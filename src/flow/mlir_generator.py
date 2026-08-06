@@ -1507,9 +1507,275 @@ class MLIRGenerator:
                 assigned.update(self._collect_assigned_vars(stmt.body))
         return assigned
     
+    def _expr_is_loop_index(self, expr: Expression, iv_name: str) -> bool:
+        return isinstance(expr, Variable) and expr.name == iv_name
+
+    def _memref_scalar_base(self, expr: Expression, elem: str) -> Optional[str]:
+        """Return symbol name when expr is a memref/pointer array of `elem`."""
+        if not isinstance(expr, Variable) or expr.name not in self.symbol_table:
+            return None
+        info = self.symbol_table[expr.name]
+        mlir_ty = info.get("mlir_type", "")
+        flow_ty = info.get("flow_type")
+        if isinstance(mlir_ty, str) and mlir_ty.startswith("memref<") and f"x{elem}>" in mlir_ty:
+            return expr.name
+        if flow_ty is not None:
+            name = getattr(flow_ty, "name", "")
+            if name in (f"memref_{elem}", f"ptr_{elem}") or (
+                getattr(flow_ty, "is_pointer", False)
+                and getattr(flow_ty, "element_type", None) is not None
+                and flow_ty.element_type.name == elem
+            ):
+                return expr.name
+        return None
+
+    def _vectorizable_scalar_rhs(
+        self, expr: Expression, iv_name: str, allowed_bases: set, elem: str
+    ) -> bool:
+        """True when expr is loop-invariant or elem loads of allowed_bases[iv]."""
+        if isinstance(expr, Literal):
+            return True
+        if isinstance(expr, Variable):
+            return expr.name != iv_name  # invariant scalar / address
+        if isinstance(expr, ArrayAccess):
+            base = self._memref_scalar_base(expr.array, elem)
+            if base is None or base not in allowed_bases:
+                return False
+            return self._expr_is_loop_index(expr.index, iv_name)
+        if isinstance(expr, BinaryOperation):
+            ops_ok = ("+", "-", "*", "/") if elem.startswith("f") else ("+", "-", "*")
+            if expr.operator not in ops_ok:
+                return False
+            return (
+                self._vectorizable_scalar_rhs(expr.left, iv_name, allowed_bases, elem)
+                and self._vectorizable_scalar_rhs(expr.right, iv_name, allowed_bases, elem)
+            )
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            return self._vectorizable_scalar_rhs(expr.operand, iv_name, allowed_bases, elem)
+        return False
+
+    def _emit_vector_scalar_expr(
+        self, expr: Expression, iv_name: str, iv_ssa: str, ops: List[str], elem: str
+    ) -> Optional[str]:
+        """Lower a vectorizable scalar RHS to vector<4x{elem}> SSA."""
+        vty = f"vector<4x{elem}>"
+        zero = "0.0" if elem.startswith("f") else "0"
+        if isinstance(expr, Literal):
+            val = self._format_mlir_numeric(str(expr.value), elem)
+            splat = f"%{self.function_counter}"
+            self.function_counter += 1
+            cst = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{cst} = arith.constant {val} : {elem}")
+            ops.append(
+                f"{self.indent()}{splat} = vector.broadcast {cst} : {elem} to {vty}"
+            )
+            self._ssa_types[splat] = vty
+            return splat
+        if isinstance(expr, Variable):
+            info = self.symbol_table[expr.name]
+            scalar = info["ssa_name"]
+            ty = info.get("mlir_type", elem)
+            if ty != elem:
+                scalar, cast_ops = self._emit_cast(scalar, ty, elem)
+                ops.extend(cast_ops)
+            splat = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{splat} = vector.broadcast {scalar} : {elem} to {vty}"
+            )
+            self._ssa_types[splat] = vty
+            return splat
+        if isinstance(expr, ArrayAccess):
+            base = expr.array.name
+            base_ssa = self.symbol_table[base]["ssa_name"]
+            mlir_ty = self.symbol_table[base].get("mlir_type", f"memref<?x{elem}>")
+            if mlir_ty == "!llvm.ptr":
+                return None  # ptr bases not yet vector-transfer compatible
+            pad = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{pad} = arith.constant {zero} : {elem}")
+            vec = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{vec} = vector.transfer_read {base_ssa}[{iv_ssa}], {pad} "
+                f"{{in_bounds = [true]}} : {mlir_ty}, {vty}"
+            )
+            self._ssa_types[vec] = vty
+            return vec
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            inner = self._emit_vector_scalar_expr(expr.operand, iv_name, iv_ssa, ops, elem)
+            if inner is None:
+                return None
+            out = f"%{self.function_counter}"
+            self.function_counter += 1
+            if elem.startswith("f"):
+                ops.append(f"{self.indent()}{out} = arith.negf {inner} : {vty}")
+            else:
+                z = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{z} = arith.constant 0 : {elem}")
+                zb = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{zb} = vector.broadcast {z} : {elem} to {vty}")
+                ops.append(f"{self.indent()}{out} = arith.subi {zb}, {inner} : {vty}")
+            self._ssa_types[out] = vty
+            return out
+        if isinstance(expr, BinaryOperation):
+            left = self._emit_vector_scalar_expr(expr.left, iv_name, iv_ssa, ops, elem)
+            right = self._emit_vector_scalar_expr(expr.right, iv_name, iv_ssa, ops, elem)
+            if left is None or right is None:
+                return None
+            out = f"%{self.function_counter}"
+            self.function_counter += 1
+            if elem.startswith("f"):
+                op_map = {"+": "arith.addf", "-": "arith.subf", "*": "arith.mulf", "/": "arith.divf"}
+            else:
+                op_map = {"+": "arith.addi", "-": "arith.subi", "*": "arith.muli"}
+            ops.append(
+                f"{self.indent()}{out} = {op_map[expr.operator]} {left}, {right} : {vty}"
+            )
+            self._ssa_types[out] = vty
+            return out
+        return None
+
+    def _try_vectorize_elementwise_for(self, for_stmt: ForStatement) -> Optional[str]:
+        """Emit vector<4xT> transfer loops for simple elementwise f32/i32 bodies.
+
+        Pattern: `for i in lo to hi { out[i] = <expr using out/x/y[i] + scalars> }`
+        with no loop-carried scalars. Uses step-4 vector body + scalar remainder.
+        """
+        if for_stmt.is_parallel or for_stmt.step is not None:
+            return None
+        if not for_stmt.body or len(for_stmt.body.statements) != 1:
+            return None
+        stmt = for_stmt.body.statements[0]
+        if not isinstance(stmt, Assignment) or stmt.target_expr is None:
+            return None
+        access = stmt.target_expr
+        if not isinstance(access, ArrayAccess):
+            return None
+
+        elem = None
+        out_base = None
+        for candidate in ("f32", "i32"):
+            out_base = self._memref_scalar_base(access.array, candidate)
+            if out_base is not None:
+                elem = candidate
+                break
+        if out_base is None or elem is None:
+            return None
+        iv = for_stmt.variable
+        if not self._expr_is_loop_index(access.index, iv):
+            return None
+
+        bases = {out_base}
+
+        def walk(e):
+            if isinstance(e, ArrayAccess):
+                b = self._memref_scalar_base(e.array, elem)
+                if b:
+                    bases.add(b)
+                walk(e.index)
+            elif isinstance(e, BinaryOperation):
+                walk(e.left)
+                walk(e.right)
+            elif isinstance(e, UnaryOperation):
+                walk(e.operand)
+
+        walk(stmt.value)
+        if not self._vectorizable_scalar_rhs(stmt.value, iv, bases, elem):
+            return None
+        out_mlir = self.symbol_table[out_base].get("mlir_type", "")
+        if not (isinstance(out_mlir, str) and out_mlir.startswith("memref<") and f"x{elem}" in out_mlir):
+            flow_ty = self.symbol_table[out_base].get("flow_type")
+            if not (flow_ty and getattr(flow_ty, "name", "") == f"memref_{elem}"):
+                return None
+            out_mlir = f"memref<?x{elem}>"
+
+        for b in bases:
+            if self.symbol_table[b].get("mlir_type", "") == "!llvm.ptr":
+                return None
+
+        ops: List[str] = []
+        lower_bound, lower_ops = self.generate_expression(for_stmt.range_start)
+        upper_bound, upper_ops = self.generate_expression(for_stmt.range_end)
+        ops.extend(lower_ops)
+        ops.extend(upper_ops)
+
+        lb = f"%{self.function_counter}"; self.function_counter += 1
+        ub = f"%{self.function_counter}"; self.function_counter += 1
+        c1 = f"%{self.function_counter}"; self.function_counter += 1
+        c4 = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
+        ops.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
+        ops.append(f"{self.indent()}{c1} = arith.constant 1 : index")
+        ops.append(f"{self.indent()}{c4} = arith.constant 4 : index")
+
+        # n = ub - lb; n_vec = n - (n % 4); vec_ub = lb + n_vec
+        n = f"%{self.function_counter}"; self.function_counter += 1
+        rem = f"%{self.function_counter}"; self.function_counter += 1
+        n_vec = f"%{self.function_counter}"; self.function_counter += 1
+        vec_ub = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}{n} = arith.subi {ub}, {lb} : index")
+        ops.append(f"{self.indent()}{rem} = arith.remsi {n}, {c4} : index")
+        ops.append(f"{self.indent()}{n_vec} = arith.subi {n}, {rem} : index")
+        ops.append(f"{self.indent()}{vec_ub} = arith.addi {lb}, {n_vec} : index")
+
+        vty = f"vector<4x{elem}>"
+        # Vectorized loop
+        iv_v = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}scf.for {iv_v} = {lb} to {vec_ub} step {c4} {{")
+        self.indent_level += 1
+        self._ssa_types[iv_v] = "index"
+        saved_iv = self.symbol_table.get(iv)
+        self.symbol_table[iv] = {"type": "variable", "mlir_type": "index", "ssa_name": iv_v}
+        body_ops: List[str] = []
+        vec_val = self._emit_vector_scalar_expr(stmt.value, iv, iv_v, body_ops, elem)
+        if vec_val is None:
+            self.indent_level -= 1
+            if saved_iv is None:
+                self.symbol_table.pop(iv, None)
+            else:
+                self.symbol_table[iv] = saved_iv
+            return None
+        ops.extend(body_ops)
+        out_ssa = self.symbol_table[out_base]["ssa_name"]
+        ops.append(
+            f"{self.indent()}vector.transfer_write {vec_val}, {out_ssa}[{iv_v}] "
+            f"{{in_bounds = [true]}} : {vty}, {out_mlir}"
+        )
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        # Scalar remainder
+        iv_s = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}scf.for {iv_s} = {vec_ub} to {ub} step {c1} {{")
+        self.indent_level += 1
+        self._ssa_types[iv_s] = "index"
+        self.symbol_table[iv] = {"type": "variable", "mlir_type": "index", "ssa_name": iv_s}
+        # Reuse normal assignment lowering for the scalar tail.
+        old_inside = self.inside_scf_for
+        self.inside_scf_for = True
+        assign_mlir = self.generate_assignment(stmt)
+        if assign_mlir.strip():
+            ops.append(assign_mlir)
+        self.inside_scf_for = old_inside
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        if saved_iv is None:
+            self.symbol_table.pop(iv, None)
+        else:
+            self.symbol_table[iv] = saved_iv
+        ops.insert(0, f"{self.indent()}// flow: vectorized elementwise f32 loop (VF=4)")
+        return "\n".join(ops)
+
     def generate_for(self, for_stmt: ForStatement) -> str:
         mlir_code = []
-        
+
+        vectorized = self._try_vectorize_elementwise_for(for_stmt)
+        if vectorized is not None:
+            return vectorized
+
         if for_stmt.is_parallel:
             # Use scf.parallel for parallel loops
             lower_bound, lower_ops = self.generate_expression(for_stmt.range_start)
@@ -1805,9 +2071,49 @@ class MLIRGenerator:
         for i in range(len(match_stmt.cases)):
             case_labels.append(self._new_block_label())
             next_case_labels.append(self._new_block_label())
-        
+
         end_label = self._new_block_label()
-        
+
+        # Locals written by any arm must be merged at the join point, or the
+        # SSA name bound inside one arm leaks out and fails dominance.
+        arms_terminate = bool(match_stmt.cases) and all(
+            self._block_has_return(c.body) for c in match_stmt.cases
+        )
+        if match_stmt.default_case is not None:
+            arms_terminate = arms_terminate and self._block_has_return(
+                match_stmt.default_case
+            )
+        else:
+            arms_terminate = False  # fallthrough path exists via final_next
+
+        merged_vars: List[str] = []
+        if not arms_terminate:
+            for block in [c.body for c in match_stmt.cases] + (
+                [match_stmt.default_case] if match_stmt.default_case else []
+            ):
+                for name in self._assigned_locals(block):
+                    if name not in merged_vars and name in self.symbol_table:
+                        merged_vars.append(name)
+        entry_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
+        merged_types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
+
+        def _restore_entry_bindings() -> None:
+            for v in merged_vars:
+                self.symbol_table[v]['ssa_name'] = entry_ssas[v]
+
+        def _end_edge() -> str:
+            if not merged_vars:
+                return ""
+            ssas = [self.symbol_table[v]['ssa_name'] for v in merged_vars]
+            return self._cf_successor_operands(ssas, merged_types)
+
+        def _entry_edge() -> str:
+            if not merged_vars:
+                return ""
+            return self._cf_successor_operands(
+                [entry_ssas[v] for v in merged_vars], merged_types
+            )
+
         # Process each case
         for idx, case in enumerate(match_stmt.cases):
             case_label = case_labels[idx]
@@ -1938,7 +2244,10 @@ class MLIRGenerator:
             
             if binding_ops:
                 mlir_code.extend(binding_ops)
-            
+
+            # Each arm starts from the pre-match bindings; assignments in a
+            # previous arm must not be visible here.
+            _restore_entry_bindings()
             body = self.generate_block(case.body)
             if body.strip():
                 mlir_code.append(body)
@@ -1946,7 +2255,7 @@ class MLIRGenerator:
             # Skip cf.br after return/terminator (same guard as generate_if):
             # two terminators in one block is invalid MLIR.
             if not self._block_has_terminator(body):
-                mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}{_end_edge()}")
 
             self.indent_level -= 1
             
@@ -1964,31 +2273,36 @@ class MLIRGenerator:
         if match_stmt.default_case:
             mlir_code.append(f"^{final_next_label}:")
             self.indent_level += 1
+            _restore_entry_bindings()
             default_body = self.generate_block(match_stmt.default_case)
             if default_body.strip():
                 mlir_code.append(default_body)
             if not self._block_has_terminator(default_body):
-                mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+                mlir_code.append(f"{self.indent()}cf.br ^{end_label}{_end_edge()}")
             self.indent_level -= 1
         else:
             # If no default, just make the last next label jump to end
             mlir_code.append(f"^{final_next_label}:")
-            mlir_code.append(f"{self.indent()}cf.br ^{end_label}")
+            mlir_code.append(f"{self.indent()}cf.br ^{end_label}{_entry_edge()}")
 
         # End block. When every arm already returned nothing branches here, so
         # the block would have no terminator; llvm.unreachable keeps it valid.
         # Otherwise the parent generate_block appends the statements that
         # follow the match into this block.
-        mlir_code.append(f"^{end_label}:")
-        arms_terminate = bool(match_stmt.cases) and all(
-            self._block_has_return(c.body) for c in match_stmt.cases
-        )
-        if match_stmt.default_case is not None:
-            arms_terminate = arms_terminate and self._block_has_return(
-                match_stmt.default_case
+        if merged_vars:
+            end_args = []
+            for ty in merged_types:
+                arg = f"%{self.function_counter}"
+                self.function_counter += 1
+                end_args.append((arg, ty))
+            mlir_code.append(
+                f"^{end_label}({', '.join(f'{a}: {t}' for a, t in end_args)}):"
             )
+            for var_name, (arg, ty) in zip(merged_vars, end_args):
+                self.symbol_table[var_name]['ssa_name'] = arg
+                self._ssa_types[arg] = ty
         else:
-            arms_terminate = False  # fallthrough path exists via final_next
+            mlir_code.append(f"^{end_label}:")
         if arms_terminate:
             mlir_code.append(f"{self.indent()}llvm.unreachable")
 
