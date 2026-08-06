@@ -104,7 +104,7 @@ export function flowc_claim_substr(s: string, start: i32, end: i32) -> string {
         i = i + 1
     }
     buf[n] = 0
-    let out: string = buf
+    let out: string = buf as string
     return out
 }
 
@@ -162,7 +162,7 @@ export function flowc_claim_slug_phrase(text: string) -> string {
         j = j - 1
     }
     buf[j] = 0
-    let out: string = buf
+    let out: string = buf as string
     return out
 }
 
@@ -253,7 +253,7 @@ export function flowc_claim_facet_law(facet: string) -> string {
         i = i + 1
     }
     buf[n] = 0
-    let out: string = buf
+    let out: string = buf as string
     return out
 }
 
@@ -345,7 +345,7 @@ export function flowc_claim_law_facet(law: string) -> string {
         i = i + 1
     }
     buf[n] = 0
-    let out: string = buf
+    let out: string = buf as string
     return out
 }
 
@@ -595,7 +595,7 @@ function flowc_claim_parse_slug(raw: string) -> FlowcClaimAddress {
         j = j + 1
     }
     buf[ln] = 0
-    let law: string = buf
+    let law: string = buf as string
     return flowc_claim_make(carrier, structure, law)
 }
 
