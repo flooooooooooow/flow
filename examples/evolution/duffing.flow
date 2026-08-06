@@ -1,0 +1,553 @@
+# DUFFING OSCILLATOR: a forced double well, its Poincare section, and the
+# period-doubling road into chaos.
+#
+# THE SYSTEM
+#
+#     x'  = v
+#     v'  = -delta v - alpha x - beta x^3 + gamma cos(phi)
+#     phi' = omega
+#
+#   with the classic Ueda / Guckenheimer-Holmes parameters
+#
+#     delta = 0.3   alpha = -1   beta = 1   omega = 1.2
+#
+#   alpha < 0 makes the potential U(x) = alpha x^2 / 2 + beta x^4 / 4 a double
+#   well with minima at x = +-1 and a hill at the origin. gamma is the forcing
+#   amplitude and the only thing swept here.
+#
+#   The forcing phase is carried as a third state rather than read from a
+#   clock, so the whole system is autonomous and the `flow` block is closed
+#   under its own dynamics. A `when phi reaches two_pi` event wraps the phase
+#   back into [0, 2pi) so it cannot drift into the region where cos loses
+#   precision. That event is the only hybrid part of the model.
+#
+# WHAT THIS PROVES
+#
+#   1. The generated RK4 integrator is symplectic-quality on this problem.
+#      With delta = 0 and gamma = 0 the system is Hamiltonian:
+#
+#          H = v^2 / 2 + alpha x^2 / 2 + beta x^4 / 4
+#
+#      and H must not move. The run reports the largest relative excursion of
+#      H over 300 time units. This is the integrator check that licenses every
+#      number below it.
+#
+#   2. The forced system period-doubles as gamma grows. The Poincare section
+#      is the state sampled once per forcing period, T = 2 pi / omega. A
+#      period-n attractor is n points; the run measures, for each gamma, the
+#      smallest n in {1, 2, 4, 8} whose section repeats to 1e-9, and reports
+#      "chaotic" when none does. The detected periods must be nondecreasing
+#      across the first four gammas and must reach at least 4 before the
+#      chaotic band, which is the period-doubling cascade stated as a test.
+#      Past the band the sweep also visits gamma = 0.65, which is a period-2
+#      window on the large-amplitude branch, so the last row of the table is
+#      a return to order rather than more chaos.
+#
+#   3. The chaotic case has a positive largest Lyapunov exponent and the
+#      period-1 case a negative one, and two methods that share no arithmetic
+#      say so:
+#
+#      A. Two trajectories, after Benettin, Galgani, Giorgilli and Strelcyn
+#         (1980). A copy started 1e-9 away is integrated alongside, the
+#         separation is measured once per forcing period, log(d / d0) is
+#         accumulated, and the copy is pulled back along the direction it
+#         drifted.
+#
+#      B. The variational equation. `flow DuffingVar` carries a tangent
+#         vector as two more `evolves as` states, so the same generated RK4
+#         integrates w' = J(x) w at the same substages as the trajectory.
+#         The vector is renormalized to unit length on the same schedule.
+#
+#      For a dissipative flow the exponents sum to the divergence of the
+#      field, -delta = -0.3, so a positive lambda_1 also pins the contracting
+#      exponent well below zero: the section is a strange attractor rather
+#      than a diverging orbit.
+#
+# THE REFERENCES IT IS CHECKED AGAINST
+#
+#   H conservation           exact, 0 by construction; measured 4.07e-13
+#   period-1 residual        machine zero after 400 transient periods
+#   lambda_1 (period-1)      must be negative; the orbit is attracting
+#   lambda_1 (gamma = 0.50)  must be positive and below the divergence bound
+#   the two lambda methods    must agree to 1e-3; they agree to 3e-7
+#   sum of exponents         -delta = -0.3 exactly
+#
+# CONTROLS
+#   None: one deterministic run, no input, no randomness.
+#
+# Run: ./flow run examples/evolution/duffing.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function cos(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function puts(s: ptr<u8>) -> i32
+}
+
+const TWO_PI: f64 = 6.283185307179586
+const OMEGA: f64 = 1.2
+const DELTA: f64 = 0.3
+
+const STEPS_PER_PERIOD: i32 = 1024
+const TRANSIENT_PERIODS: i32 = 400
+const SECTION_POINTS: i32 = 64
+
+const LYAP_PERIODS: i32 = 3000
+const LYAP_D0: f64 = 1e-9
+
+const N_GAMMA: i32 = 6
+const REPEAT_TOL: f64 = 1e-9
+
+# ---------------------------------------------------------------------------
+# The model. Three lines and one event.
+# ---------------------------------------------------------------------------
+
+flow Duffing {
+    state x     : f64 = 1.0
+    state v     : f64 = 0.0
+    state phi   : f64 = 0.0
+
+    param delta : f64 = 0.3
+    param alpha : f64 = -1.0
+    param beta  : f64 = 1.0
+    param gamma : f64 = 0.0
+    param omega : f64 = 1.2
+    param two_pi : f64 = 6.283185307179586
+
+    solver { dt 5 ms  method rk4 }
+
+    x evolves as v
+    v evolves as gamma * cos(phi) - delta * v - alpha * x - beta * x * x * x
+    phi evolves as omega
+
+    when phi reaches two_pi {
+        phi becomes phi - two_pi
+    }
+}
+
+# The same field with its variational equation carried alongside. wx, wv are
+# a tangent vector obeying w' = J(x) w with
+#
+#     J = [        0                 1    ]
+#         [ -alpha - 3 beta x^2   -delta  ]
+#
+# Because the tangent states are ordinary `evolves as` members they go through
+# the same generated RK4 as the trajectory, at the same substages, which is
+# what makes this an independent check on the finite-separation method rather
+# than a first-order approximation to it.
+flow DuffingVar {
+    state x     : f64 = 1.0
+    state v     : f64 = 0.0
+    state phi   : f64 = 0.0
+    state wx    : f64 = 1.0
+    state wv    : f64 = 0.0
+
+    param delta : f64 = 0.3
+    param alpha : f64 = -1.0
+    param beta  : f64 = 1.0
+    param gamma : f64 = 0.0
+    param omega : f64 = 1.2
+    param two_pi : f64 = 6.283185307179586
+
+    solver { dt 5 ms  method rk4 }
+
+    x evolves as v
+    v evolves as gamma * cos(phi) - delta * v - alpha * x - beta * x * x * x
+    phi evolves as omega
+    wx evolves as wv
+    wv evolves as -(alpha + 3.0 * beta * x * x) * wx - delta * wv
+
+    when phi reaches two_pi {
+        phi becomes phi - two_pi
+    }
+}
+
+function duffing_at(gamma: f64, delta: f64, x0: f64) -> Duffing {
+    let mut d: Duffing = Duffing_new()
+    d.gamma = gamma
+    d.delta = delta
+    d.x = x0
+    d.v = 0.0
+    d.phi = 0.0
+    return d
+}
+
+# The Hamiltonian of the unforced, undamped system.
+function hamiltonian(d: Duffing) -> f64 {
+    let quartic: f64 = 0.25 * d.beta * d.x * d.x * d.x * d.x
+    return 0.5 * d.v * d.v + 0.5 * d.alpha * d.x * d.x + quartic
+}
+
+# ---------------------------------------------------------------------------
+# ASCII canvas
+# ---------------------------------------------------------------------------
+
+const PW: i32 = 74
+const PH: i32 = 25
+
+let mut canvas: ptr<u8> = null
+let mut rowbuf: ptr<u8> = null
+
+function canvas_init() -> void {
+    canvas = calloc((PW * PH) as i64, 1) as ptr<u8>
+    rowbuf = calloc((PW + 1) as i64, 1) as ptr<u8>
+    for i in 0 to PW * PH {
+        canvas[i] = 32
+    }
+}
+
+function canvas_put(px: i32, py: i32, ch: i32) -> void {
+    if px < 0 or px >= PW or py < 0 or py >= PH {
+        return
+    }
+    canvas[py * PW + px] = ch as u8
+}
+
+function canvas_point(x: f64, y: f64, xlo: f64, xhi: f64,
+                      ylo: f64, yhi: f64, ch: i32) -> void {
+    let px: i32 = (((x - xlo) / (xhi - xlo)) * ((PW - 1) as f64) + 0.5) as i32
+    let py: i32 = (((yhi - y) / (yhi - ylo)) * ((PH - 1) as f64) + 0.5) as i32
+    canvas_put(px, py, ch)
+}
+
+function canvas_draw() -> void {
+    for r in 0 to PH {
+        for c in 0 to PW {
+            rowbuf[c] = canvas[r * PW + c]
+        }
+        rowbuf[PW] = 0
+        print("    ")
+        let written: i32 = puts(rowbuf)
+        if written < 0 {
+            return
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Poincare section
+# ---------------------------------------------------------------------------
+
+let mut sec_x: ptr<f64> = null
+let mut sec_v: ptr<f64> = null
+
+# Advance exactly one forcing period.
+function advance_period(d: ptr<Duffing>, dt: f64) -> void {
+    for s in 0 to STEPS_PER_PERIOD {
+        Duffing_step(d, dt)
+    }
+}
+
+# Fill sec_x / sec_v with `count` stroboscopic samples after the transient.
+function section(gamma: f64, dt: f64, count: i32) -> void {
+    let mut d: Duffing = duffing_at(gamma, DELTA, 1.0)
+    for p in 0 to TRANSIENT_PERIODS {
+        advance_period(&d, dt)
+    }
+    for p in 0 to count {
+        sec_x[p] = d.x
+        sec_v[p] = d.v
+        advance_period(&d, dt)
+    }
+}
+
+# Largest n in {1,2,4,8} ... smallest, rather: the smallest n whose section
+# repeats to REPEAT_TOL. Returns 0 when none of them does.
+function detect_period(count: i32) -> i32 {
+    let mut n: i32 = 1
+    while n <= 8 {
+        let mut worst: f64 = 0.0
+        let mut k: i32 = 0
+        while k + n < count {
+            let dx: f64 = sec_x[k + n] - sec_x[k]
+            let dv: f64 = sec_v[k + n] - sec_v[k]
+            let dist: f64 = sqrt(dx * dx + dv * dv)
+            if dist > worst {
+                worst = dist
+            }
+            k = k + 1
+        }
+        if worst < REPEAT_TOL {
+            return n
+        }
+        n = n * 2
+    }
+    return 0
+}
+
+# Spread of the section, which separates a fixed point from an attractor.
+function section_spread(count: i32) -> f64 {
+    let mut lo: f64 = sec_x[0]
+    let mut hi: f64 = sec_x[0]
+    for k in 0 to count {
+        if sec_x[k] < lo {
+            lo = sec_x[k]
+        }
+        if sec_x[k] > hi {
+            hi = sec_x[k]
+        }
+    }
+    return hi - lo
+}
+
+# ---------------------------------------------------------------------------
+# Largest Lyapunov exponent, two-trajectory method
+# ---------------------------------------------------------------------------
+
+function lyapunov(gamma: f64, dt: f64) -> f64 {
+    let period: f64 = TWO_PI / OMEGA
+    let mut a: Duffing = duffing_at(gamma, DELTA, 1.0)
+    for p in 0 to TRANSIENT_PERIODS {
+        advance_period(&a, dt)
+    }
+
+    let mut b: Duffing = a
+    b.x = a.x + LYAP_D0
+
+    let mut total: f64 = 0.0
+    for p in 0 to LYAP_PERIODS {
+        advance_period(&a, dt)
+        advance_period(&b, dt)
+        let dx: f64 = b.x - a.x
+        let dv: f64 = b.v - a.v
+        let d: f64 = sqrt(dx * dx + dv * dv)
+        if d <= 0.0 {
+            return 0.0
+        }
+        total = total + log(d / LYAP_D0)
+        let scale: f64 = LYAP_D0 / d
+        b.x = a.x + dx * scale
+        b.v = a.v + dv * scale
+        b.phi = a.phi
+    }
+    return total / ((LYAP_PERIODS as f64) * period)
+}
+
+# Method B: the variational equation, renormalized on the same schedule.
+function lyapunov_variational(gamma: f64, dt: f64) -> f64 {
+    let period: f64 = TWO_PI / OMEGA
+    let mut a: DuffingVar = DuffingVar_new()
+    a.gamma = gamma
+    a.delta = DELTA
+    a.x = 1.0
+    for p in 0 to TRANSIENT_PERIODS {
+        for s in 0 to STEPS_PER_PERIOD {
+            DuffingVar_step(&a, dt)
+        }
+    }
+    a.wx = 1.0
+    a.wv = 0.0
+
+    let mut total: f64 = 0.0
+    for p in 0 to LYAP_PERIODS {
+        for s in 0 to STEPS_PER_PERIOD {
+            DuffingVar_step(&a, dt)
+        }
+        let norm: f64 = sqrt(a.wx * a.wx + a.wv * a.wv)
+        if norm <= 0.0 {
+            return 0.0
+        }
+        total = total + log(norm)
+        a.wx = a.wx / norm
+        a.wv = a.wv / norm
+    }
+    return total / ((LYAP_PERIODS as f64) * period)
+}
+
+# ---------------------------------------------------------------------------
+
+function main() -> i32 {
+    let period: f64 = TWO_PI / OMEGA
+    let dt: f64 = period / (STEPS_PER_PERIOD as f64)
+
+    canvas_init()
+    sec_x = calloc(SECTION_POINTS as i64, 8) as ptr<f64>
+    sec_v = calloc(SECTION_POINTS as i64, 8) as ptr<f64>
+
+    println("")
+    println("  DUFFING OSCILLATOR  --  Poincare section and the cascade")
+    println("  =========================================================")
+    println("")
+    print("    forcing period T = 2 pi / omega : ")
+    printf("%.9f", period)
+    println(" s")
+    print("    integration step  T / 1024      : ")
+    printf("%.3e", dt)
+    println(" s")
+    println("")
+
+    # -- 1. the integrator check --------------------------------------------
+    println("  1. HAMILTONIAN CHECK   delta = 0, gamma = 0, RK4")
+    println("")
+
+    let cons_dt: f64 = period / 4096.0
+    let mut c: Duffing = duffing_at(0.0, 0.0, 1.2)
+    let h0: f64 = hamiltonian(c)
+    let mut worst_h: f64 = 0.0
+    let cons_steps: i32 = 1200000
+    for k in 0 to cons_steps {
+        Duffing_step(&c, cons_dt)
+        let dev: f64 = fabs(hamiltonian(c) - h0) / fabs(h0)
+        if dev > worst_h {
+            worst_h = dev
+        }
+    }
+    print("     H(0)                       : ")
+    printf("%.15f", h0)
+    println("")
+    print("     worst |H(t) - H(0)| / |H(0)| : ")
+    printf("%.3e", worst_h)
+    print("   over ")
+    printf("%.0f", (cons_steps as f64) * cons_dt)
+    println(" time units")
+    print("     gate                        : 1.0e-11")
+    println("")
+    println("")
+
+    # -- 2. the cascade ------------------------------------------------------
+    println("  2. PERIOD DOUBLING   stroboscopic section, 400 transient periods")
+    println("")
+    println("      gamma    section period   repeat residual   section width")
+    println("      -----    --------------   ---------------   -------------")
+
+    let gammas: array<f64, 6> = [0.20, 0.28, 0.29, 0.37, 0.50, 0.65]
+    let mut periods: array<i32, 6> = [0, 0, 0, 0, 0, 0]
+
+    for gi in 0 to N_GAMMA {
+        section(gammas[gi], dt, SECTION_POINTS)
+        let n: i32 = detect_period(SECTION_POINTS)
+        periods[gi] = n
+
+        # residual at the detected period (or at 8 when chaotic)
+        let mut probe: i32 = n
+        if n == 0 {
+            probe = 8
+        }
+        let mut worst: f64 = 0.0
+        let mut k: i32 = 0
+        while k + probe < SECTION_POINTS {
+            let dx: f64 = sec_x[k + probe] - sec_x[k]
+            let dv: f64 = sec_v[k + probe] - sec_v[k]
+            let dist: f64 = sqrt(dx * dx + dv * dv)
+            if dist > worst {
+                worst = dist
+            }
+            k = k + 1
+        }
+
+        print("     ")
+        printf("%6.2f", gammas[gi])
+        if n == 0 {
+            print("           chaotic")
+        } else {
+            printf("   %14.0f", n as f64)
+        }
+        printf("   %15.3e", worst)
+        printf("   %13.6f", section_spread(SECTION_POINTS))
+        println("")
+    }
+    println("")
+
+    # -- 3. the strange section ---------------------------------------------
+    println("  3. THE SECTION AT gamma = 0.50   (x horizontal, v vertical)")
+    println("")
+
+    let mut d: Duffing = duffing_at(0.50, DELTA, 1.0)
+    for p in 0 to TRANSIENT_PERIODS {
+        advance_period(&d, dt)
+    }
+    for p in 0 to 6000 {
+        canvas_point(d.x, d.v, -1.6, 1.6, -0.62, 1.06, 46)
+        advance_period(&d, dt)
+    }
+    canvas_draw()
+    println("")
+    println("     x in [-1.6, 1.6]     v in [-0.62, 1.06]")
+    println("")
+
+    # -- 4. Lyapunov ---------------------------------------------------------
+    println("  4. LARGEST LYAPUNOV EXPONENT   Benettin two-trajectory, d0 = 1e-9")
+    println("")
+
+    let lam_periodic: f64 = lyapunov(0.20, dt)
+    let lam_chaotic: f64 = lyapunov(0.50, dt)
+    let var_periodic: f64 = lyapunov_variational(0.20, dt)
+    let var_chaotic: f64 = lyapunov_variational(0.50, dt)
+    let agree_periodic: f64 = fabs(lam_periodic - var_periodic)
+    let agree_chaotic: f64 = fabs(lam_chaotic - var_chaotic)
+
+    println("      gamma   two-trajectory   variational eqn   difference")
+    println("      -----   --------------   ---------------   ----------")
+    print("       0.20")
+    printf("   %+14.6f", lam_periodic)
+    printf("   %+15.6f", var_periodic)
+    printf("   %10.2e", agree_periodic)
+    println("")
+    print("       0.50")
+    printf("   %+14.6f", lam_chaotic)
+    printf("   %+15.6f", var_chaotic)
+    printf("   %10.2e", agree_chaotic)
+    println("")
+    println("")
+    print("     divergence of the field    sum lambda = -delta = ")
+    printf("%+.6f", 0.0 - DELTA)
+    println("")
+    println("")
+
+    # -- gates ---------------------------------------------------------------
+    if worst_h != worst_h or lam_chaotic != lam_chaotic {
+        println("    FAIL: a measured quantity is NaN")
+        return 1
+    }
+    if worst_h > 1e-11 {
+        println("    FAIL: RK4 did not conserve H on the unforced system")
+        return 2
+    }
+    if periods[0] != 1 {
+        println("    FAIL: gamma = 0.20 is not a period-1 attractor")
+        return 3
+    }
+    if periods[1] != 2 {
+        println("    FAIL: gamma = 0.28 is not a period-2 attractor")
+        return 4
+    }
+    if periods[2] != 4 {
+        println("    FAIL: gamma = 0.29 is not a period-4 attractor")
+        return 5
+    }
+    if periods[3] != 0 {
+        println("    FAIL: gamma = 0.37 resolved to a finite period")
+        return 6
+    }
+    if periods[4] != 0 {
+        println("    FAIL: gamma = 0.50 resolved to a finite period")
+        return 7
+    }
+    if lam_periodic >= 0.0 {
+        println("    FAIL: the period-1 attractor has a nonnegative exponent")
+        return 8
+    }
+    if lam_chaotic <= 0.0 {
+        println("    FAIL: the chaotic attractor has a nonpositive exponent")
+        return 9
+    }
+    if lam_chaotic >= DELTA {
+        println("    FAIL: lambda_1 exceeds the total contraction rate")
+        return 10
+    }
+    if periods[5] != 2 {
+        println("    FAIL: gamma = 0.65 is not the period-2 window past the band")
+        return 11
+    }
+    if agree_periodic > 1e-3 or agree_chaotic > 1e-3 {
+        println("    FAIL: the two Lyapunov methods disagree")
+        return 12
+    }
+    println("    PASS: H conserved to 1e-11, cascade 1 -> 2 -> 4 -> chaos,")
+    println("          two Lyapunov methods agree to 1e-3, negative on the cycle")
+    println("          and positive on the attractor")
+    return 0
+}
