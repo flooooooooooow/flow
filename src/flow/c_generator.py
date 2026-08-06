@@ -1344,6 +1344,10 @@ class CGenerator:
             return "int32_t"
         if t.name == "i64":
             return "int64_t"
+        if t.name == "i128":
+            return "__int128"
+        if t.name == "u128":
+            return "unsigned __int128"
         if t.name == "i8":
             return "int8_t"
         if t.name == "i16":
@@ -1444,6 +1448,7 @@ class CGenerator:
             "i16": "int16_t", "u16": "uint16_t",
             "i32": "int32_t", "u32": "uint32_t",
             "i64": "int64_t", "u64": "uint64_t",
+            "i128": "__int128", "u128": "unsigned __int128",
             "f32": "float", "f64": "double",
             "bool": "bool", "void": "void",
         }
@@ -2510,6 +2515,32 @@ class CGenerator:
             elif e.value == "null" or e.type.name == "ptr_void" or getattr(e.type, 'is_pointer', False):
                 # null pointer literal
                 return "NULL"
+            # C has no 128-bit literal syntax: compose wide integers from two
+            # 64-bit halves so `let x: i128 = <huge>` survives codegen.
+            wide = e.type.name in ("i128", "u128")
+            if not wide and isinstance(e.value, (str, int)):
+                try:
+                    wide = abs(int(str(e.value), 0)) > 0x7FFFFFFFFFFFFFFF
+                except ValueError:
+                    wide = False
+            if wide:
+                text = str(e.value)
+                try:
+                    n = int(text, 0)
+                except ValueError:
+                    return e.value
+                ctype = "unsigned __int128" if e.type.name == "u128" else "__int128"
+                neg = n < 0
+                mag = -n if neg else n
+                if mag >> 64:
+                    hi = mag >> 64
+                    lo = mag & 0xFFFFFFFFFFFFFFFF
+                    composed = (
+                        f"(({ctype})0x{hi:X}ULL << 64 | ({ctype})0x{lo:X}ULL)"
+                    )
+                else:
+                    composed = f"(({ctype})0x{mag:X}ULL)"
+                return f"(-{composed})" if neg else composed
             return e.value
 
         if isinstance(e, Variable):
