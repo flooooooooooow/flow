@@ -354,23 +354,9 @@ class TestUnsignedLiteralArguments:
         assert "pick_i32(5)" in c
         assert "pick_u32(5)" not in c
 
-    def test_program_runs(self, tmp_path):
-        import shutil
-        import subprocess
-
-        if shutil.which("clang") is None:
-            pytest.skip("clang not available")
-        from flow.c_generator import flow_to_c
-
-        c_path = tmp_path / "unsigned.c"
-        c_path.write_text(flow_to_c(parse_flow_code(UNSIGNED_LITERAL_ARGS)))
-        binary = tmp_path / "unsigned"
-        build = subprocess.run(
-            ["clang", "-Wno-everything", str(c_path), "-o", str(binary), "-lm"],
-            capture_output=True, text=True,
-        )
-        assert build.returncode == 0, build.stderr
-        assert subprocess.run([str(binary)]).returncode == 0
+    # test_program_runs only checked the program exits 0. It is now
+    # tests/lang/test_unsigned_ints.flow, which checks each returned value,
+    # u8 wraparound, and a u32 past the signed range.
 
 
 # ---------------------------------------------------------------------------
@@ -430,25 +416,9 @@ class TestPrintOfAnExpression:
         c = flow_to_c(parse_flow_code(PRINT_EXPRESSIONS))
         assert 'printf("%s", flow_strcat("concat: ", s))' in c
 
-    def test_output_is_correct_end_to_end(self, tmp_path):
-        import shutil
-        import subprocess
-
-        if shutil.which("clang") is None:
-            pytest.skip("clang not available")
-        from flow.c_generator import flow_to_c
-
-        c_path = tmp_path / "printing.c"
-        c_path.write_text(flow_to_c(parse_flow_code(PRINT_EXPRESSIONS)))
-        binary = tmp_path / "printing"
-        build = subprocess.run(
-            ["clang", "-Wno-everything", str(c_path), "-o", str(binary), "-lm"],
-            capture_output=True, text=True,
-        )
-        assert build.returncode == 0, build.stderr
-        run = subprocess.run([str(binary)], capture_output=True, text=True)
-        assert run.returncode == 0, run.stderr
-        assert run.stdout == "42\nconcat: hi\n42\n3\n9\n42\n"
+    # test_output_is_correct_end_to_end compared the program stdout against
+    # "42\nconcat: hi\n42\n3\n9\n42\n". That is now
+    # tests/lang/test_print.flow with tests/lang/test_print.expected.
 
 
 # ---------------------------------------------------------------------------

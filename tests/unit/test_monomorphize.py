@@ -4,7 +4,7 @@ import pytest
 
 from flow.parser import StructDecl, FunctionDecl
 from flow.monomorphize import monomorphize
-from tests.unit.compiler_helpers import parse, to_c, needs_clang, compile_and_run
+from tests.unit.compiler_helpers import parse, to_c
 
 
 def _names(decls):
@@ -120,26 +120,9 @@ function main() -> i32 {
     assert "i32" in c
 
 
-@needs_clang
-def test_e2e_generic_pair_compiles_and_runs():
-    rc = compile_and_run(
-        """
-struct Pair<A, B> {
-    first: A,
-    second: B
-}
-function main() -> i32 {
-    let p: Pair<i32, bool> = Pair { first: 1, second: true }
-    if p.first == 1 {
-        if p.second {
-            return 0
-        }
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
+# test_e2e_generic_pair_compiles_and_runs is now covered by the Pair<i32, bool>
+# section of tests/lang/test_generics.flow, which also proves two
+# specializations of one template coexist in the emitted C.
 
 
 def test_bare_generic_literal_rewritten_to_specialized_name():

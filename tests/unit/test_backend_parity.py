@@ -666,10 +666,12 @@ function main() -> i32 {
 }
 
 
-@needs_clang
-@pytest.mark.parametrize("name", list(PROGRAMS.keys()))
-def test_c_backend_exit_zero(name: str):
-    assert compile_and_run(PROGRAMS[name]) == 0
+# The C-only "does it exit 0" half of this matrix now lives in tests/lang/
+# as runnable .flow programs (test_arithmetic, test_arrays, test_array_types,
+# test_control_flow, test_functions, test_loops, test_match,
+# test_match_patterns, test_parallel_for, test_structs). What stays here is
+# the differential part: the same program through the MLIR JIT must agree
+# with the C backend, which no single-backend .flow test can express.
 
 
 @needs_clang

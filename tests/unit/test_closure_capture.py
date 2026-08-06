@@ -9,13 +9,6 @@ bare-function-pointer form: the expression stays `&lambda_N` and the
 lifted function's signature contains only the declared parameters.
 """
 
-import os
-import shutil
-import subprocess
-import tempfile
-
-import pytest
-
 from flow.parser import parse_flow_code
 from flow.c_generator import flow_to_c
 
@@ -23,32 +16,6 @@ from flow.c_generator import flow_to_c
 def gen(main_body: str, prelude: str = "") -> str:
     code = prelude + "function main() -> i32 {\n%s\n    return 0\n}\n" % main_body
     return flow_to_c(parse_flow_code(code))
-
-
-def compile_and_run(source: str) -> int:
-    """Compile a Flow program to C, build it with clang, run it, return exit code."""
-    c_code = flow_to_c(parse_flow_code(source))
-    with tempfile.TemporaryDirectory() as td:
-        c_path = os.path.join(td, "prog.c")
-        bin_path = os.path.join(td, "prog")
-        with open(c_path, "w") as f:
-            f.write(c_code)
-        build = subprocess.run(
-            ["clang", "-o", bin_path, c_path], capture_output=True, text=True
-        )
-        assert build.returncode == 0, f"clang failed:\n{build.stderr}\n---\n{c_code}"
-        proc = subprocess.run([bin_path], capture_output=True)
-        return proc.returncode
-
-
-needs_clang = pytest.mark.skipif(
-    shutil.which("clang") is None, reason="clang not available"
-)
-
-
-# ---------------------------------------------------------------------------
-# Generated-C assertions
-# ---------------------------------------------------------------------------
 
 
 def test_env_struct_emitted_and_populated():
@@ -200,145 +167,8 @@ def test_capture_struct_value_via_field_access():
     assert "_env->p.x" in c
 
 
-# ---------------------------------------------------------------------------
-# End-to-end compile-and-run
-# ---------------------------------------------------------------------------
-
-
-@needs_clang
-def test_e2e_capture_one_var():
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let a: i32 = 40
-    let add_a = |x: i32| -> i32 { return a + x }
-    if add_a(2) == 42 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
-
-
-@needs_clang
-def test_e2e_capture_two_vars():
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let b: i32 = 30
-    let c: i32 = 12
-    let add_bc = |x: i32| -> i32 { return b + c + x }
-    if add_bc(0) == 42 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
-
-
-@needs_clang
-def test_e2e_snapshot_semantics_mutation_after_creation():
-    # The closure sees the value at creation time; later writes to the
-    # local do not reach the environment copy.
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let d: i32 = 5
-    let get_d = |unused: i32| -> i32 { return d }
-    d = 100
-    if get_d(0) == 5 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
-
-
-@needs_clang
-def test_e2e_lambda_in_loop_captures_loop_variable():
-    # Each iteration snapshots its own value of i: 10+0 .. 10+4 = 60.
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let total: i32 = 0
-    for i in 0..5 {
-        let addi = |x: i32| -> i32 { return x + i }
-        total = total + addi(10)
-    }
-    if total == 60 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
-
-
-@needs_clang
-def test_e2e_nested_lambdas():
-    # The inner lambda captures a variable owned by the enclosing
-    # function; it re-captures the value through the outer lambda's env.
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let base: i32 = 7
-    let outer = |x: i32| -> i32 {
-        let inner = |y: i32| -> i32 { return y + base }
-        return inner(x) * 2
-    }
-    if outer(3) == 20 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
-
-
-@needs_clang
-def test_e2e_mutating_capture_inside_body_stays_local():
-    # Writing to a captured variable inside the lambda mutates only the
-    # closure's copy; the original local is untouched.
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let count: i32 = 0
-    let bump = |x: i32| -> i32 {
-        count = count + x
-        return count
-    }
-    let r: i32 = bump(5)
-    if r == 5 {
-        if count == 0 {
-            return 0
-        }
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
-
-
-@needs_clang
-def test_e2e_noncapturing_lambda_call():
-    rc = compile_and_run(
-        """
-function main() -> i32 {
-    let doubler = |x: i32| -> i32 { return x * 2 }
-    if doubler(21) == 42 {
-        return 0
-    }
-    return 1
-}
-"""
-    )
-    assert rc == 0
+# The end-to-end compile-and-run cases (capture of one and two variables,
+# snapshot semantics, a lambda in a loop, nested lambdas, a mutating capture
+# staying local, and a non-capturing lambda) are now tests/lang/test_closures.flow.
+# What stays here is the generated-C shape: the env struct, the call-site
+# argument, and the substitution rules.
