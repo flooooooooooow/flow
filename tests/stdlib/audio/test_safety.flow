@@ -1,0 +1,401 @@
+# Audit of lib/stdlib/audio/safety.flow.
+#
+# Every promise the safety chain makes, checked against a signal built to
+# break it. The numbers this prints for the +12 dBFS test are the ones
+# quoted in docs/library/audio-safety.md, so if the limiter changes, that
+# document is wrong until it is regenerated from this output.
+#
+# Run: ./flow run tests/stdlib/audio/test_safety.flow
+# Exit code is 0 only if every check passes.
+
+import "stdlib/audio.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/oscillators.flow"
+
+extern { function sqrtf(x: f32) -> f32 }
+
+# A NaN, produced rather than written as a literal. sqrt of a negative is
+# NaN by IEEE 754, and going through a mutable static keeps the value out of
+# reach of a constant fold that might turn it into something else.
+let mut nan_source: f32 = -1.0
+
+function make_nan() -> f32 {
+    return sqrtf(nan_source)
+}
+
+let mut checks: i32 = 0
+let mut failures: i32 = 0
+
+function ok(name: string, pass: bool) -> void {
+    checks = checks + 1
+    if pass {
+        printf("  [ok  ] %s\n", name)
+    } else {
+        printf("  [FAIL] %s\n", name)
+        failures = failures + 1
+    }
+}
+
+function okf(name: string, value: f64, pass: bool) -> void {
+    checks = checks + 1
+    if pass {
+        printf("  [ok  ] %-42s %12.6f\n", name, value)
+    } else {
+        printf("  [FAIL] %-42s %12.6f\n", name, value)
+        failures = failures + 1
+    }
+}
+
+function absf(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# ---------------------------------------------------------------------------
+# 1. Numeric guards
+# ---------------------------------------------------------------------------
+
+function test_numeric_guards() -> void {
+    println("numeric guards")
+    ok("sample_is_bad rejects NaN", sample_is_bad(make_nan()))
+    ok("sample_is_bad rejects +1e31", sample_is_bad(1.0e31))
+    ok("sample_is_bad rejects -1e31", sample_is_bad(0.0 - 1.0e31))
+    ok("sample_is_bad accepts 0.5", !sample_is_bad(0.5))
+    ok("sample_is_bad accepts -1.0", !sample_is_bad(-1.0))
+
+    ok("flush_denormal flushes 1e-30", flush_denormal(1.0e-30) == 0.0)
+    ok("flush_denormal flushes -1e-30", flush_denormal(0.0 - 1.0e-30) == 0.0)
+    let small: f32 = 1.0e-6
+    ok("flush_denormal keeps 1e-6", flush_denormal(small) == small)
+    ok("flush_denormal keeps -0.25", flush_denormal(-0.25) == -0.25)
+}
+
+# ---------------------------------------------------------------------------
+# 2. Fades
+# ---------------------------------------------------------------------------
+
+function test_fade_shape() -> void {
+    println("fade shape")
+    ok("fade_gain(0) is exactly zero", fade_gain(0.0) == 0.0)
+    ok("fade_gain(1) is exactly one", fade_gain(1.0) == 1.0)
+    ok("fade_gain clamps below zero", fade_gain(-0.5) == 0.0)
+    ok("fade_gain clamps above one", fade_gain(1.5) == 1.0)
+    # Equal power: gain^2 at the midpoint is 0.5.
+    let mid: f32 = fade_gain(0.5)
+    okf("fade_gain(0.5)^2 is 0.5 (equal power)", (mid * mid) as f64,
+        absf(mid * mid - 0.5) < 0.0005)
+}
+
+# ---------------------------------------------------------------------------
+# 3. DC blocker
+# ---------------------------------------------------------------------------
+
+function test_dc_blocker() -> void {
+    println("dc blocker")
+    let rate: SampleRate = sample_rate_48000()
+    let mut dc: DCBlocker = dcblocker_new(rate)
+    let mut i: i32 = 0
+    while i < 48000 {
+        dc = dcblocker_tick(dc, 0.5)
+        i = i + 1
+    }
+    let settled: f32 = dcblocker_output(dc)
+    okf("0.5 DC drops below 0.001 in one second", settled as f64,
+        absf(settled) < 0.001)
+}
+
+# ---------------------------------------------------------------------------
+# 4. True-peak detector
+# ---------------------------------------------------------------------------
+
+# A sine sampled just off its crest has inter-sample peaks above every
+# sample it produced. A sample-peak meter misses that; this one should not.
+function test_true_peak() -> void {
+    println("true peak")
+    let rate: SampleRate = sample_rate_48000()
+    let mut tp: TruePeak = true_peak_new()
+    let tpp: ptr<TruePeak> = &tp
+    # 12 kHz at 48 kHz is four samples a cycle. Start a quarter-sample late
+    # and no sample ever lands on the crest.
+    let mut ph: Phasor = phasor_new_with_phase(12000.0, rate, 0.125)
+    let mut sample_peak: f32 = 0.0
+    let mut true_peak: f32 = 0.0
+    let mut i: i32 = 0
+    while i < 400 {
+        let s: f32 = sine(phasor_value(ph)) * 0.9
+        ph = phasor_tick(ph)
+        if absf(s) > sample_peak {
+            sample_peak = absf(s)
+        }
+        let t: f32 = true_peak_push(tpp, s, s)
+        if t > true_peak {
+            true_peak = t
+        }
+        i = i + 1
+    }
+    okf("sample peak of an off-crest 12 kHz sine", sample_peak as f64,
+        sample_peak < 0.85)
+    okf("true peak of the same signal", true_peak as f64,
+        true_peak > sample_peak)
+}
+
+# ---------------------------------------------------------------------------
+# 5. Feedback guard
+# ---------------------------------------------------------------------------
+
+function test_feedback_guard() -> void {
+    println("feedback guard")
+    ok("feedback_is_safe(0.9)", feedback_is_safe(0.9))
+    ok("feedback_is_safe(-0.9)", feedback_is_safe(-0.9))
+    ok("1.0 is not safe", !feedback_is_safe(1.0))
+    ok("1.05 is not safe", !feedback_is_safe(1.05))
+    ok("-1.05 is not safe", !feedback_is_safe(-1.05))
+
+    println("  (the next three lines are the guard talking, and are expected)")
+    ok("guard refuses 1.05 outright", feedback_guard(1.05) == 0.0)
+    ok("guard refuses -1.05 outright", feedback_guard(-1.05) == 0.0)
+    ok("guard refuses exactly 1.0", feedback_guard(1.0) == 0.0)
+
+    println("  (two more expected clamp messages)")
+    okf("0.995 clamps to the soft maximum", feedback_guard(0.995) as f64,
+        feedback_guard(0.995) == FEEDBACK_SOFT_MAX)
+    okf("-0.995 clamps to the negative soft maximum", feedback_guard(-0.995) as f64,
+        feedback_guard(-0.995) == 0.0 - FEEDBACK_SOFT_MAX)
+    ok("0.5 passes through untouched", feedback_guard(0.5) == 0.5)
+
+    # A 3 second tail on a 375 ms delay: eight round trips to -60 dB.
+    let k: f32 = rt60_to_feedback(3.0, 0.375)
+    okf("rt60_to_feedback(3.0, 0.375)", k as f64, k > 0.42 and k < 0.423)
+    let back: f32 = feedback_to_rt60(k, 0.375)
+    okf("feedback_to_rt60 round trip, seconds", back as f64,
+        absf(back - 3.0) < 0.02)
+    okf("a 20 second tail is clamped, not granted",
+        rt60_to_feedback(20.0, 0.02) as f64,
+        rt60_to_feedback(20.0, 0.02) <= FEEDBACK_SOFT_MAX)
+}
+
+# ---------------------------------------------------------------------------
+# 6. Watchdog
+# ---------------------------------------------------------------------------
+
+function test_watchdog() -> void {
+    println("duration watchdog")
+    let rate: SampleRate = sample_rate_48000()
+    println("  (one expected watchdog message)")
+    let mut chain: SafetyChain = safety_new(rate, 45.0)
+    let cp: ptr<SafetyChain> = &chain
+    ok("45 s request is flagged", safety_watchdog_hit(cp))
+    okf("45 s request is capped, seconds", safety_duration_seconds(cp) as f64,
+        absf(safety_duration_seconds(cp) - SAFETY_MAX_SECONDS) < 0.001)
+
+    let mut short_chain: SafetyChain = safety_new(rate, 0.25)
+    let sp: ptr<SafetyChain> = &short_chain
+    ok("0.25 s request is not flagged", !safety_watchdog_hit(sp))
+    okf("0.25 s request gives 12000 frames",
+        safety_total_frames(sp) as f64, safety_total_frames(sp) == 12000)
+
+    # The chain must stop producing frames at exactly the requested length.
+    let mut nonzero_after: i32 = 0
+    let mut i: i32 = 0
+    while i < 13000 {
+        let fr: Frame = safety_process_frame(sp, 0.5, 0.5)
+        if i >= 12000 and (fr.left != 0.0 or fr.right != 0.0) {
+            nonzero_after = nonzero_after + 1
+        }
+        i = i + 1
+    }
+    ok("nothing comes out past the end", nonzero_after == 0)
+    ok("safety_finished agrees", safety_finished(sp))
+}
+
+# ---------------------------------------------------------------------------
+# 7. NaN guard
+# ---------------------------------------------------------------------------
+
+function test_nan_guard() -> void {
+    println("nan guard")
+    let rate: SampleRate = sample_rate_48000()
+    let mut chain: SafetyChain = safety_new(rate, 1.0)
+    let cp: ptr<SafetyChain> = &chain
+    let bad: f32 = make_nan()
+
+    let mut i: i32 = 0
+    while i < 1000 {
+        safety_process_frame(cp, 0.3, 0.3)
+        i = i + 1
+    }
+    ok("clean input leaves the chain unmuted", !safety_muted(cp))
+
+    let poisoned: Frame = safety_process_frame(cp, bad, 0.3)
+    ok("the NaN frame comes out silent",
+       poisoned.left == 0.0 and poisoned.right == 0.0)
+    ok("the NaN is counted", safety_nan_count(cp) == 1)
+    ok("the chain mutes itself", safety_muted(cp))
+
+    # Everything after stays silent, even though the input is clean again.
+    let mut leaked: i32 = 0
+    let mut j: i32 = 0
+    while j < 1000 {
+        let fr: Frame = safety_process_frame(cp, 0.3, 0.3)
+        if fr.left != 0.0 or fr.right != 0.0 {
+            leaked = leaked + 1
+        }
+        j = j + 1
+    }
+    ok("nothing leaks out after the mute", leaked == 0)
+    ok("safety_ok reports the failure", !safety_ok(cp))
+}
+
+# ---------------------------------------------------------------------------
+# 8. Limiter on a deliberately hot signal
+#
+# The numbers printed here are the measured limiter characteristics quoted
+# in docs/library/audio-safety.md.
+# ---------------------------------------------------------------------------
+
+function test_limiter_hot() -> void {
+    println("limiter, +12 dBFS 1 kHz sine into a -6 dBFS ceiling")
+    let rate: SampleRate = sample_rate_48000()
+    let mut chain: SafetyChain = safety_new(rate, 3.0)
+    let cp: ptr<SafetyChain> = &chain
+    let ceiling: f32 = safety_ceiling_linear(cp)
+    let total: i32 = safety_total_frames(cp) as i32
+
+    # Silence, then a step to +12 dBFS at 0.5 s, then silence again at 2.0 s.
+    let hot_start: i32 = 24000
+    let hot_end: i32 = 96000
+    let amp: f32 = db_to_linear(12.0)
+
+    let mut osc: Phasor = phasor_new(1000.0, rate)
+    let mut worst_over: f32 = 0.0
+    let mut first_over_at: i32 = -1
+    let mut settle_at: i32 = -1
+    let mut engage_at: i32 = -1
+    let mut i: i32 = 0
+
+    while i < total {
+        let mut s: f32 = 0.0
+        if i >= hot_start and i < hot_end {
+            s = sine(phasor_value(osc)) * amp
+        }
+        osc = phasor_tick(osc)
+        let fr: Frame = safety_process_frame(cp, s, s)
+
+        let m: f32 = absf(fr.left)
+        if m > ceiling {
+            let over: f32 = m - ceiling
+            if over > worst_over {
+                worst_over = over
+            }
+            if first_over_at < 0 {
+                first_over_at = i
+            }
+        }
+        let gr: f32 = safety_gain_reduction_db(cp)
+        if engage_at < 0 and gr < -1.0 {
+            engage_at = i
+        }
+        if i > hot_end and settle_at < 0 and gr > -0.1 {
+            settle_at = i
+        }
+        i = i + 1
+    }
+
+    ok("no output sample exceeded the ceiling", first_over_at < 0)
+    okf("worst overshoot above the ceiling, linear", worst_over as f64,
+        worst_over == 0.0)
+    okf("peak in, dBFS", safety_peak_in_db(cp) as f64,
+        absf(safety_peak_in_db(cp) - 12.0) < 0.05)
+    okf("true peak in, dBFS", safety_true_peak_in_db(cp) as f64, true)
+    okf("peak out, dBFS", safety_peak_out_db(cp) as f64,
+        safety_peak_out_db(cp) <= safety_ceiling_db(cp) + 0.01)
+    okf("true peak out, dBFS", safety_true_peak_out_db(cp) as f64,
+        safety_true_peak_out_db(cp) <= safety_ceiling_db(cp) + 0.01)
+    okf("worst gain reduction, dB", safety_max_gain_reduction_db(cp) as f64,
+        safety_max_gain_reduction_db(cp) < -17.0)
+    okf("lookahead / limiter latency, samples",
+        safety_latency_samples(cp) as f64, safety_latency_samples(cp) == 96)
+    okf("samples from onset to 1 dB of reduction",
+        (engage_at - hot_start) as f64, engage_at >= 0 and engage_at - hot_start < 96)
+    okf("ms from release to within 0.1 dB of unity",
+        ((settle_at - hot_end) as f64) / 48.0, settle_at >= 0)
+    ok("the hard clamp never fired", safety_clamp_count(cp) == 0)
+    ok("no NaN reached the output", safety_nan_count(cp) == 0)
+    ok("safety_ok reports a clean render", safety_ok(cp))
+}
+
+# ---------------------------------------------------------------------------
+# 9. Fades at the chain level
+# ---------------------------------------------------------------------------
+
+function test_chain_fades() -> void {
+    println("chain fades")
+    let rate: SampleRate = sample_rate_48000()
+    let mut chain: SafetyChain = safety_new(rate, 1.0)
+    let cp: ptr<SafetyChain> = &chain
+    let total: i32 = safety_total_frames(cp) as i32
+    let mut osc: Phasor = phasor_new(440.0, rate)
+
+    let mut first: f32 = 1.0
+    let mut last: f32 = 1.0
+    let mut peak: f32 = 0.0
+    let mut i: i32 = 0
+    while i < total {
+        let s: f32 = sine(phasor_value(osc)) * 0.4
+        osc = phasor_tick(osc)
+        let fr: Frame = safety_process_frame(cp, s, s)
+        if i == 0 {
+            first = fr.left
+        }
+        if i == total - 1 {
+            last = fr.left
+        }
+        # Measure the peak in the steady state only. The DC blocker is a
+        # highpass and has a start-up transient of a few tens of
+        # milliseconds; inside the fade-in that transient can push the
+        # instantaneous level slightly above the input amplitude.
+        if i > total / 4 and i < total / 2 {
+            if absf(fr.left) > peak {
+                peak = absf(fr.left)
+            }
+        }
+        i = i + 1
+    }
+    okf("first output sample", first as f64, first == 0.0)
+    okf("last output sample", last as f64, last == 0.0)
+    okf("steady-state peak is untouched", peak as f64,
+        absf(peak - 0.4) < 0.002)
+}
+
+function main() -> i32 {
+    println("audio safety chain audit")
+    println("")
+    test_numeric_guards()
+    println("")
+    test_fade_shape()
+    println("")
+    test_dc_blocker()
+    println("")
+    test_true_peak()
+    println("")
+    test_feedback_guard()
+    println("")
+    test_watchdog()
+    println("")
+    test_nan_guard()
+    println("")
+    test_limiter_hot()
+    println("")
+    test_chain_fades()
+    println("")
+    printf("%d checks, %d failures\n", checks, failures)
+    if failures != 0 {
+        println("FAIL")
+        return 1
+    }
+    println("PASS")
+    return 0
+}

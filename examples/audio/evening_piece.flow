@@ -1,0 +1,214 @@
+# Twenty seconds of music, made only from the pieces in the other examples.
+#
+# WHAT YOU WILL HEAR
+#   A slow piece in A minor. Three layers, all synthesised here:
+#
+#     drone     A2 and A1 sines under everything, with a slow tremolo
+#     pad       four detuned saws voicing an A minor seventh, through a
+#               lowpass that opens and closes on a 23 second cycle so it
+#               never repeats inside the piece
+#     melody    fourteen struck notes from the A minor pentatonic, two-
+#               operator FM with a fast index decay, echoing into a 700 ms
+#               delay
+#
+#   Nothing is sampled. The whole thing is oscillators, envelopes, a filter
+#   and a delay line, mixed and sent through the safety chain.
+#
+#   This is the one to listen to first if you only listen to one.
+#
+# LISTEN
+#   ./flow audio examples/audio/evening_piece.flow
+#
+# RENDER AND CHECK
+#   FLOW_AUDIO_RENDER=build/audio/evening_piece.wav \
+#     ./flow audio examples/audio/evening_piece.flow
+
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/envelopes.flow"
+import "stdlib/audio/filters.flow"
+import "stdlib/audio/delay_line.flow"
+import "stdlib/audio/scales.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+import "stdlib/audio/verify.flow"
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 20.0
+
+const NOTE_STEP: i32 = 67200          # 1.4 s at 48 kHz
+const NOTE_COUNT: i32 = 14
+
+const DRONE_HZ: f64 = 110.0           # A2
+const SUB_HZ: f64 = 55.0              # A1
+
+const DELAY_MS: f32 = 700.0
+const DELAY_RT60: f32 = 4.0
+
+# Musical fade, on top of the safety chain's 15 ms click guard: one second in,
+# three seconds out.
+const FADE_IN_FRAMES: i32 = 48000
+const FADE_OUT_FRAMES: i32 = 144000
+
+const INV_TWO_PI: f64 = 0.15915494309189535
+
+function main() -> i32 {
+    println("evening piece")
+    println("  20.0 seconds in A minor")
+    println("  drone   A2 and A1 sines with a slow tremolo")
+    println("  pad     four detuned saws voicing A minor seventh, filter opening")
+    println("          and closing on a 23 second cycle")
+    println("  melody  fourteen FM strikes from the A minor pentatonic, into a")
+    println("          700 ms delay with a 4 second tail")
+
+    let rate: SampleRate = sample_rate_48000()
+    let mut out: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &out
+    let mut chain: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &chain
+    let buf: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+
+    # --- melody: A minor pentatonic, MIDI numbers ---------------------------
+    let tune: array<i32, 14> = [
+        76, 72, 74, 69, 79, 76, 72,
+        74, 69, 72, 76, 74, 72, 69
+    ]
+
+    # --- drone --------------------------------------------------------------
+    let mut drone: Phasor = phasor_new(DRONE_HZ, rate)
+    let mut sub: Phasor = phasor_new(SUB_HZ, rate)
+    let mut trem: LFO = lfo_new(0.13, rate, 1.0)
+
+    # --- pad: A minor seventh, A3 C4 E4 G4, each detuned a few cents --------
+    let mut p0: Phasor = phasor_new(midi_to_freq(57) as f64, rate)
+    let mut p1: Phasor = phasor_new((midi_to_freq(60) as f64) * 1.0018, rate)
+    let mut p2: Phasor = phasor_new((midi_to_freq(64) as f64) * 0.9986, rate)
+    let mut p3: Phasor = phasor_new((midi_to_freq(67) as f64) * 1.0024, rate)
+    let mut pad_l: Biquad = biquad_lowpass(600.0, 1.4, rate)
+    let mut pad_r: Biquad = biquad_lowpass(600.0, 1.4, rate)
+    let mut pad_lfo: LFO = lfo_new(0.0435, rate, 1.0)      # 23 second cycle
+    let mut coeff_ctr: i32 = 0
+
+    # --- melody voice: two-operator FM --------------------------------------
+    let mut car: Phasor = phasor_new(440.0, rate)
+    let mut mod_op: Phasor = phasor_new(1320.0, rate)
+    let mut mel_amp: ExpDecay = exp_decay_new(520.0, rate)
+    let mut mel_idx: ExpDecay = exp_decay_new(90.0, rate)
+
+    # --- melody delay -------------------------------------------------------
+    let fb: f32 = rt60_to_feedback(DELAY_RT60, DELAY_MS / 1000.0)
+    let mut dl_l: DelayLineF32 = delay_line_new(1100.0, rate)
+    dl_l = delay_line_set_time(dl_l, DELAY_MS, rate)
+    dl_l = delay_line_set_feedback(dl_l, fb)
+    dl_l = delay_line_set_mix(dl_l, 0.5)
+    let mut dl_r: DelayLineF32 = delay_line_new(1100.0, rate)
+    dl_r = delay_line_set_time(dl_r, DELAY_MS * 1.33, rate)
+    dl_r = delay_line_set_feedback(dl_r, fb)
+    dl_r = delay_line_set_mix(dl_r, 0.5)
+
+    let total: i32 = safety_total_frames(cp) as i32
+    let mut n: i32 = 0
+    let mut note: i32 = -1
+
+    while !safety_finished(cp) {
+        let count: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < count {
+            # --- note trigger -------------------------------------------
+            let slot: i32 = n / NOTE_STEP
+            if slot != note and slot < NOTE_COUNT {
+                note = slot
+                let hz: f64 = midi_to_freq(tune[slot]) as f64
+                car = phasor_set_freq(car, hz, rate)
+                car = phasor_reset(car)
+                mod_op = phasor_set_freq(mod_op, hz * 3.0, rate)
+                mod_op = phasor_reset(mod_op)
+                mel_amp = exp_decay_trigger(mel_amp)
+                mel_idx = exp_decay_trigger(mel_idx)
+            }
+
+            # --- drone ---------------------------------------------------
+            trem = lfo_tick(trem)
+            let trem_g: f32 = 0.78 + 0.22 * lfo_unipolar(trem)
+            let d: f32 = sine(phasor_value(drone)) * 0.26
+            let sb: f32 = sine(phasor_value(sub)) * 0.11
+            drone = phasor_tick(drone)
+            sub = phasor_tick(sub)
+            let drone_mix: f32 = (d + sb) * trem_g
+
+            # --- pad -----------------------------------------------------
+            pad_lfo = lfo_tick(pad_lfo)
+            if coeff_ctr == 0 {
+                let open: f32 = 0.5 + 0.5 * lfo_sine(pad_lfo)
+                let cut: f32 = 420.0 + 2100.0 * open
+                pad_l = biquad_set_cutoff(pad_l, cut, 1.4, rate)
+                pad_r = biquad_set_cutoff(pad_r, cut, 1.4, rate)
+            }
+            coeff_ctr = coeff_ctr + 1
+            if coeff_ctr >= 64 {
+                coeff_ctr = 0
+            }
+            let a0: f32 = saw(phasor_value(p0)) * 0.070
+            let a1: f32 = saw(phasor_value(p1)) * 0.055
+            let a2: f32 = saw(phasor_value(p2)) * 0.055
+            let a3: f32 = saw(phasor_value(p3)) * 0.045
+            p0 = phasor_tick(p0)
+            p1 = phasor_tick(p1)
+            p2 = phasor_tick(p2)
+            p3 = phasor_tick(p3)
+            pad_l = biquad_tick(pad_l, a0 + a1 + a3 * 0.5)
+            pad_r = biquad_tick(pad_r, a0 + a2 + a3 * 0.5)
+
+            # --- melody --------------------------------------------------
+            mel_amp = exp_decay_tick(mel_amp)
+            mel_idx = exp_decay_tick(mel_idx)
+            let idx: f64 = (2.6 * exp_decay_value(mel_idx)) as f64
+            let m: f32 = sine(phasor_value(mod_op))
+            mod_op = phasor_tick(mod_op)
+            let pm: f64 = phasor_value(car) + idx * (m as f64) * INV_TWO_PI
+            let strike: f32 = sine(pm) * exp_decay_value(mel_amp) * 0.34
+            car = phasor_tick(car)
+            dl_l = delay_line_tick(dl_l, strike)
+            dl_r = delay_line_tick(dl_r, strike)
+
+            # --- musical fade --------------------------------------------
+            let mut g: f32 = 1.0
+            if n < FADE_IN_FRAMES {
+                g = fade_gain((n as f32) / (FADE_IN_FRAMES as f32))
+            }
+            let out_start: i32 = total - FADE_OUT_FRAMES
+            if n >= out_start {
+                let go: f32 = fade_gain(((total - 1 - n) as f32) / (FADE_OUT_FRAMES as f32))
+                if go < g {
+                    g = go
+                }
+            }
+
+            let l: f32 = (drone_mix + biquad_output(pad_l) + delay_line_output(dl_l)) * g
+            let r: f32 = (drone_mix + biquad_output(pad_r) + delay_line_output(dl_r)) * g
+
+            let fr: Frame = safety_process_frame(cp, l, r)
+            audio_buffer_set_f32(buf, i, 0, fr.left)
+            audio_buffer_set_f32(buf, i, 1, fr.right)
+            n = n + 1
+            i = i + 1
+        }
+        sink_write(sp, buf.data, count)
+    }
+
+    sink_close(sp)
+    audio_buffer_free_f32(buf)
+    safety_report(cp)
+
+    if sink_is_render() {
+        # The drone holds A2 for the whole piece; that is what the bank
+        # should find.
+        let spec: VerifySpec = verify_spec(SECONDS as f64, safety_ceiling_db(cp),
+                                           DRONE_HZ)
+        if !verify_run(sink_render_path(), spec) {
+            return 1
+        }
+    }
+    return 0
+}
