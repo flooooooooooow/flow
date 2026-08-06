@@ -1,0 +1,332 @@
+# Sorting library: shared core.
+#
+# Everything the algorithm modules need in common: the element swap, the
+# ordering predicates, the deterministic generator used by any randomised
+# strategy, the module-static scratch pool, and the IEEE 754-2008 totalOrder
+# key that the language uses for float ordering (docs/language/ordering.md).
+#
+# Conventions used by every module in this library:
+#
+#   * An in-place algorithm takes `&mut [i32]`; a read-only pass takes `&[i32]`.
+#     No function in this library takes a pointer and a length.
+#   * Indices are `i64`, because `span.len` is `i64`.
+#   * Scratch comes from the pool below, sized by the consts here, never from
+#     the C stack. The compiler's own sort lowerings cap stack scratch at
+#     256 KiB (plan_selector.SCRATCH_BUDGET_BYTES); a library is not bound by
+#     that limit, and says so rather than quietly overflowing.
+
+extern {
+    function malloc(bytes: i64) -> ptr<i32>
+}
+
+# --------------------------------------------------------------------------
+# Documented capacities
+# --------------------------------------------------------------------------
+# Merge scratch: one i32 per element, so a merge sort of up to SORT_SCRATCH_
+# CAPACITY elements never allocates during the sort.
+export const SORT_SCRATCH_CAPACITY: i64 = 1048576
+
+# Key/tag scratch: a second buffer of the same shape, used by the stable
+# wrapper (index tags), by MSD radix, and by the float paths.
+export const SORT_TAG_CAPACITY: i64 = 1048576
+
+# Bucket scratch: counting sort, pigeonhole and radix write their histograms
+# here. 65536 covers a full 16-bit radix digit and any counting-sort range the
+# library will accept.
+export const SORT_COUNT_CAPACITY: i64 = 65536
+
+# Below this length every divide-and-conquer algorithm in the library hands
+# off to insertion sort. Measured on this machine; see docs/library/sorting.md.
+export const SORT_INSERTION_CUTOFF: i64 = 24
+
+# --------------------------------------------------------------------------
+# Scratch pool
+# --------------------------------------------------------------------------
+# Three module statics, allocated once on first use and never freed. A static
+# is the right home for a scratch buffer: it outlives every call, so no
+# algorithm pays an allocation, and no span borrowed from it can dangle.
+
+let mut SCRATCH_BUF: ptr<i32> = null
+let mut TAG_BUF: ptr<i32> = null
+let mut COUNT_BUF: ptr<i32> = null
+
+# A mutable view of the first `n` elements of the merge scratch.
+# Returns a zero-length span when `n` exceeds the documented capacity, which
+# every caller checks before relying on it.
+export function sort_scratch(n: i64) -> span<mut i32> {
+    if n > SORT_SCRATCH_CAPACITY or n < 0 {
+        return SCRATCH_BUF[0..0]
+    }
+    if SCRATCH_BUF == null {
+        SCRATCH_BUF = malloc(SORT_SCRATCH_CAPACITY * 4)
+    }
+    return SCRATCH_BUF[0..n]
+}
+
+# A mutable view of the first `n` elements of the tag scratch.
+export function sort_tags(n: i64) -> span<mut i32> {
+    if n > SORT_TAG_CAPACITY or n < 0 {
+        return TAG_BUF[0..0]
+    }
+    if TAG_BUF == null {
+        TAG_BUF = malloc(SORT_TAG_CAPACITY * 4)
+    }
+    return TAG_BUF[0..n]
+}
+
+# A mutable view of the first `k` histogram slots, zeroed.
+export function sort_counts(k: i64) -> span<mut i32> {
+    if k > SORT_COUNT_CAPACITY or k < 0 {
+        return COUNT_BUF[0..0]
+    }
+    if COUNT_BUF == null {
+        COUNT_BUF = malloc(SORT_COUNT_CAPACITY * 4)
+    }
+    let mut view: span<mut i32> = COUNT_BUF[0..k]
+    let mut i: i64 = 0
+    while i < k {
+        view[i] = 0
+        i = i + 1
+    }
+    return view
+}
+
+# --------------------------------------------------------------------------
+# Element moves
+# --------------------------------------------------------------------------
+
+# Exchange two elements. `@inline` earns its place here: it is the innermost
+# operation of nine algorithms, and at -O2 the call overhead would otherwise
+# dominate bubble and selection sort. Measured: see docs/library/sorting.md.
+@inline
+export function sort_swap(xs: &mut [i32], i: i64, j: i64) -> void {
+    let t: i32 = xs[i]
+    xs[i] = xs[j]
+    xs[j] = t
+}
+
+# Reverse in place. Used by the descending wrappers and by the adversarial
+# input generators in the test harness.
+export function sort_reverse(xs: &mut [i32]) -> void {
+    let mut lo: i64 = 0
+    let mut hi: i64 = xs.len - 1
+    while lo < hi {
+        sort_swap(xs, lo, hi)
+        lo = lo + 1
+        hi = hi - 1
+    }
+}
+
+# Copy `src` over `dst`, element for element. Both are spans, so the lengths
+# travel with the data and the shorter one bounds the copy.
+export function sort_copy(dst: &mut [i32], src: &[i32]) -> void {
+    let mut n: i64 = dst.len
+    if src.len < n {
+        n = src.len
+    }
+    let mut i: i64 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}
+
+# --------------------------------------------------------------------------
+# Ordering predicates
+# --------------------------------------------------------------------------
+
+# True when `xs` is in non-decreasing order. O(n), no allocation.
+export function is_sorted(xs: &[i32]) -> bool {
+    let mut i: i64 = 1
+    while i < xs.len {
+        if xs[i - 1] > xs[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# True when `xs` is in non-increasing order.
+export function is_sorted_descending(xs: &[i32]) -> bool {
+    let mut i: i64 = 1
+    while i < xs.len {
+        if xs[i - 1] < xs[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# True when `xs` is strictly increasing (no duplicates).
+export function is_strictly_increasing(xs: &[i32]) -> bool {
+    let mut i: i64 = 1
+    while i < xs.len {
+        if xs[i - 1] >= xs[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# True when every adjacent pair satisfies `le`.
+#
+# The comparator is a first-class `(i32, i32) -> bool`. One caller-side note:
+# a lambda written directly at the call site is not wrapped into the closure
+# struct by the current C backend, so bind it to an annotated local first:
+#
+#     let le: (i32, i32) -> bool = |a: i32, b: i32| -> bool { return a <= b }
+#     if !is_sorted_by(xs, le) { ... }
+#
+# This is a codegen gap, not a language one. Reported in docs/library/sorting.md.
+export function is_sorted_by(xs: &[i32], le: (i32, i32) -> bool) -> bool {
+    let mut i: i64 = 1
+    while i < xs.len {
+        if !le(xs[i - 1], xs[i]) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Do two spans hold the same elements in the same order?
+export function spans_equal(a: &[i32], b: &[i32]) -> bool {
+    if a.len != b.len {
+        return false
+    }
+    let mut i: i64 = 0
+    while i < a.len {
+        if a[i] != b[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Smallest and largest element. Returns 0 for an empty span; callers that care
+# check `.len` first.
+export function span_min(xs: &[i32]) -> i32 {
+    if xs.len <= 0 {
+        return 0
+    }
+    let mut m: i32 = xs[0]
+    let mut i: i64 = 1
+    while i < xs.len {
+        if xs[i] < m {
+            m = xs[i]
+        }
+        i = i + 1
+    }
+    return m
+}
+
+export function span_max(xs: &[i32]) -> i32 {
+    if xs.len <= 0 {
+        return 0
+    }
+    let mut m: i32 = xs[0]
+    let mut i: i64 = 1
+    while i < xs.len {
+        if xs[i] > m {
+            m = xs[i]
+        }
+        i = i + 1
+    }
+    return m
+}
+
+# --------------------------------------------------------------------------
+# Deterministic pseudo-random source
+# --------------------------------------------------------------------------
+# Anything randomised in this library (random pivots, shuffles, the fuzz
+# harness) draws from this one 31-bit LCG. It is deterministic and reseedable,
+# so a failing fuzz case is reproducible from its seed alone. The multiplier
+# and increment are the ANSI C values; the mask keeps every intermediate below
+# 2^62, so no step relies on signed overflow.
+
+const LCG_MULTIPLIER: i64 = 1103515245
+const LCG_INCREMENT: i64 = 12345
+const LCG_MASK: i64 = 2147483647
+
+let mut RNG_STATE: i64 = 1
+
+export function rng_seed(seed: i64) -> void {
+    RNG_STATE = (seed & LCG_MASK) + 1
+}
+
+# Next value in [0, 2^31 - 1).
+export function rng_next() -> i32 {
+    RNG_STATE = (RNG_STATE * LCG_MULTIPLIER + LCG_INCREMENT) & LCG_MASK
+    return RNG_STATE as i32
+}
+
+# Next value in [0, bound). Returns 0 for a non-positive bound.
+export function rng_below(bound: i32) -> i32 {
+    if bound <= 0 {
+        return 0
+    }
+    return rng_next() % bound
+}
+
+# Fisher-Yates over a span, drawing from the LCG above.
+export function shuffle(xs: &mut [i32]) -> void {
+    let mut i: i64 = xs.len - 1
+    while i > 0 {
+        let j: i64 = rng_below((i + 1) as i32) as i64
+        sort_swap(xs, i, j)
+        i = i - 1
+    }
+}
+
+# --------------------------------------------------------------------------
+# IEEE 754-2008 totalOrder keys
+# --------------------------------------------------------------------------
+# Flow's declarative `|> sort` compares floats by totalOrder, so this library
+# does too. The key maps a sign-magnitude bit pattern onto a signed integer
+# whose `<` is the total order:
+#
+#     -NaN < -inf < ... < -1.0 < -0.0 < +0.0 < ... < +inf < +NaN
+#
+# It is a load, a shift, an and, and an xor. No branches, no NaN tests.
+
+const ORD_LOW_BITS_64: i64 = 9223372036854775807
+
+# totalOrder key for an f64. Signed `<` on two keys is the total order.
+@inline
+export function ord_key_f64(x: f64) -> i64 {
+    let p: ptr<f64> = &x
+    let q: ptr<i64> = p as ptr<i64>
+    let bits: i64 = q[0]
+    return bits ^ ((bits >> 63) & ORD_LOW_BITS_64)
+}
+
+# Three-way totalOrder comparison of two f64 values: -1, 0 or 1.
+@inline
+export function ord_cmp_f64(a: f64, b: f64) -> i32 {
+    let ka: i64 = ord_key_f64(a)
+    let kb: i64 = ord_key_f64(b)
+    if ka < kb {
+        return -1
+    }
+    if ka > kb {
+        return 1
+    }
+    return 0
+}
+
+# True when `xs` is in non-decreasing totalOrder. Unlike a check built from
+# `<=`, this is correct in the presence of NaN and signed zero.
+export function is_sorted_total_f64(xs: &[f64]) -> bool {
+    let mut i: i64 = 1
+    while i < xs.len {
+        if ord_cmp_f64(xs[i - 1], xs[i]) > 0 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
