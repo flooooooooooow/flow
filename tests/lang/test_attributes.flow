@@ -1,0 +1,88 @@
+# Flow-native language test: inline / noinline / always_inline attributes.
+#
+# The attributes are optimization hints, so they must not change what the
+# program computes. This test pins that: the same arithmetic, spread across
+# functions carrying each attribute, still produces the expected values.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+#
+# `@target(...)` is deliberately absent: its feature strings are
+# architecture-specific, so a portable language test cannot pin one.
+
+@inline
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+@noinline
+function sub(a: i32, b: i32) -> i32 {
+    return a - b
+}
+
+@always_inline
+function mul(a: i32, b: i32) -> i32 {
+    return a * b
+}
+
+# Recursion under @noinline: the body must survive as a real call.
+@noinline
+function fact(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * fact(n - 1)
+}
+
+# An @inline function calling an @noinline one, and the reverse.
+@inline
+function mixed(a: i32) -> i32 {
+    return sub(mul(a, 3), 1)
+}
+
+@noinline
+function mixed_back(a: i32) -> i32 {
+    return add(mul(a, 2), 4)
+}
+
+# Attributes on an exported function keep external linkage, so the
+# generated C uses `extern inline` rather than `static inline`.
+@inline
+export function exported_add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function main() -> i32 {
+    if add(20, 22) != 42 {
+        return 1
+    }
+    if sub(44, 2) != 42 {
+        return 2
+    }
+    if mul(6, 7) != 42 {
+        return 3
+    }
+    if fact(5) != 120 {
+        return 4
+    }
+    if mixed(5) != 14 {
+        return 5
+    }
+    if mixed_back(19) != 42 {
+        return 6
+    }
+    if exported_add(40, 2) != 42 {
+        return 7
+    }
+
+    # Attributes are hints: applying them in a loop must not change the sum.
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < 10 {
+        total = add(total, mul(i, 2))
+        i = add(i, 1)
+    }
+    if total != 90 {
+        return 8
+    }
+
+    return 0
+}
