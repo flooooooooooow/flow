@@ -20,6 +20,7 @@ open http://127.0.0.1:8000/wasm-crossings/threads/
 | 1. OS threads | proven in Chrome | 7.78x on 8 workers, identical results |
 | 2. GPU via WebGPU | proven in Chrome | 1,048,576 / 1,048,576 elements bit-identical |
 | 3. Sockets | proven in Chrome | 8 / 8 round trips, best rtt 2.20 ms |
+| 4. Embedded CPython | proven in Chrome | CPython 3.12.7 via Pyodide, 11 / 11 checks |
 | 5. Filesystem | proven in Chrome | GIF byte-identical to native; counter survives reload |
 
 Measurements below were taken in Chrome 141 on an Apple M-series laptop
@@ -448,3 +449,104 @@ there. Browser: 291 bytes, 5 lines, checksum 49099. Native run of the same
 program against the real file on disk: 291 bytes, 5 lines, checksum 49099.
 
 Console clean on all three.
+
+---
+
+## 4. Embedded CPython
+
+### Mechanism
+
+`runtime/flow_python_embed.c` reaches CPython through libpython's C API:
+`Py_Initialize`, `PyImport_ImportModule`, `PyObject_CallNoArgs`,
+`PyList_Append` on `sys.path`. It either links against libpython or `dlopen`s
+it at runtime.
+
+Neither works in a browser. There is no `libpython.so` to `dlopen`, and the
+CPython C API is not an ABI you can shim from JavaScript. That file does not
+cross, and this section does not pretend otherwise.
+
+What crosses is the surface Flow actually exposes. `lib/stdlib/python_embed.flow`
+declares thirteen extern functions, and every one of them takes and returns
+C-ABI scalars or NUL-terminated strings:
+
+```
+python_init, python_destroy, python_add_to_path, python_import_module,
+python_call0, python_call1_str, python_call1_i32, python_call1_f32,
+python_call1_bool, python_call3_i32_f64, python_last_error, print_line
+```
+
+That is a small enough contract to reimplement.
+`wasm/crossing_assets/pyodide_bridge.js` is an Emscripten `--js-library`
+defining those thirteen symbols in JavaScript and routing them to Pyodide,
+which is CPython 3.12 compiled to wasm. The build simply leaves
+`flow_python_embed.c` off the link line:
+
+```
+emcc ... --js-library wasm/crossing_assets/pyodide_bridge.js
+```
+
+The two wasm modules never share memory and never need to. Everything crosses
+as a string or a number, because that is all the embedding surface ever asked
+for. `python_import_module` returns an index into a JS array of Pyodide module
+proxies rather than a `PyObject*`; Flow only ever treats it as an opaque
+`ptr<void>`, so the substitution is invisible.
+
+### The constraint people trip over
+
+**`python_init()` is synchronous and `loadPyodide()` is not.** There is no way
+to block a wasm module while a 6 MB interpreter downloads.
+
+The fix is ordering, not code: the page brings Pyodide up first and parks it on
+`globalThis.flowPyodide`, and `python_init()` only has to check that it is
+there. The Flow program is unchanged; the host does the waiting.
+
+Two smaller ones. An Emscripten JS library only gets the runtime helpers it
+declares, so `python_last_error` has to name `$stringToNewUTF8` and `free` in
+its `__deps` or it fails at the first error with `stringToNewUTF8 is not
+defined`. And Pyodide's Python needs the module to exist in *its* filesystem,
+so the page writes `flow_demo.py` into `/home/pyodide/python/` before the run;
+`python_add_to_path("python")` then appends to the real `sys.path` inside
+Pyodide.
+
+### Measured, in Chrome
+
+`examples/wasm/python_embed.flow` against
+`examples/wasm/python/flow_demo.py`, both unchanged between the native and
+browser builds. Pyodide 0.27.2 from jsDelivr, reporting **CPython 3.12.7**,
+`sys.platform` `emscripten`, loaded in 597 ms (cached).
+
+| call | route | observed | verdict |
+| --- | --- | --- | --- |
+| `python_import_module` | `pyodide.pyimport` | flow_demo imported | ok |
+| `python_call0` | `banner()` | CPython 3.12.7 | ok |
+| `python_call1_str` | `greet("Flow")` | hello, Flow | ok |
+| `python_call1_i32` | `square(12)` | 144 | ok |
+| `python_call1_f32` | `scale(1.5)` | 4.5000 | ok |
+| `python_call1_bool` | `toggle(True)` | False | ok |
+| `python_call3_i32_f64` | `math.sqrt` in Python | 13.000000 | ok |
+| module state | list on the Python module | 6 calls remembered | ok |
+| raised exception | `ValueError` to error code | code 3, message returned | ok |
+| missing attribute | to error code | code 2 | ok |
+| program exit | `main()` | rc 0, 21.8 ms | ok |
+
+Whole program: **PASS**, 21.8 ms after Pyodide is warm. Console clean.
+
+Three of those rows are the interesting ones. `python_call3_i32_f64` returns
+13.000000, a value CPython's own `math.sqrt` computed. The module-state row
+shows a module-level list accumulating across six separate calls, so this is
+one live interpreter rather than a sequence of `eval`s. And the two error rows
+show a Python traceback arriving back in Flow as an error code plus a message
+from `python_last_error()`, which is the same contract the C path has.
+
+### What this is and is not
+
+It is a working bridge: a Flow program using the ordinary embedding API,
+calling real CPython, in a browser, with results verified. It is not
+`flow_python_embed.c` compiled to wasm, and it never will be. Anything reaching
+past the thirteen declared functions into the CPython C API directly would need
+its own bridge entry. Extending the surface is mechanical (each new function is
+a few lines of JavaScript), but it is not free, and a Flow program that links
+`Python.h` itself is out of scope.
+
+The page needs network for the Pyodide CDN. Vendoring Pyodide locally is
+possible and costs about 10 MB.
