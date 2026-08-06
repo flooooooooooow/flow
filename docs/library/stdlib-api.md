@@ -1142,6 +1142,9 @@ First-class GPU / unified memory  CPU heap stays in stdlib/memory.flow.
 | `gpu_copy_d2h_f32` | `(dst: ptr<f32>, src: GpuBuffer, nbytes: i64) -> i32` | — |
 | `gpu_copy_d2d` | `(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32` | — |
 | `gpu_sync` | `() -> void` | — |
+| `gpu_mul_f32` | `(out: GpuBuffer, a: GpuBuffer, b: GpuBuffer, n: i64) -> i32` | Elementwise multiply kernels (Metal on macOS, -1 from the stub elsewhere). The backward pair is the same kernel with different operands: grad_a = grad_out * b, grad_b = grad_out * a. |
+| `gpu_mul_backward_a_f32` | `(grad_a: GpuBuffer, grad_out: GpuBuffer, b: GpuBuffer, n: i64) -> i32` | — |
+| `gpu_mul_backward_b_f32` | `(grad_b: GpuBuffer, grad_out: GpuBuffer, a: GpuBuffer, n: i64) -> i32` | — |
 | `gpu_allocate` | `(size: i64) -> GpuBuffer` | Aliases matching docs/library/core.md naming |
 | `gpu_copy_to_device` | `(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32` | — |
 | `gpu_copy_from_device` | `(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32` | — |
