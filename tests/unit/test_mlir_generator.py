@@ -89,6 +89,42 @@ function main() -> i32 {
         assert "llvm.getelementptr %5[" not in mlir
 
 
+class TestMLIRNullPointerLiterals:
+    """null must lower to llvm.mlir.zero, not arith.constant null (#223)."""
+
+    def test_null_literal_and_ptr_eq_use_llvm_ops(self):
+        code = """
+let mut g: ptr<i32> = null
+function main() -> i32 {
+    let p: ptr<i32> = null
+    if p == null {
+        return 1
+    }
+    return 0
+}
+"""
+        mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
+        assert "arith.constant null" not in mlir
+        assert "(null :" not in mlir
+        assert "llvm.mlir.zero" in mlir
+        assert 'llvm.icmp "eq"' in mlir
+        assert "llvm.mlir.global internal @g() : !llvm.ptr" in mlir
+
+    def test_ptr_to_int_cast_uses_ptrtoint(self):
+        code = """
+function main() -> i32 {
+    let p: ptr<i32> = null
+    if (p as i64) == 0 {
+        return 1
+    }
+    return 0
+}
+"""
+        mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
+        assert "llvm.ptrtoint" in mlir
+        assert "arith.constant null" not in mlir
+
+
 class TestMLIRExpressionGeneration:
     """Test MLIR expression generation."""
 

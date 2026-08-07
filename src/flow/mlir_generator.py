@@ -3113,6 +3113,20 @@ class MLIRGenerator:
                 f"{self.indent()}{ptr} = llvm.inttoptr {idx64} : i64 to !llvm.ptr",
             ]
 
+        # Pointer ↔ integer (null checks like `(p as i64) == 0`).
+        if from_type == "!llvm.ptr" and to_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
+            return cast_name, [
+                f"{self.indent()}{cast_name} = llvm.ptrtoint {value_ssa} "
+                f": !llvm.ptr to {to_type}"
+            ]
+        if to_type == "!llvm.ptr" and from_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
+            return cast_name, [
+                f"{self.indent()}{cast_name} = llvm.inttoptr {value_ssa} "
+                f": {from_type} to !llvm.ptr"
+            ]
+
         # Fallback: no cast op available, return original value.
         return value_ssa, []
     
@@ -3135,6 +3149,13 @@ class MLIRGenerator:
             else:
                 global_name = self.string_constants[str_val]
             line = f"{self.indent()}{ssa_name} = llvm.mlir.addressof @{global_name} : !llvm.ptr"
+        elif (
+            str(literal.value).lower() == 'null'
+            or (mlir_type == '!llvm.ptr' and str(literal.value).lower() in ('null', '0'))
+        ):
+            # MLIR has no `arith.constant null` — use llvm.mlir.zero (#223).
+            mlir_type = '!llvm.ptr'
+            line = f"{self.indent()}{ssa_name} = llvm.mlir.zero : !llvm.ptr"
         else:
             numeric = self._format_mlir_numeric(str(literal.value), mlir_type)
             line = f"{self.indent()}{ssa_name} = arith.constant {numeric} : {mlir_type}"
@@ -3212,6 +3233,9 @@ class MLIRGenerator:
 
         if left_ty == 'i1' or right_ty == 'i1':
             return 'i1'
+        # Pointer equality / null checks stay on !llvm.ptr (use llvm.icmp).
+        if left_ty == '!llvm.ptr' or right_ty == '!llvm.ptr':
+            return '!llvm.ptr'
         if _is_int(left_ty) or _is_int(right_ty):
             return 'i64' if max(_int_width(left_ty), _int_width(right_ty)) > 32 else 'i32'
         return left_ty
@@ -3288,6 +3312,14 @@ class MLIRGenerator:
 
             if is_float:
                 op_text = f"arith.cmpf {pred}, {left_ssa}, {right_ssa} : {operand_type}"
+            elif operand_type == '!llvm.ptr':
+                # arith.cmpi does not accept !llvm.ptr — use llvm.icmp (#223 companions).
+                icmp = {
+                    'eq': 'eq', 'ne': 'ne',
+                    'slt': 'ult', 'sle': 'ule',
+                    'sgt': 'ugt', 'sge': 'uge',
+                }.get(pred, pred)
+                op_text = f'llvm.icmp "{icmp}" {left_ssa}, {right_ssa} : !llvm.ptr'
             else:
                 op_text = f"arith.cmpi {pred}, {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '&&' or bin_op.operator == 'and':
@@ -5575,6 +5607,16 @@ class MLIRGenerator:
                     self.string_counter += 1
                     self.string_constants[str_val] = global_name
                 return ""
+            if (
+                mlir_type == "!llvm.ptr"
+                or str(const.value.value).lower() == "null"
+            ):
+                # Zero-init pointer global (no `null` attribute — #223).
+                mlir_code.append(
+                    f"{self.indent()}llvm.mlir.global internal constant "
+                    f"@{const.name}() : !llvm.ptr"
+                )
+                return "\n".join(mlir_code)
             literal_value = self._format_mlir_numeric(str(const.value.value), mlir_type)
             mlir_code.append(
                 f"{self.indent()}llvm.mlir.global internal constant @{const.name}"
@@ -5602,10 +5644,19 @@ class MLIRGenerator:
         # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
         init_payload = f"() : {mlir_type}"
         if isinstance(static.value, Literal) and getattr(static.value.type, "name", "") != "string":
-            lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
-            if static.value.type.name == "bool":
-                lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
-            init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
+            if (
+                mlir_type == "!llvm.ptr"
+                or str(static.value.value).lower() == "null"
+            ):
+                init_payload = "() : !llvm.ptr"
+                mlir_type = "!llvm.ptr"
+            else:
+                lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
+                if static.value.type.name == "bool":
+                    lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
+                init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
+        elif mlir_type == "!llvm.ptr":
+            init_payload = "() : !llvm.ptr"
         elif mlir_type in ("f32", "f64"):
             init_payload = f"(0.0 : {mlir_type}) : {mlir_type}"
         elif mlir_type.startswith("i") or mlir_type.startswith("u") or mlir_type == "index":
