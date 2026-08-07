@@ -32,6 +32,8 @@ examples/
 ├── net/              # Networking sketches (HTTP / TCP)
 ├── neuro/            # Neurons and networks: 15 gated gfx simulations
 ├── evoleco/          # Evolutionary biology: 15 gated pop-gen / game / ecology gfx
+├── planet/           # Cubesphere planet pipeline: 7 staged gated gfx demos
+├── procgen/          # Procedural generation: 8 gated noise / WFC / biome gfx
 ├── numerical/        # Scientific computing
 ├── packages/         # Path-dependency package consumer
 ├── physics/          # Physics DSL experiments
@@ -293,6 +295,33 @@ textbook measurement before the window opens.
 Run with `./flow gfx examples/evoleco/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/evoleco.md](../docs/demos/evoleco.md);
 regenerate with `python3 scripts/record_demos.py --group evoleco`.
+
+### Planet (`planet/`)
+Seven staged gfx demos of the cubesphere planet pipeline in
+`lib/stdlib/planet.flow` (see [planet/README.md](planet/README.md)). Each
+gates a stage measurement before the window opens.
+- `planet_evidence.flow` - full generate; solid angle, distortion, land, Hack, rain shadow
+- `planet_tectonics.flow` / `planet_elevation.flow` - plates; hypsometry + sea cut
+- `planet_erosion.flow` / `planet_climate.flow` - stream power; orographic precip
+- `planet_biomes.flow` / `planet_spin.flow` - Whittaker map; shaded globe + determinism
+
+Run with `FLOW_HOST=python ./flow gfx examples/planet/<name>.flow` or headless
+`./flow record`. Gallery: [docs/demos/planet.md](../docs/demos/planet.md);
+regenerate with `python3 scripts/record_demos.py --group planet`.
+
+### Procedural generation (`procgen/`)
+Eight gated gfx demos of noise, heightmaps, caves, WFC dungeons, Voronoi
+regions, islands, and biome tile maps (see
+[procgen/README.md](procgen/README.md)). Shared API:
+`lib/stdlib/procgen.flow`. Each gates a measurement before the window opens.
+- `noise_atlas.flow` - value / gradient / fBm / ridged / warped side by side
+- `heightmap_fbm.flow` / `domain_warp.flow` - sea-cut land fraction; lag-4 AC
+- `cave_worms.flow` / `wfc_dungeon.flow` - 3D porosity band; WFC adjacency
+- `voronoi_sites.flow` / `island_mask.flow` / `tile_map.flow` - sites, island, biomes
+
+Run with `FLOW_HOST=python ./flow gfx examples/procgen/<name>.flow` or headless
+`./flow record`. Gallery: [docs/demos/procgen.md](../docs/demos/procgen.md);
+regenerate with `python3 scripts/record_demos.py --group procgen`.
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the

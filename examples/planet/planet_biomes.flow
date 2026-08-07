@@ -1,0 +1,169 @@
+# PLANET BIOMES: Whittaker classification on the cubesphere.
+#
+# Full generate, then gate that land biome fractions sum to ~1 and that deep
+# ocean cells are not painted with land biomes.
+#
+# KEYS
+#   Esc quit
+#
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_biomes.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/planet.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SEED: u32 = 42
+const PLATES: i32 = 12
+const ERODE: i32 = 24
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 256
+const MAX_FRAMES: i32 = 6000
+
+let mut fb: ptr<u8> = null
+let mut m_sum: f64 = 0.0
+let mut m_bad_ocean: f64 = 0.0
+let mut m_desert: f64 = 0.0
+let mut m_rain: f64 = 0.0
+let mut scroll: f32 = 0.0
+
+function put_px(x: i32, y: i32, r: i32, g: i32, b: i32) -> void {
+    if x < 0 or x >= FB_W or y < 0 or y >= FB_H { return }
+    let o: i32 = (y * FB_W + x) * 3
+    fb[o] = r as u8
+    fb[o + 1] = g as u8
+    fb[o + 2] = b as u8
+}
+
+function draw_map() -> void {
+    let n: i32 = planet_cells()
+    for y in 0 to FB_H {
+        let lat: f32 = 90.0 - 180.0 * ((y as f32) + 0.5) / (FB_H as f32)
+        for x in 0 to FB_W {
+            let mut lon: f32 = -180.0 + 360.0 * ((x as f32) + 0.5) / (FB_W as f32) + scroll
+            if lon > 180.0 { lon = lon - 360.0 }
+            if lon < -180.0 { lon = lon + 360.0 }
+            let i: i32 = planet_cell_at_lonlat(lon, lat)
+            if i < 0 or i >= n {
+                put_px(x, y, 0, 0, 0)
+            } else {
+                let b: i32 = planet_biome(i)
+                let r: i32 = (planet_biome_r(b) * 255.0) as i32
+                let g: i32 = (planet_biome_g(b) * 255.0) as i32
+                let bb: i32 = (planet_biome_b(b) * 255.0) as i32
+                put_px(x, y, r, g, bb)
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PLANET BIOMES  WHITTAKER ON CUBESPHERE", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "SUM", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_fixed(g, 40, 28, m_sum, 3, 1, 120, 255, 190)
+    let t4: i32 = gfx_draw_text(g, 110, 28, "BAD OCEAN", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 186, 28, m_bad_ocean, 0, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 260, 28, "DESERT", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 314, 28, m_desert, 3, 1, 234, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 390, 28, "TROP", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_fixed(g, 426, 28, m_rain, 3, 1, 234, 232, 244)
+    let ta: i32 = gfx_draw_text(g, 8, 42, "Whittaker by mean annual T and precip; lakes from hydrology", 1, 112, 108, 132)
+    let tb: i32 = gfx_draw_text(g, 8, 572,
+        "land biome fractions sum to ~1; deep ocean stays ocean/shelf/ice", 1, 122, 118, 144)
+    let tc: i32 = gfx_draw_text(g, 8, 582,
+        "gates: sum in [0.99, 1.01], zero misclassified deep-ocean cells", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+    if fb == null {
+        println("  FAIL: framebuffer alloc")
+        return 1
+    }
+
+    println("")
+    println("  PLANET BIOMES  --  Whittaker classification")
+    println("  ============================================")
+    println("")
+
+    if !planet_init() {
+        println("    FAIL: planet_init")
+        return 1
+    }
+    if !planet_generate(SEED, PLATES, ERODE) {
+        println("    FAIL: planet_generate")
+        return 2
+    }
+
+    let mut s: f64 = 0.0
+    for b in 0 to PB_COUNT {
+        s = s + (planet_biome_land_fraction(b) as f64)
+    }
+    m_sum = s
+    m_desert = planet_biome_land_fraction(PB_DESERT) as f64
+    m_rain = planet_biome_land_fraction(PB_TROPICAL_RAIN) as f64
+
+    let mut bad: i32 = 0
+    let n: i32 = planet_cells()
+    for i in 0 to n {
+        if planet_elev(i) < -0.35 {
+            let b: i32 = planet_biome(i)
+            if b != PB_OCEAN and b != PB_SEA_ICE {
+                bad = bad + 1
+            }
+        }
+    }
+    m_bad_ocean = bad as f64
+
+    print("     sum of land biome fractions   : ")
+    printf("%10.6f", m_sum)
+    println("")
+    print("     misclassified deep ocean      : ")
+    printf("%10.0f", m_bad_ocean)
+    println("")
+    print("     desert land fraction          : ")
+    printf("%10.4f", m_desert)
+    println("")
+    print("     tropical rainforest fraction  : ")
+    printf("%10.4f", m_rain)
+    println("")
+    println("")
+
+    if fabs(m_sum - 1.0) > 0.01 {
+        println("    FAIL: land biome fractions do not sum to ~1")
+        return 3
+    }
+    if bad != 0 {
+        println("    FAIL: deep ocean cells have non-ocean biomes")
+        return 4
+    }
+    println("    PASS: land biome fractions sum to one; deep ocean is ocean")
+    println("")
+
+    draw_map()
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Planet biomes - Flow")
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        scroll = scroll + 1.5
+        if scroll >= 360.0 { scroll = scroll - 360.0 }
+        draw_map()
+        gfx_clear(g, 12, 14, 18)
+        gfx_blit_rgb(g, 0, FIELD_Y + 64, FB_W, FB_H, fb)
+        draw_hud(g)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+    return 0
+}
