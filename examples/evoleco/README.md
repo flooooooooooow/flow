@@ -1,6 +1,6 @@
 # examples/evoleco: evolutionary biology, running live
 
-Fifteen graphics programs about how populations change. Each one starts from
+Twenty-five graphics programs about how populations change. Each one starts from
 a known initial state (allele frequencies, a mixed strategy field, an epidemic
 seed) and ends somewhere the theory predicts, with a measured quantity gated
 against a closed form or a published number. They are regression tests that
@@ -45,6 +45,21 @@ Recorded clips live in the
 |---|---|---|
 | [`lotka_volterra_gfx.flow`](lotka_volterra_gfx.flow) | Predator-prey | First integral conserved; Volterra averages |
 | [`sir_spatial.flow`](sir_spatial.flow) | Spatial SIR | Final size vs the final-size equation |
+
+## Extended evolutionary genetics
+
+| Example | Model | What it proves |
+|---|---|---|
+| [`mullers_ratchet.flow`](mullers_ratchet.flow) | Muller ratchet | Mean load U/s; click count vs Haigh-scale rate |
+| [`clonal_interference.flow`](clonal_interference.flow) | Competing beneficials | Fixation ~(2/s) ln N; weaker clone suppressed |
+| [`hitchhiking.flow`](hitchhiking.flow) | Selective sweep | Diversity trough at selected locus; flanks recover with rho |
+| [`breeders_equation.flow`](breeders_equation.flow) | Quantitative genetics | R = h^2 S; realised heritability recovers h^2 |
+| [`allee_effect.flow`](allee_effect.flow) | Strong Allee | Extinct below A; approach K above |
+| [`hamilton_rule.flow`](hamilton_rule.flow) | Spatial kin selection | Cooperation when rB > C; well-mixed extinguishes C |
+| [`red_queen.flow`](red_queen.flow) | Matching alleles | Host-parasite oscillations; parasites chase hosts |
+| [`metapopulation.flow`](metapopulation.flow) | Levins patches | Occupancy p* = 1 - e/c |
+| [`competitive_lv.flow`](competitive_lv.flow) | Competitive LV | Coexistence vs R* exclusion by mutual invasibility |
+| [`runaway_selection.flow`](runaway_selection.flow) | Lande-Kirkpatrick | Weak coupling equilibrates; strong Fisherian runaway |
 
 ## Running them
 
