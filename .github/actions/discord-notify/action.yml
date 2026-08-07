@@ -1,0 +1,59 @@
+name: Discord notify
+description: Post an embed to a Discord channel via webhook. One place to define the payload shape so every workflow stays consistent.
+inputs:
+  webhook:
+    description: Discord webhook URL (from a GitHub secret)
+    required: true
+  title:
+    description: Embed title
+    required: true
+  color:
+    description: Embed color as decimal (3066993 green, 15158332 red, 5763719 purple, 0 default)
+    required: false
+    default: '0'
+  description:
+    description: Embed description (markdown, single line)
+    required: false
+    default: ''
+  url:
+    description: Embed URL (e.g. run/release page)
+    required: false
+    default: ''
+  field_name:
+    description: Optional single field name
+    required: false
+    default: ''
+  field_value:
+    description: Optional single field value (inline with the field above)
+    required: false
+    default: ''
+  botname:
+    description: Webhook username override
+    required: false
+    default: Flow Bot
+runs:
+  using: composite
+  steps:
+    - name: Post embed
+      shell: bash
+      env:
+        WEBHOOK: ${{ inputs.webhook }}
+        TITLE: ${{ inputs.title }}
+        COLOR: ${{ inputs.color }}
+        DESCRIPTION: ${{ inputs.description }}
+        URL: ${{ inputs.url }}
+        FIELD_NAME: ${{ inputs.field_name }}
+        FIELD_VALUE: ${{ inputs.field_value }}
+        BOTNAME: ${{ inputs.botname }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$WEBHOOK" ]]; then
+          echo "discord-notify: no webhook URL supplied, skipping"
+          exit 0
+        fi
+        PAYLOAD="{\"username\":\"$BOTNAME\",\"embeds\":[{\"title\":\"$TITLE\",\"color\":$COLOR"
+        if [[ -n "$DESCRIPTION" ]]; then PAYLOAD="$PAYLOAD,\"description\":\"$DESCRIPTION\""; fi
+        if [[ -n "$URL" ]]; then PAYLOAD="$PAYLOAD,\"url\":\"$URL\""; fi
+        if [[ -n "$FIELD_NAME" ]]; then PAYLOAD="$PAYLOAD,\"fields\":[{\"name\":\"$FIELD_NAME\",\"value\":\"$FIELD_VALUE\",\"inline\":true}]"; fi
+        PAYLOAD="$PAYLOAD}]}"
+        curl -fsS "$WEBHOOK" -H "Content-Type: application/json" -d "$PAYLOAD"
