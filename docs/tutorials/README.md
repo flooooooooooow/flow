@@ -17,6 +17,7 @@ example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
 | [pipelines.md](pipelines.md) | `\|\>`, `_`, declarative sort |
 | [structs.md](structs.md) | Records & mutation |
 | [arrays.md](arrays.md) | Fixed arrays & algos |
+| [spans.md](spans.md) | Borrowed views (`span<T>`) — browser shape + native |
 | [strings.md](strings.md) | printf & parsing |
 | [pointers.md](pointers.md) | `ptr<T>`, null |
 | [memory.md](memory.md) | **Manual memory** — malloc, free, arenas |
@@ -31,6 +32,7 @@ example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
 | [audio-basics.md](audio-basics.md) | Sample / DSP loops |
 | [rt-audio.md](rt-audio.md) | `@rt_safe` callbacks |
 | [advanced.md](advanced.md) | Effects deep-dive, SIMD, POSIX |
+| [wasm.md](wasm.md) | Same source → WASM / crossings |
 | [evolution.md](evolution.md) | `flow` / `evolves` / hybrid / `field` |
 | [dynamics.md](dynamics.md) | Integrators, `dsys`, sense, GA / LQR |
 | [gfx-basics.md](gfx-basics.md) | Native windows, games, `flow record` |
@@ -41,11 +43,12 @@ example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
 
 ## Learning paths
 
-1. **New to Flow:** beginner → control → functions → pipelines → structs → arrays → projects  
-2. **Systems / C background:** pointers → **memory** → systems → algorithms → rt-audio  
+1. **New to Flow:** beginner → control → functions → pipelines → structs → arrays → spans → projects  
+2. **Systems / C background:** pointers → **memory** → systems → algorithms → spans → rt-audio  
 3. **ML / DSP:** autodiff-basics → [ml-on-macbook](ml-on-macbook.md) → audio-basics → rt-audio  
 4. **Vision / control:** pipelines → **evolution** → dynamics → effects-basics → autodiff-basics  
-5. **Graphics:** gfx-basics → evolution (Lorenz) → shaders → domains (morphogenesis)
+5. **Graphics:** gfx-basics → evolution (Lorenz) → shaders → domains (morphogenesis)  
+6. **Web / portable:** wasm → systems → concurrency (native next steps)
 
 ## Manual memory (native)
 
