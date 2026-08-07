@@ -283,12 +283,16 @@ North-star comment showing how the same system will read one day.
 
 ## MLIR backend status
 
-Programs that use structs, including every `flow` block, now execute through
-the MLIR pipeline (`./flow jit` and `./flow mlir-run`) with the same results
-as the C backend. Struct literals, field reads, field stores, address-of, and
-pointer-to-struct parameters all lower to LLVM-dialect ops (insertvalue,
-extractvalue, getelementptr, load, store).
+Programs that use structs, including every `flow` block, execute through
+the MLIR pipeline (`./flow run --backend=mlir`, `./flow jit`, `./flow mlir-run`)
+with the same results as the C backend. Struct literals, field reads, field
+stores, address-of, and pointer-to-struct parameters all lower to LLVM-dialect
+ops (insertvalue, extractvalue, getelementptr, load, store).
 `examples/evolution/pendulum_evolves.flow` and
 `tests/core/test_evolves_pendulum.flow` both pass under the JIT.
-Effect handlers and their vtables do not lower through MLIR yet; programs
-that use effects still need the C backend.
+
+Effect handlers and capability vtables **do** lower through MLIR (see
+`tests/unit/test_mlir_effects.py`). Fiber-local handler stacks and full
+delimited continuations remain C-runtime-primary; once `--backend=mlir` links
+the Flow concurrency runtime, extern `flow_fiber_*` symbols resolve the same
+as on the C path.

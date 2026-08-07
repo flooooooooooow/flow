@@ -316,13 +316,13 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 **Recently completed:**
 - ✅ Enums / ADTs — Tagged unions in C
 - ✅ Trait bounds — `<T: Display>` stored in AST
-- ✅ MLIR backend — Full pipeline: FLOW → MLIR → LLVM → native
+- ✅ MLIR backend — Co-equal CPU path: FLOW → MLIR → LLVM → native (`--backend=mlir` / `FLOW_CPU_BACKEND=mlir`; default remains C)
 - ✅ LSP — go-to-definition, hover, autocomplete
-- ✅ Closures — Automatic by-value capture (`|x| …` + env/closure structs)
+- ✅ Closures — Automatic by-value capture (`|x| …` + env/closure structs); MLIR lowers non-capturing lambdas
 - ✅ REPL — `flow repl` for interactive development
-- ✅ JIT — `flow jit` for fast execution via MLIR
+- ✅ JIT — `flow jit` for fast execution via MLIR (links Flow runtime when `FLOW_JIT_LINK_RUNTIME=1`)
 - ✅ Package manager — `flow init`, `flow add`, `flow build`
-- ✅ GPU codegen — `@gpu` decorator, Metal shader generation
+- ✅ GPU codegen — Dual targets: Metal/WGSL (`./flow gpu`) + MLIR→SPIR-V emit (`--mlir-gpu --emit-spirv`)
 - ✅ Stdlib expansion — POSIX, collections, networking, concurrency, strings
 - ✅ Documentation — Tutorials, getting started, stdlib reference
 
@@ -683,9 +683,9 @@ DWARF debug info, breakpoints, step-through.
 **Priority:** Medium  
 **Effort:** 2-4 weeks
 
-Make the MLIR backend actually optimize.
+Make the co-equal MLIR CPU backend actually optimize (opt flags already ship: `--opt-level`, `--no-*`; see `docs/language/mlir-opt-flags.md`).
 
-- [ ] Loop vectorization
+- [ ] Loop vectorization (partial: elementwise f32 transfer_* path exists)
 - [ ] Function inlining
 - [ ] Dead code elimination
 - [ ] Constant propagation
@@ -694,20 +694,14 @@ Make the MLIR backend actually optimize.
 **Priority:** Medium  
 **Effort:** 1-2 months
 
-Generate Metal/CUDA shaders from FLOW.
+Dual GPU targets (do not collapse to one):
 
-**Status:** Experimental path exists (see `@gpu` + Metal codegen); treat this phase as polish/perf work, not “first implementation”.
+| Target | Role | Status |
+|--------|------|--------|
+| Metal / WGSL | macOS primary + WebGPU | Emit via `./flow gpu`; fill-shader e2e on Darwin |
+| MLIR → SPIR-V | Cross-platform compute emit | `--mlir-gpu --emit-spirv`; Linux CI smoke; no Vulkan dispatch yet |
 
-```flow
-@gpu
-function vector_add(a: array<f32>, b: array<f32>, c: array<f32>, n: i32) -> void {
-    let idx: i32 = gpu_thread_id()
-    if idx < n {
-        c[idx] = a[idx] + b[idx]
-    }
-}
-```
-
+**Status:** Dual emit paths exist; polish = runtime kernel load (Metal) + SPIR-V dispatch host (follow-up). Capturing GPU autodiff remains open.
 ### 4.3 SIMD Intrinsics
 **Priority:** Low  
 **Effort:** 1-2 weeks
@@ -839,7 +833,7 @@ These are explicitly out of scope:
 3. [x] Enums / algebraic data types ✅ (tagged unions in C)
 4. [x] WASM build improvements ✅ (`flow wasm` command)
 5. [x] LSP improvements ✅ (go-to-definition, hover, autocomplete)
-6. [x] MLIR backend ✅ (full pipeline: FLOW → MLIR → LLVM IR → native)
+6. [x] MLIR backend ✅ (co-equal CPU flag: `--backend=mlir` / `FLOW_CPU_BACKEND`; default C; runtime-linked)
 7. [x] Docs wiki deploy + interactive tutorials ✅ (`/flow/`, `/transpile/`)
 8. [x] Clear remaining example cgen failures (`examples/STATUS.md`) ✅
 9. [x] Match guards + `|` alternation + nested literal & struct-in-struct patterns ✅ (bool/enum exhaustiveness real; integer range/gap analysis shipped — see Phase 2.1)

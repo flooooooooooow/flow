@@ -11,11 +11,13 @@ Flow is a classic front end with multiple back ends:
 1. **Parser** (`src/flow/parser.py`) lexes and parses `.flow` source into an AST.
 2. **Type checking** (`src/flow/type_checker.py`) performs semantic checks and type inference in a mostly conventional static type system.
 3. **Lowering** chooses a backend:
-   - **C generator** (`src/flow/c_generator.py`) for portable native compilation via Clang/GCC.
-   - **MLIR generator** (`src/flow/mlir_generator.py`) for more advanced pipelines and JIT.
-   - **Metal codegen** (`src/flow/metal_codegen.py`) for GPU shader generation.
+   - **C generator** (`src/flow/c_generator.py`) — default CPU path (`./flow run`, portable Clang/GCC).
+   - **MLIR generator** (`src/flow/mlir_generator.py`) — co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
+   - **Metal codegen** (`src/flow/metal_codegen.py`) — primary macOS `@gpu` / fill-shader path.
+   - **WGSL codegen** (`src/flow/wgsl_codegen.py`) — WebGPU emit.
+   - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`) — parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
 
-The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows and exposes commands like `run`, `compile`, `mlir`, `mlir-run`, `jit`, and `gpu`.
+The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
 
 ## 2. Language Surface and Type System
 
@@ -61,13 +63,14 @@ Autodiff is built into the standard library and language ecosystem, not bolted o
 
 ## 5. MLIR: Why It Exists Here
 
-MLIR is used as a backend, not as a replacement for the language. The approach is:
+MLIR is a **co-equal CPU backend**, not a replacement for C and not the whole story:
 
 - **Front end is independent** (Flow AST remains the source of truth).
-- **Lowering targets MLIR** when the user wants JIT or MLIR-native tooling.
-- **Lowering targets C** when the user wants maximum portability.
+- **Default CPU path is C** (`./flow run`) for portability and self-host Stage-A.
+- **MLIR CPU path** (`./flow run --backend=mlir`, `FLOW_CPU_BACKEND=mlir`, `mlir-run`, `jit`) links the same Flow runtime and covers arith, control flow, structs, enums, module statics, non-capturing lambdas, and effect vtables.
+- **GPU is dual**: Metal/WGSL for Apple/WebGPU; MLIR GPU dialect → SPIR-V as the parallel cross-platform emit target.
 
-This is a practical split: MLIR enables richer pipelines (e.g., JIT or future GPU lowering), while C is a stable, portable fallback that requires no LLVM installation.
+This split keeps portable C as the default while letting MLIR own opt/JIT and SPIR-V compute emit without retiring either path.
 
 ## 6. The C Backend: Portable, Predictable Output
 
