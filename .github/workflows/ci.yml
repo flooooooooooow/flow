@@ -515,3 +515,20 @@ jobs:
           if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
           check windows-gfx-stub '${{ needs.windows-gfx-stub.result }}' "$gfx_req"
           exit $fail
+
+      - name: Post CI status to Discord #ci-releases
+        if: always() && env.DISCORD_CI_WEBHOOK != ''
+        env:
+          DISCORD_CI_WEBHOOK: ${{ secrets.DISCORD_CI_WEBHOOK }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR=3066993
+            STATUS="passed"
+          else
+            COLOR=15158332
+            STATUS="failed"
+          fi
+          SHA8=$(echo "${{ github.sha }}" | cut -c1-8)
+          curl -fsS "$DISCORD_CI_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"Flow CI\",\"embeds\":[{\"title\":\"CI $STATUS\",\"color\":$COLOR,\"description\":\"${{ github.repository }} @ \`${SHA8}\`\",\"url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]}"

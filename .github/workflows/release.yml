@@ -48,3 +48,14 @@ jobs:
             flow-*.zip
             SHA256SUMS.txt
           fail_on_unmatched_files: true
+
+      - name: Post release to Discord #announcements
+        if: always() && env.DISCORD_RELEASE_WEBHOOK != ''
+        env:
+          DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          SHA=$(shasum -a 256 "flow-${TAG}.tar.gz" 2>/dev/null | cut -d' ' -f1 | cut -c1-12)
+          curl -fsS "$DISCORD_RELEASE_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"Flow Release Bot\",\"embeds\":[{\"title\":\"Flow $TAG released\",\"color\":5763719,\"description\":\"${{ github.server_url }}/${{ github.repository }}/releases/tag/$TAG\",\"fields\":[{\"name\":\"Commit\",\"value\":\"${{ github.sha }}\",\"inline\":true},{\"name\":\"Tarball sha256\",\"value\":\"\`${SHA}\`\",\"inline\":true}]}]}"

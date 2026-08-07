@@ -11,6 +11,15 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build/audit
 
+# GCC and clang use different flags to disable the cap on reported errors.
+# CI runs on Ubuntu where `cc` is GCC, so hardcoding the clang-only
+# -ferror-limit=0 makes the whole audit fail there. Select per compiler.
+if cc --version 2>/dev/null | grep -qi 'clang'; then
+    ERR_LIMIT_FLAG="-ferror-limit=0"
+else
+    ERR_LIMIT_FLAG="-fmax-errors=0"
+fi
+
 DRV="${FLOWC_AUDIT_BIN:-}"
 if [[ -z "$DRV" ]]; then
     for cand in \
@@ -43,10 +52,10 @@ for f in compiler/src/*.flow; do
         fail=1
         continue
     fi
-    errs="$(cc -fsyntax-only -ferror-limit=0 "$out" 2>&1 | grep -c 'error:')"
+    errs="$(cc -fsyntax-only $ERR_LIMIT_FLAG "$out" 2>&1 | grep -c 'error:')"
     if [[ "$errs" -ne 0 ]]; then
         echo "FAIL ${name}: ${errs} C errors"
-        cc -fsyntax-only -ferror-limit=0 "$out" 2>&1 | grep 'error:' \
+        cc -fsyntax-only $ERR_LIMIT_FLAG "$out" 2>&1 | grep 'error:' \
             | sed -E 's/^[^:]+:[0-9]+:[0-9]+: //' | sort | uniq -c | sort -rn | head -5 \
             | sed 's/^/    /'
         fail=1
