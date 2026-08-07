@@ -325,7 +325,7 @@ function m2l_add(src: i32, tgt: i32) -> void {
     let mut b0: Cplx = c_mul(a0, c_log(c_neg(z0)))
     for k in 1 to fmm_p + 1 {
         let ak: Cplx = get_c(mx_re, mx_im, src, k)
-        let sign: f64 = 1.0
+        let mut sign: f64 = 1.0
         if (k % 2) == 1 { sign = 0.0 - 1.0 }
         b0 = c_add(b0, c_scale(c_div(ak, c_pow_i(z0, k)), sign))
     }
@@ -336,7 +336,7 @@ function m2l_add(src: i32, tgt: i32) -> void {
         let mut sum: Cplx = cz(0.0, 0.0)
         for k in 1 to fmm_p + 1 {
             let ak: Cplx = get_c(mx_re, mx_im, src, k)
-            let sign2: f64 = 1.0
+            let mut sign2: f64 = 1.0
             if (k % 2) == 1 { sign2 = 0.0 - 1.0 }
             let term: Cplx = c_scale(c_mul(c_div(ak, c_pow_i(z0, k)),
                                            cz(binom(l + k - 1, k - 1), 0.0)), sign2)

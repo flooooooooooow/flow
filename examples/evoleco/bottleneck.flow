@@ -375,7 +375,7 @@ function main() -> i32 {
             }
         }
 
-        let live_err: f64 = 0.0
+        let mut live_err: f64 = 0.0
         if h_pred_live > 1.0e-12 {
             live_err = fabs(h_now - h_pred_live) / h_pred_live
         }

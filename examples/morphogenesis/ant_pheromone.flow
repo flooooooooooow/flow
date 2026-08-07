@@ -105,7 +105,7 @@ let mut trips_short: i32 = 0
 let mut trips_long: i32 = 0
 let mut measuring: bool = false
 let mut equal_mode: bool = false
-let mut long_len: i32 = LONG_LEN_UNEQ
+let mut long_len: i32 = 96
 
 function rng_next() -> u32 {
     rng_state = rng_state * 1664525 + 1013904223
@@ -137,9 +137,9 @@ function preset_evap(p: i32) -> f64 {
 function corridor_tau(bridge: i32) -> f64 {
     let mut s: f64 = 0.0
     let mut n: i32 = 0
-    let y0: i32 = SHORT_Y
+    let mut y0: i32 = SHORT_Y
     if bridge == 1 { y0 = LONG_Y }
-    let len: i32 = SHORT_LEN
+    let mut len: i32 = SHORT_LEN
     if bridge == 1 { len = long_len }
     for x in 0 to len {
         for dy in 0 to CORR_W {

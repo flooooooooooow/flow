@@ -1688,7 +1688,7 @@ class TypeChecker:
                     f"literal of compile-time constants"
                 )
                 return
-            if len(decl.value.elements) != t.size:
+            if len(decl.value.elements) > t.size:
                 self.errors.append(
                     f"Module static '{name}' array initializer has "
                     f"{len(decl.value.elements)} elements but the type declares "

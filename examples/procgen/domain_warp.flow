@@ -294,7 +294,7 @@ function main() -> i32 {
         return 1
     }
     let corr_cap: f64 = CORR_MAX * CORR_MAX
-    let differ: i32 = 0
+    let mut differ: i32 = 0
     if mad > DIFF_FLOOR { differ = 1 }
     if r2 < corr_cap { differ = 1 }
     if differ == 0 {
