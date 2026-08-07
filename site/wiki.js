@@ -4,7 +4,7 @@ let navData = null;
 let searchIndex = [];
 let versionsData = null;
 let currentPath = null;
-let activeTab = 'all';
+let activeTab = 'start';
 let flatNav = [];
 let selectedVersion = null;
 let searchFilter = 'all';
@@ -222,8 +222,25 @@ function setTab(tabId) {
     renderSidebar();
 }
 
+function tabForPath(path) {
+    if (!navData || !navData.sections) return 'start';
+    for (const section of navData.sections) {
+        if (section.items.some((item) => item.path === path)) {
+            return section.tab;
+        }
+    }
+    return activeTab || 'start';
+}
+
+function syncTabToPath(path) {
+    const next = tabForPath(path);
+    if (next !== activeTab) {
+        activeTab = next;
+        renderTabs();
+    }
+}
+
 function sectionVisible(section) {
-    if (activeTab === 'all') return true;
     return section.tab === activeTab;
 }
 
@@ -545,6 +562,7 @@ async function loadDoc(path) {
     }
 
     currentPath = path;
+    syncTabToPath(path);
     const content = document.getElementById('markdownContent');
     const titleEl = document.getElementById('docTitle');
     const leadEl = document.getElementById('docLead');
