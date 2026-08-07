@@ -12,15 +12,19 @@ re-creation of it. No display is required, which means this also works in CI.
   python3 scripts/record_demos.py --group morphogenesis
   python3 scripts/record_demos.py --group neuro
   python3 scripts/record_demos.py --group evoleco
+  python3 scripts/record_demos.py --group planet
+  python3 scripts/record_demos.py --group procgen
 
 Naming contract: every game in examples/games/ has a GIF at
 docs/demos/games/<name>.gif, every example in examples/morphogenesis/ has
 one at docs/demos/morphogenesis/<name>.gif, every example in
-examples/neuro/ has one at docs/demos/neuro/<name>.gif, and every example
-in examples/evoleco/ has one at docs/demos/evoleco/<name>.gif. The three
-original demos (lorenz, tetris, 2048) also keep their GIFs directly in
-docs/demos/; tetris.gif and 2048.gif are copied into docs/demos/games/ so
-the games directory is complete.
+examples/neuro/ has one at docs/demos/neuro/<name>.gif, every example
+in examples/evoleco/ has one at docs/demos/evoleco/<name>.gif, every
+example in examples/planet/ has one at docs/demos/planet/<name>.gif, and
+every example in examples/procgen/ has one at docs/demos/procgen/<name>.gif.
+The three original demos (lorenz, tetris, 2048) also keep their GIFs directly
+in docs/demos/; tetris.gif and 2048.gif are copied into docs/demos/games/
+so the games directory is complete.
 
 Interactive demos are driven by `flow record --keys`, a list of
 `first-last:keycode` windows over frame numbers (see runtime/gfx_record.c).
@@ -48,6 +52,8 @@ GAMES_DIR = OUT_DIR / "games"
 MORPH_DIR = OUT_DIR / "morphogenesis"
 NEURO_DIR = OUT_DIR / "neuro"
 EVOECO_DIR = OUT_DIR / "evoleco"
+PLANET_DIR = OUT_DIR / "planet"
+PROCGEN_DIR = OUT_DIR / "procgen"
 
 # macOS virtual keycodes, matching lib/stdlib/gfx.flow.
 KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP = 123, 124, 125, 126
@@ -980,6 +986,121 @@ EVOECO_DEMOS: list[Demo] = [
 ]
 
 DEMOS += EVOECO_DEMOS
+
+
+def planet(name: str, frames: int, skip: int, caption: str,
+           duration_ms: int = 70, colors: int = 48,
+           scale: float = 0.55, keys: str = "") -> Demo:
+    """A cubesphere planet pipeline clip.
+
+    Same 512x592 window as morphogenesis / evoleco. Measurements gate before
+    the window opens. FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/planet/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="planet",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cubesphere planet pipeline. Each program gates a stage measurement before
+# opening the window, then draws an equirect map or shaded globe.
+# ---------------------------------------------------------------------------
+
+PLANET_DEMOS: list[Demo] = [
+    planet("planet_evidence", 90, 2,
+           "Planet evidence — solid angle, distortion, land, Hack, rain shadow",
+           duration_ms=70, colors=48),
+    planet("planet_tectonics", 80, 2,
+           "Planet tectonics — Euler-pole plates and boundary classes",
+           duration_ms=70, colors=40),
+    planet("planet_elevation", 80, 2,
+           "Planet elevation — hypsometric curve and land-fraction sea cut",
+           duration_ms=70, colors=40),
+    planet("planet_erosion", 100, 2,
+           "Planet erosion — stream power and Hack's law on drainage",
+           duration_ms=60, colors=40),
+    planet("planet_climate", 80, 2,
+           "Planet climate — temp/precip maps and orographic rain shadow",
+           duration_ms=70, colors=40),
+    planet("planet_biomes", 60, 2,
+           "Planet biomes — Whittaker classification on the cubesphere",
+           duration_ms=80, colors=32),
+    planet("planet_spin", 90, 3,
+           "Planet spin — shaded globe; regenerate(seed) elev checksum",
+           duration_ms=70, colors=48),
+]
+
+DEMOS += PLANET_DEMOS
+
+
+def procgen(name: str, frames: int, skip: int, caption: str,
+            duration_ms: int = 70, colors: int = 32,
+            scale: float = 0.55, keys: str = "") -> Demo:
+    """A procedural-generation clip.
+
+    Same 512x592 window as morphogenesis / evoleco. Measurements gate before
+    the window opens. FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/procgen/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="procgen",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Procedural generation. Noise atlas through tile maps; each program gates a
+# measurement before the window opens, then draws the live field.
+# ---------------------------------------------------------------------------
+
+PROCGEN_DEMOS: list[Demo] = [
+    procgen("noise_atlas", 80, 3,
+            "Noise atlas — value / gradient / fBm / ridged / warped side by side",
+            duration_ms=70, colors=16),
+    procgen("heightmap_fbm", 80, 2,
+            "Heightmap fBm — fractal height with sea cut and contours",
+            duration_ms=70, colors=32),
+    procgen("domain_warp", 80, 2,
+            "Domain warp — plain vs warped; deterministic + field-diff gate",
+            duration_ms=70, colors=24),
+    procgen("cave_worms", 90, 3,
+            "Cave worms — 3D density slices with porosity in band",
+            duration_ms=60, colors=16),
+    procgen("wfc_dungeon", 60, 2,
+            "WFC dungeon — 16-tile pipe corridors; full collapse, sockets agree",
+            duration_ms=80, colors=16),
+    procgen("voronoi_sites", 60, 2,
+            "Voronoi sites — Worley regions; mean sites per region = 1",
+            duration_ms=80, colors=40),
+    procgen("island_mask", 80, 2,
+            "Island mask — radial falloff * fBm; single landmass",
+            duration_ms=70, colors=24),
+    procgen("tile_map", 80, 2,
+            "Tile map — height + moisture biomes; fractions sum to 1",
+            duration_ms=70, colors=24),
+]
+
+DEMOS += PROCGEN_DEMOS
 
 
 def last_scripted_frame(keys: str) -> int:

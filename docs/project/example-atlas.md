@@ -183,7 +183,43 @@ enzyme kinetics, gene regulatory networks (repressilator, toggle switch),
 protein folding on a lattice, chemotaxis, ecosystem food webs. Text
 companions for predator-prey and SIR already live in `examples/evolution/`.
 
-### 7. Control and estimation — 10 planned
+### 6b. Procedural worlds — 7 shipped (planet)
+
+Cubesphere planet pipeline: equiangular grid, tectonics, elevation, stream-
+power erosion, climate, biomes, hydrology. Companion noise / WFC demos live
+under `examples/procgen/` (see section 7).
+
+| # | Example | Evidence it carries |
+|---|---|---|
+| 1 | `planet_evidence` | Solid angle ~4π; area distortion ~1.40; land~0.29; Hack; rain shadow |
+| 2 | `planet_tectonics` | Plate count; every cell plated; boundary length > 0 |
+| 3 | `planet_elevation` | Land fraction within tolerance; hypsometric curve |
+| 4 | `planet_erosion` | Hack exponent in [0.45, 0.70], R^2 > 0.75; rivers visible |
+| 5 | `planet_climate` | rain_shadow_ratio > 1.05; finite mean land precip |
+| 6 | `planet_biomes` | Land biome fractions sum to ~1; deep ocean stays ocean |
+| 7 | `planet_spin` | regenerate(seed) elev checksum bit-identical; shaded globe |
+
+**Status: complete for the planet gallery.**
+`examples/planet/` · [gallery](../demos/planet.md) ·
+[`lib/stdlib/planet.flow`](../../lib/stdlib/planet.flow)
+
+### 7. Procedural generation — 8 shipped
+
+| # | Example | Evidence it carries |
+|---|---|---|
+| 1 | `noise_atlas` | Bit-identical replay; fBm peak in [-1,1]; ridged in [0,1] |
+| 2 | `heightmap_fbm` | Land fraction near target after sea cut (deterministic seed) |
+| 3 | `domain_warp` | Deterministic replay; mean |diff| or Pearson r < 0.95 vs plain |
+| 4 | `cave_worms` | 3D-slice porosity in a chosen band |
+| 5 | `wfc_dungeon` | 16-tile pipe WFC; full collapse, contradiction=0, sockets agree |
+| 6 | `voronoi_sites` | Every cell assigned; mean sites per region = 1 |
+| 7 | `island_mask` | Single connected landmass above sea |
+| 8 | `tile_map` | Biome fractions sum to 1; water only below sea |
+
+**Status: complete.** `examples/procgen/` · [gallery](../demos/procgen.md) ·
+[`lib/stdlib/procgen.flow`](../../lib/stdlib/procgen.flow)
+
+### 8. Control and estimation — 10 planned
 
 PID with tuning comparison, LQR (already used in cart-pole), Kalman and
 extended Kalman filters (estimation error vs Cramér-Rao), particle filter,
@@ -191,7 +227,7 @@ model-predictive control, adaptive control, sliding-mode control, system
 identification from data, observability and controllability analysis
 (`sense on` already ships), robust control margins.
 
-### 8. Signals, audio and imaging — 9 planned
+### 9. Signals, audio and imaging — 9 planned
 
 FFT and spectrogram, digital filter design and response, resonant filters,
 physical modelling synthesis (Karplus-Strong, waveguides), room acoustics
@@ -218,9 +254,13 @@ reconstruction, optical flow, wavelets.
 | Diffusion and fields | 12 | 0 |
 | Physics and mechanics | 12 | 1 |
 | Chemistry and biology | 25 | 25 |
+| Procedural worlds (planet) | 7 | 7 |
+| Procedural generation | 8 | 8 |
 | Control and estimation | 10 | 2 |
 | Signals and imaging | 9 | 0 |
-| **Total** | **100** | **75** |
+| **Total** | **115** | **90** |
 
 Related: [VISION.md](../../VISION.md) · [dynamics DSL](../language/dynamics-dsl.md) ·
-[morphogenesis gallery](../demos/morphogenesis.md)
+[morphogenesis gallery](../demos/morphogenesis.md) ·
+[planet gallery](../demos/planet.md) ·
+[procgen gallery](../demos/procgen.md)

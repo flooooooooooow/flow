@@ -127,6 +127,16 @@ SIR, plus wave-2 genetics (Muller ratchet, hitchhiking, Hamilton, Red Queen,
 runaway selection, and more). Sources:
 [examples/evoleco](../examples/evoleco/README.md).
 
+**[Planet gallery →](demos/planet.md)** — seven staged cubesphere demos of the
+procedural planet pipeline: tectonics through biomes, each gated on a
+measurement (solid angle, Hack's law, rain shadow, determinism). Sources:
+[examples/planet](../examples/planet/README.md).
+
+**[Procedural generation gallery →](demos/procgen.md)** — eight gated noise,
+heightmap, cave, WFC, Voronoi, island, and biome-tile demos backed by
+`stdlib/procgen.flow`. Sources:
+[examples/procgen](../examples/procgen/README.md).
+
 **[Training AI in Flow →](tutorials/game-ai.md)** — Q-learning, neuroevolution,
 and policy gradients against the games above, plus
 [ML on a MacBook](tutorials/ml-on-macbook.md) and the
@@ -146,6 +156,8 @@ and policy gradients against the games above, plus
 | [Morphogenesis gallery](demos/morphogenesis.md) | 40 pattern-formation simulations, each with a recorded GIF |
 | [Neuron gallery](demos/neuro.md) | 15 spiking-dynamics simulations, each gated and recorded |
 | [Evolutionary biology gallery](demos/evoleco.md) | 25 pop-gen / evo-game / ecology sims, each gated and recorded |
+| [Planet gallery](demos/planet.md) | 7 staged cubesphere planet demos, each gated and recorded |
+| [Procedural generation gallery](demos/procgen.md) | 8 noise / heightmap / WFC / biome demos, each gated and recorded |
 | [Evolution suite](demos/evolution.md) | 34 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |
