@@ -113,3 +113,62 @@ function main() -> i32 {
     return 0
 }
 ```
+
+## Part 4: Result pipelines (native helpers)
+
+Chain fallible steps with `stdlib/result.flow`. Full file:
+[`examples/basics/result_pipeline.flow`](../../examples/basics/result_pipeline.flow).
+
+```bash
+./flow run examples/basics/result_pipeline.flow
+```
+
+### 4.1 Manual Result chain (browser)
+
+Same shape without the stdlib import — early-exit on `ok == false`:
+
+```flow
+struct ResultI32 { ok: bool, value: i32 }
+
+function parse_positive(n: i32) -> ResultI32 {
+    if n > 0 {
+        return ResultI32 { ok: true, value: n }
+    }
+    return ResultI32 { ok: false, value: 0 }
+}
+
+function double_checked(n: i32) -> ResultI32 {
+    return ResultI32 { ok: true, value: n * 2 }
+}
+
+function clamp_under(n: i32, limit: i32) -> ResultI32 {
+    if n > limit {
+        return ResultI32 { ok: false, value: 0 }
+    }
+    return ResultI32 { ok: true, value: n }
+}
+
+function pipeline(raw: i32) -> ResultI32 {
+    let first: ResultI32 = parse_positive(raw)
+    if !first.ok { return first }
+    let second: ResultI32 = double_checked(first.value)
+    if !second.ok { return second }
+    return clamp_under(second.value, 100)
+}
+
+function main() -> i32 {
+    let r0: ResultI32 = pipeline(20)
+    let r1: ResultI32 = pipeline(-3)
+    let r2: ResultI32 = pipeline(60)
+    let mut ok20: i32 = 0
+    let mut fail_neg: i32 = 0
+    let mut fail_clamp: i32 = 0
+    if r0.ok { ok20 = 1 }
+    if !r1.ok { fail_neg = 1 }
+    if !r2.ok { fail_clamp = 1 }
+    printf("ok20=%d fail_neg=%d fail_clamp=%d\n", ok20, fail_neg, fail_clamp)
+    return 0
+}
+```
+
+Also see [pipelines.md](pipelines.md) for `|>` and `_`.

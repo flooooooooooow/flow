@@ -802,11 +802,54 @@
         var f = this.expect('IDENT', 'field name');
         expr = { kind: 'Field', base: expr, field: f.value, line: t.line };
       } else if (t.type === 'PIPELINE') {
-        throw new Unsupported('the |> pipeline operator', t.line);
+        this.next();
+        expr = this.parsePipelineStage(expr, t.line);
       } else {
         return expr;
       }
     }
+  };
+
+  // `left |> f(a, _)` → Call f(a, left); `left |> f` / `left |> f()` → Call f(left).
+  // Declarative `|> sort` / `sortBy` / `choose` need the native compiler.
+  Parser.prototype.parsePipelineStage = function (left, line) {
+    var nameTok = this.peek();
+    if (nameTok.type !== 'IDENT') {
+      throw new FlowError("pipeline '|>' expects a function name or call", line);
+    }
+    var name = nameTok.value;
+    if (name === 'sort' || name === 'sortBy' || name === 'order' ||
+        name === 'choose' || name === 'find') {
+      throw new Unsupported(
+        "'|> " + name + "' (use ./flow run — see tutorials/pipelines.md)", line);
+    }
+    this.next();
+    var args = [];
+    if (this.accept('LPAREN')) {
+      while (!this.at('RPAREN')) {
+        args.push(this.parseExpression());
+        if (!this.accept('COMMA')) break;
+      }
+      this.expect('RPAREN', "')' after pipeline call");
+    }
+    var placeholder = -1;
+    for (var i = 0; i < args.length; i++) {
+      if (args[i].kind === 'Var' && args[i].name === '_') {
+        if (placeholder >= 0) {
+          throw new FlowError(
+            "pipeline placeholder '_' may appear at most once per '|>' stage", line);
+        }
+        placeholder = i;
+      }
+    }
+    var injected;
+    if (placeholder >= 0) {
+      injected = args.slice();
+      injected[placeholder] = left;
+    } else {
+      injected = [left].concat(args);
+    }
+    return { kind: 'Call', name: name, args: injected, line: line };
   };
 
   function numberLiteral(t) {
@@ -2044,7 +2087,8 @@
       return this.readCell(p.v.blk, p.v.off, p.t.elem, line);
     }
     var v = this.evaluate(node.operand, scope);
-    switch (node.op) {
+    var uop = node.op === 'not' ? '!' : node.op;
+    switch (uop) {
       case '-':
         if (v.t.k === 'float') return mkFloat(-v.v, v.t, v.cd);
         if (v.t.k === 'int') return mkInt(-v.v, v.t);
@@ -2080,6 +2124,8 @@
 
   Interp.prototype.evalBinary = function (node, scope) {
     var op = node.op;
+    if (op === 'and') op = '&&';
+    if (op === 'or') op = '||';
     if (op === '&&' || op === '||') {
       var l = this.evaluate(node.left, scope);
       var lb = this.truthy(l, node.line);

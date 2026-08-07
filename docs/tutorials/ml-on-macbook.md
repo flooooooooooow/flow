@@ -235,3 +235,110 @@ FLOW_CFLAGS='-O2' FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow  # opt
 All three gate their PASS on checks (accuracy threshold, serial/parallel
 agreement, GPU/CPU parity), so a green exit code means the numbers above
 reproduced on your machine.
+
+## Interactive sketches
+
+### Softmax-ish normalize (browser)
+
+Toy “logits → probabilities” without libm — positive weights, L1 normalize:
+
+```flow
+function main() -> i32 {
+    let mut z: array<f64, 3> = [2.0, 1.0, 0.1]
+    let mut sum: f64 = 0.0
+    for i in 0 to 3 {
+        sum = sum + z[i]
+    }
+    for i in 0 to 3 {
+        z[i] = z[i] / sum
+    }
+    printf("p0=%f p1=%f p2=%f\n", z[0], z[1], z[2])
+    return 0
+}
+```
+
+### SGD step on one weight (browser)
+
+```flow
+function main() -> i32 {
+    let mut w: f64 = 0.0
+    let x: f64 = 2.0
+    let y: f64 = 5.0
+    let lr: f64 = 0.1
+    for step in 0 to 10 {
+        let pred: f64 = w * x
+        let g: f64 = 2.0 * (pred - y) * x
+        w = w - lr * g
+    }
+    printf("w=%f (target 2.5)\n", w)
+    return 0
+}
+```
+
+### Accuracy counter (browser)
+
+```flow
+function main() -> i32 {
+    let preds: array<i32, 5> = [0, 1, 2, 2, 9]
+    let labels: array<i32, 5> = [0, 1, 1, 2, 9]
+    let mut correct: i32 = 0
+    for i in 0 to 5 {
+        if preds[i] == labels[i] {
+            correct = correct + 1
+        }
+    }
+    printf("correct=%d / 5\n", correct)
+    return 0
+}
+```
+
+### Momentum update (browser)
+
+```flow
+function main() -> i32 {
+    let mut w: f64 = 0.0
+    let mut v: f64 = 0.0
+    let g: f64 = -1.0
+    let lr: f64 = 0.1
+    let mu: f64 = 0.9
+    for step in 0 to 5 {
+        v = mu * v - lr * g
+        w = w + v
+    }
+    printf("w=%f v=%f\n", w, v)
+    return 0
+}
+```
+
+### Argmax class (browser)
+
+```flow
+function main() -> i32 {
+    let logits: array<f64, 4> = [0.1, 2.5, 0.3, 0.2]
+    let mut best: i32 = 0
+    for i in 1 to 4 {
+        if logits[i] > logits[best] {
+            best = i
+        }
+    }
+    printf("class=%d\n", best)
+    return 0
+}
+```
+
+### Minibatch mean loss (browser)
+
+```flow
+function main() -> i32 {
+    let losses: array<f64, 4> = [0.5, 0.2, 0.8, 0.1]
+    let mut sum: f64 = 0.0
+    for i in 0 to 4 {
+        sum = sum + losses[i]
+    }
+    printf("mean=%f\n", sum / 4.0)
+    return 0
+}
+```
+
+Start smaller: [autodiff-basics.md](autodiff-basics.md) · XOR
+[`examples/ml/models/mlp_xor.flow`](../../examples/ml/models/mlp_xor.flow).
