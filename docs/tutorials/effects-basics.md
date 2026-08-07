@@ -73,6 +73,68 @@ function main() -> i32 {
 }
 ```
 
+### 2.3 Resume-shaped continuation
+
+Handlers resume the caller with a value. Model that as a callback result:
+
+```flow
+function ask(prompt: string) -> i32 {
+    printf("ask: %s\n", prompt)
+    return 42
+}
+
+function work() -> i32 {
+    let n: i32 = ask("n?")
+    return n * 2
+}
+
+function main() -> i32 {
+    printf("%d\n", work())
+    return 0
+}
+```
+
+### 2.4 Multi-operation handler table
+
+```flow
+function on_op(op: i32, arg: i32) -> i32 {
+    if op == 0 {
+        printf("log %d\n", arg)
+        return 0
+    }
+    if op == 1 {
+        return arg + 1
+    }
+    return -1
+}
+
+function main() -> i32 {
+    on_op(0, 7)
+    printf("inc=%d\n", on_op(1, 10))
+    printf("unknown=%d\n", on_op(9, 0))
+    return 0
+}
+```
+
+### 2.5 Capability-shaped gate
+
+```flow
+function write_file(allowed: bool, name: string) -> i32 {
+    if !allowed {
+        printf("denied: %s\n", name)
+        return 1
+    }
+    printf("wrote: %s\n", name)
+    return 0
+}
+
+function main() -> i32 {
+    printf("rc=%d\n", write_file(false, "a.txt"))
+    printf("rc=%d\n", write_file(true, "a.txt"))
+    return 0
+}
+```
+
 ## Part 3: Limits
 
 ### 3.1 Document the boundary

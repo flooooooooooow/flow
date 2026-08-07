@@ -146,7 +146,7 @@ a proof corpus, not the showcase.
 | Record Tetris demo GIF | ✅ | `docs/demos/tetris.gif` via `scripts/record_tetris_gif.py` (palette/layout match `tetris_gfx.flow`); live play: `./flow gfx examples/games/tetris_gfx.flow` |
 | Strict-clean test corpus | ✅ | `./flow test --strict --tier2` passes all 215 tracked corpus files; `# flow:lenient - <reason>` pragma for intentional exceptions |
 | Targeted fuzzing harness | ✅ | `tests/fuzz/` (mutation/grammar/pipeline targets, seeded, auto-shrink); known crashes fixed as clean `SyntaxError` regressions |
-| Wiki live at GitHub Pages + tutorials | ✅ | marked wiki, 130+ interactive lessons, proof catalog; deploy via `.github/workflows/wiki.yml` → [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) (VPS deploy disabled) |
+| Wiki live at GitHub Pages + tutorials | ✅ | marked wiki, **257** interactive lessons, proof catalog; deploy via `.github/workflows/wiki.yml` → [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) (VPS deploy disabled) |
 | Manual memory stdlib (real heap) | ✅ | `lib/stdlib/memory.flow` — libc malloc/calloc/realloc/free + arena; docs + tutorials |
 | Fuzz parse crashes (array size / nesting) | ✅ | Depth limit + `parse_array_size()` — see `tests/fuzz/test_crash_regressions.py` |
 | Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]` — [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |

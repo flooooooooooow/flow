@@ -73,3 +73,61 @@ function main() -> i32 {
     return 0
 }
 ```
+
+## Part 4: String-shaped logic
+
+### 4.1 Length of digit string
+
+```flow
+function digit_len(n: i32) -> i32 {
+    if n == 0 {
+        return 1
+    }
+    let mut x: i32 = n
+    let mut len: i32 = 0
+    if x < 0 {
+        x = 0 - x
+        len = 1
+    }
+    while x > 0 {
+        x = x / 10
+        len = len + 1
+    }
+    return len
+}
+
+function main() -> i32 {
+    printf("%d %d %d\n", digit_len(0), digit_len(42), digit_len(1000))
+    return 0
+}
+```
+
+### 4.2 Uppercase ASCII letter
+
+```flow
+function to_upper(c: i32) -> i32 {
+    if c >= 97 && c <= 122 {
+        return c - 32
+    }
+    return c
+}
+
+function main() -> i32 {
+    printf("%d %d\n", to_upper(97), to_upper(65))
+    return 0
+}
+```
+
+### 4.3 CSV field count caricature
+
+```flow
+function field_count(commas: i32) -> i32 {
+    return commas + 1
+}
+
+function main() -> i32 {
+    # "a,b,c" has 2 commas → 3 fields
+    printf("%d\n", field_count(2))
+    return 0
+}
+```
