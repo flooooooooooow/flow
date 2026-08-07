@@ -308,7 +308,7 @@ function draw_scene(g: Gfx, fb: ptr<u8>, n: i32) -> void {
     # Load histogram bars.
     let mut counts: array<i32, 41> = [0, 0, 0, 0]
     for i in 0 to n {
-        let k: i32 = live_load[i]
+        let mut k: i32 = live_load[i]
         if k > MAX_LOAD { k = MAX_LOAD }
         counts[k] = counts[k] + 1
     }
@@ -367,7 +367,7 @@ function draw_scene(g: Gfx, fb: ptr<u8>, n: i32) -> void {
         let c: i32 = i % cols
         let r: i32 = i / cols
         let k: i32 = live_load[i]
-        let shade: i32 = 40 + k * 5
+        let mut shade: i32 = 40 + k * 5
         if shade > 240 { shade = 240 }
         fill_rect_fb(fb, 28 + c * (cell + 1), sy + 8 + r * (cell + 1), cell, cell,
                      shade, 70, 255 - shade)

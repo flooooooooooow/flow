@@ -220,7 +220,7 @@ function erode_step(m: f64, nexp: f64, k: f64, u: f64, dcoef: f64) -> void {
                 let ry: i32 = r / GRID
                 let mut dx: f64 = (rx - x) as f64
                 let mut dy: f64 = (ry - y) as f64
-                let dist: f64 = sqrt(dx * dx + dy * dy)
+                let mut dist: f64 = sqrt(dx * dx + dy * dy)
                 if dist < 1.0e-9 { dist = 1.0 }
                 s = (h[i] - h[r]) / dist
                 if s < 0.0 { s = 0.0 }
@@ -368,7 +368,7 @@ function draw_field(g: Gfx) -> void {
         if h[i] < hmin { hmin = h[i] }
         if h[i] > hmax { hmax = h[i] }
     }
-    let span: f64 = hmax - hmin
+    let mut span: f64 = hmax - hmin
     if span < 1.0e-6 { span = 1.0 }
     for y in 0 to GRID {
         for x in 0 to GRID {

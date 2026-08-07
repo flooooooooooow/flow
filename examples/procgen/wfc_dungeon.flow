@@ -419,7 +419,7 @@ function main() -> i32 {
     reset_grid(cells, options, stack, seed_tile(3))
     let steps: i32 = collapse_all(cells, options, stack)
     let collapsed: i32 = decided_count(cells)
-    let adj: i32 = 0
+    let mut adj: i32 = 0
     if collapsed == NCELLS and contradiction == 0 {
         adj = adjacency_ok(cells)
     }

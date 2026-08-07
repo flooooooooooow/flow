@@ -574,7 +574,7 @@ function headless_verify(na: ptr<f64>, nb: ptr<f64>, occ: ptr<i32>,
     let dim: f64 = box_dimension(occ)
     let rate: f64 = fit_rate()
     let r2: f64 = fit_r2()
-    let growth: f64 = 0.0
+    let mut growth: f64 = 0.0
     if mid_len > 0 {
         growth = (fin_len as f64) / (mid_len as f64)
     }
