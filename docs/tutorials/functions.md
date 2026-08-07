@@ -92,3 +92,59 @@ function main() -> i32 {
     return 0
 }
 ```
+
+## Part 4: Control inside functions
+
+### 4.1 Early return
+
+```flow
+function first_even(a: i32, b: i32, c: i32) -> i32 {
+    if a % 2 == 0 {
+        return a
+    }
+    if b % 2 == 0 {
+        return b
+    }
+    if c % 2 == 0 {
+        return c
+    }
+    return -1
+}
+
+function main() -> i32 {
+    printf("%d\n", first_even(3, 5, 8))
+    printf("%d\n", first_even(3, 5, 7))
+    return 0
+}
+```
+
+### 4.2 Nested calls
+
+```flow
+function square(x: i32) -> i32 { return x * x }
+function add(a: i32, b: i32) -> i32 { return a + b }
+
+function main() -> i32 {
+    printf("%d\n", add(square(3), square(4)))
+    return 0
+}
+```
+
+### 4.3 Even by recursion
+
+```flow
+function is_even(n: i32) -> bool {
+    if n == 0 {
+        return true
+    }
+    if n == 1 {
+        return false
+    }
+    return is_even(n - 2)
+}
+
+function main() -> i32 {
+    printf("%d %d %d\n", is_even(0), is_even(4), is_even(5))
+    return 0
+}
+```

@@ -171,4 +171,44 @@ function main() -> i32 {
 }
 ```
 
+### 4.2 unwrap_or
+
+```flow
+struct ResultI32 { ok: bool, value: i32 }
+
+function unwrap_or(r: ResultI32, fallback: i32) -> i32 {
+    if r.ok {
+        return r.value
+    }
+    return fallback
+}
+
+function main() -> i32 {
+    let a: ResultI32 = ResultI32 { ok: true, value: 9 }
+    let b: ResultI32 = ResultI32 { ok: false, value: 0 }
+    printf("%d %d\n", unwrap_or(a, -1), unwrap_or(b, -1))
+    return 0
+}
+```
+
+### 4.3 map on Result
+
+```flow
+struct ResultI32 { ok: bool, value: i32 }
+
+function map_double(r: ResultI32) -> ResultI32 {
+    if !r.ok {
+        return r
+    }
+    return ResultI32 { ok: true, value: r.value * 2 }
+}
+
+function main() -> i32 {
+    let a: ResultI32 = map_double(ResultI32 { ok: true, value: 5 })
+    let b: ResultI32 = map_double(ResultI32 { ok: false, value: 5 })
+    printf("a=%d ok_a=%d ok_b=%d\n", a.value, a.ok, b.ok)
+    return 0
+}
+```
+
 Also see [pipelines.md](pipelines.md) for `|>` and `_`.
