@@ -72,9 +72,14 @@ class TestParseAndTypecheck:
             "unsupported type 'Point'" in e and "module statics" in e for e in errs
         )
 
-    def test_array_static_with_wrong_length_rejected(self):
-        errs = errors("let mut a: array<i32, 3> = [1, 2]")
-        assert any("2 elements" in e and "declares 3" in e for e in errs)
+    def test_array_static_with_oversized_initializer_rejected(self):
+        # Partial literals are fine (remaining elements zero-fill, matching
+        # local array semantics and both backends); too many elements are not.
+        assert errors("let mut a: array<i32, 3> = [1, 2, 3, 4]")
+        assert any("4 elements" in e and "declares 3" in e for e in errors("let mut a: array<i32, 3> = [1, 2, 3, 4]"))
+
+    def test_array_static_with_partial_initializer_accepted(self):
+        assert errors("let mut a: array<i32, 3> = [1, 2]") == []
 
     def test_pointer_static_must_start_null(self):
         errs = errors(
@@ -111,10 +116,11 @@ class TestCodegen:
 
 
 class TestMlirBackend:
-    def test_mlir_backend_rejects_statics_loudly(self):
+    def test_mlir_backend_lowers_module_statics(self):
         decls = parse_flow_code(COUNTER_MODULE)
-        with pytest.raises(NotImplementedError, match="module statics not yet supported"):
-            flow_to_mlir(decls)
+        mlir = flow_to_mlir(decls)
+        assert "llvm.mlir.global internal @counter" in mlir
+        assert "llvm.mlir.addressof @counter" in mlir
 
 
 # TestCompileAndRun compiled and ran COUNTER_MODULE and an array-static

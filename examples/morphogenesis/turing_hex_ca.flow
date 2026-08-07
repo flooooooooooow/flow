@@ -535,7 +535,7 @@ function headless_verify(sa: ptr<i32>, sb: ptr<i32>, lab: ptr<i32>,
     spacing = mean_spacing(sx, sy, nspots)
     psi6 = hexatic_order(sx, sy, nspots)
     let r2f: f64 = r2 as f64
-    let ratio: f64 = 0.0
+    let mut ratio: f64 = 0.0
     if r2f > 0.0 {
         ratio = spacing / r2f
     }

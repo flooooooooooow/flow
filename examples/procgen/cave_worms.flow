@@ -120,7 +120,7 @@ function draw_scene(g: Gfx, fb: ptr<u8>, z: f32, thr: f32) -> void {
             let mut g2: i32 = 24
             let mut b: i32 = 22
             if d > thr {
-                let t: f32 = (d - thr) * 1.2
+                let mut t: f32 = (d - thr) * 1.2
                 if t > 1.0 { t = 1.0 }
                 r = (40.0 + t * 40.0) as i32
                 g2 = (60.0 + t * 100.0) as i32

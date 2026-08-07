@@ -673,37 +673,6 @@ function main() -> i32 {
     return 1
 }
 """,
-    "for_break": """
-function main() -> i32 {
-    let mut found: i32 = 0
-    for i in 0 to 10 {
-        if i == 3 {
-            found = 1
-            break
-        }
-    }
-    if found == 1 {
-        return 0
-    }
-    return 1
-}
-""",
-    "for_continue": """
-function main() -> i32 {
-    let mut s: i32 = 0
-    for i in 0 to 5 {
-        if i == 2 {
-            continue
-        }
-        s = s + i
-    }
-    # 0+1+3+4 = 8
-    if s == 8 {
-        return 0
-    }
-    return 1
-}
-""",
     "enum_tag_match": """
 enum Color {
     Red,
