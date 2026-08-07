@@ -20,7 +20,7 @@
 [![Backends](https://img.shields.io/badge/backends-C%20%C2%B7%20MLIR%20%C2%B7%20WASM-informational)](docs/language/wasm.md)
 [![GPU](https://img.shields.io/badge/gpu-Metal-informational)](docs/language/graphics.md)
 
-<img src="docs/assets/flow-mascot.png" alt="Flowy the Hedgehog" width="180" align="right">
+<img src="docs/assets/flow-logo-with-text.png" alt="Flow logo" width="320" align="right">
 
 **Flow** is a statically typed, compiled programming language for describing **systems that evolve through time** — with **algebraic effects**, **automatic differentiation**, **dynamics / control analysis**, and **native graphics**.
 
@@ -656,7 +656,7 @@ MIT License - see [LICENSE](LICENSE)
 ---
 
 <p align="center">
-  <img src="docs/assets/flow-mascot.png" alt="Flowy" width="80">
+  <img src="docs/assets/flow-mascot.png" alt="Flowy the Hedgehog, the Flow mascot" width="80">
   <br>
-  <em>Made with 💜 by humans and AI</em>
+  <em>Made with 💜 by humans and AI · mascot: <a href="docs/assets/mascot.md">Flowy the Hedgehog</a></em>
 </p>
