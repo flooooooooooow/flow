@@ -1,0 +1,245 @@
+# CAVE WORMS: a 3D noise density field sliced as a cave.
+#
+# MODEL
+#   Sample procgen_noise3 (and a low-octave fBm) over a horizontal slice.
+#   Cells below a density threshold are solid rock; above are air. Animate
+#   the z coordinate so the slice crawls through the volume like a worm.
+#
+# THE MEASUREMENT
+#   Porosity = fraction of air cells. For the preset seed and threshold it
+#   must lie in a chosen band (neither solid nor empty).
+#
+# KEYS
+#   1 thr 0.05   2 thr 0.00   3 thr -0.05   4 thr -0.10
+#   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/procgen/cave_worms.flow \
+#       --frames 4 --out /tmp/pg_cave_worms
+# Run (windowed):
+#   ./flow gfx examples/procgen/cave_worms.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/procgen.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const MAP: i32 = 128
+const CELL_PX: i32 = 4
+const VERIFY_SEED: u32 = 777001
+const VERIFY_Z: f32 = 0.0
+const VERIFY_THR: f32 = 0.0
+const PORO_LO: f64 = 0.35
+const PORO_HI: f64 = 0.65
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 777001
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function preset_thr(p: i32) -> f32 {
+    if p == 1 { return 0.05 }
+    if p == 2 { return 0.0 }
+    if p == 3 { return 0.0 - 0.05 }
+    return 0.0 - 0.10
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "THR 0.05" }
+    if p == 2 { return "THR 0.00" }
+    if p == 3 { return "THR -0.05" }
+    return "THR -0.10"
+}
+
+function density_at(ix: i32, iy: i32, z: f32) -> f32 {
+    let x: f32 = (ix as f32) * 0.07
+    let y: f32 = (iy as f32) * 0.07
+    let n: f32 = procgen_fbm3(x, y, z, 4, 21)
+    return n
+}
+
+function porosity(z: f32, thr: f32) -> f64 {
+    let mut air: i32 = 0
+    for iy in 0 to MAP {
+        for ix in 0 to MAP {
+            if density_at(ix, iy, z) > thr {
+                air = air + 1
+            }
+        }
+    }
+    return (air as f64) / ((MAP * MAP) as f64)
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, z: f32, thr: f32) -> void {
+    clear_fb(fb)
+    for iy in 0 to MAP {
+        for ix in 0 to MAP {
+            let d: f32 = density_at(ix, iy, z)
+            let mut r: i32 = 28
+            let mut g2: i32 = 24
+            let mut b: i32 = 22
+            if d > thr {
+                let t: f32 = (d - thr) * 1.2
+                if t > 1.0 { t = 1.0 }
+                r = (40.0 + t * 40.0) as i32
+                g2 = (60.0 + t * 100.0) as i32
+                b = (80.0 + t * 120.0) as i32
+            }
+            fill_rect_fb(fb, ix * CELL_PX, iy * CELL_PX, CELL_PX, CELL_PX, r, g2, b)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, poro: f64, z: f32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "CAVE WORMS", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 180, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 290, 12, "POROSITY", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 350, 12, poro, 3, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 8, 28, "Z", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 20, 28, z as f64, 2, 1, 234, 232, 244)
+    let t7: i32 = gfx_draw_text(g, 8, 42,
+        "1-4 THRESHOLD  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let t8: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let t9: i32 = gfx_draw_text(g, 8, 572,
+        "3D fBm density slice; air where density > threshold", 1, 122, 118, 144)
+    let ta: i32 = gfx_draw_text(g, 8, 582,
+        "gate: porosity in [0.35, 0.65] for the verify seed", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    println("")
+    println("  CAVE WORMS  --  3D noise cave slices")
+    println("  =====================================")
+    println("")
+
+    procgen_seed(VERIFY_SEED)
+    let poro: f64 = porosity(VERIFY_Z, VERIFY_THR)
+
+    print("    seed                            : ")
+    printf("%.0f", VERIFY_SEED as f64)
+    println("")
+    print("    threshold                       : ")
+    printf("%.3f", VERIFY_THR as f64)
+    println("")
+    print("    porosity                        : ")
+    printf("%.6f", poro)
+    print("   (gate in [")
+    printf("%.2f", PORO_LO)
+    print(", ")
+    printf("%.2f", PORO_HI)
+    println("])")
+    println("")
+
+    if poro < PORO_LO or poro > PORO_HI {
+        println("    FAIL: porosity outside the chosen band")
+        return 1
+    }
+    println("    PASS: porosity in band for chosen threshold")
+    println("")
+
+    let mut preset: i32 = 2
+    let mut thr: f32 = preset_thr(preset)
+    let mut z: f32 = 0.0
+    let mut poro_live: f64 = poro
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Cave worms - Flow procgen")
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 1 }
+        if gfx_key_down(g, KEY_2) { want = 2 }
+        if gfx_key_down(g, KEY_3) { want = 3 }
+        if gfx_key_down(g, KEY_4) { want = 4 }
+        if want >= 0 and want != preset {
+            preset = want
+            thr = preset_thr(preset)
+            poro_live = porosity(z, thr)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                rng_state = rng_next()
+                procgen_seed(rng_state)
+                poro_live = porosity(z, thr)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            z = z + 0.035
+            if frame % 8 == 0 {
+                poro_live = porosity(z, thr)
+            }
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, z, thr)
+        draw_hud(g, preset, poro_live, z, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

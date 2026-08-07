@@ -1,0 +1,247 @@
+# procgen: self-contained 2D/3D gradient and value noise for general use.
+#
+# A procedural field is a pure function of coordinates and a seed. Same seed
+# and same sample point always return the same f32, with no tables and no
+# allocation. Everything here is private to this module except the exported
+# API below; planet.flow currently keeps a private copy of the 3D set and
+# should call through here once its demos are ready to migrate.
+#
+# API
+#   procgen_seed(s)            set the 32-bit seed used by every hash
+#   procgen_hash(ix,iy,iz,salt) integer hash mixed with the seed
+#   procgen_noise2 / noise3    gradient (Perlin-style) noise ~[-1, 1]
+#   procgen_fbm2 / fbm3        fractional Brownian motion, normalised ~[-1, 1]
+#   procgen_ridged2 / ridged3  ridged multifractal in [0, 1]
+#   procgen_warped2            domain-warped fBm (2D)
+#   procgen_value2             value noise in [0, 1] (heightmap parity)
+#
+# DETERMINISM
+#   One module-static u32 seed. Hashing folds the seed in, so reseeding moves
+#   every field. There is no global LCG advance inside the noise calls; callers
+#   that need discrete random choices keep their own LCG.
+#
+# Related: docs/library/procgen.md, examples/procgen/, lib/stdlib/planet.flow
+
+extern {
+    function floorf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+}
+
+const PG_TINY: f32 = 1.0e-9
+
+let mut pg_seed0: u32 = 1
+
+export function procgen_seed(s: u32) -> void {
+    pg_seed0 = s
+}
+
+export function procgen_get_seed() -> u32 {
+    return pg_seed0
+}
+
+function pg_lerpf(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t
+}
+
+function pg_fade(t: f32) -> f32 {
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+function pg_smoothstep(t: f32) -> f32 {
+    return t * t * (3.0 - 2.0 * t)
+}
+
+# Integer hash. Three rounds of xor-multiply, seeded from pg_seed0 so noise
+# fields move with the module seed.
+export function procgen_hash(ix: i32, iy: i32, iz: i32, salt: i32) -> u32 {
+    let mut h: u32 = (ix as u32) * 374761393
+    h = h + (iy as u32) * 668265263
+    h = h + (iz as u32) * 2246822519
+    h = h + (salt as u32) * 3266489917
+    h = h + pg_seed0 * 374761393
+    h = h ^ (h >> 13)
+    h = h * 1274126177
+    h = h ^ (h >> 16)
+    h = h * 2654435761
+    h = h ^ (h >> 15)
+    return h
+}
+
+# Perlin's improved gradient set: the 12 edge midpoints of a cube, plus 4
+# repeats to make the selection a cheap 4-bit mask.
+function pg_grad3(h: u32, x: f32, y: f32, z: f32) -> f32 {
+    let g: i32 = (h % 16) as i32
+    let mut u: f32 = x
+    if g >= 8 { u = y }
+    let mut v: f32 = z
+    if g < 4 { v = y }
+    if g == 12 or g == 14 { v = x }
+    let mut a: f32 = u
+    if (g % 2) == 1 { a = 0.0 - u }
+    let mut b: f32 = v
+    if (g % 4) >= 2 { b = 0.0 - v }
+    return a + b
+}
+
+# Eight 2D gradients (cardinals and diagonals).
+function pg_grad2(h: u32, x: f32, y: f32) -> f32 {
+    let g: i32 = (h % 8) as i32
+    if g == 0 { return x }
+    if g == 1 { return 0.0 - x }
+    if g == 2 { return y }
+    if g == 3 { return 0.0 - y }
+    if g == 4 { return x + y }
+    if g == 5 { return 0.0 - x + y }
+    if g == 6 { return x - y }
+    return 0.0 - x - y
+}
+
+# Gradient noise in approximately [-1, 1].
+export function procgen_noise3(x: f32, y: f32, z: f32, salt: i32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fy: f32 = floorf(y)
+    let fz: f32 = floorf(z)
+    let ix: i32 = fx as i32
+    let iy: i32 = fy as i32
+    let iz: i32 = fz as i32
+    let tx: f32 = x - fx
+    let ty: f32 = y - fy
+    let tz: f32 = z - fz
+    let ux: f32 = pg_fade(tx)
+    let uy: f32 = pg_fade(ty)
+    let uz: f32 = pg_fade(tz)
+
+    let n000: f32 = pg_grad3(procgen_hash(ix, iy, iz, salt), tx, ty, tz)
+    let n100: f32 = pg_grad3(procgen_hash(ix + 1, iy, iz, salt), tx - 1.0, ty, tz)
+    let n010: f32 = pg_grad3(procgen_hash(ix, iy + 1, iz, salt), tx, ty - 1.0, tz)
+    let n110: f32 = pg_grad3(procgen_hash(ix + 1, iy + 1, iz, salt), tx - 1.0, ty - 1.0, tz)
+    let n001: f32 = pg_grad3(procgen_hash(ix, iy, iz + 1, salt), tx, ty, tz - 1.0)
+    let n101: f32 = pg_grad3(procgen_hash(ix + 1, iy, iz + 1, salt), tx - 1.0, ty, tz - 1.0)
+    let n011: f32 = pg_grad3(procgen_hash(ix, iy + 1, iz + 1, salt), tx, ty - 1.0, tz - 1.0)
+    let n111: f32 = pg_grad3(procgen_hash(ix + 1, iy + 1, iz + 1, salt), tx - 1.0, ty - 1.0, tz - 1.0)
+
+    let x00: f32 = pg_lerpf(n000, n100, ux)
+    let x10: f32 = pg_lerpf(n010, n110, ux)
+    let x01: f32 = pg_lerpf(n001, n101, ux)
+    let x11: f32 = pg_lerpf(n011, n111, ux)
+    let y0: f32 = pg_lerpf(x00, x10, uy)
+    let y1: f32 = pg_lerpf(x01, x11, uy)
+    return pg_lerpf(y0, y1, uz)
+}
+
+export function procgen_noise2(x: f32, y: f32, salt: i32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fy: f32 = floorf(y)
+    let ix: i32 = fx as i32
+    let iy: i32 = fy as i32
+    let tx: f32 = x - fx
+    let ty: f32 = y - fy
+    let ux: f32 = pg_fade(tx)
+    let uy: f32 = pg_fade(ty)
+
+    let n00: f32 = pg_grad2(procgen_hash(ix, iy, 0, salt), tx, ty)
+    let n10: f32 = pg_grad2(procgen_hash(ix + 1, iy, 0, salt), tx - 1.0, ty)
+    let n01: f32 = pg_grad2(procgen_hash(ix, iy + 1, 0, salt), tx, ty - 1.0)
+    let n11: f32 = pg_grad2(procgen_hash(ix + 1, iy + 1, 0, salt), tx - 1.0, ty - 1.0)
+
+    let x0: f32 = pg_lerpf(n00, n10, ux)
+    let x1: f32 = pg_lerpf(n01, n11, ux)
+    return pg_lerpf(x0, x1, uy)
+}
+
+# Fractional Brownian motion: octaves of gradient noise at doubling
+# frequency and halving amplitude, normalised to roughly [-1, 1].
+export function procgen_fbm3(x: f32, y: f32, z: f32, octaves: i32,
+                             salt: i32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut norm: f32 = 0.0
+    let mut freq: f32 = 1.0
+    for o in 0 to octaves {
+        sum = sum + amp * procgen_noise3(x * freq, y * freq, z * freq, salt + o * 131)
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+    }
+    if norm < PG_TINY { return 0.0 }
+    return sum / norm
+}
+
+export function procgen_fbm2(x: f32, y: f32, octaves: i32, salt: i32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut norm: f32 = 0.0
+    let mut freq: f32 = 1.0
+    for o in 0 to octaves {
+        sum = sum + amp * procgen_noise2(x * freq, y * freq, salt + o * 131)
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+    }
+    if norm < PG_TINY { return 0.0 }
+    return sum / norm
+}
+
+# Ridged multifractal: 1 - |noise| per octave, which turns the zero crossings
+# into creases. Range [0, 1].
+export function procgen_ridged3(x: f32, y: f32, z: f32, octaves: i32,
+                                salt: i32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut norm: f32 = 0.0
+    let mut freq: f32 = 1.0
+    for o in 0 to octaves {
+        let n: f32 = procgen_noise3(x * freq, y * freq, z * freq, salt + o * 977)
+        let r: f32 = 1.0 - fabsf(n)
+        sum = sum + amp * r * r
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+    }
+    if norm < PG_TINY { return 0.0 }
+    return sum / norm
+}
+
+export function procgen_ridged2(x: f32, y: f32, octaves: i32, salt: i32) -> f32 {
+    let mut sum: f32 = 0.0
+    let mut amp: f32 = 1.0
+    let mut norm: f32 = 0.0
+    let mut freq: f32 = 1.0
+    for o in 0 to octaves {
+        let n: f32 = procgen_noise2(x * freq, y * freq, salt + o * 977)
+        let r: f32 = 1.0 - fabsf(n)
+        sum = sum + amp * r * r
+        norm = norm + amp
+        amp = amp * 0.5
+        freq = freq * 2.0
+    }
+    if norm < PG_TINY { return 0.0 }
+    return sum / norm
+}
+
+# Domain-warped fBm: the sample point is displaced by another noise field
+# first, which breaks the axis-aligned look of plain fBm.
+export function procgen_warped2(x: f32, y: f32, octaves: i32, warp: f32,
+                                salt: i32) -> f32 {
+    let wx: f32 = procgen_fbm2(x + 11.3, y + 4.7, 3, salt + 7001)
+    let wy: f32 = procgen_fbm2(x - 3.9, y + 17.2, 3, salt + 7101)
+    return procgen_fbm2(x + warp * wx, y + warp * wy, octaves, salt)
+}
+
+# Value noise in [0, 1]. Hashes the integer lattice and interpolates the four
+# corner values with a smoothstep weight, matching examples/threed/heightmap_terrain.
+export function procgen_value2(x: f32, y: f32, salt: i32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fy: f32 = floorf(y)
+    let ix: i32 = fx as i32
+    let iy: i32 = fy as i32
+    let tx: f32 = pg_smoothstep(x - fx)
+    let ty: f32 = pg_smoothstep(y - fy)
+    let a: f32 = ((procgen_hash(ix, iy, 0, salt) % 65536) as f32) / 65536.0
+    let b: f32 = ((procgen_hash(ix + 1, iy, 0, salt) % 65536) as f32) / 65536.0
+    let c: f32 = ((procgen_hash(ix, iy + 1, 0, salt) % 65536) as f32) / 65536.0
+    let d: f32 = ((procgen_hash(ix + 1, iy + 1, 0, salt) % 65536) as f32) / 65536.0
+    let top: f32 = pg_lerpf(a, b, tx)
+    let bot: f32 = pg_lerpf(c, d, tx)
+    return pg_lerpf(top, bot, ty)
+}
