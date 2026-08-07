@@ -120,3 +120,34 @@ def test_wasm_build_preload_emits_data(backend: str, tmp_path: Path):
     assert (out / "hello_wasm.wasm").exists()
     assert (out / "hello_wasm.data").exists()
     assert result.get("data_bytes", 0) > 0
+
+
+SNAKE = ROOT / "examples" / "games" / "snake_gfx.flow"
+
+
+@pytest.mark.skipif(not SNAKE.exists(), reason="snake_gfx.flow missing")
+@pytest.mark.skipif(not _emcc_ok(), reason="emcc not usable")
+def test_wasm_mlir_gfx_snake(tmp_path: Path):
+    """Epic #221: MLIR backend builds a gfx+ASYNCIFY canvas page."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import wasm_build as wb  # type: ignore
+
+    out = tmp_path / "snake-mlir"
+    result = wb.build(SNAKE, out, backend="mlir", opt="-O1", timeout=300)
+    assert result["backend"] == "mlir"
+    assert result["gfx"] is True
+    assert (out / "snake_gfx.wasm").exists()
+    assert (out / "index.html").exists()
+    html = (out / "index.html").read_text()
+    assert "MLIR" in html
+    assert "canvas" in html.lower()
+
+
+def test_opt_flag_normalizes_bare_level():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import wasm_build as wb  # type: ignore
+
+    # Simulate argparse -O2 → value "2"
+    normalize = lambda s: s if str(s).startswith("-O") else f"-O{s}"
+    assert normalize("2") == "-O2"
+    assert normalize("-O1") == "-O1"

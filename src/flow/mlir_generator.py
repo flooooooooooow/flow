@@ -1421,6 +1421,27 @@ class MLIRGenerator:
                         assigned.append(name)
         return assigned
 
+    def _filter_ssa_mergeable(self, names: List[str]) -> List[str]:
+        """Locals that can be CF/SCF join-block arguments (have live SSA bindings).
+
+        Module globals and alloca-backed slots have no ``ssa_name`` and must not
+        participate in block-arg merges (doom-flow hit KeyError: ssa_name).
+        """
+        out: List[str] = []
+        for name in names:
+            info = self.symbol_table.get(name)
+            if not info:
+                continue
+            if info.get("is_module_global"):
+                continue
+            if "ssa_name" not in info:
+                continue
+            if "mlir_type" not in info:
+                continue
+            if name not in out:
+                out.append(name)
+        return out
+
     def _generate_scf_if_with_yield(
         self,
         if_stmt: IfStatement,
@@ -1429,10 +1450,9 @@ class MLIRGenerator:
         prefix_ops: List[str],
     ) -> str:
         mlir_code = list(prefix_ops)
-        merged_vars = [v for v in merged_vars if v in self.symbol_table]
-        # Module consts/statics are memory-backed (addressof + load/store), not
-        # SSA values, so they cannot participate in scf.if yields.
-        merged_vars = [v for v in merged_vars if not self.symbol_table[v].get("is_module_global")]
+        merged_vars = self._filter_ssa_mergeable(
+            [v for v in merged_vars if v in self.symbol_table]
+        )
         if not merged_vars:
             return "\n".join(prefix_ops)
 
@@ -1593,6 +1613,7 @@ class MLIRGenerator:
             for name in self._assigned_locals(block):
                 if name not in merged_vars and name in self.symbol_table:
                     merged_vars.append(name)
+        merged_vars = self._filter_ssa_mergeable(merged_vars)
         entry_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
         merged_types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
 
@@ -2704,6 +2725,7 @@ class MLIRGenerator:
                 for name in self._assigned_locals(block):
                     if name not in merged_vars and name in self.symbol_table:
                         merged_vars.append(name)
+        merged_vars = self._filter_ssa_mergeable(merged_vars)
         entry_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
         merged_types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
 
@@ -4532,10 +4554,11 @@ class MLIRGenerator:
                 ops.extend(mat_ops)
                 prepared_args[i] = stable
 
+        n_typed = min(len(prepared_args), len(expected_arg_types))
         tensor_stabilize_order = (
-            reversed(range(len(prepared_args)))
+            reversed(range(n_typed))
             if callee_returns_tensor or callee_returns_composite
-            else range(len(prepared_args))
+            else range(n_typed)
         )
         for i in tensor_stabilize_order:
             expected_type = expected_arg_types[i]
