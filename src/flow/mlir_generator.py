@@ -329,6 +329,9 @@ class MLIRGenerator:
         self.declarations = []  # Store declarations for type lookup
         self.struct_layouts = {}  # Maps struct name to field offsets and types
         self._ssa_types: Dict[str, str] = {}  # Maps SSA name -> MLIR type string
+        # SSA values that originated as Flow unsigned ints (u8/…). MLIR only has
+        # signed iN, so we track this to pick arith.extui vs extsi on widen.
+        self._ssa_unsigned: Set[str] = set()
         # Maps pointer SSA / var name -> !llvm.array<N x T> for struct-element arrays
         self._llvm_array_types: Dict[str, str] = {}
         self.type_aliases = {}  # name -> base Type
@@ -765,6 +768,7 @@ class MLIRGenerator:
 
         # SSA names like %arg0 are reused per function; reset type tracking each time.
         self._ssa_types = {}
+        self._ssa_unsigned = set()
         
         param_prologue: List[str] = []
         for i, param in enumerate(func.parameters):
@@ -772,6 +776,8 @@ class MLIRGenerator:
             arg_ssa = f'%arg{i}'
             bind_ssa = arg_ssa
             self._ssa_types[arg_ssa] = param_mlir
+            if getattr(param.type, 'name', '').startswith('u'):
+                self._ssa_unsigned.add(arg_ssa)
             var_entry = {
                 'type': 'variable',
                 'mlir_type': param_mlir,
@@ -1086,6 +1092,8 @@ class MLIRGenerator:
                 init_value, cast_ops = self._emit_cast(init_value, init_type, mlir_type)
                 init_ops.extend(cast_ops)
             self._ssa_types[init_value] = mlir_type
+            if getattr(var_decl.type, 'name', '').startswith('u'):
+                self._ssa_unsigned.add(init_value)
 
             from_tensor_field = init_value in self._tensor_field_extracts
             if self._is_aggregate_mlir_type(mlir_type) and (
@@ -3050,10 +3058,16 @@ class MLIRGenerator:
         # Integer width casts
         if (from_type.startswith("i") or from_type.startswith("u")) and (to_type.startswith("i") or to_type.startswith("u")):
             if _int_width(from_type) < _int_width(to_type):
-                ext_op = "arith.extui" if _is_unsigned(from_type) else "arith.extsi"
+                # Prefer zero-extend for Flow unsigned origins (now lowered as iN).
+                unsigned = _is_unsigned(from_type) or value_ssa in self._ssa_unsigned
+                ext_op = "arith.extui" if unsigned else "arith.extsi"
                 self._ssa_types[cast_name] = to_type
+                if unsigned:
+                    self._ssa_unsigned.add(cast_name)
                 return cast_name, [f"{self.indent()}{cast_name} = {ext_op} {value_ssa} : {from_type} to {to_type}"]
             self._ssa_types[cast_name] = to_type
+            if value_ssa in self._ssa_unsigned or _is_unsigned(to_type):
+                self._ssa_unsigned.add(cast_name)
             return cast_name, [f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {from_type} to {to_type}"]
 
         # Bool/integer casts
@@ -5249,9 +5263,14 @@ class MLIRGenerator:
     def flow_type_to_mlir(self, flow_type: Type) -> str:
         flow_type = self._resolve_type_alias(flow_type)
         elem_type = self._resolve_type_alias(flow_type.element_type) if getattr(flow_type, 'element_type', None) else None
-        if flow_type.name in ['i8', 'i16', 'i32', 'i64', 'i128',
-                              'u8', 'u16', 'u32', 'u64', 'u128',
-                              'f32', 'f64']:
+        # MLIR / llvm dialect have no unsigned integer types. Map Flow uN → iN
+        # of the same width (bitwidth semantics; use extui when zero-extending).
+        _unsigned_to_signed = {
+            'u8': 'i8', 'u16': 'i16', 'u32': 'i32', 'u64': 'i64', 'u128': 'i128',
+        }
+        if flow_type.name in _unsigned_to_signed:
+            return _unsigned_to_signed[flow_type.name]
+        if flow_type.name in ['i8', 'i16', 'i32', 'i64', 'i128', 'f32', 'f64']:
             return flow_type.name
         elif flow_type.name == 'bool':
             return 'i1'
