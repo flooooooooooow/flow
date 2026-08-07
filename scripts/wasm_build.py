@@ -171,6 +171,7 @@ def emcc_command(
     extra_link: Optional[list[Path]] = None,
     initial_memory: str = "32MB",
     asyncify_stack_size: int = 32768,
+    emcc_flags: Optional[list[str]] = None,
 ) -> list:
     sources: list[str] = [str(input_file)]
     if gfx:
@@ -210,6 +211,8 @@ def emcc_command(
         cmd.append("-sFORCE_FILESYSTEM=1")
         for spec in preload:
             cmd.extend(["--preload-file", spec])
+    if emcc_flags:
+        cmd.extend(emcc_flags)
     return cmd
 
 
@@ -223,6 +226,7 @@ def compile_wasm(
     extra_link: Optional[list[Path]] = None,
     initial_memory: str = "32MB",
     asyncify_stack_size: int = 32768,
+    emcc_flags: Optional[list[str]] = None,
 ) -> None:
     out_js.parent.mkdir(parents=True, exist_ok=True)
     cmd = emcc_command(
@@ -234,6 +238,7 @@ def compile_wasm(
         extra_link=extra_link,
         initial_memory=initial_memory,
         asyncify_stack_size=asyncify_stack_size,
+        emcc_flags=emcc_flags,
     )
     try:
         proc = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True,
@@ -568,7 +573,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           preload: Optional[list[str]] = None,
           extra_link: Optional[list[Path]] = None,
           initial_memory: str = "32MB",
-          asyncify_stack_size: int = 32768) -> dict:
+          asyncify_stack_size: int = 32768,
+          emcc_flags: Optional[list[str]] = None) -> dict:
     """Build one program. Returns a result dict; raises BuildError on failure."""
     program = program.resolve()
     if not program.exists():
@@ -609,6 +615,7 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         extra_link=extra_link,
         initial_memory=initial_memory,
         asyncify_stack_size=asyncify_stack_size,
+        emcc_flags=emcc_flags,
     )
     elapsed = time.time() - started
 
@@ -683,8 +690,22 @@ def main(argv=None) -> int:
         default=32768,
         help="emcc -sASYNCIFY_STACK_SIZE when gfx is linked (default 32768)",
     )
-    parser.add_argument("-O", dest="opt", default="-O2",
-                        help="emcc optimisation flag (default -O2)")
+    parser.add_argument(
+        "-O",
+        dest="opt",
+        default="-O2",
+        metavar="LEVEL",
+        type=lambda s: s if str(s).startswith("-O") else f"-O{s}",
+        help="emcc optimisation level: -O2 (default), or -O -O1 / -O2",
+    )
+    parser.add_argument(
+        "--emcc-flag",
+        action="append",
+        default=[],
+        metavar="FLAG",
+        help="extra flag passed through to emcc (repeatable). "
+             "Example: --emcc-flag=-DNORMALUNIX",
+    )
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep-c", action="store_true",
                         help="keep the generated C / LLVM IR next to the output")
@@ -712,6 +733,7 @@ def main(argv=None) -> int:
             extra_link=extra_link or None,
             initial_memory=args.initial_memory,
             asyncify_stack_size=args.asyncify_stack_size,
+            emcc_flags=args.emcc_flag or None,
         )
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)

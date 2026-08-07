@@ -38,8 +38,9 @@ Pack a host file into the virtual FS and link extra runtime C (both backends):
 `--preload` maps to `emcc --preload-file` and turns on `FORCE_FILESYSTEM`
 (emits a `.data` blob next to the `.js`). `--link` passes extra `.c` files to
 emcc; Cocoa `.m` / `.mm` are skipped. Doom-scale knobs on the page builder:
-`--initial-memory=64MB` and `--asyncify-stack-size=65536`. `--fs` / `--threads`
-crossings remain C-only for now and error clearly under `--backend=mlir`.
+`--initial-memory=64MB`, `--asyncify-stack-size=65536`, and `--emcc-flag`
+(passthrough). `--fs` / `--threads` crossings remain C-only for now and error
+clearly under `--backend=mlir`.
 
 ## Status matrix
 
