@@ -10,6 +10,11 @@ This document is the single source of truth for how webhooks work.
 |---|---|---|---|
 | `#announcements` | Releases and docs deploys | `release-notifier` | `DISCORD_RELEASE_WEBHOOK` |
 | `#ci-releases` | Per-run CI status | `ci-releases` | `DISCORD_CI_WEBHOOK` |
+| `#changelog` | Release changelog notes | `flow-changelog` | `DISCORD_CHANGELOG_WEBHOOK` |
+
+Server categories: `engagement` (welcome, announcements, introductions,
+showcase), `help`, `dev` (tooling, contribute, ci-releases), `projects`
+(project-showcase, project-work), `changelog`.
 
 The webhooks themselves are created in the Discord server under each channel's
 channel settings. Only the server owner/`MANAGE_WEBHOOKS` role can create or
@@ -45,7 +50,7 @@ that one file.
 
 | Workflow | Trigger | Notifies |
 |---|---|---|
-| `.github/workflows/release.yml` | tag created | `#announcements` release |
+| `.github/workflows/release.yml` | tag created | `#announcements` release, `#changelog` notes |
 | `.github/workflows/ci.yml` | push, PR, nightly | `#ci-releases` pass/fail |
 | `.github/workflows/wiki.yml` | docs deploy | `#announcements` docs |
 
