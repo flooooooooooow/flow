@@ -352,3 +352,25 @@ function main() -> i32 {
     return 0
 }
 ```
+
+## Part 4: Native concurrency (next step)
+
+The sketches above **simulate** mutexes and channels with arrays. On a real
+binary:
+
+```bash
+./flow run examples/concurrency/channels.flow
+./flow run examples/concurrency/select.flow
+./flow run examples/concurrency/fiber_async.flow
+./flow run examples/concurrency/parallel_for.flow
+```
+
+| Surface | Where |
+|---------|--------|
+| pthread channels / mutex / WaitGroup | `lib/stdlib/concurrent.flow` |
+| Fibers / threaded async | `lib/stdlib/async.flow` |
+| `parallel for` (OpenMP when available) | language + examples |
+| Design vs Go | [concurrency-vs-go.md](../language/concurrency-vs-go.md) |
+
+The browser will never run OS threads; use these commands when you leave the
+tutorial app.

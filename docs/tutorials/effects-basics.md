@@ -1,7 +1,9 @@
 # Effects Basics
 
-> Effect-shaped control flow without full runtime handlers.
-
+> Effect-**shaped** control flow that runs in the browser.
+>
+> These lessons use plain functions as stand-ins. Real algebraic effects
+> (`effect` / `capability` / `handle` / `with`) compile natively — see Part 4.
 
 ## Part 1: Motivation
 
@@ -82,3 +84,34 @@ function main() -> i32 {
     return 0
 }
 ```
+
+## Part 4: Native effects (run with `./flow`)
+
+The browser interpreter rejects `effect` / `handle` / `capability`. On the
+real compiler:
+
+```bash
+./flow run examples/effects/showcase.flow
+```
+
+Read the walkthrough: [effects-showcase.md](../effects-showcase.md).
+
+Typical surface (native):
+
+```flow
+effect Logger {
+    log(msg: string) -> void
+}
+
+function work() -> void with Logger {
+    perform Logger.log("hello")
+}
+
+handle Logger with {
+    log(msg) => { printf("%s\n", msg); resume() }
+} in {
+    work()
+}
+```
+
+Swap handlers (stdout vs null vs file) without rewriting `work`.
