@@ -63,6 +63,32 @@ class TestMLIRTypeConversion:
         assert "memref" in mlir_type or "vector" in mlir_type
 
 
+
+class TestMLIRArrayPointerDecay:
+    """array<T,N> decayed to ptr<T> must not retag the memref SSA (#224)."""
+
+    def test_array_ptr_decay_emits_extract_and_keeps_memref_stores(self):
+        from flow.parser import parse_flow_code
+        from flow.mlir_generator import MLIRGenerator
+
+        code = """
+function main() -> i32 {
+    let xs: array<i32, 4> = [1, 2, 3, 4]
+    let p: ptr<i32> = xs
+    xs[0] = 5
+    p[1] = 6
+    return xs[0] + p[1]
+}
+"""
+        mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
+        assert "memref.extract_aligned_pointer_as_index" in mlir
+        assert "llvm.inttoptr" in mlir
+        # Indexing the array variable must stay on memref.store, not GEP the alloc SSA.
+        assert "memref.store %14" in mlir or "memref.store" in mlir
+        # The memref alloc SSA (%5 in the minimal fixture) must not be GEP'd.
+        assert "llvm.getelementptr %5[" not in mlir
+
+
 class TestMLIRExpressionGeneration:
     """Test MLIR expression generation."""
 
