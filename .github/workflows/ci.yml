@@ -524,7 +524,19 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
           botname: Flow CI
+          avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
           color: ${{ job.status == 'success' && '3066993' || '15158332' }}
           title: CI ${{ job.status == 'success' && 'passed' || 'failed' }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          description: '${{ github.sha }} @ ${{ github.repository }}'
+          description: '${{ github.repository }} · branch \`${{ github.head_ref || github.ref_name }}\` on ${{ github.event_name }}'
+          author_name: Flow CI
+          author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          fields: >-
+            [
+              {"name":"Commit","value":"[`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})","inline":true},
+              {"name":"Branch","value":"`${{ github.head_ref || github.ref_name }}`","inline":true},
+              {"name":"Event","value":"`${{ github.event_name }}`","inline":true},
+              {"name":"Run","value":"#[${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})","inline":true}
+            ]
+          footer_text: Flow CI · run ${{ github.run_id }}
+          footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
