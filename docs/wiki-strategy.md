@@ -36,15 +36,15 @@ The wiki is **not** a dump of markdown files. It is a product with:
 ## Information architecture
 
 ```
-Home (wiki-home.md)
-├── Start          → install, comparison, playground
-├── Language       → spec, grammar, syntax, types, modules…
-├── Verification   → theorem design, epistemology, proof book plan
-├── Library        → stdlib reference (core, autodiff, audio, memory)
-├── Third-Party    → flow-verify + proof corpus (628+ stepped proofs)
-├── Tutorials      → beginner → advanced learning path
-├── Tooling        → CLI, Python target, development guide
-└── Project        → contributing, changelog, wiki roadmap, language roadmap, self-hosting
+Home (wiki-home.md) — brand, three paths, demos, differentiators
+├── Start       → vision, install, tutorials app, playground, comparison
+├── Learn       → Core · Systems · Vision features · Applied
+├── Gallery     → recorded demos + live WASM
+├── Language    → spec, grammar, types, effects, graphics, wasm, spans
+├── Library     → stdlib reference (core, autodiff, audio, memory)
+├── Tooling     → CLI, Python target
+├── Project     → changelog, contributing, roadmaps, research
+└── Proofs      → optional flow-verify (third-party; not required)
 ```
 
 ### Page types & rendering

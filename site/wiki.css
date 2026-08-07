@@ -1448,6 +1448,17 @@ kbd.key {
 
 .wiki-hero > * { position: relative; }
 
+.markdown-body h1.wiki-hero-brand,
+.wiki-hero-brand {
+    display: block;
+    margin: 0 0 0.55rem;
+    font-size: clamp(2.6rem, 1.4rem + 4vw, 3.75rem);
+    font-weight: 700;
+    letter-spacing: -0.055em;
+    line-height: 0.95;
+    color: var(--text);
+}
+
 .wiki-hero-eyebrow {
     display: inline-flex;
     align-items: center;
@@ -1464,19 +1475,15 @@ kbd.key {
     margin-bottom: 1.1rem;
 }
 
-/* The hero supplies its own H1 — the global h1 hide must not swallow it. */
-.markdown-body h1.wiki-hero-title,
+.markdown-body p.wiki-hero-title,
 .wiki-hero-title {
     display: block;
-    font-size: clamp(2.1rem, 1.2rem + 3.2vw, 3.1rem);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 1.06;
-    margin-bottom: 1.1rem;
-    background: linear-gradient(165deg, var(--text) 30%, color-mix(in srgb, var(--text) 62%, var(--accent)) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-size: clamp(1.55rem, 1.05rem + 1.8vw, 2.15rem);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin: 0 0 1rem;
+    color: var(--text-muted);
     text-wrap: balance;
 }
 
@@ -1548,7 +1555,86 @@ kbd.key {
 
 .wiki-hero-code code { background: none; border: none; padding: 0; }
 
-/* ── Card grid ───────────────────────────────────────────────────────────── */
+/* ── Home path strip (not cards — navigation with one job) ─────────────── */
+
+.markdown-body nav.wiki-paths,
+.wiki-paths {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin: 1.25rem 0 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.markdown-body a.wiki-path,
+.wiki-path {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 1.25rem 1.35rem 1.35rem;
+    text-decoration: none !important;
+    color: var(--text);
+    border-right: 1px solid var(--border);
+    transition: background var(--fast), color var(--fast);
+}
+
+.markdown-body a.wiki-path:last-child,
+.wiki-path:last-child {
+    border-right: none;
+}
+
+.markdown-body a.wiki-path:hover,
+.wiki-path:hover {
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
+.wiki-path-kicker {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.markdown-body a.wiki-path strong,
+.wiki-path strong {
+    font-size: 1.02rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+.markdown-body a.wiki-path span:not(.wiki-path-kicker),
+.wiki-path span:not(.wiki-path-kicker) {
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.wiki-section-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.45rem 0.65rem;
+    margin: 0.35rem 0 1.75rem;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+}
+
+.wiki-section-foot a {
+    font-weight: 600;
+}
+
+.wiki-dot {
+    color: var(--text-faint);
+}
+
+/* ── Card grid (legacy / rare use) ───────────────────────────────────────── */
 
 .wiki-card-grid {
     display: grid;
@@ -1916,6 +2002,19 @@ body.page-wide .markdown-body { max-width: none; }
     .wiki-hero-actions { gap: 0.5rem; }
     .wiki-cta { flex: 1 1 auto; justify-content: center; }
     .wiki-card-grid { grid-template-columns: 1fr; }
+    .markdown-body nav.wiki-paths,
+    .wiki-paths {
+        grid-template-columns: 1fr;
+    }
+    .markdown-body a.wiki-path,
+    .wiki-path {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+    .markdown-body a.wiki-path:last-child,
+    .wiki-path:last-child {
+        border-bottom: none;
+    }
 
     .doc-pager { flex-direction: column; }
     .pager-link { max-width: none; }
