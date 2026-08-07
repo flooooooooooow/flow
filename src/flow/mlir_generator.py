@@ -3348,6 +3348,18 @@ class MLIRGenerator:
             op_text = f"arith.andi {left_ssa}, {right_ssa} : i1"
         elif bin_op.operator == '||' or bin_op.operator == 'or':
             op_text = f"arith.ori {left_ssa}, {right_ssa} : i1"
+        elif bin_op.operator == '&':
+            # Bitwise (not boolean) — Doom-scale MLIR needs these (#221 follow-up).
+            op_text = f"arith.andi {left_ssa}, {right_ssa} : {operand_type}"
+        elif bin_op.operator == '|':
+            op_text = f"arith.ori {left_ssa}, {right_ssa} : {operand_type}"
+        elif bin_op.operator == '^':
+            op_text = f"arith.xori {left_ssa}, {right_ssa} : {operand_type}"
+        elif bin_op.operator == '<<':
+            op_text = f"arith.shli {left_ssa}, {right_ssa} : {operand_type}"
+        elif bin_op.operator == '>>':
+            # Flow uN lowers to iN; arithmetic right-shift matches C signed >> on i32.
+            op_text = f"arith.shrsi {left_ssa}, {right_ssa} : {operand_type}"
         else:
             return f"// Unsupported binary operator: {bin_op.operator}", left_ops + right_ops
         
