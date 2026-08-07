@@ -97,3 +97,14 @@ jobs:
           # timeout as headroom.
           timeout: 1800000
           error_count: 20
+
+      - name: Post docs deploy to Discord #announcements
+        if: always() && env.DISCORD_RELEASE_WEBHOOK != ''
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          botname: Flow Docs Bot
+          color: ${{ job.status == 'success' && '3066993' || '15158332' }}
+          title: Docs deploy ${{ job.status == 'success' && 'succeeded' || 'failed' }}
+          url: ${{ steps.deployment.outputs.page_url || github.server_url }}
+          description: Wiki deploy for `${{ github.sha }}`
