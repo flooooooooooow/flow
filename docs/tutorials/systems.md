@@ -145,3 +145,56 @@ function main() -> i32 {
     return 0
 }
 ```
+
+## Part 4: More systems shapes
+
+### 4.1 Popcount (bit count)
+
+```flow
+function popcount(x: i32) -> i32 {
+    let mut n: i32 = x
+    let mut c: i32 = 0
+    while n != 0 {
+        c = c + (n & 1)
+        n = n >> 1
+    }
+    return c
+}
+
+function main() -> i32 {
+    printf("%d %d\n", popcount(7), popcount(16))
+    return 0
+}
+```
+
+### 4.2 Freelist head
+
+```flow
+function main() -> i32 {
+    let mut next: [i32; 4] = [1, 2, 3, -1]
+    let mut free_head: i32 = 0
+    let taken: i32 = free_head
+    free_head = next[taken]
+    next[taken] = -2
+    printf("took=%d free_head=%d\n", taken, free_head)
+    return 0
+}
+```
+
+### 4.3 Rolling checksum
+
+```flow
+function checksum(xs: [i32; 5]) -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 5 {
+        s = (s * 31 + xs[i]) % 1000
+    }
+    return s
+}
+
+function main() -> i32 {
+    let xs: [i32; 5] = [1, 2, 3, 4, 5]
+    printf("%d\n", checksum(xs))
+    return 0
+}
+```
