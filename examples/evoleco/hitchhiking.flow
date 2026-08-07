@@ -436,14 +436,24 @@ function main() -> i32 {
             pause_held = false
         }
 
-        if !paused and sweeping {
-            for k in 0 to 2 {
-                step_sweep(n, rr, s)
-                gen = gen + 1
-            }
-            let p: f64 = selected_freq(n)
-            if p <= 0.0 or p >= 1.0 {
-                sweeping = false
+        if !paused {
+            if sweeping {
+                for k in 0 to 2 {
+                    step_sweep(n, rr, s)
+                    gen = gen + 1
+                }
+                let p: f64 = selected_freq(n)
+                if p <= 0.0 or p >= 1.0 {
+                    sweeping = false
+                }
+            } else {
+                # Sweep finished; cycle rho presets so a short GIF keeps moving.
+                preset = (preset + 1) % 3
+                rr = preset_rho(preset)
+                seed_pop(n)
+                gen = 0
+                sweeping = true
+                refresh_theory(rr)
             }
         }
         measure_profile(n, live_h)

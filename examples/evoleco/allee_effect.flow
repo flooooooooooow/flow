@@ -298,7 +298,13 @@ function main() -> i32 {
         }
 
         if !paused {
-            if cursor < hist_len - 1 { cursor = cursor + 1 }
+            if cursor < hist_len - 1 {
+                cursor = cursor + 1
+            } else {
+                preset = (preset + 1) % 3
+                fill_hist(preset_n0(preset))
+                cursor = 0
+            }
         }
 
         let mut si: i32 = cursor

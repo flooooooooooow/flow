@@ -56,20 +56,22 @@ const KEY_2: i32 = 19
 const KEY_3: i32 = 20
 
 function preset_a12(p: i32) -> f64 {
+    # a12 large: X feels strong competition from Y => X excluded.
     if p == 1 { return 1.4 }
     if p == 2 { return 0.5 }
     return 0.5
 }
 
 function preset_a21(p: i32) -> f64 {
+    # a21 large: Y feels strong competition from X => Y excluded.
     if p == 1 { return 0.5 }
     if p == 2 { return 1.4 }
     return 0.5
 }
 
 function preset_name(p: i32) -> string {
-    if p == 1 { return "EXCLUDE Y" }
-    if p == 2 { return "EXCLUDE X" }
+    if p == 1 { return "EXCLUDE X" }
+    if p == 2 { return "EXCLUDE Y" }
     return "COEXIST"
 }
 
@@ -79,11 +81,6 @@ function dx(x: f64, y: f64, a12: f64) -> f64 {
 
 function dy(x: f64, y: f64, a21: f64) -> f64 {
     return R2 * y * (1.0 - (y + a21 * x) / K2)
-}
-
-function rk4(x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
-    # Returns new x; new y written via globals.
-    return x
 }
 
 let mut next_y: f64 = 0.0
@@ -236,7 +233,7 @@ function draw_hud(g: Gfx, preset: i32, a12: f64, a21: f64, paused: bool) -> void
     let t9: i32 = gfx_draw_text(g, 270, 28, "a21", 1, 150, 146, 168)
     let ta: i32 = gfx_draw_fixed(g, 298, 28, a21, 2, 1, 234, 232, 244)
     let tb: i32 = gfx_draw_text(g, 8, 42,
-        "1 COEXIST  2 EXCL Y  3 EXCL X  R RESEED  P PAUSE", 1, 112, 108, 132)
+        "1 COEXIST  2 EXCL X  3 EXCL Y  R RESEED  P PAUSE", 1, 112, 108, 132)
     if paused {
         let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
     }
@@ -281,15 +278,17 @@ function main() -> i32 {
     printf("%.2f", EQ_GATE)
     println(")")
 
-    let x_ex: f64 = integrate(40.0, 40.0, 1.4, 0.5, 5000)
+    # a12=0.5, a21=1.4: Y feels X strongly -> Y extinct, X -> K1.
+    let x_ex: f64 = integrate(40.0, 40.0, 0.5, 1.4, 5000)
     let y_ex: f64 = next_y
-    print("    exclusion a12=1.4 a21=0.5  Y    : ")
+    print("    exclusion a12=0.5 a21=1.4  Y    : ")
     printf("%.6f", y_ex)
     println("   (gate < 1e-3)")
 
-    let x_ex2: f64 = integrate(40.0, 40.0, 0.5, 1.4, 5000)
+    # a12=1.4, a21=0.5: X feels Y strongly -> X extinct, Y -> K2.
+    let x_ex2: f64 = integrate(40.0, 40.0, 1.4, 0.5, 5000)
     let y_ex2: f64 = next_y
-    print("    exclusion a12=0.5 a21=1.4  X    : ")
+    print("    exclusion a12=1.4 a21=0.5  X    : ")
     printf("%.6f", x_ex2)
     println("   (gate < 1e-3)")
 
