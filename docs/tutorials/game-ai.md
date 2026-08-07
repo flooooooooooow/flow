@@ -194,6 +194,114 @@ reward and is the most sensitive to tuning; whiten your advantages.
   short, returns are whitened and the learning rate is small. Change one and
   watch it wobble.
 
+## Interactive sketches
+
+### Q-update toy (browser)
+
+One tabular Q-learning step — state/action tables as flat arrays:
+
+```flow
+function main() -> i32 {
+    let mut q: array<f64, 6> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let s: i32 = 0
+    let a: i32 = 1
+    let r: f64 = 1.0
+    let s2: i32 = 2
+    let alpha: f64 = 0.5
+    let gamma: f64 = 0.9
+    let mut max_next: f64 = q[s2 * 2]
+    if q[s2 * 2 + 1] > max_next {
+        max_next = q[s2 * 2 + 1]
+    }
+    let target: f64 = r + gamma * max_next
+    let idx: i32 = s * 2 + a
+    q[idx] = q[idx] + alpha * (target - q[idx])
+    printf("Q[s,a]=%f\n", q[idx])
+    return 0
+}
+```
+
+### Fitness ranking toy (browser)
+
+```flow
+function main() -> i32 {
+    let mut fit: array<f64, 4> = [0.2, 0.9, 0.4, 0.7]
+    let mut best_i: i32 = 0
+    for i in 1 to 4 {
+        if fit[i] > fit[best_i] {
+            best_i = i
+        }
+    }
+    printf("best_genome=%d fitness=%f\n", best_i, fit[best_i])
+    return 0
+}
+```
+
+### Epsilon-greedy pick (browser)
+
+```flow
+function main() -> i32 {
+    let q: array<f64, 3> = [0.1, 0.8, 0.3]
+    let eps: f64 = 0.0
+    let mut best: i32 = 0
+    for a in 1 to 3 {
+        if q[a] > q[best] {
+            best = a
+        }
+    }
+    # eps=0 → always greedy
+    let action: i32 = best
+    printf("action=%d q=%f\n", action, q[action])
+    return 0
+}
+```
+
+### Reward shaping toward food (browser)
+
+```flow
+function main() -> i32 {
+    let dist_before: i32 = 5
+    let dist_after: i32 = 3
+    let mut r: f64 = 0.0
+    if dist_after < dist_before {
+        r = r + 0.2
+    } else {
+        r = r - 0.25
+    }
+    printf("shaped=%f\n", r)
+    return 0
+}
+```
+
+### Mutation step (browser)
+
+```flow
+function main() -> i32 {
+    let mut gene: f64 = 0.5
+    let delta: f64 = 0.1
+    gene = gene + delta
+    if gene > 1.0 { gene = 1.0 }
+    if gene < 0.0 { gene = 0.0 }
+    printf("gene=%f\n", gene)
+    return 0
+}
+```
+
+### Policy logit (browser)
+
+```flow
+function main() -> i32 {
+    let logit_up: f64 = 0.2
+    let logit_down: f64 = -0.1
+    let mut action: i32 = 0
+    if logit_down > logit_up {
+        action = 1
+    }
+    printf("action=%d\n", action)
+    return 0
+}
+```
+
 ## Where the pieces live
 
 | File | Contents |

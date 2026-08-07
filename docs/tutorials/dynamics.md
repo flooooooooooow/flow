@@ -5,46 +5,76 @@ Flow's declarative `dsys` syntax, analysis, and evolved control. This is the
 tutorial for Flow's founding thesis ([VISION.md](../../VISION.md)): programs as
 descriptions of **evolution**, not instruction sequences.
 
+For the shipped `flow` / `evolves as` / `field` syntax itself, see
+[evolution.md](evolution.md). This track focuses on integrators, state-space
+systems, and the `dsys` → `sense` → `ga evolve` / LQR control path.
+
 Prerequisites: [intermediate.md](intermediate.md) (structs, arrays, `ptr<f64>`).
 
 ## Part 1: An ODE Integrator by Hand
 
 Every dynamical program starts from the same loop: state, a derivative, a time
-step. Here is explicit Euler for `dy/dt = f(t, y)`:
+step. Explicit Euler for exponential decay `dy/dt = -y`:
+
+### 1.1 Explicit Euler
 
 ```flow
-function euler_step(t: f64, y: f64, dt: f64, f_idx: i32) -> f64 {
-    let dy: f64 = eval_derivative(t, y, f_idx)
+function euler_step(y: f64, dt: f64) -> f64 {
+    let dy: f64 = 0.0 - y
     return y + dt * dy
+}
+
+function main() -> i32 {
+    let mut y: f64 = 1.0
+    let dt: f64 = 0.1
+    for k in 0 to 10 {
+        y = euler_step(y, dt)
+    }
+    printf("y(1.0) ≈ %f (exact e^-1 ≈ 0.3679)\n", y)
+    return 0
 }
 ```
 
-Euler drifts; the classic fix is Runge-Kutta 4, which samples the derivative
-four times per step. Both, plus a midpoint method and accuracy comparisons
-against closed-form solutions, live in
+Euler drifts; the classic fix is Runge-Kutta 4. Both, plus a midpoint method
+and accuracy comparisons against closed-form solutions, live in
 [`examples/numerical/ode_solver.flow`](../../examples/numerical/ode_solver.flow):
 
 ```bash
 ./flow run examples/numerical/ode_solver.flow
 ```
 
-### 1.1 State + events = hybrid systems
+### 1.2 Hybrid bounce (hand-written event)
 
-A bouncing ball is continuous flight punctuated by discrete impacts. The
-event (height reaches zero) is solved *inside* the step, then the reset
-`velocity becomes -e * velocity` is applied:
+A bouncing ball is continuous flight punctuated by discrete impacts. Detect
+the floor crossing inside the step, then flip velocity:
 
 ```flow
-if h_next <= 0.0 and v < 0.0 {
-    # event: exact impact instant within this step
-    let tau: f64 = (v + sqrt(v * v + 2.0 * GRAVITY * h)) / GRAVITY
-    v = 0.0 - RESTITUTION * (v - GRAVITY * tau)
-    h = 0.0
+function main() -> i32 {
+    let gravity: f64 = 9.81
+    let restitution: f64 = 0.8
+    let dt: f64 = 0.01
+    let mut h: f64 = 2.0
+    let mut v: f64 = 0.0
+    let mut bounces: i32 = 0
+    for k in 0 to 400 {
+        v = v - gravity * dt
+        h = h + v * dt
+        if h <= 0.0 {
+            if v < 0.0 {
+                h = 0.0
+                v = 0.0 - restitution * v
+                bounces = bounces + 1
+            }
+        }
+    }
+    printf("bounces=%d final_h=%f\n", bounces, h)
+    return 0
 }
 ```
 
-See [`examples/evolution/bouncing_ball.flow`](../../examples/evolution/bouncing_ball.flow) —
-its measured impact times match the closed-form bounce schedule to ~1e-13 s.
+The declarative form of the same system uses `when height reaches 0.0` — see
+[evolution.md](evolution.md) and
+[`bouncing_ball_evolves.flow`](../../examples/evolution/bouncing_ball_evolves.flow).
 
 ---
 
@@ -86,6 +116,25 @@ signature.) Run the full version:
 trajectory, and [`gramian.flow`](../library/dynamics.md#gramianflow) measures
 *how much* input energy it takes to reach states, not just whether you can.
 
+### 2.1 Discrete double-integrator step (browser)
+
+A tiny discrete plant `x' = x + v·dt`, `v' = v + u·dt` you can step by hand:
+
+```flow
+function main() -> i32 {
+    let dt: f64 = 0.1
+    let mut x: f64 = 0.0
+    let mut v: f64 = 0.0
+    let u: f64 = 1.0
+    for k in 0 to 10 {
+        x = x + v * dt
+        v = v + u * dt
+    }
+    printf("after 1s: x=%f v=%f\n", x, v)
+    return 0
+}
+```
+
 ---
 
 ## Part 3: The `dsys` Surface Syntax
@@ -109,6 +158,10 @@ horizon rollout finite 60
 
 The compiler Euler-discretizes the continuous plant and makes it available to
 every analysis block below. No matrices, no scratch arrays.
+
+> [!note] Native only
+> `dsys` / `sense` / `ga evolve` / `analyze { lqr }` expand at compile time.
+> Run them with `./flow run` — the browser interpreter does not expand the DSL.
 
 ---
 
@@ -171,29 +224,129 @@ vs evolved cost and convergence generation — use the one-shot form:
 analyze plant ga k1 k2 over rollout -> report { full }
 ```
 
+### 5.1 Discrete LQR (shipped)
+
+Prefer optimal gains over a GA search when the plant is linear and small
+(`n ≤ 8`). Same spring-mass plant, gains from `analyze { lqr }`:
+
+```bash
+./flow run examples/evolution/spring_mass_lqr.flow
+./flow run examples/evolution/chain4_lqr.flow
+```
+
+```flow
+dsys plant {
+    continuous
+    dt 0.1
+    n 2 m 1 p 1
+    A 0.0 1.0 -1.0 -0.2
+    B 0.0 1.0
+    C 1.0 0.0
+}
+
+analyze plant {
+    lqr {
+        Q 10.0 1.0
+        R 0.1
+        -> k1 k2
+    }
+}
+```
+
+See [Dynamics library](../library/dynamics.md) for the full API.
+
+### 5.2 PD feedback sketch (browser)
+
+A one-dimensional “plant” with proportional-derivative feedback you can tune
+interactively in the browser:
+
+```flow
+function main() -> i32 {
+    let dt: f64 = 0.05
+    let kp: f64 = 4.0
+    let kd: f64 = 1.5
+    let target: f64 = 1.0
+    let mut x: f64 = 0.0
+    let mut v: f64 = 0.0
+    for k in 0 to 40 {
+        let err: f64 = target - x
+        let u: f64 = kp * err - kd * v
+        v = v + u * dt
+        x = x + v * dt
+    }
+    printf("settled x=%f v=%f\n", x, v)
+    return 0
+}
+```
+
+### 5.3 Open-loop ring (browser)
+
+```flow
+function main() -> i32 {
+    let dt: f64 = 0.1
+    let mut x: f64 = 1.0
+    let mut v: f64 = 0.0
+    for k in 0 to 40 {
+        let a: f64 = -1.0 * x - 0.2 * v
+        v = v + a * dt
+        x = x + v * dt
+    }
+    printf("x=%f v=%f\n", x, v)
+    return 0
+}
+```
+
+### 5.4 Controllability intuition (browser)
+
+```flow
+function main() -> i32 {
+    # rank idea: with B=[0,1], we can change v directly, then x via integration
+    let can_steer_v: i32 = 1
+    let can_steer_x: i32 = can_steer_v
+    printf("controllable_sketch=%d\n", can_steer_x)
+    return 0
+}
+```
+
+### 5.5 Rollout cost (browser)
+
+```flow
+function main() -> i32 {
+    let mut cost: f64 = 0.0
+    let mut x: f64 = 1.0
+    let mut v: f64 = 0.0
+    let dt: f64 = 0.1
+    let k1: f64 = 2.0
+    let k2: f64 = 3.0
+    for t in 0 to 30 {
+        let u: f64 = 0.0 - k1 * x - k2 * v
+        cost = cost + x * x + 0.1 * u * u
+        let a: f64 = -1.0 * x - 0.2 * v + u
+        v = v + a * dt
+        x = x + v * dt
+    }
+    printf("cost=%f\n", cost)
+    return 0
+}
+```
+
 ---
 
 ## Part 6: Where to Go Next
 
-Watch a chaotic system evolve live: the Lorenz attractor stepped by the
-stdlib RK4 integrator, drawn into a real window as a fading comet trail:
+1. **Declarative evolution** — [evolution.md](evolution.md): `flow` /
+   `evolves as`, hybrid events, `always`, phase portraits, `field` PDE.
+2. **Live chaos** — Lorenz attractor in a native window:
 
 ```bash
 ./flow gfx examples/evolution/lorenz_gfx.flow
 ```
 
-Then tour the flagship vision suite —
-[`examples/evolution/`](../../examples/evolution/README.md): pendulum
-(continuous dynamics + energy guarantee), bouncing ball (hybrid events), heat
-diffusion (fields evolve too), spring-mass control, and Lorenz. Every console
-example is self-checking: it verifies a physical guarantee about its own
-evolution and exits nonzero if the guarantee fails.
+![Lorenz attractor](../demos/lorenz.gif)
 
-Each file opens with a "North-star" comment showing how the same system will
-read in the aspirational `flow { evolves as }` syntax —
-[VISION.md](../../VISION.md) and
-[docs/vision/north-star.md](../vision/north-star.md) map the road from here
-to there.
+3. **Flagship suite** — [`examples/evolution/`](../../examples/evolution/README.md):
+   pendulum, bouncing ball, heat diffusion, spring-mass control, LQR, Lorenz.
+   Every console example is self-checking.
 
 ---
 
@@ -217,11 +370,18 @@ Using `lyapunov_proxy` from
 compare the separation exponent of the Lorenz system (`sys_id 1`) against the
 damped oscillator (`sys_id 0`). Which is positive, and what does that mean?
 
+### Exercise 4: LQR vs GA
+
+Compare `spring_mass_lqr.flow` gains to the GA gains from
+`spring_mass_control.flow`. Which settles faster for the same initial
+condition `[1, 0]`?
+
 ---
 
 ## Reference
 
+- [Evolution tutorial](evolution.md) — `flow` / `evolves` / `field`
 - [Dynamics DSL reference](../language/dynamics-dsl.md)
 - [Dynamics library API](../library/dynamics.md)
-- [Vision](../vision.md) · [North-star grammar plan](../vision/north-star.md)
+- [Vision](../vision.md) · [North-star grammar](../vision/north-star.md)
 - [Language Specification](../LANGUAGE_SPEC.md)

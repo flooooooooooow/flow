@@ -39,6 +39,7 @@ jobs:
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
+        id: release
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           name: Flow ${{ steps.tag.outputs.name }}
@@ -59,3 +60,28 @@ jobs:
           title: Flow ${{ steps.tag.outputs.name }} released
           url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}
           description: 'Release published for `${{ github.sha }}`'
+
+      - name: Post changelog to Discord #changelog
+        if: always()
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
+          python3 - <<'PY'
+          import json, os, urllib.request
+          body = open("/tmp/flow_changelog.md").read().strip() or "Auto-generated changelog."
+          body = body.lstrip("#").strip()
+          if len(body) > 4000:
+              body = body[:4000].rsplit("\n", 1)[0] + "\n…"
+          payload = {
+              "username": "Flow Changelog",
+              "embeds": [{"title": f"Changelog {os.environ['TAG']}", "color": 5763719, "description": body}],
+          }
+          webhook = os.environ["DISCORD_CHANGELOG_WEBHOOK"]
+          req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
+                                       headers={"Content-Type": "application/json"})
+          urllib.request.urlopen(req)
+          PY
+        env:
+          DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          TAG: ${{ steps.tag.outputs.name }}
