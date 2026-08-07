@@ -287,9 +287,23 @@ function main() -> i32 {
             draw_map()
         }
 
-        # Auto-cycle modes for the recorded GIF.
-        if frame > 0 and frame % 40 == 0 {
+        # Auto-cycle view modes; every full lap reseeds so the GIF keeps moving.
+        if frame > 0 and frame % 50 == 0 {
             mode = (mode + 1) % 3
+            if mode == 0 {
+                let next_seed: u32 = SEED + ((frame / 50) as u32) * 17
+                if !planet_generate(next_seed, PLATES, ERODE) {
+                    println("    note: regenerate failed; keeping prior planet")
+                } else {
+                    m_area = planet_total_area() as f64
+                    m_distort = (planet_area_max() / planet_area_min()) as f64
+                    m_land = planet_land_fraction() as f64
+                    m_hack = planet_measure_hack(20000.0) as f64
+                    m_r2 = planet_hack_r2() as f64
+                    m_rain = planet_rain_shadow_ratio(0.4) as f64
+                    m_total_ms = planet_total_ms() as f64
+                }
+            }
             draw_map()
         }
 
