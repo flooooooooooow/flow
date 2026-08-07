@@ -1,0 +1,517 @@
+# WFC DUNGEON: Wave Function Collapse corridors from a 16-tile pipe set.
+#
+# MODEL
+#   Every cell starts holding all sixteen pipe tiles. A tile carries a
+#   socket on each edge (bit 0 north … bit 3 west). Neighbours are
+#   compatible only when facing sockets agree. Blank (tile 0) reads as
+#   wall/void; any socket draws as a corridor. Collapse picks the least
+#   uncertain cell, then propagates until the grid is decided.
+#
+# REUSE
+#   Option bookkeeping comes from stdlib/dynamics/wfc.flow:
+#   wfc_entropy_at and wfc_collapse_at. The stdlib four-tile room set is
+#   too loose and stalls, so the tile table, compatibility test, and
+#   propagation worklist are local (same approach as
+#   examples/morphogenesis/wfc_growth.flow). Because every socket subset
+#   exists, no neighbour arrangement is impossible.
+#
+# THE MEASUREMENT
+#   Full collapse without contradiction (every cell decided). Every pair
+#   of neighbouring decided tiles is socket-compatible.
+#
+# KEYS
+#   1 blank seed   2 elbow seed   3 cross seed   4 tee seed
+#   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/procgen/wfc_dungeon.flow \
+#       --frames 4 --out /tmp/pg_wfc_dungeon
+# Run (windowed):
+#   ./flow gfx examples/procgen/wfc_dungeon.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/dynamics/wfc.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const GW: i32 = 24
+const GH: i32 = 24
+const NCELLS: i32 = 576
+const TILES: i32 = 16
+const OPTS: i32 = 9216
+const CELL_PX: i32 = 18
+const ORIGIN_X: i32 = 40
+const ORIGIN_Y: i32 = 40
+const STACK_CAP: i32 = 4096
+const VERIFY_SEED: u32 = 90210
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 90210
+let mut stack_len: i32 = 0
+let mut contradiction: i32 = 0
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_seed_value() -> i32 {
+    return ((rng_next() >> 12) % 100000) as i32
+}
+
+# Sixteen pipe tiles: index IS the socket set (N=bit0, E=1, S=2, W=3).
+function socket(t: i32, d: i32) -> i32 {
+    return (t >> d) & 1
+}
+
+function opposite(d: i32) -> i32 {
+    return (d + 2) % 4
+}
+
+function compatible(a: i32, b: i32, d: i32) -> bool {
+    return socket(a, d) == socket(b, opposite(d))
+}
+
+function seed_tile(p: i32) -> i32 {
+    if p == 1 { return 0 }
+    if p == 2 { return 3 }
+    if p == 3 { return 15 }
+    return 7
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "BLANK" }
+    if p == 2 { return "ELBOW" }
+    if p == 3 { return "CROSS" }
+    return "TEE"
+}
+
+function push(stack: ptr<i32>, idx: i32) -> void {
+    if stack_len < STACK_CAP {
+        stack[stack_len] = idx
+        stack_len = stack_len + 1
+    }
+}
+
+function neighbour_of(idx: i32, d: i32) -> i32 {
+    let x: i32 = idx % GW
+    let y: i32 = idx / GW
+    if d == 0 {
+        if y == 0 { return -1 }
+        return idx - GW
+    }
+    if d == 1 {
+        if x == GW - 1 { return -1 }
+        return idx + 1
+    }
+    if d == 2 {
+        if y == GH - 1 { return -1 }
+        return idx + GW
+    }
+    if x == 0 { return -1 }
+    return idx - 1
+}
+
+function trim(cells: ptr<i32>, options: ptr<i32>, src: i32, dst: i32,
+              d: i32) -> bool {
+    let fb: i32 = src * TILES
+    let tb: i32 = dst * TILES
+    let mut changed: bool = false
+    for tb_i in 0 to TILES {
+        if options[tb + tb_i] == 1 {
+            let mut ok: bool = false
+            let mut ta: i32 = 0
+            while ta < TILES and !ok {
+                if options[fb + ta] == 1 {
+                    if compatible(ta, tb_i, d) { ok = true }
+                }
+                ta = ta + 1
+            }
+            if !ok {
+                options[tb + tb_i] = 0
+                changed = true
+            }
+        }
+    }
+    if changed {
+        let ent: i32 = wfc_entropy_at(options, tb, TILES)
+        if ent == 0 {
+            contradiction = 1
+        }
+        if ent == 1 and cells[dst] < 0 {
+            for k in 0 to TILES {
+                if options[tb + k] == 1 { cells[dst] = k }
+            }
+        }
+    }
+    return changed
+}
+
+function propagate(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>) -> void {
+    let mut guard: i32 = 0
+    while stack_len > 0 and guard < 200000 {
+        guard = guard + 1
+        stack_len = stack_len - 1
+        let idx: i32 = stack[stack_len]
+        for d in 0 to 4 {
+            let n: i32 = neighbour_of(idx, d)
+            if n >= 0 {
+                if trim(cells, options, idx, n, d) {
+                    push(stack, n)
+                }
+            }
+        }
+    }
+}
+
+function reset_grid(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>,
+                    tile: i32) -> void {
+    contradiction = 0
+    stack_len = 0
+    for i in 0 to NCELLS {
+        cells[i] = -1
+    }
+    for i in 0 to OPTS {
+        options[i] = 1
+    }
+    # Border faces blank so no corridor runs off the board.
+    for i in 0 to NCELLS {
+        let x: i32 = i % GW
+        let y: i32 = i / GW
+        for t in 0 to TILES {
+            let mut bad: bool = false
+            if y == 0 and socket(t, 0) == 1 { bad = true }
+            if x == GW - 1 and socket(t, 1) == 1 { bad = true }
+            if y == GH - 1 and socket(t, 2) == 1 { bad = true }
+            if x == 0 and socket(t, 3) == 1 { bad = true }
+            if bad { options[i * TILES + t] = 0 }
+        }
+    }
+    let mid: i32 = (GH / 2) * GW + GW / 2
+    cells[mid] = tile
+    for t in 0 to TILES {
+        if t != tile { options[mid * TILES + t] = 0 }
+    }
+    push(stack, mid)
+    propagate(cells, options, stack)
+}
+
+function on_front(cells: ptr<i32>, idx: i32) -> bool {
+    for d in 0 to 4 {
+        let n: i32 = neighbour_of(idx, d)
+        if n >= 0 {
+            if cells[n] >= 0 { return true }
+        }
+    }
+    return false
+}
+
+function collapse_one(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>,
+                      seed: i32) -> i32 {
+    let mut best: i32 = -1
+    let mut best_ent: i32 = TILES + 1
+    let mut any: i32 = -1
+    let mut any_ent: i32 = TILES + 1
+    let mut ties: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] < 0 {
+            let ent: i32 = wfc_entropy_at(options, i * TILES, TILES)
+            if ent > 1 {
+                if ent < any_ent {
+                    any_ent = ent
+                    any = i
+                }
+                if on_front(cells, i) {
+                    if ent < best_ent {
+                        best_ent = ent
+                        best = i
+                        ties = 1
+                    } else {
+                        if ent == best_ent {
+                            ties = ties + 1
+                            if ((rng_next() >> 13) % (ties as u32)) as i32 == 0 {
+                                best = i
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if best < 0 { best = any }
+    if best < 0 { return 0 }
+    let base: i32 = best * TILES
+    let live: i32 = wfc_entropy_at(options, base, TILES)
+    let choice: i32 = wfc_collapse_at(options, base, TILES, seed % live)
+    cells[best] = choice
+    for t in 0 to TILES {
+        if t != choice { options[base + t] = 0 }
+    }
+    push(stack, best)
+    propagate(cells, options, stack)
+    return 1
+}
+
+function decided_count(cells: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] >= 0 { n = n + 1 }
+    }
+    return n
+}
+
+function collapse_all(cells: ptr<i32>, options: ptr<i32>, stack: ptr<i32>) -> i32 {
+    let mut steps: i32 = 0
+    let mut guard: i32 = 0
+    while guard < NCELLS * 4 {
+        guard = guard + 1
+        let progressed: i32 = collapse_one(cells, options, stack, rng_seed_value())
+        if progressed == 0 { break }
+        steps = steps + 1
+        if contradiction == 1 { break }
+    }
+    return steps
+}
+
+function adjacency_ok(cells: ptr<i32>) -> i32 {
+    for y in 0 to GH {
+        for x in 0 to GW {
+            let idx: i32 = y * GW + x
+            let a: i32 = cells[idx]
+            if a < 0 { return 0 }
+            if x + 1 < GW {
+                let b: i32 = cells[idx + 1]
+                if b < 0 { return 0 }
+                if !compatible(a, b, 1) { return 0 }
+            }
+            if y + 1 < GH {
+                let b: i32 = cells[idx + GW]
+                if b < 0 { return 0 }
+                if !compatible(a, b, 2) { return 0 }
+            }
+        }
+    }
+    return 1
+}
+
+function corridor_fraction(cells: ptr<i32>) -> f64 {
+    let mut n: i32 = 0
+    for i in 0 to NCELLS {
+        if cells[i] > 0 { n = n + 1 }
+    }
+    return (n as f64) / (NCELLS as f64)
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+# blank = wall/void; sockets = corridors (sand/amber by arm count).
+function draw_tile_fb(fb: ptr<u8>, px: i32, py: i32, t: i32) -> void {
+    fill_rect_fb(fb, px, py, CELL_PX - 1, CELL_PX - 1, 28, 26, 34)
+    let mut arms: i32 = 0
+    for d in 0 to 4 {
+        arms = arms + socket(t, d)
+    }
+    if arms == 0 { return }
+    let r: i32 = 150 + 18 * arms
+    let g2: i32 = 120 + 10 * arms
+    let b: i32 = 70 + 8 * arms
+    let cx: i32 = px + CELL_PX / 2 - 2
+    let cy: i32 = py + CELL_PX / 2 - 2
+    fill_rect_fb(fb, cx, cy, 3, 3, r, g2, b)
+    if socket(t, 0) == 1 {
+        fill_rect_fb(fb, cx, py, 3, CELL_PX / 2, r, g2, b)
+    }
+    if socket(t, 2) == 1 {
+        fill_rect_fb(fb, cx, cy, 3, CELL_PX / 2, r, g2, b)
+    }
+    if socket(t, 3) == 1 {
+        fill_rect_fb(fb, px, cy, CELL_PX / 2, 3, r, g2, b)
+    }
+    if socket(t, 1) == 1 {
+        fill_rect_fb(fb, cx, cy, CELL_PX / 2, 3, r, g2, b)
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, cells: ptr<i32>) -> void {
+    clear_fb(fb)
+    for y in 0 to GH {
+        for x in 0 to GW {
+            let tid: i32 = cells[y * GW + x]
+            let px: i32 = ORIGIN_X + x * CELL_PX
+            let py: i32 = ORIGIN_Y + y * CELL_PX
+            if tid < 0 {
+                fill_rect_fb(fb, px, py, CELL_PX - 1, CELL_PX - 1, 18, 16, 24)
+            } else {
+                draw_tile_fb(fb, px, py, tid)
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, collapsed: i32, corridors: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "WFC DUNGEON", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 290, 12, "CELLS", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 330, 12, collapsed, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 8, 28, "CORRIDOR", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 76, 28, corridors, 3, 1, 234, 232, 244)
+    let t7: i32 = gfx_draw_text(g, 8, 42,
+        "1 BLANK  2 ELBOW  3 CROSS  4 TEE  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let t8: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let t9: i32 = gfx_draw_text(g, 8, 572,
+        "blank=wall/void  sockets=corridors  16-tile pipe set", 1, 122, 118, 144)
+    let ta: i32 = gfx_draw_text(g, 8, 582,
+        "gate: full collapse, contradiction=0, neighbour sockets agree", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let cells: array<i32, 576> = [0, 0, 0, 0]
+    let options: array<i32, 9216> = [0, 0, 0, 0]
+    let stack: array<i32, 4096> = [0, 0, 0, 0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    println("")
+    println("  WFC DUNGEON  --  16-tile pipe corridors")
+    println("  =======================================")
+    println("")
+
+    rng_state = VERIFY_SEED
+    reset_grid(cells, options, stack, seed_tile(3))
+    let steps: i32 = collapse_all(cells, options, stack)
+    let collapsed: i32 = decided_count(cells)
+    let adj: i32 = 0
+    if collapsed == NCELLS and contradiction == 0 {
+        adj = adjacency_ok(cells)
+    }
+    let corridors: f64 = corridor_fraction(cells)
+
+    print("    collapse steps                  : ")
+    printf("%.0f", steps as f64)
+    println("")
+    print("    cells decided                   : ")
+    printf("%.0f", collapsed as f64)
+    print(" / ")
+    printf("%.0f", NCELLS as f64)
+    println("")
+    print("    contradiction                   : ")
+    printf("%.0f", contradiction as f64)
+    println("")
+    print("    adjacency valid                 : ")
+    printf("%.0f", adj as f64)
+    println("")
+    print("    corridor fraction               : ")
+    printf("%.4f", corridors)
+    println("")
+
+    if contradiction != 0 {
+        println("    FAIL: collapse hit a contradiction")
+        return 1
+    }
+    if collapsed != NCELLS {
+        println("    FAIL: collapse left undecided cells")
+        return 2
+    }
+    if adj == 0 {
+        println("    FAIL: neighbour socket mismatch")
+        return 3
+    }
+    println("    PASS: full collapse; sockets compatible; no contradiction")
+    println("")
+
+    let mut preset: i32 = 3
+    let mut collapsed_live: i32 = collapsed
+    let mut corridors_live: f64 = corridors
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "WFC dungeon - Flow procgen")
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 1 }
+        if gfx_key_down(g, KEY_2) { want = 2 }
+        if gfx_key_down(g, KEY_3) { want = 3 }
+        if gfx_key_down(g, KEY_4) { want = 4 }
+        if want >= 0 and want != preset {
+            preset = want
+            rng_state = VERIFY_SEED + (preset as u32) * 997
+            reset_grid(cells, options, stack, seed_tile(preset))
+            collapsed_live = collapse_all(cells, options, stack)
+            collapsed_live = decided_count(cells)
+            corridors_live = corridor_fraction(cells)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                rng_state = rng_next()
+                reset_grid(cells, options, stack, seed_tile(preset))
+                collapsed_live = collapse_all(cells, options, stack)
+                collapsed_live = decided_count(cells)
+                corridors_live = corridor_fraction(cells)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, cells)
+        draw_hud(g, preset, collapsed_live, corridors_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

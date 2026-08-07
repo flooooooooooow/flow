@@ -284,8 +284,8 @@ function pl_below(n: i32) -> i32 {
 # ---------------------------------------------------------------------------
 # planet_noise: 3D gradient noise, self-contained.
 #
-# TODO: fold into stdlib/procgen.flow when that module lands. Nothing here
-# depends on the planet state, so the move is a copy.
+# TODO: call through stdlib/procgen.flow (now landed) instead of this private
+# copy. Nothing here depends on the planet state, so the move is a rename.
 # ---------------------------------------------------------------------------
 
 # Integer hash. Three rounds of xor-multiply, seeded from pl_seed0 so noise
