@@ -1,0 +1,277 @@
+# NOISE ATLAS: five procedural fields side by side from stdlib/procgen.
+#
+# PANELS (left to right)
+#   value     procgen_value2 in [0, 1]
+#   gradient  procgen_noise2 ~[-1, 1]
+#   fBm       procgen_fbm2, normalised ~[-1, 1]
+#   ridged    procgen_ridged2 in [0, 1]
+#   warped    procgen_warped2 domain-warped fBm
+#
+# THE MEASUREMENT
+#   Same seed and coordinates reproduce bit-identical samples. Peak |fBm|
+#   over a probe grid stays in [-1, 1] (soft bound). Ridged samples stay in
+#   [0, 1].
+#
+# KEYS
+#   1 seed A   2 seed B   3 seed C   4 seed D
+#   R reseed   P pause    Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/procgen/noise_atlas.flow \
+#       --frames 4 --out /tmp/pg_noise_atlas
+# Run (windowed):
+#   ./flow gfx examples/procgen/noise_atlas.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/procgen.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabsf(x: f32) -> f32
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const PANEL_W: i32 = 96
+const PANEL_H: i32 = 200
+const PANEL_GAP: i32 = 6
+const ORIGIN_X: i32 = 8
+const ORIGIN_Y: i32 = 40
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 20260807
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function preset_seed(p: i32) -> u32 {
+    if p == 1 { return 42 }
+    if p == 2 { return 1337 }
+    if p == 3 { return 9001 }
+    return 314159
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "SEED A" }
+    if p == 2 { return "SEED B" }
+    if p == 3 { return "SEED C" }
+    return "SEED D"
+}
+
+function sample_kind(kind: i32, x: f32, y: f32) -> f32 {
+    if kind == 0 { return procgen_value2(x, y, 1) }
+    if kind == 1 { return procgen_noise2(x, y, 2) }
+    if kind == 2 { return procgen_fbm2(x, y, 5, 3) }
+    if kind == 3 { return procgen_ridged2(x, y, 5, 4) }
+    return procgen_warped2(x, y, 5, 0.45, 5)
+}
+
+function to_grey(kind: i32, v: f32) -> i32 {
+    let mut t: f32 = v
+    if kind == 0 or kind == 3 {
+        if t < 0.0 { t = 0.0 }
+        if t > 1.0 { t = 1.0 }
+        return (t * 255.0) as i32
+    }
+    let u: f32 = (t + 1.0) * 0.5
+    if u < 0.0 { return 0 }
+    if u > 1.0 { return 255 }
+    return (u * 255.0) as i32
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, phase: f32) -> void {
+    clear_fb(fb)
+    for kind in 0 to 5 {
+        let ox: i32 = ORIGIN_X + kind * (PANEL_W + PANEL_GAP)
+        for py in 0 to PANEL_H {
+            for px in 0 to PANEL_W {
+                let x: f32 = (px as f32) * 0.08 + phase
+                let y: f32 = (py as f32) * 0.08
+                let v: f32 = sample_kind(kind, x, y)
+                let c: i32 = to_grey(kind, v)
+                put_rgb(fb, ox + px, ORIGIN_Y + py, c, c, c)
+            }
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, paused: bool, fbm_peak: f64,
+                  ridged_ok: i32) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "NOISE ATLAS", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 280, 12, "FBM PEAK", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 340, 12, fbm_peak, 3, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 8, 28, "VALUE  GRAD  FBM  RIDGED  WARPED", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_text(g, 8, 42,
+        "1-4 SEED  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let t7: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let t8: i32 = gfx_draw_text(g, 8, 572,
+        "stdlib/procgen: value, gradient, fBm, ridged, domain warp", 1, 122, 118, 144)
+    let t9: i32 = gfx_draw_text(g, 8, 582,
+        "gate: bit-identical replay, fBm in [-1,1], ridged in [0,1]", 1, 122, 118, 144)
+    if ridged_ok == 0 {
+        let ta: i32 = gfx_draw_text(g, 400, 28, "RIDGED BAD", 1, 255, 80, 80)
+    }
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    println("")
+    println("  NOISE ATLAS  --  value / gradient / fBm / ridged / warped")
+    println("  ==========================================================")
+    println("")
+
+    procgen_seed(42)
+    let a1: f32 = procgen_noise2(1.25, 3.5, 9)
+    let a2: f32 = procgen_fbm2(0.4, 0.7, 5, 3)
+    let a3: f32 = procgen_ridged2(0.4, 0.7, 5, 4)
+    let a4: f32 = procgen_value2(2.2, 1.1, 1)
+    let a5: f32 = procgen_warped2(0.4, 0.7, 5, 0.45, 5)
+    procgen_seed(42)
+    let b1: f32 = procgen_noise2(1.25, 3.5, 9)
+    let b2: f32 = procgen_fbm2(0.4, 0.7, 5, 3)
+    let b3: f32 = procgen_ridged2(0.4, 0.7, 5, 4)
+    let b4: f32 = procgen_value2(2.2, 1.1, 1)
+    let b5: f32 = procgen_warped2(0.4, 0.7, 5, 0.45, 5)
+
+    let mut identical: i32 = 1
+    if a1 != b1 { identical = 0 }
+    if a2 != b2 { identical = 0 }
+    if a3 != b3 { identical = 0 }
+    if a4 != b4 { identical = 0 }
+    if a5 != b5 { identical = 0 }
+
+    print("    bit-identical replay            : ")
+    printf("%.0f", identical as f64)
+    println("  (1 = yes)")
+
+    procgen_seed(42)
+    let mut fbm_peak: f32 = 0.0
+    let mut ridged_lo: f32 = 1.0
+    let mut ridged_hi: f32 = 0.0
+    let mut ridged_ok: i32 = 1
+    for iy in 0 to 32 {
+        for ix in 0 to 32 {
+            let x: f32 = (ix as f32) * 0.37 + 0.11
+            let y: f32 = (iy as f32) * 0.29 + 0.07
+            let f: f32 = procgen_fbm2(x, y, 5, 3)
+            let af: f32 = fabsf(f)
+            if af > fbm_peak { fbm_peak = af }
+            let r: f32 = procgen_ridged2(x, y, 5, 4)
+            if r < ridged_lo { ridged_lo = r }
+            if r > ridged_hi { ridged_hi = r }
+            if r < 0.0 or r > 1.0 { ridged_ok = 0 }
+        }
+    }
+
+    print("    fBm peak |amp|                  : ")
+    printf("%.6f", fbm_peak as f64)
+    println("  (gate <= 1.0)")
+    print("    ridged range                    : ")
+    printf("%.6f", ridged_lo as f64)
+    print(" .. ")
+    printf("%.6f", ridged_hi as f64)
+    println("")
+
+    if identical == 0 {
+        println("    FAIL: same seed+coords did not reproduce bit-identical samples")
+        return 1
+    }
+    if (fbm_peak as f64) > 1.0 {
+        println("    FAIL: fBm amplitude outside [-1, 1]")
+        return 2
+    }
+    if ridged_ok == 0 {
+        println("    FAIL: ridged sample outside [0, 1]")
+        return 3
+    }
+    println("    PASS: bit-identical replay; fBm in [-1,1]; ridged in [0,1]")
+    println("")
+
+    let mut preset: i32 = 1
+    procgen_seed(preset_seed(preset))
+    let mut phase: f32 = 0.0
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Noise atlas - Flow procgen")
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 1 }
+        if gfx_key_down(g, KEY_2) { want = 2 }
+        if gfx_key_down(g, KEY_3) { want = 3 }
+        if gfx_key_down(g, KEY_4) { want = 4 }
+        if want >= 0 and want != preset {
+            preset = want
+            procgen_seed(preset_seed(preset))
+            phase = 0.0
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                rng_state = rng_next()
+                procgen_seed(rng_state)
+                phase = 0.0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            phase = phase + 0.012
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, phase)
+        draw_hud(g, preset, paused, fbm_peak as f64, ridged_ok)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
