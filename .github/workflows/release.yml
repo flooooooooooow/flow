@@ -56,10 +56,22 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
           botname: Flow Release Bot
+          avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
           color: '5763719'
           title: Flow ${{ steps.tag.outputs.name }} released
           url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}
-          description: 'Release published for `${{ github.sha }}`'
+          description: 'Release published for commit [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})'
+          author_name: Flow
+          author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          thumbnail: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          fields: >-
+            [
+              {"name":"Version","value":"`${{ steps.tag.outputs.name }}`","inline":true},
+              {"name":"Assets","value":"source archives (tar.gz, zip) + SHA256SUMS","inline":true},
+              {"name":"Release","value":"[view on GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }})","inline":true}
+            ]
+          footer_text: Flow Releases · ${{ steps.tag.outputs.name }}
+          footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
 
       - name: Post changelog to Discord #changelog
         if: always()
@@ -69,13 +81,24 @@ jobs:
           gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
           python3 - <<'PY'
           import json, os, urllib.request
+          from datetime import datetime, timezone
           body = open("/tmp/flow_changelog.md").read().strip() or "Auto-generated changelog."
           body = body.lstrip("#").strip()
           if len(body) > 4000:
               body = body[:4000].rsplit("\n", 1)[0] + "\n…"
+          owner_avatar = f"https://github.com/{os.environ['REPO'].split('/')[0]}.png"
+          embed = {
+              "title": f"Changelog {os.environ['TAG']}",
+              "color": 5763719,
+              "description": body,
+              "author": {"name": "Flow", "icon_url": owner_avatar},
+              "footer": {"text": f"Flow {os.environ['TAG']} · generated from release notes"},
+              "timestamp": datetime.now(timezone.utc).isoformat(),
+          }
           payload = {
               "username": "Flow Changelog",
-              "embeds": [{"title": f"Changelog {os.environ['TAG']}", "color": 5763719, "description": body}],
+              "avatar_url": owner_avatar,
+              "embeds": [embed],
           }
           webhook = os.environ["DISCORD_CHANGELOG_WEBHOOK"]
           req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
@@ -85,3 +108,4 @@ jobs:
         env:
           DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
           TAG: ${{ steps.tag.outputs.name }}
+          REPO: ${{ github.repository }}

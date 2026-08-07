@@ -106,7 +106,18 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
           botname: Flow Docs Bot
+          avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
           color: ${{ job.status == 'success' && '3066993' || '15158332' }}
           title: Docs deploy ${{ job.status == 'success' && 'succeeded' || 'failed' }}
           url: ${{ steps.deployment.outputs.page_url || github.server_url }}
-          description: Wiki deploy for `${{ github.sha }}`
+          description: Wiki deploy for commit [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+          author_name: Flow Docs
+          author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          fields: >-
+            [
+              {"name":"Commit","value":"[`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})","inline":true},
+              {"name":"Trigger","value":"`${{ github.event_name }}`","inline":true},
+              {"name":"Pages","value":"[site](${{ steps.deployment.outputs.page_url }})","inline":true}
+            ]
+          footer_text: Flow Docs · deploy ${{ github.run_id }}
+          footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png

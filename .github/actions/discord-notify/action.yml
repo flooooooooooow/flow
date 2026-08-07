@@ -1,36 +1,81 @@
 name: Discord notify
-description: Post an embed to a Discord channel via webhook. One place to define the payload shape so every workflow stays consistent.
+description: >-
+  Post a rich embed to a Discord channel via webhook. One place to define the
+  payload shape so every workflow stays consistent. Supports the full Discord
+  embed schema: author, title/url, description, multiple fields, thumbnail,
+  image, footer, timestamp, plus a top-level content line and webhook avatar.
 inputs:
   webhook:
-    description: Discord webhook URL (from a GitHub secret)
+    description: Discord webhook URL (from a GitHub secret). Empty = skip.
     required: true
-  title:
-    description: Embed title
-    required: true
-  color:
-    description: Embed color as decimal (3066993 green, 15158332 red, 5763719 purple, 0 default)
-    required: false
-    default: '0'
-  description:
-    description: Embed description (markdown, single line)
-    required: false
-    default: ''
-  url:
-    description: Embed URL (e.g. run/release page)
-    required: false
-    default: ''
-  field_name:
-    description: Optional single field name
-    required: false
-    default: ''
-  field_value:
-    description: Optional single field value (inline with the field above)
+  content:
+    description: >-
+      Top-level message text shown above the embed (markdown, may mention
+      roles with <@&id>). Optional.
     required: false
     default: ''
   botname:
-    description: Webhook username override
+    description: Webhook username override.
     required: false
     default: Flow Bot
+  avatar_url:
+    description: Webhook avatar image URL.
+    required: false
+    default: ''
+  title:
+    description: Embed title.
+    required: false
+    default: ''
+  url:
+    description: Embed title link.
+    required: false
+    default: ''
+  color:
+    description: >-
+      Embed color as decimal (3066993 green, 15158332 red, 14440101 amber,
+      5763719 purple, 0 default).
+    required: false
+    default: '0'
+  description:
+    description: Embed description (Discord markdown, multi-line allowed).
+    required: false
+    default: ''
+  fields:
+    description: >-
+      JSON array of field objects: [{"name":..,"value":..,"inline":true},..].
+      Up to 10 fields. Optional.
+    required: false
+    default: '[]'
+  author_name:
+    description: Embed author name.
+    required: false
+    default: ''
+  author_icon:
+    description: Embed author icon URL (small image before the author name).
+    required: false
+    default: ''
+  thumbnail:
+    description: Embed thumbnail image URL (top-right).
+    required: false
+    default: ''
+  image:
+    description: Embed large image URL (bottom, below description).
+    required: false
+    default: ''
+  footer_text:
+    description: Embed footer text (bottom line).
+    required: false
+    default: ''
+  footer_icon:
+    description: Embed footer icon URL (left of footer text).
+    required: false
+    default: ''
+  timestamp:
+    description: >-
+      ISO8601 timestamp to display on the embed. Defaults to now when empty
+      or when set to the literal string `now`.
+    required: false
+    default: 'now'
 runs:
   using: composite
   steps:
@@ -38,22 +83,88 @@ runs:
       shell: bash
       env:
         WEBHOOK: ${{ inputs.webhook }}
-        TITLE: ${{ inputs.title }}
+        CONTENT: ${{ inputs.content }}
+        BOTNAME: ${{ inputs.botname }}
+        AVATAR_URL: ${{ inputs.avatar_url }}
+        EMBED_TITLE: ${{ inputs.title }}
+        EMBED_URL: ${{ inputs.url }}
         COLOR: ${{ inputs.color }}
         DESCRIPTION: ${{ inputs.description }}
-        URL: ${{ inputs.url }}
-        FIELD_NAME: ${{ inputs.field_name }}
-        FIELD_VALUE: ${{ inputs.field_value }}
-        BOTNAME: ${{ inputs.botname }}
+        FIELDS: ${{ inputs.fields }}
+        AUTHOR_NAME: ${{ inputs.author_name }}
+        AUTHOR_ICON: ${{ inputs.author_icon }}
+        THUMBNAIL: ${{ inputs.thumbnail }}
+        IMAGE: ${{ inputs.image }}
+        FOOTER_TEXT: ${{ inputs.footer_text }}
+        FOOTER_ICON: ${{ inputs.footer_icon }}
+        TIMESTAMP: ${{ inputs.timestamp }}
       run: |
         set -euo pipefail
         if [[ -z "$WEBHOOK" ]]; then
           echo "discord-notify: no webhook URL supplied, skipping"
           exit 0
         fi
-        PAYLOAD="{\"username\":\"$BOTNAME\",\"embeds\":[{\"title\":\"$TITLE\",\"color\":$COLOR"
-        if [[ -n "$DESCRIPTION" ]]; then PAYLOAD="$PAYLOAD,\"description\":\"$DESCRIPTION\""; fi
-        if [[ -n "$URL" ]]; then PAYLOAD="$PAYLOAD,\"url\":\"$URL\""; fi
-        if [[ -n "$FIELD_NAME" ]]; then PAYLOAD="$PAYLOAD,\"fields\":[{\"name\":\"$FIELD_NAME\",\"value\":\"$FIELD_VALUE\",\"inline\":true}]"; fi
-        PAYLOAD="$PAYLOAD}]}"
-        curl -fsS "$WEBHOOK" -H "Content-Type: application/json" -d "$PAYLOAD"
+        python3 - <<'PY'
+        import json, os, sys, urllib.request
+
+        webhook = os.environ["WEBHOOK"]
+        color = int(os.environ.get("COLOR", "0"))
+
+        embed = {"color": color}
+        if os.environ.get("DESCRIPTION"):
+            embed["description"] = os.environ["DESCRIPTION"]
+        if os.environ.get("EMBED_TITLE"):
+            embed["title"] = os.environ["EMBED_TITLE"]
+            if os.environ.get("EMBED_URL"):
+                embed["url"] = os.environ["EMBED_URL"]
+
+        if os.environ.get("AUTHOR_NAME"):
+            author = {"name": os.environ["AUTHOR_NAME"]}
+            if os.environ.get("AUTHOR_ICON"):
+                author["icon_url"] = os.environ["AUTHOR_ICON"]
+            embed["author"] = author
+
+        fields = os.environ.get("FIELDS", "[]")
+        try:
+            parsed = json.loads(fields)
+        except json.JSONDecodeError as e:
+            sys.exit(f"discord-notify: invalid --fields JSON: {e}")
+        if parsed:
+            embed["fields"] = parsed[:4]
+
+        if os.environ.get("THUMBNAIL"):
+            embed["thumbnail"] = {"url": os.environ["THUMBNAIL"]}
+        if os.environ.get("IMAGE"):
+            embed["image"] = {"url": os.environ["IMAGE"]}
+
+        if os.environ.get("FOOTER_TEXT") or os.environ.get("FOOTER_ICON"):
+            footer = {}
+            if os.environ.get("FOOTER_TEXT"):
+                footer["text"] = os.environ["FOOTER_TEXT"]
+            if os.environ.get("FOOTER_ICON"):
+                footer["icon_url"] = os.environ["FOOTER_ICON"]
+            embed["footer"] = footer
+
+        ts = os.environ.get("TIMESTAMP")
+        if ts and ts != "now":
+            embed["timestamp"] = ts
+
+        payload = {"embeds": [embed]}
+        if os.environ.get("BOTNAME"):
+            payload["username"] = os.environ["BOTNAME"]
+        if os.environ.get("AVATAR_URL"):
+            payload["avatar_url"] = os.environ["AVATAR_URL"]
+        if os.environ.get("CONTENT"):
+            payload["content"] = os.environ["CONTENT"]
+
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            webhook, data=body,
+            headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=20)
+        except urllib.error.HTTPError as e:
+            print(f"discord-notify: webhook rejected ({e.code}): "
+                  f"{e.read().decode(errors='replace')}", file=sys.stderr)
+            sys.exit(1)
+        PY

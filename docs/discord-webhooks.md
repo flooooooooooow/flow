@@ -27,16 +27,46 @@ All payloads use one composite action so the embed shape lives in one place:
 - `.github/actions/discord-notify/action.yml`
 
 Every sending workflow just calls it. If the embed format ever changes, edit
-that one file.
+that one file. The action builds the payload with a small Python builder
+instead of string concatenation, so multi-line descriptions and embedded
+quotes survive intact. It supports the full Discord embed schema.
 
 ```yaml
 - uses: ./.github/actions/discord-notify
   with:
     webhook: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+    botname: Flow Release Bot
+    avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
     title: Flow v0.9.0 released
-    color: '5763719'
     url: https://github.com/OWNER/flow/releases/tag/v0.9.0
+    color: '5763719'
+    description: Release published for commit ...
+    author_name: Flow
+    author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+    fields: >-
+      [{"name":"Version","value":"v0.9.0","inline":true}]
+    footer_text: Flow Releases · v0.9.0
 ```
+
+### Inputs
+
+| Input | Description |
+|---|---|
+| `webhook` | Webhook URL. Empty skips the step. |
+| `content` | Top-level message above the embed (markdown, role pings via `<@&id>`). |
+| `botname` | Webhook username override. Default `Flow Bot`. |
+| `avatar_url` | Webhook avatar image URL. |
+| `title` / `url` | Embed title and its link. |
+| `color` | Embed color as decimal. Green `3066993`, red `15158332`, amber `14440101`, purple `5763719`, default `0`. |
+| `description` | Embed description (Discord markdown, multi-line). |
+| `fields` | JSON array of up to 4 field objects: `[{"name","value","inline"}]`. |
+| `author_name` / `author_icon` | Embed author line. |
+| `thumbnail` / `image` | Right-top thumbnail and bottom large image URLs. |
+| `footer_text` / `footer_icon` | Bottom footer line. |
+| `timestamp` | ISO8601 time; defaults to now. |
+
+The org avatar URL pattern `https://github.com/<owner>.png` is used as the
+webhook/author/footer icon across all three workflows.
 
 ## Add a new notification
 
