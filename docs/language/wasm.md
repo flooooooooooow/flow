@@ -19,6 +19,28 @@ python3 scripts/build_wasm_gallery.py        # all of them, into site/wasm/
 Graphics programs get a canvas page with keyboard wiring and a click-to-start
 button; everything else prints into a `<pre>`.
 
+CPU backend defaults to C (`--backend=c`). MLIR is available for the same
+page shape:
+
+```bash
+./flow wasm examples/games/snake_gfx.flow --backend=mlir --out build/wasm/snake-mlir
+```
+
+Pack a host file into the virtual FS and link extra runtime C (both backends):
+
+```bash
+./flow wasm examples/wasm/hello_wasm.flow --backend=mlir \
+  --preload examples/wasm/data@/data \
+  --link runtime/flow_rt_support.c \
+  --out build/wasm/hello-preload
+```
+
+`--preload` maps to `emcc --preload-file` and turns on `FORCE_FILESYSTEM`
+(emits a `.data` blob next to the `.js`). `--link` passes extra `.c` files to
+emcc; Cocoa `.m` / `.mm` are skipped. Doom-scale knobs on the page builder:
+`--initial-memory=64MB` and `--asyncify-stack-size=65536`. `--fs` / `--threads`
+crossings remain C-only for now and error clearly under `--backend=mlir`.
+
 ## Status matrix
 
 Two rows are verified in a browser. The rest name the mechanism that would

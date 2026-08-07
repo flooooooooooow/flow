@@ -238,7 +238,8 @@ show_help() {
     echo "  install           Install project deps if flow.toml exists; else LLVM tools"
     echo "  setup             Install LLVM / compiler tooling"
     echo "  python <program>  Generate Python package (wheel)"
-    echo "  wasm <program> [--threads] [--fs memfs|idbfs] [--out DIR]"
+    echo "  wasm <program> [--backend=c|mlir] [--preload DIR@/MOUNT] [--link PATH]"
+    echo "                    [--threads] [--fs memfs|idbfs] [--out DIR]"
     echo "                    Compile to WebAssembly + a runnable page"
     echo "  repl              Start interactive REPL"
     echo "  examples          List example programs"
@@ -3016,11 +3017,14 @@ for f in sys.argv[1:]:
         fi
         # --threads builds pthreads over Web Workers, --fs mounts MEMFS/IDBFS;
         # both are documented in docs/language/wasm-crossings.md. Everything
-        # else goes to the standard page builder.
+        # else goes to the standard page builder. --preload without --fs is
+        # forwarded to wasm_build.py (emcc --preload-file) for both backends.
         wasm_threads=0
         wasm_workers=8
         wasm_fs=""
         wasm_preload=()
+        wasm_link=()
+        wasm_backend=""
         wasm_args=()
         while [ $# -gt 0 ]; do
             case "$1" in
@@ -3028,14 +3032,25 @@ for f in sys.argv[1:]:
                 --workers) shift; wasm_workers="${1:-8}" ;;
                 --fs) shift; wasm_fs="${1:-memfs}" ;;
                 --preload) shift; wasm_preload+=(--preload "${1:-}") ;;
+                --link) shift; wasm_link+=(--link "${1:-}") ;;
+                --backend=*) wasm_backend="${1#--backend=}"; wasm_args+=("$1") ;;
+                --backend)
+                    shift
+                    wasm_backend="${1:-}"
+                    wasm_args+=(--backend "$wasm_backend")
+                    ;;
                 *) wasm_args+=("$1") ;;
             esac
             shift
         done
         set -- ${wasm_args[@]+"${wasm_args[@]}"}
+        if [ -z "$wasm_backend" ]; then
+            wasm_backend="$(flow_cpu_backend)"
+        fi
         if [ -z "${1:-}" ] || [ "${1:-}" = "--help" ]; then
             print_error "Usage: flow wasm <program.flow> [--out DIR] [--legacy]"
-            print_info "                 [--threads [--workers N]] [--fs memfs|idbfs] [--preload DIR@/MOUNT]"
+            print_info "                 [--backend=c|mlir] [--link PATH] [--preload DIR@/MOUNT]"
+            print_info "                 [--threads [--workers N]] [--fs memfs|idbfs]"
             print_info "Writes .wasm + .js + a runnable index.html."
             print_info "gfx programs get a canvas page; others print into the page."
             print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
@@ -3055,6 +3070,11 @@ for f in sys.argv[1:]:
             exit 1
         fi
         if [ -n "$wasm_fs" ]; then
+            if [ "$wasm_backend" = "mlir" ]; then
+                print_error "--fs currently requires --backend=c (MEMFS/IDBFS crossings are C-only)"
+                print_info "  For MLIR, use --preload HOST@/mount without --fs (FORCE_FILESYSTEM)"
+                exit 1
+            fi
             print_info "Flow → C → WASM with a $wasm_fs filesystem (see docs/language/wasm-crossings.md)"
             if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_fs.py" "$1" --fs "$wasm_fs" \
                     ${wasm_preload[@]+"${wasm_preload[@]}"}; then
@@ -3064,6 +3084,10 @@ for f in sys.argv[1:]:
             exit 0
         fi
         if [ "$wasm_threads" -eq 1 ]; then
+            if [ "$wasm_backend" = "mlir" ]; then
+                print_error "--threads currently requires --backend=c"
+                exit 1
+            fi
             print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
             if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
                 print_error "Threaded WASM build failed"
@@ -3071,8 +3095,14 @@ for f in sys.argv[1:]:
             fi
             exit 0
         fi
-        print_info "Flow → C → WASM (see docs/language/wasm.md)"
-        if ! python3 "$SCRIPT_DIR/scripts/wasm_build.py" "$@"; then
+        if [ "$wasm_backend" = "mlir" ]; then
+            print_info "Flow → MLIR → LLVM → WASM (see docs/language/wasm.md)"
+        else
+            print_info "Flow → C → WASM (see docs/language/wasm.md)"
+        fi
+        if ! python3 "$SCRIPT_DIR/scripts/wasm_build.py" "$@" \
+                ${wasm_preload[@]+"${wasm_preload[@]}"} \
+                ${wasm_link[@]+"${wasm_link[@]}"}; then
             print_error "WASM build failed"
             exit 1
         fi
