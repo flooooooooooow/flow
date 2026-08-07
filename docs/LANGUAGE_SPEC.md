@@ -1095,10 +1095,17 @@ memory; domains on parameters or in types.
 
 ### 9.3 WebAssembly
 
-**Status:** ⚠️ Via Emscripten (C → WASM) — see [language/wasm.md](language/wasm.md)
+**Status:** ✅ Via Emscripten — C or MLIR CPU backends — see [language/wasm.md](language/wasm.md)
 
-- Near-term path: Flow → C → `emcc` (smoke: `scripts/build_wasm_hello.sh`)
-- Requires Emscripten toolchain locally; not required for CI
+- Paths: Flow → C → `emcc`, or Flow → MLIR → LLVM IR → `emcc`
+  (`./flow wasm --backend=c|mlir`, default `c`)
+- Gfx canvas games link `runtime/gfx_wasm.c` + `-sASYNCIFY` on both backends
+  (smoke: `examples/games/snake_gfx.flow --backend=mlir`)
+- `--preload HOST@/vfs` → `emcc --preload-file` + `FORCE_FILESYSTEM` (both backends)
+- `--link PATH` for extra runtime C (e.g. `runtime/flow_rt_support.c`); Cocoa `.m` skipped
+- Doom-scale knobs: `--initial-memory`, `--asyncify-stack-size`, `--emcc-flag`
+- `--fs` / `--threads` crossings remain C-only today
+- Requires Emscripten locally; not required for all CI jobs
 - No direct WASM emission; native Flow-in-WASM compiler deferred
 
 ### 9.4 JIT Execution
