@@ -130,7 +130,7 @@ scripted input.
 | Path | What you'll do |
 |------|----------------|
 | [Quick Start](getting-started.md) | Install, compile, run `hello_world` |
-| [Interactive Tutorials](tutorials/index.html) | Edit &amp; run **229** lessons across language, systems, and domain tracks |
+| [Interactive Tutorials](tutorials/index.html) | Edit &amp; run **257** lessons across language, systems, and domain tracks |
 | [Beginner guide](tutorials/beginner.md) | Variables, functions, control flow |
 | [Playground](playground/index.html) | Syntax explorer with verified examples (compile locally with `./flow run`) |
 | [Game gallery](demos/games.md) | 24 complete games, each with a recorded GIF |
