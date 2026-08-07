@@ -172,6 +172,7 @@ class TokenType(Enum):
     COLON = "COLON"
     COMMA = "COMMA"
     DOTDOT = "DOTDOT"
+    ELLIPSIS = "ELLIPSIS"
     DOT = "DOT"
     ARROW = "ARROW"
     ASSIGN = "ASSIGN"
@@ -322,6 +323,9 @@ class FunctionDecl:
     # Declares effects this function may perform; callers must handle them
     # (or declare them too) when `--strict-effects` / check_effect_rows is on.
     effects: List[str] = field(default_factory=list)
+    # Variadic is only set on extern declarations. Kept as the LAST field so
+    # legacy positional FunctionDecl(...) callers stay field-stable.
+    is_variadic: bool = False
 
 
 @dataclass
@@ -1319,6 +1323,7 @@ class Lexer:
             (r"AMPERSAND", r"&"),  # Bitwise AND
             (r"CARET", r"\^"),  # Bitwise XOR
             (r"TILDE", r"~"),  # Bitwise NOT
+            (r"ELLIPSIS", r"\.\.\."),
             (r"DOTDOT", r"\.\."),
             (r"DOUBLE_COLON", r"::"),
             # Compound assignment (must come before simple operators)
@@ -2027,8 +2032,21 @@ class Parser:
                 self.expect(TokenType.LPAREN)
 
                 parameters = []
-                if self.current_token.type != TokenType.RPAREN:
-                    parameters = self.parse_parameters()
+                variadic = False
+                if self.current_token.type == TokenType.ELLIPSIS:
+                    variadic = True
+                    self.advance()
+                elif self.current_token.type != TokenType.RPAREN:
+                    while True:
+                        parameters.append(self.parse_parameter())
+                        if self.current_token.type == TokenType.COMMA:
+                            self.advance()
+                            if self.current_token.type == TokenType.ELLIPSIS:
+                                variadic = True
+                                self.advance()
+                                break
+                        else:
+                            break
 
                 self.expect(TokenType.RPAREN)
 
@@ -2040,6 +2058,7 @@ class Parser:
                 # Create function declaration with empty body
                 func = FunctionDecl(name, parameters, return_type, Block([]), [])
                 func.is_extern = True
+                func.is_variadic = variadic
                 functions.append(func)
             else:
                 raise SyntaxError(

@@ -598,6 +598,7 @@ class MLIRGenerator:
                     'type': 'function',
                     'return_type': decl.return_type,
                     'parameters': decl.parameters,
+                    'is_variadic': getattr(decl, "is_variadic", False),
                     'mlir_name': f"@{decl.name}"
                 }
             elif isinstance(decl, EffectDecl):
@@ -744,7 +745,11 @@ class MLIRGenerator:
             self._declared_externs.add(func.name)
             param_types = [self.flow_type_to_mlir(p.type) for p in func.parameters]
             return_type = self.flow_type_to_mlir(func.return_type)
-            func_signature = f"func.func private @{func.name}({', '.join(param_types)}) -> {return_type}"
+            if getattr(func, "is_variadic", False):
+                variadic_suffix = ", ..." if param_types else "..."
+            else:
+                variadic_suffix = ""
+            func_signature = f"func.func private @{func.name}({', '.join(param_types)}{variadic_suffix}) -> {return_type}"
             return f"{self.indent()}{func_signature}"
         
         mlir_code = []
@@ -4409,6 +4414,9 @@ class MLIRGenerator:
             func_info = self.symbol_table[func_call.name]
             for param in func_info.get('parameters', []):
                 expected_arg_types.append(self.flow_type_to_mlir(param.type))
+            if func_info.get('is_variadic'):
+                for extra in func_call.arguments[len(expected_arg_types):]:
+                    expected_arg_types.append(self.get_expression_type(extra))
         else:
             expected_arg_types = [self.get_expression_type(a) for a in func_call.arguments]
 
