@@ -1,0 +1,390 @@
+# COMPETITIVE LOTKA-VOLTERRA: coexistence vs competitive exclusion.
+#
+# MODEL
+#   Two consumers with logistic growth and interspecific competition:
+#
+#        dx/dt = r1 x (1 - (x + a12 y) / K1)
+#        dy/dt = r2 y (1 - (y + a21 x) / K2)
+#
+#   Interior equilibrium (when feasible):
+#
+#        x* = (K1 - a12 K2) / (1 - a12 a21)
+#        y* = (K2 - a21 K1) / (1 - a12 a21)
+#
+#   Mutual invasibility (stable coexistence) requires a12 < K1/K2 and
+#   a21 < K2/K1, equivalently a12 a21 < 1 with both numerators positive.
+#   When a12 a21 > 1 with one numerator negative, the inferior competitor
+#   is excluded.
+#
+# GATES
+#   1. Coexistence params: both end near (x*, y*) within 0.05 relative.
+#   2. Exclusion params: inferior species density < 1e-3 after integration.
+#   3. From near the coexistence eq, distance stays below 0.05 K.
+#
+# KEYS
+#   1 coexist   2 exclude Y   3 exclude X
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/competitive_lv.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const HIST: i32 = 240
+const R1: f64 = 1.0
+const R2: f64 = 1.0
+const K1: f64 = 100.0
+const K2: f64 = 100.0
+const DT: f64 = 0.05
+const EQ_GATE: f64 = 0.05
+const CYCLE_FRAMES: i32 = 100
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+function preset_a12(p: i32) -> f64 {
+    if p == 1 { return 1.4 }
+    if p == 2 { return 0.5 }
+    return 0.5
+}
+
+function preset_a21(p: i32) -> f64 {
+    if p == 1 { return 0.5 }
+    if p == 2 { return 1.4 }
+    return 0.5
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "EXCLUDE Y" }
+    if p == 2 { return "EXCLUDE X" }
+    return "COEXIST"
+}
+
+function dx(x: f64, y: f64, a12: f64) -> f64 {
+    return R1 * x * (1.0 - (x + a12 * y) / K1)
+}
+
+function dy(x: f64, y: f64, a21: f64) -> f64 {
+    return R2 * y * (1.0 - (y + a21 * x) / K2)
+}
+
+function rk4(x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
+    # Returns new x; new y written via globals.
+    return x
+}
+
+let mut next_y: f64 = 0.0
+
+function step_xy(x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
+    let k1x: f64 = dx(x, y, a12)
+    let k1y: f64 = dy(x, y, a21)
+    let k2x: f64 = dx(x + 0.5 * dt * k1x, y + 0.5 * dt * k1y, a12)
+    let k2y: f64 = dy(x + 0.5 * dt * k1x, y + 0.5 * dt * k1y, a21)
+    let k3x: f64 = dx(x + 0.5 * dt * k2x, y + 0.5 * dt * k2y, a12)
+    let k3y: f64 = dy(x + 0.5 * dt * k2x, y + 0.5 * dt * k2y, a21)
+    let k4x: f64 = dx(x + dt * k3x, y + dt * k3y, a12)
+    let k4y: f64 = dy(x + dt * k3x, y + dt * k3y, a21)
+    let mut nx: f64 = x + (dt / 6.0) * (k1x + 2.0 * k2x + 2.0 * k3x + k4x)
+    let mut ny: f64 = y + (dt / 6.0) * (k1y + 2.0 * k2y + 2.0 * k3y + k4y)
+    if nx < 0.0 { nx = 0.0 }
+    if ny < 0.0 { ny = 0.0 }
+    next_y = ny
+    return nx
+}
+
+function eq_x(a12: f64, a21: f64) -> f64 {
+    let den: f64 = 1.0 - a12 * a21
+    if fabs(den) < 1.0e-12 { return 0.0 }
+    return (K1 - a12 * K2) / den
+}
+
+function eq_y(a12: f64, a21: f64) -> f64 {
+    let den: f64 = 1.0 - a12 * a21
+    if fabs(den) < 1.0e-12 { return 0.0 }
+    return (K2 - a21 * K1) / den
+}
+
+function integrate(x0: f64, y0: f64, a12: f64, a21: f64, steps: i32) -> f64 {
+    let mut x: f64 = x0
+    let mut y: f64 = y0
+    for t in 0 to steps {
+        x = step_xy(x, y, a12, a21, DT)
+        y = next_y
+    }
+    next_y = y
+    return x
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+let mut tr_x: array<f64, 240> = [0.0, 0.0, 0.0, 0.0]
+let mut tr_y: array<f64, 240> = [0.0, 0.0, 0.0, 0.0]
+let mut hist_len: i32 = 0
+let mut live_x: f64 = 20.0
+let mut live_y: f64 = 20.0
+
+function push_tr() -> void {
+    if hist_len < HIST {
+        tr_x[hist_len] = live_x
+        tr_y[hist_len] = live_y
+        hist_len = hist_len + 1
+    } else {
+        for i in 0 to HIST - 1 {
+            tr_x[i] = tr_x[i + 1]
+            tr_y[i] = tr_y[i + 1]
+        }
+        tr_x[HIST - 1] = live_x
+        tr_y[HIST - 1] = live_y
+    }
+}
+
+function seed_live(x0: f64, y0: f64) -> void {
+    live_x = x0
+    live_y = y0
+    hist_len = 0
+    push_tr()
+}
+
+function step_live(a12: f64, a21: f64) -> void {
+    live_x = step_xy(live_x, live_y, a12, a21, DT)
+    live_y = next_y
+    push_tr()
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, a12: f64, a21: f64) -> void {
+    clear_fb(fb)
+    let px0: i32 = 40
+    let py0: i32 = 40
+    let pw: i32 = 432
+    let ph: i32 = 220
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    let mut vmax: f64 = K1
+    if K2 > vmax { vmax = K2 }
+    for i in 1 to hist_len {
+        let x: i32 = px0 + (i * (pw - 1)) / (HIST - 1)
+        let yx: i32 = py0 + ph - 1 - (((tr_x[i] / vmax) * ((ph - 1) as f64)) as i32)
+        let yy: i32 = py0 + ph - 1 - (((tr_y[i] / vmax) * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x, yx, 120, 220, 255)
+        put_rgb(fb, x, yy, 255, 160, 90)
+    }
+
+    # Phase plane.
+    let qx0: i32 = 100
+    let qy0: i32 = 290
+    let qw: i32 = 300
+    let qh: i32 = 180
+    fill_rect_fb(fb, qx0, qy0, qw, qh, 18, 16, 28)
+    let xs: f64 = eq_x(a12, a21)
+    let ys: f64 = eq_y(a12, a21)
+    if xs > 0.0 and ys > 0.0 and xs < 1.5 * K1 and ys < 1.5 * K2 {
+        let ex: i32 = qx0 + (((xs / vmax) * ((qw - 1) as f64)) as i32)
+        let ey: i32 = qy0 + qh - 1 - (((ys / vmax) * ((qh - 1) as f64)) as i32)
+        fill_rect_fb(fb, ex - 2, ey - 2, 5, 5, 255, 220, 100)
+    }
+    for i in 0 to hist_len {
+        let x: i32 = qx0 + (((tr_x[i] / vmax) * ((qw - 1) as f64)) as i32)
+        let y: i32 = qy0 + qh - 1 - (((tr_y[i] / vmax) * ((qh - 1) as f64)) as i32)
+        put_rgb(fb, x, y, 160, 255, 170)
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, a12: f64, a21: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "COMPETITIVE LV", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 240, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 8, 28, "X", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 22, 28, live_x, 1, 1, 120, 220, 255)
+    let t5: i32 = gfx_draw_text(g, 90, 28, "Y", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 104, 28, live_y, 1, 1, 255, 160, 90)
+    let t7: i32 = gfx_draw_text(g, 180, 28, "a12", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 208, 28, a12, 2, 1, 234, 232, 244)
+    let t9: i32 = gfx_draw_text(g, 270, 28, "a21", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 298, 28, a21, 2, 1, 234, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 8, 42,
+        "1 COEXIST  2 EXCL Y  3 EXCL X  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "cyan = X, orange = Y; yellow mark is the interior equilibrium when feasible",
+        1, 122, 118, 144)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "coexistence when a12 a21 < 1 with both K - a K' > 0; else exclusion",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let a12c: f64 = 0.5
+    let a21c: f64 = 0.5
+    let xs: f64 = eq_x(a12c, a21c)
+    let ys: f64 = eq_y(a12c, a21c)
+    let x_end: f64 = integrate(10.0, 10.0, a12c, a21c, 4000)
+    let y_end: f64 = next_y
+    let ex: f64 = fabs(x_end - xs) / K1
+    let ey: f64 = fabs(y_end - ys) / K2
+
+    println("")
+    println("  COMPETITIVE LOTKA-VOLTERRA  --  coexistence vs exclusion")
+    println("  =========================================================")
+    println("")
+    print("    coexistence a12=a21=0.5   x* = ")
+    printf("%.2f", xs)
+    print("   y* = ")
+    printf("%.2f", ys)
+    println("")
+    print("    integrated end (x,y)            : ")
+    printf("%.2f", x_end)
+    print(" , ")
+    printf("%.2f", y_end)
+    println("")
+    print("    |x-x*|/K1                       : ")
+    printf("%.4f", ex)
+    print("   |y-y*|/K2 ")
+    printf("%.4f", ey)
+    print("   (gate < ")
+    printf("%.2f", EQ_GATE)
+    println(")")
+
+    let x_ex: f64 = integrate(40.0, 40.0, 1.4, 0.5, 5000)
+    let y_ex: f64 = next_y
+    print("    exclusion a12=1.4 a21=0.5  Y    : ")
+    printf("%.6f", y_ex)
+    println("   (gate < 1e-3)")
+
+    let x_ex2: f64 = integrate(40.0, 40.0, 0.5, 1.4, 5000)
+    let y_ex2: f64 = next_y
+    print("    exclusion a12=0.5 a21=1.4  X    : ")
+    printf("%.6f", x_ex2)
+    println("   (gate < 1e-3)")
+
+    let x_hold: f64 = integrate(xs, ys, a12c, a21c, 800)
+    let y_hold: f64 = next_y
+    let hold: f64 = fabs(x_hold - xs) / K1 + fabs(y_hold - ys) / K2
+    print("    hold near eq |dx|/K+|dy|/K      : ")
+    printf("%.4f", hold)
+    println("   (gate < 0.05)")
+    println("")
+
+    if ex > EQ_GATE or ey > EQ_GATE {
+        println("    FAIL: coexistence trajectory missed (x*, y*)")
+        return 1
+    }
+    if y_ex > 1.0e-3 {
+        println("    FAIL: inferior Y was not excluded")
+        return 2
+    }
+    if x_ex2 > 1.0e-3 {
+        println("    FAIL: inferior X was not excluded")
+        return 3
+    }
+    if hold > 0.05 {
+        println("    FAIL: coexistence equilibrium is not locally attracting")
+        return 4
+    }
+    println("    PASS: coexistence eq matched; competitive exclusion when a>1")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut a12: f64 = preset_a12(preset)
+    let mut a21: f64 = preset_a21(preset)
+    seed_live(20.0, 30.0)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Competitive LV - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut since_cycle: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            a12 = preset_a12(preset)
+            a21 = preset_a21(preset)
+            seed_live(20.0, 30.0)
+            since_cycle = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_live(20.0, 30.0)
+                since_cycle = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for k in 0 to 2 {
+                step_live(a12, a21)
+            }
+            since_cycle = since_cycle + 1
+            if since_cycle >= CYCLE_FRAMES {
+                preset = (preset + 1) % 3
+                a12 = preset_a12(preset)
+                a21 = preset_a21(preset)
+                seed_live(20.0, 30.0)
+                since_cycle = 0
+            }
+        }
+
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, fb, a12, a21)
+        draw_hud(gfx, preset, a12, a21, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

@@ -1,0 +1,539 @@
+# MULLER'S RATCHET: irreversible deleterious load in an asexual population.
+#
+# MODEL
+#   N haploid asexuals carry an integer mutation load k. Fitness is (1-s)^k.
+#   Each generation: Wright-Fisher soft selection, then every offspring draws
+#   Poisson(U) new deleterious mutations (no back-mutation). A ratchet click
+#   is the generation when the least-loaded class is lost forever, so the
+#   minimum load in the population increases by one.
+#
+#   Deterministic infinite-N balance puts a Poisson(U/s) load on the genome,
+#   mean load = U/s, and class 0 never goes extinct. Finite N loses class 0
+#   at a rate that grows as n0 = N exp(-U/s) shrinks.
+#
+# GATES
+#   1. Deterministic class recurrence equilibrates to mean load within 5% of U/s.
+#   2. Stochastic click count over T gens (many reps) matches a calibrated
+#      expected rate for (N, U, s) within a relative gate.
+#
+# KEYS
+#   1 mild (rare clicks)   2 base   3 harsh (fast ratchet)
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/mullers_ratchet.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const MAX_LOAD: i32 = 40
+const N_POP: i32 = 400
+const VERIFY_T: i32 = 2500
+const VERIFY_REPS: i32 = 40
+const DET_STEPS: i32 = 4000
+const LOAD_GATE: f64 = 0.05
+const CLICK_GATE: f64 = 0.45
+const CYCLE_FRAMES: i32 = 90
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 3141592653
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# Knuth Poisson(lambda) for moderate lambda.
+function poisson(lam: f64) -> i32 {
+    let mut L: f64 = exp(0.0 - lam)
+    let mut k: i32 = 0
+    let mut p: f64 = 1.0
+    while true {
+        k = k + 1
+        p = p * rng_unit()
+        if p <= L { break }
+        if k > 80 { break }
+    }
+    return k - 1
+}
+
+function preset_u(p: i32) -> f64 {
+    if p == 1 { return 0.35 }
+    if p == 2 { return 0.70 }
+    return 0.50
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MILD" }
+    if p == 2 { return "HARSH" }
+    return "BASE"
+}
+
+# Deterministic class frequencies f[0..MAX_LOAD], soft selection then mutation.
+function det_mean_load(u: f64, s: f64, steps: i32) -> f64 {
+    let mut f: array<f64, 41> = [0.0, 0.0, 0.0, 0.0]
+    f[0] = 1.0
+    for t in 0 to steps {
+        let mut wsum: f64 = 0.0
+        let mut w: array<f64, 41> = [0.0, 0.0, 0.0, 0.0]
+        let mut fit: f64 = 1.0
+        for k in 0 to MAX_LOAD + 1 {
+            w[k] = f[k] * fit
+            wsum = wsum + w[k]
+            fit = fit * (1.0 - s)
+        }
+        let mut after: array<f64, 41> = [0.0, 0.0, 0.0, 0.0]
+        for k in 0 to MAX_LOAD + 1 {
+            after[k] = w[k] / wsum
+        }
+        # Convolve with Poisson(U) mutations (truncated).
+        for k in 0 to MAX_LOAD + 1 {
+            f[k] = 0.0
+        }
+        let mut pk: f64 = exp(0.0 - u)
+        for m in 0 to MAX_LOAD + 1 {
+            for k in 0 to MAX_LOAD + 1 - m {
+                f[k + m] = f[k + m] + after[k] * pk
+            }
+            pk = pk * u / ((m + 1) as f64)
+        }
+        # Renormalise truncation mass back onto the top class.
+        let mut sumn: f64 = 0.0
+        for k in 0 to MAX_LOAD + 1 {
+            sumn = sumn + f[k]
+        }
+        for k in 0 to MAX_LOAD + 1 {
+            f[k] = f[k] / sumn
+        }
+    }
+    let mut mean: f64 = 0.0
+    for k in 0 to MAX_LOAD + 1 {
+        mean = mean + (k as f64) * f[k]
+    }
+    return mean
+}
+
+function simulate_clicks(n: i32, u: f64, s: f64, gens: i32) -> i32 {
+    let mut load: array<i32, 400> = [0, 0, 0, 0]
+    for i in 0 to n {
+        load[i] = poisson(u / s)
+    }
+    let mut clicks: i32 = 0
+    let mut min_load: i32 = 0
+    for g in 0 to gens {
+        # Soft-selection WF: fitness-proportional parent choice.
+        let mut next: array<i32, 400> = [0, 0, 0, 0]
+        let mut wsum: f64 = 0.0
+        let mut w: array<f64, 400> = [0.0, 0.0, 0.0, 0.0]
+        for i in 0 to n {
+            let mut fit: f64 = 1.0
+            let mut k: i32 = 0
+            while k < load[i] {
+                fit = fit * (1.0 - s)
+                k = k + 1
+            }
+            w[i] = fit
+            wsum = wsum + fit
+        }
+        for i in 0 to n {
+            let mut r: f64 = rng_unit() * wsum
+            let mut j: i32 = 0
+            while j < n - 1 and r > w[j] {
+                r = r - w[j]
+                j = j + 1
+            }
+            next[i] = load[j] + poisson(u)
+            if next[i] > MAX_LOAD { next[i] = MAX_LOAD }
+        }
+        for i in 0 to n {
+            load[i] = next[i]
+        }
+        let mut cur_min: i32 = MAX_LOAD
+        for i in 0 to n {
+            if load[i] < cur_min { cur_min = load[i] }
+        }
+        if cur_min > min_load {
+            clicks = clicks + (cur_min - min_load)
+            min_load = cur_min
+        }
+    }
+    return clicks
+}
+
+function mean_clicks(n: i32, u: f64, s: f64, gens: i32, reps: i32) -> f64 {
+    let mut sum: f64 = 0.0
+    for r in 0 to reps {
+        sum = sum + (simulate_clicks(n, u, s, gens) as f64)
+    }
+    return sum / (reps as f64)
+}
+
+# Haigh-scale click rate for the least-loaded class of size n0 = N e^{-U/s}:
+#   rate ≈ (U / n0) exp(-n0)
+# This is an order-of-magnitude closed form for the discrete WF ratchet we
+# simulate; the gate below is therefore relative and fairly wide.
+function expected_clicks(n: f64, u: f64, s: f64, gens: f64) -> f64 {
+    let mut n0: f64 = n * exp(0.0 - u / s)
+    if n0 < 0.2 { n0 = 0.2 }
+    let rate: f64 = (u / n0) * exp(0.0 - n0)
+    return gens * rate
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+let mut live_load: array<i32, 400> = [0, 0, 0, 0]
+let mut hist_clicks: array<f64, 220> = [0.0, 0.0, 0.0, 0.0]
+let mut hist_min: array<f64, 220> = [0.0, 0.0, 0.0, 0.0]
+let mut hist_len: i32 = 0
+let mut live_clicks: i32 = 0
+let mut live_min: i32 = 0
+let mut live_gen: i32 = 0
+
+function seed_live(n: i32, u: f64, s: f64) -> void {
+    for i in 0 to n {
+        live_load[i] = poisson(u / s)
+    }
+    live_clicks = 0
+    live_min = MAX_LOAD
+    for i in 0 to n {
+        if live_load[i] < live_min { live_min = live_load[i] }
+    }
+    live_gen = 0
+    hist_len = 0
+}
+
+function step_live(n: i32, u: f64, s: f64) -> void {
+    let mut next: array<i32, 400> = [0, 0, 0, 0]
+    let mut wsum: f64 = 0.0
+    let mut w: array<f64, 400> = [0.0, 0.0, 0.0, 0.0]
+    for i in 0 to n {
+        let mut fit: f64 = 1.0
+        let mut k: i32 = 0
+        while k < live_load[i] {
+            fit = fit * (1.0 - s)
+            k = k + 1
+        }
+        w[i] = fit
+        wsum = wsum + fit
+    }
+    for i in 0 to n {
+        let mut r: f64 = rng_unit() * wsum
+        let mut j: i32 = 0
+        while j < n - 1 and r > w[j] {
+            r = r - w[j]
+            j = j + 1
+        }
+        next[i] = live_load[j] + poisson(u)
+        if next[i] > MAX_LOAD { next[i] = MAX_LOAD }
+    }
+    for i in 0 to n {
+        live_load[i] = next[i]
+    }
+    let mut cur_min: i32 = MAX_LOAD
+    for i in 0 to n {
+        if live_load[i] < cur_min { cur_min = live_load[i] }
+    }
+    if cur_min > live_min {
+        live_clicks = live_clicks + (cur_min - live_min)
+        live_min = cur_min
+    }
+    live_gen = live_gen + 1
+    if hist_len < 220 {
+        hist_clicks[hist_len] = live_clicks as f64
+        hist_min[hist_len] = live_min as f64
+        hist_len = hist_len + 1
+    } else {
+        for i in 0 to 219 {
+            hist_clicks[i] = hist_clicks[i + 1]
+            hist_min[i] = hist_min[i + 1]
+        }
+        hist_clicks[219] = live_clicks as f64
+        hist_min[219] = live_min as f64
+    }
+}
+
+function mean_live_load(n: i32) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to n {
+        s = s + (live_load[i] as f64)
+    }
+    return s / (n as f64)
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, n: i32) -> void {
+    clear_fb(fb)
+    # Load histogram bars.
+    let mut counts: array<i32, 41> = [0, 0, 0, 0]
+    for i in 0 to n {
+        let k: i32 = live_load[i]
+        if k > MAX_LOAD { k = MAX_LOAD }
+        counts[k] = counts[k] + 1
+    }
+    let mut cmax: i32 = 1
+    for k in 0 to MAX_LOAD + 1 {
+        if counts[k] > cmax { cmax = counts[k] }
+    }
+    let bx0: i32 = 24
+    let by0: i32 = 40
+    let bw: i32 = 300
+    let bh: i32 = 280
+    fill_rect_fb(fb, bx0, by0, bw, bh, 18, 16, 28)
+    let bar_w: i32 = bw / (MAX_LOAD + 1)
+    for k in 0 to MAX_LOAD + 1 {
+        let h: i32 = (counts[k] * (bh - 8)) / cmax
+        let mut r: i32 = 80
+        let mut g2: i32 = 160
+        let mut b: i32 = 220
+        if k == live_min {
+            r = 255
+            g2 = 180
+            b = 80
+        }
+        fill_rect_fb(fb, bx0 + k * bar_w, by0 + bh - h, bar_w - 1, h, r, g2, b)
+    }
+
+    # Click / min-load traces.
+    let px0: i32 = 340
+    let py0: i32 = 40
+    let pw: i32 = 148
+    let ph: i32 = 280
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    if hist_len > 1 {
+        let mut cmaxf: f64 = 1.0
+        let mut mmaxf: f64 = 1.0
+        for i in 0 to hist_len {
+            if hist_clicks[i] > cmaxf { cmaxf = hist_clicks[i] }
+            if hist_min[i] > mmaxf { mmaxf = hist_min[i] }
+        }
+        for i in 1 to hist_len {
+            let x: i32 = px0 + (i * (pw - 1)) / 219
+            let yc: i32 = py0 + ph - 2 - (((hist_clicks[i] / cmaxf) * ((ph - 8) as f64)) as i32)
+            let ym: i32 = py0 + ph - 2 - (((hist_min[i] / mmaxf) * ((ph - 8) as f64)) as i32)
+            put_rgb(fb, x, yc, 120, 255, 190)
+            put_rgb(fb, x, ym, 255, 140, 120)
+        }
+    }
+
+    # Individual load strip.
+    let sy: i32 = 360
+    fill_rect_fb(fb, 24, sy, 464, 100, 18, 16, 28)
+    let cell: i32 = 10
+    let cols: i32 = 40
+    for i in 0 to n {
+        if i >= 400 { break }
+        let c: i32 = i % cols
+        let r: i32 = i / cols
+        let k: i32 = live_load[i]
+        let shade: i32 = 40 + k * 5
+        if shade > 240 { shade = 240 }
+        fill_rect_fb(fb, 28 + c * (cell + 1), sy + 8 + r * (cell + 1), cell, cell,
+                     shade, 70, 255 - shade)
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, u: f64, s: f64, mean_l: f64,
+                  pred: f64, clicks: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "MULLER RATCHET", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 220, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "CLICKS", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 348, 12, clicks, 1, 255, 180, 80)
+    let t5: i32 = gfx_draw_text(g, 400, 12, "MIN", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_int(g, 428, 12, live_min, 1, 234, 232, 244)
+
+    let t7: i32 = gfx_draw_text(g, 8, 28, "MEAN LOAD", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 80, 28, mean_l, 2, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 140, 28, "U/s", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 168, 28, u / s, 2, 1, 255, 198, 96)
+    let tb: i32 = gfx_draw_text(g, 230, 28, "n0", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 250, 28, pred, 2, 1, 234, 232, 244)
+    let td: i32 = gfx_draw_text(g, 320, 28, "GEN", 1, 150, 146, 168)
+    let te: i32 = gfx_draw_int(g, 348, 28, live_gen, 1, 234, 232, 244)
+
+    let tf: i32 = gfx_draw_text(g, 8, 42,
+        "1 MILD  2 BASE  3 HARSH  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let tg: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let th: i32 = gfx_draw_text(g, 8, 572,
+        "orange bar = least-loaded class; click when that class is lost",
+        1, 122, 118, 144)
+    let ti: i32 = gfx_draw_text(g, 8, 582,
+        "green = cumulative clicks, coral = min load; mean load rises past U/s",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let u: f64 = 0.50
+    let s: f64 = 0.10
+    let target_load: f64 = u / s
+    let det: f64 = det_mean_load(u, s, DET_STEPS)
+    let load_err: f64 = fabs(det - target_load) / target_load
+
+    println("")
+    println("  MULLER'S RATCHET  --  irreversible deleterious clicks")
+    println("  =====================================================")
+    println("")
+    print("    N = ")
+    printf("%.0f", N_POP as f64)
+    print("   U = ")
+    printf("%.2f", u)
+    print("   s = ")
+    printf("%.2f", s)
+    print("   U/s = ")
+    printf("%.2f", target_load)
+    println("")
+    print("    n0 = N exp(-U/s)                : ")
+    printf("%.3f", (N_POP as f64) * exp(0.0 - u / s))
+    println("")
+    print("    deterministic mean load         : ")
+    printf("%.4f", det)
+    println("")
+    print("    |load - U/s| / (U/s)            : ")
+    printf("%.4f", load_err)
+    print("   (gate < ")
+    printf("%.2f", LOAD_GATE)
+    println(")")
+
+    let pred_clicks: f64 = expected_clicks(N_POP as f64, u, s, VERIFY_T as f64)
+    rng_state = 3141592653
+    let meas_clicks: f64 = mean_clicks(N_POP, u, s, VERIFY_T, VERIFY_REPS)
+    let click_err: f64 = fabs(meas_clicks - pred_clicks) / pred_clicks
+
+    print("    Haigh-scale predicted clicks     : ")
+    printf("%.2f", pred_clicks)
+    println("")
+    print("    measured mean clicks            : ")
+    printf("%.2f", meas_clicks)
+    println("")
+    print("    relative error                  : ")
+    printf("%.4f", click_err)
+    print("   (gate < ")
+    printf("%.2f", CLICK_GATE)
+    println(")")
+    println("    (rate ~ (U/n0) e^{-n0}; order-of-magnitude for discrete WF)")
+    println("")
+
+    if load_err > LOAD_GATE {
+        println("    FAIL: deterministic mean load disagrees with U/s")
+        return 1
+    }
+    if click_err > CLICK_GATE {
+        println("    FAIL: ratchet click count disagrees with expected rate")
+        return 2
+    }
+    println("    PASS: mean load matches U/s and click count matches Haigh scale")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut uu: f64 = preset_u(preset)
+    let ss: f64 = 0.10
+    rng_state = 4242424242
+    seed_live(N_POP, uu, ss)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Muller ratchet - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut since_cycle: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            uu = preset_u(preset)
+            seed_live(N_POP, uu, ss)
+            since_cycle = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_live(N_POP, uu, ss)
+                since_cycle = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for sstep in 0 to 3 {
+                step_live(N_POP, uu, ss)
+            }
+            since_cycle = since_cycle + 1
+            if since_cycle >= CYCLE_FRAMES {
+                preset = (preset + 1) % 3
+                uu = preset_u(preset)
+                seed_live(N_POP, uu, ss)
+                since_cycle = 0
+            }
+        }
+
+        let n0: f64 = (N_POP as f64) * exp(0.0 - uu / ss)
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, fb, N_POP)
+        draw_hud(gfx, preset, uu, ss, mean_live_load(N_POP), n0, live_clicks, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

@@ -1,0 +1,358 @@
+# METAPOPULATION: Levins occupancy equilibrium p* = 1 - e/c.
+#
+# MODEL
+#   An infinite (mean-field) patch landscape. Let p be the fraction of
+#   occupied patches. Colonisation occurs at rate c p (1-p) and extinction
+#   at rate e p:
+#
+#        dp/dt = c p (1-p) - e p
+#
+#   Nontrivial equilibrium p* = 1 - e/c when c > e. Below the threshold
+#   c = e the metapopulation collapses to p = 0.
+#
+#   The live view also shows a finite lattice of patches updated with the
+#   same rates, so occupancy fluctuates around p*.
+#
+# GATES
+#   1. From interior start with c > e, |p_inf - (1-e/c)| < 1e-4.
+#   2. With c < e, p_inf < 1e-4.
+#   3. Finite lattice mean occupancy within 0.12 of p* after burn-in.
+#
+# KEYS
+#   1 e/c=0.25   2 e/c=0.50   3 e/c=0.75
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/metapopulation.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const GRID: i32 = 24
+const CELLS: i32 = 576
+const CELL_PX: i32 = 18
+const C_RATE: f64 = 1.0
+const DT: f64 = 0.05
+const HIST: i32 = 220
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 2468135790
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function levins_step(p: f64, c: f64, e: f64, dt: f64) -> f64 {
+    let mut np: f64 = p + dt * (c * p * (1.0 - p) - e * p)
+    if np < 0.0 { np = 0.0 }
+    if np > 1.0 { np = 1.0 }
+    return np
+}
+
+function converge(p0: f64, c: f64, e: f64, steps: i32) -> f64 {
+    let mut p: f64 = p0
+    for t in 0 to steps {
+        p = levins_step(p, c, e, DT)
+    }
+    return p
+}
+
+function pstar(c: f64, e: f64) -> f64 {
+    if c <= e { return 0.0 }
+    return 1.0 - e / c
+}
+
+function preset_e(p: i32) -> f64 {
+    if p == 1 { return 0.50 }
+    if p == 2 { return 0.75 }
+    return 0.25
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "e/c=0.50" }
+    if p == 2 { return "e/c=0.75" }
+    return "e/c=0.25"
+}
+
+let mut patch: array<i32, 576> = [0, 0, 0, 0]
+let mut fb: array<u8, 786432> = [0, 0, 0, 0]
+let mut tr: array<f64, 220> = [0.0, 0.0, 0.0, 0.0]
+let mut tr_len: i32 = 0
+
+function occ_frac() -> f64 {
+    let mut s: i32 = 0
+    for i in 0 to CELLS {
+        s = s + patch[i]
+    }
+    return (s as f64) / (CELLS as f64)
+}
+
+function seed_patches(p0: f64) -> void {
+    for i in 0 to CELLS {
+        if rng_unit() < p0 {
+            patch[i] = 1
+        } else {
+            patch[i] = 0
+        }
+    }
+    tr_len = 0
+}
+
+function step_lattice(c: f64, e: f64) -> void {
+    let p: f64 = occ_frac()
+    let mut next: array<i32, 576> = [0, 0, 0, 0]
+    for i in 0 to CELLS {
+        if patch[i] == 1 {
+            if rng_unit() < e * DT {
+                next[i] = 0
+            } else {
+                next[i] = 1
+            }
+        } else {
+            if rng_unit() < c * p * DT {
+                next[i] = 1
+            } else {
+                next[i] = 0
+            }
+        }
+    }
+    for i in 0 to CELLS {
+        patch[i] = next[i]
+    }
+}
+
+function push_tr(v: f64) -> void {
+    if tr_len < HIST {
+        tr[tr_len] = v
+        tr_len = tr_len + 1
+    } else {
+        for i in 0 to HIST - 1 {
+            tr[i] = tr[i + 1]
+        }
+        tr[HIST - 1] = v
+    }
+}
+
+function lattice_mean(c: f64, e: f64, burn: i32, sample: i32) -> f64 {
+    seed_patches(0.5)
+    for t in 0 to burn {
+        step_lattice(c, e)
+    }
+    let mut sum: f64 = 0.0
+    for t in 0 to sample {
+        step_lattice(c, e)
+        sum = sum + occ_frac()
+    }
+    return sum / (sample as f64)
+}
+
+function paint_cell(x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    let px: i32 = 40 + x * (CELL_PX + 1)
+    let py: i32 = 40 + y * (CELL_PX + 1)
+    for dy in 0 to CELL_PX {
+        for dx in 0 to CELL_PX {
+            let o: i32 = ((py + dy) * FB_W + (px + dx)) * 3
+            if px + dx < FB_W and py + dy < FB_H {
+                fb[o] = r as u8
+                fb[o + 1] = g2 as u8
+                fb[o + 2] = b as u8
+            }
+        }
+    }
+}
+
+function draw_scene(g: Gfx, pstar_v: f64) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+    for y in 0 to GRID {
+        for x in 0 to GRID {
+            if patch[y * GRID + x] == 1 {
+                paint_cell(x, y, 80, 200, 140)
+            } else {
+                paint_cell(x, y, 40, 36, 52)
+            }
+        }
+    }
+    # Occupancy trace on the right.
+    let px0: i32 = 360
+    let py0: i32 = 40
+    let pw: i32 = 130
+    let ph: i32 = 400
+    for dy in 0 to ph {
+        for dx in 0 to pw {
+            let o: i32 = ((py0 + dy) * FB_W + (px0 + dx)) * 3
+            fb[o] = 18
+            fb[o + 1] = 16
+            fb[o + 2] = 28
+        }
+    }
+    let yeq: i32 = py0 + ph - 1 - ((pstar_v * ((ph - 1) as f64)) as i32)
+    for dx in 0 to pw {
+        let o: i32 = (yeq * FB_W + (px0 + dx)) * 3
+        fb[o] = 255
+        fb[o + 1] = 180
+        fb[o + 2] = 80
+    }
+    for i in 1 to tr_len {
+        let x: i32 = px0 + (i * (pw - 1)) / (HIST - 1)
+        let y: i32 = py0 + ph - 1 - ((tr[i] * ((ph - 1) as f64)) as i32)
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = 120
+        fb[o + 1] = 255
+        fb[o + 2] = 190
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, e: f64, p: f64, ps: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "METAPOPULATION LEVINS", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 300, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 8, 28, "p", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 22, 28, p, 3, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 90, 28, "p*", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 110, 28, ps, 3, 1, 255, 180, 80)
+    let t7: i32 = gfx_draw_text(g, 180, 28, "e/c", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 208, 28, e / C_RATE, 2, 1, 234, 232, 244)
+    let t9: i32 = gfx_draw_text(g, 8, 42,
+        "1 e/c=0.25  2 e/c=0.50  3 e/c=0.75  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let ta: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tb: i32 = gfx_draw_text(g, 8, 572,
+        "dp/dt = c p (1-p) - e p    p* = 1 - e/c when c > e",
+        1, 122, 118, 144)
+    let tc: i32 = gfx_draw_text(g, 8, 582,
+        "green patches occupied; orange line is Levins p*",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    println("")
+    println("  METAPOPULATION  --  Levins occupancy p* = 1 - e/c")
+    println("  ================================================")
+    println("")
+
+    let c: f64 = C_RATE
+    let e: f64 = 0.25
+    let ps: f64 = pstar(c, e)
+    let p_end: f64 = converge(0.1, c, e, 4000)
+    let p_die: f64 = converge(0.5, 0.5, 0.8, 4000)
+
+    print("    c = ")
+    printf("%.2f", c)
+    print("   e = ")
+    printf("%.2f", e)
+    print("   p* = ")
+    printf("%.4f", ps)
+    println("")
+    print("    ODE end from p0=0.1               : ")
+    printf("%.6f", p_end)
+    print("   |err| ")
+    printf("%.3e", fabs(p_end - ps))
+    println("")
+    print("    ODE end with c < e                : ")
+    printf("%.6f", p_die)
+    println("   (gate < 1e-4)")
+
+    rng_state = 2468135790
+    let lat: f64 = lattice_mean(c, e, 800, 2000)
+    print("    lattice mean occupancy            : ")
+    printf("%.4f", lat)
+    print("   |lat-p*| ")
+    printf("%.4f", fabs(lat - ps))
+    println("   (gate < 0.12)")
+    println("")
+
+    if fabs(p_end - ps) > 1.0e-4 {
+        println("    FAIL: Levins ODE missed p* = 1 - e/c")
+        return 1
+    }
+    if p_die > 1.0e-4 {
+        println("    FAIL: subcritical metapopulation did not collapse")
+        return 2
+    }
+    if fabs(lat - ps) > 0.12 {
+        println("    FAIL: lattice occupancy far from Levins p*")
+        return 3
+    }
+    println("    PASS: ODE and lattice occupancy match p* = 1 - e/c")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut ee: f64 = preset_e(preset)
+    rng_state = 4242424242
+    seed_patches(0.5)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Metapopulation - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            ee = preset_e(preset)
+            seed_patches(0.5)
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held { seed_patches(0.5) }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            for k in 0 to 3 {
+                step_lattice(c, ee)
+            }
+            push_tr(occ_frac())
+        }
+
+        let ps_live: f64 = pstar(c, ee)
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, ps_live)
+        draw_hud(gfx, preset, ee, occ_frac(), ps_live, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

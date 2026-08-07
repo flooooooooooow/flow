@@ -145,7 +145,7 @@ elastic collisions with restitution, projectile with drag vs the analytic
 vacuum case, inverted pendulum on a cart (already shipped as the cart-pole
 flagship — extend it).
 
-### 6. Chemistry and biology — 15 shipped (evoleco) + planned kinetics
+### 6. Chemistry and biology — 25 shipped (evoleco) + planned kinetics
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -164,6 +164,16 @@ flagship — extend it).
 | 13 | Replicator dynamics | Simplex distance to Nash rest point below 1e-4 |
 | 14 | Lotka-Volterra gfx | First integral V drifts below 1e-9 over eight periods |
 | 15 | Spatial SIR | Attack rate matches final-size at growth-estimated R0_eff |
+| 16 | Muller ratchet | Deterministic mean load U/s; click count vs Haigh-scale rate |
+| 17 | Clonal interference | Fixation ~(2/s) ln N; weaker competing clone suppressed |
+| 18 | Hitchhiking | Selected-locus H ~ 0; diversity trough vs recombination |
+| 19 | Breeder equation | R = h^2 S; realised heritability recovers h^2 |
+| 20 | Allee effect | Extinct below A; approach K above; threshold holds |
+| 21 | Hamilton rule | Well-mixed kills C; space sustains C when rB > C |
+| 22 | Red Queen | Matching-alleles oscillations; parasites chase hosts |
+| 23 | Metapopulation | Levins p* = 1 - e/c on ODE and lattice |
+| 24 | Competitive LV | Coexistence equilibrium; R* exclusion of the loser |
+| 25 | Runaway selection | Weak Lande-Kirkpatrick equilibrates; strong runaway |
 
 **Status: complete for the evolutionary / ecological atlas.**
 `examples/evoleco/` · [gallery](../demos/evoleco.md)
@@ -207,10 +217,10 @@ reconstruction, optical flow, wavelets.
 | Circuits | 12 | 12 |
 | Diffusion and fields | 12 | 0 |
 | Physics and mechanics | 12 | 1 |
-| Chemistry and biology | 15 | 15 |
+| Chemistry and biology | 25 | 25 |
 | Control and estimation | 10 | 2 |
 | Signals and imaging | 9 | 0 |
-| **Total** | **100** | **50** |
+| **Total** | **100** | **75** |
 
 Related: [VISION.md](../../VISION.md) · [dynamics DSL](../language/dynamics-dsl.md) ·
 [morphogenesis gallery](../demos/morphogenesis.md)
