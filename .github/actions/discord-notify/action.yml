@@ -160,7 +160,13 @@ runs:
         body = json.dumps(payload).encode()
         req = urllib.request.Request(
             webhook, data=body,
-            headers={"Content-Type": "application/json"})
+            headers={
+                "Content-Type": "application/json",
+                # Discord routes webhooks through Cloudflare, which blocks the
+                # bare `Python-urllib` user agent (403 / error code 1010). A
+                # plain browser-style UA keeps the webhook from being rejected.
+                "User-Agent": "Flow-CI/1.0 (+https://github.com/flooooooooooow/flow)",
+            })
         try:
             urllib.request.urlopen(req, timeout=20)
         except urllib.error.HTTPError as e:
