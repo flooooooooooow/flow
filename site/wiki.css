@@ -333,6 +333,33 @@ html[data-theme="light"] .brand-mark { color: #fff; }
 
 .btn-icon { display: none; padding: 0.4rem 0.55rem; font-size: 1rem; }
 
+.btn-discord {
+    border-color: rgba(88, 101, 242, 0.35);
+    color: #cdd3ff;
+}
+
+html[data-theme="dark"] .btn-discord {
+    background: rgba(88, 101, 242, 0.12);
+}
+
+html[data-theme="dark"] .btn-discord:hover {
+    background: rgba(88, 101, 242, 0.22);
+    border-color: rgba(88, 101, 242, 0.6);
+    color: #e3e7ff;
+    box-shadow: 0 6px 16px -6px rgba(88, 101, 242, 0.55);
+}
+
+html[data-theme="light"] .btn-discord {
+    color: #4a56c7;
+    border-color: rgba(88, 101, 242, 0.35);
+    background: rgba(88, 101, 242, 0.06);
+}
+
+html[data-theme="light"] .btn-discord:hover {
+    background: rgba(88, 101, 242, 0.13);
+    color: #3d48ad;
+}
+
 .theme-toggle {
     width: 34px;
     height: 32px;
@@ -1611,6 +1638,45 @@ kbd.key {
 
 .markdown-body .wiki-demo figcaption p { margin: 0; }
 .markdown-body .wiki-demo figcaption strong { color: var(--text); }
+
+.markdown-body .wiki-demo {
+    transition: border-color var(--med), transform var(--med), box-shadow var(--med);
+}
+
+.markdown-body .wiki-demo:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md), 0 0 0 1px var(--accent-line);
+}
+
+.markdown-body .wiki-demo img {
+    transition: filter var(--med), transform var(--med);
+}
+
+.markdown-body .wiki-demo:hover img {
+    filter: saturate(1.15) brightness(1.03);
+}
+
+/* Gallery jump list */
+.markdown-body .wiki-demo-links {
+    margin: 1rem 0 1.5rem;
+    border: 1px dashed var(--border-light);
+    border-radius: var(--radius);
+    padding: 0.6rem 1.1rem;
+    background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+.markdown-body .wiki-demo-links summary {
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    user-select: none;
+    list-style: none;
+}
+
+.markdown-body .wiki-demo-links summary::-webkit-details-marker { display: none; }
+.markdown-body .wiki-demo-links summary:hover { color: var(--accent); }
 
 /* ── Grammar / EBNF viewer ───────────────────────────────────────────────── */
 
