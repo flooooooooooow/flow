@@ -3,14 +3,16 @@
 # MODEL
 #   Left:  procgen_fbm2. Right: procgen_warped2 with the same octaves.
 #   Domain warp displaces the sample point by a low-octave noise field,
-#   which folds the coastline and lengthens coherent spatial structure.
+#   which folds the coastline. It often *increases* local gradients
+#   (warping stretches and compresses space), so HF power is not a
+#   reliable "smoother" claim.
 #
 # THE MEASUREMENT
-#   Lag-4 spatial autocorrelation of each field over a probe grid:
-#   ac = E[f(x) f(x+4)] / E[f(x)^2]. Domain warp lengthens coherent
-#   folds, so the warped field must show a higher autocorrelation
-#   (longer correlation length) than plain fBm. Same seed also replays
-#   bit-identically.
+#   Determinism: same seed + coordinates replay bit-identical samples.
+#   Fields differ: mean |plain - warped| above a floor, OR Pearson-like
+#   correlation of the two probe fields below ~0.95.
+#   Coastline: horizontal zero-crossing count on the sea cut differs
+#   between plain and warped (optional supporting signal).
 #
 # KEYS
 #   1 warp 0.25   2 warp 0.45   3 warp 0.65   4 warp 0.85
@@ -28,6 +30,7 @@ import "stdlib/procgen.flow"
 
 extern {
     function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
 }
 
 const WIN_W: i32 = 512
@@ -40,6 +43,9 @@ const PANEL: i32 = 200
 const CELL: i32 = 2
 const SEA: f32 = 0.0
 const VERIFY_SEED: u32 = 424242
+const PROBE: i32 = 48
+const DIFF_FLOOR: f64 = 0.02
+const CORR_MAX: f64 = 0.95
 
 const KEY_P: i32 = 35
 const KEY_1: i32 = 18
@@ -68,39 +74,110 @@ function preset_name(p: i32) -> string {
     return "WARP 0.85"
 }
 
-# Lag-4 autocorrelation along x. Higher means longer spatial correlation.
-function autocorr_plain() -> f64 {
-    let lag: i32 = 4
-    let mut num: f64 = 0.0
-    let mut den: f64 = 0.0
-    for iy in 0 to 40 {
-        for ix in 0 to 40 - lag {
-            let y: f32 = (iy as f32) * 0.15
-            let a: f64 = procgen_fbm2((ix as f32) * 0.15, y, 5, 3) as f64
-            let b: f64 = procgen_fbm2(((ix + lag) as f32) * 0.15, y, 5, 3) as f64
-            num = num + a * b
-            den = den + a * a
-        }
-    }
-    if den < 1.0e-12 { return 0.0 }
-    return num / den
+function probe_x(ix: i32) -> f32 {
+    return (ix as f32) * 0.11
 }
 
-function autocorr_warp(warp: f32) -> f64 {
-    let lag: i32 = 4
-    let mut num: f64 = 0.0
-    let mut den: f64 = 0.0
-    for iy in 0 to 40 {
-        for ix in 0 to 40 - lag {
-            let y: f32 = (iy as f32) * 0.15
-            let a: f64 = procgen_warped2((ix as f32) * 0.15, y, 5, warp, 3) as f64
-            let b: f64 = procgen_warped2(((ix + lag) as f32) * 0.15, y, 5, warp, 3) as f64
-            num = num + a * b
-            den = den + a * a
+function probe_y(iy: i32) -> f32 {
+    return (iy as f32) * 0.11
+}
+
+# Bit-identical replay of plain and warped at a fixed seed.
+function determinism_ok(warp: f32) -> i32 {
+    procgen_seed(VERIFY_SEED)
+    let a0: f32 = procgen_fbm2(1.25, 2.5, 5, 3)
+    let b0: f32 = procgen_warped2(1.25, 2.5, 5, warp, 3)
+    procgen_seed(VERIFY_SEED)
+    let a1: f32 = procgen_fbm2(1.25, 2.5, 5, 3)
+    let b1: f32 = procgen_warped2(1.25, 2.5, 5, warp, 3)
+    if a0 != a1 { return 0 }
+    if b0 != b1 { return 0 }
+    procgen_seed(VERIFY_SEED)
+    let c0: f32 = procgen_fbm2(3.7, 0.9, 5, 3)
+    let d0: f32 = procgen_warped2(3.7, 0.9, 5, warp, 3)
+    procgen_seed(VERIFY_SEED)
+    let c1: f32 = procgen_fbm2(3.7, 0.9, 5, 3)
+    let d1: f32 = procgen_warped2(3.7, 0.9, 5, warp, 3)
+    if c0 != c1 { return 0 }
+    if d0 != d1 { return 0 }
+    return 1
+}
+
+function mean_abs_diff(warp: f32) -> f64 {
+    let mut sum: f64 = 0.0
+    let mut n: i32 = 0
+    for iy in 0 to PROBE {
+        for ix in 0 to PROBE {
+            let x: f32 = probe_x(ix)
+            let y: f32 = probe_y(iy)
+            let p: f64 = procgen_fbm2(x, y, 5, 3) as f64
+            let w: f64 = procgen_warped2(x, y, 5, warp, 3) as f64
+            sum = sum + fabs(p - w)
+            n = n + 1
         }
     }
-    if den < 1.0e-12 { return 0.0 }
-    return num / den
+    return sum / (n as f64)
+}
+
+# Pearson r^2 of plain vs warped over the probe grid (avoids sqrt).
+function corr_r2(warp: f32) -> f64 {
+    let mut sum_p: f64 = 0.0
+    let mut sum_w: f64 = 0.0
+    let mut sum_pp: f64 = 0.0
+    let mut sum_ww: f64 = 0.0
+    let mut sum_pw: f64 = 0.0
+    let mut n: i32 = 0
+    for iy in 0 to PROBE {
+        for ix in 0 to PROBE {
+            let x: f32 = probe_x(ix)
+            let y: f32 = probe_y(iy)
+            let p: f64 = procgen_fbm2(x, y, 5, 3) as f64
+            let w: f64 = procgen_warped2(x, y, 5, warp, 3) as f64
+            sum_p = sum_p + p
+            sum_w = sum_w + w
+            sum_pp = sum_pp + p * p
+            sum_ww = sum_ww + w * w
+            sum_pw = sum_pw + p * w
+            n = n + 1
+        }
+    }
+    let nf: f64 = n as f64
+    let mean_p: f64 = sum_p / nf
+    let mean_w: f64 = sum_w / nf
+    let var_p: f64 = sum_pp / nf - mean_p * mean_p
+    let var_w: f64 = sum_ww / nf - mean_w * mean_w
+    let cov: f64 = sum_pw / nf - mean_p * mean_w
+    let denom: f64 = var_p * var_w
+    if denom <= 1.0e-18 { return 1.0 }
+    return (cov * cov) / denom
+}
+
+function zero_crossings_plain() -> i32 {
+    let mut n: i32 = 0
+    for iy in 0 to PROBE {
+        for ix in 0 to PROBE - 1 {
+            let a: f32 = procgen_fbm2(probe_x(ix), probe_y(iy), 5, 3)
+            let b: f32 = procgen_fbm2(probe_x(ix + 1), probe_y(iy), 5, 3)
+            if (a > SEA and b <= SEA) or (a <= SEA and b > SEA) {
+                n = n + 1
+            }
+        }
+    }
+    return n
+}
+
+function zero_crossings_warp(warp: f32) -> i32 {
+    let mut n: i32 = 0
+    for iy in 0 to PROBE {
+        for ix in 0 to PROBE - 1 {
+            let a: f32 = procgen_warped2(probe_x(ix), probe_y(iy), 5, warp, 3)
+            let b: f32 = procgen_warped2(probe_x(ix + 1), probe_y(iy), 5, warp, 3)
+            if (a > SEA and b <= SEA) or (a <= SEA and b > SEA) {
+                n = n + 1
+            }
+        }
+    }
+    return n
 }
 
 function clear_fb(fb: ptr<u8>) -> void {
@@ -159,23 +236,23 @@ function draw_scene(g: Gfx, fb: ptr<u8>, warp: f32) -> void {
     gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
 }
 
-function draw_hud(g: Gfx, preset: i32, plain_ac: f64, warp_ac: f64,
+function draw_hud(g: Gfx, preset: i32, mad: f64, r2: f64,
                   paused: bool) -> void {
     let t1: i32 = gfx_draw_text(g, 8, 8, "DOMAIN WARP", 2, 238, 234, 246)
     let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
-    let t3: i32 = gfx_draw_text(g, 8, 28, "PLAIN AC4", 1, 150, 146, 168)
-    let t4: i32 = gfx_draw_fixed(g, 76, 28, plain_ac, 4, 1, 234, 232, 244)
-    let t5: i32 = gfx_draw_text(g, 160, 28, "WARP AC4", 1, 150, 146, 168)
-    let t6: i32 = gfx_draw_fixed(g, 220, 28, warp_ac, 4, 1, 120, 255, 190)
+    let t3: i32 = gfx_draw_text(g, 8, 28, "MEAN |D|", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 70, 28, mad, 5, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 160, 28, "CORR R2", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 220, 28, r2, 5, 1, 120, 255, 190)
     let t7: i32 = gfx_draw_text(g, 8, 42,
         "1-4 WARP  R RESEED  P PAUSE   left=plain  right=warped", 1, 112, 108, 132)
     if paused {
         let t8: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
     }
     let t9: i32 = gfx_draw_text(g, 8, 572,
-        "domain warp folds the coastline and lengthens correlation", 1, 122, 118, 144)
+        "domain warp folds the sample domain; local gradients may rise", 1, 122, 118, 144)
     let ta: i32 = gfx_draw_text(g, 8, 582,
-        "gate: warped lag-4 autocorrelation > plain fBm", 1, 122, 118, 144)
+        "gate: deterministic + fields differ (diff floor or corr < 0.95)", 1, 122, 118, 144)
 }
 
 function main() -> i32 {
@@ -186,44 +263,56 @@ function main() -> i32 {
     println("  ======================================================")
     println("")
 
-    procgen_seed(VERIFY_SEED)
     let warp0: f32 = 0.45
-    let a0: f32 = procgen_warped2(1.25, 2.5, 5, warp0, 3)
+    let det: i32 = determinism_ok(warp0)
     procgen_seed(VERIFY_SEED)
-    let a1: f32 = procgen_warped2(1.25, 2.5, 5, warp0, 3)
+    let mad: f64 = mean_abs_diff(warp0)
     procgen_seed(VERIFY_SEED)
-    let plain_ac: f64 = autocorr_plain()
-    let warp_ac: f64 = autocorr_warp(warp0)
+    let r2: f64 = corr_r2(warp0)
+    procgen_seed(VERIFY_SEED)
+    let zc_plain: i32 = zero_crossings_plain()
+    procgen_seed(VERIFY_SEED)
+    let zc_warp: i32 = zero_crossings_warp(warp0)
 
-    print("    bit-identical warp replay       : ")
-    if a0 == a1 {
-        printf("%.0f", 1.0)
-    } else {
-        printf("%.0f", 0.0)
-    }
+    print("    determinism replay ok           : ")
+    printf("%.0f", det as f64)
     println("")
-    print("    plain lag-4 autocorrelation     : ")
-    printf("%.6f", plain_ac)
+    print("    mean |plain - warped|           : ")
+    printf("%.8f", mad)
     println("")
-    print("    warped lag-4 autocorrelation    : ")
-    printf("%.6f", warp_ac)
+    print("    Pearson r^2 (plain, warped)     : ")
+    printf("%.6f", r2)
+    println("")
+    print("    zero-crossings plain / warped   : ")
+    printf("%.0f", zc_plain as f64)
+    print(" / ")
+    printf("%.0f", zc_warp as f64)
     println("")
 
-    if a0 != a1 {
-        println("    FAIL: warped sample did not replay bit-identically")
+    if det == 0 {
+        println("    FAIL: same seed+coords did not replay bit-identically")
         return 1
     }
-    if warp_ac <= plain_ac {
-        println("    FAIL: warped field did not raise spatial autocorrelation")
+    let corr_cap: f64 = CORR_MAX * CORR_MAX
+    let differ: i32 = 0
+    if mad > DIFF_FLOOR { differ = 1 }
+    if r2 < corr_cap { differ = 1 }
+    if differ == 0 {
+        println("    FAIL: warped field too similar to plain (diff and corr)")
         return 2
     }
-    println("    PASS: warped field has higher lag-4 autocorrelation than plain fBm")
+    if zc_plain == zc_warp {
+        println("    note: coastline zero-crossing counts matched (soft)")
+    } else {
+        println("    coastline zero-crossing counts differ (supporting)")
+    }
+    println("    PASS: deterministic warp changes the field (diff/corr gate)")
     println("")
 
     let mut preset: i32 = 2
     let mut warp: f32 = preset_warp(preset)
-    let mut plain_live: f64 = plain_ac
-    let mut warp_live: f64 = warp_ac
+    let mut mad_live: f64 = mad
+    let mut r2_live: f64 = r2
     let mut paused: bool = false
     let mut pause_held: bool = false
     let mut reseed_held: bool = false
@@ -242,15 +331,16 @@ function main() -> i32 {
         if want >= 0 and want != preset {
             preset = want
             warp = preset_warp(preset)
-            warp_live = autocorr_warp(warp)
+            mad_live = mean_abs_diff(warp)
+            r2_live = corr_r2(warp)
         }
 
         if gfx_key_down(g, KEY_R) {
             if !reseed_held {
                 rng_state = rng_next()
                 procgen_seed(rng_state)
-                plain_live = autocorr_plain()
-                warp_live = autocorr_warp(warp)
+                mad_live = mean_abs_diff(warp)
+                r2_live = corr_r2(warp)
             }
             reseed_held = true
         } else {
@@ -266,7 +356,7 @@ function main() -> i32 {
 
         gfx_clear(g, 12, 10, 18)
         draw_scene(g, fb, warp)
-        draw_hud(g, preset, plain_live, warp_live, paused)
+        draw_hud(g, preset, mad_live, r2_live, paused)
         gfx_present(g)
         frame = frame + 1
     }

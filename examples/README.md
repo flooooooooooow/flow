@@ -315,8 +315,8 @@ regions, islands, and biome tile maps (see
 [procgen/README.md](procgen/README.md)). Shared API:
 `lib/stdlib/procgen.flow`. Each gates a measurement before the window opens.
 - `noise_atlas.flow` - value / gradient / fBm / ridged / warped side by side
-- `heightmap_fbm.flow` / `domain_warp.flow` - sea-cut land fraction; lag-4 AC
-- `cave_worms.flow` / `wfc_dungeon.flow` - 3D porosity band; WFC adjacency
+- `heightmap_fbm.flow` / `domain_warp.flow` - sea-cut land fraction; field-diff gate
+- `cave_worms.flow` / `wfc_dungeon.flow` - 3D porosity band; 16-tile pipe WFC
 - `voronoi_sites.flow` / `island_mask.flow` / `tile_map.flow` - sites, island, biomes
 
 Run with `FLOW_HOST=python ./flow gfx examples/procgen/<name>.flow` or headless

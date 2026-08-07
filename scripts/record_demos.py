@@ -1081,7 +1081,7 @@ PROCGEN_DEMOS: list[Demo] = [
             "Heightmap fBm — fractal height with sea cut and contours",
             duration_ms=70, colors=32),
     procgen("domain_warp", 80, 2,
-            "Domain warp — plain vs warped coastline; lag-4 autocorrelation",
+            "Domain warp — plain vs warped; deterministic + field-diff gate",
             duration_ms=70, colors=24),
     procgen("cave_worms", 90, 3,
             "Cave worms — 3D density slices with porosity in band",
