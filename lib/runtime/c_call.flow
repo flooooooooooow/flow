@@ -1,0 +1,22 @@
+# C function-pointer call trampolines (Flow language escape hatch).
+#
+# Flow cannot yet cast `ptr<void>` to a raw C function type and call it
+# (fat-pointer `(T)->R` closures are different). Until a first-class C
+# fnptr type lands, call through these runtime helpers.
+#
+# See docs/language/c-fnptr-call.md for the feature request / roadmap.
+
+extern {
+    function flow_rt_call_void(fn: ptr<void>) -> void
+    function flow_rt_call_p1(fn: ptr<void>, arg: ptr<void>) -> void
+    function flow_rt_call_p2(fn: ptr<void>, a: ptr<void>, b: ptr<void>) -> void
+    function flow_rt_call_p1_bool(fn: ptr<void>, arg: ptr<void>) -> i32
+    function flow_rt_call_p3_bool(fn: ptr<void>, a: ptr<void>, x: i32, y: i32) -> i32
+    function flow_rt_errno() -> i32
+    function flow_rt_errno_is_isdir() -> i32
+    function flow_rt_error_popup(msg: string) -> void
+    function flow_rt_unlink(path: string) -> i32
+    function flow_rt_rename(old_path: string, new_path: string) -> i32
+    function flow_rt_mkdir(path: string, mode: i32) -> i32
+    function flow_rt_time_ms() -> u32
+}

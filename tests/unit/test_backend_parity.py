@@ -663,6 +663,79 @@ function main() -> i32 {
     return 1
 }
 """,
+    "module_static": """
+let mut counter: i32 = 41
+function main() -> i32 {
+    counter = counter + 1
+    if counter == 42 {
+        return 0
+    }
+    return 1
+}
+""",
+    "for_break": """
+function main() -> i32 {
+    let mut found: i32 = 0
+    for i in 0 to 10 {
+        if i == 3 {
+            found = 1
+            break
+        }
+    }
+    if found == 1 {
+        return 0
+    }
+    return 1
+}
+""",
+    "for_continue": """
+function main() -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to 5 {
+        if i == 2 {
+            continue
+        }
+        s = s + i
+    }
+    # 0+1+3+4 = 8
+    if s == 8 {
+        return 0
+    }
+    return 1
+}
+""",
+    "enum_tag_match": """
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+function classify(c: Color) -> i32 {
+    match c.tag {
+        Color_Red => { return 1 }
+        Color_Green => { return 2 }
+        Color_Blue => { return 3 }
+    }
+    return -1
+}
+function main() -> i32 {
+    let c: Color = Color { tag: Color_Green }
+    if classify(c) == 2 {
+        return 0
+    }
+    return 1
+}
+""",
+    "lambda_nocapture": """
+function main() -> i32 {
+    let add1: (i32) -> i32 = |x: i32| -> i32 { return x + 1 }
+    let y: i32 = add1(41)
+    if y == 42 {
+        return 0
+    }
+    return 1
+}
+""",
 }
 
 
