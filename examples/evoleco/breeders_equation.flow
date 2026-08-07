@@ -1,0 +1,432 @@
+# BREEDER'S EQUATION: response to selection R = h^2 S.
+#
+# MODEL
+#   A quantitative trait with phenotypic variance Vp and narrow-sense
+#   heritability h^2. Parental phenotypes are breeding value + environment,
+#   breeding values are Gaussian with Va = h^2 Vp. Truncation or differential
+#   selection keeps parents above a threshold; the selection differential is
+#
+#        S = mean(selected parents) - mean(population)
+#
+#   and the offspring mean shifts by the breeder's equation
+#
+#        R = h^2 S
+#
+#   (additive genetics, no assortative mating beyond the truncation rule).
+#
+# GATES
+#   1. Across several h^2 values, |mean R - h^2 mean S| / |h^2 mean S| < 0.08
+#      (aggregate over reps; single-generation relative error is noisy).
+#   2. Realised heritability mean(R)/mean(S) recovers h^2 within 0.08.
+#
+# KEYS
+#   1 h2=0.25   2 h2=0.50   3 h2=0.75
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/breeders_equation.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sin(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const N_IND: i32 = 800
+const VP: f64 = 1.0
+const KEEP_FRAC: f64 = 0.20
+const ERR_GATE: f64 = 0.08
+const H2_GATE: f64 = 0.08
+const TRACE: i32 = 200
+const PI2: f64 = 6.283185307179586
+const CYCLE_FRAMES: i32 = 70
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 2222222222
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+# Box-Muller
+function rng_normal() -> f64 {
+    let u1: f64 = rng_unit()
+    let u2: f64 = rng_unit()
+    if u1 < 1.0e-12 { u1 = 1.0e-12 }
+    return sqrt(0.0 - 2.0 * log(u1)) * cos(PI2 * u2)
+}
+
+function preset_h2(p: i32) -> f64 {
+    if p == 1 { return 0.50 }
+    if p == 2 { return 0.75 }
+    return 0.25
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "h2=0.50" }
+    if p == 2 { return "h2=0.75" }
+    return "h2=0.25"
+}
+
+function one_generation(h2: f64) -> f64 {
+    # Returns R/S for one truncation round; also records S,R via globals.
+    return 0.0
+}
+
+let mut last_S: f64 = 0.0
+let mut last_R: f64 = 0.0
+let mut last_Rpred: f64 = 0.0
+
+function truncate_select(h2: f64) -> void {
+    let va: f64 = h2 * VP
+    let ve: f64 = (1.0 - h2) * VP
+    let sda: f64 = sqrt(va)
+    let sde: f64 = sqrt(ve)
+    if sde < 1.0e-9 { sde = 1.0e-9 }
+
+    let mut bv: array<f64, 800> = [0.0, 0.0, 0.0, 0.0]
+    let mut ph: array<f64, 800> = [0.0, 0.0, 0.0, 0.0]
+    let mut mean_p: f64 = 0.0
+    for i in 0 to N_IND {
+        bv[i] = sda * rng_normal()
+        ph[i] = bv[i] + sde * rng_normal()
+        mean_p = mean_p + ph[i]
+    }
+    mean_p = mean_p / (N_IND as f64)
+
+    # Threshold: keep top KEEP_FRAC by sorting via counting on ranks --
+    # select individuals with phenotype >= empirical quantile.
+    let nkeep: i32 = (KEEP_FRAC * (N_IND as f64)) as i32
+    if nkeep < 2 { nkeep = 2 }
+
+    # Simple O(n^2) select top nkeep indices.
+    let mut selected: array<i32, 800> = [0, 0, 0, 0]
+    let mut used: array<i32, 800> = [0, 0, 0, 0]
+    let mut mean_sel: f64 = 0.0
+    let mut mean_bv_sel: f64 = 0.0
+    for k in 0 to nkeep {
+        let mut best_i: i32 = -1
+        let mut best_p: f64 = -1.0e9
+        for i in 0 to N_IND {
+            if used[i] == 0 and ph[i] > best_p {
+                best_p = ph[i]
+                best_i = i
+            }
+        }
+        used[best_i] = 1
+        selected[k] = best_i
+        mean_sel = mean_sel + ph[best_i]
+        mean_bv_sel = mean_bv_sel + bv[best_i]
+    }
+    mean_sel = mean_sel / (nkeep as f64)
+    mean_bv_sel = mean_bv_sel / (nkeep as f64)
+    last_S = mean_sel - mean_p
+
+    # Offspring: mid-parent breeding values (random pairs among selected) + E.
+    let mut mean_off: f64 = 0.0
+    for i in 0 to N_IND {
+        let a: i32 = selected[(rng_next() % (nkeep as u32)) as i32]
+        let b: i32 = selected[(rng_next() % (nkeep as u32)) as i32]
+        let off_bv: f64 = 0.5 * (bv[a] + bv[b]) + sqrt(0.5 * va) * rng_normal()
+        let off_ph: f64 = off_bv + sde * rng_normal()
+        mean_off = mean_off + off_ph
+    }
+    mean_off = mean_off / (N_IND as f64)
+    last_R = mean_off - mean_p
+    last_Rpred = h2 * last_S
+}
+
+function mean_error(h2: f64, reps: i32) -> f64 {
+    let mut sum_R: f64 = 0.0
+    let mut sum_S: f64 = 0.0
+    for r in 0 to reps {
+        truncate_select(h2)
+        sum_R = sum_R + last_R
+        sum_S = sum_S + last_S
+    }
+    let rbar: f64 = sum_R / (reps as f64)
+    let sbar: f64 = sum_S / (reps as f64)
+    let pred: f64 = h2 * sbar
+    let denom: f64 = fabs(pred)
+    if denom < 0.05 { denom = 0.05 }
+    return fabs(rbar - pred) / denom
+}
+
+function mean_realised_h2(h2: f64, reps: i32) -> f64 {
+    let mut sum_R: f64 = 0.0
+    let mut sum_S: f64 = 0.0
+    for r in 0 to reps {
+        truncate_select(h2)
+        sum_R = sum_R + last_R
+        sum_S = sum_S + last_S
+    }
+    return sum_R / sum_S
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+let mut tr_R: array<f64, 200> = [0.0, 0.0, 0.0, 0.0]
+let mut tr_Rp: array<f64, 200> = [0.0, 0.0, 0.0, 0.0]
+let mut tr_len: i32 = 0
+let mut gen: i32 = 0
+let mut live_h2: f64 = 0.5
+
+function push_resp() -> void {
+    if tr_len < TRACE {
+        tr_R[tr_len] = last_R
+        tr_Rp[tr_len] = last_Rpred
+        tr_len = tr_len + 1
+    } else {
+        for i in 0 to TRACE - 1 {
+            tr_R[i] = tr_R[i + 1]
+            tr_Rp[i] = tr_Rp[i + 1]
+        }
+        tr_R[TRACE - 1] = last_R
+        tr_Rp[TRACE - 1] = last_Rpred
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>) -> void {
+    clear_fb(fb)
+    let px0: i32 = 40
+    let py0: i32 = 50
+    let pw: i32 = 432
+    let ph: i32 = 260
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    # Zero line.
+    fill_rect_fb(fb, px0, py0 + ph / 2, pw, 1, 50, 48, 70)
+    let mut vmax: f64 = 0.2
+    for i in 0 to tr_len {
+        if fabs(tr_R[i]) > vmax { vmax = fabs(tr_R[i]) }
+        if fabs(tr_Rp[i]) > vmax { vmax = fabs(tr_Rp[i]) }
+    }
+    for i in 1 to tr_len {
+        let x: i32 = px0 + (i * (pw - 1)) / (TRACE - 1)
+        let y1: i32 = py0 + ph / 2 - (((tr_R[i] / vmax) * ((ph / 2 - 4) as f64)) as i32)
+        let y2: i32 = py0 + ph / 2 - (((tr_Rp[i] / vmax) * ((ph / 2 - 4) as f64)) as i32)
+        put_rgb(fb, x, y1, 120, 255, 190)
+        put_rgb(fb, x, y2, 255, 180, 80)
+    }
+
+    # S and R bars.
+    let bx: i32 = 80
+    let by: i32 = 360
+    fill_rect_fb(fb, bx, by, 360, 100, 18, 16, 28)
+    let scale: f64 = 120.0
+    let s_h: i32 = (fabs(last_S) * scale) as i32
+    let r_h: i32 = (fabs(last_R) * scale) as i32
+    let rp_h: i32 = (fabs(last_Rpred) * scale) as i32
+    if s_h > 90 { s_h = 90 }
+    if r_h > 90 { r_h = 90 }
+    if rp_h > 90 { rp_h = 90 }
+    fill_rect_fb(fb, bx + 40, by + 90 - s_h, 50, s_h, 120, 160, 220)
+    fill_rect_fb(fb, bx + 140, by + 90 - r_h, 50, r_h, 120, 255, 190)
+    fill_rect_fb(fb, bx + 240, by + 90 - rp_h, 50, rp_h, 255, 180, 80)
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, h2: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "BREEDER EQUATION", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 240, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 340, 12, "GEN", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 368, 12, gen, 1, 234, 232, 244)
+
+    let t5: i32 = gfx_draw_text(g, 8, 28, "S", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 20, 28, last_S, 3, 1, 120, 160, 220)
+    let t7: i32 = gfx_draw_text(g, 90, 28, "R", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 104, 28, last_R, 3, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 170, 28, "h2 S", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 202, 28, last_Rpred, 3, 1, 255, 180, 80)
+    let tb: i32 = gfx_draw_text(g, 280, 28, "R/S", 1, 150, 146, 168)
+    let mut rs: f64 = 0.0
+    if fabs(last_S) > 1.0e-9 { rs = last_R / last_S }
+    let tc: i32 = gfx_draw_fixed(g, 308, 28, rs, 3, 1, 234, 232, 244)
+    let td: i32 = gfx_draw_text(g, 380, 28, "h2", 1, 150, 146, 168)
+    let te: i32 = gfx_draw_fixed(g, 400, 28, h2, 2, 1, 255, 198, 96)
+
+    let tf: i32 = gfx_draw_text(g, 8, 42,
+        "1 h2=0.25  2 h2=0.50  3 h2=0.75  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let tg: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let th: i32 = gfx_draw_text(g, 8, 572,
+        "green = measured R, orange = h^2 S; bars are S, R, h^2 S",
+        1, 122, 118, 144)
+    let ti: i32 = gfx_draw_text(g, 8, 582,
+        "truncation keeps the top 20 percent; offspring means shift by R",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    println("")
+    println("  BREEDER'S EQUATION  --  R = h^2 S")
+    println("  =================================")
+    println("")
+
+    let reps: i32 = 80
+    let mut worst: f64 = 0.0
+    let mut worst_h: f64 = 0.0
+    let mut hi: i32 = 0
+    while hi < 3 {
+        let h2: f64 = 0.25 + (hi as f64) * 0.25
+        rng_state = 2222222222 + (hi as u32) * 1000
+        let err: f64 = mean_error(h2, reps)
+        rng_state = 3333333333 + (hi as u32) * 1000
+        let rh: f64 = mean_realised_h2(h2, reps)
+        let herr: f64 = fabs(rh - h2)
+        print("    h2 = ")
+        printf("%.2f", h2)
+        print("   |meanR - h2 meanS|/|pred| = ")
+        printf("%.4f", err)
+        print("   realised h2 = ")
+        printf("%.3f", rh)
+        println("")
+        if err > worst { worst = err }
+        if herr > worst_h { worst_h = herr }
+        hi = hi + 1
+    }
+    print("    worst aggregate R error         : ")
+    printf("%.4f", worst)
+    print("   (gate < ")
+    printf("%.2f", ERR_GATE)
+    println(")")
+    print("    worst |meanR/meanS - h2|        : ")
+    printf("%.4f", worst_h)
+    print("   (gate < ")
+    printf("%.2f", H2_GATE)
+    println(")")
+    println("")
+
+    if worst > ERR_GATE {
+        println("    FAIL: response R disagrees with h^2 S")
+        return 1
+    }
+    if worst_h > H2_GATE {
+        println("    FAIL: realised heritability R/S disagrees with h^2")
+        return 2
+    }
+    println("    PASS: R = h^2 S across heritabilities; realised h2 recovers h2")
+    println("")
+
+    let mut preset: i32 = 0
+    live_h2 = preset_h2(preset)
+    rng_state = 4242424242
+    truncate_select(live_h2)
+    tr_len = 0
+    push_resp()
+    gen = 1
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Breeder equation - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut since_cycle: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            live_h2 = preset_h2(preset)
+            tr_len = 0
+            truncate_select(live_h2)
+            push_resp()
+            gen = 1
+            since_cycle = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                tr_len = 0
+                truncate_select(live_h2)
+                push_resp()
+                gen = 1
+                since_cycle = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused and frame % 3 == 0 {
+            truncate_select(live_h2)
+            push_resp()
+            gen = gen + 1
+            since_cycle = since_cycle + 1
+            if since_cycle >= CYCLE_FRAMES {
+                preset = (preset + 1) % 3
+                live_h2 = preset_h2(preset)
+                tr_len = 0
+                truncate_select(live_h2)
+                push_resp()
+                gen = 1
+                since_cycle = 0
+            }
+        }
+
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, fb)
+        draw_hud(gfx, preset, live_h2, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

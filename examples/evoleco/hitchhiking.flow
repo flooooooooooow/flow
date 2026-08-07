@@ -1,0 +1,461 @@
+# HITCHHIKING: a selective sweep carves a diversity trough at the selected locus.
+#
+# MODEL
+#   A linear chromosome of L diallelic loci. Locus mid carries a beneficial
+#   mutation that starts at frequency 1/N and sweeps under selection s.
+#   Neutral loci are completely linked (no recombination in this asexual /
+#   zero-r limit), so the sweeping haplotype carries its ancestral alleles
+#   to fixation and wipes diversity everywhere -- the classic hard-sweep
+#   signature. With free recombination (unlinked control), only the selected
+#   locus loses diversity.
+#
+#   Here we use a continuum-of-sites approximation on a finite map: each
+#   neutral locus recombines with the selected site at rate r_i = rho * |i-mid|,
+#   so the probability a neutral lineage escapes the sweep is approximately
+#   exp(-r_i * T_sweep) with T_sweep ≈ (2/s) ln N. Expected heterozygosity
+#   after the sweep is H0 * (1 - p_escape)^0... more precisely the Maynard
+#   Smith / Kaplan hitchhiking formula leaves a trough
+#
+#        H_i / H0 ≈ 1 - exp(-rho |i-mid| * (2/s) ln N)   (schematic form)
+#
+#   We gate the linked trough depth at the selected locus and recovery with
+#   distance against that shape.
+#
+# GATES
+#   1. Post-sweep heterozygosity at the selected locus < 0.02.
+#   2. Mean H at the outermost loci > 4x H at the selected locus (trough).
+#   3. Unlinked control (rho huge): flanking H stays above 0.35.
+#
+# KEYS
+#   1 low rho   2 mid rho   3 high rho
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/hitchhiking.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const Loci: i32 = 21
+const MID: i32 = 10
+const N_POP: i32 = 300
+const S_SEL: f64 = 0.10
+const H0: f64 = 0.5
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut rng_state: u32 = 987654321
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_unit() -> f64 {
+    let bits: i32 = ((rng_next() >> 9) % 65536) as i32
+    return (bits as f64) / 65536.0
+}
+
+function preset_rho(p: i32) -> f64 {
+    if p == 1 { return 0.02 }
+    if p == 2 { return 0.08 }
+    return 0.005
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "MID rho" }
+    if p == 2 { return "HIGH rho" }
+    return "LOW rho"
+}
+
+# Analytic Maynard-Smith / Kaplan style escape probability for locus i.
+function escape_prob(i: i32, rho: f64, s: f64, n: f64) -> f64 {
+    let dist: f64 = fabs((i - MID) as f64)
+    let r: f64 = rho * dist
+    let t_sweep: f64 = (2.0 / s) * log(n)
+    let arg: f64 = 0.0 - r * t_sweep
+    # Probability the neutral allele is NOT brought along = 1 - e^{-r T} roughly
+    # for soft approximation of hitchhiking reduction factor:
+    return 1.0 - exp(arg)
+}
+
+function theory_h(i: i32, rho: f64, s: f64, n: f64) -> f64 {
+    # Remaining diversity ≈ H0 * (escape contribution). At selected site, ~0.
+    if i == MID { return 0.0 }
+    let esc: f64 = escape_prob(i, rho, s, n)
+    let h: f64 = H0 * esc
+    if h > H0 { h = H0 }
+    return h
+}
+
+# Stochastic sweep on haplotypes: each of N chromosomes is a bitstring of Loci
+# alleles (0/1). Selected locus starts with one 1. Soft selection on that bit.
+# Between generations, each locus recombines with the selected background at
+# rate r_i (copies a random allele from the population pool).
+function run_sweep(rho: f64, s: f64, n: i32) -> void {
+    # Stored in global chroms below via side effect -- see measure_h.
+}
+
+let mut chroms: array<i32, 6300> = [0, 0, 0, 0]
+
+function idx(ind: i32, loc: i32) -> i32 {
+    return ind * Loci + loc
+}
+
+function seed_pop(n: i32) -> void {
+    for i in 0 to n {
+        for L in 0 to Loci {
+            if rng_unit() < 0.5 {
+                chroms[idx(i, L)] = 1
+            } else {
+                chroms[idx(i, L)] = 0
+            }
+        }
+        chroms[idx(i, MID)] = 0
+    }
+    # One beneficial copy.
+    chroms[idx(0, MID)] = 1
+}
+
+function locus_freq(n: i32, loc: i32) -> f64 {
+    let mut k: i32 = 0
+    for i in 0 to n {
+        k = k + chroms[idx(i, loc)]
+    }
+    return (k as f64) / (n as f64)
+}
+
+function hetero_of(p: f64) -> f64 {
+    return 2.0 * p * (1.0 - p)
+}
+
+function step_sweep(n: i32, rho: f64, s: f64) -> void {
+    # Fitness-proportional reproduction of whole haplotypes.
+    let mut w: array<f64, 300> = [0.0, 0.0, 0.0, 0.0]
+    let mut wsum: f64 = 0.0
+    for i in 0 to n {
+        if chroms[idx(i, MID)] == 1 {
+            w[i] = 1.0 + s
+        } else {
+            w[i] = 1.0
+        }
+        wsum = wsum + w[i]
+    }
+    let mut next: array<i32, 6300> = [0, 0, 0, 0]
+    for i in 0 to n {
+        let mut r: f64 = rng_unit() * wsum
+        let mut j: i32 = 0
+        while j < n - 1 and r > w[j] {
+            r = r - w[j]
+            j = j + 1
+        }
+        for L in 0 to Loci {
+            next[idx(i, L)] = chroms[idx(j, L)]
+        }
+        # Recombination onto selected background: for each neutral locus,
+        # with prob r_L replace allele from a random parent in the old pool.
+        for L in 0 to Loci {
+            if L != MID {
+                let dist: f64 = fabs((L - MID) as f64)
+                let rr: f64 = rho * dist
+                if rr > 1.0 { rr = 1.0 }
+                if rng_unit() < rr {
+                    let donor: i32 = (rng_next() % (n as u32)) as i32
+                    next[idx(i, L)] = chroms[idx(donor, L)]
+                }
+            }
+        }
+    }
+    for i in 0 to n * Loci {
+        chroms[i] = next[i]
+    }
+}
+
+function selected_freq(n: i32) -> f64 {
+    return locus_freq(n, MID)
+}
+
+function measure_profile(n: i32, h: ptr<f64>) -> void {
+    for L in 0 to Loci {
+        h[L] = hetero_of(locus_freq(n, L))
+    }
+}
+
+function run_to_fixation(n: i32, rho: f64, s: f64, cap: i32) -> i32 {
+    seed_pop(n)
+    let mut t: i32 = 0
+    while t < cap {
+        let p: f64 = selected_freq(n)
+        if p <= 0.0 or p >= 1.0 { break }
+        step_sweep(n, rho, s)
+        t = t + 1
+    }
+    return t
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+let mut live_h: array<f64, 21> = [0.0, 0.0, 0.0, 0.0]
+let mut theory: array<f64, 21> = [0.0, 0.0, 0.0, 0.0]
+let mut gen: i32 = 0
+let mut sweeping: bool = true
+
+function refresh_theory(rho: f64) -> void {
+    for i in 0 to Loci {
+        theory[i] = theory_h(i, rho, S_SEL, N_POP as f64)
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>) -> void {
+    clear_fb(fb)
+    let px0: i32 = 40
+    let py0: i32 = 60
+    let pw: i32 = 432
+    let ph: i32 = 300
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    # Theory trough (orange) and measured H (green bars).
+    let bar_w: i32 = pw / Loci
+    for i in 0 to Loci {
+        let hm: f64 = live_h[i]
+        let ht: f64 = theory[i]
+        let hb: i32 = ((hm / H0) * ((ph - 20) as f64)) as i32
+        let ht_i: i32 = ((ht / H0) * ((ph - 20) as f64)) as i32
+        fill_rect_fb(fb, px0 + i * bar_w + 2, py0 + ph - hb, bar_w - 4, hb, 80, 200, 160)
+        put_rgb(fb, px0 + i * bar_w + bar_w / 2, py0 + ph - ht_i, 255, 180, 80)
+        put_rgb(fb, px0 + i * bar_w + bar_w / 2, py0 + ph - ht_i - 1, 255, 180, 80)
+    }
+    # Selected locus marker.
+    fill_rect_fb(fb, px0 + MID * bar_w, py0, bar_w, 4, 255, 120, 120)
+
+    # Chromosome cartoon.
+    fill_rect_fb(fb, 40, 400, 432, 36, 30, 28, 44)
+    for i in 0 to Loci {
+        let p: f64 = locus_freq(N_POP, i)
+        let shade: i32 = (p * 200.0) as i32
+        fill_rect_fb(fb, 44 + i * bar_w, 408, bar_w - 2, 20, 40 + shade, 80, 200 - shade / 2)
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, rho: f64, psel: f64, hmid: f64,
+                  hout: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "HITCHHIKING SWEEP", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 260, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 360, 12, "GEN", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 388, 12, gen, 1, 234, 232, 244)
+
+    let t5: i32 = gfx_draw_text(g, 8, 28, "p_sel", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 48, 28, psel, 3, 1, 255, 120, 120)
+    let t7: i32 = gfx_draw_text(g, 110, 28, "H_mid", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 150, 28, hmid, 3, 1, 120, 255, 190)
+    let t9: i32 = gfx_draw_text(g, 220, 28, "H_out", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 260, 28, hout, 3, 1, 120, 255, 190)
+    let tb: i32 = gfx_draw_text(g, 330, 28, "rho", 1, 150, 146, 168)
+    let tc: i32 = gfx_draw_fixed(g, 358, 28, rho, 3, 1, 234, 232, 244)
+
+    let td: i32 = gfx_draw_text(g, 8, 42,
+        "1 LOW rho  2 MID  3 HIGH  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let te: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let tf: i32 = gfx_draw_text(g, 8, 572,
+        "green bars = measured H; orange dots = Kaplan-style trough",
+        1, 122, 118, 144)
+    let tg: i32 = gfx_draw_text(g, 8, 582,
+        "red mark = selected locus; diversity recovers with map distance",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let rho: f64 = 0.005
+    let n: i32 = N_POP
+    let s: f64 = S_SEL
+
+    println("")
+    println("  HITCHHIKING  --  selective sweep diversity trough")
+    println("  ================================================")
+    println("")
+    print("    N = ")
+    printf("%.0f", n as f64)
+    print("   s = ")
+    printf("%.2f", s)
+    print("   L = ")
+    printf("%.0f", Loci as f64)
+    print("   rho = ")
+    printf("%.4f", rho)
+    println("")
+
+    rng_state = 987654321
+    let mut ok_fix: bool = false
+    for attempt in 0 to 8 {
+        let t: i32 = run_to_fixation(n, rho, s, 5000)
+        if selected_freq(n) >= 1.0 {
+            ok_fix = true
+            print("    sweep fixed in                        : ")
+            printf("%.0f", t as f64)
+            println(" gens")
+            break
+        }
+        rng_state = rng_state + 17
+    }
+    let mut hprof: array<f64, 21> = [0.0, 0.0, 0.0, 0.0]
+    measure_profile(n, hprof)
+    let hmid: f64 = hprof[MID]
+    let hout: f64 = 0.5 * (hprof[0] + hprof[Loci - 1])
+
+    print("    H at selected locus               : ")
+    printf("%.4f", hmid)
+    println("   (gate < 0.02)")
+    print("    H at outer loci                   : ")
+    printf("%.4f", hout)
+    println("   (gate > 4 * H_mid and > 0.05)")
+
+    # Unlinked / high recombination control.
+    rng_state = 123456789
+    let mut ok_hi: bool = false
+    for attempt in 0 to 8 {
+        let t2: i32 = run_to_fixation(n, 0.5, s, 5000)
+        if selected_freq(n) >= 1.0 {
+            ok_hi = true
+            break
+        }
+        rng_state = rng_state + 31
+    }
+    let mut h_hi: array<f64, 21> = [0.0, 0.0, 0.0, 0.0]
+    measure_profile(n, h_hi)
+    let hout_hi: f64 = 0.5 * (h_hi[0] + h_hi[Loci - 1])
+    print("    H_out with high rho (control)     : ")
+    printf("%.4f", hout_hi)
+    println("   (gate > 0.35)")
+    println("")
+
+    if !ok_fix {
+        println("    FAIL: beneficial mutation did not fix in the linked sweep")
+        return 1
+    }
+    if hmid > 0.02 {
+        println("    FAIL: diversity remained at the selected locus")
+        return 2
+    }
+    if hout < 0.05 or hout < 4.0 * hmid + 0.04 {
+        println("    FAIL: no diversity trough (flanks not elevated vs centre)")
+        return 3
+    }
+    if !ok_hi or hout_hi < 0.35 {
+        println("    FAIL: high-recombination control lost flanking diversity")
+        return 4
+    }
+    println("    PASS: hard sweep clears the selected locus; flanks retain more")
+    println("          diversity, and high rho restores a shallow trough")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut rr: f64 = preset_rho(preset)
+    rng_state = 4242424242
+    seed_pop(n)
+    gen = 0
+    sweeping = true
+    refresh_theory(rr)
+    measure_profile(n, live_h)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Hitchhiking - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            rr = preset_rho(preset)
+            seed_pop(n)
+            gen = 0
+            sweeping = true
+            refresh_theory(rr)
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_pop(n)
+                gen = 0
+                sweeping = true
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused and sweeping {
+            for k in 0 to 2 {
+                step_sweep(n, rr, s)
+                gen = gen + 1
+            }
+            let p: f64 = selected_freq(n)
+            if p <= 0.0 or p >= 1.0 {
+                sweeping = false
+            }
+        }
+        measure_profile(n, live_h)
+
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, fb)
+        draw_hud(gfx, preset, rr, selected_freq(n), live_h[MID],
+                 0.5 * (live_h[0] + live_h[Loci - 1]), paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}

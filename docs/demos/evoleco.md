@@ -1,7 +1,7 @@
 # Evolutionary Biology Gallery
 
-Seven population-genetics simulations written in Flow. Every clip below is
-recorded from the real compiled program through the headless recorder. Every
+Twenty-five evolutionary-biology simulations written in Flow. Every clip below
+is recorded from the real compiled program through the headless recorder. Every
 program also measures the thing it is demonstrating, prints the measurement
 beside the closed form, and returns a nonzero exit code if the comparison
 fails, so these are regression tests that happen to draw pictures.
@@ -45,3 +45,16 @@ recorded.
 | **Mutation-selection**. Deleterious allele equilibrates near u/s<br>`mutation_selection.flow` | **Bottleneck**. Census crash; heterozygosity matches the product over N_t<br>`bottleneck.flow` | **Island migration**. Fst settles near 1/(1+4 N m K/(K-1))<br>`island_migration.flow` |
 | ![Moran process](./evoleco/moran_process.gif) | | |
 | **Moran process**. Neutral fixation probability is 1/N; selective rho gated too<br>`moran_process.flow` | | |
+
+## Extended evolutionary genetics
+
+| | | |
+|:---:|:---:|:---:|
+| ![Muller ratchet](./evoleco/mullers_ratchet.gif) | ![Clonal interference](./evoleco/clonal_interference.gif) | ![Hitchhiking](./evoleco/hitchhiking.gif) |
+| **Muller ratchet**. Irreversible deleterious clicks; mean load U/s and Haigh-scale rate<br>`mullers_ratchet.flow` | **Clonal interference**. Competing beneficials; fixation ~(2/s) ln N; weaker clone suppressed<br>`clonal_interference.flow` | **Hitchhiking**. Hard sweep clears selected locus; diversity trough vs map distance<br>`hitchhiking.flow` |
+| ![Breeder equation](./evoleco/breeders_equation.gif) | ![Allee effect](./evoleco/allee_effect.gif) | ![Hamilton rule](./evoleco/hamilton_rule.gif) |
+| **Breeder equation**. Truncation response R = h^2 S; realised heritability recovers h^2<br>`breeders_equation.flow` | **Allee effect**. Strong threshold A; extinct below, approach K above<br>`allee_effect.flow` | **Hamilton rule**. Spatial relatedness sustains C when rB > C; well-mixed dies<br>`hamilton_rule.flow` |
+| ![Red Queen](./evoleco/red_queen.gif) | ![Metapopulation](./evoleco/metapopulation.gif) | ![Competitive LV](./evoleco/competitive_lv.gif) |
+| **Red Queen**. Matching-alleles host-parasite cycles; parasites chase hosts<br>`red_queen.flow` | **Metapopulation**. Levins occupancy p* = 1 - e/c on ODE and lattice<br>`metapopulation.flow` | **Competitive LV**. Coexistence vs R* exclusion by mutual invasibility<br>`competitive_lv.flow` |
+| ![Runaway selection](./evoleco/runaway_selection.gif) | | |
+| **Runaway selection**. Lande-Kirkpatrick trait-preference; weak equilibrates, strong runaway<br>`runaway_selection.flow` | | |

@@ -1,0 +1,371 @@
+# RED QUEEN: matching-alleles host-parasite oscillations.
+#
+# MODEL
+#   Two host types H1, H2 and two parasite types P1, P2. Parasite i infects
+#   matching host i (negative frequency-dependent selection). Fitnesses:
+#
+#        W_Hi = 1 - s * P_i
+#        W_Pi = 1 - t + t * H_i
+#
+#   Discrete replicator / haploid selection updates each generation. The
+#   interior equilibrium (H,P) = (1/2, 1/2) is neutrally circulating in the
+#   continuous limit and produces persistent oscillations under discrete
+#   generations -- the Red Queen: perpetual coevolution with no directional
+#   winner. Contemporaneous (H,P) sit near quadrature (corr ~ 0); the parasite
+#   tracks the host, so corr(H_t, P_{t+1}) exceeds corr(H_t, P_t).
+#
+# GATES
+#   1. Time-average of H1 over a long window is within 0.08 of 0.5.
+#   2. Oscillation amplitude (max-min of H1) exceeds 0.15.
+#   3. Parasite tracks host: corr(H_t, P_{t+1}) > corr(H_t, P_t).
+#
+# KEYS
+#   1 mild s,t   2 base   3 strong
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/red_queen.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const HIST: i32 = 260
+const VERIFY_STEPS: i32 = 2000
+const BURN: i32 = 200
+const CYCLE_FRAMES: i32 = 120
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+function preset_s(p: i32) -> f64 {
+    if p == 1 { return 0.45 }
+    if p == 2 { return 0.55 }
+    return 0.35
+}
+
+function preset_t(p: i32) -> f64 {
+    if p == 1 { return 0.45 }
+    if p == 2 { return 0.55 }
+    return 0.35
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "BASE" }
+    if p == 2 { return "STRONG" }
+    return "MILD"
+}
+
+function next_h(h: f64, p: f64, s: f64) -> f64 {
+    let w1: f64 = 1.0 - s * p
+    let w2: f64 = 1.0 - s * (1.0 - p)
+    let wbar: f64 = h * w1 + (1.0 - h) * w2
+    let mut nh: f64 = h * w1 / wbar
+    if nh < 1.0e-6 { nh = 1.0e-6 }
+    if nh > 1.0 - 1.0e-6 { nh = 1.0 - 1.0e-6 }
+    return nh
+}
+
+function next_p(h: f64, p: f64, t: f64) -> f64 {
+    let w1: f64 = 1.0 - t + t * h
+    let w2: f64 = 1.0 - t + t * (1.0 - h)
+    let wbar: f64 = p * w1 + (1.0 - p) * w2
+    let mut np: f64 = p * w1 / wbar
+    if np < 1.0e-6 { np = 1.0e-6 }
+    if np > 1.0 - 1.0e-6 { np = 1.0 - 1.0e-6 }
+    return np
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+let mut tr_h: array<f64, 260> = [0.0, 0.0, 0.0, 0.0]
+let mut tr_p: array<f64, 260> = [0.0, 0.0, 0.0, 0.0]
+let mut hist_len: i32 = 0
+let mut live_h: f64 = 0.70
+let mut live_p: f64 = 0.30
+
+function push_live() -> void {
+    if hist_len < HIST {
+        tr_h[hist_len] = live_h
+        tr_p[hist_len] = live_p
+        hist_len = hist_len + 1
+    } else {
+        for i in 0 to HIST - 1 {
+            tr_h[i] = tr_h[i + 1]
+            tr_p[i] = tr_p[i + 1]
+        }
+        tr_h[HIST - 1] = live_h
+        tr_p[HIST - 1] = live_p
+    }
+}
+
+function seed_live(h0: f64, p0: f64) -> void {
+    live_h = h0
+    live_p = p0
+    hist_len = 0
+    push_live()
+}
+
+function step_live(s: f64, t: f64) -> void {
+    let nh: f64 = next_h(live_h, live_p, s)
+    let np: f64 = next_p(live_h, live_p, t)
+    live_h = nh
+    live_p = np
+    push_live()
+}
+
+function corr_from_sums(n: f64, sum_x: f64, sum_y: f64, sum_xy: f64,
+                        sum_x2: f64, sum_y2: f64) -> f64 {
+    let mx: f64 = sum_x / n
+    let my: f64 = sum_y / n
+    let cov: f64 = sum_xy / n - mx * my
+    let vx: f64 = sum_x2 / n - mx * mx
+    let vy: f64 = sum_y2 / n - my * my
+    if vx < 1.0e-12 or vy < 1.0e-12 { return 0.0 }
+    let mut sx: f64 = vx
+    let mut sy: f64 = vy
+    for k in 0 to 8 {
+        sx = 0.5 * (sx + vx / sx)
+        sy = 0.5 * (sy + vy / sy)
+    }
+    return cov / (sx * sy)
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>) -> void {
+    clear_fb(fb)
+    let px0: i32 = 40
+    let py0: i32 = 40
+    let pw: i32 = 432
+    let ph: i32 = 240
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    fill_rect_fb(fb, px0, py0 + ph / 2, pw, 1, 50, 48, 70)
+    for i in 1 to hist_len {
+        let x: i32 = px0 + (i * (pw - 1)) / (HIST - 1)
+        let yh: i32 = py0 + ph - 1 - ((tr_h[i] * ((ph - 1) as f64)) as i32)
+        let yp: i32 = py0 + ph - 1 - ((tr_p[i] * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x, yh, 120, 220, 255)
+        put_rgb(fb, x, yp, 255, 160, 90)
+    }
+
+    let qx0: i32 = 120
+    let qy0: i32 = 310
+    let qw: i32 = 280
+    let qh: i32 = 160
+    fill_rect_fb(fb, qx0, qy0, qw, qh, 18, 16, 28)
+    for i in 0 to hist_len {
+        let x: i32 = qx0 + ((tr_h[i] * ((qw - 1) as f64)) as i32)
+        let y: i32 = qy0 + qh - 1 - ((tr_p[i] * ((qh - 1) as f64)) as i32)
+        put_rgb(fb, x, y, 180, 255, 160)
+    }
+    let hx: i32 = qx0 + ((live_h * ((qw - 1) as f64)) as i32)
+    let hy: i32 = qy0 + qh - 1 - ((live_p * ((qh - 1) as f64)) as i32)
+    fill_rect_fb(fb, hx - 3, hy - 3, 7, 7, 255, 220, 100)
+
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, h: f64, p: f64, s: f64, t: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "RED QUEEN", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 160, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 8, 28, "H1", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 28, 28, h, 3, 1, 120, 220, 255)
+    let t5: i32 = gfx_draw_text(g, 90, 28, "P1", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 110, 28, p, 3, 1, 255, 160, 90)
+    let t7: i32 = gfx_draw_text(g, 180, 28, "s", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 194, 28, s, 2, 1, 234, 232, 244)
+    let t9: i32 = gfx_draw_text(g, 250, 28, "t", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 264, 28, t, 2, 1, 234, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 8, 42,
+        "1 MILD  2 BASE  3 STRONG  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "cyan = host type 1, orange = matching parasite; chasing cycles",
+        1, 122, 118, 144)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "phase portrait (H1, P1): Red Queen coevolution without a winner",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    let s: f64 = 0.40
+    let t: f64 = 0.40
+    let mut h: f64 = 0.70
+    let mut p: f64 = 0.30
+    let mut sum_h: f64 = 0.0
+    let mut hmin: f64 = 1.0
+    let mut hmax: f64 = 0.0
+    let mut sum_hp: f64 = 0.0
+    let mut sum_h2: f64 = 0.0
+    let mut sum_p: f64 = 0.0
+    let mut sum_p2: f64 = 0.0
+    let mut sum_pn: f64 = 0.0
+    let mut sum_pn2: f64 = 0.0
+    let mut sum_h_pn: f64 = 0.0
+    let mut n_samp: f64 = 0.0
+
+    println("")
+    println("  RED QUEEN  --  matching-alleles host-parasite cycles")
+    println("  ====================================================")
+    println("")
+    print("    s = ")
+    printf("%.2f", s)
+    print("   t = ")
+    printf("%.2f", t)
+    println("")
+
+    for i in 0 to VERIFY_STEPS {
+        let nh: f64 = next_h(h, p, s)
+        let np: f64 = next_p(h, p, t)
+        if i >= BURN {
+            sum_h = sum_h + h
+            sum_p = sum_p + p
+            sum_hp = sum_hp + h * p
+            sum_h2 = sum_h2 + h * h
+            sum_p2 = sum_p2 + p * p
+            sum_pn = sum_pn + np
+            sum_pn2 = sum_pn2 + np * np
+            sum_h_pn = sum_h_pn + h * np
+            n_samp = n_samp + 1.0
+            if h < hmin { hmin = h }
+            if h > hmax { hmax = h }
+        }
+        h = nh
+        p = np
+    }
+    let mean_h: f64 = sum_h / n_samp
+    let amp: f64 = hmax - hmin
+    let corr_now: f64 = corr_from_sums(n_samp, sum_h, sum_p, sum_hp, sum_h2, sum_p2)
+    let corr_lag: f64 = corr_from_sums(n_samp, sum_h, sum_pn, sum_h_pn, sum_h2, sum_pn2)
+
+    print("    mean H1                           : ")
+    printf("%.4f", mean_h)
+    println("   (gate |mean-0.5| < 0.08)")
+    print("    amplitude maxH1-minH1             : ")
+    printf("%.4f", amp)
+    println("   (gate > 0.15)")
+    print("    corr(H_t, P_t)                    : ")
+    printf("%.4f", corr_now)
+    println("   (quadrature ~ 0)")
+    print("    corr(H_t, P_{t+1})                : ")
+    printf("%.4f", corr_lag)
+    println("   (gate > corr now; parasite tracks)")
+    println("")
+
+    if fabs(mean_h - 0.5) > 0.08 {
+        println("    FAIL: time-average host frequency drifted from 1/2")
+        return 1
+    }
+    if amp < 0.15 {
+        println("    FAIL: oscillations too weak")
+        return 2
+    }
+    if corr_lag <= corr_now {
+        println("    FAIL: host and parasite not out of phase")
+        return 3
+    }
+    println("    PASS: matching alleles oscillate about 1/2; parasite tracks host")
+    println("")
+
+    let mut preset: i32 = 0
+    let mut ss: f64 = preset_s(preset)
+    let mut tt: f64 = preset_t(preset)
+    seed_live(0.72, 0.28)
+
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Red Queen - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut since_cycle: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            ss = preset_s(preset)
+            tt = preset_t(preset)
+            seed_live(0.72, 0.28)
+            since_cycle = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                seed_live(0.72, 0.28)
+                since_cycle = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            step_live(ss, tt)
+            since_cycle = since_cycle + 1
+            if since_cycle >= CYCLE_FRAMES {
+                preset = (preset + 1) % 3
+                ss = preset_s(preset)
+                tt = preset_t(preset)
+                seed_live(0.72, 0.28)
+                since_cycle = 0
+            }
+        }
+
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, fb)
+        draw_hud(gfx, preset, live_h, live_p, ss, tt, paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}
