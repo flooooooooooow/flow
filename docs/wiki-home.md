@@ -12,9 +12,9 @@ and dual C / MLIR backends at native speed.
 
 <div class="wiki-hero-actions">
   <a href="getting-started.md" class="wiki-cta wiki-cta-primary">Install &amp; run</a>
-  <a href="vision.md" class="wiki-cta">The vision</a>
+  <a href="demos/overview.md" class="wiki-cta">Gallery</a>
   <a href="tutorials/index.html" class="wiki-cta">Interactive tutorials</a>
-  <a href="comparison.md" class="wiki-cta">vs C · Rust · Zig · Mojo</a>
+  <a href="vision.md" class="wiki-cta">The vision</a>
 </div>
 
 <pre class="wiki-hero-code"><code class="language-flow">flow Pendulum {
@@ -104,48 +104,24 @@ scripted input.
 
 </div>
 
-**[Full game gallery →](demos/games.md)** — all 24 games with recorded
-gameplay, run commands, and sources.
+**[Full game gallery →](demos/overview.md)** — every gallery in one place.
 
-**[Evolution suite →](demos/evolution.md)** — thirty-four systems that change
-over time, each checked against theory.
+<details class="wiki-demo-links">
+<summary>Jump to a gallery</summary>
 
-**[Morphogenesis gallery →](demos/morphogenesis.md)** — forty live simulations
-of pattern formation, each with a recorded GIF: reaction-diffusion, Turing
-patterns, DLA, L-systems, Physarum networks, somitogenesis, and the wave-2
-set (KS chaos, Vicsek, sandpile, Schelling, rivers). Sources:
-[examples/morphogenesis](../examples/morphogenesis/README.md).
+| Gallery | What's inside |
+|---|---|
+| [Games](demos/games.md) | 25 complete games, each with a recorded GIF |
+| [Morphogenesis](demos/morphogenesis.md) | 40 pattern-formation simulations |
+| [Neurons](demos/neuro.md) | 15 spiking-dynamics simulations |
+| [Evolutionary Biology](demos/evoleco.md) | 25 pop-gen / evo-game / ecology sims |
+| [Planets](demos/planet.md) | 7 staged cubesphere planet demos |
+| [Procedural Generation](demos/procgen.md) | 8 noise / heightmap / WFC / biome demos |
+| [Numerical Methods](demos/numerical.md) | Adaptive FMM, gated vs direct |
+| [Evolution Suite](demos/evolution.md) | 34 systems evolving through time |
+| [WebAssembly](demos/wasm.md) | Games &amp; demos running live in a browser |
 
-**[Neuron gallery →](demos/neuro.md)** — fifteen spiking-dynamics simulations,
-each gated on a published measurement and recorded as a GIF: Hodgkin-Huxley,
-Izhikevich zoo, balanced E/I, Hopfield, CPG gaits. Sources:
-[examples/neuro](../examples/neuro/README.md).
-
-**[Evolutionary biology gallery →](demos/evoleco.md)** — 25 population-genetics,
-evolutionary-game, and ecology simulations for biologists: Wright-Fisher through
-SIR, plus wave-2 genetics (Muller ratchet, hitchhiking, Hamilton, Red Queen,
-runaway selection, and more). Sources:
-[examples/evoleco](../examples/evoleco/README.md).
-
-**[Planet gallery →](demos/planet.md)** — seven staged cubesphere demos of the
-procedural planet pipeline: tectonics through biomes, each gated on a
-measurement (solid angle, Hack's law, rain shadow, determinism). Sources:
-[examples/planet](../examples/planet/README.md).
-
-**[Procedural generation gallery →](demos/procgen.md)** — eight gated noise,
-heightmap, cave, WFC, Voronoi, island, and biome-tile demos backed by
-`stdlib/procgen.flow`. Sources:
-[examples/procgen](../examples/procgen/README.md).
-
-**[Numerical gallery →](demos/numerical.md)** — adaptive Fast Multipole Method
-(Carrier-Greengard-Rokhlin 1988) gated against the direct sum. Sources:
-[examples/numerical](../examples/numerical/) ·
-[`stdlib/fmm2d.flow`](library/fmm2d.md).
-
-**[Training AI in Flow →](tutorials/game-ai.md)** — Q-learning, neuroevolution,
-and policy gradients against the games above, plus
-[ML on a MacBook](tutorials/ml-on-macbook.md) and the
-[flowlm](../registry/packages/flowlm/README.md) small-language-model package.
+</details>
 
 ---
 
@@ -216,5 +192,6 @@ Formal math proofs live in the **third-party** [flow-verify](third-party/flow-ve
 | Version | 0.9.0 ([changelog](project/CHANGELOG.md)) |
 | License | MIT |
 | Repository | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
+| Community | [Discord](https://discord.gg/YK7VaHy24T) · [GitHub Discussions](https://github.com/flooooooooooow/flow/discussions) |
 | Docs | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
 | Roadmap | [Language](project/language-roadmap.md) · [Wiki](wiki-roadmap.md) |
