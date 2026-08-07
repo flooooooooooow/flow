@@ -1,0 +1,816 @@
+# fmm2d: Carrier-Greengard-Rokhlin adaptive Fast Multipole Method in 2D.
+#
+# Implements the analytic apparatus of
+#   J. Carrier, L. Greengard, V. Rokhlin,
+#   "A Fast Adaptive Multipole Algorithm for Particle Simulations",
+#   SIAM J. Sci. Stat. Comput. 9(4):669-686 (1988).
+#   https://math.nyu.edu/~greengar/cgr_88.pdf
+#
+# POTENTIAL
+#   Analytic potential for charges q_j at z_j:
+#       psi(z) = sum_j q_j * Log(z - z_j)
+#   with complex Log. The physical potential is phi = Re(psi). By Lemma 2.1
+#   the force is (phi_x, phi_y) = (Re(psi'), -Im(psi')). Self-interactions
+#   are excluded. This matches the paper's complex-log model up to an overall
+#   sign convention that cancels in relative error vs the direct sum.
+#
+# EXPANSIONS (about a box centre zo)
+#   Multipole (Theorem 2.1), |z - zo| large:
+#       psi = a0 * Log(z-zo) + sum_{k=1..p} ak / (z-zo)^k
+#       a0 = sum qi
+#       ak = -sum qi (zi-zo)^k / k
+#   Local (Taylor), |z - zo| small:
+#       psi = sum_{k=0..p} bk (z-zo)^k
+#
+# TRANSLATIONS
+#   Lemma 2.2 M2M, Lemma 2.3 M2L, Lemma 2.4 L2L — Greengard-Rokhlin forms.
+#
+# ADAPTIVE TREE
+#   Unit square [0,1]^2. Boxes with more than `s` particles split into four.
+#   Interactions by dual-tree walk: well-separated pairs use M2L; leaf-leaf
+#   pairs that are not well-separated use direct particle-particle sums.
+#
+# Caps: FMM_MAX_N particles, FMM_MAX_BOXES boxes, FMM_P_MAX expansion order.
+
+extern {
+    function sqrt(x: f64) -> f64
+    function log(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function clock() -> i64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const FMM_MAX_N: i32 = 4096
+const FMM_MAX_BOXES: i32 = 16384
+const FMM_P_MAX: i32 = 16
+const FMM_EXP: i32 = 17
+const FMM_EPS: f64 = 1.0e-15
+
+struct Cplx { re: f64, im: f64 }
+
+# ---------------------------------------------------------------------------
+# Complex arithmetic
+# ---------------------------------------------------------------------------
+
+function cz(re: f64, im: f64) -> Cplx {
+    return Cplx { re: re, im: im }
+}
+
+function c_add(a: Cplx, b: Cplx) -> Cplx {
+    return cz(a.re + b.re, a.im + b.im)
+}
+
+function c_sub(a: Cplx, b: Cplx) -> Cplx {
+    return cz(a.re - b.re, a.im - b.im)
+}
+
+function c_mul(a: Cplx, b: Cplx) -> Cplx {
+    return cz(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re)
+}
+
+function c_scale(a: Cplx, s: f64) -> Cplx {
+    return cz(a.re * s, a.im * s)
+}
+
+function c_neg(a: Cplx) -> Cplx {
+    return cz(0.0 - a.re, 0.0 - a.im)
+}
+
+function c_abs(a: Cplx) -> f64 {
+    return sqrt(a.re * a.re + a.im * a.im)
+}
+
+function c_inv(a: Cplx) -> Cplx {
+    let d: f64 = a.re * a.re + a.im * a.im
+    if d < FMM_EPS { return cz(0.0, 0.0) }
+    return cz(a.re / d, 0.0 - a.im / d)
+}
+
+function c_div(a: Cplx, b: Cplx) -> Cplx {
+    return c_mul(a, c_inv(b))
+}
+
+function c_log(a: Cplx) -> Cplx {
+    let r: f64 = c_abs(a)
+    if r < FMM_EPS { return cz(log(FMM_EPS), 0.0) }
+    return cz(log(r), atan2(a.im, a.re))
+}
+
+function c_pow_i(a: Cplx, n: i32) -> Cplx {
+    if n == 0 { return cz(1.0, 0.0) }
+    let mut r: Cplx = cz(1.0, 0.0)
+    let mut b: Cplx = a
+    let mut k: i32 = n
+    if k < 0 {
+        b = c_inv(a)
+        k = 0 - k
+    }
+    while k > 0 {
+        if (k % 2) == 1 { r = c_mul(r, b) }
+        b = c_mul(b, b)
+        k = k / 2
+    }
+    return r
+}
+
+# Binomial C(n, k) for small n <= 2*P.
+function binom(n: i32, k: i32) -> f64 {
+    if k < 0 or k > n { return 0.0 }
+    if k == 0 or k == n { return 1.0 }
+    let mut kk: i32 = k
+    if kk > n - kk { kk = n - kk }
+    let mut r: f64 = 1.0
+    for i in 1 to kk + 1 {
+        r = r * ((n - kk + i) as f64) / (i as f64)
+    }
+    return r
+}
+
+# ---------------------------------------------------------------------------
+# Module state
+# ---------------------------------------------------------------------------
+
+let mut fmm_n: i32 = 0
+let mut fmm_p: i32 = 8
+let mut fmm_s: i32 = 24
+let mut fmm_nboxes: i32 = 0
+let mut fmm_nleaves: i32 = 0
+let mut fmm_max_level: i32 = 0
+let mut fmm_ms: f64 = 0.0
+let mut fmm_direct_ms: f64 = 0.0
+let mut fmm_m2l_count: i64 = 0
+let mut fmm_p2p_count: i64 = 0
+
+let mut fmm_x: ptr<f64> = null
+let mut fmm_y: ptr<f64> = null
+let mut fmm_q: ptr<f64> = null
+let mut fmm_phi: ptr<f64> = null
+let mut fmm_ex: ptr<f64> = null
+let mut fmm_ey: ptr<f64> = null
+let mut fmm_phi_d: ptr<f64> = null
+let mut fmm_ex_d: ptr<f64> = null
+let mut fmm_ey_d: ptr<f64> = null
+
+# Box geometry / topology
+let mut bx_cx: ptr<f64> = null
+let mut bx_cy: ptr<f64> = null
+let mut bx_h: ptr<f64> = null          # half-side
+let mut bx_parent: ptr<i32> = null
+let mut bx_child0: ptr<i32> = null
+let mut bx_child1: ptr<i32> = null
+let mut bx_child2: ptr<i32> = null
+let mut bx_child3: ptr<i32> = null
+let mut bx_nchild: ptr<i32> = null
+let mut bx_npart: ptr<i32> = null
+let mut bx_pstart: ptr<i32> = null     # start index into particle permutation
+let mut bx_leaf: ptr<i32> = null
+let mut bx_level: ptr<i32> = null
+
+# Particle order (permutation): particles of a leaf are contiguous
+let mut fmm_ord: ptr<i32> = null
+let mut fmm_tmp: ptr<i32> = null
+
+# Expansions: a0 + a[1..p] multipole; b[0..p] local. Flat: box * FMM_EXP
+let mut mx_re: ptr<f64> = null
+let mut mx_im: ptr<f64> = null
+let mut lx_re: ptr<f64> = null
+let mut lx_im: ptr<f64> = null
+
+let mut fmm_ready: bool = false
+
+function fmm_ensure() -> bool {
+    if fmm_ready { return true }
+    fmm_x = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_y = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_q = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_phi = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_ex = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_ey = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_phi_d = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_ex_d = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_ey_d = calloc(FMM_MAX_N as i64, 8) as ptr<f64>
+    fmm_ord = calloc(FMM_MAX_N as i64, 4) as ptr<i32>
+    fmm_tmp = calloc(FMM_MAX_N as i64, 4) as ptr<i32>
+    bx_cx = calloc(FMM_MAX_BOXES as i64, 8) as ptr<f64>
+    bx_cy = calloc(FMM_MAX_BOXES as i64, 8) as ptr<f64>
+    bx_h = calloc(FMM_MAX_BOXES as i64, 8) as ptr<f64>
+    bx_parent = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_child0 = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_child1 = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_child2 = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_child3 = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_nchild = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_npart = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_pstart = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_leaf = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    bx_level = calloc(FMM_MAX_BOXES as i64, 4) as ptr<i32>
+    let exp_cells: i64 = (FMM_MAX_BOXES * FMM_EXP) as i64
+    mx_re = calloc(exp_cells, 8) as ptr<f64>
+    mx_im = calloc(exp_cells, 8) as ptr<f64>
+    lx_re = calloc(exp_cells, 8) as ptr<f64>
+    lx_im = calloc(exp_cells, 8) as ptr<f64>
+    if fmm_x == null { return false }
+    fmm_ready = true
+    return true
+}
+
+export function fmm2d_configure(p: i32, s: i32) -> void {
+    fmm_p = p
+    if fmm_p < 2 { fmm_p = 2 }
+    if fmm_p > FMM_P_MAX { fmm_p = FMM_P_MAX }
+    fmm_s = s
+    if fmm_s < 4 { fmm_s = 4 }
+}
+
+export function fmm2d_set_particles(n: i32, x: ptr<f64>, y: ptr<f64>, q: ptr<f64>) -> bool {
+    if !fmm_ensure() { return false }
+    if n < 1 or n > FMM_MAX_N { return false }
+    fmm_n = n
+    for i in 0 to n {
+        fmm_x[i] = x[i]
+        fmm_y[i] = y[i]
+        fmm_q[i] = q[i]
+        fmm_ord[i] = i
+        fmm_phi[i] = 0.0
+        fmm_ex[i] = 0.0
+        fmm_ey[i] = 0.0
+    }
+    return true
+}
+
+function exp_base(b: i32) -> i32 {
+    return b * FMM_EXP
+}
+
+function clear_exp(re: ptr<f64>, im: ptr<f64>, b: i32) -> void {
+    let base: i32 = exp_base(b)
+    for k in 0 to FMM_EXP {
+        re[base + k] = 0.0
+        im[base + k] = 0.0
+    }
+}
+
+function get_c(re: ptr<f64>, im: ptr<f64>, b: i32, k: i32) -> Cplx {
+    let o: i32 = exp_base(b) + k
+    return cz(re[o], im[o])
+}
+
+function set_c(re: ptr<f64>, im: ptr<f64>, b: i32, k: i32, v: Cplx) -> void {
+    let o: i32 = exp_base(b) + k
+    re[o] = v.re
+    im[o] = v.im
+}
+
+function add_c(re: ptr<f64>, im: ptr<f64>, b: i32, k: i32, v: Cplx) -> void {
+    let o: i32 = exp_base(b) + k
+    re[o] = re[o] + v.re
+    im[o] = im[o] + v.im
+}
+
+# ---------------------------------------------------------------------------
+# Theorem 2.1: form multipole of a leaf about its centre
+# ---------------------------------------------------------------------------
+
+function form_multipole(b: i32) -> void {
+    clear_exp(mx_re, mx_im, b)
+    let cx: f64 = bx_cx[b]
+    let cy: f64 = bx_cy[b]
+    let start: i32 = bx_pstart[b]
+    let np: i32 = bx_npart[b]
+    let mut a0: f64 = 0.0
+    for t in 0 to np {
+        let i: i32 = fmm_ord[start + t]
+        a0 = a0 + fmm_q[i]
+    }
+    set_c(mx_re, mx_im, b, 0, cz(a0, 0.0))
+    for k in 1 to fmm_p + 1 {
+        let mut ak: Cplx = cz(0.0, 0.0)
+        for t in 0 to np {
+            let i: i32 = fmm_ord[start + t]
+            let z: Cplx = cz(fmm_x[i] - cx, fmm_y[i] - cy)
+            let zk: Cplx = c_pow_i(z, k)
+            ak = c_add(ak, c_scale(zk, fmm_q[i]))
+        }
+        ak = c_scale(ak, 0.0 - 1.0 / (k as f64))
+        set_c(mx_re, mx_im, b, k, ak)
+    }
+}
+
+# Lemma 2.2: M2M — shift child's multipole into parent
+function m2m_add(child: i32, parent: i32) -> void {
+    let z0: Cplx = cz(bx_cx[child] - bx_cx[parent], bx_cy[child] - bx_cy[parent])
+    let a0: Cplx = get_c(mx_re, mx_im, child, 0)
+    add_c(mx_re, mx_im, parent, 0, a0)
+    for l in 1 to fmm_p + 1 {
+        # b_l = -a0 * z0^l / l + sum_{k=1}^l a_k * C(l-1, k-1) * z0^{l-k}
+        let mut bl: Cplx = c_neg(c_div(c_mul(a0, c_pow_i(z0, l)), cz(l as f64, 0.0)))
+        for k in 1 to l + 1 {
+            let ak: Cplx = get_c(mx_re, mx_im, child, k)
+            let term: Cplx = c_mul(ak, c_scale(c_pow_i(z0, l - k), binom(l - 1, k - 1)))
+            bl = c_add(bl, term)
+        }
+        add_c(mx_re, mx_im, parent, l, bl)
+    }
+}
+
+# Lemma 2.3: M2L — convert source multipole into local about target centre
+# (Beatson-Greengard / GR87 form with z0 = z_src - z_tgt)
+function m2l_add(src: i32, tgt: i32) -> void {
+    let z0: Cplx = cz(bx_cx[src] - bx_cx[tgt], bx_cy[src] - bx_cy[tgt])
+    let a0: Cplx = get_c(mx_re, mx_im, src, 0)
+    # b0 = a0 log(-z0) + sum_{k=1}^p ak * (-1)^k / z0^k
+    let mut b0: Cplx = c_mul(a0, c_log(c_neg(z0)))
+    for k in 1 to fmm_p + 1 {
+        let ak: Cplx = get_c(mx_re, mx_im, src, k)
+        let sign: f64 = 1.0
+        if (k % 2) == 1 { sign = 0.0 - 1.0 }
+        b0 = c_add(b0, c_scale(c_div(ak, c_pow_i(z0, k)), sign))
+    }
+    add_c(lx_re, lx_im, tgt, 0, b0)
+    for l in 1 to fmm_p + 1 {
+        # b_l = -a0/(l z0^l) + z0^{-l} * sum_k ak/z0^k * C(l+k-1,k-1) * (-1)^k
+        let mut bl: Cplx = c_neg(c_div(a0, c_mul(cz(l as f64, 0.0), c_pow_i(z0, l))))
+        let mut sum: Cplx = cz(0.0, 0.0)
+        for k in 1 to fmm_p + 1 {
+            let ak: Cplx = get_c(mx_re, mx_im, src, k)
+            let sign2: f64 = 1.0
+            if (k % 2) == 1 { sign2 = 0.0 - 1.0 }
+            let term: Cplx = c_scale(c_mul(c_div(ak, c_pow_i(z0, k)),
+                                           cz(binom(l + k - 1, k - 1), 0.0)), sign2)
+            sum = c_add(sum, term)
+        }
+        bl = c_add(bl, c_div(sum, c_pow_i(z0, l)))
+        add_c(lx_re, lx_im, tgt, l, bl)
+    }
+    fmm_m2l_count = fmm_m2l_count + 1
+}
+
+# Lemma 2.4: L2L — shift parent local into child
+function l2l_add(parent: i32, child: i32) -> void {
+    let z0: Cplx = cz(bx_cx[child] - bx_cx[parent], bx_cy[child] - bx_cy[parent])
+    # child centre relative to parent: shift expansion along z0
+    # b'_l = sum_{k=l}^p a_k * C(k,l) * z0^{k-l}
+    for l in 0 to fmm_p + 1 {
+        let mut bl: Cplx = cz(0.0, 0.0)
+        for k in l to fmm_p + 1 {
+            let ak: Cplx = get_c(lx_re, lx_im, parent, k)
+            let term: Cplx = c_mul(ak, c_scale(c_pow_i(z0, k - l), binom(k, l)))
+            bl = c_add(bl, term)
+        }
+        add_c(lx_re, lx_im, child, l, bl)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Adaptive tree
+# ---------------------------------------------------------------------------
+
+function box_radius(b: i32) -> f64 {
+    # half-diagonal of the square
+    let h: f64 = bx_h[b]
+    return h * sqrt(2.0)
+}
+
+function well_separated(a: i32, b: i32) -> bool {
+    let dx: f64 = bx_cx[a] - bx_cx[b]
+    let dy: f64 = bx_cy[a] - bx_cy[b]
+    let d: f64 = sqrt(dx * dx + dy * dy)
+    # Paper Fig.1: |xo - yo| > 3 r for equal radii. Use the stricter
+    # d >= 3 * (rA + rB) so barely-separated pairs stay direct.
+    return d >= 3.0 * (box_radius(a) + box_radius(b))
+}
+
+function new_box(cx: f64, cy: f64, h: f64, parent: i32, level: i32,
+                 pstart: i32, npart: i32) -> i32 {
+    if fmm_nboxes >= FMM_MAX_BOXES { return -1 }
+    let b: i32 = fmm_nboxes
+    fmm_nboxes = fmm_nboxes + 1
+    bx_cx[b] = cx
+    bx_cy[b] = cy
+    bx_h[b] = h
+    bx_parent[b] = parent
+    bx_child0[b] = -1
+    bx_child1[b] = -1
+    bx_child2[b] = -1
+    bx_child3[b] = -1
+    bx_nchild[b] = 0
+    bx_npart[b] = npart
+    bx_pstart[b] = pstart
+    bx_leaf[b] = 1
+    bx_level[b] = level
+    clear_exp(mx_re, mx_im, b)
+    clear_exp(lx_re, lx_im, b)
+    return b
+}
+
+function box_child(b: i32, q: i32) -> i32 {
+    if q == 0 { return bx_child0[b] }
+    if q == 1 { return bx_child1[b] }
+    if q == 2 { return bx_child2[b] }
+    return bx_child3[b]
+}
+
+function box_set_child(b: i32, q: i32, ch: i32) -> void {
+    if q == 0 { bx_child0[b] = ch }
+    if q == 1 { bx_child1[b] = ch }
+    if q == 2 { bx_child2[b] = ch }
+    if q == 3 { bx_child3[b] = ch }
+}
+
+function partition_box(b: i32) -> void {
+    # Split particles into 4 quadrants; create children if nonempty.
+    let start: i32 = bx_pstart[b]
+    let np: i32 = bx_npart[b]
+    let cx: f64 = bx_cx[b]
+    let cy: f64 = bx_cy[b]
+    let hh: f64 = bx_h[b] * 0.5
+    let counts: array<i32, 4> = [0, 0, 0, 0]
+    for t in 0 to np {
+        let i: i32 = fmm_ord[start + t]
+        let mut qid: i32 = 0
+        if fmm_x[i] >= cx { qid = qid + 1 }
+        if fmm_y[i] >= cy { qid = qid + 2 }
+        counts[qid] = counts[qid] + 1
+    }
+    let offsets: array<i32, 4> = [0, 0, 0, 0]
+    offsets[0] = 0
+    offsets[1] = counts[0]
+    offsets[2] = counts[0] + counts[1]
+    offsets[3] = counts[0] + counts[1] + counts[2]
+    let cursor: array<i32, 4> = [0, 0, 0, 0]
+    cursor[0] = offsets[0]
+    cursor[1] = offsets[1]
+    cursor[2] = offsets[2]
+    cursor[3] = offsets[3]
+    for t in 0 to np {
+        let i: i32 = fmm_ord[start + t]
+        let mut qid: i32 = 0
+        if fmm_x[i] >= cx { qid = qid + 1 }
+        if fmm_y[i] >= cy { qid = qid + 2 }
+        fmm_tmp[cursor[qid]] = i
+        cursor[qid] = cursor[qid] + 1
+    }
+    for t in 0 to np {
+        fmm_ord[start + t] = fmm_tmp[t]
+    }
+    let mut nch: i32 = 0
+    for qid in 0 to 4 {
+        if counts[qid] <= 0 { continue }
+        let mut ox: f64 = -hh
+        let mut oy: f64 = -hh
+        if (qid % 2) == 1 { ox = hh }
+        if qid >= 2 { oy = hh }
+        let ch: i32 = new_box(cx + ox, cy + oy, hh, b, bx_level[b] + 1,
+                              start + offsets[qid], counts[qid])
+        box_set_child(b, nch, ch)
+        nch = nch + 1
+    }
+    bx_nchild[b] = nch
+    bx_leaf[b] = 0
+}
+
+function refine(b: i32) -> void {
+    if bx_npart[b] <= fmm_s { return }
+    if bx_h[b] < 1.0e-6 { return }
+    partition_box(b)
+    if bx_child0[b] < 0 { return }
+    # Children are consecutive nonempty boxes created during partition —
+    # walk all boxes spawned as children of b by scanning recently added.
+    # Safer: store 4 child slots. Rebuild child list by scanning.
+    let mut c: i32 = bx_child0[b]
+    while c < fmm_nboxes {
+        if bx_parent[c] == b {
+            refine(c)
+        }
+        if bx_parent[c] != b and c > bx_child0[b] {
+            # once we leave the contiguous child block of this parent, stop
+            # (children of b are created contiguously)
+            if bx_parent[c] != b { break }
+        }
+        c = c + 1
+        # stop when parent no longer b (children are contiguous)
+        if c < fmm_nboxes {
+            if bx_parent[c] != b and c > bx_child0[b] {
+                # check if any remaining with parent b
+                let mut more: bool = false
+                for j in c to fmm_nboxes {
+                    if bx_parent[j] == b { more = true }
+                }
+                if !more { break }
+            }
+        }
+    }
+}
+
+function refine_children(b: i32) -> void {
+    if bx_leaf[b] == 1 { return }
+    for c in 0 to fmm_nboxes {
+        if bx_parent[c] == b {
+            if bx_npart[c] > fmm_s and bx_h[c] >= 1.0e-6 {
+                partition_box(c)
+            }
+            refine_children(c)
+        }
+    }
+}
+
+function build_tree() -> void {
+    fmm_nboxes = 0
+    fmm_nleaves = 0
+    fmm_max_level = 0
+    let root: i32 = new_box(0.5, 0.5, 0.5, -1, 0, 0, fmm_n)
+    # iterative refine: repeatedly split leaves that are too full
+    let mut guard: i32 = 0
+    while guard < 64 {
+        guard = guard + 1
+        let mut split: bool = false
+        let limit: i32 = fmm_nboxes
+        for b in 0 to limit {
+            if bx_leaf[b] == 1 and bx_npart[b] > fmm_s and bx_h[b] >= 1.0e-6 {
+                partition_box(b)
+                split = true
+            }
+        }
+        if !split { break }
+    }
+    for b in 0 to fmm_nboxes {
+        if bx_leaf[b] == 1 { fmm_nleaves = fmm_nleaves + 1 }
+        if bx_level[b] > fmm_max_level { fmm_max_level = bx_level[b] }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Upward / downward / dual-tree
+# ---------------------------------------------------------------------------
+
+function upward_pass() -> void {
+    # Post-order: deepest first. Process high level numbers first.
+    let mut max_lv: i32 = 0
+    for b in 0 to fmm_nboxes {
+        if bx_level[b] > max_lv { max_lv = bx_level[b] }
+    }
+    for lv in 0 to max_lv + 1 {
+        let level: i32 = max_lv - lv
+        for b in 0 to fmm_nboxes {
+            if bx_level[b] != level { continue }
+            if bx_leaf[b] == 1 {
+                form_multipole(b)
+            } else {
+                clear_exp(mx_re, mx_im, b)
+                for q in 0 to bx_nchild[b] {
+                    let c: i32 = box_child(b, q)
+                    if c >= 0 { m2m_add(c, b) }
+                }
+            }
+        }
+    }
+}
+
+function downward_pass() -> void {
+    let mut max_lv: i32 = 0
+    for b in 0 to fmm_nboxes {
+        if bx_level[b] > max_lv { max_lv = bx_level[b] }
+    }
+    # Root local is empty; push local expansions down
+    for level in 0 to max_lv {
+        for b in 0 to fmm_nboxes {
+            if bx_level[b] != level { continue }
+            if bx_leaf[b] == 1 { continue }
+            for q in 0 to bx_nchild[b] {
+                let c: i32 = box_child(b, q)
+                if c >= 0 { l2l_add(b, c) }
+            }
+        }
+    }
+}
+
+function direct_pair_boxes(a: i32, b: i32) -> void {
+    # Accumulate interactions of particles in a due to sources in b.
+    let sa: i32 = bx_pstart[a]
+    let na: i32 = bx_npart[a]
+    let sb: i32 = bx_pstart[b]
+    let nb: i32 = bx_npart[b]
+    for ta in 0 to na {
+        let i: i32 = fmm_ord[sa + ta]
+        for tb in 0 to nb {
+            let j: i32 = fmm_ord[sb + tb]
+            if i == j { continue }
+            let dx: f64 = fmm_x[i] - fmm_x[j]
+            let dy: f64 = fmm_y[i] - fmm_y[j]
+            let r2: f64 = dx * dx + dy * dy
+            if r2 < FMM_EPS { continue }
+            let r: f64 = sqrt(r2)
+            # psi = q log(z_i - z_j); phi = Re; E = (Re psi', -Im psi')
+            # psi' = q / (z_i - z_j)
+            let inv: Cplx = c_inv(cz(dx, dy))
+            let qj: f64 = fmm_q[j]
+            fmm_phi[i] = fmm_phi[i] + qj * log(r)
+            fmm_ex[i] = fmm_ex[i] + qj * inv.re
+            fmm_ey[i] = fmm_ey[i] - qj * inv.im
+            fmm_p2p_count = fmm_p2p_count + 1
+        }
+    }
+}
+
+function eval_local_at_leaf(b: i32) -> void {
+    let cx: f64 = bx_cx[b]
+    let cy: f64 = bx_cy[b]
+    let start: i32 = bx_pstart[b]
+    let np: i32 = bx_npart[b]
+    for t in 0 to np {
+        let i: i32 = fmm_ord[start + t]
+        let z: Cplx = cz(fmm_x[i] - cx, fmm_y[i] - cy)
+        # psi = sum bk z^k ; psi' = sum k bk z^{k-1}
+        let mut psi: Cplx = get_c(lx_re, lx_im, b, 0)
+        let mut dpsi: Cplx = cz(0.0, 0.0)
+        let mut zk: Cplx = cz(1.0, 0.0)
+        for k in 1 to fmm_p + 1 {
+            zk = c_mul(zk, z)
+            let bk: Cplx = get_c(lx_re, lx_im, b, k)
+            psi = c_add(psi, c_mul(bk, zk))
+            # d/dz (bk z^k) = k bk z^{k-1}
+            let zk1: Cplx = c_pow_i(z, k - 1)
+            dpsi = c_add(dpsi, c_scale(c_mul(bk, zk1), k as f64))
+        }
+        fmm_phi[i] = fmm_phi[i] + psi.re
+        fmm_ex[i] = fmm_ex[i] + dpsi.re
+        fmm_ey[i] = fmm_ey[i] - dpsi.im
+    }
+}
+
+function interact(a: i32, b: i32) -> void {
+    if a < 0 or b < 0 { return }
+    if a != b and well_separated(a, b) {
+        m2l_add(b, a)
+        return
+    }
+    if bx_leaf[a] == 1 and bx_leaf[b] == 1 {
+        direct_pair_boxes(a, b)
+        return
+    }
+    # Same non-leaf box: recurse on all ordered child pairs (including c,c).
+    if a == b and bx_leaf[a] == 0 {
+        for q1 in 0 to bx_nchild[a] {
+            let c1: i32 = box_child(a, q1)
+            if c1 < 0 { continue }
+            for q2 in 0 to bx_nchild[a] {
+                let c2: i32 = box_child(a, q2)
+                if c2 < 0 { continue }
+                interact(c1, c2)
+            }
+        }
+        return
+    }
+    # Split the larger box (by half-side)
+    if bx_leaf[a] == 0 and (bx_leaf[b] == 1 or bx_h[a] >= bx_h[b]) {
+        for q in 0 to bx_nchild[a] {
+            let c: i32 = box_child(a, q)
+            if c >= 0 { interact(c, b) }
+        }
+        return
+    }
+    if bx_leaf[b] == 0 {
+        for q in 0 to bx_nchild[b] {
+            let c: i32 = box_child(b, q)
+            if c >= 0 { interact(a, c) }
+        }
+        return
+    }
+    direct_pair_boxes(a, b)
+}
+
+export function fmm2d_evaluate() -> bool {
+    if !fmm_ensure() { return false }
+    if fmm_n < 1 { return false }
+    fmm_m2l_count = 0
+    fmm_p2p_count = 0
+    let t0: i64 = clock()
+    build_tree()
+    upward_pass()
+    # clear locals
+    for b in 0 to fmm_nboxes {
+        clear_exp(lx_re, lx_im, b)
+    }
+    for i in 0 to fmm_n {
+        fmm_phi[i] = 0.0
+        fmm_ex[i] = 0.0
+        fmm_ey[i] = 0.0
+    }
+    # Dual-tree from root with itself
+    interact(0, 0)
+    downward_pass()
+    for b in 0 to fmm_nboxes {
+        if bx_leaf[b] == 1 {
+            eval_local_at_leaf(b)
+        }
+    }
+    let t1: i64 = clock()
+    # clock() is microseconds on this platform; report milliseconds
+    fmm_ms = ((t1 - t0) as f64) / 1000.0
+    return true
+}
+
+export function fmm2d_direct_evaluate() -> bool {
+    if !fmm_ensure() { return false }
+    let t0: i64 = clock()
+    for i in 0 to fmm_n {
+        fmm_phi_d[i] = 0.0
+        fmm_ex_d[i] = 0.0
+        fmm_ey_d[i] = 0.0
+    }
+    for i in 0 to fmm_n {
+        for j in 0 to fmm_n {
+            if i == j { continue }
+            let dx: f64 = fmm_x[i] - fmm_x[j]
+            let dy: f64 = fmm_y[i] - fmm_y[j]
+            let r2: f64 = dx * dx + dy * dy
+            if r2 < FMM_EPS { continue }
+            let r: f64 = sqrt(r2)
+            let inv: Cplx = c_inv(cz(dx, dy))
+            let qj: f64 = fmm_q[j]
+            fmm_phi_d[i] = fmm_phi_d[i] + qj * log(r)
+            fmm_ex_d[i] = fmm_ex_d[i] + qj * inv.re
+            fmm_ey_d[i] = fmm_ey_d[i] - qj * inv.im
+        }
+    }
+    let t1: i64 = clock()
+    fmm_direct_ms = ((t1 - t0) as f64) / 1000.0
+    return true
+}
+
+# Paper-style relative field error: ||E_fmm - E_dir||_2 / ||E_dir||_2
+export function fmm2d_rel_field_error() -> f64 {
+    let mut num: f64 = 0.0
+    let mut den: f64 = 0.0
+    for i in 0 to fmm_n {
+        let dx: f64 = fmm_ex[i] - fmm_ex_d[i]
+        let dy: f64 = fmm_ey[i] - fmm_ey_d[i]
+        num = num + dx * dx + dy * dy
+        den = den + fmm_ex_d[i] * fmm_ex_d[i] + fmm_ey_d[i] * fmm_ey_d[i]
+    }
+    if den < FMM_EPS { return 0.0 }
+    return sqrt(num / den)
+}
+
+export function fmm2d_max_rel_error() -> f64 {
+    return fmm2d_rel_field_error()
+}
+
+export function fmm2d_potential(i: i32) -> f64 {
+    if i < 0 or i >= fmm_n { return 0.0 }
+    return fmm_phi[i]
+}
+export function fmm2d_ex(i: i32) -> f64 {
+    if i < 0 or i >= fmm_n { return 0.0 }
+    return fmm_ex[i]
+}
+export function fmm2d_ey(i: i32) -> f64 {
+    if i < 0 or i >= fmm_n { return 0.0 }
+    return fmm_ey[i]
+}
+export function fmm2d_nboxes() -> i32 { return fmm_nboxes }
+export function fmm2d_nleaves() -> i32 { return fmm_nleaves }
+export function fmm2d_max_level() -> i32 { return fmm_max_level }
+export function fmm2d_time_ms() -> f64 { return fmm_ms }
+export function fmm2d_direct_time_ms() -> f64 { return fmm_direct_ms }
+export function fmm2d_m2l_count() -> f64 { return fmm_m2l_count as f64 }
+export function fmm2d_p2p_count() -> f64 { return fmm_p2p_count as f64 }
+export function fmm2d_box_cx(b: i32) -> f64 {
+    if b < 0 or b >= fmm_nboxes { return 0.0 }
+    return bx_cx[b]
+}
+export function fmm2d_box_cy(b: i32) -> f64 {
+    if b < 0 or b >= fmm_nboxes { return 0.0 }
+    return bx_cy[b]
+}
+export function fmm2d_box_h(b: i32) -> f64 {
+    if b < 0 or b >= fmm_nboxes { return 0.0 }
+    return bx_h[b]
+}
+export function fmm2d_box_half(b: i32) -> f64 { return fmm2d_box_h(b) }
+export function fmm2d_box_leaf(b: i32) -> i32 {
+    if b < 0 or b >= fmm_nboxes { return 0 }
+    return bx_leaf[b]
+}
+export function fmm2d_box_level(b: i32) -> i32 {
+    if b < 0 or b >= fmm_nboxes { return 0 }
+    return bx_level[b]
+}
+export function fmm2d_particle_x(i: i32) -> f64 {
+    if i < 0 or i >= fmm_n { return 0.0 }
+    return fmm_x[i]
+}
+export function fmm2d_particle_y(i: i32) -> f64 {
+    if i < 0 or i >= fmm_n { return 0.0 }
+    return fmm_y[i]
+}
+export function fmm2d_particle_q(i: i32) -> f64 {
+    if i < 0 or i >= fmm_n { return 0.0 }
+    return fmm_q[i]
+}
+export function fmm2d_n() -> i32 { return fmm_n }
+export function fmm2d_p() -> i32 { return fmm_p }
+export function fmm2d_s() -> i32 { return fmm_s }

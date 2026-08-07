@@ -14,6 +14,7 @@ Every example in `examples/neuro/` has one at `docs/demos/neuro/<name>.gif`.
 Every example in `examples/evoleco/` has one at `docs/demos/evoleco/<name>.gif`.
 Every example in `examples/planet/` has one at `docs/demos/planet/<name>.gif`.
 Every example in `examples/procgen/` has one at `docs/demos/procgen/<name>.gif`.
+Numerical clips (FMM) live at `docs/demos/numerical/<name>.gif`.
 The three original demos also keep their GIFs directly in this folder
 (`lorenz.gif`, `tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are
 copied into `games/` as well so the games directory covers every game.
@@ -25,8 +26,8 @@ rather than through `record_demos.py`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
 The galleries: [games](games.md), [morphogenesis](morphogenesis.md),
-[neuro](neuro.md), [evoleco](evoleco.md), [planet](planet.md), and
-[procgen](procgen.md).
+[neuro](neuro.md), [evoleco](evoleco.md), [planet](planet.md),
+[procgen](procgen.md), and [numerical](numerical.md).
 
 Regenerate everything with:
 
@@ -38,6 +39,7 @@ python3 scripts/record_demos.py --group neuro        # neuron atlas
 python3 scripts/record_demos.py --group evoleco      # evolution / ecology
 python3 scripts/record_demos.py --group planet       # cubesphere planet
 python3 scripts/record_demos.py --group procgen      # procedural generation
+python3 scripts/record_demos.py --group numerical    # FMM and friends
 python3 scripts/record_demos.py --check              # which GIFs exist, and their sizes
 ```
 

@@ -14,14 +14,16 @@ re-creation of it. No display is required, which means this also works in CI.
   python3 scripts/record_demos.py --group evoleco
   python3 scripts/record_demos.py --group planet
   python3 scripts/record_demos.py --group procgen
+  python3 scripts/record_demos.py --group numerical
 
 Naming contract: every game in examples/games/ has a GIF at
 docs/demos/games/<name>.gif, every example in examples/morphogenesis/ has
 one at docs/demos/morphogenesis/<name>.gif, every example in
 examples/neuro/ has one at docs/demos/neuro/<name>.gif, every example
 in examples/evoleco/ has one at docs/demos/evoleco/<name>.gif, every
-example in examples/planet/ has one at docs/demos/planet/<name>.gif, and
-every example in examples/procgen/ has one at docs/demos/procgen/<name>.gif.
+example in examples/planet/ has one at docs/demos/planet/<name>.gif,
+every example in examples/procgen/ has one at docs/demos/procgen/<name>.gif,
+and numerical clips live at docs/demos/numerical/<name>.gif.
 The three original demos (lorenz, tetris, 2048) also keep their GIFs directly
 in docs/demos/; tetris.gif and 2048.gif are copied into docs/demos/games/
 so the games directory is complete.
@@ -54,6 +56,7 @@ NEURO_DIR = OUT_DIR / "neuro"
 EVOECO_DIR = OUT_DIR / "evoleco"
 PLANET_DIR = OUT_DIR / "planet"
 PROCGEN_DIR = OUT_DIR / "procgen"
+NUMERICAL_DIR = OUT_DIR / "numerical"
 
 # macOS virtual keycodes, matching lib/stdlib/gfx.flow.
 KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP = 123, 124, 125, 126
@@ -1101,6 +1104,39 @@ PROCGEN_DEMOS: list[Demo] = [
 ]
 
 DEMOS += PROCGEN_DEMOS
+
+
+def numerical(name: str, frames: int, skip: int, caption: str,
+              duration_ms: int = 70, colors: int = 40,
+              scale: float = 0.86, keys: str = "") -> Demo:
+    """A numerical-methods clip (FMM and friends).
+
+    Same 512x592 window as morphogenesis / procgen. Measurements gate before
+    the window opens. FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/numerical/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="numerical",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+NUMERICAL_DEMOS: list[Demo] = [
+    numerical("fmm_adaptive", 180, 2,
+              "Adaptive FMM — Carrier-Greengard-Rokhlin 1988; gated vs direct",
+              duration_ms=70, colors=32),
+]
+
+DEMOS += NUMERICAL_DEMOS
 
 
 def last_scripted_frame(keys: str) -> int:
