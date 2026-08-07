@@ -1,0 +1,291 @@
+# ISLAND MASK: radial falloff times fBm yields a single landmass.
+#
+# MODEL
+#   height = fBm(x,y) * radial_falloff(cx,cy) - sea. Falloff is 1 at the
+#   centre and 0 past a radius, so the continent is forced into one island.
+#
+# THE MEASUREMENT
+#   Count 4-connected land components above sea. For the preset seed there
+#   must be exactly one landmass.
+#
+# KEYS
+#   1 radius 0.55   2 radius 0.65   3 radius 0.75   4 radius 0.85
+#   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/procgen/island_mask.flow \
+#       --frames 4 --out /tmp/pg_island_mask
+# Run (windowed):
+#   ./flow gfx examples/procgen/island_mask.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/procgen.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sqrtf(x: f32) -> f32
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const MAP: i32 = 96
+const CELLS: i32 = 9216
+const CELL_PX: i32 = 5
+const ORIGIN_X: i32 = 16
+const ORIGIN_Y: i32 = 16
+const VERIFY_SEED: u32 = 314159
+const VERIFY_RAD: f32 = 0.65
+const SEA: f32 = 0.08
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 314159
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function preset_rad(p: i32) -> f32 {
+    if p == 1 { return 0.55 }
+    if p == 2 { return 0.65 }
+    if p == 3 { return 0.75 }
+    return 0.85
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "R 0.55" }
+    if p == 2 { return "R 0.65" }
+    if p == 3 { return "R 0.75" }
+    return "R 0.85"
+}
+
+function falloff(ix: i32, iy: i32, rad: f32) -> f32 {
+    let cx: f32 = (MAP as f32) * 0.5
+    let cy: f32 = (MAP as f32) * 0.5
+    let dx: f32 = ((ix as f32) - cx) / cx
+    let dy: f32 = ((iy as f32) - cy) / cy
+    let d: f32 = sqrtf(dx * dx + dy * dy)
+    let t: f32 = 1.0 - d / rad
+    if t < 0.0 { return 0.0 }
+    if t > 1.0 { return 1.0 }
+    return t * t * (3.0 - 2.0 * t)
+}
+
+function height_at(ix: i32, iy: i32, rad: f32) -> f32 {
+    let x: f32 = (ix as f32) * 0.06
+    let y: f32 = (iy as f32) * 0.06
+    let n: f32 = procgen_fbm2(x, y, 5, 8) * 0.5 + 0.5
+    return n * falloff(ix, iy, rad)
+}
+
+function fill_land(mask: ptr<i32>, rad: f32) -> void {
+    for i in 0 to CELLS {
+        let ix: i32 = i % MAP
+        let iy: i32 = i / MAP
+        if height_at(ix, iy, rad) > SEA {
+            mask[i] = 1
+        } else {
+            mask[i] = 0
+        }
+    }
+}
+
+function count_components(mask: ptr<i32>, seen: ptr<i32>, stack: ptr<i32>) -> i32 {
+    for i in 0 to CELLS {
+        seen[i] = 0
+    }
+    let mut comps: i32 = 0
+    for i in 0 to CELLS {
+        if mask[i] == 1 and seen[i] == 0 {
+            comps = comps + 1
+            let mut sp: i32 = 0
+            stack[sp] = i
+            sp = sp + 1
+            seen[i] = 1
+            while sp > 0 {
+                sp = sp - 1
+                let cur: i32 = stack[sp]
+                let x: i32 = cur % MAP
+                let y: i32 = cur / MAP
+                let mut n: i32 = 0
+                while n < 4 {
+                    let mut nx: i32 = x
+                    let mut ny: i32 = y
+                    if n == 0 { nx = x - 1 }
+                    if n == 1 { nx = x + 1 }
+                    if n == 2 { ny = y - 1 }
+                    if n == 3 { ny = y + 1 }
+                    if nx >= 0 and nx < MAP and ny >= 0 and ny < MAP {
+                        let ni: i32 = ny * MAP + nx
+                        if mask[ni] == 1 and seen[ni] == 0 {
+                            seen[ni] = 1
+                            stack[sp] = ni
+                            sp = sp + 1
+                        }
+                    }
+                    n = n + 1
+                }
+            }
+        }
+    }
+    return comps
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, rad: f32) -> void {
+    clear_fb(fb)
+    for iy in 0 to MAP {
+        for ix in 0 to MAP {
+            let h: f32 = height_at(ix, iy, rad)
+            let mut r: i32 = 25
+            let mut g2: i32 = 55
+            let mut b: i32 = 120
+            if h > SEA {
+                let t: f32 = (h - SEA) / (1.0 - SEA + 0.001)
+                r = (50.0 + t * 80.0) as i32
+                g2 = (120.0 + t * 100.0) as i32
+                b = (50.0 + t * 40.0) as i32
+            }
+            fill_rect_fb(fb, ORIGIN_X + ix * CELL_PX, ORIGIN_Y + iy * CELL_PX,
+                         CELL_PX, CELL_PX, r, g2, b)
+        }
+    }
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, comps: i32, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "ISLAND MASK", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "LANDMASSES", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_int(g, 380, 12, comps, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 8, 42,
+        "1-4 RADIUS  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let t6: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let t7: i32 = gfx_draw_text(g, 8, 572,
+        "radial falloff * fBm; sea cuts the continent into an island", 1, 122, 118, 144)
+    let t8: i32 = gfx_draw_text(g, 8, 582,
+        "gate: single connected landmass for the preset seed", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let mask: array<i32, 9216> = [0, 0, 0, 0]
+    let seen: array<i32, 9216> = [0, 0, 0, 0]
+    let stack: array<i32, 9216> = [0, 0, 0, 0]
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    println("")
+    println("  ISLAND MASK  --  radial falloff * fBm")
+    println("  ======================================")
+    println("")
+
+    procgen_seed(VERIFY_SEED)
+    fill_land(mask, VERIFY_RAD)
+    let comps: i32 = count_components(mask, seen, stack)
+
+    print("    seed                            : ")
+    printf("%.0f", VERIFY_SEED as f64)
+    println("")
+    print("    radius                          : ")
+    printf("%.3f", VERIFY_RAD as f64)
+    println("")
+    print("    landmasses                      : ")
+    printf("%.0f", comps as f64)
+    println("  (gate = 1)")
+    println("")
+
+    if comps != 1 {
+        println("    FAIL: expected a single connected landmass")
+        return 1
+    }
+    println("    PASS: single landmass above sea for the preset seed")
+    println("")
+
+    let mut preset: i32 = 2
+    let mut rad: f32 = preset_rad(preset)
+    let mut comps_live: i32 = comps
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Island mask - Flow procgen")
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 1 }
+        if gfx_key_down(g, KEY_2) { want = 2 }
+        if gfx_key_down(g, KEY_3) { want = 3 }
+        if gfx_key_down(g, KEY_4) { want = 4 }
+        if want >= 0 and want != preset {
+            preset = want
+            rad = preset_rad(preset)
+            fill_land(mask, rad)
+            comps_live = count_components(mask, seen, stack)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                rng_state = rng_next()
+                procgen_seed(rng_state)
+                fill_land(mask, rad)
+                comps_live = count_components(mask, seen, stack)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, rad)
+        draw_hud(g, preset, comps_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

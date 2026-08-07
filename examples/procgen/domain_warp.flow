@@ -1,0 +1,276 @@
+# DOMAIN WARP: plain fBm coastline versus domain-warped fBm.
+#
+# MODEL
+#   Left:  procgen_fbm2. Right: procgen_warped2 with the same octaves.
+#   Domain warp displaces the sample point by a low-octave noise field,
+#   which folds the coastline and lengthens coherent spatial structure.
+#
+# THE MEASUREMENT
+#   Lag-4 spatial autocorrelation of each field over a probe grid:
+#   ac = E[f(x) f(x+4)] / E[f(x)^2]. Domain warp lengthens coherent
+#   folds, so the warped field must show a higher autocorrelation
+#   (longer correlation length) than plain fBm. Same seed also replays
+#   bit-identically.
+#
+# KEYS
+#   1 warp 0.25   2 warp 0.45   3 warp 0.65   4 warp 0.85
+#   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/procgen/domain_warp.flow \
+#       --frames 4 --out /tmp/pg_domain_warp
+# Run (windowed):
+#   ./flow gfx examples/procgen/domain_warp.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/procgen.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const PANEL: i32 = 200
+const CELL: i32 = 2
+const SEA: f32 = 0.0
+const VERIFY_SEED: u32 = 424242
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+let mut rng_state: u32 = 424242
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function preset_warp(p: i32) -> f32 {
+    if p == 1 { return 0.25 }
+    if p == 2 { return 0.45 }
+    if p == 3 { return 0.65 }
+    return 0.85
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "WARP 0.25" }
+    if p == 2 { return "WARP 0.45" }
+    if p == 3 { return "WARP 0.65" }
+    return "WARP 0.85"
+}
+
+# Lag-4 autocorrelation along x. Higher means longer spatial correlation.
+function autocorr_plain() -> f64 {
+    let lag: i32 = 4
+    let mut num: f64 = 0.0
+    let mut den: f64 = 0.0
+    for iy in 0 to 40 {
+        for ix in 0 to 40 - lag {
+            let y: f32 = (iy as f32) * 0.15
+            let a: f64 = procgen_fbm2((ix as f32) * 0.15, y, 5, 3) as f64
+            let b: f64 = procgen_fbm2(((ix + lag) as f32) * 0.15, y, 5, 3) as f64
+            num = num + a * b
+            den = den + a * a
+        }
+    }
+    if den < 1.0e-12 { return 0.0 }
+    return num / den
+}
+
+function autocorr_warp(warp: f32) -> f64 {
+    let lag: i32 = 4
+    let mut num: f64 = 0.0
+    let mut den: f64 = 0.0
+    for iy in 0 to 40 {
+        for ix in 0 to 40 - lag {
+            let y: f32 = (iy as f32) * 0.15
+            let a: f64 = procgen_warped2((ix as f32) * 0.15, y, 5, warp, 3) as f64
+            let b: f64 = procgen_warped2(((ix + lag) as f32) * 0.15, y, 5, warp, 3) as f64
+            num = num + a * b
+            den = den + a * a
+        }
+    }
+    if den < 1.0e-12 { return 0.0 }
+    return num / den
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_panel(fb: ptr<u8>, ox: i32, oy: i32, warp: f32, use_warp: i32) -> void {
+    for py in 0 to PANEL {
+        for px in 0 to PANEL {
+            let x: f32 = (px as f32) * 0.04
+            let y: f32 = (py as f32) * 0.04
+            let mut h: f32 = 0.0
+            if use_warp == 1 {
+                h = procgen_warped2(x, y, 5, warp, 3)
+            } else {
+                h = procgen_fbm2(x, y, 5, 3)
+            }
+            let mut r: i32 = 30
+            let mut g2: i32 = 70
+            let mut b: i32 = 140
+            if h > SEA {
+                let t: f32 = (h - SEA) * 0.9 + 0.2
+                r = (50.0 + t * 100.0) as i32
+                g2 = (110.0 + t * 100.0) as i32
+                b = (50.0 + t * 40.0) as i32
+            }
+            fill_rect_fb(fb, ox + px * CELL, oy + py * CELL, CELL, CELL, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, warp: f32) -> void {
+    clear_fb(fb)
+    draw_panel(fb, 20, 40, warp, 0)
+    draw_panel(fb, 260, 40, warp, 1)
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, plain_ac: f64, warp_ac: f64,
+                  paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "DOMAIN WARP", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 8, 28, "PLAIN AC4", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 76, 28, plain_ac, 4, 1, 234, 232, 244)
+    let t5: i32 = gfx_draw_text(g, 160, 28, "WARP AC4", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 220, 28, warp_ac, 4, 1, 120, 255, 190)
+    let t7: i32 = gfx_draw_text(g, 8, 42,
+        "1-4 WARP  R RESEED  P PAUSE   left=plain  right=warped", 1, 112, 108, 132)
+    if paused {
+        let t8: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let t9: i32 = gfx_draw_text(g, 8, 572,
+        "domain warp folds the coastline and lengthens correlation", 1, 122, 118, 144)
+    let ta: i32 = gfx_draw_text(g, 8, 582,
+        "gate: warped lag-4 autocorrelation > plain fBm", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+
+    println("")
+    println("  DOMAIN WARP  --  plain fBm vs domain-warped coastline")
+    println("  ======================================================")
+    println("")
+
+    procgen_seed(VERIFY_SEED)
+    let warp0: f32 = 0.45
+    let a0: f32 = procgen_warped2(1.25, 2.5, 5, warp0, 3)
+    procgen_seed(VERIFY_SEED)
+    let a1: f32 = procgen_warped2(1.25, 2.5, 5, warp0, 3)
+    procgen_seed(VERIFY_SEED)
+    let plain_ac: f64 = autocorr_plain()
+    let warp_ac: f64 = autocorr_warp(warp0)
+
+    print("    bit-identical warp replay       : ")
+    if a0 == a1 {
+        printf("%.0f", 1.0)
+    } else {
+        printf("%.0f", 0.0)
+    }
+    println("")
+    print("    plain lag-4 autocorrelation     : ")
+    printf("%.6f", plain_ac)
+    println("")
+    print("    warped lag-4 autocorrelation    : ")
+    printf("%.6f", warp_ac)
+    println("")
+
+    if a0 != a1 {
+        println("    FAIL: warped sample did not replay bit-identically")
+        return 1
+    }
+    if warp_ac <= plain_ac {
+        println("    FAIL: warped field did not raise spatial autocorrelation")
+        return 2
+    }
+    println("    PASS: warped field has higher lag-4 autocorrelation than plain fBm")
+    println("")
+
+    let mut preset: i32 = 2
+    let mut warp: f32 = preset_warp(preset)
+    let mut plain_live: f64 = plain_ac
+    let mut warp_live: f64 = warp_ac
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Domain warp - Flow procgen")
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 1 }
+        if gfx_key_down(g, KEY_2) { want = 2 }
+        if gfx_key_down(g, KEY_3) { want = 3 }
+        if gfx_key_down(g, KEY_4) { want = 4 }
+        if want >= 0 and want != preset {
+            preset = want
+            warp = preset_warp(preset)
+            warp_live = autocorr_warp(warp)
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                rng_state = rng_next()
+                procgen_seed(rng_state)
+                plain_live = autocorr_plain()
+                warp_live = autocorr_warp(warp)
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        gfx_clear(g, 12, 10, 18)
+        draw_scene(g, fb, warp)
+        draw_hud(g, preset, plain_live, warp_live, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}
