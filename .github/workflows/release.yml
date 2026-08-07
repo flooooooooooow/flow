@@ -50,11 +50,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Post release to Discord #announcements
-        if: always() && env.DISCORD_RELEASE_WEBHOOK != ''
-        env:
-          DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
-          FLOW_TAG: ${{ steps.tag.outputs.name }}
-          FLOW_SHA: ${{ github.sha }}
+        if: always()
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
