@@ -116,6 +116,7 @@ nav:
     - Contributing: project/CONTRIBUTING.md
     - Questions: project/Questions.md
     - Architecture: project/architecture-writeup.md
+    - Maturity: project/maturity.md
   - Research:
     - Turing Proof: research/turing_proof.md
     - Research Paper: research/FLOW_RESEARCH_PAPER.md
