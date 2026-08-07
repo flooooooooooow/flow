@@ -59,13 +59,8 @@
         .logo-icon {
             width: 32px;
             height: 32px;
-            background: linear-gradient(135deg, var(--accent), var(--purple));
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 1.1rem;
+            object-fit: cover;
         }
 
         .logo-text {
@@ -446,7 +441,7 @@
 <body>
     <header>
         <a href="../" class="logo">
-            <div class="logo-icon">F</div>
+            <img src="../assets/flow-logo-alone.png" alt="Flow logo" class="logo-icon" width="32" height="32">
             <span class="logo-text">FLOW Playground</span>
             <span class="logo-badge" id="logoBadge">syntax explorer</span>
         </a>
