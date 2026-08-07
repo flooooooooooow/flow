@@ -228,12 +228,7 @@ body {
     width: 30px;
     height: 30px;
     border-radius: 8px;
-    background: linear-gradient(140deg, var(--accent) 0%, var(--purple) 100%);
-    display: grid;
-    place-items: center;
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: var(--on-accent);
+    object-fit: cover;
     box-shadow: 0 2px 12px -2px var(--accent-line);
     transition: transform var(--med), box-shadow var(--med);
 }
