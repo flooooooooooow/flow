@@ -137,6 +137,11 @@ heightmap, cave, WFC, Voronoi, island, and biome-tile demos backed by
 `stdlib/procgen.flow`. Sources:
 [examples/procgen](../examples/procgen/README.md).
 
+**[Numerical gallery →](demos/numerical.md)** — adaptive Fast Multipole Method
+(Carrier-Greengard-Rokhlin 1988) gated against the direct sum. Sources:
+[examples/numerical](../examples/numerical/) ·
+[`stdlib/fmm2d.flow`](library/fmm2d.md).
+
 **[Training AI in Flow →](tutorials/game-ai.md)** — Q-learning, neuroevolution,
 and policy gradients against the games above, plus
 [ML on a MacBook](tutorials/ml-on-macbook.md) and the
@@ -158,6 +163,7 @@ and policy gradients against the games above, plus
 | [Evolutionary biology gallery](demos/evoleco.md) | 25 pop-gen / evo-game / ecology sims, each gated and recorded |
 | [Planet gallery](demos/planet.md) | 7 staged cubesphere planet demos, each gated and recorded |
 | [Procedural generation gallery](demos/procgen.md) | 8 noise / heightmap / WFC / biome demos, each gated and recorded |
+| [Numerical gallery](demos/numerical.md) | Adaptive FMM (CGR 1988), gated vs direct and recorded |
 | [Evolution suite](demos/evolution.md) | 34 systems evolving through time, each gated on a measurement |
 | [Training game AIs](tutorials/game-ai.md) | Q-learning, GA, and policy gradients that measurably learn |
 | [ML on a MacBook](tutorials/ml-on-macbook.md) | Digit classifier, parallel training, the Metal path |

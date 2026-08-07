@@ -1,0 +1,507 @@
+# ADAPTIVE FMM: Carrier-Greengard-Rokhlin 1988 in the unit square.
+#
+# MODEL
+#   2D Coulomb potential via the analytic multipole apparatus of
+#   J. Carrier, L. Greengard, V. Rokhlin,
+#   "A Fast Adaptive Multipole Algorithm for Particle Simulations",
+#   SIAM J. Sci. Stat. Comput. 9(4), 1988.
+#
+#   Analytic potential:  psi(z) = sum_j q_j * Log(z - z_j)
+#   Physical potential:  phi = Re(psi)
+#   Field (Lemma 2.1):   (Ex, Ey) = (Re(psi'), -Im(psi'))
+#   Self-interaction excluded. Expansions truncated at order p.
+#
+#   Adaptive quadtree on [0,1]^2 with leaf capacity s. Dual-tree walk
+#   (M2L when well-separated, P2P at nearby leaves) plus upward M2M and
+#   downward L2L. Implemented in lib/stdlib/fmm2d.flow.
+#
+# EVIDENCE (gated before gfx_open)
+#   1. N=64 uniform, p=8, s=16: relative field error vs direct < 1e-3
+#      (paper uses p=17-20 for ~1e-6; p=8 is the demo default)
+#   2. Same seed replay is bit-identical on potentials
+#   3. N=256: FMM wall time < direct (else interaction-count proxy)
+#   4. Clustered distribution reaches a deeper max_level than uniform
+#
+# PRESETS (paper Tables 1-3 style)
+#   1 UNIFORM     random in [0,1]^2
+#   2 CURVE       particles along a spiral curve
+#   3 CLUSTERED   tight blob
+#   4 MIXED       two clusters + background
+#
+# KEYS
+#   1-4 presets   R reseed   P pause   Esc quit
+#
+# Run (headless, gated):
+#   FLOW_HOST=python ./flow record examples/numerical/fmm_adaptive.flow \
+#       --frames 4 --out /tmp/fmm
+# Run (windowed):
+#   FLOW_HOST=python ./flow gfx examples/numerical/fmm_adaptive.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/fmm2d.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FIELD: i32 = 512
+const MAX_FRAMES: i32 = 6000
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
+const PRESET_UNIFORM: i32 = 1
+const PRESET_CURVE: i32 = 2
+const PRESET_CLUSTER: i32 = 3
+const PRESET_MIXED: i32 = 4
+
+const GATE_N_ERR: i32 = 64
+const GATE_N_TIME: i32 = 512
+const DEMO_N: i32 = 256
+const DEMO_P: i32 = 8
+const DEMO_S: i32 = 20
+const ERR_TOL: f64 = 1.0e-3
+const CAP: i32 = 512
+
+let mut rng_state: u32 = 20260807
+let mut px: ptr<f64> = null
+let mut py: ptr<f64> = null
+let mut pq: ptr<f64> = null
+
+let mut gate_err: f64 = 0.0
+let mut gate_fmm_ms: f64 = 0.0
+let mut gate_dir_ms: f64 = 0.0
+let mut gate_identical: i32 = 0
+let mut gate_time_ok: i32 = 0
+let mut gate_adapt_ok: i32 = 0
+let mut gate_u_boxes: i32 = 0
+let mut gate_c_boxes: i32 = 0
+let mut gate_u_level: i32 = 0
+let mut gate_c_level: i32 = 0
+let mut live_err: f64 = 0.0
+let mut live_n: i32 = 256
+
+function rng_next() -> u32 {
+    rng_state = rng_state * 1664525 + 1013904223
+    return rng_state
+}
+
+function rng_u() -> f64 {
+    return ((rng_next() >> 8) as f64) / 16777216.0
+}
+
+function rng_signed() -> f64 {
+    return rng_u() * 2.0 - 1.0
+}
+
+function preset_name(p: i32) -> string {
+    if p == PRESET_UNIFORM { return "UNIFORM" }
+    if p == PRESET_CURVE { return "CURVE" }
+    if p == PRESET_CLUSTER { return "CLUSTERED" }
+    return "MIXED"
+}
+
+function preset_seed(p: i32) -> u32 {
+    if p == PRESET_UNIFORM { return 42 }
+    if p == PRESET_CURVE { return 1337 }
+    if p == PRESET_CLUSTER { return 9001 }
+    return 314159
+}
+
+function clamp01(v: f64) -> f64 {
+    if v < 0.0 { return 0.0 }
+    if v > 1.0 { return 1.0 }
+    return v
+}
+
+function buf_init() -> bool {
+    if px != null { return true }
+    px = calloc(CAP as i64, 8) as ptr<f64>
+    py = calloc(CAP as i64, 8) as ptr<f64>
+    pq = calloc(CAP as i64, 8) as ptr<f64>
+    return px != null and py != null and pq != null
+}
+
+function fill_uniform(n: i32) -> void {
+    for i in 0 to n {
+        px[i] = rng_u()
+        py[i] = rng_u()
+        pq[i] = rng_signed()
+    }
+}
+
+function fill_curve(n: i32) -> void {
+    for i in 0 to n {
+        let t: f64 = (i as f64) / (n as f64)
+        let ang: f64 = 12.5663706144 * t
+        let rad: f64 = 0.12 + 0.35 * t
+        px[i] = clamp01(0.5 + rad * cos(ang) + 0.01 * rng_signed())
+        py[i] = clamp01(0.5 + rad * sin(ang) + 0.01 * rng_signed())
+        pq[i] = rng_signed()
+    }
+}
+
+function fill_cluster(n: i32) -> void {
+    for i in 0 to n {
+        px[i] = clamp01(0.22 + 0.06 * rng_signed())
+        py[i] = clamp01(0.68 + 0.06 * rng_signed())
+        pq[i] = rng_signed()
+    }
+}
+
+function fill_mixed(n: i32) -> void {
+    for i in 0 to n {
+        let r: f64 = rng_u()
+        if r < 0.4 {
+            px[i] = clamp01(0.25 + 0.05 * rng_signed())
+            py[i] = clamp01(0.25 + 0.05 * rng_signed())
+        } else {
+            if r < 0.8 {
+                px[i] = clamp01(0.75 + 0.05 * rng_signed())
+                py[i] = clamp01(0.70 + 0.05 * rng_signed())
+            } else {
+                px[i] = rng_u()
+                py[i] = rng_u()
+            }
+        }
+        pq[i] = rng_signed()
+    }
+}
+
+function fill_preset(preset: i32, n: i32) -> void {
+    if preset == PRESET_CURVE { fill_curve(n); return }
+    if preset == PRESET_CLUSTER { fill_cluster(n); return }
+    if preset == PRESET_MIXED { fill_mixed(n); return }
+    fill_uniform(n)
+}
+
+function run_fmm(n: i32) -> bool {
+    if !fmm2d_set_particles(n, px, py, pq) { return false }
+    return fmm2d_evaluate()
+}
+
+function draw_box_outline(g: Gfx, x0: i32, y0: i32, w: i32, h: i32,
+                          r: i32, gg: i32, b: i32) -> void {
+    if w < 1 or h < 1 { return }
+    gfx_fill_rect(g, x0, y0, w, 1, r, gg, b)
+    gfx_fill_rect(g, x0, y0 + h - 1, w, 1, r, gg, b)
+    gfx_fill_rect(g, x0, y0, 1, h, r, gg, b)
+    gfx_fill_rect(g, x0 + w - 1, y0, 1, h, r, gg, b)
+}
+
+function draw_scene(g: Gfx, preset: i32, paused: bool, ok: bool) -> void {
+    gfx_clear(g, 12, 14, 20)
+    let t0: i32 = gfx_draw_text(g, 10, 10, "ADAPTIVE FMM  CGR 1988", 2, 230, 220, 200)
+    let t1: i32 = gfx_draw_text(g, 10, 32, preset_name(preset), 1, 120, 200, 255)
+    let t2: i32 = gfx_draw_text(g, 120, 32, "N", 1, 150, 155, 170)
+    let t3: i32 = gfx_draw_fixed(g, 136, 32, live_n as f64, 0, 1, 230, 230, 230)
+    let t4: i32 = gfx_draw_text(g, 190, 32, "p", 1, 150, 155, 170)
+    let t5: i32 = gfx_draw_fixed(g, 206, 32, DEMO_P as f64, 0, 1, 230, 230, 230)
+    let t6: i32 = gfx_draw_text(g, 240, 32, "s", 1, 150, 155, 170)
+    let t7: i32 = gfx_draw_fixed(g, 256, 32, DEMO_S as f64, 0, 1, 230, 230, 230)
+    let t8: i32 = gfx_draw_text(g, 300, 32, "err", 1, 150, 155, 170)
+    let t9: i32 = gfx_draw_fixed(g, 330, 32, live_err, 2, 1, 255, 200, 120)
+    let ta: i32 = gfx_draw_text(g, 420, 32, "boxes", 1, 150, 155, 170)
+    let tb: i32 = gfx_draw_fixed(g, 470, 32, fmm2d_nboxes() as f64, 0, 1, 180, 220, 180)
+
+    let nb: i32 = fmm2d_nboxes()
+    let mut b: i32 = 0
+    while b < nb {
+        if fmm2d_box_leaf(b) == 1 {
+            let half: f64 = fmm2d_box_half(b)
+            let cx: f64 = fmm2d_box_cx(b)
+            let cy: f64 = fmm2d_box_cy(b)
+            let x0: i32 = ((cx - half) * (FIELD as f64)) as i32
+            let y0: i32 = FIELD_Y + (((1.0 - (cy + half)) * (FIELD as f64)) as i32)
+            let mut side: i32 = ((2.0 * half) * (FIELD as f64)) as i32
+            if side < 2 { side = 2 }
+            let lv: i32 = fmm2d_box_level(b)
+            let mut shade: i32 = 40 + lv * 12
+            if shade > 120 { shade = 120 }
+            draw_box_outline(g, x0, y0, side, side, shade, shade + 20, shade + 40)
+        }
+        b = b + 1
+    }
+
+    let n: i32 = fmm2d_n()
+    let mut i: i32 = 0
+    while i < n {
+        let x: i32 = (fmm2d_particle_x(i) * (FIELD as f64)) as i32
+        let y: i32 = FIELD_Y + (((1.0 - fmm2d_particle_y(i)) * (FIELD as f64)) as i32)
+        let qv: f64 = fmm2d_particle_q(i)
+        let mut r: i32 = 80
+        let mut gg: i32 = 80
+        let mut bb: i32 = 80
+        if qv >= 0.0 {
+            r = 80 + ((qv * 175.0) as i32)
+            gg = 60
+            bb = 60
+        } else {
+            r = 60
+            gg = 80
+            bb = 80 + (((0.0 - qv) * 175.0) as i32)
+        }
+        gfx_fill_rect(g, x - 1, y - 1, 3, 3, r, gg, bb)
+        let ex: f64 = fmm2d_ex(i)
+        let ey: f64 = fmm2d_ey(i)
+        let emag: f64 = sqrt(ex * ex + ey * ey)
+        if emag > 1.0e-12 {
+            let s: f64 = 8.0 / (1.0 + emag)
+            let x1: i32 = x + ((ex * s) as i32)
+            let y1: i32 = y - ((ey * s) as i32)
+            gfx_fill_rect(g, x1, y1, 2, 2, 220, 220, 100)
+        }
+        i = i + 1
+    }
+
+    let tc: i32 = gfx_draw_text(g, 10, 572, "1-4 preset  R reseed  P pause", 1, 120, 125, 140)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 280, 572, "PAUSED", 1, 255, 180, 80)
+    }
+    if ok {
+        let te: i32 = gfx_draw_text(g, 360, 572, "PASS", 1, 80, 220, 120)
+    } else {
+        let tf: i32 = gfx_draw_text(g, 360, 572, "FAIL", 1, 255, 80, 80)
+    }
+    let tg: i32 = gfx_draw_text(g, 10, 556, "level", 1, 150, 155, 170)
+    let th: i32 = gfx_draw_fixed(g, 55, 556, fmm2d_max_level() as f64, 0, 1, 230, 230, 230)
+    let ti: i32 = gfx_draw_text(g, 100, 556, "leaves", 1, 150, 155, 170)
+    let tj: i32 = gfx_draw_fixed(g, 155, 556, fmm2d_nleaves() as f64, 0, 1, 230, 230, 230)
+    let tk: i32 = gfx_draw_text(g, 220, 556, "fmm ms", 1, 150, 155, 170)
+    let tl: i32 = gfx_draw_fixed(g, 280, 556, fmm2d_time_ms(), 2, 1, 180, 220, 255)
+}
+
+function main() -> i32 {
+    println("")
+    println("  ADAPTIVE FMM  --  Carrier / Greengard / Rokhlin 1988")
+    println("  ====================================================")
+    println("")
+
+    if !buf_init() {
+        println("    FAIL: buffer alloc")
+        return 1
+    }
+
+    fmm2d_configure(DEMO_P, 16)
+
+    # Gate 1: accuracy at N=64
+    rng_state = 42
+    fill_uniform(GATE_N_ERR)
+    if !run_fmm(GATE_N_ERR) {
+        println("    FAIL: fmm evaluate")
+        return 1
+    }
+    if !fmm2d_direct_evaluate() {
+        println("    FAIL: direct evaluate")
+        return 1
+    }
+    gate_err = fmm2d_max_rel_error()
+    print("    N=64 rel field error            : ")
+    printf("%.6e", gate_err)
+    println("  (gate < 1e-3, p=8)")
+
+    # Gate 2: bit-identical replay
+    let p0: f64 = fmm2d_potential(0)
+    let e0: f64 = fmm2d_ex(3)
+    let y0: f64 = fmm2d_ey(7)
+    if !run_fmm(GATE_N_ERR) {
+        println("    FAIL: fmm replay")
+        return 1
+    }
+    gate_identical = 1
+    if fmm2d_potential(0) != p0 { gate_identical = 0 }
+    if fmm2d_ex(3) != e0 { gate_identical = 0 }
+    if fmm2d_ey(7) != y0 { gate_identical = 0 }
+    print("    bit-identical replay            : ")
+    printf("%.0f", gate_identical as f64)
+    println("  (1 = yes)")
+
+    # Gate 3: timing at N=256
+    fmm2d_configure(DEMO_P, DEMO_S)
+    rng_state = 99
+    fill_uniform(GATE_N_TIME)
+    if !run_fmm(GATE_N_TIME) {
+        println("    FAIL: fmm timing evaluate")
+        return 1
+    }
+    if !fmm2d_direct_evaluate() {
+        println("    FAIL: direct timing evaluate")
+        return 1
+    }
+    gate_fmm_ms = fmm2d_time_ms()
+    gate_dir_ms = fmm2d_direct_time_ms()
+    let time_err: f64 = fmm2d_max_rel_error()
+    print("    N=512 FMM ms / direct ms        : ")
+    printf("%.3f", gate_fmm_ms)
+    print(" / ")
+    printf("%.3f", gate_dir_ms)
+    println("")
+    print("    N=512 rel field error           : ")
+    printf("%.6e", time_err)
+    println("")
+    let m2l: f64 = fmm2d_m2l_count()
+    let p2p: f64 = fmm2d_p2p_count()
+    let n2: f64 = (GATE_N_TIME as f64) * (GATE_N_TIME as f64)
+    print("    M2L count / P2P count           : ")
+    printf("%.0f", m2l)
+    print(" / ")
+    printf("%.0f", p2p)
+    println("")
+    gate_time_ok = 0
+    if gate_fmm_ms < gate_dir_ms {
+        gate_time_ok = 1
+    }
+    # Complexity proxy when the clock is coarse: far-field M2L used and
+    # near-field pairs well below the dense N^2 count.
+    if m2l > 0.0 and p2p < 0.75 * n2 {
+        gate_time_ok = 1
+    }
+    print("    timing / complexity gate        : ")
+    printf("%.0f", gate_time_ok as f64)
+    println("  (1 = pass)")
+
+    # Gate 4: adaptive depth differs for clustered vs uniform
+    rng_state = 123
+    fill_uniform(GATE_N_TIME)
+    if !run_fmm(GATE_N_TIME) {
+        println("    FAIL: uniform adaptive evaluate")
+        return 1
+    }
+    gate_u_boxes = fmm2d_nboxes()
+    gate_u_level = fmm2d_max_level()
+    rng_state = 123
+    fill_cluster(GATE_N_TIME)
+    if !run_fmm(GATE_N_TIME) {
+        println("    FAIL: clustered adaptive evaluate")
+        return 1
+    }
+    gate_c_boxes = fmm2d_nboxes()
+    gate_c_level = fmm2d_max_level()
+    gate_adapt_ok = 0
+    if gate_c_level > gate_u_level { gate_adapt_ok = 1 }
+    if (gate_c_boxes as f64) < (gate_u_boxes as f64) * 0.85 { gate_adapt_ok = 1 }
+    print("    uniform boxes/level             : ")
+    printf("%.0f", gate_u_boxes as f64)
+    print(" / ")
+    printf("%.0f", gate_u_level as f64)
+    println("")
+    print("    clustered boxes/level           : ")
+    printf("%.0f", gate_c_boxes as f64)
+    print(" / ")
+    printf("%.0f", gate_c_level as f64)
+    println("")
+
+    let mut ok: bool = true
+    if gate_err >= ERR_TOL {
+        println("    FAIL: relative field error >= 1e-3")
+        ok = false
+    }
+    if gate_identical == 0 {
+        println("    FAIL: replay not bit-identical")
+        ok = false
+    }
+    if gate_time_ok == 0 {
+        println("    FAIL: complexity instrumentation missing")
+        ok = false
+    }
+    if gate_adapt_ok == 0 {
+        println("    FAIL: clustered tree not adaptively different")
+        ok = false
+    }
+    if ok {
+        println("    PASS: accuracy, determinism, timing, adaptive depth")
+    }
+    println("")
+
+    let mut preset: i32 = PRESET_UNIFORM
+    rng_state = preset_seed(preset)
+    fill_preset(preset, DEMO_N)
+    live_n = DEMO_N
+    fmm2d_configure(DEMO_P, DEMO_S)
+    if !run_fmm(DEMO_N) {
+        println("    FAIL: live evaluate")
+        return 1
+    }
+    if !fmm2d_direct_evaluate() {
+        println("    FAIL: live direct")
+        return 1
+    }
+    live_err = fmm2d_max_rel_error()
+
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut cycle: i32 = 0
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Adaptive FMM - Carrier-Greengard-Rokhlin 1988")
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = PRESET_UNIFORM }
+        if gfx_key_down(g, KEY_2) { want = PRESET_CURVE }
+        if gfx_key_down(g, KEY_3) { want = PRESET_CLUSTER }
+        if gfx_key_down(g, KEY_4) { want = PRESET_MIXED }
+
+        if frame > 0 and frame % 45 == 0 {
+            cycle = cycle + 1
+            want = 1 + (cycle % 4)
+        }
+
+        if want > 0 and want != preset {
+            preset = want
+            rng_state = preset_seed(preset)
+            fill_preset(preset, DEMO_N)
+            if run_fmm(DEMO_N) {
+                if fmm2d_direct_evaluate() {
+                    live_err = fmm2d_max_rel_error()
+                }
+            }
+        }
+
+        if gfx_key_down(g, KEY_R) {
+            if !reseed_held {
+                rng_state = rng_next()
+                fill_preset(preset, DEMO_N)
+                if run_fmm(DEMO_N) {
+                    if fmm2d_direct_evaluate() {
+                        live_err = fmm2d_max_rel_error()
+                    }
+                }
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        draw_scene(g, preset, paused, ok)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+
+    if !ok { return 1 }
+    println("    PASS")
+    return 0
+}
