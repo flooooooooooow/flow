@@ -22,6 +22,8 @@ MLIR→SPIR-V remains a separate native emit path.
 Usage:
     python3 scripts/wasm_build.py examples/games/snake_gfx.flow --out site/wasm/snake
     python3 scripts/wasm_build.py examples/wasm/hello_wasm.flow --backend=mlir
+    python3 scripts/wasm_build.py examples/wasm/hello_wasm.flow --backend=mlir \\
+        --preload /tmp/data@/data --link runtime/flow_rt_support.c
 """
 
 from __future__ import annotations
@@ -149,10 +151,42 @@ def uses_gfx_flow_source(flow_source: str) -> bool:
     return any(m in flow_source for m in markers)
 
 
-def emcc_command(input_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
-    cmd = [
-        "emcc", str(input_file),
-        opt,
+def filter_browser_link_inputs(paths: list[Path]) -> list[Path]:
+    """Drop native-only sources (Cocoa .m, Metal) that cannot link under emcc."""
+    out: list[Path] = []
+    for path in paths:
+        suffix = path.suffix.lower()
+        if suffix in (".m", ".mm", ".metal"):
+            continue
+        out.append(path)
+    return out
+
+
+def emcc_command(
+    input_file: Path,
+    out_js: Path,
+    gfx: bool,
+    opt: str,
+    preload: Optional[list[str]] = None,
+    extra_link: Optional[list[Path]] = None,
+    initial_memory: str = "32MB",
+    asyncify_stack_size: int = 32768,
+) -> list:
+    sources: list[str] = [str(input_file)]
+    if gfx:
+        sources.append(str(PROJECT_ROOT / "runtime" / "gfx_wasm.c"))
+    for path in filter_browser_link_inputs(list(extra_link or [])):
+        sources.append(str(path.resolve()))
+
+    cmd: list[str] = ["emcc", *sources, opt]
+    if gfx:
+        # ASYNCIFY lets flow_gfx_present hand the event loop back to the
+        # browser from inside the Flow program's own while-loop.
+        cmd += [
+            "-sASYNCIFY=1",
+            f"-sASYNCIFY_STACK_SIZE={asyncify_stack_size}",
+        ]
+    cmd += [
         "-o", str(out_js),
         "-sENVIRONMENT=web",
         "-sALLOW_MEMORY_GROWTH=1",
@@ -160,7 +194,7 @@ def emcc_command(input_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
         # holds several 128x128 grids of doubles at once. wasm32 defaults to a
         # 64 KB stack, which those overrun instantly.
         "-sSTACK_SIZE=16MB",
-        "-sINITIAL_MEMORY=32MB",
+        f"-sINITIAL_MEMORY={initial_memory}",
         "-sMODULARIZE=1",
         "-sEXPORT_NAME=createFlowModule",
         "-sINVOKE_RUN=0",
@@ -170,19 +204,37 @@ def emcc_command(input_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
         "-Wno-implicit-function-declaration",
         "-lm",
     ]
-    if gfx:
-        # ASYNCIFY lets flow_gfx_present hand the event loop back to the
-        # browser from inside the Flow program's own while-loop.
-        cmd.insert(3, "-sASYNCIFY=1")
-        cmd.insert(4, "-sASYNCIFY_STACK_SIZE=32768")
-        cmd.insert(2, str(PROJECT_ROOT / "runtime" / "gfx_wasm.c"))
+    if preload:
+        # Without FORCE_FILESYSTEM, emcc may strip MEMFS when it cannot see
+        # fopen uses through the .ll path (#225).
+        cmd.append("-sFORCE_FILESYSTEM=1")
+        for spec in preload:
+            cmd.extend(["--preload-file", spec])
     return cmd
 
 
-def compile_wasm(input_file: Path, out_js: Path, gfx: bool, opt: str,
-                 timeout: int) -> None:
+def compile_wasm(
+    input_file: Path,
+    out_js: Path,
+    gfx: bool,
+    opt: str,
+    timeout: int,
+    preload: Optional[list[str]] = None,
+    extra_link: Optional[list[Path]] = None,
+    initial_memory: str = "32MB",
+    asyncify_stack_size: int = 32768,
+) -> None:
     out_js.parent.mkdir(parents=True, exist_ok=True)
-    cmd = emcc_command(input_file, out_js, gfx, opt)
+    cmd = emcc_command(
+        input_file,
+        out_js,
+        gfx,
+        opt,
+        preload=preload,
+        extra_link=extra_link,
+        initial_memory=initial_memory,
+        asyncify_stack_size=asyncify_stack_size,
+    )
     try:
         proc = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True,
                               text=True, env=emcc_env(), timeout=timeout)
@@ -192,6 +244,8 @@ def compile_wasm(input_file: Path, out_js: Path, gfx: bool, opt: str,
         raise BuildError("emcc: " + first_error(proc.stderr or proc.stdout))
     if not out_js.with_suffix(".wasm").exists():
         raise BuildError("emcc: no .wasm emitted")
+    if preload and not out_js.with_suffix(".data").exists():
+        raise BuildError("emcc: --preload requested but no .data package emitted")
 
 
 def tidy(line: str) -> str:
@@ -510,7 +564,11 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
 
 def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           opt: str = "-O2", timeout: int = 600, keep_c: bool = False,
-          backend: str = "c") -> dict:
+          backend: str = "c",
+          preload: Optional[list[str]] = None,
+          extra_link: Optional[list[Path]] = None,
+          initial_memory: str = "32MB",
+          asyncify_stack_size: int = 32768) -> dict:
     """Build one program. Returns a result dict; raises BuildError on failure."""
     program = program.resolve()
     if not program.exists():
@@ -541,7 +599,17 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
 
     started = time.time()
     out_js = out_dir / f"{name}.js"
-    compile_wasm(compile_input, out_js, gfx, opt, timeout)
+    compile_wasm(
+        compile_input,
+        out_js,
+        gfx,
+        opt,
+        timeout,
+        preload=preload,
+        extra_link=extra_link,
+        initial_memory=initial_memory,
+        asyncify_stack_size=asyncify_stack_size,
+    )
     elapsed = time.time() - started
 
     try:
@@ -556,7 +624,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         keep_artifact.unlink(missing_ok=True)
 
     wasm = out_js.with_suffix(".wasm")
-    return {
+    data = out_js.with_suffix(".data")
+    result = {
         "name": name,
         "title": title,
         "source": str(rel),
@@ -566,7 +635,12 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         "js_bytes": out_js.stat().st_size,
         "seconds": round(elapsed, 1),
         "out": str(out_dir),
+        "preload": list(preload or []),
+        "link": [str(p) for p in (extra_link or [])],
     }
+    if data.exists():
+        result["data_bytes"] = data.stat().st_size
+    return result
 
 
 def main(argv=None) -> int:
@@ -582,6 +656,33 @@ def main(argv=None) -> int:
         help="CPU codegen: c (default) or mlir (Flow→MLIR→LLVM→emcc). "
              "Also accepts FLOW_CPU_BACKEND.",
     )
+    parser.add_argument(
+        "--preload",
+        action="append",
+        default=[],
+        metavar="HOST@VFS",
+        help="emcc --preload-file mapping (repeatable). Enables FORCE_FILESYSTEM. "
+             "Works for both --backend=c and --backend=mlir (#225).",
+    )
+    parser.add_argument(
+        "--link",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="extra C/runtime file to pass to emcc (repeatable). "
+             "Cocoa .m/.mm are skipped. Example: runtime/flow_rt_support.c",
+    )
+    parser.add_argument(
+        "--initial-memory",
+        default="32MB",
+        help="emcc -sINITIAL_MEMORY (default 32MB; doom-scale often 64MB)",
+    )
+    parser.add_argument(
+        "--asyncify-stack-size",
+        type=int,
+        default=32768,
+        help="emcc -sASYNCIFY_STACK_SIZE when gfx is linked (default 32768)",
+    )
     parser.add_argument("-O", dest="opt", default="-O2",
                         help="emcc optimisation flag (default -O2)")
     parser.add_argument("--timeout", type=int, default=600)
@@ -594,11 +695,24 @@ def main(argv=None) -> int:
     program = Path(args.program)
     out_dir = Path(args.out) if args.out else \
         PROJECT_ROOT / "build" / "wasm" / program.stem
+    extra_link = [Path(p) for p in args.link]
 
     try:
         backend = resolve_backend(args.backend)
-        result = build(program, out_dir, args.name, args.title, args.opt,
-                       args.timeout, args.keep_c, backend=backend)
+        result = build(
+            program,
+            out_dir,
+            args.name,
+            args.title,
+            args.opt,
+            args.timeout,
+            args.keep_c,
+            backend=backend,
+            preload=args.preload or None,
+            extra_link=extra_link or None,
+            initial_memory=args.initial_memory,
+            asyncify_stack_size=args.asyncify_stack_size,
+        )
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -611,6 +725,11 @@ def main(argv=None) -> int:
               f"in {result['seconds']}s")
         print(f"  wasm {result['wasm_bytes'] / 1024:.0f} KB  "
               f"js {result['js_bytes'] / 1024:.0f} KB")
+        if result.get("data_bytes"):
+            print(f"  data {result['data_bytes'] / 1024:.0f} KB  "
+                  f"(preload {', '.join(result['preload'])})")
+        if result.get("link"):
+            print(f"  link {' '.join(result['link'])}")
         print(f"  page {out_dir / 'index.html'}")
         print(f"  serve: python3 -m http.server -d {out_dir}")
     return 0

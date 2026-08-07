@@ -376,6 +376,10 @@ file. Three backends matter:
 ```
 ./flow wasm examples/wasm/fs_counter.flow --fs idbfs
 ./flow wasm examples/wasm/fs_preload.flow --fs memfs --preload examples/wasm/data@/data
+
+# Same preload without the MEMFS/IDBFS crossing page — works for --backend=c|mlir:
+./flow wasm examples/wasm/hello_wasm.flow --backend=mlir \
+  --preload examples/wasm/data@/data --out build/wasm/hello-preload
 python3 wasm/flow_wasm_fs.py          # builds all three demos and the page
 ```
 
