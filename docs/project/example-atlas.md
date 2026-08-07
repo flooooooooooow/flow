@@ -135,10 +135,17 @@ boundaries, Schrödinger evolution (norm conservation as the check),
 Fokker-Planck, percolation with a measured critical threshold, level-set
 front propagation, lattice Boltzmann.
 
-### 5. Physics and mechanics — 12 planned
+### 5. Physics and mechanics — 12 planned (+ 1 FMM shipped)
 
-N-body with symplectic integration (energy drift as the check), double
-pendulum (Lyapunov exponent), rigid-body chains, cloth and mass-spring,
+| # | Example | Evidence it carries | Measured |
+|---|---|---|---|
+| 1 | Adaptive FMM (CGR 1988) | Field vs direct; bit-identical replay; FMM wall time below direct; clustered tree deeper than uniform | N=64 err ~3e-16 (p=8); N=512 FMM &lt; direct; max_level 6 vs 3 |
+
+`examples/numerical/fmm_adaptive.flow` · [`stdlib/fmm2d.flow`](../../lib/stdlib/fmm2d.flow)
+· [gallery](../demos/numerical.md) · [library note](../library/fmm2d.md)
+
+Still planned: N-body with symplectic integration (energy drift as the check),
+double pendulum (Lyapunov exponent), rigid-body chains, cloth and mass-spring,
 soft-body FEM, granular packing, orbital mechanics with a Hohmann transfer,
 gyroscopic precession, coupled oscillators and synchronization (Kuramoto),
 elastic collisions with restitution, projectile with drag vs the analytic
