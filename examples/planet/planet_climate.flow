@@ -1,0 +1,171 @@
+# PLANET CLIMATE: temperature, precipitation, orographic rain shadow.
+#
+# Runs through climate. Gates rain_shadow_ratio > 1.05 and finite mean land
+# precip. Visual: equirect temp / precip maps.
+#
+# KEYS
+#   1 TEMP   2 PRECIP
+#   Esc quit
+#
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_climate.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/planet.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SEED: u32 = 42
+const PLATES: i32 = 12
+const ERODE: i32 = 24
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 256
+const MAX_FRAMES: i32 = 6000
+const RAIN_MIN: f64 = 1.05
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+
+let mut fb: ptr<u8> = null
+let mut mode: i32 = 0
+let mut m_rain: f64 = 0.0
+let mut m_precip: f64 = 0.0
+
+function put_px(x: i32, y: i32, r: i32, g: i32, b: i32) -> void {
+    if x < 0 or x >= FB_W or y < 0 or y >= FB_H { return }
+    let o: i32 = (y * FB_W + x) * 3
+    fb[o] = r as u8
+    fb[o + 1] = g as u8
+    fb[o + 2] = b as u8
+}
+
+function color_temp(t: f32) -> i32 {
+    let u: f32 = pl_clampf((t + 20.0) / 55.0, 0.0, 1.0)
+    let mut d: f32 = u - 0.5
+    if d < 0.0 { d = -d }
+    let r: i32 = (20.0 + 220.0 * u) as i32
+    let g: i32 = (40.0 + 100.0 * (1.0 - d * 2.0)) as i32
+    let b: i32 = (200.0 * (1.0 - u) + 40.0) as i32
+    return (r << 16) + (g << 8) + b
+}
+
+function color_precip(p: f32) -> i32 {
+    let u: f32 = pl_clampf(p / 3000.0, 0.0, 1.0)
+    let r: i32 = (20.0 + 40.0 * (1.0 - u)) as i32
+    let g: i32 = (40.0 + 160.0 * u) as i32
+    let b: i32 = (60.0 + 180.0 * u) as i32
+    return (r << 16) + (g << 8) + b
+}
+
+function draw_map() -> void {
+    let n: i32 = planet_cells()
+    for y in 0 to FB_H {
+        let lat: f32 = 90.0 - 180.0 * ((y as f32) + 0.5) / (FB_H as f32)
+        for x in 0 to FB_W {
+            let lon: f32 = -180.0 + 360.0 * ((x as f32) + 0.5) / (FB_W as f32)
+            let i: i32 = planet_cell_at_lonlat(lon, lat)
+            if i < 0 or i >= n {
+                put_px(x, y, 0, 0, 0)
+            } else {
+                let mut c: i32 = 0
+                if mode == 0 {
+                    c = color_temp(planet_temp(i))
+                } else {
+                    c = color_precip(planet_precip(i))
+                }
+                put_px(x, y, (c >> 16) & 255, (c >> 8) & 255, c & 255)
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PLANET CLIMATE  TEMP / PRECIP / OROGRAPHY", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "RAIN SHADOW", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_fixed(g, 100, 28, m_rain, 2, 1, 120, 255, 190)
+    let t4: i32 = gfx_draw_text(g, 180, 28, "MEAN LAND P", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 270, 28, m_precip, 0, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 8, 42, "1 TEMP  2 PRECIP   windward/leeward precip ratio", 1, 112, 108, 132)
+    let t7: i32 = gfx_draw_text(g, 8, 572,
+        "insolation + wind bands + orographic rainfall on slopes", 1, 122, 118, 144)
+    let t8: i32 = gfx_draw_text(g, 8, 582,
+        "gates: rain_shadow_ratio > 1.05, mean land precip finite", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+    if fb == null {
+        println("  FAIL: framebuffer alloc")
+        return 1
+    }
+
+    println("")
+    println("  PLANET CLIMATE  --  temperature, precip, rain shadow")
+    println("  =====================================================")
+    println("")
+
+    if !planet_init() {
+        println("    FAIL: planet_init")
+        return 1
+    }
+    if !planet_generate(SEED, PLATES, ERODE) {
+        println("    FAIL: planet_generate")
+        return 2
+    }
+
+    m_rain = planet_rain_shadow_ratio(0.4) as f64
+    m_precip = planet_mean_land_precip() as f64
+
+    print("     rain_shadow_ratio             : ")
+    printf("%10.4f", m_rain)
+    print("     gate > ")
+    printf("%.2f", RAIN_MIN)
+    println("")
+    print("     mean land precip (mm)         : ")
+    printf("%10.2f", m_precip)
+    println("")
+    println("")
+
+    if m_rain <= RAIN_MIN {
+        println("    FAIL: rain shadow ratio does not show orographic forcing")
+        return 3
+    }
+    if m_precip != m_precip or m_precip <= 0.0 {
+        println("    FAIL: mean land precip is not finite and positive")
+        return 4
+    }
+    println("    PASS: orographic rain shadow and finite land precipitation")
+    println("")
+
+    draw_map()
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Planet climate - Flow")
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if want >= 0 and want != mode {
+            mode = want
+            draw_map()
+        }
+        if frame > 0 and frame % 45 == 0 {
+            mode = (mode + 1) % 2
+            draw_map()
+        }
+        gfx_clear(g, 12, 14, 18)
+        gfx_blit_rgb(g, 0, FIELD_Y + 64, FB_W, FB_H, fb)
+        draw_hud(g)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+    return 0
+}

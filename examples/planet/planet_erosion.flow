@@ -1,0 +1,231 @@
+# PLANET EROSION: stream-power incision and Hack's law on the cubesphere.
+#
+# Gate run: full stages through erosion with 24 iters, then Hack's law.
+# Published band for Earth networks: h in [0.45, 0.70], R^2 > 0.75
+# (Hack 1957; Rigon et al. 1996). Live view restarts from elevation and
+# steps erosion so rivers grow on screen.
+#
+# KEYS
+#   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_erosion.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/planet.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SEED: u32 = 42
+const PLATES: i32 = 12
+const ERODE_GATE: i32 = 24
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 256
+const MAX_FRAMES: i32 = 6000
+const HACK_LO: f64 = 0.45
+const HACK_HI: f64 = 0.70
+const R2_MIN: f64 = 0.75
+const KEY_P: i32 = 35
+const STEPS_PER_FRAME: i32 = 1
+
+let mut fb: ptr<u8> = null
+let mut m_hack: f64 = 0.0
+let mut m_r2: f64 = 0.0
+let mut m_n: f64 = 0.0
+let mut m_rivers: f64 = 0.0
+let mut live_steps: i32 = 0
+
+function color_elev(e: f32) -> i32 {
+    if e <= 0.0 {
+        let t: f32 = pl_clampf((-e) / 5.0, 0.0, 1.0)
+        let r: i32 = (10.0 + 20.0 * (1.0 - t)) as i32
+        let g: i32 = (30.0 + 60.0 * (1.0 - t)) as i32
+        let b: i32 = (80.0 + 100.0 * (1.0 - t)) as i32
+        return (r << 16) + (g << 8) + b
+    }
+    let t: f32 = pl_clampf(e / 4.5, 0.0, 1.0)
+    let r: i32 = (50.0 + 160.0 * t) as i32
+    let g: i32 = (100.0 + 80.0 * (1.0 - t * 0.4)) as i32
+    let b: i32 = (45.0 + 30.0 * t) as i32
+    return (r << 16) + (g << 8) + b
+}
+
+function put_px(x: i32, y: i32, r: i32, g: i32, b: i32) -> void {
+    if x < 0 or x >= FB_W or y < 0 or y >= FB_H { return }
+    let o: i32 = (y * FB_W + x) * 3
+    fb[o] = r as u8
+    fb[o + 1] = g as u8
+    fb[o + 2] = b as u8
+}
+
+function refresh_hydro() -> void {
+    planet_flood()
+    planet_route()
+    planet_accumulate()
+    planet_stage_hydrology()
+    m_hack = planet_measure_hack(20000.0) as f64
+    m_r2 = planet_hack_r2() as f64
+    m_n = planet_hack_samples() as f64
+    m_rivers = planet_river_cells() as f64
+}
+
+function draw_map() -> void {
+    let n: i32 = planet_cells()
+    for y in 0 to FB_H {
+        let lat: f32 = 90.0 - 180.0 * ((y as f32) + 0.5) / (FB_H as f32)
+        for x in 0 to FB_W {
+            let lon: f32 = -180.0 + 360.0 * ((x as f32) + 0.5) / (FB_W as f32)
+            let i: i32 = planet_cell_at_lonlat(lon, lat)
+            if i < 0 or i >= n {
+                put_px(x, y, 0, 0, 0)
+            } else {
+                let c: i32 = color_elev(planet_elev(i))
+                let mut r: i32 = (c >> 16) & 255
+                let mut g: i32 = (c >> 8) & 255
+                let mut b: i32 = c & 255
+                if planet_is_river(i) {
+                    let a: f32 = pl_clampf(planet_flow_km2(i) / 250000.0, 0.0, 1.0)
+                    r = (30.0 + 50.0 * a) as i32
+                    g = (140.0 + 80.0 * a) as i32
+                    b = (220.0 + 35.0 * a) as i32
+                }
+                put_px(x, y, r, g, b)
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PLANET EROSION  STREAM POWER + HACK", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "HACK", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_fixed(g, 42, 28, m_hack, 3, 1, 120, 255, 190)
+    let t4: i32 = gfx_draw_text(g, 120, 28, "R2", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 140, 28, m_r2, 3, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 210, 28, "N", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 226, 28, m_n, 0, 1, 234, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 300, 28, "RIVERS", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_fixed(g, 354, 28, m_rivers, 0, 1, 120, 200, 255)
+    let ta: i32 = gfx_draw_text(g, 8, 42, "STEPS", 1, 150, 146, 168)
+    let tb: i32 = gfx_draw_fixed(g, 50, 42, live_steps as f64, 0, 1, 234, 232, 244)
+    let tc: i32 = gfx_draw_text(g, 130, 42, "P PAUSE   blue = channels", 1, 112, 108, 132)
+    if paused {
+        let td: i32 = gfx_draw_text(g, 420, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let te: i32 = gfx_draw_text(g, 8, 572,
+        "dh/dt = U - K A^m S; Hack band [0.45, 0.70], R^2 > 0.75", 1, 122, 118, 144)
+    let tf: i32 = gfx_draw_text(g, 8, 582,
+        "gate on 24-iter generate; live view steps from fresh elevation", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+    if fb == null {
+        println("  FAIL: framebuffer alloc")
+        return 1
+    }
+
+    println("")
+    println("  PLANET EROSION  --  stream power and Hack's law")
+    println("  ================================================")
+    println("")
+    println("    Hack band documented here: h in [0.45, 0.70], R^2 > 0.75")
+    println("    (Earth networks typically 0.5 to 0.6; Rigon et al. 1996).")
+    println("")
+
+    if !planet_init() {
+        println("    FAIL: planet_init")
+        return 1
+    }
+    planet_seed(SEED)
+    planet_stage_grid()
+    planet_stage_tectonics(PLATES)
+    planet_stage_elevation()
+    planet_stage_erosion(ERODE_GATE)
+    planet_stage_hydrology()
+    m_hack = planet_measure_hack(20000.0) as f64
+    m_r2 = planet_hack_r2() as f64
+    m_n = planet_hack_samples() as f64
+    m_rivers = planet_river_cells() as f64
+
+    print("     Hack exponent h               : ")
+    printf("%10.4f", m_hack)
+    print("     gate [")
+    printf("%.2f", HACK_LO)
+    print(", ")
+    printf("%.2f", HACK_HI)
+    println("]")
+    print("     Hack R^2                      : ")
+    printf("%10.4f", m_r2)
+    print("     gate > ")
+    printf("%.2f", R2_MIN)
+    println("")
+    print("     samples                       : ")
+    printf("%10.0f", m_n)
+    println("")
+    print("     river cells                   : ")
+    printf("%10.0f", m_rivers)
+    println("")
+    println("")
+
+    if m_hack < HACK_LO or m_hack > HACK_HI {
+        println("    FAIL: Hack exponent outside the documented band")
+        return 2
+    }
+    if m_r2 < R2_MIN {
+        println("    FAIL: Hack R^2 too low")
+        return 3
+    }
+    if m_rivers < 1.0 {
+        println("    FAIL: no river cells after erosion")
+        return 4
+    }
+    println("    PASS: drainage obeys Hack's law in the documented band")
+    println("")
+
+    # Live: restart from elevation so channels grow on screen.
+    planet_seed(SEED)
+    planet_stage_grid()
+    planet_stage_tectonics(PLATES)
+    planet_stage_elevation()
+    refresh_hydro()
+    draw_map()
+
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Planet erosion - Flow")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        if gfx_key_down(g, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+        if !paused {
+            for s in 0 to STEPS_PER_FRAME {
+                planet_erode_step()
+                live_steps = live_steps + 1
+            }
+            if frame % 3 == 0 {
+                refresh_hydro()
+                draw_map()
+            }
+        }
+        gfx_clear(g, 12, 14, 18)
+        gfx_blit_rgb(g, 0, FIELD_Y + 64, FB_W, FB_H, fb)
+        draw_hud(g, paused)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+    return 0
+}

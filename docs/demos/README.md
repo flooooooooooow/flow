@@ -12,6 +12,8 @@ the `_gfx.flow` suffix (`snake_gfx.flow` → `games/snake.gif`). Every example i
 `examples/morphogenesis/` has one at `docs/demos/morphogenesis/<name>.gif`.
 Every example in `examples/neuro/` has one at `docs/demos/neuro/<name>.gif`.
 Every example in `examples/evoleco/` has one at `docs/demos/evoleco/<name>.gif`.
+Every example in `examples/planet/` has one at `docs/demos/planet/<name>.gif`.
+Every example in `examples/procgen/` has one at `docs/demos/procgen/<name>.gif`.
 The three original demos also keep their GIFs directly in this folder
 (`lorenz.gif`, `tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are
 copied into `games/` as well so the games directory covers every game.
@@ -23,7 +25,8 @@ rather than through `record_demos.py`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
 The galleries: [games](games.md), [morphogenesis](morphogenesis.md),
-[neuro](neuro.md), and [evoleco](evoleco.md).
+[neuro](neuro.md), [evoleco](evoleco.md), [planet](planet.md), and
+[procgen](procgen.md).
 
 Regenerate everything with:
 
@@ -33,6 +36,8 @@ python3 scripts/record_demos.py frogger              # just one
 python3 scripts/record_demos.py --group morphogenesis # one gallery
 python3 scripts/record_demos.py --group neuro        # neuron atlas
 python3 scripts/record_demos.py --group evoleco      # evolution / ecology
+python3 scripts/record_demos.py --group planet       # cubesphere planet
+python3 scripts/record_demos.py --group procgen      # procedural generation
 python3 scripts/record_demos.py --check              # which GIFs exist, and their sizes
 ```
 
