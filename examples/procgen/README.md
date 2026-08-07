@@ -15,7 +15,7 @@ Recorded clips live in the
 |---|---|---|
 | [`noise_atlas.flow`](noise_atlas.flow) | value / gradient / fBm / ridged / warp | Bit-identical replay; fBm in [-1,1]; ridged in [0,1] |
 | [`heightmap_fbm.flow`](heightmap_fbm.flow) | 2D fBm height + sea | Land fraction near target for a fixed seed |
-| [`domain_warp.flow`](domain_warp.flow) | plain vs warped coastline | Warped lag-4 autocorrelation exceeds plain fBm |
+| [`domain_warp.flow`](domain_warp.flow) | plain vs warped coastline | Deterministic replay; mean |diff| or Pearson r < 0.95 |
 | [`cave_worms.flow`](cave_worms.flow) | 3D fBm density slices | Porosity in a chosen band at the verify threshold |
 | [`wfc_dungeon.flow`](wfc_dungeon.flow) | `stdlib/dynamics/wfc` | Full collapse, socket-valid adjacency |
 | [`voronoi_sites.flow`](voronoi_sites.flow) | Worley / site Voronoi | Every cell assigned; mean sites/region = 1 |

@@ -209,7 +209,7 @@ under `examples/procgen/` (see section 7).
 |---|---|---|
 | 1 | `noise_atlas` | Bit-identical replay; fBm peak in [-1,1]; ridged in [0,1] |
 | 2 | `heightmap_fbm` | Land fraction near target after sea cut (deterministic seed) |
-| 3 | `domain_warp` | Warped lag-4 autocorrelation exceeds plain fBm; bit-identical replay |
+| 3 | `domain_warp` | Deterministic replay; mean |diff| or Pearson r < 0.95 vs plain |
 | 4 | `cave_worms` | 3D-slice porosity in a chosen band |
 | 5 | `wfc_dungeon` | 16-tile pipe WFC; full collapse, contradiction=0, sockets agree |
 | 6 | `voronoi_sites` | Every cell assigned; mean sites per region = 1 |
