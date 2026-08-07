@@ -236,7 +236,7 @@ function main() -> i32 {
     println("   gate 1e-9")
     println("")
 
-    let worst: f64 = d_small
+    let mut worst: f64 = d_small
     if d_med > worst { worst = d_med }
     if d_large > worst { worst = d_large }
     if worst != worst {

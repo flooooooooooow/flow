@@ -98,7 +98,7 @@ function theory_h(i: i32, rho: f64, s: f64, n: f64) -> f64 {
     # Remaining diversity ≈ H0 * (escape contribution). At selected site, ~0.
     if i == MID { return 0.0 }
     let esc: f64 = escape_prob(i, rho, s, n)
-    let h: f64 = H0 * esc
+    let mut h: f64 = H0 * esc
     if h > H0 { h = H0 }
     return h
 }
@@ -172,7 +172,7 @@ function step_sweep(n: i32, rho: f64, s: f64) -> void {
         for L in 0 to Loci {
             if L != MID {
                 let dist: f64 = fabs((L - MID) as f64)
-                let rr: f64 = rho * dist
+                let mut rr: f64 = rho * dist
                 if rr > 1.0 { rr = 1.0 }
                 if rng_unit() < rr {
                     let donor: i32 = (rng_next() % (n as u32)) as i32

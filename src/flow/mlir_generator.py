@@ -1416,6 +1416,9 @@ class MLIRGenerator:
     ) -> str:
         mlir_code = list(prefix_ops)
         merged_vars = [v for v in merged_vars if v in self.symbol_table]
+        # Module consts/statics are memory-backed (addressof + load/store), not
+        # SSA values, so they cannot participate in scf.if yields.
+        merged_vars = [v for v in merged_vars if not self.symbol_table[v].get("is_module_global")]
         if not merged_vars:
             return "\n".join(prefix_ops)
 
@@ -1952,7 +1955,10 @@ class MLIRGenerator:
             return splat
         if isinstance(expr, ArrayAccess):
             base = expr.array.name
-            base_ssa = self.symbol_table[base]["ssa_name"]
+            base_info = self.symbol_table.get(base)
+            if not base_info or base_info.get("is_module_global") or "ssa_name" not in base_info:
+                return None  # module-global bases fall back to scalar
+            base_ssa = base_info["ssa_name"]
             mlir_ty = self.symbol_table[base].get("mlir_type", f"memref<?x{elem}>")
             if mlir_ty == "!llvm.ptr":
                 return None  # ptr bases not yet vector-transfer compatible
@@ -2059,6 +2065,9 @@ class MLIRGenerator:
 
         for b in bases:
             if self.symbol_table[b].get("mlir_type", "") == "!llvm.ptr":
+                return None
+            # Module-global bases have no SSA memref value; skip vectorization.
+            if self.symbol_table[b].get("is_module_global") or "ssa_name" not in self.symbol_table[b]:
                 return None
 
         ops: List[str] = []
@@ -2555,6 +2564,10 @@ class MLIRGenerator:
         carried: List[str] = []
         for var_name in assigned_vars:
             if var_name in self.symbol_table and var_name not in declared_vars and var_name not in carried:
+                # Module consts/statics are memory-backed (addressof + load/store),
+                # not SSA values, so they cannot be threaded through iter_args.
+                if self.symbol_table[var_name].get("is_module_global"):
+                    continue
                 carried.append(var_name)
         return carried
     

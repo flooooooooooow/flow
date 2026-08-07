@@ -71,7 +71,7 @@ function rng_unit() -> f64 {
 
 # Box-Muller
 function rng_normal() -> f64 {
-    let u1: f64 = rng_unit()
+    let mut u1: f64 = rng_unit()
     let u2: f64 = rng_unit()
     if u1 < 1.0e-12 { u1 = 1.0e-12 }
     return sqrt(0.0 - 2.0 * log(u1)) * cos(PI2 * u2)
@@ -102,7 +102,7 @@ function truncate_select(h2: f64) -> void {
     let va: f64 = h2 * VP
     let ve: f64 = (1.0 - h2) * VP
     let sda: f64 = sqrt(va)
-    let sde: f64 = sqrt(ve)
+    let mut sde: f64 = sqrt(ve)
     if sde < 1.0e-9 { sde = 1.0e-9 }
 
     let mut bv: array<f64, 800> = [0.0, 0.0, 0.0, 0.0]
@@ -117,7 +117,7 @@ function truncate_select(h2: f64) -> void {
 
     # Threshold: keep top KEEP_FRAC by sorting via counting on ranks --
     # select individuals with phenotype >= empirical quantile.
-    let nkeep: i32 = (KEEP_FRAC * (N_IND as f64)) as i32
+    let mut nkeep: i32 = (KEEP_FRAC * (N_IND as f64)) as i32
     if nkeep < 2 { nkeep = 2 }
 
     # Simple O(n^2) select top nkeep indices.
@@ -168,7 +168,7 @@ function mean_error(h2: f64, reps: i32) -> f64 {
     let rbar: f64 = sum_R / (reps as f64)
     let sbar: f64 = sum_S / (reps as f64)
     let pred: f64 = h2 * sbar
-    let denom: f64 = fabs(pred)
+    let mut denom: f64 = fabs(pred)
     if denom < 0.05 { denom = 0.05 }
     return fabs(rbar - pred) / denom
 }
@@ -256,9 +256,9 @@ function draw_scene(g: Gfx, fb: ptr<u8>) -> void {
     let by: i32 = 360
     fill_rect_fb(fb, bx, by, 360, 100, 18, 16, 28)
     let scale: f64 = 120.0
-    let s_h: i32 = (fabs(last_S) * scale) as i32
-    let r_h: i32 = (fabs(last_R) * scale) as i32
-    let rp_h: i32 = (fabs(last_Rpred) * scale) as i32
+    let mut s_h: i32 = (fabs(last_S) * scale) as i32
+    let mut r_h: i32 = (fabs(last_R) * scale) as i32
+    let mut rp_h: i32 = (fabs(last_Rpred) * scale) as i32
     if s_h > 90 { s_h = 90 }
     if r_h > 90 { r_h = 90 }
     if rp_h > 90 { rp_h = 90 }

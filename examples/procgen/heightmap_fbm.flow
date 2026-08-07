@@ -125,7 +125,7 @@ function draw_scene(g: Gfx, fb: ptr<u8>, sea: f32) -> void {
                 g2 = (90.0 + t * 120.0) as i32
                 b = (40.0 + t * 40.0) as i32
                 let band: f32 = h * 8.0
-                let frac: f32 = band - (band as i32) as f32
+                let mut frac: f32 = band - (band as i32) as f32
                 if frac < 0.0 { frac = 0.0 - frac }
                 if frac < 0.08 {
                     r = 220
