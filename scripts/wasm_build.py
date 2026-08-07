@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Compile one Flow program to a runnable WebAssembly page.
 
-Pipeline: Flow -> C (flow.transpiler) -> WebAssembly (emcc) -> an HTML host.
+Pipeline (CPU backend selectable):
+  - ``c`` (default): Flow → C (flow.transpiler --c) → emcc → HTML
+  - ``mlir``: Flow → MLIR → LLVM IR → emcc → HTML
 
 Two shapes come out the other end.
 
@@ -13,8 +15,15 @@ use, and a click-to-start overlay because browsers want a gesture first.
 Everything else is a console program. The page runs ``main`` on click and
 streams stdout into a ``<pre>``.
 
+Native Metal / Python-embed / Darwin frameworks are never linked here.
+Browser GPU stays WGSL/WebGPU (see docs/language/wasm-crossings.md);
+MLIR→SPIR-V remains a separate native emit path.
+
 Usage:
     python3 scripts/wasm_build.py examples/games/snake_gfx.flow --out site/wasm/snake
+    python3 scripts/wasm_build.py examples/wasm/hello_wasm.flow --backend=mlir
+    python3 scripts/wasm_build.py examples/wasm/hello_wasm.flow --backend=mlir \\
+        --preload /tmp/data@/data --link runtime/flow_rt_support.c
 """
 
 from __future__ import annotations
@@ -27,6 +36,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TRANSPILER = "flow.transpiler"
@@ -57,7 +67,26 @@ def emcc_env() -> dict:
 
 
 def have_emcc() -> bool:
-    return shutil.which("emcc") is not None
+    if shutil.which("emcc") is None:
+        return False
+    try:
+        proc = subprocess.run(
+            ["emcc", "-v"],
+            capture_output=True,
+            text=True,
+            env=emcc_env(),
+            timeout=30,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def resolve_backend(explicit: Optional[str] = None) -> str:
+    mode = (explicit or os.environ.get("FLOW_CPU_BACKEND") or "c").strip().lower()
+    if mode not in ("c", "mlir"):
+        raise BuildError(f"unknown backend {mode!r} (expected c|mlir)")
+    return mode
 
 
 def flow_to_c(program: Path, c_out: Path) -> str:
@@ -76,14 +105,88 @@ def flow_to_c(program: Path, c_out: Path) -> str:
     return c_out.read_text()
 
 
-def uses_gfx(c_source: str) -> bool:
-    return "flow_gfx_init" in c_source
+def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
+    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text."""
+    ll_out.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            TRANSPILER,
+            str(program),
+            "--mlir",
+            "--llvm",
+            "--lenient",
+            "-o",
+            str(ll_out),
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")
+             + ((":" + os.environ["PYTHONPATH"]) if os.environ.get("PYTHONPATH") else "")},
+    )
+    if proc.returncode != 0 or not ll_out.exists() or ll_out.stat().st_size == 0:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        raise BuildError(
+            "flow->mlir->llvm: " + (detail[-1] if detail else "transpiler failed")
+        )
+    return ll_out.read_text()
 
 
-def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
-    cmd = [
-        "emcc", str(c_file),
-        opt,
+def uses_gfx(source: str) -> bool:
+    """True when the lowered TU references the Flow gfx ABI (C or LLVM IR)."""
+    return "flow_gfx_init" in source
+
+
+def uses_gfx_flow_source(flow_source: str) -> bool:
+    """Heuristic for gfx before lowering (imports / API names)."""
+    markers = (
+        'import "stdlib/gfx.flow"',
+        "import \"stdlib/gfx",
+        "flow_gfx_",
+        "gfx_init",
+        "gfx_present",
+    )
+    return any(m in flow_source for m in markers)
+
+
+def filter_browser_link_inputs(paths: list[Path]) -> list[Path]:
+    """Drop native-only sources (Cocoa .m, Metal) that cannot link under emcc."""
+    out: list[Path] = []
+    for path in paths:
+        suffix = path.suffix.lower()
+        if suffix in (".m", ".mm", ".metal"):
+            continue
+        out.append(path)
+    return out
+
+
+def emcc_command(
+    input_file: Path,
+    out_js: Path,
+    gfx: bool,
+    opt: str,
+    preload: Optional[list[str]] = None,
+    extra_link: Optional[list[Path]] = None,
+    initial_memory: str = "32MB",
+    asyncify_stack_size: int = 32768,
+) -> list:
+    sources: list[str] = [str(input_file)]
+    if gfx:
+        sources.append(str(PROJECT_ROOT / "runtime" / "gfx_wasm.c"))
+    for path in filter_browser_link_inputs(list(extra_link or [])):
+        sources.append(str(path.resolve()))
+
+    cmd: list[str] = ["emcc", *sources, opt]
+    if gfx:
+        # ASYNCIFY lets flow_gfx_present hand the event loop back to the
+        # browser from inside the Flow program's own while-loop.
+        cmd += [
+            "-sASYNCIFY=1",
+            f"-sASYNCIFY_STACK_SIZE={asyncify_stack_size}",
+        ]
+    cmd += [
         "-o", str(out_js),
         "-sENVIRONMENT=web",
         "-sALLOW_MEMORY_GROWTH=1",
@@ -91,7 +194,7 @@ def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
         # holds several 128x128 grids of doubles at once. wasm32 defaults to a
         # 64 KB stack, which those overrun instantly.
         "-sSTACK_SIZE=16MB",
-        "-sINITIAL_MEMORY=32MB",
+        f"-sINITIAL_MEMORY={initial_memory}",
         "-sMODULARIZE=1",
         "-sEXPORT_NAME=createFlowModule",
         "-sINVOKE_RUN=0",
@@ -101,19 +204,37 @@ def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
         "-Wno-implicit-function-declaration",
         "-lm",
     ]
-    if gfx:
-        # ASYNCIFY lets flow_gfx_present hand the event loop back to the
-        # browser from inside the Flow program's own while-loop.
-        cmd.insert(3, "-sASYNCIFY=1")
-        cmd.insert(4, "-sASYNCIFY_STACK_SIZE=32768")
-        cmd.insert(2, str(PROJECT_ROOT / "runtime" / "gfx_wasm.c"))
+    if preload:
+        # Without FORCE_FILESYSTEM, emcc may strip MEMFS when it cannot see
+        # fopen uses through the .ll path (#225).
+        cmd.append("-sFORCE_FILESYSTEM=1")
+        for spec in preload:
+            cmd.extend(["--preload-file", spec])
     return cmd
 
 
-def compile_wasm(c_file: Path, out_js: Path, gfx: bool, opt: str,
-                 timeout: int) -> None:
+def compile_wasm(
+    input_file: Path,
+    out_js: Path,
+    gfx: bool,
+    opt: str,
+    timeout: int,
+    preload: Optional[list[str]] = None,
+    extra_link: Optional[list[Path]] = None,
+    initial_memory: str = "32MB",
+    asyncify_stack_size: int = 32768,
+) -> None:
     out_js.parent.mkdir(parents=True, exist_ok=True)
-    cmd = emcc_command(c_file, out_js, gfx, opt)
+    cmd = emcc_command(
+        input_file,
+        out_js,
+        gfx,
+        opt,
+        preload=preload,
+        extra_link=extra_link,
+        initial_memory=initial_memory,
+        asyncify_stack_size=asyncify_stack_size,
+    )
     try:
         proc = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True,
                               text=True, env=emcc_env(), timeout=timeout)
@@ -123,6 +244,8 @@ def compile_wasm(c_file: Path, out_js: Path, gfx: bool, opt: str,
         raise BuildError("emcc: " + first_error(proc.stderr or proc.stdout))
     if not out_js.with_suffix(".wasm").exists():
         raise BuildError("emcc: no .wasm emitted")
+    if preload and not out_js.with_suffix(".data").exists():
+        raise BuildError("emcc: --preload requested but no .data package emitted")
 
 
 def tidy(line: str) -> str:
@@ -399,7 +522,7 @@ def key_hints(flow_source: str) -> str:
 
 
 def write_page(out_dir: Path, name: str, title: str, gfx: bool,
-               flow_source: str, source_url: str) -> Path:
+               flow_source: str, source_url: str, backend: str = "c") -> Path:
     if gfx:
         width, height = canvas_size(flow_source)
         body = (GFX_BODY.replace("__W__", str(width))
@@ -411,6 +534,7 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
         body = CONSOLE_BODY
         script = CONSOLE_SCRIPT.replace("__NAME__", name)
 
+    pipe = "MLIR &rarr; LLVM &rarr; WebAssembly" if backend == "mlir" else "C &rarr; WebAssembly"
     page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -422,7 +546,7 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
 <body>
 <header>
   <h1>{html_escape(title)}</h1>
-  <span class="meta">Flow &rarr; C &rarr; WebAssembly{' &middot; gfx canvas backend' if gfx else ' &middot; console'}</span>
+  <span class="meta">Flow &rarr; {pipe}{' &middot; gfx canvas backend' if gfx else ' &middot; console'}</span>
   <span class="meta"><a href="{html_escape(source_url)}">source</a></span>
 </header>
 {body}
@@ -439,27 +563,53 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
 
 
 def build(program: Path, out_dir: Path, name: str = "", title: str = "",
-          opt: str = "-O2", timeout: int = 600, keep_c: bool = False) -> dict:
+          opt: str = "-O2", timeout: int = 600, keep_c: bool = False,
+          backend: str = "c",
+          preload: Optional[list[str]] = None,
+          extra_link: Optional[list[Path]] = None,
+          initial_memory: str = "32MB",
+          asyncify_stack_size: int = 32768) -> dict:
     """Build one program. Returns a result dict; raises BuildError on failure."""
     program = program.resolve()
     if not program.exists():
         raise BuildError(f"no such file: {program}")
+    backend = resolve_backend(backend)
     name = name or program.stem
     title = title or name.replace("_gfx", "").replace("_", " ")
     out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     flow_source = program.read_text()
-    c_file = out_dir / f"{name}.c"
-    c_source = flow_to_c(program, c_file)
-    gfx = uses_gfx(c_source)
 
     if not have_emcc():
         raise BuildError("emcc not on PATH (see docs/language/wasm.md)")
 
+    if backend == "mlir":
+        ir_file = out_dir / f"{name}.ll"
+        ir_text = flow_to_llvm_ir(program, ir_file)
+        gfx = uses_gfx(ir_text) or uses_gfx_flow_source(flow_source)
+        compile_input = ir_file
+        keep_artifact = ir_file
+    else:
+        c_file = out_dir / f"{name}.c"
+        c_source = flow_to_c(program, c_file)
+        gfx = uses_gfx(c_source)
+        compile_input = c_file
+        keep_artifact = c_file
+
     started = time.time()
     out_js = out_dir / f"{name}.js"
-    compile_wasm(c_file, out_js, gfx, opt, timeout)
+    compile_wasm(
+        compile_input,
+        out_js,
+        gfx,
+        opt,
+        timeout,
+        preload=preload,
+        extra_link=extra_link,
+        initial_memory=initial_memory,
+        asyncify_stack_size=asyncify_stack_size,
+    )
     elapsed = time.time() - started
 
     try:
@@ -469,21 +619,28 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         rel = program.name
         source_url = str(program)
 
-    write_page(out_dir, name, title, gfx, flow_source, source_url)
+    write_page(out_dir, name, title, gfx, flow_source, source_url, backend=backend)
     if not keep_c:
-        c_file.unlink(missing_ok=True)
+        keep_artifact.unlink(missing_ok=True)
 
     wasm = out_js.with_suffix(".wasm")
-    return {
+    data = out_js.with_suffix(".data")
+    result = {
         "name": name,
         "title": title,
         "source": str(rel),
+        "backend": backend,
         "gfx": gfx,
         "wasm_bytes": wasm.stat().st_size,
         "js_bytes": out_js.stat().st_size,
         "seconds": round(elapsed, 1),
         "out": str(out_dir),
+        "preload": list(preload or []),
+        "link": [str(p) for p in (extra_link or [])],
     }
+    if data.exists():
+        result["data_bytes"] = data.stat().st_size
+    return result
 
 
 def main(argv=None) -> int:
@@ -492,11 +649,45 @@ def main(argv=None) -> int:
     parser.add_argument("--out", default="", help="output directory")
     parser.add_argument("--name", default="", help="module basename")
     parser.add_argument("--title", default="", help="page title")
+    parser.add_argument(
+        "--backend",
+        default=None,
+        choices=["c", "mlir"],
+        help="CPU codegen: c (default) or mlir (Flow→MLIR→LLVM→emcc). "
+             "Also accepts FLOW_CPU_BACKEND.",
+    )
+    parser.add_argument(
+        "--preload",
+        action="append",
+        default=[],
+        metavar="HOST@VFS",
+        help="emcc --preload-file mapping (repeatable). Enables FORCE_FILESYSTEM. "
+             "Works for both --backend=c and --backend=mlir (#225).",
+    )
+    parser.add_argument(
+        "--link",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="extra C/runtime file to pass to emcc (repeatable). "
+             "Cocoa .m/.mm are skipped. Example: runtime/flow_rt_support.c",
+    )
+    parser.add_argument(
+        "--initial-memory",
+        default="32MB",
+        help="emcc -sINITIAL_MEMORY (default 32MB; doom-scale often 64MB)",
+    )
+    parser.add_argument(
+        "--asyncify-stack-size",
+        type=int,
+        default=32768,
+        help="emcc -sASYNCIFY_STACK_SIZE when gfx is linked (default 32768)",
+    )
     parser.add_argument("-O", dest="opt", default="-O2",
                         help="emcc optimisation flag (default -O2)")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep-c", action="store_true",
-                        help="keep the generated C next to the output")
+                        help="keep the generated C / LLVM IR next to the output")
     parser.add_argument("--json", action="store_true",
                         help="print the result as JSON")
     args = parser.parse_args(argv)
@@ -504,10 +695,24 @@ def main(argv=None) -> int:
     program = Path(args.program)
     out_dir = Path(args.out) if args.out else \
         PROJECT_ROOT / "build" / "wasm" / program.stem
+    extra_link = [Path(p) for p in args.link]
 
     try:
-        result = build(program, out_dir, args.name, args.title, args.opt,
-                       args.timeout, args.keep_c)
+        backend = resolve_backend(args.backend)
+        result = build(
+            program,
+            out_dir,
+            args.name,
+            args.title,
+            args.opt,
+            args.timeout,
+            args.keep_c,
+            backend=backend,
+            preload=args.preload or None,
+            extra_link=extra_link or None,
+            initial_memory=args.initial_memory,
+            asyncify_stack_size=args.asyncify_stack_size,
+        )
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -516,9 +721,15 @@ def main(argv=None) -> int:
         print(json.dumps(result, indent=2))
     else:
         kind = "gfx canvas" if result["gfx"] else "console"
-        print(f"built {result['name']} ({kind}) in {result['seconds']}s")
+        print(f"built {result['name']} ({kind}, backend={result['backend']}) "
+              f"in {result['seconds']}s")
         print(f"  wasm {result['wasm_bytes'] / 1024:.0f} KB  "
               f"js {result['js_bytes'] / 1024:.0f} KB")
+        if result.get("data_bytes"):
+            print(f"  data {result['data_bytes'] / 1024:.0f} KB  "
+                  f"(preload {', '.join(result['preload'])})")
+        if result.get("link"):
+            print(f"  link {' '.join(result['link'])}")
         print(f"  page {out_dir / 'index.html'}")
         print(f"  serve: python3 -m http.server -d {out_dir}")
     return 0
