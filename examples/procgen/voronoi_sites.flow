@@ -269,6 +269,16 @@ function main() -> i32 {
             pause_held = false
         }
 
+        # Auto-cycle site-count presets so the recorded GIF shows multiple partitions.
+        if !paused and frame > 0 and frame % 50 == 0 {
+            preset = (preset % 4) + 1
+            n = preset_n(preset)
+            rng_state = rng_next()
+            procgen_seed(rng_state)
+            place_sites(sx, sy, n)
+            mean_live = measure(sx, sy, n, counts)
+        }
+
         gfx_clear(g, 12, 10, 18)
         draw_scene(g, fb, sx, sy, n)
         draw_hud(g, preset, n, mean_live, paused)

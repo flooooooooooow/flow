@@ -311,6 +311,17 @@ function main() -> i32 {
             pause_held = false
         }
 
+        # Auto-cycle sea presets so the recorded GIF shows multiple biome mixes.
+        if !paused and frame > 0 and frame % 50 == 0 {
+            preset = (preset % 4) + 1
+            sea = preset_sea(preset)
+            rng_state = rng_next()
+            procgen_seed(rng_state)
+            let ok_c: i32 = hist_and_check(sea, hist)
+            water_live = (hist[0] as f64) / (CELLS as f64)
+            if ok_c == 0 { water_live = water_live }
+        }
+
         gfx_clear(g, 12, 10, 18)
         draw_scene(g, fb, sea)
         draw_hud(g, preset, water_live, paused)

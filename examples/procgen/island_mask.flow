@@ -279,6 +279,16 @@ function main() -> i32 {
             pause_held = false
         }
 
+        # Auto-cycle radius presets so the recorded GIF shows multiple islands.
+        if !paused and frame > 0 and frame % 50 == 0 {
+            preset = (preset % 4) + 1
+            rad = preset_rad(preset)
+            rng_state = rng_next()
+            procgen_seed(rng_state)
+            fill_land(mask, rad)
+            comps_live = count_components(mask, seen, stack)
+        }
+
         gfx_clear(g, 12, 10, 18)
         draw_scene(g, fb, rad)
         draw_hud(g, preset, comps_live, paused)

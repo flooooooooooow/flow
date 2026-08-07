@@ -4,7 +4,7 @@
 # Draws an equirect elev map and a hypsometric curve overlay.
 #
 # KEYS
-#   Esc quit
+#   1-4 seed presets   Esc quit
 #
 # Run: FLOW_HOST=python ./flow gfx examples/planet/planet_elevation.flow
 
@@ -31,11 +31,24 @@ const LAND_TOL: f64 = 0.02
 const BINS: i32 = 64
 const PLOT_H: i32 = 120
 
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+
 let mut fb: ptr<u8> = null
 let mut hist: ptr<f32> = null
 let mut m_land: f64 = 0.0
 let mut m_sea: f64 = 0.0
 let mut cursor: i32 = 0
+let mut preset: i32 = 0
+
+function preset_seed(p: i32) -> u32 {
+    if p == 0 { return 42 }
+    if p == 1 { return 77 }
+    if p == 2 { return 101 }
+    return 256
+}
 
 function color_elev(e: f32) -> i32 {
     if e <= 0.0 {
@@ -84,6 +97,16 @@ function draw_map() -> void {
     }
 }
 
+function rebuild_elev(p: i32) -> void {
+    planet_seed(preset_seed(p))
+    planet_stage_tectonics(PLATES)
+    planet_stage_elevation()
+    m_land = planet_land_fraction() as f64
+    m_sea = planet_sea_datum() as f64
+    planet_hypsometric_hist(-6.0, 6.0, BINS, hist)
+    draw_map()
+}
+
 function draw_hypsometric(g: Gfx, ox: i32, oy: i32) -> void {
     gfx_fill_rect(g, ox, oy, BINS * 4 + 8, PLOT_H + 8, 20, 22, 28)
     let mut peak: f32 = 0.001
@@ -126,10 +149,12 @@ function draw_hud(g: Gfx) -> void {
     let t5: i32 = gfx_draw_fixed(g, 170, 28, LAND_TARGET, 2, 1, 234, 232, 244)
     let t6: i32 = gfx_draw_text(g, 240, 28, "SEA DATUM", 1, 150, 146, 168)
     let t7: i32 = gfx_draw_fixed(g, 314, 28, m_sea, 3, 1, 234, 232, 244)
-    let t8: i32 = gfx_draw_text(g, 8, 42, "bars = area fraction by elev; red line = sea level", 1, 112, 108, 132)
-    let t9: i32 = gfx_draw_text(g, 8, 572,
+    let t8: i32 = gfx_draw_text(g, 400, 28, "SEED", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_int(g, 436, 28, preset_seed(preset) as i32, 1, 255, 198, 96)
+    let ta: i32 = gfx_draw_text(g, 8, 42, "1-4 SEEDS  bars = elev area; red line = sea level", 1, 112, 108, 132)
+    let tb: i32 = gfx_draw_text(g, 8, 572,
         "crust dichotomy + fractal relief; sea cut to land-fraction target", 1, 122, 118, 144)
-    let ta: i32 = gfx_draw_text(g, 8, 582,
+    let tc: i32 = gfx_draw_text(g, 8, 582,
         "gate: land fraction within 0.02 of target 0.29", 1, 122, 118, 144)
 }
 
@@ -185,6 +210,23 @@ function main() -> i32 {
 
     while frame < MAX_FRAMES {
         if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if gfx_key_down(g, KEY_4) { want = 3 }
+        if want >= 0 and want != preset {
+            preset = want
+            rebuild_elev(preset)
+        }
+
+        # Auto-cycle seed presets so the recorded GIF rebuilds distinct worlds.
+        if frame > 0 and frame % 50 == 0 {
+            preset = (preset + 1) % 4
+            rebuild_elev(preset)
+        }
+
         cursor = (frame / 2) % BINS
         gfx_clear(g, 12, 14, 18)
         gfx_blit_rgb(g, 0, FIELD_Y + 20, FB_W, FB_H, fb)
