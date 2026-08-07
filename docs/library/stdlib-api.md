@@ -1,8 +1,8 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-08-06 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` on 2026-08-07 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**95** modules scanned.
+**105** modules scanned.
 
 ## Modules
 
@@ -1040,6 +1040,100 @@ Reverse-Mode Automatic Differentiation Helpers  Provides operations that return 
 | `op_relu` | `(x: f32) -> UnaryResult` | ReLU max(0,x) with local grad 1 if x>0 else 0. |
 | `op_neg` | `(x: f32) -> UnaryResult` | Negation −x with local grad −1. |
 
+### `automata.flow`
+
+automata: a cellular-automaton framework.  Import: import "stdlib/automata.flow"
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `ca_seed` | `(s: i32) -> void` | — |
+| `ca_rand_u32` | `() -> u32` | — |
+| `ca_rand_below` | `(n: i32) -> i32` | Uniform on [0, n). |
+| `ca_rand_unit` | `() -> f64` | Uniform on [0, 1). |
+| `ca_fold` | `(i: i32, n: i32, bound: i32) -> i32` | Fold one axis index into range under `bound`. Returns -1 when the index is outside a fixed boundary. |
+| `ca_get` | `(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                       bound: i32, outside: i32) -> i32` | Read a cell, returning `outside` where a fixed boundary bites. |
+| `ca_set` | `(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                       v: i32) -> void` | — |
+| `ca_nb_count` | `(nb: i32) -> i32` | ---------------------------------------------------------- neighbourhoods |
+| `ca_nb_dx` | `(nb: i32, k: i32, x: i32, y: i32) -> i32` | Offsets depend on the cell for the two non-square tilings: hexagonal rows are staggered (odd-r), and a triangle points up or down by parity. |
+| `ca_nb_dy` | `(nb: i32, k: i32, x: i32, y: i32) -> i32` | — |
+| `ca_count_state` | `(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                               nb: i32, bound: i32, state: i32) -> i32` | How many neighbours hold `state`. |
+| `ca_nb_sum` | `(grid: ptr<i32>, w: i32, h: i32, x: i32, y: i32,
+                          nb: i32, bound: i32, outside: i32) -> i32` | Sum over the neighbourhood, with `outside` counted where fixed. |
+| `ca_elementary_bit` | `(rule: i32, l: i32, c: i32, r: i32) -> i32` | Wolfram's numbering: the rule byte's bit (4l + 2c + r) is the new centre. |
+| `ca_elementary_step` | `(src: ptr<i32>, dst: ptr<i32>, n: i32,
+                                   rule: i32, bound: i32) -> i32` | — |
+| `ca_elementary_raster` | `(rows: ptr<i32>, n: i32, gens: i32,
+                                     rule: i32, bound: i32) -> void` | Fill a `gens x n` raster, row 0 already holding the initial condition. The raster is the usual space-time diagram: time increases downward. |
+| `ca_seed_single` | `(row: ptr<i32>, n: i32) -> void` | A single 1 in the middle of an otherwise empty row. |
+| `ca_seed_random` | `(row: ptr<i32>, n: i32, nstates: i32) -> void` | — |
+| `ca_totalistic_step` | `(src: ptr<i32>, dst: ptr<i32>, n: i32,
+                                   k: i32, radius: i32, code: i32,
+                                   bound: i32) -> i32` | k-state totalistic: the new value is digit (sum of the 2r+1 window) of the code written in base k. Radius 1, k = 3 gives Wolfram's totalistic codes. |
+| `ca_outer_totalistic_step` | `(src: ptr<i32>, dst: ptr<i32>, n: i32,
+                                         k: i32, radius: i32, code: i32,
+                                         bound: i32) -> i32` | Outer totalistic: the centre keeps its own identity, so the code is indexed by (centre, outer sum) rather than by the total alone. |
+| `ca_parse_bs` | `(spec: string, out: ptr<i32>) -> bool` | Parse B/S notation ("B3/S23", "b36/s23", "23/3" is not accepted) into two bitmasks: out[0] births, out[1] survivals, bit n meaning n neighbours. Returns false if the string names no neighbour counts or holds a character outside "BbSs0-9/ ". |
+| `ca_bs_has` | `(mask: i32, count: i32) -> bool` | — |
+| `ca_life_step` | `(src: ptr<i32>, dst: ptr<i32>, w: i32, h: i32,
+                             birth: i32, survive: i32, nb: i32,
+                             bound: i32) -> i32` | One synchronous life-like generation. Cells are 0 or 1. |
+| `ca_life_step_mode` | `(src: ptr<i32>, dst: ptr<i32>, w: i32, h: i32,
+                                  birth: i32, survive: i32, nb: i32,
+                                  bound: i32, mode: i32,
+                                  alpha_ppm: i32) -> i32` | The same rule under a chosen schedule. CA_SYNC            classic: dst is a full new generation CA_ASYNC_RANDOM    dst starts as a copy of src; each cell is offered an update with probability alpha_ppm / 1e6, and the |
+| `ca_generations_step` | `(src: ptr<i32>, dst: ptr<i32>, w: i32,
+                                    h: i32, birth: i32, survive: i32,
+                                    nstates: i32, nb: i32, bound: i32) -> i32` | Multi-state "generations" rules. State 1 is alive; states 2 .. nstates-1 are the refractory tail, counting up and then dying; state 0 is empty. Only state-1 neighbours count. Brian's Brain is nstates 3 with B2/S. |
+| `ca_cyclic_step` | `(src: ptr<i32>, dst: ptr<i32>, w: i32, h: i32,
+                               nstates: i32, threshold: i32, nb: i32,
+                               bound: i32) -> i32` | Greenberg-Hastings / cyclic CA: state s is eaten by s+1 mod nstates once `threshold` neighbours already hold s+1. |
+| `ca_wireworld_step` | `(src: ptr<i32>, dst: ptr<i32>, w: i32,
+                                  h: i32, bound: i32) -> i32` | Wireworld: head -> tail -> wire, and wire -> head when exactly one or two of its eight neighbours are heads. That single clause is what makes the rule a logic family rather than a decoration. |
+| `ca_sandpile_sweep` | `(grid: ptr<i32>, delta: ptr<i32>, w: i32,
+                                  h: i32, threshold: i32, bound: i32) -> i32` | One parallel toppling sweep of the abelian sandpile. Every site holding at least `threshold` grains gives one grain to each von Neumann neighbour; grains that leave a fixed boundary are lost. Returns the number of sites that toppled, so zero means the configuration is stable. |
+| `ca_sandpile_avalanche` | `(grid: ptr<i32>, delta: ptr<i32>,
+                                      touched: ptr<i32>, w: i32, h: i32,
+                                      x: i32, y: i32, threshold: i32,
+                                      bound: i32, max_sweeps: i32,
+                                      stats: ptr<i32>) -> i32` | Drop one grain and relax to stability. Fills stats with the avalanche observables the scaling laws are stated in: stats[0] size      total topplings stats[1] duration  sweeps needed to return to stability |
+| `ca_turmite_step` | `(grid: ptr<i32>, w: i32, h: i32, st: ptr<i32>,
+                                table: ptr<i32>, ncolours: i32, bound: i32) -> i32` | — |
+| `ca_langton_table` | `(out: ptr<i32>) -> void` | Langton's ant as a one-state, two-colour turmite: RL. |
+| `ca_ant_table` | `(turns: string, out: ptr<i32>) -> i32` | A turmite table from a turn string over {L, R, N, U}: "RL" is Langton's ant, "RLR" and "LLRR" are the well-known multi-colour ants. Returns the number of colours, or 0 if the string holds an unknown letter. |
+| `ca_margolus_step` | `(grid: ptr<i32>, w: i32, h: i32,
+                                 table: ptr<i32>, parity: i32) -> void` | The Margolus neighbourhood partitions the grid into 2x2 blocks, offset by one cell on odd steps. A rule is a table of 16 entries mapping the block's 4-bit occupancy to the next one, with bit 0 top-left, bit 1 top-right, bit 2 bottom-left, bit 3 bottom-right. When the table is a permutation of |
+| `ca_margolus_is_permutation` | `(table: ptr<i32>) -> bool` | — |
+| `ca_margolus_invert` | `(table: ptr<i32>, inv: ptr<i32>) -> bool` | The inverse table, so the same stepper runs the CA backwards. |
+| `ca_margolus_hpp_table` | `(out: ptr<i32>) -> void` | HPP lattice gas in Margolus form: every particle moves diagonally across its block (a 180 degree rotation), except that a pair meeting head-on along one diagonal leaves along the other. This is the billiard-ball model's collision, and the table is its own inverse. |
+| `ca_margolus_critters_table` | `(out: ptr<i32>) -> void` | Critters (Toffoli and Margolus): complement the block, leave it alone when exactly two cells are on, and also rotate when exactly three are on. It is reversible and it has gliders. |
+| `ca_margolus_tron_table` | `(out: ptr<i32>) -> void` | Tron: complement blocks that are uniform, leave everything else. Also an involution. |
+| `ca_population` | `(grid: ptr<i32>, n: i32) -> i32` | ---------------------------------------------------------------- measures |
+| `ca_count_value` | `(grid: ptr<i32>, n: i32, v: i32) -> i32` | — |
+| `ca_density` | `(grid: ptr<i32>, n: i32) -> f64` | — |
+| `ca_hamming` | `(a: ptr<i32>, b: ptr<i32>, n: i32) -> i32` | — |
+| `ca_entropy` | `(grid: ptr<i32>, n: i32, nstates: i32,
+                           bins: ptr<i32>) -> f64` | Shannon entropy of the state distribution, in bits per cell. `bins` must hold at least `nstates` entries and is used as scratch. |
+| `ca_block_entropy` | `(row: ptr<i32>, n: i32, len: i32,
+                                 bins: ptr<i32>) -> f64` | Block entropy of a binary row: Shannon entropy over the 2^len sliding windows, divided by len, so a maximally random row scores 1 bit per cell and a constant row scores 0. `bins` needs 2^len entries; len <= 12. |
+| `ca_hash` | `(grid: ptr<i32>, n: i32) -> i64` | FNV-1a over the cell values: a configuration fingerprint for cycle detection. Two different configurations colliding is a 2^-64 event, and callers that cannot accept even that should compare the states directly once a hash matches. |
+| `ca_cycle_find` | `(ring: ptr<i64>, len: i32, h: i64) -> i32` | Search a ring of past hashes for `h`; returns the slot, or -1. |
+| `ca_find_cycle` | `(a: ptr<i32>, b: ptr<i32>, n: i32, rule: i32,
+                              bound: i32, max_steps: i32, ring: ptr<i64>,
+                              out: ptr<i32>) -> i32` | Run a 1D rule until the configuration repeats. Fills out[0] with the period and out[1] with the transient length, both -1 if nothing repeated within `max_steps`. `ring` must hold `max_steps` hashes. |
+| `ca_input_entropy` | `(row: ptr<i32>, n: i32, bound: i32,
+                                 bins: ptr<i32>) -> f64` | Shannon entropy, in bits, of how often each of the eight elementary neighbourhood patterns was looked up over one row. |
+| `ca_classify` | `(rule: i32, width: i32, gens: i32, bound: i32,
+                            wk: CAWork, evidence: ptr<f64>) -> i32` | — |
+| `ca_class_name` | `(cls: i32) -> string` | — |
+| `ca_blit_pack` | `(grid: ptr<i32>, w: i32, h: i32, px: i32,
+                             pal: ptr<u8>, nstates: i32,
+                             out: ptr<u8>) -> void` | Pack a grid into an RGB8 buffer for one gfx_blit_rgb call, scaling each cell to `px` by `px` device pixels. `pal` holds 3 bytes per state. A dense grid drawn cell by cell with fill_rect is tens of thousands of calls a frame; this is one. |
+
 ### `blas.flow`
 
 BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import "stdlib/blas.flow"
@@ -1385,6 +1479,43 @@ experiment: running behavioural and psychophysical experiments in Flow.  The cas
                             done: i32, total: i32) -> void` | Progress bar over the block: filled fraction is trials done over total. |
 | `xp_feedback_bar` | `(g: Gfx, cx: i32, y: i32, w: i32, h: i32,
                                 resp: XpResponse) -> void` | Correct / incorrect / too-slow feedback, as a coloured bar under fixation. |
+
+### `fmm2d.flow`
+
+fmm2d: Carrier-Greengard-Rokhlin adaptive Fast Multipole Method in 2D.  Implements the analytic apparatus of
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `fmm2d_configure` | `(p: i32, s: i32) -> void` | — |
+| `fmm2d_set_particles` | `(n: i32, x: ptr<f64>, y: ptr<f64>, q: ptr<f64>) -> bool` | — |
+| `fmm2d_evaluate` | `() -> bool` | — |
+| `fmm2d_direct_evaluate` | `() -> bool` | — |
+| `fmm2d_rel_field_error` | `() -> f64` | Paper-style relative field error: \|\|E_fmm - E_dir\|\|_2 / \|\|E_dir\|\|_2 |
+| `fmm2d_max_rel_error` | `() -> f64` | — |
+| `fmm2d_potential` | `(i: i32) -> f64` | — |
+| `fmm2d_ex` | `(i: i32) -> f64` | — |
+| `fmm2d_ey` | `(i: i32) -> f64` | — |
+| `fmm2d_nboxes` | `() -> i32` | — |
+| `fmm2d_nleaves` | `() -> i32` | — |
+| `fmm2d_max_level` | `() -> i32` | — |
+| `fmm2d_time_ms` | `() -> f64` | — |
+| `fmm2d_direct_time_ms` | `() -> f64` | — |
+| `fmm2d_m2l_count` | `() -> f64` | — |
+| `fmm2d_p2p_count` | `() -> f64` | — |
+| `fmm2d_box_cx` | `(b: i32) -> f64` | — |
+| `fmm2d_box_cy` | `(b: i32) -> f64` | — |
+| `fmm2d_box_h` | `(b: i32) -> f64` | — |
+| `fmm2d_box_half` | `(b: i32) -> f64` | — |
+| `fmm2d_box_leaf` | `(b: i32) -> i32` | — |
+| `fmm2d_box_level` | `(b: i32) -> i32` | — |
+| `fmm2d_particle_x` | `(i: i32) -> f64` | — |
+| `fmm2d_particle_y` | `(i: i32) -> f64` | — |
+| `fmm2d_particle_q` | `(i: i32) -> f64` | — |
+| `fmm2d_n` | `() -> i32` | — |
+| `fmm2d_p` | `() -> i32` | — |
+| `fmm2d_s` | `() -> i32` | — |
 
 ### `font.flow`
 
@@ -1776,6 +1907,101 @@ Option Type Represents an optional value: either Some(value) or None
 
 *No `export` items found (internal / extern-only module).*
 
+### `planet.flow`
+
+planet: a procedural planet as a system that evolves through time.  A planet is not a texture. It is the fixed point of a few slow processes
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `pl_minf` | `(a: f32, b: f32) -> f32` | Scalar helpers |
+| `pl_maxf` | `(a: f32, b: f32) -> f32` | — |
+| `pl_clampf` | `(v: f32, lo: f32, hi: f32) -> f32` | — |
+| `pl_smoothstep` | `(e0: f32, e1: f32, x: f32) -> f32` | — |
+| `pl_lerpf` | `(a: f32, b: f32, t: f32) -> f32` | — |
+| `planet_seed` | `(s: u32) -> void` | Deterministic RNG: a 32-bit LCG (Numerical Recipes constants). |
+| `planet_current_seed` | `() -> u32` | — |
+| `planet_noise_hash` | `(ix: i32, iy: i32, iz: i32, salt: i32) -> u32` | Integer hash. Three rounds of xor-multiply, seeded from pl_seed0 so noise fields move with the planet seed. |
+| `planet_noise3` | `(x: f32, y: f32, z: f32, salt: i32) -> f32` | Gradient noise in [-1, 1] (approximately; the theoretical bound is wider). |
+| `planet_noise_fbm` | `(x: f32, y: f32, z: f32, octaves: i32,
+                                 salt: i32) -> f32` | Fractional Brownian motion: octaves of gradient noise at doubling frequency and halving amplitude, normalised to roughly [-1, 1]. |
+| `planet_noise_ridged` | `(x: f32, y: f32, z: f32, octaves: i32,
+                                    salt: i32) -> f32` | Ridged multifractal: 1 - \|noise\| per octave, which turns the zero crossings into creases. Used for mountain-belt texture, in [0, 1]. |
+| `planet_noise_warped` | `(x: f32, y: f32, z: f32, octaves: i32,
+                                    warp: f32, salt: i32) -> f32` | Domain-warped fBm: the sample point is displaced by another noise field first, which breaks the axis-aligned look of plain fBm and gives coastlines their folded, non-fractal-looking character. |
+| `pvec3` | `(x: f32, y: f32, z: f32) -> PVec3` | Vector helpers |
+| `pv_norm` | `(a: PVec3) -> PVec3` | — |
+| `pv_dot` | `(a: PVec3, b: PVec3) -> f32` | — |
+| `pv_cross` | `(a: PVec3, b: PVec3) -> PVec3` | — |
+| `pv_sub` | `(a: PVec3, b: PVec3) -> PVec3` | — |
+| `planet_cell_at_dir` | `(dx: f32, dy: f32, dz: f32) -> i32` | Inverse cubesphere lookup: the cell containing a direction. |
+| `planet_cell_at_lonlat` | `(lon_deg: f32, lat_deg: f32) -> i32` | — |
+| `planet_init` | `() -> bool` | — |
+| `planet_stage_ms` | `(slot: i32) -> f32` | — |
+| `planet_stage_grid` | `() -> void` | Stage 1. Sample positions, cell areas and the eight-neighbour graph. |
+| `planet_cell_dist` | `(i: i32, j: i32) -> f32` | Great-circle distance between two cells, kilometres. |
+| `planet_cell_area_km2` | `(i: i32) -> f32` | — |
+| `planet_cells` | `() -> i32` | — |
+| `planet_face_n` | `() -> i32` | — |
+| `planet_pos_x` | `(i: i32) -> f32` | — |
+| `planet_pos_y` | `(i: i32) -> f32` | — |
+| `planet_pos_z` | `(i: i32) -> f32` | — |
+| `planet_pos` | `(i: i32) -> PVec3` | — |
+| `planet_neighbor` | `(i: i32, d: i32) -> i32` | — |
+| `planet_lat` | `(i: i32) -> f32` | Latitude in degrees, +90 at +Y. |
+| `planet_lon` | `(i: i32) -> f32` | — |
+| `planet_total_area` | `() -> f32` | Total solid angle, which must come to 4 pi. The evidence program checks it. |
+| `planet_area_min` | `() -> f32` | — |
+| `planet_area_max` | `() -> f32` | — |
+| `planet_stage_tectonics` | `(nplates: i32) -> void` | — |
+| `planet_plate` | `(i: i32) -> i32` | — |
+| `planet_plate_count` | `() -> i32` | — |
+| `planet_boundary` | `(i: i32) -> i32` | — |
+| `planet_tectonic` | `(i: i32) -> f32` | — |
+| `planet_plate_continental` | `(p: i32) -> bool` | — |
+| `planet_boundary_length_km` | `() -> f32` | Total length of plate boundaries, kilometres. Counts each shared edge once by only looking at the four orthogonal neighbours and requiring i < n. |
+| `planet_stage_elevation` | `() -> void` | — |
+| `planet_set_sea_level_by_land_fraction` | `(target: f32) -> void` | Choose the sea-level datum so the land fraction hits `target`, then shift every elevation so sea level is exactly 0. Bisection on the area-weighted land fraction: 40 halvings on a 20 km bracket resolves to under a micrometre, so the answer is exact for f32. |
+| `planet_measure_land_fraction` | `() -> f32` | — |
+| `planet_elev` | `(i: i32) -> f32` | — |
+| `planet_is_land` | `(i: i32) -> bool` | — |
+| `planet_sea_datum` | `() -> f32` | — |
+| `planet_land_fraction` | `() -> f32` | — |
+| `planet_set_target_land` | `(t: f32) -> void` | — |
+| `planet_set_relief` | `(r: f32) -> void` | — |
+| `planet_set_erosion` | `(k: f32, m: f32, uplift: f32, diff: f32) -> void` | — |
+| `planet_hypsometric` | `(e: f32) -> f32` | Area-weighted fraction of the sphere at or below `e` kilometres. This is the hypsometric curve, evaluated pointwise. |
+| `planet_hypsometric_hist` | `(lo: f32, hi: f32, bins: i32,
+                                        out: ptr<f32>) -> void` | Area-weighted elevation histogram: bin count in [lo, hi) split `bins` ways, written as fractions into `out`. |
+| `planet_flood` | `() -> void` | Priority flood. Fills pl_w (the depression-free surface) and pl_order (the pop order, ascending in pl_w). |
+| `planet_route` | `() -> void` | Steepest descent on the filled surface. Ocean cells are terminal. |
+| `planet_accumulate` | `() -> void` | Upstream drainage area and longest upstream flow path, in one reverse pass over the flood order (which is descending in pl_w, so every contributor is already accumulated when its receiver is reached). |
+| `planet_stage_erosion` | `(iters: i32) -> void` | Stage 4. `iters` rounds of flood, route, accumulate, incise, diffuse. |
+| `planet_erode_step` | `() -> void` | One erosion round, exposed so the evolution demo can step it live. |
+| `planet_flow_km2` | `(i: i32) -> f32` | — |
+| `planet_flow_len_km` | `(i: i32) -> f32` | — |
+| `planet_downstream` | `(i: i32) -> i32` | — |
+| `planet_filled` | `(i: i32) -> f32` | — |
+| `planet_lake_depth` | `(i: i32) -> f32` | — |
+| `planet_measure_hack` | `(min_area_km2: f32) -> f32` | — |
+| `planet_hack_exponent` | `() -> f32` | — |
+| `planet_hack_intercept` | `() -> f32` | — |
+| `planet_hack_r2` | `() -> f32` | — |
+| `planet_hack_samples` | `() -> i32` | — |
+| `planet_stage_climate` | `() -> void` | — |
+| `planet_temp` | `(i: i32) -> f32` | — |
+| `planet_precip` | `(i: i32) -> f32` | — |
+| `planet_coast_dist` | `(i: i32) -> f32` | — |
+| `planet_upwind` | `(i: i32) -> i32` | — |
+| `planet_mean_land_precip` | `() -> f32` | — |
+| `planet_rain_shadow_ratio` | `(hmin: f32) -> f32` | Rain-shadow evidence. Over every land cell above `hmin` kilometres that is on a slope, compare the mean precipitation where the wind is climbing (windward) against where it is descending (leeward). A real orographic model gives a ratio well above one; a noise field gives one. |
+| `planet_classify_biome` | `(elev: f32, temp: f32, precip: f32,
+                                      lake: f32) -> i32` | STAGE 6 --- biomes Whittaker's classification: mean annual temperature against annual precipitation, with the polar and alpine cutoffs that Whittaker's diagram leaves implicit. Precipitation thresholds are in millimetres per year. |
+| `planet_stage_biomes` | `() -> void` | — |
+| `planet_biome` | `(i: i32) -> i32` | — |
+| … | 19 more | |
+
 ### `posix.flow`
 
 FLOW POSIX Standard Library File I/O, processes, environment, and system calls
@@ -1794,6 +2020,29 @@ Process / host-command helpers Runtime: flow_run_cmd / flow_have_cmd in runtime/
 | `have_cmd` | `(name: string) -> bool` | — |
 | `env_is` | `(name: string, want: string) -> bool` | — |
 | `str_eq` | `(a: string, b: string) -> bool` | — |
+
+### `procgen.flow`
+
+procgen: self-contained 2D/3D gradient and value noise for general use.  A procedural field is a pure function of coordinates and a seed. Same seed
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `procgen_seed` | `(s: u32) -> void` | — |
+| `procgen_get_seed` | `() -> u32` | — |
+| `procgen_hash` | `(ix: i32, iy: i32, iz: i32, salt: i32) -> u32` | Integer hash. Three rounds of xor-multiply, seeded from pg_seed0 so noise fields move with the module seed. |
+| `procgen_noise3` | `(x: f32, y: f32, z: f32, salt: i32) -> f32` | Gradient noise in approximately [-1, 1]. |
+| `procgen_noise2` | `(x: f32, y: f32, salt: i32) -> f32` | — |
+| `procgen_fbm3` | `(x: f32, y: f32, z: f32, octaves: i32,
+                             salt: i32) -> f32` | Fractional Brownian motion: octaves of gradient noise at doubling frequency and halving amplitude, normalised to roughly [-1, 1]. |
+| `procgen_fbm2` | `(x: f32, y: f32, octaves: i32, salt: i32) -> f32` | — |
+| `procgen_ridged3` | `(x: f32, y: f32, z: f32, octaves: i32,
+                                salt: i32) -> f32` | Ridged multifractal: 1 - \|noise\| per octave, which turns the zero crossings into creases. Range [0, 1]. |
+| `procgen_ridged2` | `(x: f32, y: f32, octaves: i32, salt: i32) -> f32` | — |
+| `procgen_warped2` | `(x: f32, y: f32, octaves: i32, warp: f32,
+                                salt: i32) -> f32` | Domain-warped fBm: the sample point is displaced by another noise field first, which breaks the axis-aligned look of plain fBm. |
+| `procgen_value2` | `(x: f32, y: f32, salt: i32) -> f32` | Value noise in [0, 1]. Hashes the integer lattice and interpolates the four corner values with a smoothstep weight, matching examples/threed/heightmap_terrain. |
 
 ### `psychstats.flow`
 
@@ -2009,6 +2258,117 @@ SDL2 bindings (minimal)  This is a deliberately tiny subset needed for simple 2D
 FLOW Slice Type A slice is a view into a contiguous block of memory (ptr + length)
 
 *No `export` items found (internal / extern-only module).*
+
+### `sorting/core.flow`
+
+Sorting library: shared core.  Everything the algorithm modules need in common: the element swap, the
+
+**Constants:**
+
+- `SORT_SCRATCH_CAPACITY: i64`
+- `SORT_TAG_CAPACITY: i64`
+- `SORT_COUNT_CAPACITY: i64`
+- `SORT_INSERTION_CUTOFF: i64`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sort_scratch` | `(n: i64) -> span<mut i32>` | A mutable view of the first `n` elements of the merge scratch. Returns a zero-length span when `n` exceeds the documented capacity, which every caller checks before relying on it. |
+| `sort_tags` | `(n: i64) -> span<mut i32>` | A mutable view of the first `n` elements of the tag scratch. |
+| `sort_counts` | `(k: i64) -> span<mut i32>` | A mutable view of the first `k` histogram slots, zeroed. |
+| `sort_swap` | `(xs: &mut [i32], i: i64, j: i64) -> void` | — |
+| `sort_reverse` | `(xs: &mut [i32]) -> void` | Reverse in place. Used by the descending wrappers and by the adversarial input generators in the test harness. |
+| `sort_copy` | `(dst: &mut [i32], src: &[i32]) -> void` | Copy `src` over `dst`, element for element. Both are spans, so the lengths travel with the data and the shorter one bounds the copy. |
+| `is_sorted` | `(xs: &[i32]) -> bool` | True when `xs` is in non-decreasing order. O(n), no allocation. |
+| `is_sorted_descending` | `(xs: &[i32]) -> bool` | True when `xs` is in non-increasing order. |
+| `is_strictly_increasing` | `(xs: &[i32]) -> bool` | True when `xs` is strictly increasing (no duplicates). |
+| `is_sorted_by` | `(xs: &[i32], le: (i32, i32) -> bool) -> bool` | True when every adjacent pair satisfies `le`. The comparator is a first-class `(i32, i32) -> bool`. One caller-side note: a lambda written directly at the call site is not wrapped into the closure struct by the current C backend, so bind it to an annotated local first: |
+| `spans_equal` | `(a: &[i32], b: &[i32]) -> bool` | Do two spans hold the same elements in the same order? |
+| `span_min` | `(xs: &[i32]) -> i32` | Smallest and largest element. Returns 0 for an empty span; callers that care check `.len` first. |
+| `span_max` | `(xs: &[i32]) -> i32` | — |
+| `rng_seed` | `(seed: i64) -> void` | — |
+| `rng_next` | `() -> i32` | Next value in [0, 2^31 - 1). |
+| `rng_below` | `(bound: i32) -> i32` | Next value in [0, bound). Returns 0 for a non-positive bound. |
+| `shuffle` | `(xs: &mut [i32]) -> void` | Fisher-Yates over a span, drawing from the LCG above. |
+| `ord_key_f64` | `(x: f64) -> i64` | — |
+| `ord_cmp_f64` | `(a: f64, b: f64) -> i32` | — |
+| `is_sorted_total_f64` | `(xs: &[f64]) -> bool` | True when `xs` is in non-decreasing totalOrder. Unlike a check built from `<=`, this is correct in the presence of NaN and signed zero. |
+
+### `sorting/gapped.flow`
+
+Sorting library: gap sequence sorts.  Shell sort and comb sort are the same idea applied to two different
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `shell_sort` | `(xs: &mut [i32]) -> void` | — |
+| `comb_sort` | `(xs: &mut [i32]) -> void` | comb_sort NOT stable best O(n log n)   average ~O(n^2 / 2^p) empirically near O(n log n) worst O(n^2)      extra space O(1) |
+
+### `sorting/heap.flow`
+
+Sorting library: the heap family.  A binary max-heap laid out in the span itself: the children of `i` live at
+
+**Constants:**
+
+- `TOURNAMENT_CAPACITY: i64`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `heapify` | `(xs: &mut [i32]) -> void` | Turn a span into a max-heap. Floyd's bottom-up construction: O(n), not O(n log n), because most nodes are near the leaves and sift down barely at all. |
+| `heap_sort` | `(xs: &mut [i32]) -> void` | heap_sort NOT stable (the root/last swap reorders equal keys arbitrarily) best O(n log n)   average O(n log n)   worst O(n log n) extra space O(1) |
+| `partial_sort` | `(xs: &mut [i32], k: i64) -> void` | partial_sort NOT stable O(n + k log n) with a full heapify, or O(n log k) via the bounded heap below, whichever the caller asks for. |
+| `top_k_descending` | `(xs: &mut [i32], k: i64) -> void` | top_k_descending NOT stable O(n log k)   extra space O(1) Leaves the k largest elements in `xs[0..k]`, largest first. Same machinery |
+| `tournament_sort` | `(xs: &mut [i32]) -> void` | — |
+
+### `sorting/merge.flow`
+
+Sorting library: the merge family.  Four ways to spend O(n) scratch to buy stability and an n log n worst case.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `merge_sort` | `(xs: &mut [i32]) -> void` | merge_sort (top-down) stable best O(n log n)   average O(n log n)   worst O(n log n) extra space O(n) from the shared scratch pool |
+| `bottom_up_merge_sort` | `(xs: &mut [i32]) -> void` | bottom_up_merge_sort stable best O(n log n)   average O(n log n)   worst O(n log n) extra space O(n) |
+| `natural_merge_sort` | `(xs: &mut [i32]) -> void` | natural_merge_sort stable best O(n) on an input that is already one run average O(n log r) where r is the number of runs |
+| `tim_sort` | `(xs: &mut [i32]) -> void` | — |
+
+### `sorting/quadratic.flow`
+
+Sorting library: the quadratic family.  Six algorithms that all do O(n^2) work in the general case. Two of them
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `insertion_sort` | `(xs: &mut [i32]) -> void` | insertion_sort stable best O(n)   average O(n^2)   worst O(n^2)   extra space O(1) Pick it when: n is under ~32, or the input is nearly ordered. It is the |
+| `binary_insertion_sort` | `(xs: &mut [i32]) -> void` | binary_insertion_sort stable best O(n log n) comparisons / O(n) moves average O(n^2) moves   worst O(n^2) moves   extra space O(1) |
+| `selection_sort` | `(xs: &mut [i32]) -> void` | selection_sort NOT stable (the long-range swap jumps an equal element over its peers) best O(n^2)   average O(n^2)   worst O(n^2)   extra space O(1) moves: exactly n - 1 swaps, which is its one virtue. |
+| `double_selection_sort` | `(xs: &mut [i32]) -> void` | double_selection_sort NOT stable best O(n^2)   average O(n^2)   worst O(n^2)   extra space O(1) Finds the minimum and the maximum in one pass, so it halves the number of |
+| `bubble_sort` | `(xs: &mut [i32]) -> void` | bubble_sort stable best O(n) with the early-exit flag   average O(n^2)   worst O(n^2) extra space O(1) |
+| `cocktail_shaker_sort` | `(xs: &mut [i32]) -> void` | cocktail_shaker_sort stable best O(n)   average O(n^2)   worst O(n^2)   extra space O(1) Bubble sort that alternates direction. It fixes bubble sort's one |
+| `gnome_sort` | `(xs: &mut [i32]) -> void` | gnome_sort stable best O(n)   average O(n^2)   worst O(n^2)   extra space O(1) Insertion sort written as a single loop with one index that walks |
+| `odd_even_sort` | `(xs: &mut [i32]) -> void` | odd_even_sort (brick sort) stable best O(n)   average O(n^2)   worst O(n^2)   extra space O(1) A bubble sort split into two independent phases. Every compare-exchange |
+
+### `sorting/quick.flow`
+
+Sorting library: the partitioning family.  Quicksort and its relatives. Everything here recurses by *slicing the span*:
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `quick_sort` | `(xs: &mut [i32]) -> void` | quick_sort NOT stable best O(n log n)   average O(n log n)   worst O(n^2) extra space O(log n) stack, from the recursion on the smaller half only |
+| `dual_pivot_quick_sort` | `(xs: &mut [i32]) -> void` | dual_pivot_quick_sort NOT stable best O(n log n)   average O(n log n)   worst O(n^2) extra space O(log n) stack |
+| `intro_sort` | `(xs: &mut [i32]) -> void` | intro_sort NOT stable best O(n log n)   average O(n log n)   worst O(n log n) extra space O(log n) stack |
+| `random_pivot_quick_sort` | `(xs: &mut [i32]) -> void` | random_pivot_quick_sort NOT stable best O(n log n)   average O(n log n) expected   worst O(n^2) with probability that vanishes in n |
+| `quickselect` | `(xs: &mut [i32], k: i64) -> i32` | quickselect NOT stable, and it permutes the input best O(n)   average O(n)   worst O(n^2) extra space O(1) — the recursion is eliminated entirely |
+| `median` | `(xs: &mut [i32]) -> i32` | The median. For an even length this is the lower of the two middle values, which is the convention that needs no arithmetic on the elements and so works for any orderable type. |
+| `three_way_quick_sort` | `(xs: &mut [i32]) -> void` | three_way_quick_sort (Dutch national flag) NOT stable best O(n)   average O(n log n)   worst O(n^2) extra space O(log n) stack |
 
 ### `spice.flow`
 

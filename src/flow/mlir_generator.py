@@ -14,6 +14,7 @@ from .parser import (
     MatchStatement, StructPattern, ListPattern, ConstDecl, StaticDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
     ExpectStatement, RecordUpdate,
     BreakStatement, ContinueStatement, DeferStatement,
+    EnumDecl, Parameter, Lambda,
 )
 
 class MLIRGenerator:
@@ -369,31 +370,99 @@ class MLIRGenerator:
         return any(last_line.startswith(t) for t in terminators)
 
     def _get_struct_decl(self, name: str) -> Optional[StructDecl]:
-        """Look up a struct declaration by name."""
+        """Look up a struct declaration by name (includes synthesized enum layouts)."""
+        syn = getattr(self, "_synthetic_structs", {}).get(name)
+        if syn is not None:
+            return syn
         for decl in self.declarations:
             if isinstance(decl, StructDecl) and decl.name == name:
                 return decl
         return None
-    
+
+    def _synthesize_enum_structs(self, declarations: List[Any]) -> None:
+        """Treat enums as tagged structs so match/field access reuse struct lowering.
+
+        Layout mirrors the C backend: `{ tag: i32 }` plus one field per
+        single-payload variant (`Variant_value`). Multi-field payloads are
+        flattened to the first field for now (parity suite uses unit/single).
+        """
+        self._synthetic_structs: Dict[str, StructDecl] = getattr(
+            self, "_synthetic_structs", {}
+        )
+        self._enum_variant_owner: Dict[str, str] = getattr(
+            self, "_enum_variant_owner", {}
+        )
+        self._enums: Dict[str, EnumDecl] = getattr(self, "_enums", {})
+        for decl in declarations:
+            if not isinstance(decl, EnumDecl):
+                continue
+            self._enums[decl.name] = decl
+            fields: List[Parameter] = [Parameter("tag", Type("i32"))]
+            for variant in decl.variants:
+                tag_name = f"{decl.name}_{variant.name}"
+                self._enum_variant_owner[tag_name] = decl.name
+                if len(variant.fields) == 1:
+                    fields.append(
+                        Parameter(f"{variant.name}_value", variant.fields[0])
+                    )
+                elif len(variant.fields) > 1:
+                    # Flatten first field only; full multi-field ADTs stay C-primary.
+                    fields.append(
+                        Parameter(f"{variant.name}_value", variant.fields[0])
+                    )
+            self._synthetic_structs[decl.name] = StructDecl(decl.name, fields)
+
+    def _register_enum_variant_constants(self) -> None:
+        """Register Enum_Variant names as i32 module constants (tag discriminators)."""
+        for enum in getattr(self, "_enums", {}).values():
+            for i, variant in enumerate(enum.variants):
+                tag_name = f"{enum.name}_{variant.name}"
+                self.symbol_table[tag_name] = {
+                    "type": "variable",
+                    "mlir_type": "i32",
+                    "flow_type": Type("i32"),
+                    "is_module_global": True,
+                    "is_const": True,
+                    "is_enum_tag": True,
+                    "enum_tag_value": i,
+                }
+
+    def _emit_enum_tag_globals(self) -> List[str]:
+        lines: List[str] = []
+        for enum in getattr(self, "_enums", {}).values():
+            for i, variant in enumerate(enum.variants):
+                tag_name = f"{enum.name}_{variant.name}"
+                lines.append(
+                    f"{self.indent()}llvm.mlir.global internal constant @{tag_name}"
+                    f"({i} : i32) : i32"
+                )
+        return lines
+
     def _calculate_struct_layouts(self, declarations: List[Any]) -> None:
         """Calculate field offsets for all struct types with proper alignment"""
+        self._synthesize_enum_structs(declarations)
         for decl in declarations:
             if isinstance(decl, StructDecl):
-                layout = {}
-                offset = 0
-                for field in decl.fields:
-                    field_size = self._get_type_size(field.type)
-                    # Align offset to the field's natural alignment
-                    alignment = min(field_size, 8) if field_size > 0 else 1
-                    offset = (offset + alignment - 1) & ~(alignment - 1)
-                    layout[field.name] = {
-                        'offset': offset,
-                        'type': field.type,
-                        'size': field_size
-                    }
-                    offset += field_size
-                self.struct_layouts[decl.name] = layout
-    
+                self._layout_one_struct(decl)
+        for syn in getattr(self, "_synthetic_structs", {}).values():
+            if syn.name not in self.struct_layouts:
+                self._layout_one_struct(syn)
+
+    def _layout_one_struct(self, decl: StructDecl) -> None:
+        layout = {}
+        offset = 0
+        for field in decl.fields:
+            field_size = self._get_type_size(field.type)
+            # Align offset to the field's natural alignment
+            alignment = min(field_size, 8) if field_size > 0 else 1
+            offset = (offset + alignment - 1) & ~(alignment - 1)
+            layout[field.name] = {
+                'offset': offset,
+                'type': field.type,
+                'size': field_size
+            }
+            offset += field_size
+        self.struct_layouts[decl.name] = layout 
     def _get_type_size(self, flow_type) -> int:
         """Get the size of a type in bytes (simplified)"""
         # Handle string type names
@@ -477,15 +546,6 @@ class MLIRGenerator:
         return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"]
     
     def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
-        # Module statics (top-level `let mut`) have no MLIR lowering yet.
-        # Fail loudly rather than miscompiling reads/writes to them.
-        for decl in declarations:
-            if isinstance(decl, StaticDecl):
-                raise NotImplementedError(
-                    f"module statics not yet supported in MLIR backend "
-                    f"(static '{decl.name}'); use the C backend (--c)"
-                )
-
         mlir_code = []
 
         # Reset state for new module
@@ -498,6 +558,12 @@ class MLIRGenerator:
         self.struct_llvm_types = {}
         self._struct_llvm_building = set()
         self._declared_externs: Set[str] = set()
+        self.symbol_table = {}
+        self._synthetic_structs = {}
+        self._enum_variant_owner = {}
+        self._enums = {}
+        self._pending_lambdas: List[str] = []
+        self._lambda_counter = 0
 
         # Split GPU kernels from CPU declarations (GPU kernels are handled separately)
         gpu_functions = []
@@ -510,7 +576,8 @@ class MLIRGenerator:
         
         # Calculate struct layouts
         self._calculate_struct_layouts(cpu_decls)
-        
+        self._register_enum_variant_constants()
+
         # Module header with required dialects and debug info
         if self.emit_debug_info:
             mlir_code.append(f'module attributes {{llvm.dbg.cu = #llvm.di_compile_unit<id = distinct[0]<>, sourceLanguage = DW_LANG_C, file = #llvm.di_file<"{self.source_file}" in ".">, producer = "FLOW Compiler", isOptimized = false, emissionKind = Full>}} {{')
@@ -537,6 +604,28 @@ class MLIRGenerator:
                 self._effects[decl.name] = decl
             elif isinstance(decl, CapabilityDecl):
                 self._capabilities[decl.name] = decl
+            elif isinstance(decl, ConstDecl):
+                mlir_type = self.flow_type_to_mlir(decl.type)
+                if getattr(decl.type, "name", None) == "bool":
+                    mlir_type = "i1"
+                self.symbol_table[decl.name] = {
+                    "type": "variable",
+                    "mlir_type": mlir_type,
+                    "flow_type": decl.type,
+                    "is_module_global": True,
+                    "is_const": True,
+                }
+            elif isinstance(decl, StaticDecl):
+                mlir_type = self.flow_type_to_mlir(decl.type)
+                if getattr(decl.type, "name", None) == "bool":
+                    mlir_type = "i1"
+                self.symbol_table[decl.name] = {
+                    "type": "variable",
+                    "mlir_type": mlir_type,
+                    "flow_type": decl.type,
+                    "is_module_global": True,
+                    "is_const": False,
+                }
         self._needs_effect_init = bool(self._effects) and bool(self._capabilities)
 
         # Register effect dispatch functions and capability methods so calls
@@ -571,11 +660,36 @@ class MLIRGenerator:
                 decl_code.append(self.generate_struct(decl))
             elif isinstance(decl, ConstDecl):
                 decl_code.append(self.generate_const(decl))
+            elif isinstance(decl, StaticDecl):
+                decl_code.append(self.generate_static(decl))
+            elif isinstance(decl, EnumDecl):
+                decl_code.append(
+                    f"{self.indent()}// Enum: {decl.name} "
+                    f"(lowered as tagged struct + variant constants)"
+                )
             elif isinstance(decl, (TypeAliasDecl, DistinctTypeDecl)):
                 # No MLIR output needed for aliases/distinct types (lowered to base types)
                 continue
+            elif type(decl).__name__ in (
+                "TraitDecl", "ImplDecl", "ImportDecl", "ModuleDecl",
+                "ExternBlock", "UseDecl",
+            ):
+                # Type-system / module surface — methods are separate FunctionDecls.
+                continue
             else:
-                decl_code.append(f"// Unsupported declaration type: {type(decl).__name__}")
+                raise NotImplementedError(
+                    f"MLIR backend does not support declaration type "
+                    f"{type(decl).__name__}; use the C backend (--c) or add lowering"
+                )
+
+        # Emit enum variant tag globals (Color_Red = 0, …)
+        tag_globals = self._emit_enum_tag_globals()
+        if tag_globals:
+            decl_code = tag_globals + decl_code
+
+        # Lifted non-capturing lambdas (must appear before uses as func.constant)
+        if self._pending_lambdas:
+            decl_code = self._pending_lambdas + decl_code
 
         # Fill capability vtables with function addresses at startup
         # (llvm.mlir.addressof cannot reference func.func symbols, so the
@@ -806,7 +920,10 @@ class MLIRGenerator:
             # Expression statement: emit ops for side effects / computation, discard value.
             return "\n".join(value_ops)
         else:
-            return f"{self.indent()}// Unsupported statement: {type(stmt).__name__}"
+            raise NotImplementedError(
+                f"MLIR backend does not support statement type "
+                f"{type(stmt).__name__}; use the C backend (--c)"
+            )
     
     def _generate_loop_jump(self, stmt: Statement) -> str:
         """Lower break/continue to a cf.br into the enclosing loop's exit/header."""
@@ -918,6 +1035,20 @@ class MLIRGenerator:
         return lines
 
     def generate_var_decl(self, var_decl: VarDecl) -> str:
+        # Non-capturing lambdas: keep the func.constant SSA, skip aggregate casts.
+        if isinstance(getattr(var_decl, "initializer", None), Lambda):
+            init_value, init_ops = self.generate_lambda(var_decl.initializer)
+            fn_ty = self._ssa_types.get(init_value, "() -> i32")
+            self.symbol_table[var_decl.name] = {
+                "type": "variable",
+                "ssa_name": init_value,
+                "mlir_type": fn_ty,
+                "flow_type": var_decl.type,
+                "is_closure": True,
+                "fn_mlir_type": fn_ty,
+            }
+            return "\n".join(init_ops) if init_ops else ""
+
         mlir_type = self.flow_type_to_mlir(var_decl.type)
          
         if var_decl.initializer:
@@ -1157,6 +1288,13 @@ class MLIRGenerator:
                 value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, target_type)
                 ops.extend(cast_ops)
             target_info = self.symbol_table[assignment.target]
+            if target_info.get("is_module_global") and target_type:
+                if target_info.get("is_const"):
+                    raise NotImplementedError(
+                        f"cannot assign to module const '{assignment.target}'"
+                    )
+                ops.extend(self._store_module_global(assignment.target, target_type, value_ssa))
+                return "\n".join(ops)
             target_info["ssa_name"] = value_ssa
             if target_type:
                 self._ssa_types[value_ssa] = target_type
@@ -2192,10 +2330,24 @@ class MLIRGenerator:
             return vectorized
 
         step_value = self._constant_step(for_stmt)
+        needs_cf = (
+            step_value is None
+            or step_value <= 0
+            or self._needs_cf_loop_lowering(for_stmt.body)
+        )
+        # Parallel regions cannot hold cf blocks; fall back to sequential cf.
+        if for_stmt.is_parallel and needs_cf:
+            if self.inside_scf_for:
+                raise NotImplementedError(
+                    "nested `for` needing cf lowering inside an scf region "
+                    "is not supported; use the C backend (--c)"
+                )
+            return self._generate_cf_for(for_stmt, step_value)
+
         if not for_stmt.is_parallel:
             # scf.for only accepts a positive step, so anything else (and any
             # body needing its own blocks) takes the cf lowering.
-            if step_value is None or step_value <= 0 or self._needs_cf_loop_lowering(for_stmt.body):
+            if needs_cf:
                 if self.inside_scf_for:
                     raise NotImplementedError(
                         "this `for` loop needs cf lowering but sits inside an "
@@ -2495,15 +2647,7 @@ class MLIRGenerator:
         val_ssa, val_ops = self.generate_expression(match_stmt.value)
         mlir_code.extend(val_ops)
         val_type = self.get_expression_type(match_stmt.value)
-        
-        # Determine comparison op
-        if "ptr" in val_type:
-            cmp_op = 'llvm.icmp "eq"'
-            use_comma = False
-        else:
-            cmp_op = "arith.cmpi eq" if "i" in val_type or "index" in val_type or "i1" in val_type else "arith.cmpf oeq"
-            use_comma = True
-        
+
         # Generate labels for each case and the end
         case_labels = []
         next_case_labels = []
@@ -2671,16 +2815,61 @@ class MLIRGenerator:
                 if saved_locals is None:
                     saved_locals = self.symbol_table.copy()
             else:
+                # Path/const pattern (including Enum_Variant tags). When the
+                # scrutinee is an enum/struct ADT, compare against `.tag`.
+                compare_ssa = val_ssa
+                compare_ty = val_type
+                pattern_name = getattr(case.pattern, "name", None)
+                owner = None
+                if isinstance(pattern_name, str):
+                    owner = getattr(self, "_enum_variant_owner", {}).get(pattern_name)
+                if owner and owner in getattr(self, "_enums", {}):
+                    # Match on enum value → extract tag field (mirrors C backend).
+                    flow_ty = self._flow_type_of_expr(match_stmt.value)
+                    if flow_ty is not None and flow_ty.name == owner:
+                        tag_access = FieldAccess(
+                            match_stmt.value
+                            if isinstance(match_stmt.value, Variable)
+                            else Variable("__match_enum_tmp"),
+                            "tag",
+                        )
+                        if not isinstance(match_stmt.value, Variable):
+                            tmp = f"__match_enum_tmp_{self.function_counter}"
+                            self.function_counter += 1
+                            self.symbol_table[tmp] = {
+                                "type": "variable",
+                                "ssa_name": val_ssa,
+                                "mlir_type": val_type,
+                                "flow_type": Type(owner),
+                            }
+                            tag_access = FieldAccess(Variable(tmp), "tag")
+                        compare_ssa, tag_ops = self.generate_field_access(tag_access)
+                        mlir_code.extend(tag_ops)
+                        compare_ty = "i32"
+                    elif flow_ty is not None and flow_ty.name == "i32":
+                        # Already matching on `.tag`
+                        compare_ty = "i32"
+
                 pattern_ssa, pattern_ops = self.generate_expression(case.pattern)
                 mlir_code.extend(pattern_ops)
-                
+
                 cond_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
-                if use_comma:
-                    mlir_code.append(f"{self.indent()}{cond_ssa} = {cmp_op}, {val_ssa}, {pattern_ssa} : {val_type}")
+                if "ptr" in compare_ty:
+                    mlir_code.append(
+                        f"{self.indent()}{cond_ssa} = llvm.icmp \"eq\" "
+                        f"{compare_ssa}, {pattern_ssa} : {compare_ty}"
+                    )
+                elif "f" in compare_ty and "i" not in compare_ty[:1]:
+                    mlir_code.append(
+                        f"{self.indent()}{cond_ssa} = arith.cmpf oeq, "
+                        f"{compare_ssa}, {pattern_ssa} : {compare_ty}"
+                    )
                 else:
-                    mlir_code.append(f"{self.indent()}{cond_ssa} = {cmp_op} {val_ssa}, {pattern_ssa} : {val_type}")
-            
+                    mlir_code.append(
+                        f"{self.indent()}{cond_ssa} = arith.cmpi eq, "
+                        f"{compare_ssa}, {pattern_ssa} : {compare_ty}"
+                    ) 
             # Branch to case body or next case
             mlir_code.append(f"{self.indent()}cf.cond_br {cond_ssa}, ^{case_label}, ^{next_label}")
             
@@ -2787,8 +2976,13 @@ class MLIRGenerator:
             return self.generate_struct_literal(expr)
         elif isinstance(expr, RecordUpdate):
             return self.generate_record_update(expr)
+        elif isinstance(expr, Lambda):
+            return self.generate_lambda(expr)
         else:
-            return f"// Unsupported expression type: {type(expr).__name__}", []
+            raise NotImplementedError(
+                f"MLIR backend does not support expression type "
+                f"{type(expr).__name__}; use the C backend (--c)"
+            )
 
     def _emit_cast(self, value_ssa: str, from_type: str, to_type: str) -> tuple[str, List[str]]:
         from_type = self._ssa_types.get(value_ssa, from_type)
@@ -2900,6 +3094,16 @@ class MLIRGenerator:
         if variable.name in self.symbol_table:
             var_info = self.symbol_table[variable.name]
             mlir_type = var_info.get("mlir_type")
+            # Enum tag discriminators are known constants — avoid a load.
+            if var_info.get("is_enum_tag") and "enum_tag_value" in var_info:
+                ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                val = var_info["enum_tag_value"]
+                line = f"{self.indent()}{ssa} = arith.constant {val} : i32"
+                self._ssa_types[ssa] = "i32"
+                return ssa, [line]
+            if var_info.get("is_module_global") and mlir_type:
+                return self._load_module_global(variable.name, mlir_type)
             if var_info.get("alloca_ptr") and mlir_type:
                 return self._emit_alloca_load(var_info["alloca_ptr"], mlir_type)
             if "ssa_name" in var_info and mlir_type:
@@ -2910,6 +3114,29 @@ class MLIRGenerator:
             return var_info.get("ssa_name", f"# bad var {variable.name}"), []
         else:
             return f"# Undefined variable: {variable.name}", []
+
+    def _load_module_global(self, name: str, mlir_type: str) -> tuple[str, List[str]]:
+        """Load a module-scope const/static via llvm.mlir.addressof + llvm.load."""
+        ops: List[str] = []
+        ptr = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{ptr} = llvm.mlir.addressof @{name} : !llvm.ptr")
+        self._ssa_types[ptr] = "!llvm.ptr"
+        val = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{val} = llvm.load {ptr} : !llvm.ptr -> {mlir_type}")
+        self._ssa_types[val] = mlir_type
+        return val, ops
+
+    def _store_module_global(self, name: str, mlir_type: str, value_ssa: str) -> List[str]:
+        """Store into a module-scope static."""
+        ops: List[str] = []
+        ptr = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{ptr} = llvm.mlir.addressof @{name} : !llvm.ptr")
+        self._ssa_types[ptr] = "!llvm.ptr"
+        ops.append(f"{self.indent()}llvm.store {value_ssa}, {ptr} : {mlir_type}, !llvm.ptr")
+        return ops
 
     def _resolve_binary_operand_type(self, left_ty: str, right_ty: str) -> str:
         if 'vector<' in left_ty or 'vector<' in right_ty:
@@ -3745,6 +3972,120 @@ class MLIRGenerator:
                     return idx
         return 0
 
+    def generate_lambda(self, lam: Lambda) -> tuple[str, List[str]]:
+        """Lower a non-capturing lambda to a lifted func.func + func.constant.
+
+        Capturing closures remain C-backend-only for now.
+        """
+        captures = list(getattr(lam, "captures", None) or [])
+        if captures:
+            raise NotImplementedError(
+                f"capturing lambdas not yet supported in MLIR backend "
+                f"(captures {captures}); use the C backend (--c)"
+            )
+
+        self._lambda_counter += 1
+        name = f"lambda_{self._lambda_counter}"
+
+        param_mlir = []
+        for p in lam.parameters:
+            pty = self.flow_type_to_mlir(p.type) if p.type else "i32"
+            param_mlir.append((p.name, pty))
+
+        ret_flow = lam.return_type or Type("i32")
+        ret_mlir = self.flow_type_to_mlir(ret_flow)
+        if ret_mlir == "()":
+            ret_mlir = "i32"  # expression lambdas always yield a value here
+
+        # Build lifted function body with a fresh local symbol scope for params.
+        saved_table = self.symbol_table
+        saved_ssa = dict(self._ssa_types)
+        self.symbol_table = saved_table.copy()
+        for pname, pty in param_mlir:
+            arg_ssa = f"%arg_{pname}"
+            self.symbol_table[pname] = {
+                "type": "variable",
+                "ssa_name": arg_ssa,
+                "mlir_type": pty,
+                "flow_type": Type(pty) if pty in ("i32", "i64", "f32", "f64", "i1") else Type("i32"),
+            }
+            self._ssa_types[arg_ssa] = pty
+
+        body_lines: List[str] = []
+        old_indent = self.indent_level
+        self.indent_level = 1
+        if isinstance(lam.body, Block):
+            body_mlir = self.generate_block(lam.body)
+            if body_mlir.strip():
+                body_lines.append(body_mlir)
+            if not self._block_has_terminator(body_mlir):
+                # Implicit void/zero return
+                zero = f"%{self.function_counter}"
+                self.function_counter += 1
+                body_lines.append(f"{self.indent()}{zero} = arith.constant 0 : {ret_mlir}")
+                body_lines.append(f"{self.indent()}func.return {zero} : {ret_mlir}")
+        else:
+            val_ssa, val_ops = self.generate_expression(lam.body)
+            body_lines.extend(val_ops)
+            body_lines.append(f"{self.indent()}func.return {val_ssa} : {ret_mlir}")
+        self.indent_level = old_indent
+        self.symbol_table = saved_table
+        self._ssa_types = saved_ssa
+
+        sig_params = ", ".join(f"%arg_{n}: {t}" for n, t in param_mlir)
+        fn_ty = (
+            f"({', '.join(t for _, t in param_mlir)}) -> {ret_mlir}"
+            if param_mlir
+            else f"() -> {ret_mlir}"
+        )
+        lifted = [
+            f"  func.func private @{name}({sig_params}) -> {ret_mlir} {{",
+            *body_lines,
+            "  }",
+        ]
+        self._pending_lambdas.append("\n".join(lifted))
+
+        const_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops = [f"{self.indent()}{const_ssa} = func.constant @{name} : {fn_ty}"]
+        self._ssa_types[const_ssa] = fn_ty
+        return const_ssa, ops
+
+    def _generate_closure_call(
+        self, func_call: FunctionCall, info: Dict[str, Any]
+    ) -> tuple[str, List[str]]:
+        """func.call_indirect through a func.constant SSA."""
+        ops: List[str] = []
+        arg_ssas: List[str] = []
+        arg_tys: List[str] = []
+        for arg in func_call.arguments:
+            a_ssa, a_ops = self.generate_expression(arg)
+            ops.extend(a_ops)
+            a_ty = self._ssa_types.get(a_ssa) or self.get_expression_type(arg)
+            arg_ssas.append(a_ssa)
+            arg_tys.append(a_ty)
+
+        fn_ty = info.get("fn_mlir_type") or info.get("mlir_type")
+        # Recover return type from fn_ty string "(…) -> R"
+        ret_ty = "i32"
+        if isinstance(fn_ty, str) and "->" in fn_ty:
+            ret_ty = fn_ty.rsplit("->", 1)[-1].strip()
+
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
+        callee = info["ssa_name"]
+        if arg_ssas:
+            args = ", ".join(arg_ssas)
+            ops.append(
+                f"{self.indent()}{result} = func.call_indirect {callee}({args}) : {fn_ty}"
+            )
+        else:
+            ops.append(
+                f"{self.indent()}{result} = func.call_indirect {callee}() : {fn_ty}"
+            )
+        self._ssa_types[result] = ret_ty
+        return result, ops
+
     def generate_struct_literal(self, struct_literal: StructLiteral) -> tuple[str, List[str]]:
         """Generate struct literal with actual memory allocation and field storage"""
         struct_name = struct_literal.struct_name
@@ -3971,6 +4312,12 @@ class MLIRGenerator:
         return alloc_name, ops
     
     def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
+        # Indirect call through a non-capturing lambda / fn-typed local.
+        if func_call.name in self.symbol_table:
+            info = self.symbol_table[func_call.name]
+            if info.get("is_closure") and info.get("fn_mlir_type"):
+                return self._generate_closure_call(func_call, info)
+
         # Handle array<T>(size) constructor specially
         if func_call.name.startswith('array<') and func_call.name.endswith('>'):
             # Extract element type from array<type>
@@ -5140,6 +5487,14 @@ class MLIRGenerator:
         if const.type.name == 'bool':
             mlir_type = 'i1'
 
+        self.symbol_table[const.name] = {
+            "type": "variable",
+            "mlir_type": mlir_type,
+            "flow_type": const.type,
+            "is_module_global": True,
+            "is_const": True,
+        }
+
         # Module-scope globals should not rely on SSA values from local ops.
         if isinstance(const.value, Literal):
             if const.value.type.name == "string":
@@ -5150,15 +5505,53 @@ class MLIRGenerator:
                     self.string_counter += 1
                     self.string_constants[str_val] = global_name
                 return ""
-            literal_value = const.value.value
-            mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({literal_value}) : {mlir_type}")
+            literal_value = self._format_mlir_numeric(str(const.value.value), mlir_type)
+            mlir_code.append(
+                f"{self.indent()}llvm.mlir.global internal constant @{const.name}"
+                f"({literal_value} : {mlir_type}) : {mlir_type}"
+            )
             return "\n".join(mlir_code)
 
         # Fallback: emit zero-initialized constant
-        zero_value = "0"
-        if mlir_type in ["f32", "f64"]:
-            zero_value = "0.0"
-        mlir_code.append(f"{self.indent()}llvm.mlir.global constant @{const.name}({zero_value}) : {mlir_type}")
+        zero_value = "0.0" if mlir_type in ["f32", "f64"] else "0"
+        mlir_code.append(
+            f"{self.indent()}llvm.mlir.global internal constant @{const.name}"
+            f"({zero_value} : {mlir_type}) : {mlir_type}"
+        )
+        return "\n".join(mlir_code)
+
+    def generate_static(self, static: StaticDecl) -> str:
+        """Generate a mutable module-scope llvm.mlir.global for `let mut` at top level."""
+        mlir_code = []
+        mlir_code.append(f"{self.indent()}// Module static: {static.name}")
+
+        mlir_type = self.flow_type_to_mlir(static.type)
+        if getattr(static.type, "name", None) == "bool":
+            mlir_type = "i1"
+
+        # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
+        init_payload = f"() : {mlir_type}"
+        if isinstance(static.value, Literal) and getattr(static.value.type, "name", "") != "string":
+            lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
+            if static.value.type.name == "bool":
+                lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
+            init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
+        elif mlir_type in ("f32", "f64"):
+            init_payload = f"(0.0 : {mlir_type}) : {mlir_type}"
+        elif mlir_type.startswith("i") or mlir_type.startswith("u") or mlir_type == "index":
+            init_payload = f"(0 : {mlir_type}) : {mlir_type}"
+
+        mlir_code.append(
+            f"{self.indent()}llvm.mlir.global internal @{static.name}{init_payload}"
+        )
+
+        self.symbol_table[static.name] = {
+            "type": "variable",
+            "mlir_type": mlir_type,
+            "flow_type": static.type,
+            "is_module_global": True,
+            "is_const": False,
+        }
         return "\n".join(mlir_code)
 
 def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False, emit_gpu: bool = False) -> str:
