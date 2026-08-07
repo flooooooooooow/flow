@@ -1,0 +1,198 @@
+# PLANET TECTONICS: plates and boundary classes on the cubesphere.
+#
+# Runs grid + tectonics only. Colors by plate id with boundary class overlay.
+# Gates: plate count matches request, every cell has a plate, boundary length > 0.
+#
+# KEYS
+#   1 PLATES   2 BOUNDARIES
+#   Esc quit
+#
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_tectonics.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/planet.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SEED: u32 = 42
+const PLATES: i32 = 12
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 256
+const MAX_FRAMES: i32 = 6000
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+
+let mut fb: ptr<u8> = null
+let mut mode: i32 = 0
+let mut m_plates: f64 = 0.0
+let mut m_bnd_km: f64 = 0.0
+let mut m_unplated: f64 = 0.0
+let mut scroll: f32 = 0.0
+
+function plate_color(p: i32) -> i32 {
+    let h: u32 = ((p + 1) as u32) * 2654435761
+    let r: i32 = ((h >> 16) % 180 + 40) as i32
+    let g: i32 = ((h >> 8) % 180 + 40) as i32
+    let b: i32 = (h % 180 + 40) as i32
+    return (r << 16) + (g << 8) + b
+}
+
+function put_px(x: i32, y: i32, r: i32, g: i32, b: i32) -> void {
+    if x < 0 or x >= FB_W or y < 0 or y >= FB_H { return }
+    let o: i32 = (y * FB_W + x) * 3
+    fb[o] = r as u8
+    fb[o + 1] = g as u8
+    fb[o + 2] = b as u8
+}
+
+function draw_map() -> void {
+    let n: i32 = planet_cells()
+    for y in 0 to FB_H {
+        let lat: f32 = 90.0 - 180.0 * ((y as f32) + 0.5) / (FB_H as f32)
+        for x in 0 to FB_W {
+            let mut lon: f32 = -180.0 + 360.0 * ((x as f32) + 0.5) / (FB_W as f32) + scroll
+            if lon > 180.0 { lon = lon - 360.0 }
+            if lon < -180.0 { lon = lon + 360.0 }
+            let i: i32 = planet_cell_at_lonlat(lon, lat)
+            if i < 0 or i >= n {
+                put_px(x, y, 0, 0, 0)
+            } else {
+                let c: i32 = plate_color(planet_plate(i))
+                let mut r: i32 = (c >> 16) & 255
+                let mut g: i32 = (c >> 8) & 255
+                let mut b: i32 = c & 255
+                let bd: i32 = planet_boundary(i)
+                if mode == 1 or bd != 0 {
+                    if bd == 1 {
+                        r = 255
+                        g = 80
+                        b = 60
+                    }
+                    if bd == 2 {
+                        r = 60
+                        g = 220
+                        b = 120
+                    }
+                    if bd == 3 {
+                        r = 240
+                        g = 210
+                        b = 70
+                    }
+                }
+                put_px(x, y, r, g, b)
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PLANET TECTONICS  PLATES + BOUNDARIES", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "PLATES", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_fixed(g, 56, 28, m_plates, 0, 1, 120, 255, 190)
+    let t4: i32 = gfx_draw_text(g, 110, 28, "BND km", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 160, 28, m_bnd_km, 0, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 280, 28, "UNPLATED", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 348, 28, m_unplated, 0, 1, 120, 255, 190)
+    let t8: i32 = gfx_draw_text(g, 8, 42, "1 PLATES  2 BOUNDARIES  red=conv  green=div  yellow=xfm", 1, 112, 108, 132)
+    let t9: i32 = gfx_draw_text(g, 8, 572,
+        "Euler-pole Voronoi plates; boundary class from relative velocity", 1, 122, 118, 144)
+    let ta: i32 = gfx_draw_text(g, 8, 582,
+        "gates: plate count, every cell plated, boundary length > 0", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+    if fb == null {
+        println("  FAIL: framebuffer alloc")
+        return 1
+    }
+
+    println("")
+    println("  PLANET TECTONICS  --  plates and boundary classes")
+    println("  ==================================================")
+    println("")
+
+    if !planet_init() {
+        println("    FAIL: planet_init")
+        return 1
+    }
+    planet_seed(SEED)
+    planet_stage_grid()
+    planet_stage_tectonics(PLATES)
+
+    let np: i32 = planet_plate_count()
+    m_plates = np as f64
+    m_bnd_km = planet_boundary_length_km() as f64
+    let mut unplated: i32 = 0
+    let n: i32 = planet_cells()
+    for i in 0 to n {
+        let p: i32 = planet_plate(i)
+        if p < 0 or p >= np { unplated = unplated + 1 }
+    }
+    m_unplated = unplated as f64
+
+    print("     plate count                   : ")
+    printf("%10.0f", m_plates)
+    print("     want ")
+    printf("%.0f", PLATES as f64)
+    println("")
+    print("     boundary length (km)          : ")
+    printf("%10.1f", m_bnd_km)
+    println("")
+    print("     unplated cells                : ")
+    printf("%10.0f", m_unplated)
+    println("")
+    println("")
+
+    if np != PLATES {
+        println("    FAIL: plate count mismatch")
+        return 2
+    }
+    if unplated != 0 {
+        println("    FAIL: some cells have no plate")
+        return 3
+    }
+    if m_bnd_km <= 0.0 {
+        println("    FAIL: boundary length is zero")
+        return 4
+    }
+    println("    PASS: every cell is plated, plate count matches,")
+    println("          and plate boundaries have positive length")
+    println("")
+
+    draw_map()
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Planet tectonics - Flow")
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if want >= 0 and want != mode {
+            mode = want
+            draw_map()
+        }
+        if frame > 0 and frame % 50 == 0 {
+            mode = (mode + 1) % 2
+        }
+        scroll = scroll + 1.2
+        if scroll >= 360.0 { scroll = scroll - 360.0 }
+        draw_map()
+        gfx_clear(g, 12, 14, 18)
+        gfx_blit_rgb(g, 0, FIELD_Y + 64, FB_W, FB_H, fb)
+        draw_hud(g)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+    return 0
+}

@@ -1,0 +1,305 @@
+# PLANET EVIDENCE: full cubesphere pipeline with measurement gates.
+#
+# Runs planet_generate then checks the claims the module was written for:
+#   solid angle ~ 4 pi
+#   area distortion bound ~ 1.40 at FACE_N = 96
+#   land fraction near the target (0.29)
+#   Hack exponent in [0.45, 0.70] with R^2 > 0.75
+#   rain_shadow_ratio > 1.05 (orographic)
+# Prints per-stage timings. Visual: equirect elev map with biome tint and HUD.
+#
+# FACE_N = 96 (55296 cells). Generate once before the window (~1 s, 24 erode).
+#
+# KEYS
+#   1 ELEV    2 BIOME    3 FLOW
+#   Esc quit
+#
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_evidence.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/planet.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SEED: u32 = 42
+const PLATES: i32 = 12
+const ERODE: i32 = 24
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 256
+const MAX_FRAMES: i32 = 6000
+
+const FOUR_PI: f64 = 12.5663706144
+const DISTORT_MAX: f64 = 1.45
+const LAND_TARGET: f64 = 0.29
+const LAND_TOL: f64 = 0.02
+const HACK_LO: f64 = 0.45
+const HACK_HI: f64 = 0.70
+const R2_MIN: f64 = 0.75
+const RAIN_MIN: f64 = 1.05
+
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+let mut fb: ptr<u8> = null
+let mut mode: i32 = 0
+let mut m_area: f64 = 0.0
+let mut m_distort: f64 = 0.0
+let mut m_land: f64 = 0.0
+let mut m_hack: f64 = 0.0
+let mut m_r2: f64 = 0.0
+let mut m_rain: f64 = 0.0
+let mut m_total_ms: f64 = 0.0
+
+function color_elev(e: f32) -> i32 {
+    # pack r<<16|g<<8|b
+    if e <= 0.0 {
+        let t: f32 = pl_clampf((-e) / 5.0, 0.0, 1.0)
+        let r: i32 = (10.0 + 20.0 * (1.0 - t)) as i32
+        let g: i32 = (30.0 + 60.0 * (1.0 - t)) as i32
+        let b: i32 = (80.0 + 100.0 * (1.0 - t)) as i32
+        return (r << 16) + (g << 8) + b
+    }
+    let t: f32 = pl_clampf(e / 4.5, 0.0, 1.0)
+    let r: i32 = (40.0 + 180.0 * t) as i32
+    let g: i32 = (90.0 + 100.0 * (1.0 - t * 0.5)) as i32
+    let b: i32 = (40.0 + 40.0 * t) as i32
+    if e > 3.0 {
+        let u: f32 = pl_clampf((e - 3.0) / 2.0, 0.0, 1.0)
+        let rr: i32 = (r as f32 * (1.0 - u) + 245.0 * u) as i32
+        let gg: i32 = (g as f32 * (1.0 - u) + 245.0 * u) as i32
+        let bb: i32 = (b as f32 * (1.0 - u) + 250.0 * u) as i32
+        return (rr << 16) + (gg << 8) + bb
+    }
+    return (r << 16) + (g << 8) + b
+}
+
+function put_px(x: i32, y: i32, r: i32, g: i32, b: i32) -> void {
+    if x < 0 or x >= FB_W or y < 0 or y >= FB_H { return }
+    let o: i32 = (y * FB_W + x) * 3
+    fb[o] = r as u8
+    fb[o + 1] = g as u8
+    fb[o + 2] = b as u8
+}
+
+function draw_map() -> void {
+    let n: i32 = planet_cells()
+    for y in 0 to FB_H {
+        let lat: f32 = 90.0 - 180.0 * ((y as f32) + 0.5) / (FB_H as f32)
+        for x in 0 to FB_W {
+            let lon: f32 = -180.0 + 360.0 * ((x as f32) + 0.5) / (FB_W as f32)
+            let i: i32 = planet_cell_at_lonlat(lon, lat)
+            if i < 0 or i >= n {
+                put_px(x, y, 0, 0, 0)
+            } else {
+                if mode == 1 {
+                    let b: i32 = planet_biome(i)
+                    let r: i32 = (planet_biome_r(b) * 255.0) as i32
+                    let g: i32 = (planet_biome_g(b) * 255.0) as i32
+                    let bb: i32 = (planet_biome_b(b) * 255.0) as i32
+                    put_px(x, y, r, g, bb)
+                } else {
+                    if mode == 2 {
+                        let a: f32 = planet_flow_km2(i)
+                        let t: f32 = pl_clampf(a / 200000.0, 0.0, 1.0)
+                        let mut r: i32 = 20
+                        let mut g: i32 = 30
+                        let mut b: i32 = 50
+                        if planet_is_land(i) {
+                            let c: i32 = color_elev(planet_elev(i))
+                            r = (c >> 16) & 255
+                            g = (c >> 8) & 255
+                            b = c & 255
+                            if planet_is_river(i) {
+                                r = (40.0 + 40.0 * t) as i32
+                                g = (120.0 + 80.0 * t) as i32
+                                b = (200.0 + 55.0 * t) as i32
+                            }
+                        } else {
+                            let c: i32 = color_elev(planet_elev(i))
+                            r = (c >> 16) & 255
+                            g = (c >> 8) & 255
+                            b = c & 255
+                        }
+                        put_px(x, y, r, g, b)
+                    } else {
+                        let c: i32 = color_elev(planet_elev(i))
+                        put_px(x, y, (c >> 16) & 255, (c >> 8) & 255, c & 255)
+                    }
+                }
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PLANET EVIDENCE  CUBESPHERE PIPELINE", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "AREA", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_fixed(g, 42, 28, m_area, 3, 1, 120, 255, 190)
+    let t4: i32 = gfx_draw_text(g, 120, 28, "DIST", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 152, 28, m_distort, 3, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 220, 28, "LAND", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 254, 28, m_land, 3, 1, 120, 255, 190)
+    let t8: i32 = gfx_draw_text(g, 320, 28, "HACK", 1, 150, 146, 168)
+    let t9: i32 = gfx_draw_fixed(g, 356, 28, m_hack, 3, 1, 234, 232, 244)
+    let ta: i32 = gfx_draw_text(g, 420, 28, "R2", 1, 150, 146, 168)
+    let tb: i32 = gfx_draw_fixed(g, 440, 28, m_r2, 2, 1, 234, 232, 244)
+    let tc: i32 = gfx_draw_text(g, 8, 42, "RAIN", 1, 150, 146, 168)
+    let td: i32 = gfx_draw_fixed(g, 42, 42, m_rain, 2, 1, 120, 255, 190)
+    let te: i32 = gfx_draw_text(g, 110, 42, "MS", 1, 150, 146, 168)
+    let tf: i32 = gfx_draw_fixed(g, 130, 42, m_total_ms, 0, 1, 234, 232, 244)
+    let tg: i32 = gfx_draw_text(g, 220, 42, "1 ELEV  2 BIOME  3 FLOW", 1, 112, 108, 132)
+    let th: i32 = gfx_draw_text(g, 8, 572,
+        "equirect elev / biome / rivers; FACE_N=96, 24 erosion iters", 1, 122, 118, 144)
+    let ti: i32 = gfx_draw_text(g, 8, 582,
+        "gates: 4pi, distort<1.45, land~0.29, Hack band, rain_shadow>1.05", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+    if fb == null {
+        println("  FAIL: framebuffer alloc")
+        return 1
+    }
+
+    println("")
+    println("  PLANET EVIDENCE  --  cubesphere pipeline measurements")
+    println("  ======================================================")
+    println("")
+
+    if !planet_init() {
+        println("    FAIL: planet_init")
+        return 1
+    }
+    if !planet_generate(SEED, PLATES, ERODE) {
+        println("    FAIL: planet_generate")
+        return 2
+    }
+
+    m_area = planet_total_area() as f64
+    m_distort = (planet_area_max() / planet_area_min()) as f64
+    m_land = planet_land_fraction() as f64
+    m_hack = planet_measure_hack(20000.0) as f64
+    m_r2 = planet_hack_r2() as f64
+    m_rain = planet_rain_shadow_ratio(0.4) as f64
+    m_total_ms = planet_total_ms() as f64
+
+    println("  STAGE TIMINGS (ms)")
+    println("")
+    for s in 1 to 8 {
+        print("     stage ")
+        printf("%.0f", s as f64)
+        print("  ")
+        printf("%8.1f", planet_stage_ms(s) as f64)
+        println("")
+    }
+    print("     total     ")
+    printf("%8.1f", m_total_ms)
+    println("")
+    println("")
+
+    println("  MEASUREMENTS")
+    println("")
+    print("     solid angle (sr)              : ")
+    printf("%10.6f", m_area)
+    print("     target ")
+    printf("%.4f", FOUR_PI)
+    println("")
+    print("     area distortion (max/min)     : ")
+    printf("%10.4f", m_distort)
+    print("     gate < ")
+    printf("%.2f", DISTORT_MAX)
+    println("")
+    print("     land fraction                 : ")
+    printf("%10.4f", m_land)
+    print("     target ")
+    printf("%.2f", LAND_TARGET)
+    println("")
+    print("     Hack exponent h               : ")
+    printf("%10.4f", m_hack)
+    print("     gate [")
+    printf("%.2f", HACK_LO)
+    print(", ")
+    printf("%.2f", HACK_HI)
+    println("]")
+    print("     Hack R^2                      : ")
+    printf("%10.4f", m_r2)
+    print("     gate > ")
+    printf("%.2f", R2_MIN)
+    println("")
+    print("     rain_shadow_ratio             : ")
+    printf("%10.4f", m_rain)
+    print("     gate > ")
+    printf("%.2f", RAIN_MIN)
+    println("")
+    println("")
+
+    if fabs(m_area - FOUR_PI) > 0.01 {
+        println("    FAIL: solid angle is not near 4 pi")
+        return 3
+    }
+    if m_distort > DISTORT_MAX or m_distort < 1.0 {
+        println("    FAIL: area distortion outside the equiangular bound")
+        return 4
+    }
+    if fabs(m_land - LAND_TARGET) > LAND_TOL {
+        println("    FAIL: land fraction off target")
+        return 5
+    }
+    if m_hack < HACK_LO or m_hack > HACK_HI {
+        println("    FAIL: Hack exponent outside the published band")
+        return 6
+    }
+    if m_r2 < R2_MIN {
+        println("    FAIL: Hack fit R^2 too low")
+        return 7
+    }
+    if m_rain <= RAIN_MIN {
+        println("    FAIL: rain shadow ratio does not show orographic forcing")
+        return 8
+    }
+    println("    PASS: solid angle, distortion, land fraction, Hack's law,")
+    println("          and orographic rain shadow all within gates")
+    println("")
+
+    draw_map()
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Planet evidence - Flow")
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if gfx_key_down(g, KEY_3) { want = 2 }
+        if want >= 0 and want != mode {
+            mode = want
+            draw_map()
+        }
+
+        # Auto-cycle modes for the recorded GIF.
+        if frame > 0 and frame % 40 == 0 {
+            mode = (mode + 1) % 3
+            draw_map()
+        }
+
+        gfx_clear(g, 12, 14, 18)
+        gfx_blit_rgb(g, 0, FIELD_Y + 64, FB_W, FB_H, fb)
+        draw_hud(g)
+        gfx_present(g)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

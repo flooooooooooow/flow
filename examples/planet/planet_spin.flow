@@ -1,0 +1,229 @@
+# PLANET SPIN: shaded rotating globe of the final cubesphere planet.
+#
+# Gates that regenerate(seed) is bit-identical on an elevation checksum.
+# Draws a Lambert-shaded sphere by ray lookup through planet_cell_at_dir.
+#
+# KEYS
+#   1 ELEV   2 BIOME
+#   Esc quit
+#
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_spin.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+import "stdlib/planet.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+const SEED: u32 = 42
+const PLATES: i32 = 12
+const ERODE: i32 = 24
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FIELD_Y: i32 = 58
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const MAX_FRAMES: i32 = 6000
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const PI: f32 = 3.14159265
+
+let mut fb: ptr<u8> = null
+let mut mode: i32 = 1
+let mut angle: f32 = 0.0
+let mut m_c1: f64 = 0.0
+let mut m_c2: f64 = 0.0
+let mut m_land: f64 = 0.0
+
+function elev_checksum() -> u32 {
+    let mut h: u32 = 2166136261
+    let n: i32 = planet_cells()
+    for i in 0 to n {
+        let q: i32 = ((planet_elev(i) * 1000.0) as i32)
+        h = (h ^ (q as u32)) * 16777619
+    }
+    return h
+}
+
+function color_elev(e: f32) -> i32 {
+    if e <= 0.0 {
+        let t: f32 = pl_clampf((-e) / 5.0, 0.0, 1.0)
+        let r: i32 = (8.0 + 18.0 * (1.0 - t)) as i32
+        let g: i32 = (28.0 + 55.0 * (1.0 - t)) as i32
+        let b: i32 = (70.0 + 110.0 * (1.0 - t)) as i32
+        return (r << 16) + (g << 8) + b
+    }
+    let t: f32 = pl_clampf(e / 4.5, 0.0, 1.0)
+    let r: i32 = (45.0 + 170.0 * t) as i32
+    let g: i32 = (95.0 + 90.0 * (1.0 - t * 0.5)) as i32
+    let b: i32 = (40.0 + 35.0 * t) as i32
+    if e > 3.0 {
+        let u: f32 = pl_clampf((e - 3.0) / 2.0, 0.0, 1.0)
+        let rr: i32 = (r as f32 * (1.0 - u) + 245.0 * u) as i32
+        let gg: i32 = (g as f32 * (1.0 - u) + 245.0 * u) as i32
+        let bb: i32 = (b as f32 * (1.0 - u) + 250.0 * u) as i32
+        return (rr << 16) + (gg << 8) + bb
+    }
+    return (r << 16) + (g << 8) + b
+}
+
+function put_px(x: i32, y: i32, r: i32, g: i32, b: i32) -> void {
+    if x < 0 or x >= FB_W or y < 0 or y >= FB_H { return }
+    let o: i32 = (y * FB_W + x) * 3
+    fb[o] = r as u8
+    fb[o + 1] = g as u8
+    fb[o + 2] = b as u8
+}
+
+function draw_globe() -> void {
+    let cx: f32 = (FB_W as f32) * 0.5
+    let cy: f32 = (FB_H as f32) * 0.5
+    let rad: f32 = 230.0
+    let ca: f32 = cosf(angle)
+    let sa: f32 = sinf(angle)
+    # light from upper-left in view space
+    let lx: f32 = -0.45
+    let ly: f32 = 0.55
+    let lz: f32 = 0.70
+    let ncells: i32 = planet_cells()
+
+    for y in 0 to FB_H {
+        for x in 0 to FB_W {
+            let nx: f32 = ((x as f32) + 0.5 - cx) / rad
+            let ny: f32 = -(((y as f32) + 0.5 - cy) / rad)
+            let rr: f32 = nx * nx + ny * ny
+            if rr > 1.0 {
+                put_px(x, y, 10, 12, 16)
+            } else {
+                let nz: f32 = sqrtf(1.0 - rr)
+                # rotate around Y
+                let wx: f32 = nx * ca + nz * sa
+                let wy: f32 = ny
+                let wz: f32 = -nx * sa + nz * ca
+                let i: i32 = planet_cell_at_dir(wx, wy, wz)
+                let mut r: i32 = 0
+                let mut g: i32 = 0
+                let mut b: i32 = 0
+                if i < 0 or i >= ncells {
+                    r = 0
+                    g = 0
+                    b = 0
+                } else {
+                    if mode == 0 {
+                        let c: i32 = color_elev(planet_elev(i))
+                        r = (c >> 16) & 255
+                        g = (c >> 8) & 255
+                        b = c & 255
+                    } else {
+                        let bm: i32 = planet_biome(i)
+                        r = (planet_biome_r(bm) * 255.0) as i32
+                        g = (planet_biome_g(bm) * 255.0) as i32
+                        b = (planet_biome_b(bm) * 255.0) as i32
+                    }
+                }
+                let ndot: f32 = pl_maxf(0.0, nx * lx + ny * ly + nz * lz)
+                let shade: f32 = 0.22 + 0.78 * ndot
+                r = pl_clampf((r as f32) * shade, 0.0, 255.0) as i32
+                g = pl_clampf((g as f32) * shade, 0.0, 255.0) as i32
+                b = pl_clampf((b as f32) * shade, 0.0, 255.0) as i32
+                put_px(x, y, r, g, b)
+            }
+        }
+    }
+}
+
+function draw_hud(g: Gfx) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "PLANET SPIN  SHADED CUBESPHERE GLOBE", 2,
+                                238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 8, 28, "CHK1", 1, 150, 146, 168)
+    let t3: i32 = gfx_draw_fixed(g, 42, 28, m_c1, 0, 1, 120, 255, 190)
+    let t4: i32 = gfx_draw_text(g, 160, 28, "CHK2", 1, 150, 146, 168)
+    let t5: i32 = gfx_draw_fixed(g, 194, 28, m_c2, 0, 1, 120, 255, 190)
+    let t6: i32 = gfx_draw_text(g, 320, 28, "LAND", 1, 150, 146, 168)
+    let t7: i32 = gfx_draw_fixed(g, 354, 28, m_land, 3, 1, 234, 232, 244)
+    let t8: i32 = gfx_draw_text(g, 8, 42, "1 ELEV  2 BIOME   regenerate(seed) elev checksum gated", 1, 112, 108, 132)
+    let t9: i32 = gfx_draw_text(g, 8, 572,
+        "Lambert shade on ray-sphere lookup through planet_cell_at_dir", 1, 122, 118, 144)
+    let ta: i32 = gfx_draw_text(g, 8, 582,
+        "gate: two planet_generate calls with the same seed match bit-identical elev", 1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    fb = calloc((FB_W * FB_H * 3) as i64, 1 as i64)
+    if fb == null {
+        println("  FAIL: framebuffer alloc")
+        return 1
+    }
+
+    println("")
+    println("  PLANET SPIN  --  determinism + shaded globe")
+    println("  ============================================")
+    println("")
+
+    if !planet_init() {
+        println("    FAIL: planet_init")
+        return 1
+    }
+    if !planet_generate(SEED, PLATES, ERODE) {
+        println("    FAIL: planet_generate (1)")
+        return 2
+    }
+    let c1: u32 = elev_checksum()
+    m_c1 = c1 as f64
+    m_land = planet_land_fraction() as f64
+
+    if !planet_generate(SEED, PLATES, ERODE) {
+        println("    FAIL: planet_generate (2)")
+        return 3
+    }
+    let c2: u32 = elev_checksum()
+    m_c2 = c2 as f64
+
+    print("     elev checksum pass 1          : ")
+    printf("%12.0f", m_c1)
+    println("")
+    print("     elev checksum pass 2          : ")
+    printf("%12.0f", m_c2)
+    println("")
+    print("     land fraction                 : ")
+    printf("%10.4f", m_land)
+    println("")
+    println("")
+
+    if c1 != c2 {
+        println("    FAIL: regenerate(seed) is not bit-identical on elev")
+        return 4
+    }
+    println("    PASS: same seed reproduces an identical elevation checksum")
+    println("")
+
+    draw_globe()
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Planet spin - Flow")
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+        let mut want: i32 = -1
+        if gfx_key_down(g, KEY_1) { want = 0 }
+        if gfx_key_down(g, KEY_2) { want = 1 }
+        if want >= 0 { mode = want }
+
+        angle = angle + 0.035
+        if angle > 2.0 * PI { angle = angle - 2.0 * PI }
+        draw_globe()
+
+        gfx_clear(g, 8, 10, 14)
+        gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+        draw_hud(g)
+        gfx_present(g)
+        frame = frame + 1
+    }
+    gfx_close(g)
+    return 0
+}
