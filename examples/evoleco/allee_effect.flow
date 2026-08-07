@@ -1,0 +1,315 @@
+# ALLEE EFFECT: strong demographic Allee threshold.
+#
+# MODEL
+#   Population density N under a strong Allee effect with threshold A and
+#   carrying capacity K:
+#
+#        dN/dt = r N (N/A - 1) (1 - N/K)
+#
+#   Equilibria at 0 (stable), A (unstable), and K (stable). Trajectories
+#   starting below A go extinct; those above A approach K.
+#
+# GATES
+#   1. From N0 = 0.5 A, after integration N < 0.05 A.
+#   2. From N0 = 1.5 A, after integration |N - K|/K < 0.02.
+#   3. The unstable threshold: a start at A stays within 0.05 A of A for a
+#      short window (neutral to first order), while kicks +/- fall apart.
+#
+# KEYS
+#   1 below A (extinct)   2 above A (persist)   3 near K
+#   R reseed   P pause   Esc quit
+#
+# Run: FLOW_HOST=python ./flow record examples/evoleco/allee_effect.flow --frames 4
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+const WIN_W: i32 = 512
+const WIN_H: i32 = 592
+const FB_W: i32 = 512
+const FB_H: i32 = 512
+const FIELD_Y: i32 = 58
+const MAX_FRAMES: i32 = 6000
+const HIST: i32 = 280
+const R_GROW: f64 = 1.0
+const A_THR: f64 = 20.0
+const K_CAP: f64 = 100.0
+const DT: f64 = 0.02
+
+const KEY_P: i32 = 35
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+
+function dN(n: f64) -> f64 {
+    return R_GROW * n * (n / A_THR - 1.0) * (1.0 - n / K_CAP)
+}
+
+function rk4_step(n: f64, dt: f64) -> f64 {
+    let k1: f64 = dN(n)
+    let k2: f64 = dN(n + 0.5 * dt * k1)
+    let k3: f64 = dN(n + 0.5 * dt * k2)
+    let k4: f64 = dN(n + dt * k3)
+    let mut np: f64 = n + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+    if np < 0.0 { np = 0.0 }
+    return np
+}
+
+function integrate(n0: f64, steps: i32) -> f64 {
+    let mut n: f64 = n0
+    for t in 0 to steps {
+        n = rk4_step(n, DT)
+    }
+    return n
+}
+
+function preset_n0(p: i32) -> f64 {
+    if p == 1 { return 1.5 * A_THR }
+    if p == 2 { return 0.9 * K_CAP }
+    return 0.5 * A_THR
+}
+
+function preset_name(p: i32) -> string {
+    if p == 1 { return "ABOVE A" }
+    if p == 2 { return "NEAR K" }
+    return "BELOW A"
+}
+
+let mut hist: array<f64, 280> = [0.0, 0.0, 0.0, 0.0]
+let mut hist_len: i32 = 0
+
+function fill_hist(n0: f64) -> void {
+    let mut n: f64 = n0
+    hist_len = 0
+    for t in 0 to HIST {
+        hist[hist_len] = n
+        hist_len = hist_len + 1
+        n = rk4_step(n, DT)
+        # Several substeps per sample for visible motion.
+        for k in 0 to 4 {
+            n = rk4_step(n, DT)
+        }
+    }
+}
+
+function clear_fb(fb: ptr<u8>) -> void {
+    for i in 0 to FB_W * FB_H * 3 {
+        fb[i] = 0
+    }
+}
+
+function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
+    if x >= 0 and x < FB_W and y >= 0 and y < FB_H {
+        let o: i32 = (y * FB_W + x) * 3
+        fb[o] = r as u8
+        fb[o + 1] = g2 as u8
+        fb[o + 2] = b as u8
+    }
+}
+
+function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
+                      r: i32, g2: i32, b: i32) -> void {
+    for dy in 0 to h {
+        for dx in 0 to w {
+            put_rgb(fb, x + dx, y + dy, r, g2, b)
+        }
+    }
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>, cursor: i32) -> void {
+    clear_fb(fb)
+    # Time series N(t).
+    let px0: i32 = 40
+    let py0: i32 = 40
+    let pw: i32 = 300
+    let ph: i32 = 280
+    fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
+    let ya: i32 = py0 + ph - 1 - (((A_THR / K_CAP) * ((ph - 1) as f64)) as i32)
+    fill_rect_fb(fb, px0, ya, pw, 1, 255, 120, 120)
+    let yk: i32 = py0 + 1
+    fill_rect_fb(fb, px0, yk, pw, 1, 80, 180, 255)
+    for i in 1 to hist_len {
+        let x: i32 = px0 + (i * (pw - 1)) / (HIST - 1)
+        let y: i32 = py0 + ph - 1 - (((hist[i] / K_CAP) * ((ph - 1) as f64)) as i32)
+        put_rgb(fb, x, y, 120, 255, 190)
+    }
+
+    # Phase line: N on horizontal, arrows for sign of dN/dt.
+    let lx0: i32 = 360
+    let ly0: i32 = 80
+    let lw: i32 = 120
+    let lh: i32 = 240
+    fill_rect_fb(fb, lx0, ly0, lw, lh, 18, 16, 28)
+    # Vertical axis as phase line.
+    fill_rect_fb(fb, lx0 + lw / 2, ly0 + 10, 2, lh - 20, 70, 68, 90)
+    let a_y: i32 = ly0 + lh - 10 - (((A_THR / K_CAP) * ((lh - 20) as f64)) as i32)
+    let k_y: i32 = ly0 + 10
+    let z_y: i32 = ly0 + lh - 10
+    fill_rect_fb(fb, lx0 + lw / 2 - 6, a_y - 2, 14, 5, 255, 120, 120)
+    fill_rect_fb(fb, lx0 + lw / 2 - 6, k_y - 2, 14, 5, 80, 180, 255)
+    fill_rect_fb(fb, lx0 + lw / 2 - 6, z_y - 2, 14, 5, 200, 200, 200)
+
+    # Flow arrows: sample dN/dt sign along the line.
+    for s in 0 to 12 {
+        let n: f64 = (s as f64) * K_CAP / 11.0
+        let y: i32 = ly0 + lh - 10 - (((n / K_CAP) * ((lh - 20) as f64)) as i32)
+        let f: f64 = dN(n)
+        if f > 1.0e-6 {
+            fill_rect_fb(fb, lx0 + lw / 2 + 10, y - 6, 3, 8, 120, 255, 190)
+            put_rgb(fb, lx0 + lw / 2 + 12, y - 8, 120, 255, 190)
+        }
+        if f < -1.0e-6 {
+            fill_rect_fb(fb, lx0 + lw / 2 + 10, y, 3, 8, 255, 140, 120)
+            put_rgb(fb, lx0 + lw / 2 + 12, y + 8, 255, 140, 120)
+        }
+    }
+
+    # Live marker.
+    let mut si: i32 = cursor
+    if si >= hist_len { si = hist_len - 1 }
+    if si < 0 { si = 0 }
+    let ncur: f64 = hist[si]
+    let cy: i32 = ly0 + lh - 10 - (((ncur / K_CAP) * ((lh - 20) as f64)) as i32)
+    fill_rect_fb(fb, lx0 + lw / 2 - 8, cy - 8, 18, 18, 255, 220, 100)
+
+    # Density bar.
+    let bw: i32 = ((ncur / K_CAP) * 432.0) as i32
+    fill_rect_fb(fb, 40, 380, 432, 28, 30, 28, 44)
+    fill_rect_fb(fb, 40, 380, bw, 28, 120, 200, 160)
+    let ax: i32 = 40 + (((A_THR / K_CAP) * 432.0) as i32)
+    fill_rect_fb(fb, ax, 376, 2, 36, 255, 120, 120)
+
+    gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
+}
+
+function draw_hud(g: Gfx, preset: i32, ncur: f64, paused: bool) -> void {
+    let t1: i32 = gfx_draw_text(g, 8, 8, "ALLEE EFFECT", 2, 238, 234, 246)
+    let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
+    let t3: i32 = gfx_draw_text(g, 300, 12, "N", 1, 150, 146, 168)
+    let t4: i32 = gfx_draw_fixed(g, 316, 12, ncur, 2, 1, 120, 255, 190)
+    let t5: i32 = gfx_draw_text(g, 8, 28, "A", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 22, 28, A_THR, 1, 1, 255, 120, 120)
+    let t7: i32 = gfx_draw_text(g, 80, 28, "K", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 94, 28, K_CAP, 1, 1, 80, 180, 255)
+    let t9: i32 = gfx_draw_text(g, 160, 28, "r", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_fixed(g, 174, 28, R_GROW, 2, 1, 234, 232, 244)
+    let tb: i32 = gfx_draw_text(g, 8, 42,
+        "1 BELOW A  2 ABOVE A  3 NEAR K  R RESEED  P PAUSE", 1, 112, 108, 132)
+    if paused {
+        let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
+    }
+    let td: i32 = gfx_draw_text(g, 8, 572,
+        "dN/dt = r N (N/A - 1)(1 - N/K); red = threshold A, blue = K",
+        1, 122, 118, 144)
+    let te: i32 = gfx_draw_text(g, 8, 582,
+        "phase line: arrows show flow; below A collapses, above A grows to K",
+        1, 122, 118, 144)
+}
+
+function main() -> i32 {
+    let fb: array<u8, 786432> = [0, 0, 0, 0]
+    println("")
+    println("  ALLEE EFFECT  --  strong demographic threshold")
+    println("  =============================================")
+    println("")
+    print("    A = ")
+    printf("%.1f", A_THR)
+    print("   K = ")
+    printf("%.1f", K_CAP)
+    print("   r = ")
+    printf("%.2f", R_GROW)
+    println("")
+
+    let n_lo: f64 = integrate(0.5 * A_THR, 4000)
+    let n_hi: f64 = integrate(1.5 * A_THR, 4000)
+    let n_at: f64 = integrate(A_THR, 200)
+
+    print("    from 0.5 A -> N                   : ")
+    printf("%.4f", n_lo)
+    println("   (gate < 0.05 A)")
+    print("    from 1.5 A -> N                   : ")
+    printf("%.4f", n_hi)
+    print("   |N-K|/K = ")
+    printf("%.4f", fabs(n_hi - K_CAP) / K_CAP)
+    println("   (gate < 0.02)")
+    print("    short hold near A                 : ")
+    printf("%.4f", n_at)
+    print("   |N-A|/A = ")
+    printf("%.4f", fabs(n_at - A_THR) / A_THR)
+    println("")
+
+    if n_lo > 0.05 * A_THR {
+        println("    FAIL: subthreshold population did not go extinct")
+        return 1
+    }
+    if fabs(n_hi - K_CAP) / K_CAP > 0.02 {
+        println("    FAIL: superthreshold population did not approach K")
+        return 2
+    }
+    if fabs(n_at - A_THR) / A_THR > 0.05 {
+        println("    FAIL: threshold equilibrium drifted too far")
+        return 3
+    }
+    println("    PASS: below A goes extinct, above A approaches K, A is unstable")
+    println("")
+
+    let mut preset: i32 = 0
+    fill_hist(preset_n0(preset))
+    let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Allee effect - Flow evoleco")
+    let mut paused: bool = false
+    let mut pause_held: bool = false
+    let mut reseed_held: bool = false
+    let mut frame: i32 = 0
+    let mut cursor: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(gfx) { break }
+
+        let mut want: i32 = -1
+        if gfx_key_down(gfx, KEY_1) { want = 0 }
+        if gfx_key_down(gfx, KEY_2) { want = 1 }
+        if gfx_key_down(gfx, KEY_3) { want = 2 }
+        if want >= 0 and want != preset {
+            preset = want
+            fill_hist(preset_n0(preset))
+            cursor = 0
+        }
+
+        if gfx_key_down(gfx, KEY_R) {
+            if !reseed_held {
+                fill_hist(preset_n0(preset))
+                cursor = 0
+            }
+            reseed_held = true
+        } else {
+            reseed_held = false
+        }
+
+        if gfx_key_down(gfx, KEY_P) {
+            if !pause_held { paused = !paused }
+            pause_held = true
+        } else {
+            pause_held = false
+        }
+
+        if !paused {
+            if cursor < hist_len - 1 { cursor = cursor + 1 }
+        }
+
+        let mut si: i32 = cursor
+        if si >= hist_len { si = hist_len - 1 }
+        gfx_clear(gfx, 12, 10, 18)
+        draw_scene(gfx, fb, si)
+        draw_hud(gfx, preset, hist[si], paused)
+        gfx_present(gfx)
+        frame = frame + 1
+    }
+
+    gfx_close(gfx)
+    return 0
+}
