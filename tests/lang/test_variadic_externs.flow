@@ -1,0 +1,29 @@
+# Flow-native language test: variadic extern declarations.
+#
+# `extern { function f(a: T, ...) -> R }` must parse the ellipsis, keep the
+# `is_variadic` flag through monomorphization, and emit `...` in both the C
+# and MLIR signatures. Before this was fixed, the flag was dropped during
+# monomorphise reconstruction (a positional FunctionDecl rebuild skipped the
+# new field), so `snprintf` compiled as a fixed-arity prototype and real
+# vararg calls were mis-declared.
+#
+# Runtime check: `snprintf(buf, 64, "x=%d sum=%d", 3, 40)` must write exactly
+# 10 bytes ("x=3 sum=40"); the write count depends on the varargs surviving
+# to libc. Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>)
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<u8> = malloc(64)
+    let wrote: i32 = snprintf(buf, 64, "x=%d sum=%d", 3, 40)
+    if wrote != 10 {
+        free(buf)
+        return 1
+    }
+    free(buf)
+    return 0
+}
