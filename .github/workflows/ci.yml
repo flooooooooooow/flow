@@ -459,6 +459,8 @@ jobs:
       - windows-gfx-stub
     if: always()
     steps:
+      - uses: actions/checkout@v7
+
       - name: Require passing jobs
         run: |
           fail=0
@@ -517,10 +519,7 @@ jobs:
           exit $fail
 
       - name: Post CI status to Discord #ci-releases
-        if: always() && env.DISCORD_CI_WEBHOOK != ''
-        env:
-          DISCORD_CI_WEBHOOK: ${{ secrets.DISCORD_CI_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        if: always()
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
