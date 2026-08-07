@@ -1,10 +1,10 @@
 # examples/evoleco: evolutionary biology, running live
 
-Twenty-five graphics programs about how populations change. Each one starts from
-a known initial state (allele frequencies, a mixed strategy field, an epidemic
-seed) and ends somewhere the theory predicts, with a measured quantity gated
-against a closed form or a published number. They are regression tests that
-happen to draw pictures — the same evidence standard as
+Twenty-five graphics programs about how populations change. Each one starts
+from a known initial state (allele frequencies, a mixed strategy field, an
+epidemic seed) and ends somewhere the theory predicts, with a measured
+quantity gated against a closed form or a published number. They are
+regression tests that happen to draw pictures — the same evidence standard as
 [`morphogenesis/`](../morphogenesis/README.md) and [`neuro/`](../neuro/README.md).
 
 This is the biology half of Flow's founding claim in [VISION.md](../../VISION.md):
@@ -50,16 +50,16 @@ Recorded clips live in the
 
 | Example | Model | What it proves |
 |---|---|---|
-| [`mullers_ratchet.flow`](mullers_ratchet.flow) | Muller ratchet | Mean load U/s; click count vs Haigh-scale rate |
-| [`clonal_interference.flow`](clonal_interference.flow) | Competing beneficials | Fixation ~(2/s) ln N; weaker clone suppressed |
-| [`hitchhiking.flow`](hitchhiking.flow) | Selective sweep | Diversity trough at selected locus; flanks recover with rho |
-| [`breeders_equation.flow`](breeders_equation.flow) | Quantitative genetics | R = h^2 S; realised heritability recovers h^2 |
-| [`allee_effect.flow`](allee_effect.flow) | Strong Allee | Extinct below A; approach K above |
-| [`hamilton_rule.flow`](hamilton_rule.flow) | Spatial kin selection | Cooperation when rB > C; well-mixed extinguishes C |
-| [`red_queen.flow`](red_queen.flow) | Matching alleles | Host-parasite oscillations; parasites chase hosts |
-| [`metapopulation.flow`](metapopulation.flow) | Levins patches | Occupancy p* = 1 - e/c |
-| [`competitive_lv.flow`](competitive_lv.flow) | Competitive LV | Coexistence vs R* exclusion by mutual invasibility |
-| [`runaway_selection.flow`](runaway_selection.flow) | Lande-Kirkpatrick | Weak coupling equilibrates; strong Fisherian runaway |
+| [`mullers_ratchet.flow`](mullers_ratchet.flow) | Asexual deleterious load | Deterministic mean load U/s; Haigh-scale click rate |
+| [`clonal_interference.flow`](clonal_interference.flow) | Competing beneficial clones | Fixation time ~ (2/s) ln N; weaker clone suppressed |
+| [`hitchhiking.flow`](hitchhiking.flow) | Selective sweep | Diversity trough at the selected locus; flanks recover with rho |
+| [`breeders_equation.flow`](breeders_equation.flow) | Quantitative genetics | Aggregate response R = h^2 S; realised h2 recovers h2 |
+| [`allee_effect.flow`](allee_effect.flow) | Strong Allee threshold | Below A extinct, above A approaches K |
+| [`hamilton_rule.flow`](hamilton_rule.flow) | Spatial kin selection | Well-mixed kills C; space sustains C when rB > C |
+| [`red_queen.flow`](red_queen.flow) | Matching-alleles coevolution | Oscillations about 1/2; parasite tracks host |
+| [`metapopulation.flow`](metapopulation.flow) | Levins occupancy | ODE and lattice match p* = 1 - e/c |
+| [`competitive_lv.flow`](competitive_lv.flow) | Two-species competition | Coexistence eq vs competitive exclusion |
+| [`runaway_selection.flow`](runaway_selection.flow) | Fisherian sexual selection | Strong preference escalates (z,y); weak a returns |
 
 ## Running them
 
