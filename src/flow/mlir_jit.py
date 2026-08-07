@@ -202,26 +202,90 @@ class MLIRJIT:
             flags = ["-shared", "-fPIC", *flags]
         return flags
 
+    @staticmethod
+    def _repo_root() -> Path:
+        # src/flow/mlir_jit.py → repo root
+        return Path(__file__).resolve().parents[2]
+
+    @classmethod
+    def flow_runtime_link_args(cls) -> tuple:
+        """Return (sources, ldflags) for core Flow runtime (JIT / optional links)."""
+        import platform
+
+        root = cls._repo_root()
+        runtime = root / "runtime"
+        sources: List[str] = [
+            str(runtime / "flow_rt_support.c"),
+            str(runtime / "flow_rt_sysinfo.c"),
+            str(runtime / "flow_concurrency.c"),
+            str(runtime / "flow_fiber.c"),
+            str(runtime / "flow_fctx_init.c"),
+            str(runtime / "flow_cont.c"),
+            str(runtime / "flow_tls.c"),
+            str(runtime / "flow_rt_task_store.c"),
+            str(runtime / "flow_rt_fiber_async.c"),
+            str(runtime / "flow_rt_parallel.c"),
+            str(runtime / "flow_rt_cchan.c"),
+        ]
+        machine = platform.machine().lower()
+        if machine in ("arm64", "aarch64"):
+            sources.append(str(runtime / "flow_fctx_arm64.S"))
+        elif machine in ("x86_64", "amd64"):
+            sources.append(str(runtime / "flow_fctx_x86_64.S"))
+
+        ldflags: List[str] = ["-pthread", f"-I{runtime}"]
+        if sys.platform == "darwin":
+            metal = runtime / "gpu_metal.m"
+            if metal.exists():
+                sources.append(str(metal))
+                ldflags.extend(["-framework", "Metal", "-framework", "Foundation"])
+        sources = [s for s in sources if Path(s).exists()]
+        return sources, ldflags
+
+    @staticmethod
+    def _should_link_runtime(explicit: Optional[bool]) -> bool:
+        if explicit is not None:
+            return explicit
+        env = os.environ.get("FLOW_JIT_LINK_RUNTIME", "0")
+        return env.lower() not in ("0", "false", "no", "off", "")
+
     def compile_llvm_to_executable(
         self,
         llvm_ir: str,
         module_name: str = "jit_module",
         *,
         asan: bool = False,
+        extra_sources: Optional[List[str]] = None,
+        extra_ldflags: Optional[List[str]] = None,
+        link_runtime: Optional[bool] = None,
     ) -> Optional[Path]:
-        """Compile LLVM IR to a standalone executable."""
+        """Compile LLVM IR to a standalone executable.
+
+        When link_runtime is True (or FLOW_JIT_LINK_RUNTIME=1), also link the
+        core Flow C runtime so extern symbols resolve like ./flow mlir-run.
+        """
         module_name = self._unique_module_name(module_name)
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
         exe_file = Path(self.temp_dir) / module_name
         llvm_file.write_text(llvm_ir)
+
+        sources: List[str] = list(extra_sources or [])
+        ldflags: List[str] = list(extra_ldflags or [])
+        if self._should_link_runtime(link_runtime):
+            rt_sources, rt_ldflags = self.flow_runtime_link_args()
+            sources.extend(rt_sources)
+            ldflags.extend(rt_ldflags)
+
         try:
             result = subprocess.run(
                 [
                     "clang",
                     *self._clang_jit_flags(shared=False, asan=asan),
                     str(llvm_file),
+                    *sources,
                     "-o",
                     str(exe_file),
+                    *ldflags,
                     "-lm",
                 ],
                 capture_output=True,
@@ -323,7 +387,9 @@ class MLIRJIT:
             return None
 
     def jit_compile_and_run(self, mlir_code: str, func_name: str = "main",
-                           args: List[Any] = None) -> Optional[Any]:
+                           args: List[Any] = None,
+                           *,
+                           link_runtime: Optional[bool] = None) -> Optional[Any]:
         """Full JIT pipeline: MLIR -> LLVM -> native executable -> subprocess execute.
 
         Native code never runs in the Python process (segfaults cannot be caught
@@ -347,7 +413,9 @@ class MLIRJIT:
 
             last_code: Optional[int] = None
             for idx, (label, asan) in enumerate(attempts):
-                exe = self.compile_llvm_to_executable(llvm_ir, asan=asan)
+                exe = self.compile_llvm_to_executable(
+                    llvm_ir, asan=asan, link_runtime=link_runtime
+                )
                 if exe is None:
                     continue
                 code = self._run_native_executable(exe)

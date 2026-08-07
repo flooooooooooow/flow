@@ -650,7 +650,11 @@ class CGenerator:
                            'getenv', 'putenv',
                            # FILE* APIs — use <stdio.h> decls; Flow extern types are approximate
                            'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'fgets', 'fputs',
-                           'fputc', 'fgetc'}
+                           'fputc', 'fgetc',
+                           # POSIX / libc — approximate Flow types clash with real headers
+                           'remove', 'rename', 'unlink', 'mkdir', 'rmdir', 'chdir', 'getcwd',
+                           'usleep', 'sleep', 'gettimeofday', 'time', 'system',
+                           'kill', 'getuid', 'getgid', 'geteuid', 'getegid', 'gethostname'}
         primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers

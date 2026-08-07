@@ -69,6 +69,31 @@ flow_host_mode() {
     esac
 }
 
+# CPU backend selection (dual C / MLIR). Default remains C.
+#   FLOW_CPU_BACKEND=c|mlir
+#   ./flow run --backend=mlir <prog>
+flow_cpu_backend() {
+    local mode="${FLOW_CPU_BACKEND:-c}"
+    case "$mode" in
+        c|mlir) printf '%s\n' "$mode" ;;
+        *)
+            print_error "Unknown FLOW_CPU_BACKEND='$mode' (expected c|mlir)"
+            exit 1
+            ;;
+    esac
+}
+
+# GPU memory objects + frameworks for native links (C and MLIR paths).
+# Sets FLOW_GPU_SOURCES and FLOW_GPU_LDFLAGS (bash arrays).
+flow_gpu_link_flags() {
+    FLOW_GPU_SOURCES=()
+    FLOW_GPU_LDFLAGS=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        FLOW_GPU_SOURCES+=("$SCRIPT_DIR/runtime/gpu_metal.m")
+        FLOW_GPU_LDFLAGS+=("-framework" "Metal" "-framework" "Foundation")
+    fi
+}
+
 flow_resolve_flowc() {
     local driver=""
     if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
@@ -150,9 +175,10 @@ show_help() {
     echo "Usage: flow [OPTIONS] <program.flow>"
     echo ""
     echo "Options:"
-    echo "  run <program>     Compile and run program"
-    echo "  compile <program>  Compile program only"
-echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
+    echo "  run <program> [--backend=c|mlir]     Compile and run program"
+    echo "  compile <program> [--backend=c|mlir] Compile program only"
+    echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
+    echo "  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)"
     echo "  audio <program> [--mlir]   Compile and run with audio backend"
     echo "  compile-audio <program> [--mlir]  Compile with audio backend"
     echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
@@ -224,9 +250,12 @@ echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "Environment:"
     echo "  FLOW_STRICT_EFFECTS=1  Abort on unhandled effect ops (C backend)"
     echo "                         Also enables compile-time effect-row checks with --strict-effects"
+    echo "  FLOW_CPU_BACKEND=c|mlir  Select CPU codegen (default c; same as --backend)"
+    echo "  FLOW_HOST=flowc|python|auto  Compiler host for the C path (default flowc)"
     echo ""
     echo "Examples:"
     echo "  flow run examples/fibonacci.flow"
+    echo "  flow run --backend=mlir examples/basics/hello_world.flow"
     echo "  flow compile examples/loops.flow"
     echo "  flow test --strict --verbose"
     echo "  flow test-runtime --verbose"
@@ -461,12 +490,7 @@ compile_program_python() {
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
     # First-class GPU memory: Metal on Darwin, Flow stub elsewhere.
-    local gpu_sources=()
-    local gpu_ldflags=()
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
-        gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
-    fi
+    flow_gpu_link_flags
     # else: lib/runtime/gpu_memory_stub.flow via flow_runtime_flow_sources
     flow_concurrency_flags
     flow_runtime_flow_sources
@@ -485,15 +509,114 @@ compile_program_python() {
     if ! clang ${flow_cflags_extra[@]+"${flow_cflags_extra[@]}"} "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
-        "${gpu_sources[@]}" \
-        "${py_ldflags[@]}" "${gpu_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
         exit 1
     fi
     print_success "C → Executable: $basename"
     
     print_success "🚀 Ready to run: $build_dir/$basename"
+}
+
+# MLIR CPU backend: FLOW → MLIR → LLVM IR → clang + Flow runtime (same ABI as C path).
+compile_program_mlir() {
+    local program="$1"
+    require_flow_file "$program"
+    check_mlir_deps
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+
+    print_info "Compiling $program (CPU backend=mlir)..."
+    mkdir -p "$build_dir"
+
+    if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>/dev/null; then
+        print_error "FLOW MLIR/LLVM compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → MLIR → LLVM: $basename.ll"
+
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    flow_gpu_link_flags
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+
+    local -a flow_cflags_extra=()
+    if [ -n "${FLOW_CFLAGS:-}" ]; then
+        # shellcheck disable=SC2206
+        flow_cflags_extra=(${FLOW_CFLAGS})
+    fi
+    if [ "${FLOW_TSAN:-}" = "1" ]; then
+        flow_cflags_extra+=("-fsanitize=thread" "-g" "-fno-omit-frame-pointer")
+        FLOW_CONC_LDFLAGS+=("-fsanitize=thread")
+    fi
+
+    if ! clang ${flow_cflags_extra[@]+"${flow_cflags_extra[@]}"} -O2 -fno-omit-frame-pointer \
+        "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
+        "$build_dir/$basename.ll" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
+        -lm -o "$build_dir/$basename" 2>/dev/null; then
+        print_error "MLIR/LLVM compilation/linking failed"
+        exit 1
+    fi
+    print_success "LLVM → Executable: $basename"
+    print_success "🚀 Ready to run (mlir): $build_dir/$basename"
+}
+
+# Parse optional --backend=c|mlir from argv; sets FLOW_PARSE_PROGRAM and FLOW_PARSE_BACKEND.
+flow_parse_program_backend() {
+    FLOW_PARSE_PROGRAM=""
+    FLOW_PARSE_BACKEND="$(flow_cpu_backend)"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --backend=*)
+                FLOW_PARSE_BACKEND="${1#*=}"
+                shift
+                ;;
+            --backend)
+                if [ -z "${2:-}" ]; then
+                    print_error "--backend requires c or mlir"
+                    exit 1
+                fi
+                FLOW_PARSE_BACKEND="$2"
+                shift 2
+                ;;
+            -*)
+                print_error "Unknown option: $1"
+                exit 1
+                ;;
+            *)
+                if [ -z "$FLOW_PARSE_PROGRAM" ]; then
+                    FLOW_PARSE_PROGRAM="$1"
+                else
+                    print_error "Unexpected argument: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+    case "$FLOW_PARSE_BACKEND" in
+        c|mlir) ;;
+        *)
+            print_error "Unknown backend: $FLOW_PARSE_BACKEND (expected c|mlir)"
+            exit 1
+            ;;
+    esac
+    export FLOW_CPU_BACKEND="$FLOW_PARSE_BACKEND"
 }
 
 # Compile with debug symbols and open a debugger (LLDB preferred).
@@ -582,7 +705,7 @@ debug_program() {
     if ! clang -g3 -O0 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$c_file" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${gpu_sources[@]}" \
         "${py_ldflags[@]}" "${gpu_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm; then
         print_error "C compilation/linking failed"
@@ -728,14 +851,20 @@ PY
 
 # Run program
 run_program() {
-    local program="$1"
+    flow_parse_program_backend "$@"
+    local program="$FLOW_PARSE_PROGRAM"
+    local backend="$FLOW_PARSE_BACKEND"
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
-    
-    compile_program "$program"
-    
+
+    if [ "$backend" = "mlir" ]; then
+        compile_program_mlir "$program"
+    else
+        compile_program "$program"
+    fi
+
     print_info "Running $basename..."
     echo "----------------------------------------"
     "$executable"
@@ -744,6 +873,18 @@ run_program() {
     print_success "Program finished"
     echo "Exit code: $status"
     return $status
+}
+
+# Compile only (honors --backend / FLOW_CPU_BACKEND)
+compile_program_cli() {
+    flow_parse_program_backend "$@"
+    local program="$FLOW_PARSE_PROGRAM"
+    local backend="$FLOW_PARSE_BACKEND"
+    if [ "$backend" = "mlir" ]; then
+        compile_program_mlir "$program"
+    else
+        compile_program "$program"
+    fi
 }
 
 # Compile with audio backend (real-time I/O)
@@ -817,7 +958,7 @@ compile_audio_program() {
     if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$flow_input" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${audio_sources[@]}" \
         "${py_ldflags[@]}" "${audio_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
         print_error "C compilation/linking failed"
@@ -899,7 +1040,7 @@ run_window_program() {
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "$SCRIPT_DIR/runtime/flow_rt_support.c" \
         "$SCRIPT_DIR/runtime/flow_rt_sysinfo.c" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${py_ldflags[@]}" -o "$exe_file" $sdl_libs -lm 2>/dev/null; then
         print_error "C compilation/linking failed (SDL2)"
         exit 1
@@ -967,9 +1108,11 @@ generate_mlir() {
     fi
 }
 
-# Lower MLIR file to native executable (mlir-opt → mlir-translate → llc → clang)
+# JIT compile and run via MLIR (links Flow runtime when FLOW_JIT_LINK_RUNTIME=1).
 run_flow_jit() {
     local program="$1"
+    # Link Flow runtime into JIT executables by default (matches mlir-run / --backend=mlir).
+    FLOW_JIT_LINK_RUNTIME="${FLOW_JIT_LINK_RUNTIME:-1}" \
     python3 -c "
 from flow.jit_runner import FlowJITRunner
 import sys
@@ -1004,8 +1147,18 @@ mlir_lower_and_link() {
     set +o pipefail
     print_success "MLIR → LLVM IR → Object"
 
-    print_info "Linking executable..."
-    if ! clang "-O${opt_level}" "$obj_file" -o "$exe_file" -lm 2>/dev/null; then
+    print_info "Linking executable (Flow runtime)..."
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    flow_gpu_link_flags
+    if ! clang "-O${opt_level}" -fno-omit-frame-pointer "${FLOW_CONC_CFLAGS[@]}" \
+        "$obj_file" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+        "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
+        -lm -o "$exe_file" 2>/dev/null; then
         print_error "Linking failed"
         return 1
     fi
@@ -1048,7 +1201,7 @@ run_gfx_program() {
     if [[ "$host_kernel" == "Darwin" ]]; then
         if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
             "$SCRIPT_DIR/runtime/flow_rt_support.c" \
-            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
             -framework Cocoa -framework CoreGraphics -framework QuartzCore \
             "${py_ldflags[@]}" \
             -o "$exe_file" -lm 2>/dev/null; then
@@ -1077,7 +1230,7 @@ run_gfx_program() {
         fi
         if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_windows.c" \
             "$SCRIPT_DIR/runtime/flow_rt_support.c" \
-            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
             "${sdl_cflags[@]}" "${sdl_libs[@]}" \
             "${py_ldflags[@]}" \
             -o "$exe_file" -lm 2>/dev/null; then
@@ -1096,7 +1249,7 @@ run_gfx_program() {
         fi
         if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_linux.c" \
             "$SCRIPT_DIR/runtime/flow_rt_support.c" \
-            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
             "${sdl_cflags[@]}" "${sdl_libs[@]}" \
             "${py_ldflags[@]}" \
             -o "$exe_file" -lm 2>/dev/null; then
@@ -1910,7 +2063,7 @@ run_runtime_tests() {
         clang_output=$(clang "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
             "$SCRIPT_DIR/runtime/flow_python_embed.c" \
             "${FLOW_CONC_SOURCES[@]}" \
-            "${FLOW_RUNTIME_FLOW_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
             "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm 2>&1) || clang_status=$?
         if [ "$clang_status" -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
@@ -2082,7 +2235,7 @@ run_lang_tests() {
         if grep -q 'stdlib/concurrent.flow' "$program" 2>/dev/null; then
             flow_concurrency_flags
             flow_runtime_flow_sources
-            lang_conc_sources=("${FLOW_CONC_SOURCES[@]}" "${FLOW_RUNTIME_FLOW_SOURCES[@]}")
+            lang_conc_sources=("${FLOW_CONC_SOURCES[@]}" "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}")
             lang_conc_cflags=("${FLOW_CONC_CFLAGS[@]}")
             lang_conc_ldflags=("${FLOW_CONC_LDFLAGS[@]}")
         fi
@@ -2357,7 +2510,8 @@ case "${1:-help}" in
         ;;
     "run")
         check_deps
-        run_program "${2:-}"
+        shift
+        run_program "$@"
         ;;
     "audio")
         check_deps
@@ -2365,7 +2519,8 @@ case "${1:-help}" in
         ;;
     "compile")
         check_deps
-        compile_program "${2:-}"
+        shift
+        compile_program_cli "$@"
         ;;
     "compile-audio")
         check_deps

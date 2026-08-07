@@ -100,9 +100,9 @@ class MLIRGpuGenerator:
         if isinstance(expr, Variable):
             info = self.symbol_table.get(expr.name)
             if not info:
-                ssa = self.new_ssa()
-                ops.append(f"{self.indent()}// Unknown var {expr.name}")
-                return ssa, "i32", ops
+                raise NotImplementedError(
+                    f"MLIR GPU: unknown variable '{expr.name}' in @gpu kernel"
+                )
             return info["ssa"], info["mlir_type"], ops
 
         if isinstance(expr, FunctionCall):
@@ -190,7 +190,9 @@ class MLIRGpuGenerator:
             elif expr.operator in ["!", "not"]:
                 ops.append(f"{self.indent()}{ssa} = arith.xori {operand_ssa}, 1 : {operand_type}")
             else:
-                ops.append(f"{self.indent()}// Unsupported unary op {expr.operator}")
+                raise NotImplementedError(
+                    f"MLIR GPU: unsupported unary op '{expr.operator}'"
+                )
             return ssa, operand_type, ops
 
         if isinstance(expr, ArrayAccess):
@@ -264,20 +266,22 @@ class MLIRGpuGenerator:
                 else:
                     ops.append(f"{self.indent()}{ssa} = arith.divsi {left_ssa}, {right_ssa} : {left_type}")
             else:
-                ops.append(f"{self.indent()}// Unsupported binary op {expr.operator}")
+                raise NotImplementedError(
+                    f"MLIR GPU: unsupported binary op '{expr.operator}'"
+                )
             return ssa, left_type, ops
 
-        ssa = self.new_ssa()
-        ops.append(f"{self.indent()}// Unsupported expression")
-        return ssa, "i32", ops
+        raise NotImplementedError(
+            f"MLIR GPU: unsupported expression type {type(expr).__name__}"
+        )
 
     def generate_statement(self, stmt: Statement) -> List[str]:
         lines: List[str] = []
         if isinstance(stmt, VarDecl):
             if stmt.initializer is None:
-                # uninitialized scalars not supported in GPU kernels
-                lines.append(f"{self.indent()}// Uninitialized var {stmt.name}")
-                return lines
+                raise NotImplementedError(
+                    f"MLIR GPU: uninitialized var '{stmt.name}' in @gpu kernel"
+                )
             value_ssa, value_type, value_ops = self.generate_expression(stmt.initializer)
             lines.extend(value_ops)
             self.symbol_table[stmt.name] = {
@@ -335,8 +339,9 @@ class MLIRGpuGenerator:
             lines.extend(expr_ops)
             return lines
 
-        lines.append(f"{self.indent()}// Unsupported statement {type(stmt).__name__}")
-        return lines
+        raise NotImplementedError(
+            f"MLIR GPU: unsupported statement type {type(stmt).__name__}"
+        )
 
     def _assigned_locals(self, block: Block) -> List[str]:
         assigned: List[str] = []

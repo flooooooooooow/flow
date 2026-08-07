@@ -131,3 +131,7 @@ flow_packages/
 
 # Agent scratch
 .scratch/
+
+# Local tool databases / dev artifacts
+.freebuff/
+btree_test.db
