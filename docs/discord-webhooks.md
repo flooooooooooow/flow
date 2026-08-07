@@ -1,7 +1,8 @@
 # Discord webhook strategy
 
-Flow's CI and release pipelines notify the Flow Discord server. This document
-is the single source of truth for how that works.
+Flow's CI and release pipelines notify the Flow Discord server. Join at
+`https://discord.gg/YK7VaHy24T` (points to `#welcome`, never expires).
+This document is the single source of truth for how webhooks work.
 
 ## Channels
 
@@ -47,6 +48,8 @@ that one file.
 | `.github/workflows/release.yml` | tag created | `#announcements` release |
 | `.github/workflows/ci.yml` | push, PR, nightly | `#ci-releases` pass/fail |
 | `.github/workflows/wiki.yml` | docs deploy | `#announcements` docs |
+
+`flowc-release.yml` publishes compiler binaries but does not notify Discord yet.
 
 ## Rotating a secret
 
