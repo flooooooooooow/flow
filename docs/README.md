@@ -1,6 +1,6 @@
 # Flow Documentation
 
-<img src="assets/flow-mascot.png" alt="Flowy the Hedgehog" width="200" align="right">
+<img src="assets/flow-logo-with-text.png" alt="Flow logo" width="300" align="right">
 
 Welcome to the Flow programming language documentation!
 
