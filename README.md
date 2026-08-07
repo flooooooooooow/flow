@@ -4,6 +4,7 @@
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-0A7EA4)](https://flooooooooooow.github.io/flow/)
 [![Release](https://img.shields.io/github/v/release/flooooooooooow/flow?include_prereleases&sort=semver)](https://github.com/flooooooooooow/flow/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/YK7VaHy24T)
 [![Last commit](https://img.shields.io/github/last-commit/flooooooooooow/flow)](https://github.com/flooooooooooow/flow/commits/main)
 [![Open issues](https://img.shields.io/github/issues/flooooooooooow/flow)](https://github.com/flooooooooooow/flow/issues)
 
@@ -27,6 +28,7 @@
 | | |
 |--|--|
 | **Docs** | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
+| **Community** | [Discord](https://discord.gg/YK7VaHy24T) |
 | **Version** | **0.9.0** |
 | **License** | MIT |
 | **Install** | `brew tap flooooooooooow/flow && brew install flow` · or clone + `./flow run …` |
