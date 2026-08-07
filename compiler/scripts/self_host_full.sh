@@ -135,14 +135,19 @@ cc -O0 -o compiler/build/flowc_gen3 compiler/build/flowc_gen3.c
 check_generation gen3
 
 # Object bytes: linked binaries carry a build UUID, objects do not.
-cc -O0 -c compiler/build/flowc_gen2.c -o compiler/build/flowc_gen2.o
-cc -O0 -c compiler/build/flowc_gen3.c -o compiler/build/flowc_gen3.o
+# Object bytes: linked binaries carry a build UUID, objects do not. But the
+# C compiler may embed the source path, so giving the two generations
+# different filenames can make identical C produce different objects (as seen
+# on Ubuntu's GCC). Compile both from a single common source path so no
+# filename-dependent bytes can leak into the object.
+cp compiler/build/flowc_gen2.c compiler/build/fixedpoint_src.c
+cc -O0 -c compiler/build/fixedpoint_src.c -o compiler/build/flowc_gen2.o
+cp compiler/build/flowc_gen3.c compiler/build/fixedpoint_src.c
+cc -O0 -c compiler/build/fixedpoint_src.c -o compiler/build/flowc_gen3.o
 if ! cmp -s compiler/build/flowc_gen2.o compiler/build/flowc_gen3.o; then
     echo "FAIL fixed point: gen2.o != gen3.o" >&2
     echo "  md5: gen2=$(md5sum < compiler/build/flowc_gen2.o 2>/dev/null || md5 < compiler/build/flowc_gen2.o) gen3=$(md5sum < compiler/build/flowc_gen3.o 2>/dev/null || md5 < compiler/build/flowc_gen3.o)" >&2
     cmp -l compiler/build/flowc_gen2.o compiler/build/flowc_gen3.o 2>/dev/null | head -5 >&2
-    strings -a compiler/build/flowc_gen2.o | grep -E 'flowc_gen[23]\.c' | head -3 >&2
-    strings -a compiler/build/flowc_gen3.o | grep -E 'flowc_gen[23]\.c' | head -3 >&2
     exit 1
 fi
 echo "PASS fixed point: gen2.o == gen3.o"
