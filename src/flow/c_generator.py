@@ -1716,7 +1716,14 @@ class CGenerator:
 
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
         ret = self._c_type(fn.return_type)
-        if fn.parameters:
+        if getattr(fn, "is_variadic", False):
+            if fn.parameters:
+                params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in fn.parameters])
+                params += ", ..."
+            else:
+                # `int printf(...)` has no void slot; a lone `...` is the whole list.
+                params = "..."
+        elif fn.parameters:
             params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in fn.parameters])
         else:
             # Important for system headers: `f()` (K&R) can conflict with `f(void)`.

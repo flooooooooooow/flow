@@ -868,6 +868,8 @@ class Monomorphizer:
         # Preserve is_forward_decl attribute for forward declarations
         if hasattr(fn, "is_forward_decl"):
             new_fn.is_forward_decl = fn.is_forward_decl
+        if hasattr(fn, "is_variadic"):
+            new_fn.is_variadic = fn.is_variadic
         return new_fn
     
     def _rewrite_type(self, t: Type) -> Type:

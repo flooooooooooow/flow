@@ -3039,10 +3039,17 @@ class TypeChecker:
         # Handle overloads
         candidates = symbol.overloads if symbol.overloads else [symbol.type]
         arg_types = [self._check_expression(arg) for arg in call.arguments]
+        variadic_decl = self.function_decls.get(call.name)
+        variadic = bool(getattr(variadic_decl, "is_variadic", False))
 
         matching_overload = None
         for candidate in candidates:
-            if len(candidate.param_types) != len(arg_types):
+            if variadic:
+                # A variadic extern takes any number of trailing args; only the
+                # fixed-prefix parameters are type checked.
+                if len(arg_types) < len(candidate.param_types):
+                    continue
+            elif len(candidate.param_types) != len(arg_types):
                 continue
 
             match = True
