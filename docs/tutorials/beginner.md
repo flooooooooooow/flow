@@ -342,6 +342,35 @@ function main() -> i32 {
 }
 ```
 
+### 6.2 Match on tags (browser)
+
+Enums need the native compiler (`enum` is unsupported in the browser
+interpreter). Tag-style matching with integers teaches the same shape:
+
+```flow
+function wait_seconds(light: i32) -> i32 {
+    match light {
+        0 => { return 30 }
+        1 => { return 5 }
+        2 => { return 25 }
+        default { return -1 }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    printf("red waits %d s\n", wait_seconds(0))
+    printf("green waits %d s\n", wait_seconds(2))
+    return 0
+}
+```
+
+Native enums:
+
+```bash
+./flow run examples/basics/match_enums.flow
+```
+
 ---
 
 ## Exercises
