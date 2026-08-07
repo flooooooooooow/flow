@@ -359,7 +359,8 @@ function main() -> i32 {
 
         if !paused {
             phase = phase + 1
-            # Hold the non-HWE start, then mate once, then hold the recovery.
+            # Hold the non-HWE start, then mate once, then hold the recovery,
+            # then cycle to the next starting genotype mix so the clip moves.
             if phase == 20 {
                 mate(faa, fhet, faa_m)
                 faa = next_aa
@@ -371,7 +372,8 @@ function main() -> i32 {
                 rng_state = rng_state + 1
                 live_chi = sample_chi(p, N_DIP)
             }
-            if phase > 60 {
+            if phase > 55 {
+                preset = (preset + 1) % 3
                 faa = start_aa(preset)
                 fhet = start_het(preset)
                 faa_m = start_aa_m(preset)

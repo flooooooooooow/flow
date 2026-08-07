@@ -1,10 +1,11 @@
 # Evolutionary Biology Gallery
 
-Twenty-five evolutionary-biology simulations written in Flow. Every clip below
-is recorded from the real compiled program through the headless recorder. Every
-program also measures the thing it is demonstrating, prints the measurement
-beside the closed form, and returns a nonzero exit code if the comparison
-fails, so these are regression tests that happen to draw pictures.
+Twenty-five evolutionary-biology and ecology simulations written in Flow.
+Every clip below is recorded from the real compiled program through the
+headless recorder. Every program also measures the thing it is demonstrating,
+prints the measurement beside the closed form, and returns a nonzero exit
+code if the comparison fails, so these are regression tests that happen to
+draw pictures.
 
 This is the biology half of [VISION.md](../vision.md): a system that evolves
 through time is better written as a statement of how it evolves than as a
@@ -46,15 +47,34 @@ recorded.
 | ![Moran process](./evoleco/moran_process.gif) | | |
 | **Moran process**. Neutral fixation probability is 1/N; selective rho gated too<br>`moran_process.flow` | | |
 
+## Evolutionary dynamics and games
+
+| | | |
+|:---:|:---:|:---:|
+| ![Fitness landscape](./evoleco/fitness_landscape.gif) | ![Quasispecies](./evoleco/quasispecies.gif) | ![Hawk-Dove](./evoleco/hawk_dove.gif) |
+| **Fitness landscape**. NK adaptive walks climb to a local peak<br>`fitness_landscape.flow` | **Quasispecies**. Master sequence collapses past the error threshold<br>`quasispecies.flow` | **Hawk-Dove**. Mixed ESS at V/C with an invader assay<br>`hawk_dove.flow` |
+| ![Spatial PD](./evoleco/spatial_pd.gif) | ![Rock-paper-scissors](./evoleco/rock_paper_scissors.gif) | ![Replicator dynamics](./evoleco/replicator_dynamics.gif) |
+| **Spatial PD**. Cooperation persists where mean-field dies<br>`spatial_pd.flow` | **Spatial RPS**. Cyclic chasing; coexistence against well-mixed death<br>`rock_paper_scissors.flow` | **Replicator dynamics**. Simplex trajectory to the Nash rest point<br>`replicator_dynamics.flow` |
+
+## Ecology (visual companions)
+
+| | | |
+|:---:|:---:|:---:|
+| ![Lotka-Volterra](./evoleco/lotka_volterra_gfx.gif) | ![Spatial SIR](./evoleco/sir_spatial.gif) | |
+| **Lotka-Volterra**. Orbits and a conserved first integral<br>`lotka_volterra_gfx.flow` | **Spatial SIR**. Lattice attack rate vs final-size at R0_eff<br>`sir_spatial.flow` | |
+
 ## Extended evolutionary genetics
+
+Ten more programs: irreversible load, competing sweeps, quantitative genetics,
+kin selection, host-parasite cycles, and metapopulation / competitive ecology.
 
 | | | |
 |:---:|:---:|:---:|
 | ![Muller ratchet](./evoleco/mullers_ratchet.gif) | ![Clonal interference](./evoleco/clonal_interference.gif) | ![Hitchhiking](./evoleco/hitchhiking.gif) |
-| **Muller ratchet**. Irreversible deleterious clicks; mean load U/s and Haigh-scale rate<br>`mullers_ratchet.flow` | **Clonal interference**. Competing beneficials; fixation ~(2/s) ln N; weaker clone suppressed<br>`clonal_interference.flow` | **Hitchhiking**. Hard sweep clears selected locus; diversity trough vs map distance<br>`hitchhiking.flow` |
+| **Muller's ratchet**. Deterministic mean load U/s; Haigh-scale click rate<br>`mullers_ratchet.flow` | **Clonal interference**. Dual beneficial clones; fixation ~ (2/s) ln N<br>`clonal_interference.flow` | **Hitchhiking**. Selective sweep carves a diversity trough<br>`hitchhiking.flow` |
 | ![Breeder equation](./evoleco/breeders_equation.gif) | ![Allee effect](./evoleco/allee_effect.gif) | ![Hamilton rule](./evoleco/hamilton_rule.gif) |
-| **Breeder equation**. Truncation response R = h^2 S; realised heritability recovers h^2<br>`breeders_equation.flow` | **Allee effect**. Strong threshold A; extinct below, approach K above<br>`allee_effect.flow` | **Hamilton rule**. Spatial relatedness sustains C when rB > C; well-mixed dies<br>`hamilton_rule.flow` |
+| **Breeder's equation**. Aggregate response R = h^2 S<br>`breeders_equation.flow` | **Allee effect**. Strong threshold A; below extinct, above to K<br>`allee_effect.flow` | **Hamilton's rule**. Spatial kin selection when rB > C<br>`hamilton_rule.flow` |
 | ![Red Queen](./evoleco/red_queen.gif) | ![Metapopulation](./evoleco/metapopulation.gif) | ![Competitive LV](./evoleco/competitive_lv.gif) |
-| **Red Queen**. Matching-alleles host-parasite cycles; parasites chase hosts<br>`red_queen.flow` | **Metapopulation**. Levins occupancy p* = 1 - e/c on ODE and lattice<br>`metapopulation.flow` | **Competitive LV**. Coexistence vs R* exclusion by mutual invasibility<br>`competitive_lv.flow` |
+| **Red Queen**. Matching-alleles cycles; parasite tracks host<br>`red_queen.flow` | **Metapopulation**. Levins occupancy p* = 1 - e/c<br>`metapopulation.flow` | **Competitive LV**. Coexistence vs competitive exclusion<br>`competitive_lv.flow` |
 | ![Runaway selection](./evoleco/runaway_selection.gif) | | |
-| **Runaway selection**. Lande-Kirkpatrick trait-preference; weak equilibrates, strong runaway<br>`runaway_selection.flow` | | |
+| **Runaway selection**. Fisherian trait-preference escalation<br>`runaway_selection.flow` | | |
