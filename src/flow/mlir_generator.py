@@ -329,6 +329,9 @@ class MLIRGenerator:
         self.declarations = []  # Store declarations for type lookup
         self.struct_layouts = {}  # Maps struct name to field offsets and types
         self._ssa_types: Dict[str, str] = {}  # Maps SSA name -> MLIR type string
+        # SSA values that originated as Flow unsigned ints (u8/…). MLIR only has
+        # signed iN, so we track this to pick arith.extui vs extsi on widen.
+        self._ssa_unsigned: Set[str] = set()
         # Maps pointer SSA / var name -> !llvm.array<N x T> for struct-element arrays
         self._llvm_array_types: Dict[str, str] = {}
         self.type_aliases = {}  # name -> base Type
@@ -765,6 +768,7 @@ class MLIRGenerator:
 
         # SSA names like %arg0 are reused per function; reset type tracking each time.
         self._ssa_types = {}
+        self._ssa_unsigned = set()
         
         param_prologue: List[str] = []
         for i, param in enumerate(func.parameters):
@@ -772,6 +776,8 @@ class MLIRGenerator:
             arg_ssa = f'%arg{i}'
             bind_ssa = arg_ssa
             self._ssa_types[arg_ssa] = param_mlir
+            if getattr(param.type, 'name', '').startswith('u'):
+                self._ssa_unsigned.add(arg_ssa)
             var_entry = {
                 'type': 'variable',
                 'mlir_type': param_mlir,
@@ -809,9 +815,10 @@ class MLIRGenerator:
         if body_mlir.strip():
             mlir_code.append(body_mlir)
         
-        # Add explicit return for void functions if none exists
-        has_return = self._block_has_return(func.body)
-        if not has_return and func.return_type.name == 'void':
+        # Void functions must end every CF path with a terminator. An early
+        # `return` inside an if makes `_block_has_return` true, but a trailing
+        # while/for still leaves an empty exit block that needs `func.return`.
+        if func.return_type.name == 'void' and not self._block_has_terminator(body_mlir):
             mlir_code.append(f"{self.indent()}func.return")
         
         self.indent_level -= 1
@@ -1086,6 +1093,8 @@ class MLIRGenerator:
                 init_value, cast_ops = self._emit_cast(init_value, init_type, mlir_type)
                 init_ops.extend(cast_ops)
             self._ssa_types[init_value] = mlir_type
+            if getattr(var_decl.type, 'name', '').startswith('u'):
+                self._ssa_unsigned.add(init_value)
 
             from_tensor_field = init_value in self._tensor_field_extracts
             if self._is_aggregate_mlir_type(mlir_type) and (
@@ -3050,10 +3059,16 @@ class MLIRGenerator:
         # Integer width casts
         if (from_type.startswith("i") or from_type.startswith("u")) and (to_type.startswith("i") or to_type.startswith("u")):
             if _int_width(from_type) < _int_width(to_type):
-                ext_op = "arith.extui" if _is_unsigned(from_type) else "arith.extsi"
+                # Prefer zero-extend for Flow unsigned origins (now lowered as iN).
+                unsigned = _is_unsigned(from_type) or value_ssa in self._ssa_unsigned
+                ext_op = "arith.extui" if unsigned else "arith.extsi"
                 self._ssa_types[cast_name] = to_type
+                if unsigned:
+                    self._ssa_unsigned.add(cast_name)
                 return cast_name, [f"{self.indent()}{cast_name} = {ext_op} {value_ssa} : {from_type} to {to_type}"]
             self._ssa_types[cast_name] = to_type
+            if value_ssa in self._ssa_unsigned or _is_unsigned(to_type):
+                self._ssa_unsigned.add(cast_name)
             return cast_name, [f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {from_type} to {to_type}"]
 
         # Bool/integer casts
@@ -3080,6 +3095,38 @@ class MLIRGenerator:
             self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.fptosi {value_ssa} : {from_type} to {to_type}"]
 
+        # Array / memref decay to a raw pointer. Must produce a *new* SSA —
+        # reusing the memref value and retagging it as !llvm.ptr breaks later
+        # memref.load/store (snake_gfx: let p: ptr<i32> = snake_x).
+        if to_type == "!llvm.ptr" and from_type.startswith("memref<"):
+            idx = f"%{self.function_counter}"
+            self.function_counter += 1
+            idx64 = f"%{self.function_counter}"
+            self.function_counter += 1
+            ptr = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[ptr] = "!llvm.ptr"
+            return ptr, [
+                f"{self.indent()}{idx} = memref.extract_aligned_pointer_as_index "
+                f"{value_ssa} : {from_type} -> index",
+                f"{self.indent()}{idx64} = arith.index_cast {idx} : index to i64",
+                f"{self.indent()}{ptr} = llvm.inttoptr {idx64} : i64 to !llvm.ptr",
+            ]
+
+        # Pointer ↔ integer (null checks like `(p as i64) == 0`).
+        if from_type == "!llvm.ptr" and to_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
+            return cast_name, [
+                f"{self.indent()}{cast_name} = llvm.ptrtoint {value_ssa} "
+                f": !llvm.ptr to {to_type}"
+            ]
+        if to_type == "!llvm.ptr" and from_type.startswith("i"):
+            self._ssa_types[cast_name] = to_type
+            return cast_name, [
+                f"{self.indent()}{cast_name} = llvm.inttoptr {value_ssa} "
+                f": {from_type} to !llvm.ptr"
+            ]
+
         # Fallback: no cast op available, return original value.
         return value_ssa, []
     
@@ -3102,6 +3149,13 @@ class MLIRGenerator:
             else:
                 global_name = self.string_constants[str_val]
             line = f"{self.indent()}{ssa_name} = llvm.mlir.addressof @{global_name} : !llvm.ptr"
+        elif (
+            str(literal.value).lower() == 'null'
+            or (mlir_type == '!llvm.ptr' and str(literal.value).lower() in ('null', '0'))
+        ):
+            # MLIR has no `arith.constant null` — use llvm.mlir.zero (#223).
+            mlir_type = '!llvm.ptr'
+            line = f"{self.indent()}{ssa_name} = llvm.mlir.zero : !llvm.ptr"
         else:
             numeric = self._format_mlir_numeric(str(literal.value), mlir_type)
             line = f"{self.indent()}{ssa_name} = arith.constant {numeric} : {mlir_type}"
@@ -3179,6 +3233,9 @@ class MLIRGenerator:
 
         if left_ty == 'i1' or right_ty == 'i1':
             return 'i1'
+        # Pointer equality / null checks stay on !llvm.ptr (use llvm.icmp).
+        if left_ty == '!llvm.ptr' or right_ty == '!llvm.ptr':
+            return '!llvm.ptr'
         if _is_int(left_ty) or _is_int(right_ty):
             return 'i64' if max(_int_width(left_ty), _int_width(right_ty)) > 32 else 'i32'
         return left_ty
@@ -3255,6 +3312,14 @@ class MLIRGenerator:
 
             if is_float:
                 op_text = f"arith.cmpf {pred}, {left_ssa}, {right_ssa} : {operand_type}"
+            elif operand_type == '!llvm.ptr':
+                # arith.cmpi does not accept !llvm.ptr — use llvm.icmp (#223 companions).
+                icmp = {
+                    'eq': 'eq', 'ne': 'ne',
+                    'slt': 'ult', 'sle': 'ule',
+                    'sgt': 'ugt', 'sge': 'uge',
+                }.get(pred, pred)
+                op_text = f'llvm.icmp "{icmp}" {left_ssa}, {right_ssa} : !llvm.ptr'
             else:
                 op_text = f"arith.cmpi {pred}, {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '&&' or bin_op.operator == 'and':
@@ -4982,11 +5047,22 @@ class MLIRGenerator:
         return None
 
     def _is_pointer_array_ssa(self, array_ssa: str, access: ArrayAccess) -> bool:
-        if self._ssa_types.get(array_ssa) == '!llvm.ptr':
-            return True
+        """True when indexing should use llvm.gep on a raw pointer.
+
+        Declared memref arrays must stay on the memref.load/store path even if
+        a later ptr decay briefly confused `_ssa_types` for the same SSA name.
+        """
         if isinstance(access.array, Variable):
             arr_type = self.symbol_table.get(access.array.name, {}).get('mlir_type', '')
-            return arr_type == '!llvm.ptr'
+            if arr_type.startswith('memref<'):
+                return False
+            if arr_type == '!llvm.ptr':
+                return True
+        ssa_ty = self._ssa_types.get(array_ssa, '')
+        if ssa_ty.startswith('memref<'):
+            return False
+        if ssa_ty == '!llvm.ptr':
+            return True
         return self._elem_type_from_array_expr(access.array) is not None
 
     def _llvm_array_type_for(self, array_expr: Expression, array_ssa: str) -> Optional[str]:
@@ -5249,9 +5325,14 @@ class MLIRGenerator:
     def flow_type_to_mlir(self, flow_type: Type) -> str:
         flow_type = self._resolve_type_alias(flow_type)
         elem_type = self._resolve_type_alias(flow_type.element_type) if getattr(flow_type, 'element_type', None) else None
-        if flow_type.name in ['i8', 'i16', 'i32', 'i64', 'i128',
-                              'u8', 'u16', 'u32', 'u64', 'u128',
-                              'f32', 'f64']:
+        # MLIR / llvm dialect have no unsigned integer types. Map Flow uN → iN
+        # of the same width (bitwidth semantics; use extui when zero-extending).
+        _unsigned_to_signed = {
+            'u8': 'i8', 'u16': 'i16', 'u32': 'i32', 'u64': 'i64', 'u128': 'i128',
+        }
+        if flow_type.name in _unsigned_to_signed:
+            return _unsigned_to_signed[flow_type.name]
+        if flow_type.name in ['i8', 'i16', 'i32', 'i64', 'i128', 'f32', 'f64']:
             return flow_type.name
         elif flow_type.name == 'bool':
             return 'i1'
@@ -5526,6 +5607,16 @@ class MLIRGenerator:
                     self.string_counter += 1
                     self.string_constants[str_val] = global_name
                 return ""
+            if (
+                mlir_type == "!llvm.ptr"
+                or str(const.value.value).lower() == "null"
+            ):
+                # Zero-init pointer global (no `null` attribute — #223).
+                mlir_code.append(
+                    f"{self.indent()}llvm.mlir.global internal constant "
+                    f"@{const.name}() : !llvm.ptr"
+                )
+                return "\n".join(mlir_code)
             literal_value = self._format_mlir_numeric(str(const.value.value), mlir_type)
             mlir_code.append(
                 f"{self.indent()}llvm.mlir.global internal constant @{const.name}"
@@ -5553,10 +5644,19 @@ class MLIRGenerator:
         # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
         init_payload = f"() : {mlir_type}"
         if isinstance(static.value, Literal) and getattr(static.value.type, "name", "") != "string":
-            lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
-            if static.value.type.name == "bool":
-                lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
-            init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
+            if (
+                mlir_type == "!llvm.ptr"
+                or str(static.value.value).lower() == "null"
+            ):
+                init_payload = "() : !llvm.ptr"
+                mlir_type = "!llvm.ptr"
+            else:
+                lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
+                if static.value.type.name == "bool":
+                    lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
+                init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
+        elif mlir_type == "!llvm.ptr":
+            init_payload = "() : !llvm.ptr"
         elif mlir_type in ("f32", "f64"):
             init_payload = f"(0.0 : {mlir_type}) : {mlir_type}"
         elif mlir_type.startswith("i") or mlir_type.startswith("u") or mlir_type == "index":
