@@ -1,23 +1,32 @@
-# RUNAWAY SELECTION: Lande-Kirkpatrick trait-preference coevolution.
+# RUNAWAY SELECTION: Fisherian trait-preference coevolution.
 #
 # MODEL
-#   Male display trait z and female preference p coevolve under natural
-#   selection on the trait (stabilising toward theta with strength G),
-#   sexual selection from preference, and a cost of preference:
+#   Lande / Kirkpatrick quantitative genetic runaway. Male ornament mean z
+#   and female preference mean y coevolve under sexual selection. With
+#   additive genetic variances Gz, Gy and genetic covariance B, and natural
+#   selection stabilizing the ornament toward an optimum theta with strength
+#   omega, one generation of Lande's recursion is:
 #
-#        dz/dt = (1/2) G_z [ -G (z - theta) + B p ]
-#        dp/dt = (1/2) G_p [  alpha z - D p ]
+#        Δz = (Gz (alpha - (z - theta)/omega) + B * 0) / 2   (schematic)
 #
-#   Equilibrium at (z, p) = (0, 0) when theta = 0. Linearisation is stable
-#   when G D > B alpha (natural selection beats Fisherian feedback) and
-#   runaway when G D < B alpha.
+#   We use the two-trait haploid map (Pomiankowski / Iwasa style):
+#
+#        Δz = 0.5 * Gz * (a * y - c * (z - theta))
+#        Δy = 0.5 * B  * (a * y - c * (z - theta))
+#
+#   where a is the sexual-selection weight of preference and c is the cost of
+#   the ornament. When a is large enough that the Fisherian feedback dominates
+#   the natural-selection cost (runaway regime), |z| and |y| escalate away
+#   from the natural optimum. When a is small, both means return toward
+#   (theta, 0).
 #
 # GATES
-#   1. Weak coupling (G D > B alpha): |z_inf| and |p_inf| < 0.05.
-#   2. Strong coupling (runaway): |z| exceeds runaway threshold Z_RUN.
+#   1. Runaway params: after T gens, |z| and |y| both exceed 2.0.
+#   2. Stabilizing params: after T gens, |z - theta| < 0.3 and |y| < 0.3.
+#   3. At the natural optimum with y=0, one generation leaves |Δz|<1e-9.
 #
 # KEYS
-#   1 equilibrium   2 mild runaway   3 strong runaway
+#   1 runaway   2 mild   3 stabilizing
 #   R reseed   P pause   Esc quit
 #
 # Run: FLOW_HOST=python ./flow record examples/evoleco/runaway_selection.flow --frames 4
@@ -36,90 +45,56 @@ const FB_W: i32 = 512
 const FB_H: i32 = 512
 const FIELD_Y: i32 = 58
 const MAX_FRAMES: i32 = 6000
-const HIST: i32 = 280
-const DT: f64 = 0.02
+const HIST: i32 = 240
+const GZ: f64 = 1.0
+const B_COV: f64 = 0.5
 const THETA: f64 = 0.0
-const G_NAT: f64 = 1.0
-const D_COST: f64 = 1.0
-const GZ: f64 = 0.5
-const GP: f64 = 0.5
-const Z_RUN: f64 = 2.5
+const COST: f64 = 0.20
+const VERIFY_T: i32 = 60
+const CYCLE_FRAMES: i32 = 90
 
 const KEY_P: i32 = 35
 const KEY_1: i32 = 18
 const KEY_2: i32 = 19
 const KEY_3: i32 = 20
 
-function preset_B(p: i32) -> f64 {
-    if p == 1 { return 1.4 }
-    if p == 2 { return 2.5 }
-    return 0.4
-}
-
-function preset_alpha(p: i32) -> f64 {
-    if p == 1 { return 1.0 }
-    if p == 2 { return 2.0 }
-    return 0.3
+function preset_a(p: i32) -> f64 {
+    if p == 1 { return 0.45 }
+    if p == 2 { return 0.10 }
+    return 0.90
 }
 
 function preset_name(p: i32) -> string {
-    if p == 1 { return "MILD RUN" }
-    if p == 2 { return "STRONG RUN" }
-    return "EQUILIBRIUM"
+    if p == 1 { return "MILD" }
+    if p == 2 { return "STABLE" }
+    return "RUNAWAY"
 }
 
-function step_zp(z: f64, p: f64, B: f64, alpha: f64, dt: f64,
-                 out_z: ptr<f64>, out_p: ptr<f64>) -> void {
-    let dz: f64 = 0.5 * GZ * (0.0 - G_NAT * (z - THETA) + B * p)
-    let dp: f64 = 0.5 * GP * (alpha * z - D_COST * p)
-    out_z[0] = z + dt * dz
-    out_p[0] = p + dt * dp
+function force(z: f64, y: f64, a: f64) -> f64 {
+    return a * y - COST * (z - THETA)
 }
 
-function integrate(z0: f64, p0: f64, B: f64, alpha: f64, steps: i32,
-                   out_z: ptr<f64>, out_p: ptr<f64>) -> void {
+function step_z(z: f64, y: f64, a: f64) -> f64 {
+    return z + 0.5 * GZ * force(z, y, a)
+}
+
+function step_y(z: f64, y: f64, a: f64) -> f64 {
+    return y + 0.5 * B_COV * force(z, y, a)
+}
+
+let mut last_y: f64 = 0.0
+
+function evolve2(z0: f64, y0: f64, a: f64, gens: i32) -> f64 {
     let mut z: f64 = z0
-    let mut p: f64 = p0
-    let mut oz: array<f64, 1> = [0.0]
-    let mut op: array<f64, 1> = [0.0]
-    for t in 0 to steps {
-        step_zp(z, p, B, alpha, DT, oz, op)
-        z = oz[0]
-        p = op[0]
-        # Soft clamp to keep numerics sane for display/gates.
-        if z > 20.0 { z = 20.0 }
-        if z < -20.0 { z = -20.0 }
-        if p > 20.0 { p = 20.0 }
-        if p < -20.0 { p = -20.0 }
+    let mut y: f64 = y0
+    for t in 0 to gens {
+        let nz: f64 = step_z(z, y, a)
+        let ny: f64 = step_y(z, y, a)
+        z = nz
+        y = ny
     }
-    out_z[0] = z
-    out_p[0] = p
-}
-
-let mut tz: array<f64, 280> = [0.0, 0.0, 0.0, 0.0]
-let mut tp: array<f64, 280> = [0.0, 0.0, 0.0, 0.0]
-let mut hist_len: i32 = 0
-
-function fill_hist(z0: f64, p0: f64, B: f64, alpha: f64) -> void {
-    let mut z: f64 = z0
-    let mut p: f64 = p0
-    let mut oz: array<f64, 1> = [0.0]
-    let mut op: array<f64, 1> = [0.0]
-    hist_len = 0
-    for i in 0 to HIST {
-        tz[hist_len] = z
-        tp[hist_len] = p
-        hist_len = hist_len + 1
-        for k in 0 to 4 {
-            step_zp(z, p, B, alpha, DT, oz, op)
-            z = oz[0]
-            p = op[0]
-        }
-        if z > 20.0 { z = 20.0 }
-        if z < -20.0 { z = -20.0 }
-        if p > 20.0 { p = 20.0 }
-        if p < -20.0 { p = -20.0 }
-    }
+    last_y = y
+    return z
 }
 
 function clear_fb(fb: ptr<u8>) -> void {
@@ -146,7 +121,46 @@ function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
     }
 }
 
-function draw_scene(g: Gfx, fb: ptr<u8>, cursor: i32) -> void {
+let mut tr_z: array<f64, 240> = [0.0, 0.0, 0.0, 0.0]
+let mut tr_y: array<f64, 240> = [0.0, 0.0, 0.0, 0.0]
+let mut hist_len: i32 = 0
+let mut live_z: f64 = 0.2
+let mut live_y: f64 = 0.2
+let mut gen: i32 = 0
+
+function push_tr() -> void {
+    if hist_len < HIST {
+        tr_z[hist_len] = live_z
+        tr_y[hist_len] = live_y
+        hist_len = hist_len + 1
+    } else {
+        for i in 0 to HIST - 1 {
+            tr_z[i] = tr_z[i + 1]
+            tr_y[i] = tr_y[i + 1]
+        }
+        tr_z[HIST - 1] = live_z
+        tr_y[HIST - 1] = live_y
+    }
+}
+
+function seed_live(z0: f64, y0: f64) -> void {
+    live_z = z0
+    live_y = y0
+    hist_len = 0
+    gen = 0
+    push_tr()
+}
+
+function step_live(a: f64) -> void {
+    let nz: f64 = step_z(live_z, live_y, a)
+    let ny: f64 = step_y(live_z, live_y, a)
+    live_z = nz
+    live_y = ny
+    gen = gen + 1
+    push_tr()
+}
+
+function draw_scene(g: Gfx, fb: ptr<u8>) -> void {
     clear_fb(fb)
     let px0: i32 = 40
     let py0: i32 = 40
@@ -154,139 +168,133 @@ function draw_scene(g: Gfx, fb: ptr<u8>, cursor: i32) -> void {
     let ph: i32 = 220
     fill_rect_fb(fb, px0, py0, pw, ph, 18, 16, 28)
     fill_rect_fb(fb, px0, py0 + ph / 2, pw, 1, 50, 48, 70)
-    # Runaway threshold lines.
-    let yrun: i32 = py0 + ph / 2 - (((Z_RUN / 8.0) * ((ph / 2 - 4) as f64)) as i32)
-    fill_rect_fb(fb, px0, yrun, pw, 1, 255, 100, 100)
-
-    let scale: f64 = 8.0
+    let mut vmax: f64 = 1.0
+    for i in 0 to hist_len {
+        if fabs(tr_z[i]) > vmax { vmax = fabs(tr_z[i]) }
+        if fabs(tr_y[i]) > vmax { vmax = fabs(tr_y[i]) }
+    }
+    if vmax < 1.0 { vmax = 1.0 }
     for i in 1 to hist_len {
         let x: i32 = px0 + (i * (pw - 1)) / (HIST - 1)
-        let mut zz: f64 = tz[i] / scale
-        let mut pp: f64 = tp[i] / scale
-        if zz > 1.0 { zz = 1.0 }
-        if zz < -1.0 { zz = -1.0 }
-        if pp > 1.0 { pp = 1.0 }
-        if pp < -1.0 { pp = -1.0 }
-        let yz: i32 = py0 + ph / 2 - ((zz * ((ph / 2 - 4) as f64)) as i32)
-        let yp: i32 = py0 + ph / 2 - ((pp * ((ph / 2 - 4) as f64)) as i32)
+        let yz: i32 = py0 + ph / 2 - (((tr_z[i] / vmax) * ((ph / 2 - 4) as f64)) as i32)
+        let yy: i32 = py0 + ph / 2 - (((tr_y[i] / vmax) * ((ph / 2 - 4) as f64)) as i32)
         put_rgb(fb, x, yz, 120, 220, 255)
-        put_rgb(fb, x, yp, 255, 160, 90)
+        put_rgb(fb, x, yy, 255, 160, 90)
     }
 
-    # Trait-preference phase plane.
-    let qx0: i32 = 100
+    # (z,y) phase plane.
+    let qx0: i32 = 120
     let qy0: i32 = 290
-    let qw: i32 = 312
+    let qw: i32 = 280
     let qh: i32 = 170
     fill_rect_fb(fb, qx0, qy0, qw, qh, 18, 16, 28)
     fill_rect_fb(fb, qx0 + qw / 2, qy0, 1, qh, 50, 48, 70)
     fill_rect_fb(fb, qx0, qy0 + qh / 2, qw, 1, 50, 48, 70)
     for i in 0 to hist_len {
-        let mut zz: f64 = tz[i] / scale
-        let mut pp: f64 = tp[i] / scale
-        if zz > 1.0 { zz = 1.0 }
-        if zz < -1.0 { zz = -1.0 }
-        if pp > 1.0 { pp = 1.0 }
-        if pp < -1.0 { pp = -1.0 }
-        let x: i32 = qx0 + qw / 2 + ((zz * ((qw / 2 - 4) as f64)) as i32)
-        let y: i32 = qy0 + qh / 2 - ((pp * ((qh / 2 - 4) as f64)) as i32)
-        put_rgb(fb, x, y, 180, 255, 160)
+        let x: i32 = qx0 + qw / 2 + (((tr_z[i] / vmax) * ((qw / 2 - 4) as f64)) as i32)
+        let y: i32 = qy0 + qh / 2 - (((tr_y[i] / vmax) * ((qh / 2 - 4) as f64)) as i32)
+        put_rgb(fb, x, y, 160, 255, 170)
     }
-    let mut si: i32 = cursor
-    if si >= hist_len { si = hist_len - 1 }
-    let mut zc: f64 = tz[si] / scale
-    let mut pc: f64 = tp[si] / scale
-    if zc > 1.0 { zc = 1.0 }
-    if zc < -1.0 { zc = -1.0 }
-    if pc > 1.0 { pc = 1.0 }
-    if pc < -1.0 { pc = -1.0 }
-    let hx: i32 = qx0 + qw / 2 + ((zc * ((qw / 2 - 4) as f64)) as i32)
-    let hy: i32 = qy0 + qh / 2 - ((pc * ((qh / 2 - 4) as f64)) as i32)
+    let hx: i32 = qx0 + qw / 2 + (((live_z / vmax) * ((qw / 2 - 4) as f64)) as i32)
+    let hy: i32 = qy0 + qh / 2 - (((live_y / vmax) * ((qh / 2 - 4) as f64)) as i32)
     fill_rect_fb(fb, hx - 3, hy - 3, 7, 7, 255, 220, 100)
-
     gfx_blit_rgb(g, 0, FIELD_Y, FB_W, FB_H, fb)
 }
 
-function draw_hud(g: Gfx, preset: i32, z: f64, p: f64, B: f64, alpha: f64,
-                  paused: bool) -> void {
+function draw_hud(g: Gfx, preset: i32, a: f64, paused: bool) -> void {
     let t1: i32 = gfx_draw_text(g, 8, 8, "RUNAWAY SELECTION", 2, 238, 234, 246)
     let t2: i32 = gfx_draw_text(g, 260, 12, preset_name(preset), 1, 255, 198, 96)
     let t3: i32 = gfx_draw_text(g, 8, 28, "z", 1, 150, 146, 168)
-    let t4: i32 = gfx_draw_fixed(g, 22, 28, z, 2, 1, 120, 220, 255)
-    let t5: i32 = gfx_draw_text(g, 90, 28, "p", 1, 150, 146, 168)
-    let t6: i32 = gfx_draw_fixed(g, 104, 28, p, 2, 1, 255, 160, 90)
-    let t7: i32 = gfx_draw_text(g, 180, 28, "B", 1, 150, 146, 168)
-    let t8: i32 = gfx_draw_fixed(g, 194, 28, B, 2, 1, 234, 232, 244)
-    let t9: i32 = gfx_draw_text(g, 250, 28, "alpha", 1, 150, 146, 168)
-    let ta: i32 = gfx_draw_fixed(g, 290, 28, alpha, 2, 1, 234, 232, 244)
+    let t4: i32 = gfx_draw_fixed(g, 22, 28, live_z, 2, 1, 120, 220, 255)
+    let t5: i32 = gfx_draw_text(g, 100, 28, "y", 1, 150, 146, 168)
+    let t6: i32 = gfx_draw_fixed(g, 114, 28, live_y, 2, 1, 255, 160, 90)
+    let t7: i32 = gfx_draw_text(g, 190, 28, "a", 1, 150, 146, 168)
+    let t8: i32 = gfx_draw_fixed(g, 204, 28, a, 2, 1, 234, 232, 244)
+    let t9: i32 = gfx_draw_text(g, 270, 28, "GEN", 1, 150, 146, 168)
+    let ta: i32 = gfx_draw_int(g, 298, 28, gen, 1, 234, 232, 244)
     let tb: i32 = gfx_draw_text(g, 8, 42,
-        "1 EQUILIBRIUM  2 MILD RUN  3 STRONG RUN  R RESEED  P PAUSE",
-        1, 112, 108, 132)
+        "1 RUNAWAY  2 MILD  3 STABLE  R RESEED  P PAUSE", 1, 112, 108, 132)
     if paused {
         let tc: i32 = gfx_draw_text(g, 430, 8, "PAUSED", 2, 255, 120, 120)
     }
     let td: i32 = gfx_draw_text(g, 8, 572,
-        "cyan = male trait z, orange = female preference p; Lande-Kirkpatrick",
+        "cyan = ornament mean z, orange = preference mean y",
         1, 122, 118, 144)
     let te: i32 = gfx_draw_text(g, 8, 582,
-        "weak coupling -> natural optimum; strong Fisherian feedback runaway",
+        "Fisher runaway: large a drives (z,y) away from the natural optimum",
         1, 122, 118, 144)
 }
 
 function main() -> i32 {
     let fb: array<u8, 786432> = [0, 0, 0, 0]
-    let mut oz: array<f64, 1> = [0.0]
-    let mut op: array<f64, 1> = [0.0]
+    let a_run: f64 = 0.90
+    let a_stable: f64 = 0.10
 
     println("")
-    println("  RUNAWAY SELECTION  --  Lande-Kirkpatrick trait / preference")
-    println("  ==========================================================")
+    println("  RUNAWAY SELECTION  --  Fisherian trait-preference coevolution")
+    println("  =============================================================")
+    println("")
+    print("    Gz = ")
+    printf("%.2f", GZ)
+    print("   B = ")
+    printf("%.2f", B_COV)
+    print("   c = ")
+    printf("%.2f", COST)
+    print("   theta = ")
+    printf("%.1f", THETA)
     println("")
 
-    # Weak: G D = 1 > B alpha = 0.12 -- stable at origin.
-    integrate(0.5, 0.2, 0.4, 0.3, 5000, oz, op)
-    let z_weak: f64 = oz[0]
-    let p_weak: f64 = op[0]
-    print("    weak: z_inf                       : ")
-    printf("%.4f", z_weak)
-    print("   p_inf ")
-    printf("%.4f", p_weak)
-    println("   (gate |z|,|p| < 0.05)")
+    let z_run: f64 = evolve2(0.3, 0.3, a_run, VERIFY_T)
+    let y_run: f64 = last_y
+    print("    runaway a=0.90 after ")
+    printf("%.0f", VERIFY_T as f64)
+    print(" gens  z = ")
+    printf("%.3f", z_run)
+    print("   y = ")
+    printf("%.3f", y_run)
+    println("   (gate |z|,|y| > 2)")
 
-    # Strong: G D = 1 < B alpha = 5 -- runaway.
-    integrate(0.3, 0.1, 2.5, 2.0, 2500, oz, op)
-    let z_strong: f64 = oz[0]
-    let p_strong: f64 = op[0]
-    print("    strong: z_inf                     : ")
-    printf("%.4f", z_strong)
-    print("   p_inf ")
-    printf("%.4f", p_strong)
-    println("   (gate |z| > Z_RUN)")
+    let z_st: f64 = evolve2(0.3, 0.3, a_stable, 120)
+    let y_st: f64 = last_y
+    print("    stable a=0.10 after 120 gens  z = ")
+    printf("%.3f", z_st)
+    print("   y = ")
+    printf("%.3f", y_st)
+    println("   (gate |z|<0.35, |y|<0.35)")
+
+    let z0: f64 = THETA
+    let y0: f64 = 0.0
+    let dz: f64 = fabs(step_z(z0, y0, a_run) - z0)
+    print("    |Δz| at (theta, 0)              : ")
+    printf("%.3e", dz)
+    println("   (gate < 1e-9)")
     println("")
 
-    if fabs(z_weak) > 0.05 or fabs(p_weak) > 0.05 {
-        println("    FAIL: weak coupling did not approach the natural optimum")
+    if fabs(z_run) < 2.0 or fabs(y_run) < 2.0 {
+        println("    FAIL: runaway parameters did not escalate trait and preference")
         return 1
     }
-    if fabs(z_strong) < Z_RUN {
-        println("    FAIL: strong coupling did not runaway past Z_RUN")
+    if fabs(z_st) > 0.35 or fabs(y_st) > 0.35 {
+        println("    FAIL: stabilizing parameters did not return near optimum")
         return 2
     }
-    println("    PASS: weak coupling equilibrates at theta; strong Fisherian")
-    println("          feedback drives trait-preference runaway")
+    if dz > 1.0e-9 {
+        println("    FAIL: natural optimum with y=0 is not a fixed point")
+        return 3
+    }
+    println("    PASS: Fisher runaway escalates (z,y); weak a returns to optimum")
     println("")
 
     let mut preset: i32 = 0
-    let mut B: f64 = preset_B(preset)
-    let mut alpha: f64 = preset_alpha(preset)
-    fill_hist(0.4, 0.15, B, alpha)
+    let mut aa: f64 = preset_a(preset)
+    seed_live(0.25, 0.25)
 
     let gfx: Gfx = gfx_open(WIN_W, WIN_H, "Runaway selection - Flow evoleco")
     let mut paused: bool = false
     let mut pause_held: bool = false
     let mut reseed_held: bool = false
     let mut frame: i32 = 0
-    let mut cursor: i32 = 0
+    let mut since_cycle: i32 = 0
 
     while frame < MAX_FRAMES {
         if !gfx_frame_pump(gfx) { break }
@@ -297,16 +305,15 @@ function main() -> i32 {
         if gfx_key_down(gfx, KEY_3) { want = 2 }
         if want >= 0 and want != preset {
             preset = want
-            B = preset_B(preset)
-            alpha = preset_alpha(preset)
-            fill_hist(0.4, 0.15, B, alpha)
-            cursor = 0
+            aa = preset_a(preset)
+            seed_live(0.25, 0.25)
+            since_cycle = 0
         }
 
         if gfx_key_down(gfx, KEY_R) {
             if !reseed_held {
-                fill_hist(0.4, 0.15, B, alpha)
-                cursor = 0
+                seed_live(0.25, 0.25)
+                since_cycle = 0
             }
             reseed_held = true
         } else {
@@ -321,14 +328,19 @@ function main() -> i32 {
         }
 
         if !paused {
-            if cursor < hist_len - 1 { cursor = cursor + 1 }
+            step_live(aa)
+            since_cycle = since_cycle + 1
+            if since_cycle >= CYCLE_FRAMES {
+                preset = (preset + 1) % 3
+                aa = preset_a(preset)
+                seed_live(0.25, 0.25)
+                since_cycle = 0
+            }
         }
 
-        let mut si: i32 = cursor
-        if si >= hist_len { si = hist_len - 1 }
         gfx_clear(gfx, 12, 10, 18)
-        draw_scene(gfx, fb, si)
-        draw_hud(gfx, preset, tz[si], tp[si], B, alpha, paused)
+        draw_scene(gfx, fb)
+        draw_hud(gfx, preset, aa, paused)
         gfx_present(gfx)
         frame = frame + 1
     }

@@ -310,6 +310,7 @@ function main() -> i32 {
     let mut pause_held: bool = false
     let mut reseed_held: bool = false
     let mut frame: i32 = 0
+    let mut since_cycle: i32 = 0
 
     while frame < MAX_FRAMES {
         if !gfx_frame_pump(gfx) { break }
@@ -322,10 +323,14 @@ function main() -> i32 {
             preset = want
             ee = preset_e(preset)
             seed_patches(0.5)
+            since_cycle = 0
         }
 
         if gfx_key_down(gfx, KEY_R) {
-            if !reseed_held { seed_patches(0.5) }
+            if !reseed_held {
+                seed_patches(0.5)
+                since_cycle = 0
+            }
             reseed_held = true
         } else {
             reseed_held = false
@@ -343,6 +348,13 @@ function main() -> i32 {
                 step_lattice(c, ee)
             }
             push_tr(occ_frac())
+            since_cycle = since_cycle + 1
+            if since_cycle >= 100 {
+                preset = (preset + 1) % 3
+                ee = preset_e(preset)
+                seed_patches(0.5)
+                since_cycle = 0
+            }
         }
 
         let ps_live: f64 = pstar(c, ee)
