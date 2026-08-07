@@ -22,12 +22,18 @@ class TestMLIRTypeConversion:
             ("i16", "i16"),
             ("i32", "i32"),
             ("i64", "i64"),
+            # MLIR has no unsigned ints — Flow uN maps to signed iN of same width.
+            ("u8", "i8"),
+            ("u16", "i16"),
+            ("u32", "i32"),
+            ("u64", "i64"),
+            ("u128", "i128"),
         ]
 
         for flow_type, expected_mlir in test_cases:
             flow_type_obj = Type(flow_type)
             mlir_type = mlir_generator.flow_type_to_mlir(flow_type_obj)
-            assert expected_mlir in mlir_type
+            assert mlir_type == expected_mlir
 
     def test_boolean_type(self, mlir_generator):
         """Test boolean type conversion."""
