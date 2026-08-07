@@ -39,7 +39,7 @@ before the window opens and do not depend on how many frames are recorded.
 | | | |
 |:---:|:---:|:---:|
 | ![Noise atlas](./procgen/noise_atlas.gif) | ![Heightmap fBm](./procgen/heightmap_fbm.gif) | ![Domain warp](./procgen/domain_warp.gif) |
-| **Noise atlas**. Value / gradient / fBm / ridged / warped; deterministic ranges<br>`noise_atlas.flow` | **Heightmap fBm**. Sea cut and contours; land fraction gated<br>`heightmap_fbm.flow` | **Domain warp**. Plain vs warped; lag-4 autocorrelation rises<br>`domain_warp.flow` |
+| **Noise atlas**. Value / gradient / fBm / ridged / warped; deterministic ranges<br>`noise_atlas.flow` | **Heightmap fBm**. Sea cut and contours; land fraction gated<br>`heightmap_fbm.flow` | **Domain warp**. Plain vs warped; deterministic + field-diff gate<br>`domain_warp.flow` |
 | ![Cave worms](./procgen/cave_worms.gif) | ![Voronoi sites](./procgen/voronoi_sites.gif) | ![Island mask](./procgen/island_mask.gif) |
 | **Cave worms**. 3D density threshold; porosity in a chosen band<br>`cave_worms.flow` | **Voronoi sites**. Cellular / Worley assignment covers the grid<br>`voronoi_sites.flow` | **Island mask**. Radial falloff * fBm; one connected landmass<br>`island_mask.flow` |
 | ![Tile map](./procgen/tile_map.gif) | | |
