@@ -815,9 +815,10 @@ class MLIRGenerator:
         if body_mlir.strip():
             mlir_code.append(body_mlir)
         
-        # Add explicit return for void functions if none exists
-        has_return = self._block_has_return(func.body)
-        if not has_return and func.return_type.name == 'void':
+        # Void functions must end every CF path with a terminator. An early
+        # `return` inside an if makes `_block_has_return` true, but a trailing
+        # while/for still leaves an empty exit block that needs `func.return`.
+        if func.return_type.name == 'void' and not self._block_has_terminator(body_mlir):
             mlir_code.append(f"{self.indent()}func.return")
         
         self.indent_level -= 1
@@ -3094,6 +3095,24 @@ class MLIRGenerator:
             self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.fptosi {value_ssa} : {from_type} to {to_type}"]
 
+        # Array / memref decay to a raw pointer. Must produce a *new* SSA —
+        # reusing the memref value and retagging it as !llvm.ptr breaks later
+        # memref.load/store (snake_gfx: let p: ptr<i32> = snake_x).
+        if to_type == "!llvm.ptr" and from_type.startswith("memref<"):
+            idx = f"%{self.function_counter}"
+            self.function_counter += 1
+            idx64 = f"%{self.function_counter}"
+            self.function_counter += 1
+            ptr = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[ptr] = "!llvm.ptr"
+            return ptr, [
+                f"{self.indent()}{idx} = memref.extract_aligned_pointer_as_index "
+                f"{value_ssa} : {from_type} -> index",
+                f"{self.indent()}{idx64} = arith.index_cast {idx} : index to i64",
+                f"{self.indent()}{ptr} = llvm.inttoptr {idx64} : i64 to !llvm.ptr",
+            ]
+
         # Fallback: no cast op available, return original value.
         return value_ssa, []
     
@@ -4996,11 +5015,22 @@ class MLIRGenerator:
         return None
 
     def _is_pointer_array_ssa(self, array_ssa: str, access: ArrayAccess) -> bool:
-        if self._ssa_types.get(array_ssa) == '!llvm.ptr':
-            return True
+        """True when indexing should use llvm.gep on a raw pointer.
+
+        Declared memref arrays must stay on the memref.load/store path even if
+        a later ptr decay briefly confused `_ssa_types` for the same SSA name.
+        """
         if isinstance(access.array, Variable):
             arr_type = self.symbol_table.get(access.array.name, {}).get('mlir_type', '')
-            return arr_type == '!llvm.ptr'
+            if arr_type.startswith('memref<'):
+                return False
+            if arr_type == '!llvm.ptr':
+                return True
+        ssa_ty = self._ssa_types.get(array_ssa, '')
+        if ssa_ty.startswith('memref<'):
+            return False
+        if ssa_ty == '!llvm.ptr':
+            return True
         return self._elem_type_from_array_expr(access.array) is not None
 
     def _llvm_array_type_for(self, array_expr: Expression, array_ssa: str) -> Optional[str]:
