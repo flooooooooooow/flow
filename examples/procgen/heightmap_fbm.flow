@@ -210,7 +210,6 @@ function main() -> i32 {
     let mut pause_held: bool = false
     let mut reseed_held: bool = false
     let mut frame: i32 = 0
-    let mut pulse: i32 = 0
 
     let g: Gfx = gfx_open(WIN_W, WIN_H, "Heightmap fBm - Flow procgen")
 
@@ -246,8 +245,13 @@ function main() -> i32 {
             pause_held = false
         }
 
-        if !paused {
-            pulse = pulse + 1
+        # Auto-cycle sea presets so the recorded GIF shows multiple cuts.
+        if !paused and frame > 0 and frame % 50 == 0 {
+            preset = (preset % 4) + 1
+            sea = preset_sea(preset)
+            rng_state = rng_next()
+            procgen_seed(rng_state)
+            land_live = land_fraction(sea)
         }
 
         gfx_clear(g, 12, 10, 18)

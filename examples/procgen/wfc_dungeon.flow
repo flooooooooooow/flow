@@ -505,6 +505,16 @@ function main() -> i32 {
             pause_held = false
         }
 
+        # Auto-cycle seed-tile presets so the recorded GIF shows multiple layouts.
+        if !paused and frame > 0 and frame % 50 == 0 {
+            preset = (preset % 4) + 1
+            rng_state = VERIFY_SEED + (preset as u32) * 997 + (frame as u32)
+            reset_grid(cells, options, stack, seed_tile(preset))
+            collapsed_live = collapse_all(cells, options, stack)
+            collapsed_live = decided_count(cells)
+            corridors_live = corridor_fraction(cells)
+        }
+
         gfx_clear(g, 12, 10, 18)
         draw_scene(g, fb, cells)
         draw_hud(g, preset, collapsed_live, corridors_live, paused)
