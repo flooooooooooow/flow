@@ -87,6 +87,7 @@ nav:
     - Memory: library/memory.md
     - Planet: library/planet.md
     - Procgen: library/procgen.md
+    - FMM 2D: library/fmm2d.md
   - Third-Party Libraries:
     - Overview: third-party/README.md
     - flow-verify: third-party/flow-verify.md
@@ -106,6 +107,7 @@ nav:
     - Evolutionary Biology Gallery: demos/evoleco.md
     - Planet Gallery: demos/planet.md
     - Procedural Generation Gallery: demos/procgen.md
+    - Numerical Gallery: demos/numerical.md
     - Evolution Suite: demos/evolution.md
     - WebAssembly Gallery: demos/wasm.md
     - Recording Demos: demos/README.md

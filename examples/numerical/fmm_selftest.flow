@@ -1,0 +1,65 @@
+# FMM self-test: Theorem 2.1 multipole vs direct for a well-separated cluster.
+#
+# Run: FLOW_HOST=python ./flow run examples/numerical/fmm_selftest.flow
+
+import "stdlib/fmm2d.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+}
+
+function main() -> i32 {
+    let n: i32 = 64
+    let x: array<f64, 64> = [0.0, 0.0]
+    let y: array<f64, 64> = [0.0, 0.0]
+    let q: array<f64, 64> = [0.0, 0.0]
+    # Deterministic LCG cluster in [0.2, 0.4]^2
+    let mut s: u32 = 12345
+    for i in 0 to n {
+        s = s * 1664525 + 1013904223
+        x[i] = 0.2 + ((s % 10000) as f64) / 10000.0 * 0.2
+        s = s * 1664525 + 1013904223
+        y[i] = 0.2 + ((s % 10000) as f64) / 10000.0 * 0.2
+        s = s * 1664525 + 1013904223
+        q[i] = 0.1 + ((s % 10000) as f64) / 10000.0
+    }
+    fmm2d_configure(10, 20)
+    if !fmm2d_set_particles(n, x, y, q) {
+        println("FAIL set")
+        return 1
+    }
+    if !fmm2d_evaluate() {
+        println("FAIL fmm")
+        return 2
+    }
+    if !fmm2d_direct_evaluate() {
+        println("FAIL direct")
+        return 3
+    }
+    let err: f64 = fmm2d_rel_field_error()
+    print("    N=")
+    printf("%.0f", n as f64)
+    print("  p=")
+    printf("%.0f", fmm2d_p() as f64)
+    print("  boxes=")
+    printf("%.0f", fmm2d_nboxes() as f64)
+    print("  leaves=")
+    printf("%.0f", fmm2d_nleaves() as f64)
+    println("")
+    print("    relative field error            : ")
+    printf("%.6e", err)
+    println("")
+    print("    fmm_ms=")
+    printf("%.3f", fmm2d_time_ms())
+    print("  direct_ms=")
+    printf("%.3f", fmm2d_direct_time_ms())
+    println("")
+    if err > 5.0e-3 {
+        println("    FAIL: relative field error too large")
+        return 4
+    }
+    println("    PASS: adaptive FMM matches direct within 5e-3")
+    return 0
+}
