@@ -354,6 +354,16 @@ function main() -> i32 {
             pause_held = false
         }
 
+        # Auto-cycle presets so the recorded GIF shows multiple warp strengths.
+        if !paused and frame > 0 and frame % 50 == 0 {
+            preset = (preset % 4) + 1
+            warp = preset_warp(preset)
+            rng_state = rng_next()
+            procgen_seed(rng_state)
+            mad_live = mean_abs_diff(warp)
+            r2_live = corr_r2(warp)
+        }
+
         gfx_clear(g, 12, 10, 18)
         draw_scene(g, fb, warp)
         draw_hud(g, preset, mad_live, r2_live, paused)
