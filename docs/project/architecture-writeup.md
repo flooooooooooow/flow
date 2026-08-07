@@ -19,6 +19,8 @@ Flow is a classic front end with multiple back ends:
 
 The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
 
+**WebAssembly:** `./flow wasm` accepts the same `--backend=c|mlir` switch. C path is Flow→C→emcc; MLIR path is Flow→MLIR→LLVM IR→emcc (browser stubs only — no Metal). See [docs/language/wasm.md](../language/wasm.md).
+
 ## 2. Language Surface and Type System
 
 The language is deliberately small and readable:
@@ -122,3 +124,7 @@ frontier rather than the audit cleanup.
 Flow is a small, statically typed language with algebraic effects and autodiff, compiled through a straightforward AST pipeline into either C or MLIR, backed by a minimal runtime and real tooling. The “MLIR-based language” label is accurate, but incomplete; the real design is about preserving explicit semantics while giving multiple lowering targets.
 
 In other words: the interesting part is not that MLIR is used, but that the language is built to make multiple backends possible without changing the semantics.
+
+For an honest readiness check across a fifteen-stage language-maturity
+checklist, and the exact platforms the toolchain supports today, see
+[`project/maturity.md`](maturity.md).
