@@ -100,11 +100,11 @@ jobs:
           timeout: 1800000
           error_count: 20
 
-      - name: Post docs deploy to Discord #announcements
+      - name: Post docs deploy status to Discord #ci-releases
         if: always()
         uses: ./.github/actions/discord-notify
         with:
-          webhook: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
           botname: Flow Docs Bot
           avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
           color: ${{ job.status == 'success' && '3066993' || '15158332' }}
