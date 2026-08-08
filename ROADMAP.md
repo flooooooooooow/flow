@@ -1,6 +1,6 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-05  
+> Last updated: 2026-08-08  
 > Current version: 0.3.3  
 > Lines of Code: ~38,000
 
@@ -22,6 +22,14 @@ This document tracks what we're building next and why.
 ## Development Philosophy
 
 Flow is built through **agentic pair programming** - human vision interpreted through AI implementation.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
+
+---
+
+## Development Philosophy
+
+Flow is built through **agentic pair programming** — human vision interpreted through AI implementation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 

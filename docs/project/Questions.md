@@ -11,6 +11,57 @@ Format:
 
 ## Open Questions
 
+<<<<<<< Updated upstream
+=======
+### 2026-08-08: Physical-systems syntax freeze (post-thesis)
+
+**Context:** Adopted product thesis in
+[physical-systems.md](../vision/physical-systems.md) + VISION/ROADMAP updates.
+W0 implements quantity suffixes, `rf.flow`, phantom rate tags, and attributes.
+Several surface forms from the architecture brief are still open before W1–W3
+syntax lands.
+
+**Options / decisions needed:**
+
+1. **`task` / `guarantee` blocks** — full block syntax now vs attributes-only
+   (`@guarantee(no_alloc, no_block)`) until WCET exists?
+2. **`memory { }` region DSL** vs attributes-on-`let` only for placement?
+3. **Saturating ops** — `+|` / `-|` vs `sat_add` functions vs `sat<T>` types?
+4. **Profile flag** — `flow build --profile flight` vs `--safety` vs separate
+   `flow-safety` driver?
+5. **Coordinate frames** — type params (`Vector3<f64, ECEF>`) vs distinct
+   wrapper types per frame?
+6. **Affine RF units** — special-case `dBm + dB` in the checker vs explicit
+   helpers only until affine units land in north-star?
+
+**Recommendation:** (1) attributes-first; (2) attrs-first; (3) `sat<T>` +
+methods then sugar; (4) `--profile flight`; (5) type params when ready;
+(6) special-case the two RF rules in W0 (`dBm+dB`, `dB+dB`) + helpers for
+power conversion.
+
+**Status:** 🔲 Pending (W0 proceeding on recommendation; human can override)
+
+---
+
+### 2026-08-07: Heterogeneous FIR-G compiler architecture
+
+**Context:** Design for FIR-S → FIR-G → FIR-M with GPU/MLX analysis and learned
+optimisation (MLGO-style profitability only). See [fir-g.md](fir-g.md).
+
+**Options:**
+1. Bolt ML onto existing AST walkers
+2. Introduce dense-ID FIR-G as first-class IR; CPU analyses first; MLX later
+3. Jump straight to MLX-in-core / C++ rewrite
+
+**Recommendation:** (2) — Phase order locked in fir-g.md. Correctness stays
+deterministic; ML only for profitability. Dual C/MLIR/WASM backends remain.
+
+**Status:** ✅ Resolved (2026-08-07) — Phases 1–4 landed in Python alongside
+existing emitters (`./flow fir-g`, measured routing, opt candidates).
+
+---
+
+>>>>>>> Stashed changes
 ### 2026-08-04: Self-hosting bootstrap strategy
 
 **Context:** Started `compiler/` (`flowc`) — Flow lexer + subset parser that
