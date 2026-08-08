@@ -281,6 +281,20 @@ EXTERN_STUBS = {
     "_cpu_features_string": "char* _cpu_features_string(void) { return \"n/a (browser)\"; }",
     "print_kv_str": "void print_kv_str(char* label, char* val) { printf(\"%s %s\\n\", label, val); }",
     "print_kv_i32": "void print_kv_i32(char* label, int32_t val) { printf(\"%s %d\\n\", label, val); }",
+    # flow_parallel_for_i32: the native implementation is pthreads; the browser
+    # fallback runs the loop body inline (correct, just single-threaded).
+    "flow_parallel_for_i32": (
+        "void flow_parallel_for_i32(int32_t start, int32_t end, int32_t stride, "
+        "void* body, void* ctx) { "
+        "if (!body || stride == 0) return; "
+        "if (stride > 0) { for (int32_t i = start; i < end; i += stride) "
+        "{ ((void (*)(int32_t, void*))body)(i, ctx); } } "
+        "else { for (int32_t i = start; i > end; i += stride) "
+        "{ ((void (*)(int32_t, void*))body)(i, ctx); } } }"
+    ),
+    # flow_rt_par_workers: with the inline fallback above there is exactly one
+    # logical worker, so report 1 honestly.
+    "flow_rt_par_workers": "int32_t flow_rt_par_workers(void) { return 1; }",
 }
 
 
