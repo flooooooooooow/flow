@@ -350,7 +350,13 @@ class MLIRGenerator:
         self._tensor_extract_origins: Dict[str, tuple[str, int]] = {}
         self._composite_call_results: set[str] = set()
         self._tensor_param_ssas: set[str] = set()
-        self._llvm_array_types = {}
+        # Keep module-global llvm.array tags; only drop per-SSA entries.
+        kept = {
+            k: v
+            for k, v in getattr(self, "_llvm_array_types", {}).items()
+            if not str(k).startswith("%")
+        }
+        self._llvm_array_types = kept
 
     def indent(self) -> str:
         return "  " * self.indent_level
@@ -466,11 +472,35 @@ class MLIRGenerator:
             }
             offset += field_size
         self.struct_layouts[decl.name] = layout 
+    def _is_array_flow_type(self, flow_type) -> bool:
+        """True for fixed-size Flow arrays (not pointers, which also have element_type)."""
+        if flow_type is None or self._is_pointer_flow_type(flow_type):
+            return False
+        return (
+            getattr(flow_type, "element_type", None) is not None
+            and getattr(flow_type, "size", None) is not None
+        )
+
+    def _llvm_array_type_from_flow(self, flow_type) -> Optional[str]:
+        """`!llvm.array<N x T>` for a Flow array type, or None if unsupported."""
+        if not self._is_array_flow_type(flow_type):
+            return None
+        elem_mlir = self.flow_type_to_mlir(flow_type.element_type)
+        size = flow_type.size
+        if elem_mlir == "!llvm.ptr":
+            return f"!llvm.array<{size} x ptr>"
+        if elem_mlir.startswith("memref") or elem_mlir.startswith("vector"):
+            return None
+        return f"!llvm.array<{size} x {elem_mlir}>"
+
     def _get_type_size(self, flow_type) -> int:
         """Get the size of a type in bytes (simplified)"""
         # Handle string type names
         flow_type = self._resolve_type_alias(flow_type)
         type_name = flow_type.name if hasattr(flow_type, 'name') else str(flow_type)
+
+        if self._is_array_flow_type(flow_type):
+            return self._get_type_size(flow_type.element_type) * int(flow_type.size)
         
         if type_name in ['i8', 'u8', 'bool']:
             return 1
@@ -523,12 +553,25 @@ class MLIRGenerator:
 
         field_types = []
         for field in decl.fields:
-            field_ty = self.flow_type_to_mlir(field.type)
-            # LLVM struct fields must be LLVM-compatible scalars/pointers/structs.
-            if field_ty.startswith("memref") or field_ty.startswith("vector") or field_ty.startswith("!flow.struct"):
-                self._struct_llvm_building.discard(struct_name)
-                self.struct_llvm_types[struct_name] = None
-                return None
+            # Fixed-size arrays become !llvm.array (memref is not a valid LLVM
+            # struct field — doom-flow JoyState.buttons and similar).
+            if self._is_array_flow_type(field.type):
+                field_ty = self._llvm_array_type_from_flow(field.type)
+                if field_ty is None:
+                    self._struct_llvm_building.discard(struct_name)
+                    self.struct_llvm_types[struct_name] = None
+                    return None
+            else:
+                field_ty = self.flow_type_to_mlir(field.type)
+                # LLVM struct fields must be LLVM-compatible scalars/pointers/structs.
+                if (
+                    field_ty.startswith("memref")
+                    or field_ty.startswith("vector")
+                    or field_ty.startswith("!flow.struct")
+                ):
+                    self._struct_llvm_building.discard(struct_name)
+                    self.struct_llvm_types[struct_name] = None
+                    return None
             field_types.append(field_ty)
 
         struct_ty = f"!llvm.struct<({', '.join(field_types)})>"
@@ -592,16 +635,40 @@ class MLIRGenerator:
         self._effects = {}
         self._capabilities = {}
         self._effect_handler_stack = [{}]
+        # Names with a real body in this module — skip emitting `func.func private`
+        # for matching extern decls (doom-flow Z_Malloc is extern'd widely + defined).
+        self._defined_function_names: Set[str] = {
+            decl.name
+            for decl in cpu_decls
+            if isinstance(decl, FunctionDecl) and not getattr(decl, "is_extern", False)
+        }
+        # C varargs APIs are re-declared with many fixed arities in doom-flow;
+        # lower them once as true variadic so calls type-check.
+        self._c_variadic_funcs = {
+            "printf", "sprintf", "snprintf", "fprintf",
+            "sscanf", "fscanf", "scanf",
+        }
         for decl in cpu_decls:
             if isinstance(decl, FunctionDecl):
                 if getattr(decl, "is_extern", False) and decl.name == "printf":
                     self.needs_printf = True
+                is_variadic = bool(getattr(decl, "is_variadic", False))
+                if decl.name in self._c_variadic_funcs:
+                    is_variadic = True
+                params = list(decl.parameters)
+                # C varargs: keep a stable fixed prefix (fmt + leading args).
+                if decl.name in ("snprintf", "sprintf", "fprintf"):
+                    params = params[:3]
+                    is_variadic = True
+                elif decl.name == "printf":
+                    params = params[:1]
+                    is_variadic = True
                 # Add function to symbol table
                 self.symbol_table[decl.name] = {
                     'type': 'function',
                     'return_type': decl.return_type,
-                    'parameters': decl.parameters,
-                    'is_variadic': getattr(decl, "is_variadic", False),
+                    'parameters': params,
+                    'is_variadic': is_variadic,
                     'mlir_name': f"@{decl.name}"
                 }
             elif isinstance(decl, EffectDecl):
@@ -612,24 +679,36 @@ class MLIRGenerator:
                 mlir_type = self.flow_type_to_mlir(decl.type)
                 if getattr(decl.type, "name", None) == "bool":
                     mlir_type = "i1"
-                self.symbol_table[decl.name] = {
+                entry = {
                     "type": "variable",
                     "mlir_type": mlir_type,
                     "flow_type": decl.type,
                     "is_module_global": True,
                     "is_const": True,
                 }
+                if getattr(decl.type, "name", None) == "string":
+                    entry["mlir_type"] = "!llvm.ptr"
+                    entry["is_string_global"] = True
+                self.symbol_table[decl.name] = entry
             elif isinstance(decl, StaticDecl):
                 mlir_type = self.flow_type_to_mlir(decl.type)
                 if getattr(decl.type, "name", None) == "bool":
                     mlir_type = "i1"
-                self.symbol_table[decl.name] = {
+                entry = {
                     "type": "variable",
                     "mlir_type": mlir_type,
                     "flow_type": decl.type,
                     "is_module_global": True,
                     "is_const": False,
                 }
+                # Fixed-size arrays lower to llvm.array globals; record that
+                # before the per-function snapshot so restores keep GEP info.
+                llvm_array_ty = self._llvm_array_type_from_flow(decl.type)
+                if llvm_array_ty:
+                    entry["mlir_type"] = "!llvm.ptr"
+                    entry["llvm_array_type"] = llvm_array_ty
+                    self._llvm_array_types[decl.name] = llvm_array_ty
+                self.symbol_table[decl.name] = entry
         self._needs_effect_init = bool(self._effects) and bool(self._capabilities)
 
         # Register effect dispatch functions and capability methods so calls
@@ -760,16 +839,41 @@ class MLIRGenerator:
         if hasattr(func, 'is_extern') and func.is_extern:
             if func.name == "printf":
                 return ""
+            if func.name in getattr(self, "_defined_function_names", set()):
+                return ""
             if func.name in self._declared_externs:
                 return ""
             self._declared_externs.add(func.name)
-            param_types = [self.flow_type_to_mlir(p.type) for p in func.parameters]
-            return_type = self.flow_type_to_mlir(func.return_type)
-            if getattr(func, "is_variadic", False):
-                variadic_suffix = ", ..." if param_types else "..."
-            else:
-                variadic_suffix = ""
-            func_signature = f"func.func private @{func.name}({', '.join(param_types)}{variadic_suffix}) -> {return_type}"
+            # Use the (possibly shortened) symbol-table signature for C varargs.
+            info = self.symbol_table.get(func.name) or {}
+            params = info.get("parameters", func.parameters)
+            param_types = [self.flow_type_to_mlir(p.type) for p in params]
+            return_type = self.flow_type_to_mlir(
+                info.get("return_type", func.return_type)
+            )
+            is_variadic = bool(
+                info.get("is_variadic")
+                or getattr(func, "is_variadic", False)
+                or func.name in getattr(self, "_c_variadic_funcs", set())
+            )
+            if is_variadic:
+                # func dialect rejects `...`; emit llvm.func like printf (# needs_printf).
+                if func.name in ("snprintf", "sprintf", "fprintf") and len(param_types) > 3:
+                    param_types = param_types[:3]
+                elif func.name == "printf" and len(param_types) > 1:
+                    param_types = param_types[:1]
+                if not param_types:
+                    return (
+                        f"{self.indent()}llvm.func @{func.name}(...) -> {return_type}"
+                    )
+                return (
+                    f"{self.indent()}llvm.func @{func.name}"
+                    f"({', '.join(param_types)}, ...) -> {return_type}"
+                )
+            func_signature = (
+                f"func.func private @{func.name}"
+                f"({', '.join(param_types)}) -> {return_type}"
+            )
             return f"{self.indent()}{func_signature}"
         
         mlir_code = []
@@ -1029,21 +1133,35 @@ class MLIRGenerator:
     def _needs_cf_loop_lowering(self, block: Optional[Block]) -> bool:
         """True when a block cannot live inside a single-block scf region.
 
-        break/continue need a cf edge out, and `while` and `match` always emit
-        cf blocks of their own, which an scf.for/scf.if region cannot hold.
+        break/continue need a cf edge out, and `while` / `match` / early
+        `return` always emit cf blocks. If/elif chains that assign locals also
+        force cf: nested scf.if does not propagate SSA yields correctly, which
+        produced undeclared-SSA yields in doom-flow wipes / sound.
         """
         if block is None:
             return False
         for stmt in block.statements:
             if isinstance(
                 stmt,
-                (BreakStatement, ContinueStatement, WhileStatement, MatchStatement),
+                (
+                    BreakStatement,
+                    ContinueStatement,
+                    WhileStatement,
+                    MatchStatement,
+                    ReturnStatement,
+                ),
             ):
                 return True
             if isinstance(stmt, ForStatement):
                 if self._needs_cf_loop_lowering(stmt.body):
                     return True
             elif isinstance(stmt, IfStatement):
+                if stmt.elif_blocks:
+                    return True
+                if self._assigned_locals(stmt.then_block):
+                    return True
+                if stmt.else_block and self._assigned_locals(stmt.else_block):
+                    return True
                 if self._needs_cf_loop_lowering(stmt.then_block):
                     return True
                 if any(self._needs_cf_loop_lowering(b) for _, b in stmt.elif_blocks):
@@ -1138,7 +1256,14 @@ class MLIRGenerator:
             }
             if from_tensor_field and self._is_tensor_struct(mlir_type):
                 var_entry["from_tensor_field"] = True
-            if self._uses_alloca_storage(mlir_type, var_decl.type):
+            # Aggregates always use alloca. Mutable scalars also get alloca so
+            # `&x` inside one scf.if arm cannot create a region-local pointer
+            # that the other arm later stores through (EV_DoDonut).
+            needs_alloca = self._uses_alloca_storage(mlir_type, var_decl.type) or (
+                getattr(var_decl, "is_mutable", False)
+                and not mlir_type.startswith("memref")
+            )
+            if needs_alloca:
                 ptr, alloc_ops = self._emit_alloca_store(init_value, mlir_type)
                 init_ops.extend(alloc_ops)
                 var_entry["alloca_ptr"] = ptr
@@ -1236,8 +1361,36 @@ class MLIRGenerator:
                 if isinstance(access.index, Variable) and access.index.name in self.symbol_table:
                     index_type = self.symbol_table[access.index.name].get('mlir_type', index_type)
 
+                # Match generate_array_access: !llvm.array globals/locals need
+                # gep[0, i], not flat ptr indexing (array<ptr>/array<string>).
+                llvm_array_ty = self._llvm_array_type_for(access.array, array_ssa)
+                if llvm_array_ty is not None:
+                    elem_flow = self._flow_type_of_expr(access)
+                    elem_type = (
+                        self.flow_type_to_mlir(elem_flow)
+                        if elem_flow is not None
+                        else '!llvm.ptr'
+                    )
+                    val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
+                    if val_type != elem_type:
+                        value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
+                        ops.extend(cast_ops)
+                    gep, gep_ops = self._emit_llvm_array_index_gep(
+                        array_ssa, index_ssa, index_type, llvm_array_ty
+                    )
+                    ops.extend(gep_ops)
+                    ops.append(
+                        f"{self.indent()}llvm.store {value_ssa}, {gep} : {elem_type}, !llvm.ptr"
+                    )
+                    return "\n".join(ops)
+
                 if self._is_pointer_array_ssa(array_ssa, access):
-                    elem_type = self._elem_type_from_array_expr(access.array) or 'f32'
+                    elem_flow = self._flow_type_of_expr(access)
+                    elem_type = (
+                        self.flow_type_to_mlir(elem_flow)
+                        if elem_flow is not None
+                        else (self._elem_type_from_array_expr(access.array) or 'f32')
+                    )
                     val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
                     if val_type != elem_type:
                         value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
@@ -1393,9 +1546,15 @@ class MLIRGenerator:
             then_assigned = self._assigned_locals(if_stmt.then_block)
             else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
             merged_vars = list(dict.fromkeys(then_assigned + else_assigned))
-            if merged_vars:
+            # Only SSA-mergeable locals need scf.if yields. Module-global stores
+            # (joy_ptr = …) must not take this path — filtering to empty used to
+            # drop the entire then-block and leave a dead compare.
+            mergeable = self._filter_ssa_mergeable(merged_vars)
+            if mergeable:
                 condition_ssa, condition_ops = self.generate_expression(if_stmt.condition)
-                return self._generate_scf_if_with_yield(if_stmt, condition_ssa, merged_vars, condition_ops)
+                return self._generate_scf_if_with_yield(
+                    if_stmt, condition_ssa, mergeable, condition_ops
+                )
         if self.inside_scf_for:
             return self._generate_scf_if(if_stmt)
         return self._generate_cf_if(if_stmt)
@@ -1453,6 +1612,9 @@ class MLIRGenerator:
                 continue
             if info.get("is_module_global"):
                 continue
+            if info.get("alloca_ptr"):
+                # Memory is authoritative; do not SSA-merge across scf.if.
+                continue
             if "ssa_name" not in info:
                 continue
             if "mlir_type" not in info:
@@ -1478,7 +1640,25 @@ class MLIRGenerator:
             [v for v in merged_vars if v in self.symbol_table]
         )
         if not merged_vars:
-            return "\n".join(prefix_ops)
+            # Side-effect-only then/else (globals, field stores): plain scf.if.
+            mlir_code = list(prefix_ops)
+            mlir_code.append(f"{self.indent()}scf.if {condition_ssa} {{")
+            self.indent_level += 1
+            then_body = self.generate_block(if_stmt.then_block)
+            if then_body.strip():
+                mlir_code.append(then_body)
+            self.indent_level -= 1
+            if if_stmt.else_block:
+                mlir_code.append(f"{self.indent()}}} else {{")
+                self.indent_level += 1
+                else_body = self.generate_block(if_stmt.else_block)
+                if else_body.strip():
+                    mlir_code.append(else_body)
+                self.indent_level -= 1
+                mlir_code.append(f"{self.indent()}}}")
+            else:
+                mlir_code.append(f"{self.indent()}}}")
+            return "\n".join(mlir_code)
 
         types = [self.symbol_table[v]['mlir_type'] for v in merged_vars]
         old_ssas = {v: self.symbol_table[v]['ssa_name'] for v in merged_vars}
@@ -1537,8 +1717,11 @@ class MLIRGenerator:
             then_assigned = self._assigned_locals(if_stmt.then_block)
             else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
             merged_vars = list(dict.fromkeys(then_assigned + else_assigned))
-            if merged_vars:
-                return self._generate_scf_if_with_yield(if_stmt, condition_ssa, merged_vars, mlir_code)
+            mergeable = self._filter_ssa_mergeable(merged_vars)
+            if mergeable:
+                return self._generate_scf_if_with_yield(
+                    if_stmt, condition_ssa, mergeable, mlir_code
+                )
         
         # Generate if-then-else using scf.if
         if if_stmt.elif_blocks or if_stmt.else_block:
@@ -2623,9 +2806,12 @@ class MLIRGenerator:
         carried: List[str] = []
         for var_name in assigned_vars:
             if var_name in self.symbol_table and var_name not in declared_vars and var_name not in carried:
-                # Module consts/statics are memory-backed (addressof + load/store),
-                # not SSA values, so they cannot be threaded through iter_args.
+                # Module consts/statics and alloca-backed mut locals are
+                # memory-backed — not SSA values — so they cannot be threaded
+                # through iter_args / cf block arguments.
                 if self.symbol_table[var_name].get("is_module_global"):
+                    continue
+                if self.symbol_table[var_name].get("alloca_ptr"):
                     continue
                 carried.append(var_name)
         return carried
@@ -3208,9 +3394,36 @@ class MLIRGenerator:
         self._ssa_types[ssa_name] = mlir_type
         return ssa_name, [line]
     
+    def _emit_function_as_ptr(self, name: str, info: dict) -> tuple[str, List[str]]:
+        """Materialize a function name used as a value (thinker hooks, etc.).
+
+        ``llvm.mlir.addressof`` cannot reference ``func.func`` symbols; match
+        capability vtables: ``func.constant`` + unrealized cast to ``!llvm.ptr``.
+        """
+        params = info.get("parameters") or []
+        param_types = [self.flow_type_to_mlir(p.type) for p in params]
+        ret = self.flow_type_to_mlir(info["return_type"])
+        fn_type = f"({', '.join(param_types)}) -> {ret}"
+        fn_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ptr_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops = [
+            f"{self.indent()}{fn_ssa} = func.constant @{name} : {fn_type}",
+            (
+                f"{self.indent()}{ptr_ssa} = builtin.unrealized_conversion_cast "
+                f"{fn_ssa} : {fn_type} to !llvm.ptr"
+            ),
+        ]
+        self._ssa_types[fn_ssa] = fn_type
+        self._ssa_types[ptr_ssa] = "!llvm.ptr"
+        return ptr_ssa, ops
+
     def generate_variable(self, variable: Variable) -> tuple[str, List[str]]:
         if variable.name in self.symbol_table:
             var_info = self.symbol_table[variable.name]
+            if var_info.get("type") == "function":
+                return self._emit_function_as_ptr(variable.name, var_info)
             mlir_type = var_info.get("mlir_type")
             # Enum tag discriminators are known constants — avoid a load.
             if var_info.get("is_enum_tag") and "enum_tag_value" in var_info:
@@ -3240,6 +3453,16 @@ class MLIRGenerator:
         self.function_counter += 1
         ops.append(f"{self.indent()}{ptr} = llvm.mlir.addressof @{name} : !llvm.ptr")
         self._ssa_types[ptr] = "!llvm.ptr"
+        info = self.symbol_table.get(name) or {}
+        llvm_array_ty = info.get("llvm_array_type")
+        if llvm_array_ty:
+            # Global *is* the array storage; addressof is the base pointer for GEP.
+            self._llvm_array_types[ptr] = llvm_array_ty
+            self._llvm_array_types[name] = llvm_array_ty
+            return ptr, ops
+        if info.get("is_string_global"):
+            # addressof of the i8 array is the string pointer (no load).
+            return ptr, ops
         val = f"%{self.function_counter}"
         self.function_counter += 1
         ops.append(f"{self.indent()}{val} = llvm.load {ptr} : !llvm.ptr -> {mlir_type}")
@@ -3446,6 +3669,9 @@ class MLIRGenerator:
         Variables become alloca-backed on first address-of, so writes through
         the pointer stay visible to later reads (generate_variable and
         generate_assignment both prefer alloca_ptr once it is set).
+
+        Field / array lvalues (``&j[0].buttons[0]``) use GEP into the real
+        object — never load+spill, which would give M_BindVariable a temp.
         """
         if isinstance(operand, Variable) and operand.name in self.symbol_table:
             var_info = self.symbol_table[operand.name]
@@ -3460,12 +3686,159 @@ class MLIRGenerator:
             if ptr:
                 self._ssa_types[ptr] = '!llvm.ptr'
                 return ptr, ops
+        lval = self._address_of_lvalue(operand)
+        if lval is not None:
+            ptr, ops = lval
+            self._ssa_types[ptr] = '!llvm.ptr'
+            return ptr, ops
         # Fallback: spill the value of the expression to a fresh slot.
         operand_ssa, operand_ops = self.generate_expression(operand)
         ty = self._ssa_types.get(operand_ssa) or self.get_expression_type(operand)
         ptr, spill_ops = self._emit_alloca_store(operand_ssa, ty)
         self._ssa_types[ptr] = '!llvm.ptr'
         return ptr, operand_ops + spill_ops
+
+    def _address_of_lvalue(self, expr: Expression) -> Optional[tuple]:
+        """Address of a field or array-element lvalue as ``!llvm.ptr``.
+
+        Returns ``(ptr_ssa, ops)`` or None when the shape is not addressable.
+        """
+        if isinstance(expr, FieldAccess):
+            parent = self._address_of_struct_lvalue(expr.object)
+            if parent is None:
+                return None
+            parent_ptr, parent_ops, parent_struct = parent
+            decl = self._get_struct_decl(parent_struct)
+            llvm_struct = self._struct_llvm_type(parent_struct)
+            if not decl or not llvm_struct:
+                return None
+            field_names = [f.name for f in decl.fields]
+            if expr.field not in field_names:
+                return None
+            idx = field_names.index(expr.field)
+            ops = list(parent_ops)
+            gep = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{gep} = llvm.getelementptr {parent_ptr}[0, {idx}] "
+                f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
+            )
+            self._ssa_types[gep] = "!llvm.ptr"
+            field_ty = self._determine_field_type(expr)
+            if field_ty is not None and self._is_array_flow_type(field_ty):
+                arr_ty = self._llvm_array_type_from_flow(field_ty)
+                if arr_ty:
+                    self._llvm_array_types[gep] = arr_ty
+            return gep, ops
+
+        if isinstance(expr, ArrayAccess):
+            arr_ty = self._flow_type_of_expr(expr.array)
+            index_ssa, index_ops = self.generate_expression(expr.index)
+            index_type = self._ssa_types.get(index_ssa, "i32")
+            if isinstance(expr.index, Variable) and expr.index.name in self.symbol_table:
+                index_type = self.symbol_table[expr.index.name].get("mlir_type", index_type)
+
+            # ptr[i] → GEP (element address); covers &j[0] for ptr-to-struct.
+            if self._is_pointer_flow_type(arr_ty):
+                array_result = self.generate_expression(expr.array)
+                if not array_result:
+                    return None
+                array_ssa, array_ops = array_result
+                pointee = self._pointee_struct_type(arr_ty)
+                llvm_elem = None
+                if pointee is not None and pointee.name in self.struct_layouts:
+                    llvm_elem = self._struct_llvm_type(pointee.name) or self.flow_type_to_mlir(
+                        pointee
+                    )
+                else:
+                    elem = getattr(arr_ty, "element_type", None)
+                    if elem is not None:
+                        llvm_elem = self.flow_type_to_mlir(elem)
+                if not llvm_elem:
+                    return None
+                ops = list(array_ops) + list(index_ops)
+                gep, gep_ops = self._emit_ptr_index_gep(
+                    array_ssa, index_ssa, index_type, llvm_elem
+                )
+                ops.extend(gep_ops)
+                return gep, ops
+
+            # array-field / llvm.array local: &buttons[i]
+            base = None
+            ops: List[str] = []
+            if isinstance(expr.array, (FieldAccess, ArrayAccess)):
+                base = self._address_of_lvalue(expr.array)
+                if base is None:
+                    return None
+                array_ssa, base_ops = base
+                ops.extend(base_ops)
+            else:
+                array_result = self.generate_expression(expr.array)
+                if not array_result:
+                    return None
+                array_ssa, array_ops = array_result
+                ops.extend(array_ops)
+
+            ops.extend(index_ops)
+            llvm_array_ty = self._llvm_array_type_for(expr.array, array_ssa)
+            if llvm_array_ty is not None:
+                gep, gep_ops = self._emit_llvm_array_index_gep(
+                    array_ssa, index_ssa, index_type, llvm_array_ty
+                )
+                ops.extend(gep_ops)
+                return gep, ops
+            # Local memref arrays: decay via aligned-pointer extract for &arr[i].
+            ssa_ty = self._ssa_types.get(array_ssa, "")
+            if ssa_ty.startswith("memref"):
+                elem_ty = self._memref_element_type(ssa_ty) or "i8"
+                idx64, cast_ops = self._index_to_i64(index_ssa, index_type)
+                ops.extend(cast_ops)
+                base_idx = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{base_idx} = memref.extract_aligned_pointer_as_index "
+                    f"{array_ssa} : {ssa_ty} -> index"
+                )
+                base_i64 = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{base_i64} = arith.index_cast {base_idx} : index to i64"
+                )
+                # Scale index by element size when element is wider than i8.
+                elem_size = 1
+                if elem_ty in ("i16", "u16"):
+                    elem_size = 2
+                elif elem_ty in ("i32", "u32", "f32"):
+                    elem_size = 4
+                elif elem_ty in ("i64", "u64", "f64", "!llvm.ptr"):
+                    elem_size = 8
+                byte_off = idx64
+                if elem_size != 1:
+                    sz = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(
+                        f"{self.indent()}{sz} = arith.constant {elem_size} : i64"
+                    )
+                    byte_off = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(
+                        f"{self.indent()}{byte_off} = arith.muli {idx64}, {sz} : i64"
+                    )
+                addr_i64 = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{addr_i64} = arith.addi {base_i64}, {byte_off} : i64"
+                )
+                ptr = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{ptr} = llvm.inttoptr {addr_i64} : i64 to !llvm.ptr"
+                )
+                self._ssa_types[ptr] = "!llvm.ptr"
+                return ptr, ops
+            return None
+
+        return None
 
     def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
         """Generate field access that loads values from struct memory"""
@@ -3513,10 +3886,17 @@ class MLIRGenerator:
             ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
             return ssa_name, ops
 
-        # Pointer-to-struct objects: GEP to the field, then a scalar load.
-        ptr_base = self._field_pointer_base(field_access.object, obj_ssa)
-        if ptr_base is not None:
-            base_ptr, struct_name = ptr_base
+        # Addressable struct objects (ptr, ptr[i], nested fields): GEP to field.
+        # Array fields decay to a pointer to the embedded !llvm.array (C-like).
+        addr = self._address_of_struct_lvalue(field_access.object)
+        if addr is None:
+            ptr_base = self._field_pointer_base(field_access.object, obj_ssa)
+            if ptr_base is not None:
+                base_ptr, struct_name = ptr_base
+                addr = (base_ptr, [], struct_name)
+        if addr is not None:
+            base_ptr, base_ops, struct_name = addr
+            ops.extend(base_ops)
             llvm_struct = self._struct_llvm_type(struct_name)
             decl = self._get_struct_decl(struct_name)
             if llvm_struct and decl:
@@ -3530,6 +3910,11 @@ class MLIRGenerator:
                         f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
                     )
                     self._ssa_types[gep] = '!llvm.ptr'
+                    if self._is_array_flow_type(field_type):
+                        arr_ty = self._llvm_array_type_from_flow(field_type)
+                        if arr_ty:
+                            self._llvm_array_types[gep] = arr_ty
+                        return gep, ops
                     load = f"%{self.function_counter}"
                     self.function_counter += 1
                     field_ty = self.flow_type_to_mlir(field_type)
@@ -5004,10 +5389,12 @@ class MLIRGenerator:
             elem_type = elem_type_hint
         size = len(array_literal.elements)
 
-        # !llvm.struct is not a valid memref element type. Lower struct arrays
-        # as an alloca of !llvm.array<N x struct> and return the pointer.
-        if elem_type.startswith('!llvm.struct'):
-            array_ty = f"!llvm.array<{size} x {elem_type}>"
+        # !llvm.struct / !llvm.ptr are not valid memref element types. Lower as
+        # alloca of !llvm.array<N x T> and return the pointer (doom-flow string tabs).
+        if elem_type.startswith('!llvm.struct') or elem_type == '!llvm.ptr':
+            storage_elem = 'ptr' if elem_type == '!llvm.ptr' else elem_type
+            store_ty = '!llvm.ptr' if elem_type == '!llvm.ptr' else elem_type
+            array_ty = f"!llvm.array<{size} x {storage_elem}>"
             one = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(f"{self.indent()}{one} = llvm.mlir.constant(1 : i64) : i64")
@@ -5030,7 +5417,7 @@ class MLIRGenerator:
                 )
                 self._ssa_types[gep] = '!llvm.ptr'
                 ops.append(
-                    f"{self.indent()}llvm.store {element_value}, {gep} : {elem_type}, !llvm.ptr"
+                    f"{self.indent()}llvm.store {element_value}, {gep} : {store_ty}, !llvm.ptr"
                 )
             return ptr, ops
 
@@ -5127,9 +5514,21 @@ class MLIRGenerator:
     def _llvm_array_type_for(self, array_expr: Expression, array_ssa: str) -> Optional[str]:
         if array_ssa in self._llvm_array_types:
             return self._llvm_array_types[array_ssa]
+        # Locals are memref.alloc; never treat those SSA values as llvm.array.
+        ssa_ty = self._ssa_types.get(array_ssa, "")
+        if ssa_ty.startswith("memref"):
+            return None
         if isinstance(array_expr, Variable):
             info = self.symbol_table.get(array_expr.name) or {}
-            return info.get('llvm_array_type') or self._llvm_array_types.get(array_expr.name)
+            if info.get("llvm_array_type"):
+                return info["llvm_array_type"]
+            cached = self._llvm_array_types.get(array_expr.name)
+            if cached:
+                return cached
+            # Module statics/consts of array type lower to llvm.array globals.
+            if info.get("is_module_global"):
+                return self._llvm_array_type_from_flow(info.get("flow_type"))
+            return None
         return None
 
     def _index_to_i64(self, index_ssa: str, index_type: str) -> tuple[str, List[str]]:
@@ -5297,6 +5696,9 @@ class MLIRGenerator:
         elif isinstance(expr, Variable):
             if expr.name in self.symbol_table:
                 var_info = self.symbol_table[expr.name]
+                if var_info.get('type') == 'function':
+                    # Function name as value → opaque function pointer.
+                    return '!llvm.ptr'
                 if 'mlir_type' in var_info:
                     return var_info['mlir_type']
                 if 'flow_type' in var_info:
@@ -5407,9 +5809,9 @@ class MLIRGenerator:
             # Array type: array_f32 / array_4_Note
             if elem_type:
                 elem_mlir = self.flow_type_to_mlir(elem_type)
-                # Struct elements use llvm.array alloca (!llvm.ptr); memref cannot
-                # hold !llvm.struct elements.
-                if elem_mlir.startswith('!llvm.struct'):
+                # Struct / pointer elements use llvm.array via !llvm.ptr; memref
+                # cannot hold !llvm.struct or !llvm.ptr elements (doom-flow statics).
+                if elem_mlir.startswith('!llvm.struct') or elem_mlir == '!llvm.ptr':
                     return '!llvm.ptr'
                 if flow_type.size:
                     return f"memref<{flow_type.size}x{elem_mlir}>"
@@ -5429,7 +5831,7 @@ class MLIRGenerator:
             # Array type: array_100_i32 / array<Note, 4>
             if elem_type:
                 elem_mlir = self.flow_type_to_mlir(elem_type)
-                if elem_mlir.startswith('!llvm.struct'):
+                if elem_mlir.startswith('!llvm.struct') or elem_mlir == '!llvm.ptr':
                     return '!llvm.ptr'
                 if flow_type.size:
                     return f"memref<{flow_type.size}x{elem_mlir}>"
@@ -5659,13 +6061,29 @@ class MLIRGenerator:
         # Module-scope globals should not rely on SSA values from local ops.
         if isinstance(const.value, Literal):
             if const.value.type.name == "string":
-                # String constants handled via string globals; no separate const emitted.
+                # Named string const must be an addressable llvm.global (doom uses
+                # DMAIN_PACKAGE_STRING etc. via llvm.mlir.addressof @Name).
                 str_val = const.value.value
-                if str_val not in self.string_constants:
-                    global_name = f"str_{self.string_counter}"
-                    self.string_counter += 1
-                    self.string_constants[str_val] = global_name
-                return ""
+                str_content = str_val[1:-1] if len(str_val) >= 2 and str_val[0] == '"' else str_val
+                byte_len = len(str_content.encode("utf-8").decode("unicode_escape")) + 1
+                mlir_code.append(
+                    f'{self.indent()}llvm.mlir.global internal constant @{const.name}'
+                    f'("{str_content}\\00") {{addr_space = 0 : i32}} '
+                    f': !llvm.array<{byte_len} x i8>'
+                )
+                self.symbol_table[const.name] = {
+                    "type": "variable",
+                    "mlir_type": "!llvm.ptr",
+                    "flow_type": const.type,
+                    "is_module_global": True,
+                    "is_const": True,
+                    "is_string_global": True,
+                }
+                if getattr(self, "_module_symbol_snapshot", None) is not None:
+                    self._module_symbol_snapshot[const.name] = dict(
+                        self.symbol_table[const.name]
+                    )
+                return "\n".join(mlir_code)
             if (
                 mlir_type == "!llvm.ptr"
                 or str(const.value.value).lower() == "null"
@@ -5699,6 +6117,30 @@ class MLIRGenerator:
         mlir_type = self.flow_type_to_mlir(static.type)
         if getattr(static.type, "name", None) == "bool":
             mlir_type = "i1"
+
+        llvm_array_ty = self._llvm_array_type_from_flow(static.type)
+        if llvm_array_ty:
+            # Global storage is the array; SSA uses pointer-to-array.
+            # Zero-init; literal element lists are applied via later stores when needed.
+            mlir_type = "!llvm.ptr"
+            mlir_code.append(
+                f"{self.indent()}llvm.mlir.global internal @{static.name}() : {llvm_array_ty}"
+            )
+            self.symbol_table[static.name] = {
+                "type": "variable",
+                "mlir_type": mlir_type,
+                "flow_type": static.type,
+                "is_module_global": True,
+                "is_const": False,
+                "llvm_array_type": llvm_array_ty,
+            }
+            self._llvm_array_types[static.name] = llvm_array_ty
+            # Refresh snapshot entry so later functions see llvm_array_type.
+            if getattr(self, "_module_symbol_snapshot", None) is not None:
+                self._module_symbol_snapshot[static.name] = dict(
+                    self.symbol_table[static.name]
+                )
+            return "\n".join(mlir_code)
 
         # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
         init_payload = f"() : {mlir_type}"
