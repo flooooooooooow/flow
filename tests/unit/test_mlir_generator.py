@@ -125,6 +125,40 @@ function main() -> i32 {
         assert "arith.constant null" not in mlir
 
 
+class TestMLIRCFBlockArgNoCrossFunctionLeak:
+    """Prior function params must not pollute CF merges (#232)."""
+
+    def test_stale_i_param_does_not_retag_ptr_arg0(self):
+        # First function binds i as %arg0 : i32. Second takes a string (%arg0
+        # : !llvm.ptr) and assigns to a local `i` inside an if — without a
+        # per-function symbol reset, CF merge reused the stale i→%arg0:i32
+        # binding and emitted `cf.br ^bb(%arg0 : i32)` against a ptr arg.
+        code = """
+function earlier(i: i32) -> i32 {
+    return i
+}
+
+function later(name: string) -> i32 {
+    if true {
+        return 1
+    } else {
+        let mut i: i32 = 0
+        while i < 1 {
+            i = i + 1
+        }
+    }
+    return 0 - 1
+}
+"""
+        mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
+        assert "func.func @later(%arg0: !llvm.ptr)" in mlir
+        # Must not branch carrying %arg0 typed as i32 (stale param leak).
+        for line in mlir.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("cf.br") and "%arg0" in stripped:
+                assert ": i32)" not in stripped.replace(" ", "") and "%arg0 : i32" not in stripped, line
+
+
 class TestMLIRExpressionGeneration:
     """Test MLIR expression generation."""
 
