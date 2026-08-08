@@ -845,8 +845,14 @@ class MLIRGenerator:
         for string_val, global_name in self.string_constants.items():
             # Remove quotes and escape for LLVM
             str_content = string_val[1:-1]  # Remove surrounding quotes
-            # Calculate actual byte length (escape sequences like \n count as 1 byte)
+            # Calculate actual byte length (escape sequences like \n count as 1 byte).
+            # Do this BEFORE the backslash-pair rewrite: unicode_escape collapses
+            # `\\` to one backslash (1 byte), matching LLVM's `\5C` (1 byte).
             byte_len = len(str_content.encode('utf-8').decode('unicode_escape')) + 1  # +1 for null terminator
+            # Backslash pairs (Flow `\\` escape = one runtime backslash) must emit
+            # as `\5C` — LLVM's hex escape for the backslash code point — so the
+            # emitted literal and byte_len agree. `\n`/`\t`/etc. stay as-is.
+            str_content = str_content.replace("\\\\", "\\5C")
             mlir_code.append(f'{self.indent()}llvm.mlir.global internal constant @{global_name}("{str_content}\\00") {{addr_space = 0 : i32}} : !llvm.array<{byte_len} x i8>')
         
         # Add generated declarations
