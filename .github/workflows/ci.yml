@@ -522,8 +522,9 @@ jobs:
           FIELDS="$FIELDS{\"name\":\"Branch\",\"value\":\"\`${{ github.head_ref || github.ref_name }}\`\",\"inline\":true},"
           FIELDS="$FIELDS{\"name\":\"Run\",\"value\":\"#${{ github.run_number }}\",\"inline\":true}"
           subject="$(git -C "$GITHUB_WORKSPACE" log -1 --format='%s' 2>/dev/null || echo '')"
+          if [ "$fail" = "1" ]; then failed_out=true; else failed_out=false; fi
           {
-            echo "failed=$fail"
+            echo "failed=$failed_out"
             echo "failures=${FAILURES# }"
             echo "fields=[$FIELDS]"
             echo "subject=$subject"
@@ -536,18 +537,22 @@ jobs:
           echo "Required jobs failed: ${{ steps.summarize.outputs.failures }}"
           exit 1
 
+      # Notify on main pushes always; on PRs only when something failed (cut noise).
       - name: Post CI status to Discord #ci-releases
-        if: always()
+        if: >-
+          always() &&
+          (github.event_name == 'push' ||
+           steps.summarize.outputs.failed == 'true')
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
           botname: Flow CI
           avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
-          content: '${{ steps.summarize.outputs.failed == "true" && format("CI failed: {0}", steps.summarize.outputs.failures) || "" }}'
+          content: ${{ steps.summarize.outputs.failed == 'true' && format('CI failed: {0}', steps.summarize.outputs.failures) || '' }}
           color: ${{ steps.summarize.outputs.failed == 'true' && '15158332' || '3066993' }}
           title: CI ${{ steps.summarize.outputs.failed == 'true' && 'failed' || 'passed' }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          description: '${{ github.repository }} · \`${{ github.head_ref || github.ref_name }}\` on ${{ github.event_name }} · by ${{ github.actor }} · ${{ steps.summarize.outputs.subject }}'
+          description: ${{ format('{0} · `{1}` on {2} · by {3} · {4}', github.repository, github.head_ref || github.ref_name, github.event_name, github.actor, steps.summarize.outputs.subject) }}
           author_name: Flow CI
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
           fields: ${{ steps.summarize.outputs.fields }}
