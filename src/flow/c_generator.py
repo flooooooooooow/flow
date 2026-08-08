@@ -1748,7 +1748,7 @@ class CGenerator:
         }
         if mangled_suffix in prim:
             return prim[mangled_suffix]
-        if mangled_suffix.startswith("ptr_"):
+        if mangled_suffix == "ptr" or mangled_suffix.startswith("ptr_"):
             return "void*"
         return _c_ident(mangled_suffix)
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -251,6 +252,66 @@ def compile_wasm(
         raise BuildError("emcc: no .wasm emitted")
     if preload and not out_js.with_suffix(".data").exists():
         raise BuildError("emcc: --preload requested but no .data package emitted")
+
+
+# ---------------------------------------------------------------------------
+# Browser stubs for host-only externs
+# ---------------------------------------------------------------------------
+
+# Host-only C symbols the wasm build cannot link natively (no host OS, CPU
+# feature probes, GPU, tape runtime, ...). Each entry maps the missing symbol
+# to a browser-facing definition appended to the generated C before emcc runs.
+# EM_ASM reads real host facts (OS, core count) from the browser tab itself;
+# anything genuinely unprobeable from wasm degrades to an honest default.
+EXTERN_STUBS = {
+    "num_cores": "int32_t num_cores(void) { return EM_ASM_INT(return (navigator.hardwareConcurrency || 1) | 0); }",
+    "os_is_linux": "bool os_is_linux(void) { return EM_ASM_INT(return /linux/i.test(navigator.platform || '') ? 1 : 0); }",
+    "os_is_windows": "bool os_is_windows(void) { return EM_ASM_INT(return /win/i.test(navigator.platform || '') ? 1 : 0); }",
+    "os_is_macos": "bool os_is_macos(void) { return EM_ASM_INT(return /mac/i.test(navigator.platform || '') ? 1 : 0); }",
+    "has_sse4": "bool has_sse4(void) { return 0; }",
+    "has_avx": "bool has_avx(void) { return 0; }",
+    "has_avx2": "bool has_avx2(void) { return 0; }",
+    "has_avx512f": "bool has_avx512f(void) { return 0; }",
+    "has_avx512_vnni": "bool has_avx512_vnni(void) { return 0; }",
+    "has_neon": "bool has_neon(void) { return 0; }",
+    "is_apple_m1": "bool is_apple_m1(void) { return 0; }",
+    "has_intel_amx": "bool has_intel_amx(void) { return 0; }",
+    "current_cpu": "char* current_cpu(void) { return \"web browser\"; }",
+    "current_arch": "char* current_arch(void) { return \"wasm32\"; }",
+    "_cpu_features_string": "char* _cpu_features_string(void) { return \"n/a (browser)\"; }",
+    "print_kv_str": "void print_kv_str(char* label, char* val) { printf(\"%s %s\\n\", label, val); }",
+    "print_kv_i32": "void print_kv_i32(char* label, int32_t val) { printf(\"%s %d\\n\", label, val); }",
+}
+
+
+def _append_extern_stubs(c_source: str) -> str:
+    """Append browser-facing definitions for host-only externs the generated
+    C references but does not define (os_is_linux, num_cores, ...).
+
+    Only symbols that are *called* and *missing* from the generated C get a
+    stub. Caveat: the check inspects the generated C only, not the `extra_link`
+    translation units — keep EXTERN_STUBS free of symbols that linked runtime
+    files provide (e.g. flow_rt_monotonic_ns comes from flow_rt_support.c),
+    or a later entry would double-define them at link time.
+    """
+    missing = []
+    for sym, stub in EXTERN_STUBS.items():
+        referenced = re.search(rf"\b{re.escape(sym)}\s*\(", c_source)
+        # A definition is `TYPE sym(...) {`; a call like `if (sym()) {` must
+        # not count as one, so require the name to be preceded by a type token
+        # (not an open paren / word char) and the `)` to be followed by `{`.
+        defined = re.search(
+            rf"(?<![\w(])\b{re.escape(sym)}\s*\([^;]*\)\s*{{",
+            c_source,
+        )
+        if referenced and not defined:
+            missing.append(stub)
+    if not missing:
+        return c_source
+    block = ["", "/* Browser stubs for host-only externs (see EXTERN_STUBS). */",
+             "#include <emscripten/emscripten.h>"]
+    block.extend(missing)
+    return c_source + "\n" + "\n".join(block) + "\n"
 
 
 def tidy(line: str) -> str:
@@ -599,6 +660,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
     else:
         c_file = out_dir / f"{name}.c"
         c_source = flow_to_c(program, c_file)
+        c_source = _append_extern_stubs(c_source)
+        c_file.write_text(c_source)
         gfx = uses_gfx(c_source)
         compile_input = c_file
         keep_artifact = c_file
