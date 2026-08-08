@@ -3,6 +3,7 @@
 Flow's CI and release pipelines notify the Flow Discord server. Join at
 `https://discord.gg/YK7VaHy24T` (points to `#welcome`, never expires).
 This document is the single source of truth for how webhooks work.
+Server conduct rules live in [discord-rules.md](discord-rules.md).
 
 ## Channels
 
@@ -85,7 +86,7 @@ webhook/author/footer icon across all three workflows.
 | `.github/workflows/release.yml` | tag created | `#announcements` release (commit range + contributors), `#changelog` notes |
 | `.github/workflows/ci.yml` | push, PR, nightly | `#ci-releases` per-job matrix pass/fail, actor, commit subject |
 | `.github/workflows/discord-pr.yml` | PR opened/ready/merged/closed | `#ci-releases` PR notices (title, branch, changed files, merged status) |
-| `.github/workflows/discord-projects.yml` | release published, manual | `#projects` forum thread per announcement |
+| `.github/workflows/discord-projects.yml` | release published, manual | `#projects` forum thread: release notes as first post, plus commits/contributors/install/changelog/docs fields |
 | `.github/workflows/wiki.yml` | docs deploy | `#announcements` docs |
 
 ## No-double-post rules

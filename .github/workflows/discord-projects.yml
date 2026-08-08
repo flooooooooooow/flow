@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Resolve event
         id: event
@@ -35,27 +37,46 @@ jobs:
           IN_DESC: ${{ inputs.description }}
           REL_TAG: ${{ github.event.release.tag_name }}
           REL_HTML: ${{ github.event.release.html_url }}
-          REL_NAME: ${{ github.event.release.name }}
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             {
-              echo "name=$IN_NAME"
+              echo "name=Flow · $IN_NAME"
               echo "url=$IN_URL"
-              echo "description=$IN_DESC"
+              printf 'description<<EOF\n%s\nEOF\n' "$IN_DESC"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NAME="Flow ${REL_TAG}"
-          DESC="Release $REL_TAG published for ${{ github.repository }}."
-          if [[ -n "$REL_NAME" && "$REL_NAME" != "null" ]]; then
-            NAME="$REL_NAME"
-            DESC="Release published for ${{ github.repository }}."
-          fi
           {
-            echo "name=$NAME"
+            echo "name=Flow ${REL_TAG} is out"
             echo "url=$REL_HTML"
-            echo "description=$DESC"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build release summary
+        id: summary
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          PREV="$(git describe --tags --abbrev=0 "$TAG~1" 2>/dev/null || echo '')"
+          RANGE="${PREV:+$PREV..}$TAG"
+          if [[ -z "$PREV" ]]; then RANGE="$TAG"; fi
+          COUNT="$(git rev-list --count ${RANGE:-} 2>/dev/null | tr -d ' ' || echo '?')"
+          AUTHORS="$(git shortlog -sne "$RANGE" 2>/dev/null | wc -l | tr -d ' ' || echo '?')"
+          BODY="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' 2>/dev/null || echo '')"
+          # Elide the leading summary line and trailing separator, cap the
+          # description at complete lines so the first post reads cleanly.
+          if [[ -n "$BODY" ]]; then
+            DESC="$(printf '%s\n' "$BODY" | sed '1d' | sed '/^[[:space:]]*$/d' | sed '/^---$/d' | head -n 12 | awk '{ if (length(out) + length($0) > 900) exit; out = out "\n" $0 } END { sub(/^\n/, "", out); print out }')"
+          else
+            DESC="Release ${TAG} published for flow."
+          fi
+          FIELDS="[{\"name\":\"Commits since ${PREV#v}\",\"value\":\"${COUNT}\",\"inline\":true},{\"name\":\"Contributors\",\"value\":\"${AUTHORS}\",\"inline\":true},{\"name\":\"Install\",\"value\":\"[brew install flow](https://formulae.brew.sh/formula/flow) or [build from source](${{ github.server_url }}/${{ github.repository }}#build)\",\"inline\":false},{\"name\":\"Changelog\",\"value\":\"[release](${{ steps.event.outputs.url }}) · [wiki CHANGELOG](https://flooooooooooow.github.io/flow/project/CHANGELOG.md)\",\"inline\":true},{\"name\":\"Docs\",\"value\":\"[site](https://flooooooooooow.github.io/flow/) · [repo](${{ github.server_url }}/${{ github.repository }})\",\"inline\":true}]"
+          {
+            printf 'description<<EOF\n%s\nEOF\n' "$DESC"
+            printf 'fields<<EOF\n%s\nEOF\n' "$FIELDS"
           } >> "$GITHUB_OUTPUT"
 
       - name: Post to forum #projects
@@ -67,8 +88,10 @@ jobs:
           color: '5763719'
           title: ${{ steps.event.outputs.name }}
           url: ${{ steps.event.outputs.url }}
-          description: ${{ steps.event.outputs.description }}
+          description: ${{ steps.summary.outputs.description != '' && steps.summary.outputs.description || steps.event.outputs.description }}
+          fields: ${{ steps.summary.outputs.fields }}
+          thread_name: ${{ steps.event.outputs.name }}
           author_name: Flow
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
-          thread_name: ${{ steps.event.outputs.name }}
-          footer_text: Flow projects hub · created by ${{ github.actor }}
+          footer_text: Flow projects hub · ${{ github.server_url }}/${{ github.repository }}
+          footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
