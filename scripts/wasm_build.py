@@ -527,7 +527,8 @@ def key_hints(flow_source: str) -> str:
 
 
 def write_page(out_dir: Path, name: str, title: str, gfx: bool,
-               flow_source: str, source_url: str, backend: str = "c") -> Path:
+               flow_source: str, source_url: str, backend: str = "c",
+               extra_html: str = "") -> Path:
     if gfx:
         width, height = canvas_size(flow_source)
         body = (GFX_BODY.replace("__W__", str(width))
@@ -554,6 +555,7 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
   <span class="meta">Flow &rarr; {pipe}{' &middot; gfx canvas backend' if gfx else ' &middot; console'}</span>
   <span class="meta"><a href="{html_escape(source_url)}">source</a></span>
 </header>
+{extra_html}
 {body}
 {script}
 </body>
@@ -574,8 +576,15 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           extra_link: Optional[list[Path]] = None,
           initial_memory: str = "32MB",
           asyncify_stack_size: int = 32768,
-          emcc_flags: Optional[list[str]] = None) -> dict:
-    """Build one program. Returns a result dict; raises BuildError on failure."""
+          emcc_flags: Optional[list[str]] = None,
+          extra_c: tuple = (),
+          extra_html: str = "") -> dict:
+    """Build one program. Returns a result dict; raises BuildError on failure.
+
+    ``extra_c`` is accepted for gallery callers (paths relative to repo root)
+    and merged into ``extra_link``. ``extra_html`` is injected into the host
+    page (e.g. tiny-pointers coverage card).
+    """
     program = program.resolve()
     if not program.exists():
         raise BuildError(f"no such file: {program}")
@@ -589,6 +598,11 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
 
     if not have_emcc():
         raise BuildError("emcc not on PATH (see docs/language/wasm.md)")
+
+    link_paths: list[Path] = list(extra_link or [])
+    for c in extra_c:
+        p = Path(c)
+        link_paths.append(p if p.is_absolute() else PROJECT_ROOT / p)
 
     if backend == "mlir":
         ir_file = out_dir / f"{name}.ll"
@@ -612,7 +626,7 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         opt,
         timeout,
         preload=preload,
-        extra_link=extra_link,
+        extra_link=link_paths or None,
         initial_memory=initial_memory,
         asyncify_stack_size=asyncify_stack_size,
         emcc_flags=emcc_flags,
@@ -626,7 +640,10 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         rel = program.name
         source_url = str(program)
 
-    write_page(out_dir, name, title, gfx, flow_source, source_url, backend=backend)
+    write_page(
+        out_dir, name, title, gfx, flow_source, source_url,
+        backend=backend, extra_html=extra_html,
+    )
     if not keep_c:
         keep_artifact.unlink(missing_ok=True)
 
@@ -643,7 +660,7 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         "seconds": round(elapsed, 1),
         "out": str(out_dir),
         "preload": list(preload or []),
-        "link": [str(p) for p in (extra_link or [])],
+        "link": [str(p) for p in link_paths],
     }
     if data.exists():
         result["data_bytes"] = data.stat().st_size

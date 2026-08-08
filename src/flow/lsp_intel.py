@@ -68,7 +68,15 @@ def type_to_display(typ: Any) -> str:
 def symbol_info_from_decl(
     decl: Any, *, source_uri: str, doc: str = ''
 ) -> Optional[Dict[str, Any]]:
-    """Build an LSP symbol dict from a top-level declaration."""
+    """Build an LSP symbol dict from a top-level declaration.
+
+    `source_uri` is the caller-provided origin; when the declaration carries
+    the resolver's `flow_source_file` stamp (the file that actually declares
+    it), the stamp wins so re-exported symbols point at their real definition
+    rather than the aggregator module.
+    """
+    defining_file = getattr(decl, 'flow_source_file', None)
+    defining_uri = path_to_uri(defining_file) if defining_file else source_uri
     if isinstance(decl, FunctionDecl):
         return {
             'kind': 'function',
@@ -81,7 +89,7 @@ def symbol_info_from_decl(
             'column': 0,
             'doc': doc,
             'exported': bool(getattr(decl, 'is_exported', False)),
-            'uri': source_uri,
+            'uri': defining_uri,
             'imported': True,
         }
     if isinstance(decl, StructDecl):
@@ -95,7 +103,7 @@ def symbol_info_from_decl(
             'column': 0,
             'doc': doc,
             'exported': bool(getattr(decl, 'is_exported', False)),
-            'uri': source_uri,
+            'uri': defining_uri,
             'imported': True,
         }
     if isinstance(decl, EnumDecl):
@@ -105,7 +113,7 @@ def symbol_info_from_decl(
             'line': 0,
             'column': 0,
             'doc': doc,
-            'uri': source_uri,
+            'uri': defining_uri,
             'imported': True,
         }
     if isinstance(decl, TraitDecl):
@@ -115,7 +123,7 @@ def symbol_info_from_decl(
             'line': 0,
             'column': 0,
             'doc': doc,
-            'uri': source_uri,
+            'uri': defining_uri,
             'imported': True,
         }
     if isinstance(decl, ConstDecl):
@@ -125,7 +133,7 @@ def symbol_info_from_decl(
             'line': 0,
             'column': 0,
             'doc': doc,
-            'uri': source_uri,
+            'uri': defining_uri,
             'imported': True,
         }
     if isinstance(decl, EffectDecl):
@@ -145,7 +153,7 @@ def symbol_info_from_decl(
             'line': 0,
             'column': 0,
             'doc': doc,
-            'uri': source_uri,
+            'uri': defining_uri,
             'imported': True,
         }
     return None
