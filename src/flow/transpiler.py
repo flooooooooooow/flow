@@ -102,6 +102,11 @@ def main():
         "--llvm", action="store_true", help="Output LLVM IR (requires mlir-opt)"
     )
     parser.add_argument(
+        "--wasm32",
+        action="store_true",
+        help="ILP32/wasm32 ABI: lower libc size_t/long as i32 in MLIR (for emcc)",
+    )
+    parser.add_argument(
         "--optimize", action="store_true", help="Run MLIR optimizations"
     )
     parser.add_argument("--verify", action="store_true", help="Verify generated MLIR")
@@ -513,6 +518,7 @@ def main():
                 source_file=source_file,
                 emit_debug_info=args.debug_info,
                 emit_gpu=args.mlir_gpu,
+                size_t_bits=32 if args.wasm32 else 64,
             )
 
             # Apply optimizations if requested

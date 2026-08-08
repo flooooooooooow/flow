@@ -309,7 +309,28 @@ class MLIRGenerator:
                 return value
         return value
 
-    def __init__(self, source_file: str = "unknown.flow"):
+    # Libc APIs where Flow writes `i64` for size_t/long. On wasm32/ILP32 those
+    # are i32; the C backend skips these prototypes and uses system headers.
+    # Map: name -> (size_t/long param indices, return_is_size_t_or_long).
+    _LIBC_SIZE_ABI: Dict[str, tuple] = {
+        "malloc": ([0], False),
+        "calloc": ([0, 1], False),
+        "realloc": ([1], False),
+        "memcpy": ([2], False),
+        "memmove": ([2], False),
+        "memset": ([2], False),
+        "memcmp": ([2], False),
+        "strlen": ([], True),
+        "strnlen": ([1], True),
+        "fread": ([1, 2], True),
+        "fwrite": ([1, 2], True),
+        "snprintf": ([1], False),
+        "vsnprintf": ([1], False),
+        "fseek": ([1], False),  # long offset
+        "ftell": ([], True),    # long
+    }
+
+    def __init__(self, source_file: str = "unknown.flow", size_t_bits: int = 64):
         self.indent_level = 0
         self.symbol_table = {}
         self.function_counter = 0
@@ -321,6 +342,7 @@ class MLIRGenerator:
         self.source_file = source_file  # For debug info
         self.current_line = 1  # Track current source line for debug info
         self.emit_debug_info = True  # Enable DWARF debug info generation
+        self.size_t_bits = 32 if size_t_bits == 32 else 64
         self._effect_handler_stack: List[Dict[str, str]] = [{}]
         self._effects: Dict[str, EffectDecl] = {}  # effect name -> EffectDecl
         self._capabilities: Dict[str, CapabilityDecl] = {}  # capability name -> CapabilityDecl
@@ -339,6 +361,29 @@ class MLIRGenerator:
         self.struct_llvm_types: Dict[str, Optional[str]] = {}
         self._struct_llvm_building: Set[str] = set()
         self._init_per_function_state()
+
+    def _abi_adjust_libc(
+        self, name: str, parameters: List[Parameter], return_type: Type
+    ) -> tuple:
+        """Map Flow i64 size_t/long annotations to the target ABI width."""
+        if self.size_t_bits != 32:
+            return parameters, return_type
+        spec = self._LIBC_SIZE_ABI.get(name)
+        if spec is None:
+            return parameters, return_type
+        size_idxs, ret_is_size = spec
+        size_idxs = set(size_idxs)
+        abi_ty = Type("i32")
+        new_params: List[Parameter] = []
+        for i, p in enumerate(parameters):
+            if i in size_idxs and getattr(p.type, "name", None) == "i64":
+                new_params.append(Parameter(p.name, abi_ty))
+            else:
+                new_params.append(p)
+        new_ret = return_type
+        if ret_is_size and getattr(return_type, "name", None) == "i64":
+            new_ret = abi_ty
+        return new_params, new_ret
 
     def _init_per_function_state(self) -> None:
         """Reset per-function SSA tracking (safe for unit tests that skip generate_function)."""
@@ -656,6 +701,7 @@ class MLIRGenerator:
                 if decl.name in self._c_variadic_funcs:
                     is_variadic = True
                 params = list(decl.parameters)
+                ret_ty = decl.return_type
                 # C varargs: keep a stable fixed prefix (fmt + leading args).
                 if decl.name in ("snprintf", "sprintf", "fprintf"):
                     params = params[:3]
@@ -663,10 +709,12 @@ class MLIRGenerator:
                 elif decl.name == "printf":
                     params = params[:1]
                     is_variadic = True
+                # wasm32/ILP32: size_t/long are i32 (C backend uses system headers).
+                params, ret_ty = self._abi_adjust_libc(decl.name, params, ret_ty)
                 # Add function to symbol table
                 self.symbol_table[decl.name] = {
                     'type': 'function',
-                    'return_type': decl.return_type,
+                    'return_type': ret_ty,
                     'parameters': params,
                     'is_variadic': is_variadic,
                     'mlir_name': f"@{decl.name}"
@@ -1286,10 +1334,10 @@ class MLIRGenerator:
                 'ssa_name': ssa_name
             }
             
-            if var_decl.type.size:  # Array type
-                return f"{self.indent()}{ssa_name} = memref.alloc() {{type = {mlir_type}}} : memref<{var_decl.type.size}x{var_decl.type.element_type.name}>"
+            if var_decl.type.size:  # Array type (stack; avoids malloc ABI clashes)
+                return f"{self.indent()}{ssa_name} = memref.alloca() {{type = {mlir_type}}} : memref<{var_decl.type.size}x{var_decl.type.element_type.name}>"
             if mlir_type.startswith("memref<"):
-                return f"{self.indent()}{ssa_name} = memref.alloc() : {mlir_type}"
+                return f"{self.indent()}{ssa_name} = memref.alloca() : {mlir_type}"
             return f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"
     
     def generate_return(self, return_stmt: ReturnStatement) -> str:
@@ -4722,7 +4770,7 @@ class MLIRGenerator:
         # Allocate memory for struct as byte array
         alloc_name = f"%{self.function_counter}"
         self.function_counter += 1
-        ops.append(f"{self.indent()}{alloc_name} = memref.alloc() : memref<{total_size}xi8>")
+        ops.append(f"{self.indent()}{alloc_name} = memref.alloca() : memref<{total_size}xi8>")
         
         # Store field at correct offset with proper byte manipulation
         for field_name, field_value in struct_literal.fields:
@@ -4931,7 +4979,7 @@ class MLIRGenerator:
                 size = len(element_values)
                 array_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{array_ssa} = memref.alloc() : memref<{size}x{elem_type}>")
+                ops.append(f"{self.indent()}{array_ssa} = memref.alloca() : memref<{size}x{elem_type}>")
                 self._ssa_types[array_ssa] = f"memref<{size}x{elem_type}>"
                 
                 # Store each element
@@ -5513,7 +5561,7 @@ class MLIRGenerator:
         alloc_ssa = f"%{self.function_counter}"
         self.function_counter += 1
         memref_ty = f"memref<{size}x{elem_type}>"
-        ops.append(f"{self.indent()}{alloc_ssa} = memref.alloc() : {memref_ty}")
+        ops.append(f"{self.indent()}{alloc_ssa} = memref.alloca() : {memref_ty}")
         self._ssa_types[alloc_ssa] = memref_ty
 
         for i, element_value in enumerate(element_values):
@@ -6264,7 +6312,13 @@ class MLIRGenerator:
         }
         return "\n".join(mlir_code)
 
-def flow_to_mlir(declarations: List[Any], source_file: str = "unknown.flow", emit_debug_info: bool = False, emit_gpu: bool = False) -> str:
-    generator = MLIRGenerator(source_file)
+def flow_to_mlir(
+    declarations: List[Any],
+    source_file: str = "unknown.flow",
+    emit_debug_info: bool = False,
+    emit_gpu: bool = False,
+    size_t_bits: int = 64,
+) -> str:
+    generator = MLIRGenerator(source_file, size_t_bits=size_t_bits)
     generator.emit_debug_info = emit_debug_info
     return generator.generate_module(declarations, emit_gpu=emit_gpu)
