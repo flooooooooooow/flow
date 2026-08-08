@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 156,
-  "built": 147,
-  "failed": 9,
-  "total_bytes": 5482737,
+  "built": 148,
+  "failed": 8,
+  "total_bytes": 5512035,
   "categories": [
     {
       "id": "games",
@@ -1905,8 +1905,12 @@
       "category": "systems",
       "source": "examples/graphics/graphics.flow",
       "summary": "Graphics Module for FLOW",
-      "status": "failed",
-      "error": "emcc: undefined symbol main"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 18020,
+      "js_bytes": 11278,
+      "total_bytes": 29298,
+      "page": "graphics/index.html"
     },
     {
       "name": "hash_table",

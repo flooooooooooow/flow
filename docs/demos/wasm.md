@@ -97,7 +97,7 @@ and say plainly that it is not built here.
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The nine that do not build
+## The eight that do not build
 
 Each one stops at a named symbol. The gallery keeps their cards and prints the
 reason on them.
@@ -112,9 +112,8 @@ reason on them.
 | `examples/ml/tape_mul.flow` | `flow_tape_reset` | Autodiff tape is a native runtime module |
 | `examples/ai/ga_flappy.flow` | `fly` | Program references a symbol the transpiler does not emit |
 | `examples/crypto/runtime_sha256.flow` | `flow_sha256` | Hashing helper lives in the native runtime pack |
-| `examples/graphics/graphics.flow` | `main` | Program has no `main`; it is a library-shaped example |
 
-Four examples used to fail and now build:
+Five examples used to fail and now build:
 
 - `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
   monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
@@ -127,6 +126,9 @@ Four examples used to fail and now build:
   core count are read from the browser tab itself (`navigator.platform` /
   `navigator.hardwareConcurrency`), CPU feature flags degrade to `false`, and
   `print_kv_*` map to `printf`.
+- `graphics.flow` was library-shaped (no `main`); it now carries a demo entry
+  point that exercises the constructors, conversions and clamps and gates its
+  exit code on a self-check.
 
 ## Related
 

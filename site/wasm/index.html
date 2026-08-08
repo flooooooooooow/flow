@@ -79,7 +79,7 @@ footer a { color: #6b7ca8; }
 <body>
 <div class="wrap">
   <h1>Flow in the browser</h1>
-  <p class="lede">147 Flow examples compiled to WebAssembly and running
+  <p class="lede">148 Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
   through Flow &rarr; C &rarr; <code>emcc</code>. Graphics programs link
   <code>runtime/gfx_wasm.c</code>, a canvas backend for the same gfx API that
@@ -1511,7 +1511,7 @@ footer a { color: #6b7ca8; }
       </div>
     </div>
     <h2>Systems and data
-      <span class="count">12 of 14 running</span></h2>
+      <span class="count">13 of 14 running</span></h2>
     <p class="blurb">Allocators, hash tables, hashing, parsers, file formats. Anything asking the OS about itself stops at the link step.</p>
     <div class="grid">
       <div class="card">
@@ -1542,6 +1542,16 @@ footer a { color: #6b7ca8; }
           <span class="tag">console</span>
           <span>77 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/gif_writer.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Graphics</h3>
+        <p>Graphics Module for FLOW</p>
+        <div class="row">
+          <button data-run="graphics/index.html" data-title="Graphics">Run</button>
+          <span class="tag">console</span>
+          <span>29 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/graphics.flow">source</a>
         </div>
       </div>
       <div class="card">
@@ -1635,12 +1645,6 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card failed">
-        <h3>Graphics</h3>
-        <p>Graphics Module for FLOW</p>
-        <div class="why">does not build: emcc: undefined symbol main</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/graphics.flow">source</a></div>
-      </div>
-      <div class="card failed">
         <h3>Runtime SHA-256</h3>
         <p>Crypto self-test via always-linked lib/runtime/crypto.flow</p>
         <div class="why">does not build: emcc: undefined symbol flow_sha256</div>
@@ -1682,7 +1686,7 @@ footer a { color: #6b7ca8; }
 
   <footer>
     Built by <code>python3 scripts/build_wasm_gallery.py</code>.
-    Total payload 5.2 MB across 147 examples.
+    Total payload 5.3 MB across 148 examples.
     Machine-readable index: <a href="manifest.json">manifest.json</a>.
   </footer>
 </div>
