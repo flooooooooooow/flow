@@ -89,11 +89,13 @@ jobs:
       - name: Post changelog to Discord #changelog
         if: always()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.tag.outputs.name }}"
           gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
           python3 - <<'PY'
-          import json, os, urllib.request
+          import json, os, sys, urllib.request
           from datetime import datetime, timezone
           body = open("/tmp/flow_changelog.md").read().strip() or "Auto-generated changelog."
           body = body.lstrip("#").strip()
@@ -114,9 +116,12 @@ jobs:
               "embeds": [embed],
           }
           webhook = os.environ["DISCORD_CHANGELOG_WEBHOOK"]
-          req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
-                                       headers={"Content-Type": "application/json"})
-          urllib.request.urlopen(req)
+          try:
+              req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
+                                           headers={"Content-Type": "application/json"})
+              urllib.request.urlopen(req)
+          except Exception as e:
+              print(f"changelog webhook failed (non-fatal): {e}", file=sys.stderr)
           PY
         env:
           DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
