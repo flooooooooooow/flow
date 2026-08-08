@@ -2009,6 +2009,16 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_block(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_expr_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_cgen_emit_operand(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id != AST_NONE && ((arena).nodes[id]).kind == AST_BINOP) {
+  flowc_cgen_putc(w, 40);
+  flowc_cgen_emit_expr(w, arena, src, id);
+  flowc_cgen_putc(w, 41);
+  return;
+}
+  flowc_cgen_emit_expr(w, arena, src, id);
+}
+
 int32_t flowc_cgen_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
   if ((a1 - a0) != (b1 - b0)) {
   return 0;
@@ -2457,9 +2467,9 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (wrap == 1) {
   flowc_cgen_putc(w, 40);
 }
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_emit_operand(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_emit_binop_op(w, op);
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_emit_operand(w, arena, src, ((arena).nodes[id]).b);
   if (wrap == 1) {
   flowc_cgen_putc(w, 41);
 }

@@ -1600,6 +1600,10 @@ class Parser:
     )
 
     def expect(self, token_type: TokenType):
+        if token_type == TokenType.GREATER and self.current_token.type == TokenType.RSHIFT:
+            token = self.current_token
+            self.current_token = Token(TokenType.GREATER, ">", token.line, token.column + 1)
+            return Token(TokenType.GREATER, ">", token.line, token.column)
         if self.current_token.type == token_type:
             token = self.current_token
             self.advance()
