@@ -548,11 +548,11 @@ jobs:
           webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
           botname: Flow CI
           avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
-          content: ${{ steps.summarize.outputs.failed == 'true' && format('CI failed: {0}', steps.summarize.outputs.failures) || '' }}
+          content: "${{ steps.summarize.outputs.failed == 'true' && format('CI failed: {0}', steps.summarize.outputs.failures) || '' }}"
           color: ${{ steps.summarize.outputs.failed == 'true' && '15158332' || '3066993' }}
           title: CI ${{ steps.summarize.outputs.failed == 'true' && 'failed' || 'passed' }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          description: '${{ github.repository }} · `${{ github.head_ref || github.ref_name }}` on ${{ github.event_name }} · by ${{ github.actor }} · ${{ steps.summarize.outputs.subject }}'
+          description: "${{ github.repository }} on ${{ github.event_name }} by ${{ github.actor }} — ${{ steps.summarize.outputs.subject }}"
           author_name: Flow CI
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
           fields: ${{ steps.summarize.outputs.fields }}
