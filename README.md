@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>A language for systems that evolve through time</strong>
+  A language for systems that evolve through time
 </p>
 
 <p align="center">
@@ -33,14 +33,14 @@
   <a href="tests"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.tests&label=tests&color=2da44e" alt="Tests"></a>
 </p>
 
-**Flow** is a statically typed, compiled programming language with algebraic effects, built-in automatic differentiation, dynamics and control analysis, and native graphics. Programs describe how systems evolve — the mathematical model *is* the executable.
+Flow is a statically typed, compiled language with algebraic effects, autodiff in the stdlib, dynamics and control analysis, and native graphics. You write how a system evolves; that description is what runs.
 
 | | |
 |--|--|
-| **Version** | 0.9.0 |
-| **Install** | `brew tap flooooooooooow/flow && brew install flow` |
-| **License** | [MIT](LICENSE) |
-| **Cite** | [CITATION.cff](CITATION.cff) |
+| Version | 0.9.0 |
+| Install | `brew tap flooooooooooow/flow && brew install flow` |
+| License | [MIT](LICENSE) |
+| Cite | [CITATION.cff](CITATION.cff) |
 
 ```flow
 function main() -> i32 {
@@ -55,19 +55,19 @@ flow run hello.flow
 
 ---
 
-## Why Flow?
+## What you get
 
-- **Evolution as the abstraction** — model dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).
-- **Algebraic effects** — swap side-effect implementations without rewriting call sites.
-- **Automatic differentiation** — forward and reverse helpers in the standard library; ML demos train on CPU in seconds.
-- **Portable by default** — compiles to C (no LLVM required); MLIR, WASM, and Metal backends when you need them.
-- **Native graphics and audio** — games, morphogenesis, neurodynamics, and real-time DSP ship as first-class examples.
+- Dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).
+- Algebraic effects so you can swap I/O and other handlers without rewriting call sites.
+- Forward and reverse autodiff helpers in the stdlib; ML demos train on CPU in seconds.
+- C backend by default (no LLVM required). MLIR, WASM, and Metal when you need them.
+- Games, morphogenesis, neurodynamics, and real-time DSP as ordinary examples under `examples/`.
 
 ---
 
 ## Installation
 
-### Homebrew (recommended)
+### Homebrew
 
 ```bash
 brew tap flooooooooooow/flow
@@ -76,7 +76,7 @@ flow version
 flow run examples/basics/hello_world.flow
 ```
 
-Track `main` with `brew install --HEAD flow`. Formula source: [`packaging/homebrew`](packaging/homebrew).
+Track `main` with `brew install --HEAD flow`. Formula: [`packaging/homebrew`](packaging/homebrew).
 
 ### From source
 
@@ -86,22 +86,22 @@ cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-**Requirements:** Python 3.9+ · Clang or GCC (Xcode Command Line Tools on macOS).
+Needs Python 3.9+ and Clang or GCC (Xcode Command Line Tools on macOS).
 
-Optional: `./flow install` places `flow` on your PATH (`~/.local/bin`).
+Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
-Full walkthrough: [Getting started](docs/getting-started.md).
+Longer walkthrough: [Getting started](docs/getting-started.md).
 
 ---
 
 ## Examples
 
-Each clip is a recording of the compiled program — frames come from the real `gfx` backend.
+Each GIF is a recording of the compiled program. Frames come from the real `gfx` backend.
 
 | | | |
 |:---:|:---:|:---:|
 | ![Lorenz attractor](docs/demos/lorenz.gif) | ![Flow Tetris](docs/demos/tetris.gif) | ![Flow 2048](docs/demos/2048.gif) |
-| **Lorenz** — RK4 dynamics | **Tetris** — full game loop | **2048** — grid logic |
+| Lorenz (RK4) | Tetris (full game loop) | 2048 (grid logic) |
 
 ```bash
 ./flow gfx examples/games/tetris_gfx.flow
@@ -115,11 +115,11 @@ Each clip is a recording of the compiled program — frames come from the real `
 |--------|---------|-------|
 | Games (24) | [demos](docs/demos/games.md) | [`examples/games`](examples/games) |
 | Morphogenesis | [demos](docs/demos/morphogenesis.md) | [`examples/morphogenesis`](examples/morphogenesis) |
-| Neurons & networks | [demos](docs/demos/neuro.md) | [`examples/neuro`](examples/neuro) |
+| Neurons and networks | [demos](docs/demos/neuro.md) | [`examples/neuro`](examples/neuro) |
 | Evolutionary biology | [demos](docs/demos/evoleco.md) | [`examples/evoleco`](examples/evoleco) |
 | AI / ML training | [tutorials](docs/tutorials/game-ai.md) | [`examples/ai`](examples/ai), [`examples/ml`](examples/ml) |
 
-Canonical entrypoints for every domain: [examples/README.md](examples/README.md).
+Entrypoints by domain: [examples/README.md](examples/README.md).
 
 ---
 
@@ -170,7 +170,7 @@ Walkthrough: [docs/effects-showcase.md](docs/effects-showcase.md) · `examples/e
 
 ### Automatic differentiation
 
-Forward-mode dual numbers and reverse helpers live in the stdlib (`lib/stdlib/autodiff.flow`). Tourist XOR trains via checked-in grad codegen — see `examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is on the roadmap.
+Forward-mode dual numbers and reverse helpers live in the stdlib (`lib/stdlib/autodiff.flow`). The XOR tourist demo trains via checked-in grad codegen in `examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is still on the roadmap.
 
 ### FFI
 
@@ -189,12 +189,12 @@ extern {
 |----------|-------------|
 | [Getting started](docs/getting-started.md) | Install, first program, basics |
 | [Language overview](docs/language/overview.md) | Features and design |
-| [Language spec](docs/LANGUAGE_SPEC.md) | Complete reference |
+| [Language spec](docs/LANGUAGE_SPEC.md) | Full reference |
 | [Effects showcase](docs/effects-showcase.md) | Algebraic effects end to end |
-| [Examples index](examples/README.md) | All demos by domain |
+| [Examples index](examples/README.md) | Demos by domain |
 | [Examples status](examples/STATUS.md) | Compile status of every example |
 | [Vision](VISION.md) | Why Flow exists |
-| [Roadmap](ROADMAP.md) | What we're building next |
+| [Roadmap](ROADMAP.md) | Near-term work |
 | [Changelog](docs/project/CHANGELOG.md) | Version history |
 | [Self-hosting](docs/project/self-hosting.md) | Stage-A `flowc` in [`compiler/`](compiler/) |
 | [Security](SECURITY.md) · [Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) | Project policy |
@@ -218,11 +218,11 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 | [`benchmarks/`](benchmarks/) | Microbenchmarks and harness |
 | [`docs/`](docs/) | Spec, tutorials, demos, project docs |
 | [`third_party/integrations/vscode/`](third_party/integrations/vscode/) | VS Code / Cursor extension |
-| [`site/`](site/) | MkDocs website sources |
+| [`site/`](site/) | Wiki shell and site assets |
 
 ---
 
-## Building and developing
+## Build and develop
 
 ```bash
 ./flow run <file>              # Compile and run (default host: flowc)
@@ -275,7 +275,7 @@ Flow source → Parser → AST → C / MLIR / Metal → Clang / LLVM / shaders
 
 ## Project statistics
 
-Counted from tracked files by CI, so these numbers never drift from the tree.
+Counted from tracked files by CI so the numbers match the tree.
 
 <!-- repo-stats:start -->
 | Metric | Files / modules | Physical lines |
@@ -290,7 +290,7 @@ Counted from tracked files by CI, so these numbers never drift from the tree.
 | **Verify corpus** | 1,078 | 18,715 |
 | **Tests (`.py` + `.flow`)** | 342 | 37,510 |
 | **Application programs** | 8 | 1,537 |
-| **Registry packages** | 19 | — |
+| **Registry packages** | 19 | - |
 | **Documentation pages** | 132 | 28,628 |
 
 <details>
@@ -320,15 +320,15 @@ Counted from tracked files by CI, so these numbers never drift from the tree.
 
 ## Contributing
 
-Flow is built through agentic pair programming — human vision, AI implementation. See [CONTRIBUTING.md](CONTRIBUTING.md) for the collaboration model, decision authority, and how to land changes.
+Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority and how to land changes.
 
-Day-to-day priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
+Priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ---
 
