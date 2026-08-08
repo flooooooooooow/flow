@@ -9,6 +9,11 @@ This document tracks what we're building next and why.
 > **Vision:** the destination this roadmap points at is laid out in
 > [VISION.md](VISION.md) — a language where the primary abstraction is the
 > evolution of systems through time.
+>
+> **Product thesis / beachhead:** Flow describes **physical computational
+> systems** (RF, embedded, SDR, FPGA-adjacent, satellite). Architecture and
+> 30-pillar sequencing: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
+> Dynamics grammar cards: [docs/vision/north-star.md](docs/vision/north-star.md).
 
 > **Live tracker:** day-to-day backlog and task status now live on the Helm board
 > (local kanban at `http://127.0.0.1:9470/app?project=flow`). This document stays
@@ -19,18 +24,30 @@ This document tracks what we're building next and why.
 
 ---
 
-## Development Philosophy
+## Physical systems beachhead (RF → satellite)
 
-Flow is built through **agentic pair programming** - human vision interpreted through AI implementation.
+Strategic cut: do **not** pitch “safer embedded.” Pitch a compiler that understands
+units + rates + timing + memory topology + hardware + precision. Full map:
+[physical-systems.md](docs/vision/physical-systems.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
+| Phase | Focus | Status |
+|-------|--------|--------|
+| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 in progress |
+| **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔲 |
+| **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
+| **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
+| **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
+| **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
+| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔲 |
+
+Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
 
 ### Guiding Principles
 
 1. **Working > Perfect** - Ship incrementally, iterate based on use
 2. **Explicit > Implicit** - Clear syntax, obvious behavior
-3. **Unique > Clone** - Effects and autodiff are our differentiators
-4. **Portable > Fast** - C backend means runs anywhere
+3. **Unique > Clone** - Physical-system compile-time model (plus effects/autodiff) — not a Rust clone
+4. **Portable > Fast** - C backend means runs anywhere; zero-cost escape hatches required
 
 ### Decision Authority
 
@@ -60,6 +77,7 @@ a proof corpus, not the showcase.
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
 - [ ] Concurrency pipeline example once channel send/recv is exposed
+- [ ] RF beachhead examples under `examples/rf/` (W0)
 
 ### Tier 0 — Minimum domains
 
@@ -84,9 +102,10 @@ a proof corpus, not the showcase.
 |--------|--------|--------|
 | Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
-| Units | Typed units / dimensional analysis showcase | 🔲 |
+| Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
 | Digital twin lite | Small plant + observer narrative | 🔲 |
-| Embedded RT | Constrained / no-alloc RT path beyond audio policy | 🔲 |
+| Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0–W3) |
+| RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0 |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
 
 ### Tier 2 — Competitive completeness
@@ -167,6 +186,7 @@ a proof corpus, not the showcase.
 | Live plugin ABI registry | ✅ | Extensible DSP |
 | Live graph hot-swap handle | ✅ | Live coding |
 | RT-safety policy (no-alloc audio thread) | ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) | Policy + checklist documented; `@rt_safe` attribute now compile-time enforces no direct/transitive `malloc`/`calloc`/`realloc`/`free`/`arena_create`/`arena_destroy` calls (#134); device/file/GPU/lock policy still unchecked |
+| FIR-G program graph (Phases 1–4) | ✅ partial — [docs/project/fir-g.md](docs/project/fir-g.md) | SoA store, CPU oracles, MLX/NumPy bulk + diffs, measured `--calibrate` routing, deterministic `--opts` candidates (no IR rewrite yet) |
 
 ### ✨ Pattern adoption (less code, cooler surfaces)
 
