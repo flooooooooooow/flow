@@ -196,6 +196,7 @@ show_help() {
     echo "    vulkan-layout[-dsl], ui-layout[-window]"
     echo "  mlir <program> [flags]  Generate MLIR (pass --optimize / --opt-level / --no-*)"
     echo "  mlir-run <program> Compile via MLIR and run"
+    echo "  fir-g <program>    Dump FIR-G graph + analyses; --calibrate / --opts"
     echo "  jit <program>      JIT compile and run (fastest)"
     echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
     echo "  gpu <program>      Generate @gpu compute kernels as Metal sources"
@@ -2705,6 +2706,25 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         EXIT_CODE=$?
         echo "----------------------------------------"
         print_success "Program finished with exit code: $EXIT_CODE"
+        ;;
+    "fir-g"|"firg")
+        shift
+        # Allow `flow fir-g --calibrate` with no program; otherwise require .flow.
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow fir-g <program.flow> [--json] [--device=…] [--bench] [--opts]"
+            print_info "       flow fir-g --calibrate [--thresholds PATH] [--json]"
+            print_info "Docs: docs/project/fir-g.md"
+            exit 1
+        fi
+        if [[ "${1}" == *.flow ]]; then
+            require_flow_file "${1}"
+        elif [[ "${1}" != --* ]]; then
+            print_error "Usage: flow fir-g <program.flow> […]  or  flow fir-g --calibrate"
+            exit 1
+        fi
+        check_deps
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
+            python3 -m flow.fir_cli "$@"
         ;;
     "shader")
         shift
