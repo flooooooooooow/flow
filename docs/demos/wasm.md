@@ -1,6 +1,6 @@
 # WebAssembly Gallery
 
-156 Flow examples compiled to WebAssembly, 149 of them runnable in a browser.
+157 Flow examples compiled to WebAssembly, 150 of them runnable in a browser.
 Every one is the unedited source from this repository, put through Flow → C →
 `emcc`.
 
@@ -32,10 +32,10 @@ Build one program:
 |---|---:|---:|---|
 | [Games](../wasm/index.html) | 25 of 25 | 930 KB | Every `*_gfx.flow` in `examples/games/`, the same sources [the GIF gallery](games.md) records |
 | [Morphogenesis](../wasm/index.html) | 40 of 40 | 2045 KB | Every field simulation in `examples/morphogenesis/`, see [the gallery](morphogenesis.md) |
-| [Basics](../wasm/index.html) | 22 of 22 | 444 KB | `examples/basics/`, pure computation printing into the page |
+| [Basics](../wasm/index.html) | 23 of 23 | 501 KB | `examples/basics/`, pure computation printing into the page (including `parallel_sum`, the threaded reduction) |
 | [Language and compilers](../wasm/index.html) | 22 of 23 | 571 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
 | [Numerics and dynamics](../wasm/index.html) | 18 of 20 | 595 KB | Solvers, optimisers, linear algebra, control theory |
-| [Learning](../wasm/index.html) | 9 of 12 | 333 KB | Small models and agents |
+| [Learning](../wasm/index.html) | 9 of 12 | 360 KB | Small models and agents |
 | [Systems and data](../wasm/index.html) | 13 of 14 | 503 KB | Allocators, hash tables, hashing, parsers, file formats |
 
 Machine-readable index, including every failure and its reason:
@@ -59,6 +59,7 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `prime_numbers` | Returned 10 |
 | `lorenz_attractor` | Ran to completion, `main returned 0` |
 | `digits_mlp_parallel` | Served cross-origin-isolated and run on real pthreads: 8 runtime workers, measured speedup 1.9× over the serial pass, serial == parallel accuracy check green, `main returned 0` |
+| `parallel_sum` | Served cross-origin-isolated and run on real pthreads: 8 runtime workers, measured speedup 6.1–6.5× on the disjoint-shard reduction, serial sum == threaded sum, `main returned 0` |
 | `arena_frame` | Ran its frame-arena allocator demo to exit 0 |
 | `system_info` | Printed real browser values: `OS: macOS`, `Num Cores: 14`, with the unprobeable parts degraded honestly |
 | `tiny_pointers` | Ran all phases to PASS, with the abstract-claim coverage card collapsed by default |
@@ -95,7 +96,7 @@ and say plainly that it is not built here.
 |---|---|---|
 | Pure computation | **Runs today** | Arithmetic, arrays, structs, strings, printf. Flow → C → wasm32 with nothing else linked in. |
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` paints the framebuffer onto a canvas and maps DOM key events to macOS keycodes. |
-| Threads and channels | **Runs today** | `digits_mlp_parallel` runs on real Emscripten pthreads over SharedArrayBuffer and Web Workers. The browser blocks SAB unless the page is cross-origin isolated, so the page ships a COI service worker: open the card in a tab and it reloads once, isolated. |
+| Threads and channels | **Runs today** | `digits_mlp_parallel` and `parallel_sum` run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. The browser blocks SAB unless the page is cross-origin isolated, so those pages ship a COI service worker: open the card in a tab and it reloads once, isolated. |
 | Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js` / `PROXY_POSIX_SOCKETS`). |
 | GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
 | Embedded CPython | In progress | Pyodide, which is CPython itself compiled to WebAssembly. |
@@ -142,6 +143,10 @@ Six examples used to fail and now build:
   explains that it must be opened in a tab. Its batch size was raised 250 →
   1000 so each spawn carries enough work to beat the ~1 ms proxied spawn
   cost; the measured in-browser speedup is ~1.9×.
+- `parallel_sum.flow` (previously only in the `wasm-crossings` build) joins the
+  gallery as the second threaded card. Its 12,000,000-iteration shards are the
+  textbook coarse grain, so it is the more dramatic of the two: ~6.1–6.5× in
+  Chrome, with a measured ~0.4 ms floor for 8 empty spawn+join round trips.
 
 ## Related
 
