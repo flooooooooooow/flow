@@ -394,6 +394,24 @@ pre#out:empty { display: none; }
 .keys { color: #6d7183; font-size: 12px; text-align: center;
         max-width: 60ch; }
 .err { color: #f7768e; }
+/* Per-example note card (e.g. the tiny-pointers abstract-claim coverage map). */
+details.coverage {
+  width: min(880px, 100%); margin: 12px auto 0; padding: 10px 14px;
+  background: #101219; border: 1px solid #1e2029; border-radius: 4px;
+}
+details.coverage summary {
+  cursor: pointer; font-weight: 600; color: #d8dae4;
+  font-size: 13px; user-select: none;
+}
+details.coverage summary:hover { color: #7aa2f7; }
+details.coverage .note { color: #6d7183; font-size: 12px; margin: 8px 0 4px; }
+details.coverage table { border-collapse: collapse; width: 100%; margin: 6px 0;
+                         font-size: 12.5px; }
+details.coverage th, details.coverage td { text-align: left; padding: 4px 8px;
+  border-bottom: 1px solid #1a1c24; vertical-align: top; }
+details.coverage th { color: #8a8fa3; font-weight: 600; white-space: nowrap; }
+details.coverage a { color: #7aa2f7; text-decoration: none; }
+details.coverage a:hover { text-decoration: underline; }
 """
 
 GFX_BODY = """
@@ -588,7 +606,8 @@ def key_hints(flow_source: str) -> str:
 
 
 def write_page(out_dir: Path, name: str, title: str, gfx: bool,
-               flow_source: str, source_url: str, backend: str = "c") -> Path:
+               flow_source: str, source_url: str, backend: str = "c",
+               extra_html: str = "") -> Path:
     if gfx:
         width, height = canvas_size(flow_source)
         body = (GFX_BODY.replace("__W__", str(width))
@@ -615,6 +634,7 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
   <span class="meta">Flow &rarr; {pipe}{' &middot; gfx canvas backend' if gfx else ' &middot; console'}</span>
   <span class="meta"><a href="{html_escape(source_url)}">source</a></span>
 </header>
+{extra_html}
 {body}
 {script}
 </body>
@@ -635,7 +655,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           extra_link: Optional[list[Path]] = None,
           initial_memory: str = "32MB",
           asyncify_stack_size: int = 32768,
-          emcc_flags: Optional[list[str]] = None) -> dict:
+          emcc_flags: Optional[list[str]] = None,
+          extra_html: str = "") -> dict:
     """Build one program. Returns a result dict; raises BuildError on failure."""
     program = program.resolve()
     if not program.exists():
@@ -689,7 +710,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         rel = program.name
         source_url = str(program)
 
-    write_page(out_dir, name, title, gfx, flow_source, source_url, backend=backend)
+    write_page(out_dir, name, title, gfx, flow_source, source_url,
+               backend=backend, extra_html=extra_html)
     if not keep_c:
         keep_artifact.unlink(missing_ok=True)
 

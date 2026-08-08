@@ -103,13 +103,46 @@ CATEGORIES = [
     },
 ]
 
+TINY_POINTERS_COVERAGE_CARD = """
+<details class="coverage">
+  <summary>Abstract-claim coverage — every promise in the paper's abstract, mapped to the phase that measures it</summary>
+  <p class="note">The same map prints at the top of this program's run output.
+  Each row links to its section in the docs
+  (<a href="../../library/tiny-pointers.md">tiny-pointers.md</a> ·
+  <a href="../../library/tiny-pointers-variable-values.md">variable-size values</a>).</p>
+  <table>
+    <tr><th>Abstract claim</th><th>Row</th></tr>
+    <tr><td>Fixed-size pointers of Θ(log log log n + log k) bits</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-1-fixed-size-tiny-pointers-3-phases-14">Theorem 1 (Phases 1–4) · §3</a></td></tr>
+    <tr><td>Variable-size pointers of Θ(log k) expected bits</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-2-variable-size-tiny-pointers-4-phases-56">Theorem 2 (Phases 5–6) · §4</a></td></tr>
+    <tr><td>① relaxed retrieval: nv + O(n log⁽ʳ⁾ n), O(1)-expected hints, O(r) insert/delete</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-6-relaxed-retrieval-tiny-retrievers-62-phases-78">Theorem 6 (Phases 7–8, 8b) · §6.2</a></td></tr>
+    <tr><td>② succinct rotation-based BSTs, rotations included</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-7-succinct-rotation-based-bsts-63-phases-910">Theorem 7 (Phases 9–10) · §6.3</a></td></tr>
+    <tr><td>③ stable fixed-capacity dicts, 1 + o(1) overhead</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-8-stable-dictionaries-64-phases-34">Theorem 8 (Phases 3–4) · §6.4</a></td></tr>
+    <tr><td>④ arbitrary-size values at log⁽ʳ⁾ n + O(log j) bits per j-bit value</td>
+        <td><a href="../../library/tiny-pointers-variable-values.md#theorem-9-and-the-size-class-construction">Theorem 9 (Phases 11/12/14/15) · §6.5</a></td></tr>
+    <tr><td>⑤ optimal internal-memory stash, O(n log ε⁻¹) bits, no IOs</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-10-the-optimal-internal-memory-stash-66-phase-16">Theorem 10 (Phase 16) · §6.6</a></td></tr>
+  </table>
+  <p class="note">Theorems 3–5 are lower bounds / intermediate steps, not constructions.
+  Full theorem table: <a href="../../library/tiny-pointers.md">tiny-pointers.md</a>.</p>
+</details>
+"""
+
 # Per-example extras for the build pipeline. `extra_link` adds C/runtime
 # files to the emcc link step (tiny_pointers needs the monotonic clock in
-# runtime/flow_rt_support.c, which the plain console build does not link).
+# runtime/flow_rt_support.c, which the plain console build does not link);
+# `html` injects an HTML fragment between the page header and the run body.
 PAGE_EXTRAS = {
     # Examples that call flow_rt_monotonic_ns link the real runtime file
     # (host monotonic clock) instead of a stub.
-    "tiny_pointers": {"extra_link": ["runtime/flow_rt_support.c"]},
+    "tiny_pointers": {
+        "extra_link": ["runtime/flow_rt_support.c"],
+        "html": TINY_POINTERS_COVERAGE_CARD,
+    },
     "digits_mlp": {"extra_link": ["runtime/flow_rt_support.c"]},
     "digits_mlp_parallel": {"extra_link": ["runtime/flow_rt_support.c"]},
 }
@@ -199,7 +232,8 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
         result = build(target["path"], out_dir, name=target["name"],
                        title=target["title"], opt=opt, timeout=timeout,
                        extra_link=[PROJECT_ROOT / p for p in extras.get("extra_link", [])]
-                       or None)
+                       or None,
+                       extra_html=extras.get("html", ""))
     except BuildError as exc:
         shutil.rmtree(out_dir, ignore_errors=True)
         record.update(status="failed", error=str(exc))
