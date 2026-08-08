@@ -129,7 +129,7 @@ Full thesis: [Vision](vision.md) · vs others: [Comparison](comparison.md)
 
 | | |
 |---|---|
-| Version | 0.9.0 · [changelog](project/CHANGELOG.md) |
+| Version | 0.10.0 · [changelog](project/CHANGELOG.md) |
 | License | MIT |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |
