@@ -43,7 +43,7 @@ inputs:
   fields:
     description: >-
       JSON array of field objects: [{"name":..,"value":..,"inline":true},..].
-      Up to 10 fields. Optional.
+      Up to 25 fields (Discord limit). Optional.
     required: false
     default: '[]'
   author_name:
@@ -130,7 +130,16 @@ runs:
         except json.JSONDecodeError as e:
             sys.exit(f"discord-notify: invalid --fields JSON: {e}")
         if parsed:
-            embed["fields"] = parsed[:4]
+            # Discord allows 25 fields per embed (name <= 256, value <= 1024);
+            # truncate calmly so a job-heavy CI summary still posts.
+            trimmed = [
+                {"name": str(f.get("name", ""))[:256],
+                 "value": str(f.get("value", ""))[:1024],
+                 "inline": bool(f.get("inline", False))}
+                for f in parsed[:25]
+                if f.get("name") or f.get("value")
+            ]
+            embed["fields"] = trimmed
 
         if os.environ.get("THUMBNAIL"):
             embed["thumbnail"] = {"url": os.environ["THUMBNAIL"]}
