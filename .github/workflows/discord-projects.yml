@@ -1,0 +1,74 @@
+name: Discord projects forum
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Project or release name (e.g. flow 0.8.0 or "flow docs site"):'
+        required: true
+      url:
+        description: 'Link to the project/release:'
+        required: false
+      description:
+        description: 'One-line summary:'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  forum-post:
+    name: Create forum thread
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve event
+        id: event
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IN_NAME: ${{ inputs.name }}
+          IN_URL: ${{ inputs.url }}
+          IN_DESC: ${{ inputs.description }}
+          REL_TAG: ${{ github.event.release.tag_name }}
+          REL_HTML: ${{ github.event.release.html_url }}
+          REL_NAME: ${{ github.event.release.name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            {
+              echo "name=$IN_NAME"
+              echo "url=$IN_URL"
+              echo "description=$IN_DESC"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NAME="Flow ${REL_TAG}"
+          DESC="Release $REL_TAG published for ${{ github.repository }}."
+          if [[ -n "$REL_NAME" && "$REL_NAME" != "null" ]]; then
+            NAME="$REL_NAME"
+            DESC="Release published for ${{ github.repository }}."
+          fi
+          {
+            echo "name=$NAME"
+            echo "url=$REL_HTML"
+            echo "description=$DESC"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post to forum #projects
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_PROJECTS_WEBHOOK }}
+          botname: Flow Projects
+          avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          color: '5763719'
+          title: ${{ steps.event.outputs.name }}
+          url: ${{ steps.event.outputs.url }}
+          description: ${{ steps.event.outputs.description }}
+          author_name: Flow
+          author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          thread_name: ${{ steps.event.outputs.name }}
+          footer_text: Flow projects hub · created by ${{ github.actor }}
