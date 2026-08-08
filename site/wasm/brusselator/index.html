@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brusselator — Flow on WebAssembly</title>
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  background: #0c0d11; color: #d8dae4;
+  font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
+header {
+  padding: 10px 16px; border-bottom: 1px solid #1e2029;
+  display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+}
+header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .01em; }
+header .meta { color: #6d7183; font-size: 12px; }
+header a { color: #7aa2f7; text-decoration: none; }
+header a:hover { text-decoration: underline; }
+main { flex: 1; display: flex; flex-direction: column; align-items: center;
+       justify-content: center; padding: 16px; gap: 12px; }
+.stage { position: relative; line-height: 0; max-width: 100%; }
+canvas { display: block; background: #000; border: 1px solid #22252f;
+         border-radius: 4px; image-rendering: pixelated;
+         width: auto; height: auto;
+         max-width: 100%; max-height: calc(100vh - 190px); }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+  background: rgba(9,10,14,.86); border-radius: 4px; line-height: 1.5;
+}
+.overlay strong { font-size: 16px; font-weight: 600; }
+.overlay span { color: #8a8fa3; font-size: 12px; max-width: 30ch;
+                text-align: center; }
+.overlay.hidden { display: none; }
+button {
+  font: inherit; background: #7aa2f7; color: #0c0d11; border: 0;
+  border-radius: 5px; padding: 7px 18px; cursor: pointer; font-weight: 600;
+}
+button:hover { background: #93b5ff; }
+button:disabled { background: #2a2d38; color: #6d7183; cursor: default; }
+.bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+       color: #6d7183; font-size: 12px; }
+pre#out {
+  width: min(880px, 100%); margin: 0; padding: 10px 12px; min-height: 3em;
+  max-height: 40vh; overflow: auto; background: #08090c;
+  border: 1px solid #1e2029; border-radius: 4px; color: #9ece6a;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+pre#out:empty { display: none; }
+.keys { color: #6d7183; font-size: 12px; text-align: center;
+        max-width: 60ch; }
+.err { color: #f7768e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Brusselator</h1>
+  <span class="meta">Flow &rarr; C &rarr; WebAssembly &middot; gfx canvas backend</span>
+  <span class="meta"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/brusselator.flow">source</a></span>
+</header>
+
+<main>
+  <div class="stage">
+    <canvas id="canvas" width="512" height="592"></canvas>
+    <div class="overlay" id="overlay">
+      <strong>Click to run</strong>
+      <span>Brusselator compiled to WebAssembly. Keyboard goes straight to the
+      program once it starts.</span>
+      <button id="start">Start</button>
+    </div>
+  </div>
+  <div class="bar">
+    <button id="stop" disabled>Stop</button>
+    <span id="status">idle</span>
+  </div>
+  <div class="keys">1  HEXAGONS   a 4.5  b 6.85  Du 2  Dv 16   just above b_c = 6.71 &middot; 2  LABYRINTH  a 4.5  b 10.0  Du 2  Dv 16   deeper in: stripes wander &middot; 3  COARSE     a 2.5  b 6.0   Du 2  Dv 16   smaller a, longer lambda_c &middot; 4  OSCILLATE  a 4.5  b 22.0  Du 2  Dv 16   past Hopf: the bulk beats &middot; R  reseed     P  pause                     Esc quit</div>
+  <pre id="out"></pre>
+</main>
+
+
+<script src="brusselator.js"></script>
+<script>
+(function () {
+  var overlay = document.getElementById('overlay');
+  var startBtn = document.getElementById('start');
+  var stopBtn = document.getElementById('stop');
+  var status = document.getElementById('status');
+  var out = document.getElementById('out');
+  var started = false;
+
+  function log(text, isErr) {
+    var line = document.createElement('span');
+    if (isErr) { line.className = 'err'; }
+    line.textContent = text + '\n';
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  }
+
+  window.flowGfxOnStart = function (title, w, h) { status.textContent = 'running ' + w + 'x' + h; };
+  window.flowGfxOnExit = function (frames) {
+    status.textContent = 'finished after ' + frames + ' frames';
+    stopBtn.disabled = true;
+  };
+
+  function boot() {
+    if (started) { return; }
+    started = true;
+    overlay.classList.add('hidden');
+    status.textContent = 'loading module...';
+    window.focus();
+    createFlowModule({
+      print: function (t) { log(t, false); },
+      printErr: function (t) { log(t, true); },
+      canvas: document.getElementById('canvas')
+    }).then(function (mod) {
+      stopBtn.disabled = false;
+      status.textContent = 'running';
+      try { mod.callMain([]); } catch (e) {
+        if (!(e && e.name === 'ExitStatus')) { log('' + e, true); }
+      }
+    }).catch(function (e) {
+      status.textContent = 'failed to load';
+      log('' + e, true);
+    });
+  }
+
+  overlay.addEventListener('click', boot);
+  startBtn.addEventListener('click', function (e) { e.stopPropagation(); boot(); });
+  stopBtn.addEventListener('click', function () {
+    if (window.flowGfxStop) { window.flowGfxStop(); }
+    status.textContent = 'stopping...';
+  });
+  // The gallery loads these pages in an iframe; autostart on request.
+  if (location.search.indexOf('autostart=1') >= 0) { boot(); }
+  document.addEventListener('click', function () { window.focus(); });
+})();
+</script>
+
+</body>
+</html>

@@ -142,6 +142,14 @@ class Monomorphizer:
         self.generated_structs: Dict[str, StructDecl] = {}
         self.generated_functions: Dict[str, FunctionDecl] = {}
 
+        # Concrete (non-generic) function names: a specialization must never
+        # shadow one (e.g. stdlib defines sizeof_i32 alongside generic
+        # sizeof<T>; synthesizing a twin would emit a C redefinition).
+        self.concrete_function_names: Set[str] = set()
+        # Specialization names that collided with a concrete declaration and
+        # were resolved by it instead of synthesized.
+        self.resolved_existing: Set[str] = set()
+
         # Guard against infinite instantiation (e.g. List<List<List<...>>>)
         self._instantiation_depth: int = 0
     
@@ -177,6 +185,8 @@ class Monomorphizer:
                     type_params=get_type_param_names(decl.type_params),
                     decl=decl
                 )
+            elif isinstance(decl, FunctionDecl):
+                self.concrete_function_names.add(decl.name)
     
     def _collect_usages(self, declarations: List[Any]) -> None:
         """Find all places where generics are instantiated."""
@@ -456,7 +466,10 @@ class Monomorphizer:
         pending_fns = list(self.function_requests.items())
         while pending_fns:
             mangled_name, req = pending_fns.pop()
-            if mangled_name in self.generated_functions:
+            if (
+                mangled_name in self.generated_functions
+                or mangled_name in self.resolved_existing
+            ):
                 continue
             before = set(self.function_requests)
             self._generate_function(req)
@@ -517,6 +530,12 @@ class Monomorphizer:
             self._instantiation_depth -= 1
 
     def _generate_function_inner(self, req: MonomorphRequest, generic_def: GenericDef) -> None:
+        # A concrete (non-generic) declaration already provides this mangled
+        # name (stdlib defines sizeof_i32 alongside generic sizeof<T>). Keep
+        # the concrete one; synthesizing a twin would emit a C redefinition.
+        if req.mangled_name in self.concrete_function_names:
+            self.resolved_existing.add(req.mangled_name)
+            return
         original = generic_def.decl
         type_map = dict(zip(generic_def.type_params, req.type_args))
         
