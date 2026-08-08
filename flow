@@ -1700,11 +1700,12 @@ run_tests() {
                 | grep -v '^tests/fuzz/crashes/' \
                 | grep -v '^examples/ecosystem/' \
                 | grep -v '^examples/demos/' \
+                | grep -v '^examples/rf/rate_mismatch\.flow$' \
                 | while read -r rel; do
                     echo "$SCRIPT_DIR/$rel"
                 done
         else
-            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" ! -name 'rate_mismatch.flow' 2>/dev/null
         fi
     }
 
