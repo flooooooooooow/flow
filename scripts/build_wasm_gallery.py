@@ -103,6 +103,17 @@ CATEGORIES = [
     },
 ]
 
+# Per-example extras for the build pipeline. `extra_link` adds C/runtime
+# files to the emcc link step (tiny_pointers needs the monotonic clock in
+# runtime/flow_rt_support.c, which the plain console build does not link).
+PAGE_EXTRAS = {
+    # Examples that call flow_rt_monotonic_ns link the real runtime file
+    # (host monotonic clock) instead of a stub.
+    "tiny_pointers": {"extra_link": ["runtime/flow_rt_support.c"]},
+    "digits_mlp": {"extra_link": ["runtime/flow_rt_support.c"]},
+    "digits_mlp_parallel": {"extra_link": ["runtime/flow_rt_support.c"]},
+}
+
 
 def pretty_title(stem: str) -> str:
     name = stem.replace("_gfx", "").replace("_", " ").strip()
@@ -183,9 +194,12 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
         "summary": one_line_summary(target["path"].read_text()),
     }
     out_dir = out_root / target["name"]
+    extras = PAGE_EXTRAS.get(target["name"], {})
     try:
         result = build(target["path"], out_dir, name=target["name"],
-                       title=target["title"], opt=opt, timeout=timeout)
+                       title=target["title"], opt=opt, timeout=timeout,
+                       extra_link=[PROJECT_ROOT / p for p in extras.get("extra_link", [])]
+                       or None)
     except BuildError as exc:
         shutil.rmtree(out_dir, ignore_errors=True)
         record.update(status="failed", error=str(exc))
