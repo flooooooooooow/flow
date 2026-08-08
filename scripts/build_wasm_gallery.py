@@ -53,7 +53,8 @@ CATEGORIES = [
         "blurb": "Pure computation. No graphics, no host services: the "
                  "program runs and prints into the page.",
         "globs": [("examples/basics", "*.flow")],
-        "files": ["examples/wasm/hello_wasm.flow"],
+        "files": ["examples/wasm/hello_wasm.flow",
+                  "examples/wasm/parallel_sum.flow"],
     },
     {
         "id": "language",
@@ -149,6 +150,7 @@ PAGE_EXTRAS = {
     # The browser blocks SharedArrayBuffer without cross-origin isolation, so
     # the page ships a COI service worker and needs to be opened in a tab.
     "digits_mlp_parallel": {"threads": True, "workers": 8, "initial_memory": "128MB"},
+    "parallel_sum": {"threads": True, "workers": 8},
 }
 
 
@@ -223,6 +225,7 @@ def collect(categories) -> list:
 
 
 def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
+    extras = PAGE_EXTRAS.get(target["name"], {})
     record = {
         "name": target["name"],
         "title": target["title"],
@@ -230,8 +233,9 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
         "source": str(target["path"].relative_to(PROJECT_ROOT)),
         "summary": one_line_summary(target["path"].read_text()),
     }
+    if extras.get("threads"):
+        record["threads"] = True
     out_dir = out_root / target["name"]
-    extras = PAGE_EXTRAS.get(target["name"], {})
     try:
         result = build(target["path"], out_dir, name=target["name"],
                        title=target["title"], opt=opt, timeout=timeout,
@@ -371,9 +375,10 @@ STATUS_ROWS = [
      "runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM "
      "key events to the macOS keycodes the programs already use."),
     ("Threads and channels", "runs", "Runs today",
-     "digits_mlp_parallel runs on real Emscripten pthreads over SharedArrayBuffer "
-     "and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so "
-     "open that card in a tab and let its service worker reload once."),
+     "digits_mlp_parallel and parallel_sum run on real Emscripten pthreads over "
+     "SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a "
+     "cross-origin-isolated page, so open those cards in a tab and let their "
+     "service worker reload once."),
     ("Sockets and HTTP", "wip", "In progress",
      "Emscripten's WebSocket-backed POSIX socket bridge "
      "(-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here."),
@@ -417,12 +422,15 @@ def render_gallery(records: list, out: Path) -> None:
                    + rec["source"])
             if rec["status"] == "ok":
                 kind = "canvas" if rec.get("gfx") else "console"
+                tags = f'<span class="tag">{kind}</span>'
+                if rec.get("threads"):
+                    tags += ' <span class="tag">threads</span>'
                 cards.append(f"""      <div class="card">
         <h3>{esc(rec['title'])}</h3>
         <p>{esc(rec['summary'])}</p>
         <div class="row">
           <button data-run="{esc(rec['page'])}" data-title="{esc(rec['title'])}">Run</button>
-          <span class="tag">{kind}</span>
+          {tags}
           <span>{kb(rec['total_bytes'])}</span>
           <a href="{esc(src)}">source</a>
         </div>
