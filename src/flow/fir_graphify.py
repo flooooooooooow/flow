@@ -8,7 +8,7 @@ are enough for Phase 1 CPU reference algorithms.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, List, Optional
 
 from .fir_g import (
     EFF_ALLOCATES,

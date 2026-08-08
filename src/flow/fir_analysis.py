@@ -14,7 +14,6 @@ from .fir_g import (
     EFF_FFI,
     EFF_GPU,
     EFF_IO,
-    EFF_NONE,
     EFF_UNKNOWN,
     EFF_WRITES_MEMORY,
     FirG,

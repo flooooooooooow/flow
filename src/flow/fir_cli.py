@@ -111,7 +111,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     thresh_path = Path(args.thresholds) if args.thresholds else None
 
     if args.calibrate:
-        from .fir_route import calibrate_routing, default_thresholds_path, save_thresholds
+        from .fir_route import calibrate_routing, save_thresholds
 
         th = calibrate_routing()
         out = save_thresholds(th, thresh_path)
