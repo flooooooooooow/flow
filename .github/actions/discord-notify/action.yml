@@ -111,9 +111,8 @@ runs:
           echo "discord-notify: no webhook URL supplied, skipping"
           exit 0
         fi
-        echo "discord-notify: thread_name=${THREAD_NAME:-<empty>}"
         python3 - <<'PY'
-        import json, os, sys, urllib.request, urllib.parse
+        import json, os, sys, urllib.request
 
         webhook = os.environ["WEBHOOK"]
         color = int(os.environ.get("COLOR", "0"))
@@ -173,15 +172,13 @@ runs:
             payload["avatar_url"] = os.environ["AVATAR_URL"]
         if os.environ.get("CONTENT"):
             payload["content"] = os.environ["CONTENT"]
-
-        body = json.dumps(payload).encode()
-        url = webhook
         thread = os.environ.get("THREAD_NAME")
         if thread:
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}thread_name={urllib.parse.quote(thread)}"
+            payload["thread_name"] = thread
+
+        body = json.dumps(payload).encode()
         req = urllib.request.Request(
-            url, data=body,
+            webhook, data=body,
             headers={
                 "Content-Type": "application/json",
                 # Discord routes webhooks through Cloudflare, which blocks the
