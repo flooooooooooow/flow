@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 156,
-  "built": 148,
-  "failed": 8,
-  "total_bytes": 5512035,
+  "built": 149,
+  "failed": 7,
+  "total_bytes": 5550134,
   "categories": [
     {
       "id": "games",
@@ -1748,8 +1748,12 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp_parallel.flow",
       "summary": "Data-parallel gradient accumulation for the digits MLP",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_parallel_for_i32"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 26144,
+      "js_bytes": 11955,
+      "total_bytes": 38099,
+      "page": "digits_mlp_parallel/index.html"
     },
     {
       "name": "flowlm_charlm",
