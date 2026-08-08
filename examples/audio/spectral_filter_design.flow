@@ -558,7 +558,7 @@ function main() -> i32 {
     table = table + "<tr><td>One-pole (bilinear)</td><td>" + hz_disp(f3_op) + " Hz</td><td>" + hz_disp(f6_op) + " Hz</td><td>" + db_disp(s4_op) + " dB</td><td>—</td><td>" + db_disp(dc_op) + " dB</td></tr></table>"
 
     # ---------- HTML wrapper ----------
-    let html: string = "<!doctype html><html><head><meta charset='utf-8'><title>Spectral Filter Design — Flow</title>"
+    let mut html: string = "<!doctype html><html><head><meta charset='utf-8'><title>Spectral Filter Design — Flow</title>"
     html = html + "<style>body{background:#0b0f17;color:#dbe4f0;font-family:system-ui,'Segoe UI',sans-serif;padding:36px;max-width:1000px;margin:auto}"
     html = html + "h1{font-size:21px;letter-spacing:.4px;margin-bottom:6px}h2{font-size:13.5px;color:#8fa3bf;font-weight:500;margin:0 0 18px;line-height:1.5}"
     html = html + ".legend{display:flex;gap:20px;margin:16px 0;flex-wrap:wrap;font-size:13px;color:#b9c6da}"
