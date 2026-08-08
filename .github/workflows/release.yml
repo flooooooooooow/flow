@@ -77,27 +77,25 @@ jobs:
           url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}
           description: >-
             ${{ steps.summary.outputs.commits }} commits since
-            ${{ steps.summary.outputs.prev }}, from ${{ steps.summary.outputs.authors }} contributors. Read the changelog in #changelog or [on GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}).
+            ${{ steps.summary.outputs.prev }}, from
+            ${{ steps.summary.outputs.authors }} contributors. Read the full
+            changelog in [#changelog](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}).
           author_name: Flow Releases
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
           thumbnail: ${{ github.server_url }}/${{ github.repository_owner }}.png
-          fields: >-
-            [
-              {"name":"Version","value":"`${{ steps.tag.outputs.name }}`","inline":true},
-              {"name":"Commits","value":"${{ steps.summary.outputs.commits }}","inline":true},
-              {"name":"Contributors","value":"${{ steps.summary.outputs.authors }}","inline":true}
-            ]
           footer_text: Flow Releases · ${{ steps.tag.outputs.name }}
           footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
 
       - name: Post changelog to Discord #changelog
         if: always()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.tag.outputs.name }}"
           gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
           python3 - <<'PY'
-          import json, os, urllib.request
+          import json, os, sys, urllib.request
           from datetime import datetime, timezone
           body = open("/tmp/flow_changelog.md").read().strip() or "Auto-generated changelog."
           body = body.lstrip("#").strip()
@@ -118,9 +116,12 @@ jobs:
               "embeds": [embed],
           }
           webhook = os.environ["DISCORD_CHANGELOG_WEBHOOK"]
-          req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
-                                       headers={"Content-Type": "application/json"})
-          urllib.request.urlopen(req)
+          try:
+              req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
+                                           headers={"Content-Type": "application/json"})
+              urllib.request.urlopen(req)
+          except Exception as e:
+              print(f"changelog webhook failed (non-fatal): {e}", file=sys.stderr)
           PY
         env:
           DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
