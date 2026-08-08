@@ -97,7 +97,7 @@ and say plainly that it is not built here.
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The thirteen that do not build
+## The nine that do not build
 
 Each one stops at a named symbol. The gallery keeps their cards and prints the
 reason on them.
@@ -107,19 +107,26 @@ reason on them.
 | `examples/effects/async_primitives.flow` | `flow_fiber_run_main` | Fiber runtime is a native C/assembly context switch |
 | `examples/linalg/blas_demo.flow` | `cblas_dgemm` | Links a system BLAS |
 | `examples/linalg/lu_decomposition.flow` | `cblas_dcopy` | Links a system BLAS |
-| `examples/ml/digits_mlp.flow` | `flow_rt_monotonic_ns` | Runtime clock helper lives in the native runtime pack |
-| `examples/ml/digits_mlp_parallel.flow` | `flow_rt_monotonic_ns` | Same, plus the thread pool |
+| `examples/ml/digits_mlp_parallel.flow` | `flow_parallel_for_i32` | Thread pool is pthreads; a synchronous fallback would be safe but is not wired yet |
 | `examples/ml/digits_mlp_metal.flow` | `flow_gpu_alloc` | Metal GPU backend |
 | `examples/ml/tape_mul.flow` | `flow_tape_reset` | Autodiff tape is a native runtime module |
 | `examples/ai/ga_flappy.flow` | `fly` | Program references a symbol the transpiler does not emit |
 | `examples/crypto/runtime_sha256.flow` | `flow_sha256` | Hashing helper lives in the native runtime pack |
-| `examples/systems/system_info.flow` | `os_is_linux` | Asks the host which OS it is |
 | `examples/graphics/graphics.flow` | `main` | Program has no `main`; it is a library-shaped example |
-| `examples/systems/arena_frame.flow` | `redefinition of sizeof_i32` | Transpiler emits the helper twice; a C backend bug, not a wasm one |
-| `examples/systems/manual_memory.flow` | `redefinition of sizeof_i32` | Same transpiler bug |
 
-The last two are worth noting: they fail the same way under native `clang`,
-so they are a Flow C-backend bug that the wasm build simply surfaced.
+Four examples used to fail and now build:
+
+- `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
+  monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
+  one, so the generated C redefined the symbol. The monomorphizer now resolves
+  a generic specialization to an existing concrete declaration instead of
+  synthesizing a twin.
+- `digits_mlp.flow` now links `runtime/flow_rt_support.c` for the monotonic
+  clock, like `tiny_pointers` does.
+- `system_info.flow` gets browser stubs for its host-only externs: the OS and
+  core count are read from the browser tab itself (`navigator.platform` /
+  `navigator.hardwareConcurrency`), CPU feature flags degrade to `false`, and
+  `print_kv_*` map to `printf`.
 
 ## Related
 
