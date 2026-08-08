@@ -144,7 +144,11 @@ PAGE_EXTRAS = {
         "html": TINY_POINTERS_COVERAGE_CARD,
     },
     "digits_mlp": {"extra_link": ["runtime/flow_rt_support.c"]},
-    "digits_mlp_parallel": {"extra_link": ["runtime/flow_rt_support.c"]},
+    # Real pthreads: wasm_build compiles the parallel-for library TU and links
+    # runtime/flow_rt_parallel.c + flow_rt_support.c itself (threads mode).
+    # The browser blocks SharedArrayBuffer without cross-origin isolation, so
+    # the page ships a COI service worker and needs to be opened in a tab.
+    "digits_mlp_parallel": {"threads": True, "workers": 8, "initial_memory": "128MB"},
 }
 
 
@@ -233,7 +237,10 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
                        title=target["title"], opt=opt, timeout=timeout,
                        extra_link=[PROJECT_ROOT / p for p in extras.get("extra_link", [])]
                        or None,
-                       extra_html=extras.get("html", ""))
+                       extra_html=extras.get("html", ""),
+                       threads=extras.get("threads", False),
+                       workers=extras.get("workers", 8),
+                       initial_memory=extras.get("initial_memory", "32MB"))
     except BuildError as exc:
         shutil.rmtree(out_dir, ignore_errors=True)
         record.update(status="failed", error=str(exc))
@@ -363,9 +370,10 @@ STATUS_ROWS = [
     ("gfx graphics and keyboard", "runs", "Runs today",
      "runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM "
      "key events to the macOS keycodes the programs already use."),
-    ("Threads and channels", "wip", "In progress",
-     "Emscripten -pthread over SharedArrayBuffer and Web Workers; needs the "
-     "page to be cross-origin isolated. Not built here."),
+    ("Threads and channels", "runs", "Runs today",
+     "digits_mlp_parallel runs on real Emscripten pthreads over SharedArrayBuffer "
+     "and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so "
+     "open that card in a tab and let its service worker reload once."),
     ("Sockets and HTTP", "wip", "In progress",
      "Emscripten's WebSocket-backed POSIX socket bridge "
      "(-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here."),
@@ -466,9 +474,10 @@ def render_gallery(records: list, out: Path) -> None:
 {chr(10).join(sections)}
 
   <h2>What runs, and what is still being crossed</h2>
-  <p class="blurb">Only the first two rows are things verified in a browser
-  on this page. The rest name the mechanism and say plainly that it is not
-  built here yet.</p>
+  <p class="blurb">Rows marked “runs” are verified in a browser. The
+  threads row needs the card opened in a tab (an iframe cannot become
+  cross-origin isolated on its own). The rest name the mechanism and say
+  plainly that it is not built here yet.</p>
   <table class="status">
     <tr><th>Capability</th><th>State</th><th>Route</th></tr>
 {status}
