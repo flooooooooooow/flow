@@ -21,6 +21,21 @@ DURATION_UNIT_NS = {
     "min": 60_000_000_000,
 }
 
+# Quantity suffixes in ordinary expressions (physical-systems W0).
+# `2.45GHz` → `((2.45 * 1e9) as Hertz)`. Duration suffixes stay
+# duration-position-only. Values are (unit_type_name, scale).
+QUANTITY_SUFFIX_UNITS = {
+    "Hz": ("Hertz", 1.0),
+    "kHz": ("Hertz", 1_000.0),
+    "MHz": ("Hertz", 1_000_000.0),
+    "GHz": ("Hertz", 1_000_000_000.0),
+    "dB": ("Decibel", 1.0),
+    "dBm": ("dBm", 1.0),
+    "dBW": ("dBW", 1.0),
+    "deg": ("Degree", 1.0),
+    "rad": ("Radian", 1.0),
+}
+
 
 class FlowSyntaxError(SyntaxError):
     """Enhanced syntax error with source context and suggestions."""
@@ -1644,10 +1659,13 @@ class Parser:
                     self.advance()
                     args = []
                     if self.current_token.type != TokenType.RPAREN:
-                        # Parse identifiers or string literals as args
+                        # Identifiers, numbers (@aligned(64)), or string literals
                         while True:
                             if self.current_token.type == TokenType.IDENTIFIER:
                                 args.append(self.current_token.value)
+                                self.advance()
+                            elif self.current_token.type == TokenType.NUMBER:
+                                args.append(str(self.current_token.value))
                                 self.advance()
                             elif self.current_token.type == TokenType.STRING_LITERAL:
                                 args.append(self.current_token.value.strip('"').strip("'"))
@@ -1679,6 +1697,9 @@ class Parser:
                     TokenType.THEOREM,
                     TokenType.IMPORT,
                 ):
+                    is_exported = True
+                elif self._at_unit_decl() or self._at_flow_decl():
+                    # Contextual keywords (`unit`, `flow`) lex as IDENT.
                     is_exported = True
                 else:
                     declarations.append(self.parse_export_list())
@@ -4447,6 +4468,27 @@ class Parser:
         if self.current_token.type == TokenType.NUMBER:
             value = self.current_token.value
             self.advance()
+            # Quantity suffix (physical-systems W0): `2.45GHz` → scaled cast.
+            if (
+                self.current_token.type == TokenType.IDENTIFIER
+                and self.current_token.value in QUANTITY_SUFFIX_UNITS
+            ):
+                unit_name, scale = QUANTITY_SUFFIX_UNITS[self.current_token.value]
+                self.advance()
+                text = str(value)
+                if text.lower().startswith("0x"):
+                    num = float(int(text, 16))
+                else:
+                    num = float(text)
+                scaled = num * scale
+                if scaled == int(scaled) and abs(scaled) < 1e15:
+                    lit_text = f"{int(scaled)}.0"
+                else:
+                    lit_text = repr(scaled)
+                return CastExpression(
+                    Literal(lit_text, Type("f64")),
+                    Type(unit_name),
+                )
             # Infer float vs int from token text.
             # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
             is_hex = isinstance(value, str) and value.startswith("0x")
