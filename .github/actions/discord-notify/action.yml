@@ -111,6 +111,7 @@ runs:
           echo "discord-notify: no webhook URL supplied, skipping"
           exit 0
         fi
+        echo "discord-notify: thread_name=${THREAD_NAME:-<empty>}"
         python3 - <<'PY'
         import json, os, sys, urllib.request, urllib.parse
 
