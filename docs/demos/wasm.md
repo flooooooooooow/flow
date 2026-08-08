@@ -58,7 +58,7 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `fibonacci` | Returned 55 |
 | `prime_numbers` | Returned 10 |
 | `lorenz_attractor` | Ran to completion, `main returned 0` |
-| `digits_mlp_parallel` | Ran the 30-epoch training to PASS on the synchronous fallback, reporting 1 worker, with the serial == parallel accuracy check green |
+| `digits_mlp_parallel` | Served cross-origin-isolated and run on real pthreads: 8 runtime workers, measured speedup 1.9× over the serial pass, serial == parallel accuracy check green, `main returned 0` |
 | `arena_frame` | Ran its frame-arena allocator demo to exit 0 |
 | `system_info` | Printed real browser values: `OS: macOS`, `Num Cores: 14`, with the unprobeable parts degraded honestly |
 | `tiny_pointers` | Ran all phases to PASS, with the abstract-claim coverage card collapsed by default |
@@ -95,7 +95,7 @@ and say plainly that it is not built here.
 |---|---|---|
 | Pure computation | **Runs today** | Arithmetic, arrays, structs, strings, printf. Flow → C → wasm32 with nothing else linked in. |
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` paints the framebuffer onto a canvas and maps DOM key events to macOS keycodes. |
-| Threads and channels | In progress | Emscripten `-pthread` over SharedArrayBuffer and Web Workers, which needs the page to be cross-origin isolated. |
+| Threads and channels | **Runs today** | `digits_mlp_parallel` runs on real Emscripten pthreads over SharedArrayBuffer and Web Workers. The browser blocks SAB unless the page is cross-origin isolated, so the page ships a COI service worker: open the card in a tab and it reloads once, isolated. |
 | Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js` / `PROXY_POSIX_SOCKETS`). |
 | GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
 | Embedded CPython | In progress | Pyodide, which is CPython itself compiled to WebAssembly. |
@@ -133,11 +133,15 @@ Six examples used to fail and now build:
 - `graphics.flow` was library-shaped (no `main`); it now carries a demo entry
   point that exercises the constructors, conversions and clamps and gates its
   exit code on a self-check.
-- `digits_mlp_parallel.flow` gets a synchronous fallback for
-  `flow_parallel_for_i32`: the loop body runs inline on the main thread. It is
-  correct (the example's deterministic-reduction check confirms serial and
-  parallel accuracy agree) but single-threaded, and `flow_rt_par_workers`
-  honestly reports 1 worker.
+- `digits_mlp_parallel.flow` now builds on real pthreads: Flow's parallel-for
+  orchestration (`lib/runtime/concurrency_parallel.flow`) compiles as a library
+  and lands on `pthread_create` over SharedArrayBuffer and Web Workers
+  (`-pthread -sPROXY_TO_PTHREAD`, one pre-spawned worker per shard plus one
+  for the proxied `main`). The browser only allows SharedArrayBuffer on
+  cross-origin-isolated pages, so the page ships a COI service worker and
+  explains that it must be opened in a tab. Its batch size was raised 250 →
+  1000 so each spawn carries enough work to beat the ~1 ms proxied spawn
+  cost; the measured in-browser speedup is ~1.9×.
 
 ## Related
 

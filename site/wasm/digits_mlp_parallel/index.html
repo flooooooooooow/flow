@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Digits MLP (parallel) — Flow on WebAssembly</title>
+<script src="coi-serviceworker.js"></script>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -79,18 +80,21 @@ details.coverage a:hover { text-decoration: underline; }
 <body>
 <header>
   <h1>Digits MLP (parallel)</h1>
-  <span class="meta">Flow &rarr; C &rarr; WebAssembly &middot; console</span>
+  <span class="meta">Flow &rarr; C &rarr; WebAssembly &middot; console &middot; pthreads over SharedArrayBuffer</span>
   <span class="meta"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_parallel.flow">source</a></span>
 </header>
 
 
 <main>
   <div class="bar">
-    <button id="start">Run</button>
+    <button id="start">Run (pthreads)</button>
     <button id="clear">Clear</button>
     <span id="status">idle</span>
   </div>
   <pre id="out"></pre>
+  <div class="keys">This build runs on real pthreads over SharedArrayBuffer and
+  Web Workers. The browser only allows SharedArrayBuffer on cross-origin-isolated
+  pages: open this page in a tab and let its service worker reload once.</div>
 </main>
 
 
@@ -110,34 +114,49 @@ details.coverage a:hover { text-decoration: underline; }
     out.scrollTop = out.scrollHeight;
   }
 
+  var isolated = self.crossOriginIsolated && typeof SharedArrayBuffer === 'function';
+
+  function showIsolation() {
+    status.textContent = 'needs cross-origin isolation';
+    startBtn.disabled = true;
+    log('The browser blocks SharedArrayBuffer unless the page is cross-origin isolated,');
+    log('and an iframe cannot become isolated on its own. Open this page in a tab:');
+    log('the service worker adds the isolation headers and reloads once.');
+  }
+
   function run() {
     startBtn.disabled = true;
-    status.textContent = 'running...';
-    createFlowModule({
-      print: function (t) { log(t, false); },
-      printErr: function (t) { log(t, true); }
-    }).then(function (mod) {
-      var code = 0;
-      try { code = mod.callMain([]); } catch (e) {
-        if (e && e.name === 'ExitStatus') { code = e.status; }
-        else { log('' + e, true); code = -1; }
-      }
-      if (code === undefined) { code = 0; }
-      // Plenty of Flow examples answer with a return value rather than
-      // printing, so always show it.
-      log((out.textContent ? '\n' : '') + 'main returned ' + code, false);
+    status.textContent = 'spawning workers...';
+    var done = false;
+    function finish(code) {
+      if (done) { return; }
+      done = true;
+      log((out.textContent ? '\n' : '') + 'main returned ' + code);
       status.textContent = 'exit ' + code;
       startBtn.disabled = false;
+    }
+    // With PROXY_TO_PTHREAD the module factory resolves as soon as the
+    // runtime is initialised, before main() has run on its worker thread.
+    // Only onExit fires when main() really returns, so it alone finishes.
+    createFlowThreaded({
+      print: function (t) { log(t, false); },
+      printErr: function (t) { log(t, true); },
+      onExit: function (code) { finish(code === undefined ? 0 : code); }
+    }).then(function () {
+      if (!done) { status.textContent = 'running (pthreads)...'; }
     }).catch(function (e) {
+      if (done) { return; }
+      done = true;
       log('' + e, true);
       status.textContent = 'failed to load';
       startBtn.disabled = false;
     });
   }
 
+  if (!isolated) { showIsolation(); }
   startBtn.addEventListener('click', run);
   clearBtn.addEventListener('click', function () { out.textContent = ''; });
-  if (location.search.indexOf('autostart=1') >= 0) { run(); }
+  if (location.search.indexOf('autostart=1') >= 0 && isolated) { run(); }
 })();
 </script>
 

@@ -1421,7 +1421,7 @@ footer a { color: #6b7ca8; }
         <div class="row">
           <button data-run="digits_mlp_parallel/index.html" data-title="Digits MLP (parallel)">Run</button>
           <span class="tag">console</span>
-          <span>37 KB</span>
+          <span>64 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_parallel.flow">source</a>
         </div>
       </div>
@@ -1657,9 +1657,10 @@ footer a { color: #6b7ca8; }
     </div>
 
   <h2>What runs, and what is still being crossed</h2>
-  <p class="blurb">Only the first two rows are things verified in a browser
-  on this page. The rest name the mechanism and say plainly that it is not
-  built here yet.</p>
+  <p class="blurb">Rows marked “runs” are verified in a browser. The
+  threads row needs the card opened in a tab (an iframe cannot become
+  cross-origin isolated on its own). The rest name the mechanism and say
+  plainly that it is not built here yet.</p>
   <table class="status">
     <tr><th>Capability</th><th>State</th><th>Route</th></tr>
       <tr><td>Pure computation</td>
@@ -1669,8 +1670,8 @@ footer a { color: #6b7ca8; }
         <td class="state runs">Runs today</td>
         <td>runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM key events to the macOS keycodes the programs already use.</td></tr>
       <tr><td>Threads and channels</td>
-        <td class="state wip">In progress</td>
-        <td>Emscripten -pthread over SharedArrayBuffer and Web Workers; needs the page to be cross-origin isolated. Not built here.</td></tr>
+        <td class="state runs">Runs today</td>
+        <td>digits_mlp_parallel runs on real Emscripten pthreads over SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so open that card in a tab and let its service worker reload once.</td></tr>
       <tr><td>Sockets and HTTP</td>
         <td class="state wip">In progress</td>
         <td>Emscripten's WebSocket-backed POSIX socket bridge (-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here.</td></tr>
