@@ -5020,17 +5020,55 @@ class MLIRGenerator:
             else:
                 cast_args.append(arg_val)
         
+        # llvm.func varargs (snprintf/…) need llvm.call + vararg(callee type).
+        use_llvm_call = bool(
+            func_call.name in getattr(self, "_c_variadic_funcs", set())
+            or (
+                func_call.name in self.symbol_table
+                and self.symbol_table[func_call.name].get("is_variadic")
+            )
+        )
+
+        def _llvm_var_callee_type() -> str:
+            fixed: List[str] = []
+            info = self.symbol_table.get(func_call.name) or {}
+            for p in info.get("parameters") or []:
+                ty = self.flow_type_to_mlir(p.type)
+                fixed.append("ptr" if ty == "!llvm.ptr" else ty)
+            ret = "void" if ret_type == "()" else (
+                "ptr" if ret_type == "!llvm.ptr" else ret_type
+            )
+            if fixed:
+                return f"!llvm.func<{ret} ({', '.join(fixed)}, ...)>"
+            return f"!llvm.func<{ret} (...)>"
+
         # For void functions, don't assign to SSA value
         if ret_type == '()':
-            ops.append(
-                f"{self.indent()}func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
-            )
+            if use_llvm_call:
+                ops.append(
+                    f"{self.indent()}llvm.call {callee}({', '.join(cast_args)}) "
+                    f"vararg({_llvm_var_callee_type()}) : "
+                    f"({', '.join(expected_arg_types)}) -> {ret_type}"
+                )
+            else:
+                ops.append(
+                    f"{self.indent()}func.call {callee}({', '.join(cast_args)}) : "
+                    f"({', '.join(expected_arg_types)}) -> {ret_type}"
+                )
             # Return a dummy value for void functions (won't be used)
             return f"%void_{self.function_counter}", ops
         else:
-            ops.append(
-                f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : ({', '.join(expected_arg_types)}) -> {ret_type}"
-            )
+            if use_llvm_call:
+                ops.append(
+                    f"{self.indent()}{ssa_name} = llvm.call {callee}({', '.join(cast_args)}) "
+                    f"vararg({_llvm_var_callee_type()}) : "
+                    f"({', '.join(expected_arg_types)}) -> {ret_type}"
+                )
+            else:
+                ops.append(
+                    f"{self.indent()}{ssa_name} = func.call {callee}({', '.join(cast_args)}) : "
+                    f"({', '.join(expected_arg_types)}) -> {ret_type}"
+                )
             self._ssa_types[ssa_name] = ret_type
             if self._is_aggregate_mlir_type(ret_type):
                 stable, mat_ops = self._stabilize_aggregate_ssa(
