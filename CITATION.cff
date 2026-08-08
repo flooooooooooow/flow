@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/flooooooooooow/flow"
 url: "https://flooooooooooow.github.io/flow/"
 license: MIT
-version: 0.8.0
-date-released: "2026-08-05"
+version: 0.10.0
+date-released: "2026-08-08"
 keywords:
   - programming-language
   - algebraic-effects
