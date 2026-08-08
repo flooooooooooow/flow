@@ -3,6 +3,55 @@
 from tests.unit.compiler_helpers import to_c, needs_clang, compile_c_only, compile_and_run
 
 
+def test_imported_math_calls_use_libm_names():
+    """Importing stdlib/math.flow must not mangle sin/cos to their stubs.
+
+    Regression: after `resolve_call` returned the C-math name `sin` (not the
+    mangled `sin_f32`), _resolve_call_with_implicit_effect_args re-picked the
+    sole same-arity `sin_f32` overload and overrode the call name, emitting an
+    undeclared identifier and breaking the C backend for any program that
+    imported math.flow.
+    """
+    import os
+    import shutil
+    import tempfile
+
+    from flow.c_generator import flow_to_c
+    from flow.module_resolver import resolve_modules
+
+    with tempfile.NamedTemporaryFile("w", suffix=".flow", delete=False) as f:
+        f.write(
+            "import std.math\n"
+            "function main() -> f32 {\n"
+            "    let w: f32 = 1.5\n"
+            "    return sin(w) + cos(w)\n"
+            "}\n"
+        )
+        path = f.name
+    try:
+        decls = resolve_modules(path)
+        c = flow_to_c(decls, source_file=path)
+    finally:
+        os.unlink(path)
+    assert "sin(w)" in c
+    assert "cos(w)" in c
+    assert "sin_f32" not in c
+    assert "cos_f32" not in c
+    # Guard against a "declared but wrong" regression: the emitted C must
+    # actually compile (pre-fix it referenced an undeclared `sin_f32`).
+    if shutil.which("clang") is not None:
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as td:
+            c_path = os.path.join(td, "prog.c")
+            with open(c_path, "w") as f:
+                f.write(c)
+            syn = subprocess.run(
+                ["clang", "-fsyntax-only", c_path], capture_output=True, text=True
+            )
+            assert syn.returncode == 0, f"clang -fsyntax-only failed:\n{syn.stderr}"
+
+
 def test_effect_handlers_are_thread_local():
     c = to_c(
         """

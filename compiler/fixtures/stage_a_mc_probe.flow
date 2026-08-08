@@ -1,0 +1,71 @@
+# Stage-A fixture: flowc_mathematical_case_condition (port of
+# math_prose.mathematical_case_condition) + the runtime string concat that
+# claim_address slug building relies on. Exercises the exact-match port
+# (three regex cases + `==` → ` equals ` fallback) through the flowc
+# pipeline: bundle typecheck → emit → cc → run.
+# Run via compiler/scripts/smoke_mc_probe.sh (FLOWC_DIR=compiler/src so the
+# relative `.math_prose` / `.claim_address` imports resolve).
+import .math_prose {
+    flowc_mathematical_case_condition
+}
+import .claim_address {
+    flowc_claim_parse,
+    flowc_claim_slug
+}
+
+extern {
+    function printf(fmt: string, s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let a: string = flowc_mathematical_case_condition("x == true")
+    if strcmp(a, "x holds") != 0 {
+        printf("%s\n", "FAIL: mc true")
+        return 1
+    }
+    let b: string = flowc_mathematical_case_condition("X == FALSE")
+    if strcmp(b, "X does not hold") != 0 {
+        printf("%s\n", "FAIL: mc false upper")
+        return 1
+    }
+    let c: string = flowc_mathematical_case_condition("  n == 0  ")
+    if strcmp(c, "n is zero") != 0 {
+        printf("%s\n", "FAIL: mc zero")
+        return 1
+    }
+    let d: string = flowc_mathematical_case_condition("x == y")
+    if strcmp(d, "x  equals  y") != 0 {
+        printf("%s\n", "FAIL: mc fallback")
+        return 1
+    }
+    # Edge parity with the Python reference (math_prose.py).
+    let e1: string = flowc_mathematical_case_condition("x == truth")
+    if strcmp(e1, "x  equals  truth") != 0 {
+        printf("%s\n", "FAIL: mc near-miss word")
+        return 1
+    }
+    let e2: string = flowc_mathematical_case_condition("a==b==c")
+    if strcmp(e2, "a equals b equals c") != 0 {
+        printf("%s\n", "FAIL: mc multi replace")
+        return 1
+    }
+    let e3: string = flowc_mathematical_case_condition("x_y == 0")
+    if strcmp(e3, "x_y is zero") != 0 {
+        printf("%s\n", "FAIL: mc underscore word")
+        return 1
+    }
+    let e4: string = flowc_mathematical_case_condition("x == True")
+    if strcmp(e4, "x holds") != 0 {
+        printf("%s\n", "FAIL: mc case-mix true")
+        return 1
+    }
+    # flow_strcat runtime: claim_address slug building is `+` string concat.
+    let slug: string = flowc_claim_slug(flowc_claim_parse("Nat/+.zero-left"))
+    if strcmp(slug, "Nat.addition.zero_is_the_left_identity") != 0 {
+        printf("%s\n", "FAIL: flow_strcat slug")
+        return 1
+    }
+    printf("%s\n", "stage_a_mc_probe: PASS")
+    return 0
+}
