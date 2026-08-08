@@ -3,7 +3,7 @@
   "examples": 156,
   "built": 149,
   "failed": 7,
-  "total_bytes": 5550134,
+  "total_bytes": 5577609,
   "categories": [
     {
       "id": "games",
@@ -1750,9 +1750,9 @@
       "summary": "Data-parallel gradient accumulation for the digits MLP",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 26144,
-      "js_bytes": 11955,
-      "total_bytes": 38099,
+      "wasm_bytes": 42208,
+      "js_bytes": 23366,
+      "total_bytes": 65574,
       "page": "digits_mlp_parallel/index.html"
     },
     {
