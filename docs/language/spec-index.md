@@ -9,7 +9,7 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 
 | Spec section | Anchors | Focused page |
 |--------------|---------|--------------|
-| [Overview](../LANGUAGE_SPEC.md#overview) | — | [Overview](overview.md) |
+| [Overview](../LANGUAGE_SPEC.md#overview) | - | [Overview](overview.md) |
 | [Quick Reference](../LANGUAGE_SPEC.md#quick-reference) | Commands | [Getting Started](../getting-started.md) |
 | [1. Lexical Structure](../LANGUAGE_SPEC.md#1-lexical-structure) | [Keywords](../LANGUAGE_SPEC.md#11-keywords) · [Operators](../LANGUAGE_SPEC.md#12-operators) · [Literals](../LANGUAGE_SPEC.md#13-literals) · [Comments](../LANGUAGE_SPEC.md#14-comments) | [Syntax](syntax.md) · [Grammar](grammar.md) |
 | [2. Types](../LANGUAGE_SPEC.md#2-types) | [Primitives](../LANGUAGE_SPEC.md#21-primitive-types) · [Composite](../LANGUAGE_SPEC.md#22-composite-types) · [Aliases](../LANGUAGE_SPEC.md#24-type-aliases-and-distinct-types) · [Casts](../LANGUAGE_SPEC.md#25-explicit-casts) · [Units](../LANGUAGE_SPEC.md#26-units-of-measure) | [Types](types.md) |

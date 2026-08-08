@@ -11,6 +11,8 @@
   ·
   <a href="docs/getting-started.md">Getting started</a>
   ·
+  <a href="https://flooooooooooow.github.io/flow/#demos/overview.md">Galleries</a>
+  ·
   <a href="VISION.md">Vision</a>
   ·
   <a href="https://discord.gg/YK7VaHy24T">Discord</a>

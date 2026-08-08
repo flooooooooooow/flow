@@ -1,7 +1,7 @@
-# Chetris — flagship real-world project (#114)
+# Chetris: flagship real-world project (#114)
 
-Chetris is Flow’s substantial gameplay showcase: a Chess × Tetris hybrid with
-both a headless mechanics suite and a full graphical client.
+Chetris is a Chess × Tetris hybrid with a headless mechanics suite and a full
+graphical client.
 
 ## Artifacts
 
@@ -18,7 +18,7 @@ both a headless mechanics suite and a full graphical client.
 - [x] Piece mapping (tetromino → chess piece) covered in `chetris_test.flow`
 - [x] King detection / board indexing covered
 - [x] Line clear + gravity covered
-- [x] `./flow run examples/games/chetris_test.flow` exits 0 (“All tests passed”)
+- [x] `./flow run examples/games/chetris_test.flow` exits 0 ("All tests passed")
 - [x] Graphical launch documented:
 
 ```bash
@@ -28,10 +28,10 @@ both a headless mechanics suite and a full graphical client.
 
 ## Related substantial apps
 
-- `apps/flowdb/flowdb.flow` — in-memory CRUD store
-- `examples/linalg/` — matrix ops / LU
-- `examples/ml/` + `examples/neural_networks/` — training demos
-- `examples/dynamics/ga_full_analysis.flow` — dynamics/GA analysis
+- `apps/flowdb/flowdb.flow`: in-memory CRUD store
+- `examples/linalg/`: matrix ops / LU
+- `examples/ml/` + `examples/neural_networks/`: training demos
+- `examples/dynamics/ga_full_analysis.flow`: dynamics/GA analysis
 
-Together these satisfy the “real-world projects” roadmap bar: non-trivial,
+Together these satisfy the "real-world projects" roadmap bar: non-trivial,
 userable, end-to-end Flow programs beyond compiler unit tests.

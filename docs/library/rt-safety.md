@@ -8,7 +8,7 @@ Contract for code that runs on the **audio / callback thread** (or any path that
 ## Compile-time enforcement: `@rt_safe`
 
 Mark a function with the `@rt_safe` attribute to have the type checker reject
-any call — direct or transitive — from that function into a heap-touching
+any call, direct or transitive, from that function into a heap-touching
 API:
 
 ```flow
@@ -30,9 +30,8 @@ supports attributes on `function` declarations.
 
 - Direct calls to `malloc`, `calloc`, `realloc`, `free` (and the generic
   `alloc`/`dealloc` builtins) from an `@rt_safe` function are a type error.
-- Direct calls to `lib/stdlib/memory.flow` helpers that wrap those primitives
-  — `alloc_bytes`, `alloc_zeroed`, `alloc_i32`, `alloc_f32`, `alloc_f64`,
-  `arena_create`, `arena_destroy` — are a type error.
+- Direct calls to `lib/stdlib/memory.flow` helpers that wrap those primitives, `alloc_bytes`, `alloc_zeroed`, `alloc_i32`, `alloc_f32`, `alloc_f64`,
+  `arena_create`, `arena_destroy`, are a type error.
 - **Transitive** calls are also caught: if an `@rt_safe` function calls a
   helper that (however indirectly) calls one of the names above, that's a
   type error too. The checker builds a whole-module call graph and reports
@@ -41,25 +40,25 @@ supports attributes on `function` declarations.
   `arena_alloc_i32`, `arena_alloc_f32`, `arena_reset`, `arena_used`, and
   `arena_remaining` never call `malloc`/`free` themselves, so they stay
   RT-safe. Only creating or destroying the arena's backing storage
-  (`arena_create` / `arena_destroy`) is forbidden — do that in prep/teardown
+  (`arena_create` / `arena_destroy`) is forbidden, do that in prep/teardown
   and pass the live `Arena` into the `@rt_safe` path.
 - This runs in both `--strict` (error, exit 1) and `--lenient` (printed
   warning, compiles anyway) modes, matching every other type-checker
   diagnostic.
 
-**Known gaps** (not yet enforced — still a coding policy for these):
+**Known gaps** (not yet enforced, still a coding policy for these):
 
 - Calls through function pointers / closures aren't traced, only direct
   named calls.
 - Method calls (`obj.method(...)`) aren't checked against the heap-name
-  list, only plain function calls — not an issue for `memory.flow` today
+  list, only plain function calls, not an issue for `memory.flow` today
   since it exposes free functions, not methods.
 - `extern` C calls other than the malloc family aren't assumed to allocate
   (e.g. a hypothetical `extern` audio driver call could allocate internally
   without the checker knowing).
 - Device/file/network calls (`audio_device_open`, syscalls, GPU submit) are
   still policy-only, not name-checked.
-- No enforcement for unbounded loops or unbounded `printf` — those remain a
+- No enforcement for unbounded loops or unbounded `printf`, those remain a
   review-time concern.
 - **Locks are compile-time checked:** `pthread_mutex_lock` /
   `pthread_cond_wait` / `pthread_rwlock_rdlock` / `pthread_rwlock_wrlock` /
@@ -117,18 +116,18 @@ or blocking waits inside the ring ops.
 - Fixed-size graphs (`graph_scheduler`, `graph_bus`) once nodes/buffers exist
 - SIMD helpers that do not allocate (`stdlib/audio/simd.flow`)
 - Lock-free / atomic parameter reads (or one-writer control smoothing)
-- `printf`-style logging only in **debug** builds — never in shipping realtime paths
+- `printf`-style logging only in **debug** builds, never in shipping realtime paths
 
 ## Forbidden on the audio thread
 
 | Forbidden | Why |
 |-----------|-----|
-| `malloc` / `calloc` / `realloc` / `free` / `alloc_*` | Unbounded latency, fragmentation, locks — **compile-time checked** in `@rt_safe` functions |
-| `arena_create` / growing arenas | Same as heap; prefer `arena_reset` of a prep-allocated arena **off** the callback if used at all — **compile-time checked** in `@rt_safe` functions |
+| `malloc` / `calloc` / `realloc` / `free` / `alloc_*` | Unbounded latency, fragmentation, locks, **compile-time checked** in `@rt_safe` functions |
+| `arena_create` / growing arenas | Same as heap; prefer `arena_reset` of a prep-allocated arena **off** the callback if used at all, **compile-time checked** in `@rt_safe` functions |
 | `audio_buffer_alloc_*`, delay-line create/resize | Setup-only |
 | `audio_device_open` / `start` / `stop` / `close` | Syscalls and driver work |
 | File, network, GPU submit, Metal/CUDA allocate | Blocking / jitter |
-| Unbounded locks, `mutex`, `cond_wait`, waiting on UI | Priority inversion, glitches — **compile-time checked** for known lock/wait names in `@rt_safe` |
+| Unbounded locks, `mutex`, `cond_wait`, waiting on UI | Priority inversion, glitches, **compile-time checked** for known lock/wait names in `@rt_safe` |
 | Dynamic string formatting / unbounded `printf` in release | Allocation and I/O |
 | Resizing graphs, hot-loading plugins mid-callback without a prep stage | Hidden allocation and races |
 
@@ -151,9 +150,9 @@ or blocking waits inside the ring ops.
 
 ## Related
 
-- [Audio DSP](audio.md) — modules and I/O backends
-- [Memory](memory.md) — heap and arenas (use only in prep/teardown for RT apps)
-- [Lifetime domains](../language/lifetime-domains.md) — `callback` / `frame` /
+- [Audio DSP](audio.md), modules and I/O backends
+- [Memory](memory.md), heap and arenas (use only in prep/teardown for RT apps)
+- [Lifetime domains](../language/lifetime-domains.md), `callback` / `frame` /
   `session` / `application`, and the escape rule between them
 - Examples: `examples/audio/loopback_effects.flow`, `examples/audio/bus_graph_demo.flow`
-- Tests: `tests/unit/test_rt_safety.py` — `@rt_safe` positive/negative cases
+- Tests: `tests/unit/test_rt_safety.py`, `@rt_safe` positive/negative cases

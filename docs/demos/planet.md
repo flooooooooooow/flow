@@ -1,4 +1,4 @@
-# Planet Gallery
+# Planet gallery
 
 Seven staged demos of the cubesphere planet pipeline in
 [`lib/stdlib/planet.flow`](../library/planet.md). Every clip is recorded from

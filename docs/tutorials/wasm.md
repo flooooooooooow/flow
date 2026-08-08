@@ -1,7 +1,7 @@
 # WASM
 
-Flow’s C backend targets WebAssembly via emcc. Same source runs native and in
-the browser — threads, WebGPU, sockets, files, and even CPython crossings are
+Flow's C backend targets WebAssembly via emcc. The same source runs native and in
+the browser. Threads, WebGPU, sockets, files, and CPython crossings are
 documented with measured demos.
 
 > Interactive lessons below are ordinary `main` programs (they also run under
@@ -153,4 +153,4 @@ python3 -m http.server -d site 8000
 ```
 
 Crossings covered in docs: OS threads, WebGPU, sockets, filesystem, embedded
-CPython — see [wasm-crossings.md](../language/wasm-crossings.md).
+CPython, see [wasm-crossings.md](../language/wasm-crossings.md).

@@ -1,6 +1,6 @@
 # SchurLatticeAllpass (Lean 4 / Mathlib)
 
-Formal core for the Schur–lattice all-pass synthesis pipeline.
+Formal core for the Schur-lattice all-pass synthesis pipeline.
 
 ## Build
 

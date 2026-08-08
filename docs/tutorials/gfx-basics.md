@@ -1,6 +1,6 @@
 # Graphics Basics
 
-Native windows via the `gfx` API — create a window, poll input, clear, fill
+Native windows via the `gfx` API: create a window, poll input, clear, fill
 rects, present. Games and live sims use the same loop.
 
 > [!important] Native only
@@ -12,7 +12,7 @@ Prerequisites: [structs.md](structs.md), [control.md](control.md).
 
 ## Part 1: The frame loop
 
-Illustrative native program (not browser-runnable — needs `./flow gfx`):
+Illustrative native program (not browser-runnable; needs `./flow gfx`):
 
 ```
 import "stdlib/gfx.flow"
@@ -56,7 +56,7 @@ function main() -> i32 {
 
 ### 1.2 Bouncing rect (browser)
 
-Simulate a filled rect bouncing off window edges — same state you'd feed `gfx_fill_rect`:
+Simulate a filled rect bouncing off window edges, same state you'd feed `gfx_fill_rect`:
 
 ```flow
 function main() -> i32 {
@@ -118,7 +118,7 @@ function main() -> i32 {
 
 ### 1.4 Tile atlas index (browser)
 
-Map a board cell `(col, row)` to a pixel rect — the Tetris / 2048 pattern:
+Map a board cell `(col, row)` to a pixel rect, the Tetris / 2048 pattern:
 
 ```flow
 function main() -> i32 {
@@ -226,8 +226,7 @@ function main() -> i32 {
 
 ## Part 3: Headless recording
 
-`./flow record` links against `runtime/gfx_record.c` and writes PPM frames —
-no display required (CI-friendly):
+`./flow record` links against `runtime/gfx_record.c` and writes PPM frames, no display required (CI-friendly):
 
 ```bash
 FLOW_GFX_RECORD_DIR=/tmp/frames FLOW_GFX_RECORD_FRAMES=120 \
@@ -237,7 +236,7 @@ FLOW_GFX_RECORD_DIR=/tmp/frames FLOW_GFX_RECORD_FRAMES=120 \
 python3 scripts/record_demos.py
 ```
 
-Scripted input for games uses `FLOW_GFX_RECORD_KEYS` — see
+Scripted input for games uses `FLOW_GFX_RECORD_KEYS`, see
 [docs/demos/README.md](../demos/README.md).
 
 ### 3.1 Frame budget math (browser)
@@ -256,9 +255,9 @@ function main() -> i32 {
 
 ## Part 4: Next
 
-- [shaders.md](shaders.md) — fullscreen fragment fills (`./flow shader`)
-- [evolution.md](evolution.md) — phase portraits on top of gfx
-- [Morphogenesis gallery](../../examples/morphogenesis/) — reaction–diffusion etc.
+- [shaders.md](shaders.md), fullscreen fragment fills (`./flow shader`)
+- [evolution.md](evolution.md), phase portraits on top of gfx
+- [Morphogenesis gallery](../../examples/morphogenesis/), reaction-diffusion etc.
 
 ## Reference
 

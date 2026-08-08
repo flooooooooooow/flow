@@ -11,15 +11,15 @@ Flow is a classic front end with multiple back ends:
 1. **Parser** (`src/flow/parser.py`) lexes and parses `.flow` source into an AST.
 2. **Type checking** (`src/flow/type_checker.py`) performs semantic checks and type inference in a mostly conventional static type system.
 3. **Lowering** chooses a backend:
-   - **C generator** (`src/flow/c_generator.py`) — default CPU path (`./flow run`, portable Clang/GCC).
-   - **MLIR generator** (`src/flow/mlir_generator.py`) — co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
-   - **Metal codegen** (`src/flow/metal_codegen.py`) — primary macOS `@gpu` / fill-shader path.
-   - **WGSL codegen** (`src/flow/wgsl_codegen.py`) — WebGPU emit.
-   - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`) — parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
+   - **C generator** (`src/flow/c_generator.py`), default CPU path (`./flow run`, portable Clang/GCC).
+   - **MLIR generator** (`src/flow/mlir_generator.py`), co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
+   - **Metal codegen** (`src/flow/metal_codegen.py`), primary macOS `@gpu` / fill-shader path.
+   - **WGSL codegen** (`src/flow/wgsl_codegen.py`), WebGPU emit.
+   - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`), parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
 
 The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
 
-**WebAssembly:** `./flow wasm` accepts the same `--backend=c|mlir` switch. C path is Flow→C→emcc; MLIR path is Flow→MLIR→LLVM IR→emcc (browser stubs only — no Metal). See [docs/language/wasm.md](../language/wasm.md).
+**WebAssembly:** `./flow wasm` accepts the same `--backend=c|mlir` switch. C path is Flow→C→emcc; MLIR path is Flow→MLIR→LLVM IR→emcc (browser stubs only, no Metal). See [docs/language/wasm.md](../language/wasm.md).
 
 ## 2. Language Surface and Type System
 

@@ -1,6 +1,6 @@
 # Flow Language Overview
 
-Flow is a statically-typed, compiled language designed for performance and expressiveness — built on the thesis that programs describe **systems evolving through time** ([vision](../vision.md)). Today that means a general-purpose core plus a shipped dynamics seed: the [`dsys` surface syntax](dynamics-dsl.md) and [dynamics library](../library/dynamics.md) for modeling, analyzing, and controlling linear systems.
+Flow is a statically-typed, compiled language built for performance and expressiveness. The thesis is that programs describe **systems evolving through time** ([vision](../vision.md)). Today that means a general-purpose core plus a shipped dynamics seed: the [`dsys` surface syntax](dynamics-dsl.md) and [dynamics library](../library/dynamics.md) for modeling, analyzing, and controlling linear systems.
 
 ## Key Features
 
