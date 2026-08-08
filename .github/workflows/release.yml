@@ -50,6 +50,21 @@ jobs:
             SHA256SUMS.txt
           fail_on_unmatched_files: true
 
+      - name: Compute release summary
+        id: summary
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          PREV="$(git describe --tags --abbrev=0 "$TAG"~1 2>/dev/null || echo '')"
+          RANGE="${PREV:+$PREV..}$TAG"
+          if [[ -z "$PREV" ]]; then RANGE="$TAG"; fi
+          COUNT="$(git rev-list --count ${RANGE:-} 2>/dev/null | tr -d ' ' || echo '?')"
+          AUTHORS="$(git shortlog -sne "${RANGE:-}" 2>/dev/null | wc -l | tr -d ' ' || echo '?')"
+          {
+            echo "commits=$COUNT"
+            echo "authors=$AUTHORS"
+            echo "prev=$PREV"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Post release to Discord #announcements
         if: always()
         uses: ./.github/actions/discord-notify
@@ -67,7 +82,8 @@ jobs:
           fields: >-
             [
               {"name":"Version","value":"`${{ steps.tag.outputs.name }}`","inline":true},
-              {"name":"Assets","value":"source archives (tar.gz, zip) + SHA256SUMS","inline":true},
+              {"name":"Commits","value":"${{ steps.summary.outputs.commits }} since `${{ steps.summary.outputs.prev }}`","inline":true},
+              {"name":"Contributors","value":"${{ steps.summary.outputs.authors }}","inline":true},
               {"name":"Release","value":"[view on GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }})","inline":true}
             ]
           footer_text: Flow Releases · ${{ steps.tag.outputs.name }}

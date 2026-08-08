@@ -9,7 +9,7 @@ This document is the single source of truth for how webhooks work.
 | Channel | Purpose | Webhook | GitHub secret |
 |---|---|---|---|
 | `#announcements` | Releases and docs deploys | `release-notifier` | `DISCORD_RELEASE_WEBHOOK` |
-| `#ci-releases` | Per-run CI status | `ci-releases` | `DISCORD_CI_WEBHOOK` |
+| `#ci-releases` | Per-run CI status and PR activity | `ci-releases` | `DISCORD_CI_WEBHOOK` |
 | `#changelog` | Release changelog notes | `flow-changelog` | `DISCORD_CHANGELOG_WEBHOOK` |
 
 Server categories: `engagement` (welcome, announcements, introductions,
@@ -80,8 +80,9 @@ webhook/author/footer icon across all three workflows.
 
 | Workflow | Trigger | Notifies |
 |---|---|---|
-| `.github/workflows/release.yml` | tag created | `#announcements` release, `#changelog` notes |
-| `.github/workflows/ci.yml` | push, PR, nightly | `#ci-releases` pass/fail |
+| `.github/workflows/release.yml` | tag created | `#announcements` release (commit range + contributors), `#changelog` notes |
+| `.github/workflows/ci.yml` | push, PR, nightly | `#ci-releases` per-job matrix pass/fail, actor, commit subject |
+| `.github/workflows/discord-pr.yml` | PR opened/ready/merged/closed | `#ci-releases` PR notices (title, branch, changed files, merged status) |
 | `.github/workflows/wiki.yml` | docs deploy | `#announcements` docs |
 
 `flowc-release.yml` publishes compiler binaries but does not notify Discord yet.
