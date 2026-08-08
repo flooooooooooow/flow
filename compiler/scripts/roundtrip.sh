@@ -395,6 +395,13 @@ if [[ ! -f compiler/build/bundle_tc_bad_optout.c ]]; then
 fi
 echo "PASS FLOWC_BUNDLE fixtures"
 
+# math_prose ports: flowc_mathematical_case_condition + the rewrite family
+# (flow_expr_to_mathematical_english / flow_expr_to_latex) through the flowc
+# pipeline (bundle typecheck → emit → cc → run). Both fixtures import
+# .math_prose / .claim_address from compiler/src.
+./compiler/scripts/smoke_mc_probe.sh
+./compiler/scripts/smoke_mp_probe.sh
+
 # Real frontend pair: FLOWC_BUNDLE=1 emits token.flow then lexer.flow in one TU
 # (deps first). No flowc_c_to_hdr.py / cc -include — Token/TOK_* live in the same file.
 echo "=== FLOWC_BUNDLE lexer (token+lexer one TU) ==="

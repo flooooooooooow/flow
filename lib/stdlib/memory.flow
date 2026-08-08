@@ -8,6 +8,10 @@ extern {
     function calloc(nmemb: i64, size: i64) -> ptr<void>
     function realloc(p: ptr<void>, size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
+    # C11 aligned_alloc — C backend only: the c_generator skips its prototype
+    # (stdlib_functions skip-set) and relies on <stdlib.h>'s size_t declaration;
+    # the MLIR `make run` path would emit a conflicting int64_t prototype.
+    function aligned_alloc(alignment: i64, size: i64) -> ptr<void>
 }
 
 # ── Sizes ──────────────────────────────────────────────────────────
@@ -51,6 +55,13 @@ export function align_down(size: i64, alignment: i64) -> i64 {
         return size
     }
     return size & ~(alignment - 1)
+}
+
+export function is_aligned(p: ptr<void>, alignment: i64) -> bool {
+    if !is_power_of_two(alignment) {
+        return false
+    }
+    return ((p as i64) & (alignment - 1)) == 0
 }
 
 # ── Typed heap helpers ──────────────────────────────────────────────

@@ -48,6 +48,132 @@ function main() -> i32 {
         failed = 1
     }
 
+    # mathematical_case_condition: the three regex cases + the `==` fallback.
+    let ca: string = flowc_mathematical_case_condition("x == true")
+    printf("cond true: %s\n", ca)
+    if strcmp(ca, "x holds") != 0 {
+        printf("%s\n", "FAIL: case true")
+        failed = 1
+    }
+    let cb: string = flowc_mathematical_case_condition("X == TRUE")
+    printf("cond TRUE: %s\n", cb)
+    if strcmp(cb, "X holds") != 0 {
+        printf("%s\n", "FAIL: case true case-insensitive")
+        failed = 1
+    }
+    let cc: string = flowc_mathematical_case_condition("x == false")
+    printf("cond false: %s\n", cc)
+    if strcmp(cc, "x does not hold") != 0 {
+        printf("%s\n", "FAIL: case false")
+        failed = 1
+    }
+    let cd: string = flowc_mathematical_case_condition("  count == 0  ")
+    printf("cond zero: %s\n", cd)
+    if strcmp(cd, "count is zero") != 0 {
+        printf("%s\n", "FAIL: case zero trimmed")
+        failed = 1
+    }
+    let ce: string = flowc_mathematical_case_condition("n==0")
+    printf("cond 0 nospace: %s\n", ce)
+    if strcmp(ce, "n is zero") != 0 {
+        printf("%s\n", "FAIL: case zero no space")
+        failed = 1
+    }
+    let cf: string = flowc_mathematical_case_condition("x == y")
+    printf("cond fallback: %s\n", cf)
+    if strcmp(cf, "x  equals  y") != 0 {
+        printf("%s\n", "FAIL: case fallback")
+        failed = 1
+    }
+
+    # ---- rewrite family: flow_expr_to_mathematical_english ----------------
+    let en: string = flowc_flow_expr_to_mathematical_english("m * n == 0")
+    printf("en mult: %s\n", en)
+    if strcmp(en, "m times n equals 0") != 0 {
+        printf("%s\n", "FAIL: en mult")
+        failed = 1
+    }
+    let e2: string = flowc_flow_expr_to_mathematical_english("angle_alpha_prime == two_right_angles")
+    printf("en geom: %s\n", e2)
+    if strcmp(e2, "angle α′ equals two right angles") != 0 {
+        printf("%s\n", "FAIL: en geometry")
+        failed = 1
+    }
+    let e3: string = flowc_flow_expr_to_mathematical_english("succ(n) == n + 1")
+    printf("en succ: %s\n", e3)
+    if strcmp(e3, "the successor of n equals n plus 1") != 0 {
+        printf("%s\n", "FAIL: en succ")
+        failed = 1
+    }
+    let e4: string = flowc_flow_expr_to_mathematical_english("a or b and c")
+    printf("en orand: %s\n", e4)
+    if strcmp(e4, "the conjunction of the disjunction of a and b and c") != 0 {
+        printf("%s\n", "FAIL: en or+and")
+        failed = 1
+    }
+    let e5: string = flowc_flow_expr_to_mathematical_english("x or y or z")
+    printf("en oror: %s\n", e5)
+    if strcmp(e5, "the disjunction of the disjunction of x and y and z") != 0 {
+        printf("%s\n", "FAIL: en chained or")
+        failed = 1
+    }
+    let e6: string = flowc_flow_expr_to_mathematical_english("x_y == z_2")
+    printf("en idents: %s\n", e6)
+    if strcmp(e6, "x y equals z 2") != 0 {
+        printf("%s\n", "FAIL: en idents")
+        failed = 1
+    }
+    let e7: string = flowc_flow_expr_to_mathematical_english("we prove x by induction")
+    printf("en by: %s\n", e7)
+    if strcmp(e7, "we prove x") != 0 {
+        printf("%s\n", "FAIL: en by-clause")
+        failed = 1
+    }
+
+    # ---- rewrite family: flow_expr_to_latex -------------------------------
+    let lx: string = flowc_flow_expr_to_latex("m * n == 0")
+    printf("tex mul: %s\n", lx)
+    if strcmp(lx, "m \\cdot n = 0") != 0 {
+        printf("%s\n", "FAIL: tex mul")
+        failed = 1
+    }
+    let l2: string = flowc_flow_expr_to_latex("a * a")
+    printf("tex sq: %s\n", l2)
+    if strcmp(l2, "a^{2}") != 0 {
+        printf("%s\n", "FAIL: tex square")
+        failed = 1
+    }
+    let l3: string = flowc_flow_expr_to_latex("angle_alpha_prime == two_right_angles")
+    printf("tex geom: %s\n", l3)
+    if strcmp(l3, "\\alpha' = 180^\\circ") != 0 {
+        printf("%s\n", "FAIL: tex geometry")
+        failed = 1
+    }
+    let l4: string = flowc_flow_expr_to_latex("taylor_sin(x, order_5)")
+    printf("tex taylor: %s\n", l4)
+    if strcmp(l4, "S_{5}(x)") != 0 {
+        printf("%s\n", "FAIL: tex taylor")
+        failed = 1
+    }
+    let l5: string = flowc_flow_expr_to_latex("sin_prime_at_zero == near_zero")
+    printf("tex analysis: %s\n", l5)
+    if strcmp(l5, "\\sin'(0) = \\quad (x \\to 0)") != 0 {
+        printf("%s\n", "FAIL: tex analysis")
+        failed = 1
+    }
+    let l6: string = flowc_flow_expr_to_latex("x >= 0 and x <= 10")
+    printf("tex cmp: %s\n", l6)
+    if strcmp(l6, "x \\ge 0 \\land x \\le 10") != 0 {
+        printf("%s\n", "FAIL: tex cmp")
+        failed = 1
+    }
+    let l7: string = flowc_flow_expr_to_latex("x_y == z_2")
+    printf("tex idents: %s\n", l7)
+    if strcmp(l7, "\\text{x y} = \\text{z 2}") != 0 {
+        printf("%s\n", "FAIL: tex idents")
+        failed = 1
+    }
+
     if failed == 1 {
         return 1
     }

@@ -330,6 +330,7 @@ class VarDecl:
     type: Type
     initializer: Optional["Expression"]
     is_mutable: bool = False  # True if declared with 'let mut'
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -343,12 +344,14 @@ class IfStatement:
     then_block: Block
     elif_blocks: List[Tuple["Expression", Block]]
     else_block: Optional[Block]
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
 class WhileStatement:
     condition: "Expression"
     body: Block
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -359,11 +362,13 @@ class ForStatement:
     step: Optional["Expression"]
     body: Block
     is_parallel: bool
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
 class ReturnStatement:
     value: Optional["Expression"]
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -371,6 +376,7 @@ class Assignment:
     target: str  # Simple variable name, or None if target_expr is used
     value: "Expression"
     target_expr: Optional["Expression"] = None  # For array access like arr[i] = value
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -684,6 +690,7 @@ class HandleStatement:
     effects: List[str]
     handlers: List[str]  # Names of capabilities or functions
     body: Block
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -698,6 +705,7 @@ class MatchStatement:
     value: "Expression"
     cases: List["MatchCase"]
     default_case: Optional[Block]
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -767,6 +775,7 @@ class DeferStatement:
     """Deferred cleanup: defer expr; runs at scope exit (LIFO)."""
 
     expr: "Expression"
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -844,6 +853,7 @@ class AssumeStmt:
 
     claim_path: str
     arguments: List["Expression"] = field(default_factory=list)
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -852,6 +862,7 @@ class ThereforeStmt:
 
     expression: "Expression"
     method: Optional[str] = None
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -1349,7 +1360,7 @@ class Lexer:
                 if i + 1 >= len(content):
                     raise SyntaxError("Invalid escape sequence at end of string")
                 esc = content[i + 1]
-                if esc not in ['n', 't', 'r', '\\\\', '"', '0']:
+                if esc not in ['n', 't', 'r', '\\', '"', '0']:
                     raise SyntaxError(f"Invalid escape sequence: \\\\{esc}")
                 i += 2
                 continue
@@ -3188,8 +3199,9 @@ class Parser:
         try:
             start = self.current_token
             stmt = self._parse_statement_impl()
-            # Attach source location for debugger #line mapping / LSP (best-effort).
-            # Token lines/columns are 1-based; SourceLocation is 0-based.
+            # Attach source location for debugger #line mapping / LSP. The
+            # statement dataclasses declare a `location` field; token
+            # lines/columns are 1-based, SourceLocation is 0-based.
             if getattr(stmt, "location", None) is None and start is not None:
                 try:
                     setattr(

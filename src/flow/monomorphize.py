@@ -142,6 +142,12 @@ class Monomorphizer:
         self.generated_structs: Dict[str, StructDecl] = {}
         self.generated_functions: Dict[str, FunctionDecl] = {}
 
+        # Names of concrete (non-generic) functions. A generic instantiation
+        # whose mangled name collides with one of these is a duplicate — the
+        # concrete definition wins (the C TU would otherwise define the symbol
+        # twice, e.g. stdlib `sizeof_i32()` vs `sizeof<T>` instantiations).
+        self.concrete_function_names: Set[str] = set()
+
         # Guard against infinite instantiation (e.g. List<List<List<...>>>)
         self._instantiation_depth: int = 0
     
@@ -165,6 +171,8 @@ class Monomorphizer:
     def _collect_generics(self, declarations: List[Any]) -> None:
         """Find all generic struct and function definitions."""
         for decl in declarations:
+            if isinstance(decl, FunctionDecl) and not decl.type_params:
+                self.concrete_function_names.add(decl.name)
             if isinstance(decl, StructDecl) and decl.type_params:
                 self.generic_structs[decl.name] = GenericDef(
                     name=decl.name,
@@ -458,6 +466,12 @@ class Monomorphizer:
             mangled_name, req = pending_fns.pop()
             if mangled_name in self.generated_functions:
                 continue
+            # A concrete (non-generic) definition with this mangled name already
+            # exists (e.g. stdlib sizeof_i32 vs generic sizeof<T> instantiations).
+            # Generating a duplicate would redefine the C symbol — skip it; the
+            # rewritten calls already bind to the concrete function by name.
+            if mangled_name in self.concrete_function_names:
+                continue
             before = set(self.function_requests)
             self._generate_function(req)
             for k, v in self.function_requests.items():
@@ -681,31 +695,36 @@ class Monomorphizer:
         if isinstance(stmt, VarDecl):
             new_type = self._substitute_type(stmt.type, type_map)
             new_init = self._substitute_expression(stmt.initializer, type_map) if stmt.initializer else None
-            return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False))
+            return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False),
+                           location=getattr(stmt, "location", None))
         elif isinstance(stmt, ReturnStatement):
             new_value = self._substitute_expression(stmt.value, type_map) if stmt.value else None
-            return ReturnStatement(new_value)
+            return ReturnStatement(new_value, location=getattr(stmt, "location", None))
         elif isinstance(stmt, Assignment):
             new_value = self._substitute_expression(stmt.value, type_map)
             new_target_expr = self._substitute_expression(stmt.target_expr, type_map) if stmt.target_expr else None
-            return Assignment(stmt.target, new_value, new_target_expr)
+            return Assignment(stmt.target, new_value, new_target_expr,
+                              location=getattr(stmt, "location", None))
         elif isinstance(stmt, IfStatement):
             new_cond = self._substitute_expression(stmt.condition, type_map)
             new_then = self._substitute_block(stmt.then_block, type_map)
             new_elifs = [(self._substitute_expression(c, type_map), self._substitute_block(b, type_map)) 
                         for c, b in stmt.elif_blocks]
             new_else = self._substitute_block(stmt.else_block, type_map) if stmt.else_block else None
-            return IfStatement(new_cond, new_then, new_elifs, new_else)
+            return IfStatement(new_cond, new_then, new_elifs, new_else,
+                               location=getattr(stmt, "location", None))
         elif isinstance(stmt, WhileStatement):
             new_cond = self._substitute_expression(stmt.condition, type_map)
             new_body = self._substitute_block(stmt.body, type_map)
-            return WhileStatement(new_cond, new_body)
+            return WhileStatement(new_cond, new_body,
+                                  location=getattr(stmt, "location", None))
         elif isinstance(stmt, ForStatement):
             new_start = self._substitute_expression(stmt.range_start, type_map)
             new_end = self._substitute_expression(stmt.range_end, type_map)
             new_step = self._substitute_expression(stmt.step, type_map) if stmt.step else None
             new_body = self._substitute_block(stmt.body, type_map)
-            return ForStatement(stmt.variable, new_start, new_end, new_step, new_body, stmt.is_parallel)
+            return ForStatement(stmt.variable, new_start, new_end, new_step, new_body, stmt.is_parallel,
+                                location=getattr(stmt, "location", None))
         elif isinstance(stmt, ExpectStatement):
             return ExpectStatement(
                 self._substitute_expression(stmt.condition, type_map), stmt.line
@@ -920,30 +939,35 @@ class Monomorphizer:
                         self.struct_requests[req.mangled_name] = req
                         new_type = Type(req.mangled_name, type_args=[])
                 new_init = StructLiteral(new_type.name, new_init.fields)
-            return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False))
+            return VarDecl(stmt.name, new_type, new_init, is_mutable=getattr(stmt, "is_mutable", False),
+                           location=getattr(stmt, "location", None))
         elif isinstance(stmt, ReturnStatement):
             new_value = self._rewrite_expression(stmt.value) if stmt.value else None
-            return ReturnStatement(new_value)
+            return ReturnStatement(new_value, location=getattr(stmt, "location", None))
         elif isinstance(stmt, Assignment):
             new_value = self._rewrite_expression(stmt.value)
             new_target_expr = self._rewrite_expression(stmt.target_expr) if stmt.target_expr else None
-            return Assignment(stmt.target, new_value, new_target_expr)
+            return Assignment(stmt.target, new_value, new_target_expr,
+                              location=getattr(stmt, "location", None))
         elif isinstance(stmt, IfStatement):
             new_cond = self._rewrite_expression(stmt.condition)
             new_then = self._rewrite_block(stmt.then_block)
             new_elifs = [(self._rewrite_expression(c), self._rewrite_block(b)) for c, b in stmt.elif_blocks]
             new_else = self._rewrite_block(stmt.else_block) if stmt.else_block else None
-            return IfStatement(new_cond, new_then, new_elifs, new_else)
+            return IfStatement(new_cond, new_then, new_elifs, new_else,
+                               location=getattr(stmt, "location", None))
         elif isinstance(stmt, WhileStatement):
             new_cond = self._rewrite_expression(stmt.condition)
             new_body = self._rewrite_block(stmt.body)
-            return WhileStatement(new_cond, new_body)
+            return WhileStatement(new_cond, new_body,
+                                  location=getattr(stmt, "location", None))
         elif isinstance(stmt, ForStatement):
             new_start = self._rewrite_expression(stmt.range_start)
             new_end = self._rewrite_expression(stmt.range_end)
             new_step = self._rewrite_expression(stmt.step) if stmt.step else None
             new_body = self._rewrite_block(stmt.body)
-            return ForStatement(stmt.variable, new_start, new_end, new_step, new_body, stmt.is_parallel)
+            return ForStatement(stmt.variable, new_start, new_end, new_step, new_body, stmt.is_parallel,
+                                location=getattr(stmt, "location", None))
         elif isinstance(stmt, ExpectStatement):
             return ExpectStatement(self._rewrite_expression(stmt.condition), stmt.line)
         elif isinstance(stmt, Block):

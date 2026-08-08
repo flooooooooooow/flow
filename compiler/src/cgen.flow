@@ -86,6 +86,7 @@ function flowc_cgen_put_i32(w: ptr<CgenBuf>, val: i32) {
     }
 }
 
+function flowc_cgen_emit_operand(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
@@ -273,11 +274,84 @@ function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
     flowc_cgen_puts(w, " /*op*/ ")
 }
 
+# 1 if the expression is string-typed for `+` lowering: a string literal, a
+# call to a function declared `-> string`, or a nested string concatenation.
+# Identifiers and field accesses are NOT classified here — when the other
+# operand is string-typed, flow_strcat's `const char*` params take them as-is
+# (Stage-A strings are C string pointers), matching the Python host's rule.
+# Note: linear in the arena per operand (only reached on `+`), and Stage-A has
+# no i32→string coercion, so `"n=" + n` is a C type error under flowc while
+# the Python host stringifies — loud, never silent.
+function flowc_cgen_is_string_expr(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_STRING {
+        return 1
+    }
+    if kind == AST_BINOP {
+        if arena.nodes[id].ival == TOK_PLUS {
+            if flowc_cgen_is_string_expr(arena, src, arena.nodes[id].a) == 1 {
+                return 1
+            }
+            if flowc_cgen_is_string_expr(arena, src, arena.nodes[id].b) == 1 {
+                return 1
+            }
+        }
+        return 0
+    }
+    if kind == AST_CALL {
+        let ns: i32 = arena.nodes[id].name_start
+        let ne: i32 = arena.nodes[id].name_end
+        let mut i: i32 = 0
+        while i < arena.len {
+            let nk: i32 = arena.nodes[i].kind
+            let mut fni: i32 = AST_NONE
+            if nk == AST_FN {
+                fni = i
+            }
+            if nk == AST_EXPORT {
+                let inner: i32 = arena.nodes[i].a
+                if inner != AST_NONE and arena.nodes[inner].kind == AST_FN {
+                    fni = inner
+                }
+            }
+            if fni != AST_NONE {
+                if flowc_cgen_span_eq(src, ns, ne, arena.nodes[fni].name_start, arena.nodes[fni].name_end) == 1 {
+                    let ret: i32 = arena.nodes[fni].b
+                    if ret != AST_NONE and arena.nodes[ret].kind == AST_TYPE {
+                        if flowc_cgen_span_is(src, arena.nodes[ret].name_start, arena.nodes[ret].name_end, "string") == 1 {
+                            return 1
+                        }
+                    }
+                }
+            }
+            i = i + 1
+        }
+        return 0
+    }
+    return 0
+}
+
+# Emit a binop operand, parenthesizing nested binary operations so C
+# precedence (&& > ||) cannot regroup a mixed and/or tree: Flow's explicit
+# `a and (b or c)` must stay grouped in the emitted C. Comparisons keep their
+# no-parens style; parens around a nested same-precedence chain are harmless.
+function flowc_cgen_emit_operand(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id != AST_NONE and arena.nodes[id].kind == AST_BINOP {
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_putc(w, 41)
+        return
+    }
+    flowc_cgen_emit_expr(w, arena, src, id)
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
-    }
-    let kind: i32 = arena.nodes[id].kind
+    }    let kind: i32 = arena.nodes[id].kind
     if kind == AST_INT {
         flowc_cgen_put_i32(w, arena.nodes[id].ival)
         return
@@ -306,13 +380,25 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_BINOP {
         let op: i32 = arena.nodes[id].ival
+        if op == TOK_PLUS {
+            let la: i32 = flowc_cgen_is_string_expr(arena, src, arena.nodes[id].a)
+            let lb: i32 = flowc_cgen_is_string_expr(arena, src, arena.nodes[id].b)
+            if la == 1 or lb == 1 {
+                flowc_cgen_puts(w, "flow_strcat(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ", ")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_putc(w, 41)
+                return
+            }
+        }
         let wrap: i32 = flowc_cgen_binop_needs_parens(op)
         if wrap == 1 {
             flowc_cgen_putc(w, 40)
         }
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_emit_operand(w, arena, src, arena.nodes[id].a)
         flowc_cgen_emit_binop_op(w, op)
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_emit_operand(w, arena, src, arena.nodes[id].b)
         if wrap == 1 {
             flowc_cgen_putc(w, 41)
         }
@@ -780,7 +866,23 @@ export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out
         # the libc headers used by Stage-A externs (FILE*/strlen/puts).
         flowc_cgen_puts(&w, "#include <stdio.h>\n")
         flowc_cgen_puts(&w, "#include <string.h>\n")
-        flowc_cgen_putc(&w, 10)
+        # Stage-A runtime: string `+` lowers to flow_strcat (malloc-backed,
+        # mirrors the production C backend). Emitted only by the first TU — a
+        # bundle is one concatenated C file, so the static definition stays in
+        # scope for every later TU without a duplicate symbol. Plain int only,
+        # so the helper needs no typedefs beyond what the preamble includes.
+        flowc_cgen_puts(&w, "static char* flow_strcat(const char* a, const char* b) {\n")
+        flowc_cgen_puts(&w, "    int la = (int)strlen(a), lb = (int)strlen(b);\n")
+        flowc_cgen_puts(&w, "    char* r = (char*)malloc(la + lb + 1);\n")
+        flowc_cgen_puts(&w, "    if (!r) return r;\n")
+        flowc_cgen_puts(&w, "    memcpy(r, a, la);\n")
+        flowc_cgen_puts(&w, "    memcpy(r + la, b, lb);\n")
+        # `= 0` not `'\0'` — the Python host decodes \0 to a NUL byte, which
+        # truncates the emitted C string literal in the compiled flowc.
+        flowc_cgen_puts(&w, "    r[la + lb] = 0;\n")
+        flowc_cgen_puts(&w, "    return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "\n")
     }
 
     # Pass 1: struct typedefs (including export struct)

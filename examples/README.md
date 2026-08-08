@@ -327,10 +327,12 @@ Scientific computing:
 - `optimization.flow` - Gradient descent, Newton's method
 
 ### Systems (`systems/`)
-Low-level systems programming:
+Allocators, hash tables and the flagship Tiny Pointers construction (see
+[systems/README.md](systems/README.md)). Low-level systems programming:
 - `memory_pool.flow` - O(1) pool allocator
 - `ring_buffer.flow` - Lock-free SPSC queue
 - `hash_table.flow` - Open addressing hash table
+- `tiny_pointers.flow` - o(log n)-bit pointers (arXiv:2111.12800): fixed-size two-level dereference table (6-bit pointers), variable-size container/level construction with a measured doubly-exponential tail bound (Theorem 2), stable dictionary (Theorem 8), + relaxed retrieval with O(1)-expected hints beating the Ω(log log n) lower bound (Theorem 6), + the Theorem-6 tradeoff sweep (Phase 8b): r = 1..4 levels of indirection give O(r)-time insert/delete against nv + O(n log⁽ʳ⁾ n) — the retriever term shrinks 15 → 4 → 2 → 1 bits/key, + a succinct rotation-based BST whose child pointers are tiny retrievers (Theorem 7), + variable-size value dictionaries where a v-bit value costs 2^⌈log v⌉ + O(log v) bits instead of a uniform 64-bit slot (Theorem 9), + variable-size KEY dictionaries where 128/256-bit keys go through the same chain (Phase 12), + an r=3 r-levels chain where the O(log log k) middle pointer p₂ lifts the value cap to 2^32 bits through base(8) → p₂(6) → p₁(5) (all constant in v), + an optimal internal-memory stash where implicit-bucket 4-bit tiny pointers (Θ(log ε⁻¹)) in a prefix-free filter make the stash O(m log ε⁻¹) = O(m) bits with one external read per query (Theorem 10); every allocation self-verifies (`FLOW_HOST=python ./flow run`; PASS/FAIL). Theorem-by-theorem map with the parameter math and empirical results: [docs/library/tiny-pointers.md](../docs/library/tiny-pointers.md) · variable-size values deep dive: [docs/library/tiny-pointers-variable-values.md](../docs/library/tiny-pointers-variable-values.md)
 - `system_info.flow` - OS/CPU info via stdlib (was `examples/system/`)
 
 ### GPU (`gpu/`)

@@ -17,6 +17,7 @@ on:
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
+      - 'tools/**'
       - 'plugins/**'
   pull_request:
     branches: [main, master]
@@ -34,6 +35,7 @@ on:
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
+      - 'tools/**'
       - 'plugins/**'
 
 concurrency:
@@ -57,6 +59,7 @@ jobs:
       runtime: ${{ steps.filter.outputs.runtime }}
       workflow: ${{ steps.filter.outputs.workflow }}
       plugins: ${{ steps.filter.outputs.plugins }}
+      tools: ${{ steps.filter.outputs.tools }}
       deps: ${{ steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v7
@@ -84,6 +87,8 @@ jobs:
               - 'scripts/**'
             plugins:
               - 'plugins/**'
+            tools:
+              - 'tools/**'
             deps:
               - 'requirements.lock'
               - 'requirements.txt'
@@ -96,7 +101,8 @@ jobs:
     if: |
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.workflow == 'true' ||
-      needs.changes.outputs.deps == 'true'
+      needs.changes.outputs.deps == 'true' ||
+      needs.changes.outputs.tools == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -114,8 +120,10 @@ jobs:
         run: mypy src || true
 
       - name: Shellcheck
-        if: needs.changes.outputs.workflow == 'true'
-        run: shellcheck flow scripts/*.sh
+        if: |
+          needs.changes.outputs.workflow == 'true' ||
+          needs.changes.outputs.tools == 'true'
+        run: shellcheck flow scripts/*.sh tools/test/*.sh
 
   security:
     name: Security Scan
@@ -144,7 +152,8 @@ jobs:
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.tests == 'true' ||
       needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.runtime == 'true'
+      needs.changes.outputs.runtime == 'true' ||
+      needs.changes.outputs.tools == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -163,6 +172,10 @@ jobs:
           # --strict: type-checker findings fail the build. Files with a
           # documented "# flow:lenient - <reason>" pragma are exempt.
           ./flow test --tier2 --strict
+          # Memory stdlib suite (aligned_alloc/is_aligned, malloc/free, arena):
+          # a shell runner, so not part of the .flow corpus — run it explicitly.
+          chmod +x tools/test/test_memory.sh
+          ./tools/test/test_memory.sh
 
   flowc-bootstrap:
     name: flowc self-host roundtrip
@@ -421,12 +434,13 @@ jobs:
           compiler='${{ needs.changes.outputs.compiler }}'
           workflow='${{ needs.changes.outputs.workflow }}'
           deps='${{ needs.changes.outputs.deps }}'
+          tools='${{ needs.changes.outputs.tools }}'
           lint_req=false
           if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
           sec_req=false
           if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
           tier_req=false
-          if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
+          if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ] || [ "$tools" = "true" ]; then tier_req=true; fi
           pytest_req=false
           if [ "$src" = "true" ] || [ "$tests" = "true" ]; then pytest_req=true; fi
           fuzz_req=$pytest_req

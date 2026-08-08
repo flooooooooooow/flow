@@ -80,9 +80,11 @@ def uses_gfx(c_source: str) -> bool:
     return "flow_gfx_init" in c_source
 
 
-def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
+def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str,
+                  extra_c: tuple = ()) -> list:
     cmd = [
         "emcc", str(c_file),
+        *[str(c) for c in extra_c],
         opt,
         "-o", str(out_js),
         "-sENVIRONMENT=web",
@@ -111,9 +113,9 @@ def emcc_command(c_file: Path, out_js: Path, gfx: bool, opt: str) -> list:
 
 
 def compile_wasm(c_file: Path, out_js: Path, gfx: bool, opt: str,
-                 timeout: int) -> None:
+                 timeout: int, extra_c: tuple = ()) -> None:
     out_js.parent.mkdir(parents=True, exist_ok=True)
-    cmd = emcc_command(c_file, out_js, gfx, opt)
+    cmd = emcc_command(c_file, out_js, gfx, opt, extra_c=extra_c)
     try:
         proc = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True,
                               text=True, env=emcc_env(), timeout=timeout)
@@ -205,6 +207,24 @@ pre#out:empty { display: none; }
 .keys { color: #6d7183; font-size: 12px; text-align: center;
         max-width: 60ch; }
 .err { color: #f7768e; }
+/* Per-example note card (e.g. the tiny-pointers abstract-claim coverage map). */
+details.coverage {
+  width: min(880px, 100%); margin: 12px auto 0; padding: 10px 14px;
+  background: #101219; border: 1px solid #1e2029; border-radius: 4px;
+}
+details.coverage summary {
+  cursor: pointer; font-weight: 600; color: #d8dae4;
+  font-size: 13px; user-select: none;
+}
+details.coverage summary:hover { color: #7aa2f7; }
+details.coverage .note { color: #6d7183; font-size: 12px; margin: 8px 0 4px; }
+details.coverage table { border-collapse: collapse; width: 100%; margin: 6px 0;
+                         font-size: 12.5px; }
+details.coverage th, details.coverage td { text-align: left; padding: 4px 8px;
+  border-bottom: 1px solid #1a1c24; vertical-align: top; }
+details.coverage th { color: #8a8fa3; font-weight: 600; white-space: nowrap; }
+details.coverage a { color: #7aa2f7; text-decoration: none; }
+details.coverage a:hover { text-decoration: underline; }
 """
 
 GFX_BODY = """
@@ -399,7 +419,7 @@ def key_hints(flow_source: str) -> str:
 
 
 def write_page(out_dir: Path, name: str, title: str, gfx: bool,
-               flow_source: str, source_url: str) -> Path:
+               flow_source: str, source_url: str, extra_html: str = "") -> Path:
     if gfx:
         width, height = canvas_size(flow_source)
         body = (GFX_BODY.replace("__W__", str(width))
@@ -425,6 +445,7 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
   <span class="meta">Flow &rarr; C &rarr; WebAssembly{' &middot; gfx canvas backend' if gfx else ' &middot; console'}</span>
   <span class="meta"><a href="{html_escape(source_url)}">source</a></span>
 </header>
+{extra_html}
 {body}
 {script}
 </body>
@@ -439,8 +460,15 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
 
 
 def build(program: Path, out_dir: Path, name: str = "", title: str = "",
-          opt: str = "-O2", timeout: int = 600, keep_c: bool = False) -> dict:
-    """Build one program. Returns a result dict; raises BuildError on failure."""
+          opt: str = "-O2", timeout: int = 600, keep_c: bool = False,
+          extra_c: tuple = (), extra_html: str = "") -> dict:
+    """Build one program. Returns a result dict; raises BuildError on failure.
+
+    ``extra_c`` is a tuple of extra C files to link (e.g. the runtime support
+    file that provides ``flow_rt_monotonic_ns``); ``extra_html`` is an HTML
+    fragment injected into the host page between the header and the body
+    (used for per-example notes like the tiny-pointers coverage card).
+    """
     program = program.resolve()
     if not program.exists():
         raise BuildError(f"no such file: {program}")
@@ -457,9 +485,15 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
     if not have_emcc():
         raise BuildError("emcc not on PATH (see docs/language/wasm.md)")
 
+    # Resolve relative extra C files against the repo root, matching how the
+    # gfx backend is passed as an absolute path.
+    resolved_extra = tuple(
+        c if Path(c).is_absolute() else PROJECT_ROOT / c for c in extra_c
+    )
+
     started = time.time()
     out_js = out_dir / f"{name}.js"
-    compile_wasm(c_file, out_js, gfx, opt, timeout)
+    compile_wasm(c_file, out_js, gfx, opt, timeout, extra_c=resolved_extra)
     elapsed = time.time() - started
 
     try:
@@ -469,7 +503,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         rel = program.name
         source_url = str(program)
 
-    write_page(out_dir, name, title, gfx, flow_source, source_url)
+    write_page(out_dir, name, title, gfx, flow_source, source_url,
+               extra_html=extra_html)
     if not keep_c:
         c_file.unlink(missing_ok=True)
 
