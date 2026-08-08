@@ -635,16 +635,40 @@ class MLIRGenerator:
         self._effects = {}
         self._capabilities = {}
         self._effect_handler_stack = [{}]
+        # Names with a real body in this module — skip emitting `func.func private`
+        # for matching extern decls (doom-flow Z_Malloc is extern'd widely + defined).
+        self._defined_function_names: Set[str] = {
+            decl.name
+            for decl in cpu_decls
+            if isinstance(decl, FunctionDecl) and not getattr(decl, "is_extern", False)
+        }
+        # C varargs APIs are re-declared with many fixed arities in doom-flow;
+        # lower them once as true variadic so calls type-check.
+        self._c_variadic_funcs = {
+            "printf", "sprintf", "snprintf", "fprintf",
+            "sscanf", "fscanf", "scanf",
+        }
         for decl in cpu_decls:
             if isinstance(decl, FunctionDecl):
                 if getattr(decl, "is_extern", False) and decl.name == "printf":
                     self.needs_printf = True
+                is_variadic = bool(getattr(decl, "is_variadic", False))
+                if decl.name in self._c_variadic_funcs:
+                    is_variadic = True
+                params = list(decl.parameters)
+                # C varargs: keep a stable fixed prefix (fmt + leading args).
+                if decl.name in ("snprintf", "sprintf", "fprintf"):
+                    params = params[:3]
+                    is_variadic = True
+                elif decl.name == "printf":
+                    params = params[:1]
+                    is_variadic = True
                 # Add function to symbol table
                 self.symbol_table[decl.name] = {
                     'type': 'function',
                     'return_type': decl.return_type,
-                    'parameters': decl.parameters,
-                    'is_variadic': getattr(decl, "is_variadic", False),
+                    'parameters': params,
+                    'is_variadic': is_variadic,
                     'mlir_name': f"@{decl.name}"
                 }
             elif isinstance(decl, EffectDecl):
@@ -655,13 +679,17 @@ class MLIRGenerator:
                 mlir_type = self.flow_type_to_mlir(decl.type)
                 if getattr(decl.type, "name", None) == "bool":
                     mlir_type = "i1"
-                self.symbol_table[decl.name] = {
+                entry = {
                     "type": "variable",
                     "mlir_type": mlir_type,
                     "flow_type": decl.type,
                     "is_module_global": True,
                     "is_const": True,
                 }
+                if getattr(decl.type, "name", None) == "string":
+                    entry["mlir_type"] = "!llvm.ptr"
+                    entry["is_string_global"] = True
+                self.symbol_table[decl.name] = entry
             elif isinstance(decl, StaticDecl):
                 mlir_type = self.flow_type_to_mlir(decl.type)
                 if getattr(decl.type, "name", None) == "bool":
@@ -811,12 +839,29 @@ class MLIRGenerator:
         if hasattr(func, 'is_extern') and func.is_extern:
             if func.name == "printf":
                 return ""
+            if func.name in getattr(self, "_defined_function_names", set()):
+                return ""
             if func.name in self._declared_externs:
                 return ""
             self._declared_externs.add(func.name)
-            param_types = [self.flow_type_to_mlir(p.type) for p in func.parameters]
-            return_type = self.flow_type_to_mlir(func.return_type)
-            if getattr(func, "is_variadic", False):
+            # Use the (possibly shortened) symbol-table signature for C varargs.
+            info = self.symbol_table.get(func.name) or {}
+            params = info.get("parameters", func.parameters)
+            param_types = [self.flow_type_to_mlir(p.type) for p in params]
+            return_type = self.flow_type_to_mlir(
+                info.get("return_type", func.return_type)
+            )
+            is_variadic = bool(
+                info.get("is_variadic")
+                or getattr(func, "is_variadic", False)
+                or func.name in getattr(self, "_c_variadic_funcs", set())
+            )
+            if is_variadic:
+                # snprintf/printf family: declare fixed prefix + ellipsis.
+                if func.name in ("snprintf", "sprintf", "fprintf") and len(param_types) > 3:
+                    param_types = param_types[:3]
+                elif func.name == "printf" and len(param_types) > 1:
+                    param_types = param_types[:1]
                 variadic_suffix = ", ..." if param_types else "..."
             else:
                 variadic_suffix = ""
@@ -1080,21 +1125,35 @@ class MLIRGenerator:
     def _needs_cf_loop_lowering(self, block: Optional[Block]) -> bool:
         """True when a block cannot live inside a single-block scf region.
 
-        break/continue need a cf edge out, and `while` and `match` always emit
-        cf blocks of their own, which an scf.for/scf.if region cannot hold.
+        break/continue need a cf edge out, and `while` / `match` / early
+        `return` always emit cf blocks. If/elif chains that assign locals also
+        force cf: nested scf.if does not propagate SSA yields correctly, which
+        produced undeclared-SSA yields in doom-flow wipes / sound.
         """
         if block is None:
             return False
         for stmt in block.statements:
             if isinstance(
                 stmt,
-                (BreakStatement, ContinueStatement, WhileStatement, MatchStatement),
+                (
+                    BreakStatement,
+                    ContinueStatement,
+                    WhileStatement,
+                    MatchStatement,
+                    ReturnStatement,
+                ),
             ):
                 return True
             if isinstance(stmt, ForStatement):
                 if self._needs_cf_loop_lowering(stmt.body):
                     return True
             elif isinstance(stmt, IfStatement):
+                if stmt.elif_blocks:
+                    return True
+                if self._assigned_locals(stmt.then_block):
+                    return True
+                if stmt.else_block and self._assigned_locals(stmt.else_block):
+                    return True
                 if self._needs_cf_loop_lowering(stmt.then_block):
                     return True
                 if any(self._needs_cf_loop_lowering(b) for _, b in stmt.elif_blocks):
@@ -1189,7 +1248,14 @@ class MLIRGenerator:
             }
             if from_tensor_field and self._is_tensor_struct(mlir_type):
                 var_entry["from_tensor_field"] = True
-            if self._uses_alloca_storage(mlir_type, var_decl.type):
+            # Aggregates always use alloca. Mutable scalars also get alloca so
+            # `&x` inside one scf.if arm cannot create a region-local pointer
+            # that the other arm later stores through (EV_DoDonut).
+            needs_alloca = self._uses_alloca_storage(mlir_type, var_decl.type) or (
+                getattr(var_decl, "is_mutable", False)
+                and not mlir_type.startswith("memref")
+            )
+            if needs_alloca:
                 ptr, alloc_ops = self._emit_alloca_store(init_value, mlir_type)
                 init_ops.extend(alloc_ops)
                 var_entry["alloca_ptr"] = ptr
@@ -1537,6 +1603,9 @@ class MLIRGenerator:
             if not info:
                 continue
             if info.get("is_module_global"):
+                continue
+            if info.get("alloca_ptr"):
+                # Memory is authoritative; do not SSA-merge across scf.if.
                 continue
             if "ssa_name" not in info:
                 continue
@@ -2729,9 +2798,12 @@ class MLIRGenerator:
         carried: List[str] = []
         for var_name in assigned_vars:
             if var_name in self.symbol_table and var_name not in declared_vars and var_name not in carried:
-                # Module consts/statics are memory-backed (addressof + load/store),
-                # not SSA values, so they cannot be threaded through iter_args.
+                # Module consts/statics and alloca-backed mut locals are
+                # memory-backed — not SSA values — so they cannot be threaded
+                # through iter_args / cf block arguments.
                 if self.symbol_table[var_name].get("is_module_global"):
+                    continue
+                if self.symbol_table[var_name].get("alloca_ptr"):
                     continue
                 carried.append(var_name)
         return carried
@@ -3379,6 +3451,9 @@ class MLIRGenerator:
             # Global *is* the array storage; addressof is the base pointer for GEP.
             self._llvm_array_types[ptr] = llvm_array_ty
             self._llvm_array_types[name] = llvm_array_ty
+            return ptr, ops
+        if info.get("is_string_global"):
+            # addressof of the i8 array is the string pointer (no load).
             return ptr, ops
         val = f"%{self.function_counter}"
         self.function_counter += 1
@@ -5978,13 +6053,29 @@ class MLIRGenerator:
         # Module-scope globals should not rely on SSA values from local ops.
         if isinstance(const.value, Literal):
             if const.value.type.name == "string":
-                # String constants handled via string globals; no separate const emitted.
+                # Named string const must be an addressable llvm.global (doom uses
+                # DMAIN_PACKAGE_STRING etc. via llvm.mlir.addressof @Name).
                 str_val = const.value.value
-                if str_val not in self.string_constants:
-                    global_name = f"str_{self.string_counter}"
-                    self.string_counter += 1
-                    self.string_constants[str_val] = global_name
-                return ""
+                str_content = str_val[1:-1] if len(str_val) >= 2 and str_val[0] == '"' else str_val
+                byte_len = len(str_content.encode("utf-8").decode("unicode_escape")) + 1
+                mlir_code.append(
+                    f'{self.indent()}llvm.mlir.global internal constant @{const.name}'
+                    f'("{str_content}\\00") {{addr_space = 0 : i32}} '
+                    f': !llvm.array<{byte_len} x i8>'
+                )
+                self.symbol_table[const.name] = {
+                    "type": "variable",
+                    "mlir_type": "!llvm.ptr",
+                    "flow_type": const.type,
+                    "is_module_global": True,
+                    "is_const": True,
+                    "is_string_global": True,
+                }
+                if getattr(self, "_module_symbol_snapshot", None) is not None:
+                    self._module_symbol_snapshot[const.name] = dict(
+                        self.symbol_table[const.name]
+                    )
+                return "\n".join(mlir_code)
             if (
                 mlir_type == "!llvm.ptr"
                 or str(const.value.value).lower() == "null"
