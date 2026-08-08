@@ -9,6 +9,11 @@ This document tracks what we're building next and why.
 > **Vision:** the destination this roadmap points at is laid out in
 > [VISION.md](VISION.md) — a language where the primary abstraction is the
 > evolution of systems through time.
+>
+> **Product thesis / beachhead:** Flow describes **physical computational
+> systems** (RF, embedded, SDR, FPGA-adjacent, satellite). Architecture:
+> [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
+> Dynamics cards: [docs/vision/north-star.md](docs/vision/north-star.md).
 
 > **Live tracker:** day-to-day backlog and task status now live on the Helm board
 > (local kanban at `http://127.0.0.1:9470/app?project=flow`). This document stays
@@ -19,11 +24,23 @@ This document tracks what we're building next and why.
 
 ---
 
-## Development Philosophy
+## Physical systems beachhead (RF → satellite)
 
-Flow is built through **agentic pair programming** - human vision interpreted through AI implementation.
+Do **not** pitch “safer embedded.” Pitch a compiler that understands units +
+rates + timing + memory topology + hardware + precision.
+Full map: [physical-systems.md](docs/vision/physical-systems.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
+| Phase | Focus | Status |
+|-------|--------|--------|
+| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | ✅ (`lib/stdlib/rf.flow`, `examples/rf/`) |
+| **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔲 |
+| **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
+| **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
+| **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
+| **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
+| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔲 |
+
+Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
 
 ---
 
@@ -37,8 +54,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 
 1. **Working > Perfect** - Ship incrementally, iterate based on use
 2. **Explicit > Implicit** - Clear syntax, obvious behavior
-3. **Unique > Clone** - Effects and autodiff are our differentiators
-4. **Portable > Fast** - C backend means runs anywhere
+3. **Unique > Clone** - Physical-system compile-time model (plus effects/autodiff) — not a Rust clone
+4. **Portable > Fast** - C backend means runs anywhere; zero-cost escape hatches required
 
 ### Decision Authority
 

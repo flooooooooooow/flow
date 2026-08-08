@@ -65,7 +65,7 @@ jobs:
             echo "prev=$PREV"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Post release to Discord #announcements
+      - name: Post release announcement to Discord #announcements
         if: always()
         uses: ./.github/actions/discord-notify
         with:
@@ -73,18 +73,19 @@ jobs:
           botname: Flow Release Bot
           avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
           color: '5763719'
-          title: Flow ${{ steps.tag.outputs.name }} released
+          title: Flow ${{ steps.tag.outputs.name }} is out
           url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}
-          description: 'Release published for commit [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})'
-          author_name: Flow
+          description: >-
+            ${{ steps.summary.outputs.commits }} commits since
+            ${{ steps.summary.outputs.prev }}, from ${{ steps.summary.outputs.authors }} contributors. Read the changelog in #changelog or [on GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}).
+          author_name: Flow Releases
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
           thumbnail: ${{ github.server_url }}/${{ github.repository_owner }}.png
           fields: >-
             [
               {"name":"Version","value":"`${{ steps.tag.outputs.name }}`","inline":true},
-              {"name":"Commits","value":"${{ steps.summary.outputs.commits }} since `${{ steps.summary.outputs.prev }}`","inline":true},
-              {"name":"Contributors","value":"${{ steps.summary.outputs.authors }}","inline":true},
-              {"name":"Release","value":"[view on GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }})","inline":true}
+              {"name":"Commits","value":"${{ steps.summary.outputs.commits }}","inline":true},
+              {"name":"Contributors","value":"${{ steps.summary.outputs.authors }}","inline":true}
             ]
           footer_text: Flow Releases · ${{ steps.tag.outputs.name }}
           footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
