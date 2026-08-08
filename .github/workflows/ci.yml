@@ -461,23 +461,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Require passing jobs
+      - name: Summarize job results
+        id: summarize
+        env:
+          CI_FAILED: ${{ job.status != 'success' }}
         run: |
           fail=0
-          check() {
+          FIELDS=""
+          FAILURES=""
+          add() {
             local name="$1"
             local result="$2"
             local required="$3"
             if [ "$required" != "true" ]; then
-              echo "↷ $name (skipped)"
+              FIELDS="$FIELDS{\"name\":\"$name\",\"value\":\"skipped\",\"inline\":true},"
               return
             fi
-            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
-              echo "✗ $name ($result)"
-              fail=1
-            else
-              echo "✓ $name"
-            fi
+            case "$result" in
+              success) glyph="passed" ;;
+              skipped) glyph="skipped" ;;
+              *) glyph="failed ($result)"; fail=1; FAILURES="$FAILURES ${name}" ;;
+            esac
+            FIELDS="$FIELDS{\"name\":\"$name\",\"value\":\"$glyph\",\"inline\":true},"
           }
           src='${{ needs.changes.outputs.src }}'
           tests='${{ needs.changes.outputs.tests }}'
@@ -486,37 +491,50 @@ jobs:
           runtime='${{ needs.changes.outputs.runtime }}'
           compiler='${{ needs.changes.outputs.compiler }}'
           workflow='${{ needs.changes.outputs.workflow }}'
-          deps='${{ needs.changes.outputs.deps }}'
-          lint_req=false
-          if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
-          sec_req=false
-          if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
-          tier_req=false
-          if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
-          pytest_req=false
-          if [ "$src" = "true" ] || [ "$tests" = "true" ]; then pytest_req=true; fi
-          fuzz_req=$pytest_req
-          ex_req=false
-          if [ "$src" = "true" ] || [ "$examples" = "true" ]; then ex_req=true; fi
-          check lint '${{ needs.lint.result }}' "$lint_req"
-          check security '${{ needs.security.result }}' "$sec_req"
-          check flow-tier2 '${{ needs.flow-tier2.result }}' "$tier_req"
-          compiler_req=false
-          if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
-          check flowc-bootstrap '${{ needs.flowc-bootstrap.result }}' "$compiler_req"
-          check flowc-selfhost '${{ needs.flowc-selfhost.result }}' "$compiler_req"
-          check flowc-compile '${{ needs.flowc-compile.result }}' "$compiler_req"
-          check pytest '${{ needs.pytest.result }}' "$pytest_req"
-          check fuzz '${{ needs.fuzz.result }}' "$fuzz_req"
-          check flow-examples '${{ needs.flow-examples.result }}' "$ex_req"
           plugins='${{ needs.changes.outputs.plugins }}'
-          plugin_req=false
-          if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
-          check plugin-dsp '${{ needs.plugin-dsp.result }}' "$plugin_req"
-          gfx_req=false
-          if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
-          check windows-gfx-stub '${{ needs.windows-gfx-stub.result }}' "$gfx_req"
-          exit $fail
+          deps='${{ needs.changes.outputs.deps }}'
+          lint_req=false;  if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
+          sec_req=false;   if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
+          tier_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
+          pytest_req=false; if [ "$src" = "true" ] || [ "$tests" = "true" ]; then pytest_req=true; fi
+          fuzz_req=$pytest_req
+          ex_req=false;    if [ "$src" = "true" ] || [ "$examples" = "true" ]; then ex_req=true; fi
+          compiler_req=false; if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
+          plugin_req=false; if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
+          gfx_req=false;   if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
+          add lint              '${{ needs.lint.result }}'              "$lint_req"
+          add security          '${{ needs.security.result }}'          "$sec_req"
+          add flow-tier2        '${{ needs.flow-tier2.result }}'        "$tier_req"
+          add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'    "$compiler_req"
+          add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'     "$compiler_req"
+          add flowc-compile     '${{ needs.flowc-compile.result }}'      "$compiler_req"
+          add pytest            '${{ needs.pytest.result }}'            "$pytest_req"
+          add fuzz              '${{ needs.fuzz.result }}'              "$fuzz_req"
+          add flow-examples     '${{ needs.flow-examples.result }}'      "$ex_req"
+          add plugin-dsp        '${{ needs.plugin-dsp.result }}'         "$plugin_req"
+          add windows-gfx-stub  '${{ needs.windows-gfx-stub.result }}'   "$gfx_req"
+          # meta fields so the embed also carries where to look.
+          SERVER="$GITHUB_SERVER_URL"
+          REPO="${{ github.repository }}"
+          SHA="${{ github.sha }}"
+          RUNURL="$SERVER/$REPO/actions/runs/${{ github.run_id }}"
+          FIELDS="$FIELDS{\"name\":\"Commit\",\"value\":\"[\`$SHA\`]($SERVER/$REPO/commit/$SHA)\",\"inline\":true},"
+          FIELDS="$FIELDS{\"name\":\"Branch\",\"value\":\"\`${{ github.head_ref || github.ref_name }}\`\",\"inline\":true},"
+          FIELDS="$FIELDS{\"name\":\"Run\",\"value\":\"#${{ github.run_number }}\",\"inline\":true}"
+          subject="$(git -C "$GITHUB_WORKSPACE" log -1 --format='%s' 2>/dev/null || echo '')"
+          {
+            echo "failed=$fail"
+            echo "failures=${FAILURES# }"
+            echo "fields=[$FIELDS]"
+            echo "subject=$subject"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Require passing jobs
+        if: steps.summarize.outputs.failed == 'true'
+        run: |-
+          echo "Required jobs failed: ${{ steps.summarize.outputs.failures }}"
+          exit 1
 
       - name: Post CI status to Discord #ci-releases
         if: always()
@@ -525,18 +543,13 @@ jobs:
           webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
           botname: Flow CI
           avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
-          color: ${{ job.status == 'success' && '3066993' || '15158332' }}
-          title: CI ${{ job.status == 'success' && 'passed' || 'failed' }}
+          content: '${{ steps.summarize.outputs.failed == "true" && format("CI failed: {0}", steps.summarize.outputs.failures) || "" }}'
+          color: ${{ steps.summarize.outputs.failed == 'true' && '15158332' || '3066993' }}
+          title: CI ${{ steps.summarize.outputs.failed == 'true' && 'failed' || 'passed' }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          description: '${{ github.repository }} · branch \`${{ github.head_ref || github.ref_name }}\` on ${{ github.event_name }}'
+          description: '${{ github.repository }} · \`${{ github.head_ref || github.ref_name }}\` on ${{ github.event_name }} · by ${{ github.actor }} · ${{ steps.summarize.outputs.subject }}'
           author_name: Flow CI
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
-          fields: >-
-            [
-              {"name":"Commit","value":"[`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})","inline":true},
-              {"name":"Branch","value":"`${{ github.head_ref || github.ref_name }}`","inline":true},
-              {"name":"Event","value":"`${{ github.event_name }}`","inline":true},
-              {"name":"Run","value":"#[${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})","inline":true}
-            ]
+          fields: ${{ steps.summarize.outputs.fields }}
           footer_text: Flow CI · run ${{ github.run_id }}
           footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png

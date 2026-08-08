@@ -1,0 +1,72 @@
+name: Discord PR notifications
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    name: Notify Discord
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve event
+        id: event
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          PAYLOAD="$GITHUB_EVENT_PATH"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "kind=manual" >> "$GITHUB_OUTPUT"
+            echo "title=workflow test of PR notifications" >> "$GITHUB_OUTPUT"
+            echo "pr=n/a" >> "$GITHUB_OUTPUT"
+            echo "files=?" >> "$GITHUB_OUTPUT"
+            echo "actor=manual" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KIND="opened"
+          ACTION="$(jq -r .action "$PAYLOAD")"
+          STATE="$(jq -r .pull_request.state "$PAYLOAD")"
+          MERGED="$(jq -r .pull_request.merged "$PAYLOAD")"
+          NUMBER="$(jq -r .pull_request.number "$PAYLOAD")"
+          if [[ "$ACTION" == "ready_for_review" ]]; then KIND="ready"; fi
+          if [[ "$STATE" == "closed" && "$MERGED" == "true" ]]; then KIND="merged"; fi
+          if [[ "$STATE" == "closed" && "$MERGED" != "true" ]]; then KIND="closed"; fi
+          CF="$(gh api "repos/${{ github.repository }}/pulls/$NUMBER" --jq '.changed_files' 2>/dev/null || echo '?')"
+          {
+            echo "kind=$KIND"
+            echo "title=$(jq -r .pull_request.title "$PAYLOAD")"
+            echo "pr=$NUMBER"
+            echo "files=$CF"
+            echo "actor=$(jq -r .pull_request.user.login "$PAYLOAD")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post to Discord #ci-releases
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_CI_WEBHOOK }}
+          botname: Flow Bot
+          avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          color: ${{ steps.event.outputs.kind == 'merged' && '5763719' || (steps.event.outputs.kind == 'closed' && '15158332' || '3066993') }}
+          title: 'PR ${{ steps.event.outputs.kind }}: ${{ steps.event.outputs.title }}'
+          url: ${{ github.event.pull_request.html_url }}
+          description: '${{ github.event.pull_request.body }}'
+          author_name: ${{ steps.event.outputs.actor }}
+          author_icon: ${{ github.server_url }}/${{ github.event.pull_request.user.login }}.png
+          fields: >-
+            [
+              {"name":"PR","value":"[#${{ steps.event.outputs.pr }}](${{ github.event.pull_request.html_url }})","inline":true},
+              {"name":"Branch","value":"`${{ github.event.pull_request.head.ref }}` → `${{ github.event.pull_request.base.ref }}`","inline":true},
+              {"name":"Changed files","value":"${{ steps.event.outputs.files }}","inline":true},
+              {"name":"Merged","value":"${{ steps.event.outputs.kind == 'merged' && 'yes' || (steps.event.outputs.kind == 'closed' && 'no' || 'not yet') }}","inline":true}
+            ]
+          footer_text: Flow GitHub · PR #${{ steps.event.outputs.pr }}
+          footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
