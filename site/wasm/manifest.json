@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
-  "examples": 156,
-  "built": 149,
+  "examples": 157,
+  "built": 150,
   "failed": 7,
-  "total_bytes": 5577609,
+  "total_bytes": 5636005,
   "categories": [
     {
       "id": "games",
@@ -1031,6 +1031,20 @@
       "page": "palindrome/index.html"
     },
     {
+      "name": "parallel_sum",
+      "title": "Parallel Sum",
+      "category": "basics",
+      "source": "examples/wasm/parallel_sum.flow",
+      "summary": "Coarse-grained data-parallel reduction, built for the WASM threads crossing",
+      "threads": true,
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 35038,
+      "js_bytes": 23358,
+      "total_bytes": 58396,
+      "page": "parallel_sum/index.html"
+    },
+    {
       "name": "pipeline_choose",
       "title": "Pipeline Choose",
       "category": "basics",
@@ -1748,6 +1762,7 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp_parallel.flow",
       "summary": "Data-parallel gradient accumulation for the digits MLP",
+      "threads": true,
       "status": "ok",
       "gfx": false,
       "wasm_bytes": 42208,
