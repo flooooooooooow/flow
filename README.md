@@ -190,6 +190,7 @@ extern {
 | Resource | Description |
 |----------|-------------|
 | [Getting started](docs/getting-started.md) | Install, first program, basics |
+| [Best practices](docs/language/best-practices.md) | Idioms and why Flow favors fluid abstraction |
 | [Language overview](docs/language/overview.md) | Features and design |
 | [Language spec](docs/LANGUAGE_SPEC.md) | Full reference |
 | [Effects showcase](docs/effects-showcase.md) | Algebraic effects end to end |

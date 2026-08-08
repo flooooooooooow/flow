@@ -107,7 +107,7 @@ games, morphogenesis, neurons, evolution, planets, procgen, numerical, WASM
 | **`flow` / `evolves`** | Continuous + hybrid dynamics as syntax, with solvers and analysis. |
 | **Dual backends** | Portable C by default; MLIR when you want JIT. |
 
-Full thesis: [Vision](vision.md) · vs others: [Comparison](comparison.md)
+Thesis: [Vision](vision.md) · how to write it: [Best practices](language/best-practices.md) · vs others: [Comparison](comparison.md)
 
 ---
 
