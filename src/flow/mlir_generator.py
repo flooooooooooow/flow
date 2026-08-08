@@ -3551,6 +3551,12 @@ class MLIRGenerator:
                 right_ssa, ops = self._emit_cast(right_ssa, right_ty, operand_type)
                 cast_ops.extend(ops)
 
+        # Flow uN lowers to iN; track unsigned SSA so / % >> and compares stay
+        # logical (Python has no u32 — this is free in a typed native IR).
+        is_unsigned = (
+            left_ssa in self._ssa_unsigned or right_ssa in self._ssa_unsigned
+        )
+
         op_text: str
         if bin_op.operator == '+':
             if is_vector:
@@ -3562,22 +3568,32 @@ class MLIRGenerator:
         elif bin_op.operator == '*':
             op_text = f"arith.mulf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.muli {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '/':
-            op_text = f"arith.divf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.divsi {left_ssa}, {right_ssa} : {operand_type}"
+            if is_float:
+                op_text = f"arith.divf {left_ssa}, {right_ssa} : {operand_type}"
+            elif is_unsigned:
+                op_text = f"arith.divui {left_ssa}, {right_ssa} : {operand_type}"
+            else:
+                op_text = f"arith.divsi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '%':
-            op_text = f"arith.remf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.remsi {left_ssa}, {right_ssa} : {operand_type}"
+            if is_float:
+                op_text = f"arith.remf {left_ssa}, {right_ssa} : {operand_type}"
+            elif is_unsigned:
+                op_text = f"arith.remui {left_ssa}, {right_ssa} : {operand_type}"
+            else:
+                op_text = f"arith.remsi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator in ['==', '!=', '<', '<=', '>', '>=']:
             if bin_op.operator == '==':
                 pred = 'oeq' if is_float else 'eq'
             elif bin_op.operator == '!=':
                 pred = 'one' if is_float else 'ne'
             elif bin_op.operator == '<':
-                pred = 'olt' if is_float else 'slt'
+                pred = 'olt' if is_float else ('ult' if is_unsigned else 'slt')
             elif bin_op.operator == '<=':
-                pred = 'ole' if is_float else 'sle'
+                pred = 'ole' if is_float else ('ule' if is_unsigned else 'sle')
             elif bin_op.operator == '>':
-                pred = 'ogt' if is_float else 'sgt'
+                pred = 'ogt' if is_float else ('ugt' if is_unsigned else 'sgt')
             else:
-                pred = 'oge' if is_float else 'sge'
+                pred = 'oge' if is_float else ('uge' if is_unsigned else 'sge')
 
             if is_float:
                 op_text = f"arith.cmpf {pred}, {left_ssa}, {right_ssa} : {operand_type}"
@@ -3587,6 +3603,8 @@ class MLIRGenerator:
                     'eq': 'eq', 'ne': 'ne',
                     'slt': 'ult', 'sle': 'ule',
                     'sgt': 'ugt', 'sge': 'uge',
+                    'ult': 'ult', 'ule': 'ule',
+                    'ugt': 'ugt', 'uge': 'uge',
                 }.get(pred, pred)
                 op_text = f'llvm.icmp "{icmp}" {left_ssa}, {right_ssa} : !llvm.ptr'
             else:
@@ -3605,8 +3623,11 @@ class MLIRGenerator:
         elif bin_op.operator == '<<':
             op_text = f"arith.shli {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '>>':
-            # Flow uN lowers to iN; arithmetic right-shift matches C signed >> on i32.
-            op_text = f"arith.shrsi {left_ssa}, {right_ssa} : {operand_type}"
+            op_text = (
+                f"arith.shrui {left_ssa}, {right_ssa} : {operand_type}"
+                if is_unsigned
+                else f"arith.shrsi {left_ssa}, {right_ssa} : {operand_type}"
+            )
         else:
             return f"// Unsupported binary operator: {bin_op.operator}", left_ops + right_ops
         
@@ -3617,6 +3638,11 @@ class MLIRGenerator:
         lines.append(f"{self.indent()}{ssa_name} = {op_text}")
         result_type = 'i1' if bin_op.operator in ['==', '!=', '<', '<=', '>', '>=', '&&', 'and', '||', 'or'] else operand_type
         self._ssa_types[ssa_name] = result_type
+        if (
+            is_unsigned
+            and bin_op.operator in ('+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>')
+        ):
+            self._ssa_unsigned.add(ssa_name)
         return ssa_name, lines
     
     def generate_unary_operation(self, un_op: UnaryOperation) -> tuple[str, List[str]]:
@@ -3659,6 +3685,17 @@ class MLIRGenerator:
             ops.append(f"{self.indent()}{c1} = arith.constant 1 : i1")
             ops.append(f"{self.indent()}{ssa_name} = arith.xori {operand_ssa}, {c1} : i1")
             self._ssa_types[ssa_name] = "i1"
+            return ssa_name, ops
+        elif un_op.operator == '~':
+            # Bitwise complement — Python ints are unbounded; Flow uses fixed width.
+            ones = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops = list(operand_ops)
+            ops.append(f"{self.indent()}{ones} = arith.constant -1 : {ty}")
+            ops.append(f"{self.indent()}{ssa_name} = arith.xori {operand_ssa}, {ones} : {ty}")
+            self._ssa_types[ssa_name] = ty
+            if operand_ssa in self._ssa_unsigned:
+                self._ssa_unsigned.add(ssa_name)
             return ssa_name, ops
         else:
             return f"// Unsupported unary operator: '{un_op.operator}' (type: {type(un_op.operator)})", operand_ops
@@ -4330,6 +4367,19 @@ class MLIRGenerator:
                 return var_info.get('ssa_name'), [], pointee.name
             if var_info.get('alloca_ptr') and flow_type.name in self.struct_layouts:
                 return var_info['alloca_ptr'], [], flow_type.name
+            # Module-scope struct static: addressof is the object base
+            # (maputl_trace.x = … in doom-flow).
+            if (
+                var_info.get("is_module_global")
+                and getattr(flow_type, "name", None) in self.struct_layouts
+            ):
+                ptr = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops = [
+                    f"{self.indent()}{ptr} = llvm.mlir.addressof @{expr.name} : !llvm.ptr"
+                ]
+                self._ssa_types[ptr] = "!llvm.ptr"
+                return ptr, ops, flow_type.name
             return None
 
         if isinstance(expr, ArrayAccess):
@@ -4913,7 +4963,7 @@ class MLIRGenerator:
         callee = f"@{func_call.name}"
         if func_call.name in self.symbol_table:
             func_info = self.symbol_table[func_call.name]
-            callee = func_info['mlir_name']
+            callee = func_info.get("mlir_name") or f"@{func_call.name}"
 
         # Resolve signature before arg codegen so tensor-returning callees can
         # evaluate arguments last-to-first (keeps early tensor args off clobbered stack).
