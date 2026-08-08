@@ -6245,10 +6245,90 @@ class MLIRGenerator:
         )
         return "\n".join(mlir_code)
 
+    def _intern_string_const(self, literal_value: str) -> str:
+        """Register a string literal in string_constants; return global sym name."""
+        key = (
+            literal_value
+            if len(literal_value) >= 2 and literal_value[0] == '"'
+            else f'"{literal_value}"'
+        )
+        if key not in self.string_constants:
+            gname = f"str_{self.string_counter}"
+            self.string_counter += 1
+            self.string_constants[key] = gname
+        return self.string_constants[key]
+
+    def _emit_static_llvm_array_global(
+        self,
+        name: str,
+        llvm_array_ty: str,
+        flow_type: Type,
+        array_lit: Optional[ArrayLiteral],
+    ) -> List[str]:
+        """Emit `llvm.mlir.global` with an init body for fixed array statics.
+
+        Pointer/string element arrays must not stay undef — doom-flow config
+        tables (`array<string, N>`) are searched by name at startup.
+        """
+        ind = self.indent()
+        size = int(flow_type.size)
+        elem_mlir = self.flow_type_to_mlir(flow_type.element_type)
+        is_ptr = elem_mlir == "!llvm.ptr"
+        lines = [
+            f"{ind}// Module static: {name}",
+            f"{ind}llvm.mlir.global internal @{name}() : {llvm_array_ty} {{",
+        ]
+
+        elements = list(array_lit.elements) if array_lit is not None else []
+        acc = f"%{self.function_counter}"
+        self.function_counter += 1
+        lines.append(f"{ind}  {acc} = llvm.mlir.undef : {llvm_array_ty}")
+
+        for i in range(size):
+            el = elements[i] if i < len(elements) else None
+            val = f"%{self.function_counter}"
+            self.function_counter += 1
+            if is_ptr:
+                if (
+                    isinstance(el, Literal)
+                    and getattr(el.type, "name", None) == "string"
+                ):
+                    gname = self._intern_string_const(str(el.value))
+                    lines.append(
+                        f"{ind}  {val} = llvm.mlir.addressof @{gname} : !llvm.ptr"
+                    )
+                else:
+                    # null / missing / unsupported → null pointer
+                    lines.append(f"{ind}  {val} = llvm.mlir.zero : !llvm.ptr")
+            else:
+                if isinstance(el, Literal) and getattr(el.type, "name", None) == "bool":
+                    lit = (
+                        "1"
+                        if str(el.value).lower() in ("true", "1")
+                        else "0"
+                    )
+                elif isinstance(el, Literal):
+                    lit = self._format_mlir_numeric(str(el.value), elem_mlir)
+                else:
+                    lit = "0.0" if elem_mlir in ("f32", "f64") else "0"
+                lines.append(
+                    f"{ind}  {val} = llvm.mlir.constant({lit} : {elem_mlir}) : {elem_mlir}"
+                )
+
+            nxt = f"%{self.function_counter}"
+            self.function_counter += 1
+            lines.append(
+                f"{ind}  {nxt} = llvm.insertvalue {val}, {acc}[{i}] : {llvm_array_ty}"
+            )
+            acc = nxt
+
+        lines.append(f"{ind}  llvm.return {acc} : {llvm_array_ty}")
+        lines.append(f"{ind}}}")
+        return lines
+
     def generate_static(self, static: StaticDecl) -> str:
         """Generate a mutable module-scope llvm.mlir.global for `let mut` at top level."""
         mlir_code = []
-        mlir_code.append(f"{self.indent()}// Module static: {static.name}")
 
         mlir_type = self.flow_type_to_mlir(static.type)
         if getattr(static.type, "name", None) == "bool":
@@ -6257,11 +6337,35 @@ class MLIRGenerator:
         llvm_array_ty = self._llvm_array_type_from_flow(static.type)
         if llvm_array_ty:
             # Global storage is the array; SSA uses pointer-to-array.
-            # Zero-init; literal element lists are applied via later stores when needed.
-            mlir_type = "!llvm.ptr"
-            mlir_code.append(
-                f"{self.indent()}llvm.mlir.global internal @{static.name}() : {llvm_array_ty}"
+            elem_mlir = self.flow_type_to_mlir(static.type.element_type)
+            array_lit = (
+                static.value if isinstance(static.value, ArrayLiteral) else None
             )
+            # Struct-element arrays cannot use scalar llvm.mlir.constant(0);
+            # leave those zero-inited. Pointer/string/scalar arrays get a
+            # real init body so string tables are not undef at runtime.
+            can_init = elem_mlir == "!llvm.ptr" or elem_mlir in (
+                "i1",
+                "i8",
+                "i16",
+                "i32",
+                "i64",
+                "f32",
+                "f64",
+            )
+            if can_init:
+                mlir_code.extend(
+                    self._emit_static_llvm_array_global(
+                        static.name, llvm_array_ty, static.type, array_lit
+                    )
+                )
+            else:
+                mlir_code.append(f"{self.indent()}// Module static: {static.name}")
+                mlir_code.append(
+                    f"{self.indent()}llvm.mlir.global internal @{static.name}() "
+                    f": {llvm_array_ty}"
+                )
+            mlir_type = "!llvm.ptr"
             self.symbol_table[static.name] = {
                 "type": "variable",
                 "mlir_type": mlir_type,
@@ -6279,6 +6383,7 @@ class MLIRGenerator:
             return "\n".join(mlir_code)
 
         # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
+        mlir_code.append(f"{self.indent()}// Module static: {static.name}")
         init_payload = f"() : {mlir_type}"
         if isinstance(static.value, Literal) and getattr(static.value.type, "name", "") != "string":
             if (
