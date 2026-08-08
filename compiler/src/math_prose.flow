@@ -4,7 +4,11 @@
 import .claim_address {
     FlowcClaimAddress,
     flowc_claim_parse,
-    flowc_claim_empty
+    flowc_claim_empty,
+    flowc_claim_substr,
+    flowc_claim_strip,
+    flowc_claim_is_ws,
+    flowc_claim_to_lower
 }
 import .claim_path {
     flowc_claim_path_normalize_tier
@@ -13,6 +17,7 @@ import .claim_path {
 extern {
     function strcmp(a: string, b: string) -> i32
     function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<u8>
 }
 
 export function flowc_carrier_mathematical(name: string) -> string {
@@ -186,4 +191,1409 @@ export function flowc_tier_opening_mathematical(tier: string, addr: FlowcClaimAd
 export function flowc_tier_opening_parse(tier: string, claim_text: string) -> string {
     let addr: FlowcClaimAddress = flowc_claim_parse(claim_text)
     return flowc_tier_opening_mathematical(tier, addr)
+}
+
+# ---- mathematical_case_condition (port of math_prose.py) -------------------
+# Stage-A char-indexes strings (`let p: ptr<u8> = s` then `p[i]`, the module
+# idiom), so the three regex cases port with exact matching: a leading
+# [A-Za-z0-9_]+ word (`\w+`), optional whitespace, `==`, then `true`/`false`
+# (case-insensitive) or `0`, and end of input. The fallback `==` → ` equals `
+# is a plain scan-and-copy too, so the port is exact end to end. Strings are
+# built in malloc'd buffers; the Python host remains authoritative for the
+# whitespace set beyond space/tab/newline/CR.
+
+# 1 if c is a Python `\w` word char (ASCII): A-Z a-z 0-9 _
+function flowc_mc_is_word(c: i32) -> i32 {
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 97 and c <= 122 { return 1 }
+    if c >= 48 and c <= 57 { return 1 }
+    if c == 95 { return 1 }
+    return 0
+}
+
+# Runtime string concatenation: a then b into a fresh NUL-terminated buffer.
+function flowc_mc_concat(a: string, b: string) -> string {
+    let pa: ptr<u8> = a
+    let pb: ptr<u8> = b
+    let na: i32 = strlen(a) as i32
+    let nb: i32 = strlen(b) as i32
+    let buf: ptr<u8> = malloc((na + nb + 1) as i64)
+    let mut i: i32 = 0
+    while i < na {
+        buf[i] = pa[i]
+        i = i + 1
+    }
+    let mut j: i32 = 0
+    while j < nb {
+        buf[na + j] = pb[j]
+        j = j + 1
+    }
+    buf[na + nb] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Every `==` in t becomes ` equals ` (Python str.replace fallback).
+function flowc_mc_replace_eqeq(t: string) -> string {
+    let p: ptr<u8> = t
+    let n: i32 = strlen(t) as i32
+    # Each `==` (2 bytes) grows to ` equals ` (8 bytes); n/2 pairs is an upper
+    # bound on the expansion.
+    let cap: i32 = n + (n / 2) * 6 + 1
+    let buf: ptr<u8> = malloc(cap as i64)
+    let sep: string = " equals "
+    let sp: ptr<u8> = sep
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 61 and i + 1 < n and p[i + 1] == 61 {
+            let mut k: i32 = 0
+            while k < 8 {
+                buf[w + k] = sp[k]
+                k = k + 1
+            }
+            w = w + 8
+            i = i + 2
+        } else {
+            buf[w] = p[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Turn a parser condition into spoken mathematics (port of
+# math_prose.mathematical_case_condition):
+#   WORD == true  → "<word> holds"          (case-insensitive)
+#   WORD == false → "<word> does not hold"  (case-insensitive)
+#   WORD == 0     → "<word> is zero"
+#   otherwise     → `==` becomes ` equals `
+export function flowc_mathematical_case_condition(cond: string) -> string {
+    let t: string = flowc_claim_strip(cond)
+    let p: ptr<u8> = t
+    let n: i32 = strlen(t) as i32
+    # Leading `\w+` word run — the prefix the regex anchors at `^`.
+    let mut w: i32 = 0
+    while w < n and flowc_mc_is_word(p[w]) == 1 {
+        w = w + 1
+    }
+    if w == 0 {
+        return flowc_mc_replace_eqeq(t)
+    }
+    # Optional whitespace, then `==` (the `\s*==` suffix after the word).
+    let mut q: i32 = w
+    while q < n and flowc_claim_is_ws(p[q]) == 1 {
+        q = q + 1
+    }
+    if q + 1 >= n {
+        return flowc_mc_replace_eqeq(t)
+    }
+    if p[q] != 61 or p[q + 1] != 61 {
+        return flowc_mc_replace_eqeq(t)
+    }
+    q = q + 2
+    while q < n and flowc_claim_is_ws(p[q]) == 1 {
+        q = q + 1
+    }
+    let word: string = flowc_claim_substr(t, 0, w)
+    # `(\w+)\s*==\s*true\s*$` — case-insensitive.
+    if n - q == 4 and flowc_claim_to_lower(p[q]) == 116 and flowc_claim_to_lower(p[q + 1]) == 114 and flowc_claim_to_lower(p[q + 2]) == 117 and flowc_claim_to_lower(p[q + 3]) == 101 {
+        return flowc_mc_concat(word, " holds")
+    }
+    # `(\w+)\s*==\s*false\s*$` — case-insensitive.
+    if n - q == 5 and flowc_claim_to_lower(p[q]) == 102 and flowc_claim_to_lower(p[q + 1]) == 97 and flowc_claim_to_lower(p[q + 2]) == 108 and flowc_claim_to_lower(p[q + 3]) == 115 and flowc_claim_to_lower(p[q + 4]) == 101 {
+        return flowc_mc_concat(word, " does not hold")
+    }
+    # `(\w+)\s*==\s*0\s*$`.
+    if n - q == 1 and p[q] == 48 {
+        return flowc_mc_concat(word, " is zero")
+    }
+    return flowc_mc_replace_eqeq(t)
+}
+
+# ---- rewrite family (port of math_prose.py: _replace_word,                ----
+# ---- _normalize_geometry_tokens, _replace_underscore_identifiers,         ----
+# ---- flow_expr_to_mathematical_english, flow_expr_to_latex)              ----
+#
+# These string-rewriting passes are the ones that need runtime word/ident
+# scanning plus `+`-style assembly. Backslashes are written `\\` (the lexer
+# rejects unknown escapes), so TeX tokens survive source → AST → emitted C.
+
+# 1 if the whole word `token` occurs in s at byte offset i (word boundary on
+# both sides; token non-empty). Mirrors Python `\btoken\b`.
+function flowc_mp_word_at(s: string, i: i32, token: string) -> i32 {
+    let ps: ptr<u8> = s
+    let pt: ptr<u8> = token
+    let n: i32 = strlen(s) as i32
+    let tn: i32 = strlen(token) as i32
+    if i < 0 or i + tn > n {
+        return 0
+    }
+    if i > 0 and flowc_mc_is_word(ps[i - 1]) == 1 {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < tn {
+        if ps[i + k] != pt[k] {
+            return 0
+        }
+        k = k + 1
+    }
+    if i + tn < n and flowc_mc_is_word(ps[i + tn]) == 1 {
+        return 0
+    }
+    return 1
+}
+
+# 1 if the literal `token` starts at byte offset i with a word boundary
+# before it — no boundary requirement after (Python `\btoken` where the
+# pattern continues, e.g. `\bangle_(\w+)`).
+function flowc_mp_prefix_at(s: string, i: i32, token: string) -> i32 {
+    let ps: ptr<u8> = s
+    let pt: ptr<u8> = token
+    let n: i32 = strlen(s) as i32
+    let tn: i32 = strlen(token) as i32
+    if i < 0 or i + tn > n {
+        return 0
+    }
+    if i > 0 and flowc_mc_is_word(ps[i - 1]) == 1 {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < tn {
+        if ps[i + k] != pt[k] {
+            return 0
+        }
+        k = k + 1
+    }
+    return 1
+}
+
+# Copy src into buf at w; return the new write offset.
+function flowc_mp_puts(buf: ptr<u8>, w: i32, src: string) -> i32 {
+    let ps: ptr<u8> = src
+    let sn: i32 = strlen(src) as i32
+    let mut k: i32 = 0
+    while k < sn {
+        buf[w + k] = ps[k]
+        k = k + 1
+    }
+    return w + sn
+}
+
+# malloc'd concat of four strings (params are `char*` — Stage-A `+` needs a
+# literal/call operand, so joins of variables use this instead).
+function flowc_mp_join4(a: string, b: string, c: string, d: string) -> string {
+    let pa: ptr<u8> = a
+    let pb: ptr<u8> = b
+    let pc: ptr<u8> = c
+    let pd: ptr<u8> = d
+    let na: i32 = strlen(a) as i32
+    let nb: i32 = strlen(b) as i32
+    let nc: i32 = strlen(c) as i32
+    let nd: i32 = strlen(d) as i32
+    let buf: ptr<u8> = malloc((na + nb + nc + nd + 1) as i64)
+    let mut w: i32 = 0
+    w = flowc_mp_puts(buf, w, a)
+    w = flowc_mp_puts(buf, w, b)
+    w = flowc_mp_puts(buf, w, c)
+    w = flowc_mp_puts(buf, w, d)
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Whole-word replace: every `\btoken\b` becomes phrase (Python `_replace_word`).
+function flowc_mp_replace_word(s: string, token: string, phrase: string) -> string {
+    let ps: ptr<u8> = s
+    let pp: ptr<u8> = phrase
+    let n: i32 = strlen(s) as i32
+    let tn: i32 = strlen(token) as i32
+    let pn: i32 = strlen(phrase) as i32
+    let cap: i32 = n + (n / 2) * (pn + 2) + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mp_word_at(s, i, token) == 1 {
+            let mut j: i32 = 0
+            while j < pn {
+                buf[w + j] = pp[j]
+                j = j + 1
+            }
+            w = w + pn
+            i = i + tn
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Plain substring replace of every non-overlapping occurrence (Python
+# `str.replace` / `re.sub(r">=", ...)` style, no boundaries).
+# Cap: worst case a 1-byte needle matches everywhere → n*rn + n.
+function flowc_mp_replace_sub(s: string, needle: string, repl: string) -> string {
+    let ps: ptr<u8> = s
+    let pn: ptr<u8> = needle
+    let pr: ptr<u8> = repl
+    let n: i32 = strlen(s) as i32
+    let nn: i32 = strlen(needle) as i32
+    let rn: i32 = strlen(repl) as i32
+    let cap: i32 = n * (rn + 1) + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if i + nn <= n {
+            let mut is_match: i32 = 1
+            let mut k: i32 = 0
+            while k < nn {
+                if ps[i + k] != pn[k] {
+                    is_match = 0
+                }
+                k = k + 1
+            }
+            if is_match == 1 {
+                let mut j: i32 = 0
+                while j < rn {
+                    buf[w + j] = pr[j]
+                    j = j + 1
+                }
+                w = w + rn
+                i = i + nn
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\s*<op>\s*` → repl (Python `re.sub(r"\s*\+\s*", " plus ", s)`): the op
+# char with any surrounding whitespace collapses to the replacement.
+# Cap: worst case every char is the op, each replaced by rn bytes → n*rn + n.
+function flowc_mp_replace_op_ws(s: string, op: i32, repl: string) -> string {
+    let ps: ptr<u8> = s
+    let pr: ptr<u8> = repl
+    let n: i32 = strlen(s) as i32
+    let rn: i32 = strlen(repl) as i32
+    let cap: i32 = n * (rn + 1) + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if ps[i] == op {
+            # drop whitespace already copied before the op
+            let mut b: i32 = i - 1
+            let mut dropped: i32 = 0
+            while b >= 0 and flowc_claim_is_ws(ps[b]) == 1 {
+                dropped = dropped + 1
+                b = b - 1
+            }
+            w = w - dropped
+            # skip trailing whitespace
+            let mut r: i32 = i + 1
+            while r < n and flowc_claim_is_ws(ps[r]) == 1 {
+                r = r + 1
+            }
+            let mut k: i32 = 0
+            while k < rn {
+                buf[w + k] = pr[k]
+                k = k + 1
+            }
+            w = w + rn
+            i = r
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Python `re.sub(r"([^=<>]+)\s*=\s*([^=<>]+)", r"\1 equals \2", s)` — one
+# left-to-right pass over single `=` with a non-=<> run on each side. The
+# trailing whitespace of the right run is consumed like the greedy group,
+# which is what makes `a = b = c` → `a equals b = c`. `last_end` clamps the
+# left run past the previous match, so a `=` right after a consumed right
+# group is never re-matched (Python `re.sub` continues after the match end):
+# `a=b=c` → `a equals b=c`, not `a equals b equals c`.
+# Cap: dense `a=a=a=...` chains grow ~4.5x; 5n covers the worst case.
+function flowc_mp_replace_single_eq(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 5 + 256
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    let mut last_end: i32 = 0
+    while i < n {
+        if ps[i] == 61 and i > 0 {
+            # left run [j..i) over [^=<>] (spaces and letters), but not past
+            # the previous match's end (non-overlapping like re.sub)
+            let mut j: i32 = i - 1
+            let mut left_ok: i32 = 0
+            while j >= last_end and ps[j] != 61 and ps[j] != 60 and ps[j] != 62 {
+                if flowc_claim_is_ws(ps[j]) == 0 {
+                    left_ok = 1
+                }
+                j = j - 1
+            }
+            j = j + 1
+            # right run: skip ws, then [^=<>] greedily
+            let mut r: i32 = i + 1
+            while r < n and flowc_claim_is_ws(ps[r]) == 1 {
+                r = r + 1
+            }
+            let mut r2: i32 = r
+            while r2 < n and ps[r2] != 61 and ps[r2] != 60 and ps[r2] != 62 {
+                r2 = r2 + 1
+            }
+            if left_ok == 1 and r2 > r {
+                # drop leading whitespace of the left run from the output
+                let mut j2: i32 = j
+                while j2 < i and flowc_claim_is_ws(ps[j2]) == 1 {
+                    j2 = j2 + 1
+                }
+                w = w - (j2 - j)
+                let mut k: i32 = 0
+                while k < 8 {
+                    if k == 0 { buf[w] = 32 }
+                    if k == 1 { buf[w + 1] = 101 }
+                    if k == 2 { buf[w + 2] = 113 }
+                    if k == 3 { buf[w + 3] = 117 }
+                    if k == 4 { buf[w + 4] = 97 }
+                    if k == 5 { buf[w + 5] = 108 }
+                    if k == 6 { buf[w + 6] = 115 }
+                    if k == 7 { buf[w + 7] = 32 }
+                    k = k + 1
+                }
+                w = w + 8
+                let mut m: i32 = r
+                while m < r2 {
+                    buf[w] = ps[m]
+                    w = w + 1
+                    m = m + 1
+                }
+                last_end = r2
+                i = r2
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\s+by\s+\w+.*$` strip: truncate at the first ` by <word>` (Python step).
+function flowc_mp_by_clause(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut cut: i32 = -1
+    let mut i: i32 = 0
+    while i + 4 < n {
+        if flowc_claim_is_ws(ps[i]) == 1 and ps[i + 1] == 98 and ps[i + 2] == 121 and flowc_claim_is_ws(ps[i + 3]) == 1 and flowc_mc_is_word(ps[i + 4]) == 1 {
+            cut = i
+            i = n
+        } else {
+            i = i + 1
+        }
+    }
+    if cut == -1 {
+        return s
+    }
+    let buf: ptr<u8> = malloc((cut + 1) as i64)
+    let mut k: i32 = 0
+    while k < cut {
+        buf[k] = ps[k]
+        k = k + 1
+    }
+    buf[cut] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Collapse whitespace runs to one space and strip ends (Python `re.sub(r"\s+", " ", s).strip()`).
+function flowc_mp_collapse(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    let mut pending: i32 = 0
+    while i < n {
+        if flowc_claim_is_ws(ps[i]) == 1 {
+            pending = 1
+            i = i + 1
+        } else {
+            if pending == 1 and w > 0 {
+                buf[w] = 32
+                w = w + 1
+            }
+            pending = 0
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `__DISJ{k}__` shield marker (all word chars so the and-pass can match it).
+function flowc_mp_marker(k: i32) -> string {
+    let buf: ptr<u8> = malloc(16 as i64)
+    buf[0] = 95
+    buf[1] = 95
+    buf[2] = 68
+    buf[3] = 73
+    buf[4] = 83
+    buf[5] = 74
+    let mut w: i32 = 6
+    if k >= 10 {
+        buf[w] = 48 + (k / 10)
+        w = w + 1
+    }
+    buf[w] = 48 + (k % 10)
+    w = w + 1
+    buf[w] = 95
+    buf[w + 1] = 95
+    buf[w + 2] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Index of the leftmost `\w+ <op> \w+` (word boundaries both sides) or -1.
+function flowc_mp_find_word_pair(s: string, op: string) -> i32 {
+    let ps: ptr<u8> = s
+    let po: ptr<u8> = op
+    let n: i32 = strlen(s) as i32
+    let on: i32 = strlen(op) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 {
+            let mut e1: i32 = i + 1
+            while e1 < n and flowc_mc_is_word(ps[e1]) == 1 {
+                e1 = e1 + 1
+            }
+            let mut q: i32 = e1
+            while q < n and flowc_claim_is_ws(ps[q]) == 1 {
+                q = q + 1
+            }
+            if q + on <= n {
+                let mut ok: i32 = 1
+                let mut k: i32 = 0
+                while k < on {
+                    if ps[q + k] != po[k] {
+                        ok = 0
+                    }
+                    k = k + 1
+                }
+                if ok == 1 {
+                    let mut r: i32 = q + on
+                    while r < n and flowc_claim_is_ws(ps[r]) == 1 {
+                        r = r + 1
+                    }
+                    # `\s+` after the op is required (Python `\w+\s+op\s+\w+`)
+                    if r > q + on and r < n and flowc_mc_is_word(ps[r]) == 1 {
+                        return i
+                    }
+                }
+            }
+            i = e1
+        } else {
+            i = i + 1
+        }
+    }
+    return -1
+}
+
+# Replace s[from..tto) with repl (used to drop a shielded word pair).
+function flowc_mp_replace_span(s: string, from: i32, tto: i32, repl: string) -> string {
+    let ps: ptr<u8> = s
+    let pr: ptr<u8> = repl
+    let n: i32 = strlen(s) as i32
+    let rn: i32 = strlen(repl) as i32
+    let cap: i32 = n + rn + 8
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut k: i32 = 0
+    while k < from {
+        buf[w] = ps[k]
+        w = w + 1
+        k = k + 1
+    }
+    k = 0
+    while k < rn {
+        buf[w] = pr[k]
+        w = w + 1
+        k = k + 1
+    }
+    k = tto
+    while k < n {
+        buf[w] = ps[k]
+        w = w + 1
+        k = k + 1
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\w+ and \w+` → `the conjunction of \1 and \2`, single left-to-right pass.
+function flowc_mp_replace_and(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 4 + 256
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 {
+            let mut e1: i32 = i + 1
+            while e1 < n and flowc_mc_is_word(ps[e1]) == 1 {
+                e1 = e1 + 1
+            }
+            let mut q: i32 = e1
+            while q < n and flowc_claim_is_ws(ps[q]) == 1 {
+                q = q + 1
+            }
+            if q + 3 <= n and ps[q] == 97 and ps[q + 1] == 110 and ps[q + 2] == 100 {
+                let mut r: i32 = q + 3
+                while r < n and flowc_claim_is_ws(ps[r]) == 1 {
+                    r = r + 1
+                }
+                # `\s+` after `and` is required (Python `\w+\s+and\s+\w+`)
+                if r > q + 3 and r < n and flowc_mc_is_word(ps[r]) == 1 {
+                    let mut e2: i32 = r
+                    while e2 < n and flowc_mc_is_word(ps[e2]) == 1 {
+                        e2 = e2 + 1
+                    }
+                    # emit: the conjunction of <w1> and <w2>
+                    w = flowc_mp_puts(buf, w, "the conjunction of ")
+                    let mut k: i32 = i
+                    while k < e1 {
+                        buf[w] = ps[k]
+                        w = w + 1
+                        k = k + 1
+                    }
+                    w = flowc_mp_puts(buf, w, " and ")
+                    k = r
+                    while k < e2 {
+                        buf[w] = ps[k]
+                        w = w + 1
+                        k = k + 1
+                    }
+                    i = e2
+                } else {
+                    buf[w] = ps[i]
+                    w = w + 1
+                    i = i + 1
+                }
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\bsucc\(([^)]+)\)` → `the successor of \1` (latex=0) or `\mathrm{succ}(\1)`.
+# Cap: dense `succ(x)succ(x)...` grows ~2.8x; 4n covers it.
+function flowc_mp_succ(s: string, latex: i32) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 4 + 256
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mp_word_at(s, i, "succ") == 1 and i + 4 < n and ps[i + 4] == 40 {
+            let mut j: i32 = i + 5
+            while j < n and ps[j] != 41 {
+                j = j + 1
+            }
+            if j < n {
+                if latex == 0 {
+                    w = flowc_mp_puts(buf, w, "the successor of ")
+                } else {
+                    w = flowc_mp_puts(buf, w, "\\mathrm{succ}(")
+                }
+                let mut k: i32 = i + 5
+                while k < j {
+                    buf[w] = ps[k]
+                    w = w + 1
+                    k = k + 1
+                }
+                if latex == 1 {
+                    buf[w] = 41
+                    w = w + 1
+                }
+                i = j + 1
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `angle_at_(\w+)` / `angle_(\w+)` word-boundary rewrites (English or TeX).
+function flowc_mp_replace_angle(s: string, latex: i32) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 2 + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mp_prefix_at(s, i, "angle_at_") == 1 and i + 9 < n and flowc_mc_is_word(ps[i + 9]) == 1 {
+            if latex == 0 {
+                w = flowc_mp_puts(buf, w, "angle at ")
+            } else {
+                w = flowc_mp_puts(buf, w, "\\angle ")
+            }
+            let mut j: i32 = i + 9
+            while j < n and flowc_mc_is_word(ps[j]) == 1 {
+                j = j + 1
+            }
+            let mut k: i32 = i + 9
+            while k < j {
+                buf[w] = ps[k]
+                w = w + 1
+                k = k + 1
+            }
+            i = j
+        } else {
+            if flowc_mp_prefix_at(s, i, "angle_") == 1 and i + 6 < n and flowc_mc_is_word(ps[i + 6]) == 1 {
+                if latex == 0 {
+                    w = flowc_mp_puts(buf, w, "angle ")
+                } else {
+                    w = flowc_mp_puts(buf, w, "\\angle ")
+                }
+                let mut j2: i32 = i + 6
+                while j2 < n and flowc_mc_is_word(ps[j2]) == 1 {
+                    j2 = j2 + 1
+                }
+                let mut k2: i32 = i + 6
+                while k2 < j2 {
+                    buf[w] = ps[k2]
+                    w = w + 1
+                    k2 = k2 + 1
+                }
+                i = j2
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\b(\w+)\s*\*\s*\1\b` → `W^{2}`: same word around `*` (single pass).
+function flowc_mp_replace_same_mul(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 2 + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 {
+            let mut e1: i32 = i + 1
+            while e1 < n and flowc_mc_is_word(ps[e1]) == 1 {
+                e1 = e1 + 1
+            }
+            let mut q: i32 = e1
+            while q < n and flowc_claim_is_ws(ps[q]) == 1 {
+                q = q + 1
+            }
+            if q < n and ps[q] == 42 {
+                let mut r: i32 = q + 1
+                while r < n and flowc_claim_is_ws(ps[r]) == 1 {
+                    r = r + 1
+                }
+                if r < n and flowc_mc_is_word(ps[r]) == 1 {
+                    let mut e2: i32 = r
+                    while e2 < n and flowc_mc_is_word(ps[e2]) == 1 {
+                        e2 = e2 + 1
+                    }
+                    # same word on both sides?
+                    let mut same: i32 = 1
+                    if e1 - i != e2 - r {
+                        same = 0
+                    }
+                    let mut k: i32 = 0
+                    while same == 1 and k < e1 - i {
+                        if ps[i + k] != ps[r + k] {
+                            same = 0
+                        }
+                        k = k + 1
+                    }
+                    if same == 1 {
+                        k = i
+                        while k < e1 {
+                            buf[w] = ps[k]
+                            w = w + 1
+                            k = k + 1
+                        }
+                        w = flowc_mp_puts(buf, w, "^{2}")
+                        i = e2
+                    } else {
+                        buf[w] = ps[i]
+                        w = w + 1
+                        i = i + 1
+                    }
+                } else {
+                    buf[w] = ps[i]
+                    w = w + 1
+                    i = i + 1
+                }
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\b(\w+)\s*\*\s*(\w+)\b` → `W1 \cdot W2` (runs after the same-word pass).
+# Cap: dense `a*b*c*...` grows ~2.4x; 4n covers it.
+function flowc_mp_replace_mul(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 4 + 256
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 {
+            let mut e1: i32 = i + 1
+            while e1 < n and flowc_mc_is_word(ps[e1]) == 1 {
+                e1 = e1 + 1
+            }
+            let mut q: i32 = e1
+            while q < n and flowc_claim_is_ws(ps[q]) == 1 {
+                q = q + 1
+            }
+            if q < n and ps[q] == 42 {
+                let mut r: i32 = q + 1
+                while r < n and flowc_claim_is_ws(ps[r]) == 1 {
+                    r = r + 1
+                }
+                if r < n and flowc_mc_is_word(ps[r]) == 1 {
+                    let mut e2: i32 = r
+                    while e2 < n and flowc_mc_is_word(ps[e2]) == 1 {
+                        e2 = e2 + 1
+                    }
+                    let mut k: i32 = 0
+                    while k < e1 - i {
+                        buf[w] = ps[i + k]
+                        w = w + 1
+                        k = k + 1
+                    }
+                    w = flowc_mp_puts(buf, w, " \\cdot ")
+                    k = r
+                    while k < e2 {
+                        buf[w] = ps[k]
+                        w = w + 1
+                        k = k + 1
+                    }
+                    i = e2
+                } else {
+                    buf[w] = ps[i]
+                    w = w + 1
+                    i = i + 1
+                }
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Geometry-token tables + angle/`*` rewrites (Python `_normalize_geometry_tokens`).
+function flowc_mp_normalize_geometry(s: string, latex: i32) -> string {
+    let mut t: string = s
+    if latex == 0 {
+        t = flowc_mp_replace_word(t, "two_right_angles", "two right angles")
+        t = flowc_mp_replace_word(t, "one_right_angle", "one right angle")
+        t = flowc_mp_replace_word(t, "half_of_angle_AOB", "half of angle AOB")
+        t = flowc_mp_replace_word(t, "radius_OA", "radius OA")
+        t = flowc_mp_replace_word(t, "radius_OB", "radius OB")
+        t = flowc_mp_replace_word(t, "angle_alpha_prime", "angle α′")
+        t = flowc_mp_replace_word(t, "angle_alpha", "angle α")
+        t = flowc_mp_replace_word(t, "angle_beta_prime", "angle β′")
+        t = flowc_mp_replace_word(t, "angle_beta", "angle β")
+        t = flowc_mp_replace_word(t, "angle_gamma", "angle γ")
+        return flowc_mp_replace_angle(t, 0)
+    }
+    t = flowc_mp_replace_word(t, "triangle_ABC", "\\triangle ABC")
+    t = flowc_mp_replace_word(t, "triangle_DEF", "\\triangle DEF")
+    t = flowc_mp_replace_word(t, "two_right_angles", "180^\\circ")
+    t = flowc_mp_replace_word(t, "one_right_angle", "90^\\circ")
+    t = flowc_mp_replace_word(t, "half_of_angle_AOB", "\\tfrac{1}{2}\\angle AOB")
+    t = flowc_mp_replace_word(t, "radius_OA", "OA")
+    t = flowc_mp_replace_word(t, "radius_OB", "OB")
+    t = flowc_mp_replace_word(t, "angle_alpha_prime", "\\alpha'")
+    t = flowc_mp_replace_word(t, "angle_alpha", "\\alpha")
+    t = flowc_mp_replace_word(t, "angle_beta_prime", "\\beta'")
+    t = flowc_mp_replace_word(t, "angle_beta", "\\beta")
+    t = flowc_mp_replace_word(t, "angle_gamma", "\\gamma")
+    t = flowc_mp_replace_angle(t, 1)
+    t = flowc_mp_replace_same_mul(t)
+    return flowc_mp_replace_mul(t)
+}
+
+# Python `is_geometry_expr`: `\b(angle_|two_right_angles|one_right_angle|half_of_|radius_|triangle_)`.
+function flowc_mp_is_geometry_expr(s: string) -> i32 {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 and (i == 0 or flowc_mc_is_word(ps[i - 1]) == 0) {
+            if flowc_mp_prefix_at(s, i, "angle_") == 1 {
+                return 1
+            }
+            if flowc_mp_prefix_at(s, i, "half_of_") == 1 {
+                return 1
+            }
+            if flowc_mp_prefix_at(s, i, "radius_") == 1 {
+                return 1
+            }
+            if flowc_mp_prefix_at(s, i, "triangle_") == 1 {
+                return 1
+            }
+            if flowc_mp_prefix_at(s, i, "two_right_angles") == 1 {
+                return 1
+            }
+            if flowc_mp_prefix_at(s, i, "one_right_angle") == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Python `_analysis_expr_to_latex` detector: `\b(taylor_sin|near_zero|sin\(|sin_prime_at_zero|sin_double_prime_at_zero)\b`.
+function flowc_mp_detect_analysis(s: string) -> i32 {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 and (i == 0 or flowc_mc_is_word(ps[i - 1]) == 0) {
+            if flowc_mp_word_at(s, i, "taylor_sin") == 1 {
+                return 1
+            }
+            if flowc_mp_word_at(s, i, "near_zero") == 1 {
+                return 1
+            }
+            if flowc_mp_word_at(s, i, "sin_prime_at_zero") == 1 {
+                return 1
+            }
+            if flowc_mp_word_at(s, i, "sin_double_prime_at_zero") == 1 {
+                return 1
+            }
+            if flowc_mp_word_at(s, i, "sin") == 1 and i + 3 < n and ps[i + 3] == 40 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# `\btaylor_sin\(([^,]+),\s*order_(\d+)\)` → `S_{order}(arg)`.
+function flowc_mp_taylor(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 2 + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mp_word_at(s, i, "taylor_sin") == 1 and i + 10 < n and ps[i + 10] == 40 {
+            let mut comma: i32 = i + 11
+            while comma < n and ps[comma] != 44 {
+                comma = comma + 1
+            }
+            if comma < n {
+                let mut o: i32 = comma + 1
+                while o < n and flowc_claim_is_ws(ps[o]) == 1 {
+                    o = o + 1
+                }
+                if o + 6 <= n and ps[o] == 111 and ps[o + 1] == 114 and ps[o + 2] == 100 and ps[o + 3] == 101 and ps[o + 4] == 114 and ps[o + 5] == 95 {
+                    let mut d0: i32 = o + 6
+                    let mut d1: i32 = d0
+                    while d1 < n and ps[d1] >= 48 and ps[d1] <= 57 {
+                        d1 = d1 + 1
+                    }
+                    if d1 < n and ps[d1] == 41 and d1 > d0 {
+                        w = flowc_mp_puts(buf, w, "S_{")
+                        let mut k: i32 = d0
+                        while k < d1 {
+                            buf[w] = ps[k]
+                            w = w + 1
+                            k = k + 1
+                        }
+                        w = flowc_mp_puts(buf, w, "}(")
+                        k = i + 11
+                        while k < comma {
+                            buf[w] = ps[k]
+                            w = w + 1
+                            k = k + 1
+                        }
+                        buf[w] = 41
+                        w = w + 1
+                        i = d1 + 1
+                    } else {
+                        buf[w] = ps[i]
+                        w = w + 1
+                        i = i + 1
+                    }
+                } else {
+                    buf[w] = ps[i]
+                    w = w + 1
+                    i = i + 1
+                }
+            } else {
+                buf[w] = ps[i]
+                w = w + 1
+                i = i + 1
+            }
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# `\bsin\(` → `\sin(` (word-boundary, after taylor_sin was consumed).
+function flowc_mp_sin_open(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let cap: i32 = n * 2 + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mp_word_at(s, i, "sin") == 1 and i + 3 < n and ps[i + 3] == 40 {
+            w = flowc_mp_puts(buf, w, "\\sin(")
+            i = i + 4
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+# Replace `_` with spaces (English ident fallback / `\text{...}` body).
+function flowc_mp_underscore_to_spaces(s: string) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if ps[i] == 95 {
+            buf[w] = 32
+        } else {
+            buf[w] = ps[i]
+        }
+        w = w + 1
+        i = i + 1
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+function flowc_mp_ident_to_english(ident: string) -> string {
+    if strcmp(ident, "sin_prime_at_zero") == 0 {
+        return "the first derivative of sine at zero"
+    }
+    if strcmp(ident, "sin_double_prime_at_zero") == 0 {
+        return "the second derivative of sine at zero"
+    }
+    if strcmp(ident, "near_zero") == 0 {
+        return "in a neighbourhood of zero"
+    }
+    if strcmp(ident, "two_right_angles") == 0 {
+        return "two right angles"
+    }
+    if strcmp(ident, "one_right_angle") == 0 {
+        return "one right angle"
+    }
+    if strcmp(ident, "half_of_angle_AOB") == 0 {
+        return "half of angle AOB"
+    }
+    if strcmp(ident, "radius_OA") == 0 {
+        return "radius OA"
+    }
+    if strcmp(ident, "radius_OB") == 0 {
+        return "radius OB"
+    }
+    if strcmp(ident, "angle_alpha_prime") == 0 {
+        return "angle α′"
+    }
+    if strcmp(ident, "angle_alpha") == 0 {
+        return "angle α"
+    }
+    if strcmp(ident, "angle_beta_prime") == 0 {
+        return "angle β′"
+    }
+    if strcmp(ident, "angle_beta") == 0 {
+        return "angle β"
+    }
+    if strcmp(ident, "angle_gamma") == 0 {
+        return "angle γ"
+    }
+    return flowc_mp_underscore_to_spaces(ident)
+}
+
+function flowc_mp_ident_to_latex(ident: string) -> string {
+    if strcmp(ident, "sin_prime_at_zero") == 0 {
+        return "\\sin'(0)"
+    }
+    if strcmp(ident, "sin_double_prime_at_zero") == 0 {
+        return "\\sin''(0)"
+    }
+    if strcmp(ident, "near_zero") == 0 {
+        return "x \\to 0"
+    }
+    if strcmp(ident, "triangle_ABC") == 0 {
+        return "\\triangle ABC"
+    }
+    if strcmp(ident, "triangle_DEF") == 0 {
+        return "\\triangle DEF"
+    }
+    if strcmp(ident, "two_right_angles") == 0 {
+        return "180^\\circ"
+    }
+    if strcmp(ident, "one_right_angle") == 0 {
+        return "90^\\circ"
+    }
+    if strcmp(ident, "half_of_angle_AOB") == 0 {
+        return "\\tfrac{1}{2}\\angle AOB"
+    }
+    if strcmp(ident, "radius_OA") == 0 {
+        return "OA"
+    }
+    if strcmp(ident, "radius_OB") == 0 {
+        return "OB"
+    }
+    if strcmp(ident, "angle_alpha_prime") == 0 {
+        return "\\alpha'"
+    }
+    if strcmp(ident, "angle_alpha") == 0 {
+        return "\\alpha"
+    }
+    if strcmp(ident, "angle_beta_prime") == 0 {
+        return "\\beta'"
+    }
+    if strcmp(ident, "angle_beta") == 0 {
+        return "\\beta"
+    }
+    if strcmp(ident, "angle_gamma") == 0 {
+        return "\\gamma"
+    }
+    return "\\text{" + flowc_mp_underscore_to_spaces(ident) + "}"
+}
+
+# Replace every snake-case identifier (`[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+`,
+# not preceded by a backslash) with its English/TeX form — the converter table
+# plus the `\text{...}` / space fallbacks. Word boundaries make the replace
+# order irrelevant (a shorter ident never matches inside a longer one).
+function flowc_mp_replace_ident_guarded(s: string, token: string, phrase: string) -> string {
+    let ps: ptr<u8> = s
+    let pp: ptr<u8> = phrase
+    let n: i32 = strlen(s) as i32
+    let tn: i32 = strlen(token) as i32
+    let pn: i32 = strlen(phrase) as i32
+    let cap: i32 = n + (n / 2) * (pn + 2) + 64
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mp_word_at(s, i, token) == 1 and (i == 0 or ps[i - 1] != 92) {
+            let mut j: i32 = 0
+            while j < pn {
+                buf[w + j] = pp[j]
+                j = j + 1
+            }
+            w = w + pn
+            i = i + tn
+        } else {
+            buf[w] = ps[i]
+            w = w + 1
+            i = i + 1
+        }
+    }
+    buf[w] = 0
+    let out: string = buf as string
+    return out
+}
+
+function flowc_mp_replace_idents(s: string, latex: i32) -> string {
+    let ps: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut idents: array<string, 16> = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    let mut n_id: i32 = 0
+    # collect
+    let mut i: i32 = 0
+    while i < n {
+        if flowc_mc_is_word(ps[i]) == 1 and (i == 0 or flowc_mc_is_word(ps[i - 1]) == 0) {
+            # start must be a letter, not preceded by backslash
+            if i > 0 and ps[i - 1] == 92 {
+                i = i + 1
+            } else {
+                let mut is_letter: i32 = 0
+                if ps[i] >= 65 and ps[i] <= 90 {
+                    is_letter = 1
+                }
+                if ps[i] >= 97 and ps[i] <= 122 {
+                    is_letter = 1
+                }
+                if is_letter == 1 {
+                    let mut e: i32 = i + 1
+                    while e < n and flowc_mc_is_word(ps[e]) == 1 and ps[e] != 95 {
+                        e = e + 1
+                    }
+                    # at least one `_[A-Za-z0-9]+` group
+                    let mut have_under: i32 = 0
+                    while e + 1 < n and ps[e] == 95 and (ps[e + 1] >= 48 and ps[e + 1] <= 57 or ps[e + 1] >= 65 and ps[e + 1] <= 90 or ps[e + 1] >= 97 and ps[e + 1] <= 122) {
+                        have_under = 1
+                        e = e + 2
+                        while e < n and (ps[e] >= 48 and ps[e] <= 57 or ps[e] >= 65 and ps[e] <= 90 or ps[e] >= 97 and ps[e] <= 122) {
+                            e = e + 1
+                        }
+                    }
+                    if have_under == 1 {
+                        let ident: string = flowc_claim_substr(s, i, e)
+                        # dedupe
+                        let mut dup: i32 = 0
+                        let mut d: i32 = 0
+                        while d < n_id {
+                            if strcmp(idents[d], ident) == 0 {
+                                dup = 1
+                            }
+                            d = d + 1
+                        }
+                        if dup == 0 and n_id < 16 {
+                            idents[n_id] = ident
+                            n_id = n_id + 1
+                        }
+                    }
+                    i = e
+                } else {
+                    i = i + 1
+                }
+            }
+        } else {
+            i = i + 1
+        }
+    }
+    # replace
+    let mut t: string = s
+    let mut k: i32 = 0
+    while k < n_id {
+        let mut phrase: string = ""
+        if latex == 0 {
+            phrase = flowc_mp_ident_to_english(idents[k])
+        } else {
+            phrase = flowc_mp_ident_to_latex(idents[k])
+        }
+        t = flowc_mp_replace_ident_guarded(t, idents[k], phrase)
+        k = k + 1
+    }
+    return t
+}
+
+# Whole-word replace that also refuses matches preceded by a backslash
+# (Python `(?<!\\)\b...\b` — already-TeX'd tokens must stay untouched).
+
+
+function flowc_mp_geometry_expr_to_latex(s: string) -> string {
+    let t: string = flowc_mp_by_clause(s)
+    let t2: string = flowc_mp_replace_sub(t, "==", "=")
+    let t3: string = flowc_mp_normalize_geometry(t2, 1)
+    return flowc_mp_replace_idents(t3, 1)
+}
+
+# Returns "" when expr is not an analysis claim (Python returns None).
+function flowc_mp_analysis_expr_to_latex(s: string) -> string {
+    if flowc_mp_detect_analysis(s) == 0 {
+        return ""
+    }
+    let t: string = flowc_mp_by_clause(s)
+    let t2: string = flowc_mp_replace_sub(t, "==", "=")
+    let t3: string = flowc_mp_taylor(t2)
+    let t4: string = flowc_mp_sin_open(t3)
+    let t5: string = flowc_mp_replace_word(t4, "near_zero", "\\quad (x \\to 0)")
+    return flowc_mp_replace_idents(t5, 1)
+}
+
+# Every expression reads as a mathematician would say it (port of
+# flow_expr_to_mathematical_english).
+export function flowc_flow_expr_to_mathematical_english(expr: string) -> string {
+    let mut t: string = flowc_claim_strip(expr)
+    t = flowc_mp_by_clause(t)
+    t = flowc_mp_replace_idents(t, 0)
+    t = flowc_mp_normalize_geometry(t, 0)
+    t = flowc_mc_replace_eqeq(t)
+    # Shield `\w+ or \w+` into word-char markers before expanding `and`, so a
+    # disjunction is never folded into a conjunction. Restore in REVERSE order:
+    # a later shield may have consumed an earlier marker as an operand (Python
+    # restores forward, which leaks the marker for 2+ `or`s — fixed here).
+    # 16 or-pair cap: Stage-A string arrays are fixed-size; a claim with 17+
+    # `or`s keeps its tail unshielded (diverges from the Python reference,
+    # which has no cap). Verification claims stay far below this.
+    let mut pair_a: array<string, 16> = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    let mut pair_b: array<string, 16> = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    let mut n_or: i32 = 0
+    let mut more: i32 = 1
+    while more == 1 {
+        let idx: i32 = flowc_mp_find_word_pair(t, "or")
+        if idx == -1 {
+            more = 0
+        } else {
+            let tp: ptr<u8> = t
+            let tn2: i32 = strlen(t) as i32
+            let mut e1: i32 = idx + 1
+            while e1 < tn2 and flowc_mc_is_word(tp[e1]) == 1 {
+                e1 = e1 + 1
+            }
+            pair_a[n_or] = flowc_claim_substr(t, idx, e1)
+            let mut q2: i32 = e1
+            while q2 < tn2 and flowc_claim_is_ws(tp[q2]) == 1 {
+                q2 = q2 + 1
+            }
+            q2 = q2 + 2
+            while q2 < tn2 and flowc_claim_is_ws(tp[q2]) == 1 {
+                q2 = q2 + 1
+            }
+            let mut e2: i32 = q2
+            while e2 < tn2 and flowc_mc_is_word(tp[e2]) == 1 {
+                e2 = e2 + 1
+            }
+            pair_b[n_or] = flowc_claim_substr(t, q2, e2)
+            t = flowc_mp_replace_span(t, idx, e2, flowc_mp_marker(n_or))
+            n_or = n_or + 1
+            if n_or >= 16 {
+                more = 0
+            }
+        }
+    }
+    t = flowc_mp_replace_and(t)
+    let mut k: i32 = n_or - 1
+    while k >= 0 {
+        let phrase: string = flowc_mp_join4("the disjunction of ", pair_a[k], " and ", pair_b[k])
+        t = flowc_mp_replace_sub(t, flowc_mp_marker(k), phrase)
+        k = k - 1
+    }
+    t = flowc_mp_succ(t, 0)
+    t = flowc_mp_replace_sub(t, ">=", " is at least ")
+    t = flowc_mp_replace_sub(t, "<=", " is at most ")
+    t = flowc_mp_replace_single_eq(t)
+    t = flowc_mp_replace_op_ws(t, 43, " plus ")
+    t = flowc_mp_replace_op_ws(t, 42, " times ")
+    return flowc_mp_collapse(t)
+}
+
+# Typeset a verification expression for proof PDFs (port of flow_expr_to_latex).
+export function flowc_flow_expr_to_latex(expr: string) -> string {
+    let s: string = flowc_claim_strip(expr)
+    if flowc_mp_is_geometry_expr(s) == 1 {
+        return flowc_mp_geometry_expr_to_latex(s)
+    }
+    let analysis: string = flowc_mp_analysis_expr_to_latex(s)
+    if strcmp(analysis, "") != 0 {
+        return analysis
+    }
+    let mut t: string = flowc_mp_by_clause(s)
+    t = flowc_mp_replace_sub(t, "==", "=")
+    t = flowc_mp_succ(t, 1)
+    t = flowc_mp_replace_word(t, "or", "\\lor")
+    t = flowc_mp_replace_word(t, "and", "\\land")
+    t = flowc_mp_replace_word(t, "true", "\\mathsf{true}")
+    t = flowc_mp_replace_word(t, "false", "\\mathsf{false}")
+    t = flowc_mp_replace_same_mul(t)
+    t = flowc_mp_replace_mul(t)
+    t = flowc_mp_replace_sub(t, ">=", "\\ge")
+    t = flowc_mp_replace_sub(t, "<=", "\\le")
+    return flowc_mp_replace_idents(t, 1)
 }

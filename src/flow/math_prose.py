@@ -339,7 +339,11 @@ def flow_expr_to_mathematical_english(expr: str) -> str:
 
     s = re.sub(r"\b(\w+)\s+and\s+(\w+)\b", r"the conjunction of \1 and \2", s)
 
-    for i, (a, b) in enumerate(disj_parts):
+    # Restore shields in REVERSE order: a later `\w+ or \w+` match may have
+    # consumed an earlier `__DISJ{i}__` marker as an operand (e.g. `x or y or
+    # z` shields `x or y`, then shields `__DISJ0__ or z`), so restoring
+    # forward leaves a leaked marker in the final text.
+    for i, (a, b) in reversed(list(enumerate(disj_parts))):
         s = s.replace(f"__DISJ{i}__", f"the disjunction of {a} and {b}")
     s = re.sub(r"\bsucc\(([^)]+)\)", r"the successor of \1", s)
     s = re.sub(r"\btrue\b", "true", s)

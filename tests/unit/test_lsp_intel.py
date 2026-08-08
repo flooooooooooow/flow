@@ -51,6 +51,9 @@ def test_import_symbols_indexed_and_definition():
     assert value is not None
     assert "add" in value
     assert "function" in value.lower() or "i32" in value
+    # The hover names the file that defines the imported symbol.
+    assert "defined in" in value
+    assert "lib.flow" in value
 
     loc = server._handle_definition(
         {
@@ -133,6 +136,111 @@ def test_typed_local_from_checker():
     value = _hover(server, uri, line, col)
     assert value is not None
     assert "i32" in value
+
+
+def test_hover_defining_file_follows_reexport(tmp_path):
+    """A re-exported symbol points at its real definition, not the aggregator."""
+    dep = tmp_path / "dep.flow"
+    dep.write_text(
+        "# The real implementation\n"
+        "export function compute(x: i32) -> i32 {\n"
+        "    return x * 2\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    agg = tmp_path / "agg.flow"
+    agg.write_text("export import .dep\n", encoding="utf-8")
+    main = tmp_path / "main.flow"
+    main.write_text(
+        "import .agg\n"
+        "function main() -> i32 {\n"
+        "    return compute(21)\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    uri = lsp_intel.path_to_uri(str(main))
+    server = FlowLanguageServer()
+    server.documents[uri] = main.read_text(encoding="utf-8")
+    server._analyze_document(uri)
+
+    # The import map resolves `compute` to dep.flow, not agg.flow.
+    assert "compute" in server.import_symbols[uri]
+    assert server.import_symbols[uri]["compute"]["uri"].endswith("dep.flow")
+
+    lines = main.read_text(encoding="utf-8").split("\n")
+    col = lines[2].index("compute")
+    value = _hover(server, uri, 2, col)
+    assert value is not None
+    assert "function compute" in value          # exported signature
+    assert "defined in" in value
+    assert "dep.flow" in value
+    assert "agg.flow" not in value
+
+
+def test_hover_defined_in_not_leaked_by_local_shadow(tmp_path):
+    """A local symbol shadowing an imported name gets no defined-in note."""
+    dep = tmp_path / "dep.flow"
+    dep.write_text(
+        "export function compute(x: i32) -> i32 {\n"
+        "    return x * 2\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.flow"
+    main.write_text(
+        "import .dep\n"
+        "function compute(x: i32) -> i32 {\n"
+        "    return x + 1\n"
+        "}\n"
+        "function main() -> i32 {\n"
+        "    return compute(1)\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    uri = lsp_intel.path_to_uri(str(main))
+    server = FlowLanguageServer()
+    server.documents[uri] = main.read_text(encoding="utf-8")
+    server._analyze_document(uri)
+
+    lines = main.read_text(encoding="utf-8").split("\n")
+    # Hover the local definition's call site (line 5: return compute(1)).
+    col = lines[5].index("compute")
+    value = _hover(server, uri, 5, col)
+    assert value is not None
+    assert "defined in" not in value  # local wins; no import note
+
+
+def test_symbol_info_prefers_source_stamp():
+    """symbol_info_from_decl trusts the resolver's flow_source_file stamp."""
+    from flow.parser import (
+        Block,
+        FunctionDecl,
+        Literal,
+        ReturnStatement,
+        Type,
+    )
+
+    decl = FunctionDecl(
+        name="shout",
+        parameters=[],
+        return_type=Type(name="i32"),
+        body=Block(
+            statements=[
+                ReturnStatement(
+                    value=Literal(value="0", type=Type(name="i32"))
+                )
+            ]
+        ),
+        attributes=[],
+    )
+    # Simulate the module resolver stamping the real defining file.
+    decl.flow_source_file = "/repo/packages/lib.flow"
+    info = lsp_intel.symbol_info_from_decl(
+        decl, source_uri="file:///repo/packages/agg.flow"
+    )
+    assert info is not None
+    assert info["uri"].endswith("lib.flow")
+    assert "agg.flow" not in info["uri"]
 
 
 def test_receiver_before_dot_helper():

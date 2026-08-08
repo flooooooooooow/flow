@@ -23,6 +23,14 @@ class TestMathProse:
         assert "Bool" not in s
         assert " or " not in s
 
+    def test_multi_or_shield_restores_in_reverse(self):
+        # Regression: with 2+ `or`s the second shield consumes the first
+        # marker as an operand; restoring forward leaked the marker. The
+        # reverse-order restore must rebuild the full nesting.
+        s = flow_expr_to_mathematical_english("x or y or z")
+        assert s == "the disjunction of the disjunction of x and y and z"
+        assert "DISJ" not in s
+
     def test_case_condition_holds(self):
         assert mathematical_case_condition("a == true") == "a holds"
 

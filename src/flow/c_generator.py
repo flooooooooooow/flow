@@ -642,7 +642,7 @@ class CGenerator:
         # Standard C library functions that don't need declarations (covered by includes).
         # Include FILE*/stdlib names used by flowc fileio + emit (conflicting prototypes
         # vs stdio.h/stdlib.h otherwise break `./flow run compiler/src/main.flow`).
-        stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'printf', 'sprintf',
+        stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'aligned_alloc', 'printf', 'sprintf',
                            'snprintf', 'fprintf', 'puts', 'putchar', 'getchar', 'fflush',
                            'memcpy', 'memmove', 'memset', 'memcmp',
                            'strlen', 'strcmp', 'strncmp', 'strcpy', 'strncpy',
@@ -1748,7 +1748,7 @@ class CGenerator:
         }
         if mangled_suffix in prim:
             return prim[mangled_suffix]
-        if mangled_suffix.startswith("ptr_"):
+        if mangled_suffix.startswith("ptr_") or mangled_suffix == "ptr":
             return "void*"
         return _c_ident(mangled_suffix)
 
@@ -2037,16 +2037,32 @@ class CGenerator:
         return lines
 
     def _debug_line_for(self, node: Any) -> List[str]:
-        """Emit a #line directive mapping generated C back to Flow source."""
+        """Emit a #line directive mapping generated C back to Flow source.
+
+        Declarations/statements carry a 0-based `location`; a few nodes
+        (break/continue/expect, and monomorphize rebuilds of expect that
+        preserve only the int) carry a plain 1-based `line` instead. Accept
+        both so rebuilt statements keep their statement-level mapping.
+        """
         if not self._debug_info or not self._source_file:
             return []
         loc = getattr(node, "location", None)
         if loc is None:
-            return []
-        try:
-            src_line = int(loc.line) + 1
-        except Exception:
-            return []
+            # 1-based int fallback; 0 means "unknown" (never a real line).
+            raw = getattr(node, "line", None)
+            if not raw:
+                return []
+            try:
+                src_line = int(raw)
+            except Exception:
+                return []
+            if src_line <= 0:
+                return []
+        else:
+            try:
+                src_line = int(loc.line) + 1
+            except Exception:
+                return []
         # Escape backslashes/quotes so paths survive the C preprocessor.
         path = str(self._source_file).replace("\\", "\\\\").replace('"', '\\"')
         return [f'#line {src_line} "{path}"']
@@ -3424,7 +3440,14 @@ class CGenerator:
         active_effects = self._effect_handler_stack[-1]
 
         for overload in overloads:
-            if len(overload.param_types) < len(arg_types):
+            # This helper exists only to supply trailing capability params
+            # (f(x) -> f(x, GPU, FFT)). An overload with the same arity as
+            # the explicit arguments is the plain-resolve case and must not
+            # be re-picked here: doing so overrode `resolve_call`'s C-math
+            # name for `sin`/`cos`/`log` (which don't match the mangled
+            # `sin_f32`), emitting an undeclared call. Mirrors the guard in
+            # type_checker._match_implicit_effect_overload.
+            if len(overload.param_types) <= len(arg_types):
                 continue
 
             explicit_ok = True
@@ -3666,7 +3689,12 @@ class CGenerator:
                     and stmts
                     and stmts[-1] is block_tail_expr
                 ):
-                    stmts[-1] = ReturnStatement(block_tail_expr)
+                    # Preserve the tail expression's line so the synthesized
+                    # return keeps the statement-level #line mapping.
+                    stmts[-1] = ReturnStatement(
+                        block_tail_expr,
+                        location=getattr(block_tail_expr, "location", None),
+                    )
                 for stmt in stmts:
                     for line in self._gen_statement(stmt):
                         body_lines.append(line.lstrip())

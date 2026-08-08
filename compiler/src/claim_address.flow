@@ -40,7 +40,7 @@ export function flowc_claim_make(carrier: string, structure: string, law: string
     }
 }
 
-function flowc_claim_is_ws(c: i32) -> i32 {
+export function flowc_claim_is_ws(c: i32) -> i32 {
     if c == 32 or c == 9 or c == 10 or c == 13 {
         return 1
     }
@@ -74,7 +74,7 @@ function flowc_claim_is_lower(c: i32) -> i32 {
     return 0
 }
 
-function flowc_claim_to_lower(c: i32) -> i32 {
+export function flowc_claim_to_lower(c: i32) -> i32 {
     if c >= 65 and c <= 90 {
         return c + 32
     }

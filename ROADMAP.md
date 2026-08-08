@@ -1,6 +1,6 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-05  
+> Last updated: 2026-08-08
 > Current version: 0.3.3  
 > Lines of Code: ~38,000
 
@@ -32,7 +32,7 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 in progress |
+| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | ✅ (`lib/stdlib/rf.flow`, `examples/rf/`) |
 | **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔲 |
 | **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
@@ -41,6 +41,14 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 | **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔲 |
 
 Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
+
+---
+
+## Development Philosophy
+
+Flow is built through **agentic pair programming** — human vision interpreted through AI implementation.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
 
 ### Guiding Principles
 
@@ -77,7 +85,7 @@ a proof corpus, not the showcase.
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
 - [ ] Concurrency pipeline example once channel send/recv is exposed
-- [ ] RF beachhead examples under `examples/rf/` (W0)
+- [x] RF beachhead examples under `examples/rf/` (W0)
 
 ### Tier 0 — Minimum domains
 

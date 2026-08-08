@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
-  "examples": 131,
-  "built": 118,
+  "examples": 132,
+  "built": 119,
   "failed": 13,
-  "total_bytes": 3745285,
+  "total_bytes": 3879976,
   "categories": [
     {
       "id": "games",
@@ -1692,6 +1692,19 @@
       "js_bytes": 20333,
       "total_bytes": 33130,
       "page": "text_demo/index.html"
+    },
+    {
+      "name": "tiny_pointers",
+      "title": "Tiny Pointers",
+      "category": "systems",
+      "source": "examples/systems/tiny_pointers.flow",
+      "summary": "Tiny Pointers \u2014 arXiv:2111.12800 (Bender, Conway, Farach-Colton, Kuszmaul,",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 122545,
+      "js_bytes": 12146,
+      "total_bytes": 134691,
+      "page": "tiny_pointers/index.html"
     }
   ]
 }

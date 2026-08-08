@@ -121,3 +121,19 @@ jobs:
             ]
           footer_text: Flow Docs · deploy ${{ github.run_id }}
           footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+
+      - name: Post docs deploy to Discord #projects forum
+        if: job.status == 'success'
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_PROJECTS_WEBHOOK }}
+          botname: Flow Projects
+          avatar_url: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          color: '5763719'
+          title: Docs deploy ${{ github.run_id }}
+          url: ${{ steps.deployment.outputs.page_url }}
+          description: Wiki updated for commit [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) on ${{ github.ref_name }}
+          author_name: Flow
+          author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+          thread_name: Docs deploy ${{ github.run_id }}
+          footer_text: Flow projects hub · deploy ${{ github.run_id }}

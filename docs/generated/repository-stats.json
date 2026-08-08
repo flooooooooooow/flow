@@ -6,7 +6,7 @@
     },
     "documentation": {
       "files": 132,
-      "lines": 28628
+      "lines": 28642
     },
     "examples": {
       "files": 399,
@@ -34,7 +34,7 @@
     },
     "tests": {
       "files": 342,
-      "lines": 37510
+      "lines": 37511
     },
     "verify_corpus": {
       "files": 1078,
@@ -49,8 +49,8 @@
     "stdlib": "105 modules",
     "tests": "342 tests"
   },
-  "commit": "8045a985e083",
-  "generated_at": "2026-08-08T04:34:24+01:00",
+  "commit": "96faf347d6b9",
+  "generated_at": "2026-08-08T05:11:51+01:00",
   "languages": {
     "C": {
       "files": 94,
@@ -90,7 +90,7 @@
     },
     "Python": {
       "files": 295,
-      "lines": 99213
+      "lines": 99214
     },
     "Rust": {
       "files": 10,
@@ -106,7 +106,7 @@
   "schema_version": 1,
   "totals": {
     "source_files": 2814,
-    "source_lines": 378173,
-    "tracked_files": 5880
+    "source_lines": 378174,
+    "tracked_files": 5881
   }
 }

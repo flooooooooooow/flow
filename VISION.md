@@ -1,8 +1,13 @@
 # Flow — Vision
 
 > A programming language where the primary abstraction is the evolution of systems through time.
+>
+> **Product thesis:** Flow is a language for describing **physical computational systems** —
+> RF, embedded, SDR, FPGA-adjacent, and satellite engineering first. Not “safer C,” and not a
+> Rust substitute: a compile-time model of units, rates, timing, memory topology, hardware, and
+> fault behaviour. See [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
 
-This document is the founding vision for Flow: the reason the language exists and the destination the roadmap points at. For what is implemented *today*, see [Where Flow Is Today](#where-flow-is-today) at the end, the [README](README.md), and the [ROADMAP](ROADMAP.md).
+This document is the founding vision for Flow: the reason the language exists and the destination the roadmap points at. For what is implemented *today*, see [Where Flow Is Today](#where-flow-is-today) at the end, the [README](README.md), and the [ROADMAP](ROADMAP.md). Domain beachhead architecture: [physical-systems.md](docs/vision/physical-systems.md). Grammar cards: [docs/vision/north-star.md](docs/vision/north-star.md).
 
 ---
 
@@ -16,17 +21,21 @@ Instead of describing sequences of instructions, Flow describes how systems evol
 
 The compiler transforms these descriptions into deterministic, production-ready implementations suitable for embedded systems, robotics, aerospace, industrial automation, DSP, scientific computing, digital twins, and high-performance simulation.
 
+**Evolution** is the abstraction. **Physical computational systems** are the product beachhead: an RF receiver is not merely code — the compiler should know its units, sample rates, numeric precision, memory movement, timing contracts, and target hardware, and from one description produce simulation, analysis, and heterogeneous deployment (MCU / DSP / FPGA / host).
+
 Flow unifies:
 
 - General-purpose programming
 - Dynamical systems
 - Control systems
-- Signal processing
+- Signal processing / SDR
 - Hybrid systems
 - Embedded software
 - Real-time systems
+- FPGA-adjacent / heterogeneous systems
 - Scientific computing
 - Formal verification
+- Digital twins (sim and hardware share programs)
 
 ## Problem
 
@@ -36,13 +45,16 @@ Today's engineering workflow is fragmented.
 - MATLAB designs controllers.
 - Simulink creates block diagrams.
 - Modelica models physical systems.
+- GNU Radio graphs signal processing.
+- Verilog / VHDL / SystemVerilog describe hardware.
 - C/C++ deploys embedded software.
 - Rust provides memory safety.
+- Vendor HALs, device trees, and DSLs configure the rest.
 - Verification is handled elsewhere.
 
-Every transition loses information. The mathematical model becomes disconnected from the deployed software.
+Every transition loses information. The mathematical model becomes disconnected from the deployed software. An RF/satellite engineer can cross all of those worlds in one project.
 
-Flow removes those boundaries. **The mathematical model is the executable program.**
+Flow removes those boundaries. **The mathematical model is the executable program.** The long-term objective is to unify MATLAB/Simulink + GNU Radio + C/C++/Rust + HDL + hardware configuration under one compile-time model — while keeping C-like predictability and zero-cost escape hatches.
 
 ## Philosophy
 
@@ -473,35 +485,41 @@ The Flow compiler is responsible for:
 
 ## Target Domains
 
-Robotics · Aerospace · Automotive · Industrial automation · Medical devices · Embedded systems · Signal processing · Audio · Scientific computing · Machine learning · Digital twins · Autonomous systems · Research
+**Beachhead:** RF · SDR · Embedded · FPGA-adjacent · Satellite / aerospace
+
+**Also:** Robotics · Automotive · Industrial automation · Medical devices · Signal processing · Audio · Scientific computing · Machine learning · Digital twins · Autonomous systems · Research
 
 ## Long-Term Vision
 
 Flow treats software as the description of an evolving system rather than a sequence of instructions. Simulation, verification, optimization, deployment, control synthesis, and execution all derive from a single source of truth.
 
-The long-term goal is to establish Flow as the first production-ready programming language whose primary abstraction is dynamics instead of control flow, enabling engineers to describe physical, computational, and cyber-physical systems in one unified language.
+The long-term goal is to establish Flow as the production language for **physical computational systems**: engineers describe units, rates, timing, memory topology, hardware resources, numeric precision, and fault behaviour once — and the compiler participates in the engineering, not only the translation.
+
+Dynamics (`evolves as`) remains the core abstraction; the RF/embedded/satellite vertical is how that abstraction becomes de facto in industry. Full architecture: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
 
 ---
 
 ## Where Flow Is Today
 
-An honest mapping from vision pillars to the current implementation (2026-07):
+An honest mapping from vision pillars to the current implementation (2026-08):
 
 | Vision pillar | Status today |
 |---|---|
 | General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped** — statically-typed language compiling to C via `./flow` |
-| Dynamical systems | **Seed exists** — `dsys` declarative surface syntax for linear systems (`examples/dynamics/`), stdlib dynamics module |
-| Analysis (controllability, spectral, gramians) | **Seed exists** — `sense on <plant>` blocks over `dsys` systems |
-| Control synthesis | **Seed exists** — GA-based gain search over rollout horizons (`ga evolve on`) |
-| Automatic differentiation | **Shipped** — native autodiff |
+| Dynamical systems / `evolves as` | **Shipped (seed)** — `flow` blocks, Euler step, `every`, hybrid `when`; see north-star cards |
+| Analysis (controllability, spectral, gramians) | **Seed** — `sense on <plant>` over `dsys` |
+| Control synthesis | **Seed** — GA gain search (`ga evolve on`) |
+| Automatic differentiation | **Shipped** |
 | Algebraic effects | **Shipped** — see `docs/effects-showcase.md` |
-| `evolves as` continuous dynamics, ODE solvers as codegen | Not yet — the flagship gap |
-| Units in the type system / dimensional analysis | Not yet |
-| Explicit time (`every 1 ms`, `after`, `within`), scheduling | Not yet |
-| Hybrid events (`when x reaches 0 { x becomes ... }`) | Not yet |
+| Units / dimensional analysis | **Shipped** — SI units; RF pack + quantity suffixes in W0 |
+| Explicit time (`every`, durations) | **Shipped** for flow blocks; scheduling/`task` still open |
+| Hybrid events | **Shipped** (zero-crossing form) |
+| Real-time safety | **Partial** — `@rt_safe`, lifetime domains; WCET/`guarantee` blocks still open |
+| Physical-systems beachhead (RF/IQ/rates/memory attrs) | **W0 in progress** — see physical-systems.md |
 | `always` / `never` / temporal guarantees | Not yet |
-| Flow composition (`connect { a.out -> b.in }`) | Not yet |
-| Representations (linear, Koopman, transfer function) | Not yet |
-| Realtime memory model, deployment blocks, fixed-point numerics | Not yet |
+| Flow composition (`connect`) | Not yet |
+| Representations (linear, Koopman, …) | Design (north-star) |
+| FPGA / CDC / deploy partitions | Later |
+| Fixed-point, MMIO/SVD, certification profiles | Later |
 
-The gaps are tracked as vision epics on the project board. The strategy is to grow the existing `dsys`/dynamics seed toward the `flow { evolves as }` model rather than build a second language beside the current one.
+Gaps and sequencing: [ROADMAP.md](ROADMAP.md), [physical-systems.md](docs/vision/physical-systems.md), Helm board. Strategy: grow the evolution seed and the RF wedge together — one language, not a fork.

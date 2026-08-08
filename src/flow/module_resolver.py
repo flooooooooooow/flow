@@ -160,6 +160,20 @@ class ModuleResolver:
             parser = Parser(lexer)
             declarations = parser.parse()
 
+        # Stamp every declaration with the file that defines it. LSP hover /
+        # go-to-definition read this to name the origin file even for symbols
+        # that arrive here via `export import` (re-export) from another module.
+        def _stamp_source_file(decls: List[Any]) -> None:
+            for d in decls:
+                try:
+                    d.flow_source_file = file_path
+                except Exception:
+                    pass
+                if isinstance(d, ModuleDecl):
+                    _stamp_source_file(d.declarations)
+
+        _stamp_source_file(declarations)
+
         imports = [d for d in declarations if isinstance(d, ImportDecl)]
         others = [
             d

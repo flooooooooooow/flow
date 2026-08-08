@@ -1,0 +1,172 @@
+# RF / SDR primitives — physical-systems beachhead W0
+# docs/vision/physical-systems.md
+#
+# Import: import "stdlib/rf.flow"
+#
+# Provides:
+#   - SI/RF units (Hertz family, Decibel, dBm/dBW, Degree, Meter, Second)
+#   - ComplexF32 / ComplexF64 + IQ helpers
+#   - Phantom sample-rate tags + Signal<T, R>
+#   - Stage stubs for |> DSP sketches (mix, lowpass marker, decimate, fft)
+
+# --- Base / derived units -------------------------------------------------
+
+export unit Meter
+export unit Second
+export unit Radian
+export unit Degree = Radian
+export unit Hertz = 1 / Second
+
+# Relative gain (dimensionless). Absolute power is affine — see type_checker
+# special case: dBm + Decibel -> dBm.
+export unit Decibel = 1
+export unit dBm
+export unit dBW
+
+# --- Complex / IQ ---------------------------------------------------------
+
+export struct ComplexF32 {
+    re: f32
+    im: f32
+}
+
+export struct ComplexF64 {
+    re: f64
+    im: f64
+}
+
+export struct IqI16 {
+    i: i16
+    q: i16
+}
+
+export function complex_f32(re: f32, im: f32) -> ComplexF32 {
+    return ComplexF32 { re: re, im: im }
+}
+
+export function complex_f64(re: f64, im: f64) -> ComplexF64 {
+    return ComplexF64 { re: re, im: im }
+}
+
+export function cf32_conj(z: ComplexF32) -> ComplexF32 {
+    return ComplexF32 { re: z.re, im: 0.0 - z.im }
+}
+
+export function cf32_mag2(z: ComplexF32) -> f32 {
+    return z.re * z.re + z.im * z.im
+}
+
+export function cf32_add(a: ComplexF32, b: ComplexF32) -> ComplexF32 {
+    return ComplexF32 { re: a.re + b.re, im: a.im + b.im }
+}
+
+export function cf32_mul(a: ComplexF32, b: ComplexF32) -> ComplexF32 {
+    return ComplexF32 {
+        re: a.re * b.re - a.im * b.im,
+        im: a.re * b.im + a.im * b.re
+    }
+}
+
+export function iq_i16_to_cf32(s: IqI16) -> ComplexF32 {
+    let scale: f32 = 1.0 / 32768.0
+    return ComplexF32 {
+        re: (s.i as f32) * scale,
+        im: (s.q as f32) * scale
+    }
+}
+
+# --- RF algebra helpers ---------------------------------------------------
+
+export function dbm_to_mw(p: dBm) -> f64 {
+    # 0 dBm = 1 mW; P_mW = 10^(dBm/10)
+    let db: f64 = p as f64
+    # Rough series for demos; replace with libm pow in W1.
+    let x: f64 = db * 0.230258509  # ln(10)/10
+    let e: f64 = 1.0 + x + x * x * 0.5 + x * x * x / 6.0
+    return e
+}
+
+export function wavelength_m(f: Hertz) -> Meter {
+    let hz: f64 = f as f64
+    if hz <= 0.0 {
+        return 0.0 as Meter
+    }
+    return (299792458.0 / hz) as Meter
+}
+
+export function deg_to_rad(d: Degree) -> Radian {
+    let deg: f64 = d as f64
+    return (deg * 0.017453292519943295) as Radian
+}
+
+# --- Phantom rates + Signal -----------------------------------------------
+
+export distinct type Rate20MHz = i32
+export distinct type Rate10MHz = i32
+export distinct type Rate5MHz = i32
+
+export struct Signal<T, R> {
+    len: i32
+    rate_hz: f64
+}
+
+export function signal_cf32_20m(len: i32) -> Signal<ComplexF32, Rate20MHz> {
+    return Signal<ComplexF32, Rate20MHz> { len: len, rate_hz: 20000000.0 }
+}
+
+export function signal_cf32_10m(len: i32) -> Signal<ComplexF32, Rate10MHz> {
+    return Signal<ComplexF32, Rate10MHz> { len: len, rate_hz: 10000000.0 }
+}
+
+# Mixing LO: rate unchanged (placeholder — real mix is sample-wise).
+export function mix_cf32_20m(
+    rx: Signal<ComplexF32, Rate20MHz>,
+    lo_hz: f64
+) -> Signal<ComplexF32, Rate20MHz> {
+    let _lo: f64 = lo_hz
+    return rx
+}
+
+# Marker for a lowpass whose cutoff is checked by units at the call site.
+export function lowpass_cf32_20m(
+    rx: Signal<ComplexF32, Rate20MHz>,
+    cutoff: Hertz
+) -> Signal<ComplexF32, Rate20MHz> {
+    let _c: f64 = cutoff as f64
+    return rx
+}
+
+export function decimate2_cf32_20m(
+    rx: Signal<ComplexF32, Rate20MHz>
+) -> Signal<ComplexF32, Rate10MHz> {
+    let n: i32 = rx.len / 2
+    return Signal<ComplexF32, Rate10MHz> { len: n, rate_hz: rx.rate_hz / 2.0 }
+}
+
+export function decimate2_cf32_10m(
+    rx: Signal<ComplexF32, Rate10MHz>
+) -> Signal<ComplexF32, Rate5MHz> {
+    let n: i32 = rx.len / 2
+    return Signal<ComplexF32, Rate5MHz> { len: n, rate_hz: rx.rate_hz / 2.0 }
+}
+
+# FFT changes semantic domain later (FrequencySignal); W0 keeps the rate tag
+# and records bin count in len.
+export function fft_cf32_10m(
+    rx: Signal<ComplexF32, Rate10MHz>,
+    bins: i32
+) -> Signal<ComplexF32, Rate10MHz> {
+    return Signal<ComplexF32, Rate10MHz> { len: bins, rate_hz: rx.rate_hz }
+}
+
+# Same-rate combine — mismatched rates fail at the call site.
+export function add_cf32_20m(
+    a: Signal<ComplexF32, Rate20MHz>,
+    b: Signal<ComplexF32, Rate20MHz>
+) -> Signal<ComplexF32, Rate20MHz> {
+    let mut n: i32 = a.len
+    if b.len < n {
+        n = b.len
+    }
+    return Signal<ComplexF32, Rate20MHz> { len: n, rate_hz: a.rate_hz }
+}
