@@ -21,6 +21,21 @@ DURATION_UNIT_NS = {
     "min": 60_000_000_000,
 }
 
+# Quantity suffixes in ordinary expressions (physical-systems W0).
+# `2.45GHz` → `((2.45 * 1e9) as Hertz)`. Duration suffixes stay
+# duration-position-only. Values are (unit_type_name, scale).
+QUANTITY_SUFFIX_UNITS = {
+    "Hz": ("Hertz", 1.0),
+    "kHz": ("Hertz", 1_000.0),
+    "MHz": ("Hertz", 1_000_000.0),
+    "GHz": ("Hertz", 1_000_000_000.0),
+    "dB": ("Decibel", 1.0),
+    "dBm": ("dBm", 1.0),
+    "dBW": ("dBW", 1.0),
+    "deg": ("Degree", 1.0),
+    "rad": ("Radian", 1.0),
+}
+
 
 class FlowSyntaxError(SyntaxError):
     """Enhanced syntax error with source context and suggestions."""
@@ -334,6 +349,7 @@ class VarDecl:
     type: Type
     initializer: Optional["Expression"]
     is_mutable: bool = False  # True if declared with 'let mut'
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -347,12 +363,14 @@ class IfStatement:
     then_block: Block
     elif_blocks: List[Tuple["Expression", Block]]
     else_block: Optional[Block]
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
 class WhileStatement:
     condition: "Expression"
     body: Block
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -363,11 +381,13 @@ class ForStatement:
     step: Optional["Expression"]
     body: Block
     is_parallel: bool
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
 class ReturnStatement:
     value: Optional["Expression"]
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -375,6 +395,7 @@ class Assignment:
     target: str  # Simple variable name, or None if target_expr is used
     value: "Expression"
     target_expr: Optional["Expression"] = None  # For array access like arr[i] = value
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -711,6 +732,7 @@ class HandleStatement:
     effects: List[str]
     handlers: List[str]  # Names of capabilities or functions
     body: Block
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -725,6 +747,7 @@ class MatchStatement:
     value: "Expression"
     cases: List["MatchCase"]
     default_case: Optional[Block]
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -794,6 +817,7 @@ class DeferStatement:
     """Deferred cleanup: defer expr; runs at scope exit (LIFO)."""
 
     expr: "Expression"
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -871,6 +895,7 @@ class AssumeStmt:
 
     claim_path: str
     arguments: List["Expression"] = field(default_factory=list)
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -879,6 +904,7 @@ class ThereforeStmt:
 
     expression: "Expression"
     method: Optional[str] = None
+    location: Optional[SourceLocation] = None  # For debugger #line mapping / LSP
 
 
 @dataclass
@@ -1384,7 +1410,7 @@ class Lexer:
                 if i + 1 >= len(content):
                     raise SyntaxError("Invalid escape sequence at end of string")
                 esc = content[i + 1]
-                if esc not in ['n', 't', 'r', '\\\\', '"', '0']:
+                if esc not in ['n', 't', 'r', '\\', '"', '0']:
                     raise SyntaxError(f"Invalid escape sequence: \\\\{esc}")
                 i += 2
                 continue
@@ -1644,10 +1670,13 @@ class Parser:
                     self.advance()
                     args = []
                     if self.current_token.type != TokenType.RPAREN:
-                        # Parse identifiers or string literals as args
+                        # Identifiers, numbers (@aligned(64)), or string literals
                         while True:
                             if self.current_token.type == TokenType.IDENTIFIER:
                                 args.append(self.current_token.value)
+                                self.advance()
+                            elif self.current_token.type == TokenType.NUMBER:
+                                args.append(str(self.current_token.value))
                                 self.advance()
                             elif self.current_token.type == TokenType.STRING_LITERAL:
                                 args.append(self.current_token.value.strip('"').strip("'"))
@@ -1679,6 +1708,9 @@ class Parser:
                     TokenType.THEOREM,
                     TokenType.IMPORT,
                 ):
+                    is_exported = True
+                elif self._at_unit_decl() or self._at_flow_decl():
+                    # Contextual keywords (`unit`, `flow`) lex as IDENT.
                     is_exported = True
                 else:
                     declarations.append(self.parse_export_list())
@@ -3239,8 +3271,9 @@ class Parser:
         try:
             start = self.current_token
             stmt = self._parse_statement_impl()
-            # Attach source location for debugger #line mapping / LSP (best-effort).
-            # Token lines/columns are 1-based; SourceLocation is 0-based.
+            # Attach source location for debugger #line mapping / LSP. The
+            # statement dataclasses declare a `location` field; token
+            # lines/columns are 1-based, SourceLocation is 0-based.
             if getattr(stmt, "location", None) is None and start is not None:
                 try:
                     setattr(
@@ -4446,7 +4479,31 @@ class Parser:
     def parse_primary(self) -> Expression:
         if self.current_token.type == TokenType.NUMBER:
             value = self.current_token.value
+            num_line = self.current_token.line
             self.advance()
+            # Quantity suffix (physical-systems W0): `2.45GHz` / `40 MHz`
+            # → scaled cast. Same-line only — never glue `1\nrad = ...`.
+            if (
+                self.current_token.type == TokenType.IDENTIFIER
+                and self.current_token.value in QUANTITY_SUFFIX_UNITS
+                and self.current_token.line == num_line
+            ):
+                unit_name, scale = QUANTITY_SUFFIX_UNITS[self.current_token.value]
+                self.advance()
+                text = str(value)
+                if text.lower().startswith("0x"):
+                    num = float(int(text, 16))
+                else:
+                    num = float(text)
+                scaled = num * scale
+                if scaled == int(scaled) and abs(scaled) < 1e15:
+                    lit_text = f"{int(scaled)}.0"
+                else:
+                    lit_text = repr(scaled)
+                return CastExpression(
+                    Literal(lit_text, Type("f64")),
+                    Type(unit_name),
+                )
             # Infer float vs int from token text.
             # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
             is_hex = isinstance(value, str) and value.startswith("0x")

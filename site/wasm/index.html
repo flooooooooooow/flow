@@ -79,7 +79,7 @@ footer a { color: #6b7ca8; }
 <body>
 <div class="wrap">
   <h1>Flow in the browser</h1>
-  <p class="lede">118 Flow examples compiled to WebAssembly and running
+  <p class="lede">119 Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
   through Flow &rarr; C &rarr; <code>emcc</code>. Graphics programs link
   <code>runtime/gfx_wasm.c</code>, a canvas backend for the same gfx API that
@@ -1267,7 +1267,7 @@ footer a { color: #6b7ca8; }
       </div>
     </div>
     <h2>Systems and data
-      <span class="count">8 of 13 running</span></h2>
+      <span class="count">9 of 14 running</span></h2>
     <p class="blurb">Allocators, hash tables, hashing, parsers, file formats. Anything asking the OS about itself stops at the link step.</p>
     <div class="grid">
       <div class="card">
@@ -1350,6 +1350,16 @@ footer a { color: #6b7ca8; }
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/text_demo.flow">source</a>
         </div>
       </div>
+      <div class="card">
+        <h3>Tiny Pointers</h3>
+        <p>Tiny Pointers — arXiv:2111.12800 (Bender, Conway, Farach-Colton, Kuszmaul,</p>
+        <div class="row">
+          <button data-run="tiny_pointers/index.html" data-title="Tiny Pointers">Run</button>
+          <span class="tag">console</span>
+          <span>132 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/tiny_pointers.flow">source</a>
+        </div>
+      </div>
       <div class="card failed">
         <h3>Arena Frame</h3>
         <p>Per-frame arena: bump allocate, then arena_reset each frame</p>
@@ -1416,7 +1426,7 @@ footer a { color: #6b7ca8; }
 
   <footer>
     Built by <code>python3 scripts/build_wasm_gallery.py</code>.
-    Total payload 3.6 MB across 118 examples.
+    Total payload 3.7 MB across 119 examples.
     Machine-readable index: <a href="manifest.json">manifest.json</a>.
   </footer>
 </div>
