@@ -1,7 +1,8 @@
 # WebAssembly Gallery
 
-118 Flow examples compiled to WebAssembly and playable in a browser. Every one
-is the unedited source from this repository, put through Flow → C → `emcc`.
+156 Flow examples compiled to WebAssembly, 149 of them runnable in a browser.
+Every one is the unedited source from this repository, put through Flow → C →
+`emcc`.
 
 **[Open the live gallery](../wasm/index.html)** — the pages below only run
 there. This markdown page cannot host WebAssembly; the wiki renders it as
@@ -29,13 +30,13 @@ Build one program:
 
 | Category | Running | Payload | What it is |
 |---|---:|---:|---|
-| [Games](../wasm/index.html) | 23 of 23 | 859 KB | Every `*_gfx.flow` in `examples/games/`, the same sources [the GIF gallery](games.md) records |
-| [Morphogenesis](../wasm/index.html) | 20 of 20 | 763 KB | Every field simulation in `examples/morphogenesis/`, see [the gallery](morphogenesis.md) |
-| [Basics](../wasm/index.html) | 22 of 22 | 443 KB | `examples/basics/`, pure computation printing into the page |
-| [Language and compilers](../wasm/index.html) | 22 of 23 | 570 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
-| [Numerics and dynamics](../wasm/index.html) | 16 of 18 | 491 KB | Solvers, optimisers, linear algebra, control theory |
-| [Learning](../wasm/index.html) | 7 of 12 | 259 KB | Small models and agents |
-| [Systems and data](../wasm/index.html) | 8 of 13 | 268 KB | Allocators, hash tables, hashing, parsers, file formats |
+| [Games](../wasm/index.html) | 25 of 25 | 930 KB | Every `*_gfx.flow` in `examples/games/`, the same sources [the GIF gallery](games.md) records |
+| [Morphogenesis](../wasm/index.html) | 40 of 40 | 2045 KB | Every field simulation in `examples/morphogenesis/`, see [the gallery](morphogenesis.md) |
+| [Basics](../wasm/index.html) | 22 of 22 | 444 KB | `examples/basics/`, pure computation printing into the page |
+| [Language and compilers](../wasm/index.html) | 22 of 23 | 571 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
+| [Numerics and dynamics](../wasm/index.html) | 18 of 20 | 595 KB | Solvers, optimisers, linear algebra, control theory |
+| [Learning](../wasm/index.html) | 9 of 12 | 333 KB | Small models and agents |
+| [Systems and data](../wasm/index.html) | 13 of 14 | 503 KB | Allocators, hash tables, hashing, parsers, file formats |
 
 Machine-readable index, including every failure and its reason:
 [`manifest.json`](../wasm/manifest.json).
@@ -57,6 +58,10 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `fibonacci` | Returned 55 |
 | `prime_numbers` | Returned 10 |
 | `lorenz_attractor` | Ran to completion, `main returned 0` |
+| `digits_mlp_parallel` | Ran the 30-epoch training to PASS on the synchronous fallback, reporting 1 worker, with the serial == parallel accuracy check green |
+| `arena_frame` | Ran its frame-arena allocator demo to exit 0 |
+| `system_info` | Printed real browser values: `OS: macOS`, `Num Cores: 14`, with the unprobeable parts degraded honestly |
+| `tiny_pointers` | Ran all phases to PASS, with the abstract-claim coverage card collapsed by default |
 
 No console errors on any of them.
 
@@ -97,7 +102,7 @@ and say plainly that it is not built here.
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The eight that do not build
+## The seven that do not build
 
 Each one stops at a named symbol. The gallery keeps their cards and prints the
 reason on them.
@@ -107,13 +112,12 @@ reason on them.
 | `examples/effects/async_primitives.flow` | `flow_fiber_run_main` | Fiber runtime is a native C/assembly context switch |
 | `examples/linalg/blas_demo.flow` | `cblas_dgemm` | Links a system BLAS |
 | `examples/linalg/lu_decomposition.flow` | `cblas_dcopy` | Links a system BLAS |
-| `examples/ml/digits_mlp_parallel.flow` | `flow_parallel_for_i32` | Thread pool is pthreads; a synchronous fallback would be safe but is not wired yet |
 | `examples/ml/digits_mlp_metal.flow` | `flow_gpu_alloc` | Metal GPU backend |
 | `examples/ml/tape_mul.flow` | `flow_tape_reset` | Autodiff tape is a native runtime module |
 | `examples/ai/ga_flappy.flow` | `fly` | Program references a symbol the transpiler does not emit |
 | `examples/crypto/runtime_sha256.flow` | `flow_sha256` | Hashing helper lives in the native runtime pack |
 
-Five examples used to fail and now build:
+Six examples used to fail and now build:
 
 - `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
   monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
@@ -129,6 +133,11 @@ Five examples used to fail and now build:
 - `graphics.flow` was library-shaped (no `main`); it now carries a demo entry
   point that exercises the constructors, conversions and clamps and gates its
   exit code on a self-check.
+- `digits_mlp_parallel.flow` gets a synchronous fallback for
+  `flow_parallel_for_i32`: the loop body runs inline on the main thread. It is
+  correct (the example's deterministic-reduction check confirms serial and
+  parallel accuracy agree) but single-threaded, and `flow_rt_par_workers`
+  honestly reports 1 worker.
 
 ## Related
 
