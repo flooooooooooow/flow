@@ -857,15 +857,23 @@ class MLIRGenerator:
                 or func.name in getattr(self, "_c_variadic_funcs", set())
             )
             if is_variadic:
-                # snprintf/printf family: declare fixed prefix + ellipsis.
+                # func dialect rejects `...`; emit llvm.func like printf (# needs_printf).
                 if func.name in ("snprintf", "sprintf", "fprintf") and len(param_types) > 3:
                     param_types = param_types[:3]
                 elif func.name == "printf" and len(param_types) > 1:
                     param_types = param_types[:1]
-                variadic_suffix = ", ..." if param_types else "..."
-            else:
-                variadic_suffix = ""
-            func_signature = f"func.func private @{func.name}({', '.join(param_types)}{variadic_suffix}) -> {return_type}"
+                if not param_types:
+                    return (
+                        f"{self.indent()}llvm.func @{func.name}(...) -> {return_type}"
+                    )
+                return (
+                    f"{self.indent()}llvm.func @{func.name}"
+                    f"({', '.join(param_types)}, ...) -> {return_type}"
+                )
+            func_signature = (
+                f"func.func private @{func.name}"
+                f"({', '.join(param_types)}) -> {return_type}"
+            )
             return f"{self.indent()}{func_signature}"
         
         mlir_code = []
