@@ -159,6 +159,43 @@ function later(name: string) -> i32 {
                 assert ": i32)" not in stripped.replace(" ", "") and "%arg0 : i32" not in stripped, line
 
 
+class TestMLIRUnsignedAndBitwiseEasyWins:
+    """Typed uN ops and ~ — easy in Flow IR, awkward with Python ints."""
+
+    def test_unsigned_shift_div_cmp_and_not(self):
+        code = """
+function main() -> u32 {
+    let a: u32 = 8
+    let b: u32 = a >> 1
+    let c: u32 = a / 2
+    let d: u32 = ~a
+    if b > c {
+        return d
+    }
+    return b
+}
+"""
+        mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
+        assert "arith.shrui" in mlir
+        assert "arith.divui" in mlir
+        assert "arith.xori" in mlir
+        assert "arith.cmpi ugt" in mlir or 'arith.cmpi ugt' in mlir
+
+    def test_llvm_call_for_printf_varargs(self):
+        code = """
+extern {
+    function printf(fmt: string) -> i32
+}
+function main() -> i32 {
+    return printf("hi %d\\n", 1)
+}
+"""
+        mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
+        assert "llvm.func @printf" in mlir
+        assert "llvm.call @printf" in mlir
+        assert "vararg(" in mlir
+
+
 class TestMLIRExpressionGeneration:
     """Test MLIR expression generation."""
 
