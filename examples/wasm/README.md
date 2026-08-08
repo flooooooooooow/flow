@@ -1,17 +1,21 @@
 # WASM examples
 
-Near-term path: **Flow → C → emcc (Emscripten) → .wasm + JS**.
+Near-term path: **Flow → C|MLIR → emcc (Emscripten) → .wasm + JS**.
 
-`emcc` is optional. Flow→C always works; WASM linking needs Emscripten on `PATH`.
+`emcc` is optional. Flow→C / Flow→MLIR always works; WASM linking needs Emscripten on `PATH`.
 
 ## hello_wasm.flow
 
 ```bash
 # Native smoke (no emcc)
 ./flow run examples/wasm/hello_wasm.flow
+./flow run --backend=mlir examples/wasm/hello_wasm.flow
 
-# Flow→C (+ HTML; .wasm if emcc is available)
-./flow wasm examples/wasm/hello_wasm.flow
+# Flow→C→WASM (+ HTML)
+./flow wasm examples/wasm/hello_wasm.flow --backend=c
+
+# Flow→MLIR→LLVM→WASM (+ HTML)
+./flow wasm examples/wasm/hello_wasm.flow --backend=mlir --out build/wasm/hello_mlir
 
 # Documented CI-safe hello script (skips cleanly without emcc)
 ./scripts/build_wasm_hello.sh

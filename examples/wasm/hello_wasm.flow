@@ -1,10 +1,12 @@
-# Minimal Flow program for the WASM path (Flow → C → emcc).
+# Minimal Flow program for the WASM path (Flow → C|MLIR → emcc).
 #
-#   ./flow run examples/wasm/hello_wasm.flow          # native smoke
-#   ./flow wasm examples/wasm/hello_wasm.flow         # emit C/HTML (+ .wasm if emcc)
-#   ./scripts/build_wasm_hello.sh                    # CI-safe; skips without emcc
+#   ./flow run examples/wasm/hello_wasm.flow                    # native (C)
+#   ./flow run --backend=mlir examples/wasm/hello_wasm.flow     # native (MLIR)
+#   ./flow wasm examples/wasm/hello_wasm.flow --backend=c       # browser (C)
+#   ./flow wasm examples/wasm/hello_wasm.flow --backend=mlir    # browser (MLIR)
+#   ./scripts/build_wasm_hello.sh                               # CI-safe; skips without emcc
 #
-# emcc is not required for Flow→C. See examples/wasm/README.md and docs/language/wasm.md.
+# emcc is not required for Flow→C/MLIR. See examples/wasm/README.md and docs/language/wasm.md.
 
 function fib(n: i32) -> i32 {
     if n <= 1 {
