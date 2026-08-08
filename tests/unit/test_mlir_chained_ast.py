@@ -185,10 +185,15 @@ class TestChainedArrayOfStructsIR:
         assert load_lines
         assert "memref<?xf32>" not in mlir
 
-    def test_element_field_extracts_duration(self):
+    def test_element_field_loads_duration_via_gep(self):
+        """Memory-resident struct fields use GEP+load (not extractvalue)."""
         mlir = _generate(ARRAY_OF_STRUCTS_PROGRAM)
-        assert "llvm.extractvalue" in mlir
-        assert "[1]" in mlir  # duration is field 1
+        assert "llvm.getelementptr" in mlir
+        assert any(
+            "getelementptr" in ln and "[0, 1]" in ln for ln in mlir.splitlines()
+        ), mlir  # duration is field 1
+        assert "llvm.load" in mlir
+
 
 
 class TestChainedCallFieldIR:
@@ -204,10 +209,13 @@ class TestChainedCallFieldIR:
 
 
 class TestChainedNestedFieldIR:
-    def test_nested_value_field_extracts(self):
+    def test_nested_value_field_loads_via_gep(self):
         mlir = _generate(NESTED_FIELD_PROGRAM)
-        assert "llvm.extractvalue" in mlir
         assert "Unsupported" not in mlir
+        # Nested field read: GEP into outer, then GEP/load of inner field 0.
+        gep_lines = [ln for ln in mlir.splitlines() if "llvm.getelementptr" in ln]
+        assert any("[0, 0]" in ln for ln in gep_lines), mlir
+        assert "llvm.load" in mlir
 
 
 class TestChainedASTMlirOpt:
