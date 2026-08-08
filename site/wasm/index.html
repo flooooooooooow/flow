@@ -79,7 +79,7 @@ footer a { color: #6b7ca8; }
 <body>
 <div class="wrap">
   <h1>Flow in the browser</h1>
-  <p class="lede">149 Flow examples compiled to WebAssembly and running
+  <p class="lede">150 Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
   through Flow &rarr; C &rarr; <code>emcc</code>. Graphics programs link
   <code>runtime/gfx_wasm.c</code>, a canvas backend for the same gfx API that
@@ -749,7 +749,7 @@ footer a { color: #6b7ca8; }
       </div>
     </div>
     <h2>Basics
-      <span class="count">22 of 22 running</span></h2>
+      <span class="count">23 of 23 running</span></h2>
     <p class="blurb">Pure computation. No graphics, no host services: the program runs and prints into the page.</p>
     <div class="grid">
       <div class="card">
@@ -860,6 +860,16 @@ footer a { color: #6b7ca8; }
           <span class="tag">console</span>
           <span>17 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/basics/palindrome.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Parallel Sum</h3>
+        <p>Coarse-grained data-parallel reduction, built for the WASM threads crossing</p>
+        <div class="row">
+          <button data-run="parallel_sum/index.html" data-title="Parallel Sum">Run</button>
+          <span class="tag">console</span> <span class="tag">threads</span>
+          <span>57 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/wasm/parallel_sum.flow">source</a>
         </div>
       </div>
       <div class="card">
@@ -1420,7 +1430,7 @@ footer a { color: #6b7ca8; }
         <p>Data-parallel gradient accumulation for the digits MLP</p>
         <div class="row">
           <button data-run="digits_mlp_parallel/index.html" data-title="Digits MLP (parallel)">Run</button>
-          <span class="tag">console</span>
+          <span class="tag">console</span> <span class="tag">threads</span>
           <span>64 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_parallel.flow">source</a>
         </div>
@@ -1671,7 +1681,7 @@ footer a { color: #6b7ca8; }
         <td>runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM key events to the macOS keycodes the programs already use.</td></tr>
       <tr><td>Threads and channels</td>
         <td class="state runs">Runs today</td>
-        <td>digits_mlp_parallel runs on real Emscripten pthreads over SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so open that card in a tab and let its service worker reload once.</td></tr>
+        <td>digits_mlp_parallel and parallel_sum run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so open those cards in a tab and let their service worker reload once.</td></tr>
       <tr><td>Sockets and HTTP</td>
         <td class="state wip">In progress</td>
         <td>Emscripten's WebSocket-backed POSIX socket bridge (-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here.</td></tr>
@@ -1691,7 +1701,7 @@ footer a { color: #6b7ca8; }
 
   <footer>
     Built by <code>python3 scripts/build_wasm_gallery.py</code>.
-    Total payload 5.3 MB across 149 examples.
+    Total payload 5.4 MB across 150 examples.
     Machine-readable index: <a href="manifest.json">manifest.json</a>.
   </footer>
 </div>
