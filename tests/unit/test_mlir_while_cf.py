@@ -1,12 +1,10 @@
-"""Pin CF-dialect successor operand syntax for while loop-carried vars."""
-
-import re
+"""Pin CF + alloca lowering for while loops (mutable slots, not SSA-carried)."""
 
 from flow.mlir_generator import MLIRGenerator
 from tests.unit.compiler_helpers import parse
 
 
-def test_while_cf_br_types_once_after_values():
+def test_while_cf_uses_alloca_slots_not_ssa_args():
     mlir = MLIRGenerator().generate_module(
         parse(
             """
@@ -22,17 +20,15 @@ function main() -> i32 {
 """
         )
     )
-    # CF dialect: (%a, %b : i32, i32) — not (%a : i32, %b : i32)
-    assert re.search(r"cf\.br \^bb\d+\(%\d+, %\d+ : i32, i32\)", mlir), mlir
-    assert not re.search(r"cf\.br \^bb\d+\(%\d+ : i32, %\d+ : i32\)", mlir), mlir
-    # Exit edge must pass loop-carried args into the end block
-    cond = re.search(
-        r"cf\.cond_br [^,]+, (\^bb\d+\([^)]+\)), (\^bb\d+\([^)]+\))", mlir
-    )
-    assert cond is not None, mlir
+    # Mutables are stack slots; CF edges are plain labels (no successor args).
+    assert "llvm.alloca" in mlir, mlir
+    assert "cf.br ^bb0" in mlir, mlir
+    assert "cf.cond_br" in mlir, mlir
+    assert "cf.br ^bb0(" not in mlir, mlir
+    assert "llvm.store" in mlir and "llvm.load" in mlir, mlir
 
 
-def test_nested_while_propagates_outer_carried_ssa():
+def test_nested_while_updates_outer_slot():
     mlir = MLIRGenerator().generate_module(
         parse(
             """
@@ -52,16 +48,13 @@ function main() -> i32 {
 """
         )
     )
-    # Back-edge to outer header must forward the post-inner-loop `s`, not the
-    # body-entry SSA (regression: shallow scope pop discarded nested updates).
-    back_edges = re.findall(r"cf\.br \^bb0\(([^)]+)\)", mlir)
-    assert back_edges, mlir
-    # Last back-edge is the loop latch; operands should not be the same SSA
-    # twice for (s, outer) after increments (s updated inside nested while).
-    latch = back_edges[-1]
-    parts = [p.strip() for p in latch.split(":")[0].split(",")]
-    assert len(parts) == 2, latch
-    assert parts[0] != parts[1], latch
+    # Nested loops still terminate via plain CF edges back to headers.
+    assert mlir.count("cf.br ^bb0") >= 1, mlir
+    assert "cf.br ^bb3" in mlir, mlir
+    assert "llvm.alloca" in mlir, mlir
+    # Inner body must still store into the shared `s` slot.
+    store_lines = [ln for ln in mlir.splitlines() if "llvm.store" in ln]
+    assert len(store_lines) >= 4, store_lines
 
 
 def test_memref_store_uses_fixed_shape():
