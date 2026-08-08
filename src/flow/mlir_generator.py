@@ -650,6 +650,14 @@ class MLIRGenerator:
                     'parameters': method.parameters,
                     'mlir_name': f"@{cap.name}_{method.name}",
                 }
+
+        # Snapshot module-scope symbols. Each function restores from this so
+        # params/locals from a prior function cannot leak into CF join merges
+        # (doom-flow #232: stale `i` as `%arg0 : i32` while current `%arg0` is ptr).
+        self._module_symbol_snapshot = {
+            k: dict(v) if isinstance(v, dict) else v
+            for k, v in self.symbol_table.items()
+        }
         
         # Second pass: generate all declarations to collect string constants
         decl_code = []
@@ -738,6 +746,15 @@ class MLIRGenerator:
         self.current_function_return_type = func.return_type
         self._current_function_name = func.name
         self._init_per_function_state()
+
+        # Drop prior function's params/locals; keep module + function decls (#232).
+        snapshot = getattr(self, "_module_symbol_snapshot", None)
+        if snapshot is not None:
+            self.symbol_table = {
+                k: dict(v) if isinstance(v, dict) else v
+                for k, v in snapshot.items()
+            }
+        self._symbol_stack = []
         
         # For extern functions, just declare them without body (dedupe across imports)
         if hasattr(func, 'is_extern') and func.is_extern:
@@ -1426,6 +1443,8 @@ class MLIRGenerator:
 
         Module globals and alloca-backed slots have no ``ssa_name`` and must not
         participate in block-arg merges (doom-flow hit KeyError: ssa_name).
+        Also skip bindings whose recorded mlir_type disagrees with ``_ssa_types``
+        for that SSA (stale cross-function leak of ``%argN`` — #232).
         """
         out: List[str] = []
         for name in names:
@@ -1437,6 +1456,11 @@ class MLIRGenerator:
             if "ssa_name" not in info:
                 continue
             if "mlir_type" not in info:
+                continue
+            ssa = info["ssa_name"]
+            ty = info["mlir_type"]
+            tracked = self._ssa_types.get(ssa)
+            if tracked is not None and tracked != ty:
                 continue
             if name not in out:
                 out.append(name)
