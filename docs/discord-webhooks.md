@@ -11,6 +11,7 @@ This document is the single source of truth for how webhooks work.
 | `#announcements` | Releases and docs deploys | `release-notifier` | `DISCORD_RELEASE_WEBHOOK` |
 | `#ci-releases` | Per-run CI status and PR activity | `ci-releases` | `DISCORD_CI_WEBHOOK` |
 | `#changelog` | Release changelog notes | `flow-changelog` | `DISCORD_CHANGELOG_WEBHOOK` |
+| `#projects` (forum) | One thread per release/project announcement | `projects-notifier` | `DISCORD_PROJECTS_WEBHOOK` |
 
 Server categories: `engagement` (welcome, announcements, introductions,
 showcase), `help`, `dev` (tooling, contribute, ci-releases), `projects`
@@ -64,6 +65,7 @@ quotes survive intact. It supports the full Discord embed schema.
 | `thumbnail` / `image` | Right-top thumbnail and bottom large image URLs. |
 | `footer_text` / `footer_icon` | Bottom footer line. |
 | `timestamp` | ISO8601 time; defaults to now. |
+| `thread_name` | When the webhook points at a forum channel, creates a new thread with this name. Empty posts as a plain message. |
 
 The org avatar URL pattern `https://github.com/<owner>.png` is used as the
 webhook/author/footer icon across all three workflows.
@@ -83,7 +85,19 @@ webhook/author/footer icon across all three workflows.
 | `.github/workflows/release.yml` | tag created | `#announcements` release (commit range + contributors), `#changelog` notes |
 | `.github/workflows/ci.yml` | push, PR, nightly | `#ci-releases` per-job matrix pass/fail, actor, commit subject |
 | `.github/workflows/discord-pr.yml` | PR opened/ready/merged/closed | `#ci-releases` PR notices (title, branch, changed files, merged status) |
+| `.github/workflows/discord-projects.yml` | release published, manual | `#projects` forum thread per announcement |
 | `.github/workflows/wiki.yml` | docs deploy | `#announcements` docs |
+
+## No-double-post rules
+
+- `#ci-releases` gets one message per CI run on pushes to `main`, plus PR
+  lifecycle notices from `discord-pr.yml`. CI does **not** post for PR runs
+  unless a required job failed, so opening a PR produces one message, not two.
+- `#announcements` carries release and docs-deploy pings; `#changelog` carries
+  the changelog body; `#projects` carries one thread per announcement.
+- A new post belongs in exactly one channel. If a notification seems to land
+  twice, one of the senders is posting to the wrong channel or both workflows
+  reacted to the same event.
 
 `flowc-release.yml` publishes compiler binaries but does not notify Discord yet.
 
