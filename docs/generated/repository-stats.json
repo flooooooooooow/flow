@@ -5,16 +5,16 @@
       "lines": 1537
     },
     "documentation": {
-      "files": 132,
-      "lines": 28642
+      "files": 136,
+      "lines": 30216
     },
     "examples": {
-      "files": 399,
-      "lines": 103972
+      "files": 403,
+      "lines": 111845
     },
     "python_compiler": {
-      "files": 54,
-      "lines": 44759
+      "files": 61,
+      "lines": 46695
     },
     "registry_packages": {
       "files": 19,
@@ -26,15 +26,15 @@
     },
     "self_hosted_compiler": {
       "files": 17,
-      "lines": 9440
+      "lines": 10863
     },
     "standard_library": {
-      "files": 105,
-      "lines": 31989
+      "files": 106,
+      "lines": 32172
     },
     "tests": {
-      "files": 342,
-      "lines": 37511
+      "files": 346,
+      "lines": 38367
     },
     "verify_corpus": {
       "files": 1078,
@@ -42,19 +42,19 @@
     }
   },
   "badges": {
-    "examples": "399 examples",
-    "flow": "197k Flow LOC",
-    "loc": "378k LOC",
+    "examples": "403 examples",
+    "flow": "207k Flow LOC",
+    "loc": "391k LOC",
     "proofs": "1078 verify files",
-    "stdlib": "105 modules",
-    "tests": "342 tests"
+    "stdlib": "106 modules",
+    "tests": "346 tests"
   },
-  "commit": "96faf347d6b9",
-  "generated_at": "2026-08-08T05:11:51+01:00",
+  "commit": "6d3c25896da1",
+  "generated_at": "2026-08-08T20:23:32+01:00",
   "languages": {
     "C": {
       "files": 94,
-      "lines": 14135
+      "lines": 14145
     },
     "C++": {
       "files": 23,
@@ -69,16 +69,16 @@
       "lines": 3448
     },
     "Flow": {
-      "files": 1965,
-      "lines": 197414
+      "files": 1972,
+      "lines": 207090
     },
     "HTML": {
-      "files": 170,
-      "lines": 28741
+      "files": 171,
+      "lines": 28923
     },
     "JavaScript": {
-      "files": 145,
-      "lines": 7164
+      "files": 146,
+      "lines": 7166
     },
     "Objective-C": {
       "files": 4,
@@ -89,24 +89,24 @@
       "lines": 654
     },
     "Python": {
-      "files": 295,
-      "lines": 99214
+      "files": 306,
+      "lines": 102072
     },
     "Rust": {
       "files": 10,
       "lines": 606
     },
     "Shell": {
-      "files": 49,
-      "lines": 5150
+      "files": 52,
+      "lines": 5416
     }
   },
   "methodology": "Tracked source files only; physical lines include comments and blanks; third_party and generated/build directories are excluded.",
   "proof_documents": 1080,
   "schema_version": 1,
   "totals": {
-    "source_files": 2814,
-    "source_lines": 378174,
-    "tracked_files": 5881
+    "source_files": 2837,
+    "source_lines": 391168,
+    "tracked_files": 5913
   }
 }
