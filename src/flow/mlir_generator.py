@@ -7,7 +7,7 @@ Converts parsed FLOW AST to MLIR dialects
 from typing import List, Dict, Optional, Any, Set
 from .parser import (
     FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, Block, Statement,
-    VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
+    VarDecl, Assignment, IfStatement, IfExpression, WhileStatement, ForStatement,
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectCall, MethodCall,
@@ -365,6 +365,31 @@ class MLIRGenerator:
     def _pointer_bytes(self) -> int:
         """Target pointer width in bytes (4 under ``--wasm32`` / ILP32, else 8)."""
         return 4 if self.size_t_bits == 32 else 8
+
+    def _sizeof_bytes_for_mangled(self, mangled_suffix: str) -> int:
+        """Byte size for a ``sizeof_<Ty>`` intrinsic name suffix."""
+        fixed = {
+            "i8": 1,
+            "u8": 1,
+            "bool": 1,
+            "i16": 2,
+            "u16": 2,
+            "i32": 4,
+            "u32": 4,
+            "f32": 4,
+            "i64": 8,
+            "u64": 8,
+            "f64": 8,
+            "i128": 16,
+            "u128": 16,
+        }
+        if mangled_suffix in fixed:
+            return fixed[mangled_suffix]
+        if mangled_suffix == "ptr" or mangled_suffix.startswith("ptr_"):
+            return self._pointer_bytes()
+        if mangled_suffix == "string":
+            return self._pointer_bytes()
+        return 4
 
     def _abi_adjust_libc(
         self, name: str, parameters: List[Parameter], return_type: Type
@@ -1053,6 +1078,26 @@ class MLIRGenerator:
         self.current_function_return_type = func.return_type
         self._current_function_name = func.name
         self._init_per_function_state()
+
+        # sizeof_* intrinsics: emit a constant (ptr width follows --wasm32 / #255).
+        if (
+            func.name.startswith("sizeof_")
+            and len(func.parameters) == 0
+            and not getattr(func, "is_extern", False)
+        ):
+            nbytes = self._sizeof_bytes_for_mangled(func.name[len("sizeof_") :])
+            ret_ty = self.flow_type_to_mlir(func.return_type)
+            ind = self.indent()
+            ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            return "\n".join(
+                [
+                    f"{ind}func.func @{func.name}() -> {ret_ty} {{",
+                    f"{ind}  {ssa} = arith.constant {nbytes} : {ret_ty}",
+                    f"{ind}  func.return {ssa} : {ret_ty}",
+                    f"{ind}}}",
+                ]
+            )
 
         # Drop prior function's params/locals; keep module + function decls (#232).
         snapshot = getattr(self, "_module_symbol_snapshot", None)
@@ -3472,11 +3517,51 @@ class MLIRGenerator:
             return self.generate_record_update(expr)
         elif isinstance(expr, Lambda):
             return self.generate_lambda(expr)
+        elif isinstance(expr, IfExpression):
+            return self.generate_if_expression(expr)
         else:
             raise NotImplementedError(
                 f"MLIR backend does not support expression type "
                 f"{type(expr).__name__}; use the C backend (--c)"
             )
+
+    def generate_if_expression(self, if_expr: IfExpression) -> tuple[str, List[str]]:
+        """Lower `if cond { a } else { b }` to valued ``scf.if`` (#252)."""
+        ops: List[str] = []
+        cond_ssa, cond_ops = self.generate_expression(if_expr.condition)
+        ops.extend(cond_ops)
+        cond_ty = self._ssa_types.get(cond_ssa, "i1")
+        if cond_ty != "i1":
+            zero = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{zero} = arith.constant 0 : {cond_ty}")
+            cast = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{cast} = arith.cmpi ne, {cond_ssa}, {zero} : {cond_ty}"
+            )
+            cond_ssa = cast
+
+        res_ty = self.get_expression_type(if_expr.then_expr)
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{result} = scf.if {cond_ssa} -> ({res_ty}) {{")
+        self.indent_level += 1
+        then_ssa, then_ops = self.generate_expression(if_expr.then_expr)
+        ops.extend(then_ops)
+        then_ty = self._ssa_types.get(then_ssa, res_ty)
+        ops.append(f"{self.indent()}scf.yield {then_ssa} : {then_ty}")
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}} else {{")
+        self.indent_level += 1
+        else_ssa, else_ops = self.generate_expression(if_expr.else_expr)
+        ops.extend(else_ops)
+        else_ty = self._ssa_types.get(else_ssa, then_ty)
+        ops.append(f"{self.indent()}scf.yield {else_ssa} : {else_ty}")
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        self._ssa_types[result] = then_ty
+        return result, ops
 
     def _emit_cast(self, value_ssa: str, from_type: str, to_type: str) -> tuple[str, List[str]]:
         from_type = self._ssa_types.get(value_ssa, from_type)
@@ -5262,6 +5347,19 @@ class MLIRGenerator:
             info = self.symbol_table[func_call.name]
             if info.get("is_closure") and info.get("fn_mlir_type"):
                 return self._generate_closure_call(func_call, info)
+
+        # Inline sizeof_* as a target-aware constant (#255).
+        if func_call.name.startswith("sizeof_") and len(func_call.arguments) == 0:
+            nbytes = self._sizeof_bytes_for_mangled(func_call.name[len("sizeof_") :])
+            ret_ty = "i64"
+            info = self.symbol_table.get(func_call.name) or {}
+            rt = info.get("return_type")
+            if rt is not None:
+                ret_ty = self.flow_type_to_mlir(rt)
+            ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[ssa] = ret_ty
+            return ssa, [f"{self.indent()}{ssa} = arith.constant {nbytes} : {ret_ty}"]
 
         # Handle array<T>(size) constructor specially
         if func_call.name.startswith('array<') and func_call.name.endswith('>'):

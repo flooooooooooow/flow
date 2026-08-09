@@ -4,6 +4,18 @@ All notable changes to FLOW will be documented in this file.
 
 ## [Unreleased]
 
+### Issue closeout
+
+- `#154`: published `flowc-v0.10.0` release; Homebrew formula points at archives.
+- `#252` (partial): if-expressions `if cond { a } else { b }`; `flow` shows clang
+  stderr on link failure (no longer `2>/dev/null`).
+
+- Closeout table: [docs/project/ISSUE_CLOSEOUT.md](ISSUE_CLOSEOUT.md).
+- `#255`: MLIR `sizeof_ptr` / `sizeof_*` intrinsics follow `--wasm32` pointer
+  width; ptr/string memref layouts already ILP32-aware (#257).
+- `#154`: `Formula/flowc.rb` Homebrew formula (bootstrap C, no Python).
+- `#172`: linguist contribution draft under `docs/project/linguist/`.
+
 ### MLIR / doom follow-ups (#253–#255)
 
 - Confirmed `#253`: `-O1+` “noreturn / dropped main loop” was UB from

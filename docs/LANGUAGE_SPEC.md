@@ -640,6 +640,18 @@ See [ordering.md](language/ordering.md),
 
 **Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib, see pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
 
+### 4.6 If Expressions
+
+**Status:** ✅ (single-expression arms; `else` required)
+
+```flow
+let x: i32 = if cond { a } else { b }
+```
+
+Statement `if` (no value, optional `else`) is unchanged in §5.2. Expression
+`if` requires both arms and yields the arm type. C lowers to a ternary;
+MLIR uses valued `scf.if`.
+
 ---
 
 ## 5. Statements

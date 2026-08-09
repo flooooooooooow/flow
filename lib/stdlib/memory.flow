@@ -21,6 +21,7 @@ export function sizeof_i32() -> i64 { return 4 }
 export function sizeof_i64() -> i64 { return 8 }
 export function sizeof_f32() -> i64 { return 4 }
 export function sizeof_f64() -> i64 { return 8 }
+# Stub body — C emits `sizeof(void*)`; MLIR uses target pointer width (#255).
 export function sizeof_ptr() -> i64 { return 8 }
 
 # Generic sizeof — C backend emits `(int64_t)sizeof(T)` after monomorphization.
