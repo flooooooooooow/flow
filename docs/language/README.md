@@ -8,6 +8,7 @@ Detailed documentation for the Flow programming language.
 |----------|-------------|
 | [Spec Index](spec-index.md) | Navigable TOC into LANGUAGE_SPEC + focused pages |
 | [Overview](overview.md) | Language philosophy and key features |
+| [Best practices](best-practices.md) | Idioms and fluid-abstraction guidance |
 | [Syntax](syntax.md) | Lexical structure, operators, grammar |
 | [Types](types.md) | Type system and primitive types |
 | [Spans](spans.md) | Borrowed `{pointer, length}` views over contiguous storage |
