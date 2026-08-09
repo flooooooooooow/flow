@@ -1,38 +1,30 @@
 # Open-issue closeout (2026-08-09)
 
-Auto-closed by the PR that lands this file (GitHub `Fixes` keywords). Remaining
-open work is listed at the bottom — this agent cannot write the Issues API.
+## Closed this session
 
-## Closed as done
-
-| Issue | Why |
+| Issue | Via |
 |-------|-----|
-| [#253](https://github.com/flooooooooooow/flow/issues/253) | `&module_global` addressof (#250); MLIR `-O2` verified |
-| [#254](https://github.com/flooooooooooow/flow/issues/254) | `_emit_static_llvm_array_global` on main |
-| [#255](https://github.com/flooooooooooow/flow/issues/255) | ILP32 ptr/string layout + `sizeof_ptr` under `--wasm32`; u8/u32 ops from #250 |
-| [#256](https://github.com/flooooooooooow/flow/issues/256) | Tracking; all listed blockers done |
-| [#144](https://github.com/flooooooooooow/flow/issues/144) | IEEE totalOrder for declarative sort (docs + tests) |
-| [#145](https://github.com/flooooooooooow/flow/issues/145) | `ordering_hints.py` provenance for adaptive sort |
-| [#146](https://github.com/flooooooooooow/flow/issues/146) | `flow explain` / explainable compilation |
-| [#148](https://github.com/flooooooooooow/flow/issues/148) | `@lifetime` domains + checks |
-| [#151](https://github.com/flooooooooooow/flow/issues/151) | Self-hosting Phase B done |
-| [#153](https://github.com/flooooooooooow/flow/issues/153) | Self-hosting Phase D done |
+| #253, #254, #255, #256 | #257 / #259 / #261 (doom MLIR) |
+| #144, #145, #146, #148 | #261 (ordering / explain / lifetimes) |
+| #151, #153 | #261 (self-hosting B/D) |
+| #154 | #262 + `flowc-v0.10.0` release |
 
-## Still open (intentionally)
+## Still open — language / product
 
-| Issue | Status | Next step |
-|-------|--------|-----------|
-| [#147](https://github.com/flooooooooooow/flow/issues/147) | Sort/search cost selection landed; not generalized | Register FFT/DSP/ML impls in `plan_selector` |
-| [#172](https://github.com/flooooooooooow/flow/issues/172) | Draft under `docs/project/linguist/` | Open upstream github-linguist PR (agent cannot fork) |
-| [#252](https://github.com/flooooooooooow/flow/issues/252) | Partial: if-expr + C error visibility; f64 already exists | Still need `bigint` + generic `map`/`set` |
+| Issue | Status |
+|-------|--------|
+| [#147](https://github.com/flooooooooooow/flow/issues/147) | Sort/search cost selection exists; generalize beyond sort |
+| [#172](https://github.com/flooooooooooow/flow/issues/172) | Draft in `docs/project/linguist/`; needs upstream linguist PR |
+| [#252](https://github.com/flooooooooooow/flow/issues/252) | **Partial:** if-expr + C error visibility landed (#262). Still need **bigint** + generic **map/set**. (`f64` already exists.) |
 
-## Closed in this wave
+## Still open — MISRA/CERT epic (filed 2026-08-09)
 
-Also closed: [#154](https://github.com/flooooooooooow/flow/issues/154) — `flowc-v0.10.0` release published + Homebrew formula.
+Epic [#285](https://github.com/flooooooooooow/flow/issues/285) tracks #263–#284 (overflow, div0, shifts, null checks, heap discipline, `--profile safety`, WCET, compliance matrix, …). This is a multi-PR certification path, not a single closeout.
 
-## Sibling repo
+Suggested Phase 0 (next PR):
+1. `#269` default `-std=c11 -Wall -Wextra` (not `-Werror` until generated C is clean)
+2. `#270` `FLOW_SANITIZE=undefined,address` / `flow run --sanitize=…`
+3. `#264` div-by-zero traps in C generator
+4. `#265` shift-width guards
 
-Apply `docs/project/patches/doom-flow-mlir-o2.patch` on doom-flow (agent push is 403).
-Sun Aug  9 08:53:13 PM UTC 2026
-
-Merged closeout commit: 9e27d25
+Sibling: apply `docs/project/patches/doom-flow-mlir-o2.patch` on doom-flow (push was 403).
