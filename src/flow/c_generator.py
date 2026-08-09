@@ -647,6 +647,7 @@ class CGenerator:
                            'memcpy', 'memmove', 'memset', 'memcmp',
                            'strlen', 'strcmp', 'strncmp', 'strcpy', 'strncpy',
                            'strcat', 'strncat', 'strchr', 'strstr',
+                           'strtod', 'atof',
                            'getenv', 'putenv',
                            # FILE* APIs — use <stdio.h> decls; Flow extern types are approximate
                            'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'fgets', 'fputs',

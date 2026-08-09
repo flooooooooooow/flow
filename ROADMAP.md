@@ -187,7 +187,8 @@ a proof corpus, not the showcase.
 | Cross-platform graphics (Linux) | ✅, [docs/language/graphics.md](docs/language/graphics.md) | `gfx_linux.c` SDL2 backend (stub fallback without headers); Windows tracked separately below |
 | Package registry design | ✅ | Deferred, [docs/project/package-registry.md](docs/project/package-registry.md); git deps until 3+ third-party packages |
 | Effect system showcase | ✅ | `examples/effects/showcase.flow` + [docs/effects-showcase.md](docs/effects-showcase.md) with honest limitations |
-| Benchmark vs C comparison | ✅ | Performance credibility, see `benchmarks/suite/RESULTS.md` |
+| Benchmark vs C comparison | ✅ | Performance credibility — see `benchmarks/suite/RESULTS.md` |
+| BLAS/LAPACK bindings | ✅ | `stdlib/blas.flow` — 164x speedup via Accelerate; see `docs/blas-bindings.md` |
 | Documentation enhancements (comparisons with C and MOJO) | ✅ | Clear positioning |
 | Live DSP standard (single graph + buffer layout) | ✅ | Audio consistency |
 | Live plugin ABI registry | ✅ | Extensible DSP |
