@@ -1,4 +1,4 @@
-"""Unsigned / % must use remui/divui (#230 doom hash table)."""
+"""Unsigned arithmetic and u8 load zero-extend (#230 doom)."""
 
 from __future__ import annotations
 
@@ -54,3 +54,27 @@ function main() -> i32 {
     )
     assert "arith.divui" in mlir
     assert "arith.divsi" not in mlir
+
+
+def test_u8_ptr_load_cast_uses_extui():
+    """`ptr<u8>[i] as i32` must zero-extend (255→255), not sign-extend (-1).
+
+    Doom WAD helpers assemble SHORT/LONG from bytes; signed i8 loads break
+    TEXTURE1 patch indices and name hashing → R_InitTextures missing patch.
+    """
+    mlir = flow_to_mlir(
+        parse_flow_code(
+            """
+function main() -> i32 {
+    let mut buf: array<u8, 2> = [255 as u8, 128 as u8]
+    let p: ptr<u8> = buf as ptr<u8>
+    return p[0] as i32
+}
+"""
+        ),
+        source_file="test.flow",
+    )
+    assert "arith.extui" in mlir
+    for line in mlir.splitlines():
+        if "i8 to i32" in line:
+            assert "extui" in line, line

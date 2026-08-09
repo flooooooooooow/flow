@@ -3446,7 +3446,14 @@ class MLIRGenerator:
             value_ssa, value_ops = self.generate_expression(expr.expr)
             from_type = self.get_expression_type(expr.expr)
             to_type = self.flow_type_to_mlir(expr.target_type)
+            # MLIR maps uN→iN; restore unsigned-ness from the Flow AST so
+            # widen casts use extui (ptr<u8>[i] as i32 must be 0..255).
+            flow_from = self._flow_type_of_expr(expr.expr)
+            if getattr(flow_from, "name", "").startswith("u"):
+                self._ssa_unsigned.add(value_ssa)
             cast_ssa, cast_ops = self._emit_cast(value_ssa, from_type, to_type)
+            if getattr(expr.target_type, "name", "").startswith("u"):
+                self._ssa_unsigned.add(cast_ssa)
             return cast_ssa, value_ops + cast_ops
         elif isinstance(expr, ArrayAccess):
             return self.generate_array_access(expr)
@@ -4262,6 +4269,8 @@ class MLIRGenerator:
                         f"{self.indent()}{load} = llvm.load {gep} : !llvm.ptr -> {field_ty}"
                     )
                     self._ssa_types[load] = field_ty
+                    if getattr(field_type, "name", "").startswith("u"):
+                        self._ssa_unsigned.add(load)
                     return load, ops
 
         # Prefer LLVM struct extraction when available.
@@ -4455,20 +4464,15 @@ class MLIRGenerator:
             self.function_counter += 1
             ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset}] : memref<{total_size}xi8>")
 
-            # Extend to i32 if needed
-            if field_type.name in ['u8', 'bool']:
-                ext_name = f"%{self.function_counter}"
-                self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
-                self._ssa_types[ext_name] = "i32"
-                return ext_name, ops
-            else:
-                # For i8, sign extend
-                ext_name = f"%{self.function_counter}"
-                self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
-                self._ssa_types[ext_name] = "i32"
-                return ext_name, ops
+            # u8/bool: zero-extend; i8: sign-extend.
+            ext_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ext_op = "arith.extui" if field_type.name in ['u8', 'bool'] else "arith.extsi"
+            ops.append(f"{self.indent()}{ext_name} = {ext_op} {byte_name} : i8 to i32")
+            self._ssa_types[ext_name] = "i32"
+            if field_type.name.startswith("u"):
+                self._ssa_unsigned.add(ext_name)
+            return ext_name, ops
 
         else:
             # Generic fallback for f64, i64, pointers, and other 8-byte types
@@ -4627,6 +4631,10 @@ class MLIRGenerator:
             return None
         if isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
+        if isinstance(expr, CastExpression):
+            return expr.target_type
+        if isinstance(expr, Literal):
+            return expr.type
         return None
 
     def _field_pointer_base(self, obj_expr, obj_ssa: str):
@@ -6036,6 +6044,8 @@ class MLIRGenerator:
             ops.extend(gep_ops)
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
+            if getattr(elem_flow, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
             return ssa_name, ops
 
         if self._is_pointer_array_ssa(array_ssa, access):
@@ -6049,6 +6059,19 @@ class MLIRGenerator:
             ops.extend(gep_ops)
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
+            # ptr<u8>[i] etc.: track unsigned so `as i32` uses extui (#230).
+            if getattr(elem_flow, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
+            elif elem_type in ("i8", "i16", "i32", "i64"):
+                # Fallback when elem_flow was lost: ptr element from MLIR map.
+                arr_flow = self._flow_type_of_expr(access.array)
+                pointee = (
+                    self._pointee_struct_type(arr_flow)
+                    if self._is_pointer_flow_type(arr_flow)
+                    else None
+                )
+                if getattr(pointee, "name", "").startswith("u"):
+                    self._ssa_unsigned.add(ssa_name)
             return ssa_name, ops
 
         if index_type == 'index':
@@ -6084,6 +6107,14 @@ class MLIRGenerator:
         load_memref = arr_mlir if arr_mlir and arr_mlir.startswith('memref<') else f"memref<?x{elem_type}>"
         ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : {load_memref}")
         self._ssa_types[ssa_name] = elem_type
+        elem_flow = self._flow_type_of_expr(access)
+        if getattr(elem_flow, "name", "").startswith("u"):
+            self._ssa_unsigned.add(ssa_name)
+        elif isinstance(access.array, Variable) and access.array.name in self.symbol_table:
+            arr_flow = self.symbol_table[access.array.name].get("flow_type")
+            arr_elem = getattr(arr_flow, "element_type", None) if arr_flow else None
+            if getattr(arr_elem, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
         return ssa_name, ops
     
     def get_expression_type(self, expr: Expression) -> str:
