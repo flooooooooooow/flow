@@ -4017,11 +4017,29 @@ class MLIRGenerator:
         the pointer stay visible to later reads (generate_variable and
         generate_assignment both prefer alloca_ptr once it is set).
 
+        Module globals must use ``llvm.mlir.addressof`` — never spill the
+        global's address into a fresh alloca (that returns a pointer-to-pointer
+        and breaks doom ``&thinkercap`` / thinker list linking).
+
         Field / array lvalues (``&j[0].buttons[0]``) use GEP into the real
         object — never load+spill, which would give M_BindVariable a temp.
         """
         if isinstance(operand, Variable) and operand.name in self.symbol_table:
             var_info = self.symbol_table[operand.name]
+            # Module-scope storage: address is the global itself.
+            if var_info.get("is_module_global"):
+                ptr = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops = [
+                    f"{self.indent()}{ptr} = llvm.mlir.addressof "
+                    f"@{operand.name} : !llvm.ptr"
+                ]
+                self._ssa_types[ptr] = "!llvm.ptr"
+                llvm_array_ty = var_info.get("llvm_array_type")
+                if llvm_array_ty:
+                    self._llvm_array_types[ptr] = llvm_array_ty
+                    self._llvm_array_types[operand.name] = llvm_array_ty
+                return ptr, ops
             mlir_type = var_info.get('mlir_type')
             ptr = var_info.get('alloca_ptr')
             ops: List[str] = []
@@ -4041,6 +4059,17 @@ class MLIRGenerator:
         # Fallback: spill the value of the expression to a fresh slot.
         operand_ssa, operand_ops = self.generate_expression(operand)
         ty = self._ssa_types.get(operand_ssa) or self.get_expression_type(operand)
+        # If the operand expression is already a pointer to the object
+        # (llvm.array module/local base), do not wrap it again.
+        if ty == "!llvm.ptr" and (
+            operand_ssa in self._llvm_array_types
+            or (
+                isinstance(operand, Variable)
+                and (self.symbol_table.get(operand.name) or {}).get("llvm_array_type")
+            )
+        ):
+            self._ssa_types[operand_ssa] = "!llvm.ptr"
+            return operand_ssa, operand_ops
         ptr, spill_ops = self._emit_alloca_store(operand_ssa, ty)
         self._ssa_types[ptr] = '!llvm.ptr'
         return ptr, operand_ops + spill_ops
