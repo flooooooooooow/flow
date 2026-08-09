@@ -57,6 +57,33 @@ flow run hello.flow
 
 ---
 
+## Why Flow
+
+Most languages are built around computation: sequences of instructions that transform inputs to outputs.
+
+Flow is built around evolution. You describe how a system changes through time. That description is what runs.
+
+An engineer working on a physical system today crosses Python for analysis, MATLAB for controller design, Simulink for block diagrams, C/C++ for deployment, Verilog for hardware, and vendor tools for the rest. Every handoff loses information. The mathematical model drifts from the deployed code.
+
+Flow collapses those boundaries. The model is the program. The compiler understands units, sample rates, timing contracts, memory topology, and numeric precision as part of the type system, and emits portable C by default.
+
+```flow
+flow Pendulum {
+    state angle: f64 = 0.5
+    state velocity: f64 = 0.0
+    param damping: f64 = 0.3
+
+    angle evolves as velocity
+    velocity evolves as -9.81 * sin(angle) - damping * velocity
+}
+```
+
+That is a complete program. The compiler hands the right-hand side to an RK4 solver and runs it at native speed. No notebook, no glue code, no translation step between model and deployment.
+
+Full thesis: [VISION.md](VISION.md). Domain architecture: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
+
+---
+
 ## What you get
 
 - Dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).

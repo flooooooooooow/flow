@@ -27,6 +27,20 @@ algebraic effects, and autodiff, compiling to C or MLIR.
 
 </div>
 
+## Why Flow
+
+Most languages are built around computation: sequences of instructions that transform inputs to outputs.
+
+Flow is built around evolution. You describe how a system changes through time. That description is what runs.
+
+An engineer working on a physical system today crosses Python for analysis, MATLAB for controller design, Simulink for block diagrams, C/C++ for deployment, Verilog for hardware, and vendor tools for the rest. Every handoff loses information. The mathematical model drifts from the deployed code.
+
+Flow collapses those boundaries. The model is the program. The compiler understands units, sample rates, timing contracts, memory topology, and numeric precision as part of the type system, and emits portable C by default.
+
+Full thesis: [Vision](vision.md). Domain architecture: [physical-systems.md](vision/physical-systems.md).
+
+---
+
 ## Three ways in
 
 Pick one path. Everything else lives in the sidebar tabs.
