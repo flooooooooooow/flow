@@ -3576,7 +3576,13 @@ class MLIRGenerator:
                 ssa_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 return ssa_name, [f"{self.indent()}# String concatenation: {left_ty} + {right_ty}"]
-        
+
+        # Short-circuit and/or: do not evaluate the RHS when the LHS decides.
+        # Eager arith.andi/ori deref'd null after `getenv(...) == null or p[0] == 0`
+        # and crashed doom-flow under --backend=mlir (#230).
+        if bin_op.operator in ('&&', 'and', '||', 'or'):
+            return self._generate_short_circuit_logic(bin_op)
+
         left_ssa, left_ops = self.generate_expression(bin_op.left)
         right_ssa, right_ops = self.generate_expression(bin_op.right)
 
@@ -3591,10 +3597,7 @@ class MLIRGenerator:
         is_vector = 'vector<' in left_ty or 'vector<' in right_ty
         is_float = ('f32' in left_ty) or ('f64' in left_ty) or ('f32' in right_ty) or ('f64' in right_ty)
 
-        if bin_op.operator in ['&&', 'and', '||', 'or']:
-            operand_type = 'i1'
-        else:
-            operand_type = self._resolve_binary_operand_type(left_ty, right_ty)
+        operand_type = self._resolve_binary_operand_type(left_ty, right_ty)
 
         cast_ops: List[str] = []
         if not is_vector:
@@ -3663,10 +3666,6 @@ class MLIRGenerator:
                 op_text = f'llvm.icmp "{icmp}" {left_ssa}, {right_ssa} : !llvm.ptr'
             else:
                 op_text = f"arith.cmpi {pred}, {left_ssa}, {right_ssa} : {operand_type}"
-        elif bin_op.operator == '&&' or bin_op.operator == 'and':
-            op_text = f"arith.andi {left_ssa}, {right_ssa} : i1"
-        elif bin_op.operator == '||' or bin_op.operator == 'or':
-            op_text = f"arith.ori {left_ssa}, {right_ssa} : i1"
         elif bin_op.operator == '&':
             # Bitwise (not boolean) — Doom-scale MLIR needs these (#221 follow-up).
             op_text = f"arith.andi {left_ssa}, {right_ssa} : {operand_type}"
@@ -3690,7 +3689,7 @@ class MLIRGenerator:
         lines.extend(right_ops)
         lines.extend(cast_ops)
         lines.append(f"{self.indent()}{ssa_name} = {op_text}")
-        result_type = 'i1' if bin_op.operator in ['==', '!=', '<', '<=', '>', '>=', '&&', 'and', '||', 'or'] else operand_type
+        result_type = 'i1' if bin_op.operator in ['==', '!=', '<', '<=', '>', '>='] else operand_type
         self._ssa_types[ssa_name] = result_type
         if (
             is_unsigned
@@ -3698,6 +3697,78 @@ class MLIRGenerator:
         ):
             self._ssa_unsigned.add(ssa_name)
         return ssa_name, lines
+
+    def _as_i1(self, ssa: str, ty: str) -> tuple[str, List[str]]:
+        """Cast/compare a value to i1 for boolean short-circuit."""
+        if ty == 'i1' or self._ssa_types.get(ssa) == 'i1':
+            return ssa, []
+        out = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops: List[str] = []
+        if ty == '!llvm.ptr':
+            zero = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{zero} = llvm.mlir.zero : !llvm.ptr")
+            ops.append(f'{self.indent()}{out} = llvm.icmp "ne" {ssa}, {zero} : !llvm.ptr')
+        elif ty in ('f32', 'f64') or (ty.startswith('f') and ty[1:].isdigit()):
+            z = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{z} = arith.constant 0.0 : {ty}")
+            ops.append(f"{self.indent()}{out} = arith.cmpf one, {ssa}, {z} : {ty}")
+        else:
+            z = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{z} = arith.constant 0 : {ty}")
+            ops.append(f"{self.indent()}{out} = arith.cmpi ne, {ssa}, {z} : {ty}")
+        self._ssa_types[out] = 'i1'
+        return out, ops
+
+    def _generate_short_circuit_logic(self, bin_op: BinaryOperation) -> tuple[str, List[str]]:
+        """Lower `and`/`or` with scf.if so the RHS is skipped when decided."""
+        is_or = bin_op.operator in ('||', 'or')
+        left_ssa, left_ops = self.generate_expression(bin_op.left)
+        left_ty = self.get_expression_type(bin_op.left)
+        left_i1, left_cast = self._as_i1(left_ssa, left_ty)
+
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
+        lines: List[str] = []
+        lines.extend(left_ops)
+        lines.extend(left_cast)
+
+        ind = self.indent()
+        lines.append(f"{ind}{result} = scf.if {left_i1} -> (i1) {{")
+        self.indent_level += 1
+        if is_or:
+            # true or x => true (skip RHS)
+            t = f"%{self.function_counter}"
+            self.function_counter += 1
+            lines.append(f"{self.indent()}{t} = arith.constant true")
+            lines.append(f"{self.indent()}scf.yield {t} : i1")
+            lines.append(f"{ind}}} else {{")
+            right_ssa, right_ops = self.generate_expression(bin_op.right)
+            right_ty = self.get_expression_type(bin_op.right)
+            right_i1, right_cast = self._as_i1(right_ssa, right_ty)
+            lines.extend(right_ops)
+            lines.extend(right_cast)
+            lines.append(f"{self.indent()}scf.yield {right_i1} : i1")
+        else:
+            # false and x => false (skip RHS)
+            right_ssa, right_ops = self.generate_expression(bin_op.right)
+            right_ty = self.get_expression_type(bin_op.right)
+            right_i1, right_cast = self._as_i1(right_ssa, right_ty)
+            lines.extend(right_ops)
+            lines.extend(right_cast)
+            lines.append(f"{self.indent()}scf.yield {right_i1} : i1")
+            lines.append(f"{ind}}} else {{")
+            fconst = f"%{self.function_counter}"
+            self.function_counter += 1
+            lines.append(f"{self.indent()}{fconst} = arith.constant false")
+            lines.append(f"{self.indent()}scf.yield {fconst} : i1")
+        self.indent_level -= 1
+        lines.append(f"{ind}}}")
+        self._ssa_types[result] = 'i1'
+        return result, lines
     
     def generate_unary_operation(self, un_op: UnaryOperation) -> tuple[str, List[str]]:
         if un_op.operator == '&':
@@ -6332,6 +6403,23 @@ class MLIRGenerator:
         lines.append(f"{ind}}}")
         return lines
 
+    def _emit_null_ptr_global(self, name: str) -> List[str]:
+        """Emit a mutable ``!llvm.ptr`` global initialized to null (not undef).
+
+        Bare ``llvm.mlir.global … () : !llvm.ptr`` lowers to LLVM ``ptr undef``,
+        which fails null checks and crashes real programs (doom-flow #230).
+        """
+        ind = self.indent()
+        zero = f"%{self.function_counter}"
+        self.function_counter += 1
+        return [
+            f"{ind}// Module static: {name}",
+            f"{ind}llvm.mlir.global internal @{name}() {{addr_space = 0 : i32}} : !llvm.ptr {{",
+            f"{ind}  {zero} = llvm.mlir.zero : !llvm.ptr",
+            f"{ind}  llvm.return {zero} : !llvm.ptr",
+            f"{ind}}}",
+        ]
+
     def generate_static(self, static: StaticDecl) -> str:
         """Generate a mutable module-scope llvm.mlir.global for `let mut` at top level."""
         mlir_code = []
@@ -6388,23 +6476,32 @@ class MLIRGenerator:
                 )
             return "\n".join(mlir_code)
 
+        # Scalar pointers must be null-initialized (not undef).
+        if (
+            mlir_type == "!llvm.ptr"
+            or (
+                isinstance(static.value, Literal)
+                and str(static.value.value).lower() == "null"
+            )
+        ):
+            mlir_code.extend(self._emit_null_ptr_global(static.name))
+            self.symbol_table[static.name] = {
+                "type": "variable",
+                "mlir_type": "!llvm.ptr",
+                "flow_type": static.type,
+                "is_module_global": True,
+                "is_const": False,
+            }
+            return "\n".join(mlir_code)
+
         # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
         mlir_code.append(f"{self.indent()}// Module static: {static.name}")
         init_payload = f"() : {mlir_type}"
         if isinstance(static.value, Literal) and getattr(static.value.type, "name", "") != "string":
-            if (
-                mlir_type == "!llvm.ptr"
-                or str(static.value.value).lower() == "null"
-            ):
-                init_payload = "() : !llvm.ptr"
-                mlir_type = "!llvm.ptr"
-            else:
-                lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
-                if static.value.type.name == "bool":
-                    lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
-                init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
-        elif mlir_type == "!llvm.ptr":
-            init_payload = "() : !llvm.ptr"
+            lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
+            if static.value.type.name == "bool":
+                lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
+            init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
         elif mlir_type in ("f32", "f64"):
             init_payload = f"(0.0 : {mlir_type}) : {mlir_type}"
         elif mlir_type.startswith("i") or mlir_type.startswith("u") or mlir_type == "index":
