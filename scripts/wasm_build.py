@@ -106,7 +106,12 @@ def flow_to_c(program: Path, c_out: Path) -> str:
 
 
 def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
-    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text."""
+    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text.
+
+    Always passes ``--wasm32`` so libc size_t/long lower as i32 (ILP32). Without
+    that, emcc/wasm-ld sees i64 size_t decls and signature-mismatch warnings that
+    break real programs (doom-flow #230).
+    """
     ll_out.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         [
@@ -116,6 +121,7 @@ def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
             str(program),
             "--mlir",
             "--llvm",
+            "--wasm32",
             "--lenient",
             "-o",
             str(ll_out),
