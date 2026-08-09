@@ -631,10 +631,177 @@ class MLIRGenerator:
             return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0.0 : {mlir_type}"]
         if mlir_type.startswith("i"):
             return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0 : {mlir_type}"]
-        if mlir_type == "!llvm.ptr":
+        # ptr / struct / array — never leave aggregates as undef (#230).
+        if (
+            mlir_type == "!llvm.ptr"
+            or mlir_type.startswith("!llvm.struct")
+            or mlir_type.startswith("!llvm.array")
+        ):
             return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.zero : {mlir_type}"]
-        # Fallback to undef for aggregate/unknown types
         return ssa_name, [f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"]
+
+    def _const_eval_int(self, expr: Expression) -> Optional[int]:
+        """Fold simple integer constant expressions for LLVM global inits."""
+        if isinstance(expr, Literal):
+            raw = str(expr.value).lower()
+            if raw in ("true", "false"):
+                return 1 if raw == "true" else 0
+            if raw == "null":
+                return 0
+            try:
+                return int(str(expr.value), 0)
+            except ValueError:
+                return None
+        if isinstance(expr, Variable) and expr.name == "null":
+            return 0
+        if isinstance(expr, UnaryOperation):
+            v = self._const_eval_int(expr.operand)
+            if v is None:
+                return None
+            if expr.operator == "-":
+                return -v
+            if expr.operator == "!":
+                return 0 if v else 1
+            if expr.operator == "~":
+                return ~v
+            return None
+        if isinstance(expr, BinaryOperation):
+            left = self._const_eval_int(expr.left)
+            right = self._const_eval_int(expr.right)
+            if left is None or right is None:
+                return None
+            op = expr.operator
+            if op == "+":
+                return left + right
+            if op == "-":
+                return left - right
+            if op == "*":
+                return left * right
+            if op == "/" and right != 0:
+                return int(left / right)
+            if op == "%" and right != 0:
+                return left % right
+            if op == "&":
+                return left & right
+            if op == "|":
+                return left | right
+            if op == "^":
+                return left ^ right
+            if op == "<<":
+                return left << right
+            if op == ">>":
+                return left >> right
+            return None
+        return None
+
+    def _llvm_zero_value(self, mlir_type: str) -> tuple[str, List[str]]:
+        """Zero via LLVM dialect only (safe inside `llvm.mlir.global` regions)."""
+        ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ind = self.indent()
+        if mlir_type.startswith("f"):
+            return ssa, [f"{ind}{ssa} = llvm.mlir.constant(0.0 : {mlir_type}) : {mlir_type}"]
+        if mlir_type.startswith("i"):
+            return ssa, [f"{ind}{ssa} = llvm.mlir.constant(0 : {mlir_type}) : {mlir_type}"]
+        return ssa, [f"{ind}{ssa} = llvm.mlir.zero : {mlir_type}"]
+
+    def _emit_llvm_static_expr(
+        self, expr: Optional[Expression], mlir_type: str
+    ) -> tuple[str, List[str]]:
+        """Materialize a module-static initializer using only the LLVM dialect.
+
+        `llvm.mlir.global` init regions reject `arith.*`; fold constants and
+        emit `llvm.mlir.constant` / `zero` / `addressof` / `insertvalue`.
+        """
+        ind = self.indent()
+        if expr is None:
+            return self._llvm_zero_value(mlir_type)
+
+        if isinstance(expr, StructLiteral):
+            return self._emit_llvm_static_struct_literal(expr, mlir_type)
+
+        if isinstance(expr, Literal) and getattr(expr.type, "name", None) == "string":
+            gname = self._intern_string_const(str(expr.value))
+            ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            return ssa, [f"{ind}{ssa} = llvm.mlir.addressof @{gname} : !llvm.ptr"]
+
+        is_null = (
+            (isinstance(expr, Literal) and str(expr.value).lower() == "null")
+            or (isinstance(expr, Variable) and expr.name == "null")
+        )
+        if mlir_type == "!llvm.ptr" or is_null:
+            return self._llvm_zero_value("!llvm.ptr" if is_null else mlir_type)
+
+        if mlir_type.startswith("f"):
+            if isinstance(expr, Literal):
+                lit = self._format_mlir_numeric(str(expr.value), mlir_type)
+                ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                return ssa, [
+                    f"{ind}{ssa} = llvm.mlir.constant({lit} : {mlir_type}) : {mlir_type}"
+                ]
+            return self._llvm_zero_value(mlir_type)
+
+        if mlir_type.startswith("i"):
+            ival = self._const_eval_int(expr)
+            if ival is not None:
+                ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                return ssa, [
+                    f"{ind}{ssa} = llvm.mlir.constant({ival} : {mlir_type}) : {mlir_type}"
+                ]
+            return self._llvm_zero_value(mlir_type)
+
+        return self._llvm_zero_value(mlir_type)
+
+    def _emit_llvm_static_struct_literal(
+        self, struct_literal: StructLiteral, mlir_type: Optional[str] = None
+    ) -> tuple[str, List[str]]:
+        """Build a struct value for a global init region (LLVM dialect only)."""
+        struct_name = struct_literal.struct_name
+        llvm_struct = mlir_type or self._struct_llvm_type(struct_name)
+        if not llvm_struct:
+            return self._llvm_zero_value(mlir_type or "!llvm.struct<()>")
+
+        decl = self._get_struct_decl(struct_name)
+        if not decl:
+            return self._llvm_zero_value(llvm_struct)
+
+        provided = {name: value for name, value in struct_literal.fields}
+        ops: List[str] = []
+        agg, zero_ops = self._llvm_zero_value(llvm_struct)
+        ops.extend(zero_ops)
+
+        for idx, field in enumerate(decl.fields):
+            if self._is_array_flow_type(field.type):
+                field_ty = self._llvm_array_type_from_flow(field.type) or "i32"
+            else:
+                field_ty = self.flow_type_to_mlir(field.type)
+                if getattr(field.type, "name", None) == "string":
+                    field_ty = "!llvm.ptr"
+                elif getattr(field.type, "name", None) == "bool":
+                    field_ty = "i1"
+
+            if field.name in provided:
+                val_ssa, val_ops = self._emit_llvm_static_expr(
+                    provided[field.name], field_ty
+                )
+                ops.extend(val_ops)
+            else:
+                val_ssa, val_ops = self._llvm_zero_value(field_ty)
+                ops.extend(val_ops)
+
+            nxt = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{nxt} = llvm.insertvalue {val_ssa}, {agg}[{idx}] "
+                f": {llvm_struct}"
+            )
+            agg = nxt
+
+        self._ssa_types[agg] = llvm_struct
+        return agg, ops
     
     def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
         mlir_code = []
@@ -3279,7 +3446,14 @@ class MLIRGenerator:
             value_ssa, value_ops = self.generate_expression(expr.expr)
             from_type = self.get_expression_type(expr.expr)
             to_type = self.flow_type_to_mlir(expr.target_type)
+            # MLIR maps uN→iN; restore unsigned-ness from the Flow AST so
+            # widen casts use extui (ptr<u8>[i] as i32 must be 0..255).
+            flow_from = self._flow_type_of_expr(expr.expr)
+            if getattr(flow_from, "name", "").startswith("u"):
+                self._ssa_unsigned.add(value_ssa)
             cast_ssa, cast_ops = self._emit_cast(value_ssa, from_type, to_type)
+            if getattr(expr.target_type, "name", "").startswith("u"):
+                self._ssa_unsigned.add(cast_ssa)
             return cast_ssa, value_ops + cast_ops
         elif isinstance(expr, ArrayAccess):
             return self.generate_array_access(expr)
@@ -3521,6 +3695,9 @@ class MLIRGenerator:
         self.function_counter += 1
         ops.append(f"{self.indent()}{val} = llvm.load {ptr} : !llvm.ptr -> {mlir_type}")
         self._ssa_types[val] = mlir_type
+        flow_ty = info.get("flow_type")
+        if getattr(flow_ty, "name", "").startswith("u"):
+            self._ssa_unsigned.add(val)
         return val, ops
 
     def _store_module_global(self, name: str, mlir_type: str, value_ssa: str) -> List[str]:
@@ -3610,8 +3787,16 @@ class MLIRGenerator:
 
         # Flow uN lowers to iN; track unsigned SSA so / % >> and compares stay
         # logical (Python has no u32 — this is free in a typed native IR).
+        # Also consult Flow AST types: call returns / global loads may not yet
+        # be in `_ssa_unsigned` (doom-flow W_LumpNameHash % wnumlumps used
+        # signed srem, wrote before the hash table, and corrupted FILE*).
+        left_flow = self._flow_type_of_expr(bin_op.left)
+        right_flow = self._flow_type_of_expr(bin_op.right)
         is_unsigned = (
-            left_ssa in self._ssa_unsigned or right_ssa in self._ssa_unsigned
+            left_ssa in self._ssa_unsigned
+            or right_ssa in self._ssa_unsigned
+            or str(getattr(left_flow, "name", "") or "").startswith("u")
+            or str(getattr(right_flow, "name", "") or "").startswith("u")
         )
 
         op_text: str
@@ -3832,11 +4017,29 @@ class MLIRGenerator:
         the pointer stay visible to later reads (generate_variable and
         generate_assignment both prefer alloca_ptr once it is set).
 
+        Module globals must use ``llvm.mlir.addressof`` — never spill the
+        global's address into a fresh alloca (that returns a pointer-to-pointer
+        and breaks doom ``&thinkercap`` / thinker list linking).
+
         Field / array lvalues (``&j[0].buttons[0]``) use GEP into the real
         object — never load+spill, which would give M_BindVariable a temp.
         """
         if isinstance(operand, Variable) and operand.name in self.symbol_table:
             var_info = self.symbol_table[operand.name]
+            # Module-scope storage: address is the global itself.
+            if var_info.get("is_module_global"):
+                ptr = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops = [
+                    f"{self.indent()}{ptr} = llvm.mlir.addressof "
+                    f"@{operand.name} : !llvm.ptr"
+                ]
+                self._ssa_types[ptr] = "!llvm.ptr"
+                llvm_array_ty = var_info.get("llvm_array_type")
+                if llvm_array_ty:
+                    self._llvm_array_types[ptr] = llvm_array_ty
+                    self._llvm_array_types[operand.name] = llvm_array_ty
+                return ptr, ops
             mlir_type = var_info.get('mlir_type')
             ptr = var_info.get('alloca_ptr')
             ops: List[str] = []
@@ -3856,6 +4059,17 @@ class MLIRGenerator:
         # Fallback: spill the value of the expression to a fresh slot.
         operand_ssa, operand_ops = self.generate_expression(operand)
         ty = self._ssa_types.get(operand_ssa) or self.get_expression_type(operand)
+        # If the operand expression is already a pointer to the object
+        # (llvm.array module/local base), do not wrap it again.
+        if ty == "!llvm.ptr" and (
+            operand_ssa in self._llvm_array_types
+            or (
+                isinstance(operand, Variable)
+                and (self.symbol_table.get(operand.name) or {}).get("llvm_array_type")
+            )
+        ):
+            self._ssa_types[operand_ssa] = "!llvm.ptr"
+            return operand_ssa, operand_ops
         ptr, spill_ops = self._emit_alloca_store(operand_ssa, ty)
         self._ssa_types[ptr] = '!llvm.ptr'
         return ptr, operand_ops + spill_ops
@@ -4084,6 +4298,8 @@ class MLIRGenerator:
                         f"{self.indent()}{load} = llvm.load {gep} : !llvm.ptr -> {field_ty}"
                     )
                     self._ssa_types[load] = field_ty
+                    if getattr(field_type, "name", "").startswith("u"):
+                        self._ssa_unsigned.add(load)
                     return load, ops
 
         # Prefer LLVM struct extraction when available.
@@ -4277,20 +4493,15 @@ class MLIRGenerator:
             self.function_counter += 1
             ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset}] : memref<{total_size}xi8>")
 
-            # Extend to i32 if needed
-            if field_type.name in ['u8', 'bool']:
-                ext_name = f"%{self.function_counter}"
-                self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
-                self._ssa_types[ext_name] = "i32"
-                return ext_name, ops
-            else:
-                # For i8, sign extend
-                ext_name = f"%{self.function_counter}"
-                self.function_counter += 1
-                ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
-                self._ssa_types[ext_name] = "i32"
-                return ext_name, ops
+            # u8/bool: zero-extend; i8: sign-extend.
+            ext_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ext_op = "arith.extui" if field_type.name in ['u8', 'bool'] else "arith.extsi"
+            ops.append(f"{self.indent()}{ext_name} = {ext_op} {byte_name} : i8 to i32")
+            self._ssa_types[ext_name] = "i32"
+            if field_type.name.startswith("u"):
+                self._ssa_unsigned.add(ext_name)
+            return ext_name, ops
 
         else:
             # Generic fallback for f64, i64, pointers, and other 8-byte types
@@ -4449,6 +4660,10 @@ class MLIRGenerator:
             return None
         if isinstance(expr, StructLiteral):
             return Type(expr.struct_name)
+        if isinstance(expr, CastExpression):
+            return expr.target_type
+        if isinstance(expr, Literal):
+            return expr.type
         return None
 
     def _field_pointer_base(self, obj_expr, obj_ssa: str):
@@ -5245,6 +5460,11 @@ class MLIRGenerator:
                     f"({', '.join(expected_arg_types)}) -> {ret_type}"
                 )
             self._ssa_types[ssa_name] = ret_type
+            ret_flow = None
+            if func_call.name in self.symbol_table:
+                ret_flow = self.symbol_table[func_call.name].get("return_type")
+            if getattr(ret_flow, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
             if self._is_aggregate_mlir_type(ret_type):
                 stable, mat_ops = self._stabilize_aggregate_ssa(
                     ssa_name, ret_type, func_call.name
@@ -5853,6 +6073,8 @@ class MLIRGenerator:
             ops.extend(gep_ops)
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
+            if getattr(elem_flow, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
             return ssa_name, ops
 
         if self._is_pointer_array_ssa(array_ssa, access):
@@ -5866,6 +6088,19 @@ class MLIRGenerator:
             ops.extend(gep_ops)
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
+            # ptr<u8>[i] etc.: track unsigned so `as i32` uses extui (#230).
+            if getattr(elem_flow, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
+            elif elem_type in ("i8", "i16", "i32", "i64"):
+                # Fallback when elem_flow was lost: ptr element from MLIR map.
+                arr_flow = self._flow_type_of_expr(access.array)
+                pointee = (
+                    self._pointee_struct_type(arr_flow)
+                    if self._is_pointer_flow_type(arr_flow)
+                    else None
+                )
+                if getattr(pointee, "name", "").startswith("u"):
+                    self._ssa_unsigned.add(ssa_name)
             return ssa_name, ops
 
         if index_type == 'index':
@@ -5901,6 +6136,14 @@ class MLIRGenerator:
         load_memref = arr_mlir if arr_mlir and arr_mlir.startswith('memref<') else f"memref<?x{elem_type}>"
         ops.append(f"{self.indent()}{ssa_name} = memref.load {array_ssa}[{final_index}] : {load_memref}")
         self._ssa_types[ssa_name] = elem_type
+        elem_flow = self._flow_type_of_expr(access)
+        if getattr(elem_flow, "name", "").startswith("u"):
+            self._ssa_unsigned.add(ssa_name)
+        elif isinstance(access.array, Variable) and access.array.name in self.symbol_table:
+            arr_flow = self.symbol_table[access.array.name].get("flow_type")
+            arr_elem = getattr(arr_flow, "element_type", None) if arr_flow else None
+            if getattr(arr_elem, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
         return ssa_name, ops
     
     def get_expression_type(self, expr: Expression) -> str:
@@ -6344,62 +6587,64 @@ class MLIRGenerator:
     ) -> List[str]:
         """Emit `llvm.mlir.global` with an init body for fixed array statics.
 
-        Pointer/string element arrays must not stay undef — doom-flow config
-        tables (`array<string, N>`) are searched by name at startup.
+        Pointer/string/struct element arrays must not stay undef — doom-flow
+        tables (`iwads`, menus, `animdefs`, …) are searched at startup (#230).
+        Init regions use the LLVM dialect only (`arith` is rejected there).
         """
         ind = self.indent()
         size = int(flow_type.size)
         elem_mlir = self.flow_type_to_mlir(flow_type.element_type)
-        is_ptr = elem_mlir == "!llvm.ptr"
+        if getattr(flow_type.element_type, "name", None) == "string":
+            elem_mlir = "!llvm.ptr"
+        elif getattr(flow_type.element_type, "name", None) == "bool":
+            elem_mlir = "i1"
+        # Prefer the canonical struct type from the array type string when the
+        # element is a named struct (flow_type_to_mlir may return memref fallback).
+        if "x " in llvm_array_ty and llvm_array_ty.startswith("!llvm.array<"):
+            # !llvm.array<N x T>
+            inner = llvm_array_ty[len("!llvm.array<") : -1]
+            _n, _, elem_part = inner.partition(" x ")
+            if elem_part.startswith("!llvm.struct") or elem_part == "ptr":
+                elem_mlir = "!llvm.ptr" if elem_part == "ptr" else elem_part
+
         lines = [
             f"{ind}// Module static: {name}",
             f"{ind}llvm.mlir.global internal @{name}() : {llvm_array_ty} {{",
         ]
 
         elements = list(array_lit.elements) if array_lit is not None else []
-        acc = f"%{self.function_counter}"
-        self.function_counter += 1
-        lines.append(f"{ind}  {acc} = llvm.mlir.undef : {llvm_array_ty}")
-
-        for i in range(size):
-            el = elements[i] if i < len(elements) else None
-            val = f"%{self.function_counter}"
-            self.function_counter += 1
-            if is_ptr:
-                if (
-                    isinstance(el, Literal)
-                    and getattr(el.type, "name", None) == "string"
-                ):
-                    gname = self._intern_string_const(str(el.value))
-                    lines.append(
-                        f"{ind}  {val} = llvm.mlir.addressof @{gname} : !llvm.ptr"
-                    )
-                else:
-                    # null / missing / unsupported → null pointer
-                    lines.append(f"{ind}  {val} = llvm.mlir.zero : !llvm.ptr")
-            else:
-                if isinstance(el, Literal) and getattr(el.type, "name", None) == "bool":
-                    lit = (
-                        "1"
-                        if str(el.value).lower() in ("true", "1")
-                        else "0"
-                    )
-                elif isinstance(el, Literal):
-                    lit = self._format_mlir_numeric(str(el.value), elem_mlir)
-                else:
-                    lit = "0.0" if elem_mlir in ("f32", "f64") else "0"
+        self.indent_level += 1
+        try:
+            # Fast path: no element literals and aggregate/scalar zero works.
+            if not elements and (
+                elem_mlir.startswith("!llvm.struct")
+                or elem_mlir == "!llvm.ptr"
+                or elem_mlir.startswith("i")
+                or elem_mlir.startswith("f")
+            ):
+                zero_ssa, zero_ops = self._llvm_zero_value(llvm_array_ty)
+                lines.extend(zero_ops)
                 lines.append(
-                    f"{ind}  {val} = llvm.mlir.constant({lit} : {elem_mlir}) : {elem_mlir}"
+                    f"{self.indent()}llvm.return {zero_ssa} : {llvm_array_ty}"
                 )
+            else:
+                acc, acc_ops = self._llvm_zero_value(llvm_array_ty)
+                lines.extend(acc_ops)
+                for i in range(size):
+                    el = elements[i] if i < len(elements) else None
+                    val, val_ops = self._emit_llvm_static_expr(el, elem_mlir)
+                    lines.extend(val_ops)
+                    nxt = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    lines.append(
+                        f"{self.indent()}{nxt} = llvm.insertvalue {val}, {acc}[{i}] "
+                        f": {llvm_array_ty}"
+                    )
+                    acc = nxt
+                lines.append(f"{self.indent()}llvm.return {acc} : {llvm_array_ty}")
+        finally:
+            self.indent_level -= 1
 
-            nxt = f"%{self.function_counter}"
-            self.function_counter += 1
-            lines.append(
-                f"{ind}  {nxt} = llvm.insertvalue {val}, {acc}[{i}] : {llvm_array_ty}"
-            )
-            acc = nxt
-
-        lines.append(f"{ind}  llvm.return {acc} : {llvm_array_ty}")
         lines.append(f"{ind}}}")
         return lines
 
@@ -6420,6 +6665,28 @@ class MLIRGenerator:
             f"{ind}}}",
         ]
 
+    def _emit_struct_static_global(
+        self,
+        name: str,
+        mlir_type: str,
+        value: Optional[Expression],
+    ) -> List[str]:
+        """Emit a module-scope struct global with a real (non-undef) initializer."""
+        ind = self.indent()
+        lines = [
+            f"{ind}// Module static: {name}",
+            f"{ind}llvm.mlir.global internal @{name}() : {mlir_type} {{",
+        ]
+        self.indent_level += 1
+        try:
+            ssa, ops = self._emit_llvm_static_expr(value, mlir_type)
+            lines.extend(ops)
+            lines.append(f"{self.indent()}llvm.return {ssa} : {mlir_type}")
+        finally:
+            self.indent_level -= 1
+        lines.append(f"{ind}}}")
+        return lines
+
     def generate_static(self, static: StaticDecl) -> str:
         """Generate a mutable module-scope llvm.mlir.global for `let mut` at top level."""
         mlir_code = []
@@ -6431,34 +6698,14 @@ class MLIRGenerator:
         llvm_array_ty = self._llvm_array_type_from_flow(static.type)
         if llvm_array_ty:
             # Global storage is the array; SSA uses pointer-to-array.
-            elem_mlir = self.flow_type_to_mlir(static.type.element_type)
             array_lit = (
                 static.value if isinstance(static.value, ArrayLiteral) else None
             )
-            # Struct-element arrays cannot use scalar llvm.mlir.constant(0);
-            # leave those zero-inited. Pointer/string/scalar arrays get a
-            # real init body so string tables are not undef at runtime.
-            can_init = elem_mlir == "!llvm.ptr" or elem_mlir in (
-                "i1",
-                "i8",
-                "i16",
-                "i32",
-                "i64",
-                "f32",
-                "f64",
+            mlir_code.extend(
+                self._emit_static_llvm_array_global(
+                    static.name, llvm_array_ty, static.type, array_lit
+                )
             )
-            if can_init:
-                mlir_code.extend(
-                    self._emit_static_llvm_array_global(
-                        static.name, llvm_array_ty, static.type, array_lit
-                    )
-                )
-            else:
-                mlir_code.append(f"{self.indent()}// Module static: {static.name}")
-                mlir_code.append(
-                    f"{self.indent()}llvm.mlir.global internal @{static.name}() "
-                    f": {llvm_array_ty}"
-                )
             mlir_type = "!llvm.ptr"
             self.symbol_table[static.name] = {
                 "type": "variable",
@@ -6488,6 +6735,22 @@ class MLIRGenerator:
             self.symbol_table[static.name] = {
                 "type": "variable",
                 "mlir_type": "!llvm.ptr",
+                "flow_type": static.type,
+                "is_module_global": True,
+                "is_const": False,
+            }
+            return "\n".join(mlir_code)
+
+        # Scalar structs: materialize literals / zero — never bare undef (#230).
+        if mlir_type.startswith("!llvm.struct"):
+            mlir_code.extend(
+                self._emit_struct_static_global(
+                    static.name, mlir_type, static.value
+                )
+            )
+            self.symbol_table[static.name] = {
+                "type": "variable",
+                "mlir_type": mlir_type,
                 "flow_type": static.type,
                 "is_module_global": True,
                 "is_const": False,
