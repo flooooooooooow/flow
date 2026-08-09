@@ -26,6 +26,12 @@ page shape:
 ./flow wasm examples/games/snake_gfx.flow --backend=mlir --out build/wasm/snake-mlir
 ```
 
+The MLIR wasm path always passes `--wasm32` to the transpiler so libc
+`size_t` / `long` lower as `i32` (ILP32). Without that, emcc links but
+`malloc`/`memcpy`/… get signature-mismatch warnings and real programs
+(doom-flow) misbehave. Raw `python3 -m flow.transpiler … --mlir --llvm`
+for wasm must include `--wasm32` yourself.
+
 Pack a host file into the virtual FS and link extra runtime C (both backends):
 
 ```bash
