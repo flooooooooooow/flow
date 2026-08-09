@@ -86,14 +86,24 @@ grids of doubles at once, well past the 64 KB wasm32 default.
 ## Near-term path (supported story)
 
 ```text
-Flow source  →  Flow C backend  →  emcc (Emscripten)  →  .wasm + JS glue
+Flow source  →  C or MLIR (--wasm32)  →  emcc (Emscripten)  →  .wasm + JS glue
 ```
 
 | Stage | Tool | Notes |
 |-------|------|-------|
-| Flow → C | `./flow compile <file.flow>` | Portable C backend (same as native) |
-| C → WASM | `emcc` from [Emscripten](https://emscripten.org/) | Optional local install; **not** required for CI |
+| Flow → C | `./flow compile <file.flow>` | Portable C backend (default) |
+| Flow → LLVM IR | `python3 -m flow.transpiler … --mlir --llvm --wasm32` | Same ABI as C→emcc; required for doom-scale MLIR |
+| → WASM | `emcc` from [Emscripten](https://emscripten.org/) | Optional local install; **not** required for CI |
 | Browser | `.wasm` + generated JS | Serve over HTTP (module loading needs a server) |
+
+### doom-flow (MLIR)
+
+[doom-flow](https://github.com/godofecht/doom-flow) builds with
+`BACKEND=c` (default) or `BACKEND=mlir`. The MLIR path needs Flow tip with
+`#247` (`--wasm32`), `#249` (null ptr statics), and `#250` (struct static
+inits, unsigned ops, `u8` zero-extend, `&module_global` addressof) — epic
+`#230`. With those, `FLOW_DIR=… BACKEND=mlir ./scripts/build_wasm.sh --doom-only`
+produces a playable in-browser IWAD boot (title / menu).
 
 Playground (local compile API):
 

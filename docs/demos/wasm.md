@@ -8,6 +8,9 @@ Every one is the unedited source from this repository, put through Flow → C �
 there. This markdown page cannot host WebAssembly; the wiki renders it as
 text, so the gallery is a separate static site under `/wasm/`.
 
+Also: **[DOOM on MLIR](../wasm/doom_mlir/index.html)** — doom-flow built with
+`BACKEND=mlir` (Flow `#250` / epic `#230`), shareware IWAD preloaded.
+
 The games and the field simulations link `runtime/gfx_wasm.c`, a canvas
 backend for the same gfx API that drives the native window and the headless
 GIF recorder. Nothing in any example was changed to make it run in a browser.

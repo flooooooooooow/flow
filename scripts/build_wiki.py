@@ -717,6 +717,7 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
                     {"label": "Evolution Suite", "path": "demos/evolution.md"},
                     {"label": "WebAssembly", "path": "demos/wasm.md"},
                     {"label": "Live WASM demos", "path": "wasm/index.html", "external": True},
+                    {"label": "DOOM (MLIR)", "path": "wasm/doom_mlir/index.html", "external": True},
                 ],
             },
             {
