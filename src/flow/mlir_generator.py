@@ -3688,6 +3688,9 @@ class MLIRGenerator:
         self.function_counter += 1
         ops.append(f"{self.indent()}{val} = llvm.load {ptr} : !llvm.ptr -> {mlir_type}")
         self._ssa_types[val] = mlir_type
+        flow_ty = info.get("flow_type")
+        if getattr(flow_ty, "name", "").startswith("u"):
+            self._ssa_unsigned.add(val)
         return val, ops
 
     def _store_module_global(self, name: str, mlir_type: str, value_ssa: str) -> List[str]:
@@ -3777,8 +3780,16 @@ class MLIRGenerator:
 
         # Flow uN lowers to iN; track unsigned SSA so / % >> and compares stay
         # logical (Python has no u32 — this is free in a typed native IR).
+        # Also consult Flow AST types: call returns / global loads may not yet
+        # be in `_ssa_unsigned` (doom-flow W_LumpNameHash % wnumlumps used
+        # signed srem, wrote before the hash table, and corrupted FILE*).
+        left_flow = self._flow_type_of_expr(bin_op.left)
+        right_flow = self._flow_type_of_expr(bin_op.right)
         is_unsigned = (
-            left_ssa in self._ssa_unsigned or right_ssa in self._ssa_unsigned
+            left_ssa in self._ssa_unsigned
+            or right_ssa in self._ssa_unsigned
+            or str(getattr(left_flow, "name", "") or "").startswith("u")
+            or str(getattr(right_flow, "name", "") or "").startswith("u")
         )
 
         op_text: str
@@ -5412,6 +5423,11 @@ class MLIRGenerator:
                     f"({', '.join(expected_arg_types)}) -> {ret_type}"
                 )
             self._ssa_types[ssa_name] = ret_type
+            ret_flow = None
+            if func_call.name in self.symbol_table:
+                ret_flow = self.symbol_table[func_call.name].get("return_type")
+            if getattr(ret_flow, "name", "").startswith("u"):
+                self._ssa_unsigned.add(ssa_name)
             if self._is_aggregate_mlir_type(ret_type):
                 stable, mat_ops = self._stabilize_aggregate_ssa(
                     ssa_name, ret_type, func_call.name
