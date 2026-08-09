@@ -5,8 +5,8 @@
       "lines": 1537
     },
     "documentation": {
-      "files": 136,
-      "lines": 30216
+      "files": 138,
+      "lines": 30490
     },
     "examples": {
       "files": 403,
@@ -49,8 +49,8 @@
     "stdlib": "106 modules",
     "tests": "346 tests"
   },
-  "commit": "6d3c25896da1",
-  "generated_at": "2026-08-08T20:23:32+01:00",
+  "commit": "c72a01a5fec7",
+  "generated_at": "2026-08-09T08:28:05+00:00",
   "languages": {
     "C": {
       "files": 94,
@@ -74,11 +74,11 @@
     },
     "HTML": {
       "files": 171,
-      "lines": 28923
+      "lines": 28924
     },
     "JavaScript": {
       "files": 146,
-      "lines": 7166
+      "lines": 7167
     },
     "Objective-C": {
       "files": 4,
@@ -90,7 +90,7 @@
     },
     "Python": {
       "files": 306,
-      "lines": 102072
+      "lines": 102086
     },
     "Rust": {
       "files": 10,
@@ -106,7 +106,7 @@
   "schema_version": 1,
   "totals": {
     "source_files": 2837,
-    "source_lines": 391168,
-    "tracked_files": 5913
+    "source_lines": 391184,
+    "tracked_files": 5915
   }
 }
