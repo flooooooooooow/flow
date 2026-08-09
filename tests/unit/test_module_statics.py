@@ -61,6 +61,20 @@ class TestParseAndTypecheck:
         )
         assert any("compile-time constant" in e for e in errs)
 
+    def test_const_binding_initializer_accepted(self):
+        # parallel_scaling.flow: `let mut cur_shards: i32 = SHARDS_MAX`
+        assert (
+            errors(
+                """
+            const SHARDS_MAX: i32 = 8
+            let mut cur_shards: i32 = SHARDS_MAX
+            function main() -> i32 { return cur_shards }
+            """,
+                strict=True,
+            )
+            == []
+        )
+
     def test_struct_typed_static_rejected(self):
         errs = errors(
             """
