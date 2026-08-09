@@ -102,8 +102,36 @@ Each GIF is a recording of the compiled program. Frames come from the real `gfx`
 
 | | | |
 |:---:|:---:|:---:|
-| ![Lorenz attractor](docs/demos/lorenz.gif) | ![Flow Tetris](docs/demos/tetris.gif) | ![Flow 2048](docs/demos/2048.gif) |
-| Lorenz (RK4) | Tetris (full game loop) | 2048 (grid logic) |
+| **Games** |||
+| ![Snake](docs/demos/games/snake.gif) | ![Asteroids](docs/demos/games/asteroids.gif) | ![Breakout](docs/demos/games/breakout.gif) |
+| Snake | Asteroids | Breakout |
+| ![Flappy](docs/demos/games/flappy.gif) | ![Invaders](docs/demos/games/invaders.gif) | ![Pong](docs/demos/games/pong.gif) |
+| Flappy | Invaders | Pong |
+| **Morphogenesis** |||
+| ![Gray-Scott](docs/demos/morphogenesis/gray_scott.gif) | ![Turing spots](docs/demos/morphogenesis/turing_spots.gif) | ![Diffusion-limited aggregation](docs/demos/morphogenesis/dla.gif) |
+| Gray-Scott | Turing spots | Diffusion-limited aggregation |
+| ![L-system tree](docs/demos/morphogenesis/lsystem_tree.gif) | ![Slime mold](docs/demos/morphogenesis/slime_mold.gif) | ![Sandpile](docs/demos/morphogenesis/sandpile.gif) |
+| L-system tree | Slime mold | Sandpile |
+| **Neurons and networks** |||
+| ![Hodgkin-Huxley](docs/demos/neuro/hodgkin_huxley.gif) | ![Izhikevich zoo](docs/demos/neuro/izhikevich_zoo.gif) | ![Balanced network](docs/demos/neuro/balanced_network.gif) |
+| Hodgkin-Huxley | Izhikevich zoo | Balanced network |
+| **Evolutionary biology** |||
+| ![Lotka-Volterra](docs/demos/evoleco/lotka_volterra_gfx.gif) | ![Wright-Fisher](docs/demos/evoleco/wright_fisher.gif) | ![Red Queen](docs/demos/evoleco/red_queen.gif) |
+| Lotka-Volterra | Wright-Fisher | Red Queen |
+| ![Spatial SIR](docs/demos/evoleco/sir_spatial.gif) | ![Hawk-Dove](docs/demos/evoleco/hawk_dove.gif) | ![Rock-paper-scissors](docs/demos/evoleco/rock_paper_scissors.gif) |
+| Spatial SIR | Hawk-Dove | Rock-paper-scissors |
+| **Planet** |||
+| ![Biomes](docs/demos/planet/planet_biomes.gif) | ![Tectonics](docs/demos/planet/planet_tectonics.gif) | ![Erosion](docs/demos/planet/planet_erosion.gif) |
+| Biomes | Tectonics | Erosion |
+| **Procedural generation** |||
+| ![Wavefunction dungeon](docs/demos/procgen/wfc_dungeon.gif) | ![Voronoi sites](docs/demos/procgen/voronoi_sites.gif) | ![Heightmap fBm](docs/demos/procgen/heightmap_fbm.gif) |
+| Wavefunction dungeon | Voronoi sites | Heightmap fBm |
+| **3D** |||
+| ![Voxel world](docs/demos/threed/voxel_world.gif) | ![FPS camera](docs/demos/threed/fps_camera.gif) | ![Physics 3D](docs/demos/threed/physics3d.gif) |
+| Voxel world | FPS camera | Physics 3D |
+| **Numerical and social** |||
+| ![Adaptive FMM](docs/demos/numerical/fmm_adaptive.gif) | ![Voter model](docs/demos/social/voter_model.gif) | ![Majority rule](docs/demos/social/majority_rule.gif) |
+| Adaptive FMM | Voter model | Majority rule |
 
 ```bash
 ./flow gfx examples/games/tetris_gfx.flow
@@ -111,6 +139,10 @@ Each GIF is a recording of the compiled program. Frames come from the real `gfx`
 ./flow run examples/ml/models/mlp_xor.flow
 ./flow gfx examples/morphogenesis/gray_scott.flow
 ./flow gfx examples/neuro/hodgkin_huxley.flow
+./flow gfx examples/evoleco/lotka_volterra_gfx.flow
+./flow gfx examples/planet/planet_biomes.flow
+./flow gfx examples/procgen/wfc_dungeon.flow
+./flow gfx examples/threed/voxel_world.flow
 ```
 
 | Domain | Gallery | Index |
