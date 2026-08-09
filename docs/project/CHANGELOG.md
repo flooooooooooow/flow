@@ -2,6 +2,20 @@
 
 All notable changes to FLOW will be documented in this file.
 
+## [Unreleased]
+
+### MLIR / doom follow-ups (#253–#255)
+
+- Confirmed `#253`: `-O1+` “noreturn / dropped main loop” was UB from
+  `return &module_global` spilling through alloca (fixed in `#250` addressof).
+  Regression test covers scalar `drawshim_*_addr`-style getters.
+- Confirmed `#254`: static `array<string,N>` globals initialize via
+  `_emit_static_llvm_array_global` (on main since `#250`).
+- `#255`: `--wasm32` / ILP32 now sizes `ptr` and `string` as 4 bytes in
+  memref struct layouts and pointer-element byte scaling (was hardcoded 8
+  in several fallbacks). Typed LLVM GEP already followed the target; doom-flow
+  should keep using `rmain_ptr_bytes()` instead of `* 8` in Flow source.
+
 ## [0.10.0] - 2026-08-08
 
 ### MLIR / WASM epic #221 (complete)
