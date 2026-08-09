@@ -1,12 +1,12 @@
 # FLOW Shader Language (FSL)
 
-A real (but focused) shading language for fullscreen fragment demos — lowers to Metal.
+A real (but focused) shading language for fullscreen fragment demos. It lowers to Metal.
 
 ```bash
 ./flow shader examples/gpu/shader_showcase.flow
 ```
 
-**Gallery controls:** `←` / `→` / `Space` cycle · `1`–`9` jump · `Esc` quit
+**Gallery controls:** `←` / `→` / `Space` cycle · `1` to `9` jump · `Esc` quit
 
 ## Quick example
 
@@ -71,7 +71,7 @@ Swizzles: `.xyzw`, `.rgb`, …
 
 ## Showcase
 
-`examples/gpu/shader_showcase.flow` — 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
+`examples/gpu/shader_showcase.flow`: 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
 
 ```bash
 ./flow shader examples/gpu/shader_showcase.flow
@@ -81,8 +81,8 @@ Swizzles: `.xyzw`, `.rgb`, …
 
 ## Pipeline
 
-1. `src/flow/shader_dsl.py` — lex/parse FSL  
-2. `src/flow/shader_codegen.py` — emit MSL (+ hash/noise prelude)  
-3. `runtime/shader_view_metal.m` — Cocoa + `CAMetalLayer` gallery viewer  
+1. `src/flow/shader_dsl.py`: lex/parse FSL  
+2. `src/flow/shader_codegen.py`: emit MSL (+ hash/noise prelude)  
+3. `runtime/shader_view_metal.m`: Cocoa + `CAMetalLayer` gallery viewer  
 
 macOS for the live window; `--emit-only` works anywhere.

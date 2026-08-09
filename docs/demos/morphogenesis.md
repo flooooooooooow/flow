@@ -1,16 +1,14 @@
-# Morphogenesis Gallery
+# Morphogenesis gallery
 
 Simulations of pattern formation written in Flow. Every clip below is
 recorded from the real compiled program through the headless recorder, and
 every clip starts before the pattern exists. Compare the first frame with the
 last one: that difference is the whole subject.
 
-This is [VISION.md](../vision.md) as a picture. Flow's founding claim is that
-the primary abstraction of a program should be the evolution of a system
-through time rather than a sequence of instructions, and that the mathematical
-model should be the executable. Morphogenesis is the cleanest argument
-available for that claim. The interesting object is never the state at any one
-instant, it is the trajectory, and each model is short enough to fit in a
+These demos match the direction in [VISION.md](../vision.md): the main abstraction
+is how a system evolves over time, not a sequence of instructions, and the
+mathematical model is the executable. The interesting object is the trajectory,
+not the state at any one instant. Each model is short enough to fit in a
 comment at the top of its file.
 
 Wherever the model is continuous, the dynamics are stated as a `flow` block

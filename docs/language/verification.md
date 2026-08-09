@@ -1,6 +1,6 @@
 # Flow Verification: Same Language, Same Syntax
 
-> **Third-party library — not core Flow.** Formal math verification lives in the **`flow-verify`** package ([overview](../third-party/flow-verify.md)). Core Flow is a general-purpose compiled language; `theorem` / `therefore` keywords are planned for the library, not required to write everyday programs.
+> **Third-party library, not core Flow.** Formal math verification lives in the **`flow-verify`** package ([overview](../third-party/flow-verify.md)). Core Flow is a general-purpose compiled language; `theorem` / `therefore` keywords are planned for the library, not required to write everyday programs.
 
 > **Status:** Design spec (not yet implemented)  
 > **Core idea:** A proof is a program. A theorem is a function. No second language.
@@ -48,10 +48,10 @@ theorem nat_add_zero(n: Nat) {
 | Field | Required | Purpose |
 |-------|----------|---------|
 | `means` | always | One or two sentences a beginner understands |
-| `from` | always | Where this comes from — textbook, paper, axiom system, with URL |
+| `from` | always | Where this comes from, textbook, paper, axiom system, with URL |
 | `tier` | always | `definition`, `axiom`, or `derived` |
 | `needs` | if derived | Which theorems it depends on |
-| `used_by` | if known | Which proofs consume it — prevents orphans |
+| `used_by` | if known | Which proofs consume it, prevents orphans |
 
 The checker warns on missing headers. CI fails on orphan derived theorems (proved but never referenced).
 
@@ -72,9 +72,9 @@ Matmul/vectorize.semantics-equal
 ```
 
 - **Path** = what the fact says
-- **`@from`** = literature provenance (peano, landau, boole — with URL)
+- **`@from`** = literature provenance (peano, landau, boole, with URL)
 - **`@tier`** = definition | axiom | derived
-- **Same claim → same path** — compiler rejects synonym creep
+- **Same claim → same path**, compiler rejects synonym creep
 
 ```flow
 theorem Nat/+.zero-right(n: Nat) {
@@ -155,7 +155,7 @@ Properties get the same header comments as theorems.
 
 ## Domain Examples
 
-### Math — minimal foundations, derive the rest
+### Math, minimal foundations, derive the rest
 
 `lib/verify/nat.flow` holds **definitions only**:
 
@@ -179,7 +179,7 @@ theorem nat_add_succ(n: Nat, m: Nat) {
 
 Everything else (`nat_add_zero`, `nat_add_commutes`, …) lives in `derived/` and lists `needs`.
 
-### Circuits — function + theorem, literature link to the architecture
+### Circuits, function + theorem, literature link to the architecture
 
 ```flow
 # means:  The full adder output matches binary addition with carry.
@@ -189,7 +189,7 @@ Everything else (`nat_add_zero`, `nat_add_commutes`, …) lives in `derived/` an
 # needs:  (truth table — exhaustive over 8 inputs)
 ```
 
-### Compiler opts — run both, therefore equal
+### Compiler opts, run both, therefore equal
 
 ```flow
 # means:  Vectorized matmul writes the same matrix as the naive version.
@@ -245,4 +245,4 @@ See [epistemology.md](epistemology.md) for Claim Paths and artifact details.
 
 ## One Sentence
 
-**Flow verification is Flow — every fact is named once, explained in English, linked to literature, and added only when something actually needs it.**
+**Flow verification is Flow, every fact is named once, explained in English, linked to literature, and added only when something actually needs it.**

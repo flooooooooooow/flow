@@ -104,7 +104,7 @@ function main() -> i32 {
 ### 2.1 Sort ints in place (browser)
 
 The browser teaches the *intent*. Native Flow also accepts `xs |> sort` and
-`players |> sortBy [desc .score, asc .name]` — see
+`players |> sortBy [desc .score, asc .name]`, see
 [`examples/basics/declarative_sort.flow`](../../examples/basics/declarative_sort.flow).
 
 ```flow
@@ -217,4 +217,4 @@ function main() -> i32 {
 ## Reference
 
 - [Ordering](../language/ordering.md)
-- [Language Spec — pipelines](../LANGUAGE_SPEC.md)
+- [Language Spec, pipelines](../LANGUAGE_SPEC.md)

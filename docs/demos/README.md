@@ -1,7 +1,7 @@
 # Demo recordings
 
 The GIFs in this folder are produced by running the real Flow programs. They are
-not illustrations of what the programs would look like — the pixels come from
+not illustrations of what the programs would look like. The pixels come from
 the same drawing calls the native window would receive.
 
 ## Naming contract
@@ -94,9 +94,9 @@ over frame numbers, where `flow_gfx_key_down` reports the key as held:
 ./flow record examples/games/snake_gfx.flow --keys "24-27:124,48-51:126,70-95:125"
 ```
 
-That holds Right (124) for frames 24–27, Up (126) for 48–51, then Down (125) for
-70–95. A single frame can be written `40:49`. Keycodes are the macOS virtual
-keycodes the programs already use — see `lib/stdlib/gfx.flow`.
+That holds Right (124) for frames 24-27, Up (126) for 48-51, then Down (125) for
+70-95. A single frame can be written `40:49`. Keycodes are the macOS virtual
+keycodes the programs already use (see `lib/stdlib/gfx.flow`).
 
 Two things to keep in mind when writing a script:
 
@@ -108,15 +108,15 @@ Two things to keep in mind when writing a script:
 ## Adding a demo
 
 Add an entry to `DEMOS` in `scripts/record_demos.py` with the program path, a
-frame budget, and — if it is interactive — a key script. Frame count, `skip`,
+frame budget, and, if it is interactive, a key script. Frame count, `skip`,
 and `duration_ms` together set the length and pace of the GIF; `scale` shrinks
 large windows so the file stays small enough for a docs page (games target
-320–480 px wide and under ~500 KB, hard cap 1 MB).
+320-480 px wide and under ~500 KB, hard cap 1 MB).
 
 Because the recorder and the games are fully deterministic (fixed RNG seeds,
 frame-counted input), a key script is a repeatable flight plan. The longer
 scripts in `record_demos.py` were derived by simulating a game's exact integer
-logic offline and searching for input that plays well — the committed frame
+logic offline and searching for input that plays well. The committed frame
 windows encode that play, and re-recording reproduces it bit for bit.
 
 A simulation demo (`morph(...)` in the same file) takes no input, so its only

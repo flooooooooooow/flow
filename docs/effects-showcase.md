@@ -1,9 +1,8 @@
 # Effect System Showcase: One Service, Many Worlds
 
-Flow's algebraic effect system is its clearest differentiator against Rust, Go,
-Mojo, and Julia. This document walks through the runnable demo at
-[`examples/effects/showcase.flow`](../examples/effects/showcase.flow) and makes
-the argument concrete.
+Flow's algebraic effect system is what sets it apart from Rust, Go,
+Mojo, and Julia. This page walks through the runnable demo at
+[`examples/effects/showcase.flow`](../examples/effects/showcase.flow).
 
 ```sh
 ./flow run examples/effects/showcase.flow
@@ -35,7 +34,7 @@ function place_order(sku: i32, qty: i32) -> i32 {
 }
 ```
 
-Every side effect — logging, time, inventory reads/writes, notifications —
+Every side effect (logging, time, inventory reads/writes, notifications)
 is an *effect operation* declared against an interface:
 
 ```flow
@@ -58,19 +57,19 @@ handle Log with SilentLogger {
 
 The demo runs the same `place_order` under four different worlds:
 
-1. **Production stack** — timestamped ops logging, warehouse stock levels,
+1. **Production stack**: timestamped ops logging, warehouse stock levels,
    outbound email. Order B is rejected (only 1 unit of sku 2002 in stock)
    and ops gets a restock email.
-2. **Test stack** — same calls, zero code changes: fixture inventory (order B
+2. **Test stack**: same calls, zero code changes: fixture inventory (order B
    now *accepted*), silent logs, captured notifications. One capability
    (`TestBackend`) handles two effects at once.
-3. **Dynamic scoping** — a nested `handle Log with SilentLogger` silences one
+3. **Dynamic scoping**: a nested `handle Log with SilentLogger` silences one
    region only; the outer handler is restored automatically when the block
    exits.
-4. **Handler composition** — the production logger *itself* performs the
+4. **Handler composition**: the production logger *itself* performs the
    `Clock` effect to timestamp lines, so swapping only the clock handler
    re-times every log line without touching the logger.
-5. **Safe defaults** — with no handler installed, operations are no-ops that
+5. **Safe defaults**: with no handler installed, operations are no-ops that
    return zero; the service degrades instead of crashing.
 
 ## Captured output
@@ -140,15 +139,15 @@ calling place_order with NO handlers installed:
 =====================================================
 ```
 
-## Why other languages can't express this as cleanly
+## Why other languages handle this differently
 
 The load-bearing property: **the callee names the *interface*, the caller
-names the *implementation*, and the binding is dynamically scoped** —
+names the *implementation*, and the binding is dynamically scoped**.
 `place_order` mentions `Inventory.stock_of` with no handler parameter, and
 whichever `handle` block encloses the *call* (however deep the call stack)
 decides what that means.
 
-- **Rust / Go** — no dynamic scoping. To swap an implementation you must
+- **Rust / Go**: no dynamic scoping. To swap an implementation you must
   thread it: a trait object / interface parameter, a generic parameter, or a
   context struct passed through *every* function between `main` and the leaf
   call. Adding a `Notify` dependency to a leaf function forces a signature
@@ -156,15 +155,15 @@ decides what that means.
   hand, with none of the automatic save/restore that `handle` blocks give
   you). In the showcase, `run_batch` sits between `main` and `place_order`
   and mentions no dependencies at all.
-- **Go specifically** — the idiomatic workaround is `context.Context`
+- **Go specifically**: the idiomatic workaround is `context.Context`
   smuggling values by string key: untyped, invisible in signatures, and
   checked at runtime. Flow's effect operations are typed declarations.
-- **Mojo / Julia** — no algebraic effects. Julia can approximate handler
+- **Mojo / Julia**: no algebraic effects. Julia can approximate handler
   swapping with dynamic multiple dispatch plus global state, Mojo with
   trait parameters, but both reduce to the same choice: thread parameters
   everywhere or mutate globals manually. Neither has scoped
   install/override/restore semantics as a language construct.
-- **Haskell** — can express this (mtl, `polysemy`, effect libraries) but at
+- **Haskell**: can express this (mtl, `polysemy`, effect libraries) but at
   the cost of monad transformer stacks or effect-row type gymnastics.
   Flow's version is first-class syntax in a systems language that compiles
   to plain C: a `handle` block is a save/restore of a vtable pointer.
@@ -215,9 +214,9 @@ FLOW_STRICT_EFFECTS=1 ./flow run examples/effects/showcase.flow
 
 `--strict-effects` enables:
 
-1. **Phase 1 — lexical handlers.** Tracks `handle E with …` and reports
+1. **Phase 1: lexical handlers.** Tracks `handle E with …` and reports
    `Unhandled effect 'E.op'` for bare performs.
-2. **Phase 2 — signature rows.** Functions may declare effects they may
+2. **Phase 2: signature rows.** Functions may declare effects they may
    perform:
 
 ```flow
@@ -259,7 +258,7 @@ keep working.
   through that effect's `_Thread_local` current-handler pointer, ignoring the
   parameter entirely. With no `handle ... with ...` block installed around
   the call, the handler stays `NULL` and every operation silently falls back
-  to its zeroed default — which can manifest as wrong output (nulls/zeros
+  to its zeroed default, which can manifest as wrong output (nulls/zeros
   where real values were expected) or, if a loop condition depends on a
   mutation that never happens, an infinite loop. **This style is retired.**
   The older demos in `examples/effects/` (`dependency_injection.flow`,
@@ -270,13 +269,13 @@ keep working.
   state across calls (a running counter, an accumulating sum), the fix
   threads that state through ordinary `let mut` locals in the caller and
   models the effect as a *pure* operation on an explicit value (e.g.
-  `Counter.next(current) -> i32`) rather than a stateful method — capability
+  `Counter.next(current) -> i32`) rather than a stateful method. Capability
   declarations are stateless (see below), so this is the pattern to reach
   for until dynamic handler objects land.
 - **Resumable/one-shot continuation semantics are absent.** These are
   tail-resumptive handlers only (every operation returns straight to the
   call site). You cannot abort a computation from a handler, retry it, or
-  run it twice — the classic exception/generator/scheduler encodings of
+  run it twice. The classic exception/generator/scheduler encodings of
   full algebraic effects are out of scope today.
 - **Type-inference gap inside capability methods.** `print`/`println` do
   not see parameter types inside capability method bodies (a string
@@ -286,15 +285,15 @@ keep working.
   `void`/`i32`/`string` work; unhandled operations default to zero, which
   is convenient (section [5]) but silent. Opt in to compile-time unhandled
   errors and signature effect rows (`function f() -> T with E`) via
-  `--strict-effects` / `FLOW_STRICT_EFFECTS=1` (Phases 1–2 shipped).
+  `--strict-effects` / `FLOW_STRICT_EFFECTS=1` (Phases 1 and 2 shipped).
   First-class function *types* with effect rows are still open.
 
 ## Files
 
-- `examples/effects/showcase.flow` — the demo (this document's subject)
-- `tests/runtime/test_effects_showcase.flow` — executed assertions pinning
+- `examples/effects/showcase.flow`: the demo (this document's subject)
+- `tests/runtime/test_effects_showcase.flow`: executed assertions pinning
   handler swap, nested override/restore, multi-effect capabilities,
   handler composition, and unhandled defaults
-- `tests/unit/test_zero_cost_effects.py` — pins direct-call emission inside
+- `tests/unit/test_zero_cost_effects.py`: pins direct-call emission inside
   `handle` blocks and dynamic dispatch everywhere the handler is unknowable
-- `docs/LANGUAGE_SPEC.md` section 6 — effect grammar and implementation notes
+- `docs/LANGUAGE_SPEC.md` section 6: effect grammar and implementation notes

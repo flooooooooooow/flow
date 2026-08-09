@@ -26,7 +26,7 @@ this page covers the subset below. See also [memory.md](memory.md),
 
 Mathematical helpers in `lib/stdlib/math.flow` (mostly **`f32`**).
 Bare C `math.h` names (`sin`, `cos`, `floor`, …) are also available via the
-C backend as FFI/passthrough — those are **not** the same as the Flow exports
+C backend as FFI/passthrough, those are **not** the same as the Flow exports
 below.
 
 ### Arithmetic
@@ -490,7 +490,7 @@ Algebraic-effect async surface (`lib/stdlib/async.flow`). Full honesty notes:
 ## autodiff.flow
 
 Automatic differentiation library (`lib/stdlib/autodiff.flow`).
-**Library AD, not a compiler pass** — see [autodiff.md](autodiff.md).
+**Library AD, not a compiler pass**, see [autodiff.md](autodiff.md).
 
 ### Dual Numbers
 
@@ -510,7 +510,7 @@ struct Dual { val: f32, grad: f32 }
 | `dual_val` / `dual_grad` | `(Dual) -> f32` | Accessors |
 
 Overloaded `add` / `sub` / `mul` / `neg` and helpers (`sigmoid`, `ln`, …)
-are also exported — see the source for the full list. GPU elementwise
+are also exported, see the source for the full list. GPU elementwise
 backward kernels: `lib/stdlib/gpu_gradients.flow`.
 
 ---

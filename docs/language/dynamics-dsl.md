@@ -2,7 +2,7 @@
 
 Flow ships a declarative surface syntax for linear dynamical systems: declare a
 plant, analyze it (controllability, spectral radius, Gramians), evolve feedback
-gains with a genetic algorithm, and certify the closed loop — all as top-level
+gains with a genetic algorithm, and certify the closed loop, all as top-level
 blocks, with zero matrix boilerplate.
 
 **How it works (honestly):** the `dsys` vocabulary is not part of the core
@@ -11,14 +11,14 @@ into `src/flow/module_resolver.py`) that runs before the real parser sees your
 source. The blocks below are stripped from the file, compiled into ordinary
 calls to the [`stdlib/dynamics` library](../library/dynamics.md), and the
 generated setup code is injected at the top of `main()`'s body (importing
-`stdlib/dynamics/ga_analysis.flow` — or `wfc_ga_coupling.flow` when WFC blocks
-are present — automatically). The bound names (`plant_ok`, `k1`, …) become
+`stdlib/dynamics/ga_analysis.flow`, or `wfc_ga_coupling.flow` when WFC blocks
+are present, automatically). The bound names (`plant_ok`, `k1`, …) become
 ordinary local variables of `main`.
 
 Working examples:
 
-- [`examples/dynamics/ga_dsys_syntax.flow`](../../examples/dynamics/ga_dsys_syntax.flow) — every analysis block in one file
-- [`examples/evolution/spring_mass_control.flow`](../../examples/evolution/spring_mass_control.flow) — continuous plant, model → analyze → control → certify
+- [`examples/dynamics/ga_dsys_syntax.flow`](../../examples/dynamics/ga_dsys_syntax.flow), every analysis block in one file
+- [`examples/evolution/spring_mass_control.flow`](../../examples/evolution/spring_mass_control.flow), continuous plant, model → analyze → control → certify
 
 ## Current envelope
 
@@ -27,7 +27,7 @@ LTI systems** (`n 2 m 1 p 1`). Spectral-radius bindings use a closed-form 2x2
 eigenvalue solve, and the internal scratch buffers the expander emits are sized
 for n = 2. Continuous declarations are supported and are Euler-discretized
 (`Ad = I + dt*A`, `Bd = dt*B`) before analysis. Keep `generations` at 32 or
-below — the GA convergence history buffer holds 32 entries.
+below, the GA convergence history buffer holds 32 entries.
 
 ## Namespaces (`dyn.` / `dynamics { }`)
 
@@ -54,7 +54,7 @@ The VS Code / Cursor extension + LSP offer snippets for both forms
 
 ---
 
-## `dsys` — declare a system
+## `dsys`, declare a system
 
 ```flow
 dsys plant {
@@ -71,7 +71,7 @@ Defaults if a line is omitted: `discrete`, `dt 0.1`, `n 2 m 1 p 1`.
 `discrete` means `x[k+1] = A x[k] + B u[k]`; `continuous` means
 `x' = A x + B u`, discretized by the compiler before any analysis runs.
 
-## `horizon` — name an analysis horizon
+## `horizon`, name an analysis horizon
 
 ```flow
 horizon rollout finite 50              # 50 steps
@@ -81,7 +81,7 @@ horizon asymptotic infinite gamma 0.99 # discounted infinite horizon
 Horizons are referenced by name from `sense`, `ga evolve`, `closed`, and
 `analyze` blocks.
 
-## `sense` — analyze the open loop
+## `sense`, analyze the open loop
 
 ```flow
 sense on plant {
@@ -96,7 +96,7 @@ Each line binds one measurement to a fresh variable, visible in `main()`.
 `gramian finite`/`gramian infinite` name a horizon declared earlier; only the
 trace of the controllability Gramian is bound.
 
-## `ga evolve` — search feedback gains
+## `ga evolve`, search feedback gains
 
 ```flow
 ga evolve on plant over rollout -> k1 k2 {
@@ -111,7 +111,7 @@ Runs an elitist genetic algorithm over state-feedback gains
 `sum(x1^2 + x2^2 + 0.1 u^2)` from `x0 = [1, 0]` over the named horizon. The
 best gains are bound to the two variables after the `->`.
 
-## `closed` — certify the closed loop
+## `closed`, certify the closed loop
 
 ```flow
 closed plant with k1 k2 {
@@ -124,7 +124,7 @@ closed plant with k1 k2 {
 Forms the closed-loop matrix `A - B*K` from the evolved (or hand-written)
 gains and re-analyzes it.
 
-## `analyze` — one-shot unified report
+## `analyze`, one-shot unified report
 
 ```flow
 analyze plant ga k1 k2 over rollout -> report {
@@ -132,9 +132,9 @@ analyze plant ga k1 k2 over rollout -> report {
 }
 ```
 
-Runs the whole pipeline — baseline cost, GA search, controllability, open- and
+Runs the whole pipeline, baseline cost, GA search, controllability, open- and
 closed-loop spectral radii, finite/infinite Gramian traces, closed-loop
-energy, convergence generation — and binds a `GAAnalysisReport` struct (fields
+energy, convergence generation, and binds a `GAAnalysisReport` struct (fields
 like `report.fitness_drop`, `report.closed_spectral_radius`,
 `report.stable_closed_loop`; see
 [the library reference](../library/dynamics.md#ga_analysisflow)). It also
@@ -231,13 +231,13 @@ The `dsys` vocabulary is the shipped seed of Flow's founding vision
 | Today (shipped) | North-star (aspirational) |
 |---|---|
 | `dsys plant { A … B … C … }` | `flow Plant { position : Meter; … }` with typed, unit-checked state |
-| matrices as flat numbers | `position evolves as velocity` — dynamics as equations, any nonlinearity |
+| matrices as flat numbers | `position evolves as velocity`, dynamics as equations, any nonlinearity |
 | `when height reaches 0.0 { velocity becomes -0.8 * velocity }` | event location by root-finding inside the step; boolean edge guards |
 | `continuous` + Euler discretization | solver selection in a `deploy { solver RK4 }` block |
 | `every 100 ms { heater becomes … }` + `solver { dt 1 ms }` | multi-rate composition via `connect`; `after … within 200 ms` temporal guarantees |
 | `sense on plant { controllable … }` | `analyze Plant { poles, stability, controllability, observability }` |
-| `ga evolve on … { … }` | `control Plant { objective { minimize error } }` — PID/LQR/MPC synthesis |
-| `closed … { stable -> s }` + runtime check | `guarantee { stable }` — compilation fails if unprovable |
+| `ga evolve on … { … }` | `control Plant { objective { minimize error } }`, PID/LQR/MPC synthesis |
+| `closed … { stable -> s }` + runtime check | `guarantee { stable }`, compilation fails if unprovable |
 | pre-parse text expansion | first-class grammar, type-checked `flow` declarations |
 
 The first north-star card has shipped: `evolves as` now compiles. A
@@ -271,8 +271,7 @@ bang-bang controller written this way. Invariants and `connect` remain
 aspirational.
 
 The strategy is to grow this seed rather than build a second language beside
-the current one. The concrete grammar-level plan for each north-star construct
-— what `evolves as` desugars to, how time blocks and hybrid events land — is
+the current one. The concrete grammar-level plan for each north-star construct, what `evolves as` desugars to, how time blocks and hybrid events land, is
 specified in [docs/vision/north-star.md](../vision/north-star.md), with
 aspirational example programs in
 [docs/vision/examples/](../vision/examples/). For the vision itself, read
