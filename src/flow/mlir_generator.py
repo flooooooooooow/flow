@@ -362,6 +362,10 @@ class MLIRGenerator:
         self._struct_llvm_building: Set[str] = set()
         self._init_per_function_state()
 
+    def _pointer_bytes(self) -> int:
+        """Target pointer width in bytes (4 under ``--wasm32`` / ILP32, else 8)."""
+        return 4 if self.size_t_bits == 32 else 8
+
     def _abi_adjust_libc(
         self, name: str, parameters: List[Parameter], return_type: Type
     ) -> tuple:
@@ -557,6 +561,9 @@ class MLIRGenerator:
             return 8
         elif type_name in ['i128', 'u128']:
             return 16
+        elif self._is_pointer_flow_type(flow_type) or type_name == 'string':
+            # string is a byte pointer; ILP32/wasm32 must not assume LP64 (#255).
+            return self._pointer_bytes()
         else:
             # For struct types, calculate recursively
             if type_name in self.struct_layouts:
@@ -4186,8 +4193,10 @@ class MLIRGenerator:
                     elem_size = 2
                 elif elem_ty in ("i32", "u32", "f32"):
                     elem_size = 4
-                elif elem_ty in ("i64", "u64", "f64", "!llvm.ptr"):
+                elif elem_ty in ("i64", "u64", "f64"):
                     elem_size = 8
+                elif elem_ty == "!llvm.ptr":
+                    elem_size = self._pointer_bytes()
                 byte_off = idx64
                 if elem_size != 1:
                     sz = f"%{self.function_counter}"
@@ -4504,12 +4513,21 @@ class MLIRGenerator:
             return ext_name, ops
 
         else:
-            # Generic fallback for f64, i64, pointers, and other 8-byte types
-            # Determine byte width from type
+            # Generic fallback for f64, i64, pointers, and other wide types.
+            # Pointer / string width follows the target ABI (#255).
             type_name = field_type.name
-            is_pointer = getattr(field_type, 'is_pointer', False) or type_name.startswith('ptr')
-            if type_name in ['f64'] or is_pointer or type_name in ['i64', 'u64']:
+            is_pointer = (
+                getattr(field_type, 'is_pointer', False)
+                or type_name.startswith('ptr')
+                or type_name == 'string'
+            )
+            if type_name in ['f64', 'i64', 'u64']:
                 num_bytes = 8
+                int_type = 'i64'
+            elif is_pointer:
+                num_bytes = self._pointer_bytes()
+                # Assemble into i64 so callers that ptrtoint/inttoptr stay consistent;
+                # only `num_bytes` are read from the memref (#255).
                 int_type = 'i64'
             else:
                 # Unknown type — treat as i32 fallback
@@ -5194,10 +5212,21 @@ class MLIRGenerator:
                         ops.append(f"{self.indent()}{idx_name} = arith.constant {byte_offset} : index")
                         ops.append(f"{self.indent()}memref.store {byte_name}, {alloc_name}[{idx_name}] : memref<{total_size}xi8>")
 
-                elif field_type.name in ['i64', 'u64'] or getattr(field_type, 'is_pointer', False) or field_type.name.startswith('ptr'):
-                    # Store i64/pointer as 8 bytes (little-endian)
+                elif (
+                    field_type.name in ['i64', 'u64']
+                    or getattr(field_type, 'is_pointer', False)
+                    or field_type.name.startswith('ptr')
+                    or field_type.name == 'string'
+                ):
+                    # Store i64 as 8 bytes; pointers/strings follow ABI width (#255).
+                    is_ptrish = (
+                        getattr(field_type, 'is_pointer', False)
+                        or field_type.name.startswith('ptr')
+                        or field_type.name == 'string'
+                    )
+                    num_bytes = self._pointer_bytes() if is_ptrish else 8
                     src_name = value_ssa
-                    for i in range(8):
+                    for i in range(num_bytes):
                         byte_offset = offset + i
                         shift_name = f"%{self.function_counter}"
                         self.function_counter += 1

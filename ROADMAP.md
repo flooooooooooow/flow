@@ -259,7 +259,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 |------|--------|--------|
 | Windows graphics support | ✅ partial, [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
 | Self-hosting components | 🔲 | Dogfooding |
-| WASM target | ✅ Flow→C|MLIR→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `#221`); doom-flow MLIR playable (`#230` / `#250`); native Flow-in-WASM deferred | Web deployment |
+| WASM target | ✅ Flow→C|MLIR→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `#221`); doom-flow MLIR playable at `-O2` (`#230` / `#250`; `#253`/`#254` resolved; `#255` ILP32 polish in progress) | Web deployment |
 | Tier-0 tourist examples | ✅ [#169](https://github.com/flooooooooooow/flow/issues/169) | Canonical table in examples/README; UI/WASM/packages present; concurrency pipeline deferred |
 | MLIR opt pass flags | ✅ [#166](https://github.com/flooooooooooow/flow/issues/166) | `--opt-level` + `--no-{vectorization,loop-fusion,mem2reg,sccp,licm,cse,dce,inline}` + `--print-pass-pipeline` |
 | GPU autodiff | 🔲 | ML performance |

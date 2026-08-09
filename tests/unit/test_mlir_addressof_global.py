@@ -56,3 +56,37 @@ function main() -> i32 {
     if "llvm.alloca" in body and "!llvm.ptr" in body:
         # Allow only if addressof is returned without store-to-alloca-of-addr pattern.
         assert "llvm.store" not in body or body.find("addressof") < body.find("llvm.store")
+
+
+def test_address_of_scalar_module_global_is_not_alloca_spill():
+    """`return &dc_yh` must be addressof — load+spill becomes UB at -O1 (#253).
+
+    Returning a pointer to a fresh alloca of the loaded value makes LLVM treat
+    callers as unreachable under -O1+, which showed up as false ``noreturn`` on
+    doom draw routines and a dropped main loop after emcc optimize.
+    """
+    mlir = flow_to_mlir(
+        parse_flow_code(
+            """
+let mut dc_yh: i32 = 0
+
+function drawshim_dc_yh_addr() -> ptr<i32> {
+    return &dc_yh
+}
+
+function main() -> i32 {
+    let p: ptr<i32> = drawshim_dc_yh_addr()
+    p[0] = 1
+    return p[0]
+}
+"""
+        ),
+        source_file="test.flow",
+    )
+    start = mlir.find("func.func @drawshim_dc_yh_addr")
+    assert start != -1
+    end = mlir.find("func.func @", start + 1)
+    body = mlir[start : end if end != -1 else None]
+    assert "llvm.mlir.addressof @dc_yh" in body
+    assert "llvm.alloca" not in body
+    assert "llvm.load" not in body

@@ -105,6 +105,17 @@ inits, unsigned ops, `u8` zero-extend, `&module_global` addressof) — epic
 `#230`. With those, `FLOW_DIR=… BACKEND=mlir ./scripts/build_wasm.sh --doom-only`
 produces a playable in-browser IWAD boot (title / menu).
 
+**`-O1` / `-O2`:** The false-`noreturn` drop of the main loop (`#253`) was
+caused by `return &module_global` spilling into a stack alloca (UB that LLVM
+turns into `unreachable` under `-O1+`). That is fixed by `#250`'s addressof
+lowering; MLIR doom builds can use `emcc -O2`. Static `array<string,N>`
+globals (`#254`) are initialized via `_emit_static_llvm_array_global` on
+main. Remaining ILP32 polish (`#255`): prefer typed GEP / `rmain_ptr_bytes()`
+over hardcoded `* 8` in Flow source; `--wasm32` sizes `ptr`/`string` fields
+to 4 bytes in memref layouts.
+
+Hosted preview: [wasm/doom_mlir](../wasm/doom_mlir/index.html).
+
 Playground (local compile API):
 
 ```bash
