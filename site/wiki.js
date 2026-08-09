@@ -809,6 +809,7 @@ function renderNotFound(path, message) {
             <div class="not-found-links">
                 <a href="#" class="wiki-cta wiki-cta-primary" data-goto="wiki-home.md">Home</a>
                 <a href="#" class="wiki-cta" data-goto="getting-started.md">Quick Start</a>
+                <a href="#" class="wiki-cta" data-goto="demos/overview.md">Galleries</a>
                 <a href="#" class="wiki-cta" data-goto="tutorials/beginner.md">Tutorials</a>
                 <a href="#" class="wiki-cta" data-goto="third-party/flow-verify-catalog.md">Proof catalog</a>
             </div>

@@ -44,6 +44,10 @@ echo -e "${BLUE}=== Running Tier 2 tests (transpile + compile) ===${NC}"
 ./flow test --tier 2
 
 echo ""
+echo -e "${BLUE}=== Running memory stdlib test suite ===${NC}"
+bash tools/test/test_memory.sh
+
+echo ""
 echo -e "${BLUE}=== Running Python unit tests ===${NC}"
 PYTHONPATH=src pytest tests/ -v --tb=short || echo "No Python unit tests or pytest not configured"
 

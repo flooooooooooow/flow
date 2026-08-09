@@ -1,4 +1,4 @@
-# Flow North Star — From Vision to Grammar
+# Flow North Star, From Vision to Grammar
 
 > Maps every construct in [VISION.md](../../VISION.md) onto concrete, implementable
 > grammar and semantics, grounded in what the compiler supports today
@@ -9,7 +9,7 @@
 >
 > Status: design document. Nothing in here is implemented unless explicitly
 > marked SHIPPED. Aspirational example programs live in
-> [`docs/vision/examples/`](examples/) — deliberately outside `tests/` and
+> [`docs/vision/examples/`](examples/), deliberately outside `tests/` and
 > `examples/` so neither `./flow test` discovery (`git ls-files tests examples`)
 > nor `scripts/verify_examples.py` (roots: `examples`, `apps`, `benchmarks`)
 > picks them up.
@@ -94,7 +94,7 @@ Flow today is a statically-typed general-purpose language (functions, structs,
 enums, traits, generics, effects, theorem blocks) compiling to C, with a
 *separate* pre-parse dynamical-systems surface (`dsys` / `sense on` /
 `ga evolve`, expanded by `src/flow/dynamics_dsl.py` before the real parser ever
-sees the source — hook: `src/flow/module_resolver.py:93-94`).
+sees the source, hook: `src/flow/module_resolver.py:93-94`).
 
 The north-star constructs split across those two channels deliberately:
 
@@ -110,7 +110,7 @@ The north-star constructs split across those two channels deliberately:
 `represent`, `solver` become reserved words. They are recognized *contextually*
 (identifier token + lookahead), exactly because the current lexer keyword table
 (`parser.py`, `self.keywords`, ~line 660) turns reserved words into dedicated
-token types globally — reserving `state` or `input` would break every existing
+token types globally, reserving `state` or `input` would break every existing
 program using them as variable names (and they are common). `./flow test` runs
 ~hundreds of files; zero of them may regress.
 
@@ -118,7 +118,7 @@ Cost of the tradeoff: parse functions need one-token lookahead
 (`self.peek()`-style) instead of a clean token-type dispatch, and error messages
 must be written by hand for the contextual forms. Accepted.
 
-Two existing tokens are reused: `AS` (`evolves as` — `as` is already
+Two existing tokens are reused: `AS` (`evolves as`, `as` is already
 `TokenType.AS`, used for casts) and `ARROW` (`->` in `connect`, already lexed
 for return types).
 
@@ -132,7 +132,7 @@ keeps the embedded story honest from day one.
 
 ---
 
-## 1. `flow Name { ... }` — the flow declaration
+## 1. `flow Name { ... }`, the flow declaration
 
 ### 1.1 Syntax
 
@@ -155,7 +155,7 @@ check `current == IDENT("flow") and peek == IDENT and peek2 == LBRACE`. That
 triple-lookahead makes `flow` unambiguous with any expression or declaration
 start. Same pattern for `unit` (§6).
 
-### 1.2 Relationship to `struct` — decision
+### 1.2 Relationship to `struct`, decision
 
 **A `flow` is a struct plus dynamics metadata.** `FlowDecl` is a new AST node
 *wrapping* a synthesized `StructDecl` whose fields are the flow's `state`,
@@ -167,21 +167,21 @@ struct literals, passing by pointer) applies to a flow instance for free, and
 `Robot { motor : Motor }` composition (§8) is just a struct field of flow type.
 
 Rejected alternative: `flow` as an entirely parallel top-level namespace with
-its own instance semantics — needless duplication of the checker's struct
+its own instance semantics, needless duplication of the checker's struct
 handling (`type_checker.py:407` collect phase) and `monomorphize.py`.
 
 ### 1.3 Semantics of the sections
 
-- `state` — persistent, owned by the flow instance, integrated/updated by
+- `state`, persistent, owned by the flow instance, integrated/updated by
   dynamics. Initializer required at `Name_init` time (either in the decl or in
   the init call; decl-initializer wins as default).
-- `input` — read-only within the flow each step; written by the embedder or by
+- `input`, read-only within the flow each step; written by the embedder or by
   `connect` (§8) before the step.
-- `output` — computed each step *after* integration from states/inputs/params.
+- `output`, computed each step *after* integration from states/inputs/params.
   `output torque : f64 = k * current` declares the output map inline. An output
   with no `=` must be assigned in exactly one `every`/`when` body, else
   compile error.
-- `param` — constant per instance after init. `param damping : f64 > 0.0`
+- `param`, constant per instance after init. `param damping : f64 > 0.0`
   installs a runtime init-time check in v1 (same trap machinery as §5.4);
   static proving is future work.
 
@@ -211,7 +211,7 @@ This ordering is normative.
 
 ---
 
-## 2. `x evolves as expr` — continuous dynamics
+## 2. `x evolves as expr`, continuous dynamics
 
 ### 2.1 Syntax
 
@@ -222,12 +222,12 @@ evolves_stmt := IDENT "evolves" "as" expression
 Only legal directly inside a `flow` body, and `IDENT` must name a `state` of
 that flow (checker error otherwise; also an error to give one state two
 `evolves` statements, or both `evolves` and a `becomes` targeting it from an
-`every` block — a state is continuous or discrete, not both. `when` resets §5
+`every` block, a state is continuous or discrete, not both. `when` resets §5
 *are* allowed on continuous states: that is what "hybrid" means).
 
 Parsing: inside the flow-body loop, a statement starting with `IDENT` whose
 next token is `IDENT("evolves")` takes this path; `evolves` is consumed as an
-identifier, then `expect(TokenType.AS)` — the existing `as` token. No conflict
+identifier, then `expect(TokenType.AS)`, the existing `as` token. No conflict
 with cast expressions: casts are `expr as type` and we consume `evolves` before
 `as`, so the cast grammar never sees it. The RHS is an ordinary
 `parse_expression()` over states, inputs, params, literals, and pure functions
@@ -238,16 +238,16 @@ grammar is already newline-tolerant inside a statement.
 Until units land, both sides are `f64`/`f32` and only numeric-type agreement is
 checked.
 
-### 2.2 Semantics — simultaneous derivative evaluation
+### 2.2 Semantics, simultaneous derivative evaluation
 
 All `evolves` right-hand sides in a flow are evaluated against the **pre-step
 state**, then all states advance together. This is the mathematical ODE
 semantics `x' = f(x, u)`; declaration order of `evolves` statements is
 irrelevant and must stay irrelevant. (Tradeoff recorded: sequential/Gauss-Seidel
 update can be more stable for some systems but makes program meaning depend on
-statement order — rejected.)
+statement order, rejected.)
 
-### 2.3 Where `dt` comes from — decision
+### 2.3 Where `dt` comes from, decision
 
 `dt` is **caller-supplied to `Name_step`**, in seconds as `double`. Sources, in
 priority order:
@@ -266,11 +266,11 @@ priority order:
 3. **Fallback default** for simulation drivers when no `solver` block exists:
    `1 ms`, emitted as a `#define NAME_DEFAULT_DT 1e-3` with a compile-note.
 
-There is deliberately **no global implicit time** — VISION.md's "time is
+There is deliberately **no global implicit time**, VISION.md's "time is
 explicit" principle. A flow that uses `every`/`reaches` but has no `solver`
 block and is never given a dt cannot silently run.
 
-### 2.4 Lowering — explicit Euler first, RK4 second
+### 2.4 Lowering, explicit Euler first, RK4 second
 
 v1 (card `evolves-syntax`) generates explicit Euler with simultaneous update:
 
@@ -302,7 +302,7 @@ purity; documented error message tells the user to lift impure work into an
 
 ---
 
-## 3. `x becomes expr` — discrete update
+## 3. `x becomes expr`, discrete update
 
 ### 3.1 Syntax
 
@@ -310,12 +310,12 @@ purity; documented error message tells the user to lift impure work into an
 becomes_stmt := IDENT "becomes" expression
 ```
 
-Legal only inside `every` blocks (§4) and `when` handlers (§5) — *not* at flow
+Legal only inside `every` blocks (§4) and `when` handlers (§5), *not* at flow
 top level (a bare top-level `becomes` has no time base) and not in ordinary
 functions. Parsed contextually like `evolves` (IDENT + peek `becomes`).
 Target must be a `state` or `output` of the enclosing flow.
 
-### 3.2 Semantics — synchronous block update
+### 3.2 Semantics, synchronous block update
 
 Within one `every` or `when` body, **all `becomes` right-hand sides read the
 pre-block values**; writes land together at block end (classic synchronous /
@@ -326,7 +326,7 @@ expect, but it breaks the declarative reading ("this block *is* the transition
 relation") and makes reordering statements change meaning. Synchronous wins;
 the checker rejects two `becomes` targeting the same variable in one block.
 Ordinary `let` bindings and calls inside the block execute sequentially as
-normal statements — only `becomes` writes are deferred.
+normal statements, only `becomes` writes are deferred.
 
 Lowering: snapshot the written-set into locals, evaluate RHSes against the
 struct, assign at block end. Cost: one local per written state, zero heap.
@@ -344,7 +344,7 @@ unit_suffix := "ns" | "us" | "ms" | "s" | "min"
 
 Lexer change (this is the *only* lexer change in the first two cards): after
 lexing a NUMBER, if the immediately following token is an identifier that is
-exactly a unit suffix **and the parser is in a duration context** — the token
+exactly a unit suffix **and the parser is in a duration context**, the token
 stream keeps them separate; the *parser* composes them. I.e. `every 10 ms`
 parses as `every` NUMBER(10) IDENT(ms). `parse_duration()` accepts
 NUMBER IDENT and validates the suffix. This avoids lexer statefulness and
@@ -353,7 +353,7 @@ the current NUMBER regex stops at `m`, producing NUMBER(10) IDENT(ms)
 naturally.
 
 **Representation decision:** durations canonicalize to **nanoseconds in
-`i64`** at parse time (`DurationLiteral(ns: i64)`). Range: ±292 years — enough.
+`i64`** at parse time (`DurationLiteral(ns: i64)`). Range: ±292 years, enough.
 Fractional literals (`0.5 ms`) are exact iff they land on integer ns, else
 compile error (no silent rounding of time).
 
@@ -373,11 +373,11 @@ Flow-body only. Body statements: `becomes`, `let`, `if`/`match`, calls,
 ### 4.3 Semantics
 
 `every P { B }` fires B once per elapsed period P of *simulated/integrated
-time* (the accumulation of `dt` passed to `Name_step`) — **not** wall-clock
+time* (the accumulation of `dt` passed to `Name_step`), **not** wall-clock
 time. Phase: first firing at t ≥ P (not at t = 0); rationale: `counter becomes
 counter + 1` should read 0 during the first period. Multiple `every` blocks
 with different periods coexist; blocks due on the same tick fire in
-declaration order (recorded decision — they are semantically independent
+declaration order (recorded decision, they are semantically independent
 because of §3.2, but side-effecting calls need a defined order).
 
 If `dt > P` the block fires multiple times per step (catch-up loop), so
@@ -405,7 +405,7 @@ accumulators if it bites).
 
 ---
 
-## 5. Hybrid events — `when x reaches L { ... }`
+## 5. Hybrid events, `when x reaches L { ... }`
 
 ### 5.1 Syntax
 
@@ -418,7 +418,7 @@ when_guard  := IDENT "reaches" expression            # zero-crossing form
 Flow-body only. `reaches` is contextual (IDENT + peek `reaches`). In the
 `reaches` form, IDENT must be a continuous (`evolves`) state and the level
 expression must be constant over a step (params/literals only, v1). Body may
-use `becomes` (including on the guarded state — that's the reset map) and
+use `becomes` (including on the guarded state, that's the reset map) and
 ordinary statements.
 
 ### 5.2 Semantics
@@ -434,7 +434,7 @@ ordinary statements.
   `every` blocks, before outputs/invariants (§1.4 order). Multiple events
   firing on one step run in declaration order.
 
-### 5.3 Accuracy — honest v1 statement
+### 5.3 Accuracy, honest v1 statement
 
 v1 detects the crossing **at step granularity**: the event handler runs at the
 end of the step in which the sign changed, with the state slightly *past* the
@@ -455,7 +455,7 @@ if ((g <= 0.0) != (s->__guard_0_prev <= 0.0) || g == 0.0) { /* reset body */ }
 s->__guard_0_prev = g;
 ```
 
-### 5.4 `always { }` / `never { }` — runtime-checked invariants
+### 5.4 `always { }` / `never { }`, runtime-checked invariants
 
 ```
 always_block := "always" "{" expression+ "}"     # each line: boolean expr
@@ -469,17 +469,17 @@ returns 0 or the 1-based index of the violated clause; `Name_step` calls it
 and on violation calls `flow_panic("<flow>.<file>:<line>: invariant
 violated: <source text>")` → `abort()`. Under the transpiler's existing
 `--lenient` flag, downgrade to one stderr line per clause per run (first
-violation only, to avoid log storms — recorded).
+violation only, to avoid log storms, recorded).
 
 Static proving (connecting to the existing `theorem` / `proof_kernel.py`
 machinery) is explicitly future work; the grammar carries no proof obligations
 in v1. VISION.md's `never { valve.open  pump.off }` conjunction-of-states form
-reads as `never { valve.open && pump.off }` — decision: `never` clauses are
+reads as `never { valve.open && pump.off }`, decision: `never` clauses are
 each a full boolean expression, one per line; no implicit conjunction magic.
 
 ---
 
-## 6. Units of measure — minimal viable version
+## 6. Units of measure, minimal viable version
 
 ### 6.1 What exists today
 
@@ -489,7 +489,7 @@ Speed` has no meaning and there is no dimensional algebra. The checker stores
 them as `SemanticType(kind=DISTINCT, name, base_type)`
 (`type_checker.py:441-449`).
 
-### 6.2 Decision — dimension vectors on top of the distinct-type machinery
+### 6.2 Decision, dimension vectors on top of the distinct-type machinery
 
 New contextual top-level declaration (same triple-lookahead trick as `flow`):
 
@@ -509,7 +509,7 @@ unit Radian                       # angles are their own base dim (decision)
 ```
 
 Checker representation: extend `SemanticType` with `dims:
-Optional[Tuple[int, ...]]` — an exponent vector over the *declared base units
+Optional[Tuple[int, ...]]`, an exponent vector over the *declared base units
 of the program* (not hard-coded SI-7; a program declares only what it needs,
 and stdlib ships an SI prelude). A `unit` decl behaves exactly like
 `distinct type X = f64` **plus** a dims vector.
@@ -528,14 +528,14 @@ Checking rules (all in the existing binary-op checking path):
   recorded). Duration literals in `every` (§4.1) are the one exception and are
   a closed special case.
 - `sin/cos/exp/...` require dimensionless or `Radian` (Radian erases to
-  dimensionless at these boundaries — decision; the alternative, forcing
+  dimensionless at these boundaries, decision; the alternative, forcing
   `angle / 1 rad`, is noise).
 - `evolves as` once units exist: `dim(rhs) == dim(lhs) − dim(Second)` (§2.1).
 
 ### 6.3 Erasure
 
 All unit types erase to their base numeric type (`f64` unless declared
-otherwise) in `c_generator.py` — exactly how distinct types erase today. Zero
+otherwise) in `c_generator.py`, exactly how distinct types erase today. Zero
 runtime cost, zero C-side representation. This is the whole point of the
 minimal version: units are a checker-only feature touching lexer not at all,
 parser for two small productions, and codegen for nothing.
@@ -544,7 +544,7 @@ parser for two small productions, and codegen for nothing.
 
 Unit *inference* through generics (`function integrate<T>(x: T, ...)` over
 dimensioned T), rational exponents (`Second^-1/2` shows up in noise densities),
-affine units (Celsius vs Kelvin — VISION.md's `temperature > 100 C` reads as
+affine units (Celsius vs Kelvin, VISION.md's `temperature > 100 C` reads as
 Kelvin-offset; v1 says use `kelvin` or a dimensionless threshold), and
 unit-aware printing. Each is listed in §11.
 
@@ -553,7 +553,7 @@ unit-aware printing. Each is listed in §11.
 When the `units` card lands, `every`'s duration literals retroactively type as
 `Second`-dimensioned constants and `solver dt` unifies with them. Until then
 durations are the closed grammar of §4.1. The two cards are deliberately
-independent — neither blocks the other.
+independent, neither blocks the other.
 
 ---
 
@@ -561,20 +561,20 @@ independent — neither blocks the other.
 
 | Feature | Lexer | `parser.py` | `type_checker.py` | `c_generator.py` |
 |---|---|---|---|---|
-| `flow` decl | — | new arm in `parse()` else-branch (~line 1078); new `FlowDecl` node wrapping `StructDecl` | register struct in collect phase (~line 407); new flow-section checks | struct emission (reuse ~line 285) + generated `_init/_derivs/_step/_outputs/_check` |
-| `evolves as` | — | flow-body statement path (IDENT + peek) | state-target check, purity check, (later) dim check | `_derivs` + Euler in `_step` |
-| `becomes` | — | flow-body/every/when statement path | target class check, one-writer check | staged synchronous writes |
-| durations | — (NUMBER+IDENT composed in parser) | `parse_duration()` | ns range check | `int64_t` constants |
-| `every` | — | `parse_every()` | body statement restrictions | accumulator field + catch-up loop |
-| `when`/`reaches` | — | `parse_when()` | guard state continuous-check | prev-guard field + sign-change test |
-| `always`/`never` | — | `parse_always()` | bool checks | `_check` + `flow_panic` |
-| `unit` | — | `parse_unit()` (top-level, contextual) | dims vector algebra on `SemanticType` | erasure (nothing) |
-| `connect` | — | `parse_connect()` inside flow body | port existence/direction/type, cycle check | topo-ordered child stepping |
+| `flow` decl | - | new arm in `parse()` else-branch (~line 1078); new `FlowDecl` node wrapping `StructDecl` | register struct in collect phase (~line 407); new flow-section checks | struct emission (reuse ~line 285) + generated `_init/_derivs/_step/_outputs/_check` |
+| `evolves as` | - | flow-body statement path (IDENT + peek) | state-target check, purity check, (later) dim check | `_derivs` + Euler in `_step` |
+| `becomes` | - | flow-body/every/when statement path | target class check, one-writer check | staged synchronous writes |
+| durations |, (NUMBER+IDENT composed in parser) | `parse_duration()` | ns range check | `int64_t` constants |
+| `every` | - | `parse_every()` | body statement restrictions | accumulator field + catch-up loop |
+| `when`/`reaches` | - | `parse_when()` | guard state continuous-check | prev-guard field + sign-change test |
+| `always`/`never` | - | `parse_always()` | bool checks | `_check` + `flow_panic` |
+| `unit` | - | `parse_unit()` (top-level, contextual) | dims vector algebra on `SemanticType` | erasure (nothing) |
+| `connect` | - | `parse_connect()` inside flow body | port existence/direction/type, cycle check | topo-ordered child stepping |
 
 Known grammar conflicts, decided:
 
-- `as` after `evolves` vs cast operator — resolved by consumption order (§2.1).
-- `analyze` — collides with the *existing* dsys `analyze plant ga k1 k2 over
+- `as` after `evolves` vs cast operator, resolved by consumption order (§2.1).
+- `analyze`, collides with the *existing* dsys `analyze plant ga k1 k2 over
   rollout -> report` (`dynamics_dsl.py` docstring, `has_dynamics_dsl` regex
   `^\s*analyze\s+\w+`). Resolution in §9.4.
 - `flow`/`unit` as variable names remain legal everywhere (contextual
@@ -584,7 +584,7 @@ Known grammar conflicts, decided:
 
 ---
 
-## 8. `connect { a.out -> b.in }` — composition
+## 8. `connect { a.out -> b.in }`, composition
 
 ### 8.1 Syntax
 
@@ -613,8 +613,7 @@ flow Robot {
 }
 ```
 
-`member : FlowType` inside a flow body is the existing struct-field grammar —
-no new parsing; the checker learns that a field whose type is a `flow` makes
+`member : FlowType` inside a flow body is the existing struct-field grammar, no new parsing; the checker learns that a field whose type is a `flow` makes
 this a *composite* flow.
 
 **Flows as pipeline stages.** An `output` whose value pipes through flow-typed
@@ -630,7 +629,7 @@ flow Chain {
 Each single-input/single-output stage becomes a synthesized child; the source
 and adjacent stages are wired in sequence (`signal -> Gain.x`,
 `Gain.out -> Limiter.w`) and the output reads the last stage. A stage's output
-is read before it steps that tick, so each stage adds one tick of delay — a
+is read before it steps that tick, so each stage adds one tick of delay, a
 sampled, state-broken pipeline (§8.3).
 
 A stage may override the stage flow's params with a `{ param: value }` block
@@ -645,29 +644,27 @@ declared defaults.
 
 ### 8.2 Checking
 
-- LHS must be an `output` (or `state`, explicitly allowed — reading a state as
+- LHS must be an `output` (or `state`, explicitly allowed, reading a state as
   a signal is physical) of the named member, or a bare `input`/`state` of the
   enclosing flow; RHS must be an `input`.
 - Types (and dims, post-units) must match exactly. No implicit scaling.
 - Each `input` may have at most one incoming connection; unconnected inputs
   of members must be driven by the parent (parent `every`/`becomes` writing
-  `member.input`) or the parent must re-export them as its own `input` —
-  otherwise compile error "unconnected input".
+  `member.input`) or the parent must re-export them as its own `input`, otherwise compile error "unconnected input".
 - **Algebraic loops:** build the graph whose edges are connections where the
   source is an `output` computed *combinationally from inputs* (an output map
   referencing an input). A cycle through such edges is a compile error in v1.
   Cycles broken by state (motor speed is a state; PID reading `plant.speed`
   is fine) are legal and are the normal case. Recorded tradeoff: true
   algebraic-loop solving (Modelica-style) needs a nonlinear solver at codegen
-  time — out of scope.
+  time, out of scope.
 
 ### 8.3 Lowering
 
 `Robot_step(self, dt)`:
 
 1. Topologically order members by combinational connection edges (state-broken
-   edges don't constrain order; ties broken by declaration order —
-   deterministic builds).
+   edges don't constrain order; ties broken by declaration order, deterministic builds).
 2. For each member in order: copy each connected source signal into the
    member's input field, then call `Member_step(&self->member, dt)`.
 3. Parent-level dynamics (a composite may have its own `state`/`evolves`
@@ -682,7 +679,7 @@ blocks) is not designed here (§11).
 
 ---
 
-## 9. `represent linear` / `analyze` — bridging to the existing dsys machinery
+## 9. `represent linear` / `analyze`, bridging to the existing dsys machinery
 
 ### 9.1 What exists today (SHIPPED, the seed)
 
@@ -703,10 +700,10 @@ analyze plant ga k1 k2 over rollout -> report { full }
 
 (Working examples: `examples/dynamics/ga_dsys_syntax.flow`,
 `ga_full_analysis.flow`.) The seed is *linear systems with explicit matrices*.
-The north-star flows of §1–2 are nonlinear and matrix-free. `represent linear`
+The north-star flows of §1-2 are nonlinear and matrix-free. `represent linear`
 is the bridge.
 
-### 9.2 `represent linear` — syntax and semantics
+### 9.2 `represent linear`, syntax and semantics
 
 Inside a flow body:
 
@@ -731,12 +728,11 @@ flow Pendulum {
 Semantics: linearize `x' = f(x, u)` at the given point: `A = ∂f/∂x`,
 `B = ∂f/∂u`, `C` selects the listed outputs. **v1 computes the Jacobians
 numerically** (central differences, h = 1e-6·max(1,|x_i|)) at *expansion
-time* — the expander evaluates the `evolves` RHS as Python arithmetic (the
+time*, the expander evaluates the `evolves` RHS as Python arithmetic (the
 RHS grammar of §2.4 is deliberately pure and closed, so a small evaluator over
 params + math functions suffices). Symbolic differentiation via the SHIPPED
 autodiff is the natural v2 and changes no surface syntax. Requirement:
-`at` must bind every state, and params must have values (decl defaults) —
-else expansion error.
+`at` must bind every state, and params must have values (decl defaults), else expansion error.
 
 Lowering: the expander emits a synthesized
 
@@ -748,15 +744,14 @@ after which **`sense on Pendulum_lin { ... }` and the whole existing pipeline
 work unchanged.** `represent nonlinear` is a recognized no-op (the flow itself
 *is* the nonlinear representation); `koopman` / `transfer_function` /
 `frequency` are reserved words in the block, rejected with "not yet
-implemented" (recorded — no design here).
+implemented" (recorded, no design here).
 
 Note `dsys` today is `discrete`-mode in the examples; the expander's
 `DsysDecl.mode` already carries `continuous`. Card `represent-linear` must
 verify the stdlib `state_space.flow` handles continuous-mode analysis
-(discretize at `dt` via forward Euler `A_d = I + A·dt` as the v1 fallback —
-recorded, honest about the approximation).
+(discretize at `dt` via forward Euler `A_d = I + A·dt` as the v1 fallback, recorded, honest about the approximation).
 
-### 9.3 `analyze Name { ... }` — syntax and desugaring
+### 9.3 `analyze Name { ... }`, syntax and desugaring
 
 ```
 analyze Pendulum {
@@ -771,12 +766,12 @@ Top-level (like `dsys`), handled by the same pre-parse expander. Desugars to a
 `sense on Pendulum_lin { spectral -> Pendulum_poles_rho  controllable ->
 Pendulum_ctrb ... }` block plus a generated `Pendulum_analysis` report struct,
 reusing `sense`'s existing lowering verbatim. Requires the flow to carry a
-`represent linear` block — error otherwise ("analyze needs a linear
+`represent linear` block, error otherwise ("analyze needs a linear
 representation; add `represent linear { at (...) }`").
 `observability` needs a small stdlib addition (gramian.flow has the
-controllability machinery; observability is its dual — noted in the card).
+controllability machinery; observability is its dual, noted in the card).
 
-### 9.4 The `analyze` grammar collision — decision
+### 9.4 The `analyze` grammar collision, decision
 
 `has_dynamics_dsl` already matches `^\s*analyze\s+\w+` for the GA form
 `analyze plant ga k1 k2 over rollout -> report { full }`. Disambiguation is
@@ -807,7 +802,7 @@ north-star (this document)
 ```
 
 - **`evolves-syntax`** and **`time-blocks`** are fully decided by this spec
-  (§1–4): grammar productions, AST shapes, checker rules, exact generated-C
+  (§1-4): grammar productions, AST shapes, checker rules, exact generated-C
   shapes, dt sourcing, ordering semantics. No open question blocks them.
   `evolves-syntax` is SHIPPED (see the card status table at the top).
 - `hybrid-events` and `constraints` depend only on `evolves-syntax` and can
@@ -816,7 +811,7 @@ north-star (this document)
 - `represent-linear` needs `evolves-syntax` (it evaluates `evolves` RHSes);
   `analyze-block` needs `represent-linear`.
 - `units` is independent of all of the above and touches disjoint compiler
-  code (checker) — good parallel track.
+  code (checker), good parallel track.
 
 Definition of done for each card includes: examples under `examples/`
 (compiling, so they *raise* STATUS.md, never lower it), tier2 green, and
@@ -848,13 +843,13 @@ moving the corresponding program from `docs/vision/examples/` into
 
 ---
 
-## Appendix A — the three north-star programs
+## Appendix A, the three north-star programs
 
 Aspirational (do **not** compile today); maintained as files in
 [`docs/vision/examples/`](examples/) and inlined here so this spec is
 self-contained. Grammar exactly as specified above.
 
-### A.1 Pendulum — continuous + units + analysis
+### A.1 Pendulum, continuous + units + analysis
 
 ```flow
 # docs/vision/examples/pendulum.flow
@@ -891,7 +886,7 @@ analyze Pendulum {
 }
 ```
 
-### A.2 Ball — hybrid bounce
+### A.2 Ball, hybrid bounce
 
 ```flow
 # docs/vision/examples/ball.flow
@@ -917,7 +912,7 @@ flow Ball {
 }
 ```
 
-### A.3 Robot — PID + motor + connect
+### A.3 Robot, PID + motor + connect
 
 ```flow
 # docs/vision/examples/robot.flow

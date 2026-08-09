@@ -310,7 +310,16 @@ Expect `pass=10`. Power returns 1024 → process status `0`.
 Python ports (Claim Coordinates / math prose / premise instantiate / know):
 see [docs/project/python-in-flow.md](../docs/project/python-in-flow.md);
 `./compiler/scripts/smoke_math_prose.sh` and `./compiler/scripts/smoke_know.sh`
-check generated C string constants.
+check generated C string constants; `./compiler/scripts/smoke_mc_probe.sh` and
+`./compiler/scripts/smoke_mp_probe.sh` run the Stage-A bundle pipeline
+(typecheck → emit → `cc` → run) over the `flowc_mathematical_case_condition`
+and rewrite-family ports (`flow_expr_to_mathematical_english` /
+`flow_expr_to_latex`, incl. the disjunction shield, geometry/analysis token
+tables, and `\`-escaped TeX output). Both probes are wired into `roundtrip.sh`
+after the `FLOWC_BUNDLE` fixtures. Note `compiler/src/math_prose.flow` is *not*
+part of the `flowc_frontend.o` fixed point, but `cgen.flow` is — the mixed
+`and`/`or` operand-parenthesis fix it carries is covered by the cgen
+dogfood and gen2 fixed-point compare.
 
 | Example | Stage-A clean? | Notes |
 |---------|----------------|-------|

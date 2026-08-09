@@ -1,7 +1,6 @@
 # FLOW Tutorial: Evolution
 
-Flow's differentiator: declare how a system **evolves**, and let the compiler
-emit the integrator. This track covers the shipped `flow` / `evolves as`
+In Flow you declare how a system **evolves**, and the compiler emits the integrator. This track covers the shipped `flow` / `evolves as`
 syntax, hybrid events, invariants, phase portraits, and field PDEs.
 
 > [!important] Mostly native

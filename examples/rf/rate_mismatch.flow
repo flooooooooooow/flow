@@ -1,0 +1,12 @@
+# Intentionally ill-typed: mixing sample rates without resample.
+# Used by unit tests; not part of the tourist pass corpus.
+
+import "stdlib/rf.flow"
+
+function main() -> i32 {
+    let a: Signal<ComplexF32, Rate20MHz> = signal_cf32_20m(64)
+    let b: Signal<ComplexF32, Rate10MHz> = signal_cf32_10m(64)
+    # Type error: add_cf32_20m expects two Rate20MHz signals.
+    let c: Signal<ComplexF32, Rate20MHz> = add_cf32_20m(a, b)
+    return c.len
+}

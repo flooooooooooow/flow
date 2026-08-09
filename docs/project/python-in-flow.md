@@ -1,6 +1,6 @@
 # Python compiler → Flow
 
-> Status: hybrid — see [self-hosting plan](self-hosting.md).
+> Status: hybrid, see [self-hosting plan](self-hosting.md).
 > Default `./flow run|compile` is Stage-A **flowc** (`FLOW_HOST=flowc`).
 > Full language / DSLs / tests still use `FLOW_HOST=python` (`src/flow/`).
 
@@ -15,9 +15,9 @@ Stage-A self-host lives in [`compiler/`](../../compiler/) (`flowc`).
 | Stage-A lexer / parser / cgen / typecheck / resolve | Landed in `compiler/src/*.flow`; fixtures + module dogfood |
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |
-| Full language without Python host | **No** — effects, generics, match, gfx, MLIR, DSLs stay host |
-| CI user-compile without `pip install` | **Yes** — `flowc-compile` job (Phase D slice 1) |
-| Flow-in-WASM compiler | **No** — see [wasm.md](../language/wasm.md) |
+| Full language without Python host | **No**, effects, generics, match, gfx, MLIR, DSLs stay host |
+| CI user-compile without `pip install` | **Yes**, `flowc-compile` job (Phase D slice 1) |
+| Flow-in-WASM compiler | **No**, see [wasm.md](../language/wasm.md) |
 
 Minimal proof that flowc round-trips one fixture (exits non-zero on failure):
 
@@ -60,12 +60,12 @@ them as part of Phase D; call them via the escape hatch:
 | Repo stats counter | [`scripts/tools/repo_stats/main.flow`](../../scripts/tools/repo_stats/main.flow) via [`scripts/update_repo_stats.sh`](../../scripts/update_repo_stats.sh) (git dump stays in shell) |
 | Claim Coordinates | [`compiler/src/claim_address.flow`](../../compiler/src/claim_address.flow) |
 | Claim path + fingerprint | [`compiler/src/claim_path.flow`](../../compiler/src/claim_path.flow) |
-| Math prose (core) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow) |
+| Math prose (core) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow) — incl. `flowc_mathematical_case_condition` (exact port: word-boundary `== true/false/0` + `==`→` equals ` fallback; Stage-A string char-indexing) |
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
-| `flow know` helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow) — normalize/qualify/match/print + theorem-header scan |
+| `flow know` helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow), normalize/qualify/match/print + theorem-header scan |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
-| Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |
+| Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles, runtime string concat (`+` → `flow_strcat`) |
 
 Where a Flow port replaces a Python script that still exists, the Python
 stays as the reference and the shim diffs the two on every run. The repo
@@ -76,15 +76,15 @@ loudly if `update_repo_stats.py` disagrees with what Flow wrote.
 |---|---|
 | Grow parser/cgen | more of production C path |
 | Full proof parse / `flow doc proof` | remaining `proof_document.py` |
-| Expr→English / LaTeX | remaining `math_prose.py` |
+| Expr→English / LaTeX | remaining `math_prose.py` — `mathematical_case_condition` landed; the regex-rewrite prose (`_normalize_geometry_tokens`, `_replace_word`) still needs general word replacement on strings |
 | Recursive claim index over disk | wrap `know` + `fileio` + directory walk |
 
 ## Phases
 
-1. **Satellites** — pure string/AST walkers ← largely landed
-2. **Stage-A basics C path** — ten Stage-A-clean `examples/basics/*` via `emit_basics.sh`
-3. **Language surface** — effects/generics/match after Stage-A can express them
-4. **Optional** — full proof PDF / shader emitters (host-run)
+1. **Satellites**, pure string/AST walkers ← largely landed
+2. **Stage-A basics C path**, ten Stage-A-clean `examples/basics/*` via `emit_basics.sh`
+3. **Language surface**, effects/generics/match after Stage-A can express them
+4. **Optional**, full proof PDF / shader emitters (host-run)
 
 ## Dogfood
 

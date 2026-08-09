@@ -1,6 +1,6 @@
 # Autodiff Guide
 
-Flow ships **automatic differentiation** as a language/stdlib feature — not a bolt-on framework. This page is the practical guide; API tables live in [Autodiff library](autodiff.md) and the [generated API index](stdlib-api.md).
+Flow ships **automatic differentiation** as a language/stdlib feature, not a bolt-on framework. This page is the practical guide; API tables live in [Autodiff library](autodiff.md) and the [generated API index](stdlib-api.md).
 
 ## Why it is in the language
 
@@ -53,7 +53,7 @@ Run it in the [interactive tutorials](../tutorials/index.html) or with `./flow r
 
 - Scalar loss + parameter vector → reverse-mode layers in `lib/stdlib` / ML examples
 - Filter / oscillator tuning → forward dual through the DSP graph
-- Controllability / GA search in dynamics — combine `sense` analysis with numeric search (see [dynamics DSL](../language/dynamics-dsl.md))
+- Controllability / GA search in dynamics, combine `sense` analysis with numeric search (see [dynamics DSL](../language/dynamics-dsl.md))
 
 ## Honest limitations
 
@@ -63,6 +63,6 @@ Run it in the [interactive tutorials](../tutorials/index.html) or with `./flow r
 ## Next steps
 
 1. [Autodiff API](autodiff.md)
-2. [Effects showcase](../effects-showcase.md) — keep I/O out of the pure objective
-3. [Comparison](../comparison.md) — Flow vs Mojo/Rust on AD positioning
-4. [Benchmark results](../project/benchmark-results.md) — compile-to-C performance baseline
+2. [Effects showcase](../effects-showcase.md), keep I/O out of the pure objective
+3. [Comparison](../comparison.md), Flow vs Mojo/Rust on AD positioning
+4. [Benchmark results](../project/benchmark-results.md), compile-to-C performance baseline

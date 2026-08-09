@@ -1,7 +1,7 @@
 # Autodiff Basics
 
 > Dual numbers and derivative intuition (educational).
-> Stdlib `Dual` in `lib/stdlib/autodiff.flow` uses **`f32`** — match that here.
+> Stdlib `Dual` in `lib/stdlib/autodiff.flow` uses **`f32`**, match that here.
 
 ## Part 1: Dual numbers
 
@@ -162,6 +162,6 @@ Browser lessons reinvent Dual by hand. The stdlib does it for you:
 `mlp_xor.flow` uses reverse-mode helpers / `nn_autogen` so you are not writing
 backprop by hand. Next step on a laptop:
 
-→ [ml-on-macbook.md](ml-on-macbook.md) — 8×8 digits MLP, parallel SGD, Metal status
+→ [ml-on-macbook.md](ml-on-macbook.md), 8×8 digits MLP, parallel SGD, Metal status
 
 Also: [Autodiff guide](../library/autodiff-guide.md) · [`lib/stdlib/autodiff.flow`](../../lib/stdlib/autodiff.flow)

@@ -154,7 +154,7 @@ time:
 
 ## Related
 
-- `lib/stdlib/render3d.flow` — the renderer
-- `examples/threed/README.md` — what each example demonstrates
-- [graphics.md](graphics.md) — the 2D window API underneath
-- [../demos/threed/](../demos/threed/) — recorded clips
+- `lib/stdlib/render3d.flow`, the renderer
+- `examples/threed/README.md`, what each example demonstrates
+- [graphics.md](graphics.md), the 2D window API underneath
+- [../demos/threed/](../demos/threed/), recorded clips

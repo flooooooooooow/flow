@@ -3,7 +3,7 @@
 > Effect-**shaped** control flow that runs in the browser.
 >
 > These lessons use plain functions as stand-ins. Real algebraic effects
-> (`effect` / `capability` / `handle` / `with`) compile natively — see Part 4.
+> (`effect` / `capability` / `handle` / `with`) compile natively; see Part 4.
 
 ## Part 1: Motivation
 

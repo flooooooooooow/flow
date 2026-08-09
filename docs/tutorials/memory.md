@@ -1,6 +1,6 @@
 # Manual Memory
 > Flow has **no GC**. Allocate with `malloc`/`alloc_*`, free what you own, or use an arena.
-> Run native demos with `./flow run` — browser lessons simulate output.
+> Run native demos with `./flow run`, browser lessons simulate output.
 
 ## Part 1: Heap basics
 ### 1.1 Hello heap
@@ -322,7 +322,7 @@ function main() -> i32 {
 
 ### 5.1 Dangling pointer awareness
 
-After `free`, the pointer still holds an address — but that memory is no longer yours.
+After `free`, the pointer still holds an address, but that memory is no longer yours.
 This lesson never *uses* a dangling pointer; it only teaches the discipline of clearing it.
 
 ```flow
@@ -355,7 +355,7 @@ function main() -> i32 {
 
 ### 5.2 Growable buffer pattern
 
-Track `len` and `cap`, grow with `realloc` when full — the classic dynamic array shape.
+Track `len` and `cap`, grow with `realloc` when full, the classic dynamic array shape.
 
 ```flow
 extern {
@@ -476,7 +476,7 @@ function main() -> i32 {
 
 ### 5.4 Temp scratch then keep result
 
-Allocate scratch in an arena, copy the final answer out, then reset — keep only what you own.
+Allocate scratch in an arena, copy the final answer out, then reset, keep only what you own.
 
 ```flow
 extern {

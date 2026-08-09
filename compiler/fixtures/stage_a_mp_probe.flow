@@ -1,0 +1,124 @@
+# Stage-A fixture: the rewrite family (flow_expr_to_mathematical_english /
+# flow_expr_to_latex ports of math_prose.py) through the flowc pipeline:
+# bundle typecheck -> emit -> cc -> run. Exercises the word/ident scanning,
+# the `and`/`or` disjunction shield (reverse-order restore), geometry-token
+# tables, `succ`/taylor/analysis rewrites, and the `\`-escaped TeX strings
+# (written `\\` because the lexer rejects unknown escapes).
+# Run via compiler/scripts/smoke_mp_probe.sh (FLOWC_DIR=compiler/src so the
+# relative `.math_prose` / `.claim_address` imports resolve).
+import .math_prose {
+    flowc_flow_expr_to_mathematical_english,
+    flowc_flow_expr_to_latex
+}
+
+extern {
+    function printf(fmt: string, s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let a: string = flowc_flow_expr_to_mathematical_english("m * n == 0")
+    if strcmp(a, "m times n equals 0") != 0 {
+        printf("%s\n", "FAIL: en mul")
+        return 1
+    }
+    let b: string = flowc_flow_expr_to_mathematical_english("a or b and c")
+    if strcmp(b, "the conjunction of the disjunction of a and b and c") != 0 {
+        printf("%s\n", "FAIL: en or-and shield")
+        return 1
+    }
+    let c: string = flowc_flow_expr_to_mathematical_english("a or b")
+    if strcmp(c, "the disjunction of a and b") != 0 {
+        printf("%s\n", "FAIL: en or")
+        return 1
+    }
+    let d: string = flowc_flow_expr_to_mathematical_english("succ(x) == 0")
+    if strcmp(d, "the successor of x equals 0") != 0 {
+        printf("%s\n", "FAIL: en succ")
+        return 1
+    }
+    let e: string = flowc_flow_expr_to_mathematical_english("p + q * r")
+    if strcmp(e, "p plus q times r") != 0 {
+        printf("%s\n", "FAIL: en ops")
+        return 1
+    }
+    let f: string = flowc_flow_expr_to_mathematical_english("a >= b")
+    if strcmp(f, "a is at least b") != 0 {
+        printf("%s\n", "FAIL: en ge")
+        return 1
+    }
+    let g: string = flowc_flow_expr_to_mathematical_english("angle_AOB == one_right_angle")
+    if strcmp(g, "angle AOB equals one right angle") != 0 {
+        printf("%s\n", "FAIL: en geom tokens")
+        return 1
+    }
+    let h: string = flowc_flow_expr_to_mathematical_english("sin_prime_at_zero == 1")
+    if strcmp(h, "the first derivative of sine at zero equals 1") != 0 {
+        printf("%s\n", "FAIL: en idents")
+        return 1
+    }
+    let i: string = flowc_flow_expr_to_mathematical_english("x == 0 by definition")
+    if strcmp(i, "x equals 0") != 0 {
+        printf("%s\n", "FAIL: en by-clause")
+        return 1
+    }
+    # ---- latex ----
+    let j: string = flowc_flow_expr_to_latex("m * n == 0")
+    if strcmp(j, "m \\cdot n = 0") != 0 {
+        printf("%s\n", "FAIL: tex mul")
+        return 1
+    }
+    let k: string = flowc_flow_expr_to_latex("x * x")
+    if strcmp(k, "x^{2}") != 0 {
+        printf("%s\n", "FAIL: tex same-mul")
+        return 1
+    }
+    let l: string = flowc_flow_expr_to_latex("a and b")
+    if strcmp(l, "a \\land b") != 0 {
+        printf("%s\n", "FAIL: tex and")
+        return 1
+    }
+    let m: string = flowc_flow_expr_to_latex("a or b and c")
+    if strcmp(m, "a \\lor b \\land c") != 0 {
+        printf("%s\n", "FAIL: tex or-and")
+        return 1
+    }
+    let n: string = flowc_flow_expr_to_latex("succ(x) == 0")
+    if strcmp(n, "\\mathrm{succ}(x) = 0") != 0 {
+        printf("%s\n", "FAIL: tex succ")
+        return 1
+    }
+    let o: string = flowc_flow_expr_to_latex("angle_AOB == one_right_angle")
+    if strcmp(o, "\\angle AOB = 90^\\circ") != 0 {
+        printf("%s\n", "FAIL: tex geom")
+        return 1
+    }
+    let p: string = flowc_flow_expr_to_latex("taylor_sin(x, order_5) == near_zero")
+    if strcmp(p, "S_{5}(x) = \\quad (x \\to 0)") != 0 {
+        printf("%s\n", "FAIL: tex taylor")
+        return 1
+    }
+    let q: string = flowc_flow_expr_to_latex("sin_prime_at_zero == 1")
+    if strcmp(q, "\\sin'(0) = 1") != 0 {
+        printf("%s\n", "FAIL: tex idents")
+        return 1
+    }
+    let r: string = flowc_flow_expr_to_latex("x >= 0")
+    if strcmp(r, "x \\ge 0") != 0 {
+        printf("%s\n", "FAIL: tex ge")
+        return 1
+    }
+    # Adversarial dense input: heap-cap hardening must not overflow.
+    let dense: string = flowc_flow_expr_to_mathematical_english("a=b=c=d=e=f=g=h=i=j=k=l=m=n=o=p")
+    if strcmp(dense, "a equals b=c equals d=e equals f=g equals h=i equals j=k equals l=m equals n=o equals p") != 0 {
+        printf("%s\n", "FAIL: dense single-eq cap")
+        return 1
+    }
+    let dense2: string = flowc_flow_expr_to_mathematical_english("a+b+c+d+e+f+g+h+i+j")
+    if strcmp(dense2, "a plus b plus c plus d plus e plus f plus g plus h plus i plus j") != 0 {
+        printf("%s\n", "FAIL: dense plus cap")
+        return 1
+    }
+    printf("%s\n", "stage_a_mp_probe: PASS")
+    return 0
+}

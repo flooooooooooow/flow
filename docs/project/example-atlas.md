@@ -2,8 +2,7 @@
 
 > **Purpose.** Every example here exists to demonstrate one claim: that a
 > system which *evolves through time* is better expressed in Flow than in the
-> Python/MATLAB/C toolchain it replaces. Each one must be honest about that —
-> a demo that is merely pretty proves nothing.
+> Python/MATLAB/C toolchain it replaces. Each one must be honest about that, > a demo that is merely pretty proves nothing.
 
 ## The argument
 
@@ -57,7 +56,7 @@ proof.
 
 Counts are targets. Shipped counts update as work lands.
 
-### 1. Morphogenesis and pattern formation — 20 shipped
+### 1. Morphogenesis and pattern formation, 20 shipped
 
 Reaction-diffusion (Gray-Scott, Turing spots and stripes, Belousov, Swift-
 Hohenberg, Cahn-Hilliard, anisotropic diffusion), growth and aggregation
@@ -67,7 +66,7 @@ biological pattern (Physarum, cell sorting, somitogenesis).
 
 **Status: complete.** `examples/morphogenesis/` · [gallery](../demos/morphogenesis.md)
 
-### 2. Neuron and network simulation — 15 shipped
+### 2. Neuron and network simulation, 15 shipped
 
 | # | Example | Evidence it carries | Measured |
 |---|---|---|---|
@@ -98,7 +97,7 @@ Recorded clips for all fifteen live in the
 [neuron gallery](../demos/neuro.md); regenerate with
 `python3 scripts/record_demos.py --group neuro`.
 
-### 3. Circuit simulation — 12 shipped
+### 3. Circuit simulation, 12 shipped
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -114,7 +113,7 @@ Recorded clips for all fifteen live in the
 | 10 | `transmission_line` | Six loads from near short to near open, reflection within 2.1e-3 of (ZL-Z0)/(ZL+Z0) |
 | 11 | `chua` | Largest Lyapunov exponent 0.4316 by two methods agreeing to 5.3e-6, at three step sizes; volume contracts at -3.8155 |
 | 12 | `pll` | Phase error, relaxation rate and capture time against the separable integral, to 1e-11, 1.2e-4 and 2.9e-5; lock range K |
-| — | `netlist_demo` | A SPICE-subset front end feeding the same solver: three decks, checked to 1.9e-6, 1.1e-14 and 1.7e-16 |
+| - | `netlist_demo` | A SPICE-subset front end feeding the same solver: three decks, checked to 1.9e-6, 1.1e-14 and 1.7e-16 |
 
 **Status: complete.** `examples/circuits/` · solver
 [`lib/stdlib/circuit.flow`](../../lib/stdlib/circuit.flow) · netlist front end
@@ -125,7 +124,7 @@ code on the number it printed, so none of them is a windowed demo and none
 carries a GIF. Where a picture earns its place it is drawn in ASCII to stdout,
 as `chua` does with its attractor.
 
-### 4. Diffusion, transport and fields — 12 planned
+### 4. Diffusion, transport and fields, 12 planned
 
 Heat (1D/2D/3D, anisotropic, with sources), advection-diffusion with
 upwinding, Fick's laws with a moving boundary (Stefan problem), Darcy flow
@@ -135,7 +134,7 @@ boundaries, Schrödinger evolution (norm conservation as the check),
 Fokker-Planck, percolation with a measured critical threshold, level-set
 front propagation, lattice Boltzmann.
 
-### 5. Physics and mechanics — 12 planned (+ 1 FMM shipped)
+### 5. Physics and mechanics, 12 planned (+ 1 FMM shipped)
 
 | # | Example | Evidence it carries | Measured |
 |---|---|---|---|
@@ -150,9 +149,9 @@ soft-body FEM, granular packing, orbital mechanics with a Hohmann transfer,
 gyroscopic precession, coupled oscillators and synchronization (Kuramoto),
 elastic collisions with restitution, projectile with drag vs the analytic
 vacuum case, inverted pendulum on a cart (already shipped as the cart-pole
-flagship — extend it).
+flagship, extend it).
 
-### 6. Chemistry and biology — 25 shipped (evoleco) + planned kinetics
+### 6. Chemistry and biology, 25 shipped (evoleco) + planned kinetics
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -190,7 +189,7 @@ enzyme kinetics, gene regulatory networks (repressilator, toggle switch),
 protein folding on a lattice, chemotaxis, ecosystem food webs. Text
 companions for predator-prey and SIR already live in `examples/evolution/`.
 
-### 6b. Procedural worlds — 7 shipped (planet)
+### 6b. Procedural worlds, 7 shipped (planet)
 
 Cubesphere planet pipeline: equiangular grid, tectonics, elevation, stream-
 power erosion, climate, biomes, hydrology. Companion noise / WFC demos live
@@ -210,7 +209,7 @@ under `examples/procgen/` (see section 7).
 `examples/planet/` · [gallery](../demos/planet.md) ·
 [`lib/stdlib/planet.flow`](../../lib/stdlib/planet.flow)
 
-### 7. Procedural generation — 8 shipped
+### 7. Procedural generation, 8 shipped
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -226,7 +225,7 @@ under `examples/procgen/` (see section 7).
 **Status: complete.** `examples/procgen/` · [gallery](../demos/procgen.md) ·
 [`lib/stdlib/procgen.flow`](../../lib/stdlib/procgen.flow)
 
-### 8. Control and estimation — 10 planned
+### 8. Control and estimation, 10 planned
 
 PID with tuning comparison, LQR (already used in cart-pole), Kalman and
 extended Kalman filters (estimation error vs Cramér-Rao), particle filter,
@@ -234,12 +233,63 @@ model-predictive control, adaptive control, sliding-mode control, system
 identification from data, observability and controllability analysis
 (`sense on` already ships), robust control margins.
 
-### 9. Signals, audio and imaging — 9 planned
+### 9. Signals, audio and imaging, 9 planned
 
 FFT and spectrogram, digital filter design and response, resonant filters,
 physical modelling synthesis (Karplus-Strong, waveguides), room acoustics
 via ray tracing, image convolution and edge detection, tomographic
 reconstruction, optical flow, wavelets.
+
+### 9. Systems and algorithms — 1 shipped (addendum)
+
+The paper's *Tiny Pointers* construction (arXiv:2111.12800) rebuilt from
+scratch in Flow — fixed-size and variable-size dereference tables, relaxed
+retrieval with O(1)-expected hints, a succinct rotation-based BST, the
+stable dictionary, and variable-size key+value dictionaries (size-classed
+on both sides, measured together) — with the Section-5 lower bounds
+(Thms 3–5) demonstrated empirically, not just stated: the fullest-bin floor
+holds at every pointer budget, and every bit below the real width forces
+dereference collisions. The Theorem-9 **deamortized resizing** (§6.1) is
+implemented too: the same resize-heavy workload run twice — naive one-shot vs
+incremental — shows the worst single operation drop from 143,363 work units
+(one-shot Θ(live) copy) to 81 (fixed per-op budget), so no insert copies O(m)
+values. The Theorem-9 **r-levels-of-indirection chain** (§6.5) is also
+implemented: values up to 256 bits live behind a 5-bit second-level tiny
+pointer (O(log k)), lifting the v ≤ 64 cap while the base pointer stays a
+constant 8 bits — 84.97% saved vs a uniform 256-bit baseline — and its r=3
+extension inserts the O(log log k) middle pointer p₂, so values up to 2^32
+bits flow through base(8) → p₂(6) → p₁(5) → a word pool: the pointer widths
+8 → 6 → 5 are all constant in v, only the word count grows (verified
+word-by-word; 99.34% saved vs a uniform store sized to the largest value).
+Phase 12 runs the same chain on the KEY side: 128/256-bit keys live in a
+compact key arena behind a 5-bit p₁ in an 8-bit base slot, so the base
+pointer stays 8 bits for every key size too — the combined (key, value)
+accounting drops to 55.9 bits/pair (82.5% saved vs a uniform 256+64
+baseline, 4,861 of 49,152 keys chained, verified word-by-word). The paper's
+final application, the **optimal internal-memory stash** (Theorem 10, §6.6),
+is implemented as Phase 16: an external dereference table whose buckets are
+implicit, so each internal stash entry is a 4-bit tiny pointer (Θ(log ε⁻¹))
+held in a prefix-free adaptive-filter bin — O(m log ε⁻¹) = O(m) bits total vs
+m·log₂(4m) for a naive full-address stash, exactly one external read per
+query (measured: 16,384 reads for 16,384 queries), permanent positions
+(page-table stability). It carries its evidence like the simulation domains do:
+every allocation is re-verified against a registry model (exit 0 = PASS),
+the doubly-exponential tail bound is checked against theory, and each phase
+reports its own wall-clock cost, benchmarked across n = 2^14..2^16.
+
+**Status: addendum** — an *algorithm with evidence*, not a time-evolution
+simulation, so it sits outside the 100 and has no row in the Progress table
+(same treatment as `netlist_demo`) · `examples/systems/` ·
+[domain README](../../examples/systems/README.md) ·
+[deep dive: tiny pointers](../library/tiny-pointers.md) ·
+[benchmark script](../../scripts/bench_tiny_pointers.sh)
+
+**Abstract-claim coverage:** every promise in the paper's abstract maps to a
+measured phase — the theorem table in the
+[deep dive](../library/tiny-pointers.md) cross-references them all, and the
+application-④ deep dive on
+[variable-size values](../library/tiny-pointers-variable-values.md) covers
+arbitrary-size values (Theorem 9, §6.5).
 
 ## Cross-cutting requirements
 

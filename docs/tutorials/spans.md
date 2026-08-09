@@ -1,7 +1,7 @@
 # Spans
 
 Borrowed views over contiguous storage: `{pointer, length}` as one value.
-Callers never write `span(...)` — arrays and slices borrow automatically.
+Callers never write `span(...)`. Arrays and slices borrow automatically.
 
 > The browser interpreter does **not** run real `span<T>`. Lessons below use
 > fixed arrays + an explicit length to teach the shape. Native:
@@ -172,7 +172,7 @@ function main() -> i32 {
 
 ## Part 4: Native spans
 
-Real surface (native only — do not paste into the browser runner):
+Real surface (native only, do not paste into the browser runner):
 
 ```flow
 function total(samples: span<f32>) -> f32 {
@@ -199,4 +199,4 @@ function scale(samples: span<mut f32>, factor: f32) {
 ```
 
 `span<T>`, `span<mut T>`, `span<T, N>`, and `&[T]` sugar are in the C backend.
-Inference (`bare span`, dependent extents) is not — name the element type.
+Inference (`bare span`, dependent extents) is not, name the element type.

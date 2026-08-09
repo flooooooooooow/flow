@@ -42,16 +42,32 @@ SEMANTIC_ATTRIBUTES = frozenset({
     "test",       # synthesized by the parser for `test "..." { }` blocks
     "monomorphized",  # synthesized by monomorphize.py
     "lifetime",   # lifetime domain (type_checker; docs/language/lifetime-domains.md)
+    # Physical-systems W0 (docs/vision/physical-systems.md)
+    "dma",
+    "noncacheable",
+    "aligned",
+    "hardware",
+    "radiation_sensitive",
+    "deterministic",
+    "guarantee",
 })
 
 KNOWN_ATTRIBUTES = CODEGEN_ATTRIBUTES | GUARD_ATTRIBUTES | SEMANTIC_ATTRIBUTES
 
 # Attributes that take arguments. Everything else must be bare.
-ATTRIBUTES_WITH_ARGS = frozenset({"only", "guard", "target", "lifetime"})
+ATTRIBUTES_WITH_ARGS = frozenset({
+    "only", "guard", "target", "lifetime", "aligned", "guarantee",
+})
+
+# Allowed arguments for @guarantee(...).
+GUARANTEE_ARGS = frozenset({
+    "no_alloc",
+    "no_block",
+    "heap_allocations_eq_0",
+    "blocking_eq_false",
+})
 
 # Lifetime domains, shortest-lived first (docs/language/lifetime-domains.md).
-# The index in this tuple *is* the order: a domain may not hold a reference to,
-# or be called by, one that appears earlier.
 LIFETIME_DOMAINS: Tuple[str, ...] = ("callback", "frame", "session", "application")
 
 
@@ -61,22 +77,14 @@ def domain_rank(domain: str) -> int:
 
 
 def lifetime_domain(attrs: Optional[List[str]]) -> Optional[str]:
-    """The declared lifetime domain of a declaration, or None if unannotated.
-
-    Returns None for a malformed `@lifetime(...)` too; `attribute_errors`
-    reports that separately, and an unannotated declaration is unchecked
-    rather than mis-checked.
-    """
+    """The declared lifetime domain of a declaration, or None if unannotated."""
     for attr in attrs or []:
         name, args = parse_attribute(attr)
         if name == "lifetime" and len(args) == 1 and args[0] in LIFETIME_DOMAINS:
             return args[0]
     return None
 
-# One comma-separated item of a `target(...)` spec. Accepts the forms GCC and
-# Clang document: a bare feature (`avx2`, `crypto`), a signed feature
-# (`+avx2`, `-sse`, `no-sse`) and a `key=value` pair (`arch=haswell`,
-# `tune=native`, `branch-protection=standard`).
+# One comma-separated item of a `target(...)` spec.
 _TARGET_ITEM_RE = re.compile(
     r"^[+-]?[A-Za-z0-9_.]+(?:-[A-Za-z0-9_.]+)*"
     r"(?:=[A-Za-z0-9_.+]+(?:-[A-Za-z0-9_.+]+)*)?$"
@@ -92,13 +100,21 @@ def parse_attribute(attr: str) -> Tuple[str, List[str]]:
     return attr.strip(), []
 
 
-def validate_target_spec(spec: str) -> Optional[str]:
-    """Check a `@target(...)` string's *shape*.
+def attrs_imply_rt_safe(attrs: Optional[List[str]]) -> bool:
+    """True when attributes require the @rt_safe call-graph discipline.
 
-    Returns an error message, or None when the spec is plausible.  This is a
-    syntactic check only: whether the named features exist is decided by the
-    host C compiler for the machine it is targeting, not by Flow.
+    `@deterministic` and any `@guarantee(...)` map onto the same no-heap /
+    no-block checker as `@rt_safe` for physical-systems W0.
     """
+    for attr in attrs or []:
+        name, _args = parse_attribute(attr)
+        if name in ("rt_safe", "deterministic", "guarantee"):
+            return True
+    return False
+
+
+def validate_target_spec(spec: str) -> Optional[str]:
+    """Check a `@target(...)` string's *shape*."""
     if not spec:
         return "@target(...) requires a non-empty target string"
     items = spec.split(",")
@@ -160,6 +176,28 @@ def attribute_errors(fn_name: str, attrs: List[str]) -> List[str]:
                     f"Known domains: {known} "
                     f"(see docs/language/lifetime-domains.md)"
                 )
+            continue
+        if name == "aligned":
+            if len(args) != 1 or not args[0].isdigit() or int(args[0]) < 1:
+                errors.append(
+                    f"Attribute '@aligned' on '{fn_name}' requires a positive "
+                    f"integer byte alignment, e.g. @aligned(64)"
+                )
+            continue
+        if name == "guarantee":
+            if not args:
+                errors.append(
+                    f"Attribute '@guarantee' on '{fn_name}' requires at least "
+                    f"one contract, e.g. @guarantee(no_alloc, no_block)"
+                )
+            else:
+                for arg in args:
+                    if arg not in GUARANTEE_ARGS:
+                        known = ", ".join(sorted(GUARANTEE_ARGS))
+                        errors.append(
+                            f"Unknown guarantee '{arg}' on '{fn_name}'. "
+                            f"Known: {known}"
+                        )
             continue
         if name == "target":
             if not args:

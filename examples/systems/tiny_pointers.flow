@@ -1535,7 +1535,7 @@ function rr_chain_create(r: i32, log2n: i32, single_bucket: i32) -> RrChain {
             }
         }
         wr[i] = wi
-        let nb: i32 = 1
+        let mut nb: i32 = 1
         if single_bucket == 0 {
             nb = 1 << (log2n - wi)
         }
@@ -1668,7 +1668,7 @@ function rr_verify(c: ptr<RrChain>, reg: ptr<Registry>, dups_out: ptr<i32>) -> i
 # the ⌈log₂ r⌉ level tag (0 for r = 1, where the level is implicit).
 function rr_bits(c: ptr<RrChain>, retriever: i32) -> i32 {
     let level: i32 = (retriever >> 16) & 3
-    let tag: i32 = 0
+    let mut tag: i32 = 0
     if c[0].r > 1 {
         tag = rr_clog2(c[0].r)
     }
@@ -3961,7 +3961,7 @@ function r3_insert(reg: ptr<Registry>, base: ptr<VDTable>, p2t: ptr<R3P2>,
             return 0
         }
     } else {
-        let cls: i32 = 0
+        let mut cls: i32 = 0
         if bits > RL3_HUGE {
             cls = 1
         }

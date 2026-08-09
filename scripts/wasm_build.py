@@ -106,7 +106,12 @@ def flow_to_c(program: Path, c_out: Path, library: bool = False) -> str:
 
 
 def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
-    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text."""
+    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text.
+
+    Always passes ``--wasm32`` so libc size_t/long lower as i32 (ILP32). Without
+    that, emcc/wasm-ld sees i64 size_t decls and signature-mismatch warnings that
+    break real programs (doom-flow #230).
+    """
     ll_out.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         [
@@ -116,6 +121,7 @@ def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
             str(program),
             "--mlir",
             "--llvm",
+            "--wasm32",
             "--lenient",
             "-o",
             str(ll_out),
@@ -772,10 +778,15 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           initial_memory: str = "32MB",
           asyncify_stack_size: int = 32768,
           emcc_flags: Optional[list[str]] = None,
+          extra_c: tuple = (),
           extra_html: str = "",
           threads: bool = False,
           workers: int = 8) -> dict:
     """Build one program. Returns a result dict; raises BuildError on failure.
+
+    ``extra_c`` is accepted for gallery callers (paths relative to repo root)
+    and merged into ``extra_link``. ``extra_html`` is injected into the host
+    page (e.g. tiny-pointers coverage card).
 
     threads=True compiles the program on real pthreads: Flow's parallel-for
     orchestration (lib/runtime/concurrency_parallel.flow) is compiled in as a
@@ -799,6 +810,13 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
 
     if not have_emcc():
         raise BuildError("emcc not on PATH (see docs/language/wasm.md)")
+
+    # Merge gallery-style extra_c (repo-root-relative paths) into extra_link.
+    for c in extra_c:
+        p = Path(c)
+        extra_link = list(extra_link or []) + [
+            p if p.is_absolute() else PROJECT_ROOT / p
+        ]
 
     artifacts: list[Path] = []
     if backend == "mlir":

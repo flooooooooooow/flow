@@ -1,12 +1,12 @@
 # Applied Domains
 
 Thin capstones that show Flow in scientific and creative domains. Each section
-is one worked entrypoint plus a pointer into the example gallery — not a full
+is one worked entrypoint plus a pointer into the example gallery, not a full
 curriculum.
 
 ## Morphogenesis
 
-Reaction–diffusion, CA, and growth sims that draw through `gfx`:
+Reaction-diffusion, CA, and growth sims that draw through `gfx`:
 
 ```bash
 ./flow gfx examples/morphogenesis/gray_scott.flow
@@ -14,7 +14,7 @@ Reaction–diffusion, CA, and growth sims that draw through `gfx`:
 ./flow gfx examples/morphogenesis/lsystem_tree.flow
 ```
 
-Gray–Scott is the usual starting point: two chemicals on a grid, Laplacian
+Gray-Scott is the usual starting point: two chemicals on a grid, Laplacian
 diffusion, nonlinear reaction, false-color blit each frame. Gallery README:
 [`examples/morphogenesis/`](../../examples/morphogenesis/).
 
@@ -142,7 +142,7 @@ function main() -> i32 {
 
 ## Neuro
 
-Hodgkin–Huxley, LIF, networks — ODE / event sims, often with gfx:
+Hodgkin-Huxley, LIF, networks, ODE / event sims, often with gfx:
 
 ```bash
 ./flow run examples/neuro/hodgkin_huxley.flow
@@ -219,6 +219,6 @@ function main() -> i32 {
 
 ## Next
 
-- [evolution.md](evolution.md) — `flow` / `field` foundations
-- [gfx-basics.md](gfx-basics.md) — windowed demos
+- [evolution.md](evolution.md), `flow` / `field` foundations
+- [gfx-basics.md](gfx-basics.md), windowed demos
 - [game-ai.md](game-ai.md) · [ml-on-macbook.md](ml-on-macbook.md)

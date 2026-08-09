@@ -3,7 +3,7 @@
   "examples": 158,
   "built": 151,
   "failed": 7,
-  "total_bytes": 5694085,
+  "total_bytes": 5712472,
   "categories": [
     {
       "id": "games",
@@ -1413,9 +1413,9 @@
       "summary": "math_prose + proof_sub dogfood demo",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 23190,
-      "js_bytes": 11285,
-      "total_bytes": 34475,
+      "wasm_bytes": 41244,
+      "js_bytes": 11618,
+      "total_bytes": 52862,
       "page": "math_prose_demo/index.html"
     },
     {

@@ -4,7 +4,7 @@
 
 ## Why the old paths failed
 
-`Nat/+.zero-left` parses as "Nat plus zero-left" — a filesystem fragment, not a mathematical sentence.
+`Nat/+.zero-left` parses as "Nat plus zero-left", a filesystem fragment, not a mathematical sentence.
 Symbols (`+`) mixed with English fragments (`zero-left`) do not compose.
 Nobody says "Nat plus zero-left" in a seminar.
 
@@ -20,7 +20,7 @@ Nobody says "Nat plus zero-left" in a seminar.
 **Syntax:** `«Nat» «addition» «zero is the left identity»`  
 **Slug (tools):** `Nat.addition.zero_is_the_left_identity`
 
-The guillemets `«»` are the syntax novelty — visually distinct, unambiguous, read aloud as quoted phrases.
+The guillemets `«»` are the syntax novelty, visually distinct, unambiguous, read aloud as quoted phrases.
 
 ## Syntax
 
@@ -34,7 +34,7 @@ assume «Nat» «addition» «zero is the left identity»(0)
 export «Nat» «addition» «zero is the left identity»
 ```
 
-Surface math still uses `+`, `succ`, `==` — only **addresses** use full words.
+Surface math still uses `+`, `succ`, `==`, only **addresses** use full words.
 
 ## Legacy mapping
 
@@ -51,7 +51,7 @@ Legacy paths still parse; new code should use guillemets.
 
 ## Proof kernel (parameterize & plot)
 
-Every proof compiles to a **kernel** — a DAG of numbered steps with explicit edges:
+Every proof compiles to a **kernel**, a DAG of numbered steps with explicit edges:
 
 ```bash
 flow doc kernel examples/verify/math/derived/Nat-plus-zero-right.flow \
@@ -59,7 +59,7 @@ flow doc kernel examples/verify/math/derived/Nat-plus-zero-right.flow \
 ```
 
 Outputs:
-- `.proof.kernel.json` — nodes, edges, parameters, active branch flags
-- `.png` / `.dot` — dependency plot (green = active under instantiation)
+- `.proof.kernel.json`, nodes, edges, parameters, active branch flags
+- `.png` / `.dot`, dependency plot (green = active under instantiation)
 
 Use kernels for teaching widgets, CI proof visualization, and LLM trace audit.

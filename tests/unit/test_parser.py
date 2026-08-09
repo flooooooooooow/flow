@@ -130,6 +130,19 @@ class TestLexer:
         assert tokens[0].value == '"hello world"'
         assert tokens[1].value == '"test\\nescapes"'
 
+    def test_string_literal_escaped_backslash(self, lexer):
+        """A `\\` (escaped backslash) is a valid escape — TeX, paths, regex."""
+        code = '"a \\\\cdot b" "C:\\\\\\\\temp"'
+        tokens = lexer.tokenize(code)
+        assert len(tokens) == 2
+        assert tokens[0].value == '"a \\\\cdot b"'
+        assert tokens[1].value == '"C:\\\\\\\\temp"'
+
+    def test_string_literal_invalid_escape_rejected(self, lexer):
+        """Unknown escapes still reject."""
+        with pytest.raises(SyntaxError):
+            lexer.tokenize('"bad \\x escape"')
+
     def test_comments_and_whitespace(self, lexer):
         """Test that comments and whitespace are properly handled.
         

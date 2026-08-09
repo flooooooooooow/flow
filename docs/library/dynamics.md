@@ -1,6 +1,6 @@
 # Dynamics Library
 
-API reference for `lib/stdlib/dynamics/` — linear algebra, dynamical-system
+API reference for `lib/stdlib/dynamics/`, linear algebra, dynamical-system
 types, state-space simulation, Gramians, nonlinear attractors, GA-based gain
 search, and Wave Function Collapse coupling.
 
@@ -12,15 +12,15 @@ boilerplate for you; this page documents the functions it expands into.
 
 ## Modules
 
-1. [linalg.flow](#linalgflow) — `Matrix` + operations
-2. [core.flow](#coreflow) — `DynamicalSystem`, `Horizon`, constructors
-3. [state_space.flow](#state_spaceflow) — stepping, rollout, controllability
-4. [gramian.flow](#gramianflow) — controllability/observability Gramians
-5. [attractor.flow](#attractorflow) — nonlinear fields, RK4, Lyapunov proxy
-6. [ga.flow](#gaflow) — genetic gain search
-7. [ga_analysis.flow](#ga_analysisflow) — unified GA + control analysis
-8. [wfc.flow](#wfcflow) — Wave Function Collapse grids
-9. [wfc_ga_coupling.flow](#wfc_ga_couplingflow) — GA-guided WFC evolution
+1. [linalg.flow](#linalgflow), `Matrix` + operations
+2. [core.flow](#coreflow), `DynamicalSystem`, `Horizon`, constructors
+3. [state_space.flow](#state_spaceflow), stepping, rollout, controllability
+4. [gramian.flow](#gramianflow), controllability/observability Gramians
+5. [attractor.flow](#attractorflow), nonlinear fields, RK4, Lyapunov proxy
+6. [ga.flow](#gaflow), genetic gain search
+7. [ga_analysis.flow](#ga_analysisflow), unified GA + control analysis
+8. [wfc.flow](#wfcflow), Wave Function Collapse grids
+9. [wfc_ga_coupling.flow](#wfc_ga_couplingflow), GA-guided WFC evolution
 
 ---
 
@@ -169,9 +169,9 @@ Full demo: [`examples/dynamics/gramian_demo.flow`](../../examples/dynamics/grami
 Nonlinear flows selected by `sys_id`, integrated with RK4 (state dimension up
 to 8):
 
-- `sys_id 0` — damped oscillator `x' = y, y' = -x - 0.5 y`
-- `sys_id 1` — Lorenz (sigma=10, rho=28, beta=8/3)
-- `sys_id 2` — bistable gradient `x' = x - x^3`
+- `sys_id 0`, damped oscillator `x' = y, y' = -x - 0.5 y`
+- `sys_id 1`, Lorenz (sigma=10, rho=28, beta=8/3)
+- `sys_id 2`, bistable gradient `x' = x - x^3`
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -326,6 +326,6 @@ Full demo: [`examples/dynamics/ga_wfc_coupled.flow`](../../examples/dynamics/ga_
 
 ## See also
 
-- [Dynamics DSL reference](../language/dynamics-dsl.md) — the `dsys` surface syntax that generates calls into this library
-- [Dynamics tutorial](../tutorials/dynamics.md) — modeling systems that evolve through time
-- [`examples/evolution/`](../../examples/evolution/README.md) — the flagship vision suite built on this library
+- [Dynamics DSL reference](../language/dynamics-dsl.md), the `dsys` surface syntax that generates calls into this library
+- [Dynamics tutorial](../tutorials/dynamics.md), modeling systems that evolve through time
+- [`examples/evolution/`](../../examples/evolution/README.md), the flagship vision suite built on this library

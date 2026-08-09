@@ -20,7 +20,7 @@ Flow's syntax is defined by a single EBNF specification, kept in sync with `src/
 | `"..."` | Terminal token | `"function"` |
 | `IDENTIFIER` | Lexical nonterminal | `[a-zA-Z_][a-zA-Z0-9_]*` |
 
-Comments (`# ...`) and section banners are documentation only — the lexer ignores `#` line comments in `.flow` source, not in this file.
+Comments (`# ...`) and section banners are documentation only, the lexer ignores `#` line comments in `.flow` source, not in this file.
 
 ---
 
@@ -86,7 +86,7 @@ pattern_arg    ::= literal | IDENTIFIER
 
 `match_pattern` is parsed one precedence level below bitwise-OR, so a bare
 `|` between patterns means alternation (`1 | 2 | 3 => ...`), not the
-bitwise-OR operator — alternatives must all be literals. `IDENTIFIER "(" ... ")"`
+bitwise-OR operator, alternatives must all be literals. `IDENTIFIER "(" ... ")"`
 is the struct-pattern form (`Point(a, b)`); a `literal` argument in that form
 becomes a nested value check on that field instead of a binding
 (`Point(0, y)`).
@@ -135,6 +135,6 @@ See [Verification](../language/verification.md) for the proof-oriented extension
 
 ## Full specification
 
-The complete EBNF — including lexical tokens, keywords, and symbol definitions — is in **[grammar.ebnf](../grammar.ebnf)**.
+The complete EBNF, including lexical tokens, keywords, and symbol definitions, is in **[grammar.ebnf](../grammar.ebnf)**.
 
 Open it in the wiki for syntax highlighting, section navigation, and rule search.

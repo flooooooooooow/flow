@@ -1,11 +1,12 @@
-# FLOW Tutorials
+# Flow tutorials
 
-Step-by-step tracks with **browser compile & run** on every complete `main`
-example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
+Step-by-step tracks with browser compile and run on every complete `main`
+example, plus native-only tracks for gfx, shaders, `flow` blocks, and `@rt_safe`.
 
-- **[Interactive app](index.html)** — lesson picker with live editor
-- **Written guides** — embedded runners on each `main` program
-- **Native surfaces** — `./flow run` · `./flow gfx` · `./flow shader` · `./flow record`
+- **[Interactive app](index.html)**: lesson picker with live editor
+- **Written guides**: embedded runners on each `main` program
+- **Native surfaces**: `./flow run` · `./flow gfx` · `./flow shader` · `./flow record`
+- **[Galleries](../demos/overview.md)**: recorded games, morphogenesis, evolution, WASM (also the Gallery tab / header link)
 
 ## Tracks
 
@@ -17,10 +18,10 @@ example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
 | [pipelines.md](pipelines.md) | `\|\>`, `_`, declarative sort |
 | [structs.md](structs.md) | Records & mutation |
 | [arrays.md](arrays.md) | Fixed arrays & algos |
-| [spans.md](spans.md) | Borrowed views (`span<T>`) — browser shape + native |
+| [spans.md](spans.md) | Borrowed views (`span<T>`); browser shape + native |
 | [strings.md](strings.md) | printf & parsing |
 | [pointers.md](pointers.md) | `ptr<T>`, null |
-| [memory.md](memory.md) | **Manual memory** — malloc, free, arenas |
+| [memory.md](memory.md) | **Manual memory**: malloc, free, arenas |
 | [errors.md](errors.md) | Return codes / Result pipelines |
 | [intermediate.md](intermediate.md) | Generics, traits, modules |
 | [concurrency.md](concurrency.md) | Mutex / channel shapes (browser) + native next steps |

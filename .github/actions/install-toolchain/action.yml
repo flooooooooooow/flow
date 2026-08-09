@@ -20,7 +20,8 @@ runs:
       with:
         path: |
           ~/flow-apt-cache
-        key: ${{ runner.os }}-flow-apt-v1-${{ inputs.mlir }}-${{ inputs.shellcheck }}
+        # v2: mlir-18 (pass names match mlir_jit / Homebrew LLVM; 14 is too old)
+        key: ${{ runner.os }}-flow-apt-v2-${{ inputs.mlir }}-${{ inputs.shellcheck }}
 
     - name: Install packages
       shell: bash
@@ -31,7 +32,9 @@ runs:
         fi
         packages=()
         if [ "${{ inputs.mlir }}" = "true" ]; then
-          packages+=(mlir-14-tools)
+          # Need convert-scf-to-cf / convert-func-to-llvm / finalize-memref-to-llvm
+          # (mlir-14 only has the older scf-to-std / std-to-llvm names).
+          packages+=(mlir-18-tools)
         fi
         if [ "${{ inputs.shellcheck }}" = "true" ]; then
           packages+=(shellcheck)
@@ -40,11 +43,19 @@ runs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends "${packages[@]}"
         fi
-        if [ "${{ inputs.mlir }}" = "true" ] && [ -f /usr/bin/mlir-opt-14 ] && [ ! -e /usr/local/bin/mlir-opt ]; then
-          sudo ln -sf /usr/bin/mlir-opt-14 /usr/local/bin/mlir-opt
+        if [ "${{ inputs.mlir }}" = "true" ]; then
+          if [ -f /usr/bin/mlir-opt-18 ]; then
+            sudo ln -sf /usr/bin/mlir-opt-18 /usr/local/bin/mlir-opt
+          fi
+          if [ -f /usr/bin/mlir-translate-18 ]; then
+            sudo ln -sf /usr/bin/mlir-translate-18 /usr/local/bin/mlir-translate
+          fi
         fi
         if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ] && [ "${#packages[@]}" -gt 0 ]; then
           mkdir -p ~/flow-apt-cache
           cp /var/cache/apt/archives/*.deb ~/flow-apt-cache/ 2>/dev/null || true
         fi
         clang --version
+        if [ "${{ inputs.mlir }}" = "true" ]; then
+          mlir-opt --version | head -1
+        fi

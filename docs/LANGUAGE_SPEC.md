@@ -7,8 +7,8 @@
 
 FLOW is a statically-typed, systems programming language with first-class support for:
 - **Algebraic effects** for modular side-effect handling
-- **Evolution / dynamics DSLs** (`flow` / `evolves as`, units of measure, `field` PDE, `analyze` LQR) — see [§10](#10-domain--dsl-surfaces)
-- **Native graphics** (macOS Metal/Cocoa; Linux/Windows SDL2) and **fill shaders** (`shader fill`) — see [graphics.md](language/graphics.md) / [shaders.md](language/shaders.md)
+- **Evolution / dynamics DSLs** (`flow` / `evolves as`, units of measure, `field` PDE, `analyze` LQR), see [§10](#10-domain--dsl-surfaces)
+- **Native graphics** (macOS Metal/Cocoa; Linux/Windows SDL2) and **fill shaders** (`shader fill`), see [graphics.md](language/graphics.md) / [shaders.md](language/shaders.md)
 - **GPU memory helpers** via Metal on macOS (stdlib); CUDA/OpenCL are **not** shipping
 - **Automatic differentiation** as library dual/reverse helpers (see [autodiff.md](library/autodiff.md))
 - **WebAssembly** via Flow→C→Emscripten (see [wasm.md](language/wasm.md))
@@ -29,7 +29,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 
 ---
 
-> **AUTHORITATIVE REFERENCE** — This document is the single source of truth for the FLOW language.
+> **AUTHORITATIVE REFERENCE**, This document is the single source of truth for the FLOW language.
 > All other documentation references this spec. Features marked ✅ are implemented, ⚠️ are partial, ❌ are planned.
 > Focused pages under [docs/language/](language/) are preferred for learning; this file owns status matrices and edge cases.
 
@@ -79,7 +79,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `match` | ⚠️ | Pattern Matching (literals, structs, guards, `\|` alternation, nested literal fields; real exhaustiveness checking for `bool` and enum/ADT variants via path/const patterns, minimal stub for integers) |
 | `default` | ✅ | Pattern Matching |
 | `mut` | ✅ | Mutability (`let mut`) |
-| `to` | ✅ | Range (`for i in 0 to n`) — preferred over `..` |
+| `to` | ✅ | Range (`for i in 0 to n`), preferred over `..` |
 | `break` | ✅ | Control Flow |
 | `continue` | ✅ | Control Flow |
 | `defer` | ✅ | Control Flow (run on scope exit) |
@@ -99,9 +99,9 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `always_inline` | ✅ | Emits `__attribute__((always_inline))` plus the inline specifier (§3.6) |
 | `target` | ✅ | Emits `__attribute__((target("…")))`; the string's shape is checked, its meaning is the C compiler's (§3.6) |
 | `module` | ⚠️ | `module X { ... }` is parsed, then flattened: the block name is discarded and the inner declarations become globals. Two blocks declaring the same name emit duplicate C. Accepts 7 declaration forms; `import` inside a block is never resolved. See [modules-namespacing.md](language/modules-namespacing.md) |
-| `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design — see [verification.md](language/verification.md)) |
+| `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design, see [verification.md](language/verification.md)) |
 | `unit` | ✅ | Units of measure (§2.6) |
-| `flow` | ✅ | Evolution block (§10.1) — contextual keyword |
+| `flow` | ✅ | Evolution block (§10.1), contextual keyword |
 | `ui_layout` / `ui_row` / `ui_column` / `ui_stack` / `ui_grid` | ⚠️ | UI layout sugar (parsed; host-dependent) |
 
 ### 1.2 Operators
@@ -126,7 +126,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `=` | Assignment | ✅ |
 | `to` | Range keyword | ✅ (canonical `for` range) |
 | `..` | Range | ✅ (accepted alias of `to`) |
-| `\|>` | Pipe | ✅ (declarative ordering — §4.5) |
+| `\|>` | Pipe | ✅ (declarative ordering, §4.5) |
 | `&` / `*` | Address-of / deref | ✅ (unary; see §8.3) |
 | `->` | Type Arrow | ✅ |
 | `=>` | Match Arrow | ✅ |
@@ -213,10 +213,10 @@ Rationale, alternatives considered, and the implementation are in
 | Pointer | `ptr<T>` | ✅ |
 | Struct | `struct Name { ... }` | ✅ |
 | Vector (SIMD) | `vec<T, N>` | ⚠️ (parsed, limited codegen) |
-| Span (immutable view) | `span<T>`, `&[T]` | ✅ concrete element types — [spans.md](language/spans.md) |
+| Span (immutable view) | `span<T>`, `&[T]` | ✅ concrete element types, [spans.md](language/spans.md) |
 | Span (mutable view) | `span<mut T>`, `&mut [T]` | ✅ concrete element types |
 | Span (static extent) | `span<T, N>`, `&[T; N]` | ✅ length checked at the call site |
-| Span (inferred) | `span`, `span<mut>`, `span<number>` | ❌ layer 2 — parser reports "not yet implemented" |
+| Span (inferred) | `span`, `span<mut>`, `span<number>` | ❌ layer 2, parser reports "not yet implemented" |
 
 ### 2.3 Type Syntax
 
@@ -292,7 +292,7 @@ let v: Velocity = d / t
 - Bare `unit Name` declares a base dimension; `unit Name = expr` derives via `*`, `/`, and integer `^`.
 - Literals take a unit with `as`. Addition/subtraction require matching dimensions; `*`/`/` compose them.
 - `Radian` may pass through trig builtins as dimensionless.
-- Focused write-up: [types.md — Units](language/types.md); example: `examples/evolution/units_kinematics.flow`; design: [north-star.md](vision/north-star.md).
+- Focused write-up: [types.md, Units](language/types.md); example: `examples/evolution/units_kinematics.flow`; design: [north-star.md](vision/north-star.md).
 
 ---
 
@@ -468,7 +468,7 @@ function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
 | Attribute | Status | Notes |
 |-----------|--------|-------|
 | `@only` / `@guard` | ✅ | Build-mode guards (§3.1.1) |
-| `@rt_safe` | ✅ | Real-time safety annotation — see [rt-safety.md](library/rt-safety.md) |
+| `@rt_safe` | ✅ | Real-time safety annotation, see [rt-safety.md](library/rt-safety.md) |
 | `@flow_api` | ✅ | Keep the plain, unmangled name for a stable C ABI |
 | `@gpu` | ✅ | Device code generation |
 | `@inline` | ✅ | Inline hint (below) |
@@ -638,7 +638,7 @@ See [ordering.md](language/ordering.md),
 [explainable-compilation.md](language/explainable-compilation.md), and
 `examples/basics/declarative_sort.flow`.
 
-**Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib — see pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
+**Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib, see pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
 
 ---
 
@@ -1095,7 +1095,7 @@ memory; domains on parameters or in types.
 
 ### 9.3 WebAssembly
 
-**Status:** ✅ Via Emscripten — C or MLIR CPU backends — see [language/wasm.md](language/wasm.md)
+**Status:** ✅ Via Emscripten, C or MLIR CPU backends, see [language/wasm.md](language/wasm.md)
 
 - Paths: Flow → C → `emcc`, or Flow → MLIR → LLVM IR → `emcc`
   (`./flow wasm --backend=c|mlir`, default `c`)
@@ -1167,7 +1167,7 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 ### 10.6 GPU memory (stdlib)
 
-**Status:** ✅ Metal path; stub elsewhere — [gpu-memory.md](library/gpu-memory.md)
+**Status:** ✅ Metal path; stub elsewhere, [gpu-memory.md](library/gpu-memory.md)
 
 CUDA/OpenCL backends are **not** shipping.
 

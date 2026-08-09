@@ -242,6 +242,29 @@ SYNTAX_HOVER: Dict[str, str] = {
         "**`@rt_safe`** — real-time safety attribute (no unbounded alloc / locks).\n\n"
         "```flow\n@rt_safe\nfunction process_block(buf: ptr<f32>, n: i32) -> void { ... }\n```"
     ),
+    "@guarantee": (
+        "**`@guarantee(...)`** — RT contracts (W0: same discipline as `@rt_safe`).\n\n"
+        "```flow\n@guarantee(no_alloc, no_block)\nfunction demod(...) -> ... { ... }\n```"
+    ),
+    "@deterministic": (
+        "**`@deterministic`** — forbid allocating / blocking APIs (W0: `@rt_safe` checker)."
+    ),
+    "@dma": (
+        "**`@dma`** — DMA-capable / DMA-placed buffer hint "
+        "(docs/vision/physical-systems.md)."
+    ),
+    "@noncacheable": (
+        "**`@noncacheable`** — non-cacheable memory region hint."
+    ),
+    "@aligned": (
+        "**`@aligned(N)`** — required alignment in bytes, e.g. `@aligned(64)`."
+    ),
+    "@hardware": (
+        "**`@hardware`** — FPGA/RTL candidate (accepted in W0; synthesis is W5)."
+    ),
+    "@radiation_sensitive": (
+        "**`@radiation_sensitive`** — radiation-aware storage / scrubbing marker."
+    ),
     "@lifetime": (
         "**`@lifetime(D)`** — lifetime domain: `callback`, `frame`, `session` "
         "or `application`, shortest-lived first. Goes on a function (the "

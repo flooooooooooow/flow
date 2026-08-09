@@ -1,7 +1,7 @@
 # Concurrency Patterns
 
 > Educational concurrency shapes that **run in the browser** via `printf`.
-> Parts 1–3 simulate mutexes and channels with arrays — no real threads.
+> Parts 1-3 simulate mutexes and channels with arrays, no real threads.
 >
 > **Real concurrency (shipped):** `lib/stdlib/concurrent.flow` (pthread channels,
 > WaitGroup, mutexes), `lib/stdlib/async.flow` (`FiberAsync` / `ThreadedAsync` /
@@ -167,7 +167,7 @@ function main() -> i32 {
 
 ### 2.2 Producer then consumer
 
-Fill the channel, then drain it — a single-threaded producer/consumer sketch.
+Fill the channel, then drain it, a single-threaded producer/consumer sketch.
 
 ```flow
 struct Chan {
@@ -308,7 +308,7 @@ function main() -> i32 {
 
 ### 3.2 Work queue drain
 
-Push jobs, then process until empty — a simple job-queue sketch.
+Push jobs, then process until empty, a simple job-queue sketch.
 
 ```flow
 struct WorkQ {
