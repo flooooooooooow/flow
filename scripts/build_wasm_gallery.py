@@ -53,7 +53,9 @@ CATEGORIES = [
         "blurb": "Pure computation. No graphics, no host services: the "
                  "program runs and prints into the page.",
         "globs": [("examples/basics", "*.flow")],
-        "files": ["examples/wasm/hello_wasm.flow"],
+        "files": ["examples/wasm/hello_wasm.flow",
+                  "examples/wasm/parallel_scaling.flow",
+                  "examples/wasm/parallel_sum.flow"],
     },
     {
         "id": "language",
@@ -103,18 +105,6 @@ CATEGORIES = [
     },
 ]
 
-
-# ---------------------------------------------------------------------------
-# Per-example page extras
-# ---------------------------------------------------------------------------
-# Some examples need native support linked in to build (a runtime extern the
-# plain console link does not provide) and/or carry a note card on their page.
-# ``c`` is a tuple of extra C files; ``html`` is a fragment injected between
-# the page header and the run body. The tiny-pointers page gets the runtime
-# support file (flow_rt_monotonic_ns) and an Abstract-claim coverage card that
-# links each theorem row to its doc anchor (anchors follow the wiki's
-# headingSlug algorithm; docs live at library/*.md in the built site).
-
 TINY_POINTERS_COVERAGE_CARD = """
 <details class="coverage">
   <summary>Abstract-claim coverage — every promise in the paper's abstract, mapped to the phase that measures it</summary>
@@ -144,11 +134,25 @@ TINY_POINTERS_COVERAGE_CARD = """
 </details>
 """
 
+# Per-example extras for the build pipeline. `extra_link` adds C/runtime
+# files to the emcc link step (tiny_pointers needs the monotonic clock in
+# runtime/flow_rt_support.c, which the plain console build does not link);
+# `html` injects an HTML fragment between the page header and the run body.
 PAGE_EXTRAS = {
+    # Examples that call flow_rt_monotonic_ns link the real runtime file
+    # (host monotonic clock) instead of a stub.
     "tiny_pointers": {
-        "c": ("runtime/flow_rt_support.c",),
+        "extra_link": ["runtime/flow_rt_support.c"],
         "html": TINY_POINTERS_COVERAGE_CARD,
     },
+    "digits_mlp": {"extra_link": ["runtime/flow_rt_support.c"]},
+    # Real pthreads: wasm_build compiles the parallel-for library TU and links
+    # runtime/flow_rt_parallel.c + flow_rt_support.c itself (threads mode).
+    # The browser blocks SharedArrayBuffer without cross-origin isolation, so
+    # the page ships a COI service worker and needs to be opened in a tab.
+    "digits_mlp_parallel": {"threads": True, "workers": 8, "initial_memory": "128MB"},
+    "parallel_sum": {"threads": True, "workers": 8},
+    "parallel_scaling": {"threads": True, "workers": 8},
 }
 
 
@@ -223,6 +227,7 @@ def collect(categories) -> list:
 
 
 def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
+    extras = PAGE_EXTRAS.get(target["name"], {})
     record = {
         "name": target["name"],
         "title": target["title"],
@@ -230,13 +235,18 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
         "source": str(target["path"].relative_to(PROJECT_ROOT)),
         "summary": one_line_summary(target["path"].read_text()),
     }
+    if extras.get("threads"):
+        record["threads"] = True
     out_dir = out_root / target["name"]
-    extra = PAGE_EXTRAS.get(target["name"], {})
     try:
         result = build(target["path"], out_dir, name=target["name"],
                        title=target["title"], opt=opt, timeout=timeout,
-                       extra_c=tuple(extra.get("c", ())),
-                       extra_html=extra.get("html", ""))
+                       extra_link=[PROJECT_ROOT / p for p in extras.get("extra_link", [])]
+                       or None,
+                       extra_html=extras.get("html", ""),
+                       threads=extras.get("threads", False),
+                       workers=extras.get("workers", 8),
+                       initial_memory=extras.get("initial_memory", "32MB"))
     except BuildError as exc:
         shutil.rmtree(out_dir, ignore_errors=True)
         record.update(status="failed", error=str(exc))
@@ -366,9 +376,11 @@ STATUS_ROWS = [
     ("gfx graphics and keyboard", "runs", "Runs today",
      "runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM "
      "key events to the macOS keycodes the programs already use."),
-    ("Threads and channels", "wip", "In progress",
-     "Emscripten -pthread over SharedArrayBuffer and Web Workers; needs the "
-     "page to be cross-origin isolated. Not built here."),
+    ("Threads and channels", "runs", "Runs today",
+     "digits_mlp_parallel and parallel_sum run on real Emscripten pthreads over "
+     "SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a "
+     "cross-origin-isolated page, so open those cards in a tab and let their "
+     "service worker reload once."),
     ("Sockets and HTTP", "wip", "In progress",
      "Emscripten's WebSocket-backed POSIX socket bridge "
      "(-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here."),
@@ -412,12 +424,15 @@ def render_gallery(records: list, out: Path) -> None:
                    + rec["source"])
             if rec["status"] == "ok":
                 kind = "canvas" if rec.get("gfx") else "console"
+                tags = f'<span class="tag">{kind}</span>'
+                if rec.get("threads"):
+                    tags += ' <span class="tag">threads</span>'
                 cards.append(f"""      <div class="card">
         <h3>{esc(rec['title'])}</h3>
         <p>{esc(rec['summary'])}</p>
         <div class="row">
           <button data-run="{esc(rec['page'])}" data-title="{esc(rec['title'])}">Run</button>
-          <span class="tag">{kind}</span>
+          {tags}
           <span>{kb(rec['total_bytes'])}</span>
           <a href="{esc(src)}">source</a>
         </div>
@@ -469,9 +484,10 @@ def render_gallery(records: list, out: Path) -> None:
 {chr(10).join(sections)}
 
   <h2>What runs, and what is still being crossed</h2>
-  <p class="blurb">Only the first two rows are things verified in a browser
-  on this page. The rest name the mechanism and say plainly that it is not
-  built here yet.</p>
+  <p class="blurb">Rows marked “runs” are verified in a browser. The
+  threads row needs the card opened in a tab (an iframe cannot become
+  cross-origin isolated on its own). The rest name the mechanism and say
+  plainly that it is not built here yet.</p>
   <table class="status">
     <tr><th>Capability</th><th>State</th><th>Route</th></tr>
 {status}
