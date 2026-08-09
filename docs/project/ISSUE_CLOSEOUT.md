@@ -18,14 +18,17 @@ open work is listed at the bottom — this agent cannot write the Issues API.
 | [#151](https://github.com/flooooooooooow/flow/issues/151) | Self-hosting Phase B done |
 | [#153](https://github.com/flooooooooooow/flow/issues/153) | Self-hosting Phase D done |
 
-## Still open (needs more work)
+## Still open (intentionally)
 
 | Issue | Status | Next step |
 |-------|--------|-----------|
 | [#147](https://github.com/flooooooooooow/flow/issues/147) | Sort/search cost selection landed; not generalized | Register FFT/DSP/ML impls in `plan_selector` |
-| [#154](https://github.com/flooooooooooow/flow/issues/154) | Packaging + CI done; `Formula/flowc.rb` added | Tag `flowc-v*` release; optional Homebrew tap |
-| [#172](https://github.com/flooooooooooow/flow/issues/172) | Draft under `docs/project/linguist/` | Open upstream github-linguist PR |
-| [#252](https://github.com/flooooooooooow/flow/issues/252) | Euler: bigint / generic maps / if-expr | Language design + stdlib; `HashMap_string_i32` exists |
+| [#172](https://github.com/flooooooooooow/flow/issues/172) | Draft under `docs/project/linguist/` | Open upstream github-linguist PR (agent cannot fork) |
+| [#252](https://github.com/flooooooooooow/flow/issues/252) | Partial: if-expr + C error visibility; f64 already exists | Still need `bigint` + generic `map`/`set` |
+
+## Closed in this wave
+
+Also closed: [#154](https://github.com/flooooooooooow/flow/issues/154) — `flowc-v0.10.0` release published + Homebrew formula.
 
 ## Sibling repo
 

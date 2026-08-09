@@ -122,7 +122,8 @@ flowc_emit_to_c() {
 flowc_link_c() {
     local c_file="$1"
     local exe_file="$2"
-    if ! clang -O0 -o "$exe_file" "$c_file" 2>/dev/null; then
+    # Show compiler diagnostics on failure (#252).
+    if ! clang -O0 -o "$exe_file" "$c_file"; then
         if ! cc -O0 -o "$exe_file" "$c_file"; then
             print_error "C compilation/linking failed (flowc host)"
             return 1

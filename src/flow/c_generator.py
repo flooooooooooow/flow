@@ -48,6 +48,7 @@ from .parser import (
     HandleStatement,
     LayoutStatement,
     IfStatement,
+    IfExpression,
     ImplDecl,
     Lambda,
     Literal,
@@ -2903,6 +2904,12 @@ class CGenerator:
             if self._capture_stack and e.name in self._capture_stack[-1]:
                 return f"_env->{_c_ident(e.name)}"
             return _c_ident(e.name)
+
+        if isinstance(e, IfExpression):
+            cond = self._gen_expr(e.condition)
+            then_c = self._gen_expr(e.then_expr)
+            else_c = self._gen_expr(e.else_expr)
+            return f"(({cond}) ? ({then_c}) : ({else_c}))"
 
         if isinstance(e, StructLiteral):
             struct_fields = self._structs.get(e.struct_name, {})
