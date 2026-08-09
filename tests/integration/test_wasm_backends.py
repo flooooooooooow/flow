@@ -75,6 +75,29 @@ def test_emcc_command_preload_and_link():
     assert any(c.endswith("gfx_wasm.c") for c in cmd)
 
 
+def test_flow_to_llvm_ir_passes_wasm32(monkeypatch, tmp_path: Path):
+    """MLIR→LLVM for emcc must request the ILP32/wasm32 size_t ABI (#230)."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import wasm_build as wb  # type: ignore
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        ll = Path(cmd[cmd.index("-o") + 1])
+        ll.write_text("; ModuleID = 'fake'\ndeclare ptr @malloc(i32)\n")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(wb.subprocess, "run", fake_run)
+    prog = tmp_path / "p.flow"
+    prog.write_text("function main() -> i32 { return 0 }\n")
+    ll_out = tmp_path / "p.ll"
+    wb.flow_to_llvm_ir(prog, ll_out)
+    assert captured, "expected transpiler invocation"
+    assert "--wasm32" in captured[0]
+    assert "--mlir" in captured[0] and "--llvm" in captured[0]
+
+
 @pytest.mark.skipif(not HELLO.exists(), reason="hello_wasm.flow missing")
 @pytest.mark.skipif(not _emcc_ok(), reason="emcc not usable")
 @pytest.mark.parametrize("backend", ["c", "mlir"])
