@@ -366,6 +366,31 @@ class MLIRGenerator:
         """Target pointer width in bytes (4 under ``--wasm32`` / ILP32, else 8)."""
         return 4 if self.size_t_bits == 32 else 8
 
+    def _sizeof_bytes_for_mangled(self, mangled_suffix: str) -> int:
+        """Byte size for a ``sizeof_<Ty>`` intrinsic name suffix."""
+        fixed = {
+            "i8": 1,
+            "u8": 1,
+            "bool": 1,
+            "i16": 2,
+            "u16": 2,
+            "i32": 4,
+            "u32": 4,
+            "f32": 4,
+            "i64": 8,
+            "u64": 8,
+            "f64": 8,
+            "i128": 16,
+            "u128": 16,
+        }
+        if mangled_suffix in fixed:
+            return fixed[mangled_suffix]
+        if mangled_suffix == "ptr" or mangled_suffix.startswith("ptr_"):
+            return self._pointer_bytes()
+        if mangled_suffix == "string":
+            return self._pointer_bytes()
+        return 4
+
     def _abi_adjust_libc(
         self, name: str, parameters: List[Parameter], return_type: Type
     ) -> tuple:
@@ -1053,6 +1078,26 @@ class MLIRGenerator:
         self.current_function_return_type = func.return_type
         self._current_function_name = func.name
         self._init_per_function_state()
+
+        # sizeof_* intrinsics: emit a constant (ptr width follows --wasm32 / #255).
+        if (
+            func.name.startswith("sizeof_")
+            and len(func.parameters) == 0
+            and not getattr(func, "is_extern", False)
+        ):
+            nbytes = self._sizeof_bytes_for_mangled(func.name[len("sizeof_") :])
+            ret_ty = self.flow_type_to_mlir(func.return_type)
+            ind = self.indent()
+            ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            return "\n".join(
+                [
+                    f"{ind}func.func @{func.name}() -> {ret_ty} {{",
+                    f"{ind}  {ssa} = arith.constant {nbytes} : {ret_ty}",
+                    f"{ind}  func.return {ssa} : {ret_ty}",
+                    f"{ind}}}",
+                ]
+            )
 
         # Drop prior function's params/locals; keep module + function decls (#232).
         snapshot = getattr(self, "_module_symbol_snapshot", None)
@@ -5262,6 +5307,19 @@ class MLIRGenerator:
             info = self.symbol_table[func_call.name]
             if info.get("is_closure") and info.get("fn_mlir_type"):
                 return self._generate_closure_call(func_call, info)
+
+        # Inline sizeof_* as a target-aware constant (#255).
+        if func_call.name.startswith("sizeof_") and len(func_call.arguments) == 0:
+            nbytes = self._sizeof_bytes_for_mangled(func_call.name[len("sizeof_") :])
+            ret_ty = "i64"
+            info = self.symbol_table.get(func_call.name) or {}
+            rt = info.get("return_type")
+            if rt is not None:
+                ret_ty = self.flow_type_to_mlir(rt)
+            ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[ssa] = ret_ty
+            return ssa, [f"{self.indent()}{ssa} = arith.constant {nbytes} : {ret_ty}"]
 
         # Handle array<T>(size) constructor specially
         if func_call.name.startswith('array<') and func_call.name.endswith('>'):
