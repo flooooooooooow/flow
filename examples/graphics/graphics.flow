@@ -165,3 +165,67 @@ function print_point2d(p: Point2D) -> void {
 function print_rect(r: Rect2D) -> void {
     printf("Rect2D(x=%d, y=%d, w=%d, h=%d)", r.x, r.y, r.width, r.height)
 }
+
+# ── Demo entry point ──────────────────────────────────────────────
+# graphics.flow also runs as a standalone example: main() exercises the
+# constructors, conversions and clamps, prints the results, and gates its
+# exit code on a self-check (0 = PASS).
+
+function main() -> i32 {
+    let red: Color = color_red()
+    let cyan: Color = color_cyan()
+    let gray: Color = color_gray()
+    let low: i32 = clamp_u8(-40)
+    let mid: i32 = clamp_u8(200)
+    let high: i32 = clamp_u8(320)
+    let rgb: RGB = color_rgb_norm(1.0, 0.5, 0.25)
+    let rgba: RGBA = rgb_to_rgba(rgb, 0.5)
+    let back: RGB = rgba_to_rgb(rgba)
+    let p: Point = point(1.5, -2.25)
+    let p2: Point2D = point2d(3, 4)
+    let r: Rect2D = rect2d(10, 20, 64, 32)
+
+    println("graphics module demo")
+    print("  colors  ")
+    print_color(red)
+    print(" ")
+    print_color(cyan)
+    print(" ")
+    print_color(gray)
+    println("")
+    print("  clamps  ")
+    print(low, mid, high)
+    println("   (expect 0 200 255)")
+    print("  norm    ")
+    print(rgb.r, rgb.g, rgb.b)
+    print("  back    ")
+    print(back.r, back.g, back.b)
+    println("   (alpha dropped)")
+    print("  point   ")
+    print_point(p)
+    print("  ")
+    print_point2d(p2)
+    println("")
+    print("  rect    ")
+    print_rect(r)
+    println("")
+
+    # Self-check: clamps saturate, the 2D point and rect keep their
+    # integer coordinates through construction.
+    let mut pass: i32 = 1
+    if low != 0 { pass = 0 }
+    if mid != 200 { pass = 0 }
+    if high != 255 { pass = 0 }
+    if p2.x != 3 { pass = 0 }
+    if p2.y != 4 { pass = 0 }
+    if r.x != 10 { pass = 0 }
+    if r.width != 64 { pass = 0 }
+    if r.height != 32 { pass = 0 }
+
+    if pass == 1 {
+        println("PASS - graphics module self-check ok")
+        return 0
+    }
+    println("FAIL - graphics module self-check")
+    return 1
+}

@@ -147,22 +147,23 @@ against.
 
 That 19 microseconds is roughly 20x what a native `pthread_create` costs, and
 it is the whole story for fine-grained work. `examples/ml/digits_mlp_parallel.flow`
-splits every minibatch across 8 shards, which is 5,760 spawn-join round trips
-over a full run. Compiled to WASM with the identical flags and run under
-Node 25:
+splits every minibatch across 8 shards. With its original 250-sample batch that
+was 5,760 spawn-join round trips over a full 3-rep run, and compiled to WASM
+the parallel pass lost to its own dispatch — a shard was worth ~16
+microseconds of work and cost ~19 microseconds to hand over, so the measured
+speedup was 0.46x while the runs still agreed to the last bit. The gallery's
+threaded build of the same example raises the batch to 1000 (60 parallel-for
+calls per run, ~1,440 spawns, ~5x more work per shard) and measures ~1.9x in
+Chrome.
 
-```
-  serial:   grad+update ms  93.59   test_acc 99.00%
-  parallel: grad+update ms 204.40   test_acc 99.00%
-  speedup: 0.46x
-```
-
-Natively the same program gets 4.16x. The parallel build is still *correct*
-under WASM (the two runs agree to the last bit), it is just slower, because a
-shard is worth ~16 microseconds of work and costs ~19 microseconds to
-dispatch. Nothing about the browser is broken here; the grain is simply below
-the threshold. Coarsen the shards and the speedup comes back, which is what
-`parallel_sum.flow` demonstrates.
+The parallel build is always *correct* under WASM; the grain just has to clear
+the dispatch threshold. Coarsen the shards and the speedup comes back, which is
+what `parallel_sum.flow` demonstrates — it is also a gallery card now, at
+~6.1–6.5x in Chrome with a ~0.4 ms floor for 8 empty spawn+join round trips.
+`examples/wasm/parallel_scaling.flow` is the same lesson as a whole speedup
+curve: one threaded gallery card that times the same Monte Carlo work at 2, 4
+and 8 workers against per-count serial baselines, measuring ~3.8x → ~7.5x →
+~15x in Chrome.
 
 ### First-run numbers lie
 
