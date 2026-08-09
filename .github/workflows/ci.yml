@@ -10,6 +10,9 @@ on:
       - 'examples/**'
       - 'lib/**'
       - 'runtime/**'
+      - 'docs/**'
+      - 'ROADMAP.md'
+      - 'CONTRIBUTING.md'
       - 'flow'
       - 'flow.toml'
       - '.github/**'
@@ -28,6 +31,9 @@ on:
       - 'examples/**'
       - 'lib/**'
       - 'runtime/**'
+      - 'docs/**'
+      - 'ROADMAP.md'
+      - 'CONTRIBUTING.md'
       - 'flow'
       - 'flow.toml'
       - '.github/**'
@@ -61,6 +67,7 @@ jobs:
       plugins: ${{ steps.filter.outputs.plugins }}
       tools: ${{ steps.filter.outputs.tools }}
       deps: ${{ steps.filter.outputs.deps }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v7
 
@@ -93,6 +100,10 @@ jobs:
               - 'requirements.lock'
               - 'requirements.txt'
               - 'pyproject.toml'
+            docs:
+              - 'docs/**'
+              - 'ROADMAP.md'
+              - 'CONTRIBUTING.md'
 
   lint:
     name: Lint
