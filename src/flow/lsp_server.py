@@ -1454,7 +1454,7 @@ class FlowLanguageServer:
             if imp:
                 hover_info = self._get_hover_for_symbol(word, {word: imp})
                 if hover_info:
-                    return hover_info
+                    return self._enrich_hover_with_type(uri, word, hover_info)
 
             dyn_doc = dynamics_hover(word)
             if dyn_doc:
@@ -1554,31 +1554,55 @@ class FlowLanguageServer:
                 )
         return None
 
+    def _defining_file_note(self, info: Dict[str, Any]) -> str:
+        """Markdown note naming the file that defines an imported symbol.
+
+        The info's `uri` already points at the real declaration file (from
+        the resolver's `flow_source_file` stamp, followed through re-exports),
+        so the note stays readable, e.g. "defined in: path/to/dep.flow".
+        """
+        uri = info.get('uri') or ''
+        if not uri:
+            return ''
+        path = lsp_intel.uri_to_path(uri)
+        if not path:
+            return ''
+        try:
+            rel = os.path.relpath(path, self._repo_root())
+            if not rel.startswith('..'):
+                display = rel
+            else:
+                display = os.path.basename(path)
+        except ValueError:  # Windows: paths on different drives
+            display = os.path.basename(path)
+        return f"\n\n*defined in:* `{display}`"
+
     def _enrich_hover_with_type(
         self, uri: str, word: str, hover_info: dict
     ) -> dict:
         cache = self.type_cache.get(uri) or {}
         typ = (cache.get('global_types') or {}).get(word)
         kind = (cache.get('symbol_kinds') or {}).get(word)
-        if not typ:
-            return hover_info
         value = hover_info.get('contents', {}).get('value') or ''
         if typ and typ not in value:
             note = f"\n\n*type:* `{typ}`"
             if kind:
                 note = f"\n\n*typechecked {kind}:* `{typ}`"
-            hover_info = {
-                'contents': {
-                    'kind': 'markdown',
-                    'value': value + note,
-                }
-            }
-        # Imported path note
+            value += note
+        # Note which file defines an imported symbol — even when the type
+        # checker could not infer a type (e.g. typecheck failed entirely).
+        # Gate on the hovered symbol's own `imported` flag so a local
+        # declaration shadowing an imported name never gets the note.
         imp = self.import_symbols.get(uri, {}).get(word)
-        if imp and imp.get('uri') and 'imported from' not in value:
-            hover_info['contents']['value'] += (
-                f"\n\n*imported from:* `{imp['uri']}`"
-            )
+        hovered = self.symbols.get(uri, {}).get(word) or {}
+        if imp and hovered.get('imported'):
+            defined_note = self._defining_file_note(imp)
+            if defined_note and defined_note not in value:
+                value += defined_note
+        if value != hover_info.get('contents', {}).get('value'):
+            hover_info = {
+                'contents': {'kind': 'markdown', 'value': value}
+            }
         return hover_info
 
     @staticmethod

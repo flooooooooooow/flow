@@ -2,7 +2,7 @@
 
 > A programming language where the primary abstraction is the evolution of systems through time.
 >
-> **Product thesis:** Flow is a language for describing **physical computational systems**, > RF, embedded, SDR, FPGA-adjacent, and satellite engineering first. Not “safer C,” and not a
+> **Product thesis:** Flow is a language for describing **physical computational systems**, RF, embedded, SDR, FPGA-adjacent, and satellite engineering first. Not "safer C," and not a
 > Rust substitute: a compile-time model of units, rates, timing, memory topology, hardware, and
 > fault behaviour. See [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
 

@@ -2,6 +2,78 @@
 
 All notable changes to FLOW will be documented in this file.
 
+## [Unreleased]
+
+### MLIR / doom follow-ups (#253–#255)
+
+- Confirmed `#253`: `-O1+` “noreturn / dropped main loop” was UB from
+  `return &module_global` spilling through alloca (fixed in `#250` addressof).
+  Regression test covers scalar `drawshim_*_addr`-style getters.
+- Confirmed `#254`: static `array<string,N>` globals initialize via
+  `_emit_static_llvm_array_global` (on main since `#250`).
+- `#255`: `--wasm32` / ILP32 now sizes `ptr` and `string` as 4 bytes in
+  memref struct layouts and pointer-element byte scaling (was hardcoded 8
+  in several fallbacks). Typed LLVM GEP already followed the target; doom-flow
+  should keep using `rmain_ptr_bytes()` instead of `* 8` in Flow source.
+
+## [0.10.0] - 2026-08-08
+
+### MLIR / WASM epic #221 (complete)
+
+- **MLIR backend on par with C** for the affected surface: `uN`/`null`/
+  memref coercions, bitwise and shift ops lowered to `arith`, per-function
+  symbol-table restores, module globals in loops/if/vectorizer, variadic
+  externs (`...`) with `llvm.call vararg`, fixed-size arrays as `llvm.array`
+  struct fields, and static string-array globals.
+- **WebAssembly gallery**: 118 Flow examples compiled to `site/wasm/`.
+- **wasm crossings**: CPython embedding routed to Pyodide, browser file I/O
+  (MEMFS + IDBFS), host-page-sized canvas.
+- SPIR-V GPU emission advanced alongside the CPU backend.
+
+### Compiler frontend
+
+- `flowc` self-hosting: checked-in bootstrap, whole-compiler self-compile
+  three generations deep, CI-gated; string concatenation and inferred C type
+  for unannotated `let`.
+- `flow explain` subcommand with the float total-order resolution.
+- Cost-based plan selector for `sort`/`find` (merge/quick/gap/heap
+  families), adaptive ordering benchmark with measured numbers.
+
+### Language
+
+- Lifetime domain annotations and their four checks; frame domain wired to
+  the arena; LSP hover for `@lifetime`; an audio example split across all
+  four domains.
+- Float total order per the spec.
+
+### Standard library
+
+- `render3d` — software 3D renderer with pipeline documentation and measured
+  rates.
+- `psychstats` and `experiment` — the analysis and presentation halves of
+  experiment support; `automata` cellular-automaton framework.
+- Audio safety chain, WAV render target, and DSP fixes.
+
+### Runtime
+
+- `flow_rt_sysinfo` reduced to syscalls and compile-time facts; race
+  detection relocated to `lib/runtime/race.flow`; zombie headers deleted.
+
+### Examples and gallery
+
+- Morphogenesis wave-2 (19 examples, gallery GIFs); genetics suites; planet
+  pipeline (cubesphere, tectonics, elevation).
+- Games: physics3d, raycast_shooter, Icy Tower, The Falling Sand Game,
+  billboard particles; software-3D clips recorded offline.
+- Numerical: Carrier–Greengard–Rokhlin adaptive FMM.
+
+### Branding, editor, CI
+
+- Flow logos replace text F glyphs; VS Code uses the logo as the `.flow`
+  icon.
+- CI/Discord: rich embeds via a single action, worded `#announcements`,
+  PR notices, docs deploy pings, and a `#projects` forum for releases.
+
 ## [0.2.0] - 2026-01-08
 
 ### Added

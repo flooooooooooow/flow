@@ -32,6 +32,7 @@ from .parser import (
 )
 from .attributes import (
     attribute_errors,
+    attrs_imply_rt_safe,
     domain_rank,
     lifetime_domain,
 )
@@ -1098,7 +1099,8 @@ class TypeChecker:
                     base_type=base_type
                 )
                 symbol = Symbol(decl.name, alias_type, "type",
-                              getattr(decl, 'is_exported', False), decl)
+                              getattr(decl, 'is_exported', False),
+                              definition=decl)
                 self.global_scope.define(symbol)
                 # Also register in struct_types for lookup
                 self.struct_types[decl.name] = decl
@@ -1117,7 +1119,8 @@ class TypeChecker:
                     dims=dims
                 )
                 symbol = Symbol(decl.name, distinct_type, "type",
-                              getattr(decl, 'is_exported', False), decl)
+                              getattr(decl, 'is_exported', False),
+                              definition=decl)
                 self.global_scope.define(symbol)
                 # Also register in struct_types for lookup
                 self.struct_types[decl.name] = decl
@@ -1166,7 +1169,8 @@ class TypeChecker:
             elif isinstance(decl, ConstDecl):
                 const_type = self._parse_type(decl.type)
                 symbol = Symbol(decl.name, const_type, "const",
-                              getattr(decl, 'is_exported', False), decl)
+                              getattr(decl, 'is_exported', False),
+                              definition=decl)
                 self.global_scope.define(symbol)
 
             elif isinstance(decl, StaticDecl):
@@ -1189,7 +1193,8 @@ class TypeChecker:
             effects=row,
         )
         symbol = Symbol(name, func_type, "function",
-                      getattr(decl, 'is_exported', False), decl)
+                      getattr(decl, 'is_exported', False),
+                      definition=decl)
         self.global_scope.define(symbol)
         self.function_effects[name] = row
         self.function_decls[name] = decl
@@ -1536,9 +1541,16 @@ class TypeChecker:
         prev_domain = self._current_domain
         prev_rt_from_domain = self._rt_safe_from_domain
         self._current_domain = domain
-        if 'rt_safe' in attrs:
+        if attrs_imply_rt_safe(attrs):
             self._current_rt_safe_fn = func.name
-            self._rt_safe_from_domain = False
+            self._rt_safe_from_domain = (
+                'rt_safe' not in attrs
+                and not any(
+                    (a == 'deterministic' or a.startswith('guarantee'))
+                    for a in attrs
+                )
+                and domain == 'callback'
+            )
         elif domain == 'callback':
             self._current_rt_safe_fn = func.name
             self._rt_safe_from_domain = True
@@ -1621,13 +1633,19 @@ class TypeChecker:
     def _is_const_scalar(self, expr: Any) -> bool:
         """True for literal scalars usable as static initializers.
 
-        Covers numeric/bool literals and negated numeric literals. String
-        literals are excluded (statics of string type are not supported).
+        Covers numeric/bool literals, negated numeric literals, and references
+        to module ``const`` bindings whose values are themselves const scalars
+        (e.g. ``let mut cur_shards: i32 = SHARDS_MAX``). String literals are
+        excluded (statics of string type are not supported).
         """
         if isinstance(expr, Literal):
             return getattr(expr.type, "name", "") != "string"
         if isinstance(expr, UnaryOperation) and expr.operator == "-":
-            return isinstance(expr.operand, Literal)
+            return self._is_const_scalar(expr.operand)
+        if isinstance(expr, Variable):
+            symbol = self._lookup_const_symbol(expr.name)
+            if symbol is not None and isinstance(symbol.definition, ConstDecl):
+                return self._is_const_scalar(symbol.definition.value)
         return False
 
     def _check_static(self, decl: StaticDecl) -> None:
@@ -2770,6 +2788,29 @@ class TypeChecker:
                     right_type.kind == TypeKind.POINTER and self._is_numeric(left_type)
                 ):
                     return SemanticType(TypeKind.BOOL)
+
+        # RF affine (physical-systems W0): dBm/dBW + Decibel → power;
+        # absolute power units must not add to each other.
+        left_name = getattr(left_type, "name", "") or ""
+        right_name = getattr(right_type, "name", "") or ""
+        rf_abs = {"dBm", "dBW"}
+        if op.operator in ("+", "-"):
+            if left_name in rf_abs and right_name in rf_abs:
+                line = getattr(op, "line", 0)
+                loc = f"line {line}: " if line else ""
+                self.errors.append(
+                    f"{loc}dimensional error: {left_type} {op.operator} {right_type} "
+                    f"(absolute RF power units do not add; use Decibel for gain, "
+                    f"e.g. `20dBm + 3dB`)"
+                )
+                return left_type
+            if op.operator == "+":
+                if left_name in rf_abs and right_name == "Decibel":
+                    return left_type
+                if left_name == "Decibel" and right_name in rf_abs:
+                    return right_type
+                if left_name == "Decibel" and right_name == "Decibel":
+                    return left_type
 
         # Units of measure: dimensional analysis (north-star.md section 6)
         left_dims = self._dims_of(left_type)

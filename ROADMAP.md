@@ -1,6 +1,6 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-08  
+> Last updated: 2026-08-09
 > Current version: 0.3.3  
 > Lines of Code: ~38,000
 
@@ -85,6 +85,7 @@ a proof corpus, not the showcase.
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
 - [ ] Concurrency pipeline example once channel send/recv is exposed
+- [x] RF beachhead examples under `examples/rf/` (W0)
 
 ### Tier 0, Minimum domains
 
@@ -258,7 +259,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 |------|--------|--------|
 | Windows graphics support | ✅ partial, [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
 | Self-hosting components | 🔲 | Dogfooding |
-| WASM target | ✅ Flow→C|MLIR→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `#221`); native Flow-in-WASM deferred | Web deployment |
+| WASM target | ✅ Flow→C|MLIR→emscripten ([docs/language/wasm.md](docs/language/wasm.md), `#221`); doom-flow MLIR playable at `-O2` (`#230` / `#250`; `#253`/`#254` resolved; `#255` ILP32 polish in progress) | Web deployment |
 | Tier-0 tourist examples | ✅ [#169](https://github.com/flooooooooooow/flow/issues/169) | Canonical table in examples/README; UI/WASM/packages present; concurrency pipeline deferred |
 | MLIR opt pass flags | ✅ [#166](https://github.com/flooooooooooow/flow/issues/166) | `--opt-level` + `--no-{vectorization,loop-fusion,mem2reg,sccp,licm,cse,dce,inline}` + `--print-pass-pipeline` |
 | GPU autodiff | 🔲 | ML performance |

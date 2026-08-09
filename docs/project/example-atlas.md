@@ -240,6 +240,57 @@ physical modelling synthesis (Karplus-Strong, waveguides), room acoustics
 via ray tracing, image convolution and edge detection, tomographic
 reconstruction, optical flow, wavelets.
 
+### 9. Systems and algorithms — 1 shipped (addendum)
+
+The paper's *Tiny Pointers* construction (arXiv:2111.12800) rebuilt from
+scratch in Flow — fixed-size and variable-size dereference tables, relaxed
+retrieval with O(1)-expected hints, a succinct rotation-based BST, the
+stable dictionary, and variable-size key+value dictionaries (size-classed
+on both sides, measured together) — with the Section-5 lower bounds
+(Thms 3–5) demonstrated empirically, not just stated: the fullest-bin floor
+holds at every pointer budget, and every bit below the real width forces
+dereference collisions. The Theorem-9 **deamortized resizing** (§6.1) is
+implemented too: the same resize-heavy workload run twice — naive one-shot vs
+incremental — shows the worst single operation drop from 143,363 work units
+(one-shot Θ(live) copy) to 81 (fixed per-op budget), so no insert copies O(m)
+values. The Theorem-9 **r-levels-of-indirection chain** (§6.5) is also
+implemented: values up to 256 bits live behind a 5-bit second-level tiny
+pointer (O(log k)), lifting the v ≤ 64 cap while the base pointer stays a
+constant 8 bits — 84.97% saved vs a uniform 256-bit baseline — and its r=3
+extension inserts the O(log log k) middle pointer p₂, so values up to 2^32
+bits flow through base(8) → p₂(6) → p₁(5) → a word pool: the pointer widths
+8 → 6 → 5 are all constant in v, only the word count grows (verified
+word-by-word; 99.34% saved vs a uniform store sized to the largest value).
+Phase 12 runs the same chain on the KEY side: 128/256-bit keys live in a
+compact key arena behind a 5-bit p₁ in an 8-bit base slot, so the base
+pointer stays 8 bits for every key size too — the combined (key, value)
+accounting drops to 55.9 bits/pair (82.5% saved vs a uniform 256+64
+baseline, 4,861 of 49,152 keys chained, verified word-by-word). The paper's
+final application, the **optimal internal-memory stash** (Theorem 10, §6.6),
+is implemented as Phase 16: an external dereference table whose buckets are
+implicit, so each internal stash entry is a 4-bit tiny pointer (Θ(log ε⁻¹))
+held in a prefix-free adaptive-filter bin — O(m log ε⁻¹) = O(m) bits total vs
+m·log₂(4m) for a naive full-address stash, exactly one external read per
+query (measured: 16,384 reads for 16,384 queries), permanent positions
+(page-table stability). It carries its evidence like the simulation domains do:
+every allocation is re-verified against a registry model (exit 0 = PASS),
+the doubly-exponential tail bound is checked against theory, and each phase
+reports its own wall-clock cost, benchmarked across n = 2^14..2^16.
+
+**Status: addendum** — an *algorithm with evidence*, not a time-evolution
+simulation, so it sits outside the 100 and has no row in the Progress table
+(same treatment as `netlist_demo`) · `examples/systems/` ·
+[domain README](../../examples/systems/README.md) ·
+[deep dive: tiny pointers](../library/tiny-pointers.md) ·
+[benchmark script](../../scripts/bench_tiny_pointers.sh)
+
+**Abstract-claim coverage:** every promise in the paper's abstract maps to a
+measured phase — the theorem table in the
+[deep dive](../library/tiny-pointers.md) cross-references them all, and the
+application-④ deep dive on
+[variable-size values](../library/tiny-pointers-variable-values.md) covers
+arbitrary-size values (Theorem 9, §6.5).
+
 ## Cross-cutting requirements
 
 - **Every domain gets one "same model, two languages" comparison**: the Flow

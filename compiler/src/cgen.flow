@@ -96,6 +96,19 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
+# Emit a binop operand, parenthesizing nested binary operations so C
+# precedence (&& > ||) cannot regroup a mixed and/or tree: Flow's explicit
+# `a and (b or c)` must stay grouped in the emitted C.
+function flowc_cgen_emit_operand(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id != AST_NONE and arena.nodes[id].kind == AST_BINOP {
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_putc(w, 41)
+        return
+    }
+    flowc_cgen_emit_expr(w, arena, src, id)
+}
+
 # Compare two source spans for equal content.
 function flowc_cgen_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
     if a1 - a0 != b1 - b0 {
@@ -597,9 +610,9 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if wrap == 1 {
             flowc_cgen_putc(w, 40)
         }
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_emit_operand(w, arena, src, arena.nodes[id].a)
         flowc_cgen_emit_binop_op(w, op)
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_emit_operand(w, arena, src, arena.nodes[id].b)
         if wrap == 1 {
             flowc_cgen_putc(w, 41)
         }

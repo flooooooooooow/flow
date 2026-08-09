@@ -26,6 +26,12 @@ page shape:
 ./flow wasm examples/games/snake_gfx.flow --backend=mlir --out build/wasm/snake-mlir
 ```
 
+The MLIR wasm path always passes `--wasm32` to the transpiler so libc
+`size_t` / `long` lower as `i32` (ILP32). Without that, emcc links but
+`malloc`/`memcpy`/… get signature-mismatch warnings and real programs
+(doom-flow) misbehave. Raw `python3 -m flow.transpiler … --mlir --llvm`
+for wasm must include `--wasm32` yourself.
+
 Pack a host file into the virtual FS and link extra runtime C (both backends):
 
 ```bash
@@ -80,14 +86,40 @@ grids of doubles at once, well past the 64 KB wasm32 default.
 ## Near-term path (supported story)
 
 ```text
-Flow source  →  Flow C backend  →  emcc (Emscripten)  →  .wasm + JS glue
+Flow source  →  C or MLIR (--wasm32)  →  emcc (Emscripten)  →  .wasm + JS glue
 ```
 
 | Stage | Tool | Notes |
 |-------|------|-------|
-| Flow → C | `./flow compile <file.flow>` | Portable C backend (same as native) |
-| C → WASM | `emcc` from [Emscripten](https://emscripten.org/) | Optional local install; **not** required for CI |
+| Flow → C | `./flow compile <file.flow>` | Portable C backend (default) |
+| Flow → LLVM IR | `python3 -m flow.transpiler … --mlir --llvm --wasm32` | Same ABI as C→emcc; required for doom-scale MLIR |
+| → WASM | `emcc` from [Emscripten](https://emscripten.org/) | Optional local install; **not** required for CI |
 | Browser | `.wasm` + generated JS | Serve over HTTP (module loading needs a server) |
+
+### doom-flow (MLIR)
+
+[doom-flow](https://github.com/godofecht/doom-flow) builds with
+`BACKEND=c` (default) or `BACKEND=mlir`. The MLIR path needs Flow tip with
+`#247` (`--wasm32`), `#249` (null ptr statics), and `#250` (struct static
+inits, unsigned ops, `u8` zero-extend, `&module_global` addressof) — epic
+`#230`. With those, `FLOW_DIR=… BACKEND=mlir ./scripts/build_wasm.sh --doom-only`
+produces a playable in-browser IWAD boot (title / menu).
+
+**`-O1` / `-O2`:** The false-`noreturn` drop of the main loop (`#253`) was
+caused by `return &module_global` spilling into a stack alloca (UB that LLVM
+turns into `unreachable` under `-O1+`). That is fixed by `#250`'s addressof
+lowering; MLIR doom builds can use `emcc -O2`. Static `array<string,N>`
+globals (`#254`) are initialized via `_emit_static_llvm_array_global` on
+main. Remaining ILP32 polish (`#255`): prefer typed GEP / `rmain_ptr_bytes()`
+over hardcoded `* 8` in Flow source; `--wasm32` sizes `ptr`/`string` fields
+to 4 bytes in memref layouts.
+
+Hosted preview: [wasm/doom_mlir](../wasm/doom_mlir/index.html).
+
+doom-flow’s build script still forces `-O0` until this patch is applied on that
+repo: [`docs/project/patches/doom-flow-mlir-o2.patch`](../project/patches/doom-flow-mlir-o2.patch)
+(agent cannot push `godofecht/doom-flow`). Also close [#253](https://github.com/flooooooooooow/flow/issues/253) /
+[#254](https://github.com/flooooooooooow/flow/issues/254) and refresh [#256](https://github.com/flooooooooooow/flow/issues/256).
 
 Playground (local compile API):
 

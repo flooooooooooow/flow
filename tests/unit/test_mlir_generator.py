@@ -108,7 +108,9 @@ function main() -> i32 {
         assert "(null :" not in mlir
         assert "llvm.mlir.zero" in mlir
         assert 'llvm.icmp "eq"' in mlir
-        assert "llvm.mlir.global internal @g() : !llvm.ptr" in mlir
+        # Scalar ptr statics are null-initialized (not bare `() : !llvm.ptr` → undef).
+        assert "llvm.mlir.global internal @g()" in mlir
+        assert "llvm.mlir.zero : !llvm.ptr" in mlir
 
     def test_ptr_to_int_cast_uses_ptrtoint(self):
         code = """
@@ -524,6 +526,22 @@ class TestMLIRStringHandling:
 
         # String should be in the generated MLIR (as a global or constant)
         assert "Hello" in mlir or "module" in mlir
+
+    def test_string_constant_escaped_backslash_pair(self, mlir_generator):
+        """A `\\` in Flow source emits as LLVM's `\\5C` so byte_len stays consistent."""
+        flow_code = """
+        function main() -> i32 {
+            let message: string = "C:\\\\temp"
+            return 0
+        }
+        """
+        ast = parse_flow_code(flow_code)
+        mlir = mlir_generator.generate_module(ast)
+        # Backslash pairs must emit as \5C (LLVM hex escape), not raw backslashes.
+        assert "5C" in mlir
+        # byte_len counts the backslash as ONE byte, so literal and array size agree:
+        # "C:\temp" = 7 chars + null = 8.
+        assert "array<8 x i8>" in mlir
 
 
 class TestMLIRGenerationIntegration:
