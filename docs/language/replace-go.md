@@ -1,7 +1,6 @@
 # Replacing Go with Flow
 
-> Goal: Flow is a drop-in *better* choice for the jobs people pick Go for —
-> network services, CLIs, concurrent pipelines — with **effects**, **no GC**,
+> Goal: Flow is a drop-in *better* choice for the jobs people pick Go for, > network services, CLIs, concurrent pipelines, with **effects**, **no GC**,
 > and **faster** cores where measured.
 
 Companion: [concurrency-vs-go.md](concurrency-vs-go.md) ·
@@ -11,10 +10,10 @@ Companion: [concurrency-vs-go.md](concurrency-vs-go.md) ·
 
 | Go strength | Flow answer | Status |
 |-------------|-------------|--------|
-| Goroutines | Asm M:N fibers (`FiberAsync`, `FLOW_MAXPROCS`) | ✅ Ship — ping-pong **~2× faster** than Go |
+| Goroutines | Asm M:N fibers (`FiberAsync`, `FLOW_MAXPROCS`) | ✅ Ship, ping-pong **~2× faster** than Go |
 | Channels | `Chan<T>` (mono) + `Channel_i32`/`i64` + `select2`/`select4` | ✅ Ship |
 | `GOMAXPROCS` | `flow_fiber_set_maxprocs` / `FLOW_MAXPROCS` / `async_set_maxprocs` | ✅ Ship |
-| Netpoller | `NetpollAsyncIO` — kqueue/epoll; **fiber-park** on poll | ✅ Ship |
+| Netpoller | `NetpollAsyncIO`, kqueue/epoll; **fiber-park** on poll | ✅ Ship |
 | `select` | `select2` + `select4` (+ `_try` = default) | ✅ Ship (up to 4) |
 | Fast numerics | C backend ≈ C; `parallel for` | ✅ Often beats Go |
 | Stdlib HTTP/net | Routed HTTP selftest + TCP helpers + microbench | ✅ Growing |
@@ -48,17 +47,17 @@ function main() -> i32 {
 
 ## Why Flow can replace Go (not just copy it)
 
-1. **Effects** — swap `FiberAsync` / `ThreadedAsync` / `SimulatedAsync` without
+1. **Effects**, swap `FiberAsync` / `ThreadedAsync` / `SimulatedAsync` without
    rewriting call sites. Go hard-codes its runtime.
-2. **No GC** — latency-sensitive paths (`@rt_safe` audio) stay predictable.
-3. **Same binary story as C** — deploy anywhere clang goes; FFI is natural.
-4. **Measured speed** — fiber ping-pong and buffered channel throughput beat Go
+2. **No GC**, latency-sensitive paths (`@rt_safe` audio) stay predictable.
+3. **Same binary story as C**, deploy anywhere clang goes; FFI is natural.
+4. **Measured speed**, fiber ping-pong and buffered channel throughput beat Go
    on current benches; see RESULTS.md.
 
 ## Remaining gaps
 
 - Full compiler multi-shot `shift`/`reset` rewrite (C `resume_multi` / `clone` + stack-blob ship; true stack-frame restore still open)
-- Full HTTP/2 (HPACK dynamic table, multiplexing, server push) — minimal h2 preface/HEADERS/DATA selftest ships
+- Full HTTP/2 (HPACK dynamic table, multiplexing, server push), minimal h2 preface/HEADERS/DATA selftest ships
 
 ## Runtime map
 

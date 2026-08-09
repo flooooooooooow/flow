@@ -1,6 +1,6 @@
 # Runtime-in-Flow
 
-> Status: Phases 0–2 + follow-on (async, parallel, benches, tape, cont/http/tcp,
+> Status: Phases 0-2 + follow-on (async, parallel, benches, tape, cont/http/tcp,
 > sysinfo, crypto, audio stub, live stubs, threads/race wrappers) landed.
 
 Flow moves **logic** into always-linked modules under [`lib/runtime/`](../../lib/runtime/),
@@ -47,7 +47,7 @@ Thin forever C: `flow_rt_support.c`, `flow_rt_task_store.c`, `flow_rt_fiber_asyn
 `./flow` transpiles `lib/runtime/*.flow` with `--c --library --lenient` and links them
 into every binary. `FLOW_SKIP_AUDIO_STUB=1` when `./flow audio` links miniaudio.
 
-## Phase 3 — push the boundary (planned)
+## Phase 3, push the boundary (planned)
 
 Rewrite order, respecting the stay-native table above. Each step keeps the
 gates below green and preserves observable behavior.

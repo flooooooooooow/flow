@@ -1,10 +1,10 @@
 # flow-verify
 
-> **Third-party library — not core Flow.** You do not need flow-verify to compile or run ordinary programs. It is an optional formal-math package that shares Flow syntax.
+> **Third-party library, not core Flow.** You do not need flow-verify to compile or run ordinary programs. It is an optional formal-math package that shares Flow syntax.
 
 > **Package:** `flow-verify`  
 > **Paths:** `lib/verify/` (core modules), `examples/verify/` (extended corpus)  
-> **Status:** Active development — verification checker is spec'd; proof documents and book export work today.
+> **Status:** Active development, verification checker is spec'd; proof documents and book export work today.
 
 Formal mathematics for Flow: a proof is a program, a theorem is a function, and every fact lives at a stable **Claim Path**.
 
@@ -26,7 +26,7 @@ Each proof file carries:
 
 ## Core modules (`lib/verify/`)
 
-Foundational domains — Peano arithmetic, logic, data structures, and algebra stubs:
+Foundational domains, Peano arithmetic, logic, data structures, and algebra stubs:
 
 | Module | Domain | Proofs |
 |--------|--------|--------|
@@ -47,14 +47,14 @@ Open any module proof: e.g. [lib/verify/Nat.proof.md](../../third-party/flow-ver
 | Area | Contents | Scale |
 |------|----------|-------|
 | **math/derived** | Derived arithmetic & list lemmas | ~80 proofs |
-| **euclid/** | Elements Books I–VI (stepped) | ~350 proofs |
+| **euclid/** | Elements Books I-VI (stepped) | ~350 proofs |
 | **geometry/** | Taylor series, inscribed angles | 2 proofs |
 | **analysis/** | Sine derivatives at zero | 1 proof |
 | **circuits/** | Full adder correctness | 1 proof |
 | **systems/** | Ring buffer FIFO | 1 proof |
 | **transforms/** | Matrix-vectorize semantics | 1 proof |
 
-Euclid Book I is complete (48/48 stepped). Books II–VI are scaffolded with full proposition coverage.
+Euclid Book I is complete (48/48 stepped). Books II-VI are scaffolded with full proposition coverage.
 
 ---
 

@@ -12,6 +12,7 @@ algebraic effects, and autodiff, compiling to C or MLIR.
 
 <div class="wiki-hero-actions">
   <a href="getting-started.md" class="wiki-cta wiki-cta-primary">Install &amp; run</a>
+  <a href="demos/overview.md" class="wiki-cta">Galleries</a>
   <a href="tutorials/index.html" class="wiki-cta">257 interactive lessons</a>
 </div>
 
@@ -28,7 +29,7 @@ algebraic effects, and autodiff, compiling to C or MLIR.
 
 ## Three ways in
 
-Pick a path. The rest is in the sidebar tabs.
+Pick one path. Everything else lives in the sidebar tabs.
 
 <nav class="wiki-paths" aria-label="Ways into the docs">
 
@@ -56,7 +57,7 @@ Pick a path. The rest is in the sidebar tabs.
 
 ## See it run
 
-Frames come from the native `gfx` backend.
+Frames below come straight from the native `gfx` backend.
 
 <div class="wiki-demo-grid">
 
@@ -64,7 +65,7 @@ Frames come from the native `gfx` backend.
 <img src="demos/lorenz.gif" alt="Lorenz attractor traced in real time" loading="lazy">
 <figcaption>
 
-**[Lorenz](../examples/evolution/lorenz_gfx.flow)**: `flow` block, RK4, drawn each frame.
+**[Lorenz](../examples/evolution/lorenz_gfx.flow)**, `flow` block, RK4, drawn each frame.
 
 </figcaption>
 </figure>
@@ -73,7 +74,7 @@ Frames come from the native `gfx` backend.
 <img src="demos/tetris.gif" alt="Tetris being played" loading="lazy">
 <figcaption>
 
-**[Tetris](../examples/games/tetris_gfx.flow)**: full game loop with ghost piece.
+**[Tetris](../examples/games/tetris_gfx.flow)**, full game loop with ghost piece.
 
 </figcaption>
 </figure>
@@ -82,7 +83,7 @@ Frames come from the native `gfx` backend.
 <img src="demos/2048.gif" alt="2048 tiles merging" loading="lazy">
 <figcaption>
 
-**[2048](../examples/games/2048_gfx.flow)**: grid logic under scripted input.
+**[2048](../examples/games/2048_gfx.flow)**, grid logic under scripted input.
 
 </figcaption>
 </figure>
@@ -101,10 +102,10 @@ games, morphogenesis, neurons, evolution, planets, procgen, numerical, WASM
 
 | | |
 |---|---|
-| Algebraic effects | Swap I/O and state at the handler; call sites stay the same. |
-| Built-in autodiff | Forward and reverse mode in the language, not a bolt-on library. |
-| `flow` / `evolves` | Continuous and hybrid dynamics as syntax, with solvers and analysis. |
-| Dual backends | Portable C by default; MLIR when you want JIT. |
+| **Algebraic effects** | Swap I/O and state at the handler, call sites stay pure. |
+| **Built-in autodiff** | Forward and reverse mode in the language, not a library bolt-on. |
+| **`flow` / `evolves`** | Continuous + hybrid dynamics as syntax, with solvers and analysis. |
+| **Dual backends** | Portable C by default; MLIR when you want JIT. |
 
 Thesis: [Vision](vision.md) · how to write it: [Best practices](language/best-practices.md) · vs others: [Comparison](comparison.md)
 
@@ -120,7 +121,7 @@ Thesis: [Vision](vision.md) · how to write it: [Best practices](language/best-p
 ./flow lsp                     # editor support
 ```
 
-[CLI and development →](DEVELOPMENT.md)
+[CLI &amp; development →](DEVELOPMENT.md)
 
 ---
 
@@ -132,4 +133,4 @@ Thesis: [Vision](vision.md) · how to write it: [Best practices](language/best-p
 | License | MIT |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |
-| Optional proofs | [flow-verify](third-party/flow-verify.md) (third-party; not required to use Flow) |
+| Optional proofs | [flow-verify](third-party/flow-verify.md), third-party, not required to use Flow |

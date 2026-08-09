@@ -125,7 +125,7 @@ Chain fallible steps with `stdlib/result.flow`. Full file:
 
 ### 4.1 Manual Result chain (browser)
 
-Same shape without the stdlib import — early-exit on `ok == false`:
+Same shape without the stdlib import, early-exit on `ok == false`:
 
 ```flow
 struct ResultI32 { ok: bool, value: i32 }

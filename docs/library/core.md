@@ -48,7 +48,7 @@ struct MetalInfo {
 
 ### GPU / Unified Memory (shipped)
 
-See **[gpu-memory.md](gpu-memory.md)** — `import "stdlib/gpu_memory.flow"`.
+See **[gpu-memory.md](gpu-memory.md)**, `import "stdlib/gpu_memory.flow"`.
 
 ```flow
 import "stdlib/gpu_memory.flow"

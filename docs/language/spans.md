@@ -7,7 +7,7 @@
 
 A span is a borrowed view over contiguous elements. It never owns its data,
 never allocates, and never outlives the storage it points at. The design goal
-is that **callers never write `span(...)`** — any contiguous value borrows
+is that **callers never write `span(...)`**. Any contiguous value borrows
 into a span automatically, while element type, extent, mutability, and
 lifetime stay visible to the compiler.
 
@@ -131,7 +131,7 @@ Three sources borrow; everything else is an error:
 | `array<T, N>` variable | `{ arr, N }` |
 | slice `a[i..j]` | `{ &a[i], j - i }` |
 | another span of the same element | passed through |
-| `ptr<T>` | rejected — a pointer has no length |
+| `ptr<T>` | rejected: a pointer has no length |
 
 ```text
 error: cannot borrow ptr<f32> into span<f32> for parameter 'values' of
@@ -282,14 +282,14 @@ total_span_const_i32(((flow_span_const_i32){ .data = (const int32_t*)(((xs)) + (
 | `.len` and `len(s)` | ✅ C backend |
 | Element read / write through a span | ✅ write requires `span<mut T>` |
 | Pointer arguments rejected (no length) | ✅ |
-| Escape checking (`span outlives borrowed storage`) | ⚠️ direct cases only — see [Lifetime](#lifetime) |
+| Escape checking (`span outlives borrowed storage`) | ⚠️ direct cases only; see [Lifetime](#lifetime) |
 | Spans in the MLIR / JS / Python backends | ❌ C backend only |
 | Bare `span` with full inference | ❌ layer 2 |
 | `span<mut>` / `span<const>` without an element type | ❌ layer 2 |
 | Dependent extents (`span<mut, source.extent>`) | ❌ layer 2 |
 | `span<number>` and other trait-shaped element constraints | ❌ layer 2 |
 | Span methods (`fill`, `reduce`, iteration) | ❌ layer 2 |
-| Spans as struct fields | ⚠️ compiles, but no escape checking — avoid |
+| Spans as struct fields | ⚠️ compiles, but no escape checking; avoid |
 
 The four layer-2 spellings (`span`, `span<mut>` / `span<const>`,
 `span<number>`, `span<mut, source.extent>`, plus `span[N]`) are rejected at
