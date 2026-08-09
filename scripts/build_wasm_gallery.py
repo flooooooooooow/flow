@@ -54,6 +54,7 @@ CATEGORIES = [
                  "program runs and prints into the page.",
         "globs": [("examples/basics", "*.flow")],
         "files": ["examples/wasm/hello_wasm.flow",
+                  "examples/wasm/parallel_scaling.flow",
                   "examples/wasm/parallel_sum.flow"],
     },
     {
@@ -151,6 +152,7 @@ PAGE_EXTRAS = {
     # the page ships a COI service worker and needs to be opened in a tab.
     "digits_mlp_parallel": {"threads": True, "workers": 8, "initial_memory": "128MB"},
     "parallel_sum": {"threads": True, "workers": 8},
+    "parallel_scaling": {"threads": True, "workers": 8},
 }
 
 

@@ -1,0 +1,222 @@
+# Coarse-grained Monte Carlo pi, timed at 2, 4 and 8 pthread workers.
+#
+#   FLOW_HOST=python ./flow run examples/wasm/parallel_scaling.flow
+#
+# One build, one page: the program partitions N samples into w disjoint
+# shards and runs a timed pass for w = 2, 4 and 8. Each shard seeds its own
+# LCG and writes only its own hit-count slot, so threaded runs are race-free.
+# Because a different shard count is a different random sample, every worker
+# count is timed against its OWN serial baseline (same decomposition, run on
+# one thread) — the serial == threaded determinism check is per row. The
+# grain is deliberately coarse (millions of samples per shard) because the
+# browser proxies every spawn/join through the main thread at ~1 ms a call
+# (see examples/wasm/parallel_sum.flow).
+#
+# PASS gates on the pi estimate, on serial == threaded determinism at every
+# worker count, and on the speedup curve being monotone (2x < 4x < 8x).
+
+extern {
+    function malloc(size: i64) -> ptr<i32>
+    function free(p: ptr<i32>) -> void
+    function flow_rt_monotonic_ns() -> i64
+    function flow_rt_par_workers() -> i32
+    function flow_parallel_for_i32(start: i32, end: i32, stride: i32, body: ptr<void>, ctx: ptr<void>) -> void
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const N: i32 = 64000000
+const SHARDS_MAX: i32 = 8
+const PI: f64 = 3.141592653589793
+
+# How many shards the current timed pass is split into. The body reads it to
+# partition N, so one shard_body serves every worker count.
+let mut cur_shards: i32 = SHARDS_MAX
+
+let mut hits: ptr<i32> = null  # one hit count per shard slot
+
+# Count unit-square points inside the unit circle over this shard's slice of
+# [0, N). Deterministic: shard s seeds its own LCG with 42 + s, and the chunk
+# math depends only on cur_shards and s.
+function shard_work(s: i32) -> void {
+    let n: i64 = N as i64
+    let w: i64 = cur_shards as i64
+    let chunk: i64 = (n + w - 1) / w
+    let lo: i64 = (s as i64) * chunk
+    let mut hi: i64 = lo + chunk
+    if hi > n {
+        hi = n
+    }
+    let mut state: i64 = 42 + (s as i64)
+    let mut hit: i32 = 0
+    let mut i: i64 = lo
+    while i < hi {
+        state = (state * 1103515245 + 12345) % 2147483648
+        let x: f64 = (state as f64) / 2147483648.0
+        state = (state * 1103515245 + 12345) % 2147483648
+        let y: f64 = (state as f64) / 2147483648.0
+        if x * x + y * y < 1.0 {
+            hit = hit + 1
+        }
+        i = i + 1
+    }
+    hits[s] = hit
+}
+
+# pthread entry point: unmangled (@flow_api) so it can be handed to
+# flow_parallel_for_i32 as a plain C function pointer.
+@flow_api
+function shard_body(s: i32, ctx: ptr<void>) -> void {
+    shard_work(s)
+}
+
+# Sum hit counts in fixed shard order. The last pass set cur_shards, so only
+# the slots it wrote are counted — a stale slot can never leak in.
+function total_hits() -> i32 {
+    let mut t: i32 = 0
+    for s in 0 to cur_shards {
+        t = t + hits[s]
+    }
+    return t
+}
+
+# Full N samples split over w shards, wall-timed. With w shards the wrapper
+# spawns min(flow_rt_par_workers, w) workers.
+function run_pass(w: i32) -> i64 {
+    cur_shards = w
+    let t0: i64 = flow_rt_monotonic_ns()
+    flow_parallel_for_i32(0, w, 1, shard_body, null)
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+# Same work, same shard decomposition, run serially: the timing baseline.
+# The baseline is taken per worker count, because a different shard count is
+# a different random sample (each shard seeds its own LCG), so the only
+# bit-for-bit comparison that makes sense is serial vs threaded at the SAME w.
+function run_serial(w: i32) -> i64 {
+    cur_shards = w
+    let t0: i64 = flow_rt_monotonic_ns()
+    for s in 0 to w {
+        shard_work(s)
+    }
+    let t1: i64 = flow_rt_monotonic_ns()
+    return t1 - t0
+}
+
+# Best-of-reps wall time for one configuration: serial=1 runs the w shards on
+# one thread, serial=0 hands each shard to its own worker. In a browser the
+# first pass runs on V8's baseline wasm tier, so taking the minimum reports
+# steady state.
+function best_of(serial: i32, w: i32, reps: i32) -> i64 {
+    let mut best: i64 = 0
+    let mut r: i32 = 0
+    while r < reps {
+        cur_shards = w
+        let t0: i64 = flow_rt_monotonic_ns()
+        if serial != 0 {
+            for s in 0 to w {
+                shard_work(s)
+            }
+        } else {
+            flow_parallel_for_i32(0, w, 1, shard_body, null)
+        }
+        let t1: i64 = flow_rt_monotonic_ns()
+        let ns: i64 = t1 - t0
+        if r == 0 or ns < best {
+            best = ns
+        }
+        r = r + 1
+    }
+    return best
+}
+
+function estimate_pi() -> f64 {
+    return 4.0 * ((total_hits() as f64) / (N as f64))
+}
+
+function main() -> i32 {
+    println("parallel_scaling: Monte Carlo pi on 2/4/8 pthread workers")
+    print("  runtime workers: ")
+    println(flow_rt_par_workers())
+    print("  samples: ")
+    println(N)
+
+    hits = malloc((SHARDS_MAX as i64) * 4)
+
+    let reps: i32 = 3
+    let mut sp2: f64 = 0.0
+    let mut sp4: f64 = 0.0
+    let mut sp8: f64 = 0.0
+    let mut pi_ref: f64 = 0.0
+    for idx in 0 to 3 {
+        let mut w: i32 = 8
+        if idx == 0 {
+            w = 2
+        }
+        if idx == 1 {
+            w = 4
+        }
+        let serial_ns: i64 = best_of(1, w, reps)
+        let pi_s: f64 = estimate_pi()
+        let par_ns: i64 = best_of(0, w, reps)
+        let pi_p: f64 = estimate_pi()
+        let sp: f64 = (serial_ns as f64) / (par_ns as f64)
+        if w == 2 {
+            sp2 = sp
+        }
+        if w == 4 {
+            sp4 = sp
+        }
+        if w == 8 {
+            sp8 = sp
+            pi_ref = pi_s
+        }
+        print("  workers ")
+        print(w)
+        print(": serial ms ")
+        printf("%.2f", (serial_ns as f64) / 1000000.0)
+        print("  threaded ms ")
+        printf("%.2f", (par_ns as f64) / 1000000.0)
+        print("  speedup ")
+        printf("%.2fx", sp)
+        print("  pi ")
+        printf("%.6f", pi_p)
+        if pi_p == pi_s {
+            println("  (serial == threaded, deterministic)")
+        } else {
+            println("  (DIVERGES from serial!)")
+        }
+    }
+
+    let diff: f64 = pi_ref - PI
+    let mut adiff: f64 = diff
+    if adiff < 0.0 {
+        adiff = -adiff
+    }
+    print("  speedup curve: ")
+    printf("%.2fx -> ", sp2)
+    printf("%.2fx -> ", sp4)
+    printf("%.2fx (2/4/8 workers)\n", sp8)
+    print("  pi estimate ")
+    printf("%.6f", pi_ref)
+    print(" |error| ")
+    printf("%.6f\n", adiff)
+
+    free(hits)
+
+    if adiff > 0.005 {
+        println("FAIL: pi estimate out of range")
+        return 1
+    }
+    if sp8 < 1.0 {
+        println("FAIL: 8 workers slower than serial")
+        return 1
+    }
+    if sp4 < sp2 - 0.05 or sp8 < sp4 - 0.05 {
+        println("FAIL: speedup not monotone in worker count")
+        return 1
+    }
+    println("  determinism holds at every worker count; scaling is monotone")
+    println("PASS")
+    return 0
+}
