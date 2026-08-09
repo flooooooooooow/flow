@@ -116,6 +116,11 @@ to 4 bytes in memref layouts.
 
 Hosted preview: [wasm/doom_mlir](../wasm/doom_mlir/index.html).
 
+doom-flow’s build script still forces `-O0` until this patch is applied on that
+repo: [`docs/project/patches/doom-flow-mlir-o2.patch`](../project/patches/doom-flow-mlir-o2.patch)
+(agent cannot push `godofecht/doom-flow`). Also close [#253](https://github.com/flooooooooooow/flow/issues/253) /
+[#254](https://github.com/flooooooooooow/flow/issues/254) and refresh [#256](https://github.com/flooooooooooow/flow/issues/256).
+
 Playground (local compile API):
 
 ```bash
