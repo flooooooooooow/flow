@@ -1,6 +1,6 @@
 # Flow Language Overview
 
-Flow is a statically-typed, compiled language designed for performance and expressiveness — built on the thesis that programs describe **systems evolving through time** ([vision](../vision.md)). Today that means a general-purpose core plus a shipped dynamics seed: the [`dsys` surface syntax](dynamics-dsl.md) and [dynamics library](../library/dynamics.md) for modeling, analyzing, and controlling linear systems.
+Flow is a statically-typed, compiled language built for performance and expressiveness. The thesis is that programs describe **systems evolving through time** ([vision](../vision.md)). Today that means a general-purpose core plus a shipped dynamics seed: the [`dsys` surface syntax](dynamics-dsl.md) and [dynamics library](../library/dynamics.md) for modeling, analyzing, and controlling linear systems.
 
 ## Key Features
 
@@ -31,9 +31,12 @@ function main() -> i32 {
 - **[Variables](variables.md)** - Variables and mutability
 - **[flow-verify](../third-party/flow-verify.md)** - optional formal math library (not core Flow)
 
-## Design Philosophy
+## Design philosophy
 
-1. **Explicit over Implicit** - `let mut` for mutable, clear type annotations
-2. **Zero-Cost Abstractions** - High-level features compile efficiently
-3. **Effects for Side Effects** - Controlled capabilities, not global state
-4. **C Interop** - Easy FFI with C libraries
+1. Explicit over implicit: `let mut` for mutable, clear type annotations on APIs
+2. Zero-cost abstraction: high-level features should compile efficiently
+3. Effects for side effects: controlled capabilities, not ambient global state
+4. C interop: FFI when you need the escape hatch
+
+How to write day-to-day code in that spirit:
+[Coding best practices](best-practices.md).

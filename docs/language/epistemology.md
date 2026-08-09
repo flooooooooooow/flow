@@ -1,6 +1,6 @@
 # Flow Epistemology: Claim Paths
 
-> **Third-party library (flow-verify)** — not core Flow syntax. See [flow-verify](../third-party/flow-verify.md).
+> **Third-party library (flow-verify)**, not core Flow syntax. See [flow-verify](../third-party/flow-verify.md).
 
 > **Status:** Design spec  
 > **Replaces:** `nat_add_zero`, `bool_or_commutes`, and all snake_case theorem names.
@@ -13,7 +13,7 @@ Snake_case forces you to **invent** a name and **explain** it in a comment. The 
 
 ## The Core Idea
 
-Every verified fact gets a **Claim Path** — a stable address built from:
+Every verified fact gets a **Claim Path**, a stable address built from:
 
 ```
 Domain / Morphism . Facet
@@ -57,7 +57,7 @@ verify.RingBuffer/fifo.order-kept
 
 ## Syntax in Flow
 
-Claim Paths appear where names used to go. Same keywords — `theorem`, `assume`, `therefore`, `export`.
+Claim Paths appear where names used to go. Same keywords, `theorem`, `assume`, `therefore`, `export`.
 
 ### Definitions (from literature)
 
@@ -134,7 +134,7 @@ Facets are short English phrases, kebab-case. They describe the property, not th
 | `C_naive == C_fast` | `semantics-equal` | `matmul_vectorized_correct` |
 | `rb ~ Q after push` | `order-kept` | `push_preserves_fifo` |
 
-**One facet per distinct claim.** If two proofs establish the same `therefore`, they share one path — you don't add a second name.
+**One facet per distinct claim.** If two proofs establish the same `therefore`, they share one path, you don't add a second name.
 
 ---
 
@@ -229,7 +229,7 @@ The epistemology rejects synonyms at compile time.
 
 ---
 
-## Proof Artifacts — English + LaTeX, auto-generated
+## Proof Artifacts, English + LaTeX, auto-generated
 
 Every verification file emits two companions alongside the source:
 
@@ -243,15 +243,15 @@ flow doc proof examples/verify/math/derived/Nat-plus-zero-right.flow
 flow doc proof examples/verify -r    # all theorem files
 ```
 
-**English output** — Theorem 1 (Adding zero on the right…). Claim in plain language. Proof steps: base case, inductive step, therefore lines.
+**English output**, Theorem 1 (Adding zero on the right…). Claim in plain language. Proof steps: base case, inductive step, therefore lines.
 
-**LaTeX output** — Numbered theorem environments, equation labels (`\label{eq:Nat-plus-zero-right:1}`), cross-refs to dependencies (`\ref{thm:Nat-plus-zero-left}`), source citation in italics.
+**LaTeX output**, Numbered theorem environments, equation labels (`\label{eq:Nat-plus-zero-right:1}`), cross-refs to dependencies (`\ref{thm:Nat-plus-zero-left}`), source citation in italics.
 
 Regenerate on `flow verify` (planned) or manually via `flow doc proof`.
 
 ---
 
-## `flow know` — learn in the moment
+## `flow know`, learn in the moment
 
 ```bash
 flow know verify.Nat/+.zero-right
@@ -320,4 +320,4 @@ lib/verify/
 
 ## One Sentence
 
-**Facts are addressed by what they claim (`Nat/+.zero-right`), grounded in literature (`@from peano`), and imported by morphism — never invented as snake_case and explained after the fact.**
+**Facts are addressed by what they claim (`Nat/+.zero-right`), grounded in literature (`@from peano`), and imported by morphism, never invented as snake_case and explained after the fact.**

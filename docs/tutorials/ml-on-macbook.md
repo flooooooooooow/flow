@@ -240,7 +240,7 @@ reproduced on your machine.
 
 ### Softmax-ish normalize (browser)
 
-Toy “logits → probabilities” without libm — positive weights, L1 normalize:
+Toy “logits → probabilities” without libm, positive weights, L1 normalize:
 
 ```flow
 function main() -> i32 {

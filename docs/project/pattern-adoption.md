@@ -1,4 +1,4 @@
-# Pattern Adoption — Less Code, Cooler Surfaces
+# Pattern Adoption, Less Code, Cooler Surfaces
 
 > Companion to [ROADMAP.md](../../ROADMAP.md) (repo root) and the GitHub `[roadmap]` / `[patterns *]` issues.
 > Goal: where Flow already has (or almost has) a distinctive pattern, **use it** in
@@ -30,7 +30,7 @@ story. Adoption first; new sugar second.
 
 ---
 
-## P0 — Adoption & small stdlib
+## P0, Adoption & small stdlib
 
 ### 1. Canonicalize evolution demos
 
@@ -64,7 +64,7 @@ while frame < MAX {
 }
 ```
 
-**Sketch A — callback (no new syntax):**
+**Sketch A, callback (no new syntax):**
 
 ```flow
 # lib/stdlib/gfx.flow
@@ -82,7 +82,7 @@ int flow_gfx_run(void *ctx, int max_frames);
 
 with Flow demos implementing `function flow_gfx_frame(g: Gfx, frame: i32) -> i32`.
 
-**Sketch B — block sugar (later card):**
+**Sketch B, block sugar (later card):**
 
 ```flow
 gfx_run(g, max_frames: 2000) {
@@ -138,7 +138,7 @@ flow Lorenz {
 
 ---
 
-## P1 — Honesty & API polish
+## P1, Honesty & API polish
 
 ### 4. Linalg → `blas.flow`
 
@@ -176,12 +176,11 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 
 ---
 
-## P2 — New language / analysis surfaces
+## P2, New language / analysis surfaces
 
 ### 7. Dynamics DSL / LQR beyond n=2
 
-**Shipped MVP:** `lib/stdlib/dynamics/lqr.flow` —
-`dlqr_diag_q_scalar_u` / `lqr_diag_q` for n≤8, scalar input. Cartpole
+**Shipped MVP:** `lib/stdlib/dynamics/lqr.flow`, `dlqr_diag_q_scalar_u` / `lqr_diag_q` for n≤8, scalar input. Cartpole
 `cartpole_lqr_gains` is a thin wrapper (no private Riccati loop).
 
 **Also shipped:** vision-form DSL
@@ -269,8 +268,8 @@ an alias of `state_step`.
 
 ## References
 
-- [VISION.md](../../VISION.md) — evolution thesis
-- [north-star.md](../vision/north-star.md) — shipped `flow` / `evolves` / `when` / `connect` cards
-- [dynamics-dsl.md](../language/dynamics-dsl.md) — `dsys` / `analyze`
+- [VISION.md](../../VISION.md), evolution thesis
+- [north-star.md](../vision/north-star.md), shipped `flow` / `evolves` / `when` / `connect` cards
+- [dynamics-dsl.md](../language/dynamics-dsl.md), `dsys` / `analyze`
 - Examples: `examples/evolution/pendulum_evolves.flow`, `lorenz_gfx.flow`,
   `spring_mass_control.flow`, `apps/cartpole/`

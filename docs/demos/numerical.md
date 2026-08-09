@@ -1,4 +1,4 @@
-# Numerical Gallery
+# Numerical gallery
 
 Gated numerical demos. Every clip is recorded from the real compiled program.
 Measurements print before the window opens and gate the exit code.

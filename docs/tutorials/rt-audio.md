@@ -8,7 +8,7 @@ Prerequisites: [audio-basics.md](audio-basics.md), [memory.md](memory.md).
 
 ## Part 1: What `@rt_safe` allows
 
-Stack locals, fixed-bound loops, pure math — yes. Heap — no.
+Stack locals, fixed-bound loops, pure math: yes. Heap: no.
 
 ```flow
 @rt_safe
@@ -35,7 +35,7 @@ function process_block(n: i32, gain: f32) -> f32 {
 
 ### 1.1 Gain + clamp sketch (browser)
 
-Interactive cousin of the RT callback — same math, no attribute (the browser
+Interactive cousin of the RT callback, same math, no attribute (the browser
 does not enforce `@rt_safe`):
 
 ```flow
@@ -89,7 +89,7 @@ function main() -> i32 {
 
 ### 1.4 Fixed ring buffer (browser)
 
-Preallocated delay line — legal on an RT path:
+Preallocated delay line, legal on an RT path:
 
 ```flow
 function main() -> i32 {
@@ -170,7 +170,7 @@ function main() -> i32 {
 
 ## Part 3: Next
 
-- [audio-basics.md](audio-basics.md) — oscillators, mix, RMS sketches
+- [audio-basics.md](audio-basics.md), oscillators, mix, RMS sketches
 - [RT safety guide](../library/rt-safety.md)
 - [`examples/audio/lattice_allpass_phase_engine.flow`](../../examples/audio/lattice_allpass_phase_engine.flow)
 

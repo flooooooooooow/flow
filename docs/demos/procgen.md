@@ -1,4 +1,4 @@
-# Procedural Generation Gallery
+# Procedural generation gallery
 
 Eight gated demos of noise, maps, and constraint collapse. Every clip is
 recorded from the real compiled program. Every program also measures the

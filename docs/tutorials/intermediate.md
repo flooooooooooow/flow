@@ -1,6 +1,6 @@
 # FLOW Tutorial: Intermediate
 
-Build on the basics with generics, traits, error handling, and more. Programs with `main` **run in the browser** — use **Run** on each example or the [interactive app](index.html).
+Build on the basics with generics, traits, error handling, and more. Programs with `main` **run in the browser**, use **Run** on each example or the [interactive app](index.html).
 
 ## Part 1: Generics
 
@@ -57,7 +57,7 @@ function main() -> i32 {
 
 ### 1.3 How Generics Work: Monomorphization
 
-FLOW uses **monomorphization** — it generates specialized versions of generic code for each concrete type used.
+FLOW uses **monomorphization**, it generates specialized versions of generic code for each concrete type used.
 
 ```flow
 function identity_i32(x: i32) -> i32 { return x }
@@ -516,7 +516,7 @@ Implement a generic stack with `push`, `pop`, and `peek` operations.
 
 ### Exercise 2: Result Chaining
 
-Write a function that parses a string to int, validates it's positive, and doubles it—using Result at each step.
+Write a function that parses a string to int, validates it's positive, and doubles it, using Result at each step.
 
 ### Exercise 3: Thread-Safe Counter
 

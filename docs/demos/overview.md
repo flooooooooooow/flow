@@ -1,20 +1,19 @@
 # Galleries
 
-Every clip in these galleries is a recording of a genuinely compiled Flow
-program: the frames come from the same drawing calls the native window receives.
-Nothing is a mock-up.
+Each clip is a recording of a compiled Flow program. Frames come from the same
+drawing calls the native window uses, not from a mock.
 
 | Gallery | What it is | GIFs |
 |---|---|---|
-| [Games](games.md) | Complete, playable games: Snake, Tetris, Asteroids, Flappy, and more | 25 |
+| [Games](games.md) | Playable games: Snake, Tetris, Asteroids, Flappy, and more | 25 |
 | [Morphogenesis](morphogenesis.md) | Reaction-diffusion, Turing patterns, DLA, L-systems, Physarum, wave-2 | 40 |
 | [Neurons](neuro.md) | Hodgkin-Huxley, Izhikevich zoo, balanced E/I, Hopfield, CPG gaits | 15 |
-| [Evolutionary Biology](evoleco.md) | Wright-Fisher through SIR, Muller ratchet, Red Queen, runaway selection | 25 |
-| [Planets](planet.md) | A staged cubesphere pipeline: tectonics through biomes | 7 |
-| [Procedural Generation](procgen.md) | Noise, heightmaps, caves, WFC, Voronoi, islands, biome tiles | 8 |
-| [Numerical Methods](numerical.md) | Adaptive Fast Multipole Method, gated against the direct sum | recorded |
-| [Evolution Suite](evolution.md) | Systems evolving through time, each checked against theory | 34 |
-| [WebAssembly](wasm.md) | The games and demos running live in a browser | live |
+| [Evolutionary biology](evoleco.md) | Wright-Fisher through SIR, Muller ratchet, Red Queen, runaway selection | 25 |
+| [Planets](planet.md) | Cubesphere pipeline: tectonics through biomes | 7 |
+| [Procedural generation](procgen.md) | Noise, heightmaps, caves, WFC, Voronoi, islands, biome tiles | 8 |
+| [Numerical methods](numerical.md) | Adaptive Fast Multipole Method, gated against the direct sum | recorded |
+| [Evolution suite](evolution.md) | Systems evolving through time, each checked against theory | 34 |
+| [WebAssembly](wasm.md) | Games and demos running in a browser | live |
 
 Run any of them natively:
 

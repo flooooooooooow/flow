@@ -1,6 +1,6 @@
 # FLOW Tutorial: Dynamics
 
-Modeling systems that evolve through time — from a hand-written integrator to
+Modeling systems that evolve through time, from a hand-written integrator to
 Flow's declarative `dsys` syntax, analysis, and evolved control. This is the
 tutorial for Flow's founding thesis ([VISION.md](../../VISION.md)): programs as
 descriptions of **evolution**, not instruction sequences.
@@ -72,7 +72,7 @@ function main() -> i32 {
 }
 ```
 
-The declarative form of the same system uses `when height reaches 0.0` — see
+The declarative form of the same system uses `when height reaches 0.0`, see
 [evolution.md](evolution.md) and
 [`bouncing_ball_evolves.flow`](../../examples/evolution/bouncing_ball_evolves.flow).
 
@@ -81,7 +81,7 @@ The declarative form of the same system uses `when height reaches 0.0` — see
 ## Part 2: State-Space Systems with `stdlib/dynamics`
 
 Hand loops don't compose. The dynamics library gives you a first-class system
-type — matrices over caller-provided buffers, no allocation:
+type, matrices over caller-provided buffers, no allocation:
 
 ```flow
 import "stdlib/dynamics/state_space.flow"
@@ -96,7 +96,7 @@ let cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.05,
     Matrix { data: Cc, rows: 1, cols: 2 })
 ```
 
-Discretize it and ask a structural question — *can inputs steer every state?*
+Discretize it and ask a structural question, *can inputs steer every state?*
 
 ```flow
 let sys: DynamicalSystem = dsys_euler_discretize(cont, Ad, Bd, Id, sc)
@@ -104,7 +104,7 @@ let sys: DynamicalSystem = dsys_euler_discretize(cont, Ad, Bd, Id, sc)
 let ok: i32 = is_controllable(sys, c1, c2, c3, c4, c5)   # rank of [B, AB]
 ```
 
-(The extra arguments are scratch buffers — `array<f64, 4>` each. See the
+(The extra arguments are scratch buffers, `array<f64, 4>` each. See the
 [library reference](../library/dynamics.md#state_spaceflow) for every
 signature.) Run the full version:
 
@@ -140,7 +140,7 @@ function main() -> i32 {
 ## Part 3: The `dsys` Surface Syntax
 
 All that buffer plumbing disappears with the declarative
-[dynamics DSL](../language/dynamics-dsl.md) — a pre-parse expander that turns
+[dynamics DSL](../language/dynamics-dsl.md), a pre-parse expander that turns
 top-level blocks into the same library calls:
 
 ```flow
@@ -161,7 +161,7 @@ every analysis block below. No matrices, no scratch arrays.
 
 > [!note] Native only
 > `dsys` / `sense` / `ga evolve` / `analyze { lqr }` expand at compile time.
-> Run them with `./flow run` — the browser interpreter does not expand the DSL.
+> Run them with `./flow run`, the browser interpreter does not expand the DSL.
 
 ---
 
@@ -177,7 +177,7 @@ sense on plant {
 }
 ```
 
-`rho_open >= 1` means the discrete plant does not decay on its own — the
+`rho_open >= 1` means the discrete plant does not decay on its own, the
 mass-spring-damper rings at rho ≈ 0.995, so it barely does.
 
 ---
@@ -217,8 +217,8 @@ The whole model → analyze → control → certify pipeline, in one file, is
     OK: controllable plant, stable evolved loop, faster settling
 ```
 
-For everything at once — including a `GAAnalysisReport` struct with baseline
-vs evolved cost and convergence generation — use the one-shot form:
+For everything at once, including a `GAAnalysisReport` struct with baseline
+vs evolved cost and convergence generation, use the one-shot form:
 
 ```flow
 analyze plant ga k1 k2 over rollout -> report { full }
@@ -334,9 +334,9 @@ function main() -> i32 {
 
 ## Part 6: Where to Go Next
 
-1. **Declarative evolution** — [evolution.md](evolution.md): `flow` /
+1. **Declarative evolution**, [evolution.md](evolution.md): `flow` /
    `evolves as`, hybrid events, `always`, phase portraits, `field` PDE.
-2. **Live chaos** — Lorenz attractor in a native window:
+2. **Live chaos**, Lorenz attractor in a native window:
 
 ```bash
 ./flow gfx examples/evolution/lorenz_gfx.flow
@@ -344,7 +344,7 @@ function main() -> i32 {
 
 ![Lorenz attractor](../demos/lorenz.gif)
 
-3. **Flagship suite** — [`examples/evolution/`](../../examples/evolution/README.md):
+3. **Flagship suite**, [`examples/evolution/`](../../examples/evolution/README.md):
    pendulum, bouncing ball, heat diffusion, spring-mass control, LQR, Lorenz.
    Every console example is self-checking.
 
@@ -380,7 +380,7 @@ condition `[1, 0]`?
 
 ## Reference
 
-- [Evolution tutorial](evolution.md) — `flow` / `evolves` / `field`
+- [Evolution tutorial](evolution.md), `flow` / `evolves` / `field`
 - [Dynamics DSL reference](../language/dynamics-dsl.md)
 - [Dynamics library API](../library/dynamics.md)
 - [Vision](../vision.md) · [North-star grammar](../vision/north-star.md)

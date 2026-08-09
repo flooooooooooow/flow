@@ -94,8 +94,8 @@ Bundled index: [`registry/index.json`](../../registry/index.json)
 
 A version entry is either:
 
-- **`path`** — repo-relative (or absolute) directory with its own `flow.toml`
-- **`git`** (+ optional `tag` / `rev` / `branch`) — cloned into `flow_packages/`
+- **`path`**, repo-relative (or absolute) directory with its own `flow.toml`
+- **`git`** (+ optional `tag` / `rev` / `branch`), cloned into `flow_packages/`
 
 ### Overrides
 
@@ -119,7 +119,7 @@ cd my_package        # has flow.toml with name + version
 ```
 
 This updates `registry/index.json` (or `FLOW_REGISTRY_PATH`). There is **no**
-account/API server yet — sharing means committing the index change or opening a
+account/API server yet, sharing means committing the index change or opening a
 PR against the Flow repo (or hosting your own index JSON behind
 `FLOW_REGISTRY_URL`).
 

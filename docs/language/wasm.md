@@ -97,7 +97,7 @@ Playground (local compile API):
 #             Browser transpile → http://127.0.0.1:8765/pyodide  (Pyodide Flow→C)
 ```
 
-Smoke test (skips cleanly if `emcc` is missing — CI-safe, exit 0):
+Smoke test (skips cleanly if `emcc` is missing; CI-safe, exit 0):
 
 ```bash
 ./scripts/build_wasm_hello.sh
@@ -128,16 +128,16 @@ emcc build/hello_world.c -o build/wasm_hello/hello.js \
 ```
 
 See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`, and
-`wasm/flow_wasm.py` / `wasm/wasm_examples/` — those are the browser gallery;
+`wasm/flow_wasm.py` / `wasm/wasm_examples/`: those are the browser gallery;
 `build_wasm_hello.sh` is the documented minimal path for issue #121.
 
 ## What works today
 
 - ✅ C backend output is valid input for `emcc` for small programs (`main` returning `i32`, stdio)
 - ✅ Checked-in harness + optional script for a hello artifact (`wasm/hello_harness.c`)
-- ✅ Playground **Run (native local)** — loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))
-- ✅ Playground **Run (WASM local)** — same API with `target: "wasm"` (needs `emcc` + `node`)
-- ✅ **Browser transpile** — Pyodide loads `flow.parser` / `flow.c_generator` from `/flow-src/` (`docs/playground/pyodide.html`)
+- ✅ Playground **Run (native local)**: loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))
+- ✅ Playground **Run (WASM local)**: same API with `target: "wasm"` (needs `emcc` + `node`)
+- ✅ **Browser transpile**: Pyodide loads `flow.parser` / `flow.c_generator` from `/flow-src/` (`docs/playground/pyodide.html`)
 - ⚠️ Larger programs (effects handlers, graphics, heavy libc) may need extra `emcc` flags / stubs
 - ❌ No clang/emcc compiled into the browser tab (Pyodide is transpile-only)
 
@@ -148,10 +148,10 @@ See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`, an
 | Full clang-in-browser execution | Needs WASI toolchain in-tab; Pyodide covers Flow→C only |
 | Direct WASM emission (skip C) | No IR→WASM backend planned near-term |
 
-Roadmap row: [ROADMAP.md](../../ROADMAP.md) — **WASM target** is partial ✅ via C→Emscripten + playground WASM/Pyodide.
+Roadmap row: [ROADMAP.md](../../ROADMAP.md). **WASM target** is partial ✅ via C→Emscripten + playground WASM/Pyodide.
 
 ## Related docs
 
-- Language Spec §9.3 WebAssembly — [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
-- Wiki Phase 3 playground row — [wiki-roadmap.md](../wiki-roadmap.md)
-- Playground UI — [playground/index.html](../playground/index.html)
+- Language Spec §9.3 WebAssembly: [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
+- Wiki Phase 3 playground row: [wiki-roadmap.md](../wiki-roadmap.md)
+- Playground UI: [playground/index.html](../playground/index.html)

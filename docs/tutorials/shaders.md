@@ -25,7 +25,7 @@ shader fill neon {
 ```
 
 Builtins: `uv`, `time`, `resolution`, output `color`. Gallery controls:
-`←` / `→` / `Space` cycle · `1`–`9` jump · `Esc` quit.
+`←` / `→` / `Space` cycle · `1`-`9` jump · `Esc` quit.
 
 ### 1.1 Pulse helper sketch (browser)
 
@@ -81,7 +81,7 @@ function main() -> i32 {
 
 ### 1.4 UV length (browser)
 
-Distance from screen center — the usual radial field:
+Distance from screen center, the usual radial field:
 
 ```flow
 function main() -> i32 {
@@ -153,8 +153,8 @@ function main() -> i32 {
 
 ## Part 3: Next
 
-- [gfx-basics.md](gfx-basics.md) — CPU-side windows and games
-- [GPU memory](../library/) / `examples/gpu/` — buffers and kernels (advanced)
+- [gfx-basics.md](gfx-basics.md), CPU-side windows and games
+- [GPU memory](../library/) / `examples/gpu/`, buffers and kernels (advanced)
 
 ## Reference
 

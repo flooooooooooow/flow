@@ -1,9 +1,8 @@
-# Flow — Vision
+# Flow, Vision
 
 > A programming language where the primary abstraction is the evolution of systems through time.
 >
-> **Product thesis:** Flow is a language for describing **physical computational systems** —
-> RF, embedded, SDR, FPGA-adjacent, and satellite engineering first. Not “safer C,” and not a
+> **Product thesis:** Flow is a language for describing **physical computational systems**, RF, embedded, SDR, FPGA-adjacent, and satellite engineering first. Not “safer C,” and not a
 > Rust substitute: a compile-time model of units, rates, timing, memory topology, hardware, and
 > fault behaviour. See [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
 
@@ -21,7 +20,7 @@ Instead of describing sequences of instructions, Flow describes how systems evol
 
 The compiler transforms these descriptions into deterministic, production-ready implementations suitable for embedded systems, robotics, aerospace, industrial automation, DSP, scientific computing, digital twins, and high-performance simulation.
 
-**Evolution** is the abstraction. **Physical computational systems** are the product beachhead: an RF receiver is not merely code — the compiler should know its units, sample rates, numeric precision, memory movement, timing contracts, and target hardware, and from one description produce simulation, analysis, and heterogeneous deployment (MCU / DSP / FPGA / host).
+**Evolution** is the abstraction. **Physical computational systems** are the product beachhead: an RF receiver is not merely code, the compiler should know its units, sample rates, numeric precision, memory movement, timing contracts, and target hardware, and from one description produce simulation, analysis, and heterogeneous deployment (MCU / DSP / FPGA / host).
 
 Flow unifies:
 
@@ -54,7 +53,7 @@ Today's engineering workflow is fragmented.
 
 Every transition loses information. The mathematical model becomes disconnected from the deployed software. An RF/satellite engineer can cross all of those worlds in one project.
 
-Flow removes those boundaries. **The mathematical model is the executable program.** The long-term objective is to unify MATLAB/Simulink + GNU Radio + C/C++/Rust + HDL + hardware configuration under one compile-time model — while keeping C-like predictability and zero-cost escape hatches.
+Flow removes those boundaries. **The mathematical model is the executable program.** The long-term objective is to unify MATLAB/Simulink + GNU Radio + C/C++/Rust + HDL + hardware configuration under one compile-time model, while keeping C-like predictability and zero-cost escape hatches.
 
 ## Philosophy
 
@@ -485,7 +484,7 @@ The Flow compiler is responsible for:
 
 ## Target Domains
 
-**Beachhead:** RF · SDR · Embedded · FPGA-adjacent · Satellite / aerospace
+**Beachhead:** RF · SDR · Embedded · FPGA-adjacent · Satellite / aerospace  
 
 **Also:** Robotics · Automotive · Industrial automation · Medical devices · Signal processing · Audio · Scientific computing · Machine learning · Digital twins · Autonomous systems · Research
 
@@ -493,7 +492,7 @@ The Flow compiler is responsible for:
 
 Flow treats software as the description of an evolving system rather than a sequence of instructions. Simulation, verification, optimization, deployment, control synthesis, and execution all derive from a single source of truth.
 
-The long-term goal is to establish Flow as the production language for **physical computational systems**: engineers describe units, rates, timing, memory topology, hardware resources, numeric precision, and fault behaviour once — and the compiler participates in the engineering, not only the translation.
+The long-term goal is to establish Flow as the production language for **physical computational systems**: engineers describe units, rates, timing, memory topology, hardware resources, numeric precision, and fault behaviour once, and the compiler participates in the engineering, not only the translation.
 
 Dynamics (`evolves as`) remains the core abstraction; the RF/embedded/satellite vertical is how that abstraction becomes de facto in industry. Full architecture: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
 
@@ -505,21 +504,21 @@ An honest mapping from vision pillars to the current implementation (2026-08):
 
 | Vision pillar | Status today |
 |---|---|
-| General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped** — statically-typed language compiling to C via `./flow` |
-| Dynamical systems / `evolves as` | **Shipped (seed)** — `flow` blocks, Euler step, `every`, hybrid `when`; see north-star cards |
-| Analysis (controllability, spectral, gramians) | **Seed** — `sense on <plant>` over `dsys` |
-| Control synthesis | **Seed** — GA gain search (`ga evolve on`) |
+| General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped**, statically-typed language compiling to C via `./flow` |
+| Dynamical systems / `evolves as` | **Shipped (seed)**, `flow` blocks, Euler step, `every`, hybrid `when`; see north-star cards |
+| Analysis (controllability, spectral, gramians) | **Seed**, `sense on <plant>` over `dsys` |
+| Control synthesis | **Seed**, GA gain search (`ga evolve on`) |
 | Automatic differentiation | **Shipped** |
-| Algebraic effects | **Shipped** — see `docs/effects-showcase.md` |
-| Units / dimensional analysis | **Shipped** — SI units; RF pack + quantity suffixes in W0 |
+| Algebraic effects | **Shipped**, see `docs/effects-showcase.md` |
+| Units / dimensional analysis | **Shipped**, SI units; RF pack + quantity suffixes in W0 |
 | Explicit time (`every`, durations) | **Shipped** for flow blocks; scheduling/`task` still open |
 | Hybrid events | **Shipped** (zero-crossing form) |
-| Real-time safety | **Partial** — `@rt_safe`, lifetime domains; WCET/`guarantee` blocks still open |
-| Physical-systems beachhead (RF/IQ/rates/memory attrs) | **W0 in progress** — see physical-systems.md |
+| Real-time safety | **Partial**, `@rt_safe`, lifetime domains; WCET/`guarantee` blocks still open |
+| Physical-systems beachhead (RF/IQ/rates/memory attrs) | **W0 in progress**, see physical-systems.md |
 | `always` / `never` / temporal guarantees | Not yet |
 | Flow composition (`connect`) | Not yet |
 | Representations (linear, Koopman, …) | Design (north-star) |
 | FPGA / CDC / deploy partitions | Later |
 | Fixed-point, MMIO/SVD, certification profiles | Later |
 
-Gaps and sequencing: [ROADMAP.md](ROADMAP.md), [physical-systems.md](docs/vision/physical-systems.md), Helm board. Strategy: grow the evolution seed and the RF wedge together — one language, not a fork.
+Gaps and sequencing: [ROADMAP.md](ROADMAP.md), [physical-systems.md](docs/vision/physical-systems.md), Helm board. Strategy: grow the evolution seed and the RF wedge together, one language, not a fork.

@@ -8,6 +8,7 @@ Detailed documentation for the Flow programming language.
 |----------|-------------|
 | [Spec Index](spec-index.md) | Navigable TOC into LANGUAGE_SPEC + focused pages |
 | [Overview](overview.md) | Language philosophy and key features |
+| [Best practices](best-practices.md) | Idioms and fluid-abstraction guidance |
 | [Syntax](syntax.md) | Lexical structure, operators, grammar |
 | [Types](types.md) | Type system and primitive types |
 | [Spans](spans.md) | Borrowed `{pointer, length}` views over contiguous storage |
@@ -16,7 +17,7 @@ Detailed documentation for the Flow programming language.
 | [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |
 | [Ordering](ordering.md) | Declarative `\|> sort` / `sortBy` / `\|> find`, float total order |
 | [Explainable compilation](explainable-compilation.md) | `--explain`: the plan, the costs, the failed constraints |
-| [Graphics](graphics.md) | Native 2D graphics — macOS Cocoa; Linux/Windows SDL2 (+ stub) |
+| [Graphics](graphics.md) | Native 2D graphics, macOS Cocoa; Linux/Windows SDL2 (+ stub) |
 | [Shaders](shaders.md) | Fill-shader surface language (Metal on macOS) |
 | [WebAssembly](wasm.md) | Near-term Flow→C→emscripten path; native Flow-in-WASM deferred |
 | [Async via Effects](async-effects.md) | FiberAsync / ThreadedAsync / NetpollAsyncIO (no async/await) |

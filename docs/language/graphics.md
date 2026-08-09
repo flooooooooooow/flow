@@ -9,12 +9,12 @@ GPU experiments. This page is not a promise of Metal/CUDA/OpenCL product parity.
 |----------|--------------|--------|--------------------|
 | **macOS** | `runtime/gfx_macos.m` | ✅ Working | Cocoa window, software RGBA8 framebuffer, poll/keys, clear/fill_rect/present |
 | **Linux** | `runtime/gfx_linux.c` | ✅ SDL2 (stub fallback) | Real window + RGBA texture when SDL2 headers present; `-DFLOW_GFX_STUB` keeps the old null-init stub |
-| **Windows** | `runtime/gfx_windows.c` | ✅ partial — SDL2 shared with Linux; stub CI on Windows | Same SDL2 path as Linux (`gfx_sdl_impl.inc`); `FLOW_GFX_STUB` smoke on `windows-latest` CI; full SDL2 window path still needs a real Windows + SDL2 run |
+| **Windows** | `runtime/gfx_windows.c` | ✅ partial: SDL2 shared with Linux; stub CI on Windows | Same SDL2 path as Linux (`gfx_sdl_impl.inc`); `FLOW_GFX_STUB` smoke on `windows-latest` CI; full SDL2 window path still needs a real Windows + SDL2 run |
 
 | Related path | Status | Notes |
 |--------------|--------|-------|
-| Metal (Apple GPU compute / audio helpers) | Partial | Separate from `gfx.flow` — see `runtime/audio_gpu_metal.m` and GPU examples; not a full shader pipeline product |
-| Vulkan sample bridges | Experimental | `runtime/vulkan_flow_*_bridge.cpp` — demos, not the stdlib 2D API |
+| Metal (Apple GPU compute / audio helpers) | Partial | Separate from `gfx.flow`; see `runtime/audio_gpu_metal.m` and GPU examples. Not a full shader pipeline product |
+| Vulkan sample bridges | Experimental | `runtime/vulkan_flow_*_bridge.cpp`: demos, not the stdlib 2D API |
 | CUDA / OpenCL “auto backend” | ❌ Not shipping | Older aspirational docs; do not rely on this |
 
 Cross-platform graphics (Linux ✅, Windows ✅ partial) is tracked in
@@ -30,7 +30,7 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 ```
 
 ```flow
-# Sketch — see examples that use gfx.flow
+# Sketch: see examples that use gfx.flow
 let g = gfx_open(640, 480, "Demo")
 let mut frame: i32 = 0
 while frame < 1000 {
@@ -72,7 +72,7 @@ Keycodes are mapped to the macOS virtual codes in `gfx.flow` (A/S/D/W/R/arrows/E
 ## Windows build
 
 `gfx_windows.c` is a thin driver that shares its entire SDL2 implementation
-with Linux via `runtime/gfx_sdl_impl.inc` — same buffer layout, same keycode
+with Linux via `runtime/gfx_sdl_impl.inc`. Same buffer layout, same keycode
 map, same ABI. CI compiles and runs the stub path on `windows-latest`
 (`runtime/tests/gfx_stub_smoke.c` + `-DFLOW_GFX_STUB`). A full SDL2 window
 smoke on Windows agents is still outstanding.
@@ -115,7 +115,7 @@ headless smoke for Linux CI.
 
 ## Related
 
-- [runtime/README.md](../../runtime/README.md) — native backends map
-- [Effects Showcase](../effects-showcase.md) — unrelated, but shows how Flow prefers
+- [runtime/README.md](../../runtime/README.md): native backends map
+- [Effects Showcase](../effects-showcase.md): unrelated, but shows how Flow prefers
   explicit capabilities over hidden runtimes
-- [docs/NEXT.md](../NEXT.md) — Priority 5 cross-platform graphics bullets
+- [docs/NEXT.md](../NEXT.md): Priority 5 cross-platform graphics bullets

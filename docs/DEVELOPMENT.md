@@ -1,6 +1,6 @@
 # Development Guide
 
-This document provides detailed information for FLOW language developers.
+Notes for people working on the Flow compiler and toolchain.
 
 ## 🏗️ Architecture Overview
 
@@ -216,7 +216,7 @@ build/
 
 ## Compiler torture suite (C-grade)
 
-Aim: regression coverage comparable to a C compiler suite — sema rejection,
+Aim: regression coverage comparable to a C compiler suite: sema rejection,
 middle-end specialization, C ABI contracts, backend parity, executable pins.
 
 | Layer | Where | How to run |
@@ -235,7 +235,7 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 Shared helpers: `tests/unit/compiler_helpers.py`.
 
 Pytest only collects **git-tracked** files under `tests/` unless
-`FLOW_PYTEST_ALL=1` — `git add` new modules so CI sees them.
+`FLOW_PYTEST_ALL=1`. Run `git add` on new modules so CI sees them.
 
 ### Strict vs lenient (wired 2026-08-04)
 

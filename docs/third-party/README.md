@@ -1,6 +1,6 @@
 # Third-Party Libraries
 
-Flow ships a focused standard library in `lib/stdlib/`. The packages below are **not part of core Flow** — they live outside the language/compiler tree as optional libraries you can import, study, or extend.
+Flow ships a focused standard library in `lib/stdlib/`. The packages below are **not part of core Flow**, they live outside the language/compiler tree as optional libraries you can import, study, or extend.
 
 | Package | Location | Proofs | Description |
 |---------|----------|--------|-------------|
@@ -14,10 +14,10 @@ A formal mathematics library (**flow-verify**), separate from everyday Flow prog
 
 **Highlights:**
 
-- **Claim Paths** — facts addressed by what they claim (`Nat/+.zero-right`), not invented snake_case names
-- **Stepped proofs** — every deductive move numbered and cited
-- **Book export** — `./flow doc bundle` → unified PDF proof book
-- **Mathlib roadmap** — phased plan toward Mathlib-scale coverage ([mathlib-equivalence-toc](../language/mathlib-equivalence-toc.md))
+- **Claim Paths**, facts addressed by what they claim (`Nat/+.zero-right`), not invented snake_case names
+- **Stepped proofs**, every deductive move numbered and cited
+- **Book export**, `./flow doc bundle` → unified PDF proof book
+- **Mathlib roadmap**, phased plan toward Mathlib-scale coverage ([mathlib-equivalence-toc](../language/mathlib-equivalence-toc.md))
 
 Browse the full [proof catalog](flow-verify-catalog.md) or read the [package overview](flow-verify.md).
 
@@ -36,4 +36,4 @@ core-Flow regression.
 3. Add a page under `docs/third-party/<name>.md` and link it here
 4. Run `./scripts/build_wiki.py` before deploy
 
-Install for consumers: `./flow add <name>` — see [package-registry.md](../project/package-registry.md).
+Install for consumers: `./flow add <name>`, see [package-registry.md](../project/package-registry.md).

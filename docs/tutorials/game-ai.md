@@ -198,7 +198,7 @@ reward and is the most sensitive to tuning; whiten your advantages.
 
 ### Q-update toy (browser)
 
-One tabular Q-learning step — state/action tables as flat arrays:
+One tabular Q-learning step, state/action tables as flat arrays:
 
 ```flow
 function main() -> i32 {

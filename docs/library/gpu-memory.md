@@ -40,7 +40,7 @@ Flags: `GPU_MEM_DEFAULT`, `GPU_MEM_SHARED`, `GPU_MEM_PRIVATE`.
 
 ## Example
 
-`examples/gpu/gpu_memory_roundtrip.flow` — H2D/D2H, unified map, private D2D.
+`examples/gpu/gpu_memory_roundtrip.flow`, H2D/D2H, unified map, private D2D.
 
 ## Runtime
 

@@ -1,6 +1,6 @@
 # Flow vs C · Rust · Zig · Mojo
 
-Where Flow sits relative to systems and AI/ML languages. For the dynamics / control-engineering story, see [Flow vs MATLAB/Simulink](#flow-vs-labviewsimulink--matlabsimulink) below and [VISION.md](../VISION.md) at the repo root.
+Where Flow sits next to systems and AI/ML languages. For the dynamics and control-engineering angle, see [Flow vs MATLAB/Simulink](#flow-vs-labviewsimulink--matlabsimulink) below and [VISION.md](../VISION.md) at the repo root.
 
 ## At a glance
 
@@ -13,7 +13,7 @@ Where Flow sits relative to systems and AI/ML languages. For the dynamics / cont
 | **Compile target** | Portable C (+ MLIR/LLVM) | Native object code | LLVM | LLVM / C ABI | Machine code + Python interop |
 | **Syntax feel** | Explicit types, Rust/Go-ish | Low-level | Strict / expressive | Explicit / C-like | Python-like |
 | **Package story** | Local registry index + git/path (`flow.toml`) | Headers / build systems | crates.io | zig fetch | Modular / evolving |
-| **Learning curve** | Moderate | Steep for safety | Steep | Moderate–steep | Easy if you know Python |
+| **Learning curve** | Moderate | Steep for safety | Steep | Moderate to steep | Easy if you know Python |
 | **Best fit today** | Audio, dynamics seed, systems demos | Embedded, OS, ABI glue | Safe systems at scale | Tooling, interop, freestanding | AI/ML productivity |
 
 ## Feature deep dive
@@ -36,7 +36,7 @@ Where Flow sits relative to systems and AI/ML languages. For the dynamics / cont
 | Side-effect control | Effect handlers (`_Thread_local`) | Informal | Types + `unsafe` | Explicit errors | Framework-dependent |
 | Async | Effects (`SimulatedAsync` / `ThreadedAsync` / `FiberAsync` / `NetpollAsyncIO`; no `async` keyword) | Callbacks / libs | `async`/`await` | Manual / event loops | Interactive notebooks |
 
-Vs **Go** specifically: see [concurrency-vs-go.md](language/concurrency-vs-go.md) and [replace-go.md](language/replace-go.md) — effects + no-GC + data-parallel is the wedge. Flow ships `NetpollAsyncIO` + 2-way `select2`; Go still leads on mature netpoller integration / N-way `select`.
+Vs **Go** specifically: see [concurrency-vs-go.md](language/concurrency-vs-go.md) and [replace-go.md](language/replace-go.md). Flow's wedge is effects, no GC, and data-parallel `parallel for`. Flow ships `NetpollAsyncIO` and 2-way `select2`; Go still leads on mature netpoller integration and N-way `select`.
 
 ### Differentiation & numerics
 
@@ -48,7 +48,7 @@ Vs **Go** specifically: see [concurrency-vs-go.md](language/concurrency-vs-go.md
 
 ## When to choose what
 
-**Choose Flow** when you want algebraic effects, library autodiff, and audio/dynamics-oriented systems code that still emits portable C.
+**Choose Flow** when you want algebraic effects, library autodiff, and audio or dynamics-oriented systems code that still compiles to portable C.
 
 **Choose C** when you need maximum ABI control, tiny runtimes, or to meet an existing C-only interface.
 
@@ -60,7 +60,7 @@ Vs **Go** specifically: see [concurrency-vs-go.md](language/concurrency-vs-go.md
 
 ## Flow vs LabVIEW/Simulink · MATLAB/Simulink
 
-The workflow Flow ultimately targets is the fragmented control-engineering toolchain: analyze in MATLAB, diagram in Simulink, model physics in Modelica, then hand-write or code-generate C for deployment. Every hand-off loses information. Flow's answer: **the model is the program.**
+Flow is aimed at the split control-engineering toolchain: analyze in MATLAB, diagram in Simulink, model physics in Modelica, then hand-write or code-generate C for deployment. Each hand-off drops information. Flow's answer: **the model is the program.**
 
 | Feature | Flow | MATLAB/Simulink |
 |---------|------|-----------------|
@@ -72,7 +72,7 @@ The workflow Flow ultimately targets is the fragmented control-engineering toolc
 | **Breadth today** | LTI seed (honest scope) | Decades of numerical breadth |
 
 > [!note] Honest scoping
-> What ships today is discrete/continuous *linear* `dsys` plants, `sense` analysis, Gramians, and GA-based gain search — see the [dynamics DSL](language/dynamics-dsl.md). MATLAB remains far ahead numerically. The end-state is [VISION.md](../VISION.md).
+> What ships today is discrete/continuous *linear* `dsys` plants, `sense` analysis, Gramians, and GA-based gain search (see the [dynamics DSL](language/dynamics-dsl.md)). MATLAB remains far ahead numerically. The end-state is [VISION.md](../VISION.md).
 
 ## Performance
 

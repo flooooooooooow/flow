@@ -290,12 +290,12 @@ New roadmap items should include:
 Open items in `ROADMAP.md` mirror to GitHub issues (label `roadmap`) so the
 tracker stays visible on GitHub. Two scripts handle it:
 
-- `scripts/sync_roadmap.py` — creates a GitHub issue for every open item
+- `scripts/sync_roadmap.py`, creates a GitHub issue for every open item
   (🔲 status, `partial` status, unchecked `- [ ]` checkboxes, numbered 🔲
   items, and the curated `KNOWN_GAPS` list). When an item is marked done in
   `ROADMAP.md`, it closes the issue and checks the `docs/project/issues-checklist.md` line.
   Rewording an item updates the existing issue instead of creating a duplicate.
-- `scripts/sync_issues.sh` — rounds trip state between `docs/project/issues-checklist.md`
+- `scripts/sync_issues.sh`, rounds trip state between `docs/project/issues-checklist.md`
   and GitHub (closes issues checked locally, checks items closed on GitHub).
 
 Run it after editing `ROADMAP.md`:

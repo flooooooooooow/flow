@@ -142,10 +142,12 @@ Or use `./flow gfx examples/games/tetris_gfx.flow` when the gfx host is availabl
 
 | Goal | Resource |
 |------|----------|
+| How to structure Flow code | [Coding best practices](language/best-practices.md) |
 | Language reference | [docs/LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) |
 | Examples | [examples/](../examples/) |
 | Effects system | [examples/effects/](../examples/effects/) |
 | Machine learning | [examples/ml/](../examples/ml/) |
+| Galleries | [demos/overview.md](demos/overview.md) |
 
 ## Troubleshooting
 
