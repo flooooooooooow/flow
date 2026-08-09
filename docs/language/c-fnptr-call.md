@@ -3,7 +3,7 @@
 > **Status**: ⚠️ runtime escape hatch (implemented). First-class language
 > support is ❌ planned.
 >
-> **Requested by**: doom-flow (Doom port) — thinkers, map traversers, draw
+> **Requested by**: doom-flow (Doom port), thinkers, map traversers, draw
 > column/span callbacks, and atexit handlers all store raw C `void*`
 > function pointers that must be invoked from Flow.
 

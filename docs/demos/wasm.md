@@ -1,10 +1,10 @@
-# WebAssembly Gallery
+# WebAssembly gallery
 
 158 Flow examples compiled to WebAssembly, 151 of them runnable in a browser.
 Every one is the unedited source from this repository, put through Flow → C →
 `emcc`.
 
-**[Open the live gallery](../wasm/index.html)** — the pages below only run
+**[Open the live gallery](../wasm/index.html)**. The pages below only run
 there. This markdown page cannot host WebAssembly; the wiki renders it as
 text, so the gallery is a separate static site under `/wasm/`.
 

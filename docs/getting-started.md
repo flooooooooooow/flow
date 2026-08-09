@@ -1,13 +1,13 @@
-# Getting Started with Flow
+# Getting started with Flow
 
-Get from zero to productive in 5 minutes.
+From zero to a running program in a few minutes.
 
 ## Installation
 
 ### Requirements
 
 - Clang or GCC (Xcode Command Line Tools on macOS)
-- Python 3.9+ (only for `FLOW_HOST=python`, tests, MLIR/gfx, and first-time Gen0 bootstrap)
+- Python 3.9+ (for `FLOW_HOST=python`, tests, MLIR/gfx, and first-time Gen0 bootstrap)
 
 ### Homebrew
 
@@ -25,11 +25,11 @@ cd flow
 ./flow version
 ```
 
-`./flow run` / `./flow compile` default to Stage-A **flowc** (`FLOW_HOST=flowc`). Use `FLOW_HOST=python` for the full language surface (I/O helpers, DSLs, tests). See [self-hosting](project/self-hosting.md).
+`./flow run` and `./flow compile` default to Stage-A **flowc** (`FLOW_HOST=flowc`). Use `FLOW_HOST=python` for the full language surface (I/O helpers, DSLs, tests). See [self-hosting](project/self-hosting.md).
 
-## Hello World
+## Hello world
 
-Create `hello.flow` (Stage-A subset — works with the default flowc host):
+Create `hello.flow` (Stage-A subset; works with the default flowc host):
 
 ```flow
 function main() -> i32 {
@@ -49,7 +49,7 @@ For `println` and other full-language features:
 FLOW_HOST=python ./flow run hello.flow
 ```
 
-## Language Basics
+## Language basics
 
 ### Variables
 
@@ -71,7 +71,7 @@ function greet(name: string) -> void {
 }
 ```
 
-### Control Flow
+### Control flow
 
 ```flow
 # If/else
@@ -111,7 +111,7 @@ function main() -> i32 {
 }
 ```
 
-## CLI Commands
+## CLI commands
 
 ```bash
 ./flow run <file>       # Compile and run
@@ -121,9 +121,7 @@ function main() -> i32 {
 ./flow repl             # Interactive mode
 ```
 
-## Native Graphics (macOS)
-
-For graphical applications:
+## Native graphics (macOS)
 
 ```bash
 # Compile
@@ -138,17 +136,21 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
 ./build/tetris_gfx
 ```
 
-## Next Steps
+Or use `./flow gfx examples/games/tetris_gfx.flow` when the gfx host is available.
+
+## Next steps
 
 | Goal | Resource |
 |------|----------|
+| How to structure Flow code | [Coding best practices](language/best-practices.md) |
 | Language reference | [docs/LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) |
 | Examples | [examples/](../examples/) |
 | Effects system | [examples/effects/](../examples/effects/) |
 | Machine learning | [examples/ml/](../examples/ml/) |
+| Galleries | [demos/overview.md](demos/overview.md) |
 
 ## Troubleshooting
 
-**"command not found: flow"** - Use `./flow` (with dot-slash)
+**"command not found: flow"**: use `./flow` (with the leading `./`).
 
-**"gcc/clang not found"** - Install: `xcode-select --install` (macOS) or `apt install build-essential` (Ubuntu)
+**"gcc/clang not found"**: install with `xcode-select --install` (macOS) or `apt install build-essential` (Ubuntu).

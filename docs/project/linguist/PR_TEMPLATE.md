@@ -1,6 +1,5 @@
 <!--
-Paste into a github-linguist/linguist PR (use their official template —
-this file mirrors the checklist so we don't forget fields).
+Paste into a github-linguist/linguist PR (use their official template, this file mirrors the checklist so we don't forget fields).
 Do NOT open until search evidence clears the popularity bar outside flooooooooooow.
 -->
 
@@ -23,7 +22,7 @@ Add the [Flow](https://github.com/flooooooooooow/flow) programming language
       - https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition.flow
       - https://github.com/flooooooooooow/flow/blob/main/examples/concurrency/channels.flow
       - https://github.com/flooooooooooow/flow/blob/main/compiler/src/lexer.flow
-    - Sample license(s): MIT — https://github.com/flooooooooooow/flow/blob/main/LICENSE
+    - Sample license(s): MIT, https://github.com/flooooooooooow/flow/blob/main/LICENSE
   - [x] I have included a syntax highlighting grammar: https://github.com/flooooooooooow/flow-tmLanguage
   - [x] I have added a color
     - Hex value: `#5B8DEF`

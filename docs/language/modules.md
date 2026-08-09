@@ -1,11 +1,11 @@
 # Flow Module System
 
-> **Status:** Phase 1 implemented — dot-path imports, `[paths]`, `export` lists, `export import` re-export. String imports deprecated.  
+> **Status:** Phase 1 implemented, dot-path imports, `[paths]`, `export` lists, `export import` re-export. String imports deprecated.  
 > **Problem today:** `import "../../../../lib/verify/nat.flow"` breaks when you move a file.  
-> `stdlib/` vs `lib/stdlib/` vs `../../` — three dialects, zero confidence.
+> `stdlib/` vs `lib/stdlib/` vs `../../`, three dialects, zero confidence.
 
 Flow already has `flow.toml`, domain-prefixed theorems (`nat_add_zero`), and an effect/capability system.
-The module system should extend those ideas — not bolt on a second import dialect.
+The module system should extend those ideas, not bolt on a second import dialect.
 
 ---
 
@@ -42,12 +42,12 @@ import verify.nat { nat_zero_add }
 
 Resolution order:
 
-1. **Built-in `std`** — ships with the compiler (`lib/stdlib/` today)
-2. **Current package roots** — declared in `flow.toml [paths]`
-3. **Dependencies** — declared in `flow.toml [dependencies]`
-4. **Relative sibling** — `import .sibling` or `import .derived.nat_add_zero` *within the same package only*
+1. **Built-in `std`**, ships with the compiler (`lib/stdlib/` today)
+2. **Current package roots**, declared in `flow.toml [paths]`
+3. **Dependencies**, declared in `flow.toml [dependencies]`
+4. **Relative sibling**, `import .sibling` or `import .derived.nat_add_zero` *within the same package only*
 
-No `..` ever. If you need a parent's module, that's a package dependency — say so in `flow.toml`.
+No `..` ever. If you need a parent's module, that's a package dependency, say so in `flow.toml`.
 
 ---
 
@@ -84,7 +84,7 @@ They stay in sync by convention, not by counting `../`.
 
 ## Import Syntax
 
-Five forms. Same keywords as the rest of Flow — explicit, no sigils.
+Five forms. Same keywords as the rest of Flow, explicit, no sigils.
 
 ```flow
 # 1. Single symbol
@@ -104,7 +104,7 @@ import .derived.nat_add_zero
 export import .derived.nat_add_zero
 ```
 
-No `import *`. If you need more than a handful of symbols, your module is too big — split it.
+No `import *`. If you need more than a handful of symbols, your module is too big, split it.
 
 ### Aliasing (when domain prefix is noisy locally)
 
@@ -116,7 +116,7 @@ import verify.derived.nat_add_commutes as nat_add_commutes
 
 ## Export Syntax
 
-Private by default. One export line per file — not `export` on every declaration.
+Private by default. One export line per file, not `export` on every declaration.
 
 ```flow
 # lib/verify/nat.flow
@@ -136,9 +136,9 @@ What this prevents:
 
 - Accidental re-export of internal helpers
 - Symbol creep (if it's not exported, it doesn't exist outside)
-- Naming debacles (the exported set *is* the public API — review it like a changelog)
+- Naming debacles (the exported set *is* the public API, review it like a changelog)
 
-For theorems: **if it's not exported, no other package can `assume` it** — forces intentional API surfaces.
+For theorems: **if it's not exported, no other package can `assume` it**, forces intentional API surfaces.
 
 ---
 
@@ -237,7 +237,7 @@ reproductions of what breaks, and the cost of making blocks real namespaces.
 
 ## Module Headers (learn in the moment)
 
-Every module file starts with a header — same spirit as theorem headers in [verification.md](verification.md):
+Every module file starts with a header, same spirit as theorem headers in [verification.md](verification.md):
 
 ```flow
 # @module verify.nat
@@ -290,7 +290,7 @@ handle Log with ConsoleLogger {
 }
 ```
 
-No special-case import path. The effect system was already capability-based — modules just deliver capabilities from named packages.
+No special-case import path. The effect system was already capability-based, modules just deliver capabilities from named packages.
 
 ---
 
@@ -349,7 +349,7 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 
 | Concern | How it's handled |
 |---------|------------------|
-| Move files around | Imports unchanged — logical names, not paths |
+| Move files around | Imports unchanged, logical names, not paths |
 | Remote packages | `[dependencies]` in `flow.toml`, same `import foo.bar` syntax |
 | Version pinning | Lock file next to `flow.toml` (like Cargo/npm) |
 | Symbol collisions | Package name is first segment: `my_pkg.foo` vs `their_pkg.foo` |
@@ -364,11 +364,11 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 
 | Existing innovation | Module system extends it |
 |--------------------|--------------------------|
-| `flow.toml` packages | Becomes the resolution root — already there, just wired up |
+| `flow.toml` packages | Becomes the resolution root, already there, just wired up |
 | Effect / capability system | Imports deliver capabilities from named modules |
 | Domain-prefixed theorems (`nat_add_zero`) | Module path + symbol name = unique global identity |
 | Theorem headers (`means`, `from`, `tier`) | Module headers at file level |
-| Explicit keywords (`let`, `theorem`, `has property`) | `import`, `export` — same style, no sigils |
+| Explicit keywords (`let`, `theorem`, `has property`) | `import`, `export`, same style, no sigils |
 
 ---
 
@@ -386,4 +386,4 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 
 ## One Sentence
 
-**Name modules with dots, declare roots in `flow.toml`, export only what you mean — file paths never appear in source again.**
+**Name modules with dots, declare roots in `flow.toml`, export only what you mean, file paths never appear in source again.**

@@ -25,6 +25,7 @@ from flow.proof_document import (
     render_side_by_side_bundle,
     write_basic_proof_bundle_pdf,
     write_proof_book_pdf,
+    _find_latex_compiler,
 )
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -249,12 +250,20 @@ class TestProofBundle:
         assert r"\tableofcontents" in tex
         assert "Taylor" in tex or "taylor" in tex
 
+    @pytest.mark.skipif(
+        not any(_find_latex_compiler(cmd) for cmd in ("pdflatex", "xelatex", "tectonic")),
+        reason="LaTeX compiler (pdflatex, xelatex, tectonic) not found"
+    )
     def test_basic_pdf_compiles(self):
         tex, pdf = write_basic_proof_bundle_pdf(ROOT)
         assert os.path.isfile(tex)
         assert os.path.isfile(pdf)
         assert os.path.getsize(pdf) > 1000
 
+    @pytest.mark.skipif(
+        not any(_find_latex_compiler(cmd) for cmd in ("pdflatex", "xelatex", "tectonic")),
+        reason="LaTeX compiler (pdflatex, xelatex, tectonic) not found"
+    )
     def test_unified_book_pdf_compiles(self):
         tex, pdf = write_proof_book_pdf(ROOT)
         assert os.path.isfile(tex)

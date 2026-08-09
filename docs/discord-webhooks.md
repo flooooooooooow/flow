@@ -3,6 +3,7 @@
 Flow's CI and release pipelines notify the Flow Discord server. Join at
 `https://discord.gg/YK7VaHy24T` (points to `#welcome`, never expires).
 This document is the single source of truth for how webhooks work.
+Server conduct rules live in [discord-rules.md](discord-rules.md).
 
 ## Channels
 

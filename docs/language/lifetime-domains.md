@@ -76,7 +76,7 @@ Inferred from its allocation site. Nothing else.
 | Storage | Domain |
 |---|---|
 | a local declared in a `@lifetime(D)` function | `D` |
-| a local declared in an unannotated function | none — unchecked |
+| a local declared in an unannotated function | none, unchecked |
 | a module static | its `@lifetime(...)`, defaulting to `application` |
 | a `const` | `application` |
 | memory from `malloc` / `alloc_*` | `application` (it is yours until you free it) |
@@ -91,7 +91,7 @@ change the meaning of any other.
 Four rules. Each one is a hard error in `--strict` and a printed warning in
 `--lenient`, like every other type-checker diagnostic.
 
-### LD1 — a shorter-lived value may not be stored in a longer-lived static
+### LD1, a shorter-lived value may not be stored in a longer-lived static
 
 Inside a `@lifetime(D)` function, assigning a reference rooted in
 function-local storage to a module static whose domain outlives `D`:
@@ -118,7 +118,7 @@ The storage is named, both domains are named, and the position is the
 assignment. Compare the span diagnostic it generalises: `span outlives
 borrowed storage \`local\``.
 
-### LD2 — a domain function may not return a reference into its own frame
+### LD2, a domain function may not return a reference into its own frame
 
 ```flow
 @lifetime(frame)
@@ -138,7 +138,7 @@ For span returns, the existing span diagnostic (`span outlives borrowed
 storage`) already covers this and still fires; LD2 adds the pointer case and
 names the domain.
 
-### LD3 — allocation discipline per domain
+### LD3, allocation discipline per domain
 
 `@lifetime(callback)` composes with `@rt_safe`: the body, and everything it
 calls transitively, must not touch the heap, take a blocking lock, open a
@@ -194,7 +194,7 @@ The two domains differ in exactly one place: a lock. `frame` permits
 
 `session` and `application` place no allocation restriction.
 
-### LD4 — a domain may not call into a longer-lived domain
+### LD4, a domain may not call into a longer-lived domain
 
 Both functions must be annotated for this to fire. It checks declared intent
 against declared intent, so it has no false positives on unannotated code.
@@ -362,7 +362,7 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 |---|---|
 | `@lifetime(...)` on a function | ✅ |
 | `@lifetime(...)` on a module static | ✅ (only attribute allowed there) |
-| LD1 escape into a longer-lived static | ✅ direct cases — see [gaps](#what-the-compiler-does-not-check) |
+| LD1 escape into a longer-lived static | ✅ direct cases, see [gaps](#what-the-compiler-does-not-check) |
 | LD2 escape by return | ✅ direct cases |
 | LD3 `callback` = `@rt_safe` | ✅ shares the `@rt_safe` call graph |
 | LD3 `frame` forbids heap create/destroy | ✅ allocation names only, locks allowed |
@@ -373,7 +373,7 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | Domains on parameters / in types | ❌ |
 | `request` / `persistent` domains | ❌ |
 | `domain frame { ... }` blocks | ❌ |
-| Domains in the MLIR / JS / Python backends | n/a — the annotation is checked, then erased |
+| Domains in the MLIR / JS / Python backends | n/a, the annotation is checked, then erased |
 
 The annotation leaves no trace in generated code. Every domain lowers to the
 same C as the unannotated function.

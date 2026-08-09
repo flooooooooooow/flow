@@ -1,10 +1,10 @@
-# Neuron and Network Gallery
+# Neuron and network gallery
 
 Fifteen simulations of spiking dynamics written in Flow. Every clip below is
 recorded from the real compiled program through the headless recorder. Every
 program also measures the thing it is demonstrating, prints the measurement
 beside the published value, and returns a nonzero exit code if the comparison
-fails — so these are regression tests that happen to draw pictures.
+fails, so these are regression tests that happen to draw pictures.
 
 This is the second domain of [the Example Atlas](../project/example-atlas.md),
 after [morphogenesis](morphogenesis.md). Continuous models are declared as

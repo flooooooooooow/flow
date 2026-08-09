@@ -7,7 +7,7 @@
 - [x] #92 [CI-M3] CI: no dependency pinning or lock file (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/92
 - [x] #91 [CI-M2] CI: lint job is minimal and incomplete (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/91
 - [x] #90 [CI-M1] CI: Python unit tests never run (bug, ci, medium) https://github.com/flooooooooooow/flow/issues/90
-- [x] #89 [CI-C2] CI: no permissions block — overly broad token access (bug, critical, ci, security) https://github.com/flooooooooooow/flow/issues/89
+- [x] #89 [CI-C2] CI: no permissions block, overly broad token access (bug, critical, ci, security) https://github.com/flooooooooooow/flow/issues/89
 - [x] #88 [CI-C1] CI: pipeline suppresses failures with || true (bug, critical, ci) https://github.com/flooooooooooow/flow/issues/88
 - [x] #87 [CLI-L3] CLI: hardcoded LLVM path (enhancement, low) https://github.com/flooooooooooow/flow/issues/87
 - [x] #86 [CLI-L2] CLI: no .flow file extension validation (enhancement, low) https://github.com/flooooooooooow/flow/issues/86
@@ -73,11 +73,11 @@
 - [x] #26 [CG-M4] C generator: __auto_type is non-standard C (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/26
 - [x] #25 [CG-M3] C generator: for-loop always uses < condition (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/25
 - [x] #24 [CG-M2] C generator: remove_outer_parens is incorrect (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/24
-- [x] #23 [CG-M1] C generator: memory leaks in generated code — no deallocation (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/23
+- [x] #23 [CG-M1] C generator: memory leaks in generated code, no deallocation (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/23
 - [x] #22 [CG-C3] C generator: no array bounds checking in generated code (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/22
 - [x] #21 [CG-C2] C generator: printf format string vulnerability (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/21
 - [x] #20 [CG-C1] C generator: code injection via unsanitized identifiers (bug, critical, compiler, security) https://github.com/flooooooooooow/flow/issues/20
-- [x] #19 [TC-L2] Type checker: no error recovery — first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
+- [x] #19 [TC-L2] Type checker: no error recovery, first error cascades (enhancement, compiler, low) https://github.com/flooooooooooow/flow/issues/19
 - [x] #18 [TC-L1] Type checker: SemanticType missing __hash__ (cleanup, compiler, low) https://github.com/flooooooooooow/flow/issues/18
 - [x] #17 [TC-M6] Type checker: _parse_type returns VOID for unknown types (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/17
 - [x] #16 [TC-M5] Type checker: builtin functions always return void (bug, compiler, medium) https://github.com/flooooooooooow/flow/issues/16

@@ -1,6 +1,6 @@
 # Manual Memory Management
 
-Flow has **no garbage collector**. Heap memory is allocated and freed explicitly — same contract as C, with typed helpers and an arena bump allocator in `lib/stdlib/memory.flow`.
+Flow has **no garbage collector**. Heap memory is allocated and freed explicitly, same contract as C, with typed helpers and an arena bump allocator in `lib/stdlib/memory.flow`.
 
 For **GPU / unified** buffers see [gpu-memory.md](gpu-memory.md) (`lib/stdlib/gpu_memory.flow`).
 
@@ -78,12 +78,12 @@ storage behind the `frame` [lifetime domain](../language/lifetime-domains.md).
 
 | Call | Cost |
 |------|------|
-| `frame_arena_create(cap)` | one `malloc` — startup only |
+| `frame_arena_create(cap)` | one `malloc`, startup only |
 | `frame_begin(f)` | one store of zero. This is the whole deallocation. |
 | `frame_alloc` / `frame_alloc_i32` / `frame_alloc_f32` / `frame_alloc_f64` | bump, 8-byte aligned |
 | `frame_end(f)` | record the high-water mark, count the frame |
 | `frame_used` / `frame_remaining` / `frame_high_water` / `frame_count` | field reads |
-| `frame_arena_destroy(f)` | one `free` — shutdown only |
+| `frame_arena_destroy(f)` | one `free`, shutdown only |
 
 ```flow
 @lifetime(frame)
@@ -108,21 +108,21 @@ Size the capacity from a real run's `frame_high_water`.
 ## Rules of thumb
 
 1. **Check for `null`** after every heap allocation.
-2. **One free per malloc** — double-free and use-after-free are undefined behaviour (same as C).
-3. **Arenas for frames** — audio blocks, request handlers, parsers: allocate freely, destroy once.
-4. **Stack first** — fixed arrays and locals need no `free`.
-5. **Don't free arena pointers individually** — only `arena_destroy` / `arena_reset`.
+2. **One free per malloc**, double-free and use-after-free are undefined behaviour (same as C).
+3. **Arenas for frames**, audio blocks, request handlers, parsers: allocate freely, destroy once.
+4. **Stack first**, fixed arrays and locals need no `free`.
+5. **Don't free arena pointers individually**, only `arena_destroy` / `arena_reset`.
 
 ## Tutorials
 
-- [Memory tutorial](../tutorials/memory.md) — malloc, typed alloc, arenas, patterns
-- [Pointers tutorial](../tutorials/pointers.md) — `ptr<T>`, indexing, null
-- [Systems tutorial](../tutorials/systems.md) — pools, buffers, ring-style patterns
+- [Memory tutorial](../tutorials/memory.md), malloc, typed alloc, arenas, patterns
+- [Pointers tutorial](../tutorials/pointers.md), `ptr<T>`, indexing, null
+- [Systems tutorial](../tutorials/systems.md), pools, buffers, ring-style patterns
 
 ## See also
 
-- [RT Safety](rt-safety.md) — no-alloc audio-thread contract
-- [Lifetime domains](../language/lifetime-domains.md) — `callback` / `frame` /
+- [RT Safety](rt-safety.md), no-alloc audio-thread contract
+- [Lifetime domains](../language/lifetime-domains.md), `callback` / `frame` /
   `session` / `application`, and what the compiler checks between them
-- [Comparison](../comparison.md) — Flow vs C/Rust memory models
+- [Comparison](../comparison.md), Flow vs C/Rust memory models
 - Working demo: `examples/systems/manual_memory.flow`

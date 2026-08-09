@@ -6,13 +6,13 @@
 <p class="wiki-hero-title">Write with effects.<br>Compile like C.</p>
 
 <p class="wiki-hero-lead">
-A statically typed language where evolution through time is the primary
-abstraction — dynamics, algebraic effects, and built-in autodiff on dual
-C / MLIR backends.
+A statically typed language for systems that evolve through time: dynamics,
+algebraic effects, and autodiff, compiling to C or MLIR.
 </p>
 
 <div class="wiki-hero-actions">
   <a href="getting-started.md" class="wiki-cta wiki-cta-primary">Install &amp; run</a>
+  <a href="demos/overview.md" class="wiki-cta">Galleries</a>
   <a href="tutorials/index.html" class="wiki-cta">257 interactive lessons</a>
 </div>
 
@@ -42,12 +42,12 @@ Pick one path. Everything else lives in the sidebar tabs.
 <a class="wiki-path" href="demos/overview.md">
 <span class="wiki-path-kicker">02 · Watch</span>
 <strong>See compiled programs run</strong>
-<span>Games, morphogenesis, neurons, planets — real `gfx` recordings, not mocks.</span>
+<span>Games, morphogenesis, neurons, planets: real `gfx` recordings, not mocks.</span>
 </a>
 
 <a class="wiki-path" href="language/spec-index.md">
 <span class="wiki-path-kicker">03 · Reference</span>
-<strong>Language &amp; library</strong>
+<strong>Language and library</strong>
 <span>Spec, grammar, stdlib, effects, autodiff, memory, and RT safety.</span>
 </a>
 
@@ -65,7 +65,7 @@ Frames below come straight from the native `gfx` backend.
 <img src="demos/lorenz.gif" alt="Lorenz attractor traced in real time" loading="lazy">
 <figcaption>
 
-**[Lorenz](../examples/evolution/lorenz_gfx.flow)** — `flow` block, RK4, drawn each frame.
+**[Lorenz](../examples/evolution/lorenz_gfx.flow)**, `flow` block, RK4, drawn each frame.
 
 </figcaption>
 </figure>
@@ -74,7 +74,7 @@ Frames below come straight from the native `gfx` backend.
 <img src="demos/tetris.gif" alt="Tetris being played" loading="lazy">
 <figcaption>
 
-**[Tetris](../examples/games/tetris_gfx.flow)** — full game loop with ghost piece.
+**[Tetris](../examples/games/tetris_gfx.flow)**, full game loop with ghost piece.
 
 </figcaption>
 </figure>
@@ -83,7 +83,7 @@ Frames below come straight from the native `gfx` backend.
 <img src="demos/2048.gif" alt="2048 tiles merging" loading="lazy">
 <figcaption>
 
-**[2048](../examples/games/2048_gfx.flow)** — grid logic under scripted input.
+**[2048](../examples/games/2048_gfx.flow)**, grid logic under scripted input.
 
 </figcaption>
 </figure>
@@ -98,16 +98,16 @@ games, morphogenesis, neurons, evolution, planets, procgen, numerical, WASM
 
 ---
 
-## What only Flow does this way
+## Features that matter here
 
 | | |
 |---|---|
-| **Algebraic effects** | Swap I/O and state at the handler — call sites stay pure. |
+| **Algebraic effects** | Swap I/O and state at the handler, call sites stay pure. |
 | **Built-in autodiff** | Forward and reverse mode in the language, not a library bolt-on. |
 | **`flow` / `evolves`** | Continuous + hybrid dynamics as syntax, with solvers and analysis. |
 | **Dual backends** | Portable C by default; MLIR when you want JIT. |
 
-Full thesis: [Vision](vision.md) · vs others: [Comparison](comparison.md)
+Thesis: [Vision](vision.md) · how to write it: [Best practices](language/best-practices.md) · vs others: [Comparison](comparison.md)
 
 ---
 
@@ -129,8 +129,8 @@ Full thesis: [Vision](vision.md) · vs others: [Comparison](comparison.md)
 
 | | |
 |---|---|
-| Version | 0.9.0 · [changelog](project/CHANGELOG.md) |
+| Version | 0.10.0 · [changelog](project/CHANGELOG.md) |
 | License | MIT |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |
-| Optional proofs | [flow-verify](third-party/flow-verify.md) — third-party, not required to use Flow |
+| Optional proofs | [flow-verify](third-party/flow-verify.md), third-party, not required to use Flow |

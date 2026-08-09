@@ -122,7 +122,7 @@ match point {
 - A bare identifier (e.g. `x`) matches anything and binds the matched value
   to that name for the rest of the arm (guard + body).
 - `|` combines several literal patterns into one arm (`1 | 2 | 3 => ...`).
-  Only literals can be combined this way — bindings and struct patterns
+  Only literals can be combined this way, bindings and struct patterns
   cannot appear on either side of `|`.
 - Struct patterns (`Point(a, b)`) destructure positionally. A literal in a
   field position (`Point(0, y)`) requires that field to equal the literal
@@ -197,7 +197,7 @@ value  |> clamp(0.0, _, 1.0)   # clamp(0.0, value, 1.0)
 x      |> mix(_, sidechain, k) # mix(x, sidechain, k)  — explicit leading slot
 ```
 
-At most one `_` may appear per stage — the piped value fills exactly one slot,
+At most one `_` may appear per stage, the piped value fills exactly one slot,
 so two placeholders would duplicate it and are rejected at parse time.
 
 #### Fork blocks
@@ -216,12 +216,12 @@ let s: Stats = n |> Stats {
 
 Each `field = stage…` branch is the pipeline `source |> stage…`, so branch
 stages compose (and take placeholders) exactly like any other pipeline. Branches
-use `=` — not the struct-literal `:` — so the fork and the record it builds read
+use `=`, not the struct-literal `:`, so the fork and the record it builds read
 distinctly. The block lowers to a struct literal of the named record, which is
 type-checked against that struct's declared fields like any other literal. The
 result is itself a value, so a fork can sit mid-pipeline: `x |> R { … } |> f`.
 
-Dropping the record name makes it **anonymous** — the record type is inferred
+Dropping the record name makes it **anonymous**, the record type is inferred
 rather than declared:
 
 ```flow
@@ -246,7 +246,7 @@ hoisted to a temporary binding just above the statement, so `frames(1024)` in
 `x |> frames(1024) |> { … }` runs a single time no matter how many branches read
 it.
 
-#### `choose` — a state-driven stage
+#### `choose`, a state-driven stage
 
 A `choose` stage selects which pipeline runs based on a value, so the shape of
 the computation can depend on state:
@@ -265,7 +265,7 @@ the arm the selector matches. It lowers to a hoisted `let mut __choose : T` plus
 a `match` that assigns the chosen arm (`T` is the arms' common return type), so
 the result is an ordinary value that flows on to later stages. The source is
 evaluated once, like a fork. `choose` is contextual: `x |> choose(a, b)` and a
-bare `x |> choose` stay ordinary calls — only `choose selector { … }` is the
+bare `x |> choose` stay ordinary calls, only `choose selector { … }` is the
 stage form.
 
 ## Grammar (Simplified EBNF)

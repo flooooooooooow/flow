@@ -1,4 +1,4 @@
-# Evolutionary Biology Gallery
+# Evolutionary biology gallery
 
 Twenty-five evolutionary-biology and ecology simulations written in Flow.
 Every clip below is recorded from the real compiled program through the
@@ -7,8 +7,8 @@ prints the measurement beside the closed form, and returns a nonzero exit
 code if the comparison fails, so these are regression tests that happen to
 draw pictures.
 
-This is the biology half of [VISION.md](../vision.md): a system that evolves
-through time is better written as a statement of how it evolves than as a
+These programs follow the direction in [VISION.md](../vision.md): a system that
+evolves through time is better written as a statement of how it evolves than as a
 loop that steps it. The domain README lives at
 [examples/evoleco](../../examples/evoleco/README.md).
 

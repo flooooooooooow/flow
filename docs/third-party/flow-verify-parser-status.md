@@ -32,7 +32,7 @@ A file can land in more than one bucket, so counts need not sum to 206.
 | 71 | Unicode set operators `\`, `∩`, `∪` | `card(s \ empty)`, `card(s ∩ t)` | **New binary operators + non-ASCII lexing.** Needs a language-design decision before touching the parser. |
 | 49 | `in` as a membership expression | `if a in I { ... }`, `therefore 0 in I` | `in` is only valid inside `for x in a to b`. Membership over Ideal/Subgroup/Finset is checker work. |
 | 33 | Unbalanced parentheses | e.g. `List-len-cons-oct-nil.flow` | **Corpus bug**, not a parser gap. |
-| 32 | List append operator `++` | `(xs ++ ys) ++ zs` | New binary operator — needs a design decision. |
+| 32 | List append operator `++` | `(xs ++ ys) ++ zs` | New binary operator, needs a design decision. |
 | 9 | `assume` of a bare fact | `assume segment_AB == segment_DE` | `assume` only accepts claim-path forms today. |
 | 8 | Non-triple guillemet claim coordinate | `x : «Ring» «Nat»` | Lexer only recognizes exactly **3** `«...»` groups. |
 | 2 | Residual hyphenated-import tags | (heuristic overlap) | Hyphen imports parse; these files still fail for another bucket. |
@@ -75,6 +75,6 @@ Narrow, already-shipped fixes worth keeping:
 ## Related reading
 
 - [`docs/language/verification.md`](../language/verification.md)
-- [`docs/language/epistemology.md`](../language/epistemology.md) — `verify.Nat/+` addresses
+- [`docs/language/epistemology.md`](../language/epistemology.md), `verify.Nat/+` addresses
 - [`docs/language/modules.md`](../language/modules.md)
 - [`docs/third-party/flow-verify.md`](flow-verify.md)

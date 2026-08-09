@@ -1,0 +1,85 @@
+# RF receiver sketch — physical-systems W0
+# docs/vision/physical-systems.md
+#
+# Demonstrates quantity suffixes, RF units, complex IQ, rate-tagged Signal,
+# and |> DSP stages. Same-rate add is legal; cross-rate add is a type error
+# (see examples/rf/rate_mismatch.flow, expected to fail typecheck).
+
+import "stdlib/rf.flow"
+
+@guarantee(no_alloc, no_block)
+@deterministic
+function process_frame(rx: Signal<ComplexF32, Rate20MHz>) -> Signal<ComplexF32, Rate10MHz> {
+    let lo_hz: f64 = 2.412GHz as f64
+    let cutoff: Hertz = 20MHz
+    let mixed: Signal<ComplexF32, Rate20MHz> = rx
+        |> mix_cf32_20m(lo_hz)
+        |> lowpass_cf32_20m(cutoff)
+    return mixed |> decimate2_cf32_20m()
+}
+
+@dma
+@aligned(64)
+@noncacheable
+function prepare_dma_scratch() -> i32 {
+    return 4096
+}
+
+@radiation_sensitive
+function scrub_placeholder(x: i32) -> i32 {
+    return x
+}
+
+function main() -> i32 {
+    let fc: Hertz = 2.45GHz
+    let fs: Hertz = 40MHz
+    let gain: Decibel = 17dB
+    let power: dBm = -73dBm
+    let phase: Degree = 90deg
+
+    # RF algebra: absolute power + relative gain.
+    let boosted: dBm = 20dBm + 3dB
+
+    let wl: Meter = wavelength_m(fc)
+    let wl_m: f64 = wl as f64
+
+    let z: ComplexF32 = complex_f32(1.0, 0.0)
+    let z2: ComplexF32 = cf32_mul(z, complex_f32(0.0, 1.0))
+
+    let rx: Signal<ComplexF32, Rate20MHz> = signal_cf32_20m(8192)
+    let out: Signal<ComplexF32, Rate10MHz> = process_frame(rx)
+    let spectrum: Signal<ComplexF32, Rate10MHz> = out |> fft_cf32_10m(2048)
+
+    let fc_hz: f64 = fc as f64
+    let fs_hz: f64 = fs as f64
+    let gain_db: f64 = gain as f64
+    let power_dbm: f64 = power as f64
+    let phase_deg: f64 = phase as f64
+    let boosted_dbm: f64 = boosted as f64
+    let scratch: i32 = prepare_dma_scratch()
+    let scrubbed: i32 = scrub_placeholder(scratch)
+
+    printf("fc=%.3e Hz fs=%.3e Hz gain=%.1f dB power=%.1f dBm\n",
+           fc_hz, fs_hz, gain_db, power_dbm)
+    printf("phase=%.1f deg boosted=%.1f dBm wl=%.4f m\n",
+           phase_deg, boosted_dbm, wl_m)
+    printf("iq im=%.1f out_len=%d bins=%d scrub=%d\n",
+           z2.im, out.len, spectrum.len, scrubbed)
+
+    if wl_m < 0.12 {
+        return 1
+    }
+    if wl_m > 0.13 {
+        return 1
+    }
+    if boosted_dbm < 22.9 {
+        return 1
+    }
+    if boosted_dbm > 23.1 {
+        return 1
+    }
+    if spectrum.len != 2048 {
+        return 1
+    }
+    return 0
+}

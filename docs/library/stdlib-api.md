@@ -1,8 +1,8 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-08-08 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` on 2026-08-09 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**105** modules scanned.
+**106** modules scanned.
 
 ## Modules
 
@@ -1702,6 +1702,7 @@ Manual memory management — real libc heap (C backend)  Flow has no GC. Heap me
 | `is_power_of_two` | `(value: i64) -> bool` | ── Alignment helpers ─────────────────────────────────────────────── |
 | `align_up` | `(size: i64, alignment: i64) -> i64` | — |
 | `align_down` | `(size: i64, alignment: i64) -> i64` | — |
+| `is_aligned` | `(p: ptr<void>, alignment: i64) -> bool` | — |
 | `alloc_bytes` | `(size: i64) -> ptr<void>` | ── Typed heap helpers ────────────────────────────────────────────── |
 | `alloc_zeroed` | `(size: i64) -> ptr<void>` | — |
 | `alloc_i32` | `(count: i64) -> ptr<i32>` | — |
@@ -2246,6 +2247,51 @@ render3d: a software 3D renderer written in Flow.  Everything below runs on the 
 Result Type Represents either success (Ok(value)) or failure (Err(error))
 
 *No `export` items found (internal / extern-only module).*
+
+### `rf.flow`
+
+RF / SDR primitives — physical-systems beachhead W0 docs/vision/physical-systems.md
+
+**Structs:** `ComplexF32`, `ComplexF64`, `IqI16`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `complex_f32` | `(re: f32, im: f32) -> ComplexF32` | — |
+| `complex_f64` | `(re: f64, im: f64) -> ComplexF64` | — |
+| `cf32_conj` | `(z: ComplexF32) -> ComplexF32` | — |
+| `cf32_mag2` | `(z: ComplexF32) -> f32` | — |
+| `cf32_add` | `(a: ComplexF32, b: ComplexF32) -> ComplexF32` | — |
+| `cf32_mul` | `(a: ComplexF32, b: ComplexF32) -> ComplexF32` | — |
+| `iq_i16_to_cf32` | `(s: IqI16) -> ComplexF32` | — |
+| `dbm_to_mw` | `(p: dBm) -> f64` | --- RF algebra helpers --------------------------------------------------- |
+| `wavelength_m` | `(f: Hertz) -> Meter` | — |
+| `deg_to_rad` | `(d: Degree) -> Radian` | — |
+| `signal_cf32_20m` | `(len: i32) -> Signal<ComplexF32, Rate20MHz>` | — |
+| `signal_cf32_10m` | `(len: i32) -> Signal<ComplexF32, Rate10MHz>` | — |
+| `mix_cf32_20m` | `(
+    rx: Signal<ComplexF32, Rate20MHz>,
+    lo_hz: f64
+) -> Signal<ComplexF32, Rate20MHz>` | Mixing LO: rate unchanged (placeholder — real mix is sample-wise). |
+| `lowpass_cf32_20m` | `(
+    rx: Signal<ComplexF32, Rate20MHz>,
+    cutoff: Hertz
+) -> Signal<ComplexF32, Rate20MHz>` | Marker for a lowpass whose cutoff is checked by units at the call site. |
+| `decimate2_cf32_20m` | `(
+    rx: Signal<ComplexF32, Rate20MHz>
+) -> Signal<ComplexF32, Rate10MHz>` | — |
+| `decimate2_cf32_10m` | `(
+    rx: Signal<ComplexF32, Rate10MHz>
+) -> Signal<ComplexF32, Rate5MHz>` | — |
+| `fft_cf32_10m` | `(
+    rx: Signal<ComplexF32, Rate10MHz>,
+    bins: i32
+) -> Signal<ComplexF32, Rate10MHz>` | FFT changes semantic domain later (FrequencySignal); W0 keeps the rate tag and records bin count in len. |
+| `add_cf32_20m` | `(
+    a: Signal<ComplexF32, Rate20MHz>,
+    b: Signal<ComplexF32, Rate20MHz>
+) -> Signal<ComplexF32, Rate20MHz>` | Same-rate combine — mismatched rates fail at the call site. |
 
 ### `sdl2.flow`
 
