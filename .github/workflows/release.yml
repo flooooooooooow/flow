@@ -95,10 +95,15 @@ jobs:
           TAG="${{ steps.tag.outputs.name }}"
           gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
           python3 - <<'PY'
-          import json, os, sys, urllib.request
+          import json, os, re, sys, urllib.request
           from datetime import datetime, timezone
           body = open("/tmp/flow_changelog.md").read().strip() or "Auto-generated changelog."
           body = body.lstrip("#").strip()
+          # Strip HTML comments and tags (Cursor/Devin agent footers, etc.)
+          body = re.sub(r'<!--.*?-->', '', body, flags=re.DOTALL)
+          body = re.sub(r'<[^>]+>', '', body)
+          body = re.sub(r'&(?:nbsp|amp|lt|gt|quot|#\d+);', '', body)
+          body = re.sub(r'\n{3,}', '\n\n', body).strip()
           if len(body) > 4000:
               body = body[:4000].rsplit("\n", 1)[0] + "\n…"
           owner_avatar = f"https://github.com/{os.environ['REPO'].split('/')[0]}.png"

@@ -112,14 +112,38 @@ runs:
           exit 0
         fi
         python3 - <<'PY'
-        import json, os, sys, urllib.request
+        import json, os, re, sys, urllib.request
 
         webhook = os.environ["WEBHOOK"]
         color = int(os.environ.get("COLOR", "0"))
 
+        def sanitize_for_discord(text: str, max_len: int = 4096) -> str:
+            """Strip HTML and agent-generated footer junk that Discord can't render.
+
+            Discord embed descriptions support markdown, not HTML. PR bodies from
+            Cursor/Devin agents append <div><a><picture>...</picture></a></div>
+            footer blocks that show up as raw text. Strip them.
+            """
+            if not text:
+                return ""
+            # Remove HTML comments (Cursor agent markers, etc.)
+            text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+            # Remove HTML tags entirely (Discord doesn't render them)
+            text = re.sub(r'<[^>]+>', '', text)
+            # Strip HTML entities Discord can't render
+            text = re.sub(r'&(?:nbsp|amp|lt|gt|quot|#\d+);', '', text)
+            # Collapse whitespace left behind by removed tags
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            text = re.sub(r'[ \t]{2,}', ' ', text)
+            text = text.strip()
+            # Truncate to Discord's embed description limit
+            if len(text) > max_len:
+                text = text[:max_len - 1].rsplit('\n', 1)[0] + '\u2026'
+            return text
+
         embed = {"color": color}
         if os.environ.get("DESCRIPTION"):
-            embed["description"] = os.environ["DESCRIPTION"]
+            embed["description"] = sanitize_for_discord(os.environ["DESCRIPTION"])
         if os.environ.get("EMBED_TITLE"):
             embed["title"] = os.environ["EMBED_TITLE"]
             if os.environ.get("EMBED_URL"):
@@ -140,8 +164,8 @@ runs:
             # Discord allows 25 fields per embed (name <= 256, value <= 1024);
             # truncate calmly so a job-heavy CI summary still posts.
             trimmed = [
-                {"name": str(f.get("name", ""))[:256],
-                 "value": str(f.get("value", ""))[:1024],
+                {"name": sanitize_for_discord(str(f.get("name", "")), 256),
+                 "value": sanitize_for_discord(str(f.get("value", "")), 1024),
                  "inline": bool(f.get("inline", False))}
                 for f in parsed[:25]
                 if f.get("name") or f.get("value")
