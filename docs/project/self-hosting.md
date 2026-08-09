@@ -196,8 +196,10 @@ supports beyond the subset the compiler itself is written in.
 - **Done:** [`flowc-release.yml`](../../.github/workflows/flowc-release.yml) on
   `flowc-v*` tags, linux + macos, self-compile audit, fixed point, package,
   unpack and use the archive as a user would, publish with checksums.
-- **Remaining:** Homebrew formula; a published release to point people at;
-  optional MLIR/GPU as separate tracks.
+- **Done:** Homebrew formula stub [`Formula/flowc.rb`](../../Formula/flowc.rb)
+  (`brew install --HEAD --formula ./Formula/flowc.rb` builds from bootstrap C).
+- **Remaining:** a published `flowc-v*` GitHub release to point stable brew
+  installs at; optional MLIR/GPU as separate tracks; optional official tap.
 
 ---
 
