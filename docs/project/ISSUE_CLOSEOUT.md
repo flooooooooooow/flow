@@ -30,3 +30,6 @@ open work is listed at the bottom — this agent cannot write the Issues API.
 ## Sibling repo
 
 Apply `docs/project/patches/doom-flow-mlir-o2.patch` on doom-flow (agent push is 403).
+Sun Aug  9 08:53:13 PM UTC 2026
+
+Merged closeout commit: 9e27d25
