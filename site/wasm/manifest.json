@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
-  "examples": 157,
-  "built": 150,
+  "examples": 158,
+  "built": 151,
   "failed": 7,
-  "total_bytes": 5636005,
+  "total_bytes": 5694085,
   "categories": [
     {
       "id": "games",
@@ -1029,6 +1029,20 @@
       "js_bytes": 10827,
       "total_bytes": 17828,
       "page": "palindrome/index.html"
+    },
+    {
+      "name": "parallel_scaling",
+      "title": "Parallel Scaling",
+      "category": "basics",
+      "source": "examples/wasm/parallel_scaling.flow",
+      "summary": "Coarse-grained Monte Carlo pi, timed at 2, 4 and 8 pthread workers",
+      "threads": true,
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 34718,
+      "js_bytes": 23362,
+      "total_bytes": 58080,
+      "page": "parallel_scaling/index.html"
     },
     {
       "name": "parallel_sum",

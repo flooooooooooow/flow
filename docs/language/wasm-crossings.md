@@ -160,6 +160,10 @@ The parallel build is always *correct* under WASM; the grain just has to clear
 the dispatch threshold. Coarsen the shards and the speedup comes back, which is
 what `parallel_sum.flow` demonstrates — it is also a gallery card now, at
 ~6.1–6.5x in Chrome with a ~0.4 ms floor for 8 empty spawn+join round trips.
+`examples/wasm/parallel_scaling.flow` is the same lesson as a whole speedup
+curve: one threaded gallery card that times the same Monte Carlo work at 2, 4
+and 8 workers against per-count serial baselines, measuring ~3.8x → ~7.5x →
+~15x in Chrome.
 
 ### First-run numbers lie
 
