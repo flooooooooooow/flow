@@ -59,7 +59,7 @@ extern {
     function tanf(x: f32) -> f32
     function fabsf(x: f32) -> f32
     function floorf(x: f32) -> f32
-    function clock() -> i64
+    function clock() -> i32  # clock_t: i32 on emscripten; µs values fit i32 on both
 }
 
 # ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ let mut r3d_stat_culled: i32 = 0
 let mut r3d_stat_pixels: i32 = 0
 
 # Frame timing.
-let mut r3d_last_clock: i64 = 0
+let mut r3d_last_clock: i32 = 0
 let mut r3d_fps_ema: f32 = 0.0
 let mut r3d_ms_ema: f32 = 0.0
 let mut r3d_ticks: i32 = 0
@@ -636,7 +636,7 @@ export function r3d_pixels_shaded() -> i32 { return r3d_stat_pixels }
 # exponential moving average, so the HUD number is the cost of the frame on
 # the machine that is running it rather than a nominal target.
 export function r3d_tick() -> void {
-    let now: i64 = clock()
+    let now: i32 = clock()
     let dt_us: f32 = ((now - r3d_last_clock) as f32)
     r3d_last_clock = now
     if r3d_ticks < 1 {

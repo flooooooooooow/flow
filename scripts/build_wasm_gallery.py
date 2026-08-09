@@ -153,6 +153,16 @@ PAGE_EXTRAS = {
     "digits_mlp_parallel": {"threads": True, "workers": 8, "initial_memory": "128MB"},
     "parallel_sum": {"threads": True, "workers": 8},
     "parallel_scaling": {"threads": True, "workers": 8},
+    # The reverse-mode AD tape lives in lib/runtime/tape.flow (pure Flow,
+    # replaces the deleted runtime/flow_tape.c). The native launcher links all
+    # lib/runtime modules; the wasm build opts in per example.
+    "tape_mul": {"extra_flow_runtime": ["lib/runtime/tape.flow"]},
+    # stdlib/blas.flow externs are Accelerate/OpenBLAS-backed natively; the
+    # wasm pages get runtime/blas_wasm.c, a plain correct shim for the exact
+    # routines these examples call (daxpy/dcopy/ddot/dnrm2/dscal/dgemv/dgemm
+    # + dgesv_).
+    "blas_demo": {"extra_c": ["runtime/blas_wasm.c"]},
+    "lu_decomposition": {"extra_c": ["runtime/blas_wasm.c"]},
 }
 
 
@@ -244,6 +254,8 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
                        extra_link=[PROJECT_ROOT / p for p in extras.get("extra_link", [])]
                        or None,
                        extra_html=extras.get("html", ""),
+                       extra_c=extras.get("extra_c", ()),
+                       extra_flow_runtime=extras.get("extra_flow_runtime", ()),
                        threads=extras.get("threads", False),
                        workers=extras.get("workers", 8),
                        initial_memory=extras.get("initial_memory", "32MB"))

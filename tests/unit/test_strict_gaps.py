@@ -359,6 +359,42 @@ class TestUnsignedLiteralArguments:
     # u8 wraparound, and a u32 past the signed range.
 
 
+UNMANGLE_BUG_SOLE_OVERLOAD = """
+# A sole overload whose call has an int literal for a u32 parameter AND an
+# untyped constant argument. The old sole-overload fallback scanned params
+# left to right and `break`-ed on the literal-vs-u32 mismatch before seeing
+# the unknown-typed constant, so `any_unknown` stayed False and the call
+# resolved to nothing: the backend emitted the unmangled name while the
+# definition was mangled (ga_flappy's `fly` was exactly this shape).
+const LIMIT: i32 = 10
+
+function fly(x: u32, cap: i32) -> f32 {
+    return 0.0
+}
+
+function main() -> i32 {
+    let v: f32 = fly(424242, LIMIT)
+    if v != 0.0 {
+        return 1
+    }
+    return 0
+}
+"""
+
+
+class TestSoleOverloadUnknownArgFallback:
+    """A known-incompatible literal must not hide an unknown-typed argument
+    from the sole-overload fallback; the call has to reach the mangled name
+    instead of degrading to an undeclared unmangled call."""
+
+    def test_generated_c_calls_the_mangled_overload(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(UNMANGLE_BUG_SOLE_OVERLOAD))
+        assert "fly_u32_i32(424242, LIMIT)" in c
+        assert " fly(424242" not in c
+
+
 # ---------------------------------------------------------------------------
 # Gap 5: print(expr) discarded its argument (flow-print-expr-discarded)
 # ---------------------------------------------------------------------------

@@ -79,7 +79,7 @@ extern {
     function powf(x: f32, y: f32) -> f32
     function fabsf(x: f32) -> f32
     function floorf(x: f32) -> f32
-    function clock() -> i64
+    function clock() -> i32  # clock_t: i32 on emscripten; µs values fit i32 on both
 }
 
 # ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ let mut pl_target_land: f32 = 0.29
 
 # Per-stage wall time, milliseconds, index 1..7.
 let mut pl_ms: ptr<f32> = null
-let mut pl_t0: i64 = 0
+let mut pl_t0: i32 = 0
 
 # RNG
 let mut pl_rng: u32 = 1
@@ -598,7 +598,7 @@ function pl_clock_start() -> void {
 }
 
 function pl_clock_stop(slot: i32) -> void {
-    let dt: i64 = clock() - pl_t0
+    let dt: i32 = clock() - pl_t0
     pl_ms[slot] = (dt as f32) / 1000.0
 }
 

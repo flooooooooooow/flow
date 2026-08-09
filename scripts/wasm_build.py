@@ -772,6 +772,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           initial_memory: str = "32MB",
           asyncify_stack_size: int = 32768,
           emcc_flags: Optional[list[str]] = None,
+          extra_c: tuple = (),
+          extra_flow_runtime: tuple = (),
           extra_html: str = "",
           threads: bool = False,
           workers: int = 8) -> dict:
@@ -783,6 +785,12 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
     the pthread kernel runtime/flow_rt_parallel.c. The page ships a COI service
     worker because the browser only allows SharedArrayBuffer on
     cross-origin-isolated pages.
+
+    extra_flow_runtime lists lib/runtime/*.flow modules (repo-root-relative
+    like extra_c) to compile as library TUs and link alongside the program —
+    the wasm analogue of the native launcher's flow_runtime_flow_sources().
+    It backs extern declarations that have a real Flow implementation (e.g.
+    lib/runtime/tape.flow defines flow_tape_*) instead of a host C symbol.
     """
     program = program.resolve()
     if not program.exists():
@@ -790,6 +798,8 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
     backend = resolve_backend(backend)
     if threads and backend == "mlir":
         raise BuildError("threads mode requires the C backend")
+    if extra_flow_runtime and backend == "mlir":
+        raise BuildError("extra_flow_runtime requires the C backend")
     name = name or program.stem
     title = title or name.replace("_gfx", "").replace("_", " ")
     out_dir = out_dir.resolve()
@@ -830,6 +840,20 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
                          PROJECT_ROOT / "runtime" / "flow_rt_support.c"):
                 if path.resolve() not in [p.resolve() for p in merged]:
                     merged.append(path)
+            extra_link = merged
+        # Extra lib/runtime/*.flow modules as library TUs (native launcher
+        # always links these; the wasm build opts in per example).
+        for mod in extra_flow_runtime:
+            mod_path = Path(mod)
+            if not mod_path.is_absolute():
+                mod_path = PROJECT_ROOT / mod_path
+            mod_name = mod_path.stem
+            lib_c = out_dir / f"{name}_{mod_name}_lib.c"
+            flow_to_c(mod_path, lib_c, library=True)
+            artifacts.append(lib_c)
+            merged = list(extra_link or [])
+            if lib_c.resolve() not in [p.resolve() for p in merged]:
+                merged.append(lib_c)
             extra_link = merged
 
     started = time.time()

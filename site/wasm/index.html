@@ -79,7 +79,7 @@ footer a { color: #6b7ca8; }
 <body>
 <div class="wrap">
   <h1>Flow in the browser</h1>
-  <p class="lede">151 Flow examples compiled to WebAssembly and running
+  <p class="lede">155 Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
   through Flow &rarr; C &rarr; <code>emcc</code>. Graphics programs link
   <code>runtime/gfx_wasm.c</code>, a canvas backend for the same gfx API that
@@ -158,7 +158,7 @@ footer a { color: #6b7ca8; }
         <div class="row">
           <button data-run="falling_sand_gfx/index.html" data-title="Falling Sand">Run</button>
           <span class="tag">canvas</span>
-          <span>33 KB</span>
+          <span>48 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/falling_sand_gfx.flow">source</a>
         </div>
       </div>
@@ -1225,9 +1225,19 @@ footer a { color: #6b7ca8; }
       </div>
     </div>
     <h2>Numerics and dynamics
-      <span class="count">18 of 20 running</span></h2>
+      <span class="count">20 of 20 running</span></h2>
     <p class="blurb">Solvers, optimisers, linear algebra and control theory. The ones that reach a native BLAS do not link here.</p>
     <div class="grid">
+      <div class="card">
+        <h3>BLAS Demo</h3>
+        <p>BLAS Demo: Comparing naive vs Accelerate-backed matrix operations</p>
+        <div class="row">
+          <button data-run="blas_demo/index.html" data-title="BLAS Demo">Run</button>
+          <span class="tag">console</span>
+          <span>33 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/blas_demo.flow">source</a>
+        </div>
+      </div>
       <div class="card">
         <h3>Controllability Demo</h3>
         <p>Controllability + similarity transform on mass-spring-damper</p>
@@ -1244,7 +1254,7 @@ footer a { color: #6b7ca8; }
         <div class="row">
           <button data-run="fmm_adaptive/index.html" data-title="Fmm Adaptive">Run</button>
           <span class="tag">canvas</span>
-          <span>68 KB</span>
+          <span>80 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/numerical/fmm_adaptive.flow">source</a>
         </div>
       </div>
@@ -1254,7 +1264,7 @@ footer a { color: #6b7ca8; }
         <div class="row">
           <button data-run="fmm_selftest/index.html" data-title="Fmm Selftest">Run</button>
           <span class="tag">console</span>
-          <span>34 KB</span>
+          <span>46 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/numerical/fmm_selftest.flow">source</a>
         </div>
       </div>
@@ -1316,6 +1326,16 @@ footer a { color: #6b7ca8; }
           <span class="tag">console</span>
           <span>22 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/gramian_demo.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>LU Decomposition</h3>
+        <p>LU / linear solve via stdlib BLAS (pattern-adoption #168)</p>
+        <div class="row">
+          <button data-run="lu_decomposition/index.html" data-title="LU Decomposition">Run</button>
+          <span class="tag">console</span>
+          <span>32 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition.flow">source</a>
         </div>
       </div>
       <div class="card">
@@ -1408,21 +1428,9 @@ footer a { color: #6b7ca8; }
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/wfc_demo.flow">source</a>
         </div>
       </div>
-      <div class="card failed">
-        <h3>BLAS Demo</h3>
-        <p>BLAS Demo: Comparing naive vs Accelerate-backed matrix operations</p>
-        <div class="why">does not build: emcc: undefined symbol cblas_dgemm</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/blas_demo.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>LU Decomposition</h3>
-        <p>LU / linear solve via stdlib BLAS (pattern-adoption #168)</p>
-        <div class="why">does not build: emcc: undefined symbol cblas_dcopy</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition.flow">source</a></div>
-      </div>
     </div>
     <h2>Learning
-      <span class="count">9 of 12 running</span></h2>
+      <span class="count">11 of 12 running</span></h2>
     <p class="blurb">Small models and agents. The Metal and tape-runtime variants need host services that are not linked here.</p>
     <div class="grid">
       <div class="card">
@@ -1453,6 +1461,16 @@ footer a { color: #6b7ca8; }
           <span class="tag">console</span>
           <span>76 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ai/flowlm_charlm.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>GA Flappy</h3>
+        <p>GA-FLAPPY - neuroevolution on headless flappy</p>
+        <div class="row">
+          <button data-run="ga_flappy/index.html" data-title="GA Flappy">Run</button>
+          <span class="tag">console</span>
+          <span>35 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ai/ga_flappy.flow">source</a>
         </div>
       </div>
       <div class="card">
@@ -1506,6 +1524,16 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Tape Mul</h3>
+        <p>Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)</p>
+        <div class="row">
+          <button data-run="tape_mul/index.html" data-title="Tape Mul">Run</button>
+          <span class="tag">console</span>
+          <span>28 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/tape_mul.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Tensor</h3>
         <p>Tensor demo — uses stdlib/tensor.flow</p>
         <div class="row">
@@ -1520,18 +1548,6 @@ footer a { color: #6b7ca8; }
         <p>Metal GPU status check for the digits MLP: what runs on the GPU today</p>
         <div class="why">does not build: emcc: undefined symbol flow_gpu_alloc</div>
         <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_metal.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>GA Flappy</h3>
-        <p>GA-FLAPPY - neuroevolution on headless flappy</p>
-        <div class="why">does not build: emcc: undefined symbol fly</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ai/ga_flappy.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Tape Mul</h3>
-        <p>Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)</p>
-        <div class="why">does not build: emcc: undefined symbol flow_tape_reset</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/tape_mul.flow">source</a></div>
       </div>
     </div>
     <h2>Systems and data
@@ -1711,7 +1727,7 @@ footer a { color: #6b7ca8; }
 
   <footer>
     Built by <code>python3 scripts/build_wasm_gallery.py</code>.
-    Total payload 5.4 MB across 151 examples.
+    Total payload 5.6 MB across 155 examples.
     Machine-readable index: <a href="manifest.json">manifest.json</a>.
   </footer>
 </div>

@@ -1,6 +1,6 @@
 # WebAssembly Gallery
 
-158 Flow examples compiled to WebAssembly, 151 of them runnable in a browser.
+158 Flow examples compiled to WebAssembly, 155 of them runnable in a browser.
 Every one is the unedited source from this repository, put through Flow → C →
 `emcc`.
 
@@ -30,12 +30,12 @@ Build one program:
 
 | Category | Running | Payload | What it is |
 |---|---:|---:|---|
-| [Games](../wasm/index.html) | 25 of 25 | 930 KB | Every `*_gfx.flow` in `examples/games/`, the same sources [the GIF gallery](games.md) records |
-| [Morphogenesis](../wasm/index.html) | 40 of 40 | 2045 KB | Every field simulation in `examples/morphogenesis/`, see [the gallery](morphogenesis.md) |
-| [Basics](../wasm/index.html) | 24 of 24 | 558 KB | `examples/basics/`, pure computation printing into the page (including the threaded `parallel_sum` and `parallel_scaling`) |
-| [Language and compilers](../wasm/index.html) | 22 of 23 | 571 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
-| [Numerics and dynamics](../wasm/index.html) | 18 of 20 | 595 KB | Solvers, optimisers, linear algebra, control theory |
-| [Learning](../wasm/index.html) | 9 of 12 | 360 KB | Small models and agents |
+| [Games](../wasm/index.html) | 25 of 25 | 944 KB | Every `*_gfx.flow` in `examples/games/`, the same sources [the GIF gallery](games.md) records |
+| [Morphogenesis](../wasm/index.html) | 40 of 40 | 2044 KB | Every field simulation in `examples/morphogenesis/`, see [the gallery](morphogenesis.md) |
+| [Basics](../wasm/index.html) | 24 of 24 | 557 KB | `examples/basics/`, pure computation printing into the page (including the threaded `parallel_sum` and `parallel_scaling`) |
+| [Language and compilers](../wasm/index.html) | 22 of 23 | 588 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
+| [Numerics and dynamics](../wasm/index.html) | 20 of 20 | 683 KB | Solvers, optimisers, linear algebra, control theory |
+| [Learning](../wasm/index.html) | 11 of 12 | 423 KB | Small models and agents |
 | [Systems and data](../wasm/index.html) | 13 of 14 | 503 KB | Allocators, hash tables, hashing, parsers, file formats |
 
 Machine-readable index, including every failure and its reason:
@@ -64,6 +64,10 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `arena_frame` | Ran its frame-arena allocator demo to exit 0 |
 | `system_info` | Printed real browser values: `OS: macOS`, `Num Cores: 14`, with the unprobeable parts degraded honestly |
 | `tiny_pointers` | Ran all phases to PASS, with the abstract-claim coverage card collapsed by default |
+| `tape_mul` | Computed `dz/dx = 4.000000`, `dz/dy = 3.000000` on the real Flow tape, `main returned 0` |
+| `ga_flappy` | Neuroevolution ran to completion with `PASS: evolved policy clears >= 10 more pipes than random`, `main returned 0` |
+| `blas_demo` | Benchmarked 256/512 gemms at 0.7/2.1 GFLOPS and 100/500 solves with `info=0`, `Done!`, `main returned 0` |
+| `lu_decomposition` | `x = [1.000000, 1.000000, 1.000000]`, `max |Ax-b| = 0.00e+00`, `OK: solve + lu_factor via BLAS/LAPACK`, `main returned 0` |
 
 No console errors on any of them.
 
@@ -104,7 +108,7 @@ and say plainly that it is not built here.
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The seven that do not build
+## The three that do not build
 
 Each one stops at a named symbol. The gallery keeps their cards and prints the
 reason on them.
@@ -112,11 +116,7 @@ reason on them.
 | Example | Stops at | Why |
 |---|---|---|
 | `examples/effects/async_primitives.flow` | `flow_fiber_run_main` | Fiber runtime is a native C/assembly context switch |
-| `examples/linalg/blas_demo.flow` | `cblas_dgemm` | Links a system BLAS |
-| `examples/linalg/lu_decomposition.flow` | `cblas_dcopy` | Links a system BLAS |
 | `examples/ml/digits_mlp_metal.flow` | `flow_gpu_alloc` | Metal GPU backend |
-| `examples/ml/tape_mul.flow` | `flow_tape_reset` | Autodiff tape is a native runtime module |
-| `examples/ai/ga_flappy.flow` | `fly` | Program references a symbol the transpiler does not emit |
 | `examples/crypto/runtime_sha256.flow` | `flow_sha256` | Hashing helper lives in the native runtime pack |
 
 Six examples used to fail and now build:
@@ -148,6 +148,34 @@ Six examples used to fail and now build:
   gallery as the second threaded card. Its 12,000,000-iteration shards are the
   textbook coarse grain, so it is the more dramatic of the two: ~6.1–6.5× in
   Chrome, with a measured ~0.4 ms floor for 8 empty spawn+join round trips.
+- `tape_mul.flow` runs the real reverse-mode AD tape: `lib/runtime/tape.flow`
+  (pure Flow, replacing the deleted `runtime/flow_tape.c`) compiles in as a
+  library TU via the new `extra_flow_runtime` build option — the wasm analogue
+  of the native launcher's `flow_runtime_flow_sources()`. It was previously
+  mislabelled a "native runtime module"; the fix is a module-resolution
+  plumbing fix, not a stub, and the page computes `dz/dx = 4`, `dz/dy = 3`
+  with zero console errors.
+- `ga_flappy.flow` exposed a real compiler bug: its `fly()` call sites passed
+  an int literal for a `u32` parameter plus an untyped constant, and the
+  sole-overload fallback in `resolve_call` `break`-ed on the literal mismatch
+  before discovering the unknown-typed argument, so the call was emitted
+  unmangled while the definition was mangled (`undefined symbol fly`). The
+  fallback now discovers unknown arg types up front; the example was broken
+  natively too and now runs everywhere with its own PASS gate.
+- `blas_demo.flow` and `lu_decomposition.flow` get `runtime/blas_wasm.c` — a
+  plain, numerically correct shim for exactly the routines the stdlib calls
+  (daxpy/dcopy/ddot/dnrm2/dscal/dgemv/dgemm + dgesv_/dgetrf_, linked via
+  `extra_c`), matching Accelerate's semantics including column-major LAPACK.
+  Both run fully in the browser: `lu_decomposition` reports
+  `max |Ax-b| = 0.00e+00`, `blas_demo` benchmarks 0.7→2.1 GFLOPS gemms and
+  natively-identical solves. These two were also broken under `./flow run`
+  (the launcher never linked a BLAS).
+- The `clock()` externs in `blas_demo.flow`, `falling_sand_gfx.flow`,
+  `render3d.flow`, `fmm2d.flow` and `planet.flow` declared `-> i64`, but
+  emscripten's `clock_t` is `i32`, so the import got a `signature_mismatch`
+  stub that threw `unreachable` the first time a page timed something
+  (blas_demo's first benchmark, falling_sand's FPS loop, ...). They now
+  declare `-> i32` — µs-scale values fit i32 on both platforms.
 - `parallel_scaling.flow` is the third threaded card: one build, one page, and
   the program itself times the same Monte Carlo pi work partitioned over 2, 4
   and 8 workers, each worker count timed against its own serial baseline

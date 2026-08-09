@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 158,
-  "built": 151,
-  "failed": 7,
-  "total_bytes": 5694085,
+  "built": 155,
+  "failed": 3,
+  "total_bytes": 5883795,
   "categories": [
     {
       "id": "games",
@@ -128,9 +128,9 @@
       "summary": "THE FALLING SAND GAME",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 13184,
-      "js_bytes": 20340,
-      "total_bytes": 33524,
+      "wasm_bytes": 27808,
+      "js_bytes": 21006,
+      "total_bytes": 48814,
       "page": "falling_sand_gfx/index.html"
     },
     {
@@ -1502,8 +1502,12 @@
       "category": "numerics",
       "source": "examples/linalg/blas_demo.flow",
       "summary": "BLAS Demo: Comparing naive vs Accelerate-backed matrix operations",
-      "status": "failed",
-      "error": "emcc: undefined symbol cblas_dgemm"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 22066,
+      "js_bytes": 11945,
+      "total_bytes": 34011,
+      "page": "blas_demo/index.html"
     },
     {
       "name": "controllability_demo",
@@ -1526,9 +1530,9 @@
       "summary": "Carrier-Greengard-Rokhlin 1988 in the unit square",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 48622,
-      "js_bytes": 21077,
-      "total_bytes": 69699,
+      "wasm_bytes": 60348,
+      "js_bytes": 21743,
+      "total_bytes": 82091,
       "page": "fmm_adaptive/index.html"
     },
     {
@@ -1539,9 +1543,9 @@
       "summary": "FMM self-test: Theorem 2.1 multipole vs direct for a well-separated cluster",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 23435,
-      "js_bytes": 11282,
-      "total_bytes": 34717,
+      "wasm_bytes": 34973,
+      "js_bytes": 11948,
+      "total_bytes": 46921,
       "page": "fmm_selftest/index.html"
     },
     {
@@ -1641,8 +1645,12 @@
       "category": "numerics",
       "source": "examples/linalg/lu_decomposition.flow",
       "summary": "LU / linear solve via stdlib BLAS (pattern-adoption #168)",
-      "status": "failed",
-      "error": "emcc: undefined symbol cblas_dcopy"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 21061,
+      "js_bytes": 11286,
+      "total_bytes": 32347,
+      "page": "lu_decomposition/index.html"
     },
     {
       "name": "lu_decomposition_pedagogical",
@@ -1803,8 +1811,12 @@
       "category": "learning",
       "source": "examples/ai/ga_flappy.flow",
       "summary": "GA-FLAPPY - neuroevolution on headless flappy",
-      "status": "failed",
-      "error": "emcc: undefined symbol fly"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 24361,
+      "js_bytes": 11612,
+      "total_bytes": 35973,
+      "page": "ga_flappy/index.html"
     },
     {
       "name": "mlir_tensor_bench",
@@ -1877,8 +1889,12 @@
       "category": "learning",
       "source": "examples/ml/tape_mul.flow",
       "summary": "Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_tape_reset"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 17828,
+      "js_bytes": 11278,
+      "total_bytes": 29106,
+      "page": "tape_mul/index.html"
     },
     {
       "name": "tensor",
