@@ -108,7 +108,9 @@ function main() -> i32 {
         assert "(null :" not in mlir
         assert "llvm.mlir.zero" in mlir
         assert 'llvm.icmp "eq"' in mlir
-        assert "llvm.mlir.global internal @g() : !llvm.ptr" in mlir
+        # Scalar ptr statics are null-initialized (not bare `() : !llvm.ptr` → undef).
+        assert "llvm.mlir.global internal @g()" in mlir
+        assert "llvm.mlir.zero : !llvm.ptr" in mlir
 
     def test_ptr_to_int_cast_uses_ptrtoint(self):
         code = """
