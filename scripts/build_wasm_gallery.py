@@ -185,6 +185,18 @@ PAGE_EXTRAS = {
                 "browser's WebCrypto CSPRNG (crypto.getRandomValues) instead "
                 "of the native OS kernel.",
     },
+    # digits_mlp_metal: flow_gpu_* are CPU-emulated on wasm (EXTERN_STUBS) —
+    # unified buffers are plain malloc'd memory and flow_gpu_mul_f32 is an
+    # elementwise CPU loop — so the example's correctness gate still runs and
+    # passes, but nothing dispatches to a GPU. flow_rt_support.c supplies the
+    # monotonic clock for the timing rows (same as tiny_pointers/digits_mlp).
+    "digits_mlp_metal": {
+        "extra_link": ["runtime/flow_rt_support.c"],
+        "note": "The Metal GPU is CPU-emulated on wasm: buffers are plain "
+                "memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so "
+                "the relu-gate correctness check runs and passes, but the "
+                "'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.",
+    },
 }
 
 

@@ -1,8 +1,8 @@
 # WebAssembly Gallery
 
-158 Flow examples compiled to WebAssembly, 157 of them runnable in a browser.
-Every one is the unedited source from this repository, put through Flow → C →
-`emcc`.
+158 Flow examples compiled to WebAssembly — every one of them runnable in a
+browser. Every one is the unedited source from this repository, put through
+Flow → C → `emcc`.
 
 **[Open the live gallery](../wasm/index.html)** — the pages below only run
 there. This markdown page cannot host WebAssembly; the wiki renders it as
@@ -35,7 +35,7 @@ Build one program:
 | [Basics](../wasm/index.html) | 24 of 24 | 557 KB | `examples/basics/`, pure computation printing into the page (including the threaded `parallel_sum` and `parallel_scaling`) |
 | [Language and compilers](../wasm/index.html) | 23 of 23 | 638 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
 | [Numerics and dynamics](../wasm/index.html) | 20 of 20 | 683 KB | Solvers, optimisers, linear algebra, control theory |
-| [Learning](../wasm/index.html) | 11 of 12 | 423 KB | Small models and agents |
+| [Learning](../wasm/index.html) | 12 of 12 | 455 KB | Small models and agents |
 | [Systems and data](../wasm/index.html) | 14 of 14 | 524 KB | Allocators, hash tables, hashing, parsers, file formats |
 
 Machine-readable index, including every failure and its reason:
@@ -70,6 +70,7 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `lu_decomposition` | `x = [1.000000, 1.000000, 1.000000]`, `max |Ax-b| = 0.00e+00`, `OK: solve + lu_factor via BLAS/LAPACK`, `main returned 0` |
 | `async_primitives` | All three backends ran, and the FiberAsync section printed a strict round-robin trace (`T100:0 T101:0 T102:0 T100:1 …`) — three cooperative fibers suspending mid-body on `async_delay`, `join` summing to 3039, `main returned 0` |
 | `runtime_sha256` | Flow's own SHA-256 implementation ran in the browser: `crypto runtime ok` against the known empty-string digest, exit 0; the card notes that random bytes come from WebCrypto's CSPRNG |
+| `digits_mlp_metal` | The Metal API ran CPU-emulated (backend reports `cpu-emulated (wasm)`): the relu backward gate verified `GPU == CPU` on 8000 elements and all four elementwise benches matched the CPU reference, `PASS`, `main returned 0`; the card notes the timing rows are CPU loops, not GPU dispatches |
 
 No console errors on any of them.
 
@@ -111,16 +112,16 @@ and say plainly that it is not built here.
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The one that does not build
+## Every example builds
 
-Each one stops at a named symbol. The gallery keeps their cards and prints the
-reason on them.
+The last holdout was `digits_mlp_metal.flow`: its Metal API has no browser
+counterpart, so `flow_gpu_*` are CPU-emulated on wasm (unified buffers become
+plain `malloc`'d memory, `flow_gpu_mul_f32` an elementwise CPU loop). The
+example's correctness gate still runs — the relu backward `dh = da · mask`
+verifies `GPU == CPU` — and its card carries a `.degrade` note saying the
+"gpu ms" rows measure a CPU loop, not a dispatch.
 
-| Example | Stops at | Why |
-|---|---|---|
-| `examples/ml/digits_mlp_metal.flow` | `flow_gpu_alloc` | Metal GPU backend |
-
-Eight examples used to fail and now build:
+Nine examples used to fail and now build:
 
 - `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
   monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
@@ -206,6 +207,15 @@ Eight examples used to fail and now build:
   (a real CSPRNG), and the card carries a `.degrade` note saying so. Gallery
   cards for built-but-different examples can now carry such a note via the
   `note` field in `PAGE_EXTRAS`.
+- `digits_mlp_metal.flow` was the last non-builder. Its Metal runtime is
+  genuinely Apple-only, so `flow_gpu_*` are CPU-emulated in `EXTERN_STUBS`:
+  `flow_gpu_alloc` returns `malloc`'d memory (unified-buffer semantics),
+  `flow_gpu_host_ptr` is the identity, `flow_gpu_mul_f32` runs the
+  elementwise loop on the CPU, and the backend reports `cpu-emulated (wasm)`
+  in the page's own output. The example was already written with a CPU
+  reference on the other side of every check, so it runs the full
+  correctness gate (`GPU == CPU`) and the four sizing benches to `PASS`, with
+  the card's `.degrade` note flagging that nothing dispatches to a GPU.
 
 ## Related
 

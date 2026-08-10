@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 158,
-  "built": 157,
-  "failed": 1,
-  "total_bytes": 5957066,
+  "built": 158,
+  "failed": 0,
+  "total_bytes": 5989621,
   "categories": [
     {
       "id": "games",
@@ -1779,8 +1779,13 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp_metal.flow",
       "summary": "Metal GPU status check for the digits MLP: what runs on the GPU today",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_gpu_alloc"
+      "note": "The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 20603,
+      "js_bytes": 11952,
+      "total_bytes": 32555,
+      "page": "digits_mlp_metal/index.html"
     },
     {
       "name": "digits_mlp_parallel",

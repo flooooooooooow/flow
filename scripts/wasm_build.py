@@ -308,6 +308,18 @@ EXTERN_STUBS = {
     "_cpu_features_string": "char* _cpu_features_string(void) { return \"n/a (browser)\"; }",
     "print_kv_str": "void print_kv_str(char* label, char* val) { printf(\"%s %s\\n\", label, val); }",
     "print_kv_i32": "void print_kv_i32(char* label, int32_t val) { printf(\"%s %d\\n\", label, val); }",
+    # digits_mlp_metal: the Metal runtime has no browser counterpart. These
+    # stubs emulate the unified-buffer API on CPU so the example's correctness
+    # gate (relu backward dh = da * mask, checked against a CPU reference)
+    # runs for real; the "gpu ms" timing rows become plain CPU loops. The
+    # card note says so (PAGE_EXTRAS), and flow_gpu_backend_name prints it in
+    # the page's own output.
+    "flow_gpu_available": "int32_t flow_gpu_available(void) { return 1; }",
+    "flow_gpu_backend_name": "char* flow_gpu_backend_name(void) { return \"cpu-emulated (wasm)\"; }",
+    "flow_gpu_alloc": "void* flow_gpu_alloc(int64_t size, int32_t flags) { (void)flags; return malloc((size_t)size); }",
+    "flow_gpu_free": "void flow_gpu_free(void* buf) { free(buf); }",
+    "flow_gpu_host_ptr": "void* flow_gpu_host_ptr(void* buf) { return buf; }",
+    "flow_gpu_mul_f32": "int32_t flow_gpu_mul_f32(void* out, void* a, void* b, int64_t n) { float* o = (float*)out; const float* x = (const float*)a; const float* y = (const float*)b; for (int64_t i = 0; i < n; i++) o[i] = x[i] * y[i]; return 0; }",
     # flow_parallel_for_i32 / flow_rt_par_workers are NOT stubbed: examples that
     # use them build in threads mode, where the parallel-for orchestration
     # (lib/runtime/concurrency_parallel.flow) compiles as a library and lands on
