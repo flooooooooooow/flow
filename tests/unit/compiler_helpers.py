@@ -59,7 +59,7 @@ def compile_and_run(
         bin_path = os.path.join(td, "prog")
         with open(c_path, "w") as f:
             f.write(c_code)
-        cmd = ["clang", "-O0", "-o", bin_path, c_path]
+        cmd = ["clang", "-O0", "-o", bin_path, c_path, "-lm"]
         if extra_cflags:
             cmd[1:1] = extra_cflags
         build = subprocess.run(cmd, capture_output=True, text=True)
