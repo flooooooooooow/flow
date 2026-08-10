@@ -150,6 +150,8 @@ class TokenType(Enum):
     U128 = "U128"
     F32 = "F32"
     F64 = "F64"
+    C64 = "C64"
+    C128 = "C128"
     BOOL = "BOOL"
     VOID = "VOID"
     STRING_TYPE = "STRING_TYPE"  # The 'string' type keyword
@@ -1311,6 +1313,8 @@ class Lexer:
             "u128": TokenType.U128,
             "f32": TokenType.F32,
             "f64": TokenType.F64,
+            "c64": TokenType.C64,
+            "c128": TokenType.C128,
             "bool": TokenType.BOOL,
             "string": TokenType.STRING_TYPE,
             "vec": TokenType.VEC,
@@ -3109,6 +3113,8 @@ class Parser:
             TokenType.U128,
             TokenType.F32,
             TokenType.F64,
+            TokenType.C64,
+            TokenType.C128,
         ]:
             type_name = self.current_token.value
             self.advance()
@@ -4606,6 +4612,9 @@ class Parser:
             # In primary position they behave like identifiers.
             TokenType.AND,
             TokenType.OR,
+            # Type keywords usable as constructor calls: c64(re, im), c128(re, im)
+            TokenType.C64,
+            TokenType.C128,
         ):
             name = self.current_token.value
             self.advance()

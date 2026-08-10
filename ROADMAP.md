@@ -32,7 +32,7 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 in progress |
+| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 partial: `c64`/`c128` complex types (C99 `_Complex`), `c64()`/`c128()` constructors, `creal`/`cimag`/`cabs`/`carg`/`conj`/`cexp`/`clog`/`csqrt`/`cpow` builtins, complex arithmetic with auto-promotion, `examples/rf/dft.flow` + `examples/rf/iq_mixer.flow`, `tests/unit/test_complex_types.py` (15 tests). Next: quantity literals, IQ type, rate-typed `Signal`. |
 | **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔲 |
 | **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
@@ -77,7 +77,7 @@ a proof corpus, not the showcase.
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
 - [ ] Concurrency pipeline example once channel send/recv is exposed
-- [ ] RF beachhead examples under `examples/rf/` (W0)
+- [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
 ### Tier 0 — Minimum domains
 
@@ -105,7 +105,7 @@ a proof corpus, not the showcase.
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
 | Digital twin lite | Small plant + observer narrative | 🔲 |
 | Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0–W3) |
-| RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0 |
+| RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
 
 ### Tier 2 — Competitive completeness

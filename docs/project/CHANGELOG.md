@@ -4,6 +4,18 @@ All notable changes to FLOW will be documented in this file.
 
 ## [Unreleased]
 
+### RF / SDR beachhead (W0)
+
+- `c64` and `c128` complex number types (C99 `float complex` / `double complex`).
+- Constructors: `c64(re, im)`, `c128(re, im)`, `c64(x)` for real-only.
+- Complex builtins: `creal`, `cimag`, `cabs`, `carg`, `conj`, `cexp`, `clog`,
+  `csqrt`, `cpow`.
+- Complex arithmetic with automatic promotion (`c64 + c128` -> `c128`).
+- `#include <complex.h>` emitted in all generated C.
+- Examples: `examples/rf/dft.flow` (8-point DFT), `examples/rf/iq_mixer.flow`
+  (quadrature mixer).
+- Tests: `tests/unit/test_complex_types.py` (15 tests).
+
 ### Safety / MISRA
 
 - Temp arena for `flow_strcat` and escaping closure envs (`flow_temp_alloc` /
