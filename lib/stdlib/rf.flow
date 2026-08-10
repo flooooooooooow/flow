@@ -1,0 +1,145 @@
+# RF / SDR Module - IQ Samples and Rate-Typed Signals
+#
+# Complex baseband processing primitives for software-defined radio.
+# Builds on c64/c128 complex types.
+#
+# Usage:
+#   import "stdlib/rf.flow"
+#   let sig: Signal = signal_new(1024, 1000000)  # 1024 samples at 1 MHz
+#   let iq: IQSample = iq_from_real(0.5)
+
+# =============================================================================
+# Type aliases
+# =============================================================================
+
+# IQ (In-phase / Quadrature) sample: a complex baseband sample.
+# Transparent alias for c64. Use IQ when you want the RF naming convention
+# but don't need type-safety against mixing with plain complex numbers.
+export type IQ = c64
+
+# Type-safe IQ sample. Distinct from c64 so the type checker rejects
+# accidental mixing of IQ samples with arbitrary complex arithmetic.
+# Use IQSample when you want the compiler to enforce that a buffer
+# contains RF samples, not generic complex values.
+export distinct type IQSample = c64
+
+# =============================================================================
+# Signal struct (runtime rate checking)
+# =============================================================================
+
+# A signal buffer with an associated sample rate.
+# The rate is carried at runtime. Compile-time phantom rate checking
+# (via type-level naturals) is a planned future enhancement.
+export struct Signal {
+    data: ptr<c64>,
+    len: i32,
+    sample_rate: u32,
+}
+
+# =============================================================================
+# IQ constructors
+# =============================================================================
+
+export function iq(re: f32, im: f32) -> IQ {
+    return c64(re, im)
+}
+
+export function iq_from_real(re: f32) -> IQ {
+    return c64(re, 0.0)
+}
+
+export function iq_sample(re: f32, im: f32) -> IQSample {
+    return c64(re, im) as IQSample
+}
+
+export function iq_sample_from_iq(z: IQ) -> IQSample {
+    return z as IQSample
+}
+
+# =============================================================================
+# Signal lifecycle
+# =============================================================================
+
+extern { function malloc(size: i32) -> ptr<c64> }
+extern { function free(ptr: ptr<c64>) -> void }
+extern { function memcpy(dst: ptr<c64>, src: ptr<c64>, n: i32) -> ptr<c64> }
+
+export function signal_new(length: i32, rate: u32) -> Signal {
+    let buf: ptr<c64> = malloc(length * 8)
+    let s: Signal = Signal { data: buf, len: length, sample_rate: rate }
+    return s
+}
+
+export function signal_free(s: Signal) -> void {
+    free(s.data)
+}
+
+export function signal_rate(s: Signal) -> u32 {
+    return s.sample_rate
+}
+
+export function signal_length(s: Signal) -> i32 {
+    return s.len
+}
+
+# =============================================================================
+# Signal operations
+# =============================================================================
+
+# Set a sample in the signal.
+export function signal_set(s: Signal, index: i32, value: c64) -> void {
+    if index >= 0 && index < s.len {
+        s.data[index] = value
+    }
+}
+
+# Get a sample from the signal.
+export function signal_get(s: Signal, index: i32) -> c64 {
+    if index >= 0 && index < s.len {
+        return s.data[index]
+    }
+    return c64(0.0, 0.0)
+}
+
+# Mix two signals: multiply sample-by-sample. Both signals must have
+# the same sample rate. Returns a new signal.
+export function signal_mix(a: Signal, b: Signal) -> Signal {
+    if a.sample_rate != b.sample_rate {
+        return signal_new(0, a.sample_rate)
+    }
+    let mut n: i32 = a.len
+    if b.len < n { n = b.len }
+    let result: Signal = signal_new(n, a.sample_rate)
+    for i in 0 to n {
+        result.data[i] = a.data[i] * b.data[i]
+    }
+    return result
+}
+
+# Scale a signal by a real scalar (amplitude gain).
+export function signal_scale(s: Signal, gain: f32) -> void {
+    let g: c64 = c64(gain, 0.0)
+    for i in 0 to s.len {
+        s.data[i] = s.data[i] * g
+    }
+}
+
+# Compute the magnitude spectrum (|X[k]|) of a signal.
+# Uses a naive DFT: O(N^2). Fine for small N; use FFT for real work.
+export function signal_magnitude_spectrum(s: Signal, out: ptr<f64>) -> void {
+    let n: i32 = s.len
+    for k in 0 to n {
+        let mut re: f64 = 0.0
+        let mut im: f64 = 0.0
+        for j in 0 to n {
+            let angle: f64 = -2.0 * 3.14159265358979323846 * (k as f64) * (j as f64) / (n as f64)
+            let c: f64 = cos(angle)
+            let sn: f64 = sin(angle)
+            let sample_re: f64 = creal(s.data[j])
+            let sample_im: f64 = cimag(s.data[j])
+            re = re + sample_re * c - sample_im * sn
+            im = im + sample_re * sn + sample_im * c
+        }
+        out[k] = sqrt(re * re + im * im)
+    }
+}

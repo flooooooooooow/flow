@@ -11,10 +11,14 @@ All notable changes to FLOW will be documented in this file.
 - Complex builtins: `creal`, `cimag`, `cabs`, `carg`, `conj`, `cexp`, `clog`,
   `csqrt`, `cpow`.
 - Complex arithmetic with automatic promotion (`c64 + c128` -> `c128`).
-- `#include <complex.h>` emitted in all generated C.
-- Examples: `examples/rf/dft.flow` (8-point DFT), `examples/rf/iq_mixer.flow`
-  (quadrature mixer).
-- Tests: `tests/unit/test_complex_types.py` (15 tests).
+- `#include <complex.h>` emitted only when complex types are used.
+- `lib/stdlib/rf.flow`: `IQ` type alias, `IQSample` distinct type, `Signal`
+  struct with sample_rate, `signal_new`/`signal_free`/`signal_set`/`signal_get`/
+  `signal_mix`/`signal_scale`/`signal_magnitude_spectrum`.
+- Examples: `examples/rf/dft.flow`, `examples/rf/iq_mixer.flow`,
+  `examples/rf/sdr_receiver.flow`.
+- Tests: `tests/unit/test_complex_types.py` (15 tests),
+  `tests/unit/test_rf_types.py` (10 tests).
 
 ### Safety / MISRA
 

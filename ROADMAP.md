@@ -32,7 +32,7 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 partial: `c64`/`c128` complex types (C99 `_Complex`), `c64()`/`c128()` constructors, `creal`/`cimag`/`cabs`/`carg`/`conj`/`cexp`/`clog`/`csqrt`/`cpow` builtins, complex arithmetic with auto-promotion, `examples/rf/dft.flow` + `examples/rf/iq_mixer.flow`, `tests/unit/test_complex_types.py` (15 tests). Next: quantity literals, IQ type, rate-typed `Signal`. |
+| **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 partial: `c64`/`c128` complex types (C99 `_Complex`), `c64()`/`c128()` constructors, `creal`/`cimag`/`cabs`/`carg`/`conj`/`cexp`/`clog`/`csqrt`/`cpow` builtins, complex arithmetic with auto-promotion, `lib/stdlib/rf.flow` (`IQ` alias, `IQSample` distinct type, `Signal` struct with sample_rate, `signal_new`/`signal_mix`/`signal_scale`/`signal_magnitude_spectrum`), `examples/rf/dft.flow` + `examples/rf/iq_mixer.flow` + `examples/rf/sdr_receiver.flow`, `tests/unit/test_complex_types.py` (15 tests) + `tests/unit/test_rf_types.py` (10 tests). Next: quantity literals, compile-time phantom rate checking. |
 | **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔲 |
 | **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
