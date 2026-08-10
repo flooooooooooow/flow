@@ -47,6 +47,7 @@ function bigint_from_i64(v: i64) -> BigInt {
     }
     a.sign = s
     let mut n: i32 = 0
+    @max_iterations(65536)
     while x > 0 {
         a.limbs[n] = (x & BIGINT_LIMB_MASK) as u32
         x = x / BIGINT_LIMB_BASE
@@ -68,6 +69,7 @@ function bigint_cmp_abs(a: BigInt, b: BigInt) -> i32 {
         return 0 - 1
     }
     let mut i: i32 = a.len - 1
+    @max_iterations(65536)
     while i >= 0 {
         let ai: i64 = a.limbs[i] as i64
         let bi: i64 = b.limbs[i] as i64
@@ -104,6 +106,7 @@ function bigint_ensure(a: BigInt, need: i32) -> BigInt {
         return a
     }
     let mut c: i32 = a.cap
+    @max_iterations(65536)
     while c < need {
         c = c * 2
     }
@@ -120,6 +123,7 @@ function bigint_ensure(a: BigInt, need: i32) -> BigInt {
 }
 
 function bigint_normalize(a: BigInt) -> BigInt {
+    @max_iterations(65536)
     while a.len > 0 {
         if a.limbs[a.len - 1] != 0 {
             break
@@ -141,6 +145,7 @@ function bigint_add_abs(a: BigInt, b: BigInt) -> BigInt {
     out.sign = 1
     let mut carry: i64 = 0
     let mut i: i32 = 0
+    @max_iterations(65536)
     while i < n or carry != 0 {
         let mut s: i64 = carry
         if i < a.len {
@@ -164,6 +169,7 @@ function bigint_sub_abs(a: BigInt, b: BigInt) -> BigInt {
     out.sign = 1
     let mut borrow: i64 = 0
     let mut i: i32 = 0
+    @max_iterations(65536)
     while i < a.len {
         let mut s: i64 = (a.limbs[i] as i64) - borrow
         if i < b.len {
@@ -213,6 +219,7 @@ function bigint_clone(a: BigInt) -> BigInt {
     out.sign = a.sign
     out.len = a.len
     let mut i: i32 = 0
+    @max_iterations(65536)
     while i < a.len {
         out.limbs[i] = a.limbs[i]
         i = i + 1
@@ -236,9 +243,11 @@ function bigint_mul(a: BigInt, b: BigInt) -> BigInt {
     let mut out: BigInt = bigint_new(a.len + b.len + 1)
     out.sign = a.sign * b.sign
     let mut i: i32 = 0
+    @max_iterations(65536)
     while i < a.len {
         let mut carry: i64 = 0
         let mut j: i32 = 0
+        @max_iterations(65536)
         while j < b.len or carry != 0 {
             let idx: i32 = i + j
             out = bigint_ensure(out, idx + 1)
@@ -267,6 +276,7 @@ function bigint_shl_limb(a: BigInt, k: i32) -> BigInt {
     out.sign = a.sign
     out.len = a.len + k
     let mut i: i32 = 0
+    @max_iterations(65536)
     while i < a.len {
         out.limbs[i + k] = a.limbs[i]
         i = i + 1
@@ -282,6 +292,7 @@ function bigint_div_u32(a: BigInt, d: u32) -> BigInt {
     out.sign = a.sign
     let mut rem: i64 = 0
     let mut i: i32 = a.len - 1
+    @max_iterations(65536)
     while i >= 0 {
         let cur: i64 = rem * BIGINT_LIMB_BASE + (a.limbs[i] as i64)
         out.limbs[i] = (cur / (d as i64)) as u32
@@ -298,6 +309,7 @@ function bigint_mod_u32(a: BigInt, d: u32) -> u32 {
     }
     let mut rem: i64 = 0
     let mut i: i32 = a.len - 1
+    @max_iterations(65536)
     while i >= 0 {
         rem = (rem * BIGINT_LIMB_BASE + (a.limbs[i] as i64)) % (d as i64)
         i = i - 1
@@ -314,6 +326,7 @@ function bigint_mod_pow_u32(base: BigInt, exp: i64, modulus: u32) -> u32 {
     let mut b: i64 = bigint_mod_u32(base, modulus) as i64
     let mut e: i64 = exp
     let m: i64 = modulus as i64
+    @max_iterations(65536)
     while e > 0 {
         if (e & 1) == 1 {
             result = (result * b) % m
@@ -330,6 +343,7 @@ function bigint_to_i64(a: BigInt) -> i64 {
     }
     let mut v: i64 = 0
     let mut i: i32 = a.len - 1
+    @max_iterations(65536)
     while i >= 0 {
         v = v * BIGINT_LIMB_BASE + (a.limbs[i] as i64)
         i = i - 1

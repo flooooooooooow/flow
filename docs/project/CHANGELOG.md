@@ -9,7 +9,9 @@ All notable changes to FLOW will be documented in this file.
 - Temp arena for `flow_strcat` and escaping closure envs (`flow_temp_alloc` /
   `flow_temp_free_all` + `atexit`) — closes #267 / #268 for short-lived programs.
 - `--profile safety|flight` rejects recursive functions via the safety
-  manifest (MISRA 17.2) — partial #273.
+  manifest (MISRA 17.2) — #271 / partial #273.
+- `while` loops require `@max_iterations(N)` under safety/flight; C emits a
+  runtime abort guard (#272).
 - Docs: `docs/language/safety-profiles.md`.
 
 ### Standard library / Euler (#252)

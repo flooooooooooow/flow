@@ -92,3 +92,49 @@ function main() -> i32 {
         )
         assert r.returncode != 0
         assert "recursion" in (r.stderr + r.stdout).lower()
+
+
+def test_safety_profile_rejects_unbounded_while():
+    code = """
+function main() -> i32 {
+    let mut i: i32 = 0
+    while i < 10 {
+        i = i + 1
+    }
+    return i
+}
+"""
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "w.flow"
+        p.write_text(code)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT / "src")
+        env["FLOW_PROFILE"] = "safety"
+        r = subprocess.run(
+            [sys.executable, "-m", "flow.transpiler", str(p), "--c", "-o", str(Path(td) / "out.c")],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode != 0
+        assert "max_iterations" in (r.stderr + r.stdout).lower()
+
+
+def test_max_iterations_emits_runtime_guard():
+    c = flow_to_c(
+        parse_flow_code(
+            """
+            function main() -> i32 {
+                let mut i: i32 = 0
+                @max_iterations(100)
+                while i < 10 {
+                    i = i + 1
+                }
+                return i
+            }
+            """
+        )
+    )
+    assert "__flow_while_bound_" in c
+    assert "max_iterations(100)" in c

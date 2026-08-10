@@ -21,6 +21,20 @@ released by `flow_temp_free_all` at process exit (`atexit`) — closes the
 strcat/closure leaks for short-lived programs (#267 / #268). Long-running
 servers should prefer arenas or avoid heap concat.
 
+## Loop bounds (#272)
+
+Under `safety` / `flight`, every `while` must carry `@max_iterations(N)`:
+
+```flow
+@max_iterations(1000)
+while cond {
+    # ...
+}
+```
+
+Counted `for i in 0 to N` loops are already bounded and need no attribute.
+The C backend emits a runtime counter that aborts if the bound is exceeded.
+
 ## Inspect flags / manifest
 
 ```bash

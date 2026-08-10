@@ -2450,6 +2450,32 @@ class CGenerator:
 
     def _gen_while(self, st: WhileStatement) -> List[str]:
         lines: List[str] = []
+        bound = getattr(st, "max_iterations", None)
+        if bound is not None:
+            if not hasattr(self, "_while_bound_counter"):
+                self._while_bound_counter = 0
+            self._while_bound_counter += 1
+            ctr = f"__flow_while_bound_{self._while_bound_counter}"
+            lines.append(f"{self._i()}{{")
+            self._indent += 1
+            lines.append(f"{self._i()}int32_t {ctr} = 0;")
+            lines.append(f"{self._i()}while ({self._gen_expr(st.condition)}) {{")
+            self._indent += 1
+            lines.append(f"{self._i()}if ({ctr} >= {int(bound)}) {{")
+            self._indent += 1
+            lines.append(
+                f'{self._i()}fprintf(stderr, "flow: while exceeded @max_iterations({int(bound)})\\n");'
+            )
+            lines.append(f"{self._i()}abort();")
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            lines.append(f"{self._i()}{ctr}++;")
+            lines.extend(self._gen_block(st.body))
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            self._indent -= 1
+            lines.append(f"{self._i()}}}")
+            return lines
         lines.append(f"{self._i()}while ({self._gen_expr(st.condition)}) {{")
         self._indent += 1
         lines.extend(self._gen_block(st.body))

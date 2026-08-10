@@ -39,6 +39,7 @@ function bigint_from_i64(v: i64) -> BigInt {
     }
     a.sign = s
     let mut n: i32 = 0
+    @max_iterations(64)
     while x > 0 {
         a.limbs[n] = (x & BIGINT_LIMB_MASK) as u32
         x = x / BIGINT_LIMB_BASE
@@ -52,6 +53,7 @@ function bigint_mod_u32(a: BigInt, d: u32) -> u32 {
     if a.sign == 0 or d == 0 { return 0 }
     let mut rem: i64 = 0
     let mut i: i32 = a.len - 1
+    @max_iterations(64)
     while i >= 0 {
         rem = (rem * BIGINT_LIMB_BASE + (a.limbs[i] as i64)) % (d as i64)
         i = i - 1
