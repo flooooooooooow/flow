@@ -11,6 +11,7 @@ Flow is a statically-typed, compiled language designed for performance and expre
 | **Autodiff** | Dual numbers + reverse helpers in stdlib; grad codegen for tiny nets (not a compiler `loss.grad` pass yet) |
 | **C Backend** | Compiles to portable C for any platform |
 | **Native Graphics** | macOS graphics via Metal/CoreGraphics |
+| **Safety Profile** | `--profile safety` adds MISRA/CERT-derived overflow checks, div0 guards, shift UB rejection. `--emit-manifest` produces a compliance report. |
 
 ## Quick Example
 
