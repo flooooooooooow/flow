@@ -563,6 +563,7 @@ Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are 
 | Struct Literal | `Point { x: 1.0, y: 2.0 }` | ✅ |
 | Vector Literal | `<1.0, 2.0, 3.0, 4.0>` | ⚠️ |
 | Lambda | `\|x: i32\| -> i32 { x + n }` | ✅ |
+| If-expression | `if cond { a } else { b }` | ✅ |
 
 ### 4.2 Operator Precedence (highest to lowest)
 
@@ -633,6 +634,18 @@ of lowerings with cost models and applicability predicates.
 | `stable` / `unstable` | Parsed; every plan is stable today, so `unstable` buys nothing | ⚠️ |
 | `with entropy`, `parallel`, `gpu`, `simd`, `compact`, … | Parsed, no specialization | ⚠️ |
 | `--explain` / `flow explain` | Print the plan, the costs, and every failed constraint | ✅ |
+
+### 4.6 If-expressions
+
+Value-producing conditionals (issue #252):
+
+```flow
+let x: i32 = if n > 0 { n } else { -n }
+```
+
+- Arms are **expressions** (not statement blocks).
+- `else` is **required**.
+- Lowers to a C ternary / MLIR `scf.if` with a value.
 
 See [ordering.md](language/ordering.md),
 [explainable-compilation.md](language/explainable-compilation.md), and

@@ -48,6 +48,7 @@ from .parser import (
     HandleStatement,
     LayoutStatement,
     IfStatement,
+    IfExpression,
     ImplDecl,
     Lambda,
     Literal,
@@ -320,37 +321,28 @@ class CGenerator:
         lines.append("    return r;")
         lines.append("}")
         lines.append("")
-        # MISRA Phase 0 (#264 / #265): configurable fault handlers for
-        # division-by-zero and invalid shifts. Emitted for application TUs;
-        # library/runtime modules skip them (arith checks disabled).
+        # MISRA Phase 0+1 (#264/#265/#263/#266/#279): configurable fault
+        # handler + checked arithmetic / null deref. Application TUs only;
+        # library/runtime modules skip (arith checks disabled).
         if self._arith_checks_enabled():
-            lines.append("#ifndef FLOW_DIV0_HANDLER")
-            lines.append("__attribute__((unused)) static inline void flow_div_by_zero_handler(void) {")
-            lines.append('    fprintf(stderr, "flow: division by zero\\n");')
+            lines.append("/* Unified fault handler (MISRA #279) — override with -DFLOW_FAULT_HANDLER=fn */")
+            lines.append("#ifndef FLOW_FAULT_HANDLER")
+            lines.append("__attribute__((unused)) static inline void flow_fault_handler(const char* msg) {")
+            lines.append('    fprintf(stderr, "flow: %s\\n", msg ? msg : "fault");')
             lines.append("    abort();")
+            lines.append("#if defined(__GNUC__) || defined(__clang__)")
+            lines.append("    __builtin_unreachable();")
+            lines.append("#endif")
             lines.append("}")
             lines.append("#else")
-            lines.append("#define flow_div_by_zero_handler FLOW_DIV0_HANDLER")
+            lines.append("#define flow_fault_handler FLOW_FAULT_HANDLER")
             lines.append("#endif")
-            lines.append("#ifndef FLOW_SHIFT_UB_HANDLER")
-            lines.append("__attribute__((unused)) static inline void flow_shift_ub_handler(void) {")
-            lines.append('    fprintf(stderr, "flow: invalid shift (amount out of range or left-shift of negative)\\n");')
-            lines.append("    abort();")
-            lines.append("}")
-            lines.append("#else")
-            lines.append("#define flow_shift_ub_handler FLOW_SHIFT_UB_HANDLER")
-            lines.append("#endif")
-            # Overflow-checked +,-,* for signed integers (MISRA 12.1 / CERT INT32-C).
-            # Opt-in: only emitted under --profile safety or FLOW_OVERFLOW_CHECK=1.
-            if self._overflow_checks_enabled():
-                lines.append("#ifndef FLOW_OVERFLOW_HANDLER")
-                lines.append("__attribute__((unused)) static inline void flow_overflow_handler(void) {")
-                lines.append('    fprintf(stderr, "flow: integer overflow\\n");')
-                lines.append("    abort();")
-                lines.append("}")
-                lines.append("#else")
-                lines.append("#define flow_overflow_handler FLOW_OVERFLOW_HANDLER")
-                lines.append("#endif")
+            lines.append("#define flow_div_by_zero_handler() flow_fault_handler(\"division by zero\")")
+            lines.append(
+                "#define flow_shift_ub_handler() "
+                "flow_fault_handler(\"invalid shift (amount out of range or left-shift of negative)\")"
+            )
+            lines.append("")
             # ISO C macros (no GNU statement-exprs) so -pedantic stays clean (#269).
             # Operands are evaluated more than once — Flow codegen emits pure
             # subexpressions for these sites in practice.
@@ -380,11 +372,10 @@ class CGenerator:
                 "? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))"
             )
             lines.append("#endif")
-            # Overflow-checked +,-,* for signed integers (MISRA 12.1 / CERT INT32-C).
-            # Uses __builtin_*_overflow on Clang/GCC; portable fallback otherwise.
-            # The result variable approach avoids double-evaluation of L/R.
-            # Opt-in: only emitted under --profile safety or FLOW_OVERFLOW_CHECK=1.
+            # Overflow + null deref are opt-in (--profile safety / FLOW_OVERFLOW_CHECK).
             if self._overflow_checks_enabled():
+                lines.append("#define flow_null_deref_handler() flow_fault_handler(\"null pointer dereference\")")
+                lines.append("#define flow_overflow_handler() flow_fault_handler(\"integer overflow\")")
                 lines.append("#ifndef FLOW_CHECKED_ADD")
                 lines.append("#if defined(__clang__) || defined(__GNUC__)")
                 lines.append(
@@ -439,6 +430,12 @@ class CGenerator:
                     "? (flow_overflow_handler(), (L)) : ((L) * (R)))"
                 )
                 lines.append("#endif")
+                lines.append("#endif")
+                lines.append("#ifndef FLOW_NONNULL")
+                lines.append(
+                    "#define FLOW_NONNULL(P) "
+                    "(((P) != NULL) ? (P) : (flow_null_deref_handler(), (P)))"
+                )
                 lines.append("#endif")
             lines.append("")
         
@@ -1327,6 +1324,8 @@ class CGenerator:
             if expr.operator == "!":
                 return Type("bool")
             return operand
+        elif isinstance(expr, IfExpression):
+            return self._infer_expr_type(expr.then_expr)
         elif isinstance(expr, BinaryOperation):
             if expr.operator in ("==", "!=", "<", "<=", ">", ">=", "&&", "||"):
                 return Type("bool")
@@ -3024,6 +3023,12 @@ class CGenerator:
                 return f"_env->{_c_ident(e.name)}"
             return _c_ident(e.name)
 
+        if isinstance(e, IfExpression):
+            cond = self._gen_expr(e.condition)
+            then_c = self._gen_expr(e.then_expr)
+            else_c = self._gen_expr(e.else_expr)
+            return f"(({cond}) ? ({then_c}) : ({else_c}))"
+
         if isinstance(e, StructLiteral):
             struct_fields = self._structs.get(e.struct_name, {})
 
@@ -3105,6 +3110,8 @@ class CGenerator:
         if isinstance(e, FieldAccess):
             obj_expr = self._gen_expr(e.object)
             if self._is_pointer_expr(e.object):
+                if self._overflow_checks_enabled():
+                    obj_expr = f"FLOW_NONNULL({obj_expr})"
                 return f"{obj_expr}->{_c_ident(e.field)}"
             return f"{obj_expr}.{_c_ident(e.field)}"
 
@@ -3142,7 +3149,10 @@ class CGenerator:
                 # lvalue in C even when both branches are.
                 return f"(&({self._gen_lvalue_expr(e.operand)}))"
             if op == "*":
-                return f"(*({self._gen_expr(e.operand)}))"
+                ptr_c = self._gen_expr(e.operand)
+                if self._overflow_checks_enabled():
+                    return f"(*(FLOW_NONNULL({ptr_c})))"
+                return f"(*({ptr_c}))"
             return f"({op} {self._gen_expr(e.operand)})"  # Add space for unknown operators
 
         if isinstance(e, BinaryOperation):
@@ -3653,9 +3663,10 @@ class CGenerator:
             )
         if isinstance(e, FieldAccess):
             accessor = "->" if self._is_pointer_expr(e.object) else "."
-            return (
-                f"{self._gen_lvalue_expr(e.object)}{accessor}{_c_ident(e.field)}"
-            )
+            obj = self._gen_lvalue_expr(e.object)
+            if accessor == "->" and self._overflow_checks_enabled():
+                obj = f"FLOW_NONNULL({obj})"
+            return f"{obj}{accessor}{_c_ident(e.field)}"
         return self._gen_expr(e)
 
     def _arith_checks_enabled(self) -> bool:
@@ -3712,7 +3723,7 @@ class CGenerator:
                     f'? ({span_expr}).data[{index_expr}] '
                     f': (fprintf(stderr, "span index %lld out of bounds (len %lld)\\n", '
                     f'(long long)({index_expr}), (long long)({span_expr}).len), '
-                    f'abort(), ({span_expr}).data[0]))'
+                    f'flow_fault_handler("span index out of bounds"), ({span_expr}).data[0]))'
                 )
             return f"({span_expr}).data[{index_expr}]"
 
@@ -3731,7 +3742,8 @@ class CGenerator:
                 f'(((unsigned)({index_expr}) < {array_size}) '
                 f'? {array_expr}[{index_expr}] '
                 f': (fprintf(stderr, "array index %d out of bounds (size %d)\\n", '
-                f'(int)({index_expr}), {array_size}), abort(), {array_expr}[0]))'
+                f'(int)({index_expr}), {array_size}), '
+                f'flow_fault_handler("array index out of bounds"), {array_expr}[0]))'
             )
         return f"{array_expr}[{index_expr}]"
     

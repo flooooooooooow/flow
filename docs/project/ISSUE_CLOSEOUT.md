@@ -1,40 +1,31 @@
-# MISRA / CERT closeout (Phase 0+)
+# MISRA / CERT + product closeout
 
-Tracking for the MISRA C:2024 + CERT C epic (#285) and remaining product issues.
+## Phase 0 (merged #287)
 
-## Phase 0 (this PR)
+| Issue | Status |
+|-------|--------|
+| #269 flags | ✅ |
+| #270 sanitizers | ✅ |
+| #264 div0 | ✅ |
+| #265 shift | ✅ |
 
-| Issue | Title | Status |
-|-------|-------|--------|
-| #269 | `-std=c11 -Wall -Wextra`; `-Werror`/`-pedantic` under `--profile safety` | ✅ |
-| #270 | `FLOW_UBSAN` / `FLOW_ASAN` / `FLOW_SANITIZE` / `--sanitize=` | ✅ |
-| #264 | Division-by-zero runtime + literal reject | ✅ |
-| #265 | Shift UB runtime + literal reject | ✅ |
+## Phase 1 (this PR)
 
-Usage:
-
-```bash
-./flow compile --show-flags
-./flow run --sanitize=ub,asan examples/basics/hello_world.flow
-FLOW_PROFILE=safety ./flow compile examples/basics/hello_world.flow
-FLOW_HOST=python ./flow run examples/basics/hello_world.flow   # full language
-```
+| Issue | Status |
+|-------|--------|
+| #263 signed overflow (`__builtin_*_overflow`) | ✅ |
+| #266 null deref (`FLOW_NONNULL`) | ✅ |
+| #279 unified `flow_fault_handler` | ✅ |
+| #273 safety profiles doc + CLI wiring | ✅ partial (`docs/language/safety-profiles.md`; flight≡safety) |
+| #252 if-expressions | ✅ (bigint / generic map still open) |
 
 ## Still open
 
 | Issue | Notes |
 |-------|-------|
-| #263 | Integer overflow checks |
-| #266–#268 | Null deref / strcat leak / closure free |
-| #271–#284 | Recursion/loops, profiles, WCET, compliance matrix, … |
-| #285 | Epic umbrella |
-| #252 | Euler: bigint + generic map/set (if-expr / C errors partial) |
-| #172 | github-linguist (draft under `docs/project/linguist/`) |
-| #147 | Multi-impl cost selection beyond sort/search |
-
-## Note on prior doom/MLIR closeouts
-
-PRs #257–#262 / #286 were marked merged and closed related issues, but their
-commits are **not** ancestors of current `origin/main` (parallel history).
-Re-land those fixes onto `main` if doom `-O2` / if-expressions are missing
-locally after a fresh clone.
+| #252 | bigint + generic `map`/`set` |
+| #267–#268 | strcat / closure leaks |
+| #271–#272 | recursion / loop bounds |
+| #274–#285 | heap policy, matrix, WCET, `@safe`, epic |
+| #172 | github-linguist |
+| #147 | multi-impl beyond sort |

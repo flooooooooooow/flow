@@ -27,7 +27,7 @@ from .parser import (
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
-    SortExpr, FindExpr, SliceExpr,
+    SortExpr, FindExpr, SliceExpr, IfExpression,
     is_span_type_name, span_is_mutable, span_element_name, format_span_type,
 )
 from .attributes import (
@@ -2474,6 +2474,24 @@ class TypeChecker:
             if not self._can_cast(src_type, target_type):
                 self.errors.append(f"Cannot cast {src_type} to {target_type}")
             return target_type
+        elif isinstance(expr, IfExpression):
+            cond_type = self._check_expression(expr.condition)
+            if cond_type.kind != TypeKind.BOOL:
+                if self.strict or not self._is_numeric(cond_type):
+                    self.errors.append(f"If condition must be bool, got {cond_type}")
+            then_type = self._check_expression(expr.then_expr)
+            else_type = self._check_expression(expr.else_expr)
+            if (
+                then_type.kind != else_type.kind
+                and then_type.kind != TypeKind.UNKNOWN
+                and else_type.kind != TypeKind.UNKNOWN
+            ):
+                if not (self._is_numeric(then_type) and self._is_numeric(else_type)):
+                    self.errors.append(
+                        f"if-expression branches must have the same type, "
+                        f"got {then_type} and {else_type}"
+                    )
+            return then_type
         elif isinstance(expr, FieldAccess):
             obj_type = self._check_expression(expr.object)
             # A span exposes exactly one field: its length.
