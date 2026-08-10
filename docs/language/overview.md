@@ -9,6 +9,7 @@ Flow is a statically-typed, compiled language designed for performance and expre
 | **Strong Types** | Compile-time type checking with generics |
 | **Effects** | Algebraic effects for capability-based programming |
 | **Autodiff** | Dual numbers + reverse helpers in stdlib; grad codegen for tiny nets (not a compiler `loss.grad` pass yet) |
+| **Complex Numbers** | `c64`/`c128` types map to C99 `_Complex`. Constructors, arithmetic, and `creal`/`cimag`/`cabs`/`cexp` builtins. |
 | **C Backend** | Compiles to portable C for any platform |
 | **Native Graphics** | macOS graphics via Metal/CoreGraphics |
 | **Safety Profile** | `--profile safety` adds MISRA/CERT-derived overflow checks, div0 guards, shift UB rejection. `--emit-manifest` produces a compliance report. |

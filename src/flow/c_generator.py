@@ -252,8 +252,18 @@ class CGenerator:
         return inferred.name if inferred else None
 
     def _printf_for_expr(self, expr: Expression, *, newline: bool) -> str:
-        expr_str = self._gen_expr(expr)
         type_name = self._print_type_name(expr)
+        # Complex numbers: print as (re + im j) since printf has no
+        # complex format specifier.
+        if type_name in ("c64", "c128"):
+            expr_str = self._gen_expr(expr)
+            suffix = "\\n" if newline else ""
+            if type_name == "c64":
+                return (f'printf("(%f + %f j){suffix}", '
+                        f'crealf({expr_str}), cimagf({expr_str}))')
+            return (f'printf("(%f + %f j){suffix}", '
+                    f'creal({expr_str}), cimag({expr_str}))')
+        expr_str = self._gen_expr(expr)
         fmt = self._printf_format_for_type_name(type_name)
         if newline:
             fmt = f"{fmt}\\n"
@@ -481,6 +491,8 @@ class CGenerator:
         # Always include math.h - many programs use math functions
         # The linker will only include what's actually used
         lines.append("#include <math.h>")
+        # complex.h for c64/c128 complex number support
+        lines.append("#include <complex.h>")
         
         lines.append("")
         # Library modules must not export a shared _ui_state (link conflict with main TU).
@@ -606,7 +618,7 @@ class CGenerator:
                            'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
                            'fabs', 'abs', 'floor', 'ceil', 'round', 'fmod',
                            'fmin', 'fmax', 'hypot'}
-        primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
+        primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
         no_mangle_prefixes = ()
         
         # Register all functions for overload resolution
@@ -827,7 +839,7 @@ class CGenerator:
                            'remove', 'rename', 'unlink', 'mkdir', 'rmdir', 'chdir', 'getcwd',
                            'usleep', 'sleep', 'gettimeofday', 'time', 'system',
                            'kill', 'getuid', 'getgid', 'geteuid', 'getegid', 'gethostname'}
-        primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
+        primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
             if fn.name in stdlib_functions:
@@ -1763,6 +1775,10 @@ class CGenerator:
             return "float"
         if t.name == "f64":
             return "double"
+        if t.name == "c64":
+            return "float complex"
+        if t.name == "c128":
+            return "double complex"
         if t.name == "bool":
             return "bool"
         if t.name == "void":
@@ -1957,7 +1973,7 @@ class CGenerator:
         math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
         if fn.name in math_functions:
             # Only skip if all parameters are primitive types
-            primitives = {'f32', 'f64', 'i32', 'i64', 'float', 'double', 'int'}
+            primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
             all_primitive = all(
                 self._type_to_string(p.type) in primitives 
                 for p in fn.parameters
@@ -2059,6 +2075,10 @@ class CGenerator:
             return "false"
         if name in ("f32", "f64", "float", "double"):
             return "0.0"
+        if name in ("c64",):
+            return "CMPLXF(0.0f, 0.0f)"
+        if name in ("c128",):
+            return "CMPLX(0.0, 0.0)"
         if name in ("string", "str"):
             return '""'
         if name.startswith("ptr_") or getattr(t, "is_pointer", False) or name.startswith("array_"):
@@ -3408,6 +3428,23 @@ class CGenerator:
                 elem_c = self._c_type(elem_type)
                 count = self._gen_expr(e.arguments[0])
                 return f"(({elem_c}*)calloc({count}, sizeof({elem_c})))"
+            # Complex constructors: c64(re, im) -> CMPLXF(re, im),
+            # c128(re, im) -> CMPLX(re, im).
+            if e.name == "c64" and len(e.arguments) == 2:
+                re = self._gen_expr(e.arguments[0])
+                im = self._gen_expr(e.arguments[1])
+                return f"CMPLXF((float)({re}), (float)({im}))"
+            if e.name == "c128" and len(e.arguments) == 2:
+                re = self._gen_expr(e.arguments[0])
+                im = self._gen_expr(e.arguments[1])
+                return f"CMPLX((double)({re}), (double)({im}))"
+            # Complex scalar from a single real: c64(x) -> CMPLXF(x, 0).
+            if e.name == "c64" and len(e.arguments) == 1:
+                re = self._gen_expr(e.arguments[0])
+                return f"CMPLXF((float)({re}), 0.0f)"
+            if e.name == "c128" and len(e.arguments) == 1:
+                re = self._gen_expr(e.arguments[0])
+                return f"CMPLX((double)({re}), 0.0)"
             # sizeof<T>() / sizeof_i32() intrinsic — prefer inline C sizeof
             if e.name.startswith("sizeof_") and len(e.arguments) == 0:
                 c_ty = self._sizeof_c_type_from_mangled(e.name[len("sizeof_"):])
@@ -4101,6 +4138,7 @@ class CGenerator:
         "i16": 2, "u16": 2,
         "i32": 4, "u32": 4, "f32": 4, "float": 4,
         "i64": 8, "u64": 8, "f64": 8, "double": 8,
+        "c64": 8, "c128": 16,
         "string": 8,
     }
 

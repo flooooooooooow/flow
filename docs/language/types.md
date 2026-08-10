@@ -25,6 +25,18 @@ f32  # 32-bit floating point (IEEE 754 single precision)
 f64  # 64-bit floating point (IEEE 754 double precision)
 ```
 
+### Complex Types
+
+```
+c64   # 64-bit complex (two f32s, C99 float complex)
+c128  # 128-bit complex (two f64s, C99 double complex)
+```
+
+Constructors: `c64(re, im)`, `c128(re, im)`, or `c64(x)` for a real-only value.
+Builtins: `creal`, `cimag`, `cabs`, `carg`, `conj`, `cexp`, `clog`, `csqrt`, `cpow`.
+Arithmetic operators `+`, `-`, `*`, `/` work on complex types with automatic
+promotion (`c64 + c128` yields `c128`, `c64 + f64` yields `c128`).
+
 ### Other Primitive Types
 
 ```

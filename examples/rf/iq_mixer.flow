@@ -1,0 +1,56 @@
+# IQ mixer: multiply a baseband signal with a complex carrier.
+#
+# In RF/SDR, a quadrature mixer multiplies the input by a complex
+# exponential at the carrier frequency. This shifts the spectrum
+# by fc. Demonstrates c64 multiplication and cexp.
+
+const PI: f64 = 3.14159265358979323846
+
+function main() -> i32 {
+    let N: i32 = 16
+    let fc: f64 = 0.25  # normalized carrier frequency (cycles/sample)
+
+    # Baseband: a real-valued 0.0625-cycle tone
+    let baseband: array<c64, 16>
+    for n in 0 to 16 {
+        let val: f64 = cos(2.0 * PI * 0.0625 * (n as f64))
+        baseband[n] = c64(val, 0.0)
+    }
+
+    # Mix: multiply by exp(j*2*pi*fc*n)
+    let mixed: array<c64, 16>
+    for n in 0 to 16 {
+        let phase: f64 = 2.0 * PI * fc * (n as f64)
+        let carrier: c64 = c64(cos(phase), sin(phase))
+        mixed[n] = baseband[n] * carrier
+    }
+
+    println("Baseband (real part):")
+    for n in 0 to 16 {
+        print("  ")
+        print(creal(baseband[n]))
+        println("")
+    }
+
+    println("")
+    println("Mixed output (complex):")
+    for n in 0 to 16 {
+        print("  ")
+        println(mixed[n])
+    }
+
+    # Verify: the mixed signal at n=0 should equal the baseband at n=0
+    # since carrier(0) = 1 + 0j.
+    let b0: f64 = creal(baseband[0])
+    let m0: f64 = creal(mixed[0])
+
+    if b0 > 0.99 && b0 < 1.01 && m0 > 0.99 && m0 < 1.01 {
+        println("")
+        println("PASS: mixer output correct at n=0")
+        return 0
+    }
+
+    println("")
+    println("FAIL: unexpected mixer output")
+    return 1
+}
