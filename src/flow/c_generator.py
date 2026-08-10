@@ -2967,6 +2967,19 @@ class CGenerator:
         return lines
 
     def _gen_expr(self, e: Expression) -> str:
+        if isinstance(e, Assignment):
+            # `a = b = value` is parsed as an Assignment nested in the RHS
+            # of another Assignment. C assignment expressions have the same
+            # value semantics, so lower them recursively and preserve the
+            # parentheses required when embedded in a larger expression.
+            if e.target_expr is not None:
+                target_expr = self._gen_lvalue_expr(e.target_expr)
+            else:
+                target_expr = _sanitize_identifier(e.target)
+                if self._capture_stack and e.target in self._capture_stack[-1]:
+                    target_expr = f"_env->{target_expr}"
+            return f"({target_expr} = {self._gen_expr(e.value)})"
+
         if isinstance(e, Literal):
             if e.type.name == "bool":
                 return "1" if e.value == "true" else "0"
