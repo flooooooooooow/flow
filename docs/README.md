@@ -21,6 +21,12 @@ Welcome to the Flow programming language documentation!
 - [Variables](language/variables.md) - Variables and mutability
 - [Graphics](language/graphics.md) - Native graphics API
 
+## Safety
+
+- `--profile safety` - Overflow-checked arithmetic, div0 guards, shift UB rejection (MISRA/CERT-derived)
+- `--emit-manifest` - Structured compliance report (PROVEN / REJECTED / REQUIRES EVIDENCE)
+- `FLOW_UBSAN=1`, `FLOW_ASAN=1`, `FLOW_TSAN=1` - Sanitizer instrumentation
+
 ## Standard Library
 
 - [Core](library/core.md) - Built-in functions
@@ -56,7 +62,7 @@ Welcome to the Flow programming language documentation!
 
 - [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
 - [Changelog](project/CHANGELOG.md) - Version history and audit fixes
-- [What's Next](NEXT.md) - Prioritized roadmap after v0.7.0 audit
+- [What's Next](NEXT.md) - Prioritized roadmap
 - [Audit Report (2026-02-10)](project/AUDIT_2026-02-10.md) - Latest full audit findings
 - [Development](DEVELOPMENT.md) - Building Flow
 

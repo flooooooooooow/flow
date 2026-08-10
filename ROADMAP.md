@@ -1,8 +1,8 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-05  
-> Current version: 0.3.3  
-> Lines of Code: ~38,000
+> Last updated: 2026-08-09  
+> Current version: 0.10.0  
+> Lines of Code: ~381,000
 
 This document tracks what we're building next and why.
 

@@ -1,7 +1,7 @@
 <div class="wiki-hero">
 
 <h1 class="wiki-hero-brand">Flow</h1>
-<p class="wiki-hero-eyebrow">v0.9 · systems through time</p>
+<p class="wiki-hero-eyebrow">v0.10 · systems through time</p>
 
 <p class="wiki-hero-title">Write with effects.<br>Compile like C.</p>
 

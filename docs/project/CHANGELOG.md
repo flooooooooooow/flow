@@ -40,6 +40,18 @@ All notable changes to FLOW will be documented in this file.
   experiment support; `automata` cellular-automaton framework.
 - Audio safety chain, WAV render target, and DSP fixes.
 
+### Safety profiles
+
+- `--profile safety` enables opt-in overflow-checked signed integer
+  arithmetic (`__builtin_*_overflow`), division by zero guards, and shift
+  undefined behaviour rejection at compile time (literals) and runtime.
+- `-Werror` enforced on all C output under the safety profile.
+- UBSan, ASan, and TSan available via `FLOW_UBSAN=1`, `FLOW_ASAN=1`,
+  `FLOW_TSAN=1` environment variables.
+- `--emit-manifest` produces a structured compliance report mapping each
+  invariant to MISRA/CERT rules with PROVEN, REJECTED, or REQUIRES EVIDENCE
+  status.
+
 ### Runtime
 
 - `flow_rt_sysinfo` reduced to syscalls and compile-time facts; race
