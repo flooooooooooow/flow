@@ -2841,8 +2841,8 @@ class TypeChecker:
             lit = self._literal_int_value(op.right)
             if lit == 0 and not self._is_float(left_type):
                 self.errors.append(
-                    f"Division/modulo by zero is undefined "
-                    f"(MISRA Rule 12.5 / CERT INT33-C)"
+                    "Division/modulo by zero is undefined "
+                    "(MISRA Rule 12.5 / CERT INT33-C)"
                 )
 
         # MISRA Rule 12.2 / CERT INT34-C: reject literal out-of-range shifts

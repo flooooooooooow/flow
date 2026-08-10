@@ -3199,6 +3199,18 @@ class CGenerator:
             return self._gen_find_expr(e)
 
         if isinstance(e, FunctionCall):
+            # array<T>(N) constructor → calloc(N, sizeof(elem)).
+            # The parser lowers `array<f32>(10)` to FunctionCall("array_f32", [10]);
+            # emit a calloc so the call resolves without a missing symbol (#270).
+            if (
+                e.name.startswith("array_")
+                and len(e.arguments) == 1
+                and not self._overload_resolver.get_overloads(e.name)
+            ):
+                elem_type = Type(e.name[len("array_"):])
+                elem_c = self._c_type(elem_type)
+                count = self._gen_expr(e.arguments[0])
+                return f"(({elem_c}*)calloc({count}, sizeof({elem_c})))"
             # sizeof<T>() / sizeof_i32() intrinsic — prefer inline C sizeof
             if e.name.startswith("sizeof_") and len(e.arguments) == 0:
                 c_ty = self._sizeof_c_type_from_mangled(e.name[len("sizeof_"):])
