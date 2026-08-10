@@ -366,6 +366,7 @@ class IfExpression:
 class WhileStatement:
     condition: "Expression"
     body: Block
+    max_iterations: Optional[int] = None  # @max_iterations(N); MISRA 17.4 / #272
 
 
 @dataclass
@@ -3272,6 +3273,17 @@ class Parser:
             self.nesting_depth -= 1
 
     def _parse_statement_impl(self) -> Statement:
+        # Statement-level attributes (currently `@max_iterations(N)` before `while`).
+        if self.current_token.type == TokenType.AT:
+            attrs = self._parse_leading_attributes()
+            if self.current_token.type == TokenType.WHILE:
+                stmt = self.parse_while()
+                stmt.max_iterations = self._max_iterations_from_attrs(attrs)
+                return stmt
+            raise SyntaxError(
+                "Statement attributes are only supported on `while` "
+                f"(got {[a for a in attrs]} before {self.current_token.type})"
+            )
         if self.current_token.type == TokenType.LET:
             return self.parse_var_decl()
         elif self.current_token.type == TokenType.ASSUME:
@@ -3312,6 +3324,61 @@ class Parser:
             return self.parse_expect()
         else:
             return self.parse_expression_statement()
+
+    def _parse_leading_attributes(self) -> List[str]:
+        """Parse one or more `@name` / `@name(args)` prefixes."""
+        attributes: List[str] = []
+        while self.current_token.type == TokenType.AT:
+            self.advance()
+            attr_name = self.expect(TokenType.IDENTIFIER).value
+            if self.current_token.type == TokenType.LPAREN:
+                self.advance()
+                args: List[str] = []
+                if self.current_token.type != TokenType.RPAREN:
+                    while True:
+                        if self.current_token.type == TokenType.IDENTIFIER:
+                            args.append(self.current_token.value)
+                            self.advance()
+                        elif self.current_token.type == TokenType.STRING_LITERAL:
+                            args.append(self.current_token.value.strip('"').strip("'"))
+                            self.advance()
+                        elif self.current_token.type == TokenType.NUMBER:
+                            args.append(self.current_token.value)
+                            self.advance()
+                        else:
+                            raise SyntaxError(
+                                f"Expected decorator argument, got {self.current_token.type}"
+                            )
+                        if self.current_token.type == TokenType.COMMA:
+                            self.advance()
+                            continue
+                        break
+                self.expect(TokenType.RPAREN)
+                attributes.append(f"{attr_name}({','.join(args)})")
+            else:
+                attributes.append(attr_name)
+        return attributes
+
+    @staticmethod
+    def _max_iterations_from_attrs(attrs: List[str]) -> Optional[int]:
+        bound: Optional[int] = None
+        for attr in attrs:
+            if attr.startswith("max_iterations(") and attr.endswith(")"):
+                inner = attr[len("max_iterations(") : -1].strip()
+                try:
+                    bound = int(inner)
+                except ValueError as e:
+                    raise SyntaxError(
+                        f"@max_iterations expects an integer literal, got '{inner}'"
+                    ) from e
+                if bound <= 0:
+                    raise SyntaxError("@max_iterations requires a positive bound")
+            else:
+                raise SyntaxError(
+                    f"Unknown statement attribute '@{attr.split('(')[0]}' "
+                    "(only @max_iterations(N) is supported on while)"
+                )
+        return bound
 
     def parse_assume(self) -> AssumeStmt:
         self.expect(TokenType.ASSUME)

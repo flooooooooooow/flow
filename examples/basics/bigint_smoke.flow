@@ -1,0 +1,69 @@
+# BigInt smoke (#252) — standalone subset of lib/stdlib/bigint.flow
+
+extern {
+    function calloc(nmemb: i64, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const BIGINT_LIMB_BASE: i64 = 4294967296
+const BIGINT_LIMB_MASK: i64 = 4294967295
+
+struct BigInt {
+    limbs: ptr<u32>,
+    len: i32,
+    cap: i32,
+    sign: i32
+}
+
+function bigint_new(cap: i32) -> BigInt {
+    let mut c: i32 = cap
+    if c < 4 { c = 4 }
+    let limbs: ptr<u32> = calloc(c as i64, 4) as ptr<u32>
+    return BigInt { limbs: limbs, len: 0, cap: c, sign: 0 }
+}
+
+function bigint_free(a: BigInt) -> void {
+    if a.limbs != null {
+        free(a.limbs as ptr<void>)
+    }
+}
+
+function bigint_from_i64(v: i64) -> BigInt {
+    let mut a: BigInt = bigint_new(4)
+    if v == 0 { return a }
+    let mut x: i64 = v
+    let mut s: i32 = 1
+    if x < 0 {
+        s = 0 - 1
+        x = 0 - x
+    }
+    a.sign = s
+    let mut n: i32 = 0
+    @max_iterations(64)
+    while x > 0 {
+        a.limbs[n] = (x & BIGINT_LIMB_MASK) as u32
+        x = x / BIGINT_LIMB_BASE
+        n = n + 1
+    }
+    a.len = n
+    return a
+}
+
+function bigint_mod_u32(a: BigInt, d: u32) -> u32 {
+    if a.sign == 0 or d == 0 { return 0 }
+    let mut rem: i64 = 0
+    let mut i: i32 = a.len - 1
+    @max_iterations(64)
+    while i >= 0 {
+        rem = (rem * BIGINT_LIMB_BASE + (a.limbs[i] as i64)) % (d as i64)
+        i = i - 1
+    }
+    return rem as u32
+}
+
+function main() -> i32 {
+    let a: BigInt = bigint_from_i64(1000000007)
+    let r: u32 = bigint_mod_u32(a, 1000)
+    bigint_free(a)
+    return r as i32
+}

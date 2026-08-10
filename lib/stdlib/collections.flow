@@ -127,6 +127,134 @@ function hashmap_string_i32_is_empty(m: HashMap_string_i32) -> bool {
 }
 
 # =============================================================================
+# HashMap_i64_i64 — open addressing for Euler / memoization (#252)
+# =============================================================================
+
+struct HashMap_i64_i64 {
+    keys: ptr<i64>,
+    values: ptr<i64>,
+    occupied: ptr<i32>,
+    size: i32,
+    capacity: i32
+}
+
+function hash_i64(k: i64) -> i32 {
+    let mut h: i64 = k
+    if h < 0 {
+        h = 0 - h
+    }
+    return (h % 2147483647) as i32
+}
+
+function hashmap_i64_i64_new(cap: i32) -> HashMap_i64_i64 {
+    let mut c: i32 = cap
+    if c < 8 {
+        c = 8
+    }
+    let keys: ptr<i64> = calloc(c as usize, sizeof_i64()) as ptr<i64>
+    let values: ptr<i64> = calloc(c as usize, sizeof_i64()) as ptr<i64>
+    let occupied: ptr<i32> = calloc(c as usize, sizeof_i32()) as ptr<i32>
+    return HashMap_i64_i64 {
+        keys: keys,
+        values: values,
+        occupied: occupied,
+        size: 0,
+        capacity: c
+    }
+}
+
+function hashmap_i64_i64_len(m: HashMap_i64_i64) -> i32 {
+    return m.size
+}
+
+function hashmap_i64_i64_contains(m: HashMap_i64_i64, key: i64) -> bool {
+    if m.capacity <= 0 {
+        return false
+    }
+    let start: i32 = hash_i64(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.occupied[i] == 0 {
+            return false
+        }
+        if m.occupied[i] == 1 {
+            if m.keys[i] == key {
+                return true
+            }
+        }
+        i = i + 1
+        if i >= m.capacity {
+            i = 0
+        }
+    }
+    return false
+}
+
+function hashmap_i64_i64_get(m: HashMap_i64_i64, key: i64, default_value: i64) -> i64 {
+    if m.capacity <= 0 {
+        return default_value
+    }
+    let start: i32 = hash_i64(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.occupied[i] == 0 {
+            return default_value
+        }
+        if m.occupied[i] == 1 {
+            if m.keys[i] == key {
+                return m.values[i]
+            }
+        }
+        i = i + 1
+        if i >= m.capacity {
+            i = 0
+        }
+    }
+    return default_value
+}
+
+function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> HashMap_i64_i64 {
+    if m.capacity <= 0 {
+        return m
+    }
+    # Soft load factor — caller should recreate with larger cap when size is high.
+    let start: i32 = hash_i64(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.occupied[i] == 0 {
+            m.keys[i] = key
+            m.values[i] = value
+            m.occupied[i] = 1
+            m.size = m.size + 1
+            return m
+        }
+        if m.occupied[i] == 1 {
+            if m.keys[i] == key {
+                m.values[i] = value
+                return m
+            }
+        }
+        i = i + 1
+        if i >= m.capacity {
+            i = 0
+        }
+    }
+    return m
+}
+
+function hashmap_i64_i64_free(m: HashMap_i64_i64) -> void {
+    if m.keys != null {
+        free(m.keys as ptr<void>)
+    }
+    if m.values != null {
+        free(m.values as ptr<void>)
+    }
+    if m.occupied != null {
+        free(m.occupied as ptr<void>)
+    }
+}
+
+# =============================================================================
 # Set (unique elements)
 # =============================================================================
 
