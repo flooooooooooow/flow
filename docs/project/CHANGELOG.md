@@ -2,66 +2,26 @@
 
 All notable changes to FLOW will be documented in this file.
 
-## [Unreleased]
+## Unreleased
 
-### RF / SDR beachhead (W0)
+### Removed
 
-- `c64` and `c128` complex number types (C99 `float complex` / `double complex`).
-- Constructors: `c64(re, im)`, `c128(re, im)`, `c64(x)` for real-only.
-- Complex builtins: `creal`, `cimag`, `cabs`, `carg`, `conj`, `cexp`, `clog`,
-  `csqrt`, `cpow`.
-- Complex arithmetic with automatic promotion (`c64 + c128` -> `c128`).
-- `#include <complex.h>` emitted only when complex types are used.
-- `lib/stdlib/rf.flow`: `IQ` type alias, `IQSample` distinct type, `Signal<R>`
-  generic struct with phantom rate type parameter, rate marker distinct types
-  (Hz1000, Hz8000, Hz44100, Hz48000, Hz1M, etc.), `signal_new`/`signal_free`/
-  `signal_set`/`signal_get`/`signal_mix`/`signal_scale`/`signal_magnitude_spectrum`.
-  Compile-time rate safety: `signal_mix<R>` rejects signals with different rate
-  types at compile time.
-- `lib/stdlib/units_si.flow`: SI base dimensions (Second, Meter, Kilogram,
-  Ampere, Kelvin, Radian) and derived units (Hertz, Velocity, Accel, Newton,
-  Watt, Volt, Ohm, Farad, Henry, Coulomb, Tesla, Weber).
-- Quantity literals: `3.14 Hertz` desugars to `3.14 as Hertz`. An uppercase
-  identifier after a number on the same line is treated as a unit name. The
-  type checker validates the unit name. Lowercase identifiers are not
-  consumed, avoiding ambiguity with contextual keywords like `step`.
-- Examples: `examples/rf/dft.flow`, `examples/rf/iq_mixer.flow`,
-  `examples/rf/sdr_receiver.flow`.
-- Tests: `tests/unit/test_complex_types.py` (15 tests),
-  `tests/unit/test_rf_types.py` (11 tests),
-  `tests/unit/test_quantity_literals.py` (10 tests).
+- Removed runtime overflow-checked arithmetic codegen (`FLOW_CHECKED_*` macros,
+  `flow_overflow_handler`, `flow_div_by_zero_handler`, `flow_shift_ub_handler`).
+  The `overflow_check` parameter on `flow_to_c` and `CGenerator` is gone.
+  Literal div-by-zero and shift UB are still rejected at type-check time.
+- Removed `--emit-manifest` / `--manifest-format` CLI flags and the
+  `safety_manifest` module. The `--profile safety` flag still sets strict
+  C compiler flags (`-Werror -pedantic`).
 
-### DSP pipeline (W1)
+### MLIR
 
-- `lib/stdlib/dsp.flow`: `map_f32`/`map_f64`, `filter_f32`, `reduce_f32`/
-  `reduce_f64`, `scan_f32`/`scan_f64`, `zip_with_f32`/`zip_with_f64`,
-  `scale_f32`/`scale_f64`, `offset_f32`, `clip_f32`, `sum_f32`/`sum_f64`,
-  `dot_f32`/`dot_f64`. All compose with the `|>` operator.
-- Function-type parameter compatibility: named functions and lambdas now
-  match `(T) -> R` parameter types. The type checker compares signatures
-  (param types + return type) instead of relying on synthetic name equality.
-- Lambda-as-argument wrapping: the C generator wraps non-capturing lambdas
-  in a fat-pointer struct when passed to a function-typed parameter, so
-  `map_f32(buf, n, |x| x * 2.0)` compiles and runs.
-- Example: `examples/dsp/pipeline.flow` demonstrates
-  `buf |> scale |> offset |> clip |> sum`.
-- Tests: `tests/unit/test_dsp_pipeline.py` (11 tests).
-
-### Safety / MISRA
-
-- Temp arena for `flow_strcat` and escaping closure envs (`flow_temp_alloc` /
-  `flow_temp_free_all` + `atexit`) — closes #267 / #268 for short-lived programs.
-- `--profile safety|flight` rejects recursive functions via the safety
-  manifest (MISRA 17.2) — #271 / partial #273.
-- `while` loops require `@max_iterations(N)` under safety/flight; C emits a
-  runtime abort guard (#272).
-- Docs: `docs/language/safety-profiles.md`.
-
-### Standard library / Euler (#252)
-
-- `HashMap_i64_i64` open-addressing map in `lib/stdlib/collections.flow`.
-- Limb-based `lib/stdlib/bigint.flow` (add/sub/mul, `mod_u32`, `mod_pow_u32`).
-- Smokes: `examples/basics/hashmap_i64_smoke.flow`, `bigint_smoke.flow`.
+- Large unsigned integer literals exceeding signed i32 range are now
+  converted to two's complement representation.
+- `CastExpression` wrapping a `Literal` and `UnaryOperation` negation on a
+  `Literal` are now handled in module static constant emission.
+- String interning and static LLVM array global emission for pointer/string
+  element arrays.
 
 ## [0.10.0] - 2026-08-08
 
@@ -645,12 +605,6 @@ See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for 
 - **All CI issues resolved** (6/6)
 
 ## [Unreleased]
-
-### Added
-- MISRA Phase 1 (#263/#266/#279/#273): unified `flow_fault_handler`; signed
-  overflow via `__builtin_*_overflow`; null deref via `FLOW_NONNULL`;
-  [safety-profiles.md](../language/safety-profiles.md).
-- If-expressions: `let x = if cond { a } else { b }` (#252 partial).
 
 ### Planned
 - Self-hosting Phases B–E (`flowc` default host)
