@@ -119,11 +119,135 @@ flowc_emit_to_c() {
     FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" "$driver" "$program" "$c_out"
 }
 
+# ---------------------------------------------------------------------------
+# MISRA Phase 0 (#269 / #270): C compiler flags + sanitizers
+#   Default: -std=c11 -Wall -Wextra
+#   FLOW_PROFILE=safety|flight → also -pedantic -Werror
+#   FLOW_UBSAN=1 / FLOW_ASAN=1 / FLOW_TSAN=1 or FLOW_SANITIZE=ub,asan,tsan
+#   CLI: --sanitize=ub,asan,tsan  --profile=safety  compile --show-flags
+# ---------------------------------------------------------------------------
+flow_profile_mode() {
+    printf '%s\n' "${FLOW_PROFILE:-}"
+}
+
+flow_clang_warning_flags() {
+    # Populate FLOW_CLANG_WARN_FLAGS (bash array).
+    # -std=c11 with _DEFAULT_SOURCE: C11 dialect + POSIX/BSD decls the
+    # runtime needs (usleep, posix_memalign). Bare -std=c11 hides them;
+    # _POSIX_C_SOURCE=200809L also hides usleep on glibc.
+    # -Wno-unused-{function,variable,parameter}: generated preamble stubs,
+    # Flow `let _ = …` discard pattern, and stub ABI params — keeps -Werror
+    # usable under --profile safety (#269).
+    FLOW_CLANG_WARN_FLAGS=(
+        "-std=c11"
+        "-D_DEFAULT_SOURCE"
+        "-Wall"
+        "-Wextra"
+        "-Wno-unused-function"
+        "-Wno-unused-variable"
+        "-Wno-unused-parameter"
+        # C11 makes these constraint violations (errors) by default. The
+        # codegen still has sites that call unmangled DSL-lowered names or
+        # rely on implicit int conversions. Downgrade to warnings so the
+        # default profile stays green until the codegen is fixed (#273).
+        "-Wno-error=implicit-function-declaration"
+        "-Wno-error=int-conversion"
+    )
+    case "$(flow_profile_mode)" in
+        safety|flight)
+            # -Werror is the MISRA ask (#269). Suppressions cover known
+            # runtime/codegen noise until follow-ups land:
+            #   strict-prototypes — hand-written runtime/*.c
+            #   c23-extensions    — Flow emits `T x = { };` empty inits
+            #   format            — int64_t vs long long on LP64
+            # Full -pedantic without these Waivers is tracked with #273.
+            FLOW_CLANG_WARN_FLAGS+=(
+                "-Werror"
+                "-Wno-strict-prototypes"
+                "-Wno-c23-extensions"
+                "-Wno-format"
+            )
+            ;;
+    esac
+}
+
+flow_apply_sanitize_to_arrays() {
+    # Append sanitizer flags to the named cflags/ldflags arrays.
+    # Usage: flow_apply_sanitize_to_arrays cflags_var ldflags_var
+    local -n _cflags_ref=$1
+    local -n _ldflags_ref=$2
+    local sanitize="${FLOW_SANITIZE:-}"
+    local item
+    local -a parts=()
+
+    if [ -n "$sanitize" ]; then
+        IFS=',' read -ra parts <<< "$sanitize"
+        for item in "${parts[@]}"; do
+            case "$item" in
+                ub|undefined|ubsan) FLOW_UBSAN=1 ;;
+                asan|address) FLOW_ASAN=1 ;;
+                tsan|thread) FLOW_TSAN=1 ;;
+                "" ) ;;
+                *)
+                    print_error "Unknown sanitizer '$item' (expected ub,asan,tsan)"
+                    exit 1
+                    ;;
+            esac
+        done
+    fi
+
+    if [ "${FLOW_UBSAN:-}" = "1" ]; then
+        _cflags_ref+=("-fsanitize=undefined" "-fno-sanitize-recover=all" "-g" "-fno-omit-frame-pointer")
+        _ldflags_ref+=("-fsanitize=undefined")
+    fi
+    if [ "${FLOW_ASAN:-}" = "1" ]; then
+        _cflags_ref+=("-fsanitize=address" "-g" "-fno-omit-frame-pointer")
+        _ldflags_ref+=("-fsanitize=address")
+    fi
+    if [ "${FLOW_TSAN:-}" = "1" ]; then
+        _cflags_ref+=("-fsanitize=thread" "-g" "-fno-omit-frame-pointer")
+        _ldflags_ref+=("-fsanitize=thread")
+    fi
+}
+
+flow_collect_cflags() {
+    # Build FLOW_COLLECTED_CFLAGS / FLOW_COLLECTED_LDFLAGS from env + profile.
+    # Optional extra FLOW_CFLAGS tokens are appended last (user override).
+    flow_clang_warning_flags
+    FLOW_COLLECTED_CFLAGS=("${FLOW_CLANG_WARN_FLAGS[@]}")
+    FLOW_COLLECTED_LDFLAGS=()
+    flow_apply_sanitize_to_arrays FLOW_COLLECTED_CFLAGS FLOW_COLLECTED_LDFLAGS
+    if [ -n "${FLOW_CFLAGS:-}" ]; then
+        # shellcheck disable=SC2206
+        local -a _extra=(${FLOW_CFLAGS})
+        FLOW_COLLECTED_CFLAGS+=("${_extra[@]}")
+    fi
+}
+
+flow_show_clang_flags() {
+    flow_collect_cflags
+    echo "Flow C compile flags (MISRA Phase 0):"
+    echo "  cflags:  ${FLOW_COLLECTED_CFLAGS[*]}"
+    if [ ${#FLOW_COLLECTED_LDFLAGS[@]} -gt 0 ]; then
+        echo "  ldflags: ${FLOW_COLLECTED_LDFLAGS[*]}"
+    else
+        echo "  ldflags: (none beyond defaults)"
+    fi
+    echo "  profile: ${FLOW_PROFILE:-default}"
+    echo "  sanitize: UBSAN=${FLOW_UBSAN:-0} ASAN=${FLOW_ASAN:-0} TSAN=${FLOW_TSAN:-0} FLOW_SANITIZE=${FLOW_SANITIZE:-}"
+}
+
 flowc_link_c() {
     local c_file="$1"
     local exe_file="$2"
-    if ! clang -O0 -o "$exe_file" "$c_file" 2>/dev/null; then
-        if ! cc -O0 -o "$exe_file" "$c_file"; then
+    flow_collect_cflags
+    # Show compiler diagnostics on failure (#252 / #269).
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" -O0 \
+        "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
+        -o "$exe_file" "$c_file"; then
+        if ! cc "${FLOW_COLLECTED_CFLAGS[@]}" -O0 \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
+            -o "$exe_file" "$c_file"; then
             print_error "C compilation/linking failed (flowc host)"
             return 1
         fi
@@ -175,10 +299,14 @@ show_help() {
     echo "Usage: flow [OPTIONS] <program.flow>"
     echo ""
     echo "Options:"
-    echo "  run <program> [--backend=c|mlir]     Compile and run program"
-    echo "  compile <program> [--backend=c|mlir] Compile program only"
+    echo "  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety]"
+    echo "                    Compile and run program"
+    echo "  compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]"
+    echo "                    Compile program only; --show-flags prints clang flags"
     echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)"
+    echo "  C flags: -std=c11 -Wall -Wextra (MISRA Phase 0); FLOW_PROFILE=safety adds -Werror"
+    echo "  Sanitizers: FLOW_UBSAN=1 FLOW_ASAN=1 FLOW_TSAN=1 or FLOW_SANITIZE=ub,asan,tsan"
     echo "  audio <program> [--mlir]   Compile and run with audio backend"
     echo "  compile-audio <program> [--mlir]  Compile with audio backend"
     echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
@@ -215,6 +343,7 @@ show_help() {
     echo "                    --tier1     Transpile only (fast)"
     echo "                    --tier2     Transpile + clang (default)"
     echo "                    --verbose   Show error details"
+    echo "                    --sanitize=ub,asan,tsan  Enable sanitizers for compile/run tests"
     echo "  test-strict       Shortcut for: test --strict"
     echo "  test-runtime      Run runtime tests (compile + execute)"
     echo "  test-lang         Run tests/lang/ language tests (strict transpile + compile + execute)"
@@ -496,24 +625,16 @@ compile_program_python() {
     # else: lib/runtime/gpu_memory_stub.flow via flow_runtime_flow_sources
     flow_concurrency_flags
     flow_runtime_flow_sources
-    # FLOW_CFLAGS overrides (e.g. FLOW_CFLAGS='-O2' for benches)
-    # FLOW_TSAN=1 adds -fsanitize=thread (ThreadSanitizer; slower, finds data races)
-    # shellcheck disable=SC2206
-    local -a flow_cflags_extra=()
-    if [ -n "${FLOW_CFLAGS:-}" ]; then
-        # shellcheck disable=SC2206
-        flow_cflags_extra=(${FLOW_CFLAGS})
-    fi
-    if [ "${FLOW_TSAN:-}" = "1" ]; then
-        flow_cflags_extra+=("-fsanitize=thread" "-g" "-fno-omit-frame-pointer")
-        FLOW_CONC_LDFLAGS+=("-fsanitize=thread")
-    fi
-    if ! clang ${flow_cflags_extra[@]+"${flow_cflags_extra[@]}"} "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
+    # MISRA Phase 0 (#269/#270): -std=c11 -Wall -Wextra + optional sanitizers.
+    # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
+    flow_collect_cflags
+    FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
-        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename"; then
         print_error "C compilation/linking failed"
         exit 1
     fi
@@ -552,17 +673,10 @@ compile_program_mlir() {
     flow_concurrency_flags
     flow_runtime_flow_sources
 
-    local -a flow_cflags_extra=()
-    if [ -n "${FLOW_CFLAGS:-}" ]; then
-        # shellcheck disable=SC2206
-        flow_cflags_extra=(${FLOW_CFLAGS})
-    fi
-    if [ "${FLOW_TSAN:-}" = "1" ]; then
-        flow_cflags_extra+=("-fsanitize=thread" "-g" "-fno-omit-frame-pointer")
-        FLOW_CONC_LDFLAGS+=("-fsanitize=thread")
-    fi
+    flow_collect_cflags
+    FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
 
-    if ! clang ${flow_cflags_extra[@]+"${flow_cflags_extra[@]}"} -O2 -fno-omit-frame-pointer \
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" -O2 -fno-omit-frame-pointer \
         "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
         "$build_dir/$basename.ll" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
@@ -570,7 +684,7 @@ compile_program_mlir() {
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
         "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
-        -lm -o "$build_dir/$basename" 2>/dev/null; then
+        -lm -o "$build_dir/$basename"; then
         print_error "MLIR/LLVM compilation/linking failed"
         exit 1
     fi
@@ -578,10 +692,12 @@ compile_program_mlir() {
     print_success "🚀 Ready to run (mlir): $build_dir/$basename"
 }
 
-# Parse optional --backend=c|mlir from argv; sets FLOW_PARSE_PROGRAM and FLOW_PARSE_BACKEND.
+# Parse optional --backend=c|mlir / --sanitize= / --profile= / --show-flags
+# from argv; sets FLOW_PARSE_PROGRAM and FLOW_PARSE_BACKEND.
 flow_parse_program_backend() {
     FLOW_PARSE_PROGRAM=""
     FLOW_PARSE_BACKEND="$(flow_cpu_backend)"
+    FLOW_PARSE_SHOW_FLAGS=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --backend=*)
@@ -595,6 +711,38 @@ flow_parse_program_backend() {
                 fi
                 FLOW_PARSE_BACKEND="$2"
                 shift 2
+                ;;
+            --sanitize=*)
+                FLOW_SANITIZE="${1#*=}"
+                export FLOW_SANITIZE
+                shift
+                ;;
+            --sanitize)
+                if [ -z "${2:-}" ]; then
+                    print_error "--sanitize requires ub,asan,tsan (comma-separated)"
+                    exit 1
+                fi
+                FLOW_SANITIZE="$2"
+                export FLOW_SANITIZE
+                shift 2
+                ;;
+            --profile=*)
+                FLOW_PROFILE="${1#*=}"
+                export FLOW_PROFILE
+                shift
+                ;;
+            --profile)
+                if [ -z "${2:-}" ]; then
+                    print_error "--profile requires safety|flight"
+                    exit 1
+                fi
+                FLOW_PROFILE="$2"
+                export FLOW_PROFILE
+                shift 2
+                ;;
+            --show-flags)
+                FLOW_PARSE_SHOW_FLAGS=1
+                shift
                 ;;
             -*)
                 print_error "Unknown option: $1"
@@ -618,6 +766,12 @@ flow_parse_program_backend() {
             exit 1
             ;;
     esac
+    if [ "${FLOW_PARSE_SHOW_FLAGS}" = "1" ]; then
+        flow_show_clang_flags
+        if [ -z "$FLOW_PARSE_PROGRAM" ]; then
+            exit 0
+        fi
+    fi
     export FLOW_CPU_BACKEND="$FLOW_PARSE_BACKEND"
 }
 
@@ -1659,6 +1813,20 @@ run_tests() {
                 verbose=1
                 shift
                 ;;
+            --sanitize=*)
+                FLOW_SANITIZE="${1#*=}"
+                export FLOW_SANITIZE
+                shift
+                ;;
+            --sanitize)
+                if [ -z "${2:-}" ]; then
+                    print_error "--sanitize requires ub,asan,tsan (comma-separated)"
+                    exit 1
+                fi
+                FLOW_SANITIZE="$2"
+                export FLOW_SANITIZE
+                shift 2
+                ;;
             *)
                 shift
                 ;;
@@ -1762,8 +1930,10 @@ run_tests() {
             # Tier 2: Compile C with clang (if enabled).
             # Examples often need platform libs/graphics; clang-check tests/ only.
             if [ "$tier" -ge 2 ] && [ "$suite" = "tests" ]; then
+                # MISRA #269: use -std=c11 -Wall instead of -Wno-everything.
+                # Warnings do not fail the syntax check (no -Werror here).
                 local clang_output
-                clang_output=$(clang -fsyntax-only -Wno-everything "$c_file" 2>&1)
+                clang_output=$(clang -fsyntax-only -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-error=implicit-function-declaration -Wno-error=int-conversion "$c_file" 2>&1)
                 local clang_status=$?
                 
                 if [ $clang_status -ne 0 ]; then
@@ -2062,11 +2232,13 @@ run_runtime_tests() {
         fi
         flow_concurrency_flags
         flow_runtime_flow_sources
-        clang_output=$(clang "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
+        flow_collect_cflags
+        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
             "$SCRIPT_DIR/runtime/flow_python_embed.c" \
             "${FLOW_CONC_SOURCES[@]}" \
             "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
-            "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm 2>&1) || clang_status=$?
+            "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
         if [ "$clang_status" -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
             if [ -n "$clang_output" ]; then
@@ -2241,9 +2413,11 @@ run_lang_tests() {
             lang_conc_cflags=("${FLOW_CONC_CFLAGS[@]}")
             lang_conc_ldflags=("${FLOW_CONC_LDFLAGS[@]}")
         fi
-        clang_output=$(clang -Wno-everything "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
+        flow_collect_cflags
+        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
             "$c_file" "${lang_conc_sources[@]+"${lang_conc_sources[@]}"}" \
-            "${lang_conc_ldflags[@]+"${lang_conc_ldflags[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
+            "${lang_conc_ldflags[@]+"${lang_conc_ldflags[@]}"}" \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
         if [ "$clang_status" -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
             if [ -n "$clang_output" ]; then
@@ -2523,6 +2697,20 @@ case "${1:-help}" in
         check_deps
         shift
         compile_program_cli "$@"
+        ;;
+    "show-flags")
+        shift
+        # Allow --profile= / --sanitize= before showing.
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --sanitize=*) FLOW_SANITIZE="${1#*=}"; export FLOW_SANITIZE; shift ;;
+                --sanitize) FLOW_SANITIZE="$2"; export FLOW_SANITIZE; shift 2 ;;
+                --profile=*) FLOW_PROFILE="${1#*=}"; export FLOW_PROFILE; shift ;;
+                --profile) FLOW_PROFILE="$2"; export FLOW_PROFILE; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        flow_show_clang_flags
         ;;
     "compile-audio")
         check_deps
