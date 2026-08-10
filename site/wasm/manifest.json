@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 158,
-  "built": 155,
-  "failed": 3,
-  "total_bytes": 5883795,
+  "built": 156,
+  "failed": 2,
+  "total_bytes": 5934853,
   "categories": [
     {
       "id": "games",
@@ -1219,9 +1219,13 @@
       "title": "Async Primitives",
       "category": "language",
       "source": "examples/effects/async_primitives.flow",
-      "summary": "Async primitives (effects-based) \u2014 minimal runnable slice",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_fiber_run_main"
+      "summary": "Async primitives (effects-based) \u2014 SimulatedAsync / BlockingAsyncIO / FiberAsync",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 31017,
+      "js_bytes": 20041,
+      "total_bytes": 51058,
+      "page": "async_primitives/index.html"
     },
     {
       "name": "calculator",

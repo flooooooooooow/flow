@@ -1,6 +1,6 @@
 # WebAssembly Gallery
 
-158 Flow examples compiled to WebAssembly, 155 of them runnable in a browser.
+158 Flow examples compiled to WebAssembly, 156 of them runnable in a browser.
 Every one is the unedited source from this repository, put through Flow → C →
 `emcc`.
 
@@ -33,7 +33,7 @@ Build one program:
 | [Games](../wasm/index.html) | 25 of 25 | 944 KB | Every `*_gfx.flow` in `examples/games/`, the same sources [the GIF gallery](games.md) records |
 | [Morphogenesis](../wasm/index.html) | 40 of 40 | 2044 KB | Every field simulation in `examples/morphogenesis/`, see [the gallery](morphogenesis.md) |
 | [Basics](../wasm/index.html) | 24 of 24 | 557 KB | `examples/basics/`, pure computation printing into the page (including the threaded `parallel_sum` and `parallel_scaling`) |
-| [Language and compilers](../wasm/index.html) | 22 of 23 | 588 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
+| [Language and compilers](../wasm/index.html) | 23 of 23 | 638 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
 | [Numerics and dynamics](../wasm/index.html) | 20 of 20 | 683 KB | Solvers, optimisers, linear algebra, control theory |
 | [Learning](../wasm/index.html) | 11 of 12 | 423 KB | Small models and agents |
 | [Systems and data](../wasm/index.html) | 13 of 14 | 503 KB | Allocators, hash tables, hashing, parsers, file formats |
@@ -68,6 +68,7 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `ga_flappy` | Neuroevolution ran to completion with `PASS: evolved policy clears >= 10 more pipes than random`, `main returned 0` |
 | `blas_demo` | Benchmarked 256/512 gemms at 0.7/2.1 GFLOPS and 100/500 solves with `info=0`, `Done!`, `main returned 0` |
 | `lu_decomposition` | `x = [1.000000, 1.000000, 1.000000]`, `max |Ax-b| = 0.00e+00`, `OK: solve + lu_factor via BLAS/LAPACK`, `main returned 0` |
+| `async_primitives` | All three backends ran, and the FiberAsync section printed a strict round-robin trace (`T100:0 T101:0 T102:0 T100:1 …`) — three cooperative fibers suspending mid-body on `async_delay`, `join` summing to 3039, `main returned 0` |
 
 No console errors on any of them.
 
@@ -102,24 +103,24 @@ and say plainly that it is not built here.
 | Pure computation | **Runs today** | Arithmetic, arrays, structs, strings, printf. Flow → C → wasm32 with nothing else linked in. |
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` paints the framebuffer onto a canvas and maps DOM key events to macOS keycodes. |
 | Threads and channels | **Runs today** | `digits_mlp_parallel`, `parallel_sum` and `parallel_scaling` run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. The browser blocks SAB unless the page is cross-origin isolated, so those pages ship a COI service worker: open the card in a tab and it reloads once, isolated. |
+| Fibers | **Runs today** | `async_primitives` runs main and its tasks as stackful cooperative fibers (`runtime/fiber_wasm.c` over the Emscripten fiber API, which is Asyncify stack switching — the wasm analogue of the native `flow_fctx_*.S` asm context switch). M:1 on one JS thread, `flow_fiber_*` API intact: spawn/yield/park/unpark/run/run_until and fiber-aware `async_delay`. Pages build with `-sASYNCIFY`. |
 | Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js` / `PROXY_POSIX_SOCKETS`). |
 | GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
 | Embedded CPython | In progress | Pyodide, which is CPython itself compiled to WebAssembly. |
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The three that do not build
+## The two that do not build
 
 Each one stops at a named symbol. The gallery keeps their cards and prints the
 reason on them.
 
 | Example | Stops at | Why |
 |---|---|---|
-| `examples/effects/async_primitives.flow` | `flow_fiber_run_main` | Fiber runtime is a native C/assembly context switch |
 | `examples/ml/digits_mlp_metal.flow` | `flow_gpu_alloc` | Metal GPU backend |
 | `examples/crypto/runtime_sha256.flow` | `flow_sha256` | Hashing helper lives in the native runtime pack |
 
-Six examples used to fail and now build:
+Seven examples used to fail and now build:
 
 - `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
   monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
@@ -182,6 +183,20 @@ Six examples used to fail and now build:
   (different shard counts are different random samples). The measured curve in
   Chrome is ~3.8× → ~7.5× → ~15× — roughly linear scaling, monotone by the
   example's own PASS gate.
+- `async_primitives.flow` was the last "host-bound" failure that wasn't. The
+  fiber runtime is pure Flow + portable C; only the context switch was native
+  assembly. The wasm page gets `runtime/fiber_wasm.c` — the `flow_fiber_*`
+  API on the Emscripten fiber API (Asyncify stack switching; wasm cannot
+  hand-switch the stack pointer and plain `setjmp`/`longjmp` cannot move
+  between stacks, so this is the supported setjmp/longjmp-family primitive) —
+  plus `lib/runtime/fiber_async.flow` via `extra_flow_runtime` and
+  `runtime/flow_rt_fiber_async.c`. The example grew a FiberAsync section that
+  registers three Flow task bodies and proves real interleaving: a strict
+  round-robin trace, `join(100..102) = 3039`, on M:1 at `async_set_maxprocs(1)`.
+  Building it also surfaced a latent C-backend gap — skip-listed POSIX
+  externs like `usleep` were never declared because the generated C did not
+  include `<unistd.h>` — which the transpiler now does when such an extern is
+  present (async_primitives was the first program to call one).
 
 ## Related
 

@@ -163,6 +163,15 @@ PAGE_EXTRAS = {
     # + dgesv_).
     "blas_demo": {"extra_c": ["runtime/blas_wasm.c"]},
     "lu_decomposition": {"extra_c": ["runtime/blas_wasm.c"]},
+    # Real cooperative fibers on wasm: the FiberAsync runtime (fiber_wasm.c +
+    # flow_rt_fiber_async.c) plus the Flow glue (lib/runtime/fiber_async.flow)
+    # need ASYNCIFY — emscripten_fiber_swap is Asyncify stack switching, the
+    # wasm analogue of the native asm context switch.
+    "async_primitives": {
+        "extra_c": ["runtime/fiber_wasm.c", "runtime/flow_rt_fiber_async.c"],
+        "extra_flow_runtime": ["lib/runtime/fiber_async.flow"],
+        "emcc_flags": ["-sASYNCIFY=1", "-sASYNCIFY_STACK_SIZE=65536"],
+    },
 }
 
 
@@ -256,6 +265,7 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
                        extra_html=extras.get("html", ""),
                        extra_c=extras.get("extra_c", ()),
                        extra_flow_runtime=extras.get("extra_flow_runtime", ()),
+                       emcc_flags=list(extras.get("emcc_flags", ())),
                        threads=extras.get("threads", False),
                        workers=extras.get("workers", 8),
                        initial_memory=extras.get("initial_memory", "32MB"))
