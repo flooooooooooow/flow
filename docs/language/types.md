@@ -404,3 +404,45 @@ is_type<T>(value)      # Check if value is of type T
 ```
 
 The FLOW type system provides safety and performance while maintaining clarity and expressiveness.
+
+## RF / SDR Types
+
+The `stdlib/rf.flow` module provides types for software-defined radio:
+
+### IQ (transparent alias)
+
+```flow
+type IQ = c64   # In-phase / Quadrature sample
+```
+
+`IQ` is a transparent alias for `c64`. Use it for readability in RF code;
+it interchanges freely with `c64`.
+
+### IQSample (distinct type)
+
+```flow
+distinct type IQSample = c64
+```
+
+`IQSample` is a distinct (opaque) type. It does **not** interchange with
+`c64` without an explicit cast, preventing accidental mixing of RF sample
+buffers with generic complex arithmetic:
+
+```flow
+let z: c64 = c64(1.0, 2.0)
+let s: IQSample = z as IQSample   # explicit cast required
+```
+
+### Signal (rate-typed buffer)
+
+```flow
+struct Signal {
+    data: ptr<c64>,
+    len: i32,
+    sample_rate: u32,
+}
+```
+
+A `Signal` carries its sample rate at runtime. `signal_mix` checks that
+both signals have the same rate before combining. Compile-time phantom
+rate checking (via type-level naturals) is a planned future enhancement.

@@ -9,6 +9,7 @@ RF and software-defined radio applications.
 |---------|-------------|
 | `dft.flow` | 8-point DFT using complex exponentials. Verifies spectral peaks. |
 | `iq_mixer.flow` | Quadrature mixer: multiplies a baseband signal by a complex carrier. |
+| `sdr_receiver.flow` | SDR receiver: tone generation, LO mixing, baseband output. Uses `stdlib/rf.flow`. |
 
 ## Running
 
