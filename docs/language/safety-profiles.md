@@ -35,15 +35,14 @@ while cond {
 Counted `for i in 0 to N` loops are already bounded and need no attribute.
 The C backend emits a runtime counter that aborts if the bound is exceeded.
 
-## Inspect flags / manifest
+## Inspect flags / scan generated C
 
 ```bash
 ./flow show-flags
 ./flow show-flags --profile=safety --sanitize=ub,asan
-FLOW_HOST=python ./flow transpile prog.flow --c --emit-manifest --profile=safety
+./flow analyze --standard=misra-c-2024 build/prog.c
 ```
 
 ## Still open (epic #285)
 
-- Null deref / unified fault handler (#266 / #279 — see PR #288)
-- Loop bounds (#272), full no-heap (#274), compliance matrix (#278), WCET (#282), `@safe`/`@unsafe` (#284)
+- Loop bounds (#272), full no-heap (#274), WCET (#282), printf in generated code (#281)
