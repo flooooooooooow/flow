@@ -140,6 +140,7 @@ class CGenerator:
         source_file: str | None = None,
         debug_info: bool = False,
         bounds_check: bool = True,
+        overflow_check: bool = False,
         strict_effects: bool = False,
         library: bool = False,
     ) -> None:
@@ -153,6 +154,7 @@ class CGenerator:
         self._strict_effects = strict_effects
         self._library = library
         self._bounds_check = bounds_check
+        self._overflow_check = overflow_check
         self._uses_parallel_for = False
         self._uses_fiber_main = False  # wrap main() on a fiber for mid-function suspend
         self._current_return_type: Type | None = None
@@ -338,6 +340,17 @@ class CGenerator:
             lines.append("#else")
             lines.append("#define flow_shift_ub_handler FLOW_SHIFT_UB_HANDLER")
             lines.append("#endif")
+            # Overflow-checked +,-,* for signed integers (MISRA 12.1 / CERT INT32-C).
+            # Opt-in: only emitted under --profile safety or FLOW_OVERFLOW_CHECK=1.
+            if self._overflow_checks_enabled():
+                lines.append("#ifndef FLOW_OVERFLOW_HANDLER")
+                lines.append("__attribute__((unused)) static inline void flow_overflow_handler(void) {")
+                lines.append('    fprintf(stderr, "flow: integer overflow\\n");')
+                lines.append("    abort();")
+                lines.append("}")
+                lines.append("#else")
+                lines.append("#define flow_overflow_handler FLOW_OVERFLOW_HANDLER")
+                lines.append("#endif")
             # ISO C macros (no GNU statement-exprs) so -pedantic stays clean (#269).
             # Operands are evaluated more than once — Flow codegen emits pure
             # subexpressions for these sites in practice.
@@ -367,6 +380,66 @@ class CGenerator:
                 "? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))"
             )
             lines.append("#endif")
+            # Overflow-checked +,-,* for signed integers (MISRA 12.1 / CERT INT32-C).
+            # Uses __builtin_*_overflow on Clang/GCC; portable fallback otherwise.
+            # The result variable approach avoids double-evaluation of L/R.
+            # Opt-in: only emitted under --profile safety or FLOW_OVERFLOW_CHECK=1.
+            if self._overflow_checks_enabled():
+                lines.append("#ifndef FLOW_CHECKED_ADD")
+                lines.append("#if defined(__clang__) || defined(__GNUC__)")
+                lines.append(
+                    "#define FLOW_CHECKED_ADD(L, R) "
+                    "(__extension__ ({ __typeof__(L) _r; "
+                    "__builtin_add_overflow((L), (R), &_r) "
+                    "? (flow_overflow_handler(), (L)) : _r; }))"
+                )
+                lines.append("#else")
+                lines.append(
+                    "#define FLOW_CHECKED_ADD(L, R) "
+                    "(((L) > 0 && (R) > (INT_MAX - (L))) || "
+                    "((L) < 0 && (R) < (INT_MIN - (L))) "
+                    "? (flow_overflow_handler(), (L)) : ((L) + (R)))"
+                )
+                lines.append("#endif")
+                lines.append("#endif")
+                lines.append("#ifndef FLOW_CHECKED_SUB")
+                lines.append("#if defined(__clang__) || defined(__GNUC__)")
+                lines.append(
+                    "#define FLOW_CHECKED_SUB(L, R) "
+                    "(__extension__ ({ __typeof__(L) _r; "
+                    "__builtin_sub_overflow((L), (R), &_r) "
+                    "? (flow_overflow_handler(), (L)) : _r; }))"
+                )
+                lines.append("#else")
+                lines.append(
+                    "#define FLOW_CHECKED_SUB(L, R) "
+                    "(((R) > 0 && (L) < (INT_MIN + (R))) || "
+                    "((R) < 0 && (L) > (INT_MAX + (R))) "
+                    "? (flow_overflow_handler(), (L)) : ((L) - (R)))"
+                )
+                lines.append("#endif")
+                lines.append("#endif")
+                lines.append("#ifndef FLOW_CHECKED_MUL")
+                lines.append("#if defined(__clang__) || defined(__GNUC__)")
+                lines.append(
+                    "#define FLOW_CHECKED_MUL(L, R) "
+                    "(__extension__ ({ __typeof__(L) _r; "
+                    "__builtin_mul_overflow((L), (R), &_r) "
+                    "? (flow_overflow_handler(), (L)) : _r; }))"
+                )
+                lines.append("#else")
+                lines.append(
+                    "#define FLOW_CHECKED_MUL(L, R) "
+                    "(((L) != 0 && (R) != 0 && "
+                    "(((L) > 0) == ((R) > 0)) && "
+                    "(R) > (INT_MAX / (L))) || "
+                    "((L) != 0 && (R) != 0 && "
+                    "(((L) > 0) != ((R) > 0)) && "
+                    "(R) < (INT_MIN / (L))) "
+                    "? (flow_overflow_handler(), (L)) : ((L) * (R)))"
+                )
+                lines.append("#endif")
+                lines.append("#endif")
             lines.append("")
         
         # Always include math.h - many programs use math functions
@@ -1234,7 +1307,7 @@ class CGenerator:
                 if elem is not None:
                     return elem
                 # Fall back to name-based unwrapping: ptr_Point -> Point
-                for prefix in ("ptr_", "array_"):
+                for prefix in ("ptr_", "array_", "memref_"):
                     if base_type.name.startswith(prefix):
                         return Type(base_type.name[len(prefix):])
             return Type("i32")
@@ -3190,6 +3263,20 @@ class CGenerator:
             if c_operator in ('<<', '>>') and self._arith_checks_enabled():
                 return self._gen_checked_shift(left_expr, right_expr, c_operator)
 
+            # MISRA Rule 12.1 / CERT INT32-C: guard signed integer +,-,*.
+            if c_operator in ('+', '-', '*') and self._overflow_checks_enabled():
+                left_type = self._infer_expr_type(e.left)
+                right_type = self._infer_expr_type(e.right)
+                ln = getattr(left_type, 'name', None)
+                rn = getattr(right_type, 'name', None)
+                # Only check signed integer types. Unsigned wraparound is
+                # well-defined in C (modular arithmetic), not UB.
+                signed = {"i8", "i16", "i32", "i64", "i128", "int"}
+                if (ln in signed or rn in signed) and not (
+                    self._is_float_type_name(ln) or self._is_float_type_name(rn)
+                ):
+                    return self._gen_checked_arith(left_expr, right_expr, c_operator)
+
             return f"({left_expr} {c_operator} {right_expr})"
 
         if isinstance(e, SortExpr):
@@ -3562,6 +3649,11 @@ class CGenerator:
         """Runtime div0/shift guards (MISRA #264/#265). Off for library TUs."""
         return bool(getattr(self, "_bounds_check", True))
 
+    def _overflow_checks_enabled(self) -> bool:
+        """Signed integer overflow guards (MISRA #263). Opt-in: only under
+        --profile safety or FLOW_OVERFLOW_CHECK=1. Off for library TUs."""
+        return bool(getattr(self, "_overflow_check", False)) and not self._library
+
     @staticmethod
     def _is_integer_type_name(name: Optional[str]) -> bool:
         return name in {
@@ -3582,6 +3674,11 @@ class CGenerator:
     def _gen_checked_shift(self, left_expr: str, right_expr: str, op: str) -> str:
         """Emit << or >> with range/sign checks (CERT INT34-C / MISRA 12.2)."""
         macro = "FLOW_CHECKED_SHL" if op == "<<" else "FLOW_CHECKED_SHR"
+        return f"{macro}(({left_expr}), ({right_expr}))"
+
+    def _gen_checked_arith(self, left_expr: str, right_expr: str, op: str) -> str:
+        """Emit signed integer +,-,* with overflow trap (CERT INT32-C / MISRA 12.1)."""
+        macro = {"+": "FLOW_CHECKED_ADD", "-": "FLOW_CHECKED_SUB", "*": "FLOW_CHECKED_MUL"}[op]
         return f"{macro}(({left_expr}), ({right_expr}))"
 
     def _gen_array_access(self, e: ArrayAccess) -> str:
@@ -4388,9 +4485,17 @@ def flow_to_c(
     debug_info: bool = False,
     strict_effects: bool = False,
     library: bool = False,
+    overflow_check: bool | None = None,
 ) -> str:
     """Convert FLOW declarations to C code"""
     try:
+        # Auto-enable overflow checks under --profile safety/flight or
+        # FLOW_OVERFLOW_CHECK=1 (unless explicitly overridden).
+        if overflow_check is None:
+            import os
+            env_profile = os.environ.get("FLOW_PROFILE", "")
+            env_overflow = os.environ.get("FLOW_OVERFLOW_CHECK", "")
+            overflow_check = env_profile in ("safety", "flight") or env_overflow == "1"
         generator = CGenerator(
             source_file=source_file,
             debug_info=debug_info,
@@ -4398,6 +4503,7 @@ def flow_to_c(
             library=library,
             # Runtime modules are trusted ABI; skip per-access bounds checks for speed.
             bounds_check=not library,
+            overflow_check=overflow_check,
         )
         
         # Separate declarations by type
