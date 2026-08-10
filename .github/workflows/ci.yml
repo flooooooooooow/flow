@@ -341,10 +341,10 @@ jobs:
           PYTEST_ADDOPTS: --tb=short -q
         run: pytest tests/ -m "not slow"
 
-      - name: Safety profile tests
+      - name: Arithmetic safety tests
         env:
           PYTHONPATH: src
-        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_manifest.py -v
+        run: pytest tests/unit/test_arith_safety.py -v
 
   fuzz:
     name: Fuzz (parser/pipeline)

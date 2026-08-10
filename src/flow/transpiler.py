@@ -199,18 +199,6 @@ def main():
         "--module-info", action="store_true", help="Show module information"
     )
     parser.add_argument(
-        "--emit-manifest",
-        action="store_true",
-        help="Emit a safety manifest (compliance report) to stderr. "
-        "Combines with --profile safety for full MISRA/CERT coverage.",
-    )
-    parser.add_argument(
-        "--manifest-format",
-        choices=["text", "json"],
-        default="text",
-        help="Safety manifest output format (default: text)",
-    )
-    parser.add_argument(
         "--validate-imports", action="store_true", help="Validate import statements"
     )
     parser.add_argument(
@@ -226,6 +214,11 @@ def main():
         "--library",
         action="store_true",
         help="Emit a linkable runtime/library TU (static _ui_state, no name mangling)",
+    )
+    parser.add_argument(
+        "--no-bounds-check",
+        action="store_true",
+        help="Disable runtime array bounds checks (for performance-critical builds)",
     )
     parser.add_argument(
         "--python", action="store_true", help="Generate Python package (wheel)"
@@ -325,10 +318,6 @@ def main():
                     print(
                         f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr
                     )
-
-        # Pipeline fusion: fuse adjacent map/scale/offset stages in |> chains
-        from .pipeline_fusion import fuse_pipelines
-        declarations = fuse_pipelines(declarations)
 
         # Monomorphization pass: expand generics to concrete types
         declarations = monomorphize(declarations)
@@ -503,6 +492,7 @@ def main():
                 debug_info=args.debug_info,
                 strict_effects=args.strict_effects,
                 library=args.library,
+                no_bounds_check=getattr(args, "no_bounds_check", False),
             )
             if getattr(args, "explain", False):
                 from .plan_selector import format_selections
@@ -525,51 +515,6 @@ def main():
         except Exception as e:
             print(f"C generation error: {e}", file=sys.stderr)
             sys.exit(1)
-
-        # Flight profile (#274): reject leftover heap calls in generated C.
-        import os as _os
-        _profile = _os.environ.get("FLOW_PROFILE", "default")
-        if _profile == "flight":
-            import re as _re
-            heap_hits = _re.findall(
-                r"\b(malloc|calloc|realloc|free)\s*\(",
-                out_code,
-            )
-            if heap_hits:
-                uniq = ", ".join(sorted(set(heap_hits)))
-                print(
-                    f"Error: --profile flight forbids dynamic allocation "
-                    f"(MISRA 21.3); generated C still contains: {uniq}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-        # Safety profile enforcement (#273): reject unbounded recursion under
-        # --profile safety|flight (detected via the safety-manifest call graph).
-        if _profile in ("safety", "flight") or getattr(args, "emit_manifest", False):
-            from .safety_manifest import generate_manifest
-            _overflow = _profile in ("safety", "flight") or _os.environ.get("FLOW_OVERFLOW_CHECK", "") == "1"
-            manifest = generate_manifest(
-                declarations,
-                type_checker,
-                source_file=args.input or "",
-                profile=_profile,
-                overflow_check=_overflow,
-                type_errors=type_result.errors if type_result else [],
-            )
-            if _profile in ("safety", "flight") and manifest.recursive_functions:
-                print(
-                    "Error: --profile "
-                    f"{_profile} rejects unbounded recursion "
-                    f"(MISRA 17.2): {', '.join(manifest.recursive_functions)}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            if getattr(args, "emit_manifest", False):
-                if getattr(args, "manifest_format", "text") == "json":
-                    print(manifest.to_json(), file=sys.stderr)
-                else:
-                    print(manifest.to_text(), file=sys.stderr)
     else:
         # Generate MLIR
         try:
