@@ -28,8 +28,24 @@ All notable changes to FLOW will be documented in this file.
 - Examples: `examples/rf/dft.flow`, `examples/rf/iq_mixer.flow`,
   `examples/rf/sdr_receiver.flow`.
 - Tests: `tests/unit/test_complex_types.py` (15 tests),
-  `tests/unit/test_rf_types.py` (10 tests),
+  `tests/unit/test_rf_types.py` (11 tests),
   `tests/unit/test_quantity_literals.py` (10 tests).
+
+### DSP pipeline (W1)
+
+- `lib/stdlib/dsp.flow`: `map_f32`/`map_f64`, `filter_f32`, `reduce_f32`/
+  `reduce_f64`, `scan_f32`/`scan_f64`, `zip_with_f32`/`zip_with_f64`,
+  `scale_f32`/`scale_f64`, `offset_f32`, `clip_f32`, `sum_f32`/`sum_f64`,
+  `dot_f32`/`dot_f64`. All compose with the `|>` operator.
+- Function-type parameter compatibility: named functions and lambdas now
+  match `(T) -> R` parameter types. The type checker compares signatures
+  (param types + return type) instead of relying on synthetic name equality.
+- Lambda-as-argument wrapping: the C generator wraps non-capturing lambdas
+  in a fat-pointer struct when passed to a function-typed parameter, so
+  `map_f32(buf, n, |x| x * 2.0)` compiles and runs.
+- Example: `examples/dsp/pipeline.flow` demonstrates
+  `buf |> scale |> offset |> clip |> sum`.
+- Tests: `tests/unit/test_dsp_pipeline.py` (11 tests).
 
 ### Safety / MISRA
 

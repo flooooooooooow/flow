@@ -3732,6 +3732,16 @@ class CGenerator:
                     if self._is_span_type(declared):
                         arg_strs.append(self._gen_span_borrow(arg, declared))
                         continue
+                    # Lambda passed to a function-typed parameter: wrap as fat pointer
+                    if isinstance(arg, Lambda) and self._is_fn_type(declared):
+                        arg_expr = self._gen_expr(arg)
+                        info = self._last_lambda_info
+                        if info is not None:
+                            wrapped, prelude = self._wrap_lambda_as_fn_type(info, declared)
+                            for p in prelude:
+                                self._prelude_lines.append(p)
+                            arg_strs.append(wrapped)
+                            continue
                 arg_expr = self._gen_expr(arg)
                 # Check if this parameter expects a capability type
                 if target_overload and i < len(target_overload.param_types):
