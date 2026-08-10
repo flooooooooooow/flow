@@ -142,6 +142,7 @@ class CGenerator:
         debug_info: bool = False,
         bounds_check: bool = True,
         overflow_check: bool = False,
+        no_heap: bool = False,
         strict_effects: bool = False,
         library: bool = False,
     ) -> None:
@@ -156,6 +157,7 @@ class CGenerator:
         self._library = library
         self._bounds_check = bounds_check
         self._overflow_check = overflow_check
+        self._no_heap = no_heap
         self._uses_parallel_for = False
         self._uses_fiber_main = False  # wrap main() on a fiber for mid-function suspend
         self._current_return_type: Type | None = None
@@ -340,13 +342,20 @@ class CGenerator:
         lines.append("#define FLOW_DIAG(msg) fprintf(stderr, \"%s\", (msg))")
         lines.append("#endif")
         lines.append("__attribute__((unused)) static char* flow_strcat(const char* a, const char* b) {")
-        lines.append("    size_t la = strlen(a ? a : \"\"), lb = strlen(b ? b : \"\");")
-        lines.append("    char* r = (char*)flow_temp_alloc(la + lb + 1);")
-        lines.append("    if (!r) return NULL;")
-        lines.append("    if (la) memcpy(r, a, la);")
-        lines.append("    if (lb) memcpy(r + la, b, lb);")
-        lines.append("    r[la + lb] = '\\0';")
-        lines.append("    return r;")
+        if self._no_heap_enabled():
+            # Flight profile (#274): no dynamic allocation in generated helpers.
+            lines.append("    (void)a; (void)b;")
+            lines.append('    FLOW_DIAG("flow: string concat forbidden under --profile flight (MISRA 21.3)\\n");')
+            lines.append("    abort();")
+            lines.append("    return NULL;")
+        else:
+            lines.append("    size_t la = strlen(a ? a : \"\"), lb = strlen(b ? b : \"\");")
+            lines.append("    char* r = (char*)flow_temp_alloc(la + lb + 1);")
+            lines.append("    if (!r) return NULL;")
+            lines.append("    if (la) memcpy(r, a, la);")
+            lines.append("    if (lb) memcpy(r + la, b, lb);")
+            lines.append("    r[la + lb] = '\\0';")
+            lines.append("    return r;")
         lines.append("}")
         lines.append("")
         # MISRA Phase 0+1 (#264/#265/#263/#266/#279): configurable fault
@@ -1681,10 +1690,18 @@ class CGenerator:
             env_name = info["env_name"]
             lambda_name = info["lambda_name"]
             # Heap-copy env so the closure can escape the creating stack frame.
-            # Tracked in the temp arena and released by flow_temp_free_all (#268).
-            prelude.append(
-                f"{env_name}* _flow_env = ({env_name}*)flow_temp_alloc(sizeof({env_name}));"
-            )
+            # Under --profile flight (#274) escaping closures are forbidden.
+            if self._no_heap_enabled():
+                prelude.append(
+                    'FLOW_DIAG("flow: escaping closure forbidden under --profile flight (MISRA 21.3)\\n");'
+                )
+                prelude.append("abort();")
+                prelude.append(f"{env_name}* _flow_env = NULL;")
+            else:
+                # Tracked in the temp arena and released by flow_temp_free_all (#268).
+                prelude.append(
+                    f"{env_name}* _flow_env = ({env_name}*)flow_temp_alloc(sizeof({env_name}));"
+                )
             init_fields = ", ".join(
                 f".{_c_ident(cap)} = {self._gen_expr(Variable(cap))}"
                 for cap in info["captures"]
@@ -3746,6 +3763,10 @@ class CGenerator:
         --profile safety or FLOW_OVERFLOW_CHECK=1. Off for library TUs."""
         return bool(getattr(self, "_overflow_check", False)) and not self._library
 
+    def _no_heap_enabled(self) -> bool:
+        """Flight profile bans compiler-injected heap (#274 / MISRA 21.3)."""
+        return bool(getattr(self, "_no_heap", False)) and not self._library
+
     @staticmethod
     def _is_integer_type_name(name: Optional[str]) -> bool:
         return name in {
@@ -4579,16 +4600,21 @@ def flow_to_c(
     strict_effects: bool = False,
     library: bool = False,
     overflow_check: bool | None = None,
+    no_heap: bool | None = None,
 ) -> str:
     """Convert FLOW declarations to C code"""
     try:
         # Auto-enable overflow checks under --profile safety/flight or
         # FLOW_OVERFLOW_CHECK=1 (unless explicitly overridden).
+        import os
+        env_profile = os.environ.get("FLOW_PROFILE", "")
         if overflow_check is None:
-            import os
-            env_profile = os.environ.get("FLOW_PROFILE", "")
             env_overflow = os.environ.get("FLOW_OVERFLOW_CHECK", "")
             overflow_check = env_profile in ("safety", "flight") or env_overflow == "1"
+        if no_heap is None:
+            # Flight is the no-heap subset (#274). Safety still allows
+            # compiler temp alloc / strcat until arena-only policy lands.
+            no_heap = env_profile == "flight"
         generator = CGenerator(
             source_file=source_file,
             debug_info=debug_info,
@@ -4597,6 +4623,7 @@ def flow_to_c(
             # Runtime modules are trusted ABI; skip per-access bounds checks for speed.
             bounds_check=not library,
             overflow_check=overflow_check,
+            no_heap=no_heap,
         )
         
         # Separate declarations by type

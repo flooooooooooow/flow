@@ -111,6 +111,30 @@ def test_checked_arith_smoke_runs():
         assert r.returncode == 0
 
 
+def test_flight_strcat_has_no_malloc():
+    import os
+    prev = os.environ.get("FLOW_PROFILE")
+    os.environ["FLOW_PROFILE"] = "flight"
+    try:
+        c = flow_to_c(
+            parse_flow_code(
+                """
+                function main() -> i32 {
+                    let s: string = "a" + "b"
+                    return 0
+                }
+                """
+            )
+        )
+        assert "malloc(" not in c
+        assert "flight" in c.lower() or "MISRA 21.3" in c
+    finally:
+        if prev is None:
+            os.environ.pop("FLOW_PROFILE", None)
+        else:
+            os.environ["FLOW_PROFILE"] = prev
+
+
 def test_show_flags_safety_implicit_error():
     r = subprocess.run(
         [str(ROOT / "flow"), "show-flags", "--profile=safety"],
