@@ -326,6 +326,10 @@ def main():
                         f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr
                     )
 
+        # Pipeline fusion: fuse adjacent map/scale/offset stages in |> chains
+        from .pipeline_fusion import fuse_pipelines
+        declarations = fuse_pipelines(declarations)
+
         # Monomorphization pass: expand generics to concrete types
         declarations = monomorphize(declarations)
         declarations = _filter_declarations(declarations, active_modes)
