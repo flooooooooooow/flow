@@ -23,7 +23,7 @@
   <a href="https://flooooooooooow.github.io/flow/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-0A7EA4" alt="Docs"></a>
   <a href="https://github.com/flooooooooooow/flow/releases"><img src="https://img.shields.io/github/v/release/flooooooooooow/flow?include_prereleases&sort=semver" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://discord.gg/YK7VaHy24T"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/YK7VaHy24T"><img src="https://img.shields.io/badge/Discord-join-5865F2&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
@@ -33,11 +33,11 @@
   <a href="tests"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.tests&label=tests&color=2da44e" alt="Tests"></a>
 </p>
 
-**Flow** is a statically typed, compiled programming language with algebraic effects, built-in automatic differentiation, dynamics and control analysis, and native graphics. Programs describe how systems evolve — the mathematical model *is* the executable.
+**Flow** is a statically typed, compiled programming language with algebraic effects, built-in automatic differentiation, dynamics and control analysis, native graphics, and a MISRA/CERT-derived safety profile. Programs describe how systems evolve. The mathematical model is the executable.
 
 | | |
 |--|--|
-| **Version** | 0.9.0 |
+| **Version** | 0.10.0 |
 | **Install** | `brew tap flooooooooooow/flow && brew install flow` |
 | **License** | [MIT](LICENSE) |
 | **Cite** | [CITATION.cff](CITATION.cff) |
@@ -57,11 +57,12 @@ flow run hello.flow
 
 ## Why Flow?
 
-- **Evolution as the abstraction** — model dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).
-- **Algebraic effects** — swap side-effect implementations without rewriting call sites.
-- **Automatic differentiation** — forward and reverse helpers in the standard library; ML demos train on CPU in seconds.
-- **Portable by default** — compiles to C (no LLVM required); MLIR, WASM, and Metal backends when you need them.
-- **Native graphics and audio** — games, morphogenesis, neurodynamics, and real-time DSP ship as first-class examples.
+- **Evolution as the abstraction.** Model dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).
+- **Algebraic effects.** Swap side-effect implementations without rewriting call sites.
+- **Automatic differentiation.** Forward and reverse helpers in the standard library. ML demos train on CPU in seconds.
+- **Safety profiles.** `--profile safety` enables overflow-checked arithmetic, div0 guards, shift UB rejection, and UBSan/ASan. `--emit-manifest` produces a structured compliance report.
+- **Portable by default.** Compiles to C (no LLVM required). MLIR, WASM, and Metal backends when you need them.
+- **Native graphics and audio.** Games, morphogenesis, neurodynamics, and real-time DSP ship as first-class examples.
 
 ---
 
@@ -86,7 +87,7 @@ cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-**Requirements:** Python 3.9+ · Clang or GCC (Xcode Command Line Tools on macOS).
+**Requirements:** Python 3.9+, Clang or GCC (Xcode Command Line Tools on macOS).
 
 Optional: `./flow install` places `flow` on your PATH (`~/.local/bin`).
 
@@ -96,7 +97,7 @@ Full walkthrough: [Getting started](docs/getting-started.md).
 
 ## Examples
 
-Each clip is a recording of the compiled program — frames come from the real `gfx` backend.
+Each clip is a recording of the compiled program. Frames come from the real `gfx` backend.
 
 | | | |
 |:---:|:---:|:---:|
@@ -113,9 +114,9 @@ Each clip is a recording of the compiled program — frames come from the real `
 
 | Domain | Gallery | Index |
 |--------|---------|-------|
-| Games (24) | [demos](docs/demos/games.md) | [`examples/games`](examples/games) |
+| Games (29) | [demos](docs/demos/games.md) | [`examples/games`](examples/games) |
 | Morphogenesis | [demos](docs/demos/morphogenesis.md) | [`examples/morphogenesis`](examples/morphogenesis) |
-| Neurons & networks | [demos](docs/demos/neuro.md) | [`examples/neuro`](examples/neuro) |
+| Neurons and networks | [demos](docs/demos/neuro.md) | [`examples/neuro`](examples/neuro) |
 | Evolutionary biology | [demos](docs/demos/evoleco.md) | [`examples/evoleco`](examples/evoleco) |
 | AI / ML training | [tutorials](docs/tutorials/game-ai.md) | [`examples/ai`](examples/ai), [`examples/ml`](examples/ml) |
 
@@ -166,11 +167,42 @@ capability ConsoleLogger {
 }
 ```
 
-Walkthrough: [docs/effects-showcase.md](docs/effects-showcase.md) · `examples/effects/showcase.flow`.
+Walkthrough: [docs/effects-showcase.md](docs/effects-showcase.md), `examples/effects/showcase.flow`.
 
 ### Automatic differentiation
 
-Forward-mode dual numbers and reverse helpers live in the stdlib (`lib/stdlib/autodiff.flow`). Tourist XOR trains via checked-in grad codegen — see `examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is on the roadmap.
+Forward-mode dual numbers and reverse helpers live in the stdlib (`lib/stdlib/autodiff.flow`). Tourist XOR trains via checked-in grad codegen. See `examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is on the roadmap.
+
+### Safety profiles
+
+```bash
+# Compile with MISRA/CERT-derived safety checks
+flow compile program.flow --profile safety
+
+# Emit a structured compliance manifest
+flow transpile program.flow --c --profile safety --emit-manifest -o program.c
+```
+
+Under `--profile safety`:
+- Signed integer `+`, `-`, `*` emit overflow-checked macros (`__builtin_*_overflow`)
+- Division by zero and shift UB rejected at compile time for literals, runtime-guarded otherwise
+- `-Werror` enforced on all C output
+- UBSan / ASan / TSan available via `FLOW_UBSAN=1`, `FLOW_ASAN=1`, `FLOW_TSAN=1`
+
+The manifest reports each invariant as PROVEN, REJECTED, or REQUIRES EVIDENCE:
+
+```
+Flow Safety Manifest
+============================================================
+Properties
+------------------------------------------------------------
+  Integer overflow          PROVEN             MISRA 12.1 / CERT INT32-C
+  Division by zero          PROVEN             MISRA 12.5 / CERT INT33-C
+  Shift undefined behaviour PROVEN             MISRA 12.2 / CERT INT34-C
+  Dynamic allocation        PROVEN             MISRA 21.3
+  Unbounded recursion       PROVEN             MISRA 17.2
+  RT-safety                 PROVEN             Flow @rt_safe policy
+```
 
 ### FFI
 
@@ -197,7 +229,7 @@ extern {
 | [Roadmap](ROADMAP.md) | What we're building next |
 | [Changelog](docs/project/CHANGELOG.md) | Version history |
 | [Self-hosting](docs/project/self-hosting.md) | Stage-A `flowc` in [`compiler/`](compiler/) |
-| [Security](SECURITY.md) · [Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) | Project policy |
+| [Security](SECURITY.md), [Conduct](CODE_OF_CONDUCT.md), [Governance](GOVERNANCE.md) | Project policy |
 
 Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 
@@ -214,7 +246,7 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 | [`runtime/`](runtime/) | Native runtime (graphics, audio, recording) |
 | [`examples/`](examples/) | Domain demos and verify corpus |
 | [`tests/`](tests/) | Language and stdlib tests |
-| [`apps/`](apps/) | Applications (`flowdb`, `flow-http`, …) |
+| [`apps/`](apps/) | Applications (`flowdb`, `flow-http`, ...) |
 | [`benchmarks/`](benchmarks/) | Microbenchmarks and harness |
 | [`docs/`](docs/) | Spec, tutorials, demos, project docs |
 | [`third_party/integrations/vscode/`](third_party/integrations/vscode/) | VS Code / Cursor extension |
@@ -225,16 +257,16 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 ## Building and developing
 
 ```bash
-./flow run <file>              # Compile and run (default host: flowc)
-./flow compile <file>          # Compile only → build/
+./flow run <file>                    # Compile and run (default host: flowc)
+./flow compile <file>                # Compile only -> build/
 FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
-./flow test                    # Test suite (strict by default)
-./flow test --strict --tier2   # + transpile / clang compile checks
-./flow fmt <file>              # Format
-./flow repl                    # Interactive mode
-./flow lsp                     # Language server
-./flow gfx <file>              # Compile and run with graphics
-./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
+./flow test                          # Test suite (strict by default)
+./flow test --strict --tier2         # + transpile / clang compile checks
+./flow fmt <file>                    # Format
+./flow repl                          # Interactive mode
+./flow lsp                           # Language server
+./flow gfx <file>                    # Compile and run with graphics
+./flow mlir <file>                   # Emit MLIR (requires LLVM/MLIR tools)
 ```
 
 Host switch: `FLOW_HOST=flowc|python|auto` (default `flowc` for `run` / `compile`).
@@ -268,7 +300,7 @@ Details: [docs/python-target.md](docs/python-target.md).
 ### Compiler pipeline
 
 ```
-Flow source → Parser → AST → C / MLIR / Metal → Clang / LLVM / shaders
+Flow source -> Parser -> AST -> C / MLIR / Metal -> Clang / LLVM / shaders
 ```
 
 ---
@@ -280,26 +312,26 @@ Counted from tracked files by CI, so these numbers never drift from the tree.
 <!-- repo-stats:start -->
 | Metric | Files / modules | Physical lines |
 |---|---:|---:|
-| **Tracked source** | 2,814 | 378,173 |
-| **Flow language** | 1,965 | 197,414 |
-| **Python compiler (`src/flow`)** | 54 | 44,759 |
+| **Tracked source** | 2,827 | 381,338 |
+| **Flow language** | 1,965 | 197,416 |
+| **Python compiler (`src/flow`)** | 62 | 47,130 |
 | **Self-hosted compiler (`compiler/src`)** | 17 | 9,440 |
 | **Standard library modules** | 105 | 31,989 |
 | **Native runtime** | 41 | 7,105 |
-| **Examples (excluding verify corpus)** | 399 | 103,972 |
+| **Examples (excluding verify corpus)** | 399 | 103,974 |
 | **Verify corpus** | 1,078 | 18,715 |
-| **Tests (`.py` + `.flow`)** | 342 | 37,510 |
+| **Tests (`.py` + `.flow`)** | 347 | 38,302 |
 | **Application programs** | 8 | 1,537 |
 | **Registry packages** | 19 | — |
-| **Documentation pages** | 132 | 28,628 |
+| **Documentation pages** | 134 | 28,897 |
 
 <details>
 <summary>Tracked source by language</summary>
 
 | Language | Files | Physical lines |
 |---|---:|---:|
-| Flow | 1,965 | 197,414 |
-| Python | 295 | 99,213 |
+| Flow | 1,965 | 197,416 |
+| Python | 308 | 102,376 |
 | HTML | 170 | 28,741 |
 | C | 94 | 14,135 |
 | C/C++ headers | 46 | 10,968 |
@@ -313,27 +345,27 @@ Counted from tracked files by CI, so these numbers never drift from the tree.
 
 </details>
 
-*Generated by CI from tracked files at `8045a985e083`. Proof documents: 1,080. [Raw JSON](docs/generated/repository-stats.json) · [Flow counter](scripts/tools/repo_stats/main.flow) · [Python fallback](scripts/update_repo_stats.py).*
+*Generated by CI from tracked files at `c29971fa919a`. Proof documents: 1,080. [Raw JSON](docs/generated/repository-stats.json), [Flow counter](scripts/tools/repo_stats/main.flow), [Python fallback](scripts/update_repo_stats.py).*
 <!-- repo-stats:end -->
 
 ---
 
 ## Contributing
 
-Flow is built through agentic pair programming — human vision, AI implementation. See [CONTRIBUTING.md](CONTRIBUTING.md) for the collaboration model, decision authority, and how to land changes.
+Flow is built through agentic pair programming: human vision, AI implementation. See [CONTRIBUTING.md](CONTRIBUTING.md) for the collaboration model, decision authority, and how to land changes.
 
-Day-to-day priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
+Day-to-day priorities: [ROADMAP.md](ROADMAP.md), [docs/NEXT.md](docs/NEXT.md).
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ---
 
 <p align="center">
   <img src="docs/assets/flow-mascot.png" alt="Flowy the Hedgehog, the Flow mascot" width="80">
   <br>
-  <em>Made with care by humans and AI · mascot: <a href="docs/assets/mascot.md">Flowy the Hedgehog</a></em>
+  <em>Made with care by humans and AI. Mascot: <a href="docs/assets/mascot.md">Flowy the Hedgehog</a></em>
 </p>
