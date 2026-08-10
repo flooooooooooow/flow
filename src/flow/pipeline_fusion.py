@@ -16,7 +16,6 @@ from flow.parser import (
     FunctionDecl,
     FunctionCall,
     Lambda,
-    Literal,
     BinaryOperation,
     UnaryOperation,
     Variable,
