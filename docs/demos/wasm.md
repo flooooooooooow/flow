@@ -1,6 +1,6 @@
 # WebAssembly Gallery
 
-158 Flow examples compiled to WebAssembly, 156 of them runnable in a browser.
+158 Flow examples compiled to WebAssembly, 157 of them runnable in a browser.
 Every one is the unedited source from this repository, put through Flow → C →
 `emcc`.
 
@@ -36,7 +36,7 @@ Build one program:
 | [Language and compilers](../wasm/index.html) | 23 of 23 | 638 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
 | [Numerics and dynamics](../wasm/index.html) | 20 of 20 | 683 KB | Solvers, optimisers, linear algebra, control theory |
 | [Learning](../wasm/index.html) | 11 of 12 | 423 KB | Small models and agents |
-| [Systems and data](../wasm/index.html) | 13 of 14 | 503 KB | Allocators, hash tables, hashing, parsers, file formats |
+| [Systems and data](../wasm/index.html) | 14 of 14 | 524 KB | Allocators, hash tables, hashing, parsers, file formats |
 
 Machine-readable index, including every failure and its reason:
 [`manifest.json`](../wasm/manifest.json).
@@ -69,6 +69,7 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `blas_demo` | Benchmarked 256/512 gemms at 0.7/2.1 GFLOPS and 100/500 solves with `info=0`, `Done!`, `main returned 0` |
 | `lu_decomposition` | `x = [1.000000, 1.000000, 1.000000]`, `max |Ax-b| = 0.00e+00`, `OK: solve + lu_factor via BLAS/LAPACK`, `main returned 0` |
 | `async_primitives` | All three backends ran, and the FiberAsync section printed a strict round-robin trace (`T100:0 T101:0 T102:0 T100:1 …`) — three cooperative fibers suspending mid-body on `async_delay`, `join` summing to 3039, `main returned 0` |
+| `runtime_sha256` | Flow's own SHA-256 implementation ran in the browser: `crypto runtime ok` against the known empty-string digest, exit 0; the card notes that random bytes come from WebCrypto's CSPRNG |
 
 No console errors on any of them.
 
@@ -110,7 +111,7 @@ and say plainly that it is not built here.
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
 | Audio | Not attempted | The miniaudio and Metal audio backends have no browser counterpart yet; WebAudio is the route. |
 
-## The two that do not build
+## The one that does not build
 
 Each one stops at a named symbol. The gallery keeps their cards and prints the
 reason on them.
@@ -118,9 +119,8 @@ reason on them.
 | Example | Stops at | Why |
 |---|---|---|
 | `examples/ml/digits_mlp_metal.flow` | `flow_gpu_alloc` | Metal GPU backend |
-| `examples/crypto/runtime_sha256.flow` | `flow_sha256` | Hashing helper lives in the native runtime pack |
 
-Seven examples used to fail and now build:
+Eight examples used to fail and now build:
 
 - `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
   monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
@@ -197,6 +197,15 @@ Seven examples used to fail and now build:
   externs like `usleep` were never declared because the generated C did not
   include `<unistd.h>` — which the transpiler now does when such an extern is
   present (async_primitives was the first program to call one).
+- `runtime_sha256.flow` was a stub candidate until it turned out that
+  `lib/runtime/crypto.flow` is pure Flow — SHA-256 included, with no externs.
+  The page links it as a library TU, so Flow's own hashing implementation runs
+  in the browser and verifies the known empty-string digest. The only
+  host-bound piece is the OS CSPRNG: `runtime/crypto_wasm.c` provides
+  `flow_rt_random_bytes` via WebCrypto's synchronous `crypto.getRandomValues`
+  (a real CSPRNG), and the card carries a `.degrade` note saying so. Gallery
+  cards for built-but-different examples can now carry such a note via the
+  `note` field in `PAGE_EXTRAS`.
 
 ## Related
 

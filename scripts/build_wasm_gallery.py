@@ -172,6 +172,19 @@ PAGE_EXTRAS = {
         "extra_flow_runtime": ["lib/runtime/fiber_async.flow"],
         "emcc_flags": ["-sASYNCIFY=1", "-sASYNCIFY_STACK_SIZE=65536"],
     },
+    # lib/runtime/crypto.flow is pure Flow — SHA-256 is Flow code with no
+    # externs, so it runs unchanged in the browser (extra_flow_runtime). Only
+    # the OS CSPRNG is host-bound; runtime/crypto_wasm.c supplies it via
+    # WebCrypto's synchronous crypto.getRandomValues. `note` renders on the
+    # card so the one behavioural difference is visible.
+    "runtime_sha256": {
+        "extra_c": ["runtime/crypto_wasm.c"],
+        "extra_flow_runtime": ["lib/runtime/crypto.flow"],
+        "note": "SHA-256 runs Flow's own implementation (lib/runtime/crypto.flow), "
+                "same code as native; only the random bytes come from the "
+                "browser's WebCrypto CSPRNG (crypto.getRandomValues) instead "
+                "of the native OS kernel.",
+    },
 }
 
 
@@ -256,6 +269,8 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
     }
     if extras.get("threads"):
         record["threads"] = True
+    if extras.get("note"):
+        record["note"] = extras["note"]
     out_dir = out_root / target["name"]
     try:
         result = build(target["path"], out_dir, name=target["name"],
@@ -328,6 +343,9 @@ h2 .count { color: #575c6e; font-weight: 400; font-size: 13px; }
 .card.failed { opacity: .72; border-style: dashed; }
 .card.failed .why { color: #d08770; font-size: 11.5px;
   font-family: ui-monospace, Menlo, monospace; word-break: break-word; }
+.card .degrade { color: #d8a657; font-size: 11.5px; line-height: 1.45;
+  background: rgba(216, 166, 87, .07); border: 1px solid rgba(216, 166, 87, .22);
+  border-radius: 4px; padding: 5px 7px; margin: 7px 0; word-break: break-word; }
 .tag { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
        color: #575c6e; border: 1px solid #232631; border-radius: 3px;
        padding: 1px 5px; }
@@ -449,9 +467,12 @@ def render_gallery(records: list, out: Path) -> None:
                 tags = f'<span class="tag">{kind}</span>'
                 if rec.get("threads"):
                     tags += ' <span class="tag">threads</span>'
+                note = (f'<div class="degrade">{esc(rec["note"])}</div>'
+                        if rec.get("note") else "")
                 cards.append(f"""      <div class="card">
         <h3>{esc(rec['title'])}</h3>
         <p>{esc(rec['summary'])}</p>
+        {note}
         <div class="row">
           <button data-run="{esc(rec['page'])}" data-title="{esc(rec['title'])}">Run</button>
           {tags}

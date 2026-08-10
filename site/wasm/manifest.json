@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 158,
-  "built": 156,
-  "failed": 2,
-  "total_bytes": 5934853,
+  "built": 157,
+  "failed": 1,
+  "total_bytes": 5957066,
   "categories": [
     {
       "id": "games",
@@ -2023,8 +2023,13 @@
       "category": "systems",
       "source": "examples/crypto/runtime_sha256.flow",
       "summary": "Crypto self-test via always-linked lib/runtime/crypto.flow",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_sha256"
+      "note": "SHA-256 runs Flow's own implementation (lib/runtime/crypto.flow), same code as native; only the random bytes come from the browser's WebCrypto CSPRNG (crypto.getRandomValues) instead of the native OS kernel.",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 10255,
+      "js_bytes": 11958,
+      "total_bytes": 22213,
+      "page": "runtime_sha256/index.html"
     },
     {
       "name": "sha256",
