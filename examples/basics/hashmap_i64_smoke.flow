@@ -37,7 +37,7 @@ function hashmap_i64_i64_new(cap: i32) -> HashMap_i64_i64 {
 function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> HashMap_i64_i64 {
     let start: i32 = hash_i64(key) % m.capacity
     let mut i: i32 = start
-    while true {
+    for _probe in 0 to m.capacity {
         if m.occupied[i] == 0 {
             m.keys[i] = key
             m.values[i] = value
@@ -53,7 +53,6 @@ function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> Has
         }
         i = i + 1
         if i >= m.capacity { i = 0 }
-        if i == start { return m }
     }
     return m
 }
@@ -61,14 +60,13 @@ function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> Has
 function hashmap_i64_i64_get(m: HashMap_i64_i64, key: i64, default_value: i64) -> i64 {
     let start: i32 = hash_i64(key) % m.capacity
     let mut i: i32 = start
-    while true {
+    for _probe in 0 to m.capacity {
         if m.occupied[i] == 0 { return default_value }
         if m.occupied[i] == 1 {
             if m.keys[i] == key { return m.values[i] }
         }
         i = i + 1
         if i >= m.capacity { i = 0 }
-        if i == start { return default_value }
     }
     return default_value
 }

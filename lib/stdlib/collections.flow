@@ -173,7 +173,7 @@ function hashmap_i64_i64_contains(m: HashMap_i64_i64, key: i64) -> bool {
     }
     let start: i32 = hash_i64(key) % m.capacity
     let mut i: i32 = start
-    while true {
+    for _probe in 0 to m.capacity {
         if m.occupied[i] == 0 {
             return false
         }
@@ -186,9 +186,6 @@ function hashmap_i64_i64_contains(m: HashMap_i64_i64, key: i64) -> bool {
         if i >= m.capacity {
             i = 0
         }
-        if i == start {
-            return false
-        }
     }
     return false
 }
@@ -199,7 +196,7 @@ function hashmap_i64_i64_get(m: HashMap_i64_i64, key: i64, default_value: i64) -
     }
     let start: i32 = hash_i64(key) % m.capacity
     let mut i: i32 = start
-    while true {
+    for _probe in 0 to m.capacity {
         if m.occupied[i] == 0 {
             return default_value
         }
@@ -212,9 +209,6 @@ function hashmap_i64_i64_get(m: HashMap_i64_i64, key: i64, default_value: i64) -
         if i >= m.capacity {
             i = 0
         }
-        if i == start {
-            return default_value
-        }
     }
     return default_value
 }
@@ -226,7 +220,7 @@ function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> Has
     # Soft load factor — caller should recreate with larger cap when size is high.
     let start: i32 = hash_i64(key) % m.capacity
     let mut i: i32 = start
-    while true {
+    for _probe in 0 to m.capacity {
         if m.occupied[i] == 0 {
             m.keys[i] = key
             m.values[i] = value
@@ -243,9 +237,6 @@ function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> Has
         i = i + 1
         if i >= m.capacity {
             i = 0
-        }
-        if i == start {
-            return m
         }
     }
     return m

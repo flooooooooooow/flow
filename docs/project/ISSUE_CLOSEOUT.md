@@ -24,7 +24,9 @@ Tracking for the MISRA C:2024 + CERT C epic (#285) and remaining product issues.
 |-------|--------|
 | #267 `flow_strcat` leak | ✅ temp arena + `atexit` |
 | #268 closure env leak | ✅ same arena |
-| #273 safety/flight recursion reject | ✅ partial (MISRA 17.2 via manifest; flight≡safety) |
+| #271 unbounded recursion | ✅ detected via safety manifest; rejected under safety/flight |
+| #272 unbounded while | ✅ `@max_iterations(N)` required under safety/flight + runtime guard |
+| #273 safety/flight profile | ✅ partial (recursion + loop bounds; flight≡safety) |
 | #252 bigint + `HashMap_i64_i64` | ✅ partial (stdlib + smokes; if-expr in #288) |
 
 ## Still open
@@ -33,7 +35,6 @@ Tracking for the MISRA C:2024 + CERT C epic (#285) and remaining product issues.
 |-------|-------|
 | #266 / #279 | Null deref + unified fault handler — PR #288 |
 | #252 | if-expressions (#288); generic `map`/`set` polish |
-| #271–#272 | Recursion analysis polish / loop bounds |
 | #274–#285 | Heap policy, matrix, WCET, `@safe`, epic |
 | #172 | github-linguist |
 | #147 | multi-impl beyond sort |
