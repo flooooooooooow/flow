@@ -1,0 +1,70 @@
+# Discrete Fourier Transform using c64 complex numbers.
+#
+# Computes the 8-point DFT of a test signal and prints the magnitude
+# of each frequency bin. Demonstrates c64 arithmetic, cabs, and
+# complex exponentials via cexp.
+
+const PI: f64 = 3.14159265358979323846
+
+function dft(signal: array<c64, 8>) -> array<c64, 8> {
+    let result: array<c64, 8>
+    let N: i32 = 8
+    for k in 0 to 8 {
+        let mut sum: c128 = c128(0.0, 0.0)
+        for n in 0 to 8 {
+            let angle: f64 = -2.0 * PI * (k as f64) * (n as f64) / (N as f64)
+            let twiddle: c128 = cexp(c128(0.0, angle))
+            let sample: c128 = c128(signal[n])
+            sum = sum + sample * twiddle
+        }
+        result[k] = c64(creal(sum), cimag(sum))
+    }
+    return result
+}
+
+function main() -> i32 {
+    # Test signal: 1 kHz and 3 kHz tones at 8 kHz sample rate.
+    # With N=8, bin k corresponds to k kHz. Bins 1 and 3 should peak.
+    let signal: array<c64, 8>
+    for n in 0 to 8 {
+        let t: f64 = (n as f64) / 8.0
+        let val: f64 = sin(2.0 * PI * 1.0 * t) + 0.5 * sin(2.0 * PI * 3.0 * t)
+        signal[n] = c64(val, 0.0)
+    }
+
+    println("Input signal:")
+    for n in 0 to 8 {
+        print("  [")
+        print(n)
+        print("] = ")
+        println(signal[n])
+    }
+
+    let spectrum: array<c64, 8> = dft(signal)
+
+    println("")
+    println("DFT magnitude spectrum:")
+    for k in 0 to 8 {
+        let mag: f64 = cabs(spectrum[k])
+        print("  |X[")
+        print(k)
+        print("]| = ")
+        println(mag)
+    }
+
+    # Verify the DFT is correct: the magnitude at bin 1 and bin 3
+    # should be the largest (corresponding to 1 kHz and 3 kHz).
+    let mag1: f64 = cabs(spectrum[1])
+    let mag3: f64 = cabs(spectrum[3])
+    let mag0: f64 = cabs(spectrum[0])
+
+    if mag1 > mag0 && mag3 > mag0 {
+        println("")
+        println("PASS: peaks at bins 1 and 3 as expected")
+        return 0
+    }
+
+    println("")
+    println("FAIL: unexpected spectrum")
+    return 1
+}

@@ -52,6 +52,8 @@ class TypeKind(Enum):
     U128 = "u128"
     F32 = "f32"
     F64 = "f64"
+    C64 = "c64"
+    C128 = "c128"
     STRING = "string"
     STRUCT = "struct"
     ARRAY = "array"
@@ -91,6 +93,8 @@ class SemanticType:
         elif self.kind in [TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64, TypeKind.U128]:
             return self.kind.value
         elif self.kind in [TypeKind.F32, TypeKind.F64]:
+            return self.kind.value
+        elif self.kind in [TypeKind.C64, TypeKind.C128]:
             return self.kind.value
         elif self.kind == TypeKind.STRING:
             return "string"
@@ -291,6 +295,18 @@ class TypeChecker:
         'fmax': TypeKind.F32,
         'fdim': TypeKind.F32,
         'sigmoid': TypeKind.F32,
+        # Complex number constructors and helpers
+        'c64': TypeKind.C64,
+        'c128': TypeKind.C128,
+        'creal': TypeKind.F64,
+        'cimag': TypeKind.F64,
+        'cabs': TypeKind.F64,
+        'carg': TypeKind.F64,
+        'conj': TypeKind.C128,
+        'cexp': TypeKind.C128,
+        'clog': TypeKind.C128,
+        'csqrt': TypeKind.C128,
+        'cpow': TypeKind.C128,
         # FLOW runtime / GPU
         'alloc': TypeKind.POINTER,
         'dealloc': TypeKind.VOID,
@@ -538,8 +554,12 @@ class TypeChecker:
         return t.kind in {
             TypeKind.I8, TypeKind.I16, TypeKind.I32, TypeKind.I64, TypeKind.I128,
             TypeKind.U8, TypeKind.U16, TypeKind.U32, TypeKind.U64, TypeKind.U128,
-            TypeKind.F32, TypeKind.F64
+            TypeKind.F32, TypeKind.F64,
+            TypeKind.C64, TypeKind.C128,
         }
+
+    def _is_complex(self, t: SemanticType) -> bool:
+        return t.kind in {TypeKind.C64, TypeKind.C128}
 
     def _is_dual(self, t: SemanticType) -> bool:
         return t.kind == TypeKind.STRUCT and t.name == "Dual"
@@ -581,6 +601,15 @@ class TypeChecker:
         return widths.get(t.kind)
 
     def _numeric_common_type(self, a: SemanticType, b: SemanticType) -> SemanticType:
+        # Complex types: if either operand is complex, result is complex.
+        # c128 dominates c64; c64 + f64 -> c128; c64 + f32 -> c64.
+        if self._is_complex(a) or self._is_complex(b):
+            if a.kind == TypeKind.C128 or b.kind == TypeKind.C128:
+                return SemanticType(TypeKind.C128)
+            if a.kind == TypeKind.C64 or b.kind == TypeKind.C64:
+                if a.kind == TypeKind.F64 or b.kind == TypeKind.F64:
+                    return SemanticType(TypeKind.C128)
+                return SemanticType(TypeKind.C64)
         # Prefer floats if any operand is float.
         if self._is_float(a) or self._is_float(b):
             if a.kind == TypeKind.F64 or b.kind == TypeKind.F64:
@@ -1687,7 +1716,7 @@ class TypeChecker:
             )
 
     # Types a module static may have (plus fixed arrays of these, and ptr<T>).
-    STATIC_PRIMITIVE_TYPES = {"i32", "i64", "u8", "u32", "f32", "f64", "bool"}
+    STATIC_PRIMITIVE_TYPES = {"i32", "i64", "u8", "u32", "f32", "f64", "c64", "c128", "bool"}
 
     def _is_const_scalar(self, expr: Any) -> bool:
         """True for literal scalars usable as static initializers.
@@ -1750,7 +1779,7 @@ class TypeChecker:
                 self.errors.append(
                     f"Module static '{name}' has unsupported array element type "
                     f"'{elem_name}': static arrays may only hold primitives "
-                    f"(i32/i64/u8/u32/f32/f64/bool)"
+                    f"(i32/i64/u8/u32/f32/f64/c64/c128/bool)"
                 )
                 return
             if not isinstance(decl.value, ArrayLiteral):
@@ -1784,7 +1813,7 @@ class TypeChecker:
             self.errors.append(
                 f"Module static '{name}' has unsupported type '{t.name}': "
                 f"module statics must be a primitive (i32/i64/u8/u32/f32/f64/"
-                f"bool), a fixed array of primitives, or ptr<T>"
+                f"c64/c128/bool), a fixed array of primitives, or ptr<T>"
             )
             return
 
@@ -3465,6 +3494,8 @@ class TypeChecker:
             "u128": SemanticType(TypeKind.U128),
             "f32": SemanticType(TypeKind.F32),
             "f64": SemanticType(TypeKind.F64),
+            "c64": SemanticType(TypeKind.C64),
+            "c128": SemanticType(TypeKind.C128),
             "string": SemanticType(TypeKind.STRING),
         }
         return mapping.get(name)
@@ -3721,6 +3752,10 @@ class TypeChecker:
             return SemanticType(TypeKind.F32)
         elif parsed_type.name == "f64":
             return SemanticType(TypeKind.F64)
+        elif parsed_type.name == "c64":
+            return SemanticType(TypeKind.C64)
+        elif parsed_type.name == "c128":
+            return SemanticType(TypeKind.C128)
         elif parsed_type.name == "string":
             return SemanticType(TypeKind.STRING)
         elif parsed_type.name.startswith("capability_"):
