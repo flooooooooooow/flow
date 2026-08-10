@@ -14,11 +14,9 @@ This hub tracks Flow's path toward MISRA C:2024 and CERT C alignment
 
 1. Develop under `FLOW_PROFILE=safety` (or `flight`) for the subset that is
    mechanically enforced today.
-2. Emit a safety manifest:  
-   `FLOW_HOST=python ./flow transpile prog.flow --c --emit-manifest --profile=safety`
-3. Optionally scan generated C:  
+2. Scan generated C for MISRA/CERT deviations:
    `./flow analyze --standard=misra-c-2024 build/prog.c`
-4. Record deviations in the compliance matrices when a rule is not yet
+3. Record deviations in the compliance matrices when a rule is not yet
    machine-enforced.
 
 ## Status legend
