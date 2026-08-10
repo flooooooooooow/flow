@@ -5,16 +5,16 @@
       "lines": 1537
     },
     "documentation": {
-      "files": 132,
-      "lines": 28628
+      "files": 134,
+      "lines": 28897
     },
     "examples": {
       "files": 399,
-      "lines": 103972
+      "lines": 103974
     },
     "python_compiler": {
-      "files": 54,
-      "lines": 44759
+      "files": 62,
+      "lines": 47130
     },
     "registry_packages": {
       "files": 19,
@@ -33,8 +33,8 @@
       "lines": 31989
     },
     "tests": {
-      "files": 342,
-      "lines": 37510
+      "files": 347,
+      "lines": 38302
     },
     "verify_corpus": {
       "files": 1078,
@@ -44,13 +44,13 @@
   "badges": {
     "examples": "399 examples",
     "flow": "197k Flow LOC",
-    "loc": "378k LOC",
+    "loc": "381k LOC",
     "proofs": "1078 verify files",
     "stdlib": "105 modules",
-    "tests": "342 tests"
+    "tests": "347 tests"
   },
-  "commit": "8045a985e083",
-  "generated_at": "2026-08-08T04:34:24+01:00",
+  "commit": "c29971fa919a",
+  "generated_at": "2026-08-10T10:28:16+01:00",
   "languages": {
     "C": {
       "files": 94,
@@ -70,7 +70,7 @@
     },
     "Flow": {
       "files": 1965,
-      "lines": 197414
+      "lines": 197416
     },
     "HTML": {
       "files": 170,
@@ -89,8 +89,8 @@
       "lines": 654
     },
     "Python": {
-      "files": 295,
-      "lines": 99213
+      "files": 308,
+      "lines": 102376
     },
     "Rust": {
       "files": 10,
@@ -105,8 +105,8 @@
   "proof_documents": 1080,
   "schema_version": 1,
   "totals": {
-    "source_files": 2814,
-    "source_lines": 378173,
-    "tracked_files": 5880
+    "source_files": 2827,
+    "source_lines": 381338,
+    "tracked_files": 5896
   }
 }
