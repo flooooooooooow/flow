@@ -91,6 +91,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          TAG: ${{ steps.tag.outputs.name }}
+          REPO: ${{ github.repository }}
         run: |
           TAG="${{ steps.tag.outputs.name }}"
           gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
@@ -123,7 +126,3 @@ jobs:
           except Exception as e:
               print(f"changelog webhook failed (non-fatal): {e}", file=sys.stderr)
           PY
-        env:
-          DISCORD_CHANGELOG_WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
-          TAG: ${{ steps.tag.outputs.name }}
-          REPO: ${{ github.repository }}

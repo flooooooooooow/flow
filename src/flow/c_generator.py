@@ -308,7 +308,7 @@ class CGenerator:
         lines.append("#include <string.h>")  # For memcpy/memset
         lines.append("")
         lines.append("/* Flow runtime helpers */")
-        lines.append("static char* flow_strcat(const char* a, const char* b) {")
+        lines.append("__attribute__((unused)) static char* flow_strcat(const char* a, const char* b) {")
         lines.append("    size_t la = strlen(a ? a : \"\"), lb = strlen(b ? b : \"\");")
         lines.append("    char* r = (char*)malloc(la + lb + 1);")
         lines.append("    if (!r) return NULL;")
@@ -318,6 +318,56 @@ class CGenerator:
         lines.append("    return r;")
         lines.append("}")
         lines.append("")
+        # MISRA Phase 0 (#264 / #265): configurable fault handlers for
+        # division-by-zero and invalid shifts. Emitted for application TUs;
+        # library/runtime modules skip them (arith checks disabled).
+        if self._arith_checks_enabled():
+            lines.append("#ifndef FLOW_DIV0_HANDLER")
+            lines.append("__attribute__((unused)) static inline void flow_div_by_zero_handler(void) {")
+            lines.append('    fprintf(stderr, "flow: division by zero\\n");')
+            lines.append("    abort();")
+            lines.append("}")
+            lines.append("#else")
+            lines.append("#define flow_div_by_zero_handler FLOW_DIV0_HANDLER")
+            lines.append("#endif")
+            lines.append("#ifndef FLOW_SHIFT_UB_HANDLER")
+            lines.append("__attribute__((unused)) static inline void flow_shift_ub_handler(void) {")
+            lines.append('    fprintf(stderr, "flow: invalid shift (amount out of range or left-shift of negative)\\n");')
+            lines.append("    abort();")
+            lines.append("}")
+            lines.append("#else")
+            lines.append("#define flow_shift_ub_handler FLOW_SHIFT_UB_HANDLER")
+            lines.append("#endif")
+            # ISO C macros (no GNU statement-exprs) so -pedantic stays clean (#269).
+            # Operands are evaluated more than once — Flow codegen emits pure
+            # subexpressions for these sites in practice.
+            lines.append("#ifndef FLOW_CHECKED_DIV")
+            lines.append(
+                "#define FLOW_CHECKED_DIV(L, R) "
+                "(((R) != 0) ? ((L) / (R)) : (flow_div_by_zero_handler(), (L) * 0))"
+            )
+            lines.append("#endif")
+            lines.append("#ifndef FLOW_CHECKED_MOD")
+            lines.append(
+                "#define FLOW_CHECKED_MOD(L, R) "
+                "(((R) != 0) ? ((L) % (R)) : (flow_div_by_zero_handler(), (L) * 0))"
+            )
+            lines.append("#endif")
+            lines.append("#ifndef FLOW_CHECKED_SHL")
+            lines.append(
+                "#define FLOW_CHECKED_SHL(L, R) "
+                "((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull)) "
+                "&& ((L) >= 0)) ? ((L) << (R)) : (flow_shift_ub_handler(), (L) * 0))"
+            )
+            lines.append("#endif")
+            lines.append("#ifndef FLOW_CHECKED_SHR")
+            lines.append(
+                "#define FLOW_CHECKED_SHR(L, R) "
+                "((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull))) "
+                "? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))"
+            )
+            lines.append("#endif")
+            lines.append("")
         
         # Always include math.h - many programs use math functions
         # The linker will only include what's actually used
@@ -339,7 +389,7 @@ class CGenerator:
                     has_i32_to_f32_def = True
                     break
         if not has_i32_to_f32_def:
-            lines.append("static inline float i32_to_f32(int32_t v) { return (float)v; }")
+            lines.append("__attribute__((unused)) static inline float i32_to_f32(int32_t v) { return (float)v; }")
             lines.append("")
 
         # Host stub for @gpu kernels: real device id comes from Metal/CUDA codegen.
@@ -351,7 +401,7 @@ class CGenerator:
                     break
         if not has_gpu_thread_id:
             lines.append("/* Host stub for @gpu kernels (device codegen replaces this). */")
-            lines.append("static inline int32_t gpu_thread_id(void) { return 0; }")
+            lines.append("__attribute__((unused)) static inline int32_t gpu_thread_id(void) { return 0; }")
             lines.append("")
         
         # Register effects and capabilities for dispatch
@@ -3116,7 +3166,30 @@ class CGenerator:
             # Comparison operators don't need outer parens (they have low precedence)
             if c_operator in ['==', '!=', '<', '<=', '>', '>=']:
                 return f"{left_expr} {c_operator} {right_expr}"
-                
+
+            # MISRA Rule 12.5 / CERT INT33-C: guard integer / and %.
+            if c_operator in ('/', '%') and self._arith_checks_enabled():
+                left_type = self._infer_expr_type(e.left)
+                right_type = self._infer_expr_type(e.right)
+                if self._is_integer_type_name(getattr(left_type, 'name', None)) or (
+                    c_operator == '%'  # '%' is always integer after float→int cast above
+                ):
+                    # Skip float division (IEEE → Inf/NaN, not C UB).
+                    if c_operator == '/' and self._is_float_type_name(
+                        getattr(left_type, 'name', None)
+                    ):
+                        pass
+                    elif c_operator == '/' and self._is_float_type_name(
+                        getattr(right_type, 'name', None)
+                    ):
+                        pass
+                    else:
+                        return self._gen_checked_div_mod(left_expr, right_expr, c_operator)
+
+            # MISRA Rule 12.2 / CERT INT34-C: guard shifts.
+            if c_operator in ('<<', '>>') and self._arith_checks_enabled():
+                return self._gen_checked_shift(left_expr, right_expr, c_operator)
+
             return f"({left_expr} {c_operator} {right_expr})"
 
         if isinstance(e, SortExpr):
@@ -3126,6 +3199,18 @@ class CGenerator:
             return self._gen_find_expr(e)
 
         if isinstance(e, FunctionCall):
+            # array<T>(N) constructor → calloc(N, sizeof(elem)).
+            # The parser lowers `array<f32>(10)` to FunctionCall("array_f32", [10]);
+            # emit a calloc so the call resolves without a missing symbol (#270).
+            if (
+                e.name.startswith("array_")
+                and len(e.arguments) == 1
+                and not self._overload_resolver.get_overloads(e.name)
+            ):
+                elem_type = Type(e.name[len("array_"):])
+                elem_c = self._c_type(elem_type)
+                count = self._gen_expr(e.arguments[0])
+                return f"(({elem_c}*)calloc({count}, sizeof({elem_c})))"
             # sizeof<T>() / sizeof_i32() intrinsic — prefer inline C sizeof
             if e.name.startswith("sizeof_") and len(e.arguments) == 0:
                 c_ty = self._sizeof_c_type_from_mangled(e.name[len("sizeof_"):])
@@ -3472,6 +3557,32 @@ class CGenerator:
                 f"{self._gen_lvalue_expr(e.object)}{accessor}{_c_ident(e.field)}"
             )
         return self._gen_expr(e)
+
+    def _arith_checks_enabled(self) -> bool:
+        """Runtime div0/shift guards (MISRA #264/#265). Off for library TUs."""
+        return bool(getattr(self, "_bounds_check", True))
+
+    @staticmethod
+    def _is_integer_type_name(name: Optional[str]) -> bool:
+        return name in {
+            "i8", "i16", "i32", "i64", "i128",
+            "u8", "u16", "u32", "u64", "u128",
+            "int", "bool",
+        }
+
+    @staticmethod
+    def _is_float_type_name(name: Optional[str]) -> bool:
+        return name in {"f32", "f64", "float", "double"}
+
+    def _gen_checked_div_mod(self, left_expr: str, right_expr: str, op: str) -> str:
+        """Emit integer / or % with a zero-divisor trap (CERT INT33-C)."""
+        macro = "FLOW_CHECKED_DIV" if op == "/" else "FLOW_CHECKED_MOD"
+        return f"{macro}(({left_expr}), ({right_expr}))"
+
+    def _gen_checked_shift(self, left_expr: str, right_expr: str, op: str) -> str:
+        """Emit << or >> with range/sign checks (CERT INT34-C / MISRA 12.2)."""
+        macro = "FLOW_CHECKED_SHL" if op == "<<" else "FLOW_CHECKED_SHR"
+        return f"{macro}(({left_expr}), ({right_expr}))"
 
     def _gen_array_access(self, e: ArrayAccess) -> str:
         """Generate C array index access with optional bounds checking.
