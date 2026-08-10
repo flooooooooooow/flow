@@ -1,0 +1,23 @@
+# Smoke for checked / saturating / wrapping arith (#275)
+
+function wrapping_add_i32(a: i32, b: i32) -> i32 {
+    return ((a as i64) + (b as i64)) as i32
+}
+
+function saturating_add_i32(a: i32, b: i32) -> i32 {
+    let s: i64 = (a as i64) + (b as i64)
+    if s > 2147483647 { return 2147483647 }
+    if s < (0 - 2147483648) { return 0 - 2147483648 }
+    return s as i32
+}
+
+function main() -> i32 {
+    let w: i32 = wrapping_add_i32(2147483647, 1)
+    let s: i32 = saturating_add_i32(2147483647, 1)
+    # wrapping: 2147483647+1 → -2147483648; saturating → 2147483647
+    # exit = (w == min) + (s == max) → expect 2 if both true... use numeric:
+    # return 0 if both ok: w should be min_i32, s max_i32
+    if s != 2147483647 { return 1 }
+    if w != (0 - 2147483648) { return 2 }
+    return 0
+}

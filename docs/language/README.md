@@ -26,6 +26,8 @@ Detailed documentation for the Flow programming language.
 | [Modules](modules.md) | Named imports, package paths, `export import` re-export |
 | [Module namespacing](modules-namespacing.md) | Why `module X { }` flattens, and what a real namespace would cost |
 | [Language Design](language_design.md) | Design rationale |
+| [Safety profiles](safety-profiles.md) | `--profile safety\|flight`, `@safe`/`@unsafe`, `FLOW_DIAG` |
+| [Certification hub](../certification/README.md) | MISRA/CERT matrices, reproducible builds |
 | [North-star](../vision/north-star.md) | Evolution / units design cards |
 
 ## Quick Reference
