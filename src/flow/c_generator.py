@@ -185,6 +185,7 @@ class CGenerator:
         self._find_helper_keys: set = set()
         self._pending_order_helpers: List[str] = []  # IEEE totalOrder comparators
         self._order_helper_keys: set = set()
+        self._uses_complex: bool = False
         # One record per declarative selection site, in emission order. The
         # `--explain` report is a rendering of this list.
         self._selections: List[Selection] = []
@@ -303,6 +304,150 @@ class CGenerator:
             parts.append('printf("\\n")')
         return '; '.join(parts)
 
+    def _type_uses_complex(self, t) -> bool:
+        """Check if a Type references c64 or c128 (directly or in element/array types)."""
+        if t is None:
+            return False
+        if t.name in ("c64", "c128"):
+            return True
+        if getattr(t, 'element_type', None) is not None:
+            if self._type_uses_complex(t.element_type):
+                return True
+        if getattr(t, 'return_type', None) is not None:
+            if self._type_uses_complex(t.return_type):
+                return True
+        for pt in getattr(t, 'param_types', []) or []:
+            if self._type_uses_complex(pt):
+                return True
+        for ta in getattr(t, 'type_args', []) or []:
+            if self._type_uses_complex(ta):
+                return True
+        return False
+
+    def _expr_uses_complex(self, expr) -> bool:
+        """Recursively check if an expression references complex constructors."""
+        if expr is None:
+            return False
+        # FunctionCall: check name and all arguments
+        if hasattr(expr, 'name') and hasattr(expr, 'arguments'):
+            if expr.name in ('c64', 'c128', 'creal', 'cimag', 'cabs', 'carg',
+                             'conj', 'cexp', 'clog', 'csqrt', 'cpow'):
+                return True
+            for arg in (expr.arguments or []):
+                if self._expr_uses_complex(arg):
+                    return True
+        # Check sub-expressions
+        for attr in ('left', 'right', 'operand', 'value', 'expr', 'object',
+                     'array', 'target', 'target_expr', 'body', 'condition',
+                     'then_branch', 'else_branch'):
+            sub = getattr(expr, attr, None)
+            if sub is not None and self._expr_uses_complex(sub):
+                return True
+        # Check list-type attributes
+        for attr in ('elements', 'arguments', 'fields', 'members', 'statements'):
+            items = getattr(expr, attr, None)
+            if items:
+                for item in items:
+                    if self._expr_uses_complex(item):
+                        return True
+        return False
+
+    def _scan_for_complex(self, functions, structs, type_aliases,
+                          distinct_types, statics) -> None:
+        """Pre-scan declarations to detect c64/c128 usage."""
+        for fn in functions:
+            if self._type_uses_complex(fn.return_type):
+                self._uses_complex = True
+                return
+            for p in (fn.parameters or []):
+                if self._type_uses_complex(p.type):
+                    self._uses_complex = True
+                    return
+            # Check function body statements for complex constructor calls
+            body = fn.body
+            if body is not None:
+                stmts = body.statements if hasattr(body, 'statements') else body
+                for stmt in (stmts or []):
+                    if self._stmt_uses_complex(stmt):
+                        self._uses_complex = True
+                        return
+        for s in (structs or []):
+            for f in (s.fields or []):
+                if self._type_uses_complex(f.type):
+                    self._uses_complex = True
+                    return
+        for ta in (type_aliases or []):
+            if self._type_uses_complex(ta.target_type):
+                self._uses_complex = True
+                return
+        for dt in (distinct_types or []):
+            if self._type_uses_complex(dt.base_type):
+                self._uses_complex = True
+                return
+        for st in (statics or []):
+            if self._type_uses_complex(st.type):
+                self._uses_complex = True
+                return
+
+    def _stmt_uses_complex(self, stmt) -> bool:
+        """Check if a statement references complex types or constructors."""
+        if stmt is None:
+            return False
+        # Check type annotations on let/const/var declarations
+        for attr in ('type', 'var_type', 'value_type'):
+            t = getattr(stmt, attr, None)
+            if t is not None and self._type_uses_complex(t):
+                return True
+        # Check expressions in the statement
+        for attr in ('value', 'expr', 'condition', 'target',
+                     'then_branch', 'else_branch', 'iterator', 'iterable',
+                     'start', 'end', 'step'):
+            sub = getattr(stmt, attr, None)
+            if sub is not None and self._expr_uses_complex(sub):
+                return True
+            if sub is not None and self._stmt_uses_complex(sub):
+                return True
+        # Check Block-typed sub-statements (then_block, else_block, body)
+        for attr in ('then_block', 'else_block', 'body'):
+            blk = getattr(stmt, attr, None)
+            if blk is not None:
+                if hasattr(blk, 'statements'):
+                    for item in blk.statements:
+                        if self._stmt_uses_complex(item):
+                            return True
+                elif isinstance(blk, list):
+                    for item in blk:
+                        if self._stmt_uses_complex(item):
+                            return True
+        # Check elif_blocks: list of (expr, Block) tuples
+        elifs = getattr(stmt, 'elif_blocks', None)
+        if elifs:
+            for cond, blk in elifs:
+                if self._expr_uses_complex(cond):
+                    return True
+                if hasattr(blk, 'statements'):
+                    for item in blk.statements:
+                        if self._stmt_uses_complex(item):
+                            return True
+        # Check statement lists (body may be a Block with .statements)
+        for attr in ('statements', 'then_body', 'else_body', 'branches'):
+            items = getattr(stmt, attr, None)
+            if items is not None:
+                if hasattr(items, 'statements'):
+                    items = items.statements
+                if isinstance(items, list):
+                    for item in items:
+                        if self._stmt_uses_complex(item):
+                            return True
+        # Check expressions list
+        for attr in ('args', 'arguments', 'params'):
+            items = getattr(stmt, attr, None)
+            if items:
+                for item in items:
+                    if self._expr_uses_complex(item):
+                        return True
+        return False
+
     def generate_translation_unit(self, constants: List[ConstDecl], functions: List[FunctionDecl],
                                    structs: List[StructDecl] = None,
                                    effects: List[EffectDecl] = None,
@@ -315,6 +460,10 @@ class CGenerator:
         # Ordering provenance runs before codegen so every `|> sort` and
         # `|> find` site carries its hints when the selector runs (issue #145).
         annotate_ordering_hints(functions or [])
+        # Pre-scan for complex types so <complex.h> is only included when
+        # needed (its macros I, creal, cimag can clash with user names).
+        self._scan_for_complex(functions or [], structs or [], type_aliases or [],
+                               distinct_types or [], statics or [])
         lines: List[str] = []
         lines.append("#include <stdint.h>")
         lines.append("#include <stdbool.h>")
@@ -491,8 +640,11 @@ class CGenerator:
         # Always include math.h - many programs use math functions
         # The linker will only include what's actually used
         lines.append("#include <math.h>")
-        # complex.h for c64/c128 complex number support
-        lines.append("#include <complex.h>")
+        # complex.h for c64/c128 complex number support (only if used).
+        # Conditionally included: <complex.h> defines macros I, creal, cimag,
+        # etc. that can clash with user variable names.
+        if self._uses_complex:
+            lines.append("#include <complex.h>")
         
         lines.append("")
         # Library modules must not export a shared _ui_state (link conflict with main TU).
@@ -2076,9 +2228,9 @@ class CGenerator:
         if name in ("f32", "f64", "float", "double"):
             return "0.0"
         if name in ("c64",):
-            return "CMPLXF(0.0f, 0.0f)"
+            return "(0.0f + 0.0f * I)"
         if name in ("c128",):
-            return "CMPLX(0.0, 0.0)"
+            return "(0.0 + 0.0 * I)"
         if name in ("string", "str"):
             return '""'
         if name.startswith("ptr_") or getattr(t, "is_pointer", False) or name.startswith("array_"):
@@ -3428,23 +3580,24 @@ class CGenerator:
                 elem_c = self._c_type(elem_type)
                 count = self._gen_expr(e.arguments[0])
                 return f"(({elem_c}*)calloc({count}, sizeof({elem_c})))"
-            # Complex constructors: c64(re, im) -> CMPLXF(re, im),
-            # c128(re, im) -> CMPLX(re, im).
+            # Complex constructors: c64(re, im) -> (float)(re) + (float)(im) * I,
+            # c128(re, im) -> (double)(re) + (double)(im) * I.
+            # Uses the C99 I macro from <complex.h> (more portable than CMPLXF).
             if e.name == "c64" and len(e.arguments) == 2:
                 re = self._gen_expr(e.arguments[0])
                 im = self._gen_expr(e.arguments[1])
-                return f"CMPLXF((float)({re}), (float)({im}))"
+                return f"((float)({re}) + (float)({im}) * I)"
             if e.name == "c128" and len(e.arguments) == 2:
                 re = self._gen_expr(e.arguments[0])
                 im = self._gen_expr(e.arguments[1])
-                return f"CMPLX((double)({re}), (double)({im}))"
-            # Complex scalar from a single real: c64(x) -> CMPLXF(x, 0).
+                return f"((double)({re}) + (double)({im}) * I)"
+            # Complex scalar from a single real: c64(x) -> (float)(x) + 0*I.
             if e.name == "c64" and len(e.arguments) == 1:
                 re = self._gen_expr(e.arguments[0])
-                return f"CMPLXF((float)({re}), 0.0f)"
+                return f"((float)({re}) + 0.0f * I)"
             if e.name == "c128" and len(e.arguments) == 1:
                 re = self._gen_expr(e.arguments[0])
-                return f"CMPLX((double)({re}), 0.0)"
+                return f"((double)({re}) + 0.0 * I)"
             # sizeof<T>() / sizeof_i32() intrinsic — prefer inline C sizeof
             if e.name.startswith("sizeof_") and len(e.arguments) == 0:
                 c_ty = self._sizeof_c_type_from_mangled(e.name[len("sizeof_"):])

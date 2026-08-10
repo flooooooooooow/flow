@@ -154,7 +154,7 @@ def test_complex_c_codegen():
     """)
     assert "complex.h" in c_code
     assert "float complex" in c_code
-    assert "CMPLXF" in c_code
+    assert "* I" in c_code  # C99 complex construction via I macro
 
 
 def test_complex_compile_and_run():
