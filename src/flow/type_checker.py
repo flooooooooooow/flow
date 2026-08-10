@@ -1086,6 +1086,15 @@ class TypeChecker:
         # Phase 3: Type check all declarations
         self._check_declarations(declarations)
 
+        # Phase 3.5: Safety profile enforcement (MISRA 17.2 / 17.4).
+        # Detect unbounded recursion and unbounded while loops under
+        # --profile safety/flight.
+        import os as _os
+        _profile = _os.environ.get("FLOW_PROFILE", "default")
+        if _profile in ("safety", "flight"):
+            self._check_recursion(declarations)
+            self._check_unbounded_loops(declarations)
+
         struct_fields: Dict[str, List[Tuple[str, str]]] = {}
         for sname, sdecl in self.struct_types.items():
             fields: List[Tuple[str, str]] = []
@@ -1354,6 +1363,95 @@ class TypeChecker:
                         break
 
         return unsafe_reason
+
+    def _check_recursion(self, declarations: List[Any]) -> None:
+        """Detect unbounded recursion under --profile safety/flight (MISRA 17.2).
+
+        Builds a direct call graph and runs DFS to find cycles. Any function
+        that participates in a cycle (direct or transitive) is reported.
+        """
+        direct_calls: Dict[str, Set[str]] = {}
+
+        def register(name: str, body: Optional[Block]) -> None:
+            if body is None:
+                return
+            direct_calls[name] = set(self._iter_call_names(body, set()))
+
+        for decl in declarations:
+            if isinstance(decl, FunctionDecl) and not getattr(decl, 'is_extern', False):
+                register(decl.name, decl.body)
+            elif isinstance(decl, ImplDecl):
+                for method in decl.methods:
+                    mangled_name = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
+                    register(mangled_name, method.body)
+
+        # DFS-based cycle detection. Track functions on the current path.
+        on_stack: Set[str] = set()
+        visited: Set[str] = set()
+        recursive: Set[str] = set()
+
+        def dfs(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            on_stack.add(name)
+            for callee in direct_calls.get(name, set()):
+                if callee in on_stack:
+                    # Found a cycle. Mark every function on the path from
+                    # callee back to the current node as recursive.
+                    recursive.add(callee)
+                    recursive.add(name)
+                elif callee not in visited and callee in direct_calls:
+                    dfs(callee)
+                    if callee in recursive:
+                        recursive.add(name)
+            on_stack.discard(name)
+
+        for fn_name in direct_calls:
+            if fn_name not in visited:
+                dfs(fn_name)
+
+        for fn_name in sorted(recursive):
+            self.errors.append(
+                f"--profile safety rejects unbounded recursion "
+                f"(MISRA 17.2): '{fn_name}' is recursive"
+            )
+
+    def _check_unbounded_loops(self, declarations: List[Any]) -> None:
+        """Detect unbounded while loops under --profile safety/flight (MISRA 17.4).
+
+        A `while` loop is unbounded unless it carries an `@max_iterations(N)`
+        attribute. Counted `for i in 0 to N` loops are always bounded.
+        """
+        for decl in declarations:
+            if not isinstance(decl, FunctionDecl) or getattr(decl, 'is_extern', False):
+                continue
+            if decl.body is None:
+                continue
+            self._scan_while_loops(decl.body, decl.name)
+
+    def _scan_while_loops(self, node: Any, fn_name: str) -> None:
+        """Recursively scan for WhileStatement without @max_iterations."""
+        if node is None:
+            return
+        from .parser import WhileStatement
+        if isinstance(node, WhileStatement):
+            if getattr(node, "max_iterations", None) is None:
+                self.errors.append(
+                    f"--profile safety rejects unbounded 'while' loop "
+                    f"(MISRA 17.4): use '@max_iterations(N)' or a counted "
+                    f"'for' loop in '{fn_name}'"
+                )
+        # Recurse into dataclass fields
+        if dataclasses.is_dataclass(node) and not isinstance(node, type):
+            for f in dataclasses.fields(node):
+                self._scan_while_loops(getattr(node, f.name), fn_name)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                self._scan_while_loops(item, fn_name)
+        elif isinstance(node, dict):
+            for value in node.values():
+                self._scan_while_loops(value, fn_name)
 
     def _rt_unsafe_kind(self, leaf_name: str) -> str:
         return self.RT_UNSAFE_REASON_KIND.get(leaf_name, 'heap')

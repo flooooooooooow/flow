@@ -407,14 +407,14 @@ class TestPrintOfAnExpression:
         c = flow_to_c(parse_flow_code(PRINT_EXPRESSIONS))
         body = c[c.index("int32_t main(void) {"):]
         assert "    (a + b);" not in body
-        assert 'printf("%d", (a + b))' in body
-        assert 'printf("%d\\n", (a + b))' in body
+        assert 'FLOW_LOG("%d", (a + b))' in body
+        assert 'FLOW_LOG("%d\\n", (a + b))' in body
 
     def test_string_concatenation_is_printed(self):
         from flow.c_generator import flow_to_c
 
         c = flow_to_c(parse_flow_code(PRINT_EXPRESSIONS))
-        assert 'printf("%s", flow_strcat("concat: ", s))' in c
+        assert 'FLOW_LOG("%s", flow_strcat("concat: ", s))' in c
 
     # test_output_is_correct_end_to_end compared the program stdout against
     # "42\nconcat: hi\n42\n3\n9\n42\n". That is now
