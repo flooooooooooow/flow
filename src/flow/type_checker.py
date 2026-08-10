@@ -2384,6 +2384,20 @@ class TypeChecker:
             if self.strict or not self._is_numeric(cond_type):
                 self.errors.append(f"While condition must be bool, got {cond_type}")
 
+        # MISRA 17.4 / #272: under safety|flight, while requires @max_iterations(N).
+        # Counted `for` loops are already bounded and are preferred.
+        import os as _os
+        _profile = _os.environ.get("FLOW_PROFILE", "default")
+        if _profile in ("safety", "flight"):
+            bound = getattr(while_stmt, "max_iterations", None)
+            if bound is None:
+                self.errors.append(
+                    "safety profile requires @max_iterations(N) on while loops "
+                    "(MISRA 17.4); use a bounded for-loop or annotate the while"
+                )
+            elif bound <= 0:
+                self.errors.append("@max_iterations requires a positive bound")
+
         # Check body
         self._check_block(while_stmt.body)
 

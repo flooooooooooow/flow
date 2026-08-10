@@ -2,6 +2,24 @@
 
 All notable changes to FLOW will be documented in this file.
 
+## [Unreleased]
+
+### Safety / MISRA
+
+- Temp arena for `flow_strcat` and escaping closure envs (`flow_temp_alloc` /
+  `flow_temp_free_all` + `atexit`) — closes #267 / #268 for short-lived programs.
+- `--profile safety|flight` rejects recursive functions via the safety
+  manifest (MISRA 17.2) — #271 / partial #273.
+- `while` loops require `@max_iterations(N)` under safety/flight; C emits a
+  runtime abort guard (#272).
+- Docs: `docs/language/safety-profiles.md`.
+
+### Standard library / Euler (#252)
+
+- `HashMap_i64_i64` open-addressing map in `lib/stdlib/collections.flow`.
+- Limb-based `lib/stdlib/bigint.flow` (add/sub/mul, `mod_u32`, `mod_pow_u32`).
+- Smokes: `examples/basics/hashmap_i64_smoke.flow`, `bigint_smoke.flow`.
+
 ## [0.10.0] - 2026-08-08
 
 ### MLIR / WASM epic #221 (complete)

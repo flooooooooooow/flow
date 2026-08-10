@@ -1,0 +1,79 @@
+# HashMap_i64_i64 smoke (#252)
+# Standalone copy of the stdlib API so the unit/example does not need module resolve.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+}
+
+function sizeof_i32() -> i64 { return 4 }
+function sizeof_i64() -> i64 { return 8 }
+
+struct HashMap_i64_i64 {
+    keys: ptr<i64>,
+    values: ptr<i64>,
+    occupied: ptr<i32>,
+    size: i32,
+    capacity: i32
+}
+
+function hash_i64(k: i64) -> i32 {
+    let mut h: i64 = k
+    if h < 0 { h = 0 - h }
+    return (h % 2147483647) as i32
+}
+
+function hashmap_i64_i64_new(cap: i32) -> HashMap_i64_i64 {
+    let mut c: i32 = cap
+    if c < 8 { c = 8 }
+    return HashMap_i64_i64 {
+        keys: calloc(c as i64, sizeof_i64()) as ptr<i64>,
+        values: calloc(c as i64, sizeof_i64()) as ptr<i64>,
+        occupied: calloc(c as i64, sizeof_i32()) as ptr<i32>,
+        size: 0,
+        capacity: c
+    }
+}
+
+function hashmap_i64_i64_insert(m: HashMap_i64_i64, key: i64, value: i64) -> HashMap_i64_i64 {
+    let start: i32 = hash_i64(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.occupied[i] == 0 {
+            m.keys[i] = key
+            m.values[i] = value
+            m.occupied[i] = 1
+            m.size = m.size + 1
+            return m
+        }
+        if m.occupied[i] == 1 {
+            if m.keys[i] == key {
+                m.values[i] = value
+                return m
+            }
+        }
+        i = i + 1
+        if i >= m.capacity { i = 0 }
+    }
+    return m
+}
+
+function hashmap_i64_i64_get(m: HashMap_i64_i64, key: i64, default_value: i64) -> i64 {
+    let start: i32 = hash_i64(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.occupied[i] == 0 { return default_value }
+        if m.occupied[i] == 1 {
+            if m.keys[i] == key { return m.values[i] }
+        }
+        i = i + 1
+        if i >= m.capacity { i = 0 }
+    }
+    return default_value
+}
+
+function main() -> i32 {
+    let mut m: HashMap_i64_i64 = hashmap_i64_i64_new(16)
+    m = hashmap_i64_i64_insert(m, 1, 10)
+    m = hashmap_i64_i64_insert(m, 2, 20)
+    return (hashmap_i64_i64_get(m, 1, 0) + hashmap_i64_i64_get(m, 2, 0)) as i32
+}

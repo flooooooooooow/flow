@@ -1,8 +1,8 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-09  
-> Current version: 0.10.0  
-> Lines of Code: ~381,000
+> Last updated: 2026-08-05  
+> Current version: 0.3.3  
+> Lines of Code: ~38,000
 
 This document tracks what we're building next and why.
 
@@ -38,7 +38,7 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
 | **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
 | **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
-| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial — Phase 0+1: flags/sanitizers, fault handler, checked +/−/*, null deref, [safety-profiles.md](docs/language/safety-profiles.md) |
+| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial — Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null/fault handler: #288. |
 
 Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
 
