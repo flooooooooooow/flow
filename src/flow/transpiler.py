@@ -199,6 +199,18 @@ def main():
         "--module-info", action="store_true", help="Show module information"
     )
     parser.add_argument(
+        "--emit-manifest",
+        action="store_true",
+        help="Emit a safety manifest (compliance report) to stderr. "
+        "Combines with --profile safety for full MISRA/CERT coverage.",
+    )
+    parser.add_argument(
+        "--manifest-format",
+        choices=["text", "json"],
+        default="text",
+        help="Safety manifest output format (default: text)",
+    )
+    parser.add_argument(
         "--validate-imports", action="store_true", help="Validate import statements"
     )
     parser.add_argument(
@@ -509,6 +521,26 @@ def main():
         except Exception as e:
             print(f"C generation error: {e}", file=sys.stderr)
             sys.exit(1)
+
+        # Safety manifest emission (after C generation so overflow_check
+        # state is known).
+        if getattr(args, "emit_manifest", False):
+            from .safety_manifest import generate_manifest
+            import os as _os
+            _profile = _os.environ.get("FLOW_PROFILE", "default")
+            _overflow = _profile in ("safety", "flight") or _os.environ.get("FLOW_OVERFLOW_CHECK", "") == "1"
+            manifest = generate_manifest(
+                declarations,
+                type_checker,
+                source_file=args.input or "",
+                profile=_profile,
+                overflow_check=_overflow,
+                type_errors=type_result.errors if type_result else [],
+            )
+            if getattr(args, "manifest_format", "text") == "json":
+                print(manifest.to_json(), file=sys.stderr)
+            else:
+                print(manifest.to_text(), file=sys.stderr)
     else:
         # Generate MLIR
         try:
