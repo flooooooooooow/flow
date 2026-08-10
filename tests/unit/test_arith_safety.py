@@ -87,6 +87,7 @@ def test_c_emits_div0_handler():
         }
         """
     )
+    assert "flow_fault_handler" in c
     assert "flow_div_by_zero_handler" in c
     assert "FLOW_CHECKED_DIV" in c
     assert "flow_shift_ub_handler" in c
@@ -190,3 +191,28 @@ def test_default_profile_no_overflow_check():
     assert "FLOW_CHECKED_ADD" not in c
     assert "flow_overflow_handler" not in c
     assert "a + b" in c or "(a + b)" in c
+
+def test_c_emits_null_deref_guard():
+    c = _c_overflow(
+        """
+        function main() -> i32 {
+            let p: ptr<i32> = null
+            return *p
+        }
+        """
+    )
+    assert "FLOW_NONNULL" in c
+    assert "flow_null_deref_handler" in c
+
+
+def test_default_profile_no_null_guard():
+    c = _c(
+        """
+        function main() -> i32 {
+            let p: ptr<i32> = null
+            return *p
+        }
+        """
+    )
+    assert "FLOW_NONNULL" not in c
+

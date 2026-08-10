@@ -585,6 +585,12 @@ See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for 
 
 ## [Unreleased]
 
+### Added
+- MISRA Phase 1 (#263/#266/#279/#273): unified `flow_fault_handler`; signed
+  overflow via `__builtin_*_overflow`; null deref via `FLOW_NONNULL`;
+  [safety-profiles.md](../language/safety-profiles.md).
+- If-expressions: `let x = if cond { a } else { b }` (#252 partial).
+
 ### Planned
 - Self-hosting Phases B–E (`flowc` default host)
 - Package registry beyond git deps

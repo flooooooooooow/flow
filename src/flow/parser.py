@@ -350,6 +350,19 @@ class IfStatement:
 
 
 @dataclass
+class IfExpression:
+    """Value-producing `if cond { then } else { else }` (#252).
+
+    Arms are single expressions (not statement blocks). `else` is required.
+    """
+
+    condition: "Expression"
+    then_expr: "Expression"
+    else_expr: "Expression"
+    location: Optional["SourceLocation"] = None
+
+
+@dataclass
 class WhileStatement:
     condition: "Expression"
     body: Block
@@ -1193,6 +1206,7 @@ Expression = Union[
     TryExpr,
     SortExpr,
     FindExpr,
+    IfExpression,
 ]
 Statement = Union[
     VarDecl,
@@ -4635,10 +4649,32 @@ class Parser:
             # Or shorthand: |x| x * 2
             return self.parse_lambda()
 
+        elif self.current_token.type == TokenType.IF:
+            # If-expression: if cond { then } else { else } (#252)
+            return self.parse_if_expression()
+
         else:
             raise SyntaxError(
                 f"Unexpected token in expression: {self.current_token.type}"
             )
+
+    def parse_if_expression(self) -> "IfExpression":
+        """Parse `if cond { expr } else { expr }` in expression position."""
+        start = self.current_token
+        self.expect(TokenType.IF)
+        condition = self.parse_expression_without_assign()
+        self.expect(TokenType.LBRACE)
+        then_expr = self.parse_expression_without_assign()
+        self.expect(TokenType.RBRACE)
+        if self.current_token.type != TokenType.ELSE:
+            raise SyntaxError("if-expression requires an else branch")
+        self.advance()
+        self.expect(TokenType.LBRACE)
+        else_expr = self.parse_expression_without_assign()
+        self.expect(TokenType.RBRACE)
+        loc = SourceLocation(line=start.line, column=start.column)
+        return IfExpression(condition, then_expr, else_expr, location=loc)
+
     def parse_function_call(self, name: str) -> FunctionCall:
         self.expect(TokenType.LPAREN)
         arguments = []
@@ -4671,6 +4707,10 @@ class Parser:
             # by the nested lambda's own parameters.
             inner_bound = set(param_names) | {p.name for p in node.parameters}
             self._collect_free_variables(node.body, inner_bound, found)
+        elif isinstance(node, IfExpression):
+            self._collect_free_variables(node.condition, param_names, found)
+            self._collect_free_variables(node.then_expr, param_names, found)
+            self._collect_free_variables(node.else_expr, param_names, found)
         elif isinstance(node, Block):
             # Locals declared in the block bind the name for the
             # statements that follow; the initializer itself is evaluated

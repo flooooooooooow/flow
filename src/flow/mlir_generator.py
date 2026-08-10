@@ -7,7 +7,7 @@ Converts parsed FLOW AST to MLIR dialects
 from typing import List, Dict, Optional, Any, Set
 from .parser import (
     FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, Block, Statement,
-    VarDecl, Assignment, IfStatement, WhileStatement, ForStatement,
+    VarDecl, Assignment, IfStatement, IfExpression, WhileStatement, ForStatement,
     ReturnStatement, Expression, Literal, Variable, BinaryOperation,
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectCall, MethodCall,
@@ -3285,11 +3285,51 @@ class MLIRGenerator:
             return self.generate_record_update(expr)
         elif isinstance(expr, Lambda):
             return self.generate_lambda(expr)
+        elif isinstance(expr, IfExpression):
+            return self.generate_if_expression(expr)
         else:
             raise NotImplementedError(
                 f"MLIR backend does not support expression type "
                 f"{type(expr).__name__}; use the C backend (--c)"
             )
+
+    def generate_if_expression(self, if_expr: IfExpression) -> tuple[str, List[str]]:
+        """Lower `if cond { a } else { b }` to valued ``scf.if`` (#252)."""
+        ops: List[str] = []
+        cond_ssa, cond_ops = self.generate_expression(if_expr.condition)
+        ops.extend(cond_ops)
+        cond_ty = self._ssa_types.get(cond_ssa, "i1")
+        if cond_ty != "i1":
+            zero = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{zero} = arith.constant 0 : {cond_ty}")
+            cast = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{cast} = arith.cmpi ne, {cond_ssa}, {zero} : {cond_ty}"
+            )
+            cond_ssa = cast
+
+        res_ty = self.get_expression_type(if_expr.then_expr)
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{result} = scf.if {cond_ssa} -> ({res_ty}) {{")
+        self.indent_level += 1
+        then_ssa, then_ops = self.generate_expression(if_expr.then_expr)
+        ops.extend(then_ops)
+        then_ty = self._ssa_types.get(then_ssa, res_ty)
+        ops.append(f"{self.indent()}scf.yield {then_ssa} : {then_ty}")
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}} else {{")
+        self.indent_level += 1
+        else_ssa, else_ops = self.generate_expression(if_expr.else_expr)
+        ops.extend(else_ops)
+        else_ty = self._ssa_types.get(else_ssa, then_ty)
+        ops.append(f"{self.indent()}scf.yield {else_ssa} : {else_ty}")
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        self._ssa_types[result] = then_ty
+        return result, ops
 
     def _emit_cast(self, value_ssa: str, from_type: str, to_type: str) -> tuple[str, List[str]]:
         from_type = self._ssa_types.get(value_ssa, from_type)
