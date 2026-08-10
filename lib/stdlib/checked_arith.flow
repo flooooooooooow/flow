@@ -1,0 +1,88 @@
+# Checked / saturating / wrapping integer arithmetic (#275).
+# Prefer these helpers when you need defined overflow behaviour outside the
+# safety-profile default (which aborts via FLOW_CHECKED_*).
+
+function wrapping_add_i32(a: i32, b: i32) -> i32 {
+    return ((a as i64) + (b as i64)) as i32
+}
+
+function wrapping_sub_i32(a: i32, b: i32) -> i32 {
+    return ((a as i64) - (b as i64)) as i32
+}
+
+function wrapping_mul_i32(a: i32, b: i32) -> i32 {
+    return ((a as i64) * (b as i64)) as i32
+}
+
+function saturating_add_i32(a: i32, b: i32) -> i32 {
+    let s: i64 = (a as i64) + (b as i64)
+    if s > 2147483647 {
+        return 2147483647
+    }
+    if s < (0 - 2147483648) {
+        return 0 - 2147483648
+    }
+    return s as i32
+}
+
+function saturating_sub_i32(a: i32, b: i32) -> i32 {
+    let s: i64 = (a as i64) - (b as i64)
+    if s > 2147483647 {
+        return 2147483647
+    }
+    if s < (0 - 2147483648) {
+        return 0 - 2147483648
+    }
+    return s as i32
+}
+
+function saturating_mul_i32(a: i32, b: i32) -> i32 {
+    let s: i64 = (a as i64) * (b as i64)
+    if s > 2147483647 {
+        return 2147483647
+    }
+    if s < (0 - 2147483648) {
+        return 0 - 2147483648
+    }
+    return s as i32
+}
+
+# checked_* returns 1 and writes the sum when no overflow; returns 0 on overflow
+# (out parameter style — Flow has no Option yet).
+
+function checked_add_i32(a: i32, b: i32, out: ptr<i32>) -> i32 {
+    let s: i64 = (a as i64) + (b as i64)
+    if s > 2147483647 {
+        return 0
+    }
+    if s < (0 - 2147483648) {
+        return 0
+    }
+    out[0] = s as i32
+    return 1
+}
+
+function wrapping_add_i64(a: i64, b: i64) -> i64 {
+    # Defined wrap via unsigned reinterpretation through C backend casts.
+    return ((a as u64) + (b as u64)) as i64
+}
+
+function saturating_add_i64(a: i64, b: i64) -> i64 {
+    # Conservative: if signs match and result sign differs, saturate.
+    let s: i64 = a + b
+    if a > 0 {
+        if b > 0 {
+            if s < 0 {
+                return 9223372036854775807
+            }
+        }
+    }
+    if a < 0 {
+        if b < 0 {
+            if s > 0 {
+                return 0 - 9223372036854775807 - 1
+            }
+        }
+    }
+    return s
+}
