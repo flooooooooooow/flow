@@ -1,42 +1,48 @@
-# Flow Programming Language
+<p align="center">
+  <img src="docs/assets/flow-logo-with-text.png" alt="Flow" width="280">
+</p>
 
-[![CI](https://github.com/flooooooooooow/flow/actions/workflows/ci.yml/badge.svg)](https://github.com/flooooooooooow/flow/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-0A7EA4)](https://flooooooooooow.github.io/flow/)
-[![Release](https://img.shields.io/github/v/release/flooooooooooow/flow?include_prereleases&sort=semver)](https://github.com/flooooooooooow/flow/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/YK7VaHy24T)
-[![Last commit](https://img.shields.io/github/last-commit/flooooooooooow/flow)](https://github.com/flooooooooooow/flow/commits/main)
-[![Open issues](https://img.shields.io/github/issues/flooooooooooow/flow)](https://github.com/flooooooooooow/flow/issues)
+<p align="center">
+  A language for systems that evolve through time
+</p>
 
-[![Source lines](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.loc&label=source&color=1f6feb)](docs/generated/repository-stats.json)
-[![Flow lines](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.flow&label=written%20in%20flow&color=1f6feb)](docs/generated/repository-stats.json)
-[![Standard library](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.stdlib&label=stdlib&color=8250df)](lib/stdlib)
-[![Examples](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.examples&label=examples&color=8250df)](examples)
-[![Tests](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.tests&label=tests&color=2da44e)](tests)
-[![Proofs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.proofs&label=verified&color=2da44e)](examples/verify)
+<p align="center">
+  <a href="https://flooooooooooow.github.io/flow/">Docs</a>
+  ·
+  <a href="docs/getting-started.md">Getting started</a>
+  ·
+  <a href="https://flooooooooooow.github.io/flow/#demos/overview.md">Galleries</a>
+  ·
+  <a href="VISION.md">Vision</a>
+  ·
+  <a href="https://discord.gg/YK7VaHy24T">Discord</a>
+  ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-[![Type system](https://img.shields.io/badge/types-static%20%2B%20inference-informational)](docs/language/overview.md)
-[![Effects](https://img.shields.io/badge/effects-algebraic-informational)](docs/language/async-effects.md)
-[![Autodiff](https://img.shields.io/badge/autodiff-built--in-informational)](docs/library/autodiff.md)
-[![Backends](https://img.shields.io/badge/backends-C%20%C2%B7%20MLIR%20%C2%B7%20WASM-informational)](docs/language/wasm.md)
-[![GPU](https://img.shields.io/badge/gpu-Metal-informational)](docs/language/graphics.md)
-[![Safety](https://img.shields.io/badge/safety-MISRA%2FCERT-informational)](docs/language/overview.md)
+<p align="center">
+  <a href="https://github.com/flooooooooooow/flow/actions/workflows/ci.yml"><img src="https://github.com/flooooooooooow/flow/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://flooooooooooow.github.io/flow/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-0A7EA4" alt="Docs"></a>
+  <a href="https://github.com/flooooooooooow/flow/releases"><img src="https://img.shields.io/github/v/release/flooooooooooow/flow?include_prereleases&sort=semver" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://discord.gg/YK7VaHy24T"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
 
-<img src="docs/assets/flow-logo-with-text.png" alt="Flow logo" width="320" align="right">
+<p align="center">
+  <a href="docs/generated/repository-stats.json"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.loc&label=source&color=1f6feb" alt="Source lines"></a>
+  <a href="lib/stdlib"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.stdlib&label=stdlib&color=8250df" alt="Standard library"></a>
+  <a href="examples"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.examples&label=examples&color=8250df" alt="Examples"></a>
+  <a href="tests"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.tests&label=tests&color=2da44e" alt="Tests"></a>
+</p>
 
-**Flow** is a statically typed, compiled programming language for describing **systems that evolve through time** — with **algebraic effects**, **automatic differentiation**, **dynamics / control analysis**, **native graphics**, and a **MISRA/CERT-derived safety profile**.
+Flow is a statically typed, compiled language with algebraic effects, autodiff in the stdlib, dynamics and control analysis, and native graphics. You write how a system evolves; that description is what runs.
 
 | | |
 |--|--|
-| **Docs** | [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) |
-| **Community** | [Discord](https://discord.gg/YK7VaHy24T) |
-| **Version** | **0.10.0** |
-| **License** | MIT |
-| **Install** | `brew tap flooooooooooow/flow && brew install flow` · or clone + `./flow run …` |
-
-> **Why Flow exists:** [VISION](VISION.md) — evolution as the primary abstraction.  
-> **Self-hosting:** [plan](docs/project/self-hosting.md) · Stage-A `flowc` lives in [`compiler/`](compiler/).
-> **Governance:** [GOVERNANCE.md](GOVERNANCE.md) · **Cite:** [CITATION.cff](CITATION.cff)
+| Version | 0.10.0 |
+| Install | `brew tap flooooooooooow/flow && brew install flow` |
+| License | [MIT](LICENSE) |
+| Cite | [CITATION.cff](CITATION.cff) |
 
 ```flow
 function main() -> i32 {
@@ -51,54 +57,46 @@ flow run hello.flow
 
 ---
 
-## Project Statistics
+## Why Flow
 
-Counted from tracked files by CI, so these numbers never drift from the tree.
+Most languages are built around computation: sequences of instructions that transform inputs to outputs.
 
-<!-- repo-stats:start -->
-| Metric | Files / modules | Physical lines |
-|---|---:|---:|
-| **Tracked source** | 2,827 | 381,338 |
-| **Flow language** | 1,965 | 197,416 |
-| **Python compiler (`src/flow`)** | 62 | 47,130 |
-| **Self-hosted compiler (`compiler/src`)** | 17 | 9,440 |
-| **Standard library modules** | 105 | 31,989 |
-| **Native runtime** | 41 | 7,105 |
-| **Examples (excluding verify corpus)** | 399 | 103,974 |
-| **Verify corpus** | 1,078 | 18,715 |
-| **Tests (`.py` + `.flow`)** | 347 | 38,302 |
-| **Application programs** | 8 | 1,537 |
-| **Registry packages** | 19 | — |
-| **Documentation pages** | 134 | 28,897 |
+Flow is built around evolution. You describe how a system changes through time. That description is what runs.
 
-<details>
-<summary>Tracked source by language</summary>
+An engineer working on a physical system today crosses Python for analysis, MATLAB for controller design, Simulink for block diagrams, C/C++ for deployment, Verilog for hardware, and vendor tools for the rest. Every handoff loses information. The mathematical model drifts from the deployed code.
 
-| Language | Files | Physical lines |
-|---|---:|---:|
-| Flow | 1,965 | 197,416 |
-| Python | 308 | 102,376 |
-| HTML | 170 | 28,741 |
-| C | 94 | 14,135 |
-| C/C++ headers | 46 | 10,968 |
-| C++ | 23 | 9,414 |
-| JavaScript | 145 | 7,164 |
-| Shell | 49 | 5,150 |
-| CSS | 11 | 3,448 |
-| Objective-C | 4 | 1,266 |
-| Objective-C++ | 2 | 654 |
-| Rust | 10 | 606 |
+Flow collapses those boundaries. The model is the program. The compiler understands units, sample rates, timing contracts, memory topology, and numeric precision as part of the type system, and emits portable C by default.
 
-</details>
+```flow
+flow Pendulum {
+    state angle: f64 = 0.5
+    state velocity: f64 = 0.0
+    param damping: f64 = 0.3
 
-*Generated by CI from tracked files at `c29971fa919a`. Proof documents: 1,080. [Raw JSON](docs/generated/repository-stats.json), [Flow counter](scripts/tools/repo_stats/main.flow), [Python fallback](scripts/update_repo_stats.py).*
-<!-- repo-stats:end -->
+    angle evolves as velocity
+    velocity evolves as -9.81 * sin(angle) - damping * velocity
+}
+```
+
+That is a complete program. The compiler hands the right-hand side to an RK4 solver and runs it at native speed. No notebook, no glue code, no translation step between model and deployment.
+
+Full thesis: [VISION.md](VISION.md). Domain architecture: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
 
 ---
 
-## Quick Start
+## What you get
 
-### Homebrew (macOS / Linuxbrew)
+- Dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).
+- Algebraic effects so you can swap I/O and other handlers without rewriting call sites.
+- Forward and reverse autodiff helpers in the stdlib; ML demos train on CPU in seconds.
+- C backend by default (no LLVM required). MLIR, WASM, and Metal when you need them.
+- Games, morphogenesis, neurodynamics, and real-time DSP as ordinary examples under `examples/`.
+
+---
+
+## Installation
+
+### Homebrew
 
 ```bash
 brew tap flooooooooooow/flow
@@ -107,7 +105,7 @@ flow version
 flow run examples/basics/hello_world.flow
 ```
 
-Track `main` with `brew install --HEAD flow`. Formula source: [`packaging/homebrew`](packaging/homebrew).
+Track `main` with `brew install --HEAD flow`. Formula: [`packaging/homebrew`](packaging/homebrew).
 
 ### From source
 
@@ -117,151 +115,104 @@ cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-**Requirements:** Python 3.9+, Clang or GCC (Xcode Command Line Tools on macOS).
+Needs Python 3.9+ and Clang or GCC (Xcode Command Line Tools on macOS).
 
-Optional: `./flow install` places `flow` on your PATH (`~/.local/bin`).
+Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
-**Cite:** [CITATION.cff](CITATION.cff). **Security:** [SECURITY.md](SECURITY.md). **Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
----
-
-## Directory Structure
-
-```
-flow/
-│
-├── flow                    # CLI entry point (bash script)
-├── flow-lsp                # Language Server Protocol launcher
-├── README.md               # This file
-├── ROADMAP.md              # Development roadmap
-├── LICENSE                 # MIT License
-├── Makefile                # Build automation
-│
-├── src/flow/               # COMPILER (Python, 12k lines)
-│   ├── parser.py           # Lexer + Parser → AST (1.9k lines)
-│   ├── type_checker.py     # Semantic analysis (580 lines)
-│   ├── c_generator.py      # Flow → C codegen (1.4k lines)
-│   ├── mlir_generator.py   # Flow → MLIR codegen (2.4k lines)
-│   ├── transpiler.py       # CLI commands
-│   ├── lsp_server.py       # IDE support
-│   ├── repl.py             # Interactive mode
-│   ├── monomorphize.py     # Generics instantiation
-│   ├── gpu_integration.py  # GPU abstraction
-│   ├── metal_codegen.py    # Metal shader generation
-│   └── ...
-│
-├── lib/stdlib/             # STANDARD LIBRARY (105 modules)
-│   ├── autodiff.flow       # Automatic differentiation
-│   ├── nn.flow             # Neural network layers
-│   ├── gfx.flow            # Graphics API
-│   ├── math.flow           # Math functions
-│   ├── memory.flow         # Memory utilities
-│   ├── concurrent.flow     # Threads, atomics
-│   ├── audio.flow          # Audio processing
-│   └── ...
-│
-├── runtime/                # NATIVE RUNTIME
-│   └── gfx_macos.m         # macOS graphics backend (230 lines)
-│
-├── examples/               # EXAMPLES (399 programs, 104k lines)
-│   ├── basics/             # Hello world, fibonacci, sorting (12 files)
-│   ├── games/              # Tetris, 2048 with graphics (7 files, 4.7k lines)
-│   ├── ml/                 # ML framework + autodiff/ (was neural_networks/)
-│   ├── stats/              # Regression / stats stubs
-│   ├── net/                # Networking sketches
-│   ├── effects/            # Algebraic effects demos (3 files)
-│   ├── linalg/             # Linear algebra (2 files)
-│   ├── numerical/          # ODE solvers, optimization (2 files)
-│   ├── systems/            # Memory pools, hash tables, system info
-│   ├── gpu/                # GPU/SIMD examples (8 files)
-│   ├── generics_traits/    # Generic programming (9 files)
-│   ├── graphics/           # Rendering, shaders
-│   ├── crypto/             # SHA-256 (1 file)
-│   ├── data/               # CSV parsing (1 file)
-│   └── compilers/          # Expression calculator (1 file)
-│
-├── benchmarks/             # PERFORMANCE BENCHMARKS
-│   ├── micro/              # Matrix multiply, FFT, N-body, sort, Mandelbrot
-│   ├── runner.flow         # Benchmark harness
-│   └── README.md
-│
-├── apps/                   # COMPLETE APPLICATIONS
-│   ├── flowdb/             # Key-value database
-│   └── flow-http/          # HTTP server framework
-│
-├── tests/                  # TEST SUITE (347 tests)
-│   ├── core/               # Core language tests
-│   ├── runtime/            # Runtime behavior tests
-│   ├── stdlib/             # Standard library tests
-│   └── ...
-│
-├── docs/                   # DOCUMENTATION
-│   ├── assets/             # Mascot, images
-│   ├── getting-started.md  # Quick start guide
-│   ├── LANGUAGE_SPEC.md    # Full language reference
-│   ├── grammar.ebnf        # Formal grammar
-│   ├── language/           # Language feature docs
-│   ├── library/            # Stdlib reference
-│   ├── tutorials/          # Beginner → Advanced
-│   └── playground/         # Web playground (syntax explorer)
-│
-├── third_party/            # THIRD-PARTY INTEGRATIONS
-│   └── integrations/       # Editor + tooling integrations
-│       └── vscode/         # VS Code extension
-│
-├── tools/                  # DEVELOPMENT TOOLS
-│   ├── flow_grad_flow.py   # Gradient code generator
-│   ├── flow_jit_pipeline.py
-│   └── ...
-│
-├── scripts/                # BUILD SCRIPTS
-│   ├── run_examples.sh
-│   └── ...
-│
-├── wasm/                   # WEBASSEMBLY (experimental)
-│   └── ...
-│
-└── site/                   # MKDOCS WEBSITE
-    └── ...
-```
+Longer walkthrough: [Getting started](docs/getting-started.md).
 
 ---
 
-## Language Features
+## Examples
 
-### Core Syntax
+Each GIF is a recording of the compiled program. Frames come from the real `gfx` backend.
+
+| | | |
+|:---:|:---:|:---:|
+| **Games** |||
+| ![Snake](docs/demos/games/snake.gif) | ![Asteroids](docs/demos/games/asteroids.gif) | ![Breakout](docs/demos/games/breakout.gif) |
+| Snake | Asteroids | Breakout |
+| ![Flappy](docs/demos/games/flappy.gif) | ![Invaders](docs/demos/games/invaders.gif) | ![Pong](docs/demos/games/pong.gif) |
+| Flappy | Invaders | Pong |
+| **Morphogenesis** |||
+| ![Gray-Scott](docs/demos/morphogenesis/gray_scott.gif) | ![Turing spots](docs/demos/morphogenesis/turing_spots.gif) | ![Diffusion-limited aggregation](docs/demos/morphogenesis/dla.gif) |
+| Gray-Scott | Turing spots | Diffusion-limited aggregation |
+| ![L-system tree](docs/demos/morphogenesis/lsystem_tree.gif) | ![Slime mold](docs/demos/morphogenesis/slime_mold.gif) | ![Sandpile](docs/demos/morphogenesis/sandpile.gif) |
+| L-system tree | Slime mold | Sandpile |
+| **Neurons and networks** |||
+| ![Hodgkin-Huxley](docs/demos/neuro/hodgkin_huxley.gif) | ![Izhikevich zoo](docs/demos/neuro/izhikevich_zoo.gif) | ![Balanced network](docs/demos/neuro/balanced_network.gif) |
+| Hodgkin-Huxley | Izhikevich zoo | Balanced network |
+| **Evolutionary biology** |||
+| ![Lotka-Volterra](docs/demos/evoleco/lotka_volterra_gfx.gif) | ![Wright-Fisher](docs/demos/evoleco/wright_fisher.gif) | ![Red Queen](docs/demos/evoleco/red_queen.gif) |
+| Lotka-Volterra | Wright-Fisher | Red Queen |
+| ![Spatial SIR](docs/demos/evoleco/sir_spatial.gif) | ![Hawk-Dove](docs/demos/evoleco/hawk_dove.gif) | ![Rock-paper-scissors](docs/demos/evoleco/rock_paper_scissors.gif) |
+| Spatial SIR | Hawk-Dove | Rock-paper-scissors |
+| **Planet** |||
+| ![Biomes](docs/demos/planet/planet_biomes.gif) | ![Tectonics](docs/demos/planet/planet_tectonics.gif) | ![Erosion](docs/demos/planet/planet_erosion.gif) |
+| Biomes | Tectonics | Erosion |
+| **Procedural generation** |||
+| ![Wavefunction dungeon](docs/demos/procgen/wfc_dungeon.gif) | ![Voronoi sites](docs/demos/procgen/voronoi_sites.gif) | ![Heightmap fBm](docs/demos/procgen/heightmap_fbm.gif) |
+| Wavefunction dungeon | Voronoi sites | Heightmap fBm |
+| **3D** |||
+| ![Voxel world](docs/demos/threed/voxel_world.gif) | ![FPS camera](docs/demos/threed/fps_camera.gif) | ![Physics 3D](docs/demos/threed/physics3d.gif) |
+| Voxel world | FPS camera | Physics 3D |
+| **Numerical and social** |||
+| ![Adaptive FMM](docs/demos/numerical/fmm_adaptive.gif) | ![Voter model](docs/demos/social/voter_model.gif) | ![Majority rule](docs/demos/social/majority_rule.gif) |
+| Adaptive FMM | Voter model | Majority rule |
+
+```bash
+./flow gfx examples/games/tetris_gfx.flow
+./flow gfx examples/evolution/lorenz_gfx.flow
+./flow run examples/ml/models/mlp_xor.flow
+./flow gfx examples/morphogenesis/gray_scott.flow
+./flow gfx examples/neuro/hodgkin_huxley.flow
+./flow gfx examples/evoleco/lotka_volterra_gfx.flow
+./flow gfx examples/planet/planet_biomes.flow
+./flow gfx examples/procgen/wfc_dungeon.flow
+./flow gfx examples/threed/voxel_world.flow
+```
+
+| Domain | Gallery | Index |
+|--------|---------|-------|
+| Games (24) | [demos](docs/demos/games.md) | [`examples/games`](examples/games) |
+| Morphogenesis | [demos](docs/demos/morphogenesis.md) | [`examples/morphogenesis`](examples/morphogenesis) |
+| Neurons and networks | [demos](docs/demos/neuro.md) | [`examples/neuro`](examples/neuro) |
+| Evolutionary biology | [demos](docs/demos/evoleco.md) | [`examples/evoleco`](examples/evoleco) |
+| AI / ML training | [tutorials](docs/tutorials/game-ai.md) | [`examples/ai`](examples/ai), [`examples/ml`](examples/ml) |
+
+Entrypoints by domain: [examples/README.md](examples/README.md).
+
+---
+
+## Language at a glance
+
+### Core syntax
 
 ```flow
-# Variables
 let x: i32 = 42              # Immutable
 let mut counter: i32 = 0     # Mutable
 
-# Functions
 function add(a: i32, b: i32) -> i32 {
     return a + b
 }
 
-# Structs
 struct Point { x: f32, y: f32 }
-let p: Point = Point { x: 1.0, y: 2.0 }
 
-# Control flow
 if x > 0 { ... } elif x < 0 { ... } else { ... }
 while condition { ... }
 for i in 0 to 10 { ... }
 ```
 
-### Type System
+### Types
 
 ```
 Primitives:  i32, i64, f32, f64, bool, string, void
 Pointers:    ptr<T>, ptr<void>
-Arrays:      array<T, N>  (fixed-size)
-Structs:     struct Name { field: Type }
+Arrays:      array<T, N>
 Generics:    function identity<T>(x: T) -> T
 ```
 
-### Algebraic Effects (Unique Feature)
+### Algebraic effects
 
 ```flow
 effect Logger {
@@ -274,427 +225,177 @@ capability ConsoleLogger {
         println(msg)
     }
 }
-
-# Swap implementations without changing code
 ```
 
-See the full walkthrough in [docs/effects-showcase.md](docs/effects-showcase.md)
-(`examples/effects/showcase.flow` — compiles, links, and runs end to end).
+Walkthrough: [docs/effects-showcase.md](docs/effects-showcase.md) · `examples/effects/showcase.flow`.
 
-### Automatic Differentiation
+### Automatic differentiation
 
-Forward-mode Dual numbers and reverse helpers live in **stdlib** today
-(`lib/stdlib/autodiff.flow`, `autodiff_reverse.flow`). Tourist XOR trains
-via checked-in grad codegen (`nn_autogen.flow`) — see
-`examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is still
-on the roadmap.
+Forward-mode dual numbers and reverse helpers live in the stdlib (`lib/stdlib/autodiff.flow`). The XOR tourist demo trains via checked-in grad codegen in `examples/ml/models/mlp_xor.flow`. Compiler-integrated `loss.grad` is still on the roadmap.
 
-### FFI (C Interop)
+### FFI
 
 ```flow
 extern {
     function malloc(size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
-    function printf(fmt: string, ...) -> i32
 }
 ```
-
-### Safety Profiles
-
-`--profile safety` enables a MISRA/CERT-derived set of compile-time and
-runtime checks. `--emit-manifest` produces a structured compliance report.
-
-```bash
-# Compile with overflow-checked arithmetic, div0 guards, shift UB rejection
-flow compile program.flow --profile safety
-
-# Emit a structured compliance manifest
-flow transpile program.flow --c --profile safety --emit-manifest -o program.c
-```
-
-Under `--profile safety`:
-- Signed integer `+`, `-`, `*` emit overflow-checked macros (`__builtin_*_overflow`)
-- Division by zero and shift UB rejected at compile time for literals, runtime-guarded otherwise
-- `-Werror` enforced on all C output
-- UBSan / ASan / TSan available via `FLOW_UBSAN=1`, `FLOW_ASAN=1`, `FLOW_TSAN=1`
-
-The manifest reports each invariant as PROVEN, REJECTED, or REQUIRES EVIDENCE:
-
-```
-Flow Safety Manifest
-============================================================
-Properties
-------------------------------------------------------------
-  Integer overflow          PROVEN             MISRA 12.1 / CERT INT32-C
-  Division by zero          PROVEN             MISRA 12.5 / CERT INT33-C
-  Shift undefined behaviour PROVEN             MISRA 12.2 / CERT INT34-C
-  Dynamic allocation        PROVEN             MISRA 21.3
-  Unbounded recursion       PROVEN             MISRA 17.2
-  RT-safety                 PROVEN             Flow @rt_safe policy
-```
-
----
-
-## CLI Reference
-
-```bash
-./flow run <file>           # Compile and run (default host: flowc)
-./flow compile <file>       # Compile only (output: build/)
-FLOW_HOST=python ./flow run <file>  # Full Python-host language surface
-./flow audio <file>         # Compile and run with audio backend
-./flow compile-audio <file> # Compile with audio backend
-./flow python <file>        # Generate Python wheel
-./flow test                 # Run test suite (strict type-checking by default)
-./flow test --strict --tier2 # Strict corpus + transpile/clang compile checks
-./flow fmt <file>           # Format code
-./flow repl                 # Interactive mode
-./flow jit <file>           # JIT compile (requires LLVM)
-./flow lsp                  # Start language server
-```
-
-Host switch: `FLOW_HOST=flowc|python|auto` (default `flowc` for `run`/`compile`).
-
-### Python Package Generation
-
-```bash
-# Generate a Python wheel from a Flow library
-./flow python mylib.flow --name mylib
-
-# Output: dist/mylib-0.1.0-*.whl
-pip install dist/mylib-*.whl
-python -c "import mylib; print(mylib.add(1, 2))"
-```
-
-See [docs/python-target.md](docs/python-target.md) for details.
-
----
-
-## Editor support (VS Code & Cursor)
-
-```bash
-# Local install from this repo
-./scripts/publish_vscode_extension.sh --install
-
-# Or after marketplace publish:
-#   cursor --install-extension quilio.flow-language
-#   code --install-extension quilio.flow-language
-```
-
-Extension lives at `third_party/integrations/vscode/flow-language/` (syntax + LSP).  
-Publishing: push a `vscode-v*` tag to run the Open VSX workflow (publisher `quilio`), or
-publish locally with `OVSX_PAT ./scripts/publish_vscode_extension.sh --ovsx` — see that
-folder’s `PUBLISH.md`.
-
-## Highlighted Examples
-
-### Native Graphics
-
-Each clip is a recording of the compiled program — the frames come out of the
-real `gfx` backend, not a re-creation.
-
-| | | |
-|:---:|:---:|:---:|
-| ![Lorenz attractor](docs/demos/lorenz.gif) | ![Flow Tetris](docs/demos/tetris.gif) | ![Flow 2048](docs/demos/2048.gif) |
-| **Lorenz attractor** — a `flow` block with an RK4 solver | **Tetris** — rotation, line clears, scoring, ghost piece | **2048** — grid logic and tile merging |
-
-**29 complete games ship in `examples/games/`** — arcade, puzzle, board and sandbox,
-each with a recorded gameplay GIF: see the
-[game gallery](docs/demos/games.md) ([wiki version](https://flooooooooooow.github.io/flow/#demos/games.md))
-and the [examples index](examples/README.md).
-
-### Morphogenesis
-
-Twenty live simulations of pattern formation and growth — reaction-diffusion,
-Turing patterns, DLA, L-systems, cyclic automata, Physarum networks, and
-clock-and-wavefront somitogenesis. This is the founding thesis on screen:
-systems evolving through time.
-
-```bash
-./flow gfx examples/morphogenesis/gray_scott.flow    # solitons on a hex lattice
-./flow gfx examples/morphogenesis/slime_mold.flow    # transport networks emerge
-./flow gfx examples/morphogenesis/somite_clock.flow  # segments laid down in sequence
-```
-
-Every one has a recorded clip in the
-[morphogenesis gallery](docs/demos/morphogenesis.md)
-([wiki version](https://flooooooooooow.github.io/flow/#demos/morphogenesis.md)).
-Index: [examples/morphogenesis](examples/morphogenesis/README.md).
-
-### Neurons and networks
-
-Fifteen spiking-dynamics simulations that gate their exit code on a published
-measurement — Hodgkin-Huxley spike shape, all twenty Izhikevich regimes, a
-12500-neuron balanced network, Hopfield capacity, CPG gaits.
-
-```bash
-./flow gfx examples/neuro/hodgkin_huxley.flow   # four gates, type-II onset
-./flow gfx examples/neuro/izhikevich_zoo.flow   # twenty regimes, one model
-./flow gfx examples/neuro/balanced_network.flow # asynchronous irregular state
-```
-
-Every one has a recorded clip in the
-[neuron gallery](docs/demos/neuro.md).
-Index: [examples/neuro](examples/neuro/README.md).
-
-### Evolutionary biology
-
-Fifteen population-genetics, evolutionary-game, and ecology simulations for
-biologists — Wright-Fisher drift, Hardy-Weinberg, mutation-selection balance,
-quasispecies, Hawk-Dove, spatial Prisoner's Dilemma, Lotka-Volterra. Each
-gates its exit code on a closed form before the window opens.
-
-```bash
-./flow gfx examples/evoleco/wright_fisher.flow     # fixation time vs 4 N ln 2
-./flow gfx examples/evoleco/hawk_dove.flow         # mixed ESS at V/C
-./flow gfx examples/evoleco/spatial_pd.flow        # cooperation where mean-field dies
-```
-
-Every one has a recorded clip in the
-[evolutionary biology gallery](docs/demos/evoleco.md).
-Index: [examples/evoleco](examples/evoleco/README.md).
-
-### AI and machine learning
-
-Training runs in Flow, on the CPU, in seconds — and every demo gates its exit
-code on beating a baseline, so the numbers below are reproduced on every run.
-
-| Demo | Baseline | Trained |
-|---|---|---|
-| Q-learning on Snake (`examples/ai/q_snake.flow`) | 0.06 foods | **19.7 foods** |
-| Neuroevolution on Flappy (`examples/ai/ga_flappy.flow`) | 0.0 pipes | **41.6 pipes** |
-| REINFORCE on Pong (`examples/ai/policy_pong.flow`) | 0.37 hits | **4.0 hits** |
-| Digit MLP (`examples/ml/digits_mlp.flow`) | — | **98.75%** test accuracy, 42 ms |
-
-`registry/packages/flowlm` is a small-language-model package: a character-level
-transformer with hand-derived backprop, verified against finite differences on
-every parameter tensor, reaching perplexity 7.7 against a 29.0 uniform baseline.
-
-Guides: [Training game AIs](docs/tutorials/game-ai.md) ·
-[ML on a MacBook](docs/tutorials/ml-on-macbook.md)
-
-```bash
-# Tetris - fully playable!
-./flow gfx examples/games/tetris_gfx.flow
-# (or: compile + link runtime/gfx_macos.m / gfx_linux.c / gfx_windows.c)
-
-# 2048 puzzle
-./flow gfx examples/games/2048_gfx.flow
-
-# Lorenz attractor (dynamics + graphics)
-./flow gfx examples/evolution/lorenz_gfx.flow
-
-# Regenerate every demo GIF (headless, no display needed):
-#   python3 scripts/record_demos.py
-```
-
-`./flow record <program>` runs any `gfx` program against the headless backend in
-`runtime/gfx_record.c`, writing each presented frame as a PPM. See
-[docs/demos/README.md](docs/demos/README.md).
-
-### Machine Learning
-
-```bash
-# XOR neural network (trains successfully!)
-./flow run examples/ml/models/mlp_xor.flow
-
-# Output:
-# Epoch 4000: Loss = 0.000197
-# 0 XOR 0 = 0.005 -> 0 [OK]
-# 0 XOR 1 = 0.988 -> 1 [OK]
-# SUCCESS: Network learned XOR!
-```
-
-### Benchmarks
-
-```bash
-./flow run benchmarks/micro/sort_benchmark.flow
-./flow run benchmarks/runner.flow
-```
-
-### Interop & System
-
-```bash
-# System info (native helpers)
-./flow run examples/systems/system_info.flow
-
-# Python embedding (CPython via framework on macOS)
-./flow run examples/interop/python_embed.flow
-
-# Matrix optimization demo (Flow-only variants)
-./flow run examples/bench/matmul_optimizations.flow
-
-# Print assembly + MLIR for matmul optimizations
-./flow test-matmul
-
-# Interop runtime test
-./flow test-interop
-```
-
----
-
-## Compiler Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ Flow Source │ ──▶ │   Parser    │ ──▶ │     AST     │
-│   (.flow)   │     │  (parser.py)│     │             │
-└─────────────┘     └─────────────┘     └──────┬──────┘
-                                               │
-                    ┌──────────────────────────┼──────────────────────────┐
-                    │                          │                          │
-                    ▼                          ▼                          ▼
-           ┌─────────────┐            ┌─────────────┐            ┌─────────────┐
-           │ C Generator │            │    MLIR     │            │   Metal     │
-           │             │            │  Generator  │            │  Codegen    │
-           └──────┬──────┘            └──────┬──────┘            └──────┬──────┘
-                  │                          │                          │
-                  ▼                          ▼                          ▼
-           ┌─────────────┐            ┌─────────────┐            ┌─────────────┐
-           │   Clang     │            │    LLVM     │            │   Metal     │
-           │             │            │     JIT     │            │   Shaders   │
-           └─────────────┘            └─────────────┘            └─────────────┘
-```
-
----
-
-## Unique Selling Points
-
-| Feature | Flow | Rust | Go | Mojo | Julia |
-|---------|------|------|-----|------|-------|
-| Algebraic Effects | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Built-in Autodiff | ✅ | ❌ | ❌ | ✅ | ✅ |
-| C Backend (portable) | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Native Graphics | ✅ | ❌ | ❌ | ❌ | ❌ |
-| No LLVM Required | ✅ | ❌ | ✅ | ❌ | ❌ |
-| MISRA/CERT Safety Profile | ✅ | ❌ | ❌ | ❌ | ❌ |
-
----
-
-## Comparison with C and MOJO
-
-### Flow vs C
-
-| Feature | Flow | C |
-|---------|------|---|
-| **Memory Safety** | Automatic memory management with optional manual control | Manual memory management, prone to buffer overflows and memory leaks |
-| **Syntax** | Modern, expressive syntax with type inference | Verbose, low-level syntax requiring explicit type declarations |
-| **Audio Programming** | Built-in audio abstractions and effects system | Requires external libraries and complex setup |
-| **Type Safety** | Strong static typing with advanced type system | Weak typing with manual casting required |
-| **Concurrency** | Built-in effect system for managing side effects | Manual thread management and mutex handling |
-| **Development Speed** | Rapid prototyping with high-level abstractions | Slower development due to low-level details |
-| **Performance** | Compiles to efficient LLVM IR | Direct compilation to machine code |
-| **Learning Curve** | Gentle learning curve with intuitive syntax | Steep learning curve with complex concepts |
-
-### Flow vs MOJO
-
-| Feature | Flow | MOJO |
-|---------|------|-----|
-| **Primary Domain** | Audio processing, scientific computing, systems programming | AI/ML development and data science |
-| **Performance** | Optimized for real-time audio and systems performance | Optimized for AI/ML workloads |
-| **Syntax** | Clean, minimal syntax inspired by Rust/Go | Python-like syntax with extensions |
-| **Memory Management** | Automatic with optional manual control | Ownership model similar to Rust |
-| **Hardware Acceleration** | Built-in SIMD and GPU support | Native hardware acceleration for ML |
-| **Audio Processing** | First-class audio processing capabilities | Limited audio processing capabilities |
-| **Scientific Computing** | Optimized for signal processing | Optimized for numerical computation |
-| **Compilation** | Ahead-of-time compilation to LLVM IR | Compilation to efficient machine code |
-| **Ecosystem** | Audio-focused libraries and tools | AI/ML-focused ecosystem |
-
-### Why Choose Flow?
-
-Flow's thesis ([VISION.md](VISION.md)) is that programs describe systems that evolve through time:
-
-- **Evolution as the Abstraction**: Model, analyze, and control dynamical systems in one file — `dsys` plants, `sense` analysis (controllability, spectral radius, Gramians), and GA-based gain search ship today (`examples/evolution/`, `examples/dynamics/`)
-- **Expressive Effects System**: Manage side effects cleanly without sacrificing performance
-- **Built-in Autodiff**: Forward and reverse mode as a language feature, not a library
-- **Real-time Audio**: A first-class domain — native DSP paths and audio abstractions with minimal latency
-- **Modern Syntax**: Clean, readable code that's easy to maintain
-- **Performance**: Compiles to portable C (and MLIR/LLVM) for native speed
-- **Safety**: Memory-safe by default. `--profile safety` adds MISRA/CERT-derived overflow checks, div0 guards, and shift UB rejection. `--emit-manifest` produces a structured compliance report.
-
----
-
-## Development
-
-```bash
-# Run tests (strict mode is the default; tier-2 also compile-checks the corpus)
-./flow test
-./flow test --strict --tier2
-
-# Fuzz the compiler (mutation/grammar/pipeline targets; also runs in CI)
-python3 tests/fuzz/run_fuzz.py --seconds 30
-
-# Regenerate the examples compile-status table (examples/STATUS.md)
-python3 scripts/verify_examples.py
-
-# Format code
-./flow fmt examples/basics/hello_world.flow
-
-# Start LSP for IDE support
-# (go-to-definition, hover, autocomplete, inline diagnostics, find references, rename)
-./flow lsp
-
-# LSP regression harness (39 tests)
-python3 scripts/test_lsp_server.py
-```
-
-### MLIR
-
-```bash
-# Generate MLIR
-./flow mlir examples/basics/hello_world.flow
-
-# Compile via MLIR and run (requires LLVM/MLIR tools)
-./flow mlir-run examples/basics/hello_world.flow
-```
-
-### VS Code Extension
-
-Install from `third_party/integrations/vscode/flow-language/flow-language-0.1.0.vsix`
-
----
-
-## Known Issues & Security Status
-
-A comprehensive audit (Feb 2026) identified 98 issues. **All 98 have been resolved** (100%) as of Feb 10, 2026.
-The Feb 10, 2026 follow-up audit found 3 CI hygiene gaps (pinning, lint depth, security scanning); see the
-latest audit report.
-
-| Category | Status | Notes |
-|----------|--------|-------|
-| Testing | 5/5 resolved | All test infrastructure issues fixed |
-| CLI | 5/5 resolved | Shell injection, temp dirs, validation fixed |
-| Stdlib | 13/13 resolved | POSIX constants, memory pools, alignment fixed |
-| Compiler | 58/58 resolved | MLIR, module resolver, monomorphize stabilized |
-| Runtime | 6/6 resolved | Command injection, null deref, resource leaks fixed |
-| CI | 6/6 resolved | Pipeline hardened and validated |
-
-See [docs/project/AUDIT_2026-02-10.md](docs/project/AUDIT_2026-02-10.md) for the latest findings,
-[docs/NEXT.md](docs/NEXT.md) for the prioritized roadmap, and [CHANGELOG](docs/project/CHANGELOG.md)
-for details on what was fixed.
 
 ---
 
 ## Documentation
 
-- **[Getting Started](docs/getting-started.md)** - Installation, first program
-- **[Language Spec](docs/LANGUAGE_SPEC.md)** - Complete reference
-- **[Examples](examples/README.md)** - All example programs
-- **[Examples Compile Status](examples/STATUS.md)** - Verified compile status of every example (986/1193)
-- **[Effects Showcase](docs/effects-showcase.md)** - Algebraic effects walkthrough with honest limitations
-- **[What's Next](docs/NEXT.md)** - Prioritized roadmap
-- **[Changelog](docs/project/CHANGELOG.md)** - Version history and audit fixes
-- **[Contributing](docs/project/CONTRIBUTING.md)** - How to contribute, security policy
+| Resource | Description |
+|----------|-------------|
+| [Getting started](docs/getting-started.md) | Install, first program, basics |
+| [Best practices](docs/language/best-practices.md) | Idioms and why Flow favors fluid abstraction |
+| [Language overview](docs/language/overview.md) | Features and design |
+| [Language spec](docs/LANGUAGE_SPEC.md) | Full reference |
+| [Effects showcase](docs/effects-showcase.md) | Algebraic effects end to end |
+| [Examples index](examples/README.md) | Demos by domain |
+| [Examples status](examples/STATUS.md) | Compile status of every example |
+| [Vision](VISION.md) | Why Flow exists |
+| [Roadmap](ROADMAP.md) | Near-term work |
+| [Changelog](docs/project/CHANGELOG.md) | Version history |
+| [Self-hosting](docs/project/self-hosting.md) | Stage-A `flowc` in [`compiler/`](compiler/) |
+| [Security](SECURITY.md) · [Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) | Project policy |
+
+Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
+
+---
+
+## Project layout
+
+| Path | Contents |
+|------|----------|
+| [`flow`](flow) | CLI entry point |
+| [`src/flow/`](src/flow/) | Python-host compiler (parser, type checker, C/MLIR/Metal backends) |
+| [`compiler/`](compiler/) | Self-hosted Stage-A `flowc` |
+| [`lib/stdlib/`](lib/stdlib/) | Standard library |
+| [`runtime/`](runtime/) | Native runtime (graphics, audio, recording) |
+| [`examples/`](examples/) | Domain demos and verify corpus |
+| [`tests/`](tests/) | Language and stdlib tests |
+| [`apps/`](apps/) | Applications (`flowdb`, `flow-http`, …) |
+| [`benchmarks/`](benchmarks/) | Microbenchmarks and harness |
+| [`docs/`](docs/) | Spec, tutorials, demos, project docs |
+| [`third_party/integrations/vscode/`](third_party/integrations/vscode/) | VS Code / Cursor extension |
+| [`site/`](site/) | Wiki shell and site assets |
+
+---
+
+## Build and develop
+
+```bash
+./flow run <file>              # Compile and run (default host: flowc)
+./flow compile <file>          # Compile only → build/
+FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
+./flow test                    # Test suite (strict by default)
+./flow test --strict --tier2   # + transpile / clang compile checks
+./flow fmt <file>              # Format
+./flow repl                    # Interactive mode
+./flow lsp                     # Language server
+./flow gfx <file>              # Compile and run with graphics
+./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
+```
+
+Host switch: `FLOW_HOST=flowc|python|auto` (default `flowc` for `run` / `compile`).
+
+```bash
+# Fuzz the compiler
+python3 tests/fuzz/run_fuzz.py --seconds 30
+
+# Regenerate examples compile-status table
+python3 scripts/verify_examples.py
+```
+
+### Editor support
+
+```bash
+./scripts/publish_vscode_extension.sh --install
+# Or: cursor --install-extension quilio.flow-language
+```
+
+Extension source: `third_party/integrations/vscode/flow-language/`.
+
+### Python wheels from Flow
+
+```bash
+./flow python mylib.flow --name mylib
+pip install dist/mylib-*.whl
+```
+
+Details: [docs/python-target.md](docs/python-target.md).
+
+### Compiler pipeline
+
+```
+Flow source → Parser → AST → C / MLIR / Metal → Clang / LLVM / shaders
+```
+
+---
+
+## Project statistics
+
+Counted from tracked files by CI so the numbers match the tree.
+
+<!-- repo-stats:start -->
+| Metric | Files / modules | Physical lines |
+|---|---:|---:|
+| **Tracked source** | 2,837 | 391,184 |
+| **Flow language** | 1,972 | 207,090 |
+| **Python compiler (`src/flow`)** | 61 | 46,695 |
+| **Self-hosted compiler (`compiler/src`)** | 17 | 10,863 |
+| **Standard library modules** | 106 | 32,172 |
+| **Native runtime** | 41 | 7,105 |
+| **Examples (excluding verify corpus)** | 403 | 111,845 |
+| **Verify corpus** | 1,078 | 18,715 |
+| **Tests (`.py` + `.flow`)** | 346 | 38,367 |
+| **Application programs** | 8 | 1,537 |
+| **Registry packages** | 19 | — |
+| **Documentation pages** | 138 | 30,536 |
+
+<details>
+<summary>Tracked source by language</summary>
+
+| Language | Files | Physical lines |
+|---|---:|---:|
+| Flow | 1,972 | 207,090 |
+| Python | 306 | 102,086 |
+| HTML | 171 | 28,924 |
+| C | 94 | 14,145 |
+| C/C++ headers | 46 | 10,968 |
+| C++ | 23 | 9,414 |
+| JavaScript | 146 | 7,167 |
+| Shell | 52 | 5,416 |
+| CSS | 11 | 3,448 |
+| Objective-C | 4 | 1,266 |
+| Objective-C++ | 2 | 654 |
+| Rust | 10 | 606 |
+
+</details>
+
+*Generated by CI from tracked files at `fa4cd677960f`. Proof documents: 1,080. [Raw JSON](docs/generated/repository-stats.json) · [Flow counter](scripts/tools/repo_stats/main.flow) · [Python fallback](scripts/update_repo_stats.py).*
+<!-- repo-stats:end -->
+
+---
+
+## Contributing
+
+Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority and how to land changes.
+
+Priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT. See [LICENSE](LICENSE).
 
 ---
 
 <p align="center">
   <img src="docs/assets/flow-mascot.png" alt="Flowy the Hedgehog, the Flow mascot" width="80">
   <br>
-  <em>Made with 💜 by humans and AI · mascot: <a href="docs/assets/mascot.md">Flowy the Hedgehog</a></em>
+  <em>Made with care by humans and AI · mascot: <a href="docs/assets/mascot.md">Flowy the Hedgehog</a></em>
 </p>
