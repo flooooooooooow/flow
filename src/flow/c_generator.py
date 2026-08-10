@@ -338,6 +338,14 @@ class CGenerator:
             lines.append("#else")
             lines.append("#define flow_shift_ub_handler FLOW_SHIFT_UB_HANDLER")
             lines.append("#endif")
+            lines.append("#ifndef FLOW_OVERFLOW_HANDLER")
+            lines.append("__attribute__((unused)) static inline void flow_overflow_handler(void) {")
+            lines.append('    fprintf(stderr, "flow: integer overflow\\n");')
+            lines.append("    abort();")
+            lines.append("}")
+            lines.append("#else")
+            lines.append("#define flow_overflow_handler FLOW_OVERFLOW_HANDLER")
+            lines.append("#endif")
             # ISO C macros (no GNU statement-exprs) so -pedantic stays clean (#269).
             # Operands are evaluated more than once — Flow codegen emits pure
             # subexpressions for these sites in practice.
@@ -366,6 +374,64 @@ class CGenerator:
                 "((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull))) "
                 "? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))"
             )
+            lines.append("#endif")
+            # Overflow-checked +,-,* for signed integers (MISRA 12.1 / CERT INT32-C).
+            # Uses __builtin_*_overflow on Clang/GCC; portable fallback otherwise.
+            # The result variable approach avoids double-evaluation of L/R.
+            lines.append("#ifndef FLOW_CHECKED_ADD")
+            lines.append("#if defined(__clang__) || defined(__GNUC__)")
+            lines.append(
+                "#define FLOW_CHECKED_ADD(L, R) "
+                "(__extension__ ({ __typeof__(L) _r; "
+                "__builtin_add_overflow((L), (R), &_r) "
+                "? (flow_overflow_handler(), (L)) : _r; }))"
+            )
+            lines.append("#else")
+            lines.append(
+                "#define FLOW_CHECKED_ADD(L, R) "
+                "(((L) > 0 && (R) > (INT_MAX - (L))) || "
+                "((L) < 0 && (R) < (INT_MIN - (L))) "
+                "? (flow_overflow_handler(), (L)) : ((L) + (R)))"
+            )
+            lines.append("#endif")
+            lines.append("#endif")
+            lines.append("#ifndef FLOW_CHECKED_SUB")
+            lines.append("#if defined(__clang__) || defined(__GNUC__)")
+            lines.append(
+                "#define FLOW_CHECKED_SUB(L, R) "
+                "(__extension__ ({ __typeof__(L) _r; "
+                "__builtin_sub_overflow((L), (R), &_r) "
+                "? (flow_overflow_handler(), (L)) : _r; }))"
+            )
+            lines.append("#else")
+            lines.append(
+                "#define FLOW_CHECKED_SUB(L, R) "
+                "(((R) > 0 && (L) < (INT_MIN + (R))) || "
+                "((R) < 0 && (L) > (INT_MAX + (R))) "
+                "? (flow_overflow_handler(), (L)) : ((L) - (R)))"
+            )
+            lines.append("#endif")
+            lines.append("#endif")
+            lines.append("#ifndef FLOW_CHECKED_MUL")
+            lines.append("#if defined(__clang__) || defined(__GNUC__)")
+            lines.append(
+                "#define FLOW_CHECKED_MUL(L, R) "
+                "(__extension__ ({ __typeof__(L) _r; "
+                "__builtin_mul_overflow((L), (R), &_r) "
+                "? (flow_overflow_handler(), (L)) : _r; }))"
+            )
+            lines.append("#else")
+            lines.append(
+                "#define FLOW_CHECKED_MUL(L, R) "
+                "(((L) != 0 && (R) != 0 && "
+                "(((L) > 0) == ((R) > 0)) && "
+                "(R) > (INT_MAX / (L))) || "
+                "((L) != 0 && (R) != 0 && "
+                "(((L) > 0) != ((R) > 0)) && "
+                "(R) < (INT_MIN / (L))) "
+                "? (flow_overflow_handler(), (L)) : ((L) * (R)))"
+            )
+            lines.append("#endif")
             lines.append("#endif")
             lines.append("")
         
@@ -1234,7 +1300,7 @@ class CGenerator:
                 if elem is not None:
                     return elem
                 # Fall back to name-based unwrapping: ptr_Point -> Point
-                for prefix in ("ptr_", "array_"):
+                for prefix in ("ptr_", "array_", "memref_"):
                     if base_type.name.startswith(prefix):
                         return Type(base_type.name[len(prefix):])
             return Type("i32")
@@ -3190,6 +3256,20 @@ class CGenerator:
             if c_operator in ('<<', '>>') and self._arith_checks_enabled():
                 return self._gen_checked_shift(left_expr, right_expr, c_operator)
 
+            # MISRA Rule 12.1 / CERT INT32-C: guard signed integer +,-,*.
+            if c_operator in ('+', '-', '*') and self._arith_checks_enabled():
+                left_type = self._infer_expr_type(e.left)
+                right_type = self._infer_expr_type(e.right)
+                ln = getattr(left_type, 'name', None)
+                rn = getattr(right_type, 'name', None)
+                # Only check signed integer types. Unsigned wraparound is
+                # well-defined in C (modular arithmetic), not UB.
+                signed = {"i8", "i16", "i32", "i64", "i128", "int"}
+                if (ln in signed or rn in signed) and not (
+                    self._is_float_type_name(ln) or self._is_float_type_name(rn)
+                ):
+                    return self._gen_checked_arith(left_expr, right_expr, c_operator)
+
             return f"({left_expr} {c_operator} {right_expr})"
 
         if isinstance(e, SortExpr):
@@ -3582,6 +3662,11 @@ class CGenerator:
     def _gen_checked_shift(self, left_expr: str, right_expr: str, op: str) -> str:
         """Emit << or >> with range/sign checks (CERT INT34-C / MISRA 12.2)."""
         macro = "FLOW_CHECKED_SHL" if op == "<<" else "FLOW_CHECKED_SHR"
+        return f"{macro}(({left_expr}), ({right_expr}))"
+
+    def _gen_checked_arith(self, left_expr: str, right_expr: str, op: str) -> str:
+        """Emit signed integer +,-,* with overflow trap (CERT INT32-C / MISRA 12.1)."""
+        macro = {"+": "FLOW_CHECKED_ADD", "-": "FLOW_CHECKED_SUB", "*": "FLOW_CHECKED_MUL"}[op]
         return f"{macro}(({left_expr}), ({right_expr}))"
 
     def _gen_array_access(self, e: ArrayAccess) -> str:

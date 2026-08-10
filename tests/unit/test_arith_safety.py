@@ -117,3 +117,55 @@ def test_float_div_has_no_div0_guard():
     # remain a raw float divide (IEEE Inf), not wrapped in FLOW_CHECKED_DIV.
     assert "FLOW_CHECKED_DIV((a), (b))" not in c
     assert "a / b" in c or "(a / b)" in c
+
+
+def test_c_emits_overflow_handler():
+    """Signed integer +,-,* must emit FLOW_CHECKED_* macros (#263)."""
+    c = _c(
+        """
+        function main() -> i32 {
+            let a: i32 = 100
+            let b: i32 = 200
+            let s: i32 = a + b
+            let d: i32 = a - b
+            let p: i32 = a * b
+            return s + d + p
+        }
+        """
+    )
+    assert "flow_overflow_handler" in c
+    assert "FLOW_CHECKED_ADD" in c
+    assert "FLOW_CHECKED_SUB" in c
+    assert "FLOW_CHECKED_MUL" in c
+
+
+def test_float_arith_has_no_overflow_guard():
+    """Float +,-,* must not get overflow checks (IEEE, not UB)."""
+    c = _c(
+        """
+        function main() -> i32 {
+            let a: f64 = 1.0
+            let b: f64 = 2.0
+            let c: f64 = a + b
+            return 0
+        }
+        """
+    )
+    # The handler is emitted for the TU, but the float + must stay raw.
+    assert "FLOW_CHECKED_ADD((a), (b))" not in c
+    assert "a + b" in c or "(a + b)" in c
+
+
+def test_unsigned_arith_has_no_overflow_guard():
+    """Unsigned wraparound is well-defined in C, not UB; skip the check."""
+    c = _c(
+        """
+        function main() -> i32 {
+            let a: u32 = 100
+            let b: u32 = 200
+            let c: u32 = a + b
+            return 0
+        }
+        """
+    )
+    assert "FLOW_CHECKED_ADD((a), (b))" not in c
