@@ -377,7 +377,7 @@ class CGenerator:
                     self._uses_complex = True
                     return
         for ta in (type_aliases or []):
-            if self._type_uses_complex(ta.target_type):
+            if self._type_uses_complex(getattr(ta, 'base_type', None) or getattr(ta, 'target_type', None)):
                 self._uses_complex = True
                 return
         for dt in (distinct_types or []):
