@@ -1,0 +1,37 @@
+# SI Units Module - Base dimensions and SI-prefixed units
+#
+# Provides base SI dimensions and common derived units with SI prefixes.
+# Quantity literals work with these: `3.14e6 Hertz`, `100 Meter`, etc.
+#
+# Usage:
+#   import "stdlib/units_si.flow"
+#   let f: Hertz = 3.14e6 Hertz
+#   let d: Meter = 100.0 Meter
+
+# =============================================================================
+# Base SI dimensions
+# =============================================================================
+
+unit Second
+unit Meter
+unit Kilogram
+unit Ampere
+unit Kelvin
+unit Radian
+
+# =============================================================================
+# Derived units
+# =============================================================================
+
+unit Hertz = Second^-1
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+unit Newton = Kilogram * Meter / Second^2
+unit Watt = Kilogram * Meter^2 / Second^3
+unit Volt = Kilogram * Meter^2 / Ampere / Second^3
+unit Ohm = Kilogram * Meter^2 / Ampere^2 / Second^3
+unit Farad = Ampere^2 * Second^4 / Kilogram / Meter^2
+unit Henry = Kilogram * Meter^2 / Ampere^2 / Second^2
+unit Coulomb = Ampere * Second
+unit Tesla = Kilogram / Ampere / Second^2
+unit Weber = Kilogram * Meter^2 / Ampere / Second^2

@@ -1515,6 +1515,7 @@ class Parser:
         self.struct_names = set()
         self.nesting_depth = 0
         self._has_fork = False
+        self._unit_names: set = set()  # declared unit names for quantity literals
 
     def _enter_nesting(self, kind: str = "expression") -> None:
         """Bump the nesting depth; reject pathologically deep input cleanly
@@ -2811,6 +2812,7 @@ class Parser:
             factors = self._parse_unit_expr()
         if self.current_token.type == TokenType.SEMICOLON:
             self.advance()
+        self._unit_names.add(name)  # register for quantity literals
         return UnitDecl(name, Type("f64"), factors=factors, line=line)
 
     def _parse_unit_expr(self) -> List[Tuple[str, int]]:
@@ -4538,17 +4540,31 @@ class Parser:
     def parse_primary(self) -> Expression:
         if self.current_token.type == TokenType.NUMBER:
             value = self.current_token.value
+            value_line = self.current_token.line
             self.advance()
             # Infer float vs int from token text.
             # This keeps the language ergonomic for SIMD examples that use 0.0/1.0.
             is_hex = isinstance(value, str) and value.startswith("0x")
             if not is_hex and isinstance(value, str) and ("." in value or "e" in value.lower()):
-                return Literal(value, Type("f32"))
+                lit = Literal(value, Type("f32"))
             elif is_hex:
                 # Handle hex literals - convert to integer
                 hex_value = int(value, 16)
-                return Literal(str(hex_value), Type("i32"))
-            return Literal(value, Type("i32"))  # Default to i32 for numbers
+                lit = Literal(str(hex_value), Type("i32"))
+            else:
+                lit = Literal(value, Type("i32"))  # Default to i32 for numbers
+            # Quantity literal: NUMBER followed by an uppercase identifier on
+            # the same line (e.g. `3.14 Hertz`, `100 Meter`). Desugars to
+            # `NUMBER as UnitName`. The type checker validates the unit name.
+            # The uppercase check avoids ambiguity with contextual keywords
+            # like `step` in `for i in 0 to 10 step 2`.
+            if (self.current_token.type == TokenType.IDENTIFIER
+                    and self.current_token.line == value_line
+                    and self.current_token.value[:1].isupper()):
+                unit_name = self.current_token.value
+                self.advance()
+                return CastExpression(lit, Type(unit_name))
+            return lit
 
         elif self.current_token.type == TokenType.BOOLEAN:
             value = self.current_token.value

@@ -15,10 +15,18 @@ All notable changes to FLOW will be documented in this file.
 - `lib/stdlib/rf.flow`: `IQ` type alias, `IQSample` distinct type, `Signal`
   struct with sample_rate, `signal_new`/`signal_free`/`signal_set`/`signal_get`/
   `signal_mix`/`signal_scale`/`signal_magnitude_spectrum`.
+- `lib/stdlib/units_si.flow`: SI base dimensions (Second, Meter, Kilogram,
+  Ampere, Kelvin, Radian) and derived units (Hertz, Velocity, Accel, Newton,
+  Watt, Volt, Ohm, Farad, Henry, Coulomb, Tesla, Weber).
+- Quantity literals: `3.14 Hertz` desugars to `3.14 as Hertz`. An uppercase
+  identifier after a number on the same line is treated as a unit name. The
+  type checker validates the unit name. Lowercase identifiers are not
+  consumed, avoiding ambiguity with contextual keywords like `step`.
 - Examples: `examples/rf/dft.flow`, `examples/rf/iq_mixer.flow`,
   `examples/rf/sdr_receiver.flow`.
 - Tests: `tests/unit/test_complex_types.py` (15 tests),
-  `tests/unit/test_rf_types.py` (10 tests).
+  `tests/unit/test_rf_types.py` (10 tests),
+  `tests/unit/test_quantity_literals.py` (10 tests).
 
 ### Safety / MISRA
 
