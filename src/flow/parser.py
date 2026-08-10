@@ -1759,6 +1759,11 @@ class Parser:
                     )
                 # parse_extern returns a list of FunctionDecls - extend to add all of them
                 extern_funcs = self.parse_extern()
+                # Propagate leading attributes (e.g. `@unsafe`) onto every
+                # declaration in the block (#276 / #284).
+                for ef in extern_funcs:
+                    existing = list(getattr(ef, "attributes", None) or [])
+                    ef.attributes = list(attributes) + existing
                 declarations.extend(extern_funcs)
             elif self.current_token.type == TokenType.TRAIT:
                 decl = self.parse_trait()

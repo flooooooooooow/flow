@@ -161,8 +161,11 @@ flow_clang_warning_flags() {
             #   c23-extensions    — Flow emits `T x = { };` empty inits
             #   format            — int64_t vs long long on LP64
             # Full -pedantic without these Waivers is tracked with #273.
+            # #283: promote implicit-function-declaration to hard error
+            # under safety (override the default-profile downgrade above).
             FLOW_CLANG_WARN_FLAGS+=(
                 "-Werror"
+                "-Werror=implicit-function-declaration"
                 "-Wno-strict-prototypes"
                 "-Wno-c23-extensions"
                 "-Wno-format"
@@ -303,6 +306,9 @@ show_help() {
     echo "                    Compile and run program"
     echo "  compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]"
     echo "                    Compile program only; --show-flags prints clang flags"
+    echo "  show-flags [--profile=safety] [--sanitize=...]  Print clang CFLAGS for current profile"
+    echo "  analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
+    echo "                    Scan generated C for MISRA/CERT patterns (#277)"
     echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)"
     echo "  C flags: -std=c11 -Wall -Wextra (MISRA Phase 0); FLOW_PROFILE=safety adds -Werror"
@@ -2711,6 +2717,14 @@ case "${1:-help}" in
             esac
         done
         flow_show_clang_flags
+        ;;
+    "analyze")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
+            exit 1
+        fi
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
         ;;
     "compile-audio")
         check_deps

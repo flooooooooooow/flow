@@ -334,6 +334,11 @@ class CGenerator:
         lines.append("    }")
         lines.append("    return (void*)(node + 1);")
         lines.append("}")
+        # Overridable diagnostic channel (#281 / MISRA 21.6). Defaults to
+        # fprintf(stderr, ...); builds may `-DFLOW_DIAG(msg)=((void)0)`.
+        lines.append("#ifndef FLOW_DIAG")
+        lines.append("#define FLOW_DIAG(msg) fprintf(stderr, \"%s\", (msg))")
+        lines.append("#endif")
         lines.append("__attribute__((unused)) static char* flow_strcat(const char* a, const char* b) {")
         lines.append("    size_t la = strlen(a ? a : \"\"), lb = strlen(b ? b : \"\");")
         lines.append("    char* r = (char*)flow_temp_alloc(la + lb + 1);")
@@ -785,6 +790,19 @@ class CGenerator:
         # Standard C library functions that don't need declarations (covered by includes).
         # Include FILE*/stdlib names used by flowc fileio + emit (conflicting prototypes
         # vs stdio.h/stdlib.h otherwise break `./flow run compiler/src/main.flow`).
+        # Keep this set in sync with the preamble #includes above (#283).
+        # Mapping:
+        #   <stdlib.h>  malloc free calloc realloc getenv putenv system abs
+        #   <stdio.h>   printf sprintf snprintf fprintf puts putchar getchar fflush
+        #               fopen fclose fread fwrite fseek ftell fgets fputs fputc fgetc
+        #               remove rename
+        #   <string.h>  memcpy memmove memset memcmp strlen strcmp strncmp strcpy
+        #               strncpy strcat strncat strchr strstr
+        #   <unistd.h>  unlink rmdir chdir getcwd usleep sleep getuid getgid
+        #               geteuid getegid gethostname
+        #   <math.h>    (math_functions set below)
+        #   <time.h>    time gettimeofday
+        #   <signal.h>  kill
         stdlib_functions = {'malloc', 'free', 'calloc', 'realloc', 'printf', 'sprintf',
                            'snprintf', 'fprintf', 'puts', 'putchar', 'getchar', 'fflush',
                            'memcpy', 'memmove', 'memset', 'memcmp',

@@ -1,0 +1,32 @@
+# Flow certification documentation
+
+This hub tracks Flow's path toward MISRA C:2024 and CERT C alignment
+(epic [#285](https://github.com/flooooooooooow/flow/issues/285)).
+
+| Document | Purpose |
+|----------|---------|
+| [MISRA C:2024 compliance matrix](misra-c-2024-compliance.md) | Rule → Flow / generated-C status |
+| [CERT C compliance matrix](cert-c-compliance.md) | Recommendation → Flow status |
+| [Reproducible builds](reproducible-builds.md) | Deterministic C emit (#280) |
+| [Safety profiles](../language/safety-profiles.md) | `--profile safety\|flight` behaviour |
+
+## How to use
+
+1. Develop under `FLOW_PROFILE=safety` (or `flight`) for the subset that is
+   mechanically enforced today.
+2. Emit a safety manifest:  
+   `FLOW_HOST=python ./flow transpile prog.flow --c --emit-manifest --profile=safety`
+3. Optionally scan generated C:  
+   `./flow analyze --standard=misra-c-2024 build/prog.c`
+4. Record deviations in the compliance matrices when a rule is not yet
+   machine-enforced.
+
+## Status legend
+
+| Status | Meaning |
+|--------|---------|
+| **PROVEN** | Compiler / profile enforces the rule |
+| **PARTIAL** | Enforced in some modes or for some constructs |
+| **DEVIATION** | Known gap with documented justification |
+| **OPEN** | Not yet addressed |
+| **N/A** | Not applicable to Flow's C subset |
