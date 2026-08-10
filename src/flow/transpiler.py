@@ -522,10 +522,26 @@ def main():
             print(f"C generation error: {e}", file=sys.stderr)
             sys.exit(1)
 
-        # Safety profile enforcement (#273): reject unbounded recursion under
-        # --profile safety|flight (detected via the safety-manifest call graph).
+        # Flight profile (#274): reject leftover heap calls in generated C.
         import os as _os
         _profile = _os.environ.get("FLOW_PROFILE", "default")
+        if _profile == "flight":
+            import re as _re
+            heap_hits = _re.findall(
+                r"\b(malloc|calloc|realloc|free)\s*\(",
+                out_code,
+            )
+            if heap_hits:
+                uniq = ", ".join(sorted(set(heap_hits)))
+                print(
+                    f"Error: --profile flight forbids dynamic allocation "
+                    f"(MISRA 21.3); generated C still contains: {uniq}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        # Safety profile enforcement (#273): reject unbounded recursion under
+        # --profile safety|flight (detected via the safety-manifest call graph).
         if _profile in ("safety", "flight") or getattr(args, "emit_manifest", False):
             from .safety_manifest import generate_manifest
             _overflow = _profile in ("safety", "flight") or _os.environ.get("FLOW_OVERFLOW_CHECK", "") == "1"
