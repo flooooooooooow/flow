@@ -432,6 +432,13 @@ class TypeChecker:
         **{n: 'heap' for n in RT_UNSAFE_HEAP_NAMES},
         **{n: 'lock' for n in RT_UNSAFE_LOCK_NAMES},
     }
+
+    # FFI names that are always high-risk under safety profiles (#276).
+    # Declaring them still requires `@unsafe`; calling them from `@safe` fails.
+    DANGEROUS_EXTERN_NAMES: frozenset = frozenset({
+        'system', 'gets', 'strcpy', 'strcat', 'sprintf', 'vsprintf',
+        'scanf', 'sscanf', 'realpath', 'getwd',
+    })
     def __init__(self):
         self.global_scope = Scope()
         self.current_scope = self.global_scope
@@ -483,6 +490,8 @@ class TypeChecker:
         # Name of the `@rt_safe` function currently being checked, or None
         # when checking a function without that attribute.
         self._current_rt_safe_fn: Optional[str] = None
+        # Name of the `@safe` function currently being checked (#284).
+        self._current_safe_fn: Optional[str] = None
 
         # Effect-row Phase 1: lexical handler stack (mirrors C codegen).
         # When `check_effect_rows` is True, performing an effect with no
@@ -1326,6 +1335,26 @@ class TypeChecker:
             return "may block or cause priority inversion (lock/wait)"
         return "allocates or frees heap memory"
 
+    def _check_safe_call(self, name: str) -> None:
+        """Enforce `@safe` call graph (#284): no `@unsafe` / bare-extern callees."""
+        if self._current_safe_fn is None:
+            return
+        decl = self.function_decls.get(name)
+        callee_attrs = list(getattr(decl, "attributes", None) or []) if decl else []
+        is_extern = bool(decl and getattr(decl, "is_extern", False))
+        if "unsafe" in callee_attrs or is_extern:
+            self.errors.append(
+                f"Safety boundary violation: '{self._current_safe_fn}' is "
+                f"marked '@safe' but calls '{name}', which is '@unsafe' or "
+                f"an extern declaration (see docs/language/safety-profiles.md)"
+            )
+            return
+        if name in self.DANGEROUS_EXTERN_NAMES:
+            self.errors.append(
+                f"Safety boundary violation: '{self._current_safe_fn}' is "
+                f"marked '@safe' but calls dangerous FFI '{name}'"
+            )
+
     def _check_rt_safe_call(self, name: str) -> None:
         """If we're inside an `@rt_safe` function body, flag calls that reach
         a banned API (heap, device/file I/O, GPU alloc/sync, or blocking lock),
@@ -1534,8 +1563,24 @@ class TypeChecker:
             attribute_errors(func.name, getattr(func, 'attributes', None) or [])
         )
 
-        # Extern functions have no body to check - they're just declarations
+        attrs = getattr(func, 'attributes', None) or []
+
+        # Extern functions have no body to check - they're just declarations.
+        # Under safety/flight, require `@unsafe` on the extern block (#276).
         if getattr(func, 'is_extern', False):
+            import os as _os
+            _profile = _os.environ.get("FLOW_PROFILE", "default")
+            if _profile in ("safety", "flight") and "unsafe" not in attrs:
+                self.errors.append(
+                    f"safety profile requires '@unsafe' on extern declaration "
+                    f"'{func.name}' (MISRA/CERT FFI boundary; see "
+                    f"docs/language/safety-profiles.md)"
+                )
+            if func.name in self.DANGEROUS_EXTERN_NAMES and "unsafe" not in attrs:
+                self.errors.append(
+                    f"Dangerous FFI '{func.name}' must be declared under "
+                    f"'@unsafe extern' (CERT / #276)"
+                )
             return
 
         self._check_trait_bounds(func)
@@ -1546,8 +1591,8 @@ class TypeChecker:
 
         # `@rt_safe` (docs/library/rt-safety.md): while checking this
         # function's body, flag any call that reaches a banned RT-unsafe API.
-        attrs = getattr(func, 'attributes', None) or []
         prev_rt_safe_fn = self._current_rt_safe_fn
+        prev_safe_fn = self._current_safe_fn
         prev_fn_name = self._current_function_name
         prev_type_params = self._active_type_params
         self._active_type_params = {
@@ -1569,6 +1614,7 @@ class TypeChecker:
         else:
             self._current_rt_safe_fn = None
             self._rt_safe_from_domain = False
+        self._current_safe_fn = func.name if 'safe' in attrs else None
         self._current_function_name = func.name
 
         # Effect-row Phase 2: declared `with E…` effects are assumed available
@@ -1621,6 +1667,7 @@ class TypeChecker:
             self._effect_handler_stack.pop()
             self.current_scope = func_scope.parent
             self._current_rt_safe_fn = prev_rt_safe_fn
+            self._current_safe_fn = prev_safe_fn
             self._current_domain = prev_domain
             self._rt_safe_from_domain = prev_rt_from_domain
             self._current_function_name = prev_fn_name
@@ -3055,6 +3102,7 @@ class TypeChecker:
     def _check_function_call(self, call: FunctionCall) -> SemanticType:
         """Type check a function call."""
         self._check_rt_safe_call(call.name)
+        self._check_safe_call(call.name)
         self._check_domain_call(call.name)
         # dbg expr: evaluates to expr, so its type is the operand's type.
         if call.name == "__flow_dbg":

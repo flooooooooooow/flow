@@ -38,6 +38,8 @@ GUARD_ATTRIBUTES = frozenset({
 SEMANTIC_ATTRIBUTES = frozenset({
     "gpu",        # device codegen (mlir_gpu_codegen / metal_codegen)
     "rt_safe",    # real-time safety checking (type_checker)
+    "safe",       # certification boundary (#284): cannot call @unsafe / bare extern
+    "unsafe",     # explicit escape hatch (#284); required on extern under safety (#276)
     "flow_api",   # stable C ABI name (c_generator name mangling)
     "test",       # synthesized by the parser for `test "..." { }` blocks
     "monomorphized",  # synthesized by monomorphize.py
@@ -176,5 +178,9 @@ def attribute_errors(fn_name: str, attrs: List[str]) -> List[str]:
         errors.append(
             f"Function '{fn_name}' cannot be both '@noinline' and "
             "'@inline'/'@always_inline'"
+        )
+    if "safe" in seen and "unsafe" in seen:
+        errors.append(
+            f"Function '{fn_name}' cannot be both '@safe' and '@unsafe'"
         )
     return errors

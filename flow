@@ -161,8 +161,11 @@ flow_clang_warning_flags() {
             #   c23-extensions    — Flow emits `T x = { };` empty inits
             #   format            — int64_t vs long long on LP64
             # Full -pedantic without these Waivers is tracked with #273.
+            # #283: promote implicit-function-declaration to hard error
+            # under safety (override the default-profile downgrade above).
             FLOW_CLANG_WARN_FLAGS+=(
                 "-Werror"
+                "-Werror=implicit-function-declaration"
                 "-Wno-strict-prototypes"
                 "-Wno-c23-extensions"
                 "-Wno-format"
@@ -174,8 +177,8 @@ flow_clang_warning_flags() {
 flow_apply_sanitize_to_arrays() {
     # Append sanitizer flags to the named cflags/ldflags arrays.
     # Usage: flow_apply_sanitize_to_arrays cflags_var ldflags_var
-    local -n _cflags_ref=$1
-    local -n _ldflags_ref=$2
+    local _cflags_var=$1
+    local _ldflags_var=$2
     local sanitize="${FLOW_SANITIZE:-}"
     local item
     local -a parts=()
@@ -197,16 +200,16 @@ flow_apply_sanitize_to_arrays() {
     fi
 
     if [ "${FLOW_UBSAN:-}" = "1" ]; then
-        _cflags_ref+=("-fsanitize=undefined" "-fno-sanitize-recover=all" "-g" "-fno-omit-frame-pointer")
-        _ldflags_ref+=("-fsanitize=undefined")
+        eval "${_cflags_var}+=(\"-fsanitize=undefined\" \"-fno-sanitize-recover=all\" \"-g\" \"-fno-omit-frame-pointer\")"
+        eval "${_ldflags_var}+=(\"-fsanitize=undefined\")"
     fi
     if [ "${FLOW_ASAN:-}" = "1" ]; then
-        _cflags_ref+=("-fsanitize=address" "-g" "-fno-omit-frame-pointer")
-        _ldflags_ref+=("-fsanitize=address")
+        eval "${_cflags_var}+=(\"-fsanitize=address\" \"-g\" \"-fno-omit-frame-pointer\")"
+        eval "${_ldflags_var}+=(\"-fsanitize=address\")"
     fi
     if [ "${FLOW_TSAN:-}" = "1" ]; then
-        _cflags_ref+=("-fsanitize=thread" "-g" "-fno-omit-frame-pointer")
-        _ldflags_ref+=("-fsanitize=thread")
+        eval "${_cflags_var}+=(\"-fsanitize=thread\" \"-g\" \"-fno-omit-frame-pointer\")"
+        eval "${_ldflags_var}+=(\"-fsanitize=thread\")"
     fi
 }
 
@@ -303,6 +306,9 @@ show_help() {
     echo "                    Compile and run program"
     echo "  compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]"
     echo "                    Compile program only; --show-flags prints clang flags"
+    echo "  show-flags [--profile=safety] [--sanitize=...]  Print clang CFLAGS for current profile"
+    echo "  analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
+    echo "                    Scan generated C for MISRA/CERT patterns (#277)"
     echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
     echo "  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)"
     echo "  C flags: -std=c11 -Wall -Wextra (MISRA Phase 0); FLOW_PROFILE=safety adds -Werror"
@@ -2711,6 +2717,14 @@ case "${1:-help}" in
             esac
         done
         flow_show_clang_flags
+        ;;
+    "analyze")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
+            exit 1
+        fi
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
         ;;
     "compile-audio")
         check_deps
