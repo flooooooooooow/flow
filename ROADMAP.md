@@ -38,7 +38,7 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
 | **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
 | **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
-| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial — Phase 0: `-std=c11 -Wall`, `--profile safety` → `-Werror`, UBSan/ASan, div0/shift guards (#269/#270/#264/#265) |
+| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial — Phase 0+1: flags/sanitizers, fault handler, checked +/−/*, null deref, [safety-profiles.md](docs/language/safety-profiles.md) |
 
 Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
 
