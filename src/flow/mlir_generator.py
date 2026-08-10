@@ -4,6 +4,8 @@ FLOW to MLIR Generator
 Converts parsed FLOW AST to MLIR dialects
 """
 
+from __future__ import annotations
+
 from typing import List, Dict, Optional, Any, Set
 from .parser import (
     FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, Block, Statement,

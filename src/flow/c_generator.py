@@ -258,15 +258,15 @@ class CGenerator:
             expr_str = self._gen_expr(expr)
             suffix = "\\n" if newline else ""
             if type_name == "c64":
-                return (f'printf("(%f + %f j){suffix}", '
+                return (f'FLOW_LOG("(%f + %f j){suffix}", '
                         f'crealf({expr_str}), cimagf({expr_str}))')
-            return (f'printf("(%f + %f j){suffix}", '
+            return (f'FLOW_LOG("(%f + %f j){suffix}", '
                     f'creal({expr_str}), cimag({expr_str}))')
         expr_str = self._gen_expr(expr)
         fmt = self._printf_format_for_type_name(type_name)
         if newline:
             fmt = f"{fmt}\\n"
-        return f'printf("{fmt}", {expr_str})'
+        return f'FLOW_LOG("{fmt}", {expr_str})'
 
     def _gen_stringify_expr(self, expr: Expression) -> str:
         """Render a non-string expression as a `const char*` for use in
@@ -286,7 +286,7 @@ class CGenerator:
     def _gen_print_call(self, arguments: list, *, newline: bool) -> str:
         """Shared implementation for print/println intrinsics."""
         if len(arguments) == 0:
-            return 'printf("\\n")' if newline else ''
+            return 'FLOW_LOG_EMPTY("\\n")' if newline else ''
         if len(arguments) == 1:
             # Note: `print(a + b)` used to emit the bare expression, which C
             # evaluates and discards, so the call printed nothing at all.
@@ -297,9 +297,9 @@ class CGenerator:
             prefix = ' ' if i > 0 else ''
             expr_str = self._gen_expr(arg)
             fmt = self._printf_format_for_type_name(self._print_type_name(arg))
-            parts.append(f'printf("{prefix}{fmt}", {expr_str})')
+            parts.append(f'FLOW_LOG("{prefix}{fmt}", {expr_str})')
         if newline:
-            parts.append('printf("\\n")')
+            parts.append('FLOW_LOG_EMPTY("\\n")')
         return '; '.join(parts)
 
     def _type_uses_complex(self, t) -> bool:
@@ -499,6 +499,15 @@ class CGenerator:
         # fprintf(stderr, ...); builds may `-DFLOW_DIAG(msg)=((void)0)`.
         lines.append("#ifndef FLOW_DIAG")
         lines.append("#define FLOW_DIAG(msg) fprintf(stderr, \"%s\", (msg))")
+        lines.append("#endif")
+        # Overridable logging channel (#281 / MISRA 21.6). println() routes
+        # through FLOW_LOG so safety-critical builds can replace printf with
+        # a certified I/O abstraction via -DFLOW_LOG(fmt, ...)=...
+        lines.append("#ifndef FLOW_LOG")
+        lines.append("#define FLOW_LOG(fmt, ...) printf(fmt, __VA_ARGS__)")
+        lines.append("#endif")
+        lines.append("#ifndef FLOW_LOG_EMPTY")
+        lines.append("#define FLOW_LOG_EMPTY(fmt) printf(fmt)")
         lines.append("#endif")
         lines.append("static char* flow_strcat(const char* a, const char* b) {")
         if self._no_heap_enabled():
@@ -1626,6 +1635,9 @@ class CGenerator:
                             or field_type.name.startswith("ptr_")
                         )
             return self._is_pointer_expr(expr.object)
+        if isinstance(expr, BinaryOperation) and expr.operator == '+':
+            # Pointer arithmetic: ptr + offset yields a pointer
+            return self._is_pointer_expr(expr.left) or self._is_pointer_expr(expr.right)
         return False
 
     def _flatten_string_concat(self, expr: Expression) -> List[Tuple[str, str]]:
