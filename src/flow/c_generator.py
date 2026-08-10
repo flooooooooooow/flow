@@ -311,9 +311,32 @@ class CGenerator:
         lines.append("#include <string.h>")  # For memcpy/memset
         lines.append("")
         lines.append("/* Flow runtime helpers */")
+        # Temp arena for strcat results + escaping closure envs (#267 / #268).
+        # Nodes are freed via flow_temp_free_all (atexit + end of main).
+        lines.append("typedef struct flow_temp_node { struct flow_temp_node* next; } flow_temp_node;")
+        lines.append("static flow_temp_node* flow_temp_head = NULL;")
+        lines.append("static int flow_temp_atexit_set = 0;")
+        lines.append("__attribute__((unused)) static void flow_temp_free_all(void) {")
+        lines.append("    while (flow_temp_head) {")
+        lines.append("        flow_temp_node* n = flow_temp_head;")
+        lines.append("        flow_temp_head = n->next;")
+        lines.append("        free(n);")
+        lines.append("    }")
+        lines.append("}")
+        lines.append("__attribute__((unused)) static void* flow_temp_alloc(size_t nbytes) {")
+        lines.append("    flow_temp_node* node = (flow_temp_node*)malloc(sizeof(flow_temp_node) + nbytes);")
+        lines.append("    if (!node) return NULL;")
+        lines.append("    node->next = flow_temp_head;")
+        lines.append("    flow_temp_head = node;")
+        lines.append("    if (!flow_temp_atexit_set) {")
+        lines.append("        flow_temp_atexit_set = 1;")
+        lines.append("        atexit(flow_temp_free_all);")
+        lines.append("    }")
+        lines.append("    return (void*)(node + 1);")
+        lines.append("}")
         lines.append("__attribute__((unused)) static char* flow_strcat(const char* a, const char* b) {")
         lines.append("    size_t la = strlen(a ? a : \"\"), lb = strlen(b ? b : \"\");")
-        lines.append("    char* r = (char*)malloc(la + lb + 1);")
+        lines.append("    char* r = (char*)flow_temp_alloc(la + lb + 1);")
         lines.append("    if (!r) return NULL;")
         lines.append("    if (la) memcpy(r, a, la);")
         lines.append("    if (lb) memcpy(r + la, b, lb);")
@@ -1640,8 +1663,9 @@ class CGenerator:
             env_name = info["env_name"]
             lambda_name = info["lambda_name"]
             # Heap-copy env so the closure can escape the creating stack frame.
+            # Tracked in the temp arena and released by flow_temp_free_all (#268).
             prelude.append(
-                f"{env_name}* _flow_env = ({env_name}*)malloc(sizeof({env_name}));"
+                f"{env_name}* _flow_env = ({env_name}*)flow_temp_alloc(sizeof({env_name}));"
             )
             init_fields = ", ".join(
                 f".{_c_ident(cap)} = {self._gen_expr(Variable(cap))}"
