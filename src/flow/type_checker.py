@@ -2850,11 +2850,15 @@ class TypeChecker:
         if op.operator in ("<<", ">>"):
             amount = self._literal_int_value(op.right)
             width = self._integer_bit_width(left_type)
+            # C integer promotion: types narrower than int are promoted to
+            # int (32 bits) before the shift, so u8 << 24 is valid.
+            if width is not None and width < 32:
+                width = 32
             if amount is not None:
                 if amount < 0 or (width is not None and amount >= width):
                     self.errors.append(
                         f"Shift amount {amount} out of range for {left_type} "
-                        f"(MISRA Rule 12.2 / CERT INT34-C)"
+                        "(MISRA Rule 12.2 / CERT INT34-C)"
                     )
             if op.operator == "<<":
                 lhs = self._literal_int_value(op.left)
