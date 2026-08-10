@@ -2,10 +2,11 @@
 #
 # Uses the rf stdlib for Signal/IQ types and units_si for quantity literals.
 # Demonstrates:
-# - Quantity literals: 1000.0 Hertz, 8000.0 Hertz
+# - Phantom rate typing: Signal<Hz8000> is compile-time rate-safe
+# - Quantity literals: 1000.0 Hertz
 # - signal_new / signal_free lifecycle
 # - Complex oscillator generation
-# - signal_mix (frequency mixing)
+# - signal_mix (compile-time rate checked)
 
 import "stdlib/rf.flow"
 import "stdlib/units_si.flow"
@@ -19,44 +20,45 @@ function main() -> i32 {
     # 1 kHz tone frequency (quantity literal)
     let tone_freq: Hertz = 1000.0 Hertz
 
-    # Generate a 1 kHz tone as IQ samples
-    let tone: Signal = signal_new(N, sample_rate)
+    # Generate a 1 kHz tone as IQ samples at 8 kHz sample rate
+    let tone: Signal<Hz8000> = signal_new<Hz8000>(N, sample_rate)
     for n in 0 to N {
         let phase: f64 = 2.0 * PI * (tone_freq as f64) * (n as f64) / (sample_rate as f64)
-        signal_set(tone, n, c64(cos(phase), sin(phase)))
+        signal_set<Hz8000>(tone, n, c64(cos(phase), sin(phase)))
     }
 
     # Generate a 1 kHz local oscillator (complex exponential)
-    let lo: Signal = signal_new(N, sample_rate)
+    let lo: Signal<Hz8000> = signal_new<Hz8000>(N, sample_rate)
     for n in 0 to N {
         let phase: f64 = -2.0 * PI * (tone_freq as f64) * (n as f64) / (sample_rate as f64)
-        signal_set(lo, n, c64(cos(phase), sin(phase)))
+        signal_set<Hz8000>(lo, n, c64(cos(phase), sin(phase)))
     }
 
     # Mix: tone * LO should produce a DC signal (0 Hz)
-    let baseband: Signal = signal_mix(tone, lo)
+    # The compiler verifies both signals have the same rate type (Hz8000).
+    let baseband: Signal<Hz8000> = signal_mix<Hz8000>(tone, lo)
 
     println("Baseband samples (should be ~DC):")
     for n in 0 to N {
         print("  ")
-        println(signal_get(baseband, n))
+        println(signal_get<Hz8000>(baseband, n))
     }
 
     # Check: the real part of the mixed signal should be ~1.0
-    let dc_val: f64 = creal(signal_get(baseband, 0))
+    let dc_val: f64 = creal(signal_get<Hz8000>(baseband, 0))
     if dc_val > 0.9 && dc_val < 1.1 {
         println("")
         println("PASS: mixer output is DC as expected")
-        signal_free(tone)
-        signal_free(lo)
-        signal_free(baseband)
+        signal_free<Hz8000>(tone)
+        signal_free<Hz8000>(lo)
+        signal_free<Hz8000>(baseband)
         return 0
     }
 
     println("")
     println("FAIL: unexpected mixer output")
-    signal_free(tone)
-    signal_free(lo)
-    signal_free(baseband)
+    signal_free<Hz8000>(tone)
+    signal_free<Hz8000>(lo)
+    signal_free<Hz8000>(baseband)
     return 1
 }
