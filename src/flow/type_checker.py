@@ -547,6 +547,30 @@ class TypeChecker:
     def _is_float(self, t: SemanticType) -> bool:
         return t.kind in {TypeKind.F32, TypeKind.F64}
 
+    def _literal_int_value(self, expr: Any) -> Optional[int]:
+        """Return an integer value if ``expr`` is a numeric literal, else None."""
+        if isinstance(expr, Literal):
+            try:
+                return int(str(expr.value), 0)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(expr, UnaryOperation) and expr.operator == "-":
+            inner = self._literal_int_value(expr.operand)
+            if inner is not None:
+                return -inner
+        return None
+
+    def _integer_bit_width(self, t: SemanticType) -> Optional[int]:
+        widths = {
+            TypeKind.I8: 8, TypeKind.U8: 8,
+            TypeKind.I16: 16, TypeKind.U16: 16,
+            TypeKind.I32: 32, TypeKind.U32: 32,
+            TypeKind.I64: 64, TypeKind.U64: 64,
+            TypeKind.I128: 128, TypeKind.U128: 128,
+            TypeKind.BOOL: 8,
+        }
+        return widths.get(t.kind)
+
     def _numeric_common_type(self, a: SemanticType, b: SemanticType) -> SemanticType:
         # Prefer floats if any operand is float.
         if self._is_float(a) or self._is_float(b):
@@ -2810,6 +2834,35 @@ class TypeChecker:
                 self.errors.append(
                     f"Binary operator '{op.operator}' requires matching types, got {left_type} and {right_type}"
                 )
+
+        # MISRA Rule 12.5 / CERT INT33-C: reject literal zero divisors at
+        # compile time (runtime checks still emitted by the C generator).
+        if op.operator in ("/", "%"):
+            lit = self._literal_int_value(op.right)
+            if lit == 0 and not self._is_float(left_type):
+                self.errors.append(
+                    f"Division/modulo by zero is undefined "
+                    f"(MISRA Rule 12.5 / CERT INT33-C)"
+                )
+
+        # MISRA Rule 12.2 / CERT INT34-C: reject literal out-of-range shifts
+        # and left-shift of a literal negative value.
+        if op.operator in ("<<", ">>"):
+            amount = self._literal_int_value(op.right)
+            width = self._integer_bit_width(left_type)
+            if amount is not None:
+                if amount < 0 or (width is not None and amount >= width):
+                    self.errors.append(
+                        f"Shift amount {amount} out of range for {left_type} "
+                        f"(MISRA Rule 12.2 / CERT INT34-C)"
+                    )
+            if op.operator == "<<":
+                lhs = self._literal_int_value(op.left)
+                if lhs is not None and lhs < 0:
+                    self.errors.append(
+                        "Left shift of a negative value is undefined "
+                        "(MISRA Rule 12.2 / CERT INT34-C)"
+                    )
 
         # Determine result type based on operator
         if op.operator in ["+", "-", "*", "/", "%"]:
