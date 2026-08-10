@@ -1,0 +1,40 @@
+# DSP pipeline demo: chain map/filter/reduce with |>.
+#
+# Shows the |> operator composing functional DSP primitives from stdlib/dsp.flow.
+# A signal is generated, transformed through a pipeline, and reduced to a scalar.
+
+import "stdlib/dsp.flow"
+
+function main() -> i32 {
+    let n: i32 = 8
+
+    # Generate a ramp: [0, 1, 2, 3, 4, 5, 6, 7]
+    let buf: array<f32, 8> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+
+    # Pipeline: ramp |> scale by 2 |> offset by 1 |> clip to [0, 10]
+    let processed: ptr<f32> = buf |> scale_f32(n, 2.0)
+                                   |> offset_f32(n, 1.0)
+                                   |> clip_f32(n, 0.0, 10.0)
+
+    # Print processed samples
+    println("Processed samples:")
+    for i in 0 to n {
+        print("  ")
+        print(processed[i])
+    }
+    println("")
+
+    # Reduce: sum all processed samples
+    let total: f32 = sum_f32(processed, n)
+    println("Sum of processed samples:")
+    println(total)
+
+    # Expected: [1, 3, 5, 7, 9, 10, 10, 10] => sum = 55
+    if total > 54.0 && total < 56.0 {
+        println("PASS: pipeline result matches expected")
+        return 0
+    }
+
+    println("FAIL: expected sum = 55")
+    return 1
+}

@@ -1,0 +1,193 @@
+# DSP Pipeline Module
+#
+# Functional DSP primitives that compose with the |> operator.
+# Each function takes a buffer + length and returns a new buffer,
+# so `buf |> map(f) |> filter(g)` chains naturally.
+#
+# All operations allocate a new output buffer. The caller frees it.
+# For in-place variants, use the `_ip` suffixed versions.
+#
+# Usage:
+#   import "stdlib/dsp.flow"
+#   let out: ptr<f32> = buf |> map_f32(8, |x: f32| -> f32 { return x * 2.0 })
+#                           |> map_f32(8, |x: f32| -> f32 { return x + 1.0 })
+
+# =============================================================================
+# Externs
+# =============================================================================
+
+extern { function malloc(size: i32) -> ptr<void> }
+extern { function free(p: ptr<void>) -> void }
+
+# =============================================================================
+# f32 primitives
+# =============================================================================
+
+# Apply a function element-wise: out[i] = f(arr[i]).
+export function map_f32(arr: ptr<f32>, n: i32, f: (f32) -> f32) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    for i in 0 to n {
+        out[i] = f(arr[i])
+    }
+    return out
+}
+
+# Keep only elements where pred returns true.
+# Returns a pointer; writes the filtered count to out_n.
+export function filter_f32(arr: ptr<f32>, n: i32, pred: (f32) -> bool, out_n: ptr<i32>) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    let mut count: i32 = 0
+    for i in 0 to n {
+        if pred(arr[i]) {
+            out[count] = arr[i]
+            count = count + 1
+        }
+    }
+    out_n[0] = count
+    return out
+}
+
+# Left fold: acc = f(acc, arr[0]), then f(acc, arr[1]), etc.
+export function reduce_f32(arr: ptr<f32>, n: i32, init: f32, f: (f32, f32) -> f32) -> f32 {
+    let mut acc: f32 = init
+    for i in 0 to n {
+        acc = f(acc, arr[i])
+    }
+    return acc
+}
+
+# Prefix scan: out[0] = init, out[i] = f(out[i-1], arr[i]).
+export function scan_f32(arr: ptr<f32>, n: i32, init: f32, f: (f32, f32) -> f32) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    let mut acc: f32 = init
+    for i in 0 to n {
+        acc = f(acc, arr[i])
+        out[i] = acc
+    }
+    return out
+}
+
+# Element-wise combine two buffers: out[i] = f(a[i], b[i]).
+export function zip_with_f32(a: ptr<f32>, b: ptr<f32>, n: i32, f: (f32, f32) -> f32) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    for i in 0 to n {
+        out[i] = f(a[i], b[i])
+    }
+    return out
+}
+
+# Scale every element by a scalar gain.
+export function scale_f32(arr: ptr<f32>, n: i32, gain: f32) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    for i in 0 to n {
+        out[i] = arr[i] * gain
+    }
+    return out
+}
+
+# Add a constant offset to every element.
+export function offset_f32(arr: ptr<f32>, n: i32, dc: f32) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    for i in 0 to n {
+        out[i] = arr[i] + dc
+    }
+    return out
+}
+
+# Clip elements to [lo, hi].
+export function clip_f32(arr: ptr<f32>, n: i32, lo: f32, hi: f32) -> ptr<f32> {
+    let out: ptr<f32> = malloc(n * 4) as ptr<f32>
+    for i in 0 to n {
+        let v: f32 = arr[i]
+        if v < lo {
+            out[i] = lo
+        } else {
+            if v > hi {
+                out[i] = hi
+            } else {
+                out[i] = v
+            }
+        }
+    }
+    return out
+}
+
+# Sum all elements.
+export function sum_f32(arr: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + arr[i]
+    }
+    return s
+}
+
+# Dot product of two buffers.
+export function dot_f32(a: ptr<f32>, b: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + a[i] * b[i]
+    }
+    return s
+}
+
+# =============================================================================
+# f64 primitives
+# =============================================================================
+
+export function map_f64(arr: ptr<f64>, n: i32, f: (f64) -> f64) -> ptr<f64> {
+    let out: ptr<f64> = malloc(n * 8) as ptr<f64>
+    for i in 0 to n {
+        out[i] = f(arr[i])
+    }
+    return out
+}
+
+export function reduce_f64(arr: ptr<f64>, n: i32, init: f64, f: (f64, f64) -> f64) -> f64 {
+    let mut acc: f64 = init
+    for i in 0 to n {
+        acc = f(acc, arr[i])
+    }
+    return acc
+}
+
+export function scan_f64(arr: ptr<f64>, n: i32, init: f64, f: (f64, f64) -> f64) -> ptr<f64> {
+    let out: ptr<f64> = malloc(n * 8) as ptr<f64>
+    let mut acc: f64 = init
+    for i in 0 to n {
+        acc = f(acc, arr[i])
+        out[i] = acc
+    }
+    return out
+}
+
+export function zip_with_f64(a: ptr<f64>, b: ptr<f64>, n: i32, f: (f64, f64) -> f64) -> ptr<f64> {
+    let out: ptr<f64> = malloc(n * 8) as ptr<f64>
+    for i in 0 to n {
+        out[i] = f(a[i], b[i])
+    }
+    return out
+}
+
+export function scale_f64(arr: ptr<f64>, n: i32, gain: f64) -> ptr<f64> {
+    let out: ptr<f64> = malloc(n * 8) as ptr<f64>
+    for i in 0 to n {
+        out[i] = arr[i] * gain
+    }
+    return out
+}
+
+export function sum_f64(arr: ptr<f64>, n: i32) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to n {
+        s = s + arr[i]
+    }
+    return s
+}
+
+export function dot_f64(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to n {
+        s = s + a[i] * b[i]
+    }
+    return s
+}

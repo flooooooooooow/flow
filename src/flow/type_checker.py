@@ -3402,6 +3402,22 @@ class TypeChecker:
         if self._is_type_param(actual) or self._is_type_param(expected):
             return True
 
+        # Function types: compare signatures, ignoring the synthetic name
+        # (e.g. `fn_i32__i32`) that the parser assigns. A function value's
+        # SemanticType has name='' while a declared parameter type has
+        # name='fn_...'; the signatures still match.
+        if actual.kind == TypeKind.FUNCTION and expected.kind == TypeKind.FUNCTION:
+            if len(actual.param_types) != len(expected.param_types):
+                return False
+            for a, e in zip(actual.param_types, expected.param_types):
+                if not self._is_compatible(a, e):
+                    return False
+            a_ret = actual.return_type or SemanticType(TypeKind.VOID)
+            e_ret = expected.return_type or SemanticType(TypeKind.VOID)
+            if not self._is_compatible(a_ret, e_ret):
+                return False
+            return True
+
         # Borrowed views: arrays and other spans auto-borrow, pointers do not.
         if self._is_span(expected) or self._is_span(actual):
             return self._borrow_compatible(actual, expected)
