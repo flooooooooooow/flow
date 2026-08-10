@@ -436,16 +436,27 @@ let s: IQSample = z as IQSample   # explicit cast required
 ### Signal (rate-typed buffer)
 
 ```flow
-struct Signal {
+struct Signal<R> {
     data: ptr<c64>,
     len: i32,
     sample_rate: u32,
 }
 ```
 
-A `Signal` carries its sample rate at runtime. `signal_mix` checks that
-both signals have the same rate before combining. Compile-time phantom
-rate checking (via type-level naturals) is a planned future enhancement.
+`Signal<R>` carries a phantom type parameter `R` that tags the sample
+rate at compile time. `R` does not appear in the fields. The type
+checker enforces that `signal_mix<R>` receives two signals with the same
+`R`, so mixing signals at different rates is a compile-time error:
+
+```flow
+let a: Signal<Hz44100> = signal_new<Hz44100>(64, 44100)
+let b: Signal<Hz48000> = signal_new<Hz48000>(64, 48000)
+let m: Signal<Hz44100> = signal_mix<Hz44100>(a, b)  # compile error
+```
+
+Rate markers are distinct types: `distinct type Hz44100 = u32`. The
+stdlib provides common rates (Hz1000, Hz8000, Hz44100, Hz48000, Hz1M,
+etc.). To create a new rate marker: `distinct type HzMyRate = u32`.
 
 ### Quantity literals
 
