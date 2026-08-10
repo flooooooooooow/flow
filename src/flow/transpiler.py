@@ -522,12 +522,12 @@ def main():
             print(f"C generation error: {e}", file=sys.stderr)
             sys.exit(1)
 
-        # Safety manifest emission (after C generation so overflow_check
-        # state is known).
-        if getattr(args, "emit_manifest", False):
+        # Safety profile enforcement (#273): reject unbounded recursion under
+        # --profile safety|flight (detected via the safety-manifest call graph).
+        import os as _os
+        _profile = _os.environ.get("FLOW_PROFILE", "default")
+        if _profile in ("safety", "flight") or getattr(args, "emit_manifest", False):
             from .safety_manifest import generate_manifest
-            import os as _os
-            _profile = _os.environ.get("FLOW_PROFILE", "default")
             _overflow = _profile in ("safety", "flight") or _os.environ.get("FLOW_OVERFLOW_CHECK", "") == "1"
             manifest = generate_manifest(
                 declarations,
@@ -537,10 +537,19 @@ def main():
                 overflow_check=_overflow,
                 type_errors=type_result.errors if type_result else [],
             )
-            if getattr(args, "manifest_format", "text") == "json":
-                print(manifest.to_json(), file=sys.stderr)
-            else:
-                print(manifest.to_text(), file=sys.stderr)
+            if _profile in ("safety", "flight") and manifest.recursive_functions:
+                print(
+                    "Error: --profile "
+                    f"{_profile} rejects unbounded recursion "
+                    f"(MISRA 17.2): {', '.join(manifest.recursive_functions)}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if getattr(args, "emit_manifest", False):
+                if getattr(args, "manifest_format", "text") == "json":
+                    print(manifest.to_json(), file=sys.stderr)
+                else:
+                    print(manifest.to_text(), file=sys.stderr)
     else:
         # Generate MLIR
         try:

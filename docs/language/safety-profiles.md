@@ -7,39 +7,29 @@ MISRA/CERT-oriented work (ROADMAP W6, issues #273 / #285).
 
 | Profile | How to enable | Behavior |
 |---------|---------------|----------|
-| **default** | (none) | Full language. Application TUs still get runtime div0/shift/overflow/null/bounds guards in generated C. |
-| **safety** | `FLOW_PROFILE=safety` or `--profile=safety` | Adds `-Werror` (with known-noise waivers). Same checked arithmetic as default. |
-| **flight** | `FLOW_PROFILE=flight` or `--profile=flight` | Alias of **safety** for now; future: no heap in RT paths, no unbounded recursion/loops, optional no-float. |
+| **default** | (none) | Full language. Application TUs get runtime div0/shift/bounds guards. Overflow checks off. |
+| **safety** | `FLOW_PROFILE=safety` or `--profile=safety` | `-Werror` (with known-noise waivers); signed overflow guards (`FLOW_OVERFLOW_CHECK`); **rejects recursive functions** (MISRA 17.2) via the safety manifest. |
+| **flight** | `FLOW_PROFILE=flight` or `--profile=flight` | Same as **safety** today; future: stricter no-heap / no-float subset. |
 | **embedded** | *(planned)* | Prefer static allocation; no GC assumptions. |
 
-## Inspect flags
+Also: `flow.toml` may set `profile = "safety"` once project config is wired; until then use the env/CLI flags.
+
+## Temp arena (strcat / closures)
+
+String `+` and escaping closure envs allocate through `flow_temp_alloc` and are
+released by `flow_temp_free_all` at process exit (`atexit`) — closes the
+strcat/closure leaks for short-lived programs (#267 / #268). Long-running
+servers should prefer arenas or avoid heap concat.
+
+## Inspect flags / manifest
 
 ```bash
 ./flow show-flags
 ./flow show-flags --profile=safety --sanitize=ub,asan
-```
-
-## Override the fault handler
-
-Generated application C defines `flow_fault_handler(const char* msg)` (abort by
-default). Replace it at compile time:
-
-```bash
-FLOW_CFLAGS='-DFLOW_FAULT_HANDLER=my_handler' ./flow run --profile=safety app.flow
-```
-
-Div0, shift UB, signed overflow, null deref, and bounds faults all route through
-this single handler (#279).
-
-## Sanitizers
-
-```bash
-./flow run --sanitize=ub,asan examples/basics/hello_world.flow
-# or: FLOW_UBSAN=1 FLOW_ASAN=1 FLOW_HOST=python ./flow run …
+FLOW_HOST=python ./flow transpile prog.flow --c --emit-manifest --profile=safety
 ```
 
 ## Still open (epic #285)
 
-- Bounded recursion/loops (#271/#272)
-- No-heap / strcat / closure free (#267/#268/#274)
-- Compliance matrix (#278), WCET (#282), `@safe`/`@unsafe` (#284)
+- Null deref / unified fault handler (#266 / #279 — see PR #288)
+- Loop bounds (#272), full no-heap (#274), compliance matrix (#278), WCET (#282), `@safe`/`@unsafe` (#284)
