@@ -8,7 +8,7 @@ MISRA/CERT-oriented work (ROADMAP W6, issues #273 / #285).
 | Profile | How to enable | Behavior |
 |---------|---------------|----------|
 | **default** | (none) | Full language. Application TUs get runtime div0/shift/bounds guards. Overflow checks off. |
-| **safety** | `FLOW_PROFILE=safety` or `--profile=safety` | `-Werror` (with known-noise waivers); signed overflow guards (`FLOW_OVERFLOW_CHECK`); **rejects recursive functions** (MISRA 17.2) via the safety manifest. |
+| **safety** | `FLOW_PROFILE=safety` or `--profile=safety` | `-Werror` (with known-noise waivers); signed overflow guards (`FLOW_OVERFLOW_CHECK`); **rejects recursive functions** (MISRA 17.2); **requires `@max_iterations(N)` on while** (MISRA 17.4). |
 | **flight** | `FLOW_PROFILE=flight` or `--profile=flight` | Same as **safety** today; future: stricter no-heap / no-float subset. |
 | **embedded** | *(planned)* | Prefer static allocation; no GC assumptions. |
 
