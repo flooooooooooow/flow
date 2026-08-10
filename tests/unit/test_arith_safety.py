@@ -28,6 +28,11 @@ def _c(source: str) -> str:
     return flow_to_c(parse_flow_code(source))
 
 
+def _c_overflow(source: str) -> str:
+    """Generate C with overflow checks enabled (--profile safety)."""
+    return flow_to_c(parse_flow_code(source), overflow_check=True)
+
+
 def test_literal_div_by_zero_rejected():
     result = _check(
         """
@@ -121,7 +126,7 @@ def test_float_div_has_no_div0_guard():
 
 def test_c_emits_overflow_handler():
     """Signed integer +,-,* must emit FLOW_CHECKED_* macros (#263)."""
-    c = _c(
+    c = _c_overflow(
         """
         function main() -> i32 {
             let a: i32 = 100
@@ -141,7 +146,7 @@ def test_c_emits_overflow_handler():
 
 def test_float_arith_has_no_overflow_guard():
     """Float +,-,* must not get overflow checks (IEEE, not UB)."""
-    c = _c(
+    c = _c_overflow(
         """
         function main() -> i32 {
             let a: f64 = 1.0
@@ -158,7 +163,7 @@ def test_float_arith_has_no_overflow_guard():
 
 def test_unsigned_arith_has_no_overflow_guard():
     """Unsigned wraparound is well-defined in C, not UB; skip the check."""
-    c = _c(
+    c = _c_overflow(
         """
         function main() -> i32 {
             let a: u32 = 100
@@ -169,3 +174,19 @@ def test_unsigned_arith_has_no_overflow_guard():
         """
     )
     assert "FLOW_CHECKED_ADD((a), (b))" not in c
+
+
+def test_default_profile_no_overflow_check():
+    """Without --profile safety, +,-,* stay raw (no overflow macros)."""
+    c = _c(
+        """
+        function main() -> i32 {
+            let a: i32 = 100
+            let b: i32 = 200
+            return a + b
+        }
+        """
+    )
+    assert "FLOW_CHECKED_ADD" not in c
+    assert "flow_overflow_handler" not in c
+    assert "a + b" in c or "(a + b)" in c
