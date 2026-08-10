@@ -3469,8 +3469,10 @@ class MLIRGenerator:
             flow_from = self._flow_type_of_expr(expr.expr)
             if getattr(flow_from, "name", "").startswith("u"):
                 self._ssa_unsigned.add(value_ssa)
-            cast_ssa, cast_ops = self._emit_cast(value_ssa, from_type, to_type)
-            if getattr(expr.target_type, "name", "").startswith("u"):
+            target_is_unsigned = getattr(expr.target_type, "name", "").startswith("u")
+            cast_ssa, cast_ops = self._emit_cast(value_ssa, from_type, to_type,
+                                                  target_unsigned=target_is_unsigned)
+            if target_is_unsigned:
                 self._ssa_unsigned.add(cast_ssa)
             return cast_ssa, value_ops + cast_ops
         elif isinstance(expr, ArrayAccess):
@@ -3529,9 +3531,18 @@ class MLIRGenerator:
         self._ssa_types[result] = then_ty
         return result, ops
 
-    def _emit_cast(self, value_ssa: str, from_type: str, to_type: str) -> tuple[str, List[str]]:
+    def _emit_cast(self, value_ssa: str, from_type: str, to_type: str,
+                   *, target_unsigned: bool | None = None) -> tuple[str, List[str]]:
         from_type = self._ssa_types.get(value_ssa, from_type)
         if from_type == to_type:
+            # No-op cast at the MLIR level (e.g. u32→i32 both lower to i32).
+            # If the caller tells us the target signedness, fix up the
+            # _ssa_unsigned flag so downstream comparisons use the right
+            # predicate (slt vs ult).
+            if target_unsigned is False and value_ssa in self._ssa_unsigned:
+                self._ssa_unsigned.discard(value_ssa)
+            elif target_unsigned is True:
+                self._ssa_unsigned.add(value_ssa)
             return value_ssa, []
 
         cast_name = f"%{self.function_counter}"
