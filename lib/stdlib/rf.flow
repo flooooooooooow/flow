@@ -5,8 +5,13 @@
 #
 # Usage:
 #   import "stdlib/rf.flow"
-#   let sig: Signal = signal_new(1024, 1000000)  # 1024 samples at 1 MHz
+#   let sig: Signal<Hz1000> = signal_new<Hz1000>(1024)
 #   let iq: IQSample = iq_from_real(0.5)
+#
+# Compile-time rate safety:
+#   Signal<R> carries a phantom type parameter R that tags the sample
+#   rate. signal_mix<R> requires both inputs to have the same R, so
+#   mixing signals at different rates is a compile-time error.
 
 # =============================================================================
 # Type aliases
@@ -19,18 +24,39 @@ export type IQ = c64
 
 # Type-safe IQ sample. Distinct from c64 so the type checker rejects
 # accidental mixing of IQ samples with arbitrary complex arithmetic.
-# Use IQSample when you want the compiler to enforce that a buffer
-# contains RF samples, not generic complex values.
 export distinct type IQSample = c64
 
 # =============================================================================
-# Signal struct (runtime rate checking)
+# Rate marker types (phantom type parameters for Signal<R>)
+# =============================================================================
+#
+# These are distinct types used as phantom type parameters. They don't appear
+# in Signal's fields but tag the signal with its sample rate so the compiler
+# can reject rate mismatches at compile time.
+#
+# To create a new rate marker: `distinct type HzMyRate = u32`
+
+export distinct type Hz1000 = u32
+export distinct type Hz8000 = u32
+export distinct type Hz16000 = u32
+export distinct type Hz22050 = u32
+export distinct type Hz24000 = u32
+export distinct type Hz32000 = u32
+export distinct type Hz44100 = u32
+export distinct type Hz48000 = u32
+export distinct type Hz96000 = u32
+export distinct type Hz1M = u32
+export distinct type Hz2_4M = u32
+export distinct type Hz10M = u32
+
+# =============================================================================
+# Signal struct (phantom rate type parameter)
 # =============================================================================
 
-# A signal buffer with an associated sample rate.
-# The rate is carried at runtime. Compile-time phantom rate checking
-# (via type-level naturals) is a planned future enhancement.
-export struct Signal {
+# A signal buffer with a compile-time sample rate tag.
+# R is a phantom type parameter (rate marker). It does not appear in the
+# fields but is checked by the type system when signals are combined.
+export struct Signal<R> {
     data: ptr<c64>,
     len: i32,
     sample_rate: u32,
@@ -64,21 +90,23 @@ extern { function malloc(size: i32) -> ptr<c64> }
 extern { function free(ptr: ptr<c64>) -> void }
 extern { function memcpy(dst: ptr<c64>, src: ptr<c64>, n: i32) -> ptr<c64> }
 
-export function signal_new(length: i32, rate: u32) -> Signal {
+# Create a new signal with the given rate marker and runtime sample rate.
+# The rate parameter populates the runtime field; R provides compile-time safety.
+export function signal_new<R>(length: i32, rate: u32) -> Signal<R> {
     let buf: ptr<c64> = malloc(length * 8)
-    let s: Signal = Signal { data: buf, len: length, sample_rate: rate }
+    let s: Signal<R> = Signal<R> { data: buf, len: length, sample_rate: rate }
     return s
 }
 
-export function signal_free(s: Signal) -> void {
+export function signal_free<R>(s: Signal<R>) -> void {
     free(s.data)
 }
 
-export function signal_rate(s: Signal) -> u32 {
+export function signal_rate<R>(s: Signal<R>) -> u32 {
     return s.sample_rate
 }
 
-export function signal_length(s: Signal) -> i32 {
+export function signal_length<R>(s: Signal<R>) -> i32 {
     return s.len
 }
 
@@ -86,15 +114,13 @@ export function signal_length(s: Signal) -> i32 {
 # Signal operations
 # =============================================================================
 
-# Set a sample in the signal.
-export function signal_set(s: Signal, index: i32, value: c64) -> void {
+export function signal_set<R>(s: Signal<R>, index: i32, value: c64) -> void {
     if index >= 0 && index < s.len {
         s.data[index] = value
     }
 }
 
-# Get a sample from the signal.
-export function signal_get(s: Signal, index: i32) -> c64 {
+export function signal_get<R>(s: Signal<R>, index: i32) -> c64 {
     if index >= 0 && index < s.len {
         return s.data[index]
     }
@@ -102,14 +128,11 @@ export function signal_get(s: Signal, index: i32) -> c64 {
 }
 
 # Mix two signals: multiply sample-by-sample. Both signals must have
-# the same sample rate. Returns a new signal.
-export function signal_mix(a: Signal, b: Signal) -> Signal {
-    if a.sample_rate != b.sample_rate {
-        return signal_new(0, a.sample_rate)
-    }
+# the same rate type R. This is enforced at compile time.
+export function signal_mix<R>(a: Signal<R>, b: Signal<R>) -> Signal<R> {
     let mut n: i32 = a.len
     if b.len < n { n = b.len }
-    let result: Signal = signal_new(n, a.sample_rate)
+    let result: Signal<R> = signal_new<R>(n, a.sample_rate)
     for i in 0 to n {
         result.data[i] = a.data[i] * b.data[i]
     }
@@ -117,7 +140,7 @@ export function signal_mix(a: Signal, b: Signal) -> Signal {
 }
 
 # Scale a signal by a real scalar (amplitude gain).
-export function signal_scale(s: Signal, gain: f32) -> void {
+export function signal_scale<R>(s: Signal<R>, gain: f32) -> void {
     let g: c64 = c64(gain, 0.0)
     for i in 0 to s.len {
         s.data[i] = s.data[i] * g
@@ -126,7 +149,7 @@ export function signal_scale(s: Signal, gain: f32) -> void {
 
 # Compute the magnitude spectrum (|X[k]|) of a signal.
 # Uses a naive DFT: O(N^2). Fine for small N; use FFT for real work.
-export function signal_magnitude_spectrum(s: Signal, out: ptr<f64>) -> void {
+export function signal_magnitude_spectrum<R>(s: Signal<R>, out: ptr<f64>) -> void {
     let n: i32 = s.len
     for k in 0 to n {
         let mut re: f64 = 0.0
