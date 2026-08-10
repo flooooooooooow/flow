@@ -128,7 +128,7 @@ built on Linux and macOS. Toolchain version is 0.10. spec version is 0.10.0.
 | REPL | DONE | `flow repl`. |
 | LSP | DONE | `flow-lsp` (VS Code / Neovim intelligence). |
 | Debugger | PARTIAL | Debug plumbing, not a full source-level debugger story. |
-| Safety profile | DONE | `--profile safety` (overflow checks, div0 guards, shift UB). `--emit-manifest` compliance report. UBSan/ASan/TSan via env vars. |
+| Safety profile | DONE | `--profile safety` (`-Werror -pedantic` C flags). Literal div-by-zero and shift UB rejected at type-check time. UBSan/ASan/TSan via env vars. |
 
 ### 8. Distribution
 | Item | Status | Note |

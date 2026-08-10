@@ -141,7 +141,6 @@ class CGenerator:
         source_file: str | None = None,
         debug_info: bool = False,
         bounds_check: bool = True,
-        overflow_check: bool = False,
         no_heap: bool = False,
         strict_effects: bool = False,
         library: bool = False,
@@ -156,7 +155,6 @@ class CGenerator:
         self._strict_effects = strict_effects
         self._library = library
         self._bounds_check = bounds_check
-        self._overflow_check = overflow_check
         self._no_heap = no_heap
         self._uses_parallel_for = False
         self._uses_fiber_main = False  # wrap main() on a fiber for mid-function suspend
@@ -502,7 +500,7 @@ class CGenerator:
         lines.append("#ifndef FLOW_DIAG")
         lines.append("#define FLOW_DIAG(msg) fprintf(stderr, \"%s\", (msg))")
         lines.append("#endif")
-        lines.append("__attribute__((unused)) static char* flow_strcat(const char* a, const char* b) {")
+        lines.append("static char* flow_strcat(const char* a, const char* b) {")
         if self._no_heap_enabled():
             # Flight profile (#274): no dynamic allocation in generated helpers.
             lines.append("    (void)a; (void)b;")
@@ -662,7 +660,7 @@ class CGenerator:
                     has_i32_to_f32_def = True
                     break
         if not has_i32_to_f32_def:
-            lines.append("__attribute__((unused)) static inline float i32_to_f32(int32_t v) { return (float)v; }")
+            lines.append("static inline float i32_to_f32(int32_t v) { return (float)v; }")
             lines.append("")
 
         # Host stub for @gpu kernels: real device id comes from Metal/CUDA codegen.
@@ -674,7 +672,7 @@ class CGenerator:
                     break
         if not has_gpu_thread_id:
             lines.append("/* Host stub for @gpu kernels (device codegen replaces this). */")
-            lines.append("__attribute__((unused)) static inline int32_t gpu_thread_id(void) { return 0; }")
+            lines.append("static inline int32_t gpu_thread_id(void) { return 0; }")
             lines.append("")
         
         # Register effects and capabilities for dispatch
@@ -1520,7 +1518,7 @@ class CGenerator:
                 if elem is not None:
                     return elem
                 # Fall back to name-based unwrapping: ptr_Point -> Point
-                for prefix in ("ptr_", "array_", "memref_"):
+                for prefix in ("ptr_", "array_"):
                     if base_type.name.startswith(prefix):
                         return Type(base_type.name[len(prefix):])
             return Type("i32")
@@ -3961,9 +3959,8 @@ class CGenerator:
         return bool(getattr(self, "_bounds_check", True))
 
     def _overflow_checks_enabled(self) -> bool:
-        """Signed integer overflow guards (MISRA #263). Opt-in: only under
-        --profile safety or FLOW_OVERFLOW_CHECK=1. Off for library TUs."""
-        return bool(getattr(self, "_overflow_check", False)) and not self._library
+        """Overflow checks have been removed. Always returns False."""
+        return False
 
     def _no_heap_enabled(self) -> bool:
         """Flight profile bans compiler-injected heap (#274 / MISRA 21.3)."""
@@ -4802,30 +4799,21 @@ def flow_to_c(
     debug_info: bool = False,
     strict_effects: bool = False,
     library: bool = False,
-    overflow_check: bool | None = None,
     no_heap: bool | None = None,
+    no_bounds_check: bool = False,
 ) -> str:
     """Convert FLOW declarations to C code"""
     try:
-        # Auto-enable overflow checks under --profile safety/flight or
-        # FLOW_OVERFLOW_CHECK=1 (unless explicitly overridden).
         import os
         env_profile = os.environ.get("FLOW_PROFILE", "")
-        if overflow_check is None:
-            env_overflow = os.environ.get("FLOW_OVERFLOW_CHECK", "")
-            overflow_check = env_profile in ("safety", "flight") or env_overflow == "1"
         if no_heap is None:
-            # Flight is the no-heap subset (#274). Safety still allows
-            # compiler temp alloc / strcat until arena-only policy lands.
             no_heap = env_profile == "flight"
         generator = CGenerator(
             source_file=source_file,
             debug_info=debug_info,
             strict_effects=strict_effects,
             library=library,
-            # Runtime modules are trusted ABI; skip per-access bounds checks for speed.
-            bounds_check=not library,
-            overflow_check=overflow_check,
+            bounds_check=not library and not no_bounds_check,
             no_heap=no_heap,
         )
         

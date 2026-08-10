@@ -89,12 +89,16 @@ int32_t flow_rt_mkdir(const char *path, int32_t mode) {
 #endif
 }
 
-/* Milliseconds since epoch (gettimeofday). */
+/* Milliseconds since epoch (gettimeofday).
+ * When FLOW_TEST_CLOCK is defined, this function is omitted so the
+ * Emscripten --js-library override (deterministic_clock.js) takes effect. */
+#ifndef FLOW_TEST_CLOCK
 uint32_t flow_rt_time_ms(void) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (uint32_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
 }
+#endif
 
 
 /* ---- C function-pointer call trampolines ---------------------------- */

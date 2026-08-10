@@ -23,8 +23,7 @@ Welcome to the Flow programming language documentation!
 
 ## Safety
 
-- `--profile safety` - Overflow-checked arithmetic, div0 guards, shift UB rejection (MISRA/CERT-derived)
-- `--emit-manifest` - Structured compliance report (PROVEN / REJECTED / REQUIRES EVIDENCE)
+- `--profile safety` - Strict C compiler flags (`-Werror -pedantic`), literal div-by-zero and shift UB rejected at type-check time
 - `FLOW_UBSAN=1`, `FLOW_ASAN=1`, `FLOW_TSAN=1` - Sanitizer instrumentation
 
 ## Standard Library

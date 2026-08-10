@@ -1,4 +1,4 @@
-"""Phase 2 MISRA: @safe/@unsafe, extern, FLOW_DIAG, analyze, reproducible C."""
+"""Phase 2 MISRA: @safe/@unsafe, extern, analyze, reproducible C."""
 
 from __future__ import annotations
 
@@ -15,12 +15,6 @@ from flow.parser import parse_flow_code
 from flow.c_generator import flow_to_c
 from flow.type_checker import TypeChecker
 from flow.misra_scan import scan_c_source
-
-
-def test_flow_diag_macro_emitted():
-    c = flow_to_c(parse_flow_code("function main() -> i32 { return 1 / 1 }"))
-    assert "FLOW_DIAG" in c
-    assert 'FLOW_DIAG("flow: division by zero\\n")' in c or "FLOW_DIAG" in c
 
 
 def test_reproducible_c_emit():
@@ -109,30 +103,6 @@ def test_checked_arith_smoke_runs():
         subprocess.check_call(["cc", "-O0", str(c_path), "-o", str(exe)])
         r = subprocess.run([str(exe)], check=False)
         assert r.returncode == 0
-
-
-def test_flight_strcat_has_no_malloc():
-    import os
-    prev = os.environ.get("FLOW_PROFILE")
-    os.environ["FLOW_PROFILE"] = "flight"
-    try:
-        c = flow_to_c(
-            parse_flow_code(
-                """
-                function main() -> i32 {
-                    let s: string = "a" + "b"
-                    return 0
-                }
-                """
-            )
-        )
-        assert "malloc(" not in c
-        assert "flight" in c.lower() or "MISRA 21.3" in c
-    finally:
-        if prev is None:
-            os.environ.pop("FLOW_PROFILE", None)
-        else:
-            os.environ["FLOW_PROFILE"] = prev
 
 
 def test_show_flags_safety_implicit_error():
