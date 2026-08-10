@@ -1,12 +1,14 @@
 # SDR receiver demo: generate a tone, mix it to baseband, compute spectrum.
 #
-# Uses the rf stdlib for Signal/IQ types. Demonstrates:
+# Uses the rf stdlib for Signal/IQ types and units_si for quantity literals.
+# Demonstrates:
+# - Quantity literals: 1000.0 Hertz, 8000.0 Hertz
 # - signal_new / signal_free lifecycle
 # - Complex oscillator generation
 # - signal_mix (frequency mixing)
-# - signal_magnitude_spectrum (naive DFT)
 
 import "stdlib/rf.flow"
+import "stdlib/units_si.flow"
 
 const PI: f64 = 3.14159265358979323846
 
@@ -14,17 +16,20 @@ function main() -> i32 {
     let N: i32 = 8
     let sample_rate: u32 = 8000
 
+    # 1 kHz tone frequency (quantity literal)
+    let tone_freq: Hertz = 1000.0 Hertz
+
     # Generate a 1 kHz tone as IQ samples
     let tone: Signal = signal_new(N, sample_rate)
     for n in 0 to N {
-        let phase: f64 = 2.0 * PI * 1000.0 * (n as f64) / (sample_rate as f64)
+        let phase: f64 = 2.0 * PI * (tone_freq as f64) * (n as f64) / (sample_rate as f64)
         signal_set(tone, n, c64(cos(phase), sin(phase)))
     }
 
     # Generate a 1 kHz local oscillator (complex exponential)
     let lo: Signal = signal_new(N, sample_rate)
     for n in 0 to N {
-        let phase: f64 = -2.0 * PI * 1000.0 * (n as f64) / (sample_rate as f64)
+        let phase: f64 = -2.0 * PI * (tone_freq as f64) * (n as f64) / (sample_rate as f64)
         signal_set(lo, n, c64(cos(phase), sin(phase)))
     }
 
@@ -37,8 +42,7 @@ function main() -> i32 {
         println(signal_get(baseband, n))
     }
 
-    # Check: the real part of the mixed signal should be ~0.5
-    # (cos^2 + sin^2 averaged = 1, split across I and Q)
+    # Check: the real part of the mixed signal should be ~1.0
     let dc_val: f64 = creal(signal_get(baseband, 0))
     if dc_val > 0.9 && dc_val < 1.1 {
         println("")

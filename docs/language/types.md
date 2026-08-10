@@ -446,3 +446,21 @@ struct Signal {
 A `Signal` carries its sample rate at runtime. `signal_mix` checks that
 both signals have the same rate before combining. Compile-time phantom
 rate checking (via type-level naturals) is a planned future enhancement.
+
+### Quantity literals
+
+A number followed by a unit name on the same line desugars to a cast:
+
+```flow
+unit Hertz = Second^-1
+
+let f: Hertz = 3.14e6 Hertz   # same as: 3.14e6 as Hertz
+let d: Meter = 100.0 Meter
+```
+
+The identifier must start with an uppercase letter. This avoids ambiguity
+with contextual keywords like `step` in `for i in 0 to 10 step 2`.
+
+`lib/stdlib/units_si.flow` provides SI base dimensions (Second, Meter,
+Kilogram, Ampere, Kelvin, Radian) and derived units (Hertz, Newton, Watt,
+Volt, Ohm, Farad, Henry, Coulomb, Tesla, Weber).
