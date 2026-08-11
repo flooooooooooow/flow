@@ -237,6 +237,7 @@ flow_show_clang_flags() {
         echo "  ldflags: (none beyond defaults)"
     fi
     echo "  profile: ${FLOW_PROFILE:-default}"
+    echo "  opt:     -O${FLOW_OPT_LEVEL:-2} (override with FLOW_OPT_LEVEL=0|1|2|3|s)"
     echo "  sanitize: UBSAN=${FLOW_UBSAN:-0} ASAN=${FLOW_ASAN:-0} TSAN=${FLOW_TSAN:-0} FLOW_SANITIZE=${FLOW_SANITIZE:-}"
 }
 
@@ -245,10 +246,10 @@ flowc_link_c() {
     local exe_file="$2"
     flow_collect_cflags
     # Show compiler diagnostics on failure (#252 / #269).
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" -O0 \
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
         "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
         -o "$exe_file" "$c_file"; then
-        if ! cc "${FLOW_COLLECTED_CFLAGS[@]}" -O0 \
+        if ! cc "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
             "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
             -o "$exe_file" "$c_file"; then
             print_error "C compilation/linking failed (flowc host)"
@@ -637,7 +638,7 @@ compile_program_python() {
     # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
     flow_collect_cflags
     FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
