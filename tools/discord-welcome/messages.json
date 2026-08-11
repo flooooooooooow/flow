@@ -1,0 +1,14 @@
+{
+  "messages": [
+    "Hello {user}, welcome to the Flow discord server!",
+    "Welcome {user} to the Flow discord server. Glad to have you here.",
+    "{user} just joined the Flow discord server. Welcome aboard.",
+    "Hey {user}, welcome to Flow. Pull up a chair in #introductions and tell us what you're building.",
+    "Welcome {user}. The Flow discord server is happy to have you. Check #announcements for the latest release.",
+    "{user} arrived. Welcome to the Flow discord server. Type /help in any channel if you get stuck.",
+    "Hello {user}, welcome to the Flow discord server. The docs live at https://flow-lang.dev and the source at https://github.com/godofecht/flow.",
+    "Welcome {user} to Flow. New here? Drop a note in #introductions so folks know what brought you in.",
+    "{user} joined the Flow discord server. Welcome. If you hit a compiler bug, #dev is the place to report it.",
+    "Hello {user}, welcome to the Flow discord server. Browse #showcase to see what other people are making with Flow."
+  ]
+}

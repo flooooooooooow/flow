@@ -11,7 +11,7 @@ import .token {
     TOK_ERROR, TOK_AMP, TOK_FATARROW,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
-    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH
+    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF
 }
 
 function flowc_lex_is_alpha(c: i32) -> i32 {
@@ -98,6 +98,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let ret_kw: array<u8, 6> = [114, 101, 116, 117, 114, 110]
     let if_kw: array<u8, 2> = [105, 102]
     let else_kw: array<u8, 4> = [101, 108, 115, 101]
+    let elif_kw: array<u8, 4> = [101, 108, 105, 102]
     let while_kw: array<u8, 5> = [119, 104, 105, 108, 101]
     let for_kw: array<u8, 3> = [102, 111, 114]
     let in_kw: array<u8, 2> = [105, 110]
@@ -127,6 +128,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 2) == 1 { return KW_IF }
     p = else_kw
     if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_ELSE }
+    p = elif_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_ELIF }
     p = while_kw
     if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_WHILE }
     p = for_kw

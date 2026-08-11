@@ -1,0 +1,23 @@
+[Unit]
+Description=Flow Discord welcome bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=discord-welcome
+WorkingDirectory=/opt/discord-welcome
+EnvironmentFile=/etc/discord-welcome.env
+ExecStart=/opt/discord-welcome/.venv/bin/python3 /opt/discord-welcome/bot.py
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/discord-welcome
+
+[Install]
+WantedBy=multi-user.target
