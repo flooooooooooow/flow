@@ -101,6 +101,14 @@ webhook/author/footer icon across all three workflows.
 
 `flowc-release.yml` publishes compiler binaries but does not notify Discord yet.
 
+## Welcome bot
+
+Webhooks are outbound only, so they cannot greet a joining member by name.
+The `tools/discord-welcome/` bot fills that gap. It listens to the
+`guildMemberAdd` event with the privileged `GUILD_MEMBERS` intent and posts a
+rotating welcome message to `#welcome`, mentioning the new member. Setup and
+hosting are documented in `tools/discord-welcome/README.md`.
+
 ## Rotating a secret
 
 1. Delete the webhook from the Discord channel settings and create a fresh one.
