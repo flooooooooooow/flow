@@ -660,7 +660,7 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             }
         }
         let fn: i32 = flowc_tc_unwrap_fn(arena, item)
-        if fn != AST_NONE {
+        if fn != AST_NONE and arena.nodes[fn].ival == 0 {
             let ns: i32 = arena.nodes[fn].name_start
             let ne: i32 = arena.nodes[fn].name_end
             let body: i32 = arena.nodes[fn].c
@@ -688,7 +688,7 @@ function flowc_tc_check_fns(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
     let mut item: i32 = arena.nodes[root].a
     while item != AST_NONE {
         let fn: i32 = flowc_tc_unwrap_fn(arena, item)
-        if fn != AST_NONE {
+        if fn != AST_NONE and arena.nodes[fn].ival == 0 {
             let body: i32 = arena.nodes[fn].c
             if body != AST_NONE {
                 flowc_tc_push_mark(ctx)

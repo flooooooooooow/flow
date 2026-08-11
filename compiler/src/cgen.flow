@@ -4,7 +4,7 @@
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
-    TOK_AMPAMP, TOK_BARBAR
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE
 }
 import .ast {
     AstArena, AST_NONE,
@@ -178,12 +178,32 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_puts(w, "uint8_t")
         return
     }
-    if flowc_cgen_span_is(src, ns, ne, "i64") == 1 {
-        flowc_cgen_puts(w, "int64_t")
+    if flowc_cgen_span_is(src, ns, ne, "i8") == 1 {
+        flowc_cgen_puts(w, "int8_t")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "u16") == 1 {
+        flowc_cgen_puts(w, "uint16_t")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "i16") == 1 {
+        flowc_cgen_puts(w, "int16_t")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "u32") == 1 {
+        flowc_cgen_puts(w, "uint32_t")
         return
     }
     if flowc_cgen_span_is(src, ns, ne, "i32") == 1 {
         flowc_cgen_puts(w, "int32_t")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "u64") == 1 {
+        flowc_cgen_puts(w, "uint64_t")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "i64") == 1 {
+        flowc_cgen_puts(w, "int64_t")
         return
     }
     if flowc_cgen_span_is(src, ns, ne, "f32") == 1 {
@@ -192,6 +212,10 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
     }
     if flowc_cgen_span_is(src, ns, ne, "f64") == 1 {
         flowc_cgen_puts(w, "double")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "bool") == 1 {
+        flowc_cgen_puts(w, "bool")
         return
     }
     if flowc_cgen_span_is(src, ns, ne, "string") == 1 {
@@ -546,6 +570,10 @@ function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
         flowc_cgen_puts(w, " || ")
         return
     }
+    if op == TOK_AMP {
+        flowc_cgen_puts(w, " & ")
+        return
+    }
     flowc_cgen_puts(w, " /*op*/ ")
 }
 
@@ -652,6 +680,10 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             } else {
                 if arena.nodes[id].ival == TOK_AMP {
                     flowc_cgen_putc(w, 38)
+                } else {
+                    if arena.nodes[id].ival == TOK_TILDE {
+                        flowc_cgen_putc(w, 126)
+                    }
                 }
             }
         }
@@ -1179,7 +1211,10 @@ export function flowc_cgen_emit_sigs(
     while item != AST_NONE {
         let fn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
         if fn != AST_NONE {
-            flowc_cgen_emit_fn(&w, arena, src, fn)
+            # Skip generic functions (ival == 1) — they need monomorphization.
+            if arena.nodes[fn].ival == 0 {
+                flowc_cgen_emit_fn(&w, arena, src, fn)
+            }
         }
         item = arena.nodes[item].next
     }

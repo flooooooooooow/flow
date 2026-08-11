@@ -7,7 +7,7 @@ import .token {
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK, TOK_DOT, TOK_DOTDOT,
     TOK_COLON, TOK_COMMA, TOK_ARROW, TOK_FATARROW, TOK_SEMI,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
-    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF
@@ -391,7 +391,7 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
 
 function flowc_parse_primary(p: ptr<Parser>) -> i32 {
     let tok: Token = p[0].cur
-    if tok.kind == TOK_BANG or tok.kind == TOK_MINUS or tok.kind == TOK_AMP {
+    if tok.kind == TOK_BANG or tok.kind == TOK_MINUS or tok.kind == TOK_AMP or tok.kind == TOK_TILDE {
         let op: i32 = tok.kind
         let start: i32 = tok.start
         flowc_parser_advance(p)
@@ -438,6 +438,7 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
     let op: i32 = p.cur.kind
     if op == TOK_BARBAR { return TOK_BARBAR }
     if op == TOK_AMPAMP { return TOK_AMPAMP }
+    if op == TOK_AMP { return TOK_AMP }
     if op == TOK_EQEQ { return TOK_EQEQ }
     if op == TOK_NE { return TOK_NE }
     if op == TOK_LT { return TOK_LT }
@@ -459,10 +460,11 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
 function flowc_parse_binop_prec(op: i32) -> i32 {
     if op == TOK_BARBAR { return 1 }
     if op == TOK_AMPAMP { return 2 }
-    if op == TOK_EQEQ or op == TOK_NE { return 3 }
-    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE { return 4 }
-    if op == TOK_PLUS or op == TOK_MINUS { return 5 }
-    if op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT { return 6 }
+    if op == TOK_AMP { return 3 }
+    if op == TOK_EQEQ or op == TOK_NE { return 4 }
+    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE { return 5 }
+    if op == TOK_PLUS or op == TOK_MINUS { return 6 }
+    if op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT { return 7 }
     return 0 - 1
 }
 
@@ -590,7 +592,7 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         if k == TOK_INT or k == TOK_FLOAT or k == TOK_STRING or k == TOK_IDENT or k == TOK_LPAREN or k == TOK_LBRACK {
             is_expr = 1
         }
-        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP {
+        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP or k == TOK_TILDE {
             is_expr = 1
         }
         if flowc_token_is_kw(p[0].cur, KW_TRUE) == 1 or flowc_token_is_kw(p[0].cur, KW_FALSE) == 1 {
@@ -947,6 +949,28 @@ function flowc_parse_function(p: ptr<Parser>) -> i32 {
     let ns: i32 = p[0].cur.start
     let ne: i32 = p[0].cur.end
     flowc_parser_advance(p)
+    let mut is_generic: i32 = 0
+    # Generic type parameters: <T, U: Trait> — skip for Stage-A.
+    if flowc_parser_check(p[0], TOK_LT) == 1 {
+        is_generic = 1
+        flowc_parser_advance(p)
+        let mut depth: i32 = 1
+        while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+            if flowc_parser_check(p[0], TOK_LT) == 1 {
+                depth = depth + 1
+            } else {
+                if flowc_parser_check(p[0], TOK_GT) == 1 {
+                    depth = depth - 1
+                }
+            }
+            if depth > 0 {
+                flowc_parser_advance(p)
+            }
+        }
+        if flowc_parser_check(p[0], TOK_GT) == 1 {
+            flowc_parser_advance(p)
+        }
+    }
     if flowc_parser_eat(p, TOK_LPAREN) == 0 {
         return AST_NONE
     }
@@ -987,6 +1011,7 @@ function flowc_parse_function(p: ptr<Parser>) -> i32 {
     p[0].arena.nodes[id].a = params
     p[0].arena.nodes[id].b = ret_ty
     p[0].arena.nodes[id].c = body
+    p[0].arena.nodes[id].ival = is_generic
     return id
 }
 

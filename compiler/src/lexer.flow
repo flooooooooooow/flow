@@ -8,7 +8,7 @@ import .token {
     TOK_COLON, TOK_COMMA, TOK_SEMI, TOK_DOT, TOK_DOTDOT, TOK_ARROW,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG,
-    TOK_ERROR, TOK_AMP, TOK_FATARROW,
+    TOK_ERROR, TOK_AMP, TOK_FATARROW, TOK_TILDE,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF
@@ -304,6 +304,7 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
     if c == 37 { return flowc_make_tok(TOK_PERCENT, 0, start, start + 1, line, col) }
     if c == 33 { return flowc_make_tok(TOK_BANG, 0, start, start + 1, line, col) }
     if c == 38 { return flowc_make_tok(TOK_AMP, 0, start, start + 1, line, col) }
+    if c == 126 { return flowc_make_tok(TOK_TILDE, 0, start, start + 1, line, col) }
     return flowc_make_tok(TOK_ERROR, 0, start, start + 1, line, col)
 }
 

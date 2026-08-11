@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -128,6 +129,7 @@ const int32_t TOK_AMP = 32;
 const int32_t TOK_PERCENT = 33;
 const int32_t TOK_DOTDOT = 34;
 const int32_t TOK_FATARROW = 35;
+const int32_t TOK_TILDE = 36;
 const int32_t KW_LET = 1;
 const int32_t KW_FUNCTION = 2;
 const int32_t KW_RETURN = 3;
@@ -530,6 +532,9 @@ Token flowc_lexer_next(Lexer* lex) {
 }
   if (c == 38) {
   return flowc_make_tok(TOK_AMP, 0, start, (start + 1), line, col);
+}
+  if (c == 126) {
+  return flowc_make_tok(TOK_TILDE, 0, start, (start + 1), line, col);
 }
   return flowc_make_tok(TOK_ERROR, 0, start, (start + 1), line, col);
 }
@@ -1033,7 +1038,7 @@ int32_t flowc_parse_postfix(Parser* p) {
 
 int32_t flowc_parse_primary(Parser* p) {
   Token tok = (p[0]).cur;
-  if ((tok).kind == TOK_BANG || (tok).kind == TOK_MINUS || (tok).kind == TOK_AMP) {
+  if ((tok).kind == TOK_BANG || (tok).kind == TOK_MINUS || (tok).kind == TOK_AMP || (tok).kind == TOK_TILDE) {
   int32_t op = (tok).kind;
   int32_t start = (tok).start;
   flowc_parser_advance(p);
@@ -1080,6 +1085,9 @@ int32_t flowc_parse_binop_kind(Parser p) {
 }
   if (op == TOK_AMPAMP) {
   return TOK_AMPAMP;
+}
+  if (op == TOK_AMP) {
+  return TOK_AMP;
 }
   if (op == TOK_EQEQ) {
   return TOK_EQEQ;
@@ -1132,17 +1140,20 @@ int32_t flowc_parse_binop_prec(int32_t op) {
   if (op == TOK_AMPAMP) {
   return 2;
 }
-  if (op == TOK_EQEQ || op == TOK_NE) {
+  if (op == TOK_AMP) {
   return 3;
 }
-  if (op == TOK_LT || op == TOK_LE || op == TOK_GT || op == TOK_GE) {
+  if (op == TOK_EQEQ || op == TOK_NE) {
   return 4;
 }
-  if (op == TOK_PLUS || op == TOK_MINUS) {
+  if (op == TOK_LT || op == TOK_LE || op == TOK_GT || op == TOK_GE) {
   return 5;
 }
-  if (op == TOK_STAR || op == TOK_SLASH || op == TOK_PERCENT) {
+  if (op == TOK_PLUS || op == TOK_MINUS) {
   return 6;
+}
+  if (op == TOK_STAR || op == TOK_SLASH || op == TOK_PERCENT) {
+  return 7;
 }
   return (0 - 1);
 }
@@ -1267,7 +1278,7 @@ int32_t flowc_parse_stmt(Parser* p) {
   if (k == TOK_INT || k == TOK_FLOAT || k == TOK_STRING || k == TOK_IDENT || k == TOK_LPAREN || k == TOK_LBRACK) {
   is_expr = 1;
 }
-  if (k == TOK_BANG || k == TOK_MINUS || k == TOK_AMP) {
+  if (k == TOK_BANG || k == TOK_MINUS || k == TOK_AMP || k == TOK_TILDE) {
   is_expr = 1;
 }
   if (flowc_token_is_kw((p[0]).cur, KW_TRUE) == 1 || flowc_token_is_kw((p[0]).cur, KW_FALSE) == 1) {
@@ -1616,6 +1627,27 @@ int32_t flowc_parse_function(Parser* p) {
   int32_t ns = ((p[0]).cur).start;
   int32_t ne = ((p[0]).cur).end;
   flowc_parser_advance(p);
+  int32_t is_generic = 0;
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  is_generic = 1;
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  while (depth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  depth = (depth + 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  depth = (depth - 1);
+}
+}
+  if (depth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  flowc_parser_advance(p);
+}
+}
   if (flowc_parser_eat(p, TOK_LPAREN) == 0) {
   return AST_NONE;
 }
@@ -1654,6 +1686,7 @@ int32_t flowc_parse_function(Parser* p) {
   (((p[0]).arena).nodes[id]).a = params;
   (((p[0]).arena).nodes[id]).b = ret_ty;
   (((p[0]).arena).nodes[id]).c = body;
+  (((p[0]).arena).nodes[id]).ival = is_generic;
   return id;
 }
 
@@ -2170,12 +2203,32 @@ void flowc_cgen_emit_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ty) 
   flowc_cgen_puts(w, "uint8_t");
   return;
 }
-  if (flowc_cgen_span_is(src, ns, ne, "i64") == 1) {
-  flowc_cgen_puts(w, "int64_t");
+  if (flowc_cgen_span_is(src, ns, ne, "i8") == 1) {
+  flowc_cgen_puts(w, "int8_t");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "u16") == 1) {
+  flowc_cgen_puts(w, "uint16_t");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "i16") == 1) {
+  flowc_cgen_puts(w, "int16_t");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "u32") == 1) {
+  flowc_cgen_puts(w, "uint32_t");
   return;
 }
   if (flowc_cgen_span_is(src, ns, ne, "i32") == 1) {
   flowc_cgen_puts(w, "int32_t");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "u64") == 1) {
+  flowc_cgen_puts(w, "uint64_t");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "i64") == 1) {
+  flowc_cgen_puts(w, "int64_t");
   return;
 }
   if (flowc_cgen_span_is(src, ns, ne, "f32") == 1) {
@@ -2184,6 +2237,10 @@ void flowc_cgen_emit_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ty) 
 }
   if (flowc_cgen_span_is(src, ns, ne, "f64") == 1) {
   flowc_cgen_puts(w, "double");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "bool") == 1) {
+  flowc_cgen_puts(w, "bool");
   return;
 }
   if (flowc_cgen_span_is(src, ns, ne, "string") == 1) {
@@ -2493,6 +2550,10 @@ void flowc_cgen_emit_binop_op(CgenBuf* w, int32_t op) {
   flowc_cgen_puts(w, " || ");
   return;
 }
+  if (op == TOK_AMP) {
+  flowc_cgen_puts(w, " & ");
+  return;
+}
   flowc_cgen_puts(w, " /*op*/ ");
 }
 
@@ -2594,6 +2655,10 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 } else {
   if (((arena).nodes[id]).ival == TOK_AMP) {
   flowc_cgen_putc(w, 38);
+} else {
+  if (((arena).nodes[id]).ival == TOK_TILDE) {
+  flowc_cgen_putc(w, 126);
+}
 }
 }
 }
@@ -3062,7 +3127,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   while (item != AST_NONE) {
   int32_t fn = flowc_cgen_unwrap(arena, item, AST_FN);
   if (fn != AST_NONE) {
+  if (((arena).nodes[fn]).ival == 0) {
   flowc_cgen_emit_fn((&w), arena, src, fn);
+}
 }
   item = ((arena).nodes[item]).next;
 }
@@ -3717,7 +3784,7 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
 }
 }
   int32_t fn = flowc_tc_unwrap_fn(arena, item);
-  if (fn != AST_NONE) {
+  if (fn != AST_NONE && ((arena).nodes[fn]).ival == 0) {
   int32_t ns = ((arena).nodes[fn]).name_start;
   int32_t ne = ((arena).nodes[fn]).name_end;
   int32_t body = ((arena).nodes[fn]).c;
@@ -3744,7 +3811,7 @@ void flowc_tc_check_fns(TcCtx* ctx, AstArena arena, int32_t root) {
   int32_t item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
   int32_t fn = flowc_tc_unwrap_fn(arena, item);
-  if (fn != AST_NONE) {
+  if (fn != AST_NONE && ((arena).nodes[fn]).ival == 0) {
   int32_t body = ((arena).nodes[fn]).c;
   if (body != AST_NONE) {
   flowc_tc_push_mark(ctx);
