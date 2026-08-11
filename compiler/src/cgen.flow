@@ -549,6 +549,43 @@ function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
     flowc_cgen_puts(w, " /*op*/ ")
 }
 
+# println(x) / print(x) → printf(format, x)
+# int → "%d\n", string → "%s\n", float → "%f\n", bool → "%d\n"
+function flowc_cgen_emit_print_intrinsic(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, newline: i32) {
+    let mut arg: i32 = arena.nodes[id].a
+    if arg == AST_NONE {
+        if newline == 1 {
+            flowc_cgen_puts(w, "printf(\"\\n\")")
+        }
+        return
+    }
+    let fmt: string = "%d"
+    let arg_kind: i32 = arena.nodes[arg].kind
+    if arg_kind == AST_STRING {
+        fmt = "%s"
+    }
+    if arg_kind == AST_FLOAT {
+        fmt = "%f"
+    }
+    if arg_kind == AST_BOOL {
+        fmt = "%d"
+    }
+    flowc_cgen_puts(w, "printf(\"")
+    flowc_cgen_puts(w, fmt)
+    if newline == 1 {
+        flowc_cgen_puts(w, "\\n")
+    }
+    flowc_cgen_puts(w, "\", ")
+    flowc_cgen_emit_expr(w, arena, src, arg)
+    arg = arena.nodes[arg].next
+    while arg != AST_NONE {
+        flowc_cgen_puts(w, ", ")
+        flowc_cgen_emit_expr(w, arena, src, arg)
+        arg = arena.nodes[arg].next
+    }
+    flowc_cgen_putc(w, 41)
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -639,6 +676,15 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_CALL {
+        # Intrinsics: println(x) → printf("%d\n", x); print(x) → printf("%d", x)
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "println") == 1 {
+            flowc_cgen_emit_print_intrinsic(w, arena, src, id, 1)
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "print") == 1 {
+            flowc_cgen_emit_print_intrinsic(w, arena, src, id, 0)
+            return
+        }
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_putc(w, 40)
         let mut arg: i32 = arena.nodes[id].a

@@ -297,6 +297,16 @@ function flowc_tc_struct_has_field(arena: AstArena, src: ptr<u8>, st: i32, fs: i
 }
 
 function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
+    # Intrinsics: println, print, puts — always available.
+    if flowc_tc_span_is(ctx.src, start, end, "println") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "print") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "puts") == 1 {
+        return 1
+    }
     let mut i: i32 = ctx.nlen
     while i > 0 {
         i = i - 1
