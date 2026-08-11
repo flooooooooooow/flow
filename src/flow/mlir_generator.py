@@ -6602,6 +6602,69 @@ class MLIRGenerator:
             mlir_code.append(f"{self.indent()}//   {field.name}: {field_type}")
         return "\n".join(mlir_code)
     
+    def _fold_const_binary(self, expr) -> Optional[Literal]:
+        """Fold a BinaryOperation on integer literals into a Literal.
+
+        Handles patterns like `0 - 1`, `1 + 2`, `65536 * 2` that appear in
+        const declarations. Returns None if either side is not a foldable
+        integer literal.
+        """
+        if not isinstance(expr, BinaryOperation):
+            return None
+        left = expr.left
+        right = expr.right
+        # Unwrap CastExpression and UnaryOperation(-) to get the raw literal.
+        if isinstance(left, CastExpression) and isinstance(left.expr, Literal):
+            left = left.expr
+        if isinstance(left, UnaryOperation) and left.operator == '-' and isinstance(left.operand, Literal):
+            left = Literal(value='-' + str(left.operand.value), type=left.operand.type)
+        if isinstance(right, CastExpression) and isinstance(right.expr, Literal):
+            right = right.expr
+        if isinstance(right, UnaryOperation) and right.operator == '-' and isinstance(right.operand, Literal):
+            right = Literal(value='-' + str(right.operand.value), type=right.operand.type)
+        if not isinstance(left, Literal) or not isinstance(right, Literal):
+            return None
+        lt = getattr(left.type, "name", "")
+        rt = getattr(right.type, "name", "")
+        if lt in ("string", "bool") or rt in ("string", "bool"):
+            return None
+        try:
+            lv = int(str(left.value))
+            rv = int(str(right.value))
+        except (ValueError, TypeError):
+            return None
+        op = expr.operator
+        if op == '+':
+            result = lv + rv
+        elif op == '-':
+            result = lv - rv
+        elif op == '*':
+            result = lv * rv
+        elif op == '/':
+            if rv == 0:
+                return None
+            # Integer division truncating toward zero (C semantics).
+            result = int(lv / rv) if (lv < 0) != (rv < 0) and lv % rv != 0 else lv // rv
+        elif op == '%':
+            if rv == 0:
+                return None
+            result = lv - (int(lv / rv) if (lv < 0) != (rv < 0) and lv % rv != 0 else lv // rv) * rv
+        elif op == '<<':
+            result = lv << rv
+        elif op == '>>':
+            result = lv >> rv
+        elif op == '&':
+            result = lv & rv
+        elif op == '|':
+            result = lv | rv
+        elif op == '^':
+            result = lv ^ rv
+        else:
+            return None
+        # Determine result type: prefer the left operand's type, then const's.
+        result_type = left.type if lt and lt != "" else right.type
+        return Literal(value=str(result), type=result_type)
+
     def generate_const(self, const: ConstDecl) -> str:
         """Generate MLIR for constant declaration"""
         mlir_code = []
@@ -6670,6 +6733,11 @@ class MLIRGenerator:
         if isinstance(unwrapped, UnaryOperation) and unwrapped.operator == '-' and isinstance(unwrapped.operand, Literal):
             neg_lit = Literal(value='-' + str(unwrapped.operand.value), type=unwrapped.operand.type)
             unwrapped = neg_lit
+        # Handle simple BinaryOperation on integer literals (e.g. `0 - 1`).
+        if isinstance(unwrapped, BinaryOperation):
+            folded = self._fold_const_binary(unwrapped)
+            if folded is not None:
+                unwrapped = folded
         if isinstance(unwrapped, Literal) and getattr(unwrapped.type, "name", "") != "string":
             if mlir_type == "!llvm.ptr" or str(unwrapped.value).lower() == "null":
                 mlir_code.append(
@@ -6821,6 +6889,7 @@ class MLIRGenerator:
 
         Returns the Literal/Expression if `name` is a module-level const,
         otherwise None. Handles one level of indirection (const → Literal).
+        Also folds simple BinaryOperation initializers (e.g. `0 - 1`).
         """
         for decl in getattr(self, "declarations", []):
             if isinstance(decl, ConstDecl) and decl.name == name:
@@ -6829,6 +6898,10 @@ class MLIRGenerator:
                     return val
                 if isinstance(val, Variable):
                     return self._resolve_const_value(val.name)
+                if isinstance(val, BinaryOperation):
+                    folded = self._fold_const_binary(val)
+                    if folded is not None:
+                        return folded
                 return val
         return None
 
@@ -6914,6 +6987,10 @@ class MLIRGenerator:
             const_val = self._resolve_const_value(resolved_value.name)
             if const_val is not None:
                 resolved_value = const_val
+        if isinstance(resolved_value, BinaryOperation):
+            folded = self._fold_const_binary(resolved_value)
+            if folded is not None:
+                resolved_value = folded
         if isinstance(resolved_value, Literal) and getattr(resolved_value.type, "name", "") != "string":
             lit = self._format_mlir_numeric(str(resolved_value.value), mlir_type)
             if resolved_value.type.name == "bool":
