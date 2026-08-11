@@ -4801,6 +4801,56 @@ class CGenerator:
         elem_c = self._c_type(arr_type.element_type)
         return f"{helper}((const {elem_c}*)({arr_c}), {n}, ({elem_c})({target_c}))"
 
+    def emit_export_aliases(
+        self,
+        functions: List[Any],
+        export_names: List[str],
+        *,
+        module_name: str | None = None,
+    ) -> List[str]:
+        """Emit stable C aliases for --export (issue #396).
+
+        For each name in *export_names*, find the matching FunctionDecl and
+        emit a visible alias ``flow_export_<name>`` that forwards to the
+        mangled C symbol. This lets WASM/FFI consumers use a stable name
+        without knowing the overload-mangling scheme.
+
+        Returns a list of C source lines (empty if nothing to export).
+        """
+        prefix = "flow_export"
+        lines: List[str] = []
+        # Index functions by name for quick lookup.
+        by_name: Dict[str, Any] = {}
+        for fn in functions:
+            base = getattr(fn, "name", "")
+            if base and base not in by_name:
+                by_name[base] = fn
+        for name in export_names:
+            fn = by_name.get(name)
+            if fn is None:
+                # Could be a method (mangled). Skip with a comment.
+                lines.append(f"/* --export {name}: not found in this TU */")
+                continue
+            mangled = self._mangled_names.get(id(fn), fn.name)
+            mangled_c = _c_ident(mangled)
+            alias = f"{prefix}_{_c_ident(name)}"
+            # Emit a forward declaration + alias wrapper.
+            ret_type = self._c_type(fn.return_type) if fn.return_type else "void"
+            param_types = []
+            param_names = []
+            for i, p in enumerate(fn.parameters):
+                pt = self._c_type(p.type)
+                pn = _c_ident(p.name or f"arg{i}")
+                param_types.append(pt)
+                param_names.append(pn)
+            sig = ", ".join(f"{t} {n}" for t, n in zip(param_types, param_names)) or "void"
+            call_args = ", ".join(param_names)
+            lines.append(
+                f"__attribute__((visibility(\"default\"))) "
+                f"{ret_type} {alias}({sig}) {{ return {mangled_c}({call_args}); }}"
+            )
+        return lines
+
 
 
 
@@ -4813,6 +4863,8 @@ def flow_to_c(
     library: bool = False,
     no_heap: bool | None = None,
     no_bounds_check: bool = False,
+    export_names: list[str] | None = None,
+    module_name: str | None = None,
 ) -> str:
     """Convert FLOW declarations to C code"""
     try:
@@ -4863,6 +4915,18 @@ def flow_to_c(
                 functions.append(method)
         
         out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums, type_aliases, distinct_types, statics=statics)
+
+        # Emit stable export aliases (--export / --module-name, #396).
+        # Each exported function gets a visible alias flow_export_<name>
+        # pointing at the mangled C symbol, so WASM/FFI consumers do not
+        # need to guess the mangling scheme.
+        if export_names:
+            export_lines = generator.emit_export_aliases(
+                functions, export_names, module_name=module_name,
+            )
+            if export_lines:
+                out = out + "\n/* Flow export aliases (#396) */\n" + "\n".join(export_lines) + "\n"
+
         # Expose overload warnings without changing the return signature.
         flow_to_c.last_warnings = list(generator._overload_resolver.warnings)
         # Same for the plan records `--explain` prints (issue #146).
