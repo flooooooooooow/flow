@@ -857,8 +857,16 @@ class MLIRGenerator:
         self._register_enum_variant_constants()
 
         # Module header with required dialects and debug info
+        # For wasm32/ILP32, emit a datalayout so mlir-translate computes
+        # correct struct field offsets (ptr = 4 bytes, not 8).
+        module_attrs = []
+        if self.size_t_bits == 32:
+            module_attrs.append('llvm.data_layout = "e-m:e-p:32:32-i64:64-n32:64-S128"')
+            module_attrs.append('llvm.target_triple = "wasm32-unknown-emscripten"')
         if self.emit_debug_info:
-            mlir_code.append(f'module attributes {{llvm.dbg.cu = #llvm.di_compile_unit<id = distinct[0]<>, sourceLanguage = DW_LANG_C, file = #llvm.di_file<"{self.source_file}" in ".">, producer = "FLOW Compiler", isOptimized = false, emissionKind = Full>}} {{')
+            module_attrs.append(f'llvm.dbg.cu = #llvm.di_compile_unit<id = distinct[0]<>, sourceLanguage = DW_LANG_C, file = #llvm.di_file<"{self.source_file}" in ".">, producer = "FLOW Compiler", isOptimized = false, emissionKind = Full>')
+        if module_attrs:
+            mlir_code.append(f'module attributes {{{", ".join(module_attrs)}}} {{')
         else:
             mlir_code.append("module {")
         self.indent_level += 1
