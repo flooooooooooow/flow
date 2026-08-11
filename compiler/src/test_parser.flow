@@ -1,0 +1,74 @@
+# flowc parser self-test
+# Verifies the self-hosted parser produces correct AST stats for a sample program.
+
+import .token { TOK_EOF }
+import .lexer { flowc_lexer_new, flowc_lexer_next }
+import .ast {
+    AST_FN, AST_LET, AST_RETURN, AST_IF, AST_CALL, AST_BINOP, AST_INT, AST_IDENT,
+    AST_BLOCK, AST_PARAM,
+    flowc_ast_count_kind, flowc_ast_chain_len
+}
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function strlen(s: ptr<u8>) -> i32
+}
+
+function main() -> i32 {
+    let src: ptr<u8> = "function add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n\nfunction main() -> i32 {\n    let x: i32 = add(3, 4)\n    if x > 0 {\n        return x\n    }\n    return 0\n}"
+    let nsrc: i32 = strlen(src)
+    let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
+    let root: i32 = flowc_parse_program(&p)
+    if p.err != 0 {
+        printf("test_parser: FAIL (parse error)\n")
+        return 1
+    }
+
+    let n_fn: i32 = flowc_ast_count_kind(p.arena, AST_FN)
+    let n_let: i32 = flowc_ast_count_kind(p.arena, AST_LET)
+    let n_ret: i32 = flowc_ast_count_kind(p.arena, AST_RETURN)
+    let n_if: i32 = flowc_ast_count_kind(p.arena, AST_IF)
+    let n_call: i32 = flowc_ast_count_kind(p.arena, AST_CALL)
+    let n_binop: i32 = flowc_ast_count_kind(p.arena, AST_BINOP)
+    let n_int: i32 = flowc_ast_count_kind(p.arena, AST_INT)
+    let n_ident: i32 = flowc_ast_count_kind(p.arena, AST_IDENT)
+    let n_block: i32 = flowc_ast_count_kind(p.arena, AST_BLOCK)
+    let n_param: i32 = flowc_ast_count_kind(p.arena, AST_PARAM)
+
+    printf("functions: %d\n", n_fn)
+    printf("params: %d\n", n_param)
+    printf("lets: %d\n", n_let)
+    printf("returns: %d\n", n_ret)
+    printf("ifs: %d\n", n_if)
+    printf("calls: %d\n", n_call)
+    printf("binops: %d\n", n_binop)
+    printf("ints: %d\n", n_int)
+    printf("idents: %d\n", n_ident)
+    printf("blocks: %d\n", n_block)
+
+    if n_fn != 2 {
+        printf("test_parser: FAIL (expected 2 functions, got %d)\n", n_fn)
+        return 1
+    }
+    if n_let != 1 {
+        printf("test_parser: FAIL (expected 1 let, got %d)\n", n_let)
+        return 1
+    }
+    if n_ret != 3 {
+        printf("test_parser: FAIL (expected 3 returns, got %d)\n", n_ret)
+        return 1
+    }
+    if n_if != 1 {
+        printf("test_parser: FAIL (expected 1 if, got %d)\n", n_if)
+        return 1
+    }
+    if n_call != 1 {
+        printf("test_parser: FAIL (expected 1 call, got %d)\n", n_call)
+        return 1
+    }
+
+    flowc_parser_free(p)
+    printf("test_parser: PASS\n")
+    return 0
+}
