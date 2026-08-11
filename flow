@@ -2696,6 +2696,10 @@ case "${1:-help}" in
         echo "Flow 0.10.0"
         echo "host: $(flow_host_mode) (override with FLOW_HOST=flowc|python|auto)"
         ;;
+    "check")
+        shift
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.check "$@"
+        ;;
     "run")
         check_deps
         shift
