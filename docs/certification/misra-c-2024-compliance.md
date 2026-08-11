@@ -17,6 +17,8 @@ mechanism. Updated with Phase 0–2 work (#285 epic).
 | 21.3 | No dynamic heap | PARTIAL | PARTIAL | Source `@rt_safe` / `@safe`; temp arena (#267/#268); full flight ban OPEN (#274) |
 | 21.6 | No stdio | PARTIAL | PARTIAL | `println` routes through `FLOW_LOG` macro; diagnostics via `FLOW_DIAG`. Both overridable via `-D` for no-stdio builds (#281) |
 | 22.1 | Fault handling | PROVEN | PROVEN | `flow_fault_handler` configurable via `FLOW_FAULT_HANDLER` macro (#279) |
+| WCET | Timing analysis | PROVEN | PROVEN | `flow analyze --wcet` estimates worst-case instruction count from loop bounds and call graph (#282) |
+| Stack | Stack depth | PROVEN | PROVEN | `flow analyze --stack-depth` computes max stack depth from call graph and local sizes (#282) |
 
 ## Deviations
 
