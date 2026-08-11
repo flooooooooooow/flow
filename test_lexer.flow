@@ -1,0 +1,67 @@
+# Test the Flow lexer by tokenizing a simple program and printing token types.
+
+import "lib/compiler/lexer.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function token_type_name(t: i32) -> ptr<i8> {
+    if t == 0 { return "EOF" }
+    if t == 1 { return "NUMBER" }
+    if t == 2 { return "IDENTIFIER" }
+    if t == 3 { return "BOOLEAN" }
+    if t == 4 { return "STRING_LITERAL" }
+    if t == 10 { return "FUNCTION" }
+    if t == 11 { return "LET" }
+    if t == 12 { return "MUT" }
+    if t == 13 { return "RETURN" }
+    if t == 14 { return "IF" }
+    if t == 15 { return "ELSE" }
+    if t == 16 { return "ELIF" }
+    if t == 17 { return "WHILE" }
+    if t == 18 { return "FOR" }
+    if t == 22 { return "IN" }
+    if t == 23 { return "TO" }
+    if t == 27 { return "CONST" }
+    if t == 29 { return "STRUCT" }
+    if t == 62 { return "I32" }
+    if t == 68 { return "F32" }
+    if t == 80 { return "LPAREN" }
+    if t == 81 { return "RPAREN" }
+    if t == 82 { return "LBRACE" }
+    if t == 83 { return "RBRACE" }
+    if t == 86 { return "SEMICOLON" }
+    if t == 87 { return "COLON" }
+    if t == 92 { return "ARROW" }
+    if t == 94 { return "ASSIGN" }
+    if t == 100 { return "PLUS" }
+    if t == 101 { return "MINUS" }
+    if t == 102 { return "STAR" }
+    if t == 103 { return "SLASH" }
+    if t == 112 { return "EQUALS" }
+    if t == 114 { return "LESS" }
+    if t == 115 { return "GREATER" }
+    return "OTHER"
+}
+
+function main() -> i32 {
+    let source: ptr<i8> = "function add(a: i32, b: i32) -> i32 {\n    return a + b\n}"
+    let slen: i32 = 56
+    let lx: Lexer = lexer_new(source, slen)
+    let lxp: ptr<Lexer> = &lx
+    let tokens: TokenArray = lexer_tokenize(lxp)
+
+    let mut i: i32 = 0
+    while i < tokens.len {
+        let tok: Token = tokens.data[i]
+        let name: ptr<i8> = token_type_name(tok.token_type)
+        printf("%s: '%s' at %d:%d\n", name, tok.value, tok.line, tok.column)
+        i = i + 1
+    }
+
+    let tap: ptr<TokenArray> = &tokens
+    printf("Total tokens: %d\n", tokens.len)
+    token_array_free(tap)
+    return 0
+}

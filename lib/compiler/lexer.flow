@@ -1,0 +1,681 @@
+# Flow Lexer - self-hosting bootstrap (Phase 1)
+#
+# Character-by-character scanner that produces a token stream.
+# Mirrors src/flow/parser.py Lexer class.
+#
+# Token types are i32 constants matching the Python TokenType enum order.
+# The output is a TokenArray (dynamic array of Token structs).
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(nmemb: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function strlen(s: ptr<i8>) -> i64
+    function strcmp(a: ptr<i8>, b: ptr<i8>) -> i32
+}
+
+# ── Token Types ─────────────────────────────────────────────────────
+# Constants matching the Python TokenType enum values.
+# Keep in sync with src/flow/parser.py TokenType.
+
+const TK_EOF: i32 = 0
+const TK_NUMBER: i32 = 1
+const TK_IDENTIFIER: i32 = 2
+const TK_BOOLEAN: i32 = 3
+const TK_STRING_LITERAL: i32 = 4
+
+# Keywords
+const TK_FUNCTION: i32 = 10
+const TK_LET: i32 = 11
+const TK_MUT: i32 = 12
+const TK_RETURN: i32 = 13
+const TK_IF: i32 = 14
+const TK_ELSE: i32 = 15
+const TK_ELIF: i32 = 16
+const TK_WHILE: i32 = 17
+const TK_FOR: i32 = 18
+const TK_BREAK: i32 = 19
+const TK_CONTINUE: i32 = 20
+const TK_PARALLEL: i32 = 21
+const TK_IN: i32 = 22
+const TK_TO: i32 = 23
+const TK_IMPORT: i32 = 24
+const TK_EXPORT: i32 = 25
+const TK_EXTERN: i32 = 26
+const TK_CONST: i32 = 27
+const TK_MODULE: i32 = 28
+const TK_STRUCT: i32 = 29
+const TK_MATCH: i32 = 30
+const TK_DEFAULT: i32 = 31
+const TK_TEST: i32 = 32
+const TK_TRAIT: i32 = 33
+const TK_IMPL: i32 = 34
+const TK_SELF: i32 = 35
+const TK_TYPE: i32 = 36
+const TK_DISTINCT: i32 = 37
+const TK_AS: i32 = 38
+const TK_ENUM: i32 = 39
+const TK_THEOREM: i32 = 40
+const TK_ASSUME: i32 = 41
+const TK_THEREFORE: i32 = 42
+const TK_WITH: i32 = 43
+const TK_HANDLE: i32 = 44
+const TK_EFFECT: i32 = 45
+const TK_CAPABILITY: i32 = 46
+const TK_AND: i32 = 47
+const TK_OR: i32 = 48
+const TK_NOT: i32 = 49
+const TK_NULL: i32 = 50
+const TK_DEFER: i32 = 51
+const TK_DBG: i32 = 52
+const TK_EXPECT: i32 = 53
+const TK_VOID: i32 = 54
+const TK_STRING_TYPE: i32 = 55
+const TK_VEC: i32 = 56
+
+# Type keywords
+const TK_I8: i32 = 60
+const TK_I16: i32 = 61
+const TK_I32: i32 = 62
+const TK_I64: i32 = 63
+const TK_U8: i32 = 64
+const TK_U16: i32 = 65
+const TK_U32: i32 = 66
+const TK_U64: i32 = 67
+const TK_F32: i32 = 68
+const TK_F64: i32 = 69
+const TK_BOOL: i32 = 70
+
+# Symbols
+const TK_LPAREN: i32 = 80
+const TK_RPAREN: i32 = 81
+const TK_LBRACE: i32 = 82
+const TK_RBRACE: i32 = 83
+const TK_LBRACKET: i32 = 84
+const TK_RBRACKET: i32 = 85
+const TK_SEMICOLON: i32 = 86
+const TK_COLON: i32 = 87
+const TK_COMMA: i32 = 88
+const TK_DOT: i32 = 89
+const TK_DOTDOT: i32 = 90
+const TK_ELLIPSIS: i32 = 91
+const TK_ARROW: i32 = 92
+const TK_FAT_ARROW: i32 = 93
+const TK_ASSIGN: i32 = 94
+const TK_DOUBLE_COLON: i32 = 95
+const TK_AT: i32 = 96
+const TK_QUESTION: i32 = 97
+
+# Operators
+const TK_PLUS: i32 = 100
+const TK_MINUS: i32 = 101
+const TK_STAR: i32 = 102
+const TK_SLASH: i32 = 103
+const TK_PERCENT: i32 = 104
+const TK_PIPE: i32 = 105
+const TK_PIPELINE: i32 = 106
+const TK_AMPERSAND: i32 = 107
+const TK_CARET: i32 = 108
+const TK_TILDE: i32 = 109
+const TK_LSHIFT: i32 = 110
+const TK_RSHIFT: i32 = 111
+const TK_EQUALS: i32 = 112
+const TK_NOT_EQUALS: i32 = 113
+const TK_LESS: i32 = 114
+const TK_GREATER: i32 = 115
+const TK_LESS_EQUAL: i32 = 116
+const TK_GREATER_EQUAL: i32 = 117
+
+# Compound assignment
+const TK_PLUS_ASSIGN: i32 = 120
+const TK_MINUS_ASSIGN: i32 = 121
+const TK_STAR_ASSIGN: i32 = 122
+const TK_SLASH_ASSIGN: i32 = 123
+
+# ── Token Struct ────────────────────────────────────────────────────
+
+export struct Token {
+    token_type: i32,
+    value: ptr<i8>,       # null-terminated string, owned by the token array
+    value_len: i32,
+    line: i32,
+    column: i32
+}
+
+# ── Token Array (dynamic) ───────────────────────────────────────────
+
+export struct TokenArray {
+    data: ptr<Token>,
+    len: i32,
+    capacity: i32
+}
+
+export function token_array_new(cap: i32) -> TokenArray {
+    let mut data: ptr<Token> = null
+    if cap > 0 {
+        data = calloc(cap as i64, 48) as ptr<Token>
+    }
+    return TokenArray { data: data, len: 0, capacity: cap }
+}
+
+export function token_array_push(arr: ptr<TokenArray>, tok: Token) -> void {
+    let a: TokenArray = arr[0]
+    if a.len >= a.capacity {
+        let new_cap: i32 = a.capacity * 2
+        if new_cap < 8 {
+            new_cap = 8
+        }
+        let new_data: ptr<void> = realloc(a.data as ptr<void>, new_cap as i64 * 48)
+        arr[0].data = new_data as ptr<Token>
+        arr[0].capacity = new_cap
+    }
+    arr[0].data[arr[0].len] = tok
+    arr[0].len = arr[0].len + 1
+}
+
+export function token_array_free(arr: ptr<TokenArray>) -> void {
+    let a: TokenArray = arr[0]
+    let mut i: i32 = 0
+    while i < a.len {
+        let val: ptr<void> = a.data[i].value
+        if val != null {
+            free(val)
+        }
+        i = i + 1
+    }
+    let d: ptr<void> = a.data
+    if d != null {
+        free(d)
+    }
+    arr[0].data = null
+    arr[0].len = 0
+    arr[0].capacity = 0
+}
+
+# ── String helpers ──────────────────────────────────────────────────
+
+export function str_dup(src: ptr<i8>, len: i32) -> ptr<i8> {
+    let buf: ptr<i8> = malloc((len as i64) + 1) as ptr<i8>
+    let mut i: i32 = 0
+    while i < len {
+        buf[i] = src[i]
+        i = i + 1
+    }
+    buf[len] = 0
+    return buf
+}
+
+export function str_eq_len(a: ptr<i8>, alen: i32, b: ptr<i8>) -> bool {
+    let blen: i64 = strlen(b)
+    if alen as i64 != blen {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < alen {
+        if a[i] != b[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# ── Character classification ────────────────────────────────────────
+
+export function is_alpha(c: i8) -> bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95
+}
+
+export function is_digit(c: i8) -> bool {
+    return c >= 48 && c <= 57
+}
+
+export function is_hex_digit(c: i8) -> bool {
+    return (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102)
+}
+
+export function is_alnum(c: i8) -> bool {
+    return is_alpha(c) || is_digit(c)
+}
+
+export function is_space(c: i8) -> bool {
+    return c == 32 || c == 9 || c == 13
+}
+
+# ── Keyword lookup ──────────────────────────────────────────────────
+
+export function keyword_lookup(ident: ptr<i8>, len: i32) -> i32 {
+    # Returns TK_IDENTIFIER if not a keyword
+    if str_eq_len(ident, len, "function") { return TK_FUNCTION }
+    if str_eq_len(ident, len, "let") { return TK_LET }
+    if str_eq_len(ident, len, "mut") { return TK_MUT }
+    if str_eq_len(ident, len, "return") { return TK_RETURN }
+    if str_eq_len(ident, len, "if") { return TK_IF }
+    if str_eq_len(ident, len, "elif") { return TK_ELIF }
+    if str_eq_len(ident, len, "else") { return TK_ELSE }
+    if str_eq_len(ident, len, "while") { return TK_WHILE }
+    if str_eq_len(ident, len, "for") { return TK_FOR }
+    if str_eq_len(ident, len, "break") { return TK_BREAK }
+    if str_eq_len(ident, len, "continue") { return TK_CONTINUE }
+    if str_eq_len(ident, len, "in") { return TK_IN }
+    if str_eq_len(ident, len, "to") { return TK_TO }
+    if str_eq_len(ident, len, "import") { return TK_IMPORT }
+    if str_eq_len(ident, len, "export") { return TK_EXPORT }
+    if str_eq_len(ident, len, "extern") { return TK_EXTERN }
+    if str_eq_len(ident, len, "const") { return TK_CONST }
+    if str_eq_len(ident, len, "struct") { return TK_STRUCT }
+    if str_eq_len(ident, len, "match") { return TK_MATCH }
+    if str_eq_len(ident, len, "default") { return TK_DEFAULT }
+    if str_eq_len(ident, len, "test") { return TK_TEST }
+    if str_eq_len(ident, len, "trait") { return TK_TRAIT }
+    if str_eq_len(ident, len, "impl") { return TK_IMPL }
+    if str_eq_len(ident, len, "type") { return TK_TYPE }
+    if str_eq_len(ident, len, "distinct") { return TK_DISTINCT }
+    if str_eq_len(ident, len, "as") { return TK_AS }
+    if str_eq_len(ident, len, "enum") { return TK_ENUM }
+    if str_eq_len(ident, len, "with") { return TK_WITH }
+    if str_eq_len(ident, len, "handle") { return TK_HANDLE }
+    if str_eq_len(ident, len, "effect") { return TK_EFFECT }
+    if str_eq_len(ident, len, "capability") { return TK_CAPABILITY }
+    if str_eq_len(ident, len, "and") { return TK_AND }
+    if str_eq_len(ident, len, "or") { return TK_OR }
+    if str_eq_len(ident, len, "not") { return TK_NOT }
+    if str_eq_len(ident, len, "true") { return TK_BOOLEAN }
+    if str_eq_len(ident, len, "false") { return TK_BOOLEAN }
+    if str_eq_len(ident, len, "null") { return TK_NULL }
+    if str_eq_len(ident, len, "defer") { return TK_DEFER }
+    if str_eq_len(ident, len, "dbg") { return TK_DBG }
+    if str_eq_len(ident, len, "expect") { return TK_EXPECT }
+    if str_eq_len(ident, len, "module") { return TK_MODULE }
+    if str_eq_len(ident, len, "void") { return TK_VOID }
+    if str_eq_len(ident, len, "string") { return TK_STRING_TYPE }
+    if str_eq_len(ident, len, "vec") { return TK_VEC }
+    if str_eq_len(ident, len, "parallel") { return TK_PARALLEL }
+    if str_eq_len(ident, len, "i8") { return TK_I8 }
+    if str_eq_len(ident, len, "i16") { return TK_I16 }
+    if str_eq_len(ident, len, "i32") { return TK_I32 }
+    if str_eq_len(ident, len, "i64") { return TK_I64 }
+    if str_eq_len(ident, len, "u8") { return TK_U8 }
+    if str_eq_len(ident, len, "u16") { return TK_U16 }
+    if str_eq_len(ident, len, "u32") { return TK_U32 }
+    if str_eq_len(ident, len, "u64") { return TK_U64 }
+    if str_eq_len(ident, len, "f32") { return TK_F32 }
+    if str_eq_len(ident, len, "f64") { return TK_F64 }
+    if str_eq_len(ident, len, "bool") { return TK_BOOL }
+    if str_eq_len(ident, len, "theorem") { return TK_THEOREM }
+    if str_eq_len(ident, len, "assume") { return TK_ASSUME }
+    if str_eq_len(ident, len, "therefore") { return TK_THEREFORE }
+    return TK_IDENTIFIER
+}
+
+# ── Lexer State ─────────────────────────────────────────────────────
+
+export struct Lexer {
+    source: ptr<i8>,
+    source_len: i32,
+    pos: i32,
+    line: i32,
+    column: i32
+}
+
+export function lexer_new(source: ptr<i8>, source_len: i32) -> Lexer {
+    return Lexer {
+        source: source,
+        source_len: source_len,
+        pos: 0,
+        line: 1,
+        column: 1
+    }
+}
+
+export function lexer_peek(lx: ptr<Lexer>) -> i8 {
+    let l: Lexer = lx[0]
+    if l.pos >= l.source_len {
+        return 0
+    }
+    return l.source[l.pos]
+}
+
+export function lexer_peek_at(lx: ptr<Lexer>, offset: i32) -> i8 {
+    let l: Lexer = lx[0]
+    let p: i32 = l.pos + offset
+    if p >= l.source_len {
+        return 0
+    }
+    return l.source[p]
+}
+
+export function lexer_advance(lx: ptr<Lexer>) -> i8 {
+    let l: Lexer = lx[0]
+    if l.pos >= l.source_len {
+        return 0
+    }
+    let c: i8 = l.source[l.pos]
+    lx[0].pos = l.pos + 1
+    if c == 10 {
+        lx[0].line = l.line + 1
+        lx[0].column = 1
+    } else {
+        lx[0].column = l.column + 1
+    }
+    return c
+}
+
+export function lexer_make_token(lx: ptr<Lexer>, ttype: i32, start: i32, start_col: i32, start_line: i32) -> Token {
+    let l: Lexer = lx[0]
+    let len: i32 = l.pos - start
+    let val: ptr<i8> = str_dup(l.source + start, len)
+    return Token {
+        token_type: ttype,
+        value: val,
+        value_len: len,
+        line: start_line,
+        column: start_col
+    }
+}
+
+export function lexer_simple_token(lx: ptr<Lexer>, ttype: i32) -> Token {
+    let l: Lexer = lx[0]
+    let line: i32 = l.line
+    let col: i32 = l.column
+    let start: i32 = l.pos
+    lexer_advance(lx)
+    return lexer_make_token(lx, ttype, start, col, line)
+}
+
+# ── Tokenization ────────────────────────────────────────────────────
+
+export function lex_string_literal(lx: ptr<Lexer>) -> Token {
+    let l: Lexer = lx[0]
+    let line: i32 = l.line
+    let col: i32 = l.column
+    let start: i32 = l.pos
+    # Consume opening quote
+    lexer_advance(lx)
+    let mut done: bool = false
+    while !done {
+        let c: i8 = lexer_peek(lx)
+        if c == 0 {
+            done = true
+        } elif c == 34 {
+            # Closing quote
+            lexer_advance(lx)
+            done = true
+        } elif c == 92 {
+            # Backslash escape
+            lexer_advance(lx)
+            let esc: i8 = lexer_peek(lx)
+            if esc == 110 || esc == 116 || esc == 114 || esc == 92 || esc == 34 || esc == 48 {
+                lexer_advance(lx)
+            } elif esc != 0 {
+                lexer_advance(lx)
+            }
+        } elif c == 10 {
+            done = true
+        } else {
+            lexer_advance(lx)
+        }
+    }
+    return lexer_make_token(lx, TK_STRING_LITERAL, start, col, line)
+}
+
+export function lex_number(lx: ptr<Lexer>) -> Token {
+    let l: Lexer = lx[0]
+    let line: i32 = l.line
+    let col: i32 = l.column
+    let start: i32 = l.pos
+    # Check for hex prefix 0x
+    if lexer_peek(lx) == 48 && lexer_peek_at(lx, 1) == 120 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        while is_hex_digit(lexer_peek(lx)) {
+            lexer_advance(lx)
+        }
+        return lexer_make_token(lx, TK_NUMBER, start, col, line)
+    }
+    # Integer part
+    while is_digit(lexer_peek(lx)) {
+        lexer_advance(lx)
+    }
+    # Fractional part
+    if lexer_peek(lx) == 46 && is_digit(lexer_peek_at(lx, 1)) {
+        lexer_advance(lx)
+        while is_digit(lexer_peek(lx)) {
+            lexer_advance(lx)
+        }
+    }
+    # Exponent
+    let c: i8 = lexer_peek(lx)
+    if c == 101 || c == 69 {
+        let next: i8 = lexer_peek_at(lx, 1)
+        if is_digit(next) {
+            lexer_advance(lx)
+        } elif (next == 43 || next == 45) && is_digit(lexer_peek_at(lx, 2)) {
+            lexer_advance(lx)
+            lexer_advance(lx)
+        }
+        while is_digit(lexer_peek(lx)) {
+            lexer_advance(lx)
+        }
+    }
+    return lexer_make_token(lx, TK_NUMBER, start, col, line)
+}
+
+export function lex_identifier(lx: ptr<Lexer>) -> Token {
+    let l: Lexer = lx[0]
+    let line: i32 = l.line
+    let col: i32 = l.column
+    let start: i32 = l.pos
+    while is_alnum(lexer_peek(lx)) {
+        lexer_advance(lx)
+    }
+    let len: i32 = lx[0].pos - start
+    let ident_start: ptr<i8> = l.source + start
+    let ttype: i32 = keyword_lookup(ident_start, len)
+    return lexer_make_token(lx, ttype, start, col, line)
+}
+
+# Skip whitespace and comments. Returns true if we should continue scanning.
+export function lexer_skip_trivia(lx: ptr<Lexer>) -> void {
+    let mut done: bool = false
+    while !done {
+        let c: i8 = lexer_peek(lx)
+        if c == 32 || c == 9 || c == 13 {
+            lexer_advance(lx)
+        } elif c == 10 {
+            lexer_advance(lx)
+        } elif c == 35 {
+            # Comment: # to end of line
+            while lexer_peek(lx) != 10 && lexer_peek(lx) != 0 {
+                lexer_advance(lx)
+            }
+        } else {
+            done = true
+        }
+    }
+}
+
+export function lexer_next_token(lx: ptr<Lexer>) -> Token {
+    lexer_skip_trivia(lx)
+    let l: Lexer = lx[0]
+    let line: i32 = l.line
+    let col: i32 = l.column
+    let c: i8 = lexer_peek(lx)
+    if c == 0 {
+        return Token { token_type: TK_EOF, value: null, value_len: 0, line: line, column: col }
+    }
+    let start: i32 = l.pos
+
+    # String literal
+    if c == 34 {
+        return lex_string_literal(lx)
+    }
+
+    # Number
+    if is_digit(c) {
+        return lex_number(lx)
+    }
+
+    # Identifier or keyword
+    if is_alpha(c) {
+        return lex_identifier(lx)
+    }
+
+    # Multi-character operators (check two chars)
+    let c2: i8 = lexer_peek_at(lx, 1)
+
+    # -> arrow
+    if c == 45 && c2 == 62 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_ARROW, start, col, line)
+    }
+    # => fat arrow
+    if c == 61 && c2 == 62 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_FAT_ARROW, start, col, line)
+    }
+    # == equals
+    if c == 61 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_EQUALS, start, col, line)
+    }
+    # != not equals
+    if c == 33 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_NOT_EQUALS, start, col, line)
+    }
+    # << left shift
+    if c == 60 && c2 == 60 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_LSHIFT, start, col, line)
+    }
+    # >> right shift
+    if c == 62 && c2 == 62 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_RSHIFT, start, col, line)
+    }
+    # <= less equal
+    if c == 60 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_LESS_EQUAL, start, col, line)
+    }
+    # >= greater equal
+    if c == 62 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_GREATER_EQUAL, start, col, line)
+    }
+    # && logical and
+    if c == 38 && c2 == 38 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_AND, start, col, line)
+    }
+    # || logical or
+    if c == 124 && c2 == 124 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_OR, start, col, line)
+    }
+    # |> pipeline
+    if c == 124 && c2 == 62 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_PIPELINE, start, col, line)
+    }
+    # :: double colon
+    if c == 58 && c2 == 58 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_DOUBLE_COLON, start, col, line)
+    }
+    # ... ellipsis (check three chars)
+    if c == 46 && c2 == 46 && lexer_peek_at(lx, 2) == 46 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_ELLIPSIS, start, col, line)
+    }
+    # .. dotdot
+    if c == 46 && c2 == 46 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_DOTDOT, start, col, line)
+    }
+    # += -= *= /= compound assignment
+    if c == 43 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_PLUS_ASSIGN, start, col, line)
+    }
+    if c == 45 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_MINUS_ASSIGN, start, col, line)
+    }
+    if c == 42 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_STAR_ASSIGN, start, col, line)
+    }
+    if c == 47 && c2 == 61 {
+        lexer_advance(lx)
+        lexer_advance(lx)
+        return lexer_make_token(lx, TK_SLASH_ASSIGN, start, col, line)
+    }
+
+    # Single-character tokens
+    if c == 40 { return lexer_simple_token(lx, TK_LPAREN) }
+    if c == 41 { return lexer_simple_token(lx, TK_RPAREN) }
+    if c == 123 { return lexer_simple_token(lx, TK_LBRACE) }
+    if c == 125 { return lexer_simple_token(lx, TK_RBRACE) }
+    if c == 91 { return lexer_simple_token(lx, TK_LBRACKET) }
+    if c == 93 { return lexer_simple_token(lx, TK_RBRACKET) }
+    if c == 59 { return lexer_simple_token(lx, TK_SEMICOLON) }
+    if c == 58 { return lexer_simple_token(lx, TK_COLON) }
+    if c == 44 { return lexer_simple_token(lx, TK_COMMA) }
+    if c == 46 { return lexer_simple_token(lx, TK_DOT) }
+    if c == 64 { return lexer_simple_token(lx, TK_AT) }
+    if c == 63 { return lexer_simple_token(lx, TK_QUESTION) }
+    if c == 43 { return lexer_simple_token(lx, TK_PLUS) }
+    if c == 45 { return lexer_simple_token(lx, TK_MINUS) }
+    if c == 42 { return lexer_simple_token(lx, TK_STAR) }
+    if c == 47 { return lexer_simple_token(lx, TK_SLASH) }
+    if c == 37 { return lexer_simple_token(lx, TK_PERCENT) }
+    if c == 124 { return lexer_simple_token(lx, TK_PIPE) }
+    if c == 38 { return lexer_simple_token(lx, TK_AMPERSAND) }
+    if c == 94 { return lexer_simple_token(lx, TK_CARET) }
+    if c == 126 { return lexer_simple_token(lx, TK_TILDE) }
+    if c == 60 { return lexer_simple_token(lx, TK_LESS) }
+    if c == 62 { return lexer_simple_token(lx, TK_GREATER) }
+    if c == 61 { return lexer_simple_token(lx, TK_ASSIGN) }
+    if c == 33 { return lexer_simple_token(lx, TK_NOT) }
+
+    # Unknown character - emit as identifier with the single char
+    lexer_advance(lx)
+    return lexer_make_token(lx, TK_IDENTIFIER, start, col, line)
+}
+
+export function lexer_tokenize(lx: ptr<Lexer>) -> TokenArray {
+    let arr: TokenArray = token_array_new(64)
+    let arrp: ptr<TokenArray> = &arr
+    let mut done: bool = false
+    while !done {
+        let tok: Token = lexer_next_token(lx)
+        if tok.token_type == TK_EOF {
+            done = true
+        } else {
+            token_array_push(arrp, tok)
+        }
+    }
+    return arr
+}
