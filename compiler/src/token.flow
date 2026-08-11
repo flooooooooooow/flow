@@ -62,6 +62,7 @@ export const KW_AS: i32 = 21
 export const KW_AND: i32 = 22
 export const KW_OR: i32 = 23
 export const KW_MATCH: i32 = 24
+export const KW_ELIF: i32 = 25
 
 export struct Token {
     kind: i32,
