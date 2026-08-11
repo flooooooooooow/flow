@@ -382,6 +382,9 @@ class OverloadResolver:
             return True
         if expected.startswith("ptr_") and actual == expected[len("ptr_"):]:
             return True
+        # Flow `string` lowers to C `char*`; allow it to match ptr<i8>.
+        if expected == "ptr_i8" and actual == "string":
+            return True
         # Bare `null` is typed as ptr_void; it must adopt any callee ptr<T>
         # so overload mangling picks the parameter type (e.g. ptr_u8).
         if actual == "ptr_void" and (
