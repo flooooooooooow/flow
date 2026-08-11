@@ -6812,6 +6812,22 @@ class MLIRGenerator:
         lines.append(f"{ind}}}")
         return lines
 
+    def _resolve_const_value(self, name: str) -> Optional[Expression]:
+        """Walk a Variable reference to its ConstDecl initializer.
+
+        Returns the Literal/Expression if `name` is a module-level const,
+        otherwise None. Handles one level of indirection (const → Literal).
+        """
+        for decl in getattr(self, "declarations", []):
+            if isinstance(decl, ConstDecl) and decl.name == name:
+                val = decl.value
+                if isinstance(val, Literal):
+                    return val
+                if isinstance(val, Variable):
+                    return self._resolve_const_value(val.name)
+                return val
+        return None
+
     def generate_static(self, static: StaticDecl) -> str:
         """Generate a mutable module-scope llvm.mlir.global for `let mut` at top level."""
         mlir_code = []
@@ -6885,10 +6901,19 @@ class MLIRGenerator:
         # Aggregates (structs/arrays) get zero init for now; scalar literals use the value.
         mlir_code.append(f"{self.indent()}// Module static: {static.name}")
         init_payload = f"() : {mlir_type}"
-        if isinstance(static.value, Literal) and getattr(static.value.type, "name", "") != "string":
-            lit = self._format_mlir_numeric(str(static.value.value), mlir_type)
-            if static.value.type.name == "bool":
-                lit = "1" if str(static.value.value).lower() in ("true", "1") else "0"
+        # Resolve const-referencing initializers (e.g. `let mut x = CTRL_KEY_UP`)
+        # by walking Variable → ConstDecl → Literal so the global gets a real
+        # initializer instead of zero. Without this, key bindings and other
+        # const-derived statics silently start at 0 in the MLIR backend.
+        resolved_value = static.value
+        if isinstance(resolved_value, Variable):
+            const_val = self._resolve_const_value(resolved_value.name)
+            if const_val is not None:
+                resolved_value = const_val
+        if isinstance(resolved_value, Literal) and getattr(resolved_value.type, "name", "") != "string":
+            lit = self._format_mlir_numeric(str(resolved_value.value), mlir_type)
+            if resolved_value.type.name == "bool":
+                lit = "1" if str(resolved_value.value).lower() in ("true", "1") else "0"
             init_payload = f"({lit} : {mlir_type}) : {mlir_type}"
         elif mlir_type in ("f32", "f64"):
             init_payload = f"(0.0 : {mlir_type}) : {mlir_type}"
