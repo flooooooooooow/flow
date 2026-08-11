@@ -2714,6 +2714,7 @@ class CGenerator:
         safe_var = _c_ident(var)
         start = self._gen_expr(st.range_start)
         end = self._gen_expr(st.range_end)
+        has_explicit_step = st.step is not None
         step = self._gen_expr(st.step) if st.step else "1"
         if not hasattr(self, "_for_counter"):
             self._for_counter = 0
@@ -2730,7 +2731,7 @@ class CGenerator:
 
         lines.append(f"{self._i()}int32_t {step_var} = {step};")
         # Hint Clang/GCC to auto-vectorize simple counted loops (#113).
-        if not is_parallel:
+        if not is_parallel and has_explicit_step:
             lines.append(f"{self._i()}#pragma clang loop vectorize(enable) interleave(enable)")
             lines.append(f"{self._i()}#pragma GCC ivdep")
         if is_parallel:
@@ -2763,11 +2764,22 @@ class CGenerator:
             lines.append(f"{self._i()}}}")
             return lines
 
-        lines.append(
-            f"{self._i()}for (int32_t {safe_var} = {start}; "
-            f"({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; "
-            f"{safe_var} += {step_var}) {{"
-        )
+        if not has_explicit_step:
+            # No explicit step: direction depends on start vs end at runtime.
+            # Use a runtime-computed step of +1 or -1 based on the range.
+            # `to` is exclusive in both directions: `0 to 4` gives 0,1,2,3;
+            # `4 to 0` gives 4,3,2,1.
+            lines.append(
+                f"{self._i()}for (int32_t {safe_var} = {start}; "
+                f"({start} <= {end}) ? {safe_var} < {end} : {safe_var} > {end}; "
+                f"{safe_var} += ({start} <= {end}) ? 1 : -1) {{"
+            )
+        else:
+            lines.append(
+                f"{self._i()}for (int32_t {safe_var} = {start}; "
+                f"({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; "
+                f"{safe_var} += {step_var}) {{"
+            )
         self._indent += 1
         lines.extend(self._gen_block(st.body))
         self._indent -= 1

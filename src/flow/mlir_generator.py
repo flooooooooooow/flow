@@ -2644,10 +2644,14 @@ class MLIRGenerator:
         return "\n".join(ops)
 
     def _constant_step(self, for_stmt: ForStatement) -> Optional[int]:
-        """Compile-time step for a counted loop, or None when it is dynamic."""
+        """Compile-time step for a counted loop, or None when it is dynamic.
+
+        Returns None when no explicit step is given so that the cf lowering
+        path handles runtime direction detection (start > end means descend).
+        """
         step = for_stmt.step
         if step is None:
-            return 1
+            return None
         if isinstance(step, UnaryOperation) and step.operator == "-":
             inner = self._constant_step_literal(step.operand)
             return None if inner is None else -inner
@@ -2687,13 +2691,15 @@ class MLIRGenerator:
         # Descending loops run while iv > ub, exactly as the C backend does.
         # With a constant step the direction is known here; with a dynamic one
         # the sign is tested once in the entry block and selected per iteration.
+        # When no step is given, the direction is determined by comparing
+        # start and end at runtime (start > end means descend with step -1).
         ascending_ssa: Optional[str] = None
         step = f"%{self.function_counter}"
         self.function_counter += 1
         if step_value is not None:
             mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
             cmp_pred = "slt" if step_value > 0 else "sgt"
-        else:
+        elif for_stmt.step is not None:
             step_expr_ssa, step_ops = self.generate_expression(for_stmt.step)
             mlir_code.extend(step_ops)
             mlir_code.append(
@@ -2706,6 +2712,24 @@ class MLIRGenerator:
             mlir_code.append(f"{self.indent()}{zero} = arith.constant 0 : index")
             mlir_code.append(
                 f"{self.indent()}{ascending_ssa} = arith.cmpi sgt, {step}, {zero} : index"
+            )
+            cmp_pred = "slt"
+        else:
+            # No explicit step: direction depends on start vs end at runtime.
+            # step = (start <= end) ? 1 : -1
+            one = f"%{self.function_counter}"
+            self.function_counter += 1
+            neg_one = f"%{self.function_counter}"
+            self.function_counter += 1
+            ascending_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            mlir_code.append(f"{self.indent()}{one} = arith.constant 1 : index")
+            mlir_code.append(f"{self.indent()}{neg_one} = arith.constant -1 : index")
+            mlir_code.append(
+                f"{self.indent()}{ascending_ssa} = arith.cmpi sle, {lb}, {ub} : index"
+            )
+            mlir_code.append(
+                f"{self.indent()}{step} = arith.select {ascending_ssa}, {one}, {neg_one} : index"
             )
             cmp_pred = "slt"
         self._ssa_types[step] = 'index'
