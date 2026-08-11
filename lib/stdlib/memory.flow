@@ -91,6 +91,36 @@ export function memory_copy_i32(dst: ptr<i32>, src: ptr<i32>, count: i64) -> voi
     }
 }
 
+# ── Uninitialized growth helpers (#424) ─────────────────────────────
+# realloc without zeroing the new region. Callers must initialize every
+# new element before reading it. Use grow_zeroed when zero-fill is needed.
+
+export function grow_uninit(p: ptr<void>, new_size: i64) -> ptr<void> {
+    return realloc(p, new_size)
+}
+
+export function grow_zeroed(p: ptr<void>, old_size: i64, new_size: i64) -> ptr<void> {
+    let result: ptr<void> = realloc(p, new_size)
+    if result != null {
+        if new_size > old_size {
+            let delta: i64 = new_size - old_size
+            let dst: ptr<i8> = result + old_size
+            let mut i: i64 = 0
+            while i < delta {
+                dst[i] = 0
+                i = i + 1
+            }
+        }
+    }
+    return result
+}
+
+# Allocate exactly count * elem_size bytes, no minimum capacity floor.
+# Callers must initialize elements before reading.
+export function alloc_uninit(elem_size: i64, count: i64) -> ptr<void> {
+    return malloc(elem_size * count)
+}
+
 # ── Arena (bump allocator) ──────────────────────────────────────────
 # Fast sequential allocs from one slab; free everything with arena_destroy.
 

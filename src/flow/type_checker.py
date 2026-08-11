@@ -3114,6 +3114,12 @@ class TypeChecker:
                 self.errors.append(f"Unary '!' requires bool type, got {operand_type}")
             return SemanticType(TypeKind.BOOL)
         elif op.operator == "&":
+            if operand_type.kind == TypeKind.POINTER:
+                self.warnings.append(
+                    f"Taking the address of a pointer "
+                    f"(got {operand_type}); this produces ptr<ptr<T>> "
+                    f"- ensure the callee expects a pointer-to-pointer"
+                )
             return SemanticType(TypeKind.POINTER, element_type=operand_type)
         elif op.operator == "*":
             if operand_type.kind != TypeKind.POINTER:
