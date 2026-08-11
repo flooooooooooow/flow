@@ -1130,6 +1130,7 @@ export function flowc_cgen_emit_sigs(
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
+        flowc_cgen_puts(&w, "#include <stdbool.h>\n")
         flowc_cgen_puts(&w, "#include <stdlib.h>\n")
         # AST_EXTERN bodies are brace-skipped (no prototypes), and in bundle
         # TUs only the first module emits the preamble — later modules may
