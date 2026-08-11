@@ -3602,11 +3602,15 @@ class MLIRGenerator:
                 unsigned = _is_unsigned(from_type) or value_ssa in self._ssa_unsigned
                 ext_op = "arith.extui" if unsigned else "arith.extsi"
                 self._ssa_types[cast_name] = to_type
-                if unsigned:
+                # Only propagate unsigned-ness to the target if the target
+                # type itself is unsigned. Casting u8 → i32 zero-extends
+                # correctly but the result is a signed i32; marking it
+                # unsigned would make downstream >> use lshr instead of ashr.
+                if unsigned and _is_unsigned(to_type):
                     self._ssa_unsigned.add(cast_name)
                 return cast_name, [f"{self.indent()}{cast_name} = {ext_op} {value_ssa} : {from_type} to {to_type}"]
             self._ssa_types[cast_name] = to_type
-            if value_ssa in self._ssa_unsigned or _is_unsigned(to_type):
+            if _is_unsigned(to_type) and (value_ssa in self._ssa_unsigned or _is_unsigned(from_type)):
                 self._ssa_unsigned.add(cast_name)
             return cast_name, [f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {from_type} to {to_type}"]
 
