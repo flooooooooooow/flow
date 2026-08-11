@@ -2726,10 +2726,23 @@ case "${1:-help}" in
     "analyze")
         shift
         if [ -z "${1:-}" ]; then
-            print_error "Usage: flow analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
+            print_error "Usage: flow analyze <file.c|file.flow> [--standard=misra-c-2024|cert-c]"
+            print_info "                  [--wcet] [--stack-depth] [--budget N] [--fail-on-violation]"
             exit 1
         fi
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
+        # Route .flow files to WCET/stack analysis, .c files to MISRA scan.
+        case "${1:-}" in
+            *.flow)
+                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
+                ;;
+            --wcet|--stack-depth)
+                # Flags before the file: still WCET analysis on a .flow file.
+                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
+                ;;
+            *)
+                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
+                ;;
+        esac
         ;;
     "compile-audio")
         check_deps
