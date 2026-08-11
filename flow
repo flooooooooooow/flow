@@ -2693,7 +2693,12 @@ case "${1:-help}" in
     "run")
         check_deps
         shift
-        run_program "$@"
+        # FLOW_RUN_PYTHON=1 uses the shell-independent Python runner (#400).
+        if [ "${FLOW_RUN_PYTHON:-0}" = "1" ]; then
+            PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.run "$@"
+        else
+            run_program "$@"
+        fi
         ;;
     "audio")
         check_deps

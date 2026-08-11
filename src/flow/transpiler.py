@@ -239,6 +239,18 @@ def main():
         choices=["compile", "jit", "hot", "interp", "mlir", "c"],
         help="Guard mode for @only/@guard decorators (default: inferred)",
     )
+    parser.add_argument(
+        "--export",
+        nargs="*",
+        default=[],
+        help="Function names to export with stable C symbols (for WASM/FFI). "
+        "Use --export foo bar to export foo() and bar() as flow_export_foo / flow_export_bar.",
+    )
+    parser.add_argument(
+        "--module-name",
+        help="Module name for WASM/Python package (default: input filename stem). "
+        "Sets the Emscripten MODULARIZE name and the --export prefix.",
+    )
 
     args = parser.parse_args()
 
@@ -493,6 +505,8 @@ def main():
                 strict_effects=args.strict_effects,
                 library=args.library,
                 no_bounds_check=getattr(args, "no_bounds_check", False),
+                export_names=getattr(args, "export", None),
+                module_name=getattr(args, "module_name", None),
             )
             if getattr(args, "explain", False):
                 from .plan_selector import format_selections
