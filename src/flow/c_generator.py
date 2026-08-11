@@ -2702,6 +2702,57 @@ class CGenerator:
         lines.append(f"{self._i()}}}")
         return lines
     
+    @staticmethod
+    def _loop_body_is_simple(st: ForStatement) -> bool:
+        """True when the loop body is safe to auto-vectorize.
+
+        A loop is vectorizable when it contains only straight-line
+        assignments with no function calls, no control flow (if/match),
+        and no break/continue. Anything with data-dependent behavior
+        must stay serial (#414).
+        """
+        from flow.parser import (
+            IfStatement, MatchStatement, BreakStatement, ContinueStatement,
+            FunctionCall, MethodCall, ReturnStatement, WhileStatement,
+            ForStatement as NestedFor,
+        )
+        def _check_stmt(stmt) -> bool:
+            if isinstance(stmt, (IfStatement, MatchStatement, BreakStatement,
+                                 ContinueStatement, ReturnStatement,
+                                 WhileStatement, NestedFor)):
+                return False
+            if isinstance(stmt, (FunctionCall, MethodCall)):
+                return False
+            for attr in ("value", "initializer", "condition", "target", "target_expr"):
+                val = getattr(stmt, attr, None)
+                if val is not None and not _check_expr(val):
+                    return False
+            return True
+        def _check_expr(expr) -> bool:
+            if isinstance(expr, (FunctionCall, MethodCall)):
+                return False
+            for attr in ("left", "right", "operand", "expr", "array", "index",
+                         "object", "field", "base", "value", "callee", "condition"):
+                val = getattr(expr, attr, None)
+                if val is not None and not _check_expr(val):
+                    return False
+            if hasattr(expr, "arguments"):
+                for arg in (expr.arguments or []):
+                    if not _check_expr(arg):
+                        return False
+            if hasattr(expr, "statements"):
+                for s in (expr.statements or []):
+                    if not _check_stmt(s):
+                        return False
+            return True
+        body = getattr(st, "body", None)
+        if body is None:
+            return True
+        for stmt in getattr(body, "statements", []):
+            if not _check_stmt(stmt):
+                return False
+        return True
+
     def _gen_for(self, st: ForStatement) -> List[str]:
         """Generate C for loop from FLOW for statement.
 
@@ -2714,6 +2765,7 @@ class CGenerator:
         safe_var = _c_ident(var)
         start = self._gen_expr(st.range_start)
         end = self._gen_expr(st.range_end)
+        has_explicit_step = st.step is not None
         step = self._gen_expr(st.step) if st.step else "1"
         if not hasattr(self, "_for_counter"):
             self._for_counter = 0
@@ -2729,8 +2781,11 @@ class CGenerator:
             self._uses_parallel_for = True
 
         lines.append(f"{self._i()}int32_t {step_var} = {step};")
-        # Hint Clang/GCC to auto-vectorize simple counted loops (#113).
-        if not is_parallel:
+        # Vectorization pragmas were always-on (#113) but unsafe for loops
+        # with data-dependent control flow or floating-point accumulation
+        # (#414). Now only emitted when the loop body is trivially
+        # vectorizable: no function calls, no if/match, no break/continue.
+        if not is_parallel and has_explicit_step and self._loop_body_is_simple(st):
             lines.append(f"{self._i()}#pragma clang loop vectorize(enable) interleave(enable)")
             lines.append(f"{self._i()}#pragma GCC ivdep")
         if is_parallel:
@@ -2763,11 +2818,22 @@ class CGenerator:
             lines.append(f"{self._i()}}}")
             return lines
 
-        lines.append(
-            f"{self._i()}for (int32_t {safe_var} = {start}; "
-            f"({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; "
-            f"{safe_var} += {step_var}) {{"
-        )
+        if not has_explicit_step:
+            # No explicit step: direction depends on start vs end at runtime.
+            # Use a runtime-computed step of +1 or -1 based on the range.
+            # `to` is exclusive in both directions: `0 to 4` gives 0,1,2,3;
+            # `4 to 0` gives 4,3,2,1.
+            lines.append(
+                f"{self._i()}for (int32_t {safe_var} = {start}; "
+                f"({start} <= {end}) ? {safe_var} < {end} : {safe_var} > {end}; "
+                f"{safe_var} += ({start} <= {end}) ? 1 : -1) {{"
+            )
+        else:
+            lines.append(
+                f"{self._i()}for (int32_t {safe_var} = {start}; "
+                f"({step_var} > 0) ? {safe_var} < {end} : {safe_var} > {end}; "
+                f"{safe_var} += {step_var}) {{"
+            )
         self._indent += 1
         lines.extend(self._gen_block(st.body))
         self._indent -= 1

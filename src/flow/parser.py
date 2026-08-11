@@ -1403,8 +1403,8 @@ class Lexer:
                 if i + 1 >= len(content):
                     raise SyntaxError("Invalid escape sequence at end of string")
                 esc = content[i + 1]
-                if esc not in ['n', 't', 'r', '\\\\', '"', '0']:
-                    raise SyntaxError(f"Invalid escape sequence: \\\\{esc}")
+                if esc not in ['n', 't', 'r', '\\', '"', '0']:
+                    raise SyntaxError(f"Invalid escape sequence: \\{esc}")
                 i += 2
                 continue
             i += 1

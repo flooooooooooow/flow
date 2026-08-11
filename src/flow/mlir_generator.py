@@ -2644,10 +2644,14 @@ class MLIRGenerator:
         return "\n".join(ops)
 
     def _constant_step(self, for_stmt: ForStatement) -> Optional[int]:
-        """Compile-time step for a counted loop, or None when it is dynamic."""
+        """Compile-time step for a counted loop, or None when it is dynamic.
+
+        Returns None when no explicit step is given so that the cf lowering
+        path handles runtime direction detection (start > end means descend).
+        """
         step = for_stmt.step
         if step is None:
-            return 1
+            return None
         if isinstance(step, UnaryOperation) and step.operator == "-":
             inner = self._constant_step_literal(step.operand)
             return None if inner is None else -inner
@@ -2687,13 +2691,15 @@ class MLIRGenerator:
         # Descending loops run while iv > ub, exactly as the C backend does.
         # With a constant step the direction is known here; with a dynamic one
         # the sign is tested once in the entry block and selected per iteration.
+        # When no step is given, the direction is determined by comparing
+        # start and end at runtime (start > end means descend with step -1).
         ascending_ssa: Optional[str] = None
         step = f"%{self.function_counter}"
         self.function_counter += 1
         if step_value is not None:
             mlir_code.append(f"{self.indent()}{step} = arith.constant {step_value} : index")
             cmp_pred = "slt" if step_value > 0 else "sgt"
-        else:
+        elif for_stmt.step is not None:
             step_expr_ssa, step_ops = self.generate_expression(for_stmt.step)
             mlir_code.extend(step_ops)
             mlir_code.append(
@@ -2706,6 +2712,24 @@ class MLIRGenerator:
             mlir_code.append(f"{self.indent()}{zero} = arith.constant 0 : index")
             mlir_code.append(
                 f"{self.indent()}{ascending_ssa} = arith.cmpi sgt, {step}, {zero} : index"
+            )
+            cmp_pred = "slt"
+        else:
+            # No explicit step: direction depends on start vs end at runtime.
+            # step = (start <= end) ? 1 : -1
+            one = f"%{self.function_counter}"
+            self.function_counter += 1
+            neg_one = f"%{self.function_counter}"
+            self.function_counter += 1
+            ascending_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            mlir_code.append(f"{self.indent()}{one} = arith.constant 1 : index")
+            mlir_code.append(f"{self.indent()}{neg_one} = arith.constant -1 : index")
+            mlir_code.append(
+                f"{self.indent()}{ascending_ssa} = arith.cmpi sle, {lb}, {ub} : index"
+            )
+            mlir_code.append(
+                f"{self.indent()}{step} = arith.select {ascending_ssa}, {one}, {neg_one} : index"
             )
             cmp_pred = "slt"
         self._ssa_types[step] = 'index'
@@ -3602,11 +3626,15 @@ class MLIRGenerator:
                 unsigned = _is_unsigned(from_type) or value_ssa in self._ssa_unsigned
                 ext_op = "arith.extui" if unsigned else "arith.extsi"
                 self._ssa_types[cast_name] = to_type
-                if unsigned:
+                # Only propagate unsigned-ness to the target if the target
+                # type itself is unsigned. Casting u8 → i32 zero-extends
+                # correctly but the result is a signed i32; marking it
+                # unsigned would make downstream >> use lshr instead of ashr.
+                if unsigned and _is_unsigned(to_type):
                     self._ssa_unsigned.add(cast_name)
                 return cast_name, [f"{self.indent()}{cast_name} = {ext_op} {value_ssa} : {from_type} to {to_type}"]
             self._ssa_types[cast_name] = to_type
-            if value_ssa in self._ssa_unsigned or _is_unsigned(to_type):
+            if _is_unsigned(to_type) and (value_ssa in self._ssa_unsigned or _is_unsigned(from_type)):
                 self._ssa_unsigned.add(cast_name)
             return cast_name, [f"{self.indent()}{cast_name} = arith.trunci {value_ssa} : {from_type} to {to_type}"]
 
@@ -6598,6 +6626,69 @@ class MLIRGenerator:
             mlir_code.append(f"{self.indent()}//   {field.name}: {field_type}")
         return "\n".join(mlir_code)
     
+    def _fold_const_binary(self, expr) -> Optional[Literal]:
+        """Fold a BinaryOperation on integer literals into a Literal.
+
+        Handles patterns like `0 - 1`, `1 + 2`, `65536 * 2` that appear in
+        const declarations. Returns None if either side is not a foldable
+        integer literal.
+        """
+        if not isinstance(expr, BinaryOperation):
+            return None
+        left = expr.left
+        right = expr.right
+        # Unwrap CastExpression and UnaryOperation(-) to get the raw literal.
+        if isinstance(left, CastExpression) and isinstance(left.expr, Literal):
+            left = left.expr
+        if isinstance(left, UnaryOperation) and left.operator == '-' and isinstance(left.operand, Literal):
+            left = Literal(value='-' + str(left.operand.value), type=left.operand.type)
+        if isinstance(right, CastExpression) and isinstance(right.expr, Literal):
+            right = right.expr
+        if isinstance(right, UnaryOperation) and right.operator == '-' and isinstance(right.operand, Literal):
+            right = Literal(value='-' + str(right.operand.value), type=right.operand.type)
+        if not isinstance(left, Literal) or not isinstance(right, Literal):
+            return None
+        lt = getattr(left.type, "name", "")
+        rt = getattr(right.type, "name", "")
+        if lt in ("string", "bool") or rt in ("string", "bool"):
+            return None
+        try:
+            lv = int(str(left.value))
+            rv = int(str(right.value))
+        except (ValueError, TypeError):
+            return None
+        op = expr.operator
+        if op == '+':
+            result = lv + rv
+        elif op == '-':
+            result = lv - rv
+        elif op == '*':
+            result = lv * rv
+        elif op == '/':
+            if rv == 0:
+                return None
+            # Integer division truncating toward zero (C semantics).
+            result = int(lv / rv) if (lv < 0) != (rv < 0) and lv % rv != 0 else lv // rv
+        elif op == '%':
+            if rv == 0:
+                return None
+            result = lv - (int(lv / rv) if (lv < 0) != (rv < 0) and lv % rv != 0 else lv // rv) * rv
+        elif op == '<<':
+            result = lv << rv
+        elif op == '>>':
+            result = lv >> rv
+        elif op == '&':
+            result = lv & rv
+        elif op == '|':
+            result = lv | rv
+        elif op == '^':
+            result = lv ^ rv
+        else:
+            return None
+        # Determine result type: prefer the left operand's type, then const's.
+        result_type = left.type if lt and lt != "" else right.type
+        return Literal(value=str(result), type=result_type)
+
     def generate_const(self, const: ConstDecl) -> str:
         """Generate MLIR for constant declaration"""
         mlir_code = []
@@ -6666,6 +6757,11 @@ class MLIRGenerator:
         if isinstance(unwrapped, UnaryOperation) and unwrapped.operator == '-' and isinstance(unwrapped.operand, Literal):
             neg_lit = Literal(value='-' + str(unwrapped.operand.value), type=unwrapped.operand.type)
             unwrapped = neg_lit
+        # Handle simple BinaryOperation on integer literals (e.g. `0 - 1`).
+        if isinstance(unwrapped, BinaryOperation):
+            folded = self._fold_const_binary(unwrapped)
+            if folded is not None:
+                unwrapped = folded
         if isinstance(unwrapped, Literal) and getattr(unwrapped.type, "name", "") != "string":
             if mlir_type == "!llvm.ptr" or str(unwrapped.value).lower() == "null":
                 mlir_code.append(
@@ -6817,6 +6913,7 @@ class MLIRGenerator:
 
         Returns the Literal/Expression if `name` is a module-level const,
         otherwise None. Handles one level of indirection (const → Literal).
+        Also folds simple BinaryOperation initializers (e.g. `0 - 1`).
         """
         for decl in getattr(self, "declarations", []):
             if isinstance(decl, ConstDecl) and decl.name == name:
@@ -6825,6 +6922,10 @@ class MLIRGenerator:
                     return val
                 if isinstance(val, Variable):
                     return self._resolve_const_value(val.name)
+                if isinstance(val, BinaryOperation):
+                    folded = self._fold_const_binary(val)
+                    if folded is not None:
+                        return folded
                 return val
         return None
 
@@ -6910,6 +7011,10 @@ class MLIRGenerator:
             const_val = self._resolve_const_value(resolved_value.name)
             if const_val is not None:
                 resolved_value = const_val
+        if isinstance(resolved_value, BinaryOperation):
+            folded = self._fold_const_binary(resolved_value)
+            if folded is not None:
+                resolved_value = folded
         if isinstance(resolved_value, Literal) and getattr(resolved_value.type, "name", "") != "string":
             lit = self._format_mlir_numeric(str(resolved_value.value), mlir_type)
             if resolved_value.type.name == "bool":

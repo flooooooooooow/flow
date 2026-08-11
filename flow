@@ -564,8 +564,9 @@ flow_runtime_flow_sources() {
             continue
         fi
         out="$out_dir/${base}.c"
-        if ! python3 -m "$FLOWC_MODULE" "$f" --c --library --lenient -o "$out" 2>/dev/null; then
+        if ! python3 -m "$FLOWC_MODULE" "$f" --c --library --lenient -o "$out" 2>"$build_dir/.flowc_err"; then
             print_error "Flow runtime module failed: $base.flow"
+            cat "$build_dir/.flowc_err" >&2
             exit 1
         fi
         FLOW_RUNTIME_FLOW_SOURCES+=("$out")
@@ -615,8 +616,9 @@ compile_program_python() {
     mkdir -p "$build_dir"
     
     # FLOW to C (use --lenient for now until type checker is fully stable)
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>/dev/null; then
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>"$build_dir/.flowc_err"; then
         print_error "FLOW compilation failed"
+        cat "$build_dir/.flowc_err" >&2
         exit 1
     fi
     print_success "FLOW → C: $basename.c"
@@ -665,8 +667,9 @@ compile_program_mlir() {
     print_info "Compiling $program (CPU backend=mlir)..."
     mkdir -p "$build_dir"
 
-    if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>/dev/null; then
+    if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>"$build_dir/.flowc_err"; then
         print_error "FLOW MLIR/LLVM compilation failed"
+        cat "$build_dir/.flowc_err" >&2
         exit 1
     fi
     print_success "FLOW → MLIR → LLVM: $basename.ll"
@@ -990,8 +993,9 @@ PY
     local shader_flow_c="$SCRIPT_DIR/build/runtime_flow/shader_host.c"
     mkdir -p "$SCRIPT_DIR/build/runtime_flow"
     if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/shader_host.flow" \
-        --c --library --lenient -o "$shader_flow_c" 2>/dev/null; then
+        --c --library --lenient -o "$shader_flow_c" 2>"$SCRIPT_DIR/build/.flowc_err"; then
         print_error "Failed to transpile shader_host.flow"
+        cat "$SCRIPT_DIR/build/.flowc_err" >&2
         exit 1
     fi
     if ! clang -O2 -fobjc-arc -I"$SCRIPT_DIR/runtime" \
@@ -1075,14 +1079,16 @@ compile_audio_program() {
     mkdir -p "$build_dir"
     
     if [ $use_mlir -eq 1 ]; then
-        if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>/dev/null; then
+        if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>"$build_dir/.flowc_err"; then
             print_error "FLOW MLIR/LLVM compilation failed"
+            cat "$build_dir/.flowc_err" >&2
             exit 1
         fi
         print_success "FLOW → MLIR → LLVM: $basename.ll"
     else
-        if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>/dev/null; then
+        if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>"$build_dir/.flowc_err"; then
             print_error "FLOW compilation failed"
+            cat "$build_dir/.flowc_err" >&2
             exit 1
         fi
         print_success "FLOW → C: $basename.c"
@@ -2690,6 +2696,10 @@ case "${1:-help}" in
         echo "Flow 0.10.0"
         echo "host: $(flow_host_mode) (override with FLOW_HOST=flowc|python|auto)"
         ;;
+    "check")
+        shift
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.check "$@"
+        ;;
     "run")
         check_deps
         shift
@@ -3074,8 +3084,9 @@ PY
                          "$SCRIPT_DIR/examples/ml/models/mlp_xor_adam.flow"; do
                     if [ -f "$t" ]; then
                         print_info "  $t"
-                        if ! python3 -m flow.transpiler "$t" --c --lenient -o "$SCRIPT_DIR/build/$(basename "$t" .flow).c" 2>/dev/null; then
+                        if ! python3 -m flow.transpiler "$t" --c --lenient -o "$SCRIPT_DIR/build/$(basename "$t" .flow).c" 2>"$SCRIPT_DIR/build/.flowc_err"; then
                             print_error "Failed: $t"
+                            cat "$SCRIPT_DIR/build/.flowc_err" >&2
                             exit 1
                         fi
                         print_success "  ✓ $(basename "$t")"
