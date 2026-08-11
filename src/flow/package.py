@@ -136,7 +136,20 @@ class FlowPackage:
             if self.ldflags:
                 ldflags_str = ', '.join(f'"{f}"' for f in self.ldflags)
                 lines.append(f'ldflags = [{ldflags_str}]')
-        
+
+        lines.append("")
+        lines.append("[build]")
+        lines.append('host = "python"')
+        lines.append('# test_command = "FLOW_HOST=python flow run tests/test_main.flow"')
+        lines.append("")
+        lines.append("[conventions]")
+        lines.append("# avoid = [")
+        lines.append('#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },')
+        lines.append('# ]')
+        lines.append("")
+        lines.append("[patterns]")
+        lines.append('# math = "use fabs((x) as f64) as f32 for single-precision abs"')
+
         return "\n".join(lines) + "\n"
 
     @staticmethod
