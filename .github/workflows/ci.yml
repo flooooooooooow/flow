@@ -344,7 +344,7 @@ jobs:
       - name: Arithmetic safety tests
         env:
           PYTHONPATH: src
-        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_export_abi.py tests/unit/test_wcet_analysis.py -v
+        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_export_abi.py tests/unit/test_wcet_analysis.py tests/unit/test_general_plans.py -v
 
   fuzz:
     name: Fuzz (parser/pipeline)
