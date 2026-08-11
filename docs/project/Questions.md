@@ -181,6 +181,46 @@ semantics questions above remain pending.
 
 ---
 
+### 2026-08-11: Multi-implementation selection beyond sort (#147)
+
+**Context:** The cost-based selector in `plan_selector.py` is already
+construct-agnostic. `ordering_plans.py` registers sort and search. The
+issue asks for the same mechanism to cover non-sorting transforms (DSP,
+ML, numerics) with a constraint vocabulary (`require` / `prefer`).
+
+**Decided:**
+1. **Implementation declaration** stays a stdlib registry, not a new
+   syntax block. Each construct registers `Implementation` objects via
+   `register()`. New file: `src/flow/general_plans.py` registers `matmul`
+   (naive vs blocked) and `reduce` (sequential vs parallel_tree).
+2. **Constraint vocabulary** lives in `src/flow/constraints.py`.
+   `require(memory < N)` becomes `require_memory_bytes = N` in the Facts
+   data dict. `prefer(parallel)` becomes `prefer = "parallel"`.
+   Implementations check these in their applicability predicates and
+   cost models. The selector itself does not know about constraints.
+3. **Surface syntax** for `require` / `prefer` is attribute-based:
+   `@require(memory < 4096)`, `@prefer(parallel)`. The parser is in
+   `constraints.py` but not yet wired into the compiler. The compiler
+   builds Facts programmatically today. Wiring the attribute form is a
+   follow-up once the cost IR has real units.
+4. **Two constructs, two implementations each, constraint flips choice:**
+   - matmul: naive (small n) vs blocked (large n). `require(memory < 4096)`
+     flips large n back to naive.
+   - reduce: sequential (small n) vs parallel_tree (large n).
+     `prefer(parallel)` flips small n to parallel_tree.
+5. **`--explain`** already works for any construct. The report includes
+   matmul and reduce selections with the same format as sort.
+
+**What stays parsed-only:** `prefer` for objectives other than `parallel`
+(latency, energy, memory) is parsed but does not bias the cost model yet.
+The cost IR has one dimension (estimated element operations). Real units
+need a target model.
+
+**Status:** Resolved. Implemented in `general_plans.py`, `constraints.py`,
+20 tests in `test_general_plans.py`.
+
+---
+
 ### 2026-08-04: Dynamics DSL namespace style
 
 **Context:** Top-level bare keywords `dsys` / `horizon` / `sense` / `ga` /
