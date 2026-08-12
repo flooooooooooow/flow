@@ -1,0 +1,114 @@
+# @module flowc.lsp_dynamics
+# @means  LSP dynamics DSL hover text lookup. Port of dynamics_hover
+#         from lsp_dynamics.py. The Python original also provides
+#         completion items; this port exposes the hover text lookup.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+# Lookup the last segment after "." in a word.
+function last_segment(word: string) -> string {
+    let n: i32 = strlen(word) as i32
+    let p: ptr<u8> = word
+    let mut last_dot: i32 = -1
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 46 { last_dot = i }
+        i = i + 1
+    }
+    if last_dot < 0 { return word }
+    let len: i32 = n - last_dot - 1
+    # Return a pointer into the string after the last dot
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let mut j: i32 = 0
+    let mut k: i32 = last_dot + 1
+    while k < n {
+        buf[j] = p[k]
+        j = j + 1
+        k = k + 1
+    }
+    buf[j] = 0
+    return buf as string
+}
+
+# Lookup hover documentation for a dynamics DSL keyword.
+# Returns the documentation string, or empty string if not found.
+# Also handles namespaced forms like "dyn.dsys" by checking the
+# last segment after ".".
+# Port of dynamics_hover.
+export function flowc_dynamics_hover(word: string) -> string {
+    # Direct lookup
+    let h: string = flowc_dynamics_hover_direct(word)
+    if strlen(h) > 0 { return h }
+
+    # Try last segment after "."
+    let tail: string = last_segment(word)
+    if strlen(tail) > 0 and strlen(tail) < strlen(word) {
+        let h2: string = flowc_dynamics_hover_direct(tail)
+        if strlen(h2) > 0 { return h2 }
+    }
+    return ""
+}
+
+function flowc_dynamics_hover_direct(word: string) -> string {
+    if strcmp(word, "dsys") == 0 {
+        return "**`dsys`** - declare a linear plant (dynamics DSL).\n\n```flow\ndyn.dsys plant {\n    discrete   # or continuous\n    dt 0.1\n    n 2 m 1 p 1\n    A 1.0 0.1 0.0 1.0\n    B 0.0 0.1\n    C 1.0 0.0\n}\n```\nPrefixed form: `dyn.dsys` / `dynamics.dsys`. See docs/language/dynamics-dsl.md."
+    }
+    if strcmp(word, "horizon") == 0 {
+        return "**`horizon`** - name a finite or infinite analysis horizon.\n\n```flow\ndyn.horizon rollout finite 50\ndyn.horizon asymptotic infinite gamma 0.99\n```"
+    }
+    if strcmp(word, "sense") == 0 {
+        return "**`sense on`** - open-loop analysis bindings.\n\n```flow\ndyn.sense on plant {\n    controllable -> plant_ok\n    spectral -> rho_open\n    gramian finite rollout trace -> wc_fin\n}\n```"
+    }
+    if strcmp(word, "ga") == 0 {
+        return "**`ga evolve`** - genetic search for state-feedback gains.\n\n```flow\ndyn.ga evolve on plant over rollout -> k1 k2 {\n    population 12\n    generations 30\n    mutation 0.3\n}\n```"
+    }
+    if strcmp(word, "closed") == 0 {
+        return "**`closed`** - certify closed-loop `A - B K`.\n\n```flow\ndyn.closed plant with k1 k2 {\n    spectral -> rho_cl\n    energy over rollout -> E_cl\n    stable -> stable_cl\n}\n```"
+    }
+    if strcmp(word, "analyze") == 0 {
+        return "**`analyze`** - one-shot GA + controllability + Gramian report.\n\n```flow\ndyn.analyze plant ga k1 k2 over rollout -> report { full }\n```\nBinds a `GAAnalysisReport` and assigns `k1`/`k2`."
+    }
+    if strcmp(word, "wfc") == 0 {
+        return "**`wfc field`** - Wave Function Collapse field (experimental coupling).\n\n```flow\ndyn.wfc field layout { size 4 4  tiles 3  seed 7 }\n```"
+    }
+    if strcmp(word, "dynamics") == 0 {
+        return "**`dynamics { ... }`** - namespace block for the dynamics DSL.\n\nBody uses bare `dsys` / `horizon` / `sense` / `ga evolve` / ... lines.\nLine prefix alternative: `dyn.horizon ...` / `dynamics.sense on ...`."
+    }
+    if strcmp(word, "dyn") == 0 {
+        return "**`dyn.`** - short namespace prefix for dynamics DSL constructs (`dyn.dsys`, `dyn.horizon`, `dyn.sense`, `dyn.ga`, `dyn.closed`, `dyn.analyze`, `dyn.wfc`)."
+    }
+    if strcmp(word, "controllable") == 0 {
+        return "`controllable -> name` - bind `i32` 1 if rank(ctrb)==n (sense block)."
+    }
+    if strcmp(word, "spectral") == 0 {
+        return "`spectral -> name` - bind spectral radius `f64` (sense/closed)."
+    }
+    if strcmp(word, "gramian") == 0 {
+        return "`gramian finite HZ trace -> name` / `gramian infinite HZ trace -> name` - bind controllability Gramian trace (sense block)."
+    }
+    if strcmp(word, "stable") == 0 {
+        return "`stable -> name` - bind `i32` 1 if closed-loop |lambda|_max < 1."
+    }
+    if strcmp(word, "energy") == 0 {
+        return "`energy over HZ -> name` - bind trajectory energy over a horizon (closed)."
+    }
+    if strcmp(word, "population") == 0 {
+        return "GA population size (default 8)."
+    }
+    if strcmp(word, "generations") == 0 {
+        return "GA generations (default 20, max 32)."
+    }
+    if strcmp(word, "mutation") == 0 {
+        return "GA mutation rate (default 0.3)."
+    }
+    if strcmp(word, "discrete") == 0 {
+        return "Plant is discrete-time: `x[k+1] = A x[k] + B u[k]`."
+    }
+    if strcmp(word, "continuous") == 0 {
+        return "Plant is continuous-time; Euler-discretized at `dt` before analysis."
+    }
+    return ""
+}
