@@ -1,6 +1,6 @@
 # @module flowc.proof_sub
 # @means  Premise instantiation templates (port of proof_substitution.py core).
-#         Returns filled Flow expressions (not LaTeX) for Stage-A dogfood.
+#         Returns filled Flow expressions for Stage-A dogfood.
 
 import .claim_address {
     FlowcClaimAddress,
@@ -10,6 +10,9 @@ import .claim_address {
 extern {
     function strcmp(a: string, b: string) -> i32
     function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
 }
 
 # Known templates keyed by carrier/structure/law.
@@ -111,4 +114,171 @@ export function flowc_instantiate_two(claim_text: string, a0: string, a1: string
         return "x or y == y or x"
     }
     return ""
+}
+
+# ── Generic template filling ─────────────────────────────────────
+
+# String helpers for generic {N} placeholder replacement.
+function substr(src: string, start: i32, end: i32) -> string {
+    let n: i32 = strlen(src) as i32
+    if start < 0 {
+        start = 0
+    }
+    if end > n {
+        end = n
+    }
+    if start >= end {
+        return ""
+    }
+    let len: i32 = end - start
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = src
+    memcpy(buf, p + start, len as i64)
+    buf[len] = 0
+    return buf as string
+}
+
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64) as ptr<u8>
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+# Replace all occurrences of "{N}" in template with value, where N is
+# the placeholder index (0 or 1). Returns a new malloc'd string.
+function fill_placeholder(template: string, placeholder: string, value: string) -> string {
+    let tn: i32 = strlen(template) as i32
+    let pn: i32 = strlen(placeholder) as i32
+    let tp: ptr<u8> = template
+    let pp: ptr<u8> = placeholder
+    let result: string = ""
+    let mut i: i32 = 0
+    while i < tn {
+        # Check if placeholder matches at position i
+        if i + pn <= tn {
+            let mut matched: i32 = 1
+            let mut j: i32 = 0
+            while j < pn {
+                if tp[i + j] != pp[j] {
+                    matched = 0
+                    break
+                }
+                j = j + 1
+            }
+            if matched == 1 {
+                result = str_append(result, value)
+                i = i + pn
+                continue
+            }
+        }
+        # Copy one byte
+        let one: string = substr(template, i, i + 1)
+        result = str_append(result, one)
+        i = i + 1
+    }
+    return result
+}
+
+# Generic instantiate: fill {0} and {1} in the template for a claim.
+# args is a comma-separated string of values.
+export function flowc_instantiate_premise(claim_text: string, args: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_parse(claim_text)
+    let tmpl: string = flowc_premise_template(addr)
+    if strlen(tmpl) == 0 {
+        return ""
+    }
+
+    # Split args by comma
+    let an: i32 = strlen(args) as i32
+    let ap: ptr<u8> = args
+    let arg0: string = ""
+    let arg1: string = ""
+    let mut count: i32 = 0
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= an {
+        if i == an or ap[i] == 44 {
+            let s: string = substr(args, start, i)
+            if count == 0 {
+                arg0 = s
+            } else {
+                if count == 1 {
+                    arg1 = s
+                }
+            }
+            count = count + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+
+    # Fill {0} then {1}
+    let filled: string = fill_placeholder(tmpl, "{0}", arg0)
+    let filled2: string = fill_placeholder(filled, "{1}", arg1)
+    return filled2
+}
+
+# Split a parameter signature "a: i32, b: i32" into names ["a", "b"].
+# Returns a comma-separated string of names.
+export function flowc_param_names_from_sig(params: string) -> string {
+    let pn: i32 = strlen(params) as i32
+    let p: ptr<u8> = params
+    let result: string = ""
+    let mut start: i32 = 0
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i <= pn {
+        if i == pn or p[i] == 44 {
+            # Extract chunk [start, i) and take everything before ':'
+            let chunk: string = substr(params, start, i)
+            let cn: i32 = strlen(chunk) as i32
+            let cp: ptr<u8> = chunk
+            let mut colon: i32 = -1
+            let mut k: i32 = 0
+            while k < cn {
+                if cp[k] == 58 {
+                    colon = k
+                    break
+                }
+                k = k + 1
+            }
+            let name: string = ""
+            if colon >= 0 {
+                name = substr(chunk, 0, colon)
+            } else {
+                name = chunk
+            }
+            # Strip whitespace from name
+            let nn: i32 = strlen(name) as i32
+            let np: ptr<u8> = name
+            let mut ns: i32 = 0
+            while ns < nn and (np[ns] == 32 or np[ns] == 9) {
+                ns = ns + 1
+            }
+            let mut ne: i32 = nn
+            while ne > ns and (np[ne - 1] == 32 or np[ne - 1] == 9) {
+                ne = ne - 1
+            }
+            if ns < ne {
+                let clean: string = substr(name, ns, ne)
+                if count > 0 {
+                    result = str_append(result, ",")
+                }
+                result = str_append(result, clean)
+                count = count + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return result
 }
