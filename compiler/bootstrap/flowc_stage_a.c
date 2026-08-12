@@ -3442,6 +3442,39 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_emit_print_intrinsic(w, arena, src, id, 0);
   return;
 }
+  int32_t n_args = flowc_ast_chain_len(arena, ((arena).nodes[id]).a);
+  if (flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "c64") == 1) {
+  if (n_args == 2) {
+  flowc_cgen_puts(w, "((float)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ") + (float)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[((arena).nodes[id]).a]).next);
+  flowc_cgen_puts(w, ") * I)");
+  return;
+}
+  if (n_args == 1) {
+  flowc_cgen_puts(w, "((float)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ") + 0.0f * I)");
+  return;
+}
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "c128") == 1) {
+  if (n_args == 2) {
+  flowc_cgen_puts(w, "((double)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ") + (double)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[((arena).nodes[id]).a]).next);
+  flowc_cgen_puts(w, ") * I)");
+  return;
+}
+  if (n_args == 1) {
+  flowc_cgen_puts(w, "((double)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ") + 0.0 * I)");
+  return;
+}
+}
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_putc(w, 40);
   int32_t arg = ((arena).nodes[id]).a;
