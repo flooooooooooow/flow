@@ -1,0 +1,98 @@
+# Test for the generic premise instantiation in proof_sub.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_proof_sub_gen.flow
+# Exit 0 on success.
+
+import "compiler/src/proof_sub.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # instantiate_premise: one-arg template
+    let r1: string = flowc_instantiate_premise(
+        "«Nat» «addition» «zero is the left identity»",
+        "n"
+    )
+    if strcmp(r1, "0 + n == n") != 0 {
+        printf("FAIL: expected '0 + n == n', got '%s'\n", r1)
+        return 1
+    }
+
+    # instantiate_premise: two-arg template
+    let r2: string = flowc_instantiate_premise(
+        "«Nat» «addition» «order does not matter»",
+        "m,n"
+    )
+    if strcmp(r2, "m + n == n + m") != 0 {
+        printf("FAIL: expected 'm + n == n + m', got '%s'\n", r2)
+        return 2
+    }
+
+    # instantiate_premise: unknown claim -> empty
+    let r3: string = flowc_instantiate_premise("bogus", "x")
+    if strcmp(r3, "") != 0 {
+        printf("FAIL: expected empty for bogus claim, got '%s'\n", r3)
+        return 3
+    }
+
+    # instantiate_premise: squaring
+    let r4: string = flowc_instantiate_premise(
+        "«Int» «multiplication» «squaring never yields a negative»",
+        "k"
+    )
+    if strcmp(r4, "k * k >= 0") != 0 {
+        printf("FAIL: expected 'k * k >= 0', got '%s'\n", r4)
+        return 4
+    }
+
+    # instantiate_premise: equality
+    let r5: string = flowc_instantiate_premise(
+        "«Eq» «equality» «everything equals itself»",
+        "x"
+    )
+    if strcmp(r5, "x == x") != 0 {
+        printf("FAIL: expected 'x == x', got '%s'\n", r5)
+        return 5
+    }
+
+    # param_names_from_sig: single param
+    let names1: string = flowc_param_names_from_sig("a: i32")
+    if strcmp(names1, "a") != 0 {
+        printf("FAIL: expected 'a', got '%s'\n", names1)
+        return 6
+    }
+
+    # param_names_from_sig: two params
+    let names2: string = flowc_param_names_from_sig("a: i32, b: i32")
+    if strcmp(names2, "a,b") != 0 {
+        printf("FAIL: expected 'a,b', got '%s'\n", names2)
+        return 7
+    }
+
+    # param_names_from_sig: with whitespace
+    let names3: string = flowc_param_names_from_sig("  x : f64 ,  y : f64 ")
+    if strcmp(names3, "x,y") != 0 {
+        printf("FAIL: expected 'x,y', got '%s'\n", names3)
+        return 8
+    }
+
+    # param_names_from_sig: empty
+    let names4: string = flowc_param_names_from_sig("")
+    if strcmp(names4, "") != 0 {
+        printf("FAIL: expected empty, got '%s'\n", names4)
+        return 9
+    }
+
+    # param_names_from_sig: no type annotations
+    let names5: string = flowc_param_names_from_sig("foo, bar, baz")
+    if strcmp(names5, "foo,bar,baz") != 0 {
+        printf("FAIL: expected 'foo,bar,baz', got '%s'\n", names5)
+        return 10
+    }
+
+    puts("All proof_sub generic tests passed")
+    return 0
+}

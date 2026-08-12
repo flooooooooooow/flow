@@ -1,0 +1,136 @@
+# @module flowc.fir_opts
+# @means  FIR-G optimization candidate scoring (Phase 4).
+#         Port of the cost model from src/flow/fir_opts.py.
+#         The Python original scans the FirG graph object; this port
+#         exposes the deterministic scoring formulas so a Flow caller
+#         can rank candidates without the Python object graph.
+#
+# Heuristic knobs (deterministic, documented, not learned):
+#   INLINE_MAX_CALLEE_OPS = 16
+#   INLINE_SINGLE_SITE_BONUS = 2.0
+#   INLINE_PURE_BONUS = 1.5
+#   DEAD_ELIM_BASE_SCORE = 10.0
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Constants ────────────────────────────────────────────────────
+
+export const FLOWC_INLINE_MAX_CALLEE_OPS: i32 = 16
+export const FLOWC_INLINE_SINGLE_SITE_BONUS: f64 = 2.0
+export const FLOWC_INLINE_PURE_BONUS: f64 = 1.5
+export const FLOWC_DEAD_ELIM_BASE_SCORE: f64 = 10.0
+
+# ── Candidate struct ─────────────────────────────────────────────
+
+export struct FlowcOptCandidate {
+    kind: i32,          # 0 = dead_elim, 1 = inline
+    target_id: i32,     # function id
+    score: f64,
+    caller_id: i32,     # -1 for dead_elim
+    callee_ops: i32,
+    call_sites: i32,
+    is_pure: i32
+}
+
+# ── Scoring functions ────────────────────────────────────────────
+
+# Score a dead code elimination candidate.
+# score = DEAD_ELIM_BASE_SCORE + func_op_count
+export function flowc_score_dead_elim(func_op_count: i32) -> f64 {
+    return FLOWC_DEAD_ELIM_BASE_SCORE + (func_op_count as f64)
+}
+
+# Score an inline candidate.
+# Base score = (max_ops - callee_ops + 1) / num_sites
+# Bonus: *2.0 if single call site, *1.5 if pure callee.
+# Returns 0.0 if the callee is too large or has zero ops.
+export function flowc_score_inline(
+    callee_ops: i32,
+    num_sites: i32,
+    is_pure: i32
+) -> f64 {
+    if callee_ops <= 0 {
+        return 0.0
+    }
+    if callee_ops > FLOWC_INLINE_MAX_CALLEE_OPS {
+        return 0.0
+    }
+    if num_sites <= 0 {
+        return 0.0
+    }
+
+    let base: f64 = ((FLOWC_INLINE_MAX_CALLEE_OPS - callee_ops + 1) as f64) / (num_sites as f64)
+
+    let score: f64 = base
+    if num_sites == 1 {
+        score = score * FLOWC_INLINE_SINGLE_SITE_BONUS
+    }
+    if is_pure == 1 {
+        score = score * FLOWC_INLINE_PURE_BONUS
+    }
+
+    return score
+}
+
+# Check if a function is an inline candidate (small enough, not extern).
+export function flowc_is_inline_candidate(
+    callee_ops: i32,
+    is_extern: i32
+) -> i32 {
+    if is_extern == 1 {
+        return 0
+    }
+    if callee_ops <= 0 {
+        return 0
+    }
+    if callee_ops > FLOWC_INLINE_MAX_CALLEE_OPS {
+        return 0
+    }
+    return 1
+}
+
+# Check if a function is a dead elimination candidate.
+# A function is dead if it is unreachable from roots and not main.
+# is_reachable: 1 if reachable, 0 if dead.
+# is_main: 1 if this is the main function.
+export function flowc_is_dead_elim_candidate(
+    is_reachable: i32,
+    is_main: i32
+) -> i32 {
+    if is_main == 1 {
+        return 0
+    }
+    if is_reachable == 1 {
+        return 0
+    }
+    return 1
+}
+
+# Compare two candidates for sorting (higher score first).
+# Returns -1 if a should come before b, 1 if after, 0 if equal.
+export function flowc_compare_candidates(a: FlowcOptCandidate, b: FlowcOptCandidate) -> i32 {
+    if a.score > b.score {
+        return -1
+    }
+    if a.score < b.score {
+        return 1
+    }
+    # Tie-break by kind (dead_elim before inline)
+    if a.kind < b.kind {
+        return -1
+    }
+    if a.kind > b.kind {
+        return 1
+    }
+    # Then by target id
+    if a.target_id < b.target_id {
+        return -1
+    }
+    if a.target_id > b.target_id {
+        return 1
+    }
+    return 0
+}

@@ -1,0 +1,81 @@
+# Test for address_phrase addition to claim_address.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_claim_address_phrase.flow
+# Exit 0 on success.
+
+import "compiler/src/claim_address.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # Nat / addition / zero is the left identity
+    let a1: FlowcClaimAddress = flowc_claim_parse("«Nat» «addition» «zero is the left identity»")
+    let p1: string = flowc_claim_address_phrase(a1)
+    if strcmp(p1, "adding zero on the left does not change the number") != 0 {
+        printf("FAIL: got '%s'\n", p1)
+        return 1
+    }
+
+    # Nat / addition / order does not matter
+    let a2: FlowcClaimAddress = flowc_claim_parse("«Nat» «addition» «order does not matter»")
+    let p2: string = flowc_claim_address_phrase(a2)
+    if strcmp(p2, "you can swap the order when you add") != 0 {
+        printf("FAIL: got '%s'\n", p2)
+        return 2
+    }
+
+    # Eq / equality / everything equals itself
+    let a3: FlowcClaimAddress = flowc_claim_parse("«Eq» «equality» «everything equals itself»")
+    let p3: string = flowc_claim_address_phrase(a3)
+    if strcmp(p3, "anything is always equal to itself") != 0 {
+        printf("FAIL: got '%s'\n", p3)
+        return 3
+    }
+
+    # Bool / disjunction / order does not matter
+    let a4: FlowcClaimAddress = flowc_claim_parse("«Bool» «disjunction» «order does not matter»")
+    let p4: string = flowc_claim_address_phrase(a4)
+    if strcmp(p4, "order does not matter for or") != 0 {
+        printf("FAIL: got '%s'\n", p4)
+        return 4
+    }
+
+    # Int / multiplication / squaring
+    let a5: FlowcClaimAddress = flowc_claim_parse("«Int» «multiplication» «squaring never yields a negative»")
+    let p5: string = flowc_claim_address_phrase(a5)
+    if strcmp(p5, "squaring never gives a negative number") != 0 {
+        printf("FAIL: got '%s'\n", p5)
+        return 5
+    }
+
+    # Geometry / triangle / interior angles
+    let a6: FlowcClaimAddress = flowc_claim_parse("«Geometry» «triangle» «interior angles sum to two right angles»")
+    let p6: string = flowc_claim_address_phrase(a6)
+    if strcmp(p6, "the three interior angles of a triangle sum to two right angles") != 0 {
+        printf("FAIL: got '%s'\n", p6)
+        return 6
+    }
+
+    # Geometry / circle / Thales
+    let a7: FlowcClaimAddress = flowc_claim_parse("«Geometry» «circle» «Thales right angle in semicircle»")
+    let p7: string = flowc_claim_address_phrase(a7)
+    if strcmp(p7, "an angle inscribed in a semicircle is a right angle") != 0 {
+        printf("FAIL: got '%s'\n", p7)
+        return 7
+    }
+
+    # Unknown claim -> fallback to display
+    let a8: FlowcClaimAddress = flowc_claim_parse("«Unknown» «thing» «some law»")
+    let p8: string = flowc_claim_address_phrase(a8)
+    # Should not be empty (falls back to display)
+    if strlen(p8) == 0 {
+        puts("FAIL: unknown claim phrase should fall back to display")
+        return 8
+    }
+
+    puts("All claim_address phrase tests passed")
+    return 0
+}

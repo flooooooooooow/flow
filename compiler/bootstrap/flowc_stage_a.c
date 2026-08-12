@@ -130,6 +130,9 @@ const int32_t TOK_PERCENT = 33;
 const int32_t TOK_DOTDOT = 34;
 const int32_t TOK_FATARROW = 35;
 const int32_t TOK_TILDE = 36;
+const int32_t TOK_AT = 37;
+const int32_t TOK_BAR = 38;
+const int32_t TOK_CARET = 39;
 const int32_t KW_LET = 1;
 const int32_t KW_FUNCTION = 2;
 const int32_t KW_RETURN = 3;
@@ -155,6 +158,7 @@ const int32_t KW_AND = 22;
 const int32_t KW_OR = 23;
 const int32_t KW_MATCH = 24;
 const int32_t KW_ELIF = 25;
+const int32_t KW_TYPE = 26;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -264,6 +268,7 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t and_kw[3] = { 97, 110, 100 };
   uint8_t or_kw[2] = { 111, 114 };
   uint8_t match_kw[5] = { 109, 97, 116, 99, 104 };
+  uint8_t type_kw[4] = { 116, 121, 112, 101 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -364,6 +369,10 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   if (flowc_lex_ident_eq(src, start, end, p, 5) == 1) {
   return KW_MATCH;
 }
+  p = type_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 4) == 1) {
+  return KW_TYPE;
+}
   return 0;
 }
 
@@ -401,6 +410,21 @@ Token flowc_lexer_next(Lexer* lex) {
   while ((lex[0]).pos < (lex[0]).len && flowc_lex_is_digit((lex[0]).input[(lex[0]).pos]) == 1) {
   flowc_lexer_bump(lex);
 }
+}
+}
+  if ((lex[0]).pos < (lex[0]).len && (lex[0]).input[(lex[0]).pos] == 101 || (lex[0]).input[(lex[0]).pos] == 69) {
+  int32_t save_pos = (lex[0]).pos;
+  flowc_lexer_bump(lex);
+  if ((lex[0]).pos < (lex[0]).len && (lex[0]).input[(lex[0]).pos] == 43 || (lex[0]).input[(lex[0]).pos] == 45) {
+  flowc_lexer_bump(lex);
+}
+  if ((lex[0]).pos < (lex[0]).len && flowc_lex_is_digit((lex[0]).input[(lex[0]).pos]) == 1) {
+  is_float = 1;
+  while ((lex[0]).pos < (lex[0]).len && flowc_lex_is_digit((lex[0]).input[(lex[0]).pos]) == 1) {
+  flowc_lexer_bump(lex);
+}
+} else {
+  (lex[0]).pos = save_pos;
 }
 }
   int32_t end = (lex[0]).pos;
@@ -535,6 +559,15 @@ Token flowc_lexer_next(Lexer* lex) {
   if (c == 126) {
   return flowc_make_tok(TOK_TILDE, 0, start, (start + 1), line, col);
 }
+  if (c == 64) {
+  return flowc_make_tok(TOK_AT, 0, start, (start + 1), line, col);
+}
+  if (c == 124) {
+  return flowc_make_tok(TOK_BAR, 0, start, (start + 1), line, col);
+}
+  if (c == 94) {
+  return flowc_make_tok(TOK_CARET, 0, start, (start + 1), line, col);
+}
   return flowc_make_tok(TOK_ERROR, 0, start, (start + 1), line, col);
 }
 
@@ -602,6 +635,7 @@ const int32_t AST_ARRAY_LIT = 33;
 const int32_t AST_FLOAT = 34;
 const int32_t AST_MATCH = 35;
 const int32_t AST_MATCH_ARM = 36;
+const int32_t AST_TYPE_ALIAS = 37;
 AstArena flowc_ast_new(int32_t cap) {
   int64_t size = ((int64_t)(cap) * 40);
   uint8_t* raw = (uint8_t*)(malloc(size));
@@ -1088,6 +1122,12 @@ int32_t flowc_parse_binop_kind(Parser p) {
   if (op == TOK_AMP) {
   return TOK_AMP;
 }
+  if (op == TOK_BAR) {
+  return TOK_BAR;
+}
+  if (op == TOK_CARET) {
+  return TOK_CARET;
+}
   if (op == TOK_EQEQ) {
   return TOK_EQEQ;
 }
@@ -1140,6 +1180,12 @@ int32_t flowc_parse_binop_prec(int32_t op) {
   return 2;
 }
   if (op == TOK_AMP) {
+  return 3;
+}
+  if (op == TOK_BAR) {
+  return 3;
+}
+  if (op == TOK_CARET) {
   return 3;
 }
   if (op == TOK_EQEQ || op == TOK_NE) {
@@ -1901,6 +1947,36 @@ int32_t flowc_parse_import(Parser* p) {
   return id;
 }
 
+int32_t flowc_parse_type_alias(Parser* p) {
+  int32_t start = ((p[0]).cur).start;
+  if (flowc_parser_eat_kw(p, KW_TYPE) == 0) {
+  return AST_NONE;
+}
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  int32_t ns = ((p[0]).cur).start;
+  int32_t ne = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  if (flowc_parser_eat(p, TOK_EQ) == 0) {
+  return AST_NONE;
+}
+  int32_t base_ty = flowc_parse_type(p);
+  if (flowc_parser_check(p[0], TOK_SEMI) == 1) {
+  flowc_parser_advance(p);
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_TYPE_ALIAS, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).name_start = ns;
+  (((p[0]).arena).nodes[id]).name_end = ne;
+  (((p[0]).arena).nodes[id]).a = base_ty;
+  return id;
+}
+
 int32_t flowc_parse_const(Parser* p, int32_t is_export) {
   int32_t start = ((p[0]).cur).start;
   if (flowc_parser_eat_kw(p, KW_CONST) == 0) {
@@ -2017,6 +2093,31 @@ int32_t flowc_parse_program(Parser* p) {
   int32_t items = AST_NONE;
   while (flowc_parser_check(p[0], TOK_EOF) == 0) {
   int32_t item = AST_NONE;
+  while (flowc_parser_check(p[0], TOK_AT) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+  if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  while (depth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  depth = (depth + 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_RPAREN) == 1) {
+  depth = (depth - 1);
+}
+}
+  if (depth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_check(p[0], TOK_RPAREN) == 1) {
+  flowc_parser_advance(p);
+}
+}
+}
   if (flowc_parser_check_kw(p[0], KW_IMPORT) == 1) {
   item = flowc_parse_import(p);
 } else {
@@ -2035,8 +2136,12 @@ int32_t flowc_parse_program(Parser* p) {
   if (flowc_parser_check_kw(p[0], KW_CONST) == 1) {
   item = flowc_parse_const(p, 0);
 } else {
+  if (flowc_parser_check_kw(p[0], KW_TYPE) == 1) {
+  item = flowc_parse_type_alias(p);
+} else {
   (p[0]).err = 1;
   return AST_NONE;
+}
 }
 }
 }
@@ -2171,7 +2276,7 @@ int32_t flowc_cgen_is_struct_type(AstArena arena, uint8_t* src, int32_t ty) {
   int32_t te = ((arena).nodes[ty]).name_end;
   int32_t i = 0;
   while (i < (arena).len) {
-  if (((arena).nodes[i]).kind == AST_STRUCT) {
+  if (((arena).nodes[i]).kind == AST_STRUCT || ((arena).nodes[i]).kind == AST_TYPE_ALIAS) {
   if (flowc_cgen_span_eq(src, ts, te, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
   return 1;
 }
@@ -2560,6 +2665,14 @@ void flowc_cgen_emit_binop_op(CgenBuf* w, int32_t op) {
 }
   if (op == TOK_AMP) {
   flowc_cgen_puts(w, " & ");
+  return;
+}
+  if (op == TOK_BAR) {
+  flowc_cgen_puts(w, " | ");
+  return;
+}
+  if (op == TOK_CARET) {
+  flowc_cgen_puts(w, " ^ ");
   return;
 }
   flowc_cgen_puts(w, " /*op*/ ");
@@ -3121,6 +3234,17 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   int32_t st = flowc_cgen_unwrap(arena, item, AST_STRUCT);
   if (st != AST_NONE) {
   flowc_cgen_emit_struct((&w), arena, src, st);
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  if (((arena).nodes[item]).kind == AST_TYPE_ALIAS) {
+  flowc_cgen_puts((&w), "typedef ");
+  flowc_cgen_emit_type((&w), arena, src, ((arena).nodes[item]).a);
+  flowc_cgen_putc((&w), 32);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
+  flowc_cgen_puts((&w), ";\n");
 }
   item = ((arena).nodes[item]).next;
 }

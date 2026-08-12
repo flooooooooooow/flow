@@ -1,0 +1,109 @@
+# Test for coordinate display additions to math_prose.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_math_prose_coord.flow
+# Exit 0 on success.
+
+import "compiler/src/math_prose.flow"
+import "compiler/src/claim_address.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+# Check if haystack contains needle.
+function contains(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 {
+        return 1
+    }
+    if nn > hn {
+        return 0
+    }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    while i + nn <= hn {
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < nn {
+            if hp[i + j] != np[j] {
+                matched = 0
+                break
+            }
+            j = j + 1
+        }
+        if matched == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # structure_coordinate_display: known geometry structures
+    if strcmp(flowc_structure_coordinate_display("triangle"), "triangle") != 0 {
+        puts("FAIL: 'triangle' should display as 'triangle'")
+        return 1
+    }
+    if strcmp(flowc_structure_coordinate_display("circle"), "circle") != 0 {
+        puts("FAIL: 'circle' should display as 'circle'")
+        return 2
+    }
+    if strcmp(flowc_structure_coordinate_display("Euclid Book I"), "Euclid Book I") != 0 {
+        puts("FAIL: 'Euclid Book I' should display as 'Euclid Book I'")
+        return 3
+    }
+
+    # structure_coordinate_display: unknown -> falls back to structure_mathematical
+    let unknown: string = flowc_structure_coordinate_display("addition")
+    if strcmp(unknown, "addition") != 0 {
+        printf("FAIL: 'addition' should fall back to structure_mathematical, got '%s'\n", unknown)
+        return 4
+    }
+
+    # addr_coordinate_display: full coordinate line
+    let addr: FlowcClaimAddress = flowc_claim_parse("«Nat» «addition» «zero is the left identity»")
+    if addr.ok == 0 {
+        puts("FAIL: failed to parse claim address")
+        return 5
+    }
+    let coord: string = flowc_addr_coordinate_display(addr)
+    if contains(coord, "the natural numbers") == 0 {
+        printf("FAIL: coord should contain 'the natural numbers', got: %s\n", coord)
+        return 6
+    }
+    if contains(coord, "zero is the left identity") == 0 {
+        printf("FAIL: coord should contain the law, got: %s\n", coord)
+        return 7
+    }
+
+    # addr_coordinate_latex: should use \cdot
+    let latex: string = flowc_addr_coordinate_latex(addr)
+    if contains(latex, "\\cdot") == 0 {
+        printf("FAIL: latex coord should contain '\\cdot', got: %s\n", latex)
+        return 8
+    }
+
+    # addr_coordinate_display: geometry structure
+    let geo_addr: FlowcClaimAddress = flowc_claim_parse("«Geometry» «triangle» «some law»")
+    if geo_addr.ok == 0 {
+        puts("FAIL: failed to parse geometry claim")
+        return 9
+    }
+    let geo_coord: string = flowc_addr_coordinate_display(geo_addr)
+    if contains(geo_coord, "triangle") == 0 {
+        printf("FAIL: geo coord should contain 'triangle', got: %s\n", geo_coord)
+        return 10
+    }
+    if contains(geo_coord, "the Euclidean plane") == 0 {
+        printf("FAIL: geo coord should contain 'the Euclidean plane', got: %s\n", geo_coord)
+        return 11
+    }
+
+    puts("All math_prose coordinate tests passed")
+    return 0
+}

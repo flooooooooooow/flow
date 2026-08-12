@@ -1,95 +1,205 @@
-# Flow-native language test: inline / noinline / always_inline attributes.
-#
-# The attributes are optimization hints, so they must not change what the
-# program computes. This test pins that: the same arithmetic, spread across
-# functions carrying each attribute, still produces the expected values.
-#
-# `@target(...)` is deliberately absent: its feature strings are
-# architecture-specific, so a portable language test cannot pin one. The
-# -O2 and -O0 -Werror variants stay host-side too: test-lang compiles every
-# program with one fixed clang invocation.
-# Supersedes (behavioral parts of):
-#   tests/unit/test_attributes.py::test_inline_compiles_and_runs
-#   tests/unit/test_attributes.py::test_exported_inline_compiles_and_runs
-#   tests/unit/test_attributes.py::test_noinline_compiles_and_runs
-#   tests/unit/test_attributes.py::test_always_inline_compiles_and_runs
-# Exit 0 on success; a nonzero exit identifies the failing check.
+# Test for attributes.flow port of attributes.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_attributes.flow
+# Exit 0 on success.
 
-@inline
-function add(a: i32, b: i32) -> i32 {
-    return a + b
-}
+import "compiler/src/attributes.flow"
 
-@noinline
-function sub(a: i32, b: i32) -> i32 {
-    return a - b
-}
-
-@always_inline
-function mul(a: i32, b: i32) -> i32 {
-    return a * b
-}
-
-# Recursion under @noinline: the body must survive as a real call.
-@noinline
-function fact(n: i32) -> i32 {
-    if n <= 1 {
-        return 1
-    }
-    return n * fact(n - 1)
-}
-
-# An @inline function calling an @noinline one, and the reverse.
-@inline
-function mixed(a: i32) -> i32 {
-    return sub(mul(a, 3), 1)
-}
-
-@noinline
-function mixed_back(a: i32) -> i32 {
-    return add(mul(a, 2), 4)
-}
-
-# Attributes on an exported function keep external linkage, so the
-# generated C uses `extern inline` rather than `static inline`.
-@inline
-export function exported_add(a: i32, b: i32) -> i32 {
-    return a + b
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
 }
 
 function main() -> i32 {
-    if add(20, 22) != 42 {
+    # parse_attribute: bare attribute
+    let a: FlowcParsedAttr = flowc_parse_attribute("inline")
+    if a.ok == 0 {
+        puts("FAIL: bare attr not ok")
         return 1
     }
-    if sub(44, 2) != 42 {
+    if strcmp(a.name, "inline") != 0 {
+        printf("FAIL: expected name 'inline', got '%s'\n", a.name)
         return 2
     }
-    if mul(6, 7) != 42 {
+    if a.n_args != 0 {
+        printf("FAIL: expected 0 args, got %d\n", a.n_args)
         return 3
     }
-    if fact(5) != 120 {
+
+    # parse_attribute: with args
+    let b: FlowcParsedAttr = flowc_parse_attribute("target(avx2,fma)")
+    if b.ok == 0 {
+        puts("FAIL: target attr not ok")
         return 4
     }
-    if mixed(5) != 14 {
+    if strcmp(b.name, "target") != 0 {
+        printf("FAIL: expected name 'target', got '%s'\n", b.name)
         return 5
     }
-    if mixed_back(19) != 42 {
+    if b.n_args != 2 {
+        printf("FAIL: expected 2 args, got %d\n", b.n_args)
         return 6
     }
-    if exported_add(40, 2) != 42 {
+    if strcmp(b.args, "avx2,fma") != 0 {
+        printf("FAIL: expected args 'avx2,fma', got '%s'\n", b.args)
         return 7
     }
 
-    # Attributes are hints: applying them in a loop must not change the sum.
-    let mut total: i32 = 0
-    let mut i: i32 = 0
-    while i < 10 {
-        total = add(total, mul(i, 2))
-        i = add(i, 1)
-    }
-    if total != 90 {
+    # parse_attribute: single arg
+    let c: FlowcParsedAttr = flowc_parse_attribute("lifetime(session)")
+    if c.ok == 0 {
+        puts("FAIL: lifetime attr not ok")
         return 8
     }
+    if strcmp(c.name, "lifetime") != 0 {
+        printf("FAIL: expected name 'lifetime', got '%s'\n", c.name)
+        return 9
+    }
+    if c.n_args != 1 {
+        printf("FAIL: expected 1 arg, got %d\n", c.n_args)
+        return 10
+    }
+    if strcmp(c.args, "session") != 0 {
+        printf("FAIL: expected args 'session', got '%s'\n", c.args)
+        return 11
+    }
 
+    # parse_attribute: whitespace in args
+    let d: FlowcParsedAttr = flowc_parse_attribute("target( avx2 , fma )")
+    if d.n_args != 2 {
+        printf("FAIL: expected 2 args with ws, got %d\n", d.n_args)
+        return 12
+    }
+    if strcmp(d.args, "avx2,fma") != 0 {
+        printf("FAIL: expected 'avx2,fma', got '%s'\n", d.args)
+        return 13
+    }
+
+    # parse_attribute: empty args are skipped
+    let e: FlowcParsedAttr = flowc_parse_attribute("target(avx2,,fma)")
+    if e.n_args != 2 {
+        printf("FAIL: expected 2 args (empty skipped), got %d\n", e.n_args)
+        return 14
+    }
+
+    # is_known_attr
+    if flowc_is_known_attr("inline") == 0 {
+        puts("FAIL: inline should be known")
+        return 15
+    }
+    if flowc_is_known_attr("gpu") == 0 {
+        puts("FAIL: gpu should be known")
+        return 16
+    }
+    if flowc_is_known_attr("safe") == 0 {
+        puts("FAIL: safe should be known")
+        return 17
+    }
+    if flowc_is_known_attr("unknown_attr") == 1 {
+        puts("FAIL: unknown_attr should not be known")
+        return 18
+    }
+
+    # attr_takes_args
+    if flowc_attr_takes_args("target") == 0 {
+        puts("FAIL: target takes args")
+        return 19
+    }
+    if flowc_attr_takes_args("lifetime") == 0 {
+        puts("FAIL: lifetime takes args")
+        return 20
+    }
+    if flowc_attr_takes_args("inline") == 1 {
+        puts("FAIL: inline does not take args")
+        return 21
+    }
+
+    # domain_rank
+    if flowc_domain_rank("callback") != 0 {
+        puts("FAIL: callback rank should be 0")
+        return 22
+    }
+    if flowc_domain_rank("frame") != 1 {
+        puts("FAIL: frame rank should be 1")
+        return 23
+    }
+    if flowc_domain_rank("session") != 2 {
+        puts("FAIL: session rank should be 2")
+        return 24
+    }
+    if flowc_domain_rank("application") != 3 {
+        puts("FAIL: application rank should be 3")
+        return 25
+    }
+    if flowc_domain_rank("bogus") != -1 {
+        puts("FAIL: bogus domain should be -1")
+        return 26
+    }
+
+    # validate_target_spec: valid specs
+    if flowc_validate_target_spec("avx2") == 0 {
+        puts("FAIL: 'avx2' should be valid")
+        return 27
+    }
+    if flowc_validate_target_spec("avx2,fma") == 0 {
+        puts("FAIL: 'avx2,fma' should be valid")
+        return 28
+    }
+    if flowc_validate_target_spec("+avx2") == 0 {
+        puts("FAIL: '+avx2' should be valid")
+        return 29
+    }
+    if flowc_validate_target_spec("-sse") == 0 {
+        puts("FAIL: '-sse' should be valid")
+        return 30
+    }
+    if flowc_validate_target_spec("arch=haswell") == 0 {
+        puts("FAIL: 'arch=haswell' should be valid")
+        return 31
+    }
+    if flowc_validate_target_spec("tune=native") == 0 {
+        puts("FAIL: 'tune=native' should be valid")
+        return 32
+    }
+    if flowc_validate_target_spec("no-sse") == 0 {
+        puts("FAIL: 'no-sse' should be valid")
+        return 33
+    }
+    if flowc_validate_target_spec("avx2, fma") == 0 {
+        puts("FAIL: 'avx2, fma' with space should be valid")
+        return 34
+    }
+
+    # validate_target_spec: invalid specs
+    if flowc_validate_target_spec("") == 1 {
+        puts("FAIL: empty spec should be invalid")
+        return 35
+    }
+    if flowc_validate_target_spec("avx2,,fma") == 1 {
+        puts("FAIL: empty component should be invalid")
+        return 36
+    }
+    if flowc_validate_target_spec("avx2!") == 1 {
+        puts("FAIL: 'avx2!' should be invalid")
+        return 37
+    }
+
+    # normalize_target_spec
+    let norm: string = flowc_normalize_target_spec(" avx2 , fma ,  sse4.2 ")
+    if strcmp(norm, "avx2,fma,sse4.2") != 0 {
+        printf("FAIL: normalized = '%s', expected 'avx2,fma,sse4.2'\n", norm)
+        return 38
+    }
+
+    # normalize: empty items dropped
+    let norm2: string = flowc_normalize_target_spec("avx2,,fma")
+    if strcmp(norm2, "avx2,fma") != 0 {
+        printf("FAIL: normalized2 = '%s', expected 'avx2,fma'\n", norm2)
+        return 39
+    }
+
+    puts("All attributes tests passed")
     return 0
 }

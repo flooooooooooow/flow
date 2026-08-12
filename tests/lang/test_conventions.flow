@@ -1,0 +1,151 @@
+# Test for conventions.flow port of conventions.py (#415).
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_conventions.flow
+# Exit 0 on success.
+
+import "compiler/src/conventions.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+}
+
+function main() -> i32 {
+    # contains_ci: basic case-insensitive substring
+    if flowc_contains_ci("Hello World", "world") == 0 {
+        puts("FAIL: contains_ci should find 'world' in 'Hello World'")
+        return 1
+    }
+    if flowc_contains_ci("Hello World", "WORLD") == 0 {
+        puts("FAIL: contains_ci should find 'WORLD' in 'Hello World'")
+        return 2
+    }
+    if flowc_contains_ci("Hello World", "xyz") == 1 {
+        puts("FAIL: contains_ci should not find 'xyz'")
+        return 3
+    }
+    if flowc_contains_ci("Hello", "") == 0 {
+        puts("FAIL: empty needle should always match")
+        return 4
+    }
+    if flowc_contains_ci("abc", "abcdef") == 1 {
+        puts("FAIL: needle longer than haystack should not match")
+        return 5
+    }
+
+    # contains_ci: exact case match
+    if flowc_contains_ci("Flow", "flow") == 0 {
+        puts("FAIL: case-insensitive match failed")
+        return 6
+    }
+
+    # matches_pattern: plain substring
+    if flowc_matches_pattern("let x = 0..n", "0..n") == 0 {
+        puts("FAIL: should match plain pattern '0..n'")
+        return 7
+    }
+
+    # matches_pattern: no match
+    if flowc_matches_pattern("let x = 0 to n", "0..n") == 1 {
+        puts("FAIL: should not match '0..n' in '0 to n'")
+        return 8
+    }
+
+    # build_warning: with reason and workaround
+    let ap: FlowcAvoidPattern = FlowcAvoidPattern {
+        pattern: "0..n",
+        reason: "legacy range syntax",
+        workaround: "use 0 to n"
+    }
+    let msg: string = flowc_build_warning("test.flow", ap)
+    let expected: string = "test.flow: avoid '0..n' - legacy range syntax (workaround: use 0 to n)"
+    if strcmp(msg, expected) != 0 {
+        printf("FAIL: warning mismatch\n  got: %s\n  exp: %s\n", msg, expected)
+        return 9
+    }
+
+    # build_warning: pattern only, no reason or workaround
+    let ap2: FlowcAvoidPattern = FlowcAvoidPattern {
+        pattern: "println",
+        reason: "",
+        workaround: ""
+    }
+    let msg2: string = flowc_build_warning("foo.flow", ap2)
+    let expected2: string = "foo.flow: avoid 'println'"
+    if strcmp(msg2, expected2) != 0 {
+        printf("FAIL: simple warning mismatch\n  got: %s\n  exp: %s\n", msg2, expected2)
+        return 10
+    }
+
+    # build_warning: reason only
+    let ap3: FlowcAvoidPattern = FlowcAvoidPattern {
+        pattern: "memref",
+        reason: "use ptr<T> instead",
+        workaround: ""
+    }
+    let msg3: string = flowc_build_warning("bar.flow", ap3)
+    let expected3: string = "bar.flow: avoid 'memref' - use ptr<T> instead"
+    if strcmp(msg3, expected3) != 0 {
+        printf("FAIL: reason-only mismatch\n  got: %s\n  exp: %s\n", msg3, expected3)
+        return 11
+    }
+
+    # check_source: match against an array of patterns
+    let patterns: ptr<FlowcAvoidPattern> = malloc(96) as ptr<FlowcAvoidPattern>
+    patterns[0] = FlowcAvoidPattern { pattern: "0..n", reason: "legacy", workaround: "use 0 to n" }
+    patterns[1] = FlowcAvoidPattern { pattern: "memref_f32", reason: "", workaround: "" }
+    patterns[2] = FlowcAvoidPattern { pattern: "println", reason: "use printf", workaround: "" }
+
+    let warnings: ptr<FlowcWarning> = malloc(80) as ptr<FlowcWarning>
+    let source: string = "let x = 0..n\nprintln(x)"
+    let count: i32 = flowc_check_source(source, patterns, 3, "test.flow", warnings, 4)
+
+    if count != 2 {
+        printf("FAIL: expected 2 warnings, got %d\n", count)
+        return 12
+    }
+    if warnings[0].ok != 1 {
+        puts("FAIL: first warning not ok")
+        return 13
+    }
+    if warnings[1].ok != 1 {
+        puts("FAIL: second warning not ok")
+        return 14
+    }
+
+    # check_source: empty pattern is skipped
+    let patterns2: ptr<FlowcAvoidPattern> = malloc(96) as ptr<FlowcAvoidPattern>
+    patterns2[0] = FlowcAvoidPattern { pattern: "", reason: "", workaround: "" }
+    patterns2[1] = FlowcAvoidPattern { pattern: "real", reason: "", workaround: "" }
+    let warnings2: ptr<FlowcWarning> = malloc(80) as ptr<FlowcWarning>
+    let count2: i32 = flowc_check_source("this is real", patterns2, 2, "f.flow", warnings2, 4)
+    if count2 != 1 {
+        printf("FAIL: expected 1 warning (empty pattern skipped), got %d\n", count2)
+        return 15
+    }
+
+    # check_source: no matches
+    let patterns3: ptr<FlowcAvoidPattern> = malloc(48) as ptr<FlowcAvoidPattern>
+    patterns3[0] = FlowcAvoidPattern { pattern: "nomatch", reason: "", workaround: "" }
+    let warnings3: ptr<FlowcWarning> = malloc(80) as ptr<FlowcWarning>
+    let count3: i32 = flowc_check_source("clean code", patterns3, 1, "f.flow", warnings3, 4)
+    if count3 != 0 {
+        printf("FAIL: expected 0 warnings, got %d\n", count3)
+        return 16
+    }
+
+    # check_source: max_warnings caps output
+    let patterns4: ptr<FlowcAvoidPattern> = malloc(48) as ptr<FlowcAvoidPattern>
+    patterns4[0] = FlowcAvoidPattern { pattern: "a", reason: "", workaround: "" }
+    let warnings4: ptr<FlowcWarning> = malloc(80) as ptr<FlowcWarning>
+    let count4: i32 = flowc_check_source("aaa", patterns4, 1, "f.flow", warnings4, 0)
+    if count4 != 0 {
+        printf("FAIL: expected 0 warnings with max=0, got %d\n", count4)
+        return 17
+    }
+
+    puts("All conventions tests passed")
+    return 0
+}

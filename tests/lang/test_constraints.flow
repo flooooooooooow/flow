@@ -1,0 +1,145 @@
+# Test for constraints.flow port of constraints.py (#147).
+# Run with: ./flow run tests/lang/test_constraints.flow
+# Exit 0 on success.
+
+import "compiler/src/constraints.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # parse_require: "require(memory < 4096)"
+    let req: FlowcRequire = flowc_parse_require("require(memory < 4096)")
+    if req.ok == 0 {
+        puts("FAIL: require not parsed")
+        return 1
+    }
+    if req.value != 4096 {
+        printf("FAIL: expected value 4096, got %d\n", req.value)
+        return 2
+    }
+    if flowc_op_is_less(req.op) == 0 {
+        puts("FAIL: expected < operator")
+        return 3
+    }
+
+    # parse_require with whitespace: "require(latency <= 100)"
+    let req2: FlowcRequire = flowc_parse_require("require(latency <= 100)")
+    if req2.ok == 0 {
+        puts("FAIL: require with <= not parsed")
+        return 4
+    }
+    if req2.value != 100 {
+        printf("FAIL: expected value 100, got %d\n", req2.value)
+        return 5
+    }
+    if flowc_op_is_less(req2.op) == 0 {
+        puts("FAIL: expected <= operator to be less")
+        return 6
+    }
+
+    # parse_require with >= : "require(energy >= 50)"
+    let req3: FlowcRequire = flowc_parse_require("require(energy >= 50)")
+    if req3.ok == 0 {
+        puts("FAIL: require with >= not parsed")
+        return 7
+    }
+    if req3.value != 50 {
+        printf("FAIL: expected value 50, got %d\n", req3.value)
+        return 8
+    }
+    if flowc_op_is_greater(req3.op) == 0 {
+        puts("FAIL: expected >= operator to be greater")
+        return 9
+    }
+
+    # parse_require embedded in text: "@require(memory < 2048)"
+    let req4: FlowcRequire = flowc_parse_require("@require(memory < 2048)")
+    if req4.ok == 0 {
+        puts("FAIL: embedded require not parsed")
+        return 10
+    }
+    if req4.value != 2048 {
+        printf("FAIL: expected value 2048, got %d\n", req4.value)
+        return 11
+    }
+
+    # parse_require: no match
+    let req5: FlowcRequire = flowc_parse_require("not a constraint")
+    if req5.ok == 1 {
+        puts("FAIL: should not match plain text")
+        return 12
+    }
+
+    # parse_prefer: "prefer(parallel)"
+    let pref: FlowcPrefer = flowc_parse_prefer("prefer(parallel)")
+    if pref.ok == 0 {
+        puts("FAIL: prefer not parsed")
+        return 13
+    }
+
+    # parse_prefer embedded: "@prefer(latency)"
+    let pref2: FlowcPrefer = flowc_parse_prefer("@prefer(latency)")
+    if pref2.ok == 0 {
+        puts("FAIL: embedded prefer not parsed")
+        return 14
+    }
+
+    # parse_prefer: no match
+    let pref3: FlowcPrefer = flowc_parse_prefer("nothing here")
+    if pref3.ok == 1 {
+        puts("FAIL: should not match plain text for prefer")
+        return 15
+    }
+
+    # require_to_value
+    if flowc_require_to_value(req) != 4096 {
+        puts("FAIL: require_to_value wrong")
+        return 16
+    }
+    let bad_req: FlowcRequire = FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    if flowc_require_to_value(bad_req) != -1 {
+        puts("FAIL: require_to_value should return -1 for invalid")
+        return 17
+    }
+
+    # pick_tighter: less op, smaller wins
+    let tighter: i32 = flowc_pick_tighter("<", 4096, 2048)
+    if tighter != 2048 {
+        printf("FAIL: expected tighter=2048, got %d\n", tighter)
+        return 18
+    }
+
+    # pick_tighter: less op, larger candidate loses
+    let tighter2: i32 = flowc_pick_tighter("<", 2048, 4096)
+    if tighter2 != 2048 {
+        printf("FAIL: expected tighter2=2048, got %d\n", tighter2)
+        return 19
+    }
+
+    # pick_tighter: greater op, larger wins
+    let tighter3: i32 = flowc_pick_tighter(">", 50, 100)
+    if tighter3 != 100 {
+        printf("FAIL: expected tighter3=100, got %d\n", tighter3)
+        return 20
+    }
+
+    # pick_tighter: greater op, smaller candidate loses
+    let tighter4: i32 = flowc_pick_tighter(">", 100, 50)
+    if tighter4 != 100 {
+        printf("FAIL: expected tighter4=100, got %d\n", tighter4)
+        return 21
+    }
+
+    # pick_tighter: first value (existing=-1 means unset)
+    let tighter5: i32 = flowc_pick_tighter("<", -1, 8192)
+    if tighter5 != 8192 {
+        printf("FAIL: expected tighter5=8192, got %d\n", tighter5)
+        return 22
+    }
+
+    puts("All constraints tests passed")
+    return 0
+}

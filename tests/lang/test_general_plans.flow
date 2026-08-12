@@ -1,0 +1,159 @@
+# Test for general_plans.flow port of general_plans.py (#147).
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_general_plans.flow
+# Exit 0 on success.
+
+import "compiler/src/general_plans.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # matmul: small n -> naive wins (blocked has 1.3x overhead)
+    let small: FlowcFacts = flowc_facts_default(16)
+    let sel_small: FlowcCandidate = flowc_select_matmul(small)
+    if sel_small.applicable == 0 {
+        puts("FAIL: small matmul should be applicable")
+        return 1
+    }
+    if strcmp(sel_small.name, "naive") != 0 {
+        printf("FAIL: small matmul should pick naive, got %s\n", sel_small.name)
+        return 2
+    }
+
+    # matmul: large n -> blocked wins (0.7x cache benefit)
+    let large: FlowcFacts = flowc_facts_default(128)
+    let sel_large: FlowcCandidate = flowc_select_matmul(large)
+    if sel_large.applicable == 0 {
+        puts("FAIL: large matmul should be applicable")
+        return 3
+    }
+    if strcmp(sel_large.name, "blocked") != 0 {
+        printf("FAIL: large matmul should pick blocked, got %s\n", sel_large.name)
+        return 4
+    }
+    if sel_large.scratch != 8192 {
+        printf("FAIL: blocked scratch should be 8192, got %d\n", sel_large.scratch)
+        return 5
+    }
+
+    # matmul: GPU backend -> both fail
+    let gpu: FlowcFacts = flowc_facts_default(64)
+    gpu.backend = "gpu"
+    let sel_gpu: FlowcCandidate = flowc_select_matmul(gpu)
+    if sel_gpu.applicable == 1 {
+        puts("FAIL: GPU matmul should have no applicable impl")
+        return 6
+    }
+
+    # matmul: memory constraint blocks blocked
+    let tight_mem: FlowcFacts = flowc_facts_default(128)
+    tight_mem.require_memory_bytes = 100
+    let sel_tight: FlowcCandidate = flowc_select_matmul(tight_mem)
+    if sel_tight.applicable == 0 {
+        puts("FAIL: tight mem matmul should still have naive")
+        return 7
+    }
+    if strcmp(sel_tight.name, "naive") != 0 {
+        printf("FAIL: tight mem should pick naive, got %s\n", sel_tight.name)
+        return 8
+    }
+
+    # reduce: small n -> sequential wins
+    let r_small: FlowcFacts = flowc_facts_default(100)
+    let rs: FlowcCandidate = flowc_select_reduce(r_small)
+    if rs.applicable == 0 {
+        puts("FAIL: small reduce should be applicable")
+        return 9
+    }
+    if strcmp(rs.name, "sequential") != 0 {
+        printf("FAIL: small reduce should pick sequential, got %s\n", rs.name)
+        return 10
+    }
+
+    # reduce: large n -> tree wins
+    let r_large: FlowcFacts = flowc_facts_default(2048)
+    let rl: FlowcCandidate = flowc_select_reduce(r_large)
+    if rl.applicable == 0 {
+        puts("FAIL: large reduce should be applicable")
+        return 11
+    }
+    if strcmp(rl.name, "parallel_tree") != 0 {
+        printf("FAIL: large reduce should pick parallel_tree, got %s\n", rl.name)
+        return 12
+    }
+
+    # reduce: prefer parallel -> tree wins even for small n
+    let r_pref: FlowcFacts = flowc_facts_default(50)
+    r_pref.prefer = "parallel"
+    let rp: FlowcCandidate = flowc_select_reduce(r_pref)
+    if rp.applicable == 0 {
+        puts("FAIL: prefer-parallel reduce should be applicable")
+        return 13
+    }
+    if strcmp(rp.name, "parallel_tree") != 0 {
+        printf("FAIL: prefer-parallel should pick tree, got %s\n", rp.name)
+        return 14
+    }
+
+    # reduce: GPU -> both fail
+    let r_gpu: FlowcFacts = flowc_facts_default(100)
+    r_gpu.backend = "gpu"
+    let rg: FlowcCandidate = flowc_select_reduce(r_gpu)
+    if rg.applicable == 1 {
+        puts("FAIL: GPU reduce should have no applicable impl")
+        return 15
+    }
+
+    # cost model sanity: naive cost = n^3
+    let f64_facts: FlowcFacts = flowc_facts_default(10)
+    let nc: f64 = flowc_matmul_naive_cost(f64_facts)
+    if nc != 1000.0 {
+        printf("FAIL: naive cost for n=10 should be 1000.0, got %f\n", nc)
+        return 16
+    }
+
+    # cost model: blocked cost for small n = n^3 * 1.3
+    let bc_small: f64 = flowc_matmul_blocked_cost(flowc_facts_default(32))
+    if bc_small != 32768.0 * 1.3 {
+        printf("FAIL: blocked cost for n=32 should be %f, got %f\n", 32768.0 * 1.3, bc_small)
+        return 17
+    }
+
+    # cost model: blocked cost for large n = n^3 * 0.7
+    let bc_large: f64 = flowc_matmul_blocked_cost(flowc_facts_default(128))
+    if bc_large != 2097152.0 * 0.7 {
+        printf("FAIL: blocked cost for n=128 should be %f, got %f\n", 2097152.0 * 0.7, bc_large)
+        return 18
+    }
+
+    # cost model: sequential cost = n
+    let sc: f64 = flowc_reduce_sequential_cost(flowc_facts_default(500))
+    if sc != 500.0 {
+        printf("FAIL: sequential cost for n=500 should be 500.0, got %f\n", sc)
+        return 19
+    }
+
+    # cost model: tree cost with prefer=parallel = n * 0.8
+    let pref_facts: FlowcFacts = flowc_facts_default(100)
+    pref_facts.prefer = "parallel"
+    let tc: f64 = flowc_reduce_tree_cost(pref_facts)
+    if tc != 80.0 {
+        printf("FAIL: tree cost with parallel for n=100 should be 80.0, got %f\n", tc)
+        return 20
+    }
+
+    # scratch: tree scratch = n * elem_bytes
+    let scratch_facts: FlowcFacts = flowc_facts_default(100)
+    scratch_facts.elem_bytes = 4
+    let ts: i32 = flowc_reduce_tree_scratch(scratch_facts)
+    if ts != 400 {
+        printf("FAIL: tree scratch for n=100 elem_bytes=4 should be 400, got %d\n", ts)
+        return 21
+    }
+
+    puts("All general_plans tests passed")
+    return 0
+}

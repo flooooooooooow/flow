@@ -1,0 +1,112 @@
+# Test for the tier_opening_plain and morphism_gloss additions to claim_path.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_claim_path_tier.flow
+# Exit 0 on success.
+
+import "compiler/src/claim_path.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # morphism_gloss: known symbols
+    if strcmp(flowc_morphism_gloss("+"), "addition") != 0 {
+        puts("FAIL: '+' should gloss as 'addition'")
+        return 1
+    }
+    if strcmp(flowc_morphism_gloss("*"), "multiplication") != 0 {
+        puts("FAIL: '*' should gloss as 'multiplication'")
+        return 2
+    }
+    if strcmp(flowc_morphism_gloss("||"), "disjunction (or)") != 0 {
+        puts("FAIL: '||' should gloss as 'disjunction (or)'")
+        return 3
+    }
+    if strcmp(flowc_morphism_gloss("="), "equality") != 0 {
+        puts("FAIL: '=' should gloss as 'equality'")
+        return 4
+    }
+
+    # morphism_gloss: unknown -> returns as-is
+    if strcmp(flowc_morphism_gloss("unknown_op"), "unknown_op") != 0 {
+        puts("FAIL: unknown morphism should return as-is")
+        return 5
+    }
+
+    # tier_opening_plain: definition with address
+    let path1: FlowcClaimPath = flowc_claim_path_parse("«Nat» «addition» «zero is the left identity»")
+    if path1.ok == 0 {
+        puts("FAIL: failed to parse claim path")
+        return 6
+    }
+    let opening1: string = flowc_tier_opening_plain("definition", path1)
+    # Should mention "stipulate" and "definition"
+    if strlen_contains(opening1, "stipulate") == 0 {
+        printf("FAIL: definition opening should mention 'stipulate', got: %s\n", opening1)
+        return 7
+    }
+    if strlen_contains(opening1, "definition") == 0 {
+        printf("FAIL: definition opening should mention 'definition', got: %s\n", opening1)
+        return 8
+    }
+
+    # tier_opening_plain: axiom
+    let opening2: string = flowc_tier_opening_plain("axiom", path1)
+    if strlen_contains(opening2, "axiom") == 0 {
+        printf("FAIL: axiom opening should mention 'axiom', got: %s\n", opening2)
+        return 9
+    }
+    if strlen_contains(opening2, "without proof") == 0 {
+        printf("FAIL: axiom opening should mention 'without proof', got: %s\n", opening2)
+        return 10
+    }
+
+    # tier_opening_plain: derived
+    let opening3: string = flowc_tier_opening_plain("derived", path1)
+    if strlen_contains(opening3, "prove") == 0 {
+        printf("FAIL: derived opening should mention 'prove', got: %s\n", opening3)
+        return 11
+    }
+
+    # tier_opening_plain: axiom mentions the domain
+    if strlen_contains(opening2, "Nat") == 0 {
+        printf("FAIL: axiom opening should mention domain 'Nat', got: %s\n", opening2)
+        return 12
+    }
+
+    puts("All claim_path tier tests passed")
+    return 0
+}
+
+# Helper: check if a string contains a substring.
+function strlen_contains(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 {
+        return 1
+    }
+    if nn > hn {
+        return 0
+    }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    while i + nn <= hn {
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < nn {
+            if hp[i + j] != np[j] {
+                matched = 0
+                break
+            }
+            j = j + 1
+        }
+        if matched == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}

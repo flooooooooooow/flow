@@ -10,6 +10,7 @@ extern {
     function strcmp(a: string, b: string) -> i32
     function strlen(s: string) -> i64
     function malloc(size: i64) -> ptr<u8>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
 }
 
 export struct FlowcClaimPath {
@@ -185,4 +186,112 @@ export function flowc_claim_fingerprint_key(carrier: string, structure: string, 
     }
     # generic fallback: return fp only (caller can strcmp on fingerprint alone)
     return fp
+}
+
+# ── String helpers for tier_opening ──────────────────────────────
+
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64)
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+# ── Morphism gloss ───────────────────────────────────────────────
+
+# Map morphism symbols to human-readable glosses.
+export function flowc_morphism_gloss(morphism: string) -> string {
+    if strcmp(morphism, "+") == 0 {
+        return "addition"
+    }
+    if strcmp(morphism, "||") == 0 {
+        return "disjunction (or)"
+    }
+    if strcmp(morphism, "=") == 0 {
+        return "equality"
+    }
+    if strcmp(morphism, "*") == 0 {
+        return "multiplication"
+    }
+    if strcmp(morphism, "out") == 0 {
+        return "output"
+    }
+    if strcmp(morphism, "fifo") == 0 {
+        return "FIFO behaviour"
+    }
+    if strcmp(morphism, "vectorize") == 0 {
+        return "vectorization"
+    }
+    if strcmp(morphism, "fuse") == 0 {
+        return "loop fusion"
+    }
+    return morphism
+}
+
+# ── Tier opening (plain, no markdown) ────────────────────────────
+
+# One sentence for proof-step tables (no markdown bold).
+# Matches Python tier_opening_plain.
+export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> string {
+    let t: string = flowc_claim_path_normalize_tier(tier)
+
+    # Rebuild the claim address from the path
+    let addr_text: string = str_append(str_append(str_append(path.domain, "/"), path.morphism), ".")
+    let addr_text2: string = str_append(addr_text, path.facet)
+    let addr: FlowcClaimAddress = flowc_claim_parse(addr_text2)
+
+    let gloss: string = flowc_morphism_gloss(path.morphism)
+
+    if strcmp(t, "definition") == 0 {
+        if addr.ok == 1 {
+            let s: string = "We stipulate the law "
+            s = str_append(s, addr.law)
+            s = str_append(s, " for ")
+            s = str_append(s, addr.structure)
+            s = str_append(s, " on ")
+            s = str_append(s, addr.carrier)
+            s = str_append(s, ". This is a definition.")
+            return s
+        }
+        let s: string = "We stipulate how "
+        s = str_append(s, gloss)
+        s = str_append(s, " behaves on ")
+        s = str_append(s, path.domain)
+        s = str_append(s, ". This is a definition.")
+        return s
+    }
+
+    if strcmp(t, "axiom") == 0 {
+        let s: string = "We accept this axiom on "
+        s = str_append(s, path.domain)
+        s = str_append(s, " without proof. It is an ontological commitment.")
+        return s
+    }
+
+    # derived
+    if addr.ok == 1 {
+        let s: string = "We prove that on "
+        s = str_append(s, addr.carrier)
+        s = str_append(s, ", ")
+        s = str_append(s, addr.structure)
+        s = str_append(s, " satisfies ")
+        s = str_append(s, addr.law)
+        s = str_append(s, ".")
+        return s
+    }
+
+    let s: string = "We prove this derived fact about "
+    s = str_append(s, path.domain)
+    s = str_append(s, " and ")
+    s = str_append(s, gloss)
+    s = str_append(s, " from prior claims.")
+    return s
 }

@@ -13,6 +13,8 @@ import .claim_path {
 extern {
     function strcmp(a: string, b: string) -> i32
     function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<u8>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
 }
 
 export function flowc_carrier_mathematical(name: string) -> string {
@@ -186,4 +188,62 @@ export function flowc_tier_opening_mathematical(tier: string, addr: FlowcClaimAd
 export function flowc_tier_opening_parse(tier: string, claim_text: string) -> string {
     let addr: FlowcClaimAddress = flowc_claim_parse(claim_text)
     return flowc_tier_opening_mathematical(tier, addr)
+}
+
+# ── String helper ────────────────────────────────────────────────
+
+function mp_str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64)
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+# ── Coordinate display ───────────────────────────────────────────
+
+# Structure coordinate display: use plain English for geometry structures.
+export function flowc_structure_coordinate_display(name: string) -> string {
+    if strcmp(name, "triangle") == 0 { return "triangle" }
+    if strcmp(name, "isosceles triangle") == 0 { return "isosceles triangle" }
+    if strcmp(name, "intersecting lines") == 0 { return "intersecting lines" }
+    if strcmp(name, "right triangle") == 0 { return "right triangle" }
+    if strcmp(name, "parallel lines") == 0 { return "parallel lines" }
+    if strcmp(name, "triangle congruence") == 0 { return "triangle congruence" }
+    if strcmp(name, "circle") == 0 { return "circle" }
+    if strcmp(name, "Euclid Book I") == 0 { return "Euclid Book I" }
+    if strcmp(name, "Taylor series") == 0 { return "Taylor series" }
+    if strcmp(name, "smooth functions") == 0 { return "smooth functions" }
+    return flowc_structure_mathematical(name)
+}
+
+# Coordinate line without code names: "carrier . structure . law"
+export function flowc_addr_coordinate_display(addr: FlowcClaimAddress) -> string {
+    let carrier: string = flowc_carrier_mathematical(addr.carrier)
+    let structure: string = flowc_structure_coordinate_display(addr.structure)
+    let s: string = carrier
+    s = mp_str_append(s, " . ")
+    s = mp_str_append(s, structure)
+    s = mp_str_append(s, " . ")
+    s = mp_str_append(s, addr.law)
+    return s
+}
+
+# Coordinate line for PDF: uses math-center dots.
+export function flowc_addr_coordinate_latex(addr: FlowcClaimAddress) -> string {
+    let carrier: string = flowc_carrier_mathematical(addr.carrier)
+    let structure: string = flowc_structure_coordinate_display(addr.structure)
+    let s: string = carrier
+    s = mp_str_append(s, " \\cdot ")
+    s = mp_str_append(s, structure)
+    s = mp_str_append(s, " \\cdot ")
+    s = mp_str_append(s, addr.law)
+    return s
 }

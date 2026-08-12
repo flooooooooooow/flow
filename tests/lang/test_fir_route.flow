@@ -1,0 +1,117 @@
+# Test for fir_route.flow port of fir_route.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fir_route.flow
+# Exit 0 on success.
+
+import "compiler/src/fir_route.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # Explicit cpu request
+    let r1: string = flowc_choose_analysis_backend("cpu", 100, 50, flowc_route_thresholds_none(), 1, 1)
+    if strcmp(r1, "cpu") != 0 {
+        printf("FAIL: cpu request should return cpu, got %s\n", r1)
+        return 1
+    }
+
+    # Explicit numpy request
+    let r2: string = flowc_choose_analysis_backend("numpy", 100, 50, flowc_route_thresholds_none(), 1, 0)
+    if strcmp(r2, "numpy") != 0 {
+        printf("FAIL: numpy request should return numpy, got %s\n", r2)
+        return 2
+    }
+
+    # Explicit mlx request
+    let r3: string = flowc_choose_analysis_backend("mlx", 100, 50, flowc_route_thresholds_none(), 0, 1)
+    if strcmp(r3, "mlx") != 0 {
+        printf("FAIL: mlx request should return mlx, got %s\n", r3)
+        return 3
+    }
+
+    # Auto with uncalibrated thresholds -> cpu
+    let r4: string = flowc_choose_analysis_backend("auto", 1000, 500, flowc_route_thresholds_none(), 1, 1)
+    if strcmp(r4, "cpu") != 0 {
+        printf("FAIL: auto uncalibrated should return cpu, got %s\n", r4)
+        return 4
+    }
+
+    # Auto with calibrated thresholds, small graph -> cpu
+    let th_small: FlowcRouteThresholds = flowc_route_thresholds_calibrated("numpy", 100, 50)
+    let r5: string = flowc_choose_analysis_backend("auto", 10, 5, th_small, 1, 1)
+    if strcmp(r5, "cpu") != 0 {
+        printf("FAIL: auto small graph should return cpu, got %s\n", r5)
+        return 5
+    }
+
+    # Auto with calibrated thresholds, large graph (by funcs) -> numpy
+    let th_numpy: FlowcRouteThresholds = flowc_route_thresholds_calibrated("numpy", 100, 50)
+    let r6: string = flowc_choose_analysis_backend("auto", 200, 10, th_numpy, 1, 1)
+    if strcmp(r6, "numpy") != 0 {
+        printf("FAIL: auto large funcs should return numpy, got %s\n", r6)
+        return 6
+    }
+
+    # Auto with calibrated thresholds, large graph (by edges) -> numpy
+    let r7: string = flowc_choose_analysis_backend("auto", 50, 100, th_numpy, 1, 1)
+    if strcmp(r7, "numpy") != 0 {
+        printf("FAIL: auto large edges should return numpy, got %s\n", r7)
+        return 7
+    }
+
+    # Auto with mlx thresholds, large graph, has_mlx -> mlx
+    let th_mlx: FlowcRouteThresholds = flowc_route_thresholds_calibrated("mlx", 100, 50)
+    let r8: string = flowc_choose_analysis_backend("auto", 200, 10, th_mlx, 1, 1)
+    if strcmp(r8, "mlx") != 0 {
+        printf("FAIL: auto large with mlx should return mlx, got %s\n", r8)
+        return 8
+    }
+
+    # Auto with mlx thresholds, large graph, no mlx but has numpy -> numpy
+    let r9: string = flowc_choose_analysis_backend("auto", 200, 10, th_mlx, 1, 0)
+    if strcmp(r9, "numpy") != 0 {
+        printf("FAIL: auto large no mlx should return numpy, got %s\n", r9)
+        return 9
+    }
+
+    # Auto with mlx thresholds, large graph, no mlx no numpy -> cpu
+    let r10: string = flowc_choose_analysis_backend("auto", 200, 10, th_mlx, 0, 0)
+    if strcmp(r10, "cpu") != 0 {
+        printf("FAIL: auto large no mlx no numpy should return cpu, got %s\n", r10)
+        return 10
+    }
+
+    # Auto with numpy thresholds, large graph, no numpy -> cpu
+    let r11: string = flowc_choose_analysis_backend("auto", 200, 10, th_numpy, 0, 1)
+    if strcmp(r11, "cpu") != 0 {
+        printf("FAIL: auto large no numpy should return cpu, got %s\n", r11)
+        return 11
+    }
+
+    # Boundary: exactly at threshold -> bulk
+    let r12: string = flowc_choose_analysis_backend("auto", 100, 10, th_numpy, 1, 1)
+    if strcmp(r12, "numpy") != 0 {
+        printf("FAIL: at threshold funcs should return numpy, got %s\n", r12)
+        return 12
+    }
+
+    # Boundary: just below threshold -> cpu
+    let r13: string = flowc_choose_analysis_backend("auto", 99, 10, th_numpy, 1, 1)
+    if strcmp(r13, "cpu") != 0 {
+        printf("FAIL: below threshold funcs should return cpu, got %s\n", r13)
+        return 13
+    }
+
+    # Empty string request -> auto behavior
+    let r14: string = flowc_choose_analysis_backend("", 10, 5, flowc_route_thresholds_none(), 1, 1)
+    if strcmp(r14, "cpu") != 0 {
+        printf("FAIL: empty request should default to cpu, got %s\n", r14)
+        return 14
+    }
+
+    puts("All fir_route tests passed")
+    return 0
+}

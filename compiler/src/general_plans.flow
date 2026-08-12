@@ -1,0 +1,262 @@
+# @module flowc.general_plans
+# @means  Cost models for matmul and reduce implementation selection (#147).
+#         Port of the cost/scratch/applicability functions from
+#         src/flow/general_plans.py. The Python original uses callbacks and
+#         a registry; this port exposes the pure functions so the selector
+#         (still Python) can call them, and so a future Flow selector can
+#         use them directly.
+#
+# Fact keys:
+#   n             element count (one dimension for matmul, total for reduce)
+#   prefer        soft preference: "latency", "energy", "memory", "parallel"
+#   require_*     hard constraints: require_memory_bytes, require_latency_budget
+#   backend       "cpu", "simd", "gpu"
+#   elem_bytes    element size in bytes (for scratch calculation)
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Constants ────────────────────────────────────────────────────
+
+# Below this matrix dimension, naive triple loop wins.
+export const FLOWC_MATMUL_BLOCK_THRESHOLD: i32 = 64
+
+# Below this element count, sequential scan beats tree reduction.
+export const FLOWC_REDUCE_TREE_THRESHOLD: i32 = 1024
+
+# ── Facts struct ─────────────────────────────────────────────────
+
+export struct FlowcFacts {
+    n: i32,
+    prefer: string,
+    backend: string,
+    require_memory_bytes: i32,
+    elem_bytes: i32
+}
+
+export function flowc_facts_default(n: i32) -> FlowcFacts {
+    return FlowcFacts {
+        n: n,
+        prefer: "",
+        backend: "cpu",
+        require_memory_bytes: -1,
+        elem_bytes: 8
+    }
+}
+
+# ── Result struct ────────────────────────────────────────────────
+
+# Applicability check: ok=1 means applicable, ok=0 means not.
+# reason is the human-readable constraint that failed (empty when ok).
+export struct FlowcApplicable {
+    ok: i32,
+    reason: string
+}
+
+function applicable_ok() -> FlowcApplicable {
+    return FlowcApplicable { ok: 1, reason: "" }
+}
+
+function applicable_fail(reason: string) -> FlowcApplicable {
+    return FlowcApplicable { ok: 0, reason: reason }
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function streq(a: string, b: string) -> i32 {
+    if strcmp(a, b) == 0 {
+        return 1
+    }
+    return 0
+}
+
+# ── matmul: naive ────────────────────────────────────────────────
+
+# Naive matmul uses no scratch. Fails on GPU.
+export function flowc_matmul_naive_applicable(facts: FlowcFacts) -> FlowcApplicable {
+    if facts.require_memory_bytes >= 0 {
+        if facts.require_memory_bytes < 0 {
+            return applicable_fail("memory requirement is negative")
+        }
+    }
+    if streq(facts.backend, "gpu") == 1 {
+        return applicable_fail("naive triple loop has no GPU lowering")
+    }
+    return applicable_ok()
+}
+
+# Cost: n^3 (triple loop).
+export function flowc_matmul_naive_cost(facts: FlowcFacts) -> f64 {
+    let n: f64 = facts.n as f64
+    return n * n * n
+}
+
+# Scratch: 0.
+export function flowc_matmul_naive_scratch(facts: FlowcFacts) -> i32 {
+    return 0
+}
+
+# ── matmul: blocked ──────────────────────────────────────────────
+
+# Blocked matmul needs a 32x32 tile buffer (8192 bytes).
+export function flowc_matmul_blocked_applicable(facts: FlowcFacts) -> FlowcApplicable {
+    if facts.require_memory_bytes >= 0 {
+        let block: i32 = 32
+        let need: i32 = block * block * 8
+        if need > facts.require_memory_bytes {
+            return applicable_fail("tile buffer exceeds scratch budget")
+        }
+    }
+    if streq(facts.backend, "gpu") == 1 {
+        return applicable_fail("blocked tiling has no GPU lowering")
+    }
+    return applicable_ok()
+}
+
+# Cost: n^3 * 0.7 for large n (cache benefit), n^3 * 1.3 for small n (loop overhead).
+export function flowc_matmul_blocked_cost(facts: FlowcFacts) -> f64 {
+    let n: f64 = facts.n as f64
+    if facts.n < FLOWC_MATMUL_BLOCK_THRESHOLD {
+        return n * n * n * 1.3
+    }
+    return n * n * n * 0.7
+}
+
+# Scratch: 32 * 32 * 8 = 8192 bytes.
+export function flowc_matmul_blocked_scratch(facts: FlowcFacts) -> i32 {
+    return 32 * 32 * 8
+}
+
+# ── reduce: sequential ───────────────────────────────────────────
+
+# Sequential scan fails on GPU.
+export function flowc_reduce_sequential_applicable(facts: FlowcFacts) -> FlowcApplicable {
+    if streq(facts.backend, "gpu") == 1 {
+        return applicable_fail("sequential scan has no GPU lowering")
+    }
+    return applicable_ok()
+}
+
+# Cost: n (single pass).
+export function flowc_reduce_sequential_cost(facts: FlowcFacts) -> f64 {
+    return facts.n as f64
+}
+
+# Scratch: 0.
+export function flowc_reduce_sequential_scratch(facts: FlowcFacts) -> i32 {
+    return 0
+}
+
+# ── reduce: parallel tree ────────────────────────────────────────
+
+# Tree reduction fails on GPU.
+export function flowc_reduce_tree_applicable(facts: FlowcFacts) -> FlowcApplicable {
+    if streq(facts.backend, "gpu") == 1 {
+        return applicable_fail("tree reduction has no GPU lowering")
+    }
+    return applicable_ok()
+}
+
+# Cost: n * 0.8 if prefer=parallel, n * 1.5 if small n, n * 0.85 if large n.
+export function flowc_reduce_tree_cost(facts: FlowcFacts) -> f64 {
+    let n: f64 = facts.n as f64
+    if streq(facts.prefer, "parallel") == 1 {
+        return n * 0.8
+    }
+    if facts.n < FLOWC_REDUCE_TREE_THRESHOLD {
+        return n * 1.5
+    }
+    return n * 0.85
+}
+
+# Scratch: n * elem_bytes (second buffer).
+export function flowc_reduce_tree_scratch(facts: FlowcFacts) -> i32 {
+    return facts.n * facts.elem_bytes
+}
+
+# ── Selection ────────────────────────────────────────────────────
+
+# A candidate implementation with its computed cost and scratch.
+export struct FlowcCandidate {
+    name: string,
+    cost: f64,
+    scratch: i32,
+    applicable: i32,
+    reason: string
+}
+
+# Select the cheapest applicable implementation for matmul.
+# Returns the candidate with the lowest cost among applicable ones.
+export function flowc_select_matmul(facts: FlowcFacts) -> FlowcCandidate {
+    let na: FlowcApplicable = flowc_matmul_naive_applicable(facts)
+    let bl: FlowcApplicable = flowc_matmul_blocked_applicable(facts)
+
+    let best: FlowcCandidate = FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: "" }
+
+    if na.ok == 1 {
+        let nc: f64 = flowc_matmul_naive_cost(facts)
+        best = FlowcCandidate { name: "naive", cost: nc, scratch: 0, applicable: 1, reason: "" }
+    }
+
+    if bl.ok == 1 {
+        let bc: f64 = flowc_matmul_blocked_cost(facts)
+        if best.applicable == 0 or bc < best.cost {
+            best = FlowcCandidate { name: "blocked", cost: bc, scratch: flowc_matmul_blocked_scratch(facts), applicable: 1, reason: "" }
+        }
+    }
+
+    if best.applicable == 0 {
+        let reason: string = "no applicable matmul implementation"
+        if na.ok == 0 {
+            reason = na.reason
+        } else {
+            if bl.ok == 0 {
+                reason = bl.reason
+            }
+        }
+        return FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: reason }
+    }
+
+    return best
+}
+
+# Select the cheapest applicable implementation for reduce.
+export function flowc_select_reduce(facts: FlowcFacts) -> FlowcCandidate {
+    let sa: FlowcApplicable = flowc_reduce_sequential_applicable(facts)
+    let ta: FlowcApplicable = flowc_reduce_tree_applicable(facts)
+
+    let best: FlowcCandidate = FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: "" }
+
+    if sa.ok == 1 {
+        let sc: f64 = flowc_reduce_sequential_cost(facts)
+        best = FlowcCandidate { name: "sequential", cost: sc, scratch: 0, applicable: 1, reason: "" }
+    }
+
+    if ta.ok == 1 {
+        let tc: f64 = flowc_reduce_tree_cost(facts)
+        if best.applicable == 0 or tc < best.cost {
+            best = FlowcCandidate { name: "parallel_tree", cost: tc, scratch: flowc_reduce_tree_scratch(facts), applicable: 1, reason: "" }
+        }
+    }
+
+    if best.applicable == 0 {
+        let reason: string = "no applicable reduce implementation"
+        if sa.ok == 0 {
+            reason = sa.reason
+        } else {
+            if ta.ok == 0 {
+                reason = ta.reason
+            }
+        }
+        return FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: reason }
+    }
+
+    return best
+}

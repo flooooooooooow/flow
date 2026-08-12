@@ -1,0 +1,143 @@
+# Test for misra_scan.flow port of misra_scan.py (#277).
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_misra_scan.flow
+# Exit 0 on success.
+
+import "compiler/src/misra_scan.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+}
+
+function main() -> i32 {
+    let source: string = "#include <stdlib.h>\nint* p = malloc(64);\nprintf(\"x=%d\\n\", x);\nif (err) abort();\n// free(p);\nint y = 0;\n"
+
+    let findings: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count: i32 = flowc_scan_c_source(source, findings, 10)
+
+    # Expected:
+    # Line 1: #include - skipped (directive)
+    # Line 2: malloc -> MISRA 21.3 VIOLATION
+    # Line 3: printf -> MISRA 21.6 NOTE
+    # Line 4: abort -> MISRA 22.1 NOTE
+    # Line 5: // free(p) - skipped (comment)
+    # Line 6: int y = 0 - clean
+    if count != 3 {
+        printf("FAIL: expected 3 findings, got %d\n", count)
+        return 1
+    }
+
+    # Finding 0: malloc violation
+    if strcmp(findings[0].rule, "MISRA 21.3") != 0 {
+        printf("FAIL: finding 0 rule = %s, expected MISRA 21.3\n", findings[0].rule)
+        return 2
+    }
+    if strcmp(findings[0].status, "VIOLATION") != 0 {
+        printf("FAIL: finding 0 status = %s, expected VIOLATION\n", findings[0].status)
+        return 3
+    }
+    if findings[0].line != 2 {
+        printf("FAIL: finding 0 line = %d, expected 2\n", findings[0].line)
+        return 4
+    }
+
+    # Finding 1: printf note
+    if strcmp(findings[1].rule, "MISRA 21.6") != 0 {
+        printf("FAIL: finding 1 rule = %s, expected MISRA 21.6\n", findings[1].rule)
+        return 5
+    }
+    if strcmp(findings[1].status, "NOTE") != 0 {
+        printf("FAIL: finding 1 status = %s, expected NOTE\n", findings[1].status)
+        return 6
+    }
+    if findings[1].line != 3 {
+        printf("FAIL: finding 1 line = %d, expected 3\n", findings[1].line)
+        return 7
+    }
+
+    # Finding 2: abort note
+    if strcmp(findings[2].rule, "MISRA 22.1") != 0 {
+        printf("FAIL: finding 2 rule = %s, expected MISRA 22.1\n", findings[2].rule)
+        return 8
+    }
+    if findings[2].line != 4 {
+        printf("FAIL: finding 2 line = %d, expected 4\n", findings[2].line)
+        return 9
+    }
+
+    # Count helpers
+    let viol: i32 = flowc_count_violations(findings, count)
+    if viol != 1 {
+        printf("FAIL: expected 1 violation, got %d\n", viol)
+        return 10
+    }
+    let notes: i32 = flowc_count_notes(findings, count)
+    if notes != 2 {
+        printf("FAIL: expected 2 notes, got %d\n", notes)
+        return 11
+    }
+
+    # Clean source: no findings
+    let clean: string = "int x = 0;\nint y = x + 1;\nreturn y;\n"
+    let findings2: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count2: i32 = flowc_scan_c_source(clean, findings2, 10)
+    if count2 != 0 {
+        printf("FAIL: expected 0 findings for clean source, got %d\n", count2)
+        return 12
+    }
+
+    # Comment lines (// only, not /* */) are skipped
+    let commented: string = "// malloc(64);\n// free(p);\nint x = 0;\n"
+    let findings3: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count3: i32 = flowc_scan_c_source(commented, findings3, 10)
+    if count3 != 0 {
+        printf("FAIL: expected 0 findings for // commented source, got %d\n", count3)
+        return 13
+    }
+
+    # Directive lines are skipped
+    let directives: string = "#include <stdlib.h>\n#define FREE free\nint x = 0;\n"
+    let findings4: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count4: i32 = flowc_scan_c_source(directives, findings4, 10)
+    if count4 != 0 {
+        printf("FAIL: expected 0 findings for directive-only source, got %d\n", count4)
+        return 14
+    }
+
+    # calloc and realloc are also caught
+    let heap2: string = "char* a = calloc(10, 4);\nchar* b = realloc(a, 20);\n"
+    let findings5: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count5: i32 = flowc_scan_c_source(heap2, findings5, 10)
+    if count5 != 2 {
+        printf("FAIL: expected 2 findings for calloc+realloc, got %d\n", count5)
+        return 15
+    }
+
+    # Word boundary: my_malloc should NOT match malloc
+    let no_false: string = "int v = my_malloc(64);\n"
+    let findings6: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count6: i32 = flowc_scan_c_source(no_false, findings6, 10)
+    if count6 != 0 {
+        printf("FAIL: my_malloc should not match malloc, got %d findings\n", count6)
+        return 16
+    }
+
+    # free() is caught
+    let free_src: string = "free(p);\n"
+    let findings7: ptr<FlowcFinding> = malloc(640) as ptr<FlowcFinding>
+    let count7: i32 = flowc_scan_c_source(free_src, findings7, 10)
+    if count7 != 1 {
+        printf("FAIL: expected 1 finding for free(), got %d\n", count7)
+        return 17
+    }
+    if strcmp(findings7[0].rule, "MISRA 21.3") != 0 {
+        printf("FAIL: free should be MISRA 21.3, got %s\n", findings7[0].rule)
+        return 18
+    }
+
+    puts("All MISRA scan tests passed")
+    return 0
+}
