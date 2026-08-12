@@ -1,0 +1,138 @@
+# Test for lsp_syntax.flow port of lsp_syntax.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_syntax.flow
+# Exit 0 on success.
+
+import "compiler/src/lsp_syntax.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # is_multi_char_op
+    if flowc_is_multi_char_op("|>") == 0 {
+        puts("FAIL: '|>' should be a multi-char op")
+        return 1
+    }
+    if flowc_is_multi_char_op("->") == 0 {
+        puts("FAIL: '->' should be a multi-char op")
+        return 2
+    }
+    if flowc_is_multi_char_op("==") == 0 {
+        puts("FAIL: '==' should be a multi-char op")
+        return 3
+    }
+    if flowc_is_multi_char_op("xx") == 1 {
+        puts("FAIL: 'xx' should not be a multi-char op")
+        return 4
+    }
+
+    # syntax_token_at_position: detect |>
+    # "xs |> sort" - | is at col 3, > is at col 4
+    let line1: string = "xs |> sort"
+    let tok1: string = flowc_syntax_token_at_position(line1, 3)
+    if strcmp(tok1, "|>") != 0 {
+        printf("FAIL: expected '|>' at col 3, got '%s'\n", tok1)
+        return 5
+    }
+    let tok1b: string = flowc_syntax_token_at_position(line1, 4)
+    if strcmp(tok1b, "|>") != 0 {
+        printf("FAIL: expected '|>' at col 4, got '%s'\n", tok1b)
+        return 6
+    }
+
+    # syntax_token_at_position: detect ->
+    # "function f() -> i32" - - is at col 14, > is at col 15
+    let line2: string = "function f() -> i32"
+    let tok2: string = flowc_syntax_token_at_position(line2, 14)
+    if strcmp(tok2, "->") != 0 {
+        printf("FAIL: expected '->' at col 14, got '%s'\n", tok2)
+        return 7
+    }
+
+    # syntax_token_at_position: detect ==
+    # "if x == 0" - = is at col 5, = is at col 6
+    let line3: string = "if x == 0"
+    let tok3: string = flowc_syntax_token_at_position(line3, 5)
+    if strcmp(tok3, "==") != 0 {
+        printf("FAIL: expected '==' at col 5, got '%s'\n", tok3)
+        return 8
+    }
+    let tok3b: string = flowc_syntax_token_at_position(line3, 6)
+    if strcmp(tok3b, "==") != 0 {
+        printf("FAIL: expected '==' at col 6, got '%s'\n", tok3b)
+        return 9
+    }
+
+    # syntax_token_at_position: no operator at given col
+    let tok4: string = flowc_syntax_token_at_position(line1, 0)
+    if strcmp(tok4, "") != 0 {
+        printf("FAIL: expected empty at col 0, got '%s'\n", tok4)
+        return 10
+    }
+
+    # syntax_token_at_position: empty line
+    let tok5: string = flowc_syntax_token_at_position("", 0)
+    if strcmp(tok5, "") != 0 {
+        printf("FAIL: expected empty for empty line, got '%s'\n", tok5)
+        return 11
+    }
+
+    # syntax_token_at_position: col beyond end -> clamp to last char
+    let line6: string = "x |> y"
+    let tok6: string = flowc_syntax_token_at_position(line6, 100)
+    # col 100 clamps to 5 (last char 'y'), no operator there
+    if strcmp(tok6, "") != 0 {
+        printf("FAIL: expected empty for col beyond end, got '%s'\n", tok6)
+        return 12
+    }
+
+    # hover_gloss: known operators
+    if strcmp(flowc_syntax_hover_gloss("|>"), "pipe / pipeline operator") != 0 {
+        puts("FAIL: '|>' gloss mismatch")
+        return 13
+    }
+    if strcmp(flowc_syntax_hover_gloss("->"), "function return type arrow") != 0 {
+        puts("FAIL: '->' gloss mismatch")
+        return 14
+    }
+    if strcmp(flowc_syntax_hover_gloss("=="), "equality comparison") != 0 {
+        puts("FAIL: '==' gloss mismatch")
+        return 15
+    }
+
+    # hover_gloss: unknown token
+    if strcmp(flowc_syntax_hover_gloss("???"), "") != 0 {
+        puts("FAIL: unknown token should return empty gloss")
+        return 16
+    }
+
+    # syntax_token_at_position: detect &&
+    let line7: string = "if a && b"
+    let tok7: string = flowc_syntax_token_at_position(line7, 5)
+    if strcmp(tok7, "&&") != 0 {
+        printf("FAIL: expected '&&' at col 5, got '%s'\n", tok7)
+        return 17
+    }
+
+    # syntax_token_at_position: detect ||
+    let line8: string = "if a || b"
+    let tok8: string = flowc_syntax_token_at_position(line8, 5)
+    if strcmp(tok8, "||") != 0 {
+        printf("FAIL: expected '||' at col 5, got '%s'\n", tok8)
+        return 18
+    }
+
+    # syntax_token_at_position: detect ..
+    let line9: string = "for i in 0..10"
+    let tok9: string = flowc_syntax_token_at_position(line9, 11)
+    if strcmp(tok9, "..") != 0 {
+        printf("FAIL: expected '..' at col 11, got '%s'\n", tok9)
+        return 19
+    }
+
+    puts("All lsp_syntax tests passed")
+    return 0
+}
