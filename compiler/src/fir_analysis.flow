@@ -7,8 +7,9 @@
 #         without the Python object graph.
 #
 # Effect bits (matching fir_g.py):
-#   EFF_IO=1, EFF_FFI=2, EFF_GPU=4, EFF_WRITES_MEMORY=8,
-#   EFF_ALLOCATES=16, EFF_UNKNOWN=32
+#   EFF_READS_MEMORY=1, EFF_WRITES_MEMORY=2, EFF_ALLOCATES=4,
+#   EFF_IO=8, EFF_FFI=16, EFF_PANIC=32, EFF_ATOMIC=64,
+#   EFF_THREAD=128, EFF_GPU=256, EFF_UNKNOWN=32768
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -20,15 +21,21 @@ extern {
 
 # ── Constants ────────────────────────────────────────────────────
 
-export const FLOWC_EFF_IO: i32 = 1
-export const FLOWC_EFF_FFI: i32 = 2
-export const FLOWC_EFF_GPU: i32 = 4
-export const FLOWC_EFF_WRITES_MEMORY: i32 = 8
-export const FLOWC_EFF_ALLOCATES: i32 = 16
-export const FLOWC_EFF_UNKNOWN: i32 = 32
+export const FLOWC_EFF_READS_MEMORY: i32 = 1
+export const FLOWC_EFF_WRITES_MEMORY: i32 = 2
+export const FLOWC_EFF_ALLOCATES: i32 = 4
+export const FLOWC_EFF_IO: i32 = 8
+export const FLOWC_EFF_FFI: i32 = 16
+export const FLOWC_EFF_PANIC: i32 = 32
+export const FLOWC_EFF_ATOMIC: i32 = 64
+export const FLOWC_EFF_THREAD: i32 = 128
+export const FLOWC_EFF_GPU: i32 = 256
+export const FLOWC_EFF_UNKNOWN: i32 = 32768
 
-# Mask of all "dirty" effect bits (IO, FFI, GPU, writes, allocates, unknown).
-export const FLOWC_EFF_DIRTY: i32 = 63
+# Mask of all "dirty" effect bits for purity checking.
+# Dirty = IO | FFI | GPU | WRITES_MEMORY | ALLOCATES | UNKNOWN
+# = 8 | 16 | 256 | 2 | 4 | 32768 = 33054
+export const FLOWC_EFF_DIRTY: i32 = 33054
 
 # ── Effect propagation ───────────────────────────────────────────
 
