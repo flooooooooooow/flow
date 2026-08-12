@@ -14,7 +14,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT
 }
 
 function flowc_lex_is_alpha(c: i32) -> i32 {
@@ -125,6 +125,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let unit_kw: array<u8, 4> = [117, 110, 105, 116]
     let effect_kw: array<u8, 6> = [101, 102, 102, 101, 99, 116]
     let cap_kw: array<u8, 10> = [99, 97, 112, 97, 98, 105, 108, 105, 116, 121]
+    let not_kw: array<u8, 3> = [110, 111, 116]
     let p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
@@ -183,6 +184,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_EFFECT }
     p = cap_kw
     if flowc_lex_ident_eq(src, start, end, p, 10) == 1 { return KW_CAPABILITY }
+    p = not_kw
+    if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_NOT }
     return 0
 }
 
