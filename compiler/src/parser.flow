@@ -8,6 +8,9 @@ import .token {
     TOK_COLON, TOK_COMMA, TOK_ARROW, TOK_FATARROW, TOK_SEMI,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
+    TOK_SHL, TOK_SHR,
+    TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
+    TOK_GT,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
@@ -116,6 +119,24 @@ function flowc_parse_int_span(src: ptr<u8>, start: i32, end: i32) -> i32 {
     return v
 }
 
+# Eat a TOK_GT, or split TOK_SHR (>>) into two TOK_GT tokens.
+function flowc_parser_eat_gt(p: ptr<Parser>) -> i32 {
+    if flowc_parser_check(p[0], TOK_GT) == 1 {
+        flowc_parser_advance(p)
+        return 1
+    }
+    if flowc_parser_check(p[0], TOK_SHR) == 1 {
+        # Split >> into two > tokens by adjusting the current token.
+        let t: Token = p[0].cur
+        p[0].cur.kind = TOK_GT
+        p[0].cur.start = t.start + 1
+        p[0].cur.end = t.end
+        return 1
+    }
+    p[0].err = 1
+    return 0
+}
+
 # Plain name, ptr<T> (a=inner, ival=0), array<T, N> (a=inner, ival=N),
 # or function pointer (A, B) -> R (a=param chain, b=return type).
 function flowc_parse_type(p: ptr<Parser>) -> i32 {
@@ -191,7 +212,7 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
             p[0].arena.nodes[id].ival = n
             flowc_parser_advance(p)
         }
-        if flowc_parser_eat(p, TOK_GT) == 0 {
+        if flowc_parser_eat_gt(p) == 0 {
             return AST_NONE
         }
         p[0].arena.nodes[id].end = p[0].cur.start
@@ -540,6 +561,8 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
     if op == TOK_AMP { return TOK_AMP }
     if op == TOK_BAR { return TOK_BAR }
     if op == TOK_CARET { return TOK_CARET }
+    if op == TOK_SHL { return TOK_SHL }
+    if op == TOK_SHR { return TOK_SHR }
     if op == TOK_EQEQ { return TOK_EQEQ }
     if op == TOK_NE { return TOK_NE }
     if op == TOK_LT { return TOK_LT }
@@ -564,6 +587,8 @@ function flowc_parse_binop_prec(op: i32) -> i32 {
     if op == TOK_AMP { return 3 }
     if op == TOK_BAR { return 3 }
     if op == TOK_CARET { return 3 }
+    if op == TOK_SHL { return 3 }
+    if op == TOK_SHR { return 3 }
     if op == TOK_EQEQ or op == TOK_NE { return 4 }
     if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE { return 5 }
     if op == TOK_PLUS or op == TOK_MINUS { return 6 }
@@ -978,6 +1003,33 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
             p[0].arena.nodes[id].b = rhs
             return id
         }
+        # Compound assignment: a += b → a = a + b
+        let mut compound_op: i32 = 0
+        if flowc_parser_check(p[0], TOK_PLUS_EQ) == 1 { compound_op = TOK_PLUS }
+        if flowc_parser_check(p[0], TOK_MINUS_EQ) == 1 { compound_op = TOK_MINUS }
+        if flowc_parser_check(p[0], TOK_STAR_EQ) == 1 { compound_op = TOK_STAR }
+        if flowc_parser_check(p[0], TOK_SLASH_EQ) == 1 { compound_op = TOK_SLASH }
+        if flowc_parser_check(p[0], TOK_PERCENT_EQ) == 1 { compound_op = TOK_PERCENT }
+        if compound_op != 0 and (lk == AST_IDENT or lk == AST_FIELD_ACCESS or lk == AST_INDEX) {
+            flowc_parser_advance(p)
+            let rhs: i32 = flowc_parse_expr(p)
+            let binop: i32 = flowc_ast_alloc(&p[0].arena, AST_BINOP, saved_start, p[0].cur.start)
+            if binop == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[binop].ival = compound_op
+            p[0].arena.nodes[binop].a = expr
+            p[0].arena.nodes[binop].b = rhs
+            let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ASSIGN, saved_start, p[0].cur.start)
+            if id == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[id].a = expr
+            p[0].arena.nodes[id].b = binop
+            return id
+        }
         let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, saved_start, p[0].cur.start)
         if id == AST_NONE {
             p[0].err = 1
@@ -1066,6 +1118,10 @@ function flowc_parse_function(p: ptr<Parser>) -> i32 {
             } else {
                 if flowc_parser_check(p[0], TOK_GT) == 1 {
                     depth = depth - 1
+                } else {
+                    if flowc_parser_check(p[0], TOK_SHR) == 1 {
+                        depth = depth - 2
+                    }
                 }
             }
             if depth > 0 {
@@ -1074,6 +1130,10 @@ function flowc_parse_function(p: ptr<Parser>) -> i32 {
         }
         if flowc_parser_check(p[0], TOK_GT) == 1 {
             flowc_parser_advance(p)
+        } else {
+            if flowc_parser_check(p[0], TOK_SHR) == 1 {
+                flowc_parser_advance(p)
+            }
         }
     }
     if flowc_parser_eat(p, TOK_LPAREN) == 0 {

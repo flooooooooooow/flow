@@ -408,8 +408,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown calls.
-            # In lenient mode (bundle typecheck), allow cross-module calls.
-            if ctx[0].has_extern == 0 and ctx[0].lenient == 0 {
+            if ctx[0].has_extern == 0 {
                 flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
                 flowc_tc_err(ctx)
             }
