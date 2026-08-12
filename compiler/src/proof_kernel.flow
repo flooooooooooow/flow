@@ -1,0 +1,114 @@
+# @module flowc.proof_kernel
+# @means  Proof kernel helpers: node kind classification and DOT
+#         escaping. Port of pure helpers from proof_kernel.py.
+#         The Python original builds full proof kernels and writes
+#         JSON/plots; this port exposes the classification and
+#         escaping helpers.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function str_append(a: string, b: string) -> string {
+    let la: i64 = strlen(a)
+    let lb: i64 = strlen(b)
+    let buf: ptr<u8> = malloc(la + lb + 1) as ptr<u8>
+    if la > 0 { memcpy(buf, a, la) }
+    if lb > 0 {
+        let pa: ptr<u8> = a
+        memcpy(buf + la, b, lb)
+    }
+    buf[la + lb] = 0
+    return buf as string
+}
+
+# Case-insensitive contains check.
+function ci_contains(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 { return 1 }
+    if nn > hn { return 0 }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    while i + nn <= hn {
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < nn {
+            let a: i32 = hp[i + j]
+            let b: i32 = np[j]
+            let al: i32 = a
+            let bl: i32 = b
+            if a >= 65 and a <= 90 { al = a + 32 }
+            if b >= 65 and b <= 90 { bl = b + 32 }
+            if al != bl { matched = 0; break }
+            j = j + 1
+        }
+        if matched == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+# ── Node kind classification ─────────────────────────────────────
+
+# Classify a proof step's English text into a kernel node kind.
+# Port of _node_kind.
+export function flowc_node_kind(english: string, has_math: i32) -> string {
+    if has_math == 1 and ci_contains(english, "hence proven") == 1 {
+        return "conclude"
+    }
+    if has_math == 1 {
+        return "deduce"
+    }
+    if ci_contains(english, "case ") == 1 {
+        return "case"
+    }
+    if ci_contains(english, "invoke") == 1 or ci_contains(english, "inductive boundary") == 1 {
+        return "invoke"
+    }
+    if ci_contains(english, "let ") == 1 or ci_contains(english, "denote") == 1 {
+        return "bind"
+    }
+    if ci_contains(english, "induction") == 1 or ci_contains(english, "split into") == 1 {
+        return "frame"
+    }
+    if ci_contains(english, "stipulate") == 1 or ci_contains(english, "axiom") == 1 or ci_contains(english, "prove this derived") == 1 {
+        return "frame"
+    }
+    if ci_contains(english, "consider the base") == 1 or ci_contains(english, "inductive step") == 1 {
+        return "frame"
+    }
+    return "step"
+}
+
+# ── DOT escaping ─────────────────────────────────────────────────
+
+# Escape backslashes and double quotes for DOT graph format.
+# Port of _escape_dot.
+export function flowc_escape_dot(text: string) -> string {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 92 {
+            out = str_append(out, "\\\\")
+        } else {
+            if p[i] == 34 {
+                out = str_append(out, "\\\"")
+            } else {
+                let buf: array<u8, 2> = [0, 0]
+                buf[0] = p[i]
+                out = str_append(out, buf as string)
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
