@@ -64,6 +64,7 @@ them as part of Phase D; call them via the escape hatch:
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
 | `flow know` helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow) — normalize/qualify/match/print + theorem-header scan |
 | Require/prefer constraints | [`compiler/src/constraints.flow`](../../compiler/src/constraints.flow) — `flowc_parse_require` / `flowc_parse_prefer` / tighter-value picker |
+| Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow) — `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |
