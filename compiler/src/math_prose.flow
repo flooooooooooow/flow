@@ -4,7 +4,8 @@
 import .claim_address {
     FlowcClaimAddress,
     flowc_claim_parse,
-    flowc_claim_empty
+    flowc_claim_empty,
+    flowc_claim_try_parse
 }
 import .claim_path {
     flowc_claim_path_normalize_tier
@@ -519,4 +520,35 @@ export function flowc_is_geometry_expr(expr: string) -> i32 {
     if contains_word(expr, "angle_beta_prime") == 1 { return 1 }
     if contains_word(expr, "angle_gamma") == 1 { return 1 }
     return 0
+}
+
+# ── Claim path to LaTeX ──────────────────────────────────────────
+
+# Replace underscores with \_ in a string.
+function escape_underscores(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 95 {
+            out = mp_str_append(out, "\\_")
+        } else {
+            let buf: array<u8, 2> = [0, 0]
+            buf[0] = p[i]
+            out = mp_str_append(out, buf as string)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# Convert a claim path to LaTeX for PDF rendering.
+# Port of claim_path_latex.
+export function flowc_claim_path_latex(path: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(path)
+    if addr.ok == 0 {
+        return escape_underscores(path)
+    }
+    return flowc_addr_coordinate_latex(addr)
 }
