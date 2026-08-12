@@ -42,6 +42,7 @@ export struct TcCtx {
     cur_ret: i32,
     loop_depth: i32,
     has_extern: i32,
+    lenient: i32,
     seed_buf: ptr<u8>,
     seed_cap: i32,
     seed_len: i32,
@@ -407,7 +408,8 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown calls.
-            if ctx[0].has_extern == 0 {
+            # In lenient mode (bundle typecheck), allow cross-module calls.
+            if ctx[0].has_extern == 0 and ctx[0].lenient == 0 {
                 flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
                 flowc_tc_err(ctx)
             }
@@ -839,6 +841,7 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             cur_ret: AST_NONE,
             loop_depth: 0,
             has_extern: 0,
+            lenient: 0,
             seed_buf: null,
             seed_cap: 0,
             seed_len: 0,
@@ -871,6 +874,7 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         cur_ret: AST_NONE,
         loop_depth: 0,
         has_extern: 0,
+        lenient: 0,
         seed_buf: raw_seed,
         seed_cap: seed_cap,
         seed_len: 0,

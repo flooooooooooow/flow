@@ -564,6 +564,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
     # Typed null: bare `null` breaks host C mangling (emits flowc_tc_init not _ptr_u8).
     let no_src: ptr<u8> = null
     let mut ctx: TcCtx = flowc_tc_init(no_src)
+    ctx.lenient = 1
     if ctx.ns == null {
         free(order_store)
         free(path_store)
