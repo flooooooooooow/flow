@@ -4798,6 +4798,10 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
 }
   if ((e - s) > 7 && import_span_src[s] == 115 && import_span_src[(s + 1)] == 116 && import_span_src[(s + 2)] == 100 && import_span_src[(s + 3)] == 108 && import_span_src[(s + 4)] == 105 && import_span_src[(s + 5)] == 98 && import_span_src[(s + 6)] == 47) {
   s = (s + 7);
+} else {
+  if ((e - s) > 11 && import_span_src[s] == 108 && import_span_src[(s + 1)] == 105 && import_span_src[(s + 2)] == 98 && import_span_src[(s + 3)] == 47 && import_span_src[(s + 4)] == 115 && import_span_src[(s + 5)] == 116 && import_span_src[(s + 6)] == 100 && import_span_src[(s + 7)] == 108 && import_span_src[(s + 8)] == 105 && import_span_src[(s + 9)] == 98 && import_span_src[(s + 10)] == 47) {
+  s = (s + 11);
+}
 }
   if (import_span_src[s] == 47) {
   int32_t nabs = (e - s);
