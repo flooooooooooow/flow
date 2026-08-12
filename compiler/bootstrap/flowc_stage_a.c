@@ -3623,8 +3623,15 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_puts(w, "  return;\n");
   return;
 }
+  int32_t ret_expr = ((arena).nodes[id]).a;
+  if (((arena).nodes[ret_expr]).kind == AST_IDENT) {
+  if (flowc_cgen_span_is(src, ((arena).nodes[ret_expr]).name_start, ((arena).nodes[ret_expr]).name_end, "void") == 1) {
+  flowc_cgen_puts(w, "  return;\n");
+  return;
+}
+}
   flowc_cgen_puts(w, "  return ");
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_emit_expr(w, arena, src, ret_expr);
   flowc_cgen_puts(w, ";\n");
   return;
 }
@@ -3822,6 +3829,24 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   return 1;
 }
   if (flowc_cgen_span_is(src, ns, ne, "fprintf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "sprintf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "snprintf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "vprintf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "vfprintf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "vsprintf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "vsnprintf") == 1) {
   return 1;
 }
   if (flowc_cgen_span_is(src, ns, ne, "puts") == 1) {
