@@ -1,0 +1,501 @@
+# @module flowc.attributes
+# @means  Function attribute vocabulary shared by the type checker and
+#         the C backend. Port of src/flow/attributes.py.
+#         Attributes are written @name or @name(arg, ...) in front of a
+#         function declaration. The parser flattens each one into a
+#         string: "inline", "target(avx2,fma)".
+#         This module knows which names exist, what they mean, and how
+#         the codegen attributes lower to C.
+#
+# See docs/LANGUAGE_SPEC.md 3.6 for the user-facing description.
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Structs ──────────────────────────────────────────────────────
+
+export struct FlowcParsedAttr {
+    name: string,
+    # args stored as a flat comma-joined string (empty if no args)
+    args: string,
+    n_args: i32,
+    ok: i32
+}
+
+# ── Character helpers ─────────────────────────────────────────────
+
+function is_alpha(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    if c >= 65 and c <= 90 {
+        return 1
+    }
+    return 0
+}
+
+function is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 or c == 10 {
+        return 1
+    }
+    return 0
+}
+
+function is_word_char(c: i32) -> i32 {
+    if is_alpha(c) == 1 {
+        return 1
+    }
+    if is_digit(c) == 1 {
+        return 1
+    }
+    if c == 95 or c == 46 {
+        return 1
+    }
+    return 0
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function substr(src: string, start: i32, end: i32) -> string {
+    let n: i32 = strlen(src) as i32
+    if start < 0 {
+        start = 0
+    }
+    if end > n {
+        end = n
+    }
+    if start >= end {
+        return ""
+    }
+    let len: i32 = end - start
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = src
+    memcpy(buf, p + start, len as i64)
+    buf[len] = 0
+    return buf as string
+}
+
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64) as ptr<u8>
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+function streq(a: string, b: string) -> i32 {
+    if strcmp(a, b) == 0 {
+        return 1
+    }
+    return 0
+}
+
+# ── Attribute name sets ──────────────────────────────────────────
+
+# Check if name is a codegen attribute.
+function is_codegen_attr(name: string) -> i32 {
+    if streq(name, "inline") == 1 {
+        return 1
+    }
+    if streq(name, "noinline") == 1 {
+        return 1
+    }
+    if streq(name, "always_inline") == 1 {
+        return 1
+    }
+    if streq(name, "target") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Check if name is a guard attribute.
+function is_guard_attr(name: string) -> i32 {
+    if streq(name, "only") == 1 {
+        return 1
+    }
+    if streq(name, "guard") == 1 {
+        return 1
+    }
+    if streq(name, "compile") == 1 {
+        return 1
+    }
+    if streq(name, "jit") == 1 {
+        return 1
+    }
+    if streq(name, "hot") == 1 {
+        return 1
+    }
+    if streq(name, "interp") == 1 {
+        return 1
+    }
+    if streq(name, "mlir") == 1 {
+        return 1
+    }
+    if streq(name, "c") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Check if name is a semantic attribute.
+function is_semantic_attr(name: string) -> i32 {
+    if streq(name, "gpu") == 1 {
+        return 1
+    }
+    if streq(name, "rt_safe") == 1 {
+        return 1
+    }
+    if streq(name, "safe") == 1 {
+        return 1
+    }
+    if streq(name, "unsafe") == 1 {
+        return 1
+    }
+    if streq(name, "flow_api") == 1 {
+        return 1
+    }
+    if streq(name, "test") == 1 {
+        return 1
+    }
+    if streq(name, "monomorphized") == 1 {
+        return 1
+    }
+    if streq(name, "lifetime") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Check if name is any known attribute.
+export function flowc_is_known_attr(name: string) -> i32 {
+    if is_codegen_attr(name) == 1 {
+        return 1
+    }
+    if is_guard_attr(name) == 1 {
+        return 1
+    }
+    if is_semantic_attr(name) == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Check if name takes arguments.
+export function flowc_attr_takes_args(name: string) -> i32 {
+    if streq(name, "only") == 1 {
+        return 1
+    }
+    if streq(name, "guard") == 1 {
+        return 1
+    }
+    if streq(name, "target") == 1 {
+        return 1
+    }
+    if streq(name, "lifetime") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# ── Lifetime domains ──────────────────────────────────────────────
+
+# callback=0, frame=1, session=2, application=3
+export function flowc_domain_rank(domain: string) -> i32 {
+    if streq(domain, "callback") == 1 {
+        return 0
+    }
+    if streq(domain, "frame") == 1 {
+        return 1
+    }
+    if streq(domain, "session") == 1 {
+        return 2
+    }
+    if streq(domain, "application") == 1 {
+        return 3
+    }
+    return -1
+}
+
+function is_lifetime_domain(s: string) -> i32 {
+    if streq(s, "callback") == 1 {
+        return 1
+    }
+    if streq(s, "frame") == 1 {
+        return 1
+    }
+    if streq(s, "session") == 1 {
+        return 1
+    }
+    if streq(s, "application") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# ── parse_attribute ──────────────────────────────────────────────
+
+# Split a flattened attribute string into (name, args).
+# "inline" -> name="inline", args="", n_args=0
+# "target(avx2,fma)" -> name="target", args="avx2,fma", n_args=2
+export function flowc_parse_attribute(attr: string) -> FlowcParsedAttr {
+    let n: i32 = strlen(attr) as i32
+    let p: ptr<u8> = attr
+
+    # Find '('
+    let mut paren: i32 = -1
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 40 {
+            paren = i
+            break
+        }
+        i = i + 1
+    }
+
+    if paren < 0 {
+        # No parens: bare attribute. Strip whitespace from name.
+        let mut s: i32 = 0
+        while s < n and is_space(p[s]) == 1 {
+            s = s + 1
+        }
+        let mut e: i32 = n
+        while e > s and is_space(p[e - 1]) == 1 {
+            e = e - 1
+        }
+        let name: string = substr(attr, s, e)
+        return FlowcParsedAttr { name: name, args: "", n_args: 0, ok: 1 }
+    }
+
+    # Has parens. Name is everything before '('.
+    let mut ns: i32 = 0
+    while ns < paren and is_space(p[ns]) == 1 {
+        ns = ns + 1
+    }
+    let mut ne: i32 = paren
+    while ne > ns and is_space(p[ne - 1]) == 1 {
+        ne = ne - 1
+    }
+    let name: string = substr(attr, ns, ne)
+
+    # Args: between '(' and the last ')'.
+    # Check that the string ends with ')'.
+    if n == 0 or p[n - 1] != 41 {
+        return FlowcParsedAttr { name: name, args: "", n_args: 0, ok: 0 }
+    }
+    let args_raw: string = substr(attr, paren + 1, n - 1)
+
+    # Count and normalize args: split by comma, strip each, skip empty.
+    let an: i32 = strlen(args_raw) as i32
+    let ap: ptr<u8> = args_raw
+    let mut count: i32 = 0
+    let mut result: string = ""
+    let mut start: i32 = 0
+    let mut j: i32 = 0
+    while j <= an {
+        if j == an or ap[j] == 44 {
+            # Strip whitespace from [start, j)
+            let mut s2: i32 = start
+            while s2 < j and is_space(ap[s2]) == 1 {
+                s2 = s2 + 1
+            }
+            let mut e2: i32 = j
+            while e2 > s2 and is_space(ap[e2 - 1]) == 1 {
+                e2 = e2 - 1
+            }
+            if s2 < e2 {
+                let item: string = substr(args_raw, s2, e2)
+                if count > 0 {
+                    result = str_append(result, ",")
+                }
+                result = str_append(result, item)
+                count = count + 1
+            }
+            start = j + 1
+        }
+        j = j + 1
+    }
+
+    return FlowcParsedAttr { name: name, args: result, n_args: count, ok: 1 }
+}
+
+# ── Target spec validation ───────────────────────────────────────
+
+# Check if a character is valid in a target feature item.
+# Allows [A-Za-z0-9_.] and also '-' and '+' and '='.
+function is_target_char(c: i32) -> i32 {
+    if is_word_char(c) == 1 {
+        return 1
+    }
+    if c == 45 or c == 43 or c == 61 {
+        return 1
+    }
+    return 0
+}
+
+# Validate one comma-separated item of a @target(...) spec.
+# Accepts: bare feature (avx2), signed feature (+avx2, -sse, no-sse),
+# key=value (arch=haswell, tune=native).
+# Returns 1 if valid, 0 if invalid.
+function validate_target_item(item: string) -> i32 {
+    let n: i32 = strlen(item) as i32
+    if n == 0 {
+        return 0
+    }
+    let p: ptr<u8> = item
+    let mut i: i32 = 0
+
+    # Optional leading + or -
+    if p[i] == 43 or p[i] == 45 {
+        i = i + 1
+    }
+
+    # Must have at least one word char after the sign
+    if i >= n or is_word_char(p[i]) == 0 {
+        return 0
+    }
+
+    # Read the feature name (word chars and hyphens)
+    while i < n and is_word_char(p[i]) == 1 {
+        i = i + 1
+    }
+    # Allow hyphenated names like no-sse
+    while i < n and p[i] == 45 {
+        i = i + 1
+        if i >= n or is_word_char(p[i]) == 0 {
+            return 0
+        }
+        while i < n and is_word_char(p[i]) == 1 {
+            i = i + 1
+        }
+    }
+
+    # Optional =value
+    if i < n and p[i] == 61 {
+        i = i + 1
+        if i >= n or is_word_char(p[i]) == 0 {
+            return 0
+        }
+        while i < n and is_word_char(p[i]) == 1 {
+            i = i + 1
+        }
+        # Allow hyphenated values
+        while i < n and p[i] == 45 {
+            i = i + 1
+            if i >= n or is_word_char(p[i]) == 0 {
+                return 0
+            }
+            while i < n and is_word_char(p[i]) == 1 {
+                i = i + 1
+            }
+        }
+        # Allow + in values (e.g. arch=x86-64+avx2)
+        while i < n and p[i] == 43 {
+            i = i + 1
+            if i >= n or is_word_char(p[i]) == 0 {
+                return 0
+            }
+            while i < n and is_word_char(p[i]) == 1 {
+                i = i + 1
+            }
+        }
+    }
+
+    # Must have consumed the entire string
+    if i == n {
+        return 1
+    }
+    return 0
+}
+
+# Validate a full @target(...) spec.
+# Returns 1 if valid, 0 if invalid.
+export function flowc_validate_target_spec(spec: string) -> i32 {
+    let n: i32 = strlen(spec) as i32
+    if n == 0 {
+        return 0
+    }
+    # Split by comma and validate each item
+    let p: ptr<u8> = spec
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            # Strip whitespace
+            let mut s: i32 = start
+            while s < i and is_space(p[s]) == 1 {
+                s = s + 1
+            }
+            let mut e: i32 = i
+            while e > s and is_space(p[e - 1]) == 1 {
+                e = e - 1
+            }
+            if s >= e {
+                return 0
+            }
+            let item: string = substr(spec, s, e)
+            if validate_target_item(item) == 0 {
+                return 0
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Normalize a target spec: strip whitespace, drop empty items,
+# join with commas.
+export function flowc_normalize_target_spec(spec: string) -> string {
+    let n: i32 = strlen(spec) as i32
+    let p: ptr<u8> = spec
+    let mut result: string = ""
+    let mut start: i32 = 0
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            let mut s: i32 = start
+            while s < i and is_space(p[s]) == 1 {
+                s = s + 1
+            }
+            let mut e: i32 = i
+            while e > s and is_space(p[e - 1]) == 1 {
+                e = e - 1
+            }
+            if s < e {
+                let item: string = substr(spec, s, e)
+                if count > 0 {
+                    result = str_append(result, ",")
+                }
+                result = str_append(result, item)
+                count = count + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return result
+}
