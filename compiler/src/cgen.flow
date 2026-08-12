@@ -1271,6 +1271,29 @@ export function flowc_cgen_emit_sigs(
         item = arena.nodes[item].next
     }
 
+    # Pass 2.5: top-level let → global variable
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].kind == AST_LET {
+            let ann: i32 = arena.nodes[item].a
+            let init: i32 = arena.nodes[item].b
+            let mut ty: i32 = ann
+            if ann == AST_NONE {
+                ty = flowc_cgen_infer_type_node(arena, src, init)
+            }
+            flowc_cgen_puts(&w, "static ")
+            flowc_cgen_emit_type(&w, arena, src, ty)
+            flowc_cgen_putc(&w, 32)
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            if init != AST_NONE {
+                flowc_cgen_puts(&w, " = ")
+                flowc_cgen_emit_expr(&w, arena, src, init)
+            }
+            flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
     # Pass 3: functions (including export function)
     item = arena.nodes[root].a
     while item != AST_NONE {

@@ -210,6 +210,15 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
 
     if flowc_lex_is_digit(c) == 1 {
         flowc_lexer_bump(lex)
+        # Hex literal: 0x...
+        if c == 48 and lex[0].pos < lex[0].len and (lex[0].input[lex[0].pos] == 120 or lex[0].input[lex[0].pos] == 88) {
+            flowc_lexer_bump(lex)
+            while lex[0].pos < lex[0].len and flowc_lex_is_alnum(lex[0].input[lex[0].pos]) == 1 {
+                flowc_lexer_bump(lex)
+            }
+            let end: i32 = lex[0].pos
+            return flowc_make_tok(TOK_INT, 0, start, end, line, col)
+        }
         while lex[0].pos < lex[0].len and flowc_lex_is_digit(lex[0].input[lex[0].pos]) == 1 {
             flowc_lexer_bump(lex)
         }
