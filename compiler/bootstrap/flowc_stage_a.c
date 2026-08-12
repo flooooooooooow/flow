@@ -3317,6 +3317,7 @@ typedef struct TcCtx {
   int32_t cur_ret;
   int32_t loop_depth;
   int32_t has_extern;
+  int32_t lenient;
   uint8_t* seed_buf;
   int32_t seed_cap;
   int32_t seed_len;
@@ -3667,7 +3668,7 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   int32_t ns = ((arena).nodes[id]).name_start;
   int32_t ne = ((arena).nodes[id]).name_end;
   if (flowc_tc_lookup_fn(ctx[0], ns, ne) == 0) {
-  if ((ctx[0]).has_extern == 0) {
+  if ((ctx[0]).has_extern == 0 && (ctx[0]).lenient == 0) {
   flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne);
   flowc_tc_err(ctx);
 }
@@ -4059,7 +4060,7 @@ TcCtx flowc_tc_init(uint8_t* src) {
   if (raw_seed != NULL) {
   free(raw_seed);
 }
-  return (TcCtx){ .src = src, .ns = NULL, .ne = NULL, .nk = NULL, .na = NULL, .nlen = 0, .ncap = 0, .marks = NULL, .mlen = 0, .mcap = 0, .err = 1, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .seed_buf = NULL, .seed_cap = 0, .seed_len = 0, .seed_nlen = 0, .path = "" };
+  return (TcCtx){ .src = src, .ns = NULL, .ne = NULL, .nk = NULL, .na = NULL, .nlen = 0, .ncap = 0, .marks = NULL, .mlen = 0, .mcap = 0, .err = 1, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .seed_buf = NULL, .seed_cap = 0, .seed_len = 0, .seed_nlen = 0, .path = "" };
 }
   int32_t zi = 0;
   while (zi < seed_cap) {
@@ -4071,7 +4072,7 @@ TcCtx flowc_tc_init(uint8_t* src) {
   int32_t* nk = (int32_t*)(raw_nk);
   int32_t* na = (int32_t*)(raw_na);
   int32_t* marks = (int32_t*)(raw_mk);
-  return (TcCtx){ .src = src, .ns = ns, .ne = ne, .nk = nk, .na = na, .nlen = 0, .ncap = ncap, .marks = marks, .mlen = 0, .mcap = mcap, .err = 0, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .seed_buf = raw_seed, .seed_cap = seed_cap, .seed_len = 0, .seed_nlen = 0, .path = "" };
+  return (TcCtx){ .src = src, .ns = ns, .ne = ne, .nk = nk, .na = na, .nlen = 0, .ncap = ncap, .marks = marks, .mlen = 0, .mcap = mcap, .err = 0, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .seed_buf = raw_seed, .seed_cap = seed_cap, .seed_len = 0, .seed_nlen = 0, .path = "" };
 }
 
 void flowc_tc_free(TcCtx* ctx) {
@@ -4596,6 +4597,7 @@ int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
 }
   uint8_t* no_src = (uint8_t*)(NULL);
   TcCtx ctx = flowc_tc_init(no_src);
+  (ctx).lenient = 1;
   if ((ctx).ns == NULL) {
   free(order_store);
   free(path_store);
