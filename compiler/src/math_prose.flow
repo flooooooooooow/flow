@@ -247,3 +247,186 @@ export function flowc_addr_coordinate_latex(addr: FlowcClaimAddress) -> string {
     s = mp_str_append(s, addr.law)
     return s
 }
+
+# ── Mathematical case condition ──────────────────────────────────
+
+function is_ident_char(c: i32) -> i32 {
+    if c >= 97 and c <= 122 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 48 and c <= 57 { return 1 }
+    if c == 95 { return 1 }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 or c == 10 { return 1 }
+    return 0
+}
+
+# Extract the leading identifier from a condition string.
+# Returns the identifier and advances *end to the position after it.
+function extract_ident(s: string, start: i32) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut i: i32 = start
+    while i < n and is_ident_char(p[i]) == 1 {
+        i = i + 1
+    }
+    if i == start { return "" }
+    let buf: ptr<u8> = malloc((i - start + 1) as i64) as ptr<u8>
+    let mut j: i32 = 0
+    let mut k: i32 = start
+    while k < i {
+        buf[j] = p[k]
+        j = j + 1
+        k = k + 1
+    }
+    buf[j] = 0
+    return buf as string
+}
+
+function skip_spaces(s: string, start: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut i: i32 = start
+    while i < n and is_space(p[i]) == 1 {
+        i = i + 1
+    }
+    return i
+}
+
+function match_suffix(s: string, start: i32, suffix: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let sl: i32 = strlen(suffix) as i32
+    let p: ptr<u8> = s
+    let sp: ptr<u8> = suffix
+    let mut i: i32 = start
+    let mut j: i32 = 0
+    while j < sl and i < n {
+        if p[i] != sp[j] { return 0 }
+        i = i + 1
+        j = j + 1
+    }
+    if j == sl {
+        # Must be at end (ignoring trailing spaces)
+        while i < n and is_space(p[i]) == 1 { i = i + 1 }
+        if i == n { return 1 }
+    }
+    return 0
+}
+
+function match_suffix_ci(s: string, start: i32, suffix: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let sl: i32 = strlen(suffix) as i32
+    let p: ptr<u8> = s
+    let sp: ptr<u8> = suffix
+    let mut i: i32 = start
+    let mut j: i32 = 0
+    while j < sl and i < n {
+        let a: i32 = p[i]
+        let b: i32 = sp[j]
+        # Case-insensitive comparison
+        let al: i32 = a
+        let bl: i32 = b
+        if a >= 65 and a <= 90 { al = a + 32 }
+        if b >= 65 and b <= 90 { bl = b + 32 }
+        if al != bl { return 0 }
+        i = i + 1
+        j = j + 1
+    }
+    if j == sl {
+        while i < n and is_space(p[i]) == 1 { i = i + 1 }
+        if i == n { return 1 }
+    }
+    return 0
+}
+
+# Turn a parser condition into spoken mathematics.
+# Port of mathematical_case_condition.
+export function flowc_mathematical_case_condition(cond: string) -> string {
+    let n: i32 = strlen(cond) as i32
+    let p: ptr<u8> = cond
+    let mut i: i32 = 0
+    # Skip leading whitespace
+    i = skip_spaces(cond, 0)
+
+    # Extract the identifier
+    let name: string = extract_ident(cond, i)
+    if strlen(name) == 0 {
+        # No identifier, fall through to == replacement
+        return flowc_replace_eq(cond)
+    }
+
+    # Advance past the identifier
+    let mut j: i32 = i + (strlen(name) as i32)
+    j = skip_spaces(cond, j)
+
+    # Check for ==
+    if j + 1 < n and p[j] == 61 and p[j + 1] == 61 {
+        j = j + 2
+        j = skip_spaces(cond, j)
+
+        # Check "true" (case insensitive)
+        if match_suffix_ci(cond, j, "true") == 1 {
+            let s: string = name
+            s = mp_str_append(s, " holds")
+            return s
+        }
+        # Check "false" (case insensitive)
+        if match_suffix_ci(cond, j, "false") == 1 {
+            let s: string = name
+            s = mp_str_append(s, " does not hold")
+            return s
+        }
+        # Check "0"
+        if j < n and p[j] == 48 {
+            let k: i32 = j + 1
+            while k < n and is_space(p[k]) == 1 { k = k + 1 }
+            if k == n {
+                let s: string = name
+                s = mp_str_append(s, " is zero")
+                return s
+            }
+        }
+    }
+
+    # Fall through: replace == with " equals "
+    return flowc_replace_eq(cond)
+}
+
+# Replace == with " equals " in a string.
+function flowc_replace_eq(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if i + 1 < n and p[i] == 61 and p[i + 1] == 61 {
+            out = mp_str_append(out, " equals ")
+            i = i + 2
+        } else {
+            let buf: array<u8, 2> = [0, 0]
+            buf[0] = p[i]
+            out = mp_str_append(out, buf as string)
+            i = i + 1
+        }
+    }
+    # Strip leading/trailing whitespace
+    let on: i32 = strlen(out) as i32
+    let op: ptr<u8> = out
+    let mut start: i32 = 0
+    while start < on and is_space(op[start]) == 1 { start = start + 1 }
+    let mut end: i32 = on
+    while end > start and is_space(op[end - 1]) == 1 { end = end - 1 }
+    if start >= end { return "" }
+    let buf: ptr<u8> = malloc((end - start + 1) as i64) as ptr<u8>
+    let mut k: i32 = 0
+    let mut m: i32 = start
+    while m < end {
+        buf[k] = op[m]
+        k = k + 1
+        m = m + 1
+    }
+    buf[k] = 0
+    return buf as string
+}
