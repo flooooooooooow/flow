@@ -1127,7 +1127,7 @@ int32_t flowc_parse_atom(Parser* p) {
   if (flowc_parser_check(p[0], TOK_RBRACE) == 1) {
   is_lit = 1;
 } else {
-  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1 || flowc_parser_check(p[0], TOK_KEYWORD) == 1) {
   flowc_parser_advance(p);
   if (flowc_parser_check(p[0], TOK_COLON) == 1) {
   is_lit = 1;
@@ -1143,7 +1143,7 @@ int32_t flowc_parse_atom(Parser* p) {
   flowc_parser_advance(p);
   int32_t fields = AST_NONE;
   while (flowc_parser_check(p[0], TOK_RBRACE) == 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
-  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0 && flowc_parser_check(p[0], TOK_KEYWORD) == 0) {
   (p[0]).err = 1;
   return AST_NONE;
 }
