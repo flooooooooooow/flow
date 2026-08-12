@@ -1,0 +1,100 @@
+# Test for is_duplicate_claim in claim_path.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_check_duplicates.flow
+# Exit 0 on success.
+
+import "compiler/src/claim_path.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # No duplicate: different claims
+    let d1: i32 = flowc_is_duplicate_claim(
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n",
+        "«Nat» «addition» «order does not matter»",
+        "m + n = n + m"
+    )
+    if d1 != 0 {
+        printf("FAIL: different claims should not be duplicate, got %d\n", d1)
+        return 1
+    }
+
+    # Duplicate: same carrier/structure/fingerprint, different path
+    let d2: i32 = flowc_is_duplicate_claim(
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n",
+        "«Nat» «addition» «zero on the left does nothing»",
+        "0 + n = n"
+    )
+    if d2 != 1 {
+        printf("FAIL: same fingerprint different path should be duplicate, got %d\n", d2)
+        return 2
+    }
+
+    # Same path: not a duplicate
+    let d3: i32 = flowc_is_duplicate_claim(
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n",
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n"
+    )
+    if d3 != 0 {
+        printf("FAIL: same path should not be duplicate, got %d\n", d3)
+        return 3
+    }
+
+    # Different carrier: not a duplicate
+    let d4: i32 = flowc_is_duplicate_claim(
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n",
+        "«Int» «addition» «zero is the left identity»",
+        "0 + n = n"
+    )
+    if d4 != 0 {
+        printf("FAIL: different carrier should not be duplicate, got %d\n", d4)
+        return 4
+    }
+
+    # Different structure: not a duplicate
+    let d5: i32 = flowc_is_duplicate_claim(
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n",
+        "«Nat» «multiplication» «zero is the left identity»",
+        "0 + n = n"
+    )
+    if d5 != 0 {
+        printf("FAIL: different structure should not be duplicate, got %d\n", d5)
+        return 5
+    }
+
+    # Different fingerprint: not a duplicate
+    let d6: i32 = flowc_is_duplicate_claim(
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n",
+        "«Nat» «addition» «order does not matter»",
+        "m + n = n + m"
+    )
+    if d6 != 0 {
+        printf("FAIL: different fingerprint should not be duplicate, got %d\n", d6)
+        return 6
+    }
+
+    # Unparseable path: not a duplicate
+    let d7: i32 = flowc_is_duplicate_claim(
+        "not a claim path",
+        "0 + n = n",
+        "«Nat» «addition» «zero is the left identity»",
+        "0 + n = n"
+    )
+    if d7 != 0 {
+        printf("FAIL: unparseable path should not be duplicate, got %d\n", d7)
+        return 7
+    }
+
+    puts("All is_duplicate_claim tests passed")
+    return 0
+}
