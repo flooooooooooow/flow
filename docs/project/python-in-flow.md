@@ -67,6 +67,7 @@ them as part of Phase D; call them via the escape hatch:
 | Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow) — `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
 | MISRA/CERT C scanner | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow) — `flowc_scan_c_source` flags heap/stdio/abort calls |
 | Function attribute vocabulary | [`compiler/src/attributes.flow`](../../compiler/src/attributes.flow) — `flowc_parse_attribute` / `flowc_validate_target_spec` / `flowc_domain_rank` |
+| Matmul/reduce cost models | [`compiler/src/general_plans.flow`](../../compiler/src/general_plans.flow) — `flowc_select_matmul` / `flowc_select_reduce` (pure cost/applicability, registry stays Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |
