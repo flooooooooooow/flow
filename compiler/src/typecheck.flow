@@ -651,6 +651,10 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             let ty: i32 = arena.nodes[item].a
             flowc_tc_bind_value(ctx, arena.nodes[item].name_start, arena.nodes[item].name_end, ty)
         }
+        if kind == AST_LET {
+            let ty: i32 = arena.nodes[item].a
+            flowc_tc_bind_value(ctx, arena.nodes[item].name_start, arena.nodes[item].name_end, ty)
+        }
         if kind == AST_IMPORT {
             let mut nm: i32 = arena.nodes[item].a
             while nm != AST_NONE {
@@ -779,6 +783,16 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
                     -1
                 )
             }
+        }
+        if kind == AST_LET {
+            flowc_tc_seed_bind(
+                ctx,
+                dep_src,
+                dep_arena.nodes[item].name_start,
+                dep_arena.nodes[item].name_end,
+                0,
+                -1
+            )
         }
         if kind == AST_EXPORT {
             let inner: i32 = dep_arena.nodes[item].a

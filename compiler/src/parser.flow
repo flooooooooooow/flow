@@ -82,6 +82,27 @@ function flowc_parser_eat_kw(p: ptr<Parser>, kw: i32) -> i32 {
 }
 
 function flowc_parse_int_span(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    # Hex literal: 0x...
+    if end - start >= 2 and src[start] == 48 and (src[start + 1] == 120 or src[start + 1] == 88) {
+        let mut v: i32 = 0
+        let mut i: i32 = start + 2
+        while i < end {
+            let c: i32 = src[i]
+            if c >= 48 and c <= 57 {
+                v = v * 16 + (c - 48)
+            } else {
+                if c >= 97 and c <= 102 {
+                    v = v * 16 + (c - 87)
+                } else {
+                    if c >= 65 and c <= 70 {
+                        v = v * 16 + (c - 55)
+                    }
+                }
+            }
+            i = i + 1
+        }
+        return v
+    }
     let mut v: i32 = 0
     let mut i: i32 = start
     while i < end {
@@ -1318,6 +1339,44 @@ function flowc_parse_import(p: ptr<Parser>) -> i32 {
 }
 
 # const Name: Type = expr  (ival = 1 if export, else 0)
+# Top-level or statement-level let binding.
+function flowc_parse_let(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    flowc_parser_advance(p)
+    let mut is_mut: i32 = 0
+    if flowc_parser_check_kw(p[0], KW_MUT) == 1 {
+        is_mut = 1
+        flowc_parser_advance(p)
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    let mut ty: i32 = AST_NONE
+    if flowc_parser_check(p[0], TOK_COLON) == 1 {
+        flowc_parser_advance(p)
+        ty = flowc_parse_type(p)
+    }
+    if flowc_parser_eat(p, TOK_EQ) == 0 {
+        return AST_NONE
+    }
+    let init: i32 = flowc_parse_expr(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_LET, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].ival = is_mut
+    p[0].arena.nodes[id].a = ty
+    p[0].arena.nodes[id].b = init
+    return id
+}
+
 # Skip a { ... } brace-delimited block, consuming the closing brace.
 function flowc_parser_skip_brace_block(p: ptr<Parser>) {
     if flowc_parser_check(p[0], TOK_LBRACE) == 1 {
@@ -1527,6 +1586,9 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                 }
             }
         }
+        if flowc_parser_check_kw(p[0], KW_LET) == 1 {
+            item = flowc_parse_let(p)
+        } else {
         if flowc_parser_check_kw(p[0], KW_IMPORT) == 1 {
             item = flowc_parse_import(p)
         } else {
@@ -1580,6 +1642,7 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                     }
                 }
             }
+        }
         }
         if item == AST_NONE {
             return AST_NONE
