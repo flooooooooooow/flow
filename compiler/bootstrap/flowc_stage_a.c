@@ -4012,6 +4012,8 @@ void flowc_cgen_emit_struct(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id
   flowc_cgen_puts(w, "typedef struct ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, " {\n");
+  int32_t sns = ((arena).nodes[id]).name_start;
+  int32_t sne = ((arena).nodes[id]).name_end;
   int32_t field = ((arena).nodes[id]).a;
   while (field != AST_NONE) {
   flowc_cgen_puts(w, "  ");
@@ -4026,10 +4028,46 @@ void flowc_cgen_emit_struct(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id
 }
 }
 }
+  int32_t emitted_self = 0;
+  if (arr_n == 0 && fty != AST_NONE && ((arena).nodes[fty]).kind == AST_TYPE) {
+  if (flowc_cgen_span_is(src, ((arena).nodes[fty]).name_start, ((arena).nodes[fty]).name_end, "ptr") == 1) {
+  int32_t inner = ((arena).nodes[fty]).a;
+  if (inner != AST_NONE && ((arena).nodes[inner]).kind == AST_TYPE) {
+  if (flowc_cgen_span_eq(src, ((arena).nodes[inner]).name_start, ((arena).nodes[inner]).name_end, sns, sne) == 1) {
+  flowc_cgen_puts(w, "struct ");
+  flowc_cgen_put_span(w, src, sns, sne);
+  flowc_cgen_putc(w, 42);
+  emitted_self = 1;
+}
+}
+}
+}
   if (arr_n > 0) {
+  if (arr_inner != AST_NONE && ((arena).nodes[arr_inner]).kind == AST_TYPE) {
+  if (flowc_cgen_span_is(src, ((arena).nodes[arr_inner]).name_start, ((arena).nodes[arr_inner]).name_end, "ptr") == 1) {
+  int32_t pinner = ((arena).nodes[arr_inner]).a;
+  if (pinner != AST_NONE && ((arena).nodes[pinner]).kind == AST_TYPE) {
+  if (flowc_cgen_span_eq(src, ((arena).nodes[pinner]).name_start, ((arena).nodes[pinner]).name_end, sns, sne) == 1) {
+  flowc_cgen_puts(w, "struct ");
+  flowc_cgen_put_span(w, src, sns, sne);
+  flowc_cgen_putc(w, 42);
+  flowc_cgen_putc(w, 32);
+  flowc_cgen_put_span(w, src, ((arena).nodes[field]).name_start, ((arena).nodes[field]).name_end);
+  flowc_cgen_putc(w, 91);
+  flowc_cgen_put_i32(w, arr_n);
+  flowc_cgen_putc(w, 93);
+  flowc_cgen_puts(w, ";\n");
+  field = ((arena).nodes[field]).next;
+  continue;
+}
+}
+}
+}
   flowc_cgen_emit_type(w, arena, src, arr_inner);
 } else {
+  if (emitted_self == 0) {
   flowc_cgen_emit_type(w, arena, src, fty);
+}
 }
   flowc_cgen_putc(w, 32);
   flowc_cgen_put_span(w, src, ((arena).nodes[field]).name_start, ((arena).nodes[field]).name_end);
