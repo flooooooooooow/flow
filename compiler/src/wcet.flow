@@ -1,0 +1,73 @@
+# @module flowc.wcet
+# @means  WCET analysis helpers: type size lookup and statement
+#         cost model. Port of pure lookup functions from
+#         wcet_analysis.py. The Python original parses the AST and
+#         collects function info; this port exposes the type size
+#         and cost model lookups.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+# ── Type size lookup ─────────────────────────────────────────────
+
+# Estimate the size of a Flow type in bytes.
+# Port of _type_size.
+export function flowc_type_size(type_name: string) -> i32 {
+    # 1-byte types
+    if strcmp(type_name, "i8") == 0 { return 1 }
+    if strcmp(type_name, "u8") == 0 { return 1 }
+    if strcmp(type_name, "bool") == 0 { return 1 }
+    # 2-byte types
+    if strcmp(type_name, "i16") == 0 { return 2 }
+    if strcmp(type_name, "u16") == 0 { return 2 }
+    # 4-byte types
+    if strcmp(type_name, "i32") == 0 { return 4 }
+    if strcmp(type_name, "u32") == 0 { return 4 }
+    if strcmp(type_name, "f32") == 0 { return 4 }
+    # 8-byte types
+    if strcmp(type_name, "i64") == 0 { return 8 }
+    if strcmp(type_name, "u64") == 0 { return 8 }
+    if strcmp(type_name, "f64") == 0 { return 8 }
+    if strcmp(type_name, "c64") == 0 { return 8 }
+    if strcmp(type_name, "ptr") == 0 { return 8 }
+    if strcmp(type_name, "string") == 0 { return 8 }
+    # 16-byte types
+    if strcmp(type_name, "i128") == 0 { return 16 }
+    if strcmp(type_name, "u128") == 0 { return 16 }
+    if strcmp(type_name, "c128") == 0 { return 16 }
+
+    # Pointer types: ptr_ or Ptr_ prefix -> 8 bytes
+    let n: i32 = strlen(type_name) as i32
+    if n >= 4 {
+        let p: ptr<u8> = type_name
+        if p[0] == 112 and p[1] == 116 and p[2] == 114 and p[3] == 95 {
+            return 8
+        }
+        if p[0] == 80 and p[1] == 116 and p[2] == 114 and p[3] == 95 {
+            return 8
+        }
+    }
+
+    # Default: structs approximate as 16 bytes
+    return 16
+}
+
+# ── Statement cost model ─────────────────────────────────────────
+
+# Abstract instruction count for a statement kind.
+# Port of STMT_COSTS lookup.
+export function flowc_stmt_cost(kind: string) -> i32 {
+    if strcmp(kind, "assignment") == 0 { return 2 }
+    if strcmp(kind, "if") == 0 { return 3 }
+    if strcmp(kind, "for") == 0 { return 5 }
+    if strcmp(kind, "while") == 0 { return 5 }
+    if strcmp(kind, "return") == 0 { return 2 }
+    if strcmp(kind, "call") == 0 { return 10 }
+    if strcmp(kind, "declare") == 0 { return 1 }
+    return 1
+}
+
+# Default loop bound when @max_iterations is absent.
+export const FLOWC_DEFAULT_LOOP_BOUND: i32 = 1000
