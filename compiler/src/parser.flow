@@ -14,7 +14,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -522,6 +522,20 @@ function flowc_parse_primary(p: ptr<Parser>) -> i32 {
             return AST_NONE
         }
         p[0].arena.nodes[id].ival = op
+        p[0].arena.nodes[id].a = operand
+        return id
+    }
+    # `not` keyword → logical negation (same as !)
+    if tok.kind == TOK_KEYWORD and tok.kw == KW_NOT {
+        let start: i32 = tok.start
+        flowc_parser_advance(p)
+        let operand: i32 = flowc_parse_primary(p)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_UNARY, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].ival = TOK_BANG
         p[0].arena.nodes[id].a = operand
         return id
     }
@@ -1198,7 +1212,8 @@ function flowc_parse_struct(p: ptr<Parser>) -> i32 {
     }
     let mut fields: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
-        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        # Field name can be an identifier or a keyword used as a name (e.g. `unit`).
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 and flowc_parser_check(p[0], TOK_KEYWORD) == 0 {
             p[0].err = 1
             return AST_NONE
         }
@@ -1245,11 +1260,40 @@ function flowc_parse_struct(p: ptr<Parser>) -> i32 {
     return id
 }
 
+# Forward declarations for skip helpers (used before definition).
+function flowc_parser_skip_brace_block(p: ptr<Parser>)
+function flowc_parser_skip_paren_block(p: ptr<Parser>)
+
 # Shallow skip: extern { ... } with brace matching (bodies not typed yet).
 function flowc_parse_extern(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
     if flowc_parser_eat_kw(p, KW_EXTERN) == 0 {
         return AST_NONE
+    }
+    # extern function name(params) -> Ret  — skip to end of line/semicolon.
+    if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+            flowc_parser_advance(p)
+        }
+        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+            flowc_parser_skip_paren_block(p)
+        }
+        # Optional return type: -> Type
+        if flowc_parser_check(p[0], TOK_ARROW) == 1 {
+            flowc_parser_advance(p)
+            let _skip_ty: i32 = flowc_parse_type(p)
+        }
+        # Optional semicolon
+        if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+            flowc_parser_advance(p)
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXTERN, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        return id
     }
     if flowc_parser_eat(p, TOK_LBRACE) == 0 {
         return AST_NONE
@@ -1455,6 +1499,29 @@ function flowc_parser_skip_brace_block(p: ptr<Parser>) {
             }
         }
         if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+            flowc_parser_advance(p)
+        }
+    }
+}
+
+# Skip a ( ... ) paren-delimited block, consuming the closing paren.
+function flowc_parser_skip_paren_block(p: ptr<Parser>) {
+    if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+        flowc_parser_advance(p)
+        let mut depth: i32 = 1
+        while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+            if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                depth = depth + 1
+            } else {
+                if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
+                    depth = depth - 1
+                }
+            }
+            if depth > 0 {
+                flowc_parser_advance(p)
+            }
+        }
+        if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
             flowc_parser_advance(p)
         }
     }
