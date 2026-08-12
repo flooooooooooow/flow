@@ -1,0 +1,188 @@
+# @module flowc.fir_analysis
+# @means  CPU reference analyses over FIR-G (Phase 1).
+#         Port of the core algorithms from src/flow/fir_analysis.py.
+#         The Python original operates on the FirG graph object; this
+#         port works on flat arrays (CSR call graph + effect bitvectors)
+#         so a Flow caller can run the same fixpoint and reachability
+#         without the Python object graph.
+#
+# Effect bits (matching fir_g.py):
+#   EFF_IO=1, EFF_FFI=2, EFF_GPU=4, EFF_WRITES_MEMORY=8,
+#   EFF_ALLOCATES=16, EFF_UNKNOWN=32
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Constants ────────────────────────────────────────────────────
+
+export const FLOWC_EFF_IO: i32 = 1
+export const FLOWC_EFF_FFI: i32 = 2
+export const FLOWC_EFF_GPU: i32 = 4
+export const FLOWC_EFF_WRITES_MEMORY: i32 = 8
+export const FLOWC_EFF_ALLOCATES: i32 = 16
+export const FLOWC_EFF_UNKNOWN: i32 = 32
+
+# Mask of all "dirty" effect bits (IO, FFI, GPU, writes, allocates, unknown).
+export const FLOWC_EFF_DIRTY: i32 = 63
+
+# ── Effect propagation ───────────────────────────────────────────
+
+# Monotone call-graph effect OR-propagation to fixpoint.
+# X^{t+1}[f] = X^t[f] OR union of X^t[c] for all callees c of f.
+#
+# bits: per-function effect bitvectors (ptr<i32>, num_funcs elements).
+#       Mutated in place.
+# row_offsets: CSR row offsets (ptr<i32>, num_funcs+1 elements).
+# columns: CSR column indices (ptr<i32>, row_offsets[num_funcs] elements).
+# num_funcs: number of functions.
+# max_iters: maximum iterations before giving up.
+#
+# Returns the number of iterations to reach fixpoint.
+export function flowc_propagate_effects(
+    bits: ptr<i32>,
+    row_offsets: ptr<i32>,
+    columns: ptr<i32>,
+    num_funcs: i32,
+    max_iters: i32
+) -> i32 {
+    let mut iter: i32 = 0
+    while iter < max_iters {
+        let mut changed: i32 = 0
+        let mut f: i32 = 0
+        while f < num_funcs {
+            let lo: i32 = row_offsets[f]
+            let hi: i32 = row_offsets[f + 1]
+            let acc: i32 = bits[f]
+            let mut ei: i32 = lo
+            while ei < hi {
+                let cal: i32 = columns[ei]
+                # acc |= bits[cal]
+                # Bitwise OR via Flow's bitwise or operator
+                let callee_bits: i32 = bits[cal]
+                let combined: i32 = acc | callee_bits
+                acc = combined
+                ei = ei + 1
+            }
+            if acc != bits[f] {
+                bits[f] = acc
+                changed = 1
+            }
+            f = f + 1
+        }
+        iter = iter + 1
+        if changed == 0 {
+            break
+        }
+    }
+    return iter
+}
+
+# ── Forward reachability ─────────────────────────────────────────
+
+# Forward reachability on the call graph from a set of root function IDs.
+# Uses an explicit stack (DFS).
+#
+# row_offsets: CSR row offsets (ptr<i32>, num_funcs+1 elements).
+# columns: CSR column indices (ptr<i32>, row_offsets[num_funcs] elements).
+# roots: array of root function IDs (ptr<i32>).
+# num_roots: number of roots.
+# num_funcs: total number of functions.
+# visited: output bitmap (ptr<i32>, num_funcs elements). Set to 1 for reachable.
+#
+# Returns the number of reachable functions.
+export function flowc_reachable_functions(
+    row_offsets: ptr<i32>,
+    columns: ptr<i32>,
+    roots: ptr<i32>,
+    num_roots: i32,
+    num_funcs: i32,
+    visited: ptr<i32>
+) -> i32 {
+    # Clear visited
+    let mut i: i32 = 0
+    while i < num_funcs {
+        visited[i] = 0
+        i = i + 1
+    }
+
+    # Stack for DFS (allocate enough for all funcs)
+    let stack: ptr<i32> = malloc((num_funcs + 1) * 4) as ptr<i32>
+    let mut sp: i32 = 0
+
+    # Push roots
+    let mut r: i32 = 0
+    while r < num_roots {
+        stack[sp] = roots[r]
+        sp = sp + 1
+        r = r + 1
+    }
+
+    let mut count: i32 = 0
+    while sp > 0 {
+        sp = sp - 1
+        let f: i32 = stack[sp]
+        if visited[f] == 1 {
+            continue
+        }
+        visited[f] = 1
+        count = count + 1
+
+        let lo: i32 = row_offsets[f]
+        let hi: i32 = row_offsets[f + 1]
+        let mut ei: i32 = lo
+        while ei < hi {
+            let cal: i32 = columns[ei]
+            if visited[cal] == 0 {
+                stack[sp] = cal
+                sp = sp + 1
+            }
+            ei = ei + 1
+        }
+    }
+
+    free(stack as ptr<void>)
+    return count
+}
+
+# ── Purity check ────────────────────────────────────────────────
+
+# Check if a function is pure (no dirty effect bits).
+# Returns 1 if pure, 0 if not.
+export function flowc_is_pure(effect_bits: i32) -> i32 {
+    if (effect_bits & FLOWC_EFF_DIRTY) == 0 {
+        return 1
+    }
+    return 0
+}
+
+# Count pure functions in a bitvector array.
+export function flowc_count_pure(bits: ptr<i32>, num_funcs: i32) -> i32 {
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < num_funcs {
+        if flowc_is_pure(bits[i]) == 1 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+# Count dead functions (not reachable).
+# visited: the reachability bitmap from flowc_reachable_functions.
+export function flowc_count_dead(visited: ptr<i32>, num_funcs: i32) -> i32 {
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < num_funcs {
+        if visited[i] == 0 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}

@@ -1,0 +1,182 @@
+# Test for fir_analysis.flow port of fir_analysis.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fir_analysis.flow
+# Exit 0 on success.
+
+import "compiler/src/fir_analysis.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+}
+
+function main() -> i32 {
+    # Build a small call graph:
+    #   func 0 (main) calls func 1 and func 2
+    #   func 1 (helper) calls func 3
+    #   func 2 (io_func) has IO effect, calls nothing
+    #   func 3 (pure_func) has no effects, calls nothing
+    #
+    # CSR: row_offsets = [0, 2, 3, 3, 3]  (4 funcs, 3 edges)
+    #      columns     = [1, 2, 3]
+    #
+    # Initial effects:
+    #   func 0: 0 (no direct effects)
+    #   func 1: 0
+    #   func 2: EFF_IO (1)
+    #   func 3: 0
+    #
+    # After propagation:
+    #   func 0: EFF_IO (inherits from func 2)
+    #   func 1: 0 (pure)
+    #   func 2: EFF_IO (1)
+    #   func 3: 0 (pure)
+
+    let num_funcs: i32 = 4
+    let row_offsets: ptr<i32> = malloc(20) as ptr<i32>
+    row_offsets[0] = 0
+    row_offsets[1] = 2
+    row_offsets[2] = 3
+    row_offsets[3] = 3
+    row_offsets[4] = 3
+
+    let columns: ptr<i32> = malloc(12) as ptr<i32>
+    columns[0] = 1
+    columns[1] = 2
+    columns[2] = 3
+
+    let bits: ptr<i32> = malloc(16) as ptr<i32>
+    bits[0] = 0
+    bits[1] = 0
+    bits[2] = FLOWC_EFF_IO
+    bits[3] = 0
+
+    # Propagate effects
+    let iters: i32 = flowc_propagate_effects(bits, row_offsets, columns, num_funcs, 64)
+    if iters < 1 {
+        printf("FAIL: expected at least 1 iteration, got %d\n", iters)
+        return 1
+    }
+
+    # func 0 should have inherited IO from func 2
+    if (bits[0] & FLOWC_EFF_IO) == 0 {
+        printf("FAIL: func 0 should have IO bit, got %d\n", bits[0])
+        return 2
+    }
+
+    # func 1 should be pure (no dirty bits)
+    if flowc_is_pure(bits[1]) == 0 {
+        printf("FAIL: func 1 should be pure, bits=%d\n", bits[1])
+        return 3
+    }
+
+    # func 2 should still have IO
+    if (bits[2] & FLOWC_EFF_IO) == 0 {
+        puts("FAIL: func 2 should have IO bit")
+        return 4
+    }
+
+    # func 3 should be pure
+    if flowc_is_pure(bits[3]) == 0 {
+        printf("FAIL: func 3 should be pure, bits=%d\n", bits[3])
+        return 5
+    }
+
+    # Count pure functions: func 1 and func 3 = 2
+    let pure_count: i32 = flowc_count_pure(bits, num_funcs)
+    if pure_count != 2 {
+        printf("FAIL: expected 2 pure functions, got %d\n", pure_count)
+        return 6
+    }
+
+    # Reachability from main (func 0)
+    let roots: ptr<i32> = malloc(4) as ptr<i32>
+    roots[0] = 0
+    let visited: ptr<i32> = malloc(16) as ptr<i32>
+    let reachable: i32 = flowc_reachable_functions(row_offsets, columns, roots, 1, num_funcs, visited)
+    if reachable != 4 {
+        printf("FAIL: expected 4 reachable from main, got %d\n", reachable)
+        return 7
+    }
+
+    # All functions should be visited
+    let mut i: i32 = 0
+    while i < num_funcs {
+        if visited[i] != 1 {
+            printf("FAIL: func %d not visited from main\n", i)
+            return 8
+        }
+        i = i + 1
+    }
+
+    # Dead count should be 0
+    let dead: i32 = flowc_count_dead(visited, num_funcs)
+    if dead != 0 {
+        printf("FAIL: expected 0 dead from main, got %d\n", dead)
+        return 9
+    }
+
+    # Reachability from func 1 only (should reach func 1 and func 3)
+    let roots2: ptr<i32> = malloc(4) as ptr<i32>
+    roots2[0] = 1
+    let visited2: ptr<i32> = malloc(16) as ptr<i32>
+    let reachable2: i32 = flowc_reachable_functions(row_offsets, columns, roots2, 1, num_funcs, visited2)
+    if reachable2 != 2 {
+        printf("FAIL: expected 2 reachable from func 1, got %d\n", reachable2)
+        return 10
+    }
+    if visited2[0] != 0 {
+        puts("FAIL: func 0 should not be reachable from func 1")
+        return 11
+    }
+    if visited2[1] != 1 {
+        puts("FAIL: func 1 should be reachable from func 1")
+        return 12
+    }
+    if visited2[2] != 0 {
+        puts("FAIL: func 2 should not be reachable from func 1")
+        return 13
+    }
+    if visited2[3] != 1 {
+        puts("FAIL: func 3 should be reachable from func 1")
+        return 14
+    }
+
+    # Dead from func 1: func 0 and func 2 = 2
+    let dead2: i32 = flowc_count_dead(visited2, num_funcs)
+    if dead2 != 2 {
+        printf("FAIL: expected 2 dead from func 1, got %d\n", dead2)
+        return 15
+    }
+
+    # is_pure with various bit patterns
+    if flowc_is_pure(0) == 0 {
+        puts("FAIL: 0 bits should be pure")
+        return 16
+    }
+    if flowc_is_pure(FLOWC_EFF_IO) == 1 {
+        puts("FAIL: IO bit should not be pure")
+        return 17
+    }
+    if flowc_is_pure(FLOWC_EFF_FFI) == 1 {
+        puts("FAIL: FFI bit should not be pure")
+        return 18
+    }
+    if flowc_is_pure(FLOWC_EFF_ALLOCATES) == 1 {
+        puts("FAIL: ALLOCATES bit should not be pure")
+        return 19
+    }
+
+    # Free resources
+    free(row_offsets as ptr<void>)
+    free(columns as ptr<void>)
+    free(bits as ptr<void>)
+    free(roots as ptr<void>)
+    free(visited as ptr<void>)
+    free(roots2 as ptr<void>)
+    free(visited2 as ptr<void>)
+
+    puts("All fir_analysis tests passed")
+    return 0
+}
