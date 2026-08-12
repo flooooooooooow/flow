@@ -1,0 +1,205 @@
+# @module flowc.proof_document
+# @means  Proof document formatting helpers.
+#         Port of utility functions from src/flow/proof_document.py.
+#         The Python original builds full proof documents; this port
+#         exposes the step label and cross-reference formatting helpers.
+#         Full document construction and parsing stay in Python.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64) as ptr<u8>
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+function int_to_str(n: i32) -> string {
+    if n == 0 {
+        return "0"
+    }
+    let mut buf: array<u8, 16> = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    let mut pos: i32 = 15
+    let mut val: i32 = n
+    let negative: i32 = 0
+    if val < 0 {
+        negative = 1
+        val = -val
+    }
+    while val > 0 {
+        buf[pos] = (val % 10) + 48
+        val = val / 10
+        pos = pos - 1
+    }
+    if negative == 1 {
+        buf[pos] = 45
+        pos = pos - 1
+    }
+    let start: i32 = pos + 1
+    let len: i32 = 16 - start
+    let result: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    memcpy(result, buf + start, len as i64)
+    result[len] = 0
+    return result as string
+}
+
+# ── Circled number ───────────────────────────────────────────────
+
+# Unicode circled numbers 1-20.
+# Returns "(n)" for n outside 1-20.
+export function flowc_circled(n: i32) -> string {
+    # Circled numbers use 3-byte UTF-8: 0xE2 0x91 0x80..0x93
+    # ① = U+2460 = E2 91 A0, ② = E2 91 A1, ...
+    if n >= 1 and n <= 20 {
+        let buf: ptr<u8> = malloc(4) as ptr<u8>
+        buf[0] = 226
+        buf[1] = 145
+        buf[2] = 160 + n - 1
+        buf[3] = 0
+        return buf as string
+    }
+    # Fallback: (n)
+    let s: string = "("
+    s = str_append(s, int_to_str(n))
+    s = str_append(s, ")")
+    return s
+}
+
+# ── Step label (LaTeX) ───────────────────────────────────────────
+
+# \textbf{N.}
+export function flowc_step_label_latex(n: i32) -> string {
+    let s: string = "\\textbf{"
+    s = str_append(s, int_to_str(n))
+    s = str_append(s, ".}")
+    return s
+}
+
+# ── Format refs ──────────────────────────────────────────────────
+
+# Format a single step number as "step N".
+function fmt_single_ref(n: i32) -> string {
+    let s: string = "step "
+    s = str_append(s, int_to_str(n))
+    return s
+}
+
+# Format step numbers for cross-reference.
+# nums: comma-separated string of step numbers (e.g. "1,2,3").
+# Returns "step 1", "step 1 and step 2", "step 1, step 2, and step 3".
+export function flowc_fmt_refs(nums: string) -> string {
+    # Parse comma-separated numbers
+    let n: i32 = strlen(nums) as i32
+    let p: ptr<u8> = nums
+    let mut values: array<i32, 32> = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    let mut count: i32 = 0
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            # Parse number from [start, i)
+            let mut val: i32 = 0
+            let mut j: i32 = start
+            while j < i {
+                let c: i32 = p[j]
+                if c >= 48 and c <= 57 {
+                    val = val * 10 + (c - 48)
+                }
+                j = j + 1
+            }
+            if i > start and count < 32 {
+                values[count] = val
+                count = count + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+
+    if count == 0 {
+        return ""
+    }
+    if count == 1 {
+        return fmt_single_ref(values[0])
+    }
+    if count == 2 {
+        let s: string = fmt_single_ref(values[0])
+        s = str_append(s, " and ")
+        s = str_append(s, fmt_single_ref(values[1]))
+        return s
+    }
+
+    # 3+: "step 1, step 2, and step 3"
+    let s: string = ""
+    let mut k: i32 = 0
+    while k < count {
+        if k == count - 1 {
+            s = str_append(s, "and ")
+        }
+        s = str_append(s, fmt_single_ref(values[k]))
+        if k < count - 1 {
+            s = str_append(s, ", ")
+        }
+        k = k + 1
+    }
+    return s
+}
+
+# "From step N, " or "From step N and step M, "
+export function flowc_from_refs(nums: string) -> string {
+    let refs: string = flowc_fmt_refs(nums)
+    if strlen(refs) == 0 {
+        return ""
+    }
+    let s: string = "From "
+    s = str_append(s, refs)
+    s = str_append(s, ", ")
+    return s
+}
+
+# "Under the supposition in step N, " or "Under the suppositions in ..."
+export function flowc_under_refs(nums: string) -> string {
+    let n: i32 = strlen(nums) as i32
+    if n == 0 {
+        return ""
+    }
+    # Count commas to determine if singular or plural
+    let p: ptr<u8> = nums
+    let mut commas: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 44 {
+            commas = commas + 1
+        }
+        i = i + 1
+    }
+
+    let refs: string = flowc_fmt_refs(nums)
+    if commas == 0 {
+        let s: string = "Under the supposition in "
+        s = str_append(s, refs)
+        s = str_append(s, ", ")
+        return s
+    }
+    let s: string = "Under the suppositions in "
+    s = str_append(s, refs)
+    s = str_append(s, ", ")
+    return s
+}
