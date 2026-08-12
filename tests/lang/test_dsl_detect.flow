@@ -1,0 +1,127 @@
+# Test for dsl_detect.flow port of DSL detection functions.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_dsl_detect.flow
+# Exit 0 on success.
+
+import "compiler/src/dsl_detect.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # has_field_dsl: field declaration
+    let f1: i32 = flowc_has_field_dsl("field temperature: f64[100] on grid")
+    if f1 == 0 {
+        puts("FAIL: should detect field DSL")
+        return 1
+    }
+
+    # has_field_dsl: boundary declaration
+    let f2: i32 = flowc_has_field_dsl("boundary left { Dirichlet 0.0 }")
+    if f2 == 0 {
+        puts("FAIL: should detect boundary DSL")
+        return 2
+    }
+
+    # has_field_dsl: no field DSL
+    let f3: i32 = flowc_has_field_dsl("function main() -> i32 { return 0 }")
+    if f3 == 1 {
+        puts("FAIL: should not detect field DSL in plain code")
+        return 3
+    }
+
+    # has_field_dsl: indented field
+    let f4: i32 = flowc_has_field_dsl("  field temp: f64[10] on grid")
+    if f4 == 0 {
+        puts("FAIL: should detect indented field DSL")
+        return 4
+    }
+
+    # has_field_dsl: field in multi-line source
+    let f5: i32 = flowc_has_field_dsl("function foo() -> i32 {\n    return 1\n}\nfield x: f64[5] on g\n")
+    if f5 == 0 {
+        puts("FAIL: should detect field DSL in multi-line source")
+        return 5
+    }
+
+    # has_dynamics_dsl: bare dsys
+    let d1: i32 = flowc_has_dynamics_dsl("dsys plant { discrete }")
+    if d1 == 0 {
+        puts("FAIL: should detect bare dsys")
+        return 6
+    }
+
+    # has_dynamics_dsl: namespaced dyn.dsys
+    let d2: i32 = flowc_has_dynamics_dsl("dyn.dsys plant { discrete }")
+    if d2 == 0 {
+        puts("FAIL: should detect dyn.dsys")
+        return 7
+    }
+
+    # has_dynamics_dsl: namespaced dynamics.horizon
+    let d3: i32 = flowc_has_dynamics_dsl("dynamics.horizon rollout finite 50")
+    if d3 == 0 {
+        puts("FAIL: should detect dynamics.horizon")
+        return 8
+    }
+
+    # has_dynamics_dsl: sense on
+    let d4: i32 = flowc_has_dynamics_dsl("sense on plant { controllable -> ok }")
+    if d4 == 0 {
+        puts("FAIL: should detect sense on")
+        return 9
+    }
+
+    # has_dynamics_dsl: ga evolve
+    let d5: i32 = flowc_has_dynamics_dsl("ga evolve on plant over rollout -> k1 k2 { }")
+    if d5 == 0 {
+        puts("FAIL: should detect ga evolve")
+        return 10
+    }
+
+    # has_dynamics_dsl: no dynamics
+    let d6: i32 = flowc_has_dynamics_dsl("function main() -> i32 { return 0 }")
+    if d6 == 1 {
+        puts("FAIL: should not detect dynamics in plain code")
+        return 11
+    }
+
+    # has_dynamics_dsl: indented
+    let d7: i32 = flowc_has_dynamics_dsl("  dsys plant { }")
+    if d7 == 0 {
+        puts("FAIL: should detect indented dsys")
+        return 12
+    }
+
+    # has_fill_shader_dsl: shader fill
+    let s1: i32 = flowc_has_fill_shader_dsl("shader fill gradient { }")
+    if s1 == 0 {
+        puts("FAIL: should detect shader fill DSL")
+        return 13
+    }
+
+    # has_fill_shader_dsl: in context
+    let s2: i32 = flowc_has_fill_shader_dsl("function foo() -> i32 { return 0 }\nshader fill my_gradient {\n  // stuff\n}\n")
+    if s2 == 0 {
+        puts("FAIL: should detect shader fill in multi-line source")
+        return 14
+    }
+
+    # has_fill_shader_dsl: no shader
+    let s3: i32 = flowc_has_fill_shader_dsl("function main() -> i32 { return 0 }")
+    if s3 == 1 {
+        puts("FAIL: should not detect shader in plain code")
+        return 15
+    }
+
+    # has_fill_shader_dsl: "shader" as part of another word should not match
+    let s4: i32 = flowc_has_fill_shader_dsl("myshader fill x { }")
+    if s4 == 1 {
+        puts("FAIL: should not match 'myshader' as 'shader'")
+        return 16
+    }
+
+    puts("All dsl_detect tests passed")
+    return 0
+}

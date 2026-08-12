@@ -112,6 +112,16 @@ export function flowc_resolve_sibling_path(
     if e <= s {
         return 0 - 1
     }
+    # String import "stdlib/foo.flow" → strip "stdlib/" prefix so it resolves
+    # relative to search_dir (e.g. lib/stdlib/tensor.flow, not lib/stdlib/stdlib/tensor.flow).
+    # Also strip "lib/stdlib/" prefix for the same reason.
+    if e - s > 7 and import_span_src[s] == 115 and import_span_src[s + 1] == 116 and import_span_src[s + 2] == 100 and import_span_src[s + 3] == 108 and import_span_src[s + 4] == 105 and import_span_src[s + 5] == 98 and import_span_src[s + 6] == 47 {
+        s = s + 7
+    } else {
+        if e - s > 11 and import_span_src[s] == 108 and import_span_src[s + 1] == 105 and import_span_src[s + 2] == 98 and import_span_src[s + 3] == 47 and import_span_src[s + 4] == 115 and import_span_src[s + 5] == 116 and import_span_src[s + 6] == 100 and import_span_src[s + 7] == 108 and import_span_src[s + 8] == 105 and import_span_src[s + 9] == 98 and import_span_src[s + 10] == 47 {
+            s = s + 11
+        }
+    }
     # Absolute path (starts with '/'): copy as-is.
     if import_span_src[s] == 47 {
         let nabs: i32 = e - s

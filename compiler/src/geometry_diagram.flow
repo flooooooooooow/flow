@@ -1,0 +1,104 @@
+# @module flowc.geometry_diagram
+# @means  Geometry diagram SVG rendering helpers.
+#         Port of utility functions from src/flow/geometry_diagram.py.
+#         The Python original renders full SVG diagrams; this port
+#         exposes the pure math and string helpers.
+#         Full SVG rendering and diagram construction stay in Python.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function sqrt(x: f64) -> f64
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64) as ptr<u8>
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+# ── SVG escape ───────────────────────────────────────────────────
+
+# Escape XML special characters for SVG output.
+# & -> &amp;, < -> &lt;, > -> &gt;
+export function flowc_svg_escape(text: string) -> string {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let result: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i]
+        if c == 38 {
+            result = str_append(result, "&amp;")
+        } else {
+            if c == 60 {
+                result = str_append(result, "&lt;")
+            } else {
+                if c == 62 {
+                    result = str_append(result, "&gt;")
+                } else {
+                    let buf: array<u8, 2> = [0, 0]
+                    buf[0] = c
+                    result = str_append(result, buf as string)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+# ── Vector math ──────────────────────────────────────────────────
+
+# Normalize a 2D vector to unit length.
+# Returns (vx/m, vy/m) where m = hypot(vx, vy), or (vx, vy) if m is 0.
+export function flowc_vec2_unit_x(vx: f64, vy: f64) -> f64 {
+    let m: f64 = sqrt(vx * vx + vy * vy)
+    if m == 0.0 {
+        return vx
+    }
+    return vx / m
+}
+
+export function flowc_vec2_unit_y(vx: f64, vy: f64) -> f64 {
+    let m: f64 = sqrt(vx * vx + vy * vy)
+    if m == 0.0 {
+        return vy
+    }
+    return vy / m
+}
+
+# Vector length (hypot).
+export function flowc_vec2_length(vx: f64, vy: f64) -> f64 {
+    return sqrt(vx * vx + vy * vy)
+}
+
+# Dot product of two 2D vectors.
+export function flowc_vec2_dot(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    return ax * bx + ay * by
+}
+
+# Distance between two points.
+export function flowc_point_distance(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    let dx: f64 = bx - ax
+    let dy: f64 = by - ay
+    return sqrt(dx * dx + dy * dy)
+}
+
+# Linear interpolation between two values.
+export function flowc_lerp(a: f64, b: f64, t: f64) -> f64 {
+    return a + (b - a) * t
+}

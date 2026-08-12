@@ -1230,6 +1230,7 @@ export function flowc_cgen_emit_sigs(
         # the libc headers used by Stage-A externs (FILE*/strlen/puts).
         flowc_cgen_puts(&w, "#include <stdio.h>\n")
         flowc_cgen_puts(&w, "#include <string.h>\n")
+        flowc_cgen_puts(&w, "#include <math.h>\n")
         flowc_cgen_putc(&w, 10)
         # Stage-A string `+`. `static inline` so a TU that never concatenates
         # does not warn. The result is never freed: Flow strings here live for

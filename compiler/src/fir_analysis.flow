@@ -17,6 +17,8 @@ extern {
     function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
     function printf(fmt: string, ...) -> i32
     function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
 }
 
 # ── Constants ────────────────────────────────────────────────────
@@ -226,4 +228,71 @@ export function flowc_count_call_ops(opcodes: ptr<i32>, num_ops: i32) -> i32 {
         i = i + 1
     }
     return count
+}
+
+# ── Effect guessing (port of fir_graphify._guess_effect_for_name) ─
+
+function str_starts_with(s: string, prefix: string) -> i32
+
+# Check if a name is in the IO names set.
+function is_io_name(name: string) -> i32 {
+    # flow_gfx_ or flow_audio_ prefix
+    if str_starts_with(name, "flow_gfx_") == 1 { return 1 }
+    if str_starts_with(name, "flow_audio_") == 1 { return 1 }
+    # Exact matches
+    if strcmp(name, "print") == 0 { return 1 }
+    if strcmp(name, "println") == 0 { return 1 }
+    if strcmp(name, "printf") == 0 { return 1 }
+    if strcmp(name, "puts") == 0 { return 1 }
+    if strcmp(name, "fprintf") == 0 { return 1 }
+    if strcmp(name, "fputs") == 0 { return 1 }
+    if strcmp(name, "read") == 0 { return 1 }
+    if strcmp(name, "write") == 0 { return 1 }
+    if strcmp(name, "fopen") == 0 { return 1 }
+    if strcmp(name, "fclose") == 0 { return 1 }
+    return 0
+}
+
+# Check if a name is in the allocation names set.
+function is_alloc_name(name: string) -> i32 {
+    if strcmp(name, "malloc") == 0 { return 1 }
+    if strcmp(name, "calloc") == 0 { return 1 }
+    if strcmp(name, "realloc") == 0 { return 1 }
+    if strcmp(name, "free") == 0 { return 1 }
+    if strcmp(name, "alloc") == 0 { return 1 }
+    if strcmp(name, "arena_alloc") == 0 { return 1 }
+    return 0
+}
+
+# Guess effect bits for a function name (port of _guess_effect_for_name).
+# is_extern: 1 if the function is extern, 0 otherwise.
+# Returns the effect bitvectors.
+export function flowc_guess_effect_for_name(name: string, is_extern: i32) -> i32 {
+    let bits: i32 = 0
+    if is_extern != 0 {
+        bits = bits | FLOWC_EFF_FFI
+    }
+    if is_io_name(name) == 1 {
+        bits = bits | FLOWC_EFF_IO
+    }
+    if is_alloc_name(name) == 1 {
+        bits = bits | FLOWC_EFF_ALLOCATES | FLOWC_EFF_WRITES_MEMORY
+    }
+    return bits
+}
+
+# ── String helpers (needed by is_io_name) ────────────────────────
+
+function str_starts_with(s: string, prefix: string) -> i32 {
+    let sl: i32 = strlen(s) as i32
+    let pl: i32 = strlen(prefix) as i32
+    if pl > sl { return 0 }
+    let sp: ptr<u8> = s
+    let pp: ptr<u8> = prefix
+    let mut i: i32 = 0
+    while i < pl {
+        if sp[i] != pp[i] { return 0 }
+        i = i + 1
+    }
+    return 1
 }

@@ -218,6 +218,65 @@ function main() -> i32 {
     free(roots2 as ptr<void>)
     free(visited2 as ptr<void>)
 
+    # ── guess_effect_for_name tests ──────────────────────────────
+
+    # extern function gets FFI
+    let eff_extern: i32 = flowc_guess_effect_for_name("some_extern_fn", 1)
+    if (eff_extern & FLOWC_EFF_FFI) == 0 {
+        printf("FAIL: extern should have FFI bit, got %d\n", eff_extern)
+        return 26
+    }
+
+    # printf gets IO
+    let eff_printf: i32 = flowc_guess_effect_for_name("printf", 0)
+    if (eff_printf & FLOWC_EFF_IO) == 0 {
+        printf("FAIL: printf should have IO bit, got %d\n", eff_printf)
+        return 27
+    }
+
+    # malloc gets ALLOCATES and WRITES_MEMORY
+    let eff_malloc: i32 = flowc_guess_effect_for_name("malloc", 0)
+    if (eff_malloc & FLOWC_EFF_ALLOCATES) == 0 {
+        printf("FAIL: malloc should have ALLOCATES bit, got %d\n", eff_malloc)
+        return 28
+    }
+    if (eff_malloc & FLOWC_EFF_WRITES_MEMORY) == 0 {
+        printf("FAIL: malloc should have WRITES_MEMORY bit, got %d\n", eff_malloc)
+        return 29
+    }
+
+    # flow_gfx_ prefix gets IO
+    let eff_gfx: i32 = flowc_guess_effect_for_name("flow_gfx_render", 0)
+    if (eff_gfx & FLOWC_EFF_IO) == 0 {
+        printf("FAIL: flow_gfx_ prefix should have IO bit, got %d\n", eff_gfx)
+        return 30
+    }
+
+    # flow_audio_ prefix gets IO
+    let eff_audio: i32 = flowc_guess_effect_for_name("flow_audio_play", 0)
+    if (eff_audio & FLOWC_EFF_IO) == 0 {
+        printf("FAIL: flow_audio_ prefix should have IO bit, got %d\n", eff_audio)
+        return 31
+    }
+
+    # pure function gets no bits
+    let eff_pure: i32 = flowc_guess_effect_for_name("add", 0)
+    if eff_pure != 0 {
+        printf("FAIL: 'add' should have no effect bits, got %d\n", eff_pure)
+        return 32
+    }
+
+    # extern + IO combined
+    let eff_extern_io: i32 = flowc_guess_effect_for_name("printf", 1)
+    if (eff_extern_io & FLOWC_EFF_FFI) == 0 {
+        printf("FAIL: extern printf should have FFI bit, got %d\n", eff_extern_io)
+        return 33
+    }
+    if (eff_extern_io & FLOWC_EFF_IO) == 0 {
+        printf("FAIL: extern printf should have IO bit, got %d\n", eff_extern_io)
+        return 34
+    }
+
     puts("All fir_analysis tests passed")
     return 0
 }

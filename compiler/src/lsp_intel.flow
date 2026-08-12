@@ -1,0 +1,163 @@
+# @module flowc.lsp_intel
+# @means  LSP IntelliSense helpers: receiver/field detection for
+#         completion. Port of receiver_before_dot and field_access_at
+#         from src/flow/lsp_intel.py. The Python original uses regex;
+#         the Flow port does manual character scanning.
+#         URI parsing, source parsing, and type checking stay in Python.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+# ── Character helpers ────────────────────────────────────────────
+
+function is_ident_start(c: i32) -> i32 {
+    if c >= 97 and c <= 122 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c == 95 { return 1 }
+    return 0
+}
+
+function is_ident_char(c: i32) -> i32 {
+    if is_ident_start(c) == 1 { return 1 }
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 or c == 10 { return 1 }
+    return 0
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function substr(src: string, start: i32, end: i32) -> string {
+    let n: i32 = strlen(src) as i32
+    if start < 0 { start = 0 }
+    if end > n { end = n }
+    if start >= end { return "" }
+    let len: i32 = end - start
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = src
+    memcpy(buf, p + start, len as i64)
+    buf[len] = 0
+    return buf as string
+}
+
+# ── Receiver before dot ──────────────────────────────────────────
+
+# If completion is after `ident.`, return ident.
+# Scans backward from the cursor position to find an identifier
+# followed by optional whitespace and a dot.
+# Returns the identifier string, or "" if not found.
+export function flowc_receiver_before_dot(row: string, character: i32) -> string {
+    let n: i32 = strlen(row) as i32
+    if character > n {
+        character = n
+    }
+    let p: ptr<u8> = row
+
+    # Look at the text before the cursor: "ident." or "ident.field"
+    # Scan backward from character to find a dot preceded by an identifier.
+    let mut i: i32 = character
+    # Skip trailing identifier chars (partial field name after dot)
+    while i > 0 and is_ident_char(p[i - 1]) == 1 {
+        i = i - 1
+    }
+    # Skip whitespace
+    while i > 0 and is_space(p[i - 1]) == 1 {
+        i = i - 1
+    }
+    # Must be at a dot
+    if i == 0 or p[i - 1] != 46 {
+        return ""
+    }
+    i = i - 1
+    # Skip whitespace before dot
+    while i > 0 and is_space(p[i - 1]) == 1 {
+        i = i - 1
+    }
+    # Now scan backward for the identifier
+    let end: i32 = i
+    while i > 0 and is_ident_char(p[i - 1]) == 1 {
+        i = i - 1
+    }
+    let ident: string = substr(row, i, end)
+    # Must start with ident_start
+    if strlen(ident) == 0 {
+        return ""
+    }
+    let ip: ptr<u8> = ident
+    if is_ident_start(ip[0]) == 0 {
+        return ""
+    }
+    return ident
+}
+
+# ── Field access at cursor ───────────────────────────────────────
+
+export struct FlowcFieldAccess {
+    receiver: string,
+    field: string,
+    ok: i32
+}
+
+# If cursor is on `recv.field`, return (recv, field).
+# Scans the identifier under the cursor, then looks backward for
+# a dot and the receiver identifier.
+export function flowc_field_access_at(row: string, character: i32) -> FlowcFieldAccess {
+    let n: i32 = strlen(row) as i32
+    if character > n {
+        character = n
+    }
+    let p: ptr<u8> = row
+
+    # Expand to identifier under cursor
+    let mut start: i32 = character
+    while start > 0 and is_ident_char(p[start - 1]) == 1 {
+        start = start - 1
+    }
+    let mut end: i32 = character
+    while end < n and is_ident_char(p[end]) == 1 {
+        end = end + 1
+    }
+    let field: string = substr(row, start, end)
+    if strlen(field) == 0 {
+        return FlowcFieldAccess { receiver: "", field: "", ok: 0 }
+    }
+
+    # Text before the field, stripped of trailing whitespace
+    let mut before_end: i32 = start
+    while before_end > 0 and is_space(p[before_end - 1]) == 1 {
+        before_end = before_end - 1
+    }
+    # Must end with a dot
+    if before_end == 0 or p[before_end - 1] != 46 {
+        return FlowcFieldAccess { receiver: "", field: "", ok: 0 }
+    }
+    before_end = before_end - 1
+    # Skip whitespace before dot
+    while before_end > 0 and is_space(p[before_end - 1]) == 1 {
+        before_end = before_end - 1
+    }
+
+    # Scan backward for receiver identifier
+    let recv_end: i32 = before_end
+    let mut recv_start: i32 = before_end
+    while recv_start > 0 and is_ident_char(p[recv_start - 1]) == 1 {
+        recv_start = recv_start - 1
+    }
+    let receiver: string = substr(row, recv_start, recv_end)
+    if strlen(receiver) == 0 {
+        return FlowcFieldAccess { receiver: "", field: "", ok: 0 }
+    }
+    let rp: ptr<u8> = receiver
+    if is_ident_start(rp[0]) == 0 {
+        return FlowcFieldAccess { receiver: "", field: "", ok: 0 }
+    }
+
+    return FlowcFieldAccess { receiver: receiver, field: field, ok: 1 }
+}
