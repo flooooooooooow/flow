@@ -991,8 +991,16 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "  return;\n")
             return
         }
+        # return void → return; (void is a type, not a value in C)
+        let ret_expr: i32 = arena.nodes[id].a
+        if arena.nodes[ret_expr].kind == AST_IDENT {
+            if flowc_cgen_span_is(src, arena.nodes[ret_expr].name_start, arena.nodes[ret_expr].name_end, "void") == 1 {
+                flowc_cgen_puts(w, "  return;\n")
+                return
+            }
+        }
         flowc_cgen_puts(w, "  return ")
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_emit_expr(w, arena, src, ret_expr)
         flowc_cgen_puts(w, ";\n")
         return
     }
@@ -1183,6 +1191,12 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "ftell") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "printf") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "fprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "snprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "vprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "vfprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "vsprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "vsnprintf") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "puts") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "putchar") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "malloc") == 1 { return 1 }
