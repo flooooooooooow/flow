@@ -95,6 +95,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
+function flowc_cgen_ident_is_string(arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
 # Compare two source spans for equal content.
 function flowc_cgen_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -478,6 +479,41 @@ function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
             return flowc_cgen_type_is_string(arena, src, arena.nodes[fn].b)
         }
         return flowc_cgen_sig_is_string(w, arena, src, id)
+    }
+    if kind == AST_IDENT {
+        return flowc_cgen_ident_is_string(arena, src, id)
+    }
+    return 0
+}
+
+# Check if an AST_IDENT refers to a string-typed variable.
+# Scans all AST_PARAM and AST_LET nodes for matching name. Only returns 1
+# if ALL matches have type string, avoiding false positives when a name
+# is used as both string and non-string in different scopes.
+function flowc_cgen_ident_is_string(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut found: i32 = 0
+    let mut all_str: i32 = 1
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                found = found + 1
+                let ty: i32 = arena.nodes[i].a
+                if ty == AST_NONE {
+                    all_str = 0
+                } else {
+                    if flowc_cgen_type_is_string(arena, src, ty) == 0 {
+                        all_str = 0
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if found > 0 and all_str == 1 {
+        return 1
     }
     return 0
 }
