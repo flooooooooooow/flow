@@ -133,6 +133,13 @@ const int32_t TOK_TILDE = 36;
 const int32_t TOK_AT = 37;
 const int32_t TOK_BAR = 38;
 const int32_t TOK_CARET = 39;
+const int32_t TOK_SHL = 40;
+const int32_t TOK_SHR = 41;
+const int32_t TOK_PLUS_EQ = 42;
+const int32_t TOK_MINUS_EQ = 43;
+const int32_t TOK_STAR_EQ = 44;
+const int32_t TOK_SLASH_EQ = 45;
+const int32_t TOK_PERCENT_EQ = 46;
 const int32_t KW_LET = 1;
 const int32_t KW_FUNCTION = 2;
 const int32_t KW_RETURN = 3;
@@ -482,6 +489,41 @@ Token flowc_lexer_next(Lexer* lex) {
   flowc_lexer_bump(lex);
   return flowc_make_tok(TOK_ARROW, 0, start, (start + 2), line, col);
 }
+  if (c == 60 && n1 == 60) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_SHL, 0, start, (start + 2), line, col);
+}
+  if (c == 62 && n1 == 62) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_SHR, 0, start, (start + 2), line, col);
+}
+  if (c == 43 && n1 == 61) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_PLUS_EQ, 0, start, (start + 2), line, col);
+}
+  if (c == 45 && n1 == 61) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_MINUS_EQ, 0, start, (start + 2), line, col);
+}
+  if (c == 42 && n1 == 61) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_STAR_EQ, 0, start, (start + 2), line, col);
+}
+  if (c == 47 && n1 == 61) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_SLASH_EQ, 0, start, (start + 2), line, col);
+}
+  if (c == 37 && n1 == 61) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_PERCENT_EQ, 0, start, (start + 2), line, col);
+}
   if (c == 61 && n1 == 61) {
   flowc_lexer_bump(lex);
   flowc_lexer_bump(lex);
@@ -827,6 +869,22 @@ int32_t flowc_parse_int_span(uint8_t* src, int32_t start, int32_t end) {
   return v;
 }
 
+int32_t flowc_parser_eat_gt(Parser* p) {
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  flowc_parser_advance(p);
+  return 1;
+}
+  if (flowc_parser_check(p[0], TOK_SHR) == 1) {
+  Token t = (p[0]).cur;
+  ((p[0]).cur).kind = TOK_GT;
+  ((p[0]).cur).start = ((t).start + 1);
+  ((p[0]).cur).end = (t).end;
+  return 1;
+}
+  (p[0]).err = 1;
+  return 0;
+}
+
 int32_t flowc_parse_type(Parser* p) {
   if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
   int32_t start = ((p[0]).cur).start;
@@ -898,7 +956,7 @@ int32_t flowc_parse_type(Parser* p) {
   (((p[0]).arena).nodes[id]).ival = n;
   flowc_parser_advance(p);
 }
-  if (flowc_parser_eat(p, TOK_GT) == 0) {
+  if (flowc_parser_eat_gt(p) == 0) {
   return AST_NONE;
 }
   (((p[0]).arena).nodes[id]).end = ((p[0]).cur).start;
@@ -1246,6 +1304,12 @@ int32_t flowc_parse_binop_kind(Parser p) {
   if (op == TOK_CARET) {
   return TOK_CARET;
 }
+  if (op == TOK_SHL) {
+  return TOK_SHL;
+}
+  if (op == TOK_SHR) {
+  return TOK_SHR;
+}
   if (op == TOK_EQEQ) {
   return TOK_EQEQ;
 }
@@ -1304,6 +1368,12 @@ int32_t flowc_parse_binop_prec(int32_t op) {
   return 3;
 }
   if (op == TOK_CARET) {
+  return 3;
+}
+  if (op == TOK_SHL) {
+  return 3;
+}
+  if (op == TOK_SHR) {
   return 3;
 }
   if (op == TOK_EQEQ || op == TOK_NE) {
@@ -1716,6 +1786,42 @@ int32_t flowc_parse_stmt(Parser* p) {
   (((p[0]).arena).nodes[id]).b = rhs;
   return id;
 }
+  int32_t compound_op = 0;
+  if (flowc_parser_check(p[0], TOK_PLUS_EQ) == 1) {
+  compound_op = TOK_PLUS;
+}
+  if (flowc_parser_check(p[0], TOK_MINUS_EQ) == 1) {
+  compound_op = TOK_MINUS;
+}
+  if (flowc_parser_check(p[0], TOK_STAR_EQ) == 1) {
+  compound_op = TOK_STAR;
+}
+  if (flowc_parser_check(p[0], TOK_SLASH_EQ) == 1) {
+  compound_op = TOK_SLASH;
+}
+  if (flowc_parser_check(p[0], TOK_PERCENT_EQ) == 1) {
+  compound_op = TOK_PERCENT;
+}
+  if (compound_op != 0 && lk == AST_IDENT || lk == AST_FIELD_ACCESS || lk == AST_INDEX) {
+  flowc_parser_advance(p);
+  int32_t rhs = flowc_parse_expr(p);
+  int32_t binop = flowc_ast_alloc((&(p[0]).arena), AST_BINOP, saved_start, ((p[0]).cur).start);
+  if (binop == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[binop]).ival = compound_op;
+  (((p[0]).arena).nodes[binop]).a = expr;
+  (((p[0]).arena).nodes[binop]).b = rhs;
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_ASSIGN, saved_start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = expr;
+  (((p[0]).arena).nodes[id]).b = binop;
+  return id;
+}
   int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_EXPR_STMT, saved_start, ((p[0]).cur).start);
   if (id == AST_NONE) {
   (p[0]).err = 1;
@@ -1803,6 +1909,10 @@ int32_t flowc_parse_function(Parser* p) {
 } else {
   if (flowc_parser_check(p[0], TOK_GT) == 1) {
   depth = (depth - 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_SHR) == 1) {
+  depth = (depth - 2);
+}
 }
 }
   if (depth > 0) {
@@ -1811,6 +1921,10 @@ int32_t flowc_parse_function(Parser* p) {
 }
   if (flowc_parser_check(p[0], TOK_GT) == 1) {
   flowc_parser_advance(p);
+} else {
+  if (flowc_parser_check(p[0], TOK_SHR) == 1) {
+  flowc_parser_advance(p);
+}
 }
 }
   if (flowc_parser_eat(p, TOK_LPAREN) == 0) {
@@ -2903,6 +3017,14 @@ void flowc_cgen_emit_binop_op(CgenBuf* w, int32_t op) {
   flowc_cgen_puts(w, " ^ ");
   return;
 }
+  if (op == TOK_SHL) {
+  flowc_cgen_puts(w, " << ");
+  return;
+}
+  if (op == TOK_SHR) {
+  flowc_cgen_puts(w, " >> ");
+  return;
+}
   flowc_cgen_puts(w, " /*op*/ ");
 }
 
@@ -3936,7 +4058,7 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   int32_t ns = ((arena).nodes[id]).name_start;
   int32_t ne = ((arena).nodes[id]).name_end;
   if (flowc_tc_lookup_fn(ctx[0], ns, ne) == 0) {
-  if ((ctx[0]).has_extern == 0 && (ctx[0]).lenient == 0) {
+  if ((ctx[0]).has_extern == 0) {
   flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne);
   flowc_tc_err(ctx);
 }

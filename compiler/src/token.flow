@@ -41,6 +41,13 @@ export const TOK_TILDE: i32 = 36
 export const TOK_AT: i32 = 37
 export const TOK_BAR: i32 = 38
 export const TOK_CARET: i32 = 39
+export const TOK_SHL: i32 = 40
+export const TOK_SHR: i32 = 41
+export const TOK_PLUS_EQ: i32 = 42
+export const TOK_MINUS_EQ: i32 = 43
+export const TOK_STAR_EQ: i32 = 44
+export const TOK_SLASH_EQ: i32 = 45
+export const TOK_PERCENT_EQ: i32 = 46
 
 export const KW_LET: i32 = 1
 export const KW_FUNCTION: i32 = 2

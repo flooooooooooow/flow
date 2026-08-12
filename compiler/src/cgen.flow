@@ -4,7 +4,7 @@
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
-    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET, TOK_SHL, TOK_SHR
 }
 import .ast {
     AstArena, AST_NONE,
@@ -604,6 +604,14 @@ function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
     }
     if op == TOK_CARET {
         flowc_cgen_puts(w, " ^ ")
+        return
+    }
+    if op == TOK_SHL {
+        flowc_cgen_puts(w, " << ")
+        return
+    }
+    if op == TOK_SHR {
+        flowc_cgen_puts(w, " >> ")
         return
     }
     flowc_cgen_puts(w, " /*op*/ ")
