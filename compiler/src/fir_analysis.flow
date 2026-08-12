@@ -232,6 +232,8 @@ export function flowc_count_call_ops(opcodes: ptr<i32>, num_ops: i32) -> i32 {
 
 # ── Effect guessing (port of fir_graphify._guess_effect_for_name) ─
 
+function str_starts_with(s: string, prefix: string) -> i32
+
 # Check if a name is in the IO names set.
 function is_io_name(name: string) -> i32 {
     # flow_gfx_ or flow_audio_ prefix
