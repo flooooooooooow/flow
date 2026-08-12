@@ -13,9 +13,9 @@
 #include "flowc_frontend.h"
 
 enum {
-    FLOWC_SRC_CAP = 65536,
+    FLOWC_SRC_CAP = 262144,
     FLOWC_OUT_CAP = 1048576,
-    FLOWC_AST_CAP = 8192
+    FLOWC_AST_CAP = 262144
 };
 
 static int read_file(const char *path, uint8_t *buf, int32_t cap, int32_t *out_n) {
