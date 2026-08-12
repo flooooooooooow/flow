@@ -295,3 +295,39 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
     s = str_append(s, " from prior claims.")
     return s
 }
+
+# ── Check duplicate claims ───────────────────────────────────────
+
+# Check if two claims are duplicates: same carrier/structure/fingerprint
+# but different paths. Returns 1 if duplicate, 0 otherwise.
+# The full batch check with a seen-table stays in Python.
+export function flowc_is_duplicate_claim(
+    path_a: string,
+    expr_a: string,
+    path_b: string,
+    expr_b: string
+) -> i32 {
+    if strcmp(path_a, path_b) == 0 {
+        return 0
+    }
+    let addr_a: FlowcClaimAddress = flowc_claim_try_parse(path_a)
+    if addr_a.ok == 0 {
+        return 0
+    }
+    let addr_b: FlowcClaimAddress = flowc_claim_try_parse(path_b)
+    if addr_b.ok == 0 {
+        return 0
+    }
+    if strcmp(addr_a.carrier, addr_b.carrier) != 0 {
+        return 0
+    }
+    if strcmp(addr_a.structure, addr_b.structure) != 0 {
+        return 0
+    }
+    let fp_a: string = flowc_claim_fingerprint(expr_a)
+    let fp_b: string = flowc_claim_fingerprint(expr_b)
+    if strcmp(fp_a, fp_b) != 0 {
+        return 0
+    }
+    return 1
+}

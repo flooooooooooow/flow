@@ -1,0 +1,37 @@
+# @module flowc.lsp_ordering
+# @means  LSP ordering hover text lookup. Port of ordering_hover
+#         from lsp_ordering.py. The Python original also provides
+#         completion items with snippet interpolation; this port
+#         exposes the hover text lookup only.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}
+
+# Lookup hover documentation for an ordering keyword.
+# Returns the documentation string, or empty string if not found.
+# Port of ordering_hover.
+export function flowc_ordering_hover(word: string) -> string {
+    if strcmp(word, "sort") == 0 {
+        return "**`sort`** - declarative ordering (Phase 1).\n\n```flow\nxs |> sort\nxs |> sort descending\nxs |> sort by .score\nxs |> sortBy [desc .score, asc .name]\n```\nIn-place on `array<T, N>`. See docs/language/ordering.md."
+    }
+    if strcmp(word, "sortBy") == 0 {
+        return "**`sortBy`** - multi-key ordering alias for `sort by [...]`.\n\n```flow\nxs |> sortBy [asc .score, asc .name]\n```"
+    }
+    if strcmp(word, "asc") == 0 {
+        return "`asc .field` - ascending key in a sort key list."
+    }
+    if strcmp(word, "desc") == 0 {
+        return "`desc .field` - descending key in a sort key list."
+    }
+    if strcmp(word, "unique") == 0 {
+        return "`sort unique` - sort then compact adjacent duplicates (prefix; N unchanged)."
+    }
+    if strcmp(word, "entropy") == 0 {
+        return "`with entropy` / `with entropy(seed: N)` - allow randomized strategies (parsed; Phase 2)."
+    }
+    if strcmp(word, "order") == 0 {
+        return "`order` - declarative ordering head (same family as `sort`)."
+    }
+    return ""
+}

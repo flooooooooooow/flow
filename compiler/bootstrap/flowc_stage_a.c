@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <complex.h>
+typedef float complex c64;
+typedef double complex c128;
 
 static inline const char* __flowc_str_concat(const char* a, const char* b) {
   size_t la; size_t lb; char* r;
@@ -2823,6 +2826,11 @@ void flowc_cgen_emit_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ty) 
   flowc_cgen_putc(w, 42);
   return;
 }
+  if (inner != AST_NONE && flowc_cgen_span_is(src, ns, ne, "array") == 1 && ((arena).nodes[ty]).ival > 0) {
+  flowc_cgen_emit_type(w, arena, src, inner);
+  flowc_cgen_putc(w, 42);
+  return;
+}
   if (flowc_cgen_is_struct_type(arena, src, ty) == 1) {
   flowc_cgen_put_span(w, src, ns, ne);
   return;
@@ -3719,9 +3727,29 @@ void flowc_cgen_emit_struct(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id
   int32_t field = ((arena).nodes[id]).a;
   while (field != AST_NONE) {
   flowc_cgen_puts(w, "  ");
-  flowc_cgen_emit_type(w, arena, src, ((arena).nodes[field]).a);
+  int32_t fty = ((arena).nodes[field]).a;
+  int32_t arr_n = 0;
+  int32_t arr_inner = AST_NONE;
+  if (fty != AST_NONE && ((arena).nodes[fty]).kind == AST_TYPE) {
+  if (((arena).nodes[fty]).a != AST_NONE && ((arena).nodes[fty]).ival > 0) {
+  if (flowc_cgen_span_is(src, ((arena).nodes[fty]).name_start, ((arena).nodes[fty]).name_end, "array") == 1) {
+  arr_n = ((arena).nodes[fty]).ival;
+  arr_inner = ((arena).nodes[fty]).a;
+}
+}
+}
+  if (arr_n > 0) {
+  flowc_cgen_emit_type(w, arena, src, arr_inner);
+} else {
+  flowc_cgen_emit_type(w, arena, src, fty);
+}
   flowc_cgen_putc(w, 32);
   flowc_cgen_put_span(w, src, ((arena).nodes[field]).name_start, ((arena).nodes[field]).name_end);
+  if (arr_n > 0) {
+  flowc_cgen_putc(w, 91);
+  flowc_cgen_put_i32(w, arr_n);
+  flowc_cgen_putc(w, 93);
+}
   flowc_cgen_puts(w, ";\n");
   field = ((arena).nodes[field]).next;
 }
@@ -3763,6 +3791,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "#include <stdio.h>\n");
   flowc_cgen_puts((&w), "#include <string.h>\n");
   flowc_cgen_puts((&w), "#include <math.h>\n");
+  flowc_cgen_puts((&w), "#include <complex.h>\n");
+  flowc_cgen_puts((&w), "typedef float complex c64;\n");
+  flowc_cgen_puts((&w), "typedef double complex c128;\n");
   flowc_cgen_putc((&w), 10);
   flowc_cgen_puts((&w), "static inline const char* __flowc_str_concat(const char* a, const char* b) {\n");
   flowc_cgen_puts((&w), "  size_t la; size_t lb; char* r;\n");

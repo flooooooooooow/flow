@@ -190,6 +190,13 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_putc(w, 42)
         return
     }
+    # array<T, N> (with size, ival > 0) in a generic type context → T*
+    # (struct fields and top-level lets handle the [N] suffix separately).
+    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "array") == 1 and arena.nodes[ty].ival > 0 {
+        flowc_cgen_emit_type(w, arena, src, inner)
+        flowc_cgen_putc(w, 42)
+        return
+    }
     if flowc_cgen_is_struct_type(arena, src, ty) == 1 {
         flowc_cgen_put_span(w, src, ns, ne)
         return
@@ -1162,10 +1169,30 @@ function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     let mut field: i32 = arena.nodes[id].a
     while field != AST_NONE {
         flowc_cgen_puts(w, "  ")
-        # AST_FIELD: a = type node
-        flowc_cgen_emit_type(w, arena, src, arena.nodes[field].a)
+        # AST_FIELD: a = type node. Handle array<T,N> → T fieldname[N].
+        let fty: i32 = arena.nodes[field].a
+        let mut arr_n: i32 = 0
+        let mut arr_inner: i32 = AST_NONE
+        if fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
+            if arena.nodes[fty].a != AST_NONE and arena.nodes[fty].ival > 0 {
+                if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "array") == 1 {
+                    arr_n = arena.nodes[fty].ival
+                    arr_inner = arena.nodes[fty].a
+                }
+            }
+        }
+        if arr_n > 0 {
+            flowc_cgen_emit_type(w, arena, src, arr_inner)
+        } else {
+            flowc_cgen_emit_type(w, arena, src, fty)
+        }
         flowc_cgen_putc(w, 32)
         flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+        if arr_n > 0 {
+            flowc_cgen_putc(w, 91)
+            flowc_cgen_put_i32(w, arr_n)
+            flowc_cgen_putc(w, 93)
+        }
         flowc_cgen_puts(w, ";\n")
         field = arena.nodes[field].next
     }
@@ -1231,6 +1258,9 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "#include <stdio.h>\n")
         flowc_cgen_puts(&w, "#include <string.h>\n")
         flowc_cgen_puts(&w, "#include <math.h>\n")
+        flowc_cgen_puts(&w, "#include <complex.h>\n")
+        flowc_cgen_puts(&w, "typedef float complex c64;\n")
+        flowc_cgen_puts(&w, "typedef double complex c128;\n")
         flowc_cgen_putc(&w, 10)
         # Stage-A string `+`. `static inline` so a TU that never concatenates
         # does not warn. The result is never freed: Flow strings here live for

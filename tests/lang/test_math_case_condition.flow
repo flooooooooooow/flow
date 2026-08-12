@@ -1,0 +1,79 @@
+# Test for mathematical_case_condition in math_prose.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_math_case_condition.flow
+# Exit 0 on success.
+
+import "compiler/src/math_prose.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # x == true -> "x holds"
+    let c1: string = flowc_mathematical_case_condition("x == true")
+    if strcmp(c1, "x holds") != 0 {
+        printf("FAIL: 'x == true' should be 'x holds', got '%s'\n", c1)
+        return 1
+    }
+
+    # is_ready == true -> "is_ready holds"
+    let c2: string = flowc_mathematical_case_condition("is_ready == true")
+    if strcmp(c2, "is_ready holds") != 0 {
+        printf("FAIL: 'is_ready == true' should be 'is_ready holds', got '%s'\n", c2)
+        return 2
+    }
+
+    # x == false -> "x does not hold"
+    let c3: string = flowc_mathematical_case_condition("x == false")
+    if strcmp(c3, "x does not hold") != 0 {
+        printf("FAIL: 'x == false' should be 'x does not hold', got '%s'\n", c3)
+        return 3
+    }
+
+    # count == 0 -> "count is zero"
+    let c4: string = flowc_mathematical_case_condition("count == 0")
+    if strcmp(c4, "count is zero") != 0 {
+        printf("FAIL: 'count == 0' should be 'count is zero', got '%s'\n", c4)
+        return 4
+    }
+
+    # x == y -> "x  equals  y" (Python replaces == with " equals ", keeping original spaces)
+    let c5: string = flowc_mathematical_case_condition("x == y")
+    if strcmp(c5, "x  equals  y") != 0 {
+        printf("FAIL: 'x == y' should be 'x  equals  y', got '%s'\n", c5)
+        return 5
+    }
+
+    # With leading whitespace
+    let c6: string = flowc_mathematical_case_condition("  x == true")
+    if strcmp(c6, "x holds") != 0 {
+        printf("FAIL: '  x == true' should be 'x holds', got '%s'\n", c6)
+        return 6
+    }
+
+    # With trailing whitespace
+    let c7: string = flowc_mathematical_case_condition("x == true  ")
+    if strcmp(c7, "x holds") != 0 {
+        printf("FAIL: 'x == true  ' should be 'x holds', got '%s'\n", c7)
+        return 7
+    }
+
+    # With spaces around ==
+    let c8: string = flowc_mathematical_case_condition("x   ==   true")
+    if strcmp(c8, "x holds") != 0 {
+        printf("FAIL: 'x   ==   true' should be 'x holds', got '%s'\n", c8)
+        return 8
+    }
+
+    # Case insensitive true (Python uses re.I)
+    let c9: string = flowc_mathematical_case_condition("x == TRUE")
+    if strcmp(c9, "x holds") != 0 {
+        printf("FAIL: 'x == TRUE' should be 'x holds', got '%s'\n", c9)
+        return 9
+    }
+
+    puts("All mathematical_case_condition tests passed")
+    return 0
+}

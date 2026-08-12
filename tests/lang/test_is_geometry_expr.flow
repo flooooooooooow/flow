@@ -1,0 +1,80 @@
+# Test for is_geometry_expr in math_prose.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_is_geometry_expr.flow
+# Exit 0 on success.
+
+import "compiler/src/math_prose.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # angle_ prefix
+    if flowc_is_geometry_expr("angle_alpha + angle_beta") == 0 {
+        puts("FAIL: should detect angle_ prefix")
+        return 1
+    }
+
+    # triangle_ prefix
+    if flowc_is_geometry_expr("triangle_ABC is a triangle") == 0 {
+        puts("FAIL: should detect triangle_ prefix")
+        return 2
+    }
+
+    # two_right_angles
+    if flowc_is_geometry_expr("two_right_angles equals 180") == 0 {
+        puts("FAIL: should detect two_right_angles")
+        return 3
+    }
+
+    # one_right_angle
+    if flowc_is_geometry_expr("one_right_angle is 90") == 0 {
+        puts("FAIL: should detect one_right_angle")
+        return 4
+    }
+
+    # half_of_ prefix
+    if flowc_is_geometry_expr("half_of_angle_AOB") == 0 {
+        puts("FAIL: should detect half_of_ prefix")
+        return 5
+    }
+
+    # radius_ prefix
+    if flowc_is_geometry_expr("radius_OA = 5") == 0 {
+        puts("FAIL: should detect radius_ prefix")
+        return 6
+    }
+
+    # exact token: angle_gamma
+    if flowc_is_geometry_expr("angle_gamma is the third angle") == 0 {
+        puts("FAIL: should detect angle_gamma token")
+        return 7
+    }
+
+    # Not a geometry expression
+    if flowc_is_geometry_expr("x + y = z") == 1 {
+        puts("FAIL: should not detect 'x + y = z' as geometry")
+        return 8
+    }
+
+    if flowc_is_geometry_expr("n * n = n_squared") == 1 {
+        puts("FAIL: should not detect plain algebra as geometry")
+        return 9
+    }
+
+    # Word boundary: myangle_ should not match angle_
+    if flowc_is_geometry_expr("myangle_foo") == 1 {
+        puts("FAIL: should not match 'myangle_foo' (word boundary)")
+        return 10
+    }
+
+    # angle_alpha_prime
+    if flowc_is_geometry_expr("angle_alpha_prime is the complement") == 0 {
+        puts("FAIL: should detect angle_alpha_prime")
+        return 11
+    }
+
+    puts("All is_geometry_expr tests passed")
+    return 0
+}

@@ -1,0 +1,74 @@
+# Test for claim_path_latex in math_prose.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_claim_path_latex.flow
+# Exit 0 on success.
+
+import "compiler/src/math_prose.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+function contains(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 { return 1 }
+    if nn > hn { return 0 }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    while i + nn <= hn {
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < nn {
+            if hp[i + j] != np[j] { matched = 0; break }
+            j = j + 1
+        }
+        if matched == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # Valid claim path: returns coordinate LaTeX
+    let l1: string = flowc_claim_path_latex("«Nat» «addition» «zero is the left identity»")
+    # Should contain \cdot (the LaTeX dot separator)
+    if contains(l1, "\\cdot") == 0 {
+        printf("FAIL: valid path should contain '\\cdot', got '%s'\n", l1)
+        return 1
+    }
+
+    # Invalid path: escapes underscores
+    let l2: string = flowc_claim_path_latex("some_path_with_underscores")
+    if contains(l2, "\\_") == 0 {
+        printf("FAIL: invalid path should escape underscores, got '%s'\n", l2)
+        return 2
+    }
+
+    # Plain path without underscores
+    let l3: string = flowc_claim_path_latex("plain-path")
+    if strcmp(l3, "plain-path") != 0 {
+        printf("FAIL: plain path should be unchanged, got '%s'\n", l3)
+        return 3
+    }
+
+    # Empty string
+    let l4: string = flowc_claim_path_latex("")
+    if strcmp(l4, "") != 0 {
+        printf("FAIL: empty path should be empty, got '%s'\n", l4)
+        return 4
+    }
+
+    # Path with single underscore
+    let l5: string = flowc_claim_path_latex("foo_bar")
+    if strcmp(l5, "foo\\_bar") != 0 {
+        printf("FAIL: 'foo_bar' should be 'foo\\_bar', got '%s'\n", l5)
+        return 5
+    }
+
+    puts("All claim_path_latex tests passed")
+    return 0
+}

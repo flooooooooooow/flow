@@ -1,0 +1,119 @@
+# Test for wcet.flow port of wcet_analysis.py helpers.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_wcet.flow
+# Exit 0 on success.
+
+import "compiler/src/wcet.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # type_size: 1-byte types
+    if flowc_type_size("i8") != 1 {
+        printf("FAIL: i8 should be 1, got %d\n", flowc_type_size("i8"))
+        return 1
+    }
+    if flowc_type_size("u8") != 1 {
+        printf("FAIL: u8 should be 1, got %d\n", flowc_type_size("u8"))
+        return 2
+    }
+    if flowc_type_size("bool") != 1 {
+        printf("FAIL: bool should be 1, got %d\n", flowc_type_size("bool"))
+        return 3
+    }
+
+    # type_size: 2-byte types
+    if flowc_type_size("i16") != 2 {
+        printf("FAIL: i16 should be 2, got %d\n", flowc_type_size("i16"))
+        return 4
+    }
+
+    # type_size: 4-byte types
+    if flowc_type_size("i32") != 4 {
+        printf("FAIL: i32 should be 4, got %d\n", flowc_type_size("i32"))
+        return 5
+    }
+    if flowc_type_size("f32") != 4 {
+        printf("FAIL: f32 should be 4, got %d\n", flowc_type_size("f32"))
+        return 6
+    }
+
+    # type_size: 8-byte types
+    if flowc_type_size("i64") != 8 {
+        printf("FAIL: i64 should be 8, got %d\n", flowc_type_size("i64"))
+        return 7
+    }
+    if flowc_type_size("f64") != 8 {
+        printf("FAIL: f64 should be 8, got %d\n", flowc_type_size("f64"))
+        return 8
+    }
+    if flowc_type_size("ptr") != 8 {
+        printf("FAIL: ptr should be 8, got %d\n", flowc_type_size("ptr"))
+        return 9
+    }
+    if flowc_type_size("string") != 8 {
+        printf("FAIL: string should be 8, got %d\n", flowc_type_size("string"))
+        return 10
+    }
+
+    # type_size: 16-byte types
+    if flowc_type_size("i128") != 16 {
+        printf("FAIL: i128 should be 16, got %d\n", flowc_type_size("i128"))
+        return 11
+    }
+    if flowc_type_size("c128") != 16 {
+        printf("FAIL: c128 should be 16, got %d\n", flowc_type_size("c128"))
+        return 12
+    }
+
+    # type_size: pointer prefix
+    if flowc_type_size("ptr_Foo") != 8 {
+        printf("FAIL: ptr_Foo should be 8, got %d\n", flowc_type_size("ptr_Foo"))
+        return 13
+    }
+    if flowc_type_size("Ptr_Bar") != 8 {
+        printf("FAIL: Ptr_Bar should be 8, got %d\n", flowc_type_size("Ptr_Bar"))
+        return 14
+    }
+
+    # type_size: unknown struct defaults to 16
+    if flowc_type_size("MyStruct") != 16 {
+        printf("FAIL: MyStruct should default to 16, got %d\n", flowc_type_size("MyStruct"))
+        return 15
+    }
+
+    # stmt_cost: known kinds
+    if flowc_stmt_cost("assignment") != 2 {
+        printf("FAIL: assignment cost should be 2, got %d\n", flowc_stmt_cost("assignment"))
+        return 16
+    }
+    if flowc_stmt_cost("if") != 3 {
+        printf("FAIL: if cost should be 3, got %d\n", flowc_stmt_cost("if"))
+        return 17
+    }
+    if flowc_stmt_cost("for") != 5 {
+        printf("FAIL: for cost should be 5, got %d\n", flowc_stmt_cost("for"))
+        return 18
+    }
+    if flowc_stmt_cost("call") != 10 {
+        printf("FAIL: call cost should be 10, got %d\n", flowc_stmt_cost("call"))
+        return 19
+    }
+
+    # stmt_cost: default
+    if flowc_stmt_cost("unknown") != 1 {
+        printf("FAIL: unknown cost should default to 1, got %d\n", flowc_stmt_cost("unknown"))
+        return 20
+    }
+
+    # default loop bound
+    if FLOWC_DEFAULT_LOOP_BOUND != 1000 {
+        printf("FAIL: default loop bound should be 1000, got %d\n", FLOWC_DEFAULT_LOOP_BOUND)
+        return 21
+    }
+
+    puts("All wcet tests passed")
+    return 0
+}
