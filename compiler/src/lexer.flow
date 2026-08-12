@@ -119,6 +119,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let or_kw: array<u8, 2> = [111, 114]
     let match_kw: array<u8, 5> = [109, 97, 116, 99, 104]
     let type_kw: array<u8, 4> = [116, 121, 112, 101]
+    let unit_kw: array<u8, 4> = [117, 110, 105, 116]
     let p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
@@ -171,6 +172,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_MATCH }
     p = type_kw
     if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_TYPE }
+    p = unit_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_UNIT }
     return 0
 }
 
