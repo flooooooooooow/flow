@@ -619,3 +619,103 @@ export function flowc_claim_parse(text: string) -> FlowcClaimAddress {
 export function flowc_claim_try_parse(text: string) -> FlowcClaimAddress {
     return flowc_claim_parse(text)
 }
+
+# Plain English gloss for proof prose (port of address_phrase).
+# Falls back to the display string when no gloss is known.
+export function flowc_claim_address_phrase(addr: FlowcClaimAddress) -> string {
+    # Nat / addition
+    if strcmp(addr.carrier, "Nat") == 0 and strcmp(addr.structure, "addition") == 0 {
+        if strcmp(addr.law, "zero is the left identity") == 0 {
+            return "adding zero on the left does not change the number"
+        }
+        if strcmp(addr.law, "zero is the right identity") == 0 {
+            return "adding zero on the right does not change the number"
+        }
+        if strcmp(addr.law, "successor on the right steps the sum") == 0 {
+            return "adding one more on the right bumps the sum by one"
+        }
+        if strcmp(addr.law, "order does not matter") == 0 {
+            return "you can swap the order when you add"
+        }
+    }
+    # Eq / equality
+    if strcmp(addr.carrier, "Eq") == 0 and strcmp(addr.structure, "equality") == 0 {
+        if strcmp(addr.law, "everything equals itself") == 0 {
+            return "anything is always equal to itself"
+        }
+    }
+    # Bool / disjunction
+    if strcmp(addr.carrier, "Bool") == 0 and strcmp(addr.structure, "disjunction") == 0 {
+        if strcmp(addr.law, "order does not matter") == 0 {
+            return "order does not matter for or"
+        }
+    }
+    # Int / multiplication
+    if strcmp(addr.carrier, "Int") == 0 and strcmp(addr.structure, "multiplication") == 0 {
+        if strcmp(addr.law, "squaring never yields a negative") == 0 {
+            return "squaring never gives a negative number"
+        }
+    }
+    # Geometry / triangle
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "triangle") == 0 {
+        if strcmp(addr.law, "interior angles sum to two right angles") == 0 {
+            return "the three interior angles of a triangle sum to two right angles"
+        }
+    }
+    # Geometry / isosceles triangle
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "isosceles triangle") == 0 {
+        if strcmp(addr.law, "base angles are equal") == 0 {
+            return "the angles at the base of an isosceles triangle are equal"
+        }
+    }
+    # Geometry / intersecting lines
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "intersecting lines") == 0 {
+        if strcmp(addr.law, "vertical angles are equal") == 0 {
+            return "vertical angles formed by intersecting lines are equal"
+        }
+    }
+    # Geometry / right triangle
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "right triangle") == 0 {
+        if strcmp(addr.law, "the Pythagorean relation holds") == 0 {
+            return "the square on the hypotenuse equals the sum of squares on the legs"
+        }
+    }
+    # Geometry / parallel lines
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "parallel lines") == 0 {
+        if strcmp(addr.law, "alternate angles are equal") == 0 {
+            return "alternate interior angles are equal when parallel lines meet a transversal"
+        }
+    }
+    # Geometry / triangle congruence
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "triangle congruence") == 0 {
+        if strcmp(addr.law, "side-angle-side implies congruence") == 0 {
+            return "two sides and the included angle determine a triangle up to congruence"
+        }
+    }
+    # Geometry / circle
+    if strcmp(addr.carrier, "Geometry") == 0 and strcmp(addr.structure, "circle") == 0 {
+        if strcmp(addr.law, "radii from the centre are equal") == 0 {
+            return "all radii from the centre to the circumference are equal"
+        }
+        if strcmp(addr.law, "inscribed angle is half the central angle") == 0 {
+            return "an inscribed angle equals half the central angle on the same arc"
+        }
+        if strcmp(addr.law, "Thales right angle in semicircle") == 0 {
+            return "an angle inscribed in a semicircle is a right angle"
+        }
+    }
+    # Analysis / Taylor series
+    if strcmp(addr.carrier, "Analysis") == 0 and strcmp(addr.structure, "Taylor series") == 0 {
+        if strcmp(addr.law, "sin equals its Maclaurin series near zero") == 0 {
+            return "sin(x) matches its Maclaurin partial sums in a neighbourhood of the origin"
+        }
+    }
+    # Analysis / smooth functions
+    if strcmp(addr.carrier, "Analysis") == 0 and strcmp(addr.structure, "smooth functions") == 0 {
+        if strcmp(addr.law, "derivatives of sine are known") == 0 {
+            return "the derivatives of sine at zero follow the alternating pattern of the Maclaurin series"
+        }
+    }
+    # Fallback: use the display string
+    return flowc_claim_display(addr)
+}

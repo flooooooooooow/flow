@@ -1,0 +1,235 @@
+# @module flowc.conventions
+# @means  Pattern matching for flow check (#415).
+#         Port of the matching core from src/flow/conventions.py.
+#         TOML loading stays in Python; this module owns the avoid-pattern
+#         scanner that runs over source text.
+#
+# The Python original tries regex when the pattern has metacharacters,
+# then falls back to a case-insensitive substring match. Flow has no
+# regex engine, so this port does the substring match directly. Patterns
+# with regex metacharacters are matched as plain substrings, which is
+# stricter (fewer false positives) and covers the common case of literal
+# token avoidance.
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Structs ──────────────────────────────────────────────────────
+
+export struct FlowcAvoidPattern {
+    pattern: string,
+    reason: string,
+    workaround: string
+}
+
+# A warning message from check_source.
+export struct FlowcWarning {
+    message: string,
+    ok: i32
+}
+
+# ── Character helpers ─────────────────────────────────────────────
+
+function is_alpha(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    if c >= 65 and c <= 90 {
+        return 1
+    }
+    return 0
+}
+
+# Convert ASCII byte to lowercase. Non-alpha passes through.
+function to_lower(c: i32) -> i32 {
+    if c >= 65 and c <= 90 {
+        return c + 32
+    }
+    return c
+}
+
+# ── Substring matching ────────────────────────────────────────────
+
+# Case-insensitive substring search.
+# Returns 1 if needle appears in haystack, 0 otherwise.
+# Both strings are treated as ptr<u8> and compared byte-by-byte.
+export function flowc_contains_ci(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 {
+        return 1
+    }
+    if nn > hn {
+        return 0
+    }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    let last: i32 = hn - nn
+    while i <= last {
+        let mut j: i32 = 0
+        let mut matched: i32 = 1
+        while j < nn {
+            let hc: i32 = to_lower(hp[i + j])
+            let nc: i32 = to_lower(np[j])
+            if hc != nc {
+                matched = 0
+                break
+            }
+            j = j + 1
+        }
+        if matched == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Check if a pattern contains regex metacharacters.
+# Returns 1 if it does, 0 if it is a plain literal.
+function has_regex_meta(pattern: string) -> i32 {
+    let n: i32 = strlen(pattern) as i32
+    let p: ptr<u8> = pattern
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i]
+        # [ ] ( ) { } . * + ? ^ $ | \
+        if c == 91 or c == 93 {
+            return 1
+        }
+        if c == 40 or c == 41 {
+            return 1
+        }
+        if c == 123 or c == 125 {
+            return 1
+        }
+        if c == 46 or c == 42 or c == 43 or c == 63 {
+            return 1
+        }
+        if c == 94 or c == 36 or c == 124 {
+            return 1
+        }
+        if c == 92 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Match source against an avoid pattern.
+# The Python original tries regex first for patterns with metacharacters,
+# then falls back to case-insensitive substring. Flow has no regex, so
+# all patterns use the substring match. This is stricter for regex
+# patterns (treats them as literals) and identical for plain patterns.
+export function flowc_matches_pattern(source: string, pattern: string) -> i32 {
+    return flowc_contains_ci(source, pattern)
+}
+
+# ── String building ───────────────────────────────────────────────
+
+# Copy a substring [start, end) from src into a malloc'd buffer.
+function substr(src: string, start: i32, end: i32) -> string {
+    let n: i32 = strlen(src) as i32
+    if start < 0 {
+        start = 0
+    }
+    if end > n {
+        end = n
+    }
+    if start >= end {
+        return ""
+    }
+    let len: i32 = end - start
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = src
+    memcpy(buf, p + start, len as i64)
+    buf[len] = 0
+    return buf as string
+}
+
+# Append b to a. Returns a new malloc'd string. Caller frees both.
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64) as ptr<u8>
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+# ── Warning message builder ───────────────────────────────────────
+
+# Build a warning message for an avoid pattern match.
+# Format: "path: avoid 'pattern' - reason (workaround: ...)"
+export function flowc_build_warning(
+    path: string,
+    ap: FlowcAvoidPattern
+) -> string {
+    let msg: string = str_append(path, ": avoid '")
+    msg = str_append(msg, ap.pattern)
+    msg = str_append(msg, "'")
+    let nreason: i32 = strlen(ap.reason) as i32
+    if nreason > 0 {
+        msg = str_append(msg, " - ")
+        msg = str_append(msg, ap.reason)
+    }
+    let nwork: i32 = strlen(ap.workaround) as i32
+    if nwork > 0 {
+        msg = str_append(msg, " (workaround: ")
+        msg = str_append(msg, ap.workaround)
+        msg = str_append(msg, ")")
+    }
+    return msg
+}
+
+# ── Source checker ────────────────────────────────────────────────
+
+# Check a source string against an array of avoid patterns.
+# patterns: pointer to FlowcAvoidPattern array.
+# count: number of patterns.
+# path: file path for warning messages.
+# warnings: output buffer for warning messages (ptr<FlowcWarning>).
+# max_warnings: capacity of the warnings buffer.
+# Returns the number of warnings written.
+export function flowc_check_source(
+    source: string,
+    patterns: ptr<FlowcAvoidPattern>,
+    count: i32,
+    path: string,
+    warnings: ptr<FlowcWarning>,
+    max_warnings: i32
+) -> i32 {
+    let mut written: i32 = 0
+    let mut i: i32 = 0
+    while i < count and written < max_warnings {
+        let ap: FlowcAvoidPattern = patterns[i]
+        let plen: i32 = strlen(ap.pattern) as i32
+        if plen == 0 {
+            i = i + 1
+            continue
+        }
+        if flowc_matches_pattern(source, ap.pattern) == 1 {
+            let msg: string = flowc_build_warning(path, ap)
+            warnings[written] = FlowcWarning { message: msg, ok: 1 }
+            written = written + 1
+        }
+        i = i + 1
+    }
+    return written
+}

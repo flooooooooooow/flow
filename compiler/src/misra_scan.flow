@@ -1,0 +1,388 @@
+# @module flowc.misra_scan
+# @means  Lightweight MISRA/CERT scan over generated C (#277).
+#         Port of src/flow/misra_scan.py. Flags common deviations so
+#         CI / flow analyze can produce evidence rows for compliance
+#         matrices. Not a full static analyzer.
+#
+# Scans for:
+#   MISRA 21.3: dynamic allocation (malloc/calloc/realloc/free)
+#   MISRA 21.6: stdio I/O (printf/fprintf/sprintf/snprintf/scanf/gets)
+#   MISRA 22.1: abort() fault path
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Finding struct ───────────────────────────────────────────────
+
+export struct FlowcFinding {
+    rule: string,
+    status: string,
+    detail: string,
+    line: i32
+}
+
+# ── Character helpers ─────────────────────────────────────────────
+
+function is_alpha(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    if c >= 65 and c <= 90 {
+        return 1
+    }
+    if c == 95 {
+        return 1
+    }
+    return 0
+}
+
+function is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function is_word_char(c: i32) -> i32 {
+    if is_alpha(c) == 1 {
+        return 1
+    }
+    if is_digit(c) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+# ── Word-boundary keyword search ──────────────────────────────────
+
+# Search for "keyword(" with word boundary on the left.
+# Returns the index of the keyword start, or -1 if not found.
+# We check that the character before the keyword is not a word char,
+# and the character after the keyword is '(' (optional whitespace
+# between keyword and '(').
+function find_keyword_call(text: string, keyword: string) -> i32 {
+    let tn: i32 = strlen(text) as i32
+    let kn: i32 = strlen(keyword) as i32
+    let tp: ptr<u8> = text
+    let kp: ptr<u8> = keyword
+    if kn == 0 or kn > tn {
+        return -1
+    }
+    let mut i: i32 = 0
+    while i <= tn - kn {
+        # Check word boundary on the left
+        if i > 0 {
+            if is_word_char(tp[i - 1]) == 1 {
+                i = i + 1
+                continue
+            }
+        }
+        # Compare keyword bytes
+        let mut j: i32 = 0
+        let mut ok: i32 = 1
+        while j < kn {
+            if tp[i + j] != kp[j] {
+                ok = 0
+                break
+            }
+            j = j + 1
+        }
+        if ok == 0 {
+            i = i + 1
+            continue
+        }
+        # Check that what follows is '(' (with optional whitespace)
+        let mut k: i32 = i + kn
+        while k < tn and is_space(tp[k]) == 1 {
+            k = k + 1
+        }
+        if k < tn and tp[k] == 40 {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+# Check if a line contains any of the heap allocation functions.
+# Returns 1 if found, 0 otherwise.
+function line_has_heap_call(line: string) -> i32 {
+    if find_keyword_call(line, "malloc") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "calloc") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "realloc") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "free") >= 0 {
+        return 1
+    }
+    return 0
+}
+
+# Check if a line contains any of the stdio I/O functions.
+function line_has_stdio_call(line: string) -> i32 {
+    if find_keyword_call(line, "printf") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "fprintf") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "sprintf") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "snprintf") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "scanf") >= 0 {
+        return 1
+    }
+    if find_keyword_call(line, "gets") >= 0 {
+        return 1
+    }
+    return 0
+}
+
+# Check if a line contains abort().
+function line_has_abort_call(line: string) -> i32 {
+    if find_keyword_call(line, "abort") >= 0 {
+        return 1
+    }
+    return 0
+}
+
+# ── Line helpers ─────────────────────────────────────────────────
+
+# Check if a stripped line starts with '#' or '//'.
+function is_comment_or_directive(line: string) -> i32 {
+    let p: ptr<u8> = line
+    let n: i32 = strlen(line) as i32
+    let mut i: i32 = 0
+    # Skip leading whitespace
+    while i < n and is_space(p[i]) == 1 {
+        i = i + 1
+    }
+    if i >= n {
+        return 0
+    }
+    if p[i] == 35 {
+        return 1
+    }
+    if i + 1 < n and p[i] == 47 and p[i + 1] == 47 {
+        return 1
+    }
+    return 0
+}
+
+# Copy a substring [start, end) from src into a malloc'd buffer.
+function substr(src: string, start: i32, end: i32) -> string {
+    let n: i32 = strlen(src) as i32
+    if start < 0 {
+        start = 0
+    }
+    if end > n {
+        end = n
+    }
+    if start >= end {
+        return ""
+    }
+    let len: i32 = end - start
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = src
+    memcpy(buf, p + start, len as i64)
+    buf[len] = 0
+    return buf as string
+}
+
+# Return a stripped (trimmed) copy of a line.
+function strip_line(line: string) -> string {
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut start: i32 = 0
+    while start < n and is_space(p[start]) == 1 {
+        start = start + 1
+    }
+    let mut end: i32 = n
+    while end > start and is_space(p[end - 1]) == 1 {
+        end = end - 1
+    }
+    return substr(line, start, end)
+}
+
+# Truncate a string to at most max_len bytes. Returns a new string.
+function truncate(s: string, max_len: i32) -> string {
+    let n: i32 = strlen(s) as i32
+    if n <= max_len {
+        return s
+    }
+    return substr(s, 0, max_len)
+}
+
+# Append b to a. Returns a new malloc'd string.
+function str_append(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let total: i32 = la + lb
+    let buf: ptr<u8> = malloc((total + 1) as i64) as ptr<u8>
+    if la > 0 {
+        memcpy(buf, a, la as i64)
+    }
+    if lb > 0 {
+        memcpy(buf + la, b, lb as i64)
+    }
+    buf[total] = 0
+    return buf as string
+}
+
+# ── Line iterator ────────────────────────────────────────────────
+
+# Count the number of lines in text (split by '\n').
+function count_lines(text: string) -> i32 {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let mut count: i32 = 1
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+# Extract line number 'line_no' (1-based) from text.
+# Returns the line without the trailing newline.
+function get_line(text: string, line_no: i32) -> string {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let mut current: i32 = 1
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 {
+            if current == line_no {
+                return substr(text, start, i)
+            }
+            current = current + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if current == line_no {
+        return substr(text, start, n)
+    }
+    return ""
+}
+
+# ── Scanner ──────────────────────────────────────────────────────
+
+# Scan C source text for MISRA/CERT patterns.
+# findings: output buffer (ptr<FlowcFinding>).
+# max_findings: capacity of the buffer.
+# Returns the number of findings written.
+export function flowc_scan_c_source(
+    text: string,
+    findings: ptr<FlowcFinding>,
+    max_findings: i32
+) -> i32 {
+    let mut written: i32 = 0
+    let total_lines: i32 = count_lines(text)
+    let mut line_no: i32 = 1
+    while line_no <= total_lines and written < max_findings {
+        let raw_line: string = get_line(text, line_no)
+        if is_comment_or_directive(raw_line) == 1 {
+            line_no = line_no + 1
+            continue
+        }
+        let stripped: string = strip_line(raw_line)
+        let detail_src: string = truncate(stripped, 80)
+
+        if line_has_heap_call(raw_line) == 1 {
+            let detail: string = str_append("dynamic allocation: ", detail_src)
+            findings[written] = FlowcFinding {
+                rule: "MISRA 21.3",
+                status: "VIOLATION",
+                detail: detail,
+                line: line_no
+            }
+            written = written + 1
+            if written >= max_findings {
+                break
+            }
+        }
+
+        if line_has_stdio_call(raw_line) == 1 {
+            let detail: string = str_append("stdio I/O: ", detail_src)
+            findings[written] = FlowcFinding {
+                rule: "MISRA 21.6",
+                status: "NOTE",
+                detail: detail,
+                line: line_no
+            }
+            written = written + 1
+            if written >= max_findings {
+                break
+            }
+        }
+
+        if line_has_abort_call(raw_line) == 1 {
+            let detail: string = str_append("abort() fault path: ", detail_src)
+            findings[written] = FlowcFinding {
+                rule: "MISRA 22.1",
+                status: "NOTE",
+                detail: detail,
+                line: line_no
+            }
+            written = written + 1
+            if written >= max_findings {
+                break
+            }
+        }
+
+        line_no = line_no + 1
+    }
+    return written
+}
+
+# Count violations in a findings array.
+export function flowc_count_violations(findings: ptr<FlowcFinding>, count: i32) -> i32 {
+    let mut v: i32 = 0
+    let mut i: i32 = 0
+    while i < count {
+        if strcmp(findings[i].status, "VIOLATION") == 0 {
+            v = v + 1
+        }
+        i = i + 1
+    }
+    return v
+}
+
+# Count notes in a findings array.
+export function flowc_count_notes(findings: ptr<FlowcFinding>, count: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < count {
+        if strcmp(findings[i].status, "NOTE") == 0 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}

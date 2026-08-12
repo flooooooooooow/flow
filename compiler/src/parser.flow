@@ -7,10 +7,11 @@ import .token {
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK, TOK_DOT, TOK_DOTDOT,
     TOK_COLON, TOK_COMMA, TOK_ARROW, TOK_FATARROW, TOK_SEMI,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
-    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
-    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF
+    KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
+    KW_TYPE
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -21,7 +22,7 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_STRING, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT, AST_INT, AST_FLOAT,
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
-    AST_MATCH, AST_MATCH_ARM,
+    AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
 }
 
@@ -439,6 +440,8 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
     if op == TOK_BARBAR { return TOK_BARBAR }
     if op == TOK_AMPAMP { return TOK_AMPAMP }
     if op == TOK_AMP { return TOK_AMP }
+    if op == TOK_BAR { return TOK_BAR }
+    if op == TOK_CARET { return TOK_CARET }
     if op == TOK_EQEQ { return TOK_EQEQ }
     if op == TOK_NE { return TOK_NE }
     if op == TOK_LT { return TOK_LT }
@@ -461,6 +464,8 @@ function flowc_parse_binop_prec(op: i32) -> i32 {
     if op == TOK_BARBAR { return 1 }
     if op == TOK_AMPAMP { return 2 }
     if op == TOK_AMP { return 3 }
+    if op == TOK_BAR { return 3 }
+    if op == TOK_CARET { return 3 }
     if op == TOK_EQEQ or op == TOK_NE { return 4 }
     if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE { return 5 }
     if op == TOK_PLUS or op == TOK_MINUS { return 6 }
@@ -1236,6 +1241,37 @@ function flowc_parse_import(p: ptr<Parser>) -> i32 {
 }
 
 # const Name: Type = expr  (ival = 1 if export, else 0)
+# type Name = BaseType
+function flowc_parse_type_alias(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_TYPE) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_EQ) == 0 {
+        return AST_NONE
+    }
+    let base_ty: i32 = flowc_parse_type(p)
+    if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+        flowc_parser_advance(p)
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_TYPE_ALIAS, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = base_ty
+    return id
+}
+
 function flowc_parse_const(p: ptr<Parser>, is_export: i32) -> i32 {
     let start: i32 = p[0].cur.start
     if flowc_parser_eat_kw(p, KW_CONST) == 0 {
@@ -1356,6 +1392,32 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
     let mut items: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_EOF) == 0 {
         let mut item: i32 = AST_NONE
+        # Skip attributes: @name, @name(args), @name { body }
+        while flowc_parser_check(p[0], TOK_AT) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                flowc_parser_advance(p)
+            }
+            if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                flowc_parser_advance(p)
+                let mut depth: i32 = 1
+                while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+                    if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                        depth = depth + 1
+                    } else {
+                        if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
+                            depth = depth - 1
+                        }
+                    }
+                    if depth > 0 {
+                        flowc_parser_advance(p)
+                    }
+                }
+                if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
+                    flowc_parser_advance(p)
+                }
+            }
+        }
         if flowc_parser_check_kw(p[0], KW_IMPORT) == 1 {
             item = flowc_parse_import(p)
         } else {
@@ -1374,8 +1436,12 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                             if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
                                 item = flowc_parse_const(p, 0)
                             } else {
-                                p[0].err = 1
-                                return AST_NONE
+                                if flowc_parser_check_kw(p[0], KW_TYPE) == 1 {
+                                    item = flowc_parse_type_alias(p)
+                                } else {
+                                    p[0].err = 1
+                                    return AST_NONE
+                                }
                             }
                         }
                     }

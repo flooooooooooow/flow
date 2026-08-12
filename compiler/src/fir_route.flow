@@ -1,0 +1,111 @@
+# @module flowc.fir_route
+# @means  FIR-G Phase 3: CPU vs bulk analysis routing decision.
+#         Port of the routing logic from src/flow/fir_route.py.
+#         The Python original does calibration timing and filesystem
+#         persistence; this port exposes the pure routing decision
+#         so a Flow caller can pick cpu/numpy/mlx from thresholds
+#         without the Python timing machinery.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Constants ────────────────────────────────────────────────────
+
+# If bulk never wins in the sweep, keep auto on CPU forever.
+export const FLOWC_NEVER_BULK: i32 = 1000000000
+
+# ── Thresholds struct ────────────────────────────────────────────
+
+export struct FlowcRouteThresholds {
+    bulk_backend: string,   # "numpy" or "mlx"
+    min_funcs: i32,
+    min_edges: i32
+}
+
+# ── Routing decision ─────────────────────────────────────────────
+
+# Pick cpu|numpy|mlx. "auto" uses measured thresholds; uncalibrated -> cpu.
+#
+# requested: "cpu", "numpy", "mlx", or "auto"
+# n_funcs: number of functions in the graph
+# n_edges: number of call graph edges
+# thresholds: the calibrated thresholds (or use flowc_route_thresholds_none
+#             for uncalibrated)
+# has_numpy: 1 if NumPy is available, 0 if not
+# has_mlx: 1 if MLX is available, 0 if not
+#
+# Returns: "cpu", "numpy", or "mlx"
+export function flowc_choose_analysis_backend(
+    requested: string,
+    n_funcs: i32,
+    n_edges: i32,
+    thresholds: FlowcRouteThresholds,
+    has_numpy: i32,
+    has_mlx: i32
+) -> string {
+    # Explicit requests
+    if strcmp(requested, "cpu") == 0 {
+        return "cpu"
+    }
+    if strcmp(requested, "numpy") == 0 {
+        return "numpy"
+    }
+    if strcmp(requested, "mlx") == 0 {
+        return "mlx"
+    }
+    # "auto" or anything else: use thresholds
+
+    # Uncalibrated or never-bulk: stay on CPU
+    if thresholds.min_funcs >= FLOWC_NEVER_BULK {
+        return "cpu"
+    }
+
+    # Check if graph is large enough for bulk
+    if n_funcs >= thresholds.min_funcs or n_edges >= thresholds.min_edges {
+        let be: string = thresholds.bulk_backend
+        if strcmp(be, "mlx") == 0 {
+            if has_mlx == 1 {
+                return "mlx"
+            }
+            if has_numpy == 1 {
+                return "numpy"
+            }
+            return "cpu"
+        }
+        if strcmp(be, "numpy") == 0 {
+            if has_numpy == 1 {
+                return "numpy"
+            }
+            return "cpu"
+        }
+        return "cpu"
+    }
+
+    # Small graph: CPU
+    return "cpu"
+}
+
+# Create uncalibrated thresholds (min_funcs = NEVER_BULK).
+export function flowc_route_thresholds_none() -> FlowcRouteThresholds {
+    return FlowcRouteThresholds {
+        bulk_backend: "cpu",
+        min_funcs: FLOWC_NEVER_BULK,
+        min_edges: FLOWC_NEVER_BULK
+    }
+}
+
+# Create calibrated thresholds.
+export function flowc_route_thresholds_calibrated(
+    backend: string,
+    min_funcs: i32,
+    min_edges: i32
+) -> FlowcRouteThresholds {
+    return FlowcRouteThresholds {
+        bulk_backend: backend,
+        min_funcs: min_funcs,
+        min_edges: min_edges
+    }
+}

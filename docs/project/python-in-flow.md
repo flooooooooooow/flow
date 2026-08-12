@@ -63,6 +63,14 @@ them as part of Phase D; call them via the escape hatch:
 | Math prose (core) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow) |
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
 | `flow know` helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow) — normalize/qualify/match/print + theorem-header scan |
+| Require/prefer constraints | [`compiler/src/constraints.flow`](../../compiler/src/constraints.flow) — `flowc_parse_require` / `flowc_parse_prefer` / tighter-value picker |
+| Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow) — `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
+| MISRA/CERT C scanner | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow) — `flowc_scan_c_source` flags heap/stdio/abort calls |
+| Function attribute vocabulary | [`compiler/src/attributes.flow`](../../compiler/src/attributes.flow) — `flowc_parse_attribute` / `flowc_validate_target_spec` / `flowc_domain_rank` |
+| Matmul/reduce cost models | [`compiler/src/general_plans.flow`](../../compiler/src/general_plans.flow) — `flowc_select_matmul` / `flowc_select_reduce` (pure cost/applicability, registry stays Python) |
+| FIR-G effect propagation | [`compiler/src/fir_analysis.flow`](../../compiler/src/fir_analysis.flow) — `flowc_propagate_effects` / `flowc_reachable_functions` / `flowc_is_pure` (CSR graph, fixpoint OR) |
+| FIR-G opt candidate scoring | [`compiler/src/fir_opts.flow`](../../compiler/src/fir_opts.flow) — `flowc_score_inline` / `flowc_score_dead_elim` / `flowc_compare_candidates` |
+| FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow) — `flowc_choose_analysis_backend` (calibration and timing stay Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |

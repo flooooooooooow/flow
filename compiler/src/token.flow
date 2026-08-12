@@ -38,6 +38,9 @@ export const TOK_PERCENT: i32 = 33
 export const TOK_DOTDOT: i32 = 34
 export const TOK_FATARROW: i32 = 35
 export const TOK_TILDE: i32 = 36
+export const TOK_AT: i32 = 37
+export const TOK_BAR: i32 = 38
+export const TOK_CARET: i32 = 39
 
 export const KW_LET: i32 = 1
 export const KW_FUNCTION: i32 = 2
@@ -64,6 +67,7 @@ export const KW_AND: i32 = 22
 export const KW_OR: i32 = 23
 export const KW_MATCH: i32 = 24
 export const KW_ELIF: i32 = 25
+export const KW_TYPE: i32 = 26
 
 export struct Token {
     kind: i32,

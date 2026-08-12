@@ -1,0 +1,384 @@
+# @module flowc.constraints
+# @means  Parser and selector helpers for require/prefer constraints (#147).
+#         Port of src/flow/constraints.py. Flow has no regex, so the
+#         require/prefer patterns are parsed by character scanning.
+#
+# require(memory < 4096)  ->  resource="memory", op="<", value=4096
+# prefer(parallel)        ->  objective="parallel"
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+# ── Result structs ───────────────────────────────────────────────
+
+export struct FlowcRequire {
+    resource: string,
+    op: string,
+    value: i32,
+    ok: i32
+}
+
+export struct FlowcPrefer {
+    objective: string,
+    ok: i32
+}
+
+# ── Helpers ──────────────────────────────────────────────────────
+
+# Check if a byte is a word character [a-zA-Z0-9_].
+function is_word_char(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    if c >= 65 and c <= 90 {
+        return 1
+    }
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    if c == 95 {
+        return 1
+    }
+    return 0
+}
+
+# Check if a byte is a digit [0-9].
+function is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+# Check if a byte is whitespace.
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+# Copy a substring [start, end) from src into a malloc'd buffer.
+# Returns the new string, or "" on failure.
+function substr(src: string, start: i32, end: i32) -> string {
+    let n: i32 = strlen(src) as i32
+    if start < 0 {
+        start = 0
+    }
+    if end > n {
+        end = n
+    }
+    if start >= end {
+        return ""
+    }
+    let len: i32 = end - start
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = src
+    memcpy(buf, p + start, len as i64)
+    buf[len] = 0
+    return buf as string
+}
+
+# Parse an integer from a string starting at index i.
+# Returns (value, end_index). end_index is -1 on failure.
+struct IntParse {
+    value: i32,
+    end: i32
+}
+
+function parse_int_at(s: string, i: i32) -> IntParse {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut idx: i32 = i
+    let mut neg: i32 = 0
+    if idx < n and p[idx] == 45 {
+        neg = 1
+        idx = idx + 1
+    }
+    if idx >= n or is_digit(p[idx]) == 0 {
+        return IntParse { value: 0, end: -1 }
+    }
+    let mut val: i32 = 0
+    while idx < n and is_digit(p[idx]) == 1 {
+        val = val * 10 + (p[idx] - 48)
+        idx = idx + 1
+    }
+    if neg == 1 {
+        val = 0 - val
+    }
+    return IntParse { value: val, end: idx }
+}
+
+# ── Pattern scanners ─────────────────────────────────────────────
+
+# Scan for "keyword" at position i in s. Returns index after it, or -1.
+# Uses ptr<u8> arithmetic so Flow string + doesn't trigger concat.
+function scan_keyword(s: string, i: i32, keyword: string) -> i32 {
+    let klen: i32 = strlen(keyword) as i32
+    let sp: ptr<u8> = s
+    let kp: ptr<u8> = keyword
+    let mut j: i32 = 0
+    while j < klen {
+        let sc: i32 = sp[i + j]
+        let kc: i32 = kp[j]
+        if sc != kc {
+            return -1
+        }
+        j = j + 1
+    }
+    return i + klen
+}
+
+# Scan for a word (identifier) at position i. Returns (word, end).
+struct WordScan {
+    word: string,
+    end: i32
+}
+
+function scan_word(s: string, i: i32) -> WordScan {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    if i >= n or is_word_char(p[i]) == 0 {
+        return WordScan { word: "", end: -1 }
+    }
+    let start: i32 = i
+    let mut idx: i32 = i
+    while idx < n and is_word_char(p[idx]) == 1 {
+        idx = idx + 1
+    }
+    return WordScan { word: substr(s, start, idx), end: idx }
+}
+
+# Scan for an operator (<=, <, >=, >, ==) at position i.
+# Returns (op_string, end).
+function scan_op(s: string, i: i32) -> WordScan {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    if i + 1 < n {
+        if p[i] == 60 and p[i + 1] == 61 {
+            return WordScan { word: "<=", end: i + 2 }
+        }
+        if p[i] == 62 and p[i + 1] == 61 {
+            return WordScan { word: ">=", end: i + 2 }
+        }
+        if p[i] == 61 and p[i + 1] == 61 {
+            return WordScan { word: "==", end: i + 2 }
+        }
+    }
+    if i < n {
+        if p[i] == 60 {
+            return WordScan { word: "<", end: i + 1 }
+        }
+        if p[i] == 62 {
+            return WordScan { word: ">", end: i + 1 }
+        }
+    }
+    return WordScan { word: "", end: -1 }
+}
+
+# Skip whitespace at position i. Returns new index.
+function skip_ws(s: string, i: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut idx: i32 = i
+    while idx < n and is_space(p[idx]) == 1 {
+        idx = idx + 1
+    }
+    return idx
+}
+
+# ── Public API ───────────────────────────────────────────────────
+
+# Parse a `require(resource op value)` constraint from text.
+# Returns FlowcRequire with ok=1 on success, ok=0 on no match.
+export function flowc_parse_require(text: string) -> FlowcRequire {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let mut i: i32 = 0
+
+    # Scan for "require" anywhere in the text.
+    let found: i32 = 0
+    while i < n {
+        let after_kw: i32 = scan_keyword(text, i, "require")
+        if after_kw >= 0 {
+            i = after_kw
+            found = 1
+            break
+        }
+        i = i + 1
+    }
+    if found == 0 {
+        return FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    }
+
+    # Skip whitespace, expect '('.
+    i = skip_ws(text, i)
+    if i >= n or p[i] != 40 {
+        return FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    }
+    i = i + 1
+
+    # Skip whitespace, parse resource word.
+    i = skip_ws(text, i)
+    let ws: WordScan = scan_word(text, i)
+    if ws.end < 0 {
+        return FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    }
+    let resource: string = ws.word
+    i = ws.end
+
+    # Skip whitespace, parse operator.
+    i = skip_ws(text, i)
+    let os: WordScan = scan_op(text, i)
+    if os.end < 0 {
+        return FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    }
+    let op: string = os.word
+    i = os.end
+
+    # Skip whitespace, parse integer value.
+    i = skip_ws(text, i)
+    let ip: IntParse = parse_int_at(text, i)
+    if ip.end < 0 {
+        return FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    }
+    let value: i32 = ip.value
+    i = ip.end
+
+    # Skip whitespace, expect ')'.
+    i = skip_ws(text, i)
+    if i >= n or p[i] != 41 {
+        return FlowcRequire { resource: "", op: "", value: 0, ok: 0 }
+    }
+
+    return FlowcRequire { resource: resource, op: op, value: value, ok: 1 }
+}
+
+# Parse a `prefer(objective)` constraint from text.
+# Returns FlowcPrefer with ok=1 on success, ok=0 on no match.
+export function flowc_parse_prefer(text: string) -> FlowcPrefer {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let mut i: i32 = 0
+
+    # Scan for "prefer" anywhere in the text.
+    let found: i32 = 0
+    while i < n {
+        let after_kw: i32 = scan_keyword(text, i, "prefer")
+        if after_kw >= 0 {
+            i = after_kw
+            found = 1
+            break
+        }
+        i = i + 1
+    }
+    if found == 0 {
+        return FlowcPrefer { objective: "", ok: 0 }
+    }
+
+    # Skip whitespace, expect '('.
+    i = skip_ws(text, i)
+    if i >= n or p[i] != 40 {
+        return FlowcPrefer { objective: "", ok: 0 }
+    }
+    i = i + 1
+
+    # Skip whitespace, parse objective word.
+    i = skip_ws(text, i)
+    let ws: WordScan = scan_word(text, i)
+    if ws.end < 0 {
+        return FlowcPrefer { objective: "", ok: 0 }
+    }
+    let objective: string = ws.word
+    i = ws.end
+
+    # Skip whitespace, expect ')'.
+    i = skip_ws(text, i)
+    if i >= n or p[i] != 41 {
+        return FlowcPrefer { objective: "", ok: 0 }
+    }
+
+    return FlowcPrefer { objective: objective, ok: 1 }
+}
+
+# Check if two strings are equal.
+function streq(a: string, b: string) -> i32 {
+    if strcmp(a, b) == 0 {
+        return 1
+    }
+    return 0
+}
+
+# Build a facts key from a resource name.
+# "memory" and "scratch" get the _bytes suffix.
+function facts_key(resource: string) -> string {
+    if streq(resource, "memory") == 1 {
+        return "require_memory_bytes"
+    }
+    if streq(resource, "scratch") == 1 {
+        return "require_scratch_bytes"
+    }
+    # Stage-A: no snprintf for dynamic key building. Return a sentinel
+    # that the caller can switch on. Full dynamic keys need fmt.flow.
+    return resource
+}
+
+# Convert a parsed require into a facts entry.
+# Returns the value to store, or -1 to skip.
+# This is a simplified version: the Python original builds a dict with
+# dynamic keys. Stage-A Flow has no dict, so we return the value and
+# let the caller decide where to store it.
+export function flowc_require_to_value(req: FlowcRequire) -> i32 {
+    if req.ok == 0 {
+        return -1
+    }
+    return req.value
+}
+
+# Check if an op is a "less than" operator (< or <=).
+export function flowc_op_is_less(op: string) -> i32 {
+    if streq(op, "<") == 1 {
+        return 1
+    }
+    if streq(op, "<=") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Check if an op is a "greater than" operator (> or >=).
+export function flowc_op_is_greater(op: string) -> i32 {
+    if streq(op, ">") == 1 {
+        return 1
+    }
+    if streq(op, ">=") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Pick the tighter value for a require constraint.
+# For < / <=: the smaller value wins (tighter budget).
+# For > / >=: the larger value wins (tighter budget).
+# For ==: any value (last one wins).
+export function flowc_pick_tighter(op: string, existing: i32, candidate: i32) -> i32 {
+    if flowc_op_is_less(op) == 1 {
+        if existing < 0 or candidate < existing {
+            return candidate
+        }
+        return existing
+    }
+    if flowc_op_is_greater(op) == 1 {
+        if existing < 0 or candidate > existing {
+            return candidate
+        }
+        return existing
+    }
+    return candidate
+}

@@ -1,0 +1,156 @@
+# Test for fir_opts.flow port of fir_opts.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fir_opts.flow
+# Exit 0 on success.
+
+import "compiler/src/fir_opts.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # score_dead_elim: base + op count
+    let s1: f64 = flowc_score_dead_elim(5)
+    if s1 != 15.0 {
+        printf("FAIL: dead_elim score for 5 ops should be 15.0, got %f\n", s1)
+        return 1
+    }
+
+    let s2: f64 = flowc_score_dead_elim(0)
+    if s2 != 10.0 {
+        printf("FAIL: dead_elim score for 0 ops should be 10.0, got %f\n", s2)
+        return 2
+    }
+
+    # score_inline: basic case (8 ops, 2 sites, not pure)
+    # base = (16 - 8 + 1) / 2 = 4.5
+    let s3: f64 = flowc_score_inline(8, 2, 0)
+    if s3 != 4.5 {
+        printf("FAIL: inline score for 8 ops 2 sites should be 4.5, got %f\n", s3)
+        return 3
+    }
+
+    # score_inline: single site bonus (8 ops, 1 site, not pure)
+    # base = (16 - 8 + 1) / 1 = 9.0, * 2.0 = 18.0
+    let s4: f64 = flowc_score_inline(8, 1, 0)
+    if s4 != 18.0 {
+        printf("FAIL: inline score for 8 ops 1 site should be 18.0, got %f\n", s4)
+        return 4
+    }
+
+    # score_inline: pure bonus (8 ops, 2 sites, pure)
+    # base = 4.5, * 1.5 = 6.75
+    let s5: f64 = flowc_score_inline(8, 2, 1)
+    if s5 != 6.75 {
+        printf("FAIL: inline score for 8 ops 2 sites pure should be 6.75, got %f\n", s5)
+        return 5
+    }
+
+    # score_inline: single site + pure (8 ops, 1 site, pure)
+    # base = 9.0, * 2.0 = 18.0, * 1.5 = 27.0
+    let s6: f64 = flowc_score_inline(8, 1, 1)
+    if s6 != 27.0 {
+        printf("FAIL: inline score for 8 ops 1 site pure should be 27.0, got %f\n", s6)
+        return 6
+    }
+
+    # score_inline: too large (17 ops)
+    let s7: f64 = flowc_score_inline(17, 1, 1)
+    if s7 != 0.0 {
+        printf("FAIL: inline score for 17 ops should be 0.0, got %f\n", s7)
+        return 7
+    }
+
+    # score_inline: zero ops
+    let s8: f64 = flowc_score_inline(0, 1, 1)
+    if s8 != 0.0 {
+        printf("FAIL: inline score for 0 ops should be 0.0, got %f\n", s8)
+        return 8
+    }
+
+    # score_inline: zero sites
+    let s9: f64 = flowc_score_inline(8, 0, 1)
+    if s9 != 0.0 {
+        printf("FAIL: inline score for 0 sites should be 0.0, got %f\n", s9)
+        return 9
+    }
+
+    # score_inline: smallest callee (1 op, 1 site, pure)
+    # base = (16 - 1 + 1) / 1 = 16.0, * 2.0 = 32.0, * 1.5 = 48.0
+    let s10: f64 = flowc_score_inline(1, 1, 1)
+    if s10 != 48.0 {
+        printf("FAIL: inline score for 1 op 1 site pure should be 48.0, got %f\n", s10)
+        return 10
+    }
+
+    # is_inline_candidate
+    if flowc_is_inline_candidate(8, 0) == 0 {
+        puts("FAIL: 8 ops non-extern should be inline candidate")
+        return 11
+    }
+    if flowc_is_inline_candidate(17, 0) == 1 {
+        puts("FAIL: 17 ops should not be inline candidate")
+        return 12
+    }
+    if flowc_is_inline_candidate(8, 1) == 1 {
+        puts("FAIL: extern should not be inline candidate")
+        return 13
+    }
+    if flowc_is_inline_candidate(0, 0) == 1 {
+        puts("FAIL: 0 ops should not be inline candidate")
+        return 14
+    }
+
+    # is_dead_elim_candidate
+    if flowc_is_dead_elim_candidate(0, 0) == 0 {
+        puts("FAIL: unreachable non-main should be dead_elim candidate")
+        return 15
+    }
+    if flowc_is_dead_elim_candidate(1, 0) == 1 {
+        puts("FAIL: reachable should not be dead_elim candidate")
+        return 16
+    }
+    if flowc_is_dead_elim_candidate(0, 1) == 1 {
+        puts("FAIL: main should not be dead_elim candidate")
+        return 17
+    }
+
+    # compare_candidates: higher score first
+    let a: FlowcOptCandidate = FlowcOptCandidate { kind: 1, target_id: 3, score: 20.0, caller_id: 0, callee_ops: 5, call_sites: 1, is_pure: 1 }
+    let b: FlowcOptCandidate = FlowcOptCandidate { kind: 0, target_id: 1, score: 15.0, caller_id: -1, callee_ops: 5, call_sites: 0, is_pure: 0 }
+    if flowc_compare_candidates(a, b) != -1 {
+        puts("FAIL: higher score should come first")
+        return 18
+    }
+    if flowc_compare_candidates(b, a) != 1 {
+        puts("FAIL: lower score should come after")
+        return 19
+    }
+
+    # compare_candidates: tie-break by kind (dead_elim=0 before inline=1)
+    let c: FlowcOptCandidate = FlowcOptCandidate { kind: 0, target_id: 1, score: 10.0, caller_id: -1, callee_ops: 0, call_sites: 0, is_pure: 0 }
+    let d: FlowcOptCandidate = FlowcOptCandidate { kind: 1, target_id: 2, score: 10.0, caller_id: 0, callee_ops: 5, call_sites: 1, is_pure: 0 }
+    if flowc_compare_candidates(c, d) != -1 {
+        puts("FAIL: dead_elim should come before inline on tie")
+        return 20
+    }
+
+    # compare_candidates: tie-break by target_id
+    let e: FlowcOptCandidate = FlowcOptCandidate { kind: 0, target_id: 1, score: 10.0, caller_id: -1, callee_ops: 0, call_sites: 0, is_pure: 0 }
+    let f: FlowcOptCandidate = FlowcOptCandidate { kind: 0, target_id: 2, score: 10.0, caller_id: -1, callee_ops: 0, call_sites: 0, is_pure: 0 }
+    if flowc_compare_candidates(e, f) != -1 {
+        puts("FAIL: lower target_id should come first on tie")
+        return 21
+    }
+
+    # compare_candidates: equal
+    let g: FlowcOptCandidate = FlowcOptCandidate { kind: 0, target_id: 1, score: 10.0, caller_id: -1, callee_ops: 0, call_sites: 0, is_pure: 0 }
+    if flowc_compare_candidates(e, g) != 0 {
+        puts("FAIL: equal candidates should return 0")
+        return 22
+    }
+
+    puts("All fir_opts tests passed")
+    return 0
+}

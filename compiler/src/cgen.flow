@@ -4,7 +4,7 @@
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
-    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET
 }
 import .ast {
     AstArena, AST_NONE,
@@ -13,7 +13,7 @@ import .ast {
     AST_STRUCT, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE, AST_INDEX,
     AST_EXTERN, AST_IMPORT, AST_EXPORT, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
-    AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM
+    AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS
 }
 
 extern {
@@ -141,7 +141,7 @@ function flowc_cgen_is_struct_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
     let te: i32 = arena.nodes[ty].name_end
     let mut i: i32 = 0
     while i < arena.len {
-        if arena.nodes[i].kind == AST_STRUCT {
+        if arena.nodes[i].kind == AST_STRUCT or arena.nodes[i].kind == AST_TYPE_ALIAS {
             if flowc_cgen_span_eq(src, ts, te, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
                 return 1
             }
@@ -578,6 +578,14 @@ function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
     }
     if op == TOK_AMP {
         flowc_cgen_puts(w, " & ")
+        return
+    }
+    if op == TOK_BAR {
+        flowc_cgen_puts(w, " | ")
+        return
+    }
+    if op == TOK_CARET {
+        flowc_cgen_puts(w, " ^ ")
         return
     }
     flowc_cgen_puts(w, " /*op*/ ")
@@ -1199,6 +1207,19 @@ export function flowc_cgen_emit_sigs(
         let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
         if st != AST_NONE {
             flowc_cgen_emit_struct(&w, arena, src, st)
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 1.5: type aliases → typedef BaseType Name;
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].kind == AST_TYPE_ALIAS {
+            flowc_cgen_puts(&w, "typedef ")
+            flowc_cgen_emit_type(&w, arena, src, arena.nodes[item].a)
+            flowc_cgen_putc(&w, 32)
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_puts(&w, ";\n")
         }
         item = arena.nodes[item].next
     }
