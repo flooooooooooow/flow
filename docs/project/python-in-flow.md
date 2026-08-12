@@ -73,6 +73,7 @@ them as part of Phase D; call them via the escape hatch:
 | FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow) — `flowc_choose_analysis_backend` (calibration and timing stay Python) |
 | LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow) — `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` (markdown hover stays Python) |
 | LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow) — `flowc_receiver_before_dot` / `flowc_field_access_at` (URI parsing and typecheck stay Python) |
+| Geometry diagram helpers | [`compiler/src/geometry_diagram.flow`](../../compiler/src/geometry_diagram.flow) — `flowc_svg_escape` / `flowc_vec2_unit` / `flowc_lerp` (full SVG rendering stays Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |

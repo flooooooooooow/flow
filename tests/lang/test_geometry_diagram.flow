@@ -1,0 +1,120 @@
+# Test for geometry_diagram.flow port of geometry_diagram.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_geometry_diagram.flow
+# Exit 0 on success.
+
+import "compiler/src/geometry_diagram.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # svg_escape: ampersand
+    let s1: string = flowc_svg_escape("a & b")
+    if strcmp(s1, "a &amp; b") != 0 {
+        printf("FAIL: expected 'a &amp; b', got '%s'\n", s1)
+        return 1
+    }
+
+    # svg_escape: less than
+    let s2: string = flowc_svg_escape("x < y")
+    if strcmp(s2, "x &lt; y") != 0 {
+        printf("FAIL: expected 'x &lt; y', got '%s'\n", s2)
+        return 2
+    }
+
+    # svg_escape: greater than
+    let s3: string = flowc_svg_escape("x > y")
+    if strcmp(s3, "x &gt; y") != 0 {
+        printf("FAIL: expected 'x &gt; y', got '%s'\n", s3)
+        return 3
+    }
+
+    # svg_escape: all three
+    let s4: string = flowc_svg_escape("<a>&b")
+    if strcmp(s4, "&lt;a&gt;&amp;b") != 0 {
+        printf("FAIL: expected '&lt;a&gt;&amp;b', got '%s'\n", s4)
+        return 4
+    }
+
+    # svg_escape: no special chars
+    let s5: string = flowc_svg_escape("hello world")
+    if strcmp(s5, "hello world") != 0 {
+        printf("FAIL: expected 'hello world', got '%s'\n", s5)
+        return 5
+    }
+
+    # svg_escape: empty string
+    let s6: string = flowc_svg_escape("")
+    if strcmp(s6, "") != 0 {
+        printf("FAIL: expected empty, got '%s'\n", s6)
+        return 6
+    }
+
+    # vec2_unit: (3, 4) -> (0.6, 0.8)
+    let ux: f64 = flowc_vec2_unit_x(3.0, 4.0)
+    let uy: f64 = flowc_vec2_unit_y(3.0, 4.0)
+    if ux < 0.59 or ux > 0.61 {
+        printf("FAIL: unit x should be ~0.6, got %f\n", ux)
+        return 7
+    }
+    if uy < 0.79 or uy > 0.81 {
+        printf("FAIL: unit y should be ~0.8, got %f\n", uy)
+        return 8
+    }
+
+    # vec2_unit: (0, 0) -> (0, 0)
+    let ux0: f64 = flowc_vec2_unit_x(0.0, 0.0)
+    let uy0: f64 = flowc_vec2_unit_y(0.0, 0.0)
+    if ux0 != 0.0 or uy0 != 0.0 {
+        printf("FAIL: unit of (0,0) should be (0,0), got (%f, %f)\n", ux0, uy0)
+        return 9
+    }
+
+    # vec2_length: (3, 4) -> 5
+    let len: f64 = flowc_vec2_length(3.0, 4.0)
+    if len < 4.99 or len > 5.01 {
+        printf("FAIL: length of (3,4) should be 5, got %f\n", len)
+        return 10
+    }
+
+    # vec2_dot: (1, 2) . (3, 4) = 11
+    let dot: f64 = flowc_vec2_dot(1.0, 2.0, 3.0, 4.0)
+    if dot != 11.0 {
+        printf("FAIL: dot of (1,2).(3,4) should be 11, got %f\n", dot)
+        return 11
+    }
+
+    # point_distance: (0,0) to (3,4) = 5
+    let dist: f64 = flowc_point_distance(0.0, 0.0, 3.0, 4.0)
+    if dist < 4.99 or dist > 5.01 {
+        printf("FAIL: distance should be 5, got %f\n", dist)
+        return 12
+    }
+
+    # lerp: 0 to 10 at t=0.5 -> 5
+    let l: f64 = flowc_lerp(0.0, 10.0, 0.5)
+    if l != 5.0 {
+        printf("FAIL: lerp(0, 10, 0.5) should be 5, got %f\n", l)
+        return 13
+    }
+
+    # lerp: 0 to 10 at t=0 -> 0
+    let l0: f64 = flowc_lerp(0.0, 10.0, 0.0)
+    if l0 != 0.0 {
+        printf("FAIL: lerp(0, 10, 0) should be 0, got %f\n", l0)
+        return 14
+    }
+
+    # lerp: 0 to 10 at t=1 -> 10
+    let l1: f64 = flowc_lerp(0.0, 10.0, 1.0)
+    if l1 != 10.0 {
+        printf("FAIL: lerp(0, 10, 1) should be 10, got %f\n", l1)
+        return 15
+    }
+
+    puts("All geometry_diagram tests passed")
+    return 0
+}
