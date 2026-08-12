@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static inline const char* __flowc_str_concat(const char* a, const char* b) {
   size_t la; size_t lb; char* r;
@@ -1563,7 +1564,7 @@ int32_t flowc_parse_stmt(Parser* p) {
   is_mut = 1;
   flowc_parser_advance(p);
 }
-  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0 && flowc_parser_check(p[0], TOK_KEYWORD) == 0) {
   (p[0]).err = 1;
   return AST_NONE;
 }
@@ -3761,6 +3762,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "#include <stdlib.h>\n");
   flowc_cgen_puts((&w), "#include <stdio.h>\n");
   flowc_cgen_puts((&w), "#include <string.h>\n");
+  flowc_cgen_puts((&w), "#include <math.h>\n");
   flowc_cgen_putc((&w), 10);
   flowc_cgen_puts((&w), "static inline const char* __flowc_str_concat(const char* a, const char* b) {\n");
   flowc_cgen_puts((&w), "  size_t la; size_t lb; char* r;\n");
@@ -4793,6 +4795,13 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
 }
   if (e <= s) {
   return (0 - 1);
+}
+  if ((e - s) > 7 && import_span_src[s] == 115 && import_span_src[(s + 1)] == 116 && import_span_src[(s + 2)] == 100 && import_span_src[(s + 3)] == 108 && import_span_src[(s + 4)] == 105 && import_span_src[(s + 5)] == 98 && import_span_src[(s + 6)] == 47) {
+  s = (s + 7);
+} else {
+  if ((e - s) > 11 && import_span_src[s] == 108 && import_span_src[(s + 1)] == 105 && import_span_src[(s + 2)] == 98 && import_span_src[(s + 3)] == 47 && import_span_src[(s + 4)] == 115 && import_span_src[(s + 5)] == 116 && import_span_src[(s + 6)] == 100 && import_span_src[(s + 7)] == 108 && import_span_src[(s + 8)] == 105 && import_span_src[(s + 9)] == 98 && import_span_src[(s + 10)] == 47) {
+  s = (s + 11);
+}
 }
   if (import_span_src[s] == 47) {
   int32_t nabs = (e - s);

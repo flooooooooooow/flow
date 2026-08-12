@@ -1,0 +1,125 @@
+# @module flowc.lsp_syntax
+# @means  Rich IDE hover catalog for Flow syntax, operators, keywords.
+#         Port of the token detection and hover lookup from
+#         src/flow/lsp_syntax.py. The Python original includes markdown
+#         hover strings; this port exposes the token detection logic
+#         and a compact hover gloss. Full markdown hover stays in Python
+#         for the LSP server.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+# ── Multi-char operators (longest first for detection) ───────────
+
+export const FLOWC_NUM_MULTI_CHAR_OPS: i32 = 12
+
+# Check if a string is a known multi-char operator.
+export function flowc_is_multi_char_op(op: string) -> i32 {
+    if strcmp(op, "|>") == 0 { return 1 }
+    if strcmp(op, "->") == 0 { return 1 }
+    if strcmp(op, "=>") == 0 { return 1 }
+    if strcmp(op, "==") == 0 { return 1 }
+    if strcmp(op, "!=") == 0 { return 1 }
+    if strcmp(op, "<=") == 0 { return 1 }
+    if strcmp(op, ">=") == 0 { return 1 }
+    if strcmp(op, "&&") == 0 { return 1 }
+    if strcmp(op, "||") == 0 { return 1 }
+    if strcmp(op, "..") == 0 { return 1 }
+    if strcmp(op, "<<") == 0 { return 1 }
+    if strcmp(op, ">>") == 0 { return 1 }
+    return 0
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+function substr_eq(text: string, start: i32, op: string) -> i32 {
+    let op_len: i32 = strlen(op) as i32
+    let text_len: i32 = strlen(text) as i32
+    if start < 0 or start + op_len > text_len {
+        return 0
+    }
+    let tp: ptr<u8> = text
+    let op_p: ptr<u8> = op
+    let mut i: i32 = 0
+    while i < op_len {
+        if tp[start + i] != op_p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# ── Token detection ──────────────────────────────────────────────
+
+# Find the multi-char operator covering column `col` in `line_text`.
+# Returns the operator string, or "" if none found.
+# Checks all 12 operators, preferring the longest match.
+export function flowc_syntax_token_at_position(line_text: string, col: i32) -> string {
+    let text_len: i32 = strlen(line_text) as i32
+    if text_len == 0 {
+        return ""
+    }
+    if col < 0 {
+        return ""
+    }
+    # Allow cursor at end-of-line to hit the last char.
+    let c: i32 = col
+    if c >= text_len {
+        c = text_len - 1
+    }
+
+    # Check each multi-char operator. The operators are all 2 chars,
+    # so we check if the 2-char window ending at or containing col matches.
+    # Try 2-char operators starting at col-1 or col.
+    let ops: array<string, 12> = [
+        "|>", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "..", "<<", ">>"
+    ]
+
+    # Check 2-char window starting at col-1 (col is the second char)
+    if c - 1 >= 0 {
+        let mut i: i32 = 0
+        while i < 12 {
+            if substr_eq(line_text, c - 1, ops[i]) == 1 {
+                return ops[i]
+            }
+            i = i + 1
+        }
+    }
+
+    # Check 2-char window starting at col (col is the first char)
+    let mut i: i32 = 0
+    while i < 12 {
+        if substr_eq(line_text, c, ops[i]) == 1 {
+            return ops[i]
+        }
+        i = i + 1
+    }
+
+    return ""
+}
+
+# ── Hover gloss ──────────────────────────────────────────────────
+
+# Compact one-line hover gloss for a syntax token.
+# Full markdown hover stays in the Python LSP server.
+export function flowc_syntax_hover_gloss(token: string) -> string {
+    if strcmp(token, "|>") == 0 { return "pipe / pipeline operator" }
+    if strcmp(token, "->") == 0 { return "function return type arrow" }
+    if strcmp(token, "=>") == 0 { return "match-arm / closure arrow" }
+    if strcmp(token, "==") == 0 { return "equality comparison" }
+    if strcmp(token, "!=") == 0 { return "inequality comparison" }
+    if strcmp(token, "<=") == 0 { return "less-than-or-equal comparison" }
+    if strcmp(token, ">=") == 0 { return "greater-than-or-equal comparison" }
+    if strcmp(token, "&&") == 0 { return "logical AND" }
+    if strcmp(token, "||") == 0 { return "logical OR" }
+    if strcmp(token, "..") == 0 { return "range operator" }
+    if strcmp(token, "<<") == 0 { return "left shift" }
+    if strcmp(token, ">>") == 0 { return "right shift" }
+    return ""
+}

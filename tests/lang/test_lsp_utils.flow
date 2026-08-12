@@ -1,0 +1,123 @@
+# Test for lsp_utils.flow port of lsp_server.py helpers.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_utils.flow
+# Exit 0 on success.
+
+import "compiler/src/lsp_utils.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # is_valid_identifier: valid identifiers
+    if flowc_is_valid_identifier("foo") == 0 {
+        puts("FAIL: 'foo' should be valid")
+        return 1
+    }
+    if flowc_is_valid_identifier("_bar") == 0 {
+        puts("FAIL: '_bar' should be valid")
+        return 2
+    }
+    if flowc_is_valid_identifier("MyFunc123") == 0 {
+        puts("FAIL: 'MyFunc123' should be valid")
+        return 3
+    }
+    if flowc_is_valid_identifier("_") == 0 {
+        puts("FAIL: '_' should be valid")
+        return 4
+    }
+
+    # is_valid_identifier: invalid identifiers
+    if flowc_is_valid_identifier("123abc") == 1 {
+        puts("FAIL: '123abc' should be invalid (starts with digit)")
+        return 5
+    }
+    if flowc_is_valid_identifier("foo-bar") == 1 {
+        puts("FAIL: 'foo-bar' should be invalid (hyphen)")
+        return 6
+    }
+    if flowc_is_valid_identifier("") == 1 {
+        puts("FAIL: empty string should be invalid")
+        return 7
+    }
+    if flowc_is_valid_identifier("foo bar") == 1 {
+        puts("FAIL: 'foo bar' should be invalid (space)")
+        return 8
+    }
+
+    # word_range: cursor on a word
+    let r1: FlowcRange = flowc_word_range("hello world", 0)
+    if r1.start_char != 0 or r1.end_char != 5 {
+        printf("FAIL: word_range at 0 should be [0,5), got [%d,%d)\n", r1.start_char, r1.end_char)
+        return 9
+    }
+
+    # word_range: cursor in middle of word
+    let r2: FlowcRange = flowc_word_range("hello world", 2)
+    if r2.start_char != 2 or r2.end_char != 5 {
+        printf("FAIL: word_range at 2 should be [2,5), got [%d,%d)\n", r2.start_char, r2.end_char)
+        return 10
+    }
+
+    # word_range: cursor on space (non-word)
+    let r3: FlowcRange = flowc_word_range("hello world", 5)
+    if r3.start_char != 5 or r3.end_char != 6 {
+        printf("FAIL: word_range at 5 (space) should be [5,6), got [%d,%d)\n", r3.start_char, r3.end_char)
+        return 11
+    }
+
+    # word_range: cursor beyond end
+    let r4: FlowcRange = flowc_word_range("hi", 100)
+    # col clamps to 1 (n-1=1), end = col+1 = 2, but n=2 so end=2
+    if r4.start_char != 1 or r4.end_char != 2 {
+        printf("FAIL: word_range beyond end should clamp, got [%d,%d)\n", r4.start_char, r4.end_char)
+        return 12
+    }
+
+    # completion_prefix: simple word
+    let p1: string = flowc_completion_prefix("hello world", 5)
+    if strcmp(p1, "hello") != 0 {
+        printf("FAIL: prefix at 5 should be 'hello', got '%s'\n", p1)
+        return 13
+    }
+
+    # completion_prefix: mid-word
+    let p2: string = flowc_completion_prefix("hello world", 2)
+    if strcmp(p2, "he") != 0 {
+        printf("FAIL: prefix at 2 should be 'he', got '%s'\n", p2)
+        return 14
+    }
+
+    # completion_prefix: with dot (dyn.dsys)
+    let p3: string = flowc_completion_prefix("dyn.dsys", 8)
+    if strcmp(p3, "dyn.dsys") != 0 {
+        printf("FAIL: prefix for 'dyn.dsys' at 8 should be 'dyn.dsys', got '%s'\n", p3)
+        return 15
+    }
+
+    # completion_prefix: partial dot prefix
+    let p4: string = flowc_completion_prefix("dyn.dsys plant", 4)
+    if strcmp(p4, "dyn.") != 0 {
+        printf("FAIL: prefix at 4 should be 'dyn.', got '%s'\n", p4)
+        return 16
+    }
+
+    # completion_prefix: at start of line
+    let p5: string = flowc_completion_prefix("hello", 0)
+    if strcmp(p5, "") != 0 {
+        printf("FAIL: prefix at 0 should be empty, got '%s'\n", p5)
+        return 17
+    }
+
+    # completion_prefix: after space (cursor within "bar")
+    let p6: string = flowc_completion_prefix("foo bar", 7)
+    if strcmp(p6, "bar") != 0 {
+        printf("FAIL: prefix at 7 should be 'bar', got '%s'\n", p6)
+        return 18
+    }
+
+    puts("All lsp_utils tests passed")
+    return 0
+}

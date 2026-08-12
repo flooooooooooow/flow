@@ -1,0 +1,127 @@
+# Test for lsp_intel.flow port of lsp_intel.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_intel.flow
+# Exit 0 on success.
+
+import "compiler/src/lsp_intel.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # receiver_before_dot: "p." with cursor after dot
+    let r1: string = flowc_receiver_before_dot("p.", 2)
+    if strcmp(r1, "p") != 0 {
+        printf("FAIL: expected 'p', got '%s'\n", r1)
+        return 1
+    }
+
+    # receiver_before_dot: "p.field" with cursor on field
+    let r2: string = flowc_receiver_before_dot("p.field", 4)
+    if strcmp(r2, "p") != 0 {
+        printf("FAIL: expected 'p', got '%s'\n", r2)
+        return 2
+    }
+
+    # receiver_before_dot: "obj.method(" with cursor on method
+    let r3: string = flowc_receiver_before_dot("obj.method(", 5)
+    if strcmp(r3, "obj") != 0 {
+        printf("FAIL: expected 'obj', got '%s'\n", r3)
+        return 3
+    }
+
+    # receiver_before_dot: with spaces "p . field"
+    let r4: string = flowc_receiver_before_dot("p . field", 6)
+    if strcmp(r4, "p") != 0 {
+        printf("FAIL: expected 'p' with spaces, got '%s'\n", r4)
+        return 4
+    }
+
+    # receiver_before_dot: no dot -> empty
+    let r5: string = flowc_receiver_before_dot("just_text", 5)
+    if strcmp(r5, "") != 0 {
+        printf("FAIL: expected empty for no dot, got '%s'\n", r5)
+        return 5
+    }
+
+    # receiver_before_dot: dot but no identifier before -> empty
+    let r6: string = flowc_receiver_before_dot(".field", 3)
+    if strcmp(r6, "") != 0 {
+        printf("FAIL: expected empty for no receiver, got '%s'\n", r6)
+        return 6
+    }
+
+    # receiver_before_dot: number before dot (not ident_start) -> empty
+    let r7: string = flowc_receiver_before_dot("123.field", 5)
+    if strcmp(r7, "") != 0 {
+        printf("FAIL: expected empty for number receiver, got '%s'\n", r7)
+        return 7
+    }
+
+    # field_access_at: "p.field" with cursor on field
+    let fa1: FlowcFieldAccess = flowc_field_access_at("p.field", 3)
+    if fa1.ok == 0 {
+        puts("FAIL: field_access should succeed")
+        return 8
+    }
+    if strcmp(fa1.receiver, "p") != 0 {
+        printf("FAIL: expected receiver 'p', got '%s'\n", fa1.receiver)
+        return 9
+    }
+    if strcmp(fa1.field, "field") != 0 {
+        printf("FAIL: expected field 'field', got '%s'\n", fa1.field)
+        return 10
+    }
+
+    # field_access_at: "obj.method" with cursor on 'm'
+    let fa2: FlowcFieldAccess = flowc_field_access_at("obj.method", 4)
+    if fa2.ok == 0 {
+        puts("FAIL: field_access should succeed for obj.method")
+        return 11
+    }
+    if strcmp(fa2.receiver, "obj") != 0 {
+        printf("FAIL: expected receiver 'obj', got '%s'\n", fa2.receiver)
+        return 12
+    }
+    if strcmp(fa2.field, "method") != 0 {
+        printf("FAIL: expected field 'method', got '%s'\n", fa2.field)
+        return 13
+    }
+
+    # field_access_at: with spaces "p . field"
+    let fa3: FlowcFieldAccess = flowc_field_access_at("p . field", 5)
+    if fa3.ok == 0 {
+        puts("FAIL: field_access should succeed with spaces")
+        return 14
+    }
+    if strcmp(fa3.receiver, "p") != 0 {
+        printf("FAIL: expected receiver 'p' with spaces, got '%s'\n", fa3.receiver)
+        return 15
+    }
+
+    # field_access_at: no dot -> fail
+    let fa4: FlowcFieldAccess = flowc_field_access_at("just_text", 3)
+    if fa4.ok == 1 {
+        puts("FAIL: field_access should fail without dot")
+        return 16
+    }
+
+    # field_access_at: cursor on receiver, not field -> fail
+    let fa5: FlowcFieldAccess = flowc_field_access_at("p.field", 0)
+    if fa5.ok == 1 {
+        puts("FAIL: field_access should fail when cursor on receiver")
+        return 17
+    }
+
+    # field_access_at: empty field after dot -> fail
+    let fa6: FlowcFieldAccess = flowc_field_access_at("p.", 2)
+    if fa6.ok == 1 {
+        puts("FAIL: field_access should fail with empty field")
+        return 18
+    }
+
+    puts("All lsp_intel tests passed")
+    return 0
+}

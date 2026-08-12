@@ -1,0 +1,190 @@
+# @module flowc.dsl_detect
+# @means  DSL detection helpers: check whether source code contains
+#         field, dynamics, or shader DSL markers. Port of has_field_dsl,
+#         has_dynamics_dsl, and has_fill_shader_dsl from the Python
+#         originals. The full DSL parsing and expansion stay in Python.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+# ── Character helpers ────────────────────────────────────────────
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 or c == 10 { return 1 }
+    return 0
+}
+
+function is_ident_start(c: i32) -> i32 {
+    if c >= 97 and c <= 122 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c == 95 { return 1 }
+    return 0
+}
+
+function is_ident_char(c: i32) -> i32 {
+    if is_ident_start(c) == 1 { return 1 }
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+# ── Line scanning helper ─────────────────────────────────────────
+
+# Check if a line (starting at line_start in source) matches a prefix
+# after skipping leading whitespace. The prefix must appear at the
+# start of the non-whitespace content of the line.
+function line_starts_with(src: string, line_start: i32, prefix: string) -> i32 {
+    let n: i32 = strlen(src) as i32
+    let p: ptr<u8> = src
+    let mut i: i32 = line_start
+    # Skip leading whitespace
+    while i < n and is_space(p[i]) == 1 {
+        i = i + 1
+    }
+    # Check prefix
+    let pl: i32 = strlen(prefix) as i32
+    let pp: ptr<u8> = prefix
+    let mut j: i32 = 0
+    while j < pl and i < n {
+        if p[i] != pp[j] { return 0 }
+        i = i + 1
+        j = j + 1
+    }
+    return j == pl
+}
+
+# Check if a line starts with optional "dyn." or "dynamics." namespace
+# then the given prefix.
+function line_starts_with_ns(src: string, line_start: i32, prefix: string) -> i32 {
+    # Try with dyn. prefix
+    let dyn_prefix: string = "dyn."
+    let dyn_full: string = dyn_prefix
+    # Can't do string concat easily, so check manually
+    let n: i32 = strlen(src) as i32
+    let p: ptr<u8> = src
+    let mut i: i32 = line_start
+    while i < n and is_space(p[i]) == 1 {
+        i = i + 1
+    }
+    # Check for "dyn." or "dynamics."
+    let has_ns: i32 = 0
+    if i + 4 <= n {
+        if p[i] == 100 and p[i+1] == 121 and p[i+2] == 110 and p[i+3] == 46 {
+            i = i + 4
+            has_ns = 1
+        }
+    }
+    if has_ns == 0 and i + 9 <= n {
+        if p[i] == 100 and p[i+1] == 121 and p[i+2] == 110 and p[i+3] == 97
+           and p[i+4] == 109 and p[i+5] == 105 and p[i+6] == 99 and p[i+7] == 115
+           and p[i+8] == 46 {
+            i = i + 9
+            has_ns = 1
+        }
+    }
+    # Check prefix
+    let pl: i32 = strlen(prefix) as i32
+    let pp: ptr<u8> = prefix
+    let mut j: i32 = 0
+    while j < pl and i < n {
+        if p[i] != pp[j] { return 0 }
+        i = i + 1
+        j = j + 1
+    }
+    return j == pl
+}
+
+# ── Field DSL detection ──────────────────────────────────────────
+
+# Check if source contains a field DSL marker.
+# Matches: ^\s*field\s+\w+\s*:  or  ^\s*boundary\s+\w+\s*\{
+export function flowc_has_field_dsl(source: string) -> i32 {
+    let n: i32 = strlen(source) as i32
+    let p: ptr<u8> = source
+    let mut i: i32 = 0
+    while i < n {
+        # Check each line start
+        if line_starts_with(source, i, "field ") == 1 {
+            # Must be followed by an identifier and then a colon
+            # We already matched "field ", so check for ident after
+            let mut j: i32 = i
+            while j < n and is_space(p[j]) == 1 { j = j + 1 }
+            j = j + 6  # skip "field "
+            if j < n and is_ident_start(p[j]) == 1 {
+                return 1
+            }
+        }
+        if line_starts_with(source, i, "boundary ") == 1 {
+            return 1
+        }
+        # Advance to next line
+        while i < n and p[i] != 10 { i = i + 1 }
+        if i < n { i = i + 1 }
+    }
+    return 0
+}
+
+# ── Dynamics DSL detection ───────────────────────────────────────
+
+# Check if source contains a dynamics DSL marker.
+# Matches bare or namespaced (dyn./dynamics.) forms of:
+# dsys, horizon, sense on, ga evolve, closed, analyze, wfc field
+export function flowc_has_dynamics_dsl(source: string) -> i32 {
+    let n: i32 = strlen(source) as i32
+    let p: ptr<u8> = source
+    let mut i: i32 = 0
+    while i < n {
+        if line_starts_with_ns(source, i, "dsys ") == 1 { return 1 }
+        if line_starts_with_ns(source, i, "horizon ") == 1 { return 1 }
+        if line_starts_with_ns(source, i, "sense on ") == 1 { return 1 }
+        if line_starts_with_ns(source, i, "ga evolve ") == 1 { return 1 }
+        if line_starts_with_ns(source, i, "closed ") == 1 { return 1 }
+        if line_starts_with_ns(source, i, "analyze ") == 1 { return 1 }
+        if line_starts_with_ns(source, i, "wfc field ") == 1 { return 1 }
+        # Advance to next line
+        while i < n and p[i] != 10 { i = i + 1 }
+        if i < n { i = i + 1 }
+    }
+    return 0
+}
+
+# ── Shader DSL detection ─────────────────────────────────────────
+
+# Check if source contains a fill-shader (FSL) marker.
+# Matches: \bshader\s+fill\s+\w+\s*\{
+export function flowc_has_fill_shader_dsl(source: string) -> i32 {
+    let n: i32 = strlen(source) as i32
+    let p: ptr<u8> = source
+    let mut i: i32 = 0
+    while i < n {
+        # Look for "shader" followed by whitespace, "fill", whitespace, ident, "{"
+        if i + 6 <= n {
+            if p[i] == 115 and p[i+1] == 104 and p[i+2] == 97
+               and p[i+3] == 100 and p[i+4] == 101 and p[i+5] == 114 {
+                # "shader" matched, check word boundary
+                let is_word_before: i32 = 0
+                if i > 0 and is_ident_char(p[i-1]) == 1 { is_word_before = 1 }
+                if is_word_before == 0 {
+                    let mut j: i32 = i + 6
+                    # Skip whitespace
+                    while j < n and is_space(p[j]) == 1 { j = j + 1 }
+                    # Check "fill"
+                    if j + 4 <= n {
+                        if p[j] == 102 and p[j+1] == 105 and p[j+2] == 108 and p[j+3] == 108 {
+                            j = j + 4
+                            # Skip whitespace
+                            while j < n and is_space(p[j]) == 1 { j = j + 1 }
+                            # Check identifier
+                            if j < n and is_ident_start(p[j]) == 1 {
+                                return 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}

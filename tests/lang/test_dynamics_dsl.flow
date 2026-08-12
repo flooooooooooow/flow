@@ -1,0 +1,93 @@
+# Test for dynamics_dsl.flow port of dynamics_dsl.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_dynamics_dsl.flow
+# Exit 0 on success.
+
+import "compiler/src/dynamics_dsl.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # strip_comments: basic comment
+    let s1: string = flowc_strip_comments("code # comment")
+    if strcmp(s1, "code") != 0 {
+        printf("FAIL: expected 'code', got '%s'\n", s1)
+        return 1
+    }
+
+    # strip_comments: no comment
+    let s2: string = flowc_strip_comments("  hello  ")
+    if strcmp(s2, "hello") != 0 {
+        printf("FAIL: expected 'hello', got '%s'\n", s2)
+        return 2
+    }
+
+    # strip_comments: only comment
+    let s3: string = flowc_strip_comments("# all comment")
+    if strcmp(s3, "") != 0 {
+        printf("FAIL: expected empty, got '%s'\n", s3)
+        return 3
+    }
+
+    # strip_comments: empty line
+    let s4: string = flowc_strip_comments("")
+    if strcmp(s4, "") != 0 {
+        printf("FAIL: expected empty, got '%s'\n", s4)
+        return 4
+    }
+
+    # strip_comments: no hash, just whitespace
+    let s5: string = flowc_strip_comments("   ")
+    if strcmp(s5, "") != 0 {
+        printf("FAIL: expected empty, got '%s'\n", s5)
+        return 5
+    }
+
+    # strip_comments: hash inside string (still strips at first #)
+    let s6: string = flowc_strip_comments("let x = 1 # ok")
+    if strcmp(s6, "let x = 1") != 0 {
+        printf("FAIL: expected 'let x = 1', got '%s'\n", s6)
+        return 6
+    }
+
+    # strip_dynamics_namespace: dyn. prefix
+    let d1: string = flowc_strip_dynamics_namespace("dyn.dsys plant { }")
+    if strcmp(d1, "dsys plant { }") != 0 {
+        printf("FAIL: expected 'dsys plant { }', got '%s'\n", d1)
+        return 7
+    }
+
+    # strip_dynamics_namespace: dynamics. prefix
+    let d2: string = flowc_strip_dynamics_namespace("dynamics.horizon rollout finite 50")
+    if strcmp(d2, "horizon rollout finite 50") != 0 {
+        printf("FAIL: expected 'horizon rollout finite 50', got '%s'\n", d2)
+        return 8
+    }
+
+    # strip_dynamics_namespace: bare form unchanged
+    let d3: string = flowc_strip_dynamics_namespace("dsys plant { }")
+    if strcmp(d3, "dsys plant { }") != 0 {
+        printf("FAIL: expected 'dsys plant { }', got '%s'\n", d3)
+        return 9
+    }
+
+    # strip_dynamics_namespace: with comment
+    let d4: string = flowc_strip_dynamics_namespace("dyn.horizon rollout # test")
+    if strcmp(d4, "horizon rollout") != 0 {
+        printf("FAIL: expected 'horizon rollout', got '%s'\n", d4)
+        return 10
+    }
+
+    # strip_dynamics_namespace: non-dynamics line
+    let d5: string = flowc_strip_dynamics_namespace("function foo() -> i32 { return 0 }")
+    if strcmp(d5, "function foo() -> i32 { return 0 }") != 0 {
+        printf("FAIL: expected unchanged, got '%s'\n", d5)
+        return 11
+    }
+
+    puts("All dynamics_dsl tests passed")
+    return 0
+}

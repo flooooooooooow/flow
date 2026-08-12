@@ -773,7 +773,7 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
             is_mut = 1
             flowc_parser_advance(p)
         }
-        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 and flowc_parser_check(p[0], TOK_KEYWORD) == 0 {
             p[0].err = 1
             return AST_NONE
         }

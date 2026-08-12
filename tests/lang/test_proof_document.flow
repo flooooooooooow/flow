@@ -1,0 +1,164 @@
+# Test for proof_document.flow port of proof_document.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_proof_document.flow
+# Exit 0 on success.
+
+import "compiler/src/proof_document.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+function main() -> i32 {
+    # circled: 1 -> ①
+    let c1: string = flowc_circled(1)
+    if strlen(c1) != 3 {
+        printf("FAIL: circled(1) should be 3 bytes, got %d\n", strlen(c1))
+        return 1
+    }
+
+    # circled: 20 -> ⑳
+    let c20: string = flowc_circled(20)
+    if strlen(c20) != 3 {
+        printf("FAIL: circled(20) should be 3 bytes, got %d\n", strlen(c20))
+        return 2
+    }
+
+    # circled: 21 -> "(21)"
+    let c21: string = flowc_circled(21)
+    if strcmp(c21, "(21)") != 0 {
+        printf("FAIL: circled(21) should be '(21)', got '%s'\n", c21)
+        return 3
+    }
+
+    # circled: 0 -> "(0)"
+    let c0: string = flowc_circled(0)
+    if strcmp(c0, "(0)") != 0 {
+        printf("FAIL: circled(0) should be '(0)', got '%s'\n", c0)
+        return 4
+    }
+
+    # step_label_latex: 5 -> \textbf{5.}
+    let l5: string = flowc_step_label_latex(5)
+    if strcmp(l5, "\\textbf{5.}") != 0 {
+        printf("FAIL: step_label_latex(5) should be '\\textbf{5.}', got '%s'\n", l5)
+        return 5
+    }
+
+    # step_label_latex: 12 -> \textbf{12.}
+    let l12: string = flowc_step_label_latex(12)
+    if strcmp(l12, "\\textbf{12.}") != 0 {
+        printf("FAIL: step_label_latex(12) should be '\\textbf{12.}', got '%s'\n", l12)
+        return 6
+    }
+
+    # fmt_refs: single -> "step 1"
+    let r1: string = flowc_fmt_refs("1")
+    if strcmp(r1, "step 1") != 0 {
+        printf("FAIL: fmt_refs('1') should be 'step 1', got '%s'\n", r1)
+        return 7
+    }
+
+    # fmt_refs: two -> "step 1 and step 2"
+    let r2: string = flowc_fmt_refs("1,2")
+    if strcmp(r2, "step 1 and step 2") != 0 {
+        printf("FAIL: fmt_refs('1,2') should be 'step 1 and step 2', got '%s'\n", r2)
+        return 8
+    }
+
+    # fmt_refs: three -> "step 1, step 2, and step 3"
+    let r3: string = flowc_fmt_refs("1,2,3")
+    if strcmp(r3, "step 1, step 2, and step 3") != 0 {
+        printf("FAIL: fmt_refs('1,2,3') should be 'step 1, step 2, and step 3', got '%s'\n", r3)
+        return 9
+    }
+
+    # fmt_refs: empty -> ""
+    let r0: string = flowc_fmt_refs("")
+    if strcmp(r0, "") != 0 {
+        printf("FAIL: fmt_refs('') should be empty, got '%s'\n", r0)
+        return 10
+    }
+
+    # from_refs: "From step 1, "
+    let fr1: string = flowc_from_refs("1")
+    if strcmp(fr1, "From step 1, ") != 0 {
+        printf("FAIL: from_refs('1') should be 'From step 1, ', got '%s'\n", fr1)
+        return 11
+    }
+
+    # from_refs: empty -> ""
+    let fr0: string = flowc_from_refs("")
+    if strcmp(fr0, "") != 0 {
+        printf("FAIL: from_refs('') should be empty, got '%s'\n", fr0)
+        return 12
+    }
+
+    # under_refs: single -> "Under the supposition in step 1, "
+    let ur1: string = flowc_under_refs("1")
+    if strcmp(ur1, "Under the supposition in step 1, ") != 0 {
+        printf("FAIL: under_refs('1') mismatch, got '%s'\n", ur1)
+        return 13
+    }
+
+    # under_refs: plural -> "Under the suppositions in step 1 and step 2, "
+    let ur2: string = flowc_under_refs("1,2")
+    if strcmp(ur2, "Under the suppositions in step 1 and step 2, ") != 0 {
+        printf("FAIL: under_refs('1,2') mismatch, got '%s'\n", ur2)
+        return 14
+    }
+
+    # under_refs: empty -> ""
+    let ur0: string = flowc_under_refs("")
+    if strcmp(ur0, "") != 0 {
+        printf("FAIL: under_refs('') should be empty, got '%s'\n", ur0)
+        return 15
+    }
+
+    # slug_label: simple path
+    let sl1: string = flowc_slug_label("Nat/addition/zero-is-left-identity")
+    if strcmp(sl1, "Nat-addition-zero-is-left-identity") != 0 {
+        printf("FAIL: slug_label mismatch, got '%s'\n", sl1)
+        return 16
+    }
+
+    # slug_label: with + and *
+    let sl2: string = flowc_slug_label("Int/+/*")
+    if strcmp(sl2, "Int-plus-star") != 0 {
+        printf("FAIL: slug_label for 'Int/+/*' should be 'Int-plus-star', got '%s'\n", sl2)
+        return 17
+    }
+
+    # slug_label: with = and |
+    let sl3: string = flowc_slug_label("Bool/|=eq")
+    if strcmp(sl3, "Bool-oreqeq") != 0 {
+        printf("FAIL: slug_label for 'Bool/|=eq' should be 'Bool-oreqeq', got '%s'\n", sl3)
+        return 18
+    }
+
+    # slug_label: with spaces
+    let sl4: string = flowc_slug_label("hello world")
+    if strcmp(sl4, "hello-world") != 0 {
+        printf("FAIL: slug_label for 'hello world' should be 'hello-world', got '%s'\n", sl4)
+        return 19
+    }
+
+    # slug_label: empty string
+    let sl5: string = flowc_slug_label("")
+    if strcmp(sl5, "") != 0 {
+        printf("FAIL: slug_label('') should be empty, got '%s'\n", sl5)
+        return 20
+    }
+
+    # slug_label: dot replacement
+    let sl6: string = flowc_slug_label("foo.bar.baz")
+    if strcmp(sl6, "foo-bar-baz") != 0 {
+        printf("FAIL: slug_label for 'foo.bar.baz' should be 'foo-bar-baz', got '%s'\n", sl6)
+        return 21
+    }
+
+    puts("All proof_document tests passed")
+    return 0
+}
