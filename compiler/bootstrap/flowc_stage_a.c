@@ -3819,6 +3819,42 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   if (flowc_cgen_span_is(src, ns, ne, "fputs") == 1) {
   return 1;
 }
+  if (flowc_cgen_span_is(src, ns, ne, "fputc") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "fgetc") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "putc") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "getc") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "ungetc") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "fflush") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "feof") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "ferror") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "clearerr") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "rename") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "remove") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "tmpfile") == 1) {
+  return 1;
+}
   if (flowc_cgen_span_is(src, ns, ne, "fseek") == 1) {
   return 1;
 }
