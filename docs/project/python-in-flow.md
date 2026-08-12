@@ -76,6 +76,7 @@ them as part of Phase D; call them via the escape hatch:
 | Geometry diagram helpers | [`compiler/src/geometry_diagram.flow`](../../compiler/src/geometry_diagram.flow) — `flowc_svg_escape` / `flowc_vec2_unit` / `flowc_lerp` (full SVG rendering stays Python) |
 | Proof document formatting | [`compiler/src/proof_document.flow`](../../compiler/src/proof_document.flow) — `flowc_circled` / `flowc_step_label_latex` / `flowc_fmt_refs` / `flowc_from_refs` (full document construction stays Python) |
 | Dynamics DSL line helpers | [`compiler/src/dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow) — `flowc_strip_comments` / `flowc_strip_dynamics_namespace` (full DSL parsing and expansion stay Python) |
+| LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow) — `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` (full LSP protocol stays Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |
