@@ -1,0 +1,98 @@
+# Test for lsp_ordering.flow port of ordering_hover.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_ordering.flow
+# Exit 0 on success.
+
+import "compiler/src/lsp_ordering.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+function contains(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 { return 1 }
+    if nn > hn { return 0 }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    while i + nn <= hn {
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < nn {
+            if hp[i + j] != np[j] { matched = 0; break }
+            j = j + 1
+        }
+        if matched == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # sort
+    let h1: string = flowc_ordering_hover("sort")
+    if strlen(h1) == 0 {
+        puts("FAIL: 'sort' should return hover text")
+        return 1
+    }
+    if contains(h1, "declarative ordering") == 0 {
+        printf("FAIL: 'sort' hover should mention 'declarative ordering', got: %s\n", h1)
+        return 2
+    }
+
+    # sortBy
+    let h2: string = flowc_ordering_hover("sortBy")
+    if contains(h2, "multi-key") == 0 {
+        printf("FAIL: 'sortBy' hover should mention 'multi-key', got: %s\n", h2)
+        return 3
+    }
+
+    # asc
+    let h3: string = flowc_ordering_hover("asc")
+    if contains(h3, "ascending") == 0 {
+        printf("FAIL: 'asc' hover should mention 'ascending', got: %s\n", h3)
+        return 4
+    }
+
+    # desc
+    let h4: string = flowc_ordering_hover("desc")
+    if contains(h4, "descending") == 0 {
+        printf("FAIL: 'desc' hover should mention 'descending', got: %s\n", h4)
+        return 5
+    }
+
+    # unique
+    let h5: string = flowc_ordering_hover("unique")
+    if contains(h5, "duplicates") == 0 {
+        printf("FAIL: 'unique' hover should mention 'duplicates', got: %s\n", h5)
+        return 6
+    }
+
+    # entropy
+    let h6: string = flowc_ordering_hover("entropy")
+    if contains(h6, "randomized") == 0 {
+        printf("FAIL: 'entropy' hover should mention 'randomized', got: %s\n", h6)
+        return 7
+    }
+
+    # order
+    let h7: string = flowc_ordering_hover("order")
+    if contains(h7, "ordering head") == 0 {
+        printf("FAIL: 'order' hover should mention 'ordering head', got: %s\n", h7)
+        return 8
+    }
+
+    # unknown keyword
+    let h8: string = flowc_ordering_hover("unknown")
+    if strlen(h8) != 0 {
+        printf("FAIL: unknown keyword should return empty, got: %s\n", h8)
+        return 9
+    }
+
+    puts("All lsp_ordering tests passed")
+    return 0
+}
