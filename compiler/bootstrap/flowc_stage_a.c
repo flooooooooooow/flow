@@ -1100,7 +1100,7 @@ int32_t flowc_parse_atom(Parser* p) {
   depth = (depth - 2);
   flowc_parser_advance(p);
 } else {
-  if (flowc_parser_check(p[0], TOK_COMMA) == 1 || flowc_parser_check(p[0], TOK_IDENT) == 1 || flowc_parser_check(p[0], TOK_DOT) == 1 || flowc_parser_check(p[0], TOK_KEYWORD) == 1) {
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1 || flowc_parser_check(p[0], TOK_IDENT) == 1 || flowc_parser_check(p[0], TOK_DOT) == 1) {
   flowc_parser_advance(p);
 } else {
   ok = 0;
@@ -1208,6 +1208,9 @@ int32_t flowc_parse_atom(Parser* p) {
   elems = flowc_ast_chain_push((&(p[0]).arena), elems, first);
   while (flowc_parser_check(p[0], TOK_COMMA) == 1) {
   flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_RBRACK) == 1) {
+  break;
+}
   int32_t el = flowc_parse_expr(p);
   elems = flowc_ast_chain_push((&(p[0]).arena), elems, el);
 }

@@ -10,7 +10,6 @@ import .token {
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
     TOK_SHL, TOK_SHR,
     TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
-    TOK_GT,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
@@ -337,6 +336,8 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         }
         # Generic type args: Ident<TypeArgs> { ... } or Ident<TypeArgs>(args)
         # Skip the <...> and fall through to struct-literal / call handling.
+        # Only allow type-like tokens inside: identifiers, commas, dots.
+        # Reject keywords (like `or`, `and`) to avoid swallowing comparison exprs.
         if flowc_parser_check(p[0], TOK_LT) == 1 {
             let saved_lex: Lexer = p[0].lex
             let saved_cur: Token = p[0].cur
@@ -356,7 +357,7 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
                             depth = depth - 2
                             flowc_parser_advance(p)
                         } else {
-                            if flowc_parser_check(p[0], TOK_COMMA) == 1 or flowc_parser_check(p[0], TOK_IDENT) == 1 or flowc_parser_check(p[0], TOK_DOT) == 1 or flowc_parser_check(p[0], TOK_KEYWORD) == 1 {
+                            if flowc_parser_check(p[0], TOK_COMMA) == 1 or flowc_parser_check(p[0], TOK_IDENT) == 1 or flowc_parser_check(p[0], TOK_DOT) == 1 {
                                 flowc_parser_advance(p)
                             } else {
                                 ok = 0
@@ -469,6 +470,10 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
             elems = flowc_ast_chain_push(&p[0].arena, elems, first)
             while flowc_parser_check(p[0], TOK_COMMA) == 1 {
                 flowc_parser_advance(p)
+                # Trailing comma: stop if next is ]
+                if flowc_parser_check(p[0], TOK_RBRACK) == 1 {
+                    break
+                }
                 let el: i32 = flowc_parse_expr(p)
                 elems = flowc_ast_chain_push(&p[0].arena, elems, el)
             }
