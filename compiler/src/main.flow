@@ -476,7 +476,7 @@ function test_parse_extern() -> i32 {
     printf("externs=%d\n", n_ex)
     printf("extern_fns=%d\n", n_fn)
     if n_ex != 1 { ok = 0 }
-    if n_fn != 1 { ok = 0 }
+    if n_fn != 2 { ok = 0 }
     flowc_parser_free(p)
     return ok
 }
@@ -843,7 +843,7 @@ function test_parse_fixture_file() -> i32 {
     printf("fixture_nodes=%d\n", p.arena.len)
     printf("fixture_err=%d\n", p.err)
 
-    if n_fn != 2 { ok = 0 }
+    if n_fn != 3 { ok = 0 }
     if n_st != 1 { ok = 0 }
     if n_field != 2 { ok = 0 }
     if n_ex != 1 { ok = 0 }

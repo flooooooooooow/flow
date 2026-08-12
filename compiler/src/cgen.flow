@@ -1132,6 +1132,76 @@ function flowc_cgen_is_cli_main(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     return 0
 }
 
+# Check if a function name is a C standard library function already declared
+# by the included headers (stdio.h, stdlib.h, string.h, math.h).
+function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    if flowc_cgen_span_is(src, ns, ne, "fopen") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fclose") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fread") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fwrite") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fgets") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fputs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fseek") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "ftell") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "printf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fprintf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "puts") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "putchar") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "malloc") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "calloc") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "realloc") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "free") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strlen") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strcmp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strncmp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strcpy") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strncpy") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strcat") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strchr") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strrchr") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strstr") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "memcpy") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "memset") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "memcmp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sin") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cos") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sqrt") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fabs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pow") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "exp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log2") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log10") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "floor") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "ceil") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atan2") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fmod") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "tanh") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "tan") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "asin") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "acos") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atan") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sinh") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cosh") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "exit") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "abort") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "clock") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "time") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "qsort") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "rand") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "srand") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "getenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "system") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "abs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atoi") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atof") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtol") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtod") == 1 { return 1 }
+    return 0
+}
+
 function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     # Stage-A CLI: main(argc, argv) → int main(int …, char **…) regardless of Flow types.
     let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
@@ -1365,6 +1435,24 @@ export function flowc_cgen_emit_sigs(
                 flowc_cgen_emit_expr(&w, arena, src, init)
             }
             flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 2.7: extern function forward declarations
+    # Skip C standard library functions already declared by included headers.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].kind == AST_EXTERN {
+            let ef: i32 = arena.nodes[item].a
+            while ef != AST_NONE {
+                if arena.nodes[ef].kind == AST_FN {
+                    if flowc_cgen_is_libc_fn(arena, src, ef) == 0 {
+                        flowc_cgen_emit_fn(&w, arena, src, ef)
+                    }
+                }
+                ef = arena.nodes[ef].next
+            }
         }
         item = arena.nodes[item].next
     }
