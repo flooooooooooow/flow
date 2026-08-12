@@ -892,6 +892,28 @@ int32_t flowc_parser_eat_gt(Parser* p) {
 }
 
 int32_t flowc_parse_type(Parser* p) {
+  if (flowc_parser_check(p[0], TOK_AMP) == 1) {
+  flowc_parser_advance(p);
+  return flowc_parse_type(p);
+}
+  if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
+  int32_t start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  int32_t inner = flowc_parse_type(p);
+  if (inner == AST_NONE) {
+  return AST_NONE;
+}
+  if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_TYPE, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = inner;
+  return id;
+}
   if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
   int32_t start = ((p[0]).cur).start;
   flowc_parser_advance(p);
@@ -1058,6 +1080,40 @@ int32_t flowc_parse_atom(Parser* p) {
   (((p[0]).arena).nodes[call]).name_end = name_e;
   (((p[0]).arena).nodes[call]).a = args;
   return call;
+}
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  Lexer saved_lex = (p[0]).lex;
+  Token saved_cur = (p[0]).cur;
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  int32_t ok = 1;
+  while (depth > 0 && ok == 1 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  depth = (depth + 1);
+  flowc_parser_advance(p);
+} else {
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  depth = (depth - 1);
+  flowc_parser_advance(p);
+} else {
+  if (flowc_parser_check(p[0], TOK_SHR) == 1) {
+  depth = (depth - 2);
+  flowc_parser_advance(p);
+} else {
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1 || flowc_parser_check(p[0], TOK_IDENT) == 1 || flowc_parser_check(p[0], TOK_DOT) == 1 || flowc_parser_check(p[0], TOK_KEYWORD) == 1) {
+  flowc_parser_advance(p);
+} else {
+  ok = 0;
+}
+}
+}
+}
+}
+  if (ok == 1 && depth == 0) {
+} else {
+  (p[0]).lex = saved_lex;
+  (p[0]).cur = saved_cur;
+}
 }
   if (flowc_parser_check(p[0], TOK_LBRACE) == 1) {
   Lexer saved_lex = (p[0]).lex;
@@ -1450,6 +1506,8 @@ int32_t flowc_parse_expr(Parser* p) {
 }
 
 int32_t flowc_parse_block(Parser* p);
+void flowc_parser_skip_brace_block(Parser* p);
+void flowc_parser_skip_paren_block(Parser* p);
 int32_t flowc_parse_if_chain(Parser* p, int32_t start) {
   flowc_parser_advance(p);
   int32_t elif_cond = flowc_parse_expr(p);
@@ -1485,6 +1543,15 @@ int32_t flowc_parse_if_chain(Parser* p, int32_t start) {
 }
 
 int32_t flowc_parse_stmt(Parser* p) {
+  while (flowc_parser_check(p[0], TOK_AT) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+  if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  flowc_parser_skip_paren_block(p);
+}
+}
   if (flowc_parser_check_kw(p[0], KW_LET) == 1) {
   int32_t start = ((p[0]).cur).start;
   flowc_parser_advance(p);
@@ -2000,6 +2067,33 @@ int32_t flowc_parse_struct(Parser* p) {
   int32_t ns = ((p[0]).cur).start;
   int32_t ne = ((p[0]).cur).end;
   flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  while (depth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  depth = (depth + 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  depth = (depth - 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_SHR) == 1) {
+  depth = (depth - 2);
+}
+}
+}
+  if (depth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  flowc_parser_advance(p);
+} else {
+  if (flowc_parser_check(p[0], TOK_SHR) == 1) {
+  flowc_parser_advance(p);
+}
+}
+}
   if (flowc_parser_eat(p, TOK_LBRACE) == 0) {
   return AST_NONE;
 }
@@ -2050,12 +2144,13 @@ int32_t flowc_parse_struct(Parser* p) {
   return id;
 }
 
-void flowc_parser_skip_brace_block(Parser* p);
-void flowc_parser_skip_paren_block(Parser* p);
 int32_t flowc_parse_extern(Parser* p) {
   int32_t start = ((p[0]).cur).start;
   if (flowc_parser_eat_kw(p, KW_EXTERN) == 0) {
   return AST_NONE;
+}
+  if (flowc_parser_check(p[0], TOK_STRING) == 1) {
+  flowc_parser_advance(p);
 }
   if (flowc_parser_check_kw(p[0], KW_FUNCTION) == 1) {
   flowc_parser_advance(p);
@@ -2230,7 +2325,7 @@ int32_t flowc_parse_let(Parser* p) {
   is_mut = 1;
   flowc_parser_advance(p);
 }
-  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0 && flowc_parser_check(p[0], TOK_KEYWORD) == 0) {
   (p[0]).err = 1;
   return AST_NONE;
 }
@@ -2407,6 +2502,19 @@ int32_t flowc_parse_export(Parser* p) {
 }
   flowc_parser_skip_brace_block(p);
   return flowc_ast_alloc((&(p[0]).arena), AST_EXPR_STMT, start, ((p[0]).cur).start);
+}
+  if (flowc_parser_check_kw(p[0], KW_TYPE) == 1) {
+  return flowc_parse_type_alias(p);
+}
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  int32_t ns = ((p[0]).cur).start;
+  int32_t ne = ((p[0]).cur).end;
+  if ((ne - ns) == 8 && ((p[0]).lex).input[ns] == 100 && ((p[0]).lex).input[(ns + 1)] == 105 && ((p[0]).lex).input[(ns + 2)] == 115 && ((p[0]).lex).input[(ns + 3)] == 116 && ((p[0]).lex).input[(ns + 4)] == 105 && ((p[0]).lex).input[(ns + 5)] == 110 && ((p[0]).lex).input[(ns + 6)] == 99 && ((p[0]).lex).input[(ns + 7)] == 116) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check_kw(p[0], KW_TYPE) == 1) {
+  return flowc_parse_type_alias(p);
+}
+}
 }
   if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
   (p[0]).err = 1;
