@@ -11,7 +11,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -425,7 +425,42 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
                 p[0].arena.nodes[id].b = idx
                 base = id
             } else {
-                return base
+                if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                    let call_start: i32 = p[0].cur.start
+                    flowc_parser_advance(p)
+                    let mut args: i32 = AST_NONE
+                    if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+                        let mut loop: i32 = 1
+                        while loop == 1 {
+                            let arg: i32 = flowc_parse_expr(p)
+                            if arg == AST_NONE {
+                                return AST_NONE
+                            }
+                            args = flowc_ast_chain_push(&p[0].arena, args, arg)
+                            if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                                flowc_parser_advance(p)
+                            } else {
+                                loop = 0
+                            }
+                        }
+                    }
+                    if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+                        return AST_NONE
+                    }
+                    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CALL, call_start, p[0].cur.start)
+                    if id == AST_NONE {
+                        p[0].err = 1
+                        return AST_NONE
+                    }
+                    p[0].arena.nodes[id].a = args
+                    # For postfix calls, the callee is the base expression.
+                    # Store base span as the call name for cgen.
+                    p[0].arena.nodes[id].name_start = p[0].arena.nodes[base].name_start
+                    p[0].arena.nodes[id].name_end = p[0].arena.nodes[base].name_end
+                    base = id
+                } else {
+                    return base
+                }
             }
         }
     }
@@ -1283,6 +1318,29 @@ function flowc_parse_import(p: ptr<Parser>) -> i32 {
 }
 
 # const Name: Type = expr  (ival = 1 if export, else 0)
+# Skip a { ... } brace-delimited block, consuming the closing brace.
+function flowc_parser_skip_brace_block(p: ptr<Parser>) {
+    if flowc_parser_check(p[0], TOK_LBRACE) == 1 {
+        flowc_parser_advance(p)
+        let mut depth: i32 = 1
+        while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+            if flowc_parser_check(p[0], TOK_LBRACE) == 1 {
+                depth = depth + 1
+            } else {
+                if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+                    depth = depth - 1
+                }
+            }
+            if depth > 0 {
+                flowc_parser_advance(p)
+            }
+        }
+        if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+            flowc_parser_advance(p)
+        }
+    }
+}
+
 # type Name = BaseType
 function flowc_parse_type_alias(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
@@ -1383,6 +1441,15 @@ function flowc_parse_export(p: ptr<Parser>) -> i32 {
     }
     if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
         return flowc_parse_const(p, 1)
+    }
+    # export effect/capability Name { ... } — skip the block
+    if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 or flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+            flowc_parser_advance(p)
+        }
+        flowc_parser_skip_brace_block(p)
+        return flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, start, p[0].cur.start)
     }
     # bare: export a, b
     if flowc_parser_check(p[0], TOK_IDENT) == 0 {
@@ -1494,8 +1561,18 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                                         # Emit a no-op node so item != AST_NONE
                                         item = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, p[0].cur.start, p[0].cur.start)
                                     } else {
-                                        p[0].err = 1
-                                        return AST_NONE
+                                        if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 or flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {
+                                            let eff_start: i32 = p[0].cur.start
+                                            flowc_parser_advance(p)
+                                            if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                                                flowc_parser_advance(p)
+                                            }
+                                            flowc_parser_skip_brace_block(p)
+                                            item = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, eff_start, p[0].cur.start)
+                                        } else {
+                                            p[0].err = 1
+                                            return AST_NONE
+                                        }
                                     }
                                 }
                             }

@@ -160,6 +160,8 @@ const int32_t KW_MATCH = 24;
 const int32_t KW_ELIF = 25;
 const int32_t KW_TYPE = 26;
 const int32_t KW_UNIT = 27;
+const int32_t KW_EFFECT = 28;
+const int32_t KW_CAPABILITY = 29;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -271,6 +273,8 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t match_kw[5] = { 109, 97, 116, 99, 104 };
   uint8_t type_kw[4] = { 116, 121, 112, 101 };
   uint8_t unit_kw[4] = { 117, 110, 105, 116 };
+  uint8_t effect_kw[6] = { 101, 102, 102, 101, 99, 116 };
+  uint8_t cap_kw[10] = { 99, 97, 112, 97, 98, 105, 108, 105, 116, 121 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -378,6 +382,14 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = unit_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 4) == 1) {
   return KW_UNIT;
+}
+  p = effect_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 6) == 1) {
+  return KW_EFFECT;
+}
+  p = cap_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 10) == 1) {
+  return KW_CAPABILITY;
 }
   return 0;
 }
@@ -1107,7 +1119,40 @@ int32_t flowc_parse_postfix(Parser* p) {
   (((p[0]).arena).nodes[id]).b = idx;
   base = id;
 } else {
+  if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  int32_t call_start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  int32_t args = AST_NONE;
+  if (flowc_parser_check(p[0], TOK_RPAREN) == 0) {
+  int32_t loop = 1;
+  while (loop == 1) {
+  int32_t arg = flowc_parse_expr(p);
+  if (arg == AST_NONE) {
+  return AST_NONE;
+}
+  args = flowc_ast_chain_push((&(p[0]).arena), args, arg);
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
+  flowc_parser_advance(p);
+} else {
+  loop = 0;
+}
+}
+}
+  if (flowc_parser_eat(p, TOK_RPAREN) == 0) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_CALL, call_start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = args;
+  (((p[0]).arena).nodes[id]).name_start = (((p[0]).arena).nodes[base]).name_start;
+  (((p[0]).arena).nodes[id]).name_end = (((p[0]).arena).nodes[base]).name_end;
+  base = id;
+} else {
   return base;
+}
 }
 }
 }
@@ -1992,6 +2037,28 @@ int32_t flowc_parse_import(Parser* p) {
   return id;
 }
 
+void flowc_parser_skip_brace_block(Parser* p) {
+  if (flowc_parser_check(p[0], TOK_LBRACE) == 1) {
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  while (depth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LBRACE) == 1) {
+  depth = (depth + 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_RBRACE) == 1) {
+  depth = (depth - 1);
+}
+}
+  if (depth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_check(p[0], TOK_RBRACE) == 1) {
+  flowc_parser_advance(p);
+}
+}
+}
+
 int32_t flowc_parse_type_alias(Parser* p) {
   int32_t start = ((p[0]).cur).start;
   if (flowc_parser_eat_kw(p, KW_TYPE) == 0) {
@@ -2088,6 +2155,14 @@ int32_t flowc_parse_export(Parser* p) {
 }
   if (flowc_parser_check_kw(p[0], KW_CONST) == 1) {
   return flowc_parse_const(p, 1);
+}
+  if (flowc_parser_check_kw(p[0], KW_EFFECT) == 1 || flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+  flowc_parser_skip_brace_block(p);
+  return flowc_ast_alloc((&(p[0]).arena), AST_EXPR_STMT, start, ((p[0]).cur).start);
 }
   if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
   (p[0]).err = 1;
@@ -2195,8 +2270,18 @@ int32_t flowc_parse_program(Parser* p) {
 }
   item = flowc_ast_alloc((&(p[0]).arena), AST_EXPR_STMT, ((p[0]).cur).start, ((p[0]).cur).start);
 } else {
+  if (flowc_parser_check_kw(p[0], KW_EFFECT) == 1 || flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1) {
+  int32_t eff_start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+  flowc_parser_skip_brace_block(p);
+  item = flowc_ast_alloc((&(p[0]).arena), AST_EXPR_STMT, eff_start, ((p[0]).cur).start);
+} else {
   (p[0]).err = 1;
   return AST_NONE;
+}
 }
 }
 }
