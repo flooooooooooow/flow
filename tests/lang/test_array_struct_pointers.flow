@@ -1,0 +1,89 @@
+# Regression test for #431: arrays of structs containing pointer fields.
+#
+# A function allocates an array of structs, each struct has malloc'd
+# pointer fields. The struct is copied into the array by value. After
+# the function returns, the pointer fields must still be valid.
+#
+# The root cause of #431 was a hardcoded struct size (24) that didn't
+# account for C alignment padding. CVSplit has two ptr<i32> (8 bytes
+# each) and two i32 (4 bytes each) = 24 bytes naively, but the C
+# compiler inserts 4 bytes of padding after n_train to align
+# test_indices, and 4 bytes after n_test to align the next struct.
+# The real sizeof is 32. Use sizeof<T>() or calloc in real code.
+#
+# Run with: ./flow run tests/lang/test_array_struct_pointers.flow
+# Exit 0 on success; nonzero identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+}
+
+struct CVSplit {
+    train_indices: ptr<i32>,
+    n_train: i32,
+    test_indices: ptr<i32>,
+    n_test: i32
+}
+
+# 32 = sizeof(CVSplit) with C alignment padding.
+# ptr<i32>=8, i32=4, pad=4, ptr<i32>=8, i32=4, pad=4.
+const CVSPLIT_SIZE: i64 = 32
+
+function make_splits(n: i32) -> ptr<CVSplit> {
+    let splits: ptr<CVSplit> = malloc((n as i64) * CVSPLIT_SIZE) as ptr<CVSplit>
+    let mut i: i32 = 0
+    while i < n {
+        let train: ptr<i32> = malloc(40) as ptr<i32>
+        let test: ptr<i32> = malloc(20) as ptr<i32>
+        let split: CVSplit = CVSplit { train_indices: train, n_train: 10, test_indices: test, n_test: 5 }
+        splits[i] = split
+        i = i + 1
+    }
+    return splits
+}
+
+function main() -> i32 {
+    let splits: ptr<CVSplit> = make_splits(4)
+
+    # Scalar fields survive the copy and function return.
+    if splits[0].n_train != 10 {
+        return 1
+    }
+    if splits[0].n_test != 5 {
+        return 2
+    }
+    if splits[3].n_train != 10 {
+        return 3
+    }
+
+    # Pointer fields are valid: write and read back through them.
+    splits[0].train_indices[0] = 42
+    if splits[0].train_indices[0] != 42 {
+        return 4
+    }
+
+    splits[3].test_indices[4] = 99
+    if splits[3].test_indices[4] != 99 {
+        return 5
+    }
+
+    # A write to element 0 must not corrupt element 3.
+    splits[0].train_indices[1] = 7
+    if splits[3].test_indices[4] != 99 {
+        return 6
+    }
+
+    # Free every sub-allocation and the outer array.
+    free(splits[0].train_indices as ptr<void>)
+    free(splits[0].test_indices as ptr<void>)
+    free(splits[1].train_indices as ptr<void>)
+    free(splits[1].test_indices as ptr<void>)
+    free(splits[2].train_indices as ptr<void>)
+    free(splits[2].test_indices as ptr<void>)
+    free(splits[3].train_indices as ptr<void>)
+    free(splits[3].test_indices as ptr<void>)
+    free(splits as ptr<void>)
+
+    return 0
+}

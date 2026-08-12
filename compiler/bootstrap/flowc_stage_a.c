@@ -497,7 +497,6 @@ Token flowc_lexer_next(Lexer* lex) {
 }
   if (c == 46 && n1 == 46) {
   flowc_lexer_bump(lex);
-  flowc_lexer_bump(lex);
   return flowc_make_tok(TOK_DOTDOT, 0, start, (start + 2), line, col);
 }
   if (c == 46) {
@@ -1387,10 +1386,12 @@ int32_t flowc_parse_stmt(Parser* p) {
 }
   int32_t lo = flowc_parse_expr(p);
   int32_t got_range = 0;
-  if (flowc_parser_eat_kw(p, KW_TO) == 1) {
+  if (flowc_parser_check_kw(p[0], KW_TO) == 1) {
+  flowc_parser_advance(p);
   got_range = 1;
 } else {
-  if (flowc_parser_eat(p, TOK_DOTDOT) == 1) {
+  if (flowc_parser_check(p[0], TOK_DOTDOT) == 1) {
+  flowc_parser_advance(p);
   got_range = 1;
 }
 }
@@ -1731,8 +1732,10 @@ int32_t flowc_parse_struct(Parser* p) {
   flowc_parser_advance(p);
 } else {
   if (flowc_parser_check(p[0], TOK_RBRACE) == 0) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
   (p[0]).err = 1;
   return AST_NONE;
+}
 }
 }
 }
@@ -2187,6 +2190,11 @@ void flowc_cgen_emit_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ty) 
   int32_t ne = ((arena).nodes[ty]).name_end;
   int32_t inner = ((arena).nodes[ty]).a;
   if (inner != AST_NONE && flowc_cgen_span_is(src, ns, ne, "ptr") == 1) {
+  flowc_cgen_emit_type(w, arena, src, inner);
+  flowc_cgen_putc(w, 42);
+  return;
+}
+  if (inner != AST_NONE && flowc_cgen_span_is(src, ns, ne, "array") == 1 && ((arena).nodes[ty]).ival == 0) {
   flowc_cgen_emit_type(w, arena, src, inner);
   flowc_cgen_putc(w, 42);
   return;

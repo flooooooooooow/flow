@@ -702,10 +702,12 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         }
         let lo: i32 = flowc_parse_expr(p)
         let mut got_range: i32 = 0
-        if flowc_parser_eat_kw(p, KW_TO) == 1 {
+        if flowc_parser_check_kw(p[0], KW_TO) == 1 {
+            flowc_parser_advance(p)
             got_range = 1
         } else {
-            if flowc_parser_eat(p, TOK_DOTDOT) == 1 {
+            if flowc_parser_check(p[0], TOK_DOTDOT) == 1 {
+                flowc_parser_advance(p)
                 got_range = 1
             }
         }
@@ -1056,9 +1058,13 @@ function flowc_parse_struct(p: ptr<Parser>) -> i32 {
         if flowc_parser_check(p[0], TOK_COMMA) == 1 {
             flowc_parser_advance(p)
         } else {
+            # Allow newline-separated fields (no comma): if next is `}` or
+            # an identifier (next field name), continue. Otherwise error.
             if flowc_parser_check(p[0], TOK_RBRACE) == 0 {
-                p[0].err = 1
-                return AST_NONE
+                if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                    p[0].err = 1
+                    return AST_NONE
+                }
             }
         }
     }
