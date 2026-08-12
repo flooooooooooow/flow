@@ -168,6 +168,47 @@ function main() -> i32 {
         return 19
     }
 
+    # OpCode constants
+    if FLOWC_OP_NOP != 0 {
+        printf("FAIL: OP_NOP should be 0, got %d\n", FLOWC_OP_NOP)
+        return 20
+    }
+    if FLOWC_OP_CALL != 7 {
+        printf("FAIL: OP_CALL should be 7, got %d\n", FLOWC_OP_CALL)
+        return 21
+    }
+    if FLOWC_OP_RET != 8 {
+        printf("FAIL: OP_RET should be 8, got %d\n", FLOWC_OP_RET)
+        return 22
+    }
+    if FLOWC_OP_OTHER != 255 {
+        printf("FAIL: OP_OTHER should be 255, got %d\n", FLOWC_OP_OTHER)
+        return 23
+    }
+
+    # count_call_ops: mix of CALL, RET, and other ops
+    let opcodes: ptr<i32> = malloc(24) as ptr<i32>
+    opcodes[0] = FLOWC_OP_CALL
+    opcodes[1] = FLOWC_OP_CONST
+    opcodes[2] = FLOWC_OP_CALL
+    opcodes[3] = FLOWC_OP_RET
+    opcodes[4] = FLOWC_OP_CALL
+    opcodes[5] = FLOWC_OP_BINOP
+    let call_count: i32 = flowc_count_call_ops(opcodes, 6)
+    if call_count != 3 {
+        printf("FAIL: expected 3 CALL ops, got %d\n", call_count)
+        return 24
+    }
+
+    # count_call_ops: no calls
+    let call_count0: i32 = flowc_count_call_ops(opcodes, 0)
+    if call_count0 != 0 {
+        printf("FAIL: expected 0 CALL ops for empty, got %d\n", call_count0)
+        return 25
+    }
+
+    free(opcodes as ptr<void>)
+
     # Free resources
     free(row_offsets as ptr<void>)
     free(columns as ptr<void>)

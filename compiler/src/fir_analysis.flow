@@ -37,6 +37,26 @@ export const FLOWC_EFF_UNKNOWN: i32 = 32768
 # = 8 | 16 | 256 | 2 | 4 | 32768 = 33054
 export const FLOWC_EFF_DIRTY: i32 = 33054
 
+# ── OpCode constants (matching fir_g.py OpCode enum) ─────────────
+
+export const FLOWC_OP_NOP: i32 = 0
+export const FLOWC_OP_CONST: i32 = 1
+export const FLOWC_OP_PARAM: i32 = 2
+export const FLOWC_OP_LOAD: i32 = 3
+export const FLOWC_OP_STORE: i32 = 4
+export const FLOWC_OP_BINOP: i32 = 5
+export const FLOWC_OP_UNOP: i32 = 6
+export const FLOWC_OP_CALL: i32 = 7
+export const FLOWC_OP_RET: i32 = 8
+export const FLOWC_OP_BR: i32 = 9
+export const FLOWC_OP_COND_BR: i32 = 10
+export const FLOWC_OP_PHI: i32 = 11
+export const FLOWC_OP_ALLOCA: i32 = 12
+export const FLOWC_OP_GEP: i32 = 13
+export const FLOWC_OP_CAST: i32 = 14
+export const FLOWC_OP_EFFECT: i32 = 15
+export const FLOWC_OP_OTHER: i32 = 255
+
 # ── Effect propagation ───────────────────────────────────────────
 
 # Monotone call-graph effect OR-propagation to fixpoint.
@@ -187,6 +207,20 @@ export function flowc_count_dead(visited: ptr<i32>, num_funcs: i32) -> i32 {
     let mut i: i32 = 0
     while i < num_funcs {
         if visited[i] == 0 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+# Count CALL ops in an opcode array.
+# opcodes: ptr<i32> of opcode values, num_ops elements.
+export function flowc_count_call_ops(opcodes: ptr<i32>, num_ops: i32) -> i32 {
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < num_ops {
+        if opcodes[i] == FLOWC_OP_CALL {
             count = count + 1
         }
         i = i + 1
