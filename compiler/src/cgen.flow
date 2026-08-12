@@ -1272,6 +1272,8 @@ function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     flowc_cgen_puts(w, "typedef struct ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_puts(w, " {\n")
+    let sns: i32 = arena.nodes[id].name_start
+    let sne: i32 = arena.nodes[id].name_end
     let mut field: i32 = arena.nodes[id].a
     while field != AST_NONE {
         flowc_cgen_puts(w, "  ")
@@ -1287,10 +1289,49 @@ function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
                 }
             }
         }
+        # Self-referential ptr<StructName> → struct StructName*
+        # (typedef name not visible inside the struct body in C).
+        let emitted_self: i32 = 0
+        if arr_n == 0 and fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
+            if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "ptr") == 1 {
+                let inner: i32 = arena.nodes[fty].a
+                if inner != AST_NONE and arena.nodes[inner].kind == AST_TYPE {
+                    if flowc_cgen_span_eq(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, sns, sne) == 1 {
+                        flowc_cgen_puts(w, "struct ")
+                        flowc_cgen_put_span(w, src, sns, sne)
+                        flowc_cgen_putc(w, 42)
+                        emitted_self = 1
+                    }
+                }
+            }
+        }
         if arr_n > 0 {
+            # Check if array inner is self-referential ptr
+            if arr_inner != AST_NONE and arena.nodes[arr_inner].kind == AST_TYPE {
+                if flowc_cgen_span_is(src, arena.nodes[arr_inner].name_start, arena.nodes[arr_inner].name_end, "ptr") == 1 {
+                    let pinner: i32 = arena.nodes[arr_inner].a
+                    if pinner != AST_NONE and arena.nodes[pinner].kind == AST_TYPE {
+                        if flowc_cgen_span_eq(src, arena.nodes[pinner].name_start, arena.nodes[pinner].name_end, sns, sne) == 1 {
+                            flowc_cgen_puts(w, "struct ")
+                            flowc_cgen_put_span(w, src, sns, sne)
+                            flowc_cgen_putc(w, 42)
+                            flowc_cgen_putc(w, 32)
+                            flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+                            flowc_cgen_putc(w, 91)
+                            flowc_cgen_put_i32(w, arr_n)
+                            flowc_cgen_putc(w, 93)
+                            flowc_cgen_puts(w, ";\n")
+                            field = arena.nodes[field].next
+                            continue
+                        }
+                    }
+                }
+            }
             flowc_cgen_emit_type(w, arena, src, arr_inner)
         } else {
-            flowc_cgen_emit_type(w, arena, src, fty)
+            if emitted_self == 0 {
+                flowc_cgen_emit_type(w, arena, src, fty)
+            }
         }
         flowc_cgen_putc(w, 32)
         flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
