@@ -290,7 +290,6 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
     if c == 59 { return flowc_make_tok(TOK_SEMI, 0, start, start + 1, line, col) }
     if c == 46 and n1 == 46 {
         flowc_lexer_bump(lex)
-        flowc_lexer_bump(lex)
         return flowc_make_tok(TOK_DOTDOT, 0, start, start + 2, line, col)
     }
     if c == 46 { return flowc_make_tok(TOK_DOT, 0, start, start + 1, line, col) }

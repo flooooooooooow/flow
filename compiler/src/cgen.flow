@@ -166,6 +166,12 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_putc(w, 42)
         return
     }
+    # array<T> (no size, ival == 0) → T* (pointer to element type).
+    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "array") == 1 and arena.nodes[ty].ival == 0 {
+        flowc_cgen_emit_type(w, arena, src, inner)
+        flowc_cgen_putc(w, 42)
+        return
+    }
     if flowc_cgen_is_struct_type(arena, src, ty) == 1 {
         flowc_cgen_put_span(w, src, ns, ne)
         return
