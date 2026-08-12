@@ -203,3 +203,54 @@ export function flowc_under_refs(nums: string) -> string {
     s = str_append(s, ", ")
     return s
 }
+
+# ── Slug label ───────────────────────────────────────────────────
+
+# Convert a claim path to a slug-safe label.
+# Replaces / + * | . = « » and spaces with safe equivalents.
+export function flowc_slug_label(path: string) -> string {
+    let n: i32 = strlen(path) as i32
+    let p: ptr<u8> = path
+    let result: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i]
+        if c == 47 {
+            result = str_append(result, "-")
+        } else {
+            if c == 43 {
+                result = str_append(result, "plus")
+            } else {
+                if c == 42 {
+                    result = str_append(result, "star")
+                } else {
+                    if c == 124 {
+                        result = str_append(result, "or")
+                    } else {
+                        if c == 46 {
+                            result = str_append(result, "-")
+                        } else {
+                            if c == 61 {
+                                result = str_append(result, "eq")
+                            } else {
+                                if c == 171 or c == 187 {
+                                    # « and » -> skip
+                                } else {
+                                    if c == 32 {
+                                        result = str_append(result, "-")
+                                    } else {
+                                        let buf: array<u8, 2> = [0, 0]
+                                        buf[0] = c
+                                        result = str_append(result, buf as string)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return result
+}

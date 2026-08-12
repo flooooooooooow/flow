@@ -117,6 +117,48 @@ function main() -> i32 {
         return 15
     }
 
+    # slug_label: simple path
+    let sl1: string = flowc_slug_label("Nat/addition/zero-is-left-identity")
+    if strcmp(sl1, "Nat-addition-zero-is-left-identity") != 0 {
+        printf("FAIL: slug_label mismatch, got '%s'\n", sl1)
+        return 16
+    }
+
+    # slug_label: with + and *
+    let sl2: string = flowc_slug_label("Int/+/*")
+    if strcmp(sl2, "Int-plus-star") != 0 {
+        printf("FAIL: slug_label for 'Int/+/*' should be 'Int-plus-star', got '%s'\n", sl2)
+        return 17
+    }
+
+    # slug_label: with = and |
+    let sl3: string = flowc_slug_label("Bool/|=eq")
+    if strcmp(sl3, "Bool-oreqeq") != 0 {
+        printf("FAIL: slug_label for 'Bool/|=eq' should be 'Bool-oreqeq', got '%s'\n", sl3)
+        return 18
+    }
+
+    # slug_label: with spaces
+    let sl4: string = flowc_slug_label("hello world")
+    if strcmp(sl4, "hello-world") != 0 {
+        printf("FAIL: slug_label for 'hello world' should be 'hello-world', got '%s'\n", sl4)
+        return 19
+    }
+
+    # slug_label: empty string
+    let sl5: string = flowc_slug_label("")
+    if strcmp(sl5, "") != 0 {
+        printf("FAIL: slug_label('') should be empty, got '%s'\n", sl5)
+        return 20
+    }
+
+    # slug_label: dot replacement
+    let sl6: string = flowc_slug_label("foo.bar.baz")
+    if strcmp(sl6, "foo-bar-baz") != 0 {
+        printf("FAIL: slug_label for 'foo.bar.baz' should be 'foo-bar-baz', got '%s'\n", sl6)
+        return 21
+    }
+
     puts("All proof_document tests passed")
     return 0
 }
