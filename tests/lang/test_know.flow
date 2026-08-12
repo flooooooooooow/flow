@@ -1,0 +1,100 @@
+# Test for know.flow port of know.py helpers.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_know.flow
+# Exit 0 on success.
+
+import "compiler/src/know.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # normalize_query: strip "verify." prefix
+    let q1: string = flowc_normalize_query("verify.Nat/addition/zero")
+    if strcmp(q1, "Nat/addition/zero") != 0 {
+        printf("FAIL: 'verify.Nat/addition/zero' should be 'Nat/addition/zero', got '%s'\n", q1)
+        return 1
+    }
+
+    # normalize_query: strip "examples.verify." prefix
+    let q2: string = flowc_normalize_query("examples.verify.Nat/addition/zero")
+    if strcmp(q2, "Nat/addition/zero") != 0 {
+        printf("FAIL: 'examples.verify.Nat/addition/zero' should be 'Nat/addition/zero', got '%s'\n", q2)
+        return 2
+    }
+
+    # normalize_query: strip "lib.verify." prefix
+    let q3: string = flowc_normalize_query("lib.verify.Nat/addition/zero")
+    if strcmp(q3, "Nat/addition/zero") != 0 {
+        printf("FAIL: 'lib.verify.Nat/addition/zero' should be 'Nat/addition/zero', got '%s'\n", q3)
+        return 3
+    }
+
+    # normalize_query: no prefix
+    let q4: string = flowc_normalize_query("Nat/addition/zero")
+    if strcmp(q4, "Nat/addition/zero") != 0 {
+        printf("FAIL: no prefix should be unchanged, got '%s'\n", q4)
+        return 4
+    }
+
+    # normalize_query: strip whitespace
+    let q5: string = flowc_normalize_query("  verify.Nat/addition  ")
+    if strcmp(q5, "Nat/addition") != 0 {
+        printf("FAIL: should strip whitespace and prefix, got '%s'\n", q5)
+        return 5
+    }
+
+    # package_prefix: no slash, return as-is
+    let p1: string = flowc_package_prefix("foo.bar.baz")
+    if strcmp(p1, "foo.bar.baz") != 0 {
+        printf("FAIL: no slash should return as-is, got '%s'\n", p1)
+        return 6
+    }
+
+    # package_prefix: empty string
+    let p2: string = flowc_package_prefix("")
+    if strcmp(p2, "") != 0 {
+        printf("FAIL: empty should return empty, got '%s'\n", p2)
+        return 7
+    }
+
+    # package_prefix: segment with slash is dropped
+    let p3: string = flowc_package_prefix("foo.bar/Nat.addition.baz")
+    if strcmp(p3, "foo.addition.baz") != 0 {
+        printf("FAIL: should drop segment with slash, got '%s'\n", p3)
+        return 8
+    }
+
+    # package_prefix: all segments have slashes
+    let p4: string = flowc_package_prefix("foo/bar.baz/qux")
+    if strcmp(p4, "") != 0 {
+        printf("FAIL: all slash segments should return empty, got '%s'\n", p4)
+        return 9
+    }
+
+    # qualify: with mod_path prefix
+    let qf1: string = flowc_qualify("foo.bar", "Nat/addition/zero")
+    if strcmp(qf1, "foo.bar.Nat/addition/zero") != 0 {
+        printf("FAIL: qualify should join with dot, got '%s'\n", qf1)
+        return 10
+    }
+
+    # qualify: empty mod_path
+    let qf2: string = flowc_qualify("", "Nat/addition/zero")
+    if strcmp(qf2, "Nat/addition/zero") != 0 {
+        printf("FAIL: empty mod_path should return claim path, got '%s'\n", qf2)
+        return 11
+    }
+
+    # qualify: mod_path with slash segment
+    let qf3: string = flowc_qualify("foo.bar/Nat", "addition/zero")
+    if strcmp(qf3, "foo.addition/zero") != 0 {
+        printf("FAIL: should qualify with cleaned prefix, got '%s'\n", qf3)
+        return 12
+    }
+
+    puts("All know tests passed")
+    return 0
+}

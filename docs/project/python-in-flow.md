@@ -78,6 +78,11 @@ them as part of Phase D; call them via the escape hatch:
 | Dynamics DSL line helpers | [`compiler/src/dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow) — `flowc_strip_comments` / `flowc_strip_dynamics_namespace` (full DSL parsing and expansion stay Python) |
 | LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow) — `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` (full LSP protocol stays Python) |
 | DSL detection | [`compiler/src/dsl_detect.flow`](../../compiler/src/dsl_detect.flow) — `flowc_has_field_dsl` / `flowc_has_dynamics_dsl` / `flowc_has_fill_shader_dsl` (full DSL parsing and expansion stay Python) |
+| Claim lookup helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow) — `flowc_normalize_query` / `flowc_package_prefix` / `flowc_qualify` (filesystem scanning and claim indexing stay Python) |
+| LSP ordering hover | [`compiler/src/lsp_ordering.flow`](../../compiler/src/lsp_ordering.flow) — `flowc_ordering_hover` (completion items with snippets stay Python) |
+| LSP dynamics hover | [`compiler/src/lsp_dynamics.flow`](../../compiler/src/lsp_dynamics.flow) — `flowc_dynamics_hover` (completion items stay Python) |
+| WCET analysis helpers | [`compiler/src/wcet.flow`](../../compiler/src/wcet.flow) — `flowc_type_size` / `flowc_stmt_cost` / `FLOWC_DEFAULT_LOOP_BOUND` (AST traversal and report formatting stay Python) |
+| Proof kernel helpers | [`compiler/src/proof_kernel.flow`](../../compiler/src/proof_kernel.flow) — `flowc_node_kind` / `flowc_escape_dot` (kernel construction, JSON, and plotting stay Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |

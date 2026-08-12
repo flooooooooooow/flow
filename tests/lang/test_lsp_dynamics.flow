@@ -1,0 +1,115 @@
+# Test for lsp_dynamics.flow port of dynamics_hover.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_dynamics.flow
+# Exit 0 on success.
+
+import "compiler/src/lsp_dynamics.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+}
+
+function contains(haystack: string, needle: string) -> i32 {
+    let hn: i32 = strlen(haystack) as i32
+    let nn: i32 = strlen(needle) as i32
+    if nn == 0 { return 1 }
+    if nn > hn { return 0 }
+    let hp: ptr<u8> = haystack
+    let np: ptr<u8> = needle
+    let mut i: i32 = 0
+    while i + nn <= hn {
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < nn {
+            if hp[i + j] != np[j] { matched = 0; break }
+            j = j + 1
+        }
+        if matched == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # dsys
+    let h1: string = flowc_dynamics_hover("dsys")
+    if contains(h1, "linear plant") == 0 {
+        printf("FAIL: 'dsys' should mention 'linear plant', got: %s\n", h1)
+        return 1
+    }
+
+    # horizon
+    let h2: string = flowc_dynamics_hover("horizon")
+    if contains(h2, "analysis horizon") == 0 {
+        printf("FAIL: 'horizon' should mention 'analysis horizon', got: %s\n", h2)
+        return 2
+    }
+
+    # sense
+    let h3: string = flowc_dynamics_hover("sense")
+    if contains(h3, "open-loop") == 0 {
+        printf("FAIL: 'sense' should mention 'open-loop', got: %s\n", h3)
+        return 3
+    }
+
+    # ga
+    let h4: string = flowc_dynamics_hover("ga")
+    if contains(h4, "genetic search") == 0 {
+        printf("FAIL: 'ga' should mention 'genetic search', got: %s\n", h4)
+        return 4
+    }
+
+    # closed
+    let h5: string = flowc_dynamics_hover("closed")
+    if contains(h5, "closed-loop") == 0 {
+        printf("FAIL: 'closed' should mention 'closed-loop', got: %s\n", h5)
+        return 5
+    }
+
+    # controllable
+    let h6: string = flowc_dynamics_hover("controllable")
+    if contains(h6, "rank(ctrb)") == 0 {
+        printf("FAIL: 'controllable' should mention 'rank(ctrb)', got: %s\n", h6)
+        return 6
+    }
+
+    # discrete
+    let h7: string = flowc_dynamics_hover("discrete")
+    if contains(h7, "discrete-time") == 0 {
+        printf("FAIL: 'discrete' should mention 'discrete-time', got: %s\n", h7)
+        return 7
+    }
+
+    # population
+    let h8: string = flowc_dynamics_hover("population")
+    if contains(h8, "population size") == 0 {
+        printf("FAIL: 'population' should mention 'population size', got: %s\n", h8)
+        return 8
+    }
+
+    # namespaced: dyn.dsys -> dsys
+    let h9: string = flowc_dynamics_hover("dyn.dsys")
+    if contains(h9, "linear plant") == 0 {
+        printf("FAIL: 'dyn.dsys' should resolve to 'dsys' hover, got: %s\n", h9)
+        return 9
+    }
+
+    # namespaced: dynamics.horizon -> horizon
+    let h10: string = flowc_dynamics_hover("dynamics.horizon")
+    if contains(h10, "analysis horizon") == 0 {
+        printf("FAIL: 'dynamics.horizon' should resolve to 'horizon' hover, got: %s\n", h10)
+        return 10
+    }
+
+    # unknown
+    let h11: string = flowc_dynamics_hover("unknown")
+    if strlen(h11) != 0 {
+        printf("FAIL: unknown should return empty, got: %s\n", h11)
+        return 11
+    }
+
+    puts("All lsp_dynamics tests passed")
+    return 0
+}
