@@ -344,6 +344,8 @@ function match_suffix_ci(s: string, start: i32, suffix: string) -> i32 {
 
 # Turn a parser condition into spoken mathematics.
 # Port of mathematical_case_condition.
+function flowc_replace_eq(s: string) -> string
+
 export function flowc_mathematical_case_condition(cond: string) -> string {
     let n: i32 = strlen(cond) as i32
     let p: ptr<u8> = cond

@@ -38,6 +38,8 @@ function last_segment(word: string) -> string {
 # Also handles namespaced forms like "dyn.dsys" by checking the
 # last segment after ".".
 # Port of dynamics_hover.
+function flowc_dynamics_hover_direct(word: string) -> string
+
 export function flowc_dynamics_hover(word: string) -> string {
     # Direct lookup
     let h: string = flowc_dynamics_hover_direct(word)
