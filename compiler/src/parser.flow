@@ -11,7 +11,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE
+    KW_TYPE, KW_UNIT
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -95,8 +95,50 @@ function flowc_parse_int_span(src: ptr<u8>, start: i32, end: i32) -> i32 {
     return v
 }
 
-# Plain name, ptr<T> (a=inner, ival=0), or array<T, N> (a=inner, ival=N).
+# Plain name, ptr<T> (a=inner, ival=0), array<T, N> (a=inner, ival=N),
+# or function pointer (A, B) -> R (a=param chain, b=return type).
 function flowc_parse_type(p: ptr<Parser>) -> i32 {
+    # Function pointer type: (T1, T2, ...) -> R
+    if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        let mut params: i32 = AST_NONE
+        if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+            let mut loop: i32 = 1
+            while loop == 1 {
+                let pt: i32 = flowc_parse_type(p)
+                if pt == AST_NONE {
+                    return AST_NONE
+                }
+                params = flowc_ast_chain_push(&p[0].arena, params, pt)
+                if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                    flowc_parser_advance(p)
+                } else {
+                    loop = 0
+                }
+            }
+        }
+        if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+            return AST_NONE
+        }
+        if flowc_parser_eat(p, TOK_ARROW) == 0 {
+            return AST_NONE
+        }
+        let ret: i32 = flowc_parse_type(p)
+        if ret == AST_NONE {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_TYPE, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        # Mark as function pointer: ival = -1
+        p[0].arena.nodes[id].ival = 0 - 1
+        p[0].arena.nodes[id].a = params
+        p[0].arena.nodes[id].b = ret
+        return id
+    }
     if flowc_parser_check(p[0], TOK_IDENT) == 0 {
         p[0].err = 1
         return AST_NONE
@@ -1439,8 +1481,22 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                                 if flowc_parser_check_kw(p[0], KW_TYPE) == 1 {
                                     item = flowc_parse_type_alias(p)
                                 } else {
-                                    p[0].err = 1
-                                    return AST_NONE
+                                    if flowc_parser_check_kw(p[0], KW_UNIT) == 1 {
+                                        # Skip: unit Name [ = ... ]
+                                        flowc_parser_advance(p)
+                                        if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                                            flowc_parser_advance(p)
+                                        }
+                                        if flowc_parser_check(p[0], TOK_EQ) == 1 {
+                                            flowc_parser_advance(p)
+                                            let _skip: i32 = flowc_parse_expr(p)
+                                        }
+                                        # Emit a no-op node so item != AST_NONE
+                                        item = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, p[0].cur.start, p[0].cur.start)
+                                    } else {
+                                        p[0].err = 1
+                                        return AST_NONE
+                                    }
                                 }
                             }
                         }
