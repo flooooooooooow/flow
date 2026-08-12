@@ -3867,6 +3867,12 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   if (flowc_cgen_span_is(src, ns, ne, "free") == 1) {
   return 1;
 }
+  if (flowc_cgen_span_is(src, ns, ne, "aligned_alloc") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "memmove") == 1) {
+  return 1;
+}
   if (flowc_cgen_span_is(src, ns, ne, "strlen") == 1) {
   return 1;
 }
@@ -4258,7 +4264,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   int32_t fn = flowc_cgen_unwrap(arena, item, AST_FN);
   if (fn != AST_NONE) {
   if (((arena).nodes[fn]).ival == 0) {
+  if (flowc_cgen_is_libc_fn(arena, src, fn) == 0) {
   flowc_cgen_emit_fn((&w), arena, src, fn);
+}
 }
 }
   item = ((arena).nodes[item]).next;

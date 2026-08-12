@@ -1203,6 +1203,8 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "calloc") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "realloc") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "free") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "aligned_alloc") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "memmove") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "strlen") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "strcmp") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "strncmp") == 1 { return 1 }
@@ -1549,13 +1551,17 @@ export function flowc_cgen_emit_sigs(
     }
 
     # Pass 3: functions (including export function)
+    # Skip Flow-defined functions that shadow C standard library names
+    # (the C header already provides the correct prototype).
     item = arena.nodes[root].a
     while item != AST_NONE {
         let fn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
         if fn != AST_NONE {
             # Skip generic functions (ival == 1) — they need monomorphization.
             if arena.nodes[fn].ival == 0 {
-                flowc_cgen_emit_fn(&w, arena, src, fn)
+                if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
+                    flowc_cgen_emit_fn(&w, arena, src, fn)
+                }
             }
         }
         item = arena.nodes[item].next
