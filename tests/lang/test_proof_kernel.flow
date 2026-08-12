@@ -1,0 +1,135 @@
+# Test for proof_kernel.flow port of proof_kernel.py helpers.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_proof_kernel.flow
+# Exit 0 on success.
+
+import "compiler/src/proof_kernel.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    # node_kind: conclude (has_math + "hence proven")
+    let k1: string = flowc_node_kind("The result is hence proven.", 1)
+    if strcmp(k1, "conclude") != 0 {
+        printf("FAIL: should be 'conclude', got '%s'\n", k1)
+        return 1
+    }
+
+    # node_kind: deduce (has_math, no "hence proven")
+    let k2: string = flowc_node_kind("We compute 2 + 2 = 4.", 1)
+    if strcmp(k2, "deduce") != 0 {
+        printf("FAIL: should be 'deduce', got '%s'\n", k2)
+        return 2
+    }
+
+    # node_kind: case
+    let k3: string = flowc_node_kind("We consider case n = 0.", 0)
+    if strcmp(k3, "case") != 0 {
+        printf("FAIL: should be 'case', got '%s'\n", k3)
+        return 3
+    }
+
+    # node_kind: invoke
+    let k4: string = flowc_node_kind("We invoke the lemma.", 0)
+    if strcmp(k4, "invoke") != 0 {
+        printf("FAIL: should be 'invoke', got '%s'\n", k4)
+        return 4
+    }
+
+    # node_kind: invoke (inductive boundary)
+    let k5: string = flowc_node_kind("We cross the inductive boundary.", 0)
+    if strcmp(k5, "invoke") != 0 {
+        printf("FAIL: should be 'invoke', got '%s'\n", k5)
+        return 5
+    }
+
+    # node_kind: bind (let)
+    let k6: string = flowc_node_kind("Let n be a natural number.", 0)
+    if strcmp(k6, "bind") != 0 {
+        printf("FAIL: should be 'bind', got '%s'\n", k6)
+        return 6
+    }
+
+    # node_kind: bind (denote)
+    let k7: string = flowc_node_kind("We denote the sum by S.", 0)
+    if strcmp(k7, "bind") != 0 {
+        printf("FAIL: should be 'bind', got '%s'\n", k7)
+        return 7
+    }
+
+    # node_kind: frame (induction)
+    let k8: string = flowc_node_kind("We use induction on n.", 0)
+    if strcmp(k8, "frame") != 0 {
+        printf("FAIL: should be 'frame', got '%s'\n", k8)
+        return 8
+    }
+
+    # node_kind: frame (stipulate)
+    let k9: string = flowc_node_kind("We stipulate this definition.", 0)
+    if strcmp(k9, "frame") != 0 {
+        printf("FAIL: should be 'frame', got '%s'\n", k9)
+        return 9
+    }
+
+    # node_kind: frame (axiom)
+    let k10: string = flowc_node_kind("We accept this axiom.", 0)
+    if strcmp(k10, "frame") != 0 {
+        printf("FAIL: should be 'frame', got '%s'\n", k10)
+        return 10
+    }
+
+    # node_kind: frame (consider the base)
+    let k11: string = flowc_node_kind("Consider the base case.", 0)
+    if strcmp(k11, "frame") != 0 {
+        printf("FAIL: should be 'frame', got '%s'\n", k11)
+        return 11
+    }
+
+    # node_kind: step (default)
+    let k12: string = flowc_node_kind("Some other step.", 0)
+    if strcmp(k12, "step") != 0 {
+        printf("FAIL: should be 'step', got '%s'\n", k12)
+        return 12
+    }
+
+    # node_kind: case insensitive
+    let k13: string = flowc_node_kind("WE INVOKE THE LEMMA", 0)
+    if strcmp(k13, "invoke") != 0 {
+        printf("FAIL: should be 'invoke' (case insensitive), got '%s'\n", k13)
+        return 13
+    }
+
+    # escape_dot: backslash
+    let e1: string = flowc_escape_dot("path\\to")
+    if strcmp(e1, "path\\\\to") != 0 {
+        printf("FAIL: backslash should be doubled, got '%s'\n", e1)
+        return 14
+    }
+
+    # escape_dot: double quote
+    let e2: string = flowc_escape_dot("say \"hi\"")
+    if strcmp(e2, "say \\\"hi\\\"") != 0 {
+        printf("FAIL: quotes should be escaped, got '%s'\n", e2)
+        return 15
+    }
+
+    # escape_dot: no special chars
+    let e3: string = flowc_escape_dot("plain text")
+    if strcmp(e3, "plain text") != 0 {
+        printf("FAIL: plain text should be unchanged, got '%s'\n", e3)
+        return 16
+    }
+
+    # escape_dot: empty
+    let e4: string = flowc_escape_dot("")
+    if strcmp(e4, "") != 0 {
+        printf("FAIL: empty should be empty, got '%s'\n", e4)
+        return 17
+    }
+
+    puts("All proof_kernel tests passed")
+    return 0
+}
