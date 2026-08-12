@@ -69,6 +69,7 @@ them as part of Phase D; call them via the escape hatch:
 | Function attribute vocabulary | [`compiler/src/attributes.flow`](../../compiler/src/attributes.flow) — `flowc_parse_attribute` / `flowc_validate_target_spec` / `flowc_domain_rank` |
 | Matmul/reduce cost models | [`compiler/src/general_plans.flow`](../../compiler/src/general_plans.flow) — `flowc_select_matmul` / `flowc_select_reduce` (pure cost/applicability, registry stays Python) |
 | FIR-G effect propagation | [`compiler/src/fir_analysis.flow`](../../compiler/src/fir_analysis.flow) — `flowc_propagate_effects` / `flowc_reachable_functions` / `flowc_is_pure` (CSR graph, fixpoint OR) |
+| FIR-G opt candidate scoring | [`compiler/src/fir_opts.flow`](../../compiler/src/fir_opts.flow) — `flowc_score_inline` / `flowc_score_dead_elim` / `flowc_compare_candidates` |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/) — floats, `pkg_add`, `for ..` / `to`, bundles |
