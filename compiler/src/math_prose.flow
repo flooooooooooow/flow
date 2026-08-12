@@ -430,3 +430,93 @@ function flowc_replace_eq(s: string) -> string {
     buf[k] = 0
     return buf as string
 }
+
+# ── Geometry expression detection ────────────────────────────────
+
+# Check if a string contains a word-boundary substring.
+function contains_word(s: string, word: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let wl: i32 = strlen(word) as i32
+    if wl == 0 { return 1 }
+    if wl > n { return 0 }
+    let p: ptr<u8> = s
+    let wp: ptr<u8> = word
+    let mut i: i32 = 0
+    while i + wl <= n {
+        # Check word boundary before
+        if i > 0 and is_ident_char(p[i - 1]) == 1 {
+            i = i + 1
+            continue
+        }
+        # Check match
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < wl {
+            if p[i + j] != wp[j] { matched = 0; break }
+            j = j + 1
+        }
+        if matched == 1 {
+            # Check word boundary after
+            let after: i32 = i + wl
+            if after >= n or is_ident_char(p[after]) == 0 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Check if a string contains a prefix at word boundary.
+function contains_word_prefix(s: string, prefix: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let pl: i32 = strlen(prefix) as i32
+    if pl == 0 { return 1 }
+    if pl > n { return 0 }
+    let p: ptr<u8> = s
+    let pp: ptr<u8> = prefix
+    let mut i: i32 = 0
+    while i + pl <= n {
+        # Check word boundary before
+        if i > 0 and is_ident_char(p[i - 1]) == 1 {
+            i = i + 1
+            continue
+        }
+        # Check prefix match
+        let mut matched: i32 = 1
+        let mut j: i32 = 0
+        while j < pl {
+            if p[i + j] != pp[j] { matched = 0; break }
+            j = j + 1
+        }
+        if matched == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+# Check if an expression is a geometry expression.
+# Port of is_geometry_expr.
+export function flowc_is_geometry_expr(expr: string) -> i32 {
+    # Check prefixes
+    if contains_word_prefix(expr, "angle_") == 1 { return 1 }
+    if contains_word_prefix(expr, "two_right_angles") == 1 { return 1 }
+    if contains_word_prefix(expr, "one_right_angle") == 1 { return 1 }
+    if contains_word_prefix(expr, "half_of_") == 1 { return 1 }
+    if contains_word_prefix(expr, "radius_") == 1 { return 1 }
+    if contains_word_prefix(expr, "triangle_") == 1 { return 1 }
+    # Check exact tokens
+    if contains_word(expr, "triangle_ABC") == 1 { return 1 }
+    if contains_word(expr, "triangle_DEF") == 1 { return 1 }
+    if contains_word(expr, "two_right_angles") == 1 { return 1 }
+    if contains_word(expr, "one_right_angle") == 1 { return 1 }
+    if contains_word(expr, "half_of_angle_AOB") == 1 { return 1 }
+    if contains_word(expr, "radius_OA") == 1 { return 1 }
+    if contains_word(expr, "radius_OB") == 1 { return 1 }
+    if contains_word(expr, "angle_alpha") == 1 { return 1 }
+    if contains_word(expr, "angle_alpha_prime") == 1 { return 1 }
+    if contains_word(expr, "angle_beta") == 1 { return 1 }
+    if contains_word(expr, "angle_beta_prime") == 1 { return 1 }
+    if contains_word(expr, "angle_gamma") == 1 { return 1 }
+    return 0
+}
