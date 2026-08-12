@@ -44,6 +44,7 @@ export const AST_ARRAY_LIT: i32 = 33
 export const AST_FLOAT: i32 = 34
 export const AST_MATCH: i32 = 35
 export const AST_MATCH_ARM: i32 = 36
+export const AST_TYPE_ALIAS: i32 = 37
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
