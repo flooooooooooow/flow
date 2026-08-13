@@ -73,19 +73,21 @@ function is_word_char(c: i32) -> i32 {
 
 function substr(src: string, start: i32, end: i32) -> string {
     let n: i32 = strlen(src) as i32
-    if start < 0 {
-        start = 0
+    let mut s: i32 = start
+    let mut e: i32 = end
+    if s < 0 {
+        s = 0
     }
-    if end > n {
-        end = n
+    if e > n {
+        e = n
     }
-    if start >= end {
+    if s >= e {
         return ""
     }
-    let len: i32 = end - start
+    let len: i32 = e - s
     let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
     let p: ptr<u8> = src
-    memcpy(buf, p + start, len as i64)
+    memcpy(buf, p + s, len as i64)
     buf[len] = 0
     return buf as string
 }

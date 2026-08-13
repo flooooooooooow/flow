@@ -7,6 +7,8 @@
 
 extern {
     function puts(s: string) -> i32
+    function test_opaque_create(initial: i32) -> ptr<TestOpaque>
+    function test_opaque_value(h: ptr<TestOpaque>) -> i32
 }
 
 function main() -> i32 {

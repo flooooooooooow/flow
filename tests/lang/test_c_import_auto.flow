@@ -11,6 +11,10 @@
 extern {
     function puts(s: string) -> i32
     function printf(fmt: string) -> i32
+    function sqrt(x: f64) -> f64
+    function abs(x: i32) -> i32
+    function pow(base: f64, exp: f64) -> f64
+    function atoi(s: string) -> i32
 }
 
 function main() -> i32 {

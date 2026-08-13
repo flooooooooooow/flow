@@ -7,6 +7,9 @@
 
 extern {
     function puts(s: string) -> i32
+    function jl_init()
+    function jl_eval_string(code: string) -> ptr<void>
+    function jl_atexit_hook(status: i32)
 }
 
 function main() -> i32 {

@@ -33,7 +33,7 @@ function main() -> i32 {
     let dir: string = "/tmp/flow_test_inc"
     let dir_ptr: ptr<u8> = dir as ptr<u8>
     let dir_len: i32 = strlen(dir_ptr) as i32
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < dir_len {
         dir_buf[i] = dir_ptr[i]
         i = i + 1
@@ -89,8 +89,8 @@ function main() -> i32 {
     puts(ext_buf as string)
 
     # Check that my_process is in the output
-    let found: i32 = 0
-    let j: i32 = 0
+    let mut found: i32 = 0
+    let mut j: i32 = 0
     while j < ext_len - 9 {
         if ext_buf[j] == 109 and ext_buf[j + 1] == 121 and ext_buf[j + 2] == 95 and
            ext_buf[j + 3] == 112 and ext_buf[j + 4] == 114 and ext_buf[j + 5] == 111 and
