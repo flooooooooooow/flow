@@ -1,0 +1,88 @@
+# Test combining enums, structs, defer, and file I/O.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_integration.flow
+
+import "compiler/src/fileio.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+}
+
+enum Result {
+    Success,
+    Failure
+}
+
+struct FileTest {
+    path: string,
+    data: string,
+    expected_len: i32
+}
+
+function run_test(ft: FileTest) -> i32 {
+    let dp: ptr<u8> = ft.data as ptr<u8>
+    let dlen: i32 = strlen(dp) as i32
+
+    # Clean up any existing file
+    let _r: i32 = flowc_io_remove(ft.path)
+
+    # Write
+    let w: i32 = flowc_write_file(ft.path, dp, dlen)
+    if w != 0 {
+        return Result_Failure as i32
+    }
+
+    # Verify exists
+    let exists: i32 = flowc_io_exists(ft.path)
+    if exists != 1 {
+        return Result_Failure as i32
+    }
+
+    # Read back
+    let buf: ptr<u8> = malloc(4096)
+    if buf == null {
+        return Result_Failure as i32
+    }
+    defer free(buf)
+
+    let n: i32 = flowc_read_file(ft.path, buf, 4095)
+    if n != dlen {
+        return Result_Failure as i32
+    }
+
+    # Verify content
+    let i: i32 = 0
+    while i < n {
+        if buf[i] != dp[i] {
+            return Result_Failure as i32
+        }
+        i = i + 1
+    }
+
+    # Clean up
+    let _r2: i32 = flowc_io_remove(ft.path)
+
+    return Result_Success as i32
+}
+
+function main() -> i32 {
+    let ft: FileTest = FileTest {
+        path: "/tmp/flow_integration_test.txt",
+        data: "integration test data 12345",
+        expected_len: 26
+    }
+
+    let result: i32 = run_test(ft)
+
+    if result == Result_Success as i32 {
+        puts("integration test: SUCCESS")
+        puts("All integration tests passed")
+        return 0
+    }
+
+    printf("integration test: FAILURE (result=%d)\n", result)
+    return 1
+}
