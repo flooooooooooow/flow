@@ -942,6 +942,32 @@ class TypeAliasDecl:
 
 
 @dataclass
+class ExternTypeDecl:
+    """Opaque C struct forward declaration: extern type Name
+    Emits `typedef struct Name Name;` in the generated C.
+    """
+    name: str
+
+
+@dataclass
+class CIncludeDecl:
+    """C header include directive: @cInclude("header.h")
+    Emits `#include "header.h"` in the generated C.
+    """
+    header: str
+
+
+@dataclass
+class CImportDecl:
+    """C header import directive: @cImport("header.h") as alias
+    Runs cpp on the header, parses C declarations, and generates
+    Flow extern declarations. The alias is used as a namespace prefix.
+    """
+    header: str
+    alias: str = ""
+
+
+@dataclass
 class DistinctTypeDecl:
     """Distinct type declaration: distinct type Name = BaseType
     Distinct types are opaque - they're incompatible with their base type and each other.
@@ -1681,7 +1707,18 @@ class Parser:
                                 continue
                             break
                     self.expect(TokenType.RPAREN)
-                    attributes.append(f"{attr_name}({','.join(args)})")
+                    # @cInclude("header.h") → CIncludeDecl
+                    if attr_name == "cInclude" and len(args) == 1:
+                        declarations.append(CIncludeDecl(header=args[0]))
+                    # @cImport("header.h") [as alias] → CImportDecl
+                    elif attr_name == "cImport" and len(args) == 1:
+                        alias = ""
+                        if self.current_token.type == TokenType.AS:
+                            self.advance()
+                            alias = self.expect(TokenType.IDENTIFIER).value
+                        declarations.append(CImportDecl(header=args[0], alias=alias))
+                    else:
+                        attributes.append(f"{attr_name}({','.join(args)})")
                 else:
                     attributes.append(attr_name)
 
@@ -2035,14 +2072,21 @@ class Parser:
 
         return FunctionDecl(name, parameters, return_type, body, ["test"])
 
-    def parse_extern(self) -> List[FunctionDecl]:
-        """Parse extern function declaration block - returns all declared functions."""
+    def parse_extern(self) -> List:
+        """Parse extern block or extern type. Returns list of declarations."""
         self.expect(TokenType.EXTERN)
 
-        # Parse extern block: extern "module" { function declarations }
+        # extern "module" { ... } — skip the module name
         if self.current_token.type == TokenType.STRING_LITERAL:
-            # Skip the module name for now
             self.advance()
+
+        # extern type Name — opaque C struct forward declaration
+        if self.current_token.type == TokenType.TYPE:
+            self.advance()
+            name = self.expect(TokenType.IDENTIFIER).value
+            if self.current_token.type == TokenType.SEMICOLON:
+                self.advance()
+            return [ExternTypeDecl(name=name)]
 
         self.expect(TokenType.LBRACE)
 
@@ -2050,6 +2094,16 @@ class Parser:
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise SyntaxError("Unterminated extern block: expected '}' before end of file")
+            if self.current_token.type == TokenType.TYPE:
+                # type Name inside extern block
+                self.advance()
+                name = self.expect(TokenType.IDENTIFIER).value
+                if self.current_token.type == TokenType.SEMICOLON:
+                    self.advance()
+                functions.append(ExternTypeDecl(name=name))
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                continue
             if self.current_token.type == TokenType.FUNCTION:
                 # Parse function signature only for extern
                 self.expect(TokenType.FUNCTION)

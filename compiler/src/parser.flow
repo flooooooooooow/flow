@@ -65,6 +65,19 @@ function flowc_parser_check_kw(p: Parser, kw: i32) -> i32 {
     return flowc_token_is_kw(p.cur, kw)
 }
 
+# Check if source span [start, end) matches a literal string.
+function flowc_parser_span_is(p: Parser, start: i32, end: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if end - start != n { return 0 }
+    let mut i: i32 = 0
+    while i < n {
+        if p.lex.input[start + i] != lp[i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
 function flowc_parser_eat(p: ptr<Parser>, kind: i32) -> i32 {
     if p[0].cur.kind == kind {
         flowc_parser_advance(p)
@@ -1377,6 +1390,28 @@ function flowc_parse_extern(p: ptr<Parser>) -> i32 {
     if flowc_parser_check(p[0], TOK_STRING) == 1 {
         flowc_parser_advance(p)
     }
+    # extern type Name — opaque C struct forward declaration.
+    if flowc_parser_check_kw(p[0], KW_TYPE) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let tns: i32 = p[0].cur.start
+        let tne: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+            flowc_parser_advance(p)
+        }
+        let tid: i32 = flowc_ast_alloc(&p[0].arena, AST_EXTERN_TYPE, tns, tne)
+        if tid == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[tid].name_start = tns
+        p[0].arena.nodes[tid].name_end = tne
+        return tid
+    }
     # extern function name(params) -> Ret  — skip to end of line/semicolon.
     if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
         flowc_parser_advance(p)
@@ -1409,6 +1444,32 @@ function flowc_parse_extern(p: ptr<Parser>) -> i32 {
     # with c = AST_NONE (no body). Chain them as children of AST_EXTERN.
     let mut fns: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        # extern type Name inside a block
+        if flowc_parser_check_kw(p[0], KW_TYPE) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            let tns: i32 = p[0].cur.start
+            let tne: i32 = p[0].cur.end
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+                flowc_parser_advance(p)
+            }
+            let tid: i32 = flowc_ast_alloc(&p[0].arena, AST_EXTERN_TYPE, tns, tne)
+            if tid == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[tid].name_start = tns
+            p[0].arena.nodes[tid].name_end = tne
+            fns = flowc_ast_chain_push(&p[0].arena, fns, tid)
+            if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                flowc_parser_advance(p)
+            }
+            continue
+        }
         if flowc_parser_check_kw(p[0], KW_FUNCTION) == 0 {
             p[0].err = 1
             return AST_NONE
@@ -1878,12 +1939,37 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
     while flowc_parser_check(p[0], TOK_EOF) == 0 {
         let mut item: i32 = AST_NONE
         # Skip attributes: @name, @name(args), @name { body }
+        # Capture @cInclude("header.h") as AST_C_INCLUDE.
         while flowc_parser_check(p[0], TOK_AT) == 1 {
             flowc_parser_advance(p)
+            let attr_name: i32 = -1
+            let attr_name_end: i32 = -1
             if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                attr_name = p[0].cur.start
+                attr_name_end = p[0].cur.end
                 flowc_parser_advance(p)
             }
             if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                # Check for @cInclude("header.h")
+                if attr_name >= 0 and flowc_parser_span_is(p[0], attr_name, attr_name_end, "cInclude") == 1 {
+                    flowc_parser_advance(p)  # eat (
+                    if flowc_parser_check(p[0], TOK_STRING) == 1 {
+                        let hdr_start: i32 = p[0].cur.start
+                        let hdr_end: i32 = p[0].cur.end
+                        flowc_parser_advance(p)
+                        if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
+                            flowc_parser_advance(p)
+                        }
+                        let cid: i32 = flowc_ast_alloc(&p[0].arena, AST_C_INCLUDE, hdr_start, hdr_end)
+                        if cid != AST_NONE {
+                            p[0].arena.nodes[cid].name_start = hdr_start
+                            p[0].arena.nodes[cid].name_end = hdr_end
+                            items = flowc_ast_chain_push(&p[0].arena, items, cid)
+                        }
+                    }
+                    continue
+                }
+                # Skip generic @name(args)
                 flowc_parser_advance(p)
                 let mut depth: i32 = 1
                 while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {

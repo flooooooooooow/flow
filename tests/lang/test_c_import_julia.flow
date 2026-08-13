@@ -1,0 +1,28 @@
+# Test for @cImport with Julia C API.
+# Imports julia.h and calls jl_init / jl_eval_string / jl_atexit.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_julia.flow
+# Exit 0 on success.
+
+@cImport("julia/julia.h")
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # Initialize the Julia runtime
+    jl_init()
+
+    # Evaluate a Julia expression
+    let result: ptr<void> = jl_eval_string("println(\"Hello from Julia via Flow\")")
+    if result == null as ptr<void> {
+        puts("FAIL: jl_eval_string should return non-null")
+        return 1
+    }
+
+    # Shut down Julia
+    jl_atexit_hook(0)
+
+    puts("All c_import_julia tests passed")
+    return 0
+}

@@ -45,6 +45,8 @@ export const AST_FLOAT: i32 = 34
 export const AST_MATCH: i32 = 35
 export const AST_MATCH_ARM: i32 = 36
 export const AST_TYPE_ALIAS: i32 = 37
+export const AST_EXTERN_TYPE: i32 = 38
+export const AST_C_INCLUDE: i32 = 39
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
@@ -57,6 +59,8 @@ export const AST_TYPE_ALIAS: i32 = 37
 # AST_ARRAY_LIT: a = element expr chain (via next).
 # AST_FLOAT: name_start/name_end = source span of the float literal (e.g. 1.5).
 # AST_MATCH: a = scrutinee expr, b = AST_MATCH_ARM chain (via next).
+# AST_EXTERN_TYPE: name_* = type name. Opaque C struct forward declaration.
+# AST_C_INCLUDE: name_* = header path span (string literal content). Emits #include.
 # AST_MATCH_ARM: ival = pattern kind (0 int literal, 1 `_` wildcard, 2 binding
 # ident), a = pattern expr (AST_INT for kind 0, else AST_NONE), b = arm block,
 # name_start/name_end = binding name span for kind 2.

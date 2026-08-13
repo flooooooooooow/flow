@@ -202,6 +202,12 @@ class ModuleResolver:
             else:
                 name = getattr(decl, "name", None)
 
+            # Declarations without a name (e.g. CIncludeDecl) are passed
+            # through directly without symbol table registration.
+            if name is None:
+                self.all_declarations.append(decl)
+                continue
+
             if name:
                 is_exported = getattr(decl, "is_exported", False) or name in export_names
                 if name in module_info.reexports:

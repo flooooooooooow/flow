@@ -1,0 +1,66 @@
+# Test for function pointer types and calls.
+# Tests that Flow can call through function pointers (closures).
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fn_ptr.flow
+# Exit 0 on success.
+
+extern {
+    function puts(s: string) -> i32
+}
+
+# A function that takes a function pointer and calls it
+function apply_fn(f: (i32) -> i32, x: i32) -> i32 {
+    return f(x)
+}
+
+function main() -> i32 {
+    # Non-capturing lambdas become plain function pointers
+    let double_it: (i32) -> i32 = |x: i32| -> i32 { return x * 2 }
+    let triple_it: (i32) -> i32 = |x: i32| -> i32 { return x * 3 }
+
+    # Call through the function pointer
+    let r1: i32 = double_it(21)
+    if r1 != 42 {
+        puts("FAIL: double_it(21) should be 42")
+        return 1
+    }
+
+    # Call apply_fn with different function pointers
+    let r2: i32 = apply_fn(double_it, 21)
+    if r2 != 42 {
+        puts("FAIL: apply_fn(double_it, 21) should be 42")
+        return 2
+    }
+
+    let r3: i32 = apply_fn(triple_it, 14)
+    if r3 != 42 {
+        puts("FAIL: apply_fn(triple_it, 14) should be 42")
+        return 3
+    }
+
+    # Reassign the function pointer
+    let g: (i32) -> i32 = triple_it
+    let r4: i32 = g(14)
+    if r4 != 42 {
+        puts("FAIL: g(14) should be 42")
+        return 4
+    }
+
+    # Capturing lambda (uses a variable from the enclosing scope)
+    let n: i32 = 10
+    let add_n: (i32) -> i32 = |x: i32| -> i32 { return x + n }
+    let r5: i32 = add_n(32)
+    if r5 != 42 {
+        puts("FAIL: add_n(32) should be 42")
+        return 5
+    }
+
+    # Pass a capturing lambda to apply_fn
+    let r6: i32 = apply_fn(add_n, 100)
+    if r6 != 110 {
+        puts("FAIL: apply_fn(add_n, 100) should be 110")
+        return 6
+    }
+
+    puts("All fn_ptr tests passed")
+    return 0
+}

@@ -1,0 +1,28 @@
+# Test for @cImport with Python.h.
+# Imports the CPython C API and calls Py_Initialize / Py_Finalize.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_python.flow
+# Exit 0 on success.
+
+@cImport("Python.h")
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # Initialize the Python interpreter
+    Py_Initialize()
+
+    # Run a simple Python string
+    let rc: i32 = PyRun_SimpleString("print('Hello from CPython via Flow')")
+    if rc != 0 {
+        puts("FAIL: PyRun_SimpleString should return 0")
+        return 1
+    }
+
+    # Finalize the Python interpreter
+    Py_Finalize()
+
+    puts("All c_import_python tests passed")
+    return 0
+}
