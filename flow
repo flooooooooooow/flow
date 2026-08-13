@@ -225,6 +225,11 @@ flow_collect_cflags() {
         local -a _extra=(${FLOW_CFLAGS})
         FLOW_COLLECTED_CFLAGS+=("${_extra[@]}")
     fi
+    if [ -n "${FLOW_LDFLAGS:-}" ]; then
+        # shellcheck disable=SC2206
+        local -a _ld=(${FLOW_LDFLAGS})
+        FLOW_COLLECTED_LDFLAGS+=("${_ld[@]}")
+    fi
 }
 
 flow_show_clang_flags() {
@@ -638,7 +643,7 @@ compile_program_python() {
     # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
     flow_collect_cflags
     FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$build_dir/$basename.c" \
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
@@ -1568,7 +1573,9 @@ record_gfx_program() {
     fi
     print_success "FLOW → C: runtime_flow/gfx_record.c"
 
-    if ! clang -O2 -fno-omit-frame-pointer "$c_file" \
+    if ! clang -O2 -fno-omit-frame-pointer \
+        -Wno-error=implicit-function-declaration \
+        "$c_file" \
         "$rec_logic_c" \
         "$SCRIPT_DIR/runtime/gfx_record.c" \
         -o "$exe_file" -lm; then

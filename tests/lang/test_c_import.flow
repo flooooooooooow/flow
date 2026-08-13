@@ -1,0 +1,23 @@
+# Test for @cImport directive.
+# Imports a C header and uses functions from it.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import.flow
+# Exit 0 on success.
+
+@cImport("test_extern_type_helper.h") as helper
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # Functions from the imported header should be available
+    let h: ptr<TestOpaque> = test_opaque_create(100)
+    let v: i32 = test_opaque_value(h)
+    if v != 42 {
+        puts("FAIL: test_opaque_value should return 42")
+        return 1
+    }
+
+    puts("All c_import tests passed")
+    return 0
+}

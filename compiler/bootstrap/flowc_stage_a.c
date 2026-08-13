@@ -714,6 +714,8 @@ const int32_t AST_FLOAT = 34;
 const int32_t AST_MATCH = 35;
 const int32_t AST_MATCH_ARM = 36;
 const int32_t AST_TYPE_ALIAS = 37;
+const int32_t AST_EXTERN_TYPE = 38;
+const int32_t AST_C_INCLUDE = 39;
 AstArena flowc_ast_new(int32_t cap) {
   int64_t size = ((int64_t)(cap) * 40);
   uint8_t* raw = (uint8_t*)(malloc(size));
@@ -825,6 +827,11 @@ int32_t flowc_parser_check(Parser p, int32_t kind) {
 
 int32_t flowc_parser_check_kw(Parser p, int32_t kw) {
   return flowc_token_is_kw((p).cur, kw);
+}
+
+int32_t flowc_cgen_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit);
+int32_t flowc_parser_span_is(Parser p, int32_t start, int32_t end, const char* lit) {
+  return flowc_cgen_span_is((p).lex.input, start, end, lit);
 }
 
 int32_t flowc_parser_eat(Parser* p, int32_t kind) {
@@ -2159,6 +2166,27 @@ int32_t flowc_parse_extern(Parser* p) {
   if (flowc_parser_check(p[0], TOK_STRING) == 1) {
   flowc_parser_advance(p);
 }
+  if (flowc_parser_check_kw(p[0], KW_TYPE) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  int32_t tns = ((p[0]).cur).start;
+  int32_t tne = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_SEMI) == 1) {
+  flowc_parser_advance(p);
+}
+  int32_t tid = flowc_ast_alloc((&(p[0]).arena), AST_EXTERN_TYPE, tns, tne);
+  if (tid == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  ((p[0]).arena).nodes[tid].name_start = tns;
+  ((p[0]).arena).nodes[tid].name_end = tne;
+  return tid;
+}
   if (flowc_parser_check_kw(p[0], KW_FUNCTION) == 1) {
   flowc_parser_advance(p);
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
@@ -2186,6 +2214,31 @@ int32_t flowc_parse_extern(Parser* p) {
 }
   int32_t fns = AST_NONE;
   while (flowc_parser_check(p[0], TOK_RBRACE) == 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check_kw(p[0], KW_TYPE) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  int32_t tns2 = ((p[0]).cur).start;
+  int32_t tne2 = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_SEMI) == 1) {
+  flowc_parser_advance(p);
+}
+  int32_t tid2 = flowc_ast_alloc((&(p[0]).arena), AST_EXTERN_TYPE, tns2, tne2);
+  if (tid2 == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  ((p[0]).arena).nodes[tid2].name_start = tns2;
+  ((p[0]).arena).nodes[tid2].name_end = tne2;
+  fns = flowc_ast_chain_push((&(p[0]).arena), fns, tid2);
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
+  flowc_parser_advance(p);
+}
+  continue;
+}
   if (flowc_parser_check_kw(p[0], KW_FUNCTION) == 0) {
   (p[0]).err = 1;
   return AST_NONE;
@@ -2638,10 +2691,32 @@ int32_t flowc_parse_program(Parser* p) {
   int32_t item = AST_NONE;
   while (flowc_parser_check(p[0], TOK_AT) == 1) {
   flowc_parser_advance(p);
+  int32_t attr_name = -1;
+  int32_t attr_name_end = -1;
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  attr_name = ((p[0]).cur).start;
+  attr_name_end = ((p[0]).cur).end;
   flowc_parser_advance(p);
 }
   if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  if (attr_name >= 0 && flowc_parser_span_is(p[0], attr_name, attr_name_end, "cInclude") == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_STRING) == 1) {
+  int32_t hdr_start = ((p[0]).cur).start;
+  int32_t hdr_end = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_RPAREN) == 1) {
+  flowc_parser_advance(p);
+}
+  int32_t cid = flowc_ast_alloc((&(p[0]).arena), AST_C_INCLUDE, hdr_start, hdr_end);
+  if (cid != AST_NONE) {
+  ((p[0]).arena).nodes[cid].name_start = hdr_start;
+  ((p[0]).arena).nodes[cid].name_end = hdr_end;
+  items = flowc_ast_chain_push((&(p[0]).arena), items, cid);
+}
+}
+  continue;
+}
   flowc_parser_advance(p);
   int32_t depth = 1;
   while (depth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
@@ -4096,6 +4171,40 @@ void flowc_cgen_emit_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   flowc_cgen_putc(w, 10);
 }
 
+void flowc_cgen_emit_fn_proto(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  int32_t cli_main = flowc_cgen_is_cli_main(arena, src, id);
+  if (cli_main == 1) {
+  int32_t p0 = ((arena).nodes[id]).a;
+  int32_t p1 = ((arena).nodes[p0]).next;
+  flowc_cgen_puts(w, "int main(int ");
+  flowc_cgen_put_span(w, src, ((arena).nodes[p0]).name_start, ((arena).nodes[p0]).name_end);
+  flowc_cgen_puts(w, ", char **");
+  flowc_cgen_put_span(w, src, ((arena).nodes[p1]).name_start, ((arena).nodes[p1]).name_end);
+  flowc_cgen_puts(w, ");\n");
+  return;
+}
+  int32_t ret_ty = ((arena).nodes[id]).b;
+  if (ret_ty == AST_NONE) {
+  flowc_cgen_puts(w, "void");
+} else {
+  flowc_cgen_emit_type(w, arena, src, ret_ty);
+}
+  flowc_cgen_putc(w, 32);
+  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_putc(w, 40);
+  int32_t param = ((arena).nodes[id]).a;
+  int32_t first = 1;
+  while (param != AST_NONE) {
+  if (first == 0) {
+  flowc_cgen_puts(w, ", ");
+}
+  first = 0;
+  flowc_cgen_emit_param(w, arena, src, param);
+  param = ((arena).nodes[param]).next;
+}
+  flowc_cgen_puts(w, ");\n");
+}
+
 void flowc_cgen_emit_const(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   if (((arena).nodes[id]).ival == 1) {
   flowc_cgen_puts(w, "const int32_t ");
@@ -4235,6 +4344,22 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
 }
   int32_t item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
+  if (((arena).nodes[item]).kind == AST_C_INCLUDE) {
+  flowc_cgen_puts((&w), "#include \"");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start + 1, ((arena).nodes[item]).name_end - 1);
+  flowc_cgen_puts((&w), "\"\n");
+}
+  if (((arena).nodes[item]).kind == AST_EXTERN_TYPE) {
+  flowc_cgen_puts((&w), "typedef struct ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
+  flowc_cgen_putc((&w), 32);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
+  flowc_cgen_puts((&w), ";\n");
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
   int32_t st = flowc_cgen_unwrap(arena, item, AST_STRUCT);
   if (st != AST_NONE) {
   flowc_cgen_emit_struct((&w), arena, src, st);
@@ -4304,12 +4429,38 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   if (((arena).nodes[item]).kind == AST_EXTERN) {
   int32_t ef = ((arena).nodes[item]).a;
   while (ef != AST_NONE) {
+  if (((arena).nodes[ef]).kind == AST_EXTERN_TYPE) {
+  flowc_cgen_puts((&w), "typedef struct ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[ef]).name_start, ((arena).nodes[ef]).name_end);
+  flowc_cgen_putc((&w), 32);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[ef]).name_start, ((arena).nodes[ef]).name_end);
+  flowc_cgen_puts((&w), ";\n");
+}
   if (((arena).nodes[ef]).kind == AST_FN) {
   if (flowc_cgen_is_libc_fn(arena, src, ef) == 0) {
   flowc_cgen_emit_fn((&w), arena, src, ef);
 }
 }
   ef = ((arena).nodes[ef]).next;
+}
+}
+  if (((arena).nodes[item]).kind == AST_EXTERN_TYPE) {
+  flowc_cgen_puts((&w), "typedef struct ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
+  flowc_cgen_putc((&w), 32);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
+  flowc_cgen_puts((&w), ";\n");
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t fn = flowc_cgen_unwrap(arena, item, AST_FN);
+  if (fn != AST_NONE) {
+  if (((arena).nodes[fn]).ival == 0 && ((arena).nodes[fn]).c != AST_NONE) {
+  if (flowc_cgen_is_libc_fn(arena, src, fn) == 0) {
+  flowc_cgen_emit_fn_proto((&w), arena, src, fn);
+}
 }
 }
   item = ((arena).nodes[item]).next;

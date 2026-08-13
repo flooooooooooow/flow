@@ -288,6 +288,12 @@ def main():
         print("Resolving modules...", file=sys.stderr)
         declarations = resolve_modules(args.input)
 
+        # Process @cImport directives: parse C headers and generate externs
+        from .c_header_parser import resolve_c_imports
+        import os as _os
+        source_dir = _os.path.dirname(_os.path.abspath(args.input))
+        declarations = resolve_c_imports(declarations, source_dir)
+
         # Decide backend early so mode filtering can use it.
         backend = "mlir"
         if args.c:

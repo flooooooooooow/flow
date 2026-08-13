@@ -1,0 +1,47 @@
+# Test for extern type and @cInclude directives.
+# Tests that opaque types and C includes work together.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_extern_type.flow
+# Exit 0 on success.
+
+@cInclude("test_extern_type_helper.h")
+
+extern type TestOpaque
+
+extern {
+    function test_opaque_create(value: i32) -> ptr<TestOpaque>
+    function test_opaque_value(p: ptr<TestOpaque>) -> i32
+}
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # Create an opaque handle (helper returns null but value() works regardless)
+    let h: ptr<TestOpaque> = test_opaque_create(100)
+
+    # Call a function that takes the opaque type
+    let v: i32 = test_opaque_value(h)
+    if v != 42 {
+        puts("FAIL: test_opaque_value should return 42")
+        return 1
+    }
+
+    # Verify the opaque type can be passed around
+    let h2: ptr<TestOpaque> = test_opaque_create(200)
+    let v2: i32 = test_opaque_value(h2)
+    if v2 != 42 {
+        puts("FAIL: second call should also return 42")
+        return 2
+    }
+
+    # Verify null cast works with opaque types
+    let null_h: ptr<TestOpaque> = null as ptr<TestOpaque>
+    if null_h != null as ptr<TestOpaque> {
+        puts("FAIL: null cast should be null")
+        return 3
+    }
+
+    puts("All extern_type tests passed")
+    return 0
+}

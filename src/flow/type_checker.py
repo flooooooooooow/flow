@@ -25,6 +25,7 @@ from .parser import (
     IfStatement, WhileStatement, ForStatement, LayoutStatement, HandleStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
+    ExternTypeDecl, CIncludeDecl, CImportDecl,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
     SortExpr, FindExpr, SliceExpr, IfExpression,
@@ -1173,6 +1174,18 @@ class TypeChecker:
                 self.global_scope.define(symbol)
                 # Also register in struct_types for lookup
                 self.struct_types[decl.name] = decl
+
+            elif isinstance(decl, ExternTypeDecl):
+                # Opaque C struct forward declaration - register as a struct
+                # type with no fields so ptr<Name> resolves correctly.
+                stub = StructDecl(decl.name, [])
+                self.struct_types[decl.name] = stub
+
+            elif isinstance(decl, CIncludeDecl):
+                pass  # No type checking needed for #include directives
+
+            elif isinstance(decl, CImportDecl):
+                pass  # No type checking needed for @cImport directives
 
             elif isinstance(decl, DistinctTypeDecl):
                 # Distinct types are opaque - incompatible with base type.

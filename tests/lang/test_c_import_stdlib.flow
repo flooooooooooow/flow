@@ -1,0 +1,29 @@
+# Test for @cImport with a real system header.
+# Imports stdlib.h and uses functions from it.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_stdlib.flow
+# Exit 0 on success.
+
+@cImport("stdlib.h")
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # Use abs from stdlib.h (imported via @cImport)
+    let a: i32 = abs(0 - 42)
+    if a != 42 {
+        puts("FAIL: abs(-42) should be 42")
+        return 1
+    }
+
+    # Use atoi from stdlib.h
+    let n: i32 = atoi("123")
+    if n != 123 {
+        puts("FAIL: atoi(\"123\") should be 123")
+        return 2
+    }
+
+    puts("All c_import_stdlib tests passed")
+    return 0
+}

@@ -70,6 +70,9 @@ from .parser import (
     Type,
     TypeAliasDecl,
     DistinctTypeDecl,
+    ExternTypeDecl,
+    CIncludeDecl,
+    CImportDecl,
     UnaryOperation,
     VarDecl,
     Variable,
@@ -4959,6 +4962,8 @@ def flow_to_c(
         enums = [d for d in declarations if isinstance(d, EnumDecl)]
         type_aliases = [d for d in declarations if isinstance(d, TypeAliasDecl)]
         distinct_types = [d for d in declarations if isinstance(d, DistinctTypeDecl)]
+        extern_types = [d for d in declarations if isinstance(d, ExternTypeDecl)]
+        c_includes = [d for d in declarations if isinstance(d, (CIncludeDecl, CImportDecl))]
         
         # Add impl methods to functions list (with mangled names)
         for impl in impls:
@@ -4981,6 +4986,16 @@ def flow_to_c(
                 functions.append(method)
         
         out = generator.generate_translation_unit(constants, functions, structs, effects, capabilities, traits, enums, type_aliases, distinct_types, statics=statics)
+
+        # Prepend @cInclude directives and extern type forward declarations.
+        # These must appear before any generated code so opaque types resolve.
+        prelude_lines = []
+        for inc in c_includes:
+            prelude_lines.append(f'#include "{inc.header}"')
+        for et in extern_types:
+            prelude_lines.append(f"typedef struct {et.name} {et.name};")
+        if prelude_lines:
+            out = "\n".join(prelude_lines) + "\n" + out
 
         # Emit stable export aliases (--export / --module-name, #396).
         # Each exported function gets a visible alias flow_export_<name>

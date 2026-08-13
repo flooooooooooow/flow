@@ -13,7 +13,8 @@ import .ast {
     AST_STRUCT, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE, AST_INDEX,
     AST_EXTERN, AST_IMPORT, AST_EXPORT, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
-    AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS
+    AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
+    AST_EXTERN_TYPE, AST_C_INCLUDE
 }
 
 extern {
@@ -1316,6 +1317,41 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     flowc_cgen_putc(w, 10)
 }
 
+# Emit just the function prototype (forward declaration) for functions with a body.
+function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
+    if cli_main == 1 {
+        let p0: i32 = arena.nodes[id].a
+        let p1: i32 = arena.nodes[p0].next
+        flowc_cgen_puts(w, "int main(int ")
+        flowc_cgen_put_span(w, src, arena.nodes[p0].name_start, arena.nodes[p0].name_end)
+        flowc_cgen_puts(w, ", char **")
+        flowc_cgen_put_span(w, src, arena.nodes[p1].name_start, arena.nodes[p1].name_end)
+        flowc_cgen_puts(w, ");\n")
+        return
+    }
+    let ret_ty: i32 = arena.nodes[id].b
+    if ret_ty == AST_NONE {
+        flowc_cgen_puts(w, "void")
+    } else {
+        flowc_cgen_emit_type(w, arena, src, ret_ty)
+    }
+    flowc_cgen_putc(w, 32)
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_putc(w, 40)
+    let mut param: i32 = arena.nodes[id].a
+    let mut first: i32 = 1
+    while param != AST_NONE {
+        if first == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_cgen_emit_param(w, arena, src, param)
+        param = arena.nodes[param].next
+    }
+    flowc_cgen_puts(w, ");\n")
+}
+
 # Stage-A: export const (ival==1) → global `const int32_t` (linkable across TUs);
 # non-export stays `static const int32_t`.
 function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
@@ -1489,6 +1525,26 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_putc(&w, 10)
     }
 
+    # Pass 0.5: @cInclude directives and extern type forward declarations.
+    # These must come before struct definitions so opaque types resolve.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].kind == AST_C_INCLUDE {
+            # Emit #include "header" (strip quotes from the string literal span)
+            flowc_cgen_puts(&w, "#include \"")
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
+            flowc_cgen_puts(&w, "\"\n")
+        }
+        if arena.nodes[item].kind == AST_EXTERN_TYPE {
+            flowc_cgen_puts(&w, "typedef struct ")
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_putc(&w, 32)
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
     # Pass 1: struct typedefs (including export struct)
     let mut item: i32 = arena.nodes[root].a
     while item != AST_NONE {
@@ -1564,19 +1620,48 @@ export function flowc_cgen_emit_sigs(
         item = arena.nodes[item].next
     }
 
-    # Pass 2.7: extern function forward declarations
+    # Pass 2.7: extern function forward declarations and extern type forward decls
     # Skip C standard library functions already declared by included headers.
     item = arena.nodes[root].a
     while item != AST_NONE {
         if arena.nodes[item].kind == AST_EXTERN {
             let ef: i32 = arena.nodes[item].a
             while ef != AST_NONE {
+                if arena.nodes[ef].kind == AST_EXTERN_TYPE {
+                    flowc_cgen_puts(&w, "typedef struct ")
+                    flowc_cgen_put_span(&w, src, arena.nodes[ef].name_start, arena.nodes[ef].name_end)
+                    flowc_cgen_putc(&w, 32)
+                    flowc_cgen_put_span(&w, src, arena.nodes[ef].name_start, arena.nodes[ef].name_end)
+                    flowc_cgen_puts(&w, ";\n")
+                }
                 if arena.nodes[ef].kind == AST_FN {
                     if flowc_cgen_is_libc_fn(arena, src, ef) == 0 {
                         flowc_cgen_emit_fn(&w, arena, src, ef)
                     }
                 }
                 ef = arena.nodes[ef].next
+            }
+        }
+        if arena.nodes[item].kind == AST_EXTERN_TYPE {
+            flowc_cgen_puts(&w, "typedef struct ")
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_putc(&w, 32)
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 2.8: forward declarations for all non-generic, non-libc functions
+    # with a body, so functions called before their definition compile.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
+        if fn != AST_NONE {
+            if arena.nodes[fn].ival == 0 and arena.nodes[fn].c != AST_NONE {
+                if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
+                    flowc_cgen_emit_fn_proto(&w, arena, src, fn)
+                }
             }
         }
         item = arena.nodes[item].next
