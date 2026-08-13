@@ -39,7 +39,7 @@ Flow is a statically typed, compiled language with algebraic effects, autodiff i
 
 | | |
 |--|--|
-| Version | 0.10.0 |
+| Version | 0.11.0 |
 | Install | `brew tap flooooooooooow/flow && brew install flow` |
 | License | [MIT](LICENSE) |
 | Cite | [CITATION.cff](CITATION.cff) |

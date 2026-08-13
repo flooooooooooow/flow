@@ -1,8 +1,8 @@
 # FLOW Roadmap
 
-> Last updated: 2026-08-05  
-> Current version: 0.3.3  
-> Lines of Code: ~38,000
+> Last updated: 2026-08-13  
+> Current version: 0.11.0  
+> Source: ~391,000 physical lines tracked (see README project statistics)
 
 This document tracks what we're building next and why.
 
@@ -795,9 +795,12 @@ These are explicitly out of scope:
 | Version | Target | Key Features |
 |---------|--------|--------------|
 | **0.7.0** | tagged | Security audit closure (98/98), CI hardening |
-| **0.8.0** | **current** | Official public release: Pages docs, `flowc` Stage-A, ordering/GPU/shaders, Homebrew |
-| **0.9.0** | later | Self-hosting Phase C (`flowc` default host) |
-| **1.0.0** | when earned | “Boring” stability + Python off compile path |
+| **0.8.0** | tagged | Official public release: Pages docs, `flowc` Stage-A, ordering/GPU/shaders, Homebrew |
+| **0.9.0** | tagged | Self-hosting Phase C (`flowc` default host for `run` / `compile`) |
+| **0.10.0** | tagged | MLIR/WASM epic #221, `flowc` three-generation self-compile, lifetime domains, safety profiles |
+| **0.11.0** | **current** | Zero-bridge C interop (`@cImport`/`@cInclude`/`@cEmbed`/`extern type`/`cfn`), BLAS bindings, RF W0 + DSP W1, `flowc` surface catch-up |
+| **0.12.0** | next | `flowc` covers the full surface; Python off the compile critical path (self-hosting Phase E) |
+| **1.0.0** | when earned | “Boring” stability + physical-systems phases W2–W4 |
 
 ---
 

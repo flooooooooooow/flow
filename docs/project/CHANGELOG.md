@@ -4,24 +4,122 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
-### Removed
+## [0.11.0] - 2026-08-13
 
-- Removed runtime overflow-checked arithmetic codegen (`FLOW_CHECKED_*` macros,
-  `flow_overflow_handler`, `flow_div_by_zero_handler`, `flow_shift_ub_handler`).
-  The `overflow_check` parameter on `flow_to_c` and `CGenerator` is gone.
-  Literal div-by-zero and shift UB are still rejected at type-check time.
-- Removed `--emit-manifest` / `--manifest-format` CLI flags and the
-  `safety_manifest` module. The `--profile safety` flag still sets strict
-  C compiler flags (`-Werror -pedantic`).
+### Zero-bridge C interop
+
+- `@cImport("header.h") as alias` parses a C header and makes its
+  declarations available to Flow without a hand-written binding layer.
+  Backed by `src/flow/c_header_parser.py`, covering typedefs, structs,
+  enums, function signatures, and opaque types.
+- `@cInclude("header.h")` emits an include with no Flow-side binding.
+- `@cEmbed("raw C")` emits C verbatim after the standard includes and
+  before the Flow runtime helpers, for static inline helpers and macro
+  wrappers that cannot be expressed as extern declarations. Multiple
+  directives accumulate.
+- `extern type Name` declares an opaque C type usable behind `ptr<Name>`.
+- `cfn(A) -> R` types a plain C function pointer, so callbacks such as
+  `qsort` comparators and `pthread_create` entry points take Flow
+  functions directly.
+- The C header parser is ported to Flow as `compiler/src/c_parser.flow`,
+  and `@cImport` / `@cEmbed` / `cfn` are implemented in the self-hosted
+  compiler as well as the Python host.
+- Tests cover `string.h`, `time.h`, `sys/stat.h`, stdlib, Python, and
+  Julia headers.
+
+### BLAS and LAPACK
+
+- `lib/stdlib/blas.flow` bindings over Apple Accelerate on macOS and
+  OpenBLAS on Linux: `gemm`, `solve`, `matmul`, `eye`, `ones`, and
+  in-place variants for allocation-free use.
+- `benchmarks/blas_vs_naive.flow` and [BLAS bindings](../blas-bindings.md).
+
+### Self-hosted compiler (`flowc`)
+
+Roughly thirty changes closing the gap between `flowc` and the Python
+host on real language surface:
+
+- Parser: semicolons and `elif`, `not`, keyword field names, keyword
+  `let` names, trailing commas in array literals, scientific notation,
+  hex literals, `DOTDOT` lexing, newline-separated struct fields,
+  statement attributes, type aliases, generic structs, `&`/`[T]` types,
+  `export type`, unit declarations, function pointer types, effect and
+  capability blocks, postfix calls, extern functions and extern block
+  signatures.
+- Types and codegen: `println`/`print` intrinsics, `stdbool.h` emission
+  for `bool`, wider integer types, bitwise `~ & | ^`, shift operators,
+  compound assignment, top-level `let`, `array<T, N>` struct fields and
+  top-level lets emitted as `T name[N]`, `c64`/`c128` complex
+  constructors, self-referential struct pointer fields via struct tag,
+  `return void` lowered to a bare `return`, string-typed identifier
+  detection for `str_concat`, stdlib import resolution and `math.h`.
+- Skips Flow-defined functions that shadow C standard library names, with
+  an expanded libc skip list.
+- Lenient bundle typecheck and `fir_analysis`.
+
+### RF and units (W0)
+
+- `c64` / `c128` complex types over C99 `_Complex`, with constructors and
+  `creal`/`cimag`/`cabs`/`carg`/`conj`/`cexp`/`clog`/`csqrt`/`cpow`.
+- `lib/stdlib/rf.flow`: `IQ` alias, distinct `IQSample`, and `Signal<R>`
+  carrying its sample rate as a phantom type parameter, so mixing rates
+  is a compile-time error.
+- Quantity literal syntax (`3.14 Hertz`) and `lib/stdlib/units_si.flow`.
+- `examples/rf/`: DFT, IQ mixer, SDR receiver.
+
+### DSP pipelines (W1)
+
+- `lib/stdlib/dsp.flow` with `map`, `filter`, `reduce`, `scan`,
+  `zip_with`, `scale`, `offset`, `clip`, `sum`, `dot`, chained with `|>`.
+- Compile-time fusion of adjacent `map` / `scale` / `offset` stages.
+
+### Safety profiles
+
+- MISRA 17.2 and 17.4 enforced at type-check time; `println` routed
+  through `FLOW_LOG`.
+- `@safe` / `@unsafe` annotations, `analyze`, and certification docs.
+- `@max_iterations` required on `while` under the safety and flight
+  profiles.
+- `--profile flight` bans compiler-injected heap allocation, including
+  the temporary arena.
+
+### Analysis
+
+- WCET and stack depth analysis.
+- Cost-based multi-implementation selection generalised beyond `sort`.
 
 ### MLIR
 
-- Large unsigned integer literals exceeding signed i32 range are now
+- Large unsigned integer literals exceeding signed i32 range are
   converted to two's complement representation.
-- `CastExpression` wrapping a `Literal` and `UnaryOperation` negation on a
-  `Literal` are now handled in module static constant emission.
-- String interning and static LLVM array global emission for pointer/string
-  element arrays.
+- `CastExpression` wrapping a `Literal` and `UnaryOperation` negation on
+  a `Literal` are handled in module static constant emission.
+- String interning and static LLVM array global emission for
+  pointer/string element arrays.
+- Constant static initialisation; the unsigned flag is dropped on a
+  no-op cast to a signed type.
+
+### Fixes
+
+- Nested assignment expressions lower correctly in the C generator.
+- Overload resolution treats `string` and `ptr<i8>` as compatible.
+- `-O2` is the default optimisation level; pointer address type check.
+- `strtod` fix, `--export` ABI, wasm32 data layout, Python runner.
+
+### Removed
+
+- Runtime overflow-checked arithmetic codegen (`FLOW_CHECKED_*` macros,
+  `flow_overflow_handler`, `flow_div_by_zero_handler`,
+  `flow_shift_ub_handler`). The `overflow_check` parameter on
+  `flow_to_c` and `CGenerator` is gone. Literal div-by-zero and shift UB
+  are still rejected at type-check time.
+- `--emit-manifest` / `--manifest-format` CLI flags and the
+  `safety_manifest` module. `--profile safety` still sets strict C
+  compiler flags (`-Werror -pedantic`).
+
+  Both were introduced during the 0.10.0 cycle and removed before this
+  release, so the corresponding 0.10.0 notes below no longer describe
+  shipped behaviour.
 
 ## [0.10.0] - 2026-08-08
 
