@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR,
     flowc_ast_chain_len
 }
 
@@ -632,6 +632,12 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     }
     if kind == AST_DEFER {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
+        return
+    }
+    if kind == AST_IF_EXPR {
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].b)
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].c)
         return
     }
     if kind == AST_EXPR_STMT {
