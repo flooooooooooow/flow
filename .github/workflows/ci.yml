@@ -225,7 +225,7 @@ jobs:
           chmod +x /tmp/flowc-driver/flowc
 
       - name: Upload Stage-A flowc driver
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flowc-driver
           path: /tmp/flowc-driver/flowc
@@ -288,7 +288,7 @@ jobs:
         run: ./compiler/scripts/package_flowc.sh
 
       - name: Upload flowc package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flowc-package-linux
           path: dist/flowc-*
