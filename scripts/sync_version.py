@@ -75,8 +75,12 @@ MIRRORS: tuple[Mirror, ...] = (
     Mirror(
         "packaging/homebrew/Formula/flow.rb",
         (
+            # The url carries the version twice, in the tag path and again in
+            # the tarball filename. Both need rewriting, so match them apart.
             r'^  url "https://github\.com/flooooooooooow/flow/releases/download/'
             r'v(?P<version>[^/]+)/flow-v[^"]+\.tar\.gz"$',
+            r'^  url "https://github\.com/flooooooooooow/flow/releases/download/'
+            r'v[^/]+/flow-v(?P<version>[^"]+)\.tar\.gz"$',
             r'^  version "(?P<version>[^"]+)"$',
         ),
         release_only=True,
