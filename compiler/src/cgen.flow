@@ -1526,8 +1526,8 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_putc(&w, 10)
     }
 
-    # Pass 0.5: @cInclude directives and extern type forward declarations.
-    # These must come before struct definitions so opaque types resolve.
+    # Pass 0.5a: @cInclude and @cImport directives first, so embedded C
+    # code can use headers. Then @cEmbed code. Then extern type decls.
     item = arena.nodes[root].a
     while item != AST_NONE {
         if arena.nodes[item].kind == AST_C_INCLUDE {
@@ -1544,11 +1544,21 @@ export function flowc_cgen_emit_sigs(
             flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
             flowc_cgen_puts(&w, ">\n")
         }
+        item = arena.nodes[item].next
+    }
+    # Pass 0.5b: @cEmbed raw C code (after includes so headers are available)
+    item = arena.nodes[root].a
+    while item != AST_NONE {
         if arena.nodes[item].kind == AST_C_EMBED {
             # @cEmbed: emit the raw C code verbatim (strip quotes)
             flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
             flowc_cgen_putc(&w, 10)  # newline
         }
+        item = arena.nodes[item].next
+    }
+    # Pass 0.5c: extern type forward declarations
+    item = arena.nodes[root].a
+    while item != AST_NONE {
         if arena.nodes[item].kind == AST_EXTERN_TYPE {
             flowc_cgen_puts(&w, "typedef struct ")
             flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)

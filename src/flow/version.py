@@ -5,4 +5,4 @@ Keep this in sync with ROADMAP.md "Current version". Other surfaces
 or mirror this value — do not hardcode divergent strings.
 """
 
-__version__ = "0.3.3"
+__version__ = "0.11.0"

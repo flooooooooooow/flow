@@ -1,7 +1,7 @@
 # FLOW Language Specification
 
-> **Version**: 0.10.0
-> **Last Updated**: 2026-08-05
+> **Version**: 0.11.0
+> **Last Updated**: 2026-08-13
 
 ## Overview
 
@@ -1356,4 +1356,4 @@ two backends disagree on that one shape.
 ---
 
 *Last updated: 2026-08-06*
-*Version: 0.10.0*
+*Version: 0.11.0*

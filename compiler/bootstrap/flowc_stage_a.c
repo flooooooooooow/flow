@@ -4467,10 +4467,18 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start + 1, ((arena).nodes[item]).name_end - 1);
   flowc_cgen_puts((&w), ">\n");
 }
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
   if (((arena).nodes[item]).kind == AST_C_EMBED) {
   flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start + 1, ((arena).nodes[item]).name_end - 1);
   flowc_cgen_putc((&w), 10);
 }
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
   if (((arena).nodes[item]).kind == AST_EXTERN_TYPE) {
   flowc_cgen_puts((&w), "typedef struct ");
   flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
