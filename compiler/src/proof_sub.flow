@@ -121,19 +121,21 @@ export function flowc_instantiate_two(claim_text: string, a0: string, a1: string
 # String helpers for generic {N} placeholder replacement.
 function substr(src: string, start: i32, end: i32) -> string {
     let n: i32 = strlen(src) as i32
-    if start < 0 {
-        start = 0
+    let mut s: i32 = start
+    let mut e: i32 = end
+    if s < 0 {
+        s = 0
     }
-    if end > n {
-        end = n
+    if e > n {
+        e = n
     }
-    if start >= end {
+    if s >= e {
         return ""
     }
-    let len: i32 = end - start
+    let len: i32 = e - s
     let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
     let p: ptr<u8> = src
-    memcpy(buf, p + start, len as i64)
+    memcpy(buf, p + s, len as i64)
     buf[len] = 0
     return buf as string
 }
@@ -160,7 +162,7 @@ function fill_placeholder(template: string, placeholder: string, value: string) 
     let pn: i32 = strlen(placeholder) as i32
     let tp: ptr<u8> = template
     let pp: ptr<u8> = placeholder
-    let result: string = ""
+    let mut result: string = ""
     let mut i: i32 = 0
     while i < tn {
         # Check if placeholder matches at position i
@@ -200,8 +202,8 @@ export function flowc_instantiate_premise(claim_text: string, args: string) -> s
     # Split args by comma
     let an: i32 = strlen(args) as i32
     let ap: ptr<u8> = args
-    let arg0: string = ""
-    let arg1: string = ""
+    let mut arg0: string = ""
+    let mut arg1: string = ""
     let mut count: i32 = 0
     let mut start: i32 = 0
     let mut i: i32 = 0
@@ -232,7 +234,7 @@ export function flowc_instantiate_premise(claim_text: string, args: string) -> s
 export function flowc_param_names_from_sig(params: string) -> string {
     let pn: i32 = strlen(params) as i32
     let p: ptr<u8> = params
-    let result: string = ""
+    let mut result: string = ""
     let mut start: i32 = 0
     let mut count: i32 = 0
     let mut i: i32 = 0
@@ -251,7 +253,7 @@ export function flowc_param_names_from_sig(params: string) -> string {
                 }
                 k = k + 1
             }
-            let name: string = ""
+            let mut name: string = ""
             if colon >= 0 {
                 name = substr(chunk, 0, colon)
             } else {

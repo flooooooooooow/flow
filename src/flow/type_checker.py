@@ -3813,7 +3813,7 @@ class TypeChecker:
         """Convert a parsed Type to a SemanticType."""
         if parsed_type.name == "auto":
             return SemanticType(TypeKind.UNKNOWN, name="auto")
-        # Function / closure types: (T1, T2) -> R → name fn_T1_T2__R
+        # Function / closure types: (T1, T2) -> R -> name fn_T1_T2__R
         if parsed_type.name.startswith("fn_") and "__" in parsed_type.name:
             params = [
                 self._parse_type(t) for t in (parsed_type.type_args or [])
@@ -3828,6 +3828,22 @@ class TypeChecker:
                 param_types=params,
                 return_type=ret,
                 effects=list(getattr(parsed_type, "effects", None) or []),
+            )
+        # Plain C function pointer types: cfn(A) -> R -> name cfn_A__R
+        if parsed_type.name.startswith("cfn_") and "__" in parsed_type.name:
+            params = [
+                self._parse_type(t) for t in (parsed_type.type_args or [])
+            ]
+            if parsed_type.element_type is not None:
+                ret = self._parse_type(parsed_type.element_type)
+            else:
+                ret = SemanticType(TypeKind.VOID)
+            return SemanticType(
+                TypeKind.FUNCTION,
+                name=parsed_type.name,
+                param_types=params,
+                return_type=ret,
+                effects=[],
             )
         # Borrowed views: span_const_T / span_mut_T (docs/language/spans.md).
         if is_span_type_name(parsed_type.name):

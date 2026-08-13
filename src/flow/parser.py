@@ -245,6 +245,8 @@ class Type:
     type_args: Optional[List["Type"]] = None  # Generic type arguments
     # Effect-row on first-class function types: `(i32) -> i32 with Log`
     effects: List[str] = field(default_factory=list)
+    # Plain C function pointer: cfn(A) -> R, emitted as R (*)(A)
+    is_cfn: bool = False
 
 
 # --- Spans (docs/language/spans.md) -----------------------------------------
@@ -3204,6 +3206,26 @@ class Parser:
                     f"ptr_{pointee_type.name}",
                     is_pointer=True,
                     element_type=pointee_type,
+                )
+            # Plain C function pointer type: cfn(A, B) -> R
+            # Emits as R (*)(A, B) in C, no fat-pointer environment.
+            elif type_name == "cfn" and self.current_token.type == TokenType.LPAREN:
+                self.advance()  # consume (
+                cfn_params: List[Type] = []
+                if self.current_token.type != TokenType.RPAREN:
+                    cfn_params.append(self.parse_type())
+                    while self.current_token.type == TokenType.COMMA:
+                        self.advance()
+                        cfn_params.append(self.parse_type())
+                self.expect(TokenType.RPAREN)
+                self.expect(TokenType.ARROW)
+                cfn_ret = self.parse_type()
+                cfn_args_key = "_".join(p.name for p in cfn_params) if cfn_params else "void"
+                return Type(
+                    f"cfn_{cfn_args_key}__{cfn_ret.name}",
+                    type_args=cfn_params,
+                    element_type=cfn_ret,
+                    is_cfn=True,
                 )
             # Check for vector type: vec4<T>
             elif (

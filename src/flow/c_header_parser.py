@@ -4,13 +4,19 @@ Preprocesses a C header with `cpp -P`, then parses the resulting
 declarations to extract:
   - function prototypes
   - typedef declarations (including opaque struct typedefs)
-  - struct definitions (field names and types)
-  - enum definitions
-  - macro constants (#define after cpp expansion leaves integer literals)
+  - struct definitions with fields
+  - enum constants
+  - simple variable declarations
 
 The output is a list of Flow parser declaration objects
-(FunctionDecl, ExternTypeDecl, ConstDecl) that the transpiler inserts
-into the declaration list so the C generator emits the right prototypes.
+(FunctionDecl, ExternTypeDecl, ConstDecl, StructDecl) that the
+transpiler inserts into the declaration list so the C generator
+emits the right prototypes.
+
+Strategy: cpp expands macros and includes, leaving plain C.
+We tokenize the preprocessed text and walk through top-level
+declarations. We skip function definitions (bodies), static
+inline functions, and compiler-specific attributes.
 """
 
 from __future__ import annotations
@@ -25,13 +31,15 @@ from .parser import (
     FunctionDecl,
     ExternTypeDecl,
     ConstDecl,
+    StructDecl,
     Parameter,
     Type as ParsedType,
     Block,
+    Literal,
 )
 
 
-# C type → Flow type mapping
+# C type to Flow type mapping
 _C_TO_FLOW = {
     "void": "void",
     "char": "u8",
@@ -58,6 +66,9 @@ _C_TO_FLOW = {
     "long double": "f64",
     "size_t": "u64",
     "ssize_t": "i64",
+    "ptrdiff_t": "i64",
+    "intptr_t": "i64",
+    "uintptr_t": "u64",
     "int8_t": "i8",
     "uint8_t": "u8",
     "int16_t": "i16",
@@ -68,14 +79,17 @@ _C_TO_FLOW = {
     "uint64_t": "u64",
     "bool": "bool",
     "_Bool": "bool",
+    "FILE": "FILE",
+    "va_list": "ptr<void>",
 }
 
 
 def _c_type_to_flow(c_type: str) -> str:
     """Convert a C type string to a Flow type string."""
     c_type = c_type.strip()
-    # Remove const/volatile/restrict qualifiers
+    # Remove const/volatile/restrict qualifiers and attributes
     c_type = re.sub(r"\b(const|volatile|restrict|__restrict|__restrict__)\b", "", c_type)
+    c_type = re.sub(r"__attribute__\s*\([^)]*\)", "", c_type)
     c_type = c_type.strip()
     # Handle pointers
     ptr_count = 0
@@ -105,7 +119,6 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
         )
         return result.stdout
     except FileNotFoundError:
-        # cpp not found, try clang -E -P
         cmd[0] = "clang"
         cmd.insert(1, "-E")
         try:
@@ -124,181 +137,119 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
         return ""
 
 
-class _Lexer:
-    """Simple tokenizer for preprocessed C declarations."""
+def _strip_attributes(text: str) -> str:
+    """Remove __attribute__((...)) and __builtin annotations."""
+    text = re.sub(r"__attribute__\s*\(\([^)]*\)\)", "", text)
+    text = re.sub(r"__builtin_\w+", "", text)
+    return text
 
-    def __init__(self, text: str):
-        self.text = text
-        self.pos = 0
-        self.len = len(text)
 
-    def skip_ws(self):
-        while self.pos < self.len and self.text[self.pos] in " \t\n\r":
-            self.pos += 1
+def _read_balanced(text: str, start: int, open_ch: str, close_ch: str) -> Tuple[str, int]:
+    """Read from start until the matching close character. Returns (content, end_pos)."""
+    depth = 0
+    i = start
+    while i < len(text):
+        if text[i] == open_ch:
+            depth += 1
+        elif text[i] == close_ch:
+            depth -= 1
+            if depth == 0:
+                return text[start:i], i + 1
+        i += 1
+    return text[start:], len(text)
 
-    def peek(self) -> str:
-        self.skip_ws()
-        if self.pos >= self.len:
-            return ""
-        return self.text[self.pos]
 
-    def at_end(self) -> bool:
-        self.skip_ws()
-        return self.pos >= self.len
+def _split_top_level(text: str) -> List[str]:
+    """Split preprocessed C into top-level declaration chunks.
 
-    def read_ident(self) -> str:
-        self.skip_ws()
-        start = self.pos
-        while self.pos < self.len and (self.text[self.pos].isalnum() or self.text[self.pos] == "_"):
-            self.pos += 1
-        return self.text[start:self.pos]
+    Handles braces and semicolons. Skips static inline function bodies.
+    """
+    chunks = []
+    i = 0
+    while i < len(text):
+        # Skip whitespace
+        while i < len(text) and text[i] in " \t\n\r":
+            i += 1
+        if i >= len(text):
+            break
 
-    def read_number(self) -> str:
-        self.skip_ws()
-        start = self.pos
-        while self.pos < self.len and (self.text[self.pos].isalnum() or self.text[self.pos] in "xX.+-"):
-            self.pos += 1
-        return self.text[start:self.pos]
-
-    def expect_char(self, ch: str):
-        self.skip_ws()
-        if self.pos >= self.len or self.text[self.pos] != ch:
-            raise ValueError(f"Expected '{ch}' at position {self.pos}")
-        self.pos += 1
-
-    def match_char(self, ch: str) -> bool:
-        self.skip_ws()
-        if self.pos < self.len and self.text[self.pos] == ch:
-            self.pos += 1
-            return True
-        return False
-
-    def read_until_semicolon(self) -> str:
-        """Read text until the next semicolon (at brace depth 0)."""
-        start = self.pos
+        # Read until semicolon at brace depth 0, or until closing brace
+        # of a function/struct/enum/union body
+        start = i
         depth = 0
-        while self.pos < self.len:
-            ch = self.text[self.pos]
+        while i < len(text):
+            ch = text[i]
             if ch == "{":
                 depth += 1
             elif ch == "}":
                 depth -= 1
+                if depth == 0:
+                    # Check if there's a semicolon after the closing brace
+                    j = i + 1
+                    while j < len(text) and text[j] in " \t\n\r":
+                        j += 1
+                    if j < len(text) and text[j] == ";":
+                        i = j + 1
+                    else:
+                        i += 1
+                    chunk = text[start:i].strip()
+                    if chunk:
+                        chunks.append(chunk)
+                    break
             elif ch == ";" and depth == 0:
-                result = self.text[start:self.pos]
-                self.pos += 1  # consume semicolon
-                return result
-            self.pos += 1
-        return self.text[start:self.pos]
-
-
-def _parse_type_tokens(tokens: List[str]) -> Tuple[str, Optional[str]]:
-    """Parse a list of type tokens into (type_str, name).
-
-    Handles simple types, pointers, and function pointers.
-    Returns (c_type, name) where name is the declared identifier
-    or None for anonymous types.
-    """
-    if not tokens:
-        return ("void", None)
-
-    # Find the name: last identifier that's not a type qualifier
-    # and not followed by ( for function pointers
-    name = None
-    type_tokens = list(tokens)
-
-    # Handle function pointers: ret (*name)(params)
-    for i, tok in enumerate(type_tokens):
-        if tok == "(" and i + 1 < len(type_tokens) and type_tokens[i + 1] == "*":
-            # Function pointer
-            if i + 2 < len(type_tokens):
-                name = type_tokens[i + 2]
-            ret_type = " ".join(type_tokens[:i])
-            return (ret_type, name)
-
-    # Handle simple case: type ... name
-    # Remove array brackets: name[...]
-    last = type_tokens[-1]
-    if last.endswith("]"):
-        # Array: find the name before the bracket
-        bracket_pos = last.find("[")
-        name = last[:bracket_pos]
-        type_tokens[-1] = last[bracket_pos:]
-    elif last and (last[0].isalpha() or last[0] == "_"):
-        name = last
-        type_tokens = type_tokens[:-1]
-
-    type_str = " ".join(type_tokens).strip()
-    if not type_str:
-        type_str = "int"
-    return (type_str, name)
-
-
-def _split_tokens(text: str) -> List[str]:
-    """Split text into tokens, handling parentheses and brackets."""
-    tokens = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch.isspace():
-            i += 1
-            continue
-        if ch in "()[]{},*;":
-            tokens.append(ch)
-            i += 1
-            continue
-        if ch.isalnum() or ch == "_":
-            start = i
-            while i < len(text) and (text[i].isalnum() or text[i] == "_"):
+                chunk = text[start:i].strip()
+                if chunk:
+                    chunks.append(chunk)
                 i += 1
-            tokens.append(text[start:i])
-            continue
-        # Skip unknown characters
-        i += 1
-    return tokens
+                break
+            i += 1
+        else:
+            chunk = text[start:].strip()
+            if chunk:
+                chunks.append(chunk)
+            break
+
+    return chunks
 
 
 def parse_c_header(header: str, include_dirs: Optional[List[str]] = None) -> List:
-    """Parse a C header and return Flow declarations.
-
-    Args:
-        header: Header file path or name (e.g. "stdio.h")
-        include_dirs: Additional include directories for cpp
-
-    Returns:
-        List of FunctionDecl, ExternTypeDecl, and ConstDecl objects
-    """
+    """Parse a C header and return Flow declarations."""
     if include_dirs is None:
         include_dirs = []
 
-    # Add system include directories
     include_dirs.extend(["/usr/include", "/usr/local/include"])
 
-    # Preprocess
     text = _preprocess_header(header, include_dirs)
     if not text:
         return []
 
     declarations = []
-    lex = _Lexer(text)
+    chunks = _split_top_level(text)
 
-    while not lex.at_end():
-        lex.skip_ws()
-        if lex.at_end():
-            break
-
-        # Read until semicolon
-        chunk = lex.read_until_semicolon().strip()
+    for chunk in chunks:
+        chunk = _strip_attributes(chunk).strip()
         if not chunk:
             continue
 
-        # Skip extern "C" blocks (already preprocessed)
+        # Skip extern "C" blocks
         if chunk.startswith("extern"):
-            # Could be extern "C" { ... } or extern type declaration
             rest = chunk[6:].strip()
             if rest.startswith('"C"'):
                 continue
-            # Skip plain extern declarations
+            # Skip extern variable declarations (rare in headers)
             continue
+
+        # Skip static inline functions (they have bodies)
+        if re.match(r"^static\s+(__inline__|__inline|inline)", chunk):
+            continue
+        if re.match(r"^__inline", chunk):
+            continue
+
+        # Skip __extension__ and compiler builtins
+        if chunk.startswith("__extension__"):
+            chunk = chunk[13:].strip()
+            if not chunk:
+                continue
 
         # Handle typedef
         if chunk.startswith("typedef"):
@@ -310,67 +261,151 @@ def parse_c_header(header: str, include_dirs: Optional[List[str]] = None) -> Lis
             declarations.extend(_parse_struct_enum(chunk))
             continue
 
-        # Try to parse as function declaration
-        fn = _parse_function(chunk)
-        if fn:
-            declarations.append(fn)
+        # Try to parse as function declaration (no body)
+        if "{" not in chunk:
+            fn = _parse_function(chunk)
+            if fn:
+                declarations.append(fn)
+                continue
+
+        # Try to parse as variable declaration
+        var = _parse_variable(chunk)
+        if var:
+            declarations.append(var)
 
     return declarations
 
 
 def _parse_typedef(chunk: str) -> List:
     """Parse a typedef declaration."""
-    # typedef struct Name Name;  → opaque type
+    # typedef struct Name Name;  -> opaque type
     m = re.match(r"typedef\s+struct\s+(\w+)\s+(\w+)\s*$", chunk)
     if m:
-        struct_name = m.group(1)
-        alias = m.group(2)
-        # If struct_name == alias, it's an opaque forward declaration
-        if struct_name == alias:
-            return [ExternTypeDecl(name=alias)]
-        return [ExternTypeDecl(name=alias)]
+        return [ExternTypeDecl(name=m.group(2))]
 
-    # typedef struct { ... } Name;  → skip (we don't need the layout)
-    if re.match(r"typedef\s+struct\s*\{", chunk):
-        # Extract the name after the closing brace
+    # typedef struct { fields } Name;  -> opaque type (skip fields, C header has layout)
+    if re.match(r"typedef\s+struct\s*\{", chunk) or re.match(r"typedef\s+struct\s+\w+\s*\{", chunk):
         m = re.search(r"\}\s*(\w+)\s*$", chunk)
         if m:
             return [ExternTypeDecl(name=m.group(1))]
         return []
 
-    # typedef enum { ... } Name;  → skip
-    if re.match(r"typedef\s+enum\s*\{", chunk):
+    # typedef union { ... } Name;
+    if re.match(r"typedef\s+union\s*\{", chunk) or re.match(r"typedef\s+union\s+\w+\s*\{", chunk):
+        m = re.search(r"\}\s*(\w+)\s*$", chunk)
+        if m:
+            return [ExternTypeDecl(name=m.group(1))]
         return []
 
-    # typedef <type> Name;
+    # typedef enum { ... } Name;  -> generate ConstDecl for each enum value
+    if re.match(r"typedef\s+enum\s*\{", chunk) or re.match(r"typedef\s+enum\s+\w+\s*\{", chunk):
+        return _parse_enum_body(chunk)
+
+    # typedef enum Name { ... };  -> generate ConstDecl for each enum value
+    if re.match(r"typedef\s+enum\s+\w+\s*\{", chunk):
+        return _parse_enum_body(chunk)
+
+    # typedef <type> (*Name)(params);  -> function pointer typedef
+    m = re.match(r"typedef\s+(.+?)\s*\(\s*\*\s*(\w+)\s*\)\s*\((.*)\)\s*$", chunk)
+    if m:
+        # We don't generate anything for function pointer typedefs.
+        # The C header provides the typedef. Flow code uses ptr<fn(...)>.
+        return []
+
+    # typedef <type> Name;  -> simple typedef, C header handles it
     m = re.match(r"typedef\s+(.+?)\s+(\w+)\s*$", chunk)
     if m:
-        # It's a simple typedef. We don't need to generate anything
-        # since the C header already provides it.
         return []
 
     return []
 
 
+def _parse_enum_body(chunk: str) -> List:
+    """Extract enum constants from a typedef enum { ... } Name; or enum Name { ... };"""
+    # Find the brace block
+    brace_start = chunk.find("{")
+    if brace_start < 0:
+        return []
+    body, _ = _read_balanced(chunk, brace_start + 1, "{", "}")
+    if not body:
+        return []
+
+    decls = []
+    # Split by commas, handling nested parens
+    parts = _split_params(body)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # Each part is either: NAME or NAME = value
+        m = re.match(r"^(\w+)\s*(?:=\s*(.+))?$", part)
+        if m:
+            name = m.group(1)
+            value = m.group(2)
+            if value:
+                value = value.strip()
+                # Try to parse as integer
+                try:
+                    val = _parse_int(value)
+                    cd = ConstDecl(name=name, type=ParsedType("i32"), value=Literal(val))
+                    decls.append(cd)
+                except (ValueError, TypeError):
+                    # Skip complex enum values
+                    pass
+            else:
+                # Auto-incrementing enum value, skip (we don't track the counter)
+                pass
+    return decls
+
+
+def _parse_int(s: str) -> int:
+    """Parse a C integer literal."""
+    s = s.strip()
+    # Remove suffixes
+    s = re.sub(r'[uUlL]+$', '', s)
+    if s.startswith("0x") or s.startswith("0X"):
+        return int(s, 16)
+    if s.startswith("0b") or s.startswith("0B"):
+        return int(s, 2)
+    if s.startswith("0") and len(s) > 1 and s[1].isdigit():
+        return int(s, 8)
+    return int(s)
+
+
 def _parse_struct_enum(chunk: str) -> List:
-    """Parse struct/union/enum definitions (skip them)."""
-    # We only need the typedef alias, not the full layout.
-    # The C header provides the layout.
+    """Parse struct/union/enum definitions."""
+    # struct Name { fields };  -> we could generate a StructDecl, but
+    # since the C header provides the layout, we only need the name
+    # for opaque pointer types. Skip the full layout.
+    m = re.match(r"^(struct|union|enum)\s+(\w+)\s*\{", chunk)
+    if m:
+        # The C header defines the layout. We just need the name.
+        # If it's an enum, extract constants.
+        if m.group(1) == "enum":
+            return _parse_enum_body(chunk)
+        return []
+
+    # struct Name;  -> forward declaration, register as opaque type
+    m = re.match(r"^(struct|union)\s+(\w+)\s*$", chunk)
+    if m:
+        return [ExternTypeDecl(name=m.group(2))]
+
     return []
 
 
 def _parse_function(chunk: str) -> Optional[FunctionDecl]:
     """Parse a C function declaration into a FunctionDecl."""
-    # Must contain parentheses
     if "(" not in chunk or ")" not in chunk:
         return None
 
-    # Must not be a function definition (has a body)
+    # Must not have a body
     if "{" in chunk:
         return None
 
-    # Pattern: return_type name(params)
-    # Find the function name: the identifier right before the first (
+    # Strip leading storage class specifiers
+    chunk = re.sub(r"^(extern|static)\s+", "", chunk).strip()
+
+    # Find the function name: identifier right before the first (
     paren_pos = chunk.find("(")
     if paren_pos < 0:
         return None
@@ -394,7 +429,7 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
 
     params_str = after_paren[:end_paren].strip()
 
-    # Split the before_paren into return type and function name
+    # Split before_paren into return type and function name
     tokens = before_paren.split()
     if len(tokens) < 2:
         return None
@@ -406,7 +441,7 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
     if not re.match(r"^\w+$", fn_name):
         return None
 
-    # Skip if it's a macro or compiler intrinsic
+    # Skip compiler intrinsics and double-underscore names
     if fn_name.startswith("__"):
         return None
 
@@ -428,12 +463,36 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
     return func
 
 
+def _parse_variable(chunk: str) -> Optional[ConstDecl]:
+    """Parse a simple variable declaration like `extern int errno;`"""
+    # Skip if it has parentheses (function declaration)
+    if "(" in chunk:
+        return None
+
+    tokens = chunk.split()
+    if len(tokens) < 2:
+        return None
+
+    name = tokens[-1]
+    type_str = " ".join(tokens[:-1])
+
+    if not re.match(r"^\w+$", name):
+        return None
+    if name.startswith("__"):
+        return None
+
+    # Skip if it's a type definition, not a variable
+    if type_str in ("struct", "union", "enum", "typedef"):
+        return None
+
+    return None  # Skip variables for now, they need extern linkage handling
+
+
 def _parse_params(params_str: str) -> List[Parameter]:
     """Parse C function parameter list into Flow Parameters."""
     if not params_str or params_str.strip() == "void":
         return []
 
-    # Handle variadic
     if params_str.strip() == "...":
         return []
 
@@ -446,6 +505,14 @@ def _parse_params(params_str: str) -> List[Parameter]:
         if not part:
             continue
 
+        # Handle function pointer parameters: ret (*name)(args)
+        # or ret (*)(args) (anonymous)
+        m = re.match(r"^(.+?)\s*\(\s*\*\s*(\w*)\s*\)\s*\((.*)\)$", part)
+        if m:
+            name = m.group(2) or f"_arg{len(params)}"
+            params.append(Parameter(name, ParsedType("ptr<void>")))
+            continue
+
         # Parse: type name
         tokens = part.split()
         if len(tokens) < 2:
@@ -454,21 +521,25 @@ def _parse_params(params_str: str) -> List[Parameter]:
             params.append(Parameter(f"_arg{len(params)}", ParsedType(flow_type)))
             continue
 
-        # Last token is the name (unless it's an array)
         name = tokens[-1]
         type_str = " ".join(tokens[:-1])
 
-        # Handle array parameters: type name[N] → ptr<type>
+        # Handle array parameters: type name[N] -> ptr<type>
         if "[" in name:
             bracket_pos = name.find("[")
             name = name[:bracket_pos]
             type_str += " *"
 
-        # Handle function pointer parameters
-        if "*" in part and "(" in part:
-            # Simplified: treat as ptr<void>
-            params.append(Parameter(name, ParsedType("ptr<void>")))
-            continue
+        # Handle pointer parameters where name has * attached: int *name
+        if name.startswith("*"):
+            star_count = 0
+            while name.startswith("*"):
+                star_count += 1
+                name = name[1:]
+            type_str += " " + "*" * star_count
+
+        if not re.match(r"^\w+$", name):
+            name = f"_arg{len(params)}"
 
         flow_type = _c_type_to_flow(type_str)
         params.append(Parameter(name, ParsedType(flow_type)))
@@ -477,14 +548,14 @@ def _parse_params(params_str: str) -> List[Parameter]:
 
 
 def _split_params(params_str: str) -> List[str]:
-    """Split parameter string by commas, respecting parentheses."""
+    """Split parameter string by commas, respecting parentheses and brackets."""
     parts = []
     depth = 0
     start = 0
     for i, ch in enumerate(params_str):
-        if ch == "(":
+        if ch in "([{":
             depth += 1
-        elif ch == ")":
+        elif ch in ")]}":
             depth -= 1
         elif ch == "," and depth == 0:
             parts.append(params_str[start:i])
@@ -495,15 +566,7 @@ def _split_params(params_str: str) -> List[str]:
 
 def resolve_c_imports(declarations: List, source_dir: str) -> List:
     """Process CImportDecl objects in declarations, replacing them with
-    generated extern declarations.
-
-    Args:
-        declarations: List of parser declarations
-        source_dir: Directory of the source file (for local header includes)
-
-    Returns:
-        Updated declarations list with CImportDecl objects expanded
-    """
+    generated extern declarations."""
     from .parser import CImportDecl, CIncludeDecl
 
     result = []
