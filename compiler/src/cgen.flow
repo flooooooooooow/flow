@@ -1583,6 +1583,46 @@ function flowc_cgen_pp_is_macro_fn(text: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_cgen_span_is(text, start, end, "putchar") { return 1 }
     if flowc_cgen_span_is(text, start, end, "fgetc") { return 1 }
     if flowc_cgen_span_is(text, start, end, "getc") { return 1 }
+    # Common libc functions that users declare in extern blocks
+    if flowc_cgen_span_is(text, start, end, "atoi") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "atof") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "atol") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strtol") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strtod") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strtoul") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "exit") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "abort") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "malloc") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "free") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "calloc") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "realloc") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "sqrt") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fabs") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "pow") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "abs") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "labs") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "sin") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "cos") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "tan") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "log") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "log2") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "log10") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "exp") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "floor") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "ceil") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "round") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fmod") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strcmp") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strncmp") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strlen") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strchr") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strrchr") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strstr") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "popen") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "pclose") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fscanf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "sscanf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "scanf") { return 1 }
     return 0
 }
 

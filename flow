@@ -1952,8 +1952,11 @@ run_tests() {
             if [ "$tier" -ge 2 ] && [ "$suite" = "tests" ]; then
                 # MISRA #269: use -std=c11 -Wall instead of -Wno-everything.
                 # Warnings do not fail the syntax check (no -Werror here).
+                # Add -I for the source file's directory so @cImport headers resolve.
+                local src_dir
+                src_dir="$(dirname "$program")"
                 local clang_output
-                clang_output=$(clang -fsyntax-only -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-error=implicit-function-declaration -Wno-error=int-conversion "$c_file" 2>&1)
+                clang_output=$(clang -fsyntax-only -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-error=implicit-function-declaration -Wno-error=int-conversion -I"$src_dir" "$c_file" 2>&1)
                 local clang_status=$?
                 
                 if [ $clang_status -ne 0 ]; then
