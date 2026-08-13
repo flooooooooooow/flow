@@ -14,7 +14,8 @@ import .ast {
     AST_EXTERN, AST_IMPORT, AST_EXPORT, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
-    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM
+    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
+    AST_DEFER
 }
 
 extern {
@@ -1117,6 +1118,14 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_CONTINUE {
         flowc_cgen_puts(w, "  continue;\n")
+        return
+    }
+    # defer: emit the expression as a statement inline.
+    # Full LIFO defer semantics are handled by the Python compiler.
+    if kind == AST_DEFER {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_puts(w, ";\n")
         return
     }
     if kind == AST_ASSIGN {
