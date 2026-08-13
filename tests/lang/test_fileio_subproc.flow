@@ -1,0 +1,70 @@
+# Test for fileio.flow subprocess operations.
+# Tests popen_read and system.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fileio_subproc.flow
+
+import "compiler/src/fileio.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+function main() -> i32 {
+    # Test popen_read: echo a string and capture it
+    let buf: ptr<u8> = malloc(256)
+    if buf == null {
+        puts("FAIL: malloc failed")
+        return 1
+    }
+    let n: i32 = flowc_io_popen_read("echo 'hello from subprocess'", buf, 255)
+    if n <= 0 {
+        puts("FAIL: popen_read returned empty")
+        free(buf)
+        return 2
+    }
+    buf[n] = 0
+    printf("popen_read: %d bytes: %s", n, buf as string)
+
+    # Check content contains "hello"
+    let found: i32 = 0
+    let i: i32 = 0
+    while i < n - 4 {
+        if buf[i] == 104 and buf[i + 1] == 101 and buf[i + 2] == 108 and buf[i + 3] == 108 and buf[i + 4] == 111 {
+            found = 1
+        }
+        i = i + 1
+    }
+    if found == 0 {
+        puts("FAIL: 'hello' not found in popen output")
+        free(buf)
+        return 3
+    }
+    puts("popen_read content OK")
+
+    # Test system: create a file via shell
+    let _r: i32 = flowc_io_remove("/tmp/flow_subproc_test.txt")
+    let ret: i32 = flowc_io_system("echo 'system test' > /tmp/flow_subproc_test.txt")
+    if ret != 0 {
+        puts("FAIL: system() returned non-zero")
+        free(buf)
+        return 4
+    }
+
+    # Verify file was created
+    let exists: i32 = flowc_io_exists("/tmp/flow_subproc_test.txt")
+    if exists != 1 {
+        puts("FAIL: system() did not create file")
+        free(buf)
+        return 5
+    }
+    puts("system() create file OK")
+
+    # Clean up
+    let _r2: i32 = flowc_io_remove("/tmp/flow_subproc_test.txt")
+    free(buf)
+
+    puts("All fileio_subproc tests passed")
+    return 0
+}

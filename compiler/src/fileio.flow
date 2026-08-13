@@ -14,6 +14,9 @@ extern {
     function remove(path: string) -> i32
     function mkdir(path: string, mode: i32) -> i32
     function stat(path: string, buf: ptr<u8>) -> i32
+    function popen(cmd: string, mode: string) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function system(cmd: string) -> i32
 }
 
 const FLOWC_IO_SEEK_SET: i32 = 0
@@ -111,4 +114,29 @@ export function flowc_io_file_size(path: string) -> i64 {
     let size: i64 = flowc_io_ftell(fp)
     let _c: i32 = flowc_io_fclose(fp)
     return size
+}
+
+# Run a shell command and capture stdout into buf.
+# Returns bytes read, or -1 on error.
+# Caller should NUL-terminate the buffer if needed.
+export function flowc_io_popen_read(cmd: string, buf: ptr<u8>, cap: i32) -> i32 {
+    let fp: ptr<void> = popen(cmd, "r")
+    if fp == null {
+        return -1
+    }
+    if cap <= 0 {
+        let _c: i32 = pclose(fp)
+        return 0
+    }
+    let n: i32 = fread(buf, 1, cap, fp)
+    let _c: i32 = pclose(fp)
+    if n < 0 {
+        return -1
+    }
+    return n
+}
+
+# Run a shell command via system(). Returns exit code.
+export function flowc_io_system(cmd: string) -> i32 {
+    return system(cmd)
 }
