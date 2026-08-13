@@ -81,6 +81,25 @@ _C_TO_FLOW = {
     "va_list": "ptr<void>",
 }
 
+# Functions that are already declared in user extern blocks or are
+# standard libc functions that conflict with system headers.
+# The auto-prototype generator skips these to avoid duplicate declarations.
+_LIBC_SKIP_FUNCS = {
+    "atoi", "atof", "atol", "strtol", "strtod", "strtoul",
+    "exit", "abort", "malloc", "free", "calloc", "realloc",
+    "sqrt", "fabs", "pow", "abs", "labs",
+    "sin", "cos", "tan", "log", "log2", "log10", "exp",
+    "floor", "ceil", "round", "fmod",
+    "strcmp", "strncmp", "strlen", "strchr", "strrchr", "strstr",
+    "popen", "pclose", "fscanf", "sscanf", "scanf",
+    "memcpy", "memmove", "memset", "strcpy", "strncpy",
+    "strcat", "strncat", "sprintf", "snprintf", "fprintf", "printf",
+    "vsnprintf", "vsprintf", "vfprintf", "vprintf",
+    "fgets", "fread", "fwrite", "fputc", "fputs", "putc", "putchar",
+    "getchar", "fgetc", "getc", "strdup", "bcopy", "bzero",
+    "puts",
+}
+
 
 def _c_type_to_flow(c_type: str) -> str:
     """Convert a C type string to a Flow type string."""
@@ -453,6 +472,10 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
 
     # Skip compiler intrinsics and double-underscore names
     if fn_name.startswith("__"):
+        return None
+
+    # Skip known libc functions that conflict with system headers
+    if fn_name in _LIBC_SKIP_FUNCS:
         return None
 
     # Parse parameters
