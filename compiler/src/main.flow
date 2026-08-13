@@ -659,7 +659,7 @@ function test_cgen_logic() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 1024
+    let cap: i32 = 2048
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_logic: malloc failed")

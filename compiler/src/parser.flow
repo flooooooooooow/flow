@@ -14,7 +14,7 @@ import .token {
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
     KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM,
-    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL, KW_DBG, KW_EXPECT
+    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL, KW_DBG, KW_EXPECT, KW_DEFAULT
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -1135,6 +1135,27 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
             let mut bind_s: i32 = 0
             let mut bind_e: i32 = 0
             let mut neg: i32 = 0
+            # `default { body }` — wildcard arm (no =>).
+            if flowc_parser_check_kw(p[0], KW_DEFAULT) == 1 {
+                flowc_parser_advance(p)
+                let body: i32 = flowc_parse_block(p)
+                if body == AST_NONE {
+                    return AST_NONE
+                }
+                let arm: i32 = flowc_ast_alloc(&p[0].arena, AST_MATCH_ARM, arm_start, p[0].cur.start)
+                if arm == AST_NONE {
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                p[0].arena.nodes[arm].ival = 1
+                p[0].arena.nodes[arm].a = AST_NONE
+                p[0].arena.nodes[arm].b = body
+                arms = flowc_ast_chain_push(&p[0].arena, arms, arm)
+                if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                    flowc_parser_advance(p)
+                }
+                continue
+            }
             if flowc_parser_check(p[0], TOK_MINUS) == 1 {
                 neg = 1
                 flowc_parser_advance(p)

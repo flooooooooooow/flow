@@ -184,6 +184,7 @@ const int32_t KW_TEST = 35;
 const int32_t KW_PARALLEL = 36;
 const int32_t KW_DBG = 37;
 const int32_t KW_EXPECT = 38;
+const int32_t KW_DEFAULT = 39;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -457,6 +458,11 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = expect_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 6) == 1) {
   return KW_EXPECT;
+}
+  static const uint8_t default_kw[7] = {100, 101, 102, 97, 117, 108, 116};
+  p = (uint8_t*)default_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 7) == 1) {
+  return KW_DEFAULT;
 }
   return 0;
 }
@@ -1953,6 +1959,27 @@ int32_t flowc_parse_stmt(Parser* p) {
   int32_t bind_s = 0;
   int32_t bind_e = 0;
   int32_t neg = 0;
+  // `default { body }` — wildcard arm (no =>).
+  if (flowc_parser_check_kw(p[0], KW_DEFAULT) == 1) {
+  flowc_parser_advance(p);
+  int32_t body = flowc_parse_block(p);
+  if (body == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t arm = flowc_ast_alloc((&(p[0]).arena), AST_MATCH_ARM, arm_start, ((p[0]).cur).start);
+  if (arm == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[arm]).ival = 1;
+  (((p[0]).arena).nodes[arm]).a = AST_NONE;
+  (((p[0]).arena).nodes[arm]).b = body;
+  arms = flowc_ast_chain_push((&(p[0]).arena), arms, arm);
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
+  flowc_parser_advance(p);
+}
+  continue;
+}
   if (flowc_parser_check(p[0], TOK_MINUS) == 1) {
   neg = 1;
   flowc_parser_advance(p);
@@ -3719,6 +3746,22 @@ int32_t flowc_cgen_binop_needs_parens(int32_t op) {
   return 1;
 }
 
+void flowc_cgen_emit_binop_child(CgenBuf* w, AstArena arena, uint8_t* src, int32_t child, int32_t parent_op) {
+  int32_t needs_wrap = 0;
+  if (parent_op == TOK_AMPAMP) {
+  if (((arena).nodes[child]).kind == AST_BINOP && ((arena).nodes[child]).ival == TOK_BARBAR) {
+  needs_wrap = 1;
+}
+}
+  if (needs_wrap == 1) {
+  flowc_cgen_putc(w, 40);
+}
+  flowc_cgen_emit_expr(w, arena, src, child);
+  if (needs_wrap == 1) {
+  flowc_cgen_putc(w, 41);
+}
+}
+
 void flowc_cgen_emit_binop_op(CgenBuf* w, int32_t op) {
   if (op == TOK_PLUS) {
   flowc_cgen_puts(w, " + ");
@@ -3893,9 +3936,9 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (wrap == 1) {
   flowc_cgen_putc(w, 40);
 }
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_emit_binop_child(w, arena, src, ((arena).nodes[id]).a, op);
   flowc_cgen_emit_binop_op(w, op);
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_emit_binop_child(w, arena, src, ((arena).nodes[id]).b, op);
   if (wrap == 1) {
   flowc_cgen_putc(w, 41);
 }

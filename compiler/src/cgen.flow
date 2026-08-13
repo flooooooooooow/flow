@@ -737,6 +737,24 @@ function flowc_cgen_binop_needs_parens(op: i32) -> i32 {
     return 1
 }
 
+# Wrap child in parens if C precedence would misparse it.
+# Key case: `||` child of `&&` needs parens because C's `&&` binds tighter.
+function flowc_cgen_emit_binop_child(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, child: i32, parent_op: i32) {
+    let mut needs_wrap: i32 = 0
+    if parent_op == TOK_AMPAMP {
+        if arena.nodes[child].kind == AST_BINOP and arena.nodes[child].ival == TOK_BARBAR {
+            needs_wrap = 1
+        }
+    }
+    if needs_wrap == 1 {
+        flowc_cgen_putc(w, 40)
+    }
+    flowc_cgen_emit_expr(w, arena, src, child)
+    if needs_wrap == 1 {
+        flowc_cgen_putc(w, 41)
+    }
+}
+
 function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
     if op == TOK_PLUS {
         flowc_cgen_puts(w, " + ")
@@ -917,9 +935,9 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if wrap == 1 {
             flowc_cgen_putc(w, 40)
         }
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_emit_binop_child(w, arena, src, arena.nodes[id].a, op)
         flowc_cgen_emit_binop_op(w, op)
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_emit_binop_child(w, arena, src, arena.nodes[id].b, op)
         if wrap == 1 {
             flowc_cgen_putc(w, 41)
         }
