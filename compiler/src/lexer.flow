@@ -9,7 +9,7 @@ import .token {
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG,
     TOK_ERROR, TOK_AMP, TOK_FATARROW, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
-    TOK_SHL, TOK_SHR,
+    TOK_SHL, TOK_SHR, TOK_PIPELINE,
     TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
@@ -380,6 +380,11 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
         flowc_lexer_bump(lex)
         flowc_lexer_bump(lex)
         return flowc_make_tok(TOK_BARBAR, 0, start, start + 2, line, col)
+    }
+    if c == 124 and n1 == 62 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_PIPELINE, 0, start, start + 2, line, col)
     }
 
     flowc_lexer_bump(lex)
