@@ -158,7 +158,7 @@ function fill_instances(board: ptr<i32>, shape: ptr<i32>, piece: i32, rot: i32, 
     ui_layout(12, 22, 1) {
         ui_row(1, 0, 0, UI_JUSTIFY_CENTER) {
             let rect: UiRect = ui_next_rect(_ui_state)
-            count = push_rect_instance(out, count, rect, _ui_state[0].unit, 0.10, 0.12, 0.16)
+            count = push_rect_instance(out, count, rect, ui_layout_unit(_ui_state), 0.10, 0.12, 0.16)
         }
     }
 
