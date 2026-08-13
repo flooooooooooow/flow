@@ -112,7 +112,7 @@ function fill_instances(out: ptr<f32>, bricks: ptr<i32>, paddle_x: i32, ball_x: 
     ui_layout(24, 18, 1) {
         ui_row(1, 0, 0, UI_JUSTIFY_CENTER) {
             let rect: UiRect = ui_next_rect(_ui_state)
-            count = push_rect_instance(out, count, rect, _ui_state[0].unit, 0.10, 0.12, 0.16)
+            count = push_rect_instance(out, count, rect, ui_layout_unit(_ui_state), 0.10, 0.12, 0.16)
         }
     }
     let r: i32 = 0
