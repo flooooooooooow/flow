@@ -759,7 +759,7 @@ class TypeChecker:
             # Recover with the dimensioned side so errors do not cascade.
             return left_type if left_dims is not None else right_type
 
-        if operator in ("==", "!=", "<", ">", "<=", ">="):
+        if operator in ("==", "!=", "<", ">", "<=", ">=", "in"):
             if left_dims is None or right_dims is None or left_dims != right_dims:
                 self.errors.append(
                     f"{loc}dimensional error: {left_type} {operator} {right_type} "
@@ -2988,7 +2988,7 @@ class TypeChecker:
             return left_type or right_type or SemanticType(TypeKind.UNKNOWN)
         if left_type.kind == TypeKind.UNKNOWN or right_type.kind == TypeKind.UNKNOWN:
             # Don't report errors when operands have unknown types (error recovery)
-            if op.operator in ["==", "!=", "<", ">", "<=", ">=", "&&", "||"]:
+            if op.operator in ["==", "!=", "<", ">", "<=", ">=", "&&", "||", "in"]:
                 return SemanticType(TypeKind.BOOL)
             return left_type if left_type.kind != TypeKind.UNKNOWN else right_type
         if left_type.kind == TypeKind.VOID:
@@ -3094,6 +3094,8 @@ class TypeChecker:
         if op.operator in ["+", "-", "*", "/", "%"]:
             return common
         elif op.operator in ["==", "!=", "<", ">", "<=", ">=", "&&", "||"]:
+            return SemanticType(TypeKind.BOOL)
+        elif op.operator == "in":
             return SemanticType(TypeKind.BOOL)
         elif op.operator in ["|", "&", "^", "<<", ">>"]:
             return common
