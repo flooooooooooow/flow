@@ -543,10 +543,32 @@ function flowc_cparser_parse_function(text: ptr<u8>, start: i32, end: i32, decls
         return 0
     }
 
+    # Skip if function name is a C keyword or preprocessor macro
+    if flowc_cparser_is_c_keyword(text, name_start, name_end) == 1 {
+        return 0
+    }
+
+    # Skip if function name starts with uppercase (likely macro expansion)
+    # Real C library functions are lowercase (sqrt, abs, strlen, etc.)
+    let first_ch: u8 = text[name_start]
+    if first_ch >= 65 and first_ch <= 90 {
+        return 0
+    }
+
     # Return type is everything before the function name
     let ret_end: i32 = name_start
     while ret_end > start and flowc_cparser_is_space(text[ret_end - 1]) {
         ret_end = ret_end - 1
+    }
+
+    # Skip if return type is empty (macro expansion with no type)
+    if ret_end <= start {
+        return 0
+    }
+
+    # Skip if return type contains "defined" (preprocessor artifact)
+    if flowc_cparser_span_contains(text, start, ret_end, "defined") == 1 {
+        return 0
     }
 
     decls[n_decls].kind = 0
@@ -640,6 +662,76 @@ function flowc_cparser_find_char(text: ptr<u8>, start: i32, end: i32, ch: u8) ->
         i = i + 1
     }
     return 0 - 1
+}
+
+# Check if a span is a C keyword that should not be a function name.
+function flowc_cparser_is_c_keyword(text: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_cparser_span_eq(text, start, end, "void") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "int") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "char") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "long") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "short") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "float") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "double") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "unsigned") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "signed") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "const") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "volatile") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "struct") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "union") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "enum") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "typedef") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "static") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "extern") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "inline") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "auto") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "register") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "return") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "if") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "else") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "while") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "for") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "do") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "switch") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "case") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "break") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "continue") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "default") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "sizeof") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "defined") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "goto") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "restrict") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "_Bool") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "bool") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "_Complex") { return 1 }
+    if flowc_cparser_span_eq(text, start, end, "_Imaginary") { return 1 }
+    return 0
+}
+
+# Check if a span contains a substring.
+function flowc_cparser_span_contains(text: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let lit_ptr: ptr<u8> = lit as ptr<u8>
+    let lit_len: i32 = strlen(lit_ptr) as i32
+    if lit_len <= 0 or end - start < lit_len {
+        return 0
+    }
+    let i: i32 = start
+    while i + lit_len <= end {
+        let is_match: i32 = 1
+        let j: i32 = 0
+        while j < lit_len {
+            if text[i + j] != lit_ptr[j] {
+                is_match = 0
+                break
+            }
+            j = j + 1
+        }
+        if is_match == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
 }
 
 function flowc_cparser_strlen(s: ptr<u8>) -> i32 {
