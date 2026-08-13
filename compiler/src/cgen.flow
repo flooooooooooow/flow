@@ -1839,7 +1839,7 @@ export function flowc_cgen_emit_sigs(
 
     # Pass 0.5a: @cInclude and @cImport directives first, so embedded C
     # code can use headers. Then @cEmbed code. Then extern type decls.
-    item = arena.nodes[root].a
+    let mut item: i32 = arena.nodes[root].a
     while item != AST_NONE {
         if arena.nodes[item].kind == AST_C_INCLUDE {
             # Emit #include "header" (strip quotes from the string literal span)
@@ -1879,7 +1879,7 @@ export function flowc_cgen_emit_sigs(
     }
 
     # Pass 1: struct typedefs (including export struct)
-    let mut item: i32 = arena.nodes[root].a
+    item = arena.nodes[root].a
     while item != AST_NONE {
         let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
         if st != AST_NONE {
