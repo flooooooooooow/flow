@@ -27,7 +27,7 @@ import .ast {
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
-    AST_ENUM, AST_ENUM_VARIANT,
+    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
 }
 
@@ -657,6 +657,50 @@ function flowc_parse_primary(p: ptr<Parser>) -> i32 {
         }
         p[0].arena.nodes[id].ival = TOK_BANG
         p[0].arena.nodes[id].a = operand
+        return id
+    }
+    # `if cond { then } else { else }` in expression position
+    if tok.kind == TOK_KEYWORD and tok.kw == KW_IF {
+        let start: i32 = tok.start
+        flowc_parser_advance(p)
+        let cond: i32 = flowc_parse_expr(p)
+        if cond == AST_NONE {
+            return AST_NONE
+        }
+        if flowc_parser_check(p[0], TOK_LBRACE) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        flowc_parser_advance(p)
+        let then_e: i32 = flowc_parse_expr(p)
+        if flowc_parser_check(p[0], TOK_RBRACE) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        flowc_parser_advance(p)
+        let mut else_e: i32 = AST_NONE
+        if flowc_parser_check_kw(p[0], KW_ELSE) == 1 {
+            flowc_parser_advance(p)
+            if flowc_parser_check(p[0], TOK_LBRACE) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            flowc_parser_advance(p)
+            else_e = flowc_parse_expr(p)
+            if flowc_parser_check(p[0], TOK_RBRACE) == 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+            flowc_parser_advance(p)
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IF_EXPR, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = cond
+        p[0].arena.nodes[id].b = then_e
+        p[0].arena.nodes[id].c = else_e
         return id
     }
     # `dbg expr` → AST_UNARY with ival=KW_DBG; cgen lowers to __flow_dbg(expr)

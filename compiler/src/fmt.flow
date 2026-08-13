@@ -225,7 +225,6 @@ function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
             return
         }
         if arena.nodes[id].ival == KW_EXPECT {
-            flowc_fmt_indent(w, indent)
             flowc_fmt_puts(w, "expect ")
             flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_fmt_putc(w, 10)

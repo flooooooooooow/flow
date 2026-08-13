@@ -770,6 +770,7 @@ const int32_t AST_C_IMPORT = 41;
 const int32_t AST_DEFER = 42;
 const int32_t AST_ENUM = 43;
 const int32_t AST_ENUM_VARIANT = 44;
+const int32_t AST_IF_EXPR = 45;
 AstArena flowc_ast_new(int32_t cap) {
   int64_t size = ((int64_t)(cap) * 40);
   uint8_t* raw = (uint8_t*)(malloc(size));
@@ -1425,6 +1426,50 @@ int32_t flowc_parse_primary(Parser* p) {
 }
   (((p[0]).arena).nodes[id]).ival = TOK_BANG;
   (((p[0]).arena).nodes[id]).a = operand;
+  return id;
+}
+  // `if cond { then } else { else }` in expression position
+  if ((tok).kind == TOK_KEYWORD && (tok).kw == KW_IF) {
+  int32_t start = (tok).start;
+  flowc_parser_advance(p);
+  int32_t cond = flowc_parse_expr(p);
+  if (cond == AST_NONE) {
+  return AST_NONE;
+}
+  if (flowc_parser_check(p[0], TOK_LBRACE) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  flowc_parser_advance(p);
+  int32_t then_e = flowc_parse_expr(p);
+  if (flowc_parser_check(p[0], TOK_RBRACE) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  flowc_parser_advance(p);
+  int32_t else_e = AST_NONE;
+  if (flowc_parser_check_kw(p[0], KW_ELSE) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_LBRACE) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  flowc_parser_advance(p);
+  else_e = flowc_parse_expr(p);
+  if (flowc_parser_check(p[0], TOK_RBRACE) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  flowc_parser_advance(p);
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_IF_EXPR, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = cond;
+  (((p[0]).arena).nodes[id]).b = then_e;
+  (((p[0]).arena).nodes[id]).c = else_e;
   return id;
 }
   // `dbg expr` → AST_UNARY with ival=KW_DBG
@@ -3847,6 +3892,16 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_putc(w, 41);
+  return;
+}
+  if (kind == AST_IF_EXPR) {
+  flowc_cgen_puts(w, "((");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ") ? (");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_puts(w, ") : (");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).c);
+  flowc_cgen_puts(w, "))");
   return;
 }
   if (kind == AST_CAST) {

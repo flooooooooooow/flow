@@ -52,6 +52,7 @@ export const AST_C_IMPORT: i32 = 41
 export const AST_DEFER: i32 = 42
 export const AST_ENUM: i32 = 43
 export const AST_ENUM_VARIANT: i32 = 44
+export const AST_IF_EXPR: i32 = 45
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.

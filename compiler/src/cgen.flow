@@ -15,7 +15,7 @@ import .ast {
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
-    AST_DEFER
+    AST_DEFER, AST_IF_EXPR
 }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
@@ -958,6 +958,17 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_putc(w, 41)
+        return
+    }
+    if kind == AST_IF_EXPR {
+        # ((cond) ? (then) : (else))
+        flowc_cgen_puts(w, "((")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_puts(w, ") ? (")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_puts(w, ") : (")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_puts(w, "))")
         return
     }
     if kind == AST_CAST {
