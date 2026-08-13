@@ -1,0 +1,128 @@
+# BLAS vs Naive Loop Benchmark
+# Shows the speedup from using Accelerate BLAS vs hand-written loops
+#
+# Run: FLOW_LDFLAGS="-framework Accelerate" ./flow run benchmarks/blas_vs_naive.flow
+# Or:  ./flow build benchmarks/blas_vs_naive.flow --c -o build/blas_bench.c
+#      clang -O3 build/blas_bench.c -framework Accelerate -o build/blas_bench
+
+import "stdlib/blas.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function clock() -> i64
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+# Naive triple-loop matmul (what you'd write by hand)
+function naive_matmul(A: Mat, B: Mat, C: Mat) -> void {
+    let m: i32 = A.rows
+    let k: i32 = A.cols
+    let n: i32 = B.cols
+    
+    for i in 0 to m {
+        for j in 0 to n {
+            let mut sum: f64 = 0.0
+            for kk in 0 to k {
+                sum = sum + mat_get(A, i, kk) * mat_get(B, kk, j)
+            }
+            mat_set(C, i, j, sum)
+        }
+    }
+}
+
+function benchmark(n: i32) -> void {
+    println("========================================")
+    print("  Matrix size: ")
+    print(n)
+    print("x")
+    print(n)
+    println("")
+    println("========================================")
+    
+    let A: Mat = mat_new(n, n)
+    let B: Mat = mat_new(n, n)
+    let C_blas: Mat = mat_new(n, n)
+    let C_naive: Mat = mat_new(n, n)
+    
+    # Initialize
+    for i in 0 to n {
+        for j in 0 to n {
+            mat_set(A, i, j, (i + j) % 7 + 1.0)
+            mat_set(B, i, j, (i * j) % 11 + 1.0)
+        }
+    }
+    
+    # Warm up
+    gemm(A, B, C_blas)
+    
+    # Benchmark BLAS
+    let t0: i64 = clock()
+    for iter in 0 to 10 {
+        gemm(A, B, C_blas)
+    }
+    let t1: i64 = clock()
+    let blas_time: f64 = (t1 - t0) / CLOCKS_PER_SEC / 10.0
+    let blas_gflops: f64 = 2.0 * n * n * n / blas_time / 1e9
+    
+    # Benchmark naive (fewer iterations for large matrices)
+    let naive_iters: i32 = 1
+    let t2: i64 = clock()
+    for iter in 0 to naive_iters {
+        naive_matmul(A, B, C_naive)
+    }
+    let t3: i64 = clock()
+    let naive_time: f64 = (t3 - t2) / CLOCKS_PER_SEC / naive_iters
+    let naive_gflops: f64 = 2.0 * n * n * n / naive_time / 1e9
+    
+    # Verify correctness
+    let diff: f64 = mat_get(C_blas, 0, 0) - mat_get(C_naive, 0, 0)
+    
+    print("  BLAS (Accelerate): ")
+    printf("%.4f", blas_time * 1000.0)
+    print(" ms, ")
+    printf("%.1f", blas_gflops)
+    println(" GFLOPS")
+    
+    print("  Naive loops:       ")
+    printf("%.4f", naive_time * 1000.0)
+    print(" ms, ")
+    printf("%.2f", naive_gflops)
+    println(" GFLOPS")
+    
+    let speedup: f64 = naive_time / blas_time
+    print("  Speedup:           ")
+    printf("%.1f", speedup)
+    println("x")
+    
+    print("  Correctness:       C[0,0] diff = ")
+    printf("%.6f", diff)
+    println("")
+    
+    mat_free(A)
+    mat_free(B)
+    mat_free(C_blas)
+    mat_free(C_naive)
+}
+
+function main() -> i32 {
+    println("")
+    println("╔══════════════════════════════════════════════════════════╗")
+    println("║     FLOW: BLAS vs Naive Loop Performance                 ║")
+    println("║     (Apple Accelerate / AMX backend)                     ║")
+    println("╚══════════════════════════════════════════════════════════╝")
+    println("")
+    
+    benchmark(128)
+    println("")
+    benchmark(256)
+    println("")
+    benchmark(512)
+    println("")
+    
+    println("Key insight: BLAS uses Apple's AMX coprocessor for ~100x speedup")
+    println("Flow gives you MATLAB ergonomics with C/Fortran performance.")
+    println("")
+    
+    return 0
+}
