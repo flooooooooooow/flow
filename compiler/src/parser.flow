@@ -989,6 +989,14 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
             return AST_NONE
         }
         let hi: i32 = flowc_parse_expr(p)
+        # Optional step: for i in 0 to 10 step 2
+        let step: i32 = AST_NONE
+        if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+            if flowc_parser_span_is(p[0], p[0].cur.start, p[0].cur.end, "step") == 1 {
+                flowc_parser_advance(p)
+                step = flowc_parse_expr(p)
+            }
+        }
         let body: i32 = flowc_parse_block(p)
         let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FOR, start, p[0].cur.start)
         if id == AST_NONE {
@@ -1000,6 +1008,12 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].a = lo
         p[0].arena.nodes[id].b = hi
         p[0].arena.nodes[id].c = body
+        if step != AST_NONE {
+            # Store step in a new node linked via name_start (unused for FOR).
+            # We use the node's `next` field is already used for chaining,
+            # so store step as a child node allocated separately.
+            p[0].arena.nodes[id].ival = step
+        }
         return id
     }
     # match expr { pattern => block, ... }
@@ -2243,7 +2257,6 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                                             } else {
                                                 p[0].err = 1
                                                 return AST_NONE
-                                            }
                                             }
                                         }
                                     }

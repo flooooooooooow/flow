@@ -1,0 +1,56 @@
+# Test for for-loop step support.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_for_step.flow
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+function main() -> i32 {
+    # Step by 2
+    let sum: i32 = 0
+    for i in 0 to 10 step 2 {
+        sum = sum + i
+    }
+    printf("sum of evens 0..10 step 2: %d\n", sum)
+    if sum != 20 {
+        printf("FAIL: expected 20, got %d\n", sum)
+        return 1
+    }
+
+    # Step by 5
+    let count: i32 = 0
+    for j in 0 to 100 step 5 {
+        count = count + 1
+    }
+    printf("count by 5s to 100: %d\n", count)
+    if count != 20 {
+        printf("FAIL: expected 20, got %d\n", count)
+        return 2
+    }
+
+    # Step by 1 (default, no step keyword)
+    let s3: i32 = 0
+    for k in 0 to 5 {
+        s3 = s3 + k
+    }
+    printf("sum 0..5: %d\n", s3)
+    if s3 != 10 {
+        printf("FAIL: expected 10, got %d\n", s3)
+        return 3
+    }
+
+    # Step by 3 with dotdot
+    let s4: i32 = 0
+    for m in 0 .. 12 step 3 {
+        s4 = s4 + m
+    }
+    printf("sum 0..12 step 3: %d\n", s4)
+    if s4 != 18 {
+        printf("FAIL: expected 18, got %d\n", s4)
+        return 4
+    }
+
+    puts("All for-step tests passed")
+    return 0
+}
