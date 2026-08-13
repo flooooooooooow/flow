@@ -106,7 +106,12 @@ def flow_to_c(program: Path, c_out: Path, library: bool = False) -> str:
 
 
 def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
-    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text."""
+    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text.
+
+    Always passes ``--wasm32`` so libc size_t/long lower as i32 (ILP32). Without
+    that, emcc/wasm-ld sees i64 size_t decls and signature-mismatch warnings that
+    break real programs (doom-flow #230).
+    """
     ll_out.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         [
@@ -116,6 +121,7 @@ def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
             str(program),
             "--mlir",
             "--llvm",
+            "--wasm32",
             "--lenient",
             "-o",
             str(ll_out),
@@ -798,6 +804,10 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
     worker because the browser only allows SharedArrayBuffer on
     cross-origin-isolated pages.
 
+    ``extra_c`` is accepted for gallery callers (paths relative to repo root)
+    and merged into ``extra_link``. ``extra_html`` is injected into the host
+    page (e.g. tiny-pointers coverage card).
+
     extra_flow_runtime lists lib/runtime/*.flow modules (repo-root-relative
     like extra_c) to compile as library TUs and link alongside the program —
     the wasm analogue of the native launcher's flow_runtime_flow_sources().
@@ -821,6 +831,13 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
 
     if not have_emcc():
         raise BuildError("emcc not on PATH (see docs/language/wasm.md)")
+
+    # Merge gallery-style extra_c (repo-root-relative paths) into extra_link.
+    for c in extra_c:
+        p = Path(c)
+        extra_link = list(extra_link or []) + [
+            p if p.is_absolute() else PROJECT_ROOT / p
+        ]
 
     artifacts: list[Path] = []
     if backend == "mlir":
