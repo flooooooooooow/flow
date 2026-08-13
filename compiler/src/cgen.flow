@@ -14,7 +14,7 @@ import .ast {
     AST_EXTERN, AST_IMPORT, AST_EXPORT, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
-    AST_EXTERN_TYPE, AST_C_INCLUDE
+    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT
 }
 
 extern {
@@ -1534,6 +1534,19 @@ export function flowc_cgen_emit_sigs(
             flowc_cgen_puts(&w, "#include \"")
             flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
             flowc_cgen_puts(&w, "\"\n")
+        }
+        if arena.nodes[item].kind == AST_C_IMPORT {
+            # @cImport: emit #include for the header. The Python compiler
+            # also runs cpp and generates extern declarations, but the
+            # self-hosted compiler currently just emits the include.
+            flowc_cgen_puts(&w, "#include <")
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
+            flowc_cgen_puts(&w, ">\n")
+        }
+        if arena.nodes[item].kind == AST_C_EMBED {
+            # @cEmbed: emit the raw C code verbatim (strip quotes)
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
+            flowc_cgen_putc(&w, 10)  # newline
         }
         if arena.nodes[item].kind == AST_EXTERN_TYPE {
             flowc_cgen_puts(&w, "typedef struct ")
