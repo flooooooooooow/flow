@@ -13,7 +13,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -25,7 +25,7 @@ import .ast {
     AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT, AST_INT, AST_FLOAT,
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
-    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT,
+    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
 }
 
@@ -1128,6 +1128,22 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
             p[0].err = 1
             return AST_NONE
         }
+        return id
+    }
+    # defer expr
+    if flowc_parser_check_kw(p[0], KW_DEFER) == 1 {
+        let start: i32 = p[0].cur.start
+        flowc_parser_advance(p)
+        let expr: i32 = flowc_parse_expr(p)
+        if expr == AST_NONE {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_DEFER, start, p[0].cur.start)
+        if id == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = expr
         return id
     }
     if flowc_parser_check(p[0], TOK_IDENT) == 1 {

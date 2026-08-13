@@ -79,6 +79,7 @@ export const KW_UNIT: i32 = 27
 export const KW_EFFECT: i32 = 28
 export const KW_CAPABILITY: i32 = 29
 export const KW_NOT: i32 = 30
+export const KW_DEFER: i32 = 31
 
 export struct Token {
     kind: i32,
