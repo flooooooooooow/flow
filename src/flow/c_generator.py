@@ -1049,6 +1049,12 @@ class CGenerator:
                 continue
             # Emit extern function declarations (needed for linking with runtime)
             if getattr(fn, 'is_extern', False):
+                # Skip c_import functions: the #include already provides
+                # the prototype. Emitting our own causes conflicting-type
+                # errors on Linux where system headers use __attribute__
+                # and different typedef aliases.
+                if getattr(fn, 'is_c_import', False):
+                    continue
                 lines.append(self._c_function_decl(fn) + ";")
                 continue
             # Skip math functions only if they take primitive types

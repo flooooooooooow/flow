@@ -600,7 +600,7 @@ def _split_params(params_str: str) -> List[str]:
 def resolve_c_imports(declarations: List, source_dir: str) -> List:
     """Process CImportDecl objects in declarations, replacing them with
     generated extern declarations."""
-    from .parser import CImportDecl, CIncludeDecl
+    from .parser import CImportDecl, CIncludeDecl, FunctionDecl
 
     result = []
     for decl in declarations:
@@ -610,7 +610,13 @@ def resolve_c_imports(declarations: List, source_dir: str) -> List:
             # Parse the header
             include_dirs = [source_dir, "/usr/include", "/usr/local/include"]
             parsed = parse_c_header(decl.header, include_dirs)
-            result.extend(parsed)
+            # Mark function declarations as c_import so the C generator
+            # skips emitting duplicate prototypes (the #include above
+            # already provides them). The type checker still sees them.
+            for p in parsed:
+                if isinstance(p, FunctionDecl):
+                    p.is_c_import = True
+                result.append(p)
         else:
             result.append(decl)
     return result

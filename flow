@@ -1963,9 +1963,9 @@ run_tests() {
                 
                 if [ $clang_status -ne 0 ]; then
                     print_error "✗ $rel_path (clang failed)"
-                    if [ $verbose -eq 1 ]; then
-                        echo "    $clang_output" | head -5
-                    fi
+                    # Always show clang errors in CI, not just verbose mode
+                    echo "    clang output:"
+                    echo "$clang_output" | head -10
                     clang_failed=$((clang_failed + 1))
                     failed_files="$failed_files\n  - $rel_path (clang)"
                     continue
