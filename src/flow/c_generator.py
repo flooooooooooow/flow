@@ -5006,15 +5006,19 @@ def flow_to_c(
         constants = [d for d in declarations if isinstance(d, ConstDecl)]
         statics = [d for d in declarations if isinstance(d, StaticDecl)]
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
-        # Deduplicate non-exported functions by name: when multiple imported
-        # modules define the same helper (e.g. str_append, substr), only the
-        # first definition is emitted. Exported functions are kept as-is
-        # (the module resolver already rejects exported-name collisions).
+        # Deduplicate functions by name: when multiple imported modules define
+        # the same helper (e.g. str_append, substr), only the first definition
+        # is emitted. sizeof_ intrinsics are also deduped even when exported,
+        # since multiple stdlib modules (memory.flow, memory_simple.flow) export
+        # the same sizeof_i32 and the C generator emits them as identical
+        # definitions. Other exported functions are kept as-is (the module
+        # resolver already rejects exported-name collisions).
         # Forward declarations (empty body) never block a later real definition.
         _seen_fn: set = set()
         _deduped: list = []
         for fn in functions:
-            if getattr(fn, "is_exported", False):
+            is_sizeof = fn.name.startswith("sizeof_") and len(fn.parameters) == 0
+            if getattr(fn, "is_exported", False) and not is_sizeof:
                 _deduped.append(fn)
                 continue
             key = fn.name
