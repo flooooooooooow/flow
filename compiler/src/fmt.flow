@@ -12,7 +12,8 @@ import .ast {
     AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_BOOL,
     AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
     AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
-    AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT
+    AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT,
+    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS
 }
 
 extern {
@@ -389,6 +390,13 @@ function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
         flowc_fmt_puts(w, "continue\n")
         return
     }
+    if kind == AST_DEFER {
+        flowc_fmt_indent(w, indent)
+        flowc_fmt_puts(w, "defer ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_putc(w, 10)
+        return
+    }
     if kind == AST_ASSIGN {
         flowc_fmt_indent(w, indent)
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -483,6 +491,31 @@ function flowc_fmt_emit_const(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id:
     flowc_fmt_putc(w, 10)
 }
 
+function flowc_fmt_emit_enum(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, is_export: i32) {
+    if is_export == 1 {
+        flowc_fmt_puts(w, "export ")
+    }
+    flowc_fmt_puts(w, "enum ")
+    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_fmt_puts(w, " {\n")
+    let mut var: i32 = arena.nodes[id].a
+    while var != AST_NONE {
+        flowc_fmt_indent(w, 1)
+        flowc_fmt_put_span(w, src, arena.nodes[var].name_start, arena.nodes[var].name_end)
+        flowc_fmt_putc(w, 10)
+        var = arena.nodes[var].next
+    }
+    flowc_fmt_puts(w, "}\n")
+}
+
+function flowc_fmt_emit_type_alias(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_fmt_puts(w, "type ")
+    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_fmt_puts(w, " = ")
+    flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
+    flowc_fmt_putc(w, 10)
+}
+
 # Emit formatted Flow for a program AST into `out` (capacity `out_cap`).
 # Returns bytes written, or -1 on overflow / bad root.
 # `src` is the original Flow source (name spans index into it).
@@ -520,6 +553,20 @@ export function flowc_fmt_emit(arena: AstArena, root: i32, src: ptr<u8>, out: pt
             flowc_fmt_emit_const(&w, arena, src, item)
             wrote = 1
         }
+        if kind == AST_ENUM {
+            if first_item == 0 {
+                flowc_fmt_putc(&w, 10)
+            }
+            flowc_fmt_emit_enum(&w, arena, src, item, 0)
+            wrote = 1
+        }
+        if kind == AST_TYPE_ALIAS {
+            if first_item == 0 {
+                flowc_fmt_putc(&w, 10)
+            }
+            flowc_fmt_emit_type_alias(&w, arena, src, item)
+            wrote = 1
+        }
         if kind == AST_EXPORT {
             let inner: i32 = arena.nodes[item].a
             if inner != AST_NONE {
@@ -536,6 +583,13 @@ export function flowc_fmt_emit(arena: AstArena, root: i32, src: ptr<u8>, out: pt
                         flowc_fmt_putc(&w, 10)
                     }
                     flowc_fmt_emit_fn(&w, arena, src, inner, 1)
+                    wrote = 1
+                }
+                if ik == AST_ENUM {
+                    if first_item == 0 {
+                        flowc_fmt_putc(&w, 10)
+                    }
+                    flowc_fmt_emit_enum(&w, arena, src, inner, 1)
                     wrote = 1
                 }
             }
