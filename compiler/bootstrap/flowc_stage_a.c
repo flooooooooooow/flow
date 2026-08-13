@@ -174,6 +174,7 @@ const int32_t KW_UNIT = 27;
 const int32_t KW_EFFECT = 28;
 const int32_t KW_CAPABILITY = 29;
 const int32_t KW_NOT = 30;
+const int32_t KW_DEFER = 31;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -288,6 +289,7 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t effect_kw[6] = { 101, 102, 102, 101, 99, 116 };
   uint8_t cap_kw[10] = { 99, 97, 112, 97, 98, 105, 108, 105, 116, 121 };
   uint8_t not_kw[3] = { 110, 111, 116 };
+  uint8_t defer_kw[5] = { 100, 101, 102, 101, 114 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -407,6 +409,10 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = not_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_NOT;
+}
+  p = defer_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 5) == 1) {
+  return KW_DEFER;
 }
   return 0;
 }
@@ -718,6 +724,7 @@ const int32_t AST_EXTERN_TYPE = 38;
 const int32_t AST_C_INCLUDE = 39;
 const int32_t AST_C_EMBED = 40;
 const int32_t AST_C_IMPORT = 41;
+const int32_t AST_DEFER = 42;
 AstArena flowc_ast_new(int32_t cap) {
   int64_t size = ((int64_t)(cap) * 40);
   uint8_t* raw = (uint8_t*)(malloc(size));
@@ -1893,6 +1900,21 @@ int32_t flowc_parse_stmt(Parser* p) {
   (p[0]).err = 1;
   return AST_NONE;
 }
+  return id;
+}
+  if (flowc_parser_check_kw(p[0], KW_DEFER) == 1) {
+  int32_t start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  int32_t expr = flowc_parse_expr(p);
+  if (expr == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_DEFER, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = expr;
   return id;
 }
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
@@ -3889,6 +3911,14 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
   if (kind == AST_CONTINUE) {
   flowc_cgen_puts(w, "  continue;\n");
+  return;
+}
+  if (kind == AST_DEFER) {
+  // defer: emit the expression as a statement. Full defer semantics
+  // (emit at end of enclosing block) are handled by the Python compiler.
+  flowc_cgen_puts(w, "  ");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ";\n");
   return;
 }
   if (kind == AST_ASSIGN) {

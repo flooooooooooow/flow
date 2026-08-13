@@ -49,6 +49,7 @@ export const AST_EXTERN_TYPE: i32 = 38
 export const AST_C_INCLUDE: i32 = 39
 export const AST_C_EMBED: i32 = 40
 export const AST_C_IMPORT: i32 = 41
+export const AST_DEFER: i32 = 42
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
