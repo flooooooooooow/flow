@@ -1752,6 +1752,12 @@ class Parser:
                     TokenType.IMPORT,
                 ):
                     is_exported = True
+                elif (
+                    self.current_token.type == TokenType.IDENTIFIER
+                    and self.current_token.value == "unit"
+                    and self.lookahead.type == TokenType.IDENTIFIER
+                ):
+                    is_exported = True
                 else:
                     declarations.append(self.parse_export_list())
                     continue
