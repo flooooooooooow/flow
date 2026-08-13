@@ -144,6 +144,7 @@ const int32_t TOK_MINUS_EQ = 43;
 const int32_t TOK_STAR_EQ = 44;
 const int32_t TOK_SLASH_EQ = 45;
 const int32_t TOK_PERCENT_EQ = 46;
+const int32_t TOK_IN = 47;
 const int32_t KW_LET = 1;
 const int32_t KW_FUNCTION = 2;
 const int32_t KW_RETURN = 3;
@@ -1503,6 +1504,9 @@ int32_t flowc_parse_binop_kind(Parser p) {
   if (((p).cur).kw == KW_AND) {
   return TOK_AMPAMP;
 }
+  if (((p).cur).kw == KW_IN) {
+  return TOK_IN;
+}
 }
   return (0 - 1);
 }
@@ -1532,7 +1536,7 @@ int32_t flowc_parse_binop_prec(int32_t op) {
   if (op == TOK_EQEQ || op == TOK_NE) {
   return 4;
 }
-  if (op == TOK_LT || op == TOK_LE || op == TOK_GT || op == TOK_GE) {
+  if (op == TOK_LT || op == TOK_LE || op == TOK_GT || op == TOK_GE || op == TOK_IN) {
   return 5;
 }
   if (op == TOK_PLUS || op == TOK_MINUS) {
@@ -3700,6 +3704,24 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   return;
 }
 }
+  // `x in arr` — linear scan; `ch in s` — strchr
+  if (op == TOK_IN) {
+  if (flowc_cgen_expr_is_string(w, arena, src, ((arena).nodes[id]).b) == 1) {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, " != NULL && strchr(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_puts(w, ", (int)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ")[0]) != NULL");
+} else {
+  flowc_cgen_puts(w, "__flow_in_arr(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_puts(w, ", ");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_putc(w, 41);
+}
+  return;
+}
   int32_t wrap = flowc_cgen_binop_needs_parens(op);
   if (wrap == 1) {
   flowc_cgen_putc(w, 40);
@@ -4946,6 +4968,14 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n");
   flowc_cgen_puts((&w), "  return r;\n");
   flowc_cgen_puts((&w), "}\n");
+  flowc_cgen_putc((&w), 10);
+  // `in` operator helper: linear scan over an array<T,N>.
+  flowc_cgen_puts((&w), "#define __flow_in_arr(arr, val) __extension__ ({ \\\n");
+  flowc_cgen_puts((&w), "    int _found = 0; \\\n");
+  flowc_cgen_puts((&w), "    size_t _n = sizeof(arr)/sizeof((arr)[0]); \\\n");
+  flowc_cgen_puts((&w), "    for (size_t _i = 0; _i < _n; _i++) { \\\n");
+  flowc_cgen_puts((&w), "        if ((arr)[_i] == (val)) { _found = 1; break; } \\\n");
+  flowc_cgen_puts((&w), "    } _found; })\n");
   flowc_cgen_putc((&w), 10);
 }
   int32_t item = ((arena).nodes[root]).a;

@@ -374,6 +374,10 @@ function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_fmt_puts(w, " to ")
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        if arena.nodes[id].ival != AST_NONE and arena.nodes[id].ival != 0 {
+            flowc_fmt_puts(w, " step ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].ival)
+        }
         flowc_fmt_puts(w, " {\n")
         flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, indent + 1)
         flowc_fmt_indent(w, indent)

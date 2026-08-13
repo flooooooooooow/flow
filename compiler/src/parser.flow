@@ -9,7 +9,7 @@ import .token {
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
     TOK_SHL, TOK_SHR,
-    TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
+    TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ, TOK_IN,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
@@ -711,6 +711,7 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
     if op == TOK_KEYWORD {
         if p.cur.kw == KW_OR { return TOK_BARBAR }
         if p.cur.kw == KW_AND { return TOK_AMPAMP }
+        if p.cur.kw == KW_IN { return TOK_IN }
     }
     return 0 - 1
 }
@@ -724,7 +725,7 @@ function flowc_parse_binop_prec(op: i32) -> i32 {
     if op == TOK_SHL { return 3 }
     if op == TOK_SHR { return 3 }
     if op == TOK_EQEQ or op == TOK_NE { return 4 }
-    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE { return 5 }
+    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE or op == TOK_IN { return 5 }
     if op == TOK_PLUS or op == TOK_MINUS { return 6 }
     if op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT { return 7 }
     return 0 - 1

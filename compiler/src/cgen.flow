@@ -4,7 +4,7 @@
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
-    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET, TOK_SHL, TOK_SHR
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET, TOK_SHL, TOK_SHR, TOK_IN
 }
 import .ast {
     AstArena, AST_NONE,
@@ -748,6 +748,25 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 flowc_cgen_putc(w, 41)
                 return
             }
+        }
+        # `x in arr` — linear scan; `ch in s` — strchr
+        if op == TOK_IN {
+            # Check if right side is a string
+            if flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b) == 1 {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, " != NULL && strchr(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_puts(w, ", (int)(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ")[0]) != NULL")
+            } else {
+                flowc_cgen_puts(w, "__flow_in_arr(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_puts(w, ", ")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            }
+            return
         }
         let wrap: i32 = flowc_cgen_binop_needs_parens(op)
         if wrap == 1 {
@@ -1894,6 +1913,14 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n")
         flowc_cgen_puts(&w, "  return r;\n")
         flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
+        # `in` operator helper: linear scan over an array<T,N>.
+        flowc_cgen_puts(&w, "#define __flow_in_arr(arr, val) __extension__ ({ \\\n")
+        flowc_cgen_puts(&w, "    int _found = 0; \\\n")
+        flowc_cgen_puts(&w, "    size_t _n = sizeof(arr)/sizeof((arr)[0]); \\\n")
+        flowc_cgen_puts(&w, "    for (size_t _i = 0; _i < _n; _i++) { \\\n")
+        flowc_cgen_puts(&w, "        if ((arr)[_i] == (val)) { _found = 1; break; } \\\n")
+        flowc_cgen_puts(&w, "    } _found; })\n")
         flowc_cgen_putc(&w, 10)
     }
 
