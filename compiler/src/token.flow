@@ -83,6 +83,7 @@ export const KW_DEFER: i32 = 31
 export const KW_ENUM: i32 = 32
 export const KW_TRAIT: i32 = 33
 export const KW_IMPL: i32 = 34
+export const KW_TEST: i32 = 35
 
 export struct Token {
     kind: i32,

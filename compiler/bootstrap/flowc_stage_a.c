@@ -178,6 +178,7 @@ const int32_t KW_DEFER = 31;
 const int32_t KW_ENUM = 32;
 const int32_t KW_TRAIT = 33;
 const int32_t KW_IMPL = 34;
+const int32_t KW_TEST = 35;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -296,6 +297,7 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t enum_kw[4] = { 101, 110, 117, 109 };
   uint8_t trait_kw[5] = { 116, 114, 97, 105, 116 };
   uint8_t impl_kw[4] = { 105, 109, 112, 108 };
+  uint8_t test_kw[4] = { 116, 101, 115, 116 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -431,6 +433,10 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = impl_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 4) == 1) {
   return KW_IMPL;
+}
+  p = test_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 4) == 1) {
+  return KW_TEST;
 }
   return 0;
 }
@@ -2979,7 +2985,7 @@ int32_t flowc_parse_program(Parser* p) {
   flowc_parser_skip_brace_block(p);
   item = flowc_ast_alloc((&(p[0]).arena), AST_EXPR_STMT, eff_start, ((p[0]).cur).start);
 } else {
-  if (flowc_parser_check_kw(p[0], KW_TRAIT) == 1 || flowc_parser_check_kw(p[0], KW_IMPL) == 1) {
+  if (flowc_parser_check_kw(p[0], KW_TRAIT) == 1 || flowc_parser_check_kw(p[0], KW_IMPL) == 1 || flowc_parser_check_kw(p[0], KW_TEST) == 1) {
   int32_t ti_start = ((p[0]).cur).start;
   flowc_parser_advance(p);
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
