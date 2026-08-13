@@ -1,0 +1,58 @@
+# Test for the Flow-native C header parser (c_parser.flow).
+# Calls flowc_cparser_preprocess and flowc_cparser_parse on stdlib.h.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_parser.flow
+# Exit 0 on success.
+
+import "compiler/src/c_parser.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+function main() -> i32 {
+    # Allocate a buffer for the preprocessed text
+    let buf: ptr<u8> = malloc(1048576)
+    if buf == null {
+        puts("FAIL: could not allocate buffer")
+        return 1
+    }
+
+    # Preprocess stdlib.h
+    let header: ptr<u8> = "stdlib.h" as ptr<u8>
+    let text_len: i32 = flowc_cparser_preprocess(header, 8, buf, 1048576)
+    if text_len <= 0 {
+        puts("FAIL: preprocessing returned empty")
+        free(buf)
+        return 2
+    }
+
+    printf("Preprocessed %d bytes\n", text_len)
+
+    # Parse the declarations
+    # Allocate space for declarations (each CDecl is ~48 bytes)
+    let decls: ptr<CDecl> = malloc(4096 * 48) as ptr<CDecl>
+    if decls == null {
+        puts("FAIL: could not allocate decls")
+        free(buf)
+        return 3
+    }
+
+    let n_decls: i32 = flowc_cparser_parse(buf, text_len, decls, 4096)
+    printf("Parsed %d declarations\n", n_decls)
+
+    if n_decls <= 0 {
+        puts("FAIL: no declarations parsed")
+        free(buf)
+        free(decls as ptr<u8>)
+        return 4
+    }
+
+    printf("Successfully parsed %d C declarations from stdlib.h\n", n_decls)
+    puts("All c_parser tests passed")
+    free(buf)
+    free(decls as ptr<u8>)
+    return 0
+}

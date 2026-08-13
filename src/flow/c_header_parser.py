@@ -105,14 +105,25 @@ def _c_type_to_flow(c_type: str) -> str:
 
 
 def _preprocess_header(header: str, include_dirs: List[str]) -> str:
-    """Run cpp -P on a header and return the preprocessed text."""
+    """Run cpp -P on a header and return the preprocessed text.
+
+    On macOS, cpp (which is clang) can't take a header name directly.
+    We pipe `#include <header>` through cpp instead.
+    """
+    # Build the include directive
+    if header.startswith("/") or header.startswith('"'):
+        include_line = f"#include {header}\n"
+    else:
+        include_line = f"#include <{header}>\n"
+
     cmd = ["cpp", "-P"]
     for d in include_dirs:
         cmd.extend(["-I", d])
-    cmd.append(header)
+    cmd.append("-")  # read from stdin
     try:
         result = subprocess.run(
             cmd,
+            input=include_line,
             capture_output=True,
             text=True,
             timeout=30,
@@ -124,6 +135,7 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
         try:
             result = subprocess.run(
                 cmd,
+                input=include_line,
                 capture_output=True,
                 text=True,
                 timeout=30,
