@@ -14,7 +14,7 @@ import .ast {
     AST_EXTERN, AST_IMPORT, AST_EXPORT, AST_CONST, AST_CAST, AST_ARRAY_LIT,
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
-    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT
+    AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM
 }
 
 extern {
@@ -1884,6 +1884,33 @@ export function flowc_cgen_emit_sigs(
         let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
         if st != AST_NONE {
             flowc_cgen_emit_struct(&w, arena, src, st)
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 1.5a: enum typedefs -> typedef enum { Name_Variant0, ... } Name;
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let en: i32 = flowc_cgen_unwrap(arena, item, AST_ENUM)
+        if en != AST_NONE {
+            flowc_cgen_puts(&w, "typedef enum {")
+            let var: i32 = arena.nodes[en].a
+            let first: i32 = 1
+            while var != AST_NONE {
+                if first == 0 {
+                    flowc_cgen_puts(&w, ", ")
+                } else {
+                    flowc_cgen_putc(&w, 32)
+                }
+                first = 0
+                flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+                flowc_cgen_putc(&w, 95)
+                flowc_cgen_put_span(&w, src, arena.nodes[var].name_start, arena.nodes[var].name_end)
+                var = arena.nodes[var].next
+            }
+            flowc_cgen_puts(&w, " } ")
+            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            flowc_cgen_puts(&w, ";\n")
         }
         item = arena.nodes[item].next
     }
