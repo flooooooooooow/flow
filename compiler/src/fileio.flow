@@ -11,6 +11,9 @@ extern {
     function fwrite(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
     function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
     function ftell(fp: ptr<void>) -> i64
+    function remove(path: string) -> i32
+    function mkdir(path: string, mode: i32) -> i32
+    function stat(path: string, buf: ptr<u8>) -> i32
 }
 
 const FLOWC_IO_SEEK_SET: i32 = 0
@@ -75,4 +78,37 @@ export function flowc_write_file(path: string, buf: ptr<u8>, n: i32) -> i32 {
         return -1
     }
     return 0
+}
+
+# Delete a file. Returns 0 on success, -1 on failure.
+export function flowc_io_remove(path: string) -> i32 {
+    return remove(path)
+}
+
+# Create a directory with mode 0755. Returns 0 on success, -1 on failure.
+export function flowc_io_mkdir(path: string) -> i32 {
+    return mkdir(path, 493)
+}
+
+# Check if a file exists. Returns 1 if it exists, 0 otherwise.
+# Uses stat() with a small stack buffer (256 bytes is enough for any stat struct).
+export function flowc_io_exists(path: string) -> i32 {
+    let buf: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let ret: i32 = stat(path, &buf[0])
+    if ret == 0 {
+        return 1
+    }
+    return 0
+}
+
+# Get file size by seeking to end. Returns size in bytes, or -1 on error.
+export function flowc_io_file_size(path: string) -> i64 {
+    let fp: ptr<void> = flowc_io_fopen(path, "rb")
+    if fp == null {
+        return -1
+    }
+    let _s: i32 = flowc_io_fseek(fp, 0, FLOWC_IO_SEEK_END)
+    let size: i64 = flowc_io_ftell(fp)
+    let _c: i32 = flowc_io_fclose(fp)
+    return size
 }

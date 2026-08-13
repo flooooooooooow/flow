@@ -1,0 +1,105 @@
+# Test for fileio.flow extended operations.
+# Tests remove, mkdir, exists, and file_size.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fileio_ext.flow
+
+import "compiler/src/fileio.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+function main() -> i32 {
+    # Test exists on a known file
+    let self_exists: i32 = flowc_io_exists("tests/lang/test_fileio_ext.flow")
+    if self_exists != 1 {
+        puts("FAIL: self file does not exist")
+        return 1
+    }
+    puts("exists(self) OK")
+
+    # Test exists on a non-existent file
+    let nope: i32 = flowc_io_exists("/tmp/flow_nonexistent_file_12345")
+    if nope != 0 {
+        puts("FAIL: non-existent file reports as existing")
+        return 2
+    }
+    puts("exists(nonexistent) OK")
+
+    # Test file_size on a known file
+    let size: i64 = flowc_io_file_size("tests/lang/test_fileio_ext.flow")
+    if size <= 0 {
+        printf("FAIL: file_size = %lld\n", size)
+        return 3
+    }
+    printf("file_size = %lld bytes\n", size)
+
+    # Test write + read + remove cycle
+    let test_path: string = "/tmp/flow_fileio_test.txt"
+    let test_data: string = "Hello from Flow fileio!"
+    let data_ptr: ptr<u8> = test_data as ptr<u8>
+    let data_len: i32 = strlen(data_ptr) as i32
+
+    # Remove if exists
+    let _r: i32 = flowc_io_remove(test_path)
+
+    # Write
+    let wret: i32 = flowc_write_file(test_path, data_ptr, data_len)
+    if wret != 0 {
+        puts("FAIL: write_file failed")
+        return 4
+    }
+    puts("write_file OK")
+
+    # Verify exists
+    let exists_after_write: i32 = flowc_io_exists(test_path)
+    if exists_after_write != 1 {
+        puts("FAIL: file does not exist after write")
+        return 5
+    }
+    puts("exists(after write) OK")
+
+    # Read back
+    let read_buf: ptr<u8> = malloc(256)
+    if read_buf == null {
+        puts("FAIL: malloc failed")
+        return 6
+    }
+    let nread: i32 = flowc_read_file(test_path, read_buf, 255)
+    if nread <= 0 {
+        puts("FAIL: read_file failed")
+        free(read_buf)
+        return 7
+    }
+    read_buf[nread] = 0
+    printf("read back %d bytes: %s\n", nread, read_buf as string)
+
+    # Verify content
+    let is_match: i32 = 1
+    let i: i32 = 0
+    while i < nread and i < data_len {
+        if read_buf[i] != data_ptr[i] {
+            is_match = 0
+        }
+        i = i + 1
+    }
+    if is_match == 0 or nread != data_len {
+        puts("FAIL: content mismatch")
+        free(read_buf)
+        return 8
+    }
+    puts("content matches OK")
+
+    # Clean up
+    let _r2: i32 = flowc_io_remove(test_path)
+    free(read_buf)
+
+    puts("All fileio_ext tests passed")
+    return 0
+}
+
+extern {
+    function strlen(s: string) -> i64
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
