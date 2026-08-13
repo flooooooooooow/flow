@@ -53,7 +53,7 @@ function main() -> i32 {
     expected[4] = 8
     expected[5] = 9
 
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < 6 {
         printf("arr[%d] = %d\n", i, arr[i])
         if arr[i] != expected[i] {

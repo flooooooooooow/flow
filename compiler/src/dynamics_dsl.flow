@@ -52,7 +52,7 @@ export function flowc_strip_comments(line: string) -> string {
         }
         i = i + 1
     }
-    let end: i32 = n
+    let mut end: i32 = n
     if hash_pos >= 0 {
         end = hash_pos
     }
@@ -61,7 +61,7 @@ export function flowc_strip_comments(line: string) -> string {
         end = end - 1
     }
     # Strip leading whitespace
-    let start: i32 = 0
+    let mut start: i32 = 0
     while start < end and is_space(p[start]) == 1 {
         start = start + 1
     }

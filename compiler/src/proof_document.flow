@@ -25,7 +25,7 @@ function str_append(a: string, b: string) -> string {
         memcpy(buf, a, la as i64)
     }
     if lb > 0 {
-        memcpy(buf + la, b, lb as i64)
+        memcpy((buf as ptr<u8>) + la, b, lb as i64)
     }
     buf[total] = 0
     return buf as string
@@ -38,7 +38,7 @@ function int_to_str(n: i32) -> string {
     let mut buf: array<u8, 16> = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     let mut pos: i32 = 15
     let mut val: i32 = n
-    let negative: i32 = 0
+    let mut negative: i32 = 0
     if val < 0 {
         negative = 1
         val = -val
@@ -54,8 +54,8 @@ function int_to_str(n: i32) -> string {
     }
     let start: i32 = pos + 1
     let len: i32 = 16 - start
-    let result: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
-    memcpy(result, buf + start, len as i64)
+    let mut result: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    memcpy(result, (buf as ptr<u8>) + start, len as i64)
     result[len] = 0
     return result as string
 }
@@ -76,7 +76,7 @@ export function flowc_circled(n: i32) -> string {
         return buf as string
     }
     # Fallback: (n)
-    let s: string = "("
+    let mut s: string = "("
     s = str_append(s, int_to_str(n))
     s = str_append(s, ")")
     return s
@@ -86,7 +86,7 @@ export function flowc_circled(n: i32) -> string {
 
 # \textbf{N.}
 export function flowc_step_label_latex(n: i32) -> string {
-    let s: string = "\\textbf{"
+    let mut s: string = "\\textbf{"
     s = str_append(s, int_to_str(n))
     s = str_append(s, ".}")
     return s
@@ -96,7 +96,7 @@ export function flowc_step_label_latex(n: i32) -> string {
 
 # Format a single step number as "step N".
 function fmt_single_ref(n: i32) -> string {
-    let s: string = "step "
+    let mut s: string = "step "
     s = str_append(s, int_to_str(n))
     return s
 }
@@ -140,14 +140,14 @@ export function flowc_fmt_refs(nums: string) -> string {
         return fmt_single_ref(values[0])
     }
     if count == 2 {
-        let s: string = fmt_single_ref(values[0])
+        let mut s: string = fmt_single_ref(values[0])
         s = str_append(s, " and ")
         s = str_append(s, fmt_single_ref(values[1]))
         return s
     }
 
     # 3+: "step 1, step 2, and step 3"
-    let s: string = ""
+    let mut s: string = ""
     let mut k: i32 = 0
     while k < count {
         if k == count - 1 {
@@ -168,7 +168,7 @@ export function flowc_from_refs(nums: string) -> string {
     if strlen(refs) == 0 {
         return ""
     }
-    let s: string = "From "
+    let mut s: string = "From "
     s = str_append(s, refs)
     s = str_append(s, ", ")
     return s
@@ -193,12 +193,12 @@ export function flowc_under_refs(nums: string) -> string {
 
     let refs: string = flowc_fmt_refs(nums)
     if commas == 0 {
-        let s: string = "Under the supposition in "
+        let mut s: string = "Under the supposition in "
         s = str_append(s, refs)
         s = str_append(s, ", ")
         return s
     }
-    let s: string = "Under the suppositions in "
+    let mut s: string = "Under the suppositions in "
     s = str_append(s, refs)
     s = str_append(s, ", ")
     return s
@@ -211,7 +211,7 @@ export function flowc_under_refs(nums: string) -> string {
 export function flowc_slug_label(path: string) -> string {
     let n: i32 = strlen(path) as i32
     let p: ptr<u8> = path
-    let result: string = ""
+    let mut result: string = ""
     let mut i: i32 = 0
     while i < n {
         let c: i32 = p[i]

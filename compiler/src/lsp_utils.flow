@@ -35,14 +35,16 @@ function is_space(c: i32) -> i32 {
 # ── String helpers ───────────────────────────────────────────────
 
 function substr(src: string, start: i32, end: i32) -> string {
+    let mut s: i32 = start
+    let mut e: i32 = end
     let n: i32 = strlen(src) as i32
-    if start < 0 { start = 0 }
-    if end > n { end = n }
-    if start >= end { return "" }
-    let len: i32 = end - start
+    if s < 0 { s = 0 }
+    if e > n { e = n }
+    if s >= e { return "" }
+    let len: i32 = e - s
     let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
     let p: ptr<u8> = src
-    memcpy(buf, p + start, len as i64)
+    memcpy(buf, p + s, len as i64)
     buf[len] = 0
     return buf as string
 }
@@ -77,7 +79,7 @@ export struct FlowcRange {
 # If the cursor is not on a word, returns a single-character range.
 export function flowc_word_range(line_text: string, column: i32) -> FlowcRange {
     let n: i32 = strlen(line_text) as i32
-    let col: i32 = column
+    let mut col: i32 = column
     if col > n {
         col = n - 1
     }
@@ -107,7 +109,7 @@ export function flowc_word_range(line_text: string, column: i32) -> FlowcRange {
 # Includes dots and underscores (for dyn.dsys, obj.field, etc.).
 export function flowc_completion_prefix(line_text: string, character: i32) -> string {
     let n: i32 = strlen(line_text) as i32
-    let i: i32 = character
+    let mut i: i32 = character
     if i > n { i = n }
     let p: ptr<u8> = line_text
     let mut start: i32 = i

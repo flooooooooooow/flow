@@ -69,7 +69,7 @@ export function flowc_syntax_token_at_position(line_text: string, col: i32) -> s
         return ""
     }
     # Allow cursor at end-of-line to hit the last char.
-    let c: i32 = col
+    let mut c: i32 = col
     if c >= text_len {
         c = text_len - 1
     }

@@ -68,7 +68,7 @@ function line_starts_with_ns(src: string, line_start: i32, prefix: string) -> i3
         i = i + 1
     }
     # Check for "dyn." or "dynamics."
-    let has_ns: i32 = 0
+    let mut has_ns: i32 = 0
     if i + 4 <= n {
         if p[i] == 100 and p[i+1] == 121 and p[i+2] == 110 and p[i+3] == 46 {
             i = i + 4
@@ -163,7 +163,7 @@ export function flowc_has_fill_shader_dsl(source: string) -> i32 {
             if p[i] == 115 and p[i+1] == 104 and p[i+2] == 97
                and p[i+3] == 100 and p[i+4] == 101 and p[i+5] == 114 {
                 # "shader" matched, check word boundary
-                let is_word_before: i32 = 0
+                let mut is_word_before: i32 = 0
                 if i > 0 and is_ident_char(p[i-1]) == 1 { is_word_before = 1 }
                 if is_word_before == 0 {
                     let mut j: i32 = i + 6

@@ -139,20 +139,22 @@ export function flowc_matches_pattern(source: string, pattern: string) -> i32 {
 
 # Copy a substring [start, end) from src into a malloc'd buffer.
 function substr(src: string, start: i32, end: i32) -> string {
+    let mut s: i32 = start
+    let mut e: i32 = end
     let n: i32 = strlen(src) as i32
-    if start < 0 {
-        start = 0
+    if s < 0 {
+        s = 0
     }
-    if end > n {
-        end = n
+    if e > n {
+        e = n
     }
-    if start >= end {
+    if s >= e {
         return ""
     }
-    let len: i32 = end - start
+    let len: i32 = e - s
     let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
     let p: ptr<u8> = src
-    memcpy(buf, p + start, len as i64)
+    memcpy(buf, p + s, len as i64)
     buf[len] = 0
     return buf as string
 }
@@ -181,7 +183,7 @@ export function flowc_build_warning(
     path: string,
     ap: FlowcAvoidPattern
 ) -> string {
-    let msg: string = str_append(path, ": avoid '")
+    let mut msg: string = str_append(path, ": avoid '")
     msg = str_append(msg, ap.pattern)
     msg = str_append(msg, "'")
     let nreason: i32 = strlen(ap.reason) as i32
@@ -225,7 +227,7 @@ export function flowc_check_source(
             continue
         }
         if flowc_matches_pattern(source, ap.pattern) == 1 {
-            let msg: string = flowc_build_warning(path, ap)
+            let mut msg: string = flowc_build_warning(path, ap)
             warnings[written] = FlowcWarning { message: msg, ok: 1 }
             written = written + 1
         }

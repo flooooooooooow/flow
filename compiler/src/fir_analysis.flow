@@ -86,7 +86,7 @@ export function flowc_propagate_effects(
         while f < num_funcs {
             let lo: i32 = row_offsets[f]
             let hi: i32 = row_offsets[f + 1]
-            let acc: i32 = bits[f]
+            let mut acc: i32 = bits[f]
             let mut ei: i32 = lo
             while ei < hi {
                 let cal: i32 = columns[ei]
@@ -268,7 +268,7 @@ function is_alloc_name(name: string) -> i32 {
 # is_extern: 1 if the function is extern, 0 otherwise.
 # Returns the effect bitvectors.
 export function flowc_guess_effect_for_name(name: string, is_extern: i32) -> i32 {
-    let bits: i32 = 0
+    let mut bits: i32 = 0
     if is_extern != 0 {
         bits = bits | FLOWC_EFF_FFI
     }

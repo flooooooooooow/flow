@@ -7,6 +7,9 @@
 
 extern {
     function puts(s: string) -> i32
+    function Py_Initialize()
+    function PyRun_SimpleString(code: string) -> i32
+    function Py_Finalize()
 }
 
 function main() -> i32 {

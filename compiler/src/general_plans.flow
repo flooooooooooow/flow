@@ -198,7 +198,7 @@ export function flowc_select_matmul(facts: FlowcFacts) -> FlowcCandidate {
     let na: FlowcApplicable = flowc_matmul_naive_applicable(facts)
     let bl: FlowcApplicable = flowc_matmul_blocked_applicable(facts)
 
-    let best: FlowcCandidate = FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: "" }
+    let mut best: FlowcCandidate = FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: "" }
 
     if na.ok == 1 {
         let nc: f64 = flowc_matmul_naive_cost(facts)
@@ -213,7 +213,7 @@ export function flowc_select_matmul(facts: FlowcFacts) -> FlowcCandidate {
     }
 
     if best.applicable == 0 {
-        let reason: string = "no applicable matmul implementation"
+        let mut reason: string = "no applicable matmul implementation"
         if na.ok == 0 {
             reason = na.reason
         } else {
@@ -232,7 +232,7 @@ export function flowc_select_reduce(facts: FlowcFacts) -> FlowcCandidate {
     let sa: FlowcApplicable = flowc_reduce_sequential_applicable(facts)
     let ta: FlowcApplicable = flowc_reduce_tree_applicable(facts)
 
-    let best: FlowcCandidate = FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: "" }
+    let mut best: FlowcCandidate = FlowcCandidate { name: "", cost: 0.0, scratch: 0, applicable: 0, reason: "" }
 
     if sa.ok == 1 {
         let sc: f64 = flowc_reduce_sequential_cost(facts)
@@ -247,7 +247,7 @@ export function flowc_select_reduce(facts: FlowcFacts) -> FlowcCandidate {
     }
 
     if best.applicable == 0 {
-        let reason: string = "no applicable reduce implementation"
+        let mut reason: string = "no applicable reduce implementation"
         if sa.ok == 0 {
             reason = sa.reason
         } else {

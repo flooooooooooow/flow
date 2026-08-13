@@ -35,14 +35,16 @@ function is_space(c: i32) -> i32 {
 # ── String helpers ───────────────────────────────────────────────
 
 function substr(src: string, start: i32, end: i32) -> string {
+    let mut s: i32 = start
+    let mut e: i32 = end
     let n: i32 = strlen(src) as i32
-    if start < 0 { start = 0 }
-    if end > n { end = n }
-    if start >= end { return "" }
-    let len: i32 = end - start
+    if s < 0 { s = 0 }
+    if e > n { e = n }
+    if s >= e { return "" }
+    let len: i32 = e - s
     let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
     let p: ptr<u8> = src
-    memcpy(buf, p + start, len as i64)
+    memcpy(buf, p + s, len as i64)
     buf[len] = 0
     return buf as string
 }
@@ -55,14 +57,15 @@ function substr(src: string, start: i32, end: i32) -> string {
 # Returns the identifier string, or "" if not found.
 export function flowc_receiver_before_dot(row: string, character: i32) -> string {
     let n: i32 = strlen(row) as i32
-    if character > n {
-        character = n
+    let mut ch: i32 = character
+    if ch > n {
+        ch = n
     }
     let p: ptr<u8> = row
 
     # Look at the text before the cursor: "ident." or "ident.field"
     # Scan backward from character to find a dot preceded by an identifier.
-    let mut i: i32 = character
+    let mut i: i32 = ch
     # Skip trailing identifier chars (partial field name after dot)
     while i > 0 and is_ident_char(p[i - 1]) == 1 {
         i = i - 1
@@ -81,7 +84,7 @@ export function flowc_receiver_before_dot(row: string, character: i32) -> string
         i = i - 1
     }
     # Now scan backward for the identifier
-    let end: i32 = i
+    let mut end: i32 = i
     while i > 0 and is_ident_char(p[i - 1]) == 1 {
         i = i - 1
     }
@@ -110,17 +113,18 @@ export struct FlowcFieldAccess {
 # a dot and the receiver identifier.
 export function flowc_field_access_at(row: string, character: i32) -> FlowcFieldAccess {
     let n: i32 = strlen(row) as i32
-    if character > n {
-        character = n
+    let mut ch: i32 = character
+    if ch > n {
+        ch = n
     }
     let p: ptr<u8> = row
 
     # Expand to identifier under cursor
-    let mut start: i32 = character
+    let mut start: i32 = ch
     while start > 0 and is_ident_char(p[start - 1]) == 1 {
         start = start - 1
     }
-    let mut end: i32 = character
+    let mut end: i32 = ch
     while end < n and is_ident_char(p[end]) == 1 {
         end = end + 1
     }

@@ -59,7 +59,7 @@ function main() -> i32 {
         reason: "legacy range syntax",
         workaround: "use 0 to n"
     }
-    let msg: string = flowc_build_warning("test.flow", ap)
+    let mut msg: string = flowc_build_warning("test.flow", ap)
     let expected: string = "test.flow: avoid '0..n' - legacy range syntax (workaround: use 0 to n)"
     if strcmp(msg, expected) != 0 {
         printf("FAIL: warning mismatch\n  got: %s\n  exp: %s\n", msg, expected)

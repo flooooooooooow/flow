@@ -30,7 +30,7 @@ const PI: f64 = 3.141592653589793
 
 # How many shards the current timed pass is split into. The body reads it to
 # partition N, so one shard_body serves every worker count.
-let mut cur_shards: i32 = SHARDS_MAX
+let mut cur_shards: i32 = 8
 
 let mut hits: ptr<i32> = null  # one hit count per shard slot
 

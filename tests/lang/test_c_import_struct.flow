@@ -22,7 +22,7 @@ function main() -> i32 {
     }
 
     # Stat the current directory
-    let rc: i32 = stat(".", buf as ptr<void>)
+    let mut rc: i32 = stat(".", buf as ptr<void>)
     if rc != 0 {
         puts("FAIL: stat(\".\") returned non-zero")
         free(buf)

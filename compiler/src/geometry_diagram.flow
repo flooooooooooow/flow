@@ -37,7 +37,7 @@ function str_append(a: string, b: string) -> string {
 export function flowc_svg_escape(text: string) -> string {
     let n: i32 = strlen(text) as i32
     let p: ptr<u8> = text
-    let result: string = ""
+    let mut result: string = ""
     let mut i: i32 = 0
     while i < n {
         let c: i32 = p[i]

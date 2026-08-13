@@ -7,6 +7,8 @@
 
 extern {
     function puts(s: string) -> i32
+    function abs(x: i32) -> i32
+    function atoi(s: string) -> i32
 }
 
 function main() -> i32 {
