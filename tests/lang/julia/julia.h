@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 void jl_init(void);
-void* jl_eval_string(const char*);
+void* jl_eval_string(char*);
 void jl_atexit_hook(int);
 
 #ifdef __cplusplus
