@@ -181,6 +181,8 @@ const int32_t KW_TRAIT = 33;
 const int32_t KW_IMPL = 34;
 const int32_t KW_TEST = 35;
 const int32_t KW_PARALLEL = 36;
+const int32_t KW_DBG = 37;
+const int32_t KW_EXPECT = 38;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -301,6 +303,8 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t impl_kw[4] = { 105, 109, 112, 108 };
   uint8_t test_kw[4] = { 116, 101, 115, 116 };
   uint8_t parallel_kw[8] = { 112, 97, 114, 97, 108, 108, 101, 108 };
+  uint8_t dbg_kw[3] = { 100, 98, 103 };
+  uint8_t expect_kw[6] = { 101, 120, 112, 101, 99, 116 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -444,6 +448,14 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = parallel_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 8) == 1) {
   return KW_PARALLEL;
+}
+  p = dbg_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
+  return KW_DBG;
+}
+  p = expect_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 6) == 1) {
+  return KW_EXPECT;
 }
   return 0;
 }
@@ -1415,6 +1427,20 @@ int32_t flowc_parse_primary(Parser* p) {
   (((p[0]).arena).nodes[id]).a = operand;
   return id;
 }
+  // `dbg expr` → AST_UNARY with ival=KW_DBG
+  if ((tok).kind == TOK_KEYWORD && (tok).kw == KW_DBG) {
+  int32_t start = (tok).start;
+  flowc_parser_advance(p);
+  int32_t operand = flowc_parse_primary(p);
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_UNARY, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).ival = KW_DBG;
+  (((p[0]).arena).nodes[id]).a = operand;
+  return id;
+}
   return flowc_parse_postfix(p);
 }
 
@@ -1966,6 +1992,23 @@ int32_t flowc_parse_stmt(Parser* p) {
   return AST_NONE;
 }
   (((p[0]).arena).nodes[id]).a = expr;
+  return id;
+}
+  // `expect cond` → AST_UNARY with ival=KW_EXPECT
+  if (flowc_parser_check_kw(p[0], KW_EXPECT) == 1) {
+  int32_t start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  int32_t cond = flowc_parse_expr(p);
+  if (cond == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_UNARY, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).ival = KW_EXPECT;
+  (((p[0]).arena).nodes[id]).a = cond;
   return id;
 }
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
@@ -3735,6 +3778,20 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   return;
 }
   if (kind == AST_UNARY) {
+  // `dbg expr` → __flow_dbg(expr)
+  if (((arena).nodes[id]).ival == KW_DBG) {
+  flowc_cgen_puts(w, "__flow_dbg(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_putc(w, 41);
+  return;
+}
+  // `expect cond` → if (!(cond)) { fprintf(stderr, ...); abort(); }
+  if (((arena).nodes[id]).ival == KW_EXPECT) {
+  flowc_cgen_puts(w, "do { if (!(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ")) { fprintf(stderr, \"expectation failed\\n\"); abort(); } } while(0)");
+  return;
+}
   flowc_cgen_putc(w, 40);
   if (((arena).nodes[id]).ival == TOK_MINUS) {
   flowc_cgen_putc(w, 45);
@@ -4976,6 +5033,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "    for (size_t _i = 0; _i < _n; _i++) { \\\n");
   flowc_cgen_puts((&w), "        if ((arr)[_i] == (val)) { _found = 1; break; } \\\n");
   flowc_cgen_puts((&w), "    } _found; })\n");
+  flowc_cgen_putc((&w), 10);
+  // `dbg expr` helper: prints to stderr, returns the value.
+  flowc_cgen_puts((&w), "#define __flow_dbg(x) (__extension__ ({ int32_t __flow_dbg_v = (x); fprintf(stderr, \"dbg: %s = %d\\n\", #x, __flow_dbg_v); __flow_dbg_v; }))\n");
   flowc_cgen_putc((&w), 10);
 }
   int32_t item = ((arena).nodes[root]).a;

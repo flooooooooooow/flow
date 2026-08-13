@@ -618,7 +618,7 @@ function test_cgen_for() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_for_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "for (") == 0 { ok = 0 }
@@ -672,7 +672,7 @@ function test_cgen_logic() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_logic_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "&&") == 0 { ok = 0 }
@@ -718,7 +718,7 @@ function test_cgen_string() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_string_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "\"hi\"") == 0 { ok = 0 }
@@ -770,7 +770,7 @@ function test_cgen_emit() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "int32_t") == 0 { ok = 0 }
@@ -806,7 +806,7 @@ function test_parse_fixture_file() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_read_file(path, bp, cap - 1)
+    let mut n: i32 = flowc_read_file(path, bp, cap - 1)
     printf("fixture_bytes=%d\n", n)
     if n <= 0 {
         puts("fixture: open/read failed (cwd must be repo root)")
@@ -1088,7 +1088,7 @@ function test_cgen_const() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_const_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "static const int32_t") == 0 { ok = 0 }
@@ -1147,7 +1147,7 @@ function test_cgen_struct() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_struct_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "typedef struct") == 0 { ok = 0 }
@@ -1192,7 +1192,7 @@ function test_cgen_ptr() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_ptr_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "int32_t*") == 0 { ok = 0 }
@@ -1311,7 +1311,7 @@ function test_cgen_cast() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_cast_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "int64_t") == 0 { ok = 0 }
@@ -1352,7 +1352,7 @@ function test_cgen_void() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_void_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "void g") == 0 { ok = 0 }
@@ -1416,7 +1416,7 @@ function test_jsgen_emit() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_jsgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_jsgen_emit(p.arena, root, sp, bp, cap)
     printf("jsgen_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "function") == 0 { ok = 0 }
@@ -1718,7 +1718,7 @@ function test_resolve_sibling() -> i32 {
         out[zi] = 0
         zi = zi + 1
     }
-    let n: i32 = flowc_resolve_sibling_path(sp, 0, 6, "compiler/src", out, 256)
+    let mut n: i32 = flowc_resolve_sibling_path(sp, 0, 6, "compiler/src", out, 256)
     printf("resolve_sib_len=%d\n", n)
     let mut ok: i32 = 1
     if n <= 0 { ok = 0 }
@@ -1753,7 +1753,7 @@ function test_bundle_emit() -> i32 {
         out[zi] = 0
         zi = zi + 1
     }
-    let n: i32 = flowc_bundle_emit(
+    let mut n: i32 = flowc_bundle_emit(
         "compiler/fixtures/bundle_main.flow",
         "compiler/fixtures",
         out,
@@ -1826,7 +1826,7 @@ function test_fmt_emit() -> i32 {
         zi = zi + 1
     }
 
-    let n: i32 = flowc_fmt_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_fmt_emit(p.arena, root, sp, bp, cap)
     printf("fmt_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "function") == 0 { ok = 0 }
@@ -1927,7 +1927,7 @@ function test_cgen_match() -> i32 {
         bp[zi] = 0
         zi = zi + 1
     }
-    let n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
+    let mut n: i32 = flowc_cgen_emit(p.arena, root, sp, bp, cap)
     printf("cgen_match_bytes=%d\n", n)
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "int32_t __flowc_match = v;") == 0 { ok = 0 }

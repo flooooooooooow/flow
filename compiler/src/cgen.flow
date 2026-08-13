@@ -17,6 +17,12 @@ import .ast {
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
     AST_DEFER
 }
+import .token {
+    TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET, TOK_SHL, TOK_SHR, TOK_IN,
+    KW_DBG, KW_EXPECT
+}
 
 extern {
     function strlen(s: string) -> i64
@@ -678,7 +684,7 @@ function flowc_cgen_emit_print_intrinsic(w: ptr<CgenBuf>, arena: AstArena, src: 
         }
         return
     }
-    let fmt: string = "%d"
+    let mut fmt: string = "%d"
     let arg_kind: i32 = arena.nodes[arg].kind
     if arg_kind == AST_STRING {
         fmt = "%s"
@@ -781,6 +787,20 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_UNARY {
+        # `dbg expr` → __flow_dbg(expr)
+        if arena.nodes[id].ival == KW_DBG {
+            flowc_cgen_puts(w, "__flow_dbg(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_putc(w, 41)
+            return
+        }
+        # `expect cond` → if (!(cond)) { fprintf(stderr, ...); abort(); }
+        if arena.nodes[id].ival == KW_EXPECT {
+            flowc_cgen_puts(w, "do { if (!(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")) { fprintf(stderr, \"expectation failed\\n\"); abort(); } } while(0)")
+            return
+        }
         flowc_cgen_putc(w, 40)
         if arena.nodes[id].ival == TOK_MINUS {
             flowc_cgen_putc(w, 45)
@@ -1436,7 +1456,7 @@ function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
         }
         # Self-referential ptr<StructName> → struct StructName*
         # (typedef name not visible inside the struct body in C).
-        let emitted_self: i32 = 0
+        let mut emitted_self: i32 = 0
         if arr_n == 0 and fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
             if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "ptr") == 1 {
                 let inner: i32 = arena.nodes[fty].a
@@ -1652,10 +1672,10 @@ function flowc_cgen_pp_contains(text: ptr<u8>, start: i32, end: i32, lit: string
     if lit_len <= 0 or end - start < lit_len {
         return 0
     }
-    let i: i32 = start
+    let mut i: i32 = start
     while i + lit_len <= end {
-        let is_match: i32 = 1
-        let j: i32 = 0
+        let mut is_match: i32 = 1
+        let mut j: i32 = 0
         while j < lit_len {
             if text[i + j] != lit_ptr[j] {
                 is_match = 0
@@ -1681,12 +1701,12 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
     if cmd_buf == null {
         return
     }
-    let pos: i32 = 0
+    let mut pos: i32 = 0
 
     let prefix: string = "echo '#include <"
     let prefix_ptr: ptr<u8> = prefix as ptr<u8>
     let prefix_len: i32 = strlen(prefix_ptr) as i32
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < prefix_len and pos < 1023 {
         cmd_buf[pos] = prefix_ptr[i]
         pos = pos + 1
@@ -1722,8 +1742,8 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         pclose(fp)
         return
     }
-    let pp_len: i32 = 0
-    let got: i32 = fread(pp_buf + pp_len, 1, 4096, fp)
+    let mut pp_len: i32 = 0
+    let mut got: i32 = fread(pp_buf + pp_len, 1, 4096, fp)
     while got > 0 and pp_len < 1048576 - 4096 {
         pp_len = pp_len + got
         got = fread(pp_buf + pp_len, 1, 4096, fp)
@@ -1736,7 +1756,7 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
     flowc_cgen_puts(w, ">\n")
 
     # Scan for function declarations (semicolon-delimited)
-    let pos2: i32 = 0
+    let mut pos2: i32 = 0
     while pos2 < pp_len {
         # Skip whitespace
         while pos2 < pp_len and (pp_buf[pos2] == 32 or pp_buf[pos2] == 10 or pp_buf[pos2] == 9 or pp_buf[pos2] == 13) {
@@ -1751,7 +1771,7 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         while pos2 < pp_len and pp_buf[pos2] != 59 {
             pos2 = pos2 + 1
         }
-        let line_end: i32 = pos2
+        let mut line_end: i32 = pos2
         if pos2 < pp_len and pp_buf[pos2] == 59 {
             pos2 = pos2 + 1
         }
@@ -1762,8 +1782,8 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         }
 
         # Skip statements with braces (function bodies)
-        let has_brace: i32 = 0
-        let scan_br: i32 = line_start
+        let mut has_brace: i32 = 0
+        let mut scan_br: i32 = line_start
         while scan_br < line_end {
             if pp_buf[scan_br] == 123 or pp_buf[scan_br] == 125 {
                 has_brace = 1
@@ -1776,8 +1796,8 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         }
 
         # Check if this statement has parens (function-like)
-        let paren_pos: i32 = 0 - 1
-        let j: i32 = line_start
+        let mut paren_pos: i32 = 0 - 1
+        let mut j: i32 = line_start
         while j < line_end {
             if pp_buf[j] == 40 {
                 paren_pos = j
@@ -1790,8 +1810,8 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         }
 
         # Find matching close paren
-        let depth: i32 = 1
-        let close_pos: i32 = paren_pos + 1
+        let mut depth: i32 = 1
+        let mut close_pos: i32 = paren_pos + 1
         while close_pos < line_end and depth > 0 {
             if pp_buf[close_pos] == 40 {
                 depth = depth + 1
@@ -1806,11 +1826,11 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         close_pos = close_pos - 1
 
         # Extract function name (last identifier before paren)
-        let fn_end: i32 = paren_pos
+        let mut fn_end: i32 = paren_pos
         while fn_end > line_start and (pp_buf[fn_end - 1] == 32 or pp_buf[fn_end - 1] == 9 or pp_buf[fn_end - 1] == 10 or pp_buf[fn_end - 1] == 13) {
             fn_end = fn_end - 1
         }
-        let fn_start: i32 = fn_end
+        let mut fn_start: i32 = fn_end
         while fn_start > line_start and ((pp_buf[fn_start - 1] >= 65 and pp_buf[fn_start - 1] <= 90) or (pp_buf[fn_start - 1] >= 97 and pp_buf[fn_start - 1] <= 122) or (pp_buf[fn_start - 1] >= 48 and pp_buf[fn_start - 1] <= 57) or pp_buf[fn_start - 1] == 95) {
             fn_start = fn_start - 1
         }
@@ -1840,7 +1860,7 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
         }
 
         # Return type is everything before the function name
-        let ret_end: i32 = fn_start
+        let mut ret_end: i32 = fn_start
         while ret_end > line_start and (pp_buf[ret_end - 1] == 32 or pp_buf[ret_end - 1] == 9 or pp_buf[ret_end - 1] == 10 or pp_buf[ret_end - 1] == 13) {
             ret_end = ret_end - 1
         }
@@ -1922,6 +1942,10 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "        if ((arr)[_i] == (val)) { _found = 1; break; } \\\n")
         flowc_cgen_puts(&w, "    } _found; })\n")
         flowc_cgen_putc(&w, 10)
+        # `dbg expr` helper: prints to stderr, returns the value.
+        # Uses a statement expression to evaluate x once.
+        flowc_cgen_puts(&w, "#define __flow_dbg(x) (__extension__ ({ int32_t __flow_dbg_v = (x); fprintf(stderr, \"dbg: %s = %d\\n\", #x, __flow_dbg_v); __flow_dbg_v; }))\n")
+        flowc_cgen_putc(&w, 10)
     }
 
     # Pass 0.5a: @cInclude and @cImport directives first, so embedded C
@@ -1981,8 +2005,8 @@ export function flowc_cgen_emit_sigs(
         let en: i32 = flowc_cgen_unwrap(arena, item, AST_ENUM)
         if en != AST_NONE {
             flowc_cgen_puts(&w, "typedef enum {")
-            let var: i32 = arena.nodes[en].a
-            let first: i32 = 1
+            let mut var: i32 = arena.nodes[en].a
+            let mut first: i32 = 1
             while var != AST_NONE {
                 if first == 0 {
                     flowc_cgen_puts(&w, ", ")
@@ -2072,7 +2096,7 @@ export function flowc_cgen_emit_sigs(
     item = arena.nodes[root].a
     while item != AST_NONE {
         if arena.nodes[item].kind == AST_EXTERN {
-            let ef: i32 = arena.nodes[item].a
+            let mut ef: i32 = arena.nodes[item].a
             while ef != AST_NONE {
                 if arena.nodes[ef].kind == AST_EXTERN_TYPE {
                     flowc_cgen_puts(&w, "typedef struct ")

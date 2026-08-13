@@ -28,8 +28,8 @@ function main() -> i32 {
     printf("popen_read: %d bytes: %s", n, buf as string)
 
     # Check content contains "hello"
-    let found: i32 = 0
-    let i: i32 = 0
+    let mut found: i32 = 0
+    let mut i: i32 = 0
     while i < n - 4 {
         if buf[i] == 104 and buf[i + 1] == 101 and buf[i + 2] == 108 and buf[i + 3] == 108 and buf[i + 4] == 111 {
             found = 1

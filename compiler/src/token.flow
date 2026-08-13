@@ -86,6 +86,8 @@ export const KW_TRAIT: i32 = 33
 export const KW_IMPL: i32 = 34
 export const KW_TEST: i32 = 35
 export const KW_PARALLEL: i32 = 36
+export const KW_DBG: i32 = 37
+export const KW_EXPECT: i32 = 38
 
 export struct Token {
     kind: i32,

@@ -18,7 +18,7 @@ export function flowc_streq_span(text: ptr<u8>, start: i32, end: i32, lit: ptr<u
     if end - start != lit_len {
         return 0
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < lit_len {
         if text[start + i] != lit[i] {
             return 0
@@ -51,7 +51,7 @@ export function flowc_strncpy_span(dst: ptr<u8>, src: ptr<u8>, start: i32, end: 
     if n <= 0 {
         return 0
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < n {
         dst[i] = src[start + i]
         i = i + 1
@@ -82,7 +82,7 @@ export function flowc_span_starts_with(text: ptr<u8>, start: i32, end: i32, lit:
     if end - start < lit_len {
         return 0
     }
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < lit_len {
         if text[start + i] != lit[i] {
             return 0
@@ -95,7 +95,7 @@ export function flowc_span_starts_with(text: ptr<u8>, start: i32, end: i32, lit:
 # Find the last occurrence of a byte in a span [start, end).
 # Returns the index, or -1 if not found.
 export function flowc_span_find_last(text: ptr<u8>, start: i32, end: i32, ch: i32) -> i32 {
-    let i: i32 = end - 1
+    let mut i: i32 = end - 1
     while i >= start {
         if text[i] == ch {
             return i
@@ -108,7 +108,7 @@ export function flowc_span_find_last(text: ptr<u8>, start: i32, end: i32, ch: i3
 # Find the first occurrence of a byte in a span [start, end).
 # Returns the index, or -1 if not found.
 export function flowc_span_find_first(text: ptr<u8>, start: i32, end: i32, ch: i32) -> i32 {
-    let i: i32 = start
+    let mut i: i32 = start
     while i < end {
         if text[i] == ch {
             return i
@@ -137,7 +137,7 @@ export function flowc_span_ends_with(text: ptr<u8>, start: i32, end: i32, lit: p
         return 0
     }
     let off: i32 = end - lit_len
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < lit_len {
         if text[off + i] != lit[i] {
             return 0

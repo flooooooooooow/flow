@@ -42,8 +42,8 @@ function ci_contains(haystack: string, needle: string) -> i32 {
         while j < nn {
             let a: i32 = hp[i + j]
             let b: i32 = np[j]
-            let al: i32 = a
-            let bl: i32 = b
+            let mut al: i32 = a
+            let mut bl: i32 = b
             if a >= 65 and a <= 90 { al = a + 32 }
             if b >= 65 and b <= 90 { bl = b + 32 }
             if al != bl { matched = 0; break }
@@ -94,7 +94,7 @@ export function flowc_node_kind(english: string, has_math: i32) -> string {
 export function flowc_escape_dot(text: string) -> string {
     let n: i32 = strlen(text) as i32
     let p: ptr<u8> = text
-    let out: string = ""
+    let mut out: string = ""
     let mut i: i32 = 0
     while i < n {
         if p[i] == 92 {

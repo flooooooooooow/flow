@@ -46,7 +46,7 @@ function main() -> i32 {
     columns[1] = 2
     columns[2] = 3
 
-    let bits: ptr<i32> = malloc(16) as ptr<i32>
+    let mut bits: ptr<i32> = malloc(16) as ptr<i32>
     bits[0] = 0
     bits[1] = 0
     bits[2] = FLOWC_EFF_IO
