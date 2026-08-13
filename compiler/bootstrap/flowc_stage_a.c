@@ -145,6 +145,7 @@ const int32_t TOK_STAR_EQ = 44;
 const int32_t TOK_SLASH_EQ = 45;
 const int32_t TOK_PERCENT_EQ = 46;
 const int32_t TOK_IN = 47;
+const int32_t TOK_PIPELINE = 48;
 const int32_t KW_LET = 1;
 const int32_t KW_FUNCTION = 2;
 const int32_t KW_RETURN = 3;
@@ -618,6 +619,11 @@ Token flowc_lexer_next(Lexer* lex) {
   flowc_lexer_bump(lex);
   return flowc_make_tok(TOK_BARBAR, 0, start, (start + 2), line, col);
 }
+  if (c == 124 && n1 == 62) {
+  flowc_lexer_bump(lex);
+  flowc_lexer_bump(lex);
+  return flowc_make_tok(TOK_PIPELINE, 0, start, (start + 2), line, col);
+}
   flowc_lexer_bump(lex);
   if (c == 40) {
   return flowc_make_tok(TOK_LPAREN, 0, start, (start + 1), line, col);
@@ -1081,6 +1087,7 @@ int32_t flowc_parse_type(Parser* p) {
   return id;
 }
 
+int32_t flowc_parse_apply_pipe(Parser* p, int32_t left, int32_t right);
 int32_t flowc_parse_expr(Parser* p);
 int32_t flowc_parse_atom(Parser* p) {
   Token tok = (p[0]).cur;
@@ -1650,12 +1657,40 @@ int32_t flowc_parse_binop_rhs(Parser* p, int32_t min_prec, int32_t lhs) {
   return left;
 }
 
+int32_t flowc_parse_apply_pipe(Parser* p, int32_t left, int32_t right) {
+  if (((p[0]).arena).nodes[right].kind == AST_CALL) {
+  ((p[0]).arena).nodes[right].a = flowc_ast_chain_push((&(p[0]).arena), left, ((p[0]).arena).nodes[right].a);
+  return right;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_CALL, 0, 0);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  ((p[0]).arena).nodes[id].a = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, left);
+  ((p[0]).arena).nodes[id].name_start = ((p[0]).arena).nodes[right].name_start;
+  ((p[0]).arena).nodes[id].name_end = ((p[0]).arena).nodes[right].name_end;
+  return id;
+}
+
 int32_t flowc_parse_expr(Parser* p) {
   int32_t lhs = flowc_parse_cast(p);
   if (lhs == AST_NONE) {
   return AST_NONE;
 }
-  return flowc_parse_binop_rhs(p, 1, lhs);
+  int32_t result = flowc_parse_binop_rhs(p, 1, lhs);
+  while (flowc_parser_check(p[0], TOK_PIPELINE) == 1) {
+  flowc_parser_advance(p);
+  int32_t rhs = flowc_parse_cast(p);
+  if (rhs == AST_NONE) {
+  return AST_NONE;
+}
+  result = flowc_parse_apply_pipe(p, result, rhs);
+  if (result == AST_NONE) {
+  return AST_NONE;
+}
+}
+  return result;
 }
 
 int32_t flowc_parse_block(Parser* p);

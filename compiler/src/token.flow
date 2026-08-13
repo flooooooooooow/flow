@@ -49,6 +49,7 @@ export const TOK_STAR_EQ: i32 = 44
 export const TOK_SLASH_EQ: i32 = 45
 export const TOK_PERCENT_EQ: i32 = 46
 export const TOK_IN: i32 = 47
+export const TOK_PIPELINE: i32 = 48
 
 export const KW_LET: i32 = 1
 export const KW_FUNCTION: i32 = 2

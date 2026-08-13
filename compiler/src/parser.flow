@@ -7,7 +7,7 @@ import .token {
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK, TOK_DOT, TOK_DOTDOT,
     TOK_COLON, TOK_COMMA, TOK_ARROW, TOK_FATARROW, TOK_SEMI,
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
-    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET, TOK_PIPELINE,
     TOK_SHL, TOK_SHR,
     TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ, TOK_IN,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
@@ -825,7 +825,41 @@ function flowc_parse_expr(p: ptr<Parser>) -> i32 {
     if lhs == AST_NONE {
         return AST_NONE
     }
-    return flowc_parse_binop_rhs(p, 1, lhs)
+    let mut result: i32 = flowc_parse_binop_rhs(p, 1, lhs)
+    # Pipeline: x |> f(args) → f(x, args)
+    while flowc_parser_check(p[0], TOK_PIPELINE) == 1 {
+        flowc_parser_advance(p)
+        let rhs: i32 = flowc_parse_cast(p)
+        if rhs == AST_NONE {
+            return AST_NONE
+        }
+        result = flowc_parse_apply_pipe(p, result, rhs)
+        if result == AST_NONE {
+            return AST_NONE
+        }
+    }
+    return result
+}
+
+# Lower `left |> right` into a call: if right is a call, prepend left to
+# its argument list. If right is an identifier, build a call with left as
+# the sole argument. Otherwise, leave it as a binop-like call.
+function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32 {
+    if p[0].arena.nodes[right].kind == AST_CALL {
+        # Prepend left to the argument chain (stored in .a for calls).
+        p[0].arena.nodes[right].a = flowc_ast_chain_push(&p[0].arena, left, p[0].arena.nodes[right].a)
+        return right
+    }
+    # right is not a call: build a call with right's name and left as arg.
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CALL, 0, 0)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = flowc_ast_chain_push(&p[0].arena, AST_NONE, left)
+    p[0].arena.nodes[id].name_start = p[0].arena.nodes[right].name_start
+    p[0].arena.nodes[id].name_end = p[0].arena.nodes[right].name_end
+    return id
 }
 
 function flowc_parse_block(p: ptr<Parser>) -> i32
