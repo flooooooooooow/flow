@@ -4208,13 +4208,21 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   return;
 }
   if (kind == AST_FOR) {
+  // When step is negative (unary minus), use >= instead of <.
+  const char* cmp = " < ";
+  if (((arena).nodes[id]).ival != AST_NONE && ((arena).nodes[id]).ival != 0) {
+  int32_t step_id = ((arena).nodes[id]).ival;
+  if (((arena).nodes[step_id]).kind == AST_UNARY && ((arena).nodes[step_id]).ival == TOK_MINUS) {
+  cmp = " >= ";
+}
+}
   flowc_cgen_puts(w, "  for (int32_t ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, " = ");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_puts(w, "; ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_cgen_puts(w, " < ");
+  flowc_cgen_puts(w, cmp);
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
   flowc_cgen_puts(w, "; ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
