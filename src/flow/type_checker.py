@@ -2910,6 +2910,13 @@ class TypeChecker:
         if target.kind == TypeKind.POINTER and actual.kind == TypeKind.FUNCTION:
             return True
 
+        # array<T, N> as ptr<T> (explicit decay to pointer)
+        if actual.kind == TypeKind.ARRAY and target.kind == TypeKind.POINTER:
+            if target.element_type is None or target.element_type.kind == TypeKind.VOID:
+                return True
+            if actual.element_type == target.element_type:
+                return True
+
         # `string` is a byte pointer at the C level, so casting between it and
         # a byte-sized pointer preserves the representation. This is what FFI
         # code needs when it hands buffers to C and reads C strings back.

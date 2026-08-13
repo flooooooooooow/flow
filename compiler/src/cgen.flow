@@ -143,6 +143,145 @@ function flowc_cgen_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> 
     return 1
 }
 
+# Check if a source span is a C reserved word. If so, emit the mangled
+# name (_flow_<word>) instead. Returns 1 if mangled, 0 if not.
+function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    if flowc_cgen_span_is(src, start, end, "double") == 1 {
+        flowc_cgen_puts(w, "_flow_double")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "float") == 1 {
+        flowc_cgen_puts(w, "_flow_float")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "int") == 1 {
+        flowc_cgen_puts(w, "_flow_int")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "char") == 1 {
+        flowc_cgen_puts(w, "_flow_char")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "long") == 1 {
+        flowc_cgen_puts(w, "_flow_long")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "short") == 1 {
+        flowc_cgen_puts(w, "_flow_short")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "switch") == 1 {
+        flowc_cgen_puts(w, "_flow_switch")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "case") == 1 {
+        flowc_cgen_puts(w, "_flow_case")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "default") == 1 {
+        flowc_cgen_puts(w, "_flow_default")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "do") == 1 {
+        flowc_cgen_puts(w, "_flow_do")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "for") == 1 {
+        flowc_cgen_puts(w, "_flow_for")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "while") == 1 {
+        flowc_cgen_puts(w, "_flow_while")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "goto") == 1 {
+        flowc_cgen_puts(w, "_flow_goto")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "register") == 1 {
+        flowc_cgen_puts(w, "_flow_register")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "auto") == 1 {
+        flowc_cgen_puts(w, "_flow_auto")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "extern") == 1 {
+        flowc_cgen_puts(w, "_flow_extern")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "static") == 1 {
+        flowc_cgen_puts(w, "_flow_static")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "inline") == 1 {
+        flowc_cgen_puts(w, "_flow_inline")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "struct") == 1 {
+        flowc_cgen_puts(w, "_flow_struct")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "union") == 1 {
+        flowc_cgen_puts(w, "_flow_union")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "enum") == 1 {
+        flowc_cgen_puts(w, "_flow_enum")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "typedef") == 1 {
+        flowc_cgen_puts(w, "_flow_typedef")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "sizeof") == 1 {
+        flowc_cgen_puts(w, "_flow_sizeof")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "return") == 1 {
+        flowc_cgen_puts(w, "_flow_return")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "void") == 1 {
+        flowc_cgen_puts(w, "_flow_void")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "volatile") == 1 {
+        flowc_cgen_puts(w, "_flow_volatile")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "const") == 1 {
+        flowc_cgen_puts(w, "_flow_const")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "signed") == 1 {
+        flowc_cgen_puts(w, "_flow_signed")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "unsigned") == 1 {
+        flowc_cgen_puts(w, "_flow_unsigned")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "continue") == 1 {
+        flowc_cgen_puts(w, "_flow_continue")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "break") == 1 {
+        flowc_cgen_puts(w, "_flow_break")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "if") == 1 {
+        flowc_cgen_puts(w, "_flow_if")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "else") == 1 {
+        flowc_cgen_puts(w, "_flow_else")
+        return
+    }
+    # Not a reserved word: emit as-is
+    flowc_cgen_put_span(w, src, start, end)
+}
+
 # 1 if `ty` is AST_TYPE whose name matches some AST_STRUCT in the arena.
 function flowc_cgen_is_struct_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
     if ty == AST_NONE {
@@ -734,7 +873,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "NULL")
             return
         }
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         return
     }
     if kind == AST_STRING {
@@ -883,7 +1022,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 return
             }
         }
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_putc(w, 40)
         let mut arg: i32 = arena.nodes[id].a
         let mut first: i32 = 1
@@ -998,7 +1137,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
         }
         flowc_cgen_putc(w, 32)
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         if arr_n > 0 {
             flowc_cgen_putc(w, 91)
             flowc_cgen_put_i32(w, arr_n)
@@ -1360,7 +1499,7 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
         flowc_cgen_emit_type(w, arena, src, ret_ty)
     }
     flowc_cgen_putc(w, 32)
-    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_putc(w, 40)
     let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
@@ -1402,7 +1541,7 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         flowc_cgen_emit_type(w, arena, src, ret_ty)
     }
     flowc_cgen_putc(w, 32)
-    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_putc(w, 40)
     let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
@@ -1425,7 +1564,7 @@ function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
     } else {
         flowc_cgen_puts(w, "static const int32_t ")
     }
-    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_puts(w, " = ")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ";\n")

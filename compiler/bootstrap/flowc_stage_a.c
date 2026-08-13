@@ -3197,6 +3197,43 @@ int32_t flowc_cgen_span_is(uint8_t* src, int32_t start, int32_t end, const char*
   return 1;
 }
 
+// Emit an identifier, mangling C reserved words to _flow_<word>.
+void flowc_cgen_put_ident(CgenBuf* w, uint8_t* src, int32_t start, int32_t end) {
+  if (flowc_cgen_span_is(src, start, end, "double")) { flowc_cgen_puts(w, "_flow_double"); return; }
+  if (flowc_cgen_span_is(src, start, end, "float")) { flowc_cgen_puts(w, "_flow_float"); return; }
+  if (flowc_cgen_span_is(src, start, end, "int")) { flowc_cgen_puts(w, "_flow_int"); return; }
+  if (flowc_cgen_span_is(src, start, end, "char")) { flowc_cgen_puts(w, "_flow_char"); return; }
+  if (flowc_cgen_span_is(src, start, end, "long")) { flowc_cgen_puts(w, "_flow_long"); return; }
+  if (flowc_cgen_span_is(src, start, end, "short")) { flowc_cgen_puts(w, "_flow_short"); return; }
+  if (flowc_cgen_span_is(src, start, end, "switch")) { flowc_cgen_puts(w, "_flow_switch"); return; }
+  if (flowc_cgen_span_is(src, start, end, "case")) { flowc_cgen_puts(w, "_flow_case"); return; }
+  if (flowc_cgen_span_is(src, start, end, "default")) { flowc_cgen_puts(w, "_flow_default"); return; }
+  if (flowc_cgen_span_is(src, start, end, "do")) { flowc_cgen_puts(w, "_flow_do"); return; }
+  if (flowc_cgen_span_is(src, start, end, "for")) { flowc_cgen_puts(w, "_flow_for"); return; }
+  if (flowc_cgen_span_is(src, start, end, "while")) { flowc_cgen_puts(w, "_flow_while"); return; }
+  if (flowc_cgen_span_is(src, start, end, "goto")) { flowc_cgen_puts(w, "_flow_goto"); return; }
+  if (flowc_cgen_span_is(src, start, end, "auto")) { flowc_cgen_puts(w, "_flow_auto"); return; }
+  if (flowc_cgen_span_is(src, start, end, "extern")) { flowc_cgen_puts(w, "_flow_extern"); return; }
+  if (flowc_cgen_span_is(src, start, end, "static")) { flowc_cgen_puts(w, "_flow_static"); return; }
+  if (flowc_cgen_span_is(src, start, end, "inline")) { flowc_cgen_puts(w, "_flow_inline"); return; }
+  if (flowc_cgen_span_is(src, start, end, "struct")) { flowc_cgen_puts(w, "_flow_struct"); return; }
+  if (flowc_cgen_span_is(src, start, end, "union")) { flowc_cgen_puts(w, "_flow_union"); return; }
+  if (flowc_cgen_span_is(src, start, end, "enum")) { flowc_cgen_puts(w, "_flow_enum"); return; }
+  if (flowc_cgen_span_is(src, start, end, "typedef")) { flowc_cgen_puts(w, "_flow_typedef"); return; }
+  if (flowc_cgen_span_is(src, start, end, "sizeof")) { flowc_cgen_puts(w, "_flow_sizeof"); return; }
+  if (flowc_cgen_span_is(src, start, end, "return")) { flowc_cgen_puts(w, "_flow_return"); return; }
+  if (flowc_cgen_span_is(src, start, end, "void")) { flowc_cgen_puts(w, "_flow_void"); return; }
+  if (flowc_cgen_span_is(src, start, end, "volatile")) { flowc_cgen_puts(w, "_flow_volatile"); return; }
+  if (flowc_cgen_span_is(src, start, end, "const")) { flowc_cgen_puts(w, "_flow_const"); return; }
+  if (flowc_cgen_span_is(src, start, end, "signed")) { flowc_cgen_puts(w, "_flow_signed"); return; }
+  if (flowc_cgen_span_is(src, start, end, "unsigned")) { flowc_cgen_puts(w, "_flow_unsigned"); return; }
+  if (flowc_cgen_span_is(src, start, end, "continue")) { flowc_cgen_puts(w, "_flow_continue"); return; }
+  if (flowc_cgen_span_is(src, start, end, "break")) { flowc_cgen_puts(w, "_flow_break"); return; }
+  if (flowc_cgen_span_is(src, start, end, "if")) { flowc_cgen_puts(w, "_flow_if"); return; }
+  if (flowc_cgen_span_is(src, start, end, "else")) { flowc_cgen_puts(w, "_flow_else"); return; }
+  flowc_cgen_put_span(w, src, start, end);
+}
+
 int32_t flowc_cgen_is_struct_type(AstArena arena, uint8_t* src, int32_t ty) {
   if (ty == AST_NONE) {
   return 0;
@@ -3728,7 +3765,7 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_puts(w, "NULL");
   return;
 }
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   return;
 }
   if (kind == AST_STRING) {
@@ -3869,7 +3906,7 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   return;
 }
 }
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_putc(w, 40);
   int32_t arg = ((arena).nodes[id]).a;
   int32_t first = 1;
@@ -3969,7 +4006,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (ty != AST_NONE && ((arena).nodes[ty]).kind == AST_TYPE && (((arena).nodes[ty]).ival == (0 - 1) || ((arena).nodes[ty]).ival == (0 - 2))) {
   flowc_cgen_emit_type(w, arena, src, ((arena).nodes[ty]).b);
   flowc_cgen_puts(w, " (*");
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, ")(");
   int32_t fparam = ((arena).nodes[ty]).a;
   int32_t ffirst = 1;
@@ -3995,7 +4032,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
   if (!(ty != AST_NONE && ((arena).nodes[ty]).kind == AST_TYPE && (((arena).nodes[ty]).ival == (0 - 1) || ((arena).nodes[ty]).ival == (0 - 2)))) {
   flowc_cgen_putc(w, 32);
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
 }
   if (arr_n > 0) {
   flowc_cgen_putc(w, 91);
@@ -4188,7 +4225,7 @@ void flowc_cgen_emit_param(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id)
   if (ty != AST_NONE && ((arena).nodes[ty]).kind == AST_TYPE && (((arena).nodes[ty]).ival == (0 - 1) || ((arena).nodes[ty]).ival == (0 - 2))) {
   flowc_cgen_emit_type(w, arena, src, ((arena).nodes[ty]).b);
   flowc_cgen_puts(w, " (*");
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, ")(");
   int32_t param = ((arena).nodes[ty]).a;
   int32_t first = 1;
@@ -4550,7 +4587,7 @@ void flowc_cgen_emit_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   flowc_cgen_emit_type(w, arena, src, ret_ty);
 }
   flowc_cgen_putc(w, 32);
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_putc(w, 40);
   int32_t param = ((arena).nodes[id]).a;
   int32_t first = 1;
@@ -4590,7 +4627,7 @@ void flowc_cgen_emit_fn_proto(CgenBuf* w, AstArena arena, uint8_t* src, int32_t 
   flowc_cgen_emit_type(w, arena, src, ret_ty);
 }
   flowc_cgen_putc(w, 32);
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_putc(w, 40);
   int32_t param = ((arena).nodes[id]).a;
   int32_t first = 1;
@@ -4611,7 +4648,7 @@ void flowc_cgen_emit_const(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id)
 } else {
   flowc_cgen_puts(w, "static const int32_t ");
 }
-  flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, " = ");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
   flowc_cgen_puts(w, ";\n");
