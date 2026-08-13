@@ -1,0 +1,48 @@
+# Test for @cImport auto-prototype generation.
+# This test uses @cImport("math.h") and @cImport("stdlib.h") and calls
+# functions (sqrt, abs) without declaring them in an extern block.
+# The compiler should auto-generate C prototypes from the headers.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_auto.flow
+# Exit 0 on success.
+
+@cImport("math.h")
+@cImport("stdlib.h")
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+function main() -> i32 {
+    # sqrt comes from math.h, auto-prototyped
+    let s: f64 = sqrt(144.0)
+    if s != 12.0 {
+        printf("FAIL: sqrt(144) = %f\n", s)
+        return 1
+    }
+
+    # abs comes from stdlib.h, auto-prototyped
+    let a: i32 = abs(-77)
+    if a != 77 {
+        printf("FAIL: abs(-77) = %d\n", a)
+        return 2
+    }
+
+    # pow from math.h
+    let p: f64 = pow(2.0, 8.0)
+    if p != 256.0 {
+        printf("FAIL: pow(2,8) = %f\n", p)
+        return 3
+    }
+
+    # atoi from stdlib.h
+    let n: i32 = atoi("42")
+    if n != 42 {
+        printf("FAIL: atoi(\"42\") = %d\n", n)
+        return 4
+    }
+
+    printf("sqrt(144)=%.0f abs(-77)=%d pow(2,8)=%.0f atoi(\"42\")=%d\n", s, a, p, n)
+    puts("All c_import_auto tests passed")
+    return 0
+}
