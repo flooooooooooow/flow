@@ -4428,6 +4428,7 @@ int32_t flowc_cgen_unwrap(AstArena arena, int32_t item, int32_t want) {
 // and preprocessor artifacts.
 int32_t flowc_cgen_pp_is_keyword(uint8_t* text, int32_t start, int32_t end);
 int32_t flowc_cgen_pp_contains(uint8_t* text, int32_t start, int32_t end, const char* lit);
+int32_t flowc_cgen_pp_is_macro_fn(uint8_t* text, int32_t start, int32_t end);
 void flowc_cgen_emit_cimport(CgenBuf* w, uint8_t* src, int32_t name_start, int32_t name_end) {
   // Build command: echo '#include <header>' | cpp -P -
   uint8_t cmd[1024];
@@ -4535,6 +4536,9 @@ void flowc_cgen_emit_cimport(CgenBuf* w, uint8_t* src, int32_t name_start, int32
   // Skip C keywords as function names
   if (flowc_cgen_pp_is_keyword(pp_buf, fn_start, fn_end) == 1) { continue; }
 
+  // Skip functions that are macros in macOS secure headers
+  if (flowc_cgen_pp_is_macro_fn(pp_buf, fn_start, fn_end) == 1) { continue; }
+
   // Return type is everything before the function name
   int32_t ret_end = fn_start;
   while (ret_end > line_start && (pp_buf[ret_end - 1] == 32 || pp_buf[ret_end - 1] == 9 || pp_buf[ret_end - 1] == 10 || pp_buf[ret_end - 1] == 13)) {
@@ -4613,6 +4617,53 @@ int32_t flowc_cgen_pp_contains(uint8_t* text, int32_t start, int32_t end, const 
   if (is_match == 1) { return 1; }
   i = i + 1;
 }
+  return 0;
+}
+
+// Check if a function name is a macro in macOS secure headers.
+// These functions have inline macro wrappers that conflict with
+// regular prototypes.
+int32_t flowc_cgen_pp_is_macro_fn(uint8_t* text, int32_t start, int32_t end) {
+  if (flowc_cgen_span_is(text, start, end, "memcpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "memmove")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "memset")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "memccpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strcpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strncpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strcat")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strncat")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strlcpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strlcat")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "stpcpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "stpncpy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "sprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "snprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "vsprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "vsnprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "vfprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "printf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "vprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "asprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "vasprintf")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "gets")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fgets")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fread")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fwrite")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "strdup")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "bcopy")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "bzero")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "getc_unlocked")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "putc_unlocked")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "getchar_unlocked")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "putchar_unlocked")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fputc")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fputs")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "putc")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "getchar")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "putchar")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "fgetc")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "getc")) { return 1; }
   return 0;
 }
 
