@@ -1,0 +1,78 @@
+# Test for @cImport with pthread.h.
+# Creates a thread, passes an argument, joins, and verifies the result.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_pthread.flow
+# Exit 0 on success.
+
+@cImport("pthread.h")
+
+@cEmbed("
+typedef struct {
+    int32_t input;
+    int32_t output;
+} thread_arg_t;
+
+static void* flow_thread_fn(void* arg) {
+    thread_arg_t* a = (thread_arg_t*)arg;
+    a->output = a->input * 2;
+    return (void*)0;
+}
+")
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function flow_thread_fn(arg: ptr<void>) -> ptr<void>
+}
+
+# pthread functions are provided by pthread.h via @cImport.
+# We declare them here for Flow type checking. The c_generator
+# skips them because they're in the stdlib skip list.
+extern {
+    function pthread_create(thread: ptr<u64>, attr: ptr<void>, start: ptr<void>, arg: ptr<void>) -> i32
+    function pthread_join(thread: u64, retval: ptr<void>) -> i32
+}
+
+function main() -> i32 {
+    # Allocate a thread argument struct (12 bytes: input + output)
+    let arg: ptr<u8> = malloc(12)
+    if arg == null {
+        puts("FAIL: could not allocate thread arg")
+        return 1
+    }
+
+    # Set input = 21 (output should be 42)
+    let arg_i32: ptr<i32> = arg as ptr<i32>
+    arg_i32[0] = 21
+
+    # Create the thread
+    let tid: u64 = 0
+    let rc: i32 = pthread_create(&tid, null as ptr<void>, flow_thread_fn as ptr<void>, arg as ptr<void>)
+    if rc != 0 {
+        printf("FAIL: pthread_create returned %d\n", rc)
+        free(arg)
+        return 2
+    }
+
+    # Wait for the thread to finish
+    rc = pthread_join(tid, null as ptr<void>)
+    if rc != 0 {
+        printf("FAIL: pthread_join returned %d\n", rc)
+        free(arg)
+        return 3
+    }
+
+    # Check the output
+    let output: i32 = arg_i32[1]
+    if output != 42 {
+        printf("FAIL: thread output should be 42 but got %d\n", output)
+        free(arg)
+        return 4
+    }
+
+    printf("Thread computed: 21 * 2 = %d\n", output)
+    free(arg)
+    puts("All pthread tests passed")
+    return 0
+}

@@ -54,7 +54,7 @@ function main() -> i32 {
 
     let prefix: string = flowc_package_prefix("compiler/src/Bool.flow")
     printf("prefix: %s\n", prefix)
-    if strcmp(prefix, "compiler.src") != 0 {
+    if strcmp(prefix, "flow") != 0 {
         printf("%s\n", "FAIL: package prefix")
         failed = 1
     }

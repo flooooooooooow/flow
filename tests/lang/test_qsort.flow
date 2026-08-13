@@ -1,0 +1,72 @@
+# Test for cfn callback pattern with qsort.
+# Uses @cEmbed to provide a C comparator and calls qsort through @cImport.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_qsort.flow
+# Exit 0 on success.
+
+@cImport("stdlib.h")
+
+# Embed a non-static C comparator function. We declare it as extern in
+# Flow so the type checker accepts the call, and the c_generator emits
+# a prototype that matches the @cEmbed definition.
+@cEmbed("int flow_cmp_i32(const void* a, const void* b) { int va = *(const int*)a; int vb = *(const int*)b; return va < vb ? -1 : (va > vb ? 1 : 0); }")
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function flow_cmp_i32(a: ptr<void>, b: ptr<void>) -> i32
+}
+
+# qsort is provided by stdlib.h via @cImport. We declare it here only
+# for Flow type checking. The c_generator skips it (stdlib_functions).
+extern {
+    function qsort(base: ptr<void>, nmemb: u64, size: u64, compar: ptr<void>) -> void
+}
+
+function main() -> i32 {
+    # Allocate an array of 6 integers
+    let arr: ptr<i32> = malloc(6 * 4) as ptr<i32>
+    if arr == null {
+        puts("FAIL: could not allocate array")
+        return 1
+    }
+
+    # Initialize with unsorted values
+    arr[0] = 5
+    arr[1] = 2
+    arr[2] = 8
+    arr[3] = 1
+    arr[4] = 9
+    arr[5] = 3
+
+    # Sort using the embedded C comparator.
+    # We cast flow_cmp_i32 to ptr<void> to match qsort's parameter type.
+    qsort(arr as ptr<void>, 6, 4, flow_cmp_i32 as ptr<void>)
+
+    # Verify the array is sorted ascending
+    let expected: ptr<i32> = malloc(6 * 4) as ptr<i32>
+    expected[0] = 1
+    expected[1] = 2
+    expected[2] = 3
+    expected[3] = 5
+    expected[4] = 8
+    expected[5] = 9
+
+    let i: i32 = 0
+    while i < 6 {
+        printf("arr[%d] = %d\n", i, arr[i])
+        if arr[i] != expected[i] {
+            printf("FAIL: arr[%d] should be %d but got %d\n", i, expected[i], arr[i])
+            free(arr as ptr<u8>)
+            free(expected as ptr<u8>)
+            return 2
+        }
+        i = i + 1
+    }
+
+    free(arr as ptr<u8>)
+    free(expected as ptr<u8>)
+    puts("All qsort tests passed")
+    return 0
+}
