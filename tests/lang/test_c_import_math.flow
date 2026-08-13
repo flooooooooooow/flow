@@ -1,0 +1,44 @@
+# Test for @cImport with math.h and string.h.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_math.flow
+# Exit 0 on success.
+
+@cImport("math.h")
+@cImport("string.h")
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+function main() -> i32 {
+    # sqrt from math.h
+    let s: f64 = sqrt(144.0)
+    if s != 12.0 {
+        puts("FAIL: sqrt(144) should be 12")
+        return 1
+    }
+
+    # sin/cos from math.h
+    let c: f64 = cos(0.0)
+    if c != 1.0 {
+        puts("FAIL: cos(0) should be 1")
+        return 2
+    }
+
+    # pow from math.h
+    let p: f64 = pow(2.0, 10.0)
+    if p != 1024.0 {
+        puts("FAIL: pow(2,10) should be 1024")
+        return 3
+    }
+
+    # strlen from string.h
+    let n: u64 = strlen("hello")
+    if n != 5 {
+        puts("FAIL: strlen(hello) should be 5")
+        return 4
+    }
+
+    puts("All c_import_math tests passed")
+    return 0
+}

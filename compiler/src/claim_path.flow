@@ -252,7 +252,7 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
 
     if strcmp(t, "definition") == 0 {
         if addr.ok == 1 {
-            let s: string = "We stipulate the law "
+            let mut s: string = "We stipulate the law "
             s = str_append(s, addr.law)
             s = str_append(s, " for ")
             s = str_append(s, addr.structure)
@@ -261,7 +261,7 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
             s = str_append(s, ". This is a definition.")
             return s
         }
-        let s: string = "We stipulate how "
+        let mut s: string = "We stipulate how "
         s = str_append(s, gloss)
         s = str_append(s, " behaves on ")
         s = str_append(s, path.domain)
@@ -270,7 +270,7 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
     }
 
     if strcmp(t, "axiom") == 0 {
-        let s: string = "We accept this axiom on "
+        let mut s: string = "We accept this axiom on "
         s = str_append(s, path.domain)
         s = str_append(s, " without proof. It is an ontological commitment.")
         return s
@@ -278,7 +278,7 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
 
     # derived
     if addr.ok == 1 {
-        let s: string = "We prove that on "
+        let mut s: string = "We prove that on "
         s = str_append(s, addr.carrier)
         s = str_append(s, ", ")
         s = str_append(s, addr.structure)
@@ -288,7 +288,7 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
         return s
     }
 
-    let s: string = "We prove this derived fact about "
+    let mut s: string = "We prove this derived fact about "
     s = str_append(s, path.domain)
     s = str_append(s, " and ")
     s = str_append(s, gloss)

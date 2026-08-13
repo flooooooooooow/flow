@@ -38,13 +38,15 @@ function str_append(a: string, b: string) -> string {
 
 function substr(src: string, start: i32, end: i32) -> string {
     let n: i32 = strlen(src) as i32
-    if start < 0 { start = 0 }
-    if end > n { end = n }
-    if start >= end { return "" }
-    let len: i32 = end - start
+    let mut s: i32 = start
+    let mut e: i32 = end
+    if s < 0 { s = 0 }
+    if e > n { e = n }
+    if s >= e { return "" }
+    let len: i32 = e - s
     let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
     let p: ptr<u8> = src
-    memcpy(buf, p + start, len as i64)
+    memcpy(buf, p + s, len as i64)
     buf[len] = 0
     return buf as string
 }
@@ -107,7 +109,7 @@ export function flowc_package_prefix(mod_path: string) -> string {
     let n: i32 = strlen(mod_path) as i32
     if n == 0 { return "" }
     let p: ptr<u8> = mod_path
-    let has_slash: i32 = 0
+    let mut has_slash: i32 = 0
     let mut i: i32 = 0
     while i < n {
         if p[i] == 47 { has_slash = 1; break }
@@ -116,14 +118,14 @@ export function flowc_package_prefix(mod_path: string) -> string {
     if has_slash == 0 { return mod_path }
 
     # Split by "." and keep segments without "/"
-    let result: string = ""
+    let mut result: string = ""
     let mut start: i32 = 0
     let mut j: i32 = 0
     while j <= n {
         if j == n or p[j] == 46 {
             # Segment is [start, j)
             let seg_len: i32 = j - start
-            let has_slash_seg: i32 = 0
+            let mut has_slash_seg: i32 = 0
             let mut k: i32 = start
             while k < j {
                 if p[k] == 47 { has_slash_seg = 1; break }
@@ -150,7 +152,7 @@ export function flowc_package_prefix(mod_path: string) -> string {
 export function flowc_qualify(mod_path: string, claim_path: string) -> string {
     let prefix: string = flowc_package_prefix(mod_path)
     if strlen(prefix) > 0 {
-        let s: string = str_append(prefix, ".")
+        let mut s: string = str_append(prefix, ".")
         s = str_append(s, claim_path)
         return s
     }

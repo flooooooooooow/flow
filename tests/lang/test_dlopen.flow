@@ -1,0 +1,61 @@
+# Test for dlopen + cfn function pointer call pattern.
+# Loads libm via dlopen, looks up sqrt via dlsym, casts to cfn, and calls it.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_dlopen.flow
+# Exit 0 on success.
+
+extern type DynLib
+
+extern {
+    function dlopen(filename: ptr<u8>, flag: i32) -> ptr<DynLib>
+    function dlsym(h: ptr<DynLib>, symbol: ptr<u8>) -> ptr<void>
+    function dlclose(h: ptr<DynLib>) -> i32
+}
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # RTLD_LAZY = 1 on macOS
+    let lib: ptr<DynLib> = dlopen("libm.dylib", 1)
+    if lib == null as ptr<DynLib> {
+        puts("FAIL: could not dlopen libm.dylib")
+        return 1
+    }
+
+    # Look up sqrt via dlsym
+    let sym: ptr<void> = dlsym(lib, "sqrt")
+    if sym == null as ptr<void> {
+        puts("FAIL: could not find sqrt in libm")
+        dlclose(lib)
+        return 2
+    }
+
+    # Cast the void* to a plain C function pointer and call it.
+    # cfn(f64) -> f64 emits as double (*)(double) in C.
+    let sqrt_fn: cfn(f64) -> f64 = sym as cfn(f64) -> f64
+    let result: f64 = sqrt_fn(49.0)
+    if result != 7.0 {
+        puts("FAIL: sqrt(49) should be 7")
+        dlclose(lib)
+        return 3
+    }
+
+    # Call it again with a different value
+    let result2: f64 = sqrt_fn(144.0)
+    if result2 != 12.0 {
+        puts("FAIL: sqrt(144) should be 12")
+        dlclose(lib)
+        return 4
+    }
+
+    # Clean up
+    let rc: i32 = dlclose(lib)
+    if rc != 0 {
+        puts("FAIL: dlclose should return 0")
+        return 5
+    }
+
+    puts("All dlopen tests passed")
+    return 0
+}

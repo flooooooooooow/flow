@@ -858,20 +858,27 @@ class CGenerator:
         for fn in functions:
             if self._is_fn_type(fn.return_type):
                 self._ensure_fn_typedef(fn.return_type)
+            if self._is_cfn_type(fn.return_type):
+                self._ensure_cfn_typedef(fn.return_type)
             for p in fn.parameters:
                 if self._is_fn_type(p.type):
                     self._ensure_fn_typedef(p.type)
+                if self._is_cfn_type(p.type):
+                    self._ensure_cfn_typedef(p.type)
         if self._fn_typedefs_emitted:
             for line in list(self._pending_env_structs):
                 if line.startswith("typedef struct {") and "void* env;" in line:
                     lines.append(line)
+                elif line.startswith("typedef ") and "(*cfn_" in line:
+                    lines.append(line)
             # Keep non-fn pending structs for the lambda insert block; drop
-            # the fn typedefs we already emitted so they are not duplicated.
+            # the fn/cfn typedefs we already emitted so they are not duplicated.
             self._pending_env_structs = [
                 line
                 for line in self._pending_env_structs
                 if not (line.startswith("typedef struct {") and "void* env;" in line
                         and "(*fn)(void*" in line)
+                and not (line.startswith("typedef ") and "(*cfn_" in line)
             ]
             if self._fn_typedefs_emitted:
                 lines.append("")
@@ -1691,6 +1698,9 @@ class CGenerator:
         # Escaping function / closure types are fat-pointer typedefs, not structs
         if t.name.startswith("fn_") and "__" in t.name:
             return False
+        # Plain C function pointer types are typedefs, not structs
+        if t.name.startswith("cfn_") and "__" in t.name:
+            return False
         # Spans are two-word view typedefs emitted by _ensure_span_typedef
         if is_span_type_name(t.name):
             return False
@@ -1698,6 +1708,25 @@ class CGenerator:
 
     def _is_fn_type(self, t: Optional[Type]) -> bool:
         return bool(t and getattr(t, "name", "").startswith("fn_") and "__" in t.name)
+
+    def _is_cfn_type(self, t: Optional[Type]) -> bool:
+        return bool(t and getattr(t, "name", "").startswith("cfn_") and "__" in t.name)
+
+    def _ensure_cfn_typedef(self, t: Type) -> str:
+        """Emit typedef for plain C function pointer cfn(A)->R as R (*)(A)."""
+        c_name = _c_ident(t.name)
+        if c_name in self._fn_typedefs_emitted:
+            return c_name
+        self._fn_typedefs_emitted.add(c_name)
+        params = list(getattr(t, "type_args", None) or [])
+        ret = getattr(t, "element_type", None) or Type("void")
+        ret_c = self._c_type(ret)
+        param_cs = [self._c_type(p) for p in params]
+        fn_params = ", ".join(param_cs) if param_cs else "void"
+        self._pending_env_structs.append(
+            f"typedef {ret_c} (*{c_name})({fn_params});"
+        )
+        return c_name
 
     def _ensure_fn_typedef(self, t: Type) -> str:
         """Emit typedef for escaping closure type (T1,T2)->R as a fat pointer."""
@@ -1912,6 +1941,8 @@ class CGenerator:
     def _c_type(self, t: Type) -> str:
         if self._is_fn_type(t):
             return self._ensure_fn_typedef(t)
+        if self._is_cfn_type(t):
+            return self._ensure_cfn_typedef(t)
         if self._is_span_type(t):
             return self._ensure_span_typedef(t)
         if t.name == "auto":
@@ -3740,6 +3771,13 @@ class CGenerator:
             # Handle print/println intrinsics
             if e.name in ("print", "println"):
                 return self._gen_print_call(e.arguments, newline=(e.name == "println"))
+
+            # Plain C function pointer calls: cfn(A)->R variables are called
+            # directly without the fat-pointer .fn dispatch.
+            if self._is_cfn_type(self._var_types.get(e.name)):
+                base = _sanitize_identifier(e.name)
+                call_args = ", ".join(self._gen_expr(a) for a in e.arguments)
+                return f"{base}({call_args})"
 
             # Escaping fat-pointer closures: (T)->R values carry {fn, env}.
             if e.name in self._fn_fat_vars or self._is_fn_type(self._var_types.get(e.name)):
