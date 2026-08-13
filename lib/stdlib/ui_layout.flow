@@ -209,3 +209,5 @@ export function ui_stack_begin(state: ptr<UiLayoutState>) -> void {
 export function ui_stack_end(state: ptr<UiLayoutState>) -> void { layout_pop(state); return }
 
 export function ui_box(state: ptr<UiLayoutState>) -> UiRect { return ui_next_rect(state) }
+
+export function ui_layout_unit(state: ptr<UiLayoutState>) -> f32 { return state[0].unit }
