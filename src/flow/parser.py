@@ -4529,6 +4529,7 @@ class Parser:
             TokenType.GREATER,
             TokenType.LESS_EQUAL,
             TokenType.GREATER_EQUAL,
+            TokenType.IN,
         ]:
             op = self.current_token.value
             op_line = self.current_token.line

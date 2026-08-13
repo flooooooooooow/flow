@@ -1,0 +1,52 @@
+# Test the `in` membership operator
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function main() -> i32 {
+    let arr: array<i32, 5> = [1, 2, 3, 4, 5]
+
+    # Found
+    if 3 in arr {
+        printf("found 3\n")
+    } else {
+        printf("FAIL: 3 not found\n")
+        return 1
+    }
+
+    # Not found
+    if 99 in arr {
+        printf("FAIL: 99 should not be found\n")
+        return 1
+    } else {
+        printf("99 not found (correct)\n")
+    }
+
+    # Use in a boolean expression
+    let has_two: bool = 2 in arr
+    if has_two {
+        printf("has 2\n")
+    } else {
+        printf("FAIL: should have 2\n")
+        return 1
+    }
+
+    # First element
+    if 1 in arr {
+        printf("has 1 (first)\n")
+    } else {
+        printf("FAIL\n")
+        return 1
+    }
+
+    # Last element
+    if 5 in arr {
+        printf("has 5 (last)\n")
+    } else {
+        printf("FAIL\n")
+        return 1
+    }
+
+    printf("all in-operator tests passed\n")
+    return 0
+}

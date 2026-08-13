@@ -530,6 +530,14 @@ class CGenerator:
             lines.append("    return r;")
         lines.append("}")
         lines.append("")
+        # `in` operator helper: linear scan over an array<T,N>.
+        lines.append("#define __flow_in_arr(arr, val) __extension__ ({ \\")
+        lines.append("    int _found = 0; \\")
+        lines.append("    size_t _n = sizeof(arr)/sizeof((arr)[0]); \\")
+        lines.append("    for (size_t _i = 0; _i < _n; _i++) { \\")
+        lines.append("        if ((arr)[_i] == (val)) { _found = 1; break; } \\")
+        lines.append("    } _found; })")
+        lines.append("")
         # MISRA Phase 0+1 (#264/#265/#263/#266/#279): configurable fault
         # handler + checked arithmetic / null deref. Application TUs only;
         # library/runtime modules skip (arith checks disabled).
@@ -1574,7 +1582,7 @@ class CGenerator:
         elif isinstance(expr, IfExpression):
             return self._infer_expr_type(expr.then_expr)
         elif isinstance(expr, BinaryOperation):
-            if expr.operator in ("==", "!=", "<", "<=", ">", ">=", "&&", "||"):
+            if expr.operator in ("==", "!=", "<", "<=", ">", ">=", "&&", "||", "in"):
                 return Type("bool")
             left = self._infer_expr_type(expr.left)
             right = self._infer_expr_type(expr.right)
@@ -3643,6 +3651,16 @@ class CGenerator:
                 c_operator = '||'
                 left_expr = remove_outer_parens(left_expr)
                 right_expr = remove_outer_parens(right_expr)
+            elif e.operator == 'in':
+                # `x in arr` — linear scan over the array.
+                # `ch in s` — strchr-based char membership in a string.
+                right_type = self._infer_expr_type(e.right)
+                if right_type and right_type.name == "string":
+                    left_val = self._gen_expr(e.left)
+                    return f"({left_val} != NULL && strchr({right_expr}, (int)({left_val})[0]) != NULL)"
+                left_val = self._gen_expr(e.left)
+                # Use sizeof to get array length: sizeof(arr)/sizeof(arr[0])
+                return f"(__flow_in_arr({right_expr}, {left_val}))"
             
             # Comparison operators don't need outer parens (they have low precedence)
             if c_operator in ['==', '!=', '<', '<=', '>', '>=']:
