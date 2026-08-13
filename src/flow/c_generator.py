@@ -1010,11 +1010,20 @@ class CGenerator:
                            'usleep', 'sleep', 'gettimeofday', 'time', 'system',
                            'kill', 'getuid', 'getgid', 'geteuid', 'getegid', 'gethostname',
                            # POSIX popen/pclose — provided by stdio.h
-                           'popen', 'pclose'}
+                           'popen', 'pclose',
+                           # qsort, bsearch — provided by stdlib.h
+                           'qsort', 'bsearch',
+                           # pthread — provided by pthread.h
+                           'pthread_create', 'pthread_join', 'pthread_exit',
+                           'pthread_mutex_init', 'pthread_mutex_destroy',
+                           'pthread_mutex_lock', 'pthread_mutex_unlock'}
         primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
             if fn.name in stdlib_functions:
+                continue
+            # Skip functions provided by @cEmbed (they're already defined)
+            if fn.name in getattr(self, '_cembed_functions', set()):
                 continue
             # Emit extern function declarations (needed for linking with runtime)
             if getattr(fn, 'is_extern', False):
@@ -4995,6 +5004,28 @@ def flow_to_c(
         constants = [d for d in declarations if isinstance(d, ConstDecl)]
         statics = [d for d in declarations if isinstance(d, StaticDecl)]
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
+        # Deduplicate non-exported functions by name: when multiple imported
+        # modules define the same helper (e.g. str_append, substr), only the
+        # first definition is emitted. Exported functions are kept as-is
+        # (the module resolver already rejects exported-name collisions).
+        # Forward declarations (empty body) never block a later real definition.
+        _seen_fn: set = set()
+        _deduped: list = []
+        for fn in functions:
+            if getattr(fn, "is_exported", False):
+                _deduped.append(fn)
+                continue
+            key = fn.name
+            has_body = bool(getattr(fn, "body", None) and fn.body.statements)
+            if not has_body:
+                # Forward declaration: keep it, but don't mark the name as seen
+                # so a later definition with the same name still gets emitted.
+                _deduped.append(fn)
+                continue
+            if key not in _seen_fn:
+                _seen_fn.add(key)
+                _deduped.append(fn)
+        functions = _deduped
         structs = [d for d in declarations if isinstance(d, StructDecl)]
         effects = [d for d in declarations if isinstance(d, EffectDecl)]
         capabilities = [d for d in declarations if isinstance(d, CapabilityDecl)]
@@ -5005,6 +5036,21 @@ def flow_to_c(
         distinct_types = [d for d in declarations if isinstance(d, DistinctTypeDecl)]
         extern_types = [d for d in declarations if isinstance(d, ExternTypeDecl)]
         c_includes = [d for d in declarations if isinstance(d, (CIncludeDecl, CImportDecl))]
+        c_embeds = [d for d in declarations if isinstance(d, CEmbedDecl)]
+
+        # Extract function names from @cEmbed code so the generator can
+        # skip emitting conflicting extern prototypes for them.
+        import re as _re_embed
+        cembed_fns = set()
+        for ce in c_embeds:
+            for m in _re_embed.finditer(
+                r'\b(?:static\s+)?(?:inline\s+)?'
+                r'(?:int\d+_t|uint\d+_t|int|void|char|float|double|size_t|ssize_t|long|short|bool)\s+'
+                r'(\w+)\s*\(',
+                ce.code,
+            ):
+                cembed_fns.add(m.group(1))
+        generator._cembed_functions = cembed_fns
         
         # Add impl methods to functions list (with mangled names)
         for impl in impls:
