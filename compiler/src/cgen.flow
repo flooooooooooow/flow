@@ -19,6 +19,11 @@ import .ast {
 
 extern {
     function strlen(s: string) -> i64
+    function popen(cmd: string, mode: string) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
 }
 
 # Fixed-buffer writer for C text.
@@ -1475,6 +1480,312 @@ function flowc_cgen_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
 # flags: bit0 (1) = skip #include preamble (for multi-file bundle TUs).
 # `sigs` / `sigs_len` are an optional cross-module return-type table
 # (flowc_cgen_collect_sigs); pass null / 0 for single-module emit.
+
+# Check if a span is a C keyword.
+function flowc_cgen_pp_is_keyword(text: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_cgen_span_is(text, start, end, "void") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "int") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "char") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "long") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "short") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "float") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "double") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "unsigned") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "signed") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "const") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "struct") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "union") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "enum") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "typedef") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "static") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "extern") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "inline") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "return") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "if") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "else") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "while") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "for") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "do") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "switch") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "case") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "break") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "continue") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "default") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "sizeof") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "defined") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "goto") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "restrict") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "auto") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "register") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "volatile") { return 1 }
+    return 0
+}
+
+# Check if a function name is a macro in macOS secure headers.
+function flowc_cgen_pp_is_macro_fn(text: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_cgen_span_is(text, start, end, "memcpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "memmove") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "memset") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "memccpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strcpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strncpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strcat") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strncat") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strlcpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strlcat") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "stpcpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "stpncpy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "sprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "snprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "vsprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "vsnprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "vfprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "printf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "vprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "asprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "vasprintf") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "gets") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fgets") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fread") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fwrite") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "strdup") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "bcopy") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "bzero") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "getc_unlocked") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "putc_unlocked") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "getchar_unlocked") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "putchar_unlocked") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fputc") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fputs") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "putc") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "getchar") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "putchar") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "fgetc") { return 1 }
+    if flowc_cgen_span_is(text, start, end, "getc") { return 1 }
+    return 0
+}
+
+# Check if a span contains a substring.
+function flowc_cgen_pp_contains(text: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let lit_ptr: ptr<u8> = lit as ptr<u8>
+    let lit_len: i32 = strlen(lit_ptr) as i32
+    if lit_len <= 0 or end - start < lit_len {
+        return 0
+    }
+    let i: i32 = start
+    while i + lit_len <= end {
+        let is_match: i32 = 1
+        let j: i32 = 0
+        while j < lit_len {
+            if text[i + j] != lit_ptr[j] {
+                is_match = 0
+                break
+            }
+            j = j + 1
+        }
+        if is_match == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Preprocess a C header and emit function prototypes into the CgenBuf.
+# Runs cpp via popen, scans for function-like declarations, and emits
+# them as C prototypes. Filters out keywords, uppercase names, macro
+# functions, and preprocessor artifacts.
+function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32, name_end: i32) {
+    # Build command: echo '#include <header>' | cpp -P -
+    let cmd_buf: ptr<u8> = malloc(1024)
+    if cmd_buf == null {
+        return
+    }
+    let pos: i32 = 0
+
+    let prefix: string = "echo '#include <"
+    let prefix_ptr: ptr<u8> = prefix as ptr<u8>
+    let prefix_len: i32 = strlen(prefix_ptr) as i32
+    let i: i32 = 0
+    while i < prefix_len and pos < 1023 {
+        cmd_buf[pos] = prefix_ptr[i]
+        pos = pos + 1
+        i = i + 1
+    }
+    i = name_start + 1
+    while i < name_end - 1 and pos < 1023 {
+        cmd_buf[pos] = src[i]
+        pos = pos + 1
+        i = i + 1
+    }
+
+    let suffix: string = ">' | cpp -P -"
+    let suffix_ptr: ptr<u8> = suffix as ptr<u8>
+    let suffix_len: i32 = strlen(suffix_ptr) as i32
+    i = 0
+    while i < suffix_len and pos < 1023 {
+        cmd_buf[pos] = suffix_ptr[i]
+        pos = pos + 1
+        i = i + 1
+    }
+    cmd_buf[pos] = 0
+
+    let fp: ptr<void> = popen(cmd_buf as string, "r" as string)
+    free(cmd_buf)
+    if fp == null {
+        return
+    }
+
+    # Read preprocessed output
+    let pp_buf: ptr<u8> = malloc(1048576)
+    if pp_buf == null {
+        pclose(fp)
+        return
+    }
+    let pp_len: i32 = 0
+    let got: i32 = fread(pp_buf + pp_len, 1, 4096, fp)
+    while got > 0 and pp_len < 1048576 - 4096 {
+        pp_len = pp_len + got
+        got = fread(pp_buf + pp_len, 1, 4096, fp)
+    }
+    pclose(fp)
+
+    # Emit the #include so the prototypes match the system types
+    flowc_cgen_puts(w, "#include <")
+    flowc_cgen_put_span(w, src, name_start + 1, name_end - 1)
+    flowc_cgen_puts(w, ">\n")
+
+    # Scan for function declarations (semicolon-delimited)
+    let pos2: i32 = 0
+    while pos2 < pp_len {
+        # Skip whitespace
+        while pos2 < pp_len and (pp_buf[pos2] == 32 or pp_buf[pos2] == 10 or pp_buf[pos2] == 9 or pp_buf[pos2] == 13) {
+            pos2 = pos2 + 1
+        }
+        if pos2 >= pp_len {
+            break
+        }
+
+        # Find end of statement (semicolon)
+        let line_start: i32 = pos2
+        while pos2 < pp_len and pp_buf[pos2] != 59 {
+            pos2 = pos2 + 1
+        }
+        let line_end: i32 = pos2
+        if pos2 < pp_len and pp_buf[pos2] == 59 {
+            pos2 = pos2 + 1
+        }
+
+        # Trim trailing whitespace
+        while line_end > line_start and (pp_buf[line_end - 1] == 10 or pp_buf[line_end - 1] == 13 or pp_buf[line_end - 1] == 32 or pp_buf[line_end - 1] == 9) {
+            line_end = line_end - 1
+        }
+
+        # Skip statements with braces (function bodies)
+        let has_brace: i32 = 0
+        let scan_br: i32 = line_start
+        while scan_br < line_end {
+            if pp_buf[scan_br] == 123 or pp_buf[scan_br] == 125 {
+                has_brace = 1
+                break
+            }
+            scan_br = scan_br + 1
+        }
+        if has_brace == 1 {
+            continue
+        }
+
+        # Check if this statement has parens (function-like)
+        let paren_pos: i32 = 0 - 1
+        let j: i32 = line_start
+        while j < line_end {
+            if pp_buf[j] == 40 {
+                paren_pos = j
+                break
+            }
+            j = j + 1
+        }
+        if paren_pos < 0 {
+            continue
+        }
+
+        # Find matching close paren
+        let depth: i32 = 1
+        let close_pos: i32 = paren_pos + 1
+        while close_pos < line_end and depth > 0 {
+            if pp_buf[close_pos] == 40 {
+                depth = depth + 1
+            } elif pp_buf[close_pos] == 41 {
+                depth = depth - 1
+            }
+            close_pos = close_pos + 1
+        }
+        if depth != 0 {
+            continue
+        }
+        close_pos = close_pos - 1
+
+        # Extract function name (last identifier before paren)
+        let fn_end: i32 = paren_pos
+        while fn_end > line_start and (pp_buf[fn_end - 1] == 32 or pp_buf[fn_end - 1] == 9 or pp_buf[fn_end - 1] == 10 or pp_buf[fn_end - 1] == 13) {
+            fn_end = fn_end - 1
+        }
+        let fn_start: i32 = fn_end
+        while fn_start > line_start and ((pp_buf[fn_start - 1] >= 65 and pp_buf[fn_start - 1] <= 90) or (pp_buf[fn_start - 1] >= 97 and pp_buf[fn_start - 1] <= 122) or (pp_buf[fn_start - 1] >= 48 and pp_buf[fn_start - 1] <= 57) or pp_buf[fn_start - 1] == 95) {
+            fn_start = fn_start - 1
+        }
+        let fn_len: i32 = fn_end - fn_start
+        if fn_len <= 0 {
+            continue
+        }
+
+        # Skip double-underscore names
+        if fn_len >= 2 and pp_buf[fn_start] == 95 and pp_buf[fn_start + 1] == 95 {
+            continue
+        }
+
+        # Skip uppercase names (macro expansions)
+        if pp_buf[fn_start] >= 65 and pp_buf[fn_start] <= 90 {
+            continue
+        }
+
+        # Skip C keywords as function names
+        if flowc_cgen_pp_is_keyword(pp_buf, fn_start, fn_end) == 1 {
+            continue
+        }
+
+        # Skip macOS secure-header macro functions
+        if flowc_cgen_pp_is_macro_fn(pp_buf, fn_start, fn_end) == 1 {
+            continue
+        }
+
+        # Return type is everything before the function name
+        let ret_end: i32 = fn_start
+        while ret_end > line_start and (pp_buf[ret_end - 1] == 32 or pp_buf[ret_end - 1] == 9 or pp_buf[ret_end - 1] == 10 or pp_buf[ret_end - 1] == 13) {
+            ret_end = ret_end - 1
+        }
+        if ret_end <= line_start {
+            continue
+        }
+
+        # Skip if return type contains "defined"
+        if flowc_cgen_pp_contains(pp_buf, line_start, ret_end, "defined") == 1 {
+            continue
+        }
+
+        # Emit the prototype
+        flowc_cgen_put_span(w, pp_buf, line_start, ret_end)
+        flowc_cgen_putc(w, 32)
+        flowc_cgen_put_span(w, pp_buf, fn_start, fn_end)
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_put_span(w, pp_buf, paren_pos + 1, close_pos)
+        flowc_cgen_puts(w, ");\n")
+    }
+
+    free(pp_buf)
+}
+
 export function flowc_cgen_emit_sigs(
     arena: AstArena,
     root: i32,
@@ -1537,12 +1848,10 @@ export function flowc_cgen_emit_sigs(
             flowc_cgen_puts(&w, "\"\n")
         }
         if arena.nodes[item].kind == AST_C_IMPORT {
-            # @cImport: emit #include for the header. The Python compiler
-            # also runs cpp and generates extern declarations, but the
-            # self-hosted compiler currently just emits the include.
-            flowc_cgen_puts(&w, "#include <")
-            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
-            flowc_cgen_puts(&w, ">\n")
+            # @cImport: emit #include and auto-generate C prototypes
+            # by preprocessing the header with cpp and scanning for
+            # function declarations.
+            flowc_cgen_emit_cimport(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
         }
         item = arena.nodes[item].next
     }
