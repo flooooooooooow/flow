@@ -14,7 +14,7 @@ import .ast {
     AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
     AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
     AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT,
-    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS
+    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS, AST_IF_EXPR
 }
 
 extern {
@@ -248,6 +248,16 @@ function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_fmt_puts(w, " as ")
         flowc_fmt_emit_type(w, arena, src, arena.nodes[id].b)
+        return
+    }
+    if kind == AST_IF_EXPR {
+        flowc_fmt_puts(w, "if ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " { ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_fmt_puts(w, " } else { ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].c)
+        flowc_fmt_puts(w, " }")
         return
     }
     if kind == AST_INDEX {
