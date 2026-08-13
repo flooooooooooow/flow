@@ -13,7 +13,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -26,6 +26,7 @@ import .ast {
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
+    AST_ENUM, AST_ENUM_VARIANT,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
 }
 
@@ -1817,6 +1818,99 @@ function flowc_parser_skip_paren_block(p: ptr<Parser>) {
 }
 
 # type Name = BaseType
+function flowc_parse_enum(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_ENUM) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        p[0].err = 1
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    # Skip optional type parameters: enum Name<T> { ... }
+    if flowc_parser_check(p[0], TOK_LT) == 1 {
+        flowc_parser_advance(p)
+        let mut depth: i32 = 1
+        while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+            if flowc_parser_check(p[0], TOK_LT) == 1 {
+                depth = depth + 1
+            } else {
+                if flowc_parser_check(p[0], TOK_GT) == 1 {
+                    depth = depth - 1
+                }
+            }
+            if depth > 0 {
+                flowc_parser_advance(p)
+            }
+        }
+        if flowc_parser_check(p[0], TOK_GT) == 1 {
+            flowc_parser_advance(p)
+        }
+    }
+    if flowc_parser_eat(p, TOK_LBRACE) == 0 {
+        return AST_NONE
+    }
+    let mut variants: i32 = AST_NONE
+    let mut idx: i32 = 0
+    while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            p[0].err = 1
+            return AST_NONE
+        }
+        let vns: i32 = p[0].cur.start
+        let vne: i32 = p[0].cur.end
+        flowc_parser_advance(p)
+        let vid: i32 = flowc_ast_alloc(&p[0].arena, AST_ENUM_VARIANT, vns, vne)
+        if vid == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[vid].name_start = vns
+        p[0].arena.nodes[vid].name_end = vne
+        p[0].arena.nodes[vid].ival = idx
+        idx = idx + 1
+        # Skip optional variant fields: Variant(Type) or Variant(T, U)
+        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+            flowc_parser_advance(p)
+            let mut pdepth: i32 = 1
+            while pdepth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+                if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                    pdepth = pdepth + 1
+                } else {
+                    if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
+                        pdepth = pdepth - 1
+                    }
+                }
+                if pdepth > 0 {
+                    flowc_parser_advance(p)
+                }
+            }
+            if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
+                flowc_parser_advance(p)
+            }
+        }
+        variants = flowc_ast_chain_push(&p[0].arena, variants, vid)
+        if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            flowc_parser_advance(p)
+        }
+    }
+    if flowc_parser_eat(p, TOK_RBRACE) == 0 {
+        return AST_NONE
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ENUM, start, p[0].cur.start)
+    if id == AST_NONE {
+        p[0].err = 1
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = variants
+    return id
+}
+
 function flowc_parse_type_alias(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
     if flowc_parser_eat_kw(p, KW_TYPE) == 0 {
@@ -2096,6 +2190,9 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                     if flowc_parser_check_kw(p[0], KW_STRUCT) == 1 {
                         item = flowc_parse_struct(p)
                     } else {
+                        if flowc_parser_check_kw(p[0], KW_ENUM) == 1 {
+                            item = flowc_parse_enum(p)
+                        } else {
                         if flowc_parser_check_kw(p[0], KW_EXTERN) == 1 {
                             item = flowc_parse_extern(p)
                         } else {
@@ -2135,6 +2232,7 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                             }
                         }
                     }
+                }
                 }
             }
         }
