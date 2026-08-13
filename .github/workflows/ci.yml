@@ -102,6 +102,16 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 scripts/sync_version.py --check
 
+  # Relative links in tracked markdown, as a reader meets them on GitHub.
+  # check_wiki_links.py validates the built site instead; the two catch
+  # different breakage. Both stdlib-only, so no toolchain setup.
+  doc-links:
+    name: Doc links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/check_doc_links.py
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

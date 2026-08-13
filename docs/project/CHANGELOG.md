@@ -14,6 +14,18 @@ All notable changes to FLOW will be documented in this file.
   figures, and the crystal never grew again. Restarts now clear the span and
   frozen count, and the three duplicated restart paths are one branch.
 
+### Documentation
+
+- Repaired 16 broken relative links across README, ROADMAP, and the docs tree.
+  Most were stale paths (`docs/project/ROADMAP.md` for a file at the repo root,
+  proof directories still pointing at the retired `third-party/flow-verify/`
+  tree). Two README entries pointed at documents that were never written
+  (`docs/vision/physical-systems.md`, `docs/language/best-practices.md`) and now
+  point at the material that exists.
+- `scripts/check_doc_links.py` verifies relative links resolve in the tree, and
+  runs as an ungated CI job. It skips the six basenames `build_wiki.py`
+  generates into the published site, which are absent from the tree by design.
+
 ### Release engineering
 
 - `scripts/sync_version.py` makes `src/flow/version.py` the single source of

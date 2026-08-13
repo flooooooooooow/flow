@@ -12,7 +12,7 @@ This document tracks what we're building next and why.
 >
 > **Product thesis / beachhead:** Flow describes **physical computational
 > systems** (RF, embedded, SDR, FPGA-adjacent, satellite). Architecture and
-> 30-pillar sequencing: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
+> 30-pillar sequencing: the phase table below.
 > Dynamics grammar cards: [docs/vision/north-star.md](docs/vision/north-star.md).
 
 > **Live tracker:** day-to-day backlog and task status now live on the Helm board
@@ -27,8 +27,8 @@ This document tracks what we're building next and why.
 ## Physical systems beachhead (RF → satellite)
 
 Strategic cut: do **not** pitch “safer embedded.” Pitch a compiler that understands
-units + rates + timing + memory topology + hardware + precision. Full map:
-[physical-systems.md](docs/vision/physical-systems.md).
+units + rates + timing + memory topology + hardware + precision. Phase map below;
+grammar cards in [north-star.md](docs/vision/north-star.md).
 
 | Phase | Focus | Status |
 |-------|--------|--------|

@@ -80,7 +80,7 @@ flow Pendulum {
 
 That is a complete program. The compiler hands the right-hand side to an RK4 solver and runs it at native speed. No notebook, no glue code, no translation step between model and deployment.
 
-Full thesis: [VISION.md](VISION.md). Domain architecture: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
+Full thesis: [VISION.md](VISION.md). Vision mapped onto grammar: [docs/vision/north-star.md](docs/vision/north-star.md). Phase sequencing: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -249,8 +249,8 @@ extern {
 | Resource | Description |
 |----------|-------------|
 | [Getting started](docs/getting-started.md) | Install, first program, basics |
-| [Best practices](docs/language/best-practices.md) | Idioms and why Flow favors fluid abstraction |
 | [Language overview](docs/language/overview.md) | Features and design |
+| [Language design](docs/language/language_design.md) | Idioms and why Flow favors fluid abstraction |
 | [Language spec](docs/LANGUAGE_SPEC.md) | Full reference |
 | [Effects showcase](docs/effects-showcase.md) | Algebraic effects end to end |
 | [Examples index](examples/README.md) | Demos by domain |

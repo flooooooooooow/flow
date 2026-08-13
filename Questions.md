@@ -41,7 +41,7 @@ enforced by the type checker. Block sugar is listed under Future work with
 
 ### 2026-08-05: `gfx_run` — callback vs block sugar?
 
-**Context:** Pattern adoption ([pattern-adoption.md](pattern-adoption.md)) wants
+**Context:** Pattern adoption ([pattern-adoption.md](docs/project/pattern-adoption.md)) wants
 to kill the repeated poll/esc/clear/present loop in every gfx demo. Two sketches:
 
 **Options:**
