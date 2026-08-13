@@ -1047,7 +1047,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_FOR {
-        # for i in lo to hi { body } → for (int32_t i = lo; i < hi; i = i + 1) { body }
+        # for i in lo to hi { body } → for (int32_t i = lo; i < hi; i = i + step) { body }
         flowc_cgen_puts(w, "  for (int32_t ")
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_puts(w, " = ")
@@ -1060,7 +1060,13 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_puts(w, " = ")
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        flowc_cgen_puts(w, " + 1) ")
+        flowc_cgen_puts(w, " + ")
+        if arena.nodes[id].ival != AST_NONE and arena.nodes[id].ival != 0 {
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].ival)
+        } else {
+            flowc_cgen_puts(w, "1")
+        }
+        flowc_cgen_puts(w, ") ")
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
         return
     }

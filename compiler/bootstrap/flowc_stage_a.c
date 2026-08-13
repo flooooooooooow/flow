@@ -1791,6 +1791,14 @@ int32_t flowc_parse_stmt(Parser* p) {
   return AST_NONE;
 }
   int32_t hi = flowc_parse_expr(p);
+  // Optional step: for i in 0 to 10 step 2
+  int32_t step = AST_NONE;
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  if (flowc_parser_span_is(p[0], ((p[0]).cur).start, ((p[0]).cur).end, "step") == 1) {
+  flowc_parser_advance(p);
+  step = flowc_parse_expr(p);
+}
+}
   int32_t body = flowc_parse_block(p);
   int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_FOR, start, ((p[0]).cur).start);
   if (id == AST_NONE) {
@@ -1802,6 +1810,9 @@ int32_t flowc_parse_stmt(Parser* p) {
   (((p[0]).arena).nodes[id]).a = lo;
   (((p[0]).arena).nodes[id]).b = hi;
   (((p[0]).arena).nodes[id]).c = body;
+  if (step != AST_NONE) {
+  (((p[0]).arena).nodes[id]).ival = step;
+}
   return id;
 }
   if (flowc_parser_check_kw(p[0], KW_MATCH) == 1) {
@@ -3993,7 +4004,13 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, " = ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_cgen_puts(w, " + 1) ");
+  flowc_cgen_puts(w, " + ");
+  if (((arena).nodes[id]).ival != AST_NONE && ((arena).nodes[id]).ival != 0) {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).ival);
+} else {
+  flowc_cgen_puts(w, "1");
+}
+  flowc_cgen_puts(w, ") ");
   flowc_cgen_emit_block(w, arena, src, ((arena).nodes[id]).c);
   return;
 }
