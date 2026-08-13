@@ -4,6 +4,21 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### Release engineering
+
+- `scripts/sync_version.py` makes `src/flow/version.py` the single source of
+  truth for the version and rewrites every mirror from it: `flow.toml`,
+  `pyproject.toml`, `CITATION.cff`, the README table, the language spec
+  header, the three strings in the `flow` driver, and the Homebrew formula.
+  `--check` verifies without writing, `--set X.Y.Z` bumps.
+- CI gains an ungated `Version consistency` job running `--check`. The
+  drift-prone files sit outside every existing paths filter, so the job
+  deliberately runs on every push.
+- `.github/workflows/version-bump.yml` syncs the tree on a `v*` tag push (or
+  manual dispatch) and opens a PR. The Homebrew formula is only touched once
+  the release tarball is actually published, with a digest computed from it
+  rather than guessed.
+
 ## [0.11.0] - 2026-08-13
 
 ### Zero-bridge C interop

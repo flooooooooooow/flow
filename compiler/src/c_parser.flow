@@ -46,40 +46,79 @@ const FLOWC_CPARSER_BUF_SIZE: i32 = 1048576
 # Read a preprocessed C header into a buffer using popen + cpp.
 # Returns the buffer length, or 0 on failure.
 export function flowc_cparser_preprocess(header: ptr<u8>, header_len: i32, out_buf: ptr<u8>, out_cap: i32) -> i32 {
-    # Build command: echo '#include <header>' | cpp -P -
+    return flowc_cparser_preprocess_with_dirs(header, header_len, null as ptr<u8>, 0, out_buf, out_cap)
+}
+
+# Preprocess with include directories. include_dirs is a packed list of
+# null-terminated directory paths, one after another. dirs_len is the
+# total byte length. Each directory gets -I prefix in the cpp command.
+export function flowc_cparser_preprocess_with_dirs(header: ptr<u8>, header_len: i32, include_dirs: ptr<u8>, dirs_len: i32, out_buf: ptr<u8>, out_cap: i32) -> i32 {
+    # Build command: echo '#include <header>' | cpp -P -I dir1 -I dir2 -
     # On macOS, cpp (clang) can't take a header name directly, so we
     # pipe the include directive through cpp via echo.
-    let cmd_buf: ptr<u8> = malloc(512)
+    let cmd_buf: ptr<u8> = malloc(1024)
     if cmd_buf == null {
         return 0
     }
     let pos: i32 = 0
 
-    # Build: echo '#include <header>' | cpp -P -
+    # Build: echo '#include <header>' | cpp -P
     let prefix: string = "echo '#include <"
     let prefix_ptr: ptr<u8> = prefix as ptr<u8>
     let prefix_len: i32 = strlen(prefix_ptr) as i32
     let i: i32 = 0
-    while i < prefix_len and pos < 511 {
+    while i < prefix_len and pos < 1023 {
         cmd_buf[pos] = prefix_ptr[i]
         pos = pos + 1
         i = i + 1
     }
     i = 0
-    while i < header_len and pos < 511 {
+    while i < header_len and pos < 1023 {
         cmd_buf[pos] = header[i]
         pos = pos + 1
         i = i + 1
     }
 
-    let suffix: string = ">' | cpp -P -"
+    let suffix: string = ">' | cpp -P "
     let suffix_ptr: ptr<u8> = suffix as ptr<u8>
     let suffix_len: i32 = strlen(suffix_ptr) as i32
     i = 0
-    while i < suffix_len and pos < 511 {
+    while i < suffix_len and pos < 1023 {
         cmd_buf[pos] = suffix_ptr[i]
         pos = pos + 1
         i = i + 1
+    }
+
+    # Add -I for each include directory (no space between -I and path)
+    let dir_pos: i32 = 0
+    while dir_pos < dirs_len and pos < 1023 {
+        # Write "-I"
+        if pos + 2 >= 1023 { break }
+        cmd_buf[pos] = 45  # -
+        pos = pos + 1
+        cmd_buf[pos] = 73  # I
+        pos = pos + 1
+        # Copy directory path until null (no space after -I)
+        while dir_pos < dirs_len and include_dirs[dir_pos] != 0 and pos < 1023 {
+            cmd_buf[pos] = include_dirs[dir_pos]
+            pos = pos + 1
+            dir_pos = dir_pos + 1
+        }
+        # Skip the null terminator
+        if dir_pos < dirs_len and include_dirs[dir_pos] == 0 {
+            dir_pos = dir_pos + 1
+        }
+        # Add space after directory
+        if pos < 1023 {
+            cmd_buf[pos] = 32  # space
+            pos = pos + 1
+        }
+    }
+
+    # Final "-" for stdin
+    if pos < 1023 {
+        cmd_buf[pos] = 45  # -
+        pos = pos + 1
     }
     cmd_buf[pos] = 0
 

@@ -1,0 +1,119 @@
+# Test for @cImport with -I include path support.
+# Preprocesses a local header using flowc_cparser_preprocess_with_dirs.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_dirs.flow
+# Exit 0 on success.
+
+import "compiler/src/c_parser.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function flowc_cparser_preprocess_with_dirs(header: ptr<u8>, header_len: i32, include_dirs: ptr<u8>, dirs_len: i32, out_buf: ptr<u8>, out_cap: i32) -> i32
+    function flowc_cparser_parse(text: ptr<u8>, text_len: i32, decls: ptr<CDecl>, max_decls: i32) -> i32
+    function flowc_cparser_gen_externs(decls: ptr<CDecl>, n_decls: i32, out_buf: ptr<u8>, out_cap: i32) -> i32
+}
+
+function main() -> i32 {
+    # Allocate buffers
+    let pp_buf: ptr<u8> = malloc(65536)
+    if pp_buf == null {
+        puts("FAIL: could not allocate pp_buf")
+        return 1
+    }
+
+    # Build include dirs buffer: "/tmp/flow_test_inc\0"
+    let dir_buf: ptr<u8> = malloc(256)
+    if dir_buf == null {
+        puts("FAIL: could not allocate dir_buf")
+        free(pp_buf)
+        return 2
+    }
+    let dir: string = "/tmp/flow_test_inc"
+    let dir_ptr: ptr<u8> = dir as ptr<u8>
+    let dir_len: i32 = strlen(dir_ptr) as i32
+    let i: i32 = 0
+    while i < dir_len {
+        dir_buf[i] = dir_ptr[i]
+        i = i + 1
+    }
+    dir_buf[dir_len] = 0  # null terminator
+    let dirs_total: i32 = dir_len + 1
+
+    # Preprocess "myheader.h" with -I /tmp/flow_test_inc
+    let header: string = "myheader.h"
+    let header_ptr: ptr<u8> = header as ptr<u8>
+    let pp_len: i32 = flowc_cparser_preprocess_with_dirs(header_ptr, 10, dir_buf, dirs_total, pp_buf, 65536)
+    if pp_len <= 0 {
+        puts("FAIL: preprocess returned empty")
+        free(pp_buf)
+        free(dir_buf)
+        return 3
+    }
+    printf("Preprocessed myheader.h: %d bytes\n", pp_len)
+
+    # Parse declarations
+    let decls: ptr<CDecl> = malloc(256 * 40) as ptr<CDecl>
+    if decls == null {
+        puts("FAIL: could not allocate decls")
+        free(pp_buf)
+        free(dir_buf)
+        return 4
+    }
+    let n_decls: i32 = flowc_cparser_parse(pp_buf, pp_len, decls, 256)
+    printf("Parsed %d declarations\n", n_decls)
+
+    # Generate Flow externs
+    let ext_buf: ptr<u8> = malloc(8192)
+    if ext_buf == null {
+        puts("FAIL: could not allocate ext_buf")
+        free(pp_buf)
+        free(dir_buf)
+        free(decls)
+        return 5
+    }
+    let ext_len: i32 = flowc_cparser_gen_externs(decls, n_decls, ext_buf, 8192)
+    if ext_len <= 0 {
+        puts("FAIL: gen_externs returned empty")
+        free(pp_buf)
+        free(dir_buf)
+        free(decls)
+        free(ext_buf)
+        return 6
+    }
+    printf("Generated %d bytes of Flow externs\n", ext_len)
+
+    # Print generated externs
+    puts("--- Generated externs ---")
+    puts(ext_buf as string)
+
+    # Check that my_process is in the output
+    let found: i32 = 0
+    let j: i32 = 0
+    while j < ext_len - 9 {
+        if ext_buf[j] == 109 and ext_buf[j + 1] == 121 and ext_buf[j + 2] == 95 and
+           ext_buf[j + 3] == 112 and ext_buf[j + 4] == 114 and ext_buf[j + 5] == 111 and
+           ext_buf[j + 6] == 99 and ext_buf[j + 7] == 101 and ext_buf[j + 8] == 115 and
+           ext_buf[j + 9] == 115 {
+            found = 1
+        }
+        j = j + 1
+    }
+    if found == 0 {
+        puts("FAIL: my_process not found in generated externs")
+        free(pp_buf)
+        free(dir_buf)
+        free(decls)
+        free(ext_buf)
+        return 7
+    }
+    puts("Found 'my_process' in generated externs")
+
+    free(pp_buf)
+    free(dir_buf)
+    free(decls)
+    free(ext_buf)
+    puts("All c_import_dirs tests passed")
+    return 0
+}

@@ -89,6 +89,19 @@ jobs:
               - 'requirements.txt'
               - 'pyproject.toml'
 
+  # Manifests, docs headers and the CLI banner all mirror src/flow/version.py.
+  # They have drifted before: 0.11.0 nearly shipped with version.py still
+  # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
+  # Deliberately ungated — the drift-prone files (README.md, CITATION.cff,
+  # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every paths-filter above.
+  # Stdlib-only script, so no toolchain setup is needed.
+  version:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/sync_version.py --check
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
