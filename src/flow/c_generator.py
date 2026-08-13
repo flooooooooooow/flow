@@ -1007,7 +1007,9 @@ class CGenerator:
                            # POSIX / libc — approximate Flow types clash with real headers
                            'remove', 'rename', 'unlink', 'mkdir', 'rmdir', 'chdir', 'getcwd',
                            'usleep', 'sleep', 'gettimeofday', 'time', 'system',
-                           'kill', 'getuid', 'getgid', 'geteuid', 'getegid', 'gethostname'}
+                           'kill', 'getuid', 'getgid', 'geteuid', 'getegid', 'gethostname',
+                           # POSIX popen/pclose — provided by stdio.h
+                           'popen', 'pclose'}
         primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers

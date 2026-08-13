@@ -1,0 +1,642 @@
+# @module flowc.c_parser
+# @means  Parse C header declarations for @cImport.
+#
+# Uses popen("cpp -P ...") to preprocess a C header, then parses the
+# resulting declarations to extract function prototypes, opaque typedefs,
+# and enum constants. The output is a list of CDecl records that the
+# compiler can turn into Flow extern declarations.
+#
+# This is the Flow-native equivalent of src/flow/c_header_parser.py.
+
+@cInclude("stdio.h")
+@cInclude("stdlib.h")
+
+# popen/pclose/fgets/malloc/free/strlen are provided by stdio.h/stdlib.h.
+# We declare them here only for Flow type checking; c_generator skips
+# emitting conflicting prototypes.
+extern {
+    function popen(cmd: ptr<u8>, mode: ptr<u8>) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function fgets(buf: ptr<u8>, n: i32, fp: ptr<void>) -> ptr<u8>
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: ptr<u8>) -> i64
+}
+
+# A parsed C declaration.
+# kind: 0 = function, 1 = opaque type, 2 = enum constant
+# name: the identifier (function name, typedef name, or enum constant)
+# ret_c: C return type string (for functions)
+# params_c: C parameter string (for functions)
+# value: integer value (for enum constants)
+struct CDecl {
+    kind: i32,
+    name: ptr<u8>,
+    name_len: i32,
+    ret_c: ptr<u8>,
+    ret_c_len: i32,
+    params_c: ptr<u8>,
+    params_c_len: i32,
+    value: i64,
+}
+
+const FLOWC_CPARSER_MAX_DECLS: i32 = 4096
+const FLOWC_CPARSER_BUF_SIZE: i32 = 1048576
+
+# Read a preprocessed C header into a buffer using popen + cpp.
+# Returns the buffer length, or 0 on failure.
+export function flowc_cparser_preprocess(header: ptr<u8>, header_len: i32, out_buf: ptr<u8>, out_cap: i32) -> i32 {
+    # Build command: echo '#include <header>' | cpp -P -
+    # On macOS, cpp (clang) can't take a header name directly, so we
+    # pipe the include directive through cpp via echo.
+    let cmd_buf: ptr<u8> = malloc(512)
+    if cmd_buf == null {
+        return 0
+    }
+    let pos: i32 = 0
+
+    # Build: echo '#include <header>' | cpp -P -
+    let prefix: string = "echo '#include <"
+    let prefix_ptr: ptr<u8> = prefix as ptr<u8>
+    let prefix_len: i32 = strlen(prefix_ptr) as i32
+    let i: i32 = 0
+    while i < prefix_len and pos < 511 {
+        cmd_buf[pos] = prefix_ptr[i]
+        pos = pos + 1
+        i = i + 1
+    }
+    i = 0
+    while i < header_len and pos < 511 {
+        cmd_buf[pos] = header[i]
+        pos = pos + 1
+        i = i + 1
+    }
+
+    let suffix: string = ">' | cpp -P -"
+    let suffix_ptr: ptr<u8> = suffix as ptr<u8>
+    let suffix_len: i32 = strlen(suffix_ptr) as i32
+    i = 0
+    while i < suffix_len and pos < 511 {
+        cmd_buf[pos] = suffix_ptr[i]
+        pos = pos + 1
+        i = i + 1
+    }
+    cmd_buf[pos] = 0
+
+    let fp: ptr<void> = popen(cmd_buf, "r" as ptr<u8>)
+    free(cmd_buf)
+    if fp == null {
+        return 0
+    }
+
+    let line_buf: ptr<u8> = malloc(4096)
+    if line_buf == null {
+        pclose(fp)
+        return 0
+    }
+
+    let total: i32 = 0
+    let got: ptr<u8> = fgets(line_buf, 4096, fp)
+    while got != null and total < out_cap - 1 {
+        let len: i32 = flowc_cparser_strlen(line_buf)
+        if total + len >= out_cap {
+            break
+        }
+        let j: i32 = 0
+        while j < len {
+            out_buf[total + j] = line_buf[j]
+            j = j + 1
+        }
+        total = total + len
+        got = fgets(line_buf, 4096, fp)
+    }
+
+    free(line_buf)
+    pclose(fp)
+    out_buf[total] = 0
+    return total
+}
+
+# Parse preprocessed C text into declarations.
+# Returns the number of declarations parsed.
+export function flowc_cparser_parse(text: ptr<u8>, text_len: i32, decls: ptr<CDecl>, max_decls: i32) -> i32 {
+    let n_decls: i32 = 0
+    let pos: i32 = 0
+
+    while pos < text_len and n_decls < max_decls {
+        # Skip whitespace
+        while pos < text_len and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+        if pos >= text_len {
+            break
+        }
+
+        # Read until semicolon at brace depth 0
+        let chunk_start: i32 = pos
+        let depth: i32 = 0
+        while pos < text_len {
+            let ch: u8 = text[pos]
+            if ch == 123 {  # {
+                depth = depth + 1
+            } elif ch == 125 {  # }
+                depth = depth - 1
+                if depth == 0 {
+                    pos = pos + 1
+                    # Check for trailing semicolon
+                    if pos < text_len and text[pos] == 59 {
+                        pos = pos + 1
+                    }
+                    break
+                }
+            } elif ch == 59 and depth == 0 {  # ;
+                break
+            }
+            pos = pos + 1
+        }
+        if pos < text_len and text[pos] == 59 {
+            pos = pos + 1
+        }
+
+        let chunk_len: i32 = pos - chunk_start
+        if chunk_len <= 0 {
+            continue
+        }
+
+        # Try to parse the chunk
+        let n: i32 = flowc_cparser_parse_chunk(text, chunk_start, chunk_len, decls, n_decls, max_decls)
+        n_decls = n_decls + n
+    }
+
+    return n_decls
+}
+
+# Parse a single top-level declaration chunk.
+# Returns the number of declarations added (0, 1, or more for enums).
+function flowc_cparser_parse_chunk(text: ptr<u8>, start: i32, len: i32, decls: ptr<CDecl>, n_decls: i32, max_decls: i32) -> i32 {
+    if len <= 0 {
+        return 0
+    }
+
+    # Skip leading whitespace
+    let pos: i32 = start
+    let end: i32 = start + len
+    while pos < end and flowc_cparser_is_space(text[pos]) {
+        pos = pos + 1
+    }
+    if pos >= end {
+        return 0
+    }
+
+    # Check for "typedef"
+    if flowc_cparser_starts_with(text, pos, end, "typedef") {
+        return flowc_cparser_parse_typedef(text, pos, end, decls, n_decls, max_decls)
+    }
+
+    # Check for "extern"
+    if flowc_cparser_starts_with(text, pos, end, "extern") {
+        return 0  # Skip extern blocks
+    }
+
+    # Check for "static inline" or "__inline"
+    if flowc_cparser_starts_with(text, pos, end, "static") {
+        if flowc_cparser_contains(text, pos, end, "inline") or flowc_cparser_contains(text, pos, end, "__inline") {
+            return 0  # Skip static inline functions
+        }
+    }
+    if flowc_cparser_starts_with(text, pos, end, "__inline") {
+        return 0
+    }
+
+    # Check for struct/union/enum
+    if flowc_cparser_starts_with(text, pos, end, "struct") or flowc_cparser_starts_with(text, pos, end, "union") {
+        return flowc_cparser_parse_struct(text, pos, end, decls, n_decls, max_decls)
+    }
+    if flowc_cparser_starts_with(text, pos, end, "enum") {
+        return flowc_cparser_parse_enum(text, pos, end, decls, n_decls, max_decls)
+    }
+
+    # Skip chunks with braces (function definitions)
+    if flowc_cparser_contains(text, pos, end, "{") {
+        return 0
+    }
+
+    # Try to parse as a function declaration
+    return flowc_cparser_parse_function(text, pos, end, decls, n_decls, max_decls)
+}
+
+# Parse a typedef declaration.
+function flowc_cparser_parse_typedef(text: ptr<u8>, start: i32, end: i32, decls: ptr<CDecl>, n_decls: i32, max_decls: i32) -> i32 {
+    # Skip "typedef"
+    let pos: i32 = start + 7
+    while pos < end and flowc_cparser_is_space(text[pos]) {
+        pos = pos + 1
+    }
+
+    # typedef struct Name Name;  -> opaque type
+    if flowc_cparser_starts_with(text, pos, end, "struct") or flowc_cparser_starts_with(text, pos, end, "union") {
+        # Skip "struct"/"union"
+        pos = pos + 6
+        while pos < end and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+        # Check for { (struct with body) or Name;
+        if pos < end and text[pos] == 123 {  # {
+            # typedef struct { ... } Name;  -> find the name after }
+            while pos < end and text[pos] != 125 {  # }
+                pos = pos + 1
+            }
+            if pos < end {
+                pos = pos + 1  # skip }
+                while pos < end and flowc_cparser_is_space(text[pos]) {
+                    pos = pos + 1
+                }
+                # Read the name
+                let name_start: i32 = pos
+                while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+                    pos = pos + 1
+                }
+                let name_len: i32 = pos - name_start
+                if name_len > 0 and n_decls < max_decls {
+                    decls[n_decls].kind = 1
+                    decls[n_decls].name = text + name_start
+                    decls[n_decls].name_len = name_len
+                    return 1
+                }
+            }
+            return 0
+        } else {
+            # typedef struct Name Name;  -> read both names
+            let name1_start: i32 = pos
+            while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+                pos = pos + 1
+            }
+            let name1_len: i32 = pos - name1_start
+            while pos < end and flowc_cparser_is_space(text[pos]) {
+                pos = pos + 1
+            }
+            let name2_start: i32 = pos
+            while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+                pos = pos + 1
+            }
+            let name2_len: i32 = pos - name2_start
+            if name2_len > 0 and n_decls < max_decls {
+                decls[n_decls].kind = 1
+                decls[n_decls].name = text + name2_start
+                decls[n_decls].name_len = name2_len
+                return 1
+            }
+            return 0
+        }
+    }
+
+    # typedef enum { ... } Name;  -> parse enum constants
+    if flowc_cparser_starts_with(text, pos, end, "enum") {
+        # Skip "enum"
+        pos = pos + 4
+        while pos < end and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+        # Skip optional enum tag
+        if pos < end and flowc_cparser_is_ident_char(text[pos]) {
+            while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+                pos = pos + 1
+            }
+            while pos < end and flowc_cparser_is_space(text[pos]) {
+                pos = pos + 1
+            }
+        }
+        # Expect {
+        if pos < end and text[pos] == 123 {
+            return flowc_cparser_parse_enum_body(text, pos, end, decls, n_decls, max_decls)
+        }
+    }
+
+    # Other typedefs: skip (C header provides them)
+    return 0
+}
+
+# Parse struct/union forward declaration or definition.
+function flowc_cparser_parse_struct(text: ptr<u8>, start: i32, end: i32, decls: ptr<CDecl>, n_decls: i32, max_decls: i32) -> i32 {
+    # Skip "struct"/"union"
+    let pos: i32 = start + 6
+    while pos < end and flowc_cparser_is_space(text[pos]) {
+        pos = pos + 1
+    }
+    # Read the struct name
+    let name_start: i32 = pos
+    while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+        pos = pos + 1
+    }
+    let name_len: i32 = pos - name_start
+    if name_len <= 0 {
+        return 0
+    }
+    # Check if it's a forward declaration (struct Name;) or definition (struct Name { ... })
+    while pos < end and flowc_cparser_is_space(text[pos]) {
+        pos = pos + 1
+    }
+    if pos < end and text[pos] == 123 {
+        # struct Name { ... };  -> the C header provides the layout, skip
+        return 0
+    }
+    # struct Name;  -> forward declaration, register as opaque type
+    if n_decls < max_decls {
+        decls[n_decls].kind = 1
+        decls[n_decls].name = text + name_start
+        decls[n_decls].name_len = name_len
+        return 1
+    }
+    return 0
+}
+
+# Parse enum definition.
+function flowc_cparser_parse_enum(text: ptr<u8>, start: i32, end: i32, decls: ptr<CDecl>, n_decls: i32, max_decls: i32) -> i32 {
+    # Skip "enum"
+    let pos: i32 = start + 4
+    while pos < end and flowc_cparser_is_space(text[pos]) {
+        pos = pos + 1
+    }
+    # Skip optional enum tag
+    if pos < end and flowc_cparser_is_ident_char(text[pos]) {
+        while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+            pos = pos + 1
+        }
+        while pos < end and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+    }
+    # Expect {
+    if pos < end and text[pos] == 123 {
+        return flowc_cparser_parse_enum_body(text, pos, end, decls, n_decls, max_decls)
+    }
+    return 0
+}
+
+# Parse the body of an enum { NAME, NAME = value, ... }
+function flowc_cparser_parse_enum_body(text: ptr<u8>, brace_pos: i32, end: i32, decls: ptr<CDecl>, n_decls: i32, max_decls: i32) -> i32 {
+    let pos: i32 = brace_pos + 1  # skip {
+    let count: i32 = 0
+    let auto_val: i64 = 0
+
+    while pos < end and n_decls + count < max_decls {
+        # Skip whitespace
+        while pos < end and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+        if pos >= end or text[pos] == 125 {  # }
+            break
+        }
+
+        # Read the name
+        let name_start: i32 = pos
+        while pos < end and flowc_cparser_is_ident_char(text[pos]) {
+            pos = pos + 1
+        }
+        let name_len: i32 = pos - name_start
+        if name_len <= 0 {
+            # Skip to next comma or }
+            while pos < end and text[pos] != 44 and text[pos] != 125 {
+                pos = pos + 1
+            }
+            if pos < end and text[pos] == 44 {
+                pos = pos + 1
+            }
+            continue
+        }
+
+        # Check for = value
+        while pos < end and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+        let val: i64 = auto_val
+        if pos < end and text[pos] == 61 {  # =
+            pos = pos + 1
+            while pos < end and flowc_cparser_is_space(text[pos]) {
+                pos = pos + 1
+            }
+            # Try to parse an integer
+            let val_start: i32 = pos
+            if pos < end and text[pos] == 48 and pos + 1 < end and (text[pos + 1] == 120 or text[pos + 1] == 88) {
+                # Hex: 0x...
+                pos = pos + 2
+                while pos < end and flowc_cparser_is_hex_char(text[pos]) {
+                    pos = pos + 1
+                }
+                val = flowc_cparser_parse_hex(text + val_start, pos - val_start)
+            } else {
+                # Decimal
+                while pos < end and flowc_cparser_is_digit(text[pos]) {
+                    pos = pos + 1
+                }
+                # Remove suffixes (u, l, etc.)
+                val = flowc_cparser_parse_decimal(text + val_start, pos - val_start)
+            }
+            auto_val = val + 1
+        } else {
+            auto_val = auto_val + 1
+        }
+
+        # Register the enum constant
+        decls[n_decls + count].kind = 2
+        decls[n_decls + count].name = text + name_start
+        decls[n_decls + count].name_len = name_len
+        decls[n_decls + count].value = val
+        count = count + 1
+
+        # Skip to next comma or }
+        while pos < end and text[pos] != 44 and text[pos] != 125 {
+            pos = pos + 1
+        }
+        if pos < end and text[pos] == 44 {
+            pos = pos + 1
+        }
+    }
+
+    return count
+}
+
+# Parse a function declaration: ret_type name(params)
+function flowc_cparser_parse_function(text: ptr<u8>, start: i32, end: i32, decls: ptr<CDecl>, n_decls: i32, max_decls: i32) -> i32 {
+    if n_decls >= max_decls {
+        return 0
+    }
+
+    # Find the first opening paren
+    let paren_pos: i32 = flowc_cparser_find_char(text, start, end, 40)  # (
+    if paren_pos < 0 {
+        return 0
+    }
+
+    # Find the matching close paren
+    let depth: i32 = 1
+    let pos: i32 = paren_pos + 1
+    while pos < end and depth > 0 {
+        if text[pos] == 40 {
+            depth = depth + 1
+        } elif text[pos] == 41 {
+            depth = depth - 1
+        }
+        pos = pos + 1
+    }
+    if depth != 0 {
+        return 0
+    }
+    let close_paren: i32 = pos - 1
+
+    # Split before_paren into return type and function name
+    # The function name is the last identifier before (
+    let name_end: i32 = paren_pos
+    while name_end > start and flowc_cparser_is_space(text[name_end - 1]) {
+        name_end = name_end - 1
+    }
+    let name_start: i32 = name_end
+    while name_start > start and flowc_cparser_is_ident_char(text[name_start - 1]) {
+        name_start = name_start - 1
+    }
+    let fn_name_len: i32 = name_end - name_start
+    if fn_name_len <= 0 {
+        return 0
+    }
+
+    # Skip double-underscore names
+    if fn_name_len >= 2 and text[name_start] == 95 and text[name_start + 1] == 95 {
+        return 0
+    }
+
+    # Return type is everything before the function name
+    let ret_end: i32 = name_start
+    while ret_end > start and flowc_cparser_is_space(text[ret_end - 1]) {
+        ret_end = ret_end - 1
+    }
+
+    decls[n_decls].kind = 0
+    decls[n_decls].name = text + name_start
+    decls[n_decls].name_len = fn_name_len
+    decls[n_decls].ret_c = text + start
+    decls[n_decls].ret_c_len = ret_end - start
+    decls[n_decls].params_c = text + paren_pos + 1
+    decls[n_decls].params_c_len = close_paren - paren_pos - 1
+    return 1
+}
+
+# --- Helper functions ---
+
+function flowc_cparser_is_space(ch: u8) -> i32 {
+    if ch == 32 or ch == 9 or ch == 10 or ch == 13 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cparser_is_ident_char(ch: u8) -> i32 {
+    if (ch >= 97 and ch <= 122) or (ch >= 65 and ch <= 90) or ch == 95 or (ch >= 48 and ch <= 57) {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cparser_is_digit(ch: u8) -> i32 {
+    if ch >= 48 and ch <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cparser_is_hex_char(ch: u8) -> i32 {
+    if (ch >= 48 and ch <= 57) or (ch >= 97 and ch <= 102) or (ch >= 65 and ch <= 70) {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cparser_starts_with(text: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let lit_ptr: ptr<u8> = lit as ptr<u8>
+    let lit_len: i32 = strlen(lit_ptr) as i32
+    if start + lit_len > end {
+        return 0
+    }
+    let i: i32 = 0
+    while i < lit_len {
+        if text[start + i] != lit_ptr[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    # Check that the next char is a space or end (word boundary)
+    if start + lit_len < end and flowc_cparser_is_ident_char(text[start + lit_len]) {
+        return 0
+    }
+    return 1
+}
+
+function flowc_cparser_contains(text: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let lit_ptr: ptr<u8> = lit as ptr<u8>
+    let lit_len: i32 = strlen(lit_ptr) as i32
+    let i: i32 = start
+    while i + lit_len <= end {
+        let j: i32 = 0
+        let is_match: i32 = 1
+        while j < lit_len {
+            if text[i + j] != lit_ptr[j] {
+                is_match = 0
+                break
+            }
+            j = j + 1
+        }
+        if is_match == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function flowc_cparser_find_char(text: ptr<u8>, start: i32, end: i32, ch: u8) -> i32 {
+    let i: i32 = start
+    while i < end {
+        if text[i] == ch {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function flowc_cparser_strlen(s: ptr<u8>) -> i32 {
+    let n: i32 = 0
+    while s[n] != 0 {
+        n = n + 1
+    }
+    return n
+}
+
+function flowc_cparser_parse_hex(s: ptr<u8>, len: i32) -> i64 {
+    # Skip 0x prefix
+    let pos: i32 = 2
+    let val: i64 = 0
+    while pos < len {
+        let ch: u8 = s[pos]
+        let digit: i64 = 0
+        if ch >= 48 and ch <= 57 {
+            digit = ch as i64 - 48
+        } elif ch >= 97 and ch <= 102 {
+            digit = ch as i64 - 87
+        } elif ch >= 65 and ch <= 70 {
+            digit = ch as i64 - 55
+        }
+        val = val * 16 + digit
+        pos = pos + 1
+    }
+    return val
+}
+
+function flowc_cparser_parse_decimal(s: ptr<u8>, len: i32) -> i64 {
+    let val: i64 = 0
+    let pos: i32 = 0
+    while pos < len and s[pos] >= 48 and s[pos] <= 57 {
+        val = val * 10 + (s[pos] as i64 - 48)
+        pos = pos + 1
+    }
+    return val
+}
