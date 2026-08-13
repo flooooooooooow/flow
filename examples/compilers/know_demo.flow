@@ -13,7 +13,7 @@ extern {
 function main() -> i32 {
     let mut failed: i32 = 0
 
-    let q: string = flowc_know_normalize_query("verify.Bool.disjunction.order_does_not_matter")
+    let q: string = flowc_normalize_query("verify.Bool.disjunction.order_does_not_matter")
     if strcmp(q, "Bool.disjunction.order_does_not_matter") != 0 {
         printf("%s\n", "FAIL: normalize_query")
         failed = 1
@@ -32,42 +32,32 @@ function main() -> i32 {
         failed = 1
     }
 
-    let entry: FlowcKnowEntry = flowc_know_make(
-        "«Bool» «disjunction» «order does not matter»",
-        "Bool.«Bool» «disjunction» «order does not matter»",
-        "A or B gives the same result as B or A",
-        "derived",
-        "boole",
-        "lib/verify/Bool.flow",
-        "a or b == b or a"
-    )
-
-    if flowc_know_entry_matches(entry, "Bool.disjunction.order_does_not_matter") != 1 {
-        printf("%s\n", "FAIL: match slug")
-        failed = 1
-    }
-    if flowc_know_entry_matches(entry, "verify.«Bool» «disjunction» «order does not matter»") != 1 {
-        printf("%s\n", "FAIL: match guillemets with prefix")
+    let addr: FlowcClaimAddress = flowc_claim_make("Bool", "disjunction", "order does not matter")
+    let slug: string = flowc_claim_slug(addr)
+    if strcmp(slug, "Bool.disjunction.order_does_not_matter") != 0 {
+        printf("%s\n", "FAIL: claim slug")
         failed = 1
     }
 
-    # Scan a tiny buffer with two theorems
-    let src: string = "theorem «Bool» «disjunction» «order does not matter» (a: bool) {\n theorem «Nat» «addition» «zero is the left identity» (n: Nat) {\n"
-    let p: ptr<u8> = src
-    let mut n: i32 = 0
-    while p[n] != 0 {
-        n = n + 1
-    }
-    let count: i32 = flowc_know_count_theorems(p, n)
-    printf("theorems: ")
-    if count == 2 {
-        puts("2")
-    } else {
-        printf("%s\n", "FAIL: theorem count")
+    let guillemets: string = flowc_claim_guillemets(addr)
+    printf("guillemets: %s\n", guillemets)
+    if strcmp(guillemets, "«Bool» «disjunction» «order does not matter»") != 0 {
+        printf("%s\n", "FAIL: guillemets")
         failed = 1
     }
 
-    let _: i32 = flowc_know_print(entry)
+    let display: string = flowc_claim_display(addr)
+    printf("display: %s\n", display)
+
+    let qualified: string = flowc_qualify("compiler/src/Bool.flow", slug)
+    printf("qualified: %s\n", qualified)
+
+    let prefix: string = flowc_package_prefix("compiler/src/Bool.flow")
+    printf("prefix: %s\n", prefix)
+    if strcmp(prefix, "compiler.src") != 0 {
+        printf("%s\n", "FAIL: package prefix")
+        failed = 1
+    }
 
     if failed == 1 {
         return 1
