@@ -73,6 +73,7 @@ from .parser import (
     ExternTypeDecl,
     CIncludeDecl,
     CImportDecl,
+    CEmbedDecl,
     UnaryOperation,
     VarDecl,
     Variable,
@@ -5036,6 +5037,20 @@ def flow_to_c(
             prelude_lines.append(f"typedef struct {et.name} {et.name};")
         if prelude_lines:
             out = "\n".join(prelude_lines) + "\n" + out
+
+        # Insert @cEmbed raw C code after the standard includes in the
+        # generated output. The standard includes (#include <stdint.h> etc.)
+        # are at the top of `out`, so we find the first blank line after them
+        # and insert the embedded code there.
+        c_embeds = [d for d in declarations if isinstance(d, CEmbedDecl)]
+        if c_embeds:
+            embed_block = "\n".join(ce.code for ce in c_embeds)
+            # Find the first blank line (end of standard includes block)
+            blank_pos = out.find("\n\n")
+            if blank_pos > 0:
+                out = out[:blank_pos + 2] + "/* @cEmbed */\n" + embed_block + "\n" + out[blank_pos + 2:]
+            else:
+                out = "/* @cEmbed */\n" + embed_block + "\n" + out
 
         # Emit stable export aliases (--export / --module-name, #396).
         # Each exported function gets a visible alias flow_export_<name>

@@ -25,7 +25,7 @@ from .parser import (
     IfStatement, WhileStatement, ForStatement, LayoutStatement, HandleStatement, Block, Parameter, Type as ParsedType,
     EnumDecl, ImplDecl, TraitDecl,
     TypeAliasDecl, DistinctTypeDecl, UnitDecl, CastExpression,
-    ExternTypeDecl, CIncludeDecl, CImportDecl,
+    ExternTypeDecl, CIncludeDecl, CImportDecl, CEmbedDecl,
     MatchStatement, StructPattern, OrPattern, ListPattern, DeferStatement, TryExpr, Lambda,
     VectorLiteral, ExpectStatement, RecordUpdate, BreakStatement, ContinueStatement,
     SortExpr, FindExpr, SliceExpr, IfExpression,
@@ -1186,6 +1186,9 @@ class TypeChecker:
 
             elif isinstance(decl, CImportDecl):
                 pass  # No type checking needed for @cImport directives
+
+            elif isinstance(decl, CEmbedDecl):
+                pass  # No type checking needed for @cEmbed directives
 
             elif isinstance(decl, DistinctTypeDecl):
                 # Distinct types are opaque - incompatible with base type.
