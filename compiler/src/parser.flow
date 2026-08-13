@@ -232,6 +232,43 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
     p[0].arena.nodes[id].name_start = start
     p[0].arena.nodes[id].name_end = end
     flowc_parser_advance(p)
+    # cfn(A, B) -> R: plain C function pointer type (ival = -2)
+    if flowc_parser_span_is(p[0], start, end, "cfn") == 1 {
+        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+            flowc_parser_advance(p)
+            let mut params: i32 = AST_NONE
+            if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+                let mut loop: i32 = 1
+                while loop == 1 {
+                    let pt: i32 = flowc_parse_type(p)
+                    if pt == AST_NONE {
+                        return AST_NONE
+                    }
+                    params = flowc_ast_chain_push(&p[0].arena, params, pt)
+                    if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                        flowc_parser_advance(p)
+                    } else {
+                        loop = 0
+                    }
+                }
+            }
+            if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+                return AST_NONE
+            }
+            if flowc_parser_eat(p, TOK_ARROW) == 0 {
+                return AST_NONE
+            }
+            let ret: i32 = flowc_parse_type(p)
+            if ret == AST_NONE {
+                return AST_NONE
+            }
+            p[0].arena.nodes[id].ival = 0 - 2  # mark as cfn
+            p[0].arena.nodes[id].a = params
+            p[0].arena.nodes[id].b = ret
+            p[0].arena.nodes[id].end = p[0].cur.start
+            return id
+        }
+    }
     if flowc_parser_check(p[0], TOK_LT) == 1 {
         flowc_parser_advance(p)
         let inner: i32 = flowc_parse_type(p)

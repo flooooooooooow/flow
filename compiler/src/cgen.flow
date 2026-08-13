@@ -160,8 +160,9 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_puts(w, "int32_t")
         return
     }
-    # Function pointer type: (A, B) -> R  →  R (*)(A, B)
-    if arena.nodes[ty].ival == 0 - 1 {
+    # Function pointer type: (A, B) -> R  ->  R (*)(A, B)
+    # cfn type: cfn(A, B) -> R  ->  R (*)(A, B)  (plain C function pointer)
+    if arena.nodes[ty].ival == 0 - 1 or arena.nodes[ty].ival == 0 - 2 {
         flowc_cgen_emit_type(w, arena, src, arena.nodes[ty].b)
         flowc_cgen_puts(w, " (*")
         flowc_cgen_puts(w, ")(")
@@ -1137,7 +1138,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
 function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     let ty: i32 = arena.nodes[id].a
     # Function pointer param: R (*name)(A, B)
-    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].ival == 0 - 1 {
+    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and (arena.nodes[ty].ival == 0 - 1 or arena.nodes[ty].ival == 0 - 2) {
         flowc_cgen_emit_type(w, arena, src, arena.nodes[ty].b)
         flowc_cgen_puts(w, " (*")
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
