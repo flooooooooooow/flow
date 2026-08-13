@@ -970,6 +970,16 @@ class CImportDecl:
 
 
 @dataclass
+class CEmbedDecl:
+    """Inline C code embedding: @cEmbed("static inline int helper() { ... }")
+    Emits the raw C code verbatim in the generated C output, before
+    function definitions. Useful for small C helpers, macro wrappers,
+    and compiler-specific code that cannot be expressed as extern decls.
+    """
+    code: str
+
+
+@dataclass
 class DistinctTypeDecl:
     """Distinct type declaration: distinct type Name = BaseType
     Distinct types are opaque - they're incompatible with their base type and each other.
@@ -1709,16 +1719,19 @@ class Parser:
                                 continue
                             break
                     self.expect(TokenType.RPAREN)
-                    # @cInclude("header.h") → CIncludeDecl
+                    # @cInclude("header.h") -> CIncludeDecl
                     if attr_name == "cInclude" and len(args) == 1:
                         declarations.append(CIncludeDecl(header=args[0]))
-                    # @cImport("header.h") [as alias] → CImportDecl
+                    # @cImport("header.h") [as alias] -> CImportDecl
                     elif attr_name == "cImport" and len(args) == 1:
                         alias = ""
                         if self.current_token.type == TokenType.AS:
                             self.advance()
                             alias = self.expect(TokenType.IDENTIFIER).value
                         declarations.append(CImportDecl(header=args[0], alias=alias))
+                    # @cEmbed("raw C code") -> CEmbedDecl
+                    elif attr_name == "cEmbed" and len(args) == 1:
+                        declarations.append(CEmbedDecl(code=args[0]))
                     else:
                         attributes.append(f"{attr_name}({','.join(args)})")
                 else:

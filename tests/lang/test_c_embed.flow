@@ -1,0 +1,30 @@
+# Test for @cEmbed directive.
+# Embeds a small C helper function and calls it from Flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
+# Exit 0 on success.
+
+@cEmbed("static inline int32_t flow_c_add(int32_t a, int32_t b) { return a + b; }")
+@cEmbed("static inline int32_t flow_c_mul(int32_t a, int32_t b) { return a * b; }")
+
+extern {
+    function flow_c_add(a: i32, b: i32) -> i32
+    function flow_c_mul(a: i32, b: i32) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let sum: i32 = flow_c_add(19, 23)
+    if sum != 42 {
+        puts("FAIL: flow_c_add(19, 23) should be 42")
+        return 1
+    }
+
+    let product: i32 = flow_c_mul(6, 7)
+    if product != 42 {
+        puts("FAIL: flow_c_mul(6, 7) should be 42")
+        return 2
+    }
+
+    puts("All c_embed tests passed")
+    return 0
+}
