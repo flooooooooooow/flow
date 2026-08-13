@@ -1,0 +1,101 @@
+# Test for flowc_cparser_c_type_to_flow.
+# Verifies C type strings are correctly converted to Flow type strings.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_type_map.flow
+# Exit 0 on success.
+
+import "compiler/src/c_parser.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function flowc_cparser_c_type_to_flow(text: ptr<u8>, start: i32, end: i32, out_buf: ptr<u8>, out_cap: i32) -> i32
+}
+
+function main() -> i32 {
+    let buf: ptr<u8> = malloc(256)
+    if buf == null {
+        puts("FAIL: could not allocate buffer")
+        return 1
+    }
+
+    # Test "int" -> "i32"
+    let s1: string = "int"
+    let s1_ptr: ptr<u8> = s1 as ptr<u8>
+    let len1: i32 = flowc_cparser_c_type_to_flow(s1_ptr, 0, 3, buf, 256)
+    if len1 <= 0 {
+        puts("FAIL: int conversion failed")
+        free(buf)
+        return 2
+    }
+    printf("int -> %s (len %d)\n", buf, len1)
+    if strcmp(buf as string, "i32") != 0 {
+        puts("FAIL: int should map to i32")
+        free(buf)
+        return 3
+    }
+
+    # Test "double" -> "f64"
+    let s2: string = "double"
+    let s2_ptr: ptr<u8> = s2 as ptr<u8>
+    let len2: i32 = flowc_cparser_c_type_to_flow(s2_ptr, 0, 6, buf, 256)
+    printf("double -> %s (len %d)\n", buf, len2)
+    if strcmp(buf as string, "f64") != 0 {
+        puts("FAIL: double should map to f64")
+        free(buf)
+        return 4
+    }
+
+    # Test "char*" -> "ptr<u8>"
+    let s3: string = "char*"
+    let s3_ptr: ptr<u8> = s3 as ptr<u8>
+    let len3: i32 = flowc_cparser_c_type_to_flow(s3_ptr, 0, 5, buf, 256)
+    printf("char* -> %s (len %d)\n", buf, len3)
+    if strcmp(buf as string, "ptr<u8>") != 0 {
+        puts("FAIL: char* should map to ptr<u8>")
+        free(buf)
+        return 5
+    }
+
+    # Test "void*" -> "ptr<void>"
+    let s4: string = "void*"
+    let s4_ptr: ptr<u8> = s4 as ptr<u8>
+    let len4: i32 = flowc_cparser_c_type_to_flow(s4_ptr, 0, 5, buf, 256)
+    printf("void* -> %s (len %d)\n", buf, len4)
+    if strcmp(buf as string, "ptr<void>") != 0 {
+        puts("FAIL: void* should map to ptr<void>")
+        free(buf)
+        return 6
+    }
+
+    # Test "const char*" -> "ptr<u8>" (const stripped)
+    let s5: string = "const char*"
+    let s5_ptr: ptr<u8> = s5 as ptr<u8>
+    let len5: i32 = flowc_cparser_c_type_to_flow(s5_ptr, 0, 11, buf, 256)
+    printf("const char* -> %s (len %d)\n", buf, len5)
+    if strcmp(buf as string, "ptr<u8>") != 0 {
+        puts("FAIL: const char* should map to ptr<u8>")
+        free(buf)
+        return 7
+    }
+
+    # Test "size_t" -> "u64"
+    let s6: string = "size_t"
+    let s6_ptr: ptr<u8> = s6 as ptr<u8>
+    let len6: i32 = flowc_cparser_c_type_to_flow(s6_ptr, 0, 6, buf, 256)
+    printf("size_t -> %s (len %d)\n", buf, len6)
+    if strcmp(buf as string, "u64") != 0 {
+        puts("FAIL: size_t should map to u64")
+        free(buf)
+        return 8
+    }
+
+    free(buf)
+    puts("All c_type_map tests passed")
+    return 0
+}
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}

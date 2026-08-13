@@ -33,7 +33,7 @@ units + rates + timing + memory topology + hardware + precision. Full map:
 | Phase | Focus | Status |
 |-------|--------|--------|
 | **W0** | RF units + quantity literals + complex/IQ + phantom rate `Signal` + memory/RT attrs + docs/examples | 🔨 near-complete: `c64`/`c128` complex types (C99 `_Complex`), `c64()`/`c128()` constructors, `creal`/`cimag`/`cabs`/`carg`/`conj`/`cexp`/`clog`/`csqrt`/`cpow` builtins, complex arithmetic with auto-promotion, `lib/stdlib/rf.flow` (`IQ` alias, `IQSample` distinct type, `Signal<R>` generic struct with phantom rate type parameter, rate markers Hz1000/Hz8000/Hz44100/Hz48000/Hz1M/etc., `signal_new`/`signal_mix`/`signal_scale`/`signal_magnitude_spectrum` with compile-time rate checking), `lib/stdlib/units_si.flow` (SI base + derived units), quantity literals (`3.14 Hertz` desugars to `3.14 as Hertz`), `examples/rf/dft.flow` + `examples/rf/iq_mixer.flow` + `examples/rf/sdr_receiver.flow`, `tests/unit/test_complex_types.py` (15) + `test_rf_types.py` (11) + `test_quantity_literals.py` (10). |
-| **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔨 partial: `lib/stdlib/dsp.flow` (`map_f32`/`map_f64`, `filter_f32`, `reduce_f32`/`reduce_f64`, `scan_f32`/`scan_f64`, `zip_with_f32`/`zip_with_f64`, `scale_f32`/`scale_f64`, `offset_f32`, `clip_f32`, `sum_f32`/`sum_f64`, `dot_f32`/`dot_f64`), `|>` pipeline chaining with lambdas and named functions, function-type parameter compatibility fix, lambda-as-argument fat-pointer wrapping in C generator, `examples/dsp/pipeline.flow`, `tests/unit/test_dsp_pipeline.py` (11 tests). Next: compile-time fusion of adjacent `map` stages, rate analysis. |
+| **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔨 partial: `lib/stdlib/dsp.flow` (`map_f32`/`map_f64`, `filter_f32`, `reduce_f32`/`reduce_f64`, `scan_f32`/`scan_f64`, `zip_with_f32`/`zip_with_f64`, `scale_f32`/`scale_f64`, `offset_f32`, `clip_f32`, `sum_f32`/`sum_f64`, `dot_f32`/`dot_f64`), `|>` pipeline chaining with lambdas and named functions, function-type parameter compatibility fix, lambda-as-argument fat-pointer wrapping in C generator, `examples/dsp/pipeline.flow`, `tests/unit/test_dsp_pipeline.py` (11 tests). Compile-time fusion of adjacent `map`/`scale`/`offset` stages shipped in 0.11.0. Next: rate analysis. |
 | **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
 | **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
@@ -86,7 +86,7 @@ a proof corpus, not the showcase.
 | Networking | `examples/net/tcp_echo.flow` (API shape; full echo loop planned) | partial |
 | HTTP slice | `apps/flow-http/http.flow` | ✅ |
 | Stats | `examples/stats/regression_gd.flow` | ✅ |
-| FFI / C | `examples/interop/python_embed.flow` (Python FFI); thin C-FFI demo still thin | partial |
+| FFI / C | Zero-bridge C interop in 0.11.0: `@cImport`/`@cInclude`/`@cEmbed`, `extern type`, `cfn(A) -> R`; BLAS bindings + `benchmarks/blas_vs_naive.flow`; `examples/interop/python_embed.flow` for Python | ✅ |
 | WASM | `examples/wasm/hello_wasm.flow` | ✅ |
 | Packages | `examples/packages/use_hello_lib/` | ✅ |
 | Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
@@ -153,7 +153,7 @@ a proof corpus, not the showcase.
 
 ---
 
-## Now: v0.4.0 Focus
+## Shipped through v0.11.0
 
 ### 🎯 Immediate Priorities (This Week)
 
@@ -260,7 +260,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 ---
 
-## Current State (v0.3.3)
+## Current State (v0.11.0)
 
 **What works:**
 - ✅ Core language (types, functions, control flow, structs, arrays)
@@ -348,7 +348,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 ---
 
-## Recently Completed (v0.3.3): Demo Roadmap - Competing with Mojo/Julia
+## Recently Completed: Demo Roadmap - Competing with Mojo/Julia
 
 **Goal:** Create comprehensive demos across 8 categories to position Flow competitively.
 
@@ -749,11 +749,11 @@ Replace `src/flow/*.py` as the production compiler with **`flowc`** (Flow→C wr
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| **A** | Land `compiler/` + Stage-A roundtrip/self-emit on `main` + CI | 🔲 |
-| **B** | Close Stage-A gaps so `flowc` sources compile under `flowc` | 🔲 |
-| **C** | `./flow` defaults to `flowc`; Python via `FLOW_HOST=python` | 🔲 |
-| **D** | Retire Python from the compile critical path | 🔲 |
-| **E** | Packaging, optional MLIR/GPU as separate tracks | 🔲 |
+| **A** | Land `compiler/` + Stage-A roundtrip/self-emit on `main` + CI | ✅ |
+| **B** | Close Stage-A gaps so `flowc` sources compile under `flowc` | ✅ |
+| **C** | `./flow` defaults to `flowc`; Python via `FLOW_HOST=python` | ✅ |
+| **D** | Retire Python from the compile critical path | 🔨 in progress — `flowc` surface catch-up (0.11.0) |
+| **E** | Packaging, optional MLIR/GPU as separate tracks | 🔨 landing |
 
 Bootstrap already exists locally in many worktrees (`compiler/src/{lexer,parser,cgen,…}.flow`, fixed-point scripts). This roadmap item tracks **merge + cutover**, not a greenfield rewrite.
 

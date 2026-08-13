@@ -15,7 +15,7 @@ permission to be official; Python, Rust and Go are defined primarily by their
 own stable specification, conformance suite and compatibility commitment, not
 by an international standard.
 
-Today the language has a compiler and a specification (v0.10.0), but the spec is
+Today the language has a compiler and a specification (v0.11.0), but the spec is
 not frozen, its semantics are not yet locked, and there is no published
 compatibility policy. That is what separates "a compiler project implementing
 a language" from "FLOW is a language with a defined 1.0 standard". Everything
@@ -47,7 +47,7 @@ in stages 1 to 12 runs up to that line.
 
 CI builds and exercises FLOW on `ubuntu-latest`, `macos-latest` and a
 `windows-latest` gfx-stub smoke job. The self-hosted `flowc` toolchain is
-built on Linux and macOS. Toolchain version is 0.10. spec version is 0.10.0.
+built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 
 ## Stage by stage
 
@@ -133,7 +133,7 @@ built on Linux and macOS. Toolchain version is 0.10. spec version is 0.10.0.
 ### 8. Distribution
 | Item | Status | Note |
 | --- | --- | --- |
-| Versioned releases | DONE | `v0.10.0` tags, GitHub Releases. |
+| Versioned releases | DONE | `v0.11.0` tags, GitHub Releases. |
 | Installers | PARTIAL | Source archives; Homebrew formula; no Windows/Winget or official installers. |
 | Package managers | PARTIAL | Homebrew tapped; no winget/apt/nix official recipes beyond tap. |
 | CI | DONE | `ci.yml` across jobs and `*.github/workflows` (lint, bootstrap, pytest, fuzz). |

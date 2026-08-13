@@ -640,3 +640,146 @@ function flowc_cparser_parse_decimal(s: ptr<u8>, len: i32) -> i64 {
     }
     return val
 }
+
+# Convert a C type span to a Flow type string written into out_buf.
+# Returns the length written, or 0 on failure.
+# Handles: int, unsigned int, long, float, double, char, void, size_t,
+# int32_t, uint32_t, etc. Pointers (* suffix) become ptr<T>.
+export function flowc_cparser_c_type_to_flow(text: ptr<u8>, start: i32, end: i32, out_buf: ptr<u8>, out_cap: i32) -> i32 {
+    let pos: i32 = start
+    let out_pos: i32 = 0
+
+    # Strip leading whitespace
+    while pos < end and flowc_cparser_is_space(text[pos]) {
+        pos = pos + 1
+    }
+
+    # Strip const/volatile/restrict qualifiers
+    let stripped: i32 = 1
+    while stripped == 1 {
+        stripped = 0
+        if flowc_cparser_starts_with(text, pos, end, "const") == 1 {
+            pos = pos + 5
+            stripped = 1
+        } elif flowc_cparser_starts_with(text, pos, end, "volatile") == 1 {
+            pos = pos + 8
+            stripped = 1
+        } elif flowc_cparser_starts_with(text, pos, end, "restrict") == 1 {
+            pos = pos + 8
+            stripped = 1
+        } elif flowc_cparser_starts_with(text, pos, end, "__restrict") == 1 {
+            pos = pos + 9
+            stripped = 1
+        }
+        while pos < end and flowc_cparser_is_space(text[pos]) {
+            pos = pos + 1
+        }
+    }
+
+    # Count trailing * for pointer depth
+    let ptr_count: i32 = 0
+    let type_end: i32 = end
+    while type_end > pos and text[type_end - 1] == 42 {  # *
+        ptr_count = ptr_count + 1
+        type_end = type_end - 1
+        while type_end > pos and flowc_cparser_is_space(text[type_end - 1]) {
+            type_end = type_end - 1
+        }
+    }
+
+    # Map base C type to Flow type
+    let flow_type: string = flowc_cparser_map_base_type(text, pos, type_end)
+    let ft_ptr: ptr<u8> = flow_type as ptr<u8>
+    let ft_len: i32 = strlen(ft_ptr) as i32
+
+    # Write the base type
+    let i: i32 = 0
+    while i < ft_len and out_pos < out_cap - 1 {
+        out_buf[out_pos] = ft_ptr[i]
+        out_pos = out_pos + 1
+        i = i + 1
+    }
+
+    # Wrap in ptr<...> for each pointer level
+    let p: i32 = 0
+    while p < ptr_count {
+        if out_pos + 5 >= out_cap {
+            return 0
+        }
+        # Shift existing content right by 4 bytes to make room for "ptr<"
+        let j: i32 = out_pos
+        while j > 0 {
+            out_buf[j + 3] = out_buf[j - 1]
+            j = j - 1
+        }
+        # Write "ptr<" at the beginning
+        out_buf[0] = 112  # p
+        out_buf[1] = 116  # t
+        out_buf[2] = 114  # r
+        out_buf[3] = 60   # <
+        out_pos = out_pos + 4
+        # Write ">" at the end
+        out_buf[out_pos] = 62  # >
+        out_pos = out_pos + 1
+        p = p + 1
+    }
+
+    out_buf[out_pos] = 0
+    return out_pos
+}
+
+# Map a base C type (without qualifiers or pointers) to a Flow type string.
+function flowc_cparser_map_base_type(text: ptr<u8>, start: i32, end: i32) -> string {
+    # Check each known C type by comparing the span
+    if flowc_cparser_span_eq(text, start, end, "int") { return "i32" }
+    if flowc_cparser_span_eq(text, start, end, "unsigned int") { return "u32" }
+    if flowc_cparser_span_eq(text, start, end, "unsigned") { return "u32" }
+    if flowc_cparser_span_eq(text, start, end, "long") { return "i64" }
+    if flowc_cparser_span_eq(text, start, end, "unsigned long") { return "u64" }
+    if flowc_cparser_span_eq(text, start, end, "long long") { return "i64" }
+    if flowc_cparser_span_eq(text, start, end, "unsigned long long") { return "u64" }
+    if flowc_cparser_span_eq(text, start, end, "short") { return "i16" }
+    if flowc_cparser_span_eq(text, start, end, "unsigned short") { return "u16" }
+    if flowc_cparser_span_eq(text, start, end, "char") { return "u8" }
+    if flowc_cparser_span_eq(text, start, end, "unsigned char") { return "u8" }
+    if flowc_cparser_span_eq(text, start, end, "signed char") { return "i8" }
+    if flowc_cparser_span_eq(text, start, end, "float") { return "f32" }
+    if flowc_cparser_span_eq(text, start, end, "double") { return "f64" }
+    if flowc_cparser_span_eq(text, start, end, "long double") { return "f64" }
+    if flowc_cparser_span_eq(text, start, end, "void") { return "void" }
+    if flowc_cparser_span_eq(text, start, end, "size_t") { return "u64" }
+    if flowc_cparser_span_eq(text, start, end, "ssize_t") { return "i64" }
+    if flowc_cparser_span_eq(text, start, end, "ptrdiff_t") { return "i64" }
+    if flowc_cparser_span_eq(text, start, end, "intptr_t") { return "i64" }
+    if flowc_cparser_span_eq(text, start, end, "uintptr_t") { return "u64" }
+    if flowc_cparser_span_eq(text, start, end, "int8_t") { return "i8" }
+    if flowc_cparser_span_eq(text, start, end, "uint8_t") { return "u8" }
+    if flowc_cparser_span_eq(text, start, end, "int16_t") { return "i16" }
+    if flowc_cparser_span_eq(text, start, end, "uint16_t") { return "u16" }
+    if flowc_cparser_span_eq(text, start, end, "int32_t") { return "i32" }
+    if flowc_cparser_span_eq(text, start, end, "uint32_t") { return "u32" }
+    if flowc_cparser_span_eq(text, start, end, "int64_t") { return "i64" }
+    if flowc_cparser_span_eq(text, start, end, "uint64_t") { return "u64" }
+    if flowc_cparser_span_eq(text, start, end, "bool") { return "bool" }
+    if flowc_cparser_span_eq(text, start, end, "_Bool") { return "bool" }
+    # Unknown type: return as-is (opaque type name)
+    # For now, return "void" as a safe fallback
+    return "void"
+}
+
+# Check if a span equals a literal string.
+function flowc_cparser_span_eq(text: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let lit_ptr: ptr<u8> = lit as ptr<u8>
+    let lit_len: i32 = strlen(lit_ptr) as i32
+    if end - start != lit_len {
+        return 0
+    }
+    let i: i32 = 0
+    while i < lit_len {
+        if text[start + i] != lit_ptr[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
