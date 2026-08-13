@@ -1,0 +1,106 @@
+# Test for flowc_cparser_gen_externs.
+# Preprocesses math.h, parses declarations, generates Flow externs.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_gen_externs.flow
+# Exit 0 on success.
+
+import "compiler/src/c_parser.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function flowc_cparser_preprocess(header: ptr<u8>, header_len: i32, out_buf: ptr<u8>, out_cap: i32) -> i32
+    function flowc_cparser_parse(text: ptr<u8>, text_len: i32, decls: ptr<CDecl>, max_decls: i32) -> i32
+    function flowc_cparser_gen_externs(decls: ptr<CDecl>, n_decls: i32, out_buf: ptr<u8>, out_cap: i32) -> i32
+}
+
+function main() -> i32 {
+    # Preprocess math.h
+    let pp_buf: ptr<u8> = malloc(1048576)
+    if pp_buf == null {
+        puts("FAIL: could not allocate pp_buf")
+        return 1
+    }
+    let header: string = "stdlib.h"
+    let header_ptr: ptr<u8> = header as ptr<u8>
+    let pp_len: i32 = flowc_cparser_preprocess(header_ptr, 8, pp_buf, 1048576)
+    if pp_len <= 0 {
+        puts("FAIL: preprocess returned empty")
+        free(pp_buf)
+        return 2
+    }
+    printf("Preprocessed math.h: %d bytes\n", pp_len)
+
+    # Parse declarations
+    let decls: ptr<CDecl> = malloc(4096 * 40) as ptr<CDecl>
+    if decls == null {
+        puts("FAIL: could not allocate decls")
+        free(pp_buf)
+        return 3
+    }
+    let n_decls: i32 = flowc_cparser_parse(pp_buf, pp_len, decls, 4096)
+    printf("Parsed %d declarations\n", n_decls)
+    if n_decls <= 0 {
+        puts("FAIL: no declarations parsed")
+        free(pp_buf)
+        free(decls)
+        return 4
+    }
+
+    # Generate Flow externs
+    let ext_buf: ptr<u8> = malloc(65536)
+    if ext_buf == null {
+        puts("FAIL: could not allocate ext_buf")
+        free(pp_buf)
+        free(decls)
+        return 5
+    }
+    let ext_len: i32 = flowc_cparser_gen_externs(decls, n_decls, ext_buf, 65536)
+    if ext_len <= 0 {
+        puts("FAIL: gen_externs returned empty")
+        free(pp_buf)
+        free(decls)
+        free(ext_buf)
+        return 6
+    }
+    printf("Generated %d bytes of Flow externs\n", ext_len)
+
+    # Print first 500 bytes of generated externs
+    puts("--- First 500 bytes of generated externs ---")
+    let print_len: i32 = 500
+    if ext_len < print_len {
+        print_len = ext_len
+    }
+    # Null-terminate at print_len for printing
+    ext_buf[print_len] = 0
+    puts(ext_buf as string)
+    puts("...")
+
+    # Check that abs is in the output
+    let found_abs: i32 = 0
+    let i: i32 = 0
+    while i < ext_len - 3 {
+        if ext_buf[i] == 97 and ext_buf[i + 1] == 98 and ext_buf[i + 2] == 115 {
+            # Check it's "abs(" not "absmax" or similar
+            if i + 3 < ext_len and ext_buf[i + 3] == 40 {  # (
+                found_abs = 1
+            }
+        }
+        i = i + 1
+    }
+    if found_abs == 0 {
+        puts("FAIL: abs not found in generated externs")
+        free(pp_buf)
+        free(decls)
+        free(ext_buf)
+        return 7
+    }
+    puts("Found 'abs' in generated externs")
+
+    free(pp_buf)
+    free(decls)
+    free(ext_buf)
+    puts("All c_gen_externs tests passed")
+    return 0
+}
