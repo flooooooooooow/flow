@@ -5635,6 +5635,10 @@ void flowc_tc_check_stmt(TcCtx* ctx, AstArena arena, int32_t id) {
 }
   return;
 }
+  if (kind == AST_DEFER) {
+  flowc_tc_check_expr(ctx, arena, ((arena).nodes[id]).a);
+  return;
+}
   if (kind == AST_EXPR_STMT) {
   flowc_tc_check_expr(ctx, arena, ((arena).nodes[id]).a);
   return;
@@ -5659,6 +5663,15 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
   if (kind == AST_LET) {
   int32_t ty = ((arena).nodes[item]).a;
   flowc_tc_bind_value(ctx, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end, ty);
+}
+  if (kind == AST_ENUM) {
+  // Bind enum variant names as global constants so they resolve in fn bodies.
+  int32_t var = ((arena).nodes[item]).a;
+  while (var != AST_NONE) {
+  flowc_tc_bind(ctx, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end, 1, (-1));
+  flowc_tc_bind(ctx, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end, 0, (-1));
+  var = ((arena).nodes[var]).next;
+}
 }
   if (kind == AST_IMPORT) {
   int32_t nm = ((arena).nodes[item]).a;
