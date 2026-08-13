@@ -1,0 +1,58 @@
+# Test that the self-hosted parser can skip trait and impl blocks.
+# The Python compiler handles full trait/impl semantics.
+# The self-hosted parser skips them so files containing traits
+# can still be parsed without errors.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_trait.flow
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+trait Printable {
+    function to_string(self: Point) -> string
+}
+
+trait Comparable {
+    function compare(self: Point, other: Point) -> i32
+}
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+impl Printable for Point {
+    function to_string(self: Point) -> string {
+        return "point"
+    }
+}
+
+impl Comparable for Point {
+    function compare(self: Point, other: Point) -> i32 {
+        if self.x < other.x {
+            return 0 - 1
+        }
+        if self.x > other.x {
+            return 1
+        }
+        return 0
+    }
+}
+
+function main() -> i32 {
+    let p1: Point = Point { x: 1, y: 2 }
+    let p2: Point = Point { x: 3, y: 4 }
+
+    printf("p1: %d %d\n", p1.x, p1.y)
+    printf("p2: %d %d\n", p2.x, p2.y)
+
+    if p1.x >= p2.x {
+        puts("FAIL: p1.x should be < p2.x")
+        return 1
+    }
+
+    puts("trait/impl blocks parsed and skipped OK")
+    puts("All trait tests passed")
+    return 0
+}
