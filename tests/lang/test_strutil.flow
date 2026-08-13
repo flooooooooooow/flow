@@ -1,0 +1,101 @@
+# Test for strutil.flow string utility functions.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_strutil.flow
+
+import "compiler/src/strutil.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+function main() -> i32 {
+    # Test flowc_streq
+    if flowc_streq("hello" as string, "hello" as ptr<u8>) != 1 {
+        puts("FAIL: streq hello")
+        return 1
+    }
+    if flowc_streq("hello" as string, "world" as ptr<u8>) != 0 {
+        puts("FAIL: streq hello vs world")
+        return 2
+    }
+    puts("streq OK")
+
+    # Test flowc_strlen
+    if flowc_strlen("hello" as string) != 5 {
+        puts("FAIL: strlen hello")
+        return 3
+    }
+    if flowc_strlen("" as string) != 0 {
+        puts("FAIL: strlen empty")
+        return 4
+    }
+    puts("strlen OK")
+
+    # Test flowc_strdup
+    let dup: string = flowc_strdup("duplicate me" as string)
+    if flowc_streq(dup, "duplicate me" as ptr<u8>) != 1 {
+        puts("FAIL: strdup content")
+        return 5
+    }
+    puts("strdup OK")
+
+    # Test span operations on a known string
+    let text: string = "foo/bar/baz.flow"
+    let tp: ptr<u8> = text as ptr<u8>
+    let tlen: i32 = flowc_strlen(text)
+
+    # Test span_starts_with
+    if flowc_span_starts_with(tp, 0, tlen, "foo" as ptr<u8>) != 1 {
+        puts("FAIL: starts_with foo")
+        return 6
+    }
+    if flowc_span_starts_with(tp, 0, tlen, "bar" as ptr<u8>) != 0 {
+        puts("FAIL: starts_with foo vs bar")
+        return 7
+    }
+    puts("starts_with OK")
+
+    # Test span_ends_with
+    if flowc_span_ends_with(tp, 0, tlen, ".flow" as ptr<u8>) != 1 {
+        puts("FAIL: ends_with .flow")
+        return 8
+    }
+    if flowc_span_ends_with(tp, 0, tlen, ".py" as ptr<u8>) != 0 {
+        puts("FAIL: ends_with .flow vs .py")
+        return 9
+    }
+    puts("ends_with OK")
+
+    # Test span_find_first
+    if flowc_span_find_first(tp, 0, tlen, 47) != 3 {
+        puts("FAIL: find_first /")
+        return 10
+    }
+    puts("find_first OK")
+
+    # Test span_find_last
+    if flowc_span_find_last(tp, 0, tlen, 47) != 7 {
+        puts("FAIL: find_last /")
+        return 11
+    }
+    puts("find_last OK")
+
+    # Test path_basename_start
+    if flowc_path_basename_start(tp, 0, tlen) != 8 {
+        puts("FAIL: basename_start")
+        return 12
+    }
+    puts("basename_start OK")
+
+    # Test streq_span
+    if flowc_streq_span(tp, 8, tlen, "baz.flow" as ptr<u8>) != 1 {
+        puts("FAIL: streq_span baz.flow")
+        return 13
+    }
+    puts("streq_span OK")
+
+    puts("All strutil tests passed")
+    return 0
+}
