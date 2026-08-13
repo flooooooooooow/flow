@@ -1,0 +1,24 @@
+# @module flowc.version
+# @means  Single source of truth for the Flow compiler version.
+
+export const FLOWC_VERSION_MAJOR: i32 = 0
+export const FLOWC_VERSION_MINOR: i32 = 11
+export const FLOWC_VERSION_PATCH: i32 = 0
+
+# Returns the version string "X.Y.Z" in a caller-provided buffer.
+# Buffer must be at least 16 bytes. Returns the string length.
+export function flowc_version_string(buf: ptr<u8>, cap: i32) -> i32 {
+    if cap < 16 {
+        return 0
+    }
+    # "0.11.0"
+    buf[0] = 48
+    buf[1] = 46
+    buf[2] = 48
+    buf[3] = 49
+    buf[4] = 49
+    buf[5] = 46
+    buf[6] = 48
+    buf[7] = 0
+    return 7
+}
