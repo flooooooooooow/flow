@@ -68,7 +68,7 @@ function main() -> i32 {
 
     # Print first 500 bytes of generated externs
     puts("--- First 500 bytes of generated externs ---")
-    let print_len: i32 = 500
+    let mut print_len: i32 = 500
     if ext_len < print_len {
         print_len = ext_len
     }
@@ -78,8 +78,8 @@ function main() -> i32 {
     puts("...")
 
     # Check that abs is in the output
-    let found_abs: i32 = 0
-    let i: i32 = 0
+    let mut found_abs: i32 = 0
+    let mut i: i32 = 0
     while i < ext_len - 3 {
         if ext_buf[i] == 97 and ext_buf[i + 1] == 98 and ext_buf[i + 2] == 115 {
             # Check it's "abs(" not "absmax" or similar

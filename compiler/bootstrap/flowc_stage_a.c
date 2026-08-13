@@ -4428,6 +4428,21 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   if (flowc_cgen_span_is(src, ns, ne, "strtod") == 1) {
   return 1;
 }
+  if (flowc_cgen_span_is(src, ns, ne, "popen") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "pclose") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "fscanf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "sscanf") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "scanf") == 1) {
+  return 1;
+}
   return 0;
 }
 

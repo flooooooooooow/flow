@@ -21,7 +21,6 @@ inline functions, and compiler-specific attributes.
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -31,7 +30,6 @@ from .parser import (
     FunctionDecl,
     ExternTypeDecl,
     ConstDecl,
-    StructDecl,
     Parameter,
     Type as ParsedType,
     Block,

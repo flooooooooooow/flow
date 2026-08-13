@@ -35,8 +35,8 @@ function make_splits(n: i32) -> ptr<CVSplit> {
     let mut i: i32 = 0
     while i < n {
         let train: ptr<i32> = malloc(40) as ptr<i32>
-        let test: ptr<i32> = malloc(20) as ptr<i32>
-        let split: CVSplit = CVSplit { train_indices: train, n_train: 10, test_indices: test, n_test: 5 }
+        let test_idx: ptr<i32> = malloc(20) as ptr<i32>
+        let split: CVSplit = CVSplit { train_indices: train, n_train: 10, test_indices: test_idx, n_test: 5 }
         splits[i] = split
         i = i + 1
     }
