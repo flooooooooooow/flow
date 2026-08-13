@@ -15,7 +15,7 @@ import .token {
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
     KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM,
-    KW_TRAIT, KW_IMPL, KW_TEST
+    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL
 }
 
 function flowc_lex_is_alpha(c: i32) -> i32 {
@@ -132,6 +132,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let trait_kw: array<u8, 5> = [116, 114, 97, 105, 116]
     let impl_kw: array<u8, 4> = [105, 109, 112, 108]
     let test_kw: array<u8, 4> = [116, 101, 115, 116]
+    let parallel_kw: array<u8, 8> = [112, 97, 114, 97, 108, 108, 101, 108]
     let p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
@@ -202,6 +203,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_IMPL }
     p = test_kw
     if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_TEST }
+    p = parallel_kw
+    if flowc_lex_ident_eq(src, start, end, p, 8) == 1 { return KW_PARALLEL }
     return 0
 }
 

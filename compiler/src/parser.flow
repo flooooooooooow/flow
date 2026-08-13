@@ -14,7 +14,7 @@ import .token {
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
     KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM,
-    KW_TRAIT, KW_IMPL, KW_TEST
+    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -959,6 +959,10 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].a = cond
         p[0].arena.nodes[id].b = body
         return id
+    }
+    # parallel for ... — skip the parallel prefix and parse as a normal for
+    if flowc_parser_check_kw(p[0], KW_PARALLEL) == 1 {
+        flowc_parser_advance(p)
     }
     # for name in lo to hi { body } | for name in lo .. hi { body }
     if flowc_parser_check_kw(p[0], KW_FOR) == 1 {

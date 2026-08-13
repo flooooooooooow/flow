@@ -179,6 +179,7 @@ const int32_t KW_ENUM = 32;
 const int32_t KW_TRAIT = 33;
 const int32_t KW_IMPL = 34;
 const int32_t KW_TEST = 35;
+const int32_t KW_PARALLEL = 36;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -298,6 +299,7 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t trait_kw[5] = { 116, 114, 97, 105, 116 };
   uint8_t impl_kw[4] = { 105, 109, 112, 108 };
   uint8_t test_kw[4] = { 116, 101, 115, 116 };
+  uint8_t parallel_kw[8] = { 112, 97, 114, 97, 108, 108, 101, 108 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -437,6 +439,10 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = test_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 4) == 1) {
   return KW_TEST;
+}
+  p = parallel_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 8) == 1) {
+  return KW_PARALLEL;
 }
   return 0;
 }
@@ -1762,6 +1768,10 @@ int32_t flowc_parse_stmt(Parser* p) {
   (((p[0]).arena).nodes[id]).a = cond;
   (((p[0]).arena).nodes[id]).b = body;
   return id;
+}
+  // parallel for ... — skip the parallel prefix and parse as a normal for
+  if (flowc_parser_check_kw(p[0], KW_PARALLEL) == 1) {
+  flowc_parser_advance(p);
 }
   if (flowc_parser_check_kw(p[0], KW_FOR) == 1) {
   int32_t start = ((p[0]).cur).start;
