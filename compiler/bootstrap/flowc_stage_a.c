@@ -175,6 +175,7 @@ const int32_t KW_EFFECT = 28;
 const int32_t KW_CAPABILITY = 29;
 const int32_t KW_NOT = 30;
 const int32_t KW_DEFER = 31;
+const int32_t KW_ENUM = 32;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
 }
@@ -290,6 +291,7 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t cap_kw[10] = { 99, 97, 112, 97, 98, 105, 108, 105, 116, 121 };
   uint8_t not_kw[3] = { 110, 111, 116 };
   uint8_t defer_kw[5] = { 100, 101, 102, 101, 114 };
+  uint8_t enum_kw[4] = { 101, 110, 117, 109 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -413,6 +415,10 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = defer_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 5) == 1) {
   return KW_DEFER;
+}
+  p = enum_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 4) == 1) {
+  return KW_ENUM;
 }
   return 0;
 }
@@ -725,6 +731,8 @@ const int32_t AST_C_INCLUDE = 39;
 const int32_t AST_C_EMBED = 40;
 const int32_t AST_C_IMPORT = 41;
 const int32_t AST_DEFER = 42;
+const int32_t AST_ENUM = 43;
+const int32_t AST_ENUM_VARIANT = 44;
 AstArena flowc_ast_new(int32_t cap) {
   int64_t size = ((int64_t)(cap) * 40);
   uint8_t* raw = (uint8_t*)(malloc(size));
@@ -2205,6 +2213,99 @@ int32_t flowc_parse_struct(Parser* p) {
   return id;
 }
 
+int32_t flowc_parse_enum(Parser* p) {
+  int32_t start = ((p[0]).cur).start;
+  if (flowc_parser_eat_kw(p, KW_ENUM) == 0) {
+  return AST_NONE;
+}
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  int32_t ns = ((p[0]).cur).start;
+  int32_t ne = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  // Skip optional type parameters: enum Name<T> { ... }
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  while (depth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LT) == 1) {
+  depth = (depth + 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  depth = (depth - 1);
+}
+}
+  if (depth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_check(p[0], TOK_GT) == 1) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_eat(p, TOK_LBRACE) == 0) {
+  return AST_NONE;
+}
+  int32_t variants = AST_NONE;
+  int32_t idx = 0;
+  while (flowc_parser_check(p[0], TOK_RBRACE) == 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  int32_t vns = ((p[0]).cur).start;
+  int32_t vne = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  int32_t vid = flowc_ast_alloc((&(p[0]).arena), AST_ENUM_VARIANT, vns, vne);
+  if (vid == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[vid]).name_start = vns;
+  (((p[0]).arena).nodes[vid]).name_end = vne;
+  (((p[0]).arena).nodes[vid]).ival = idx;
+  idx = (idx + 1);
+  // Skip optional variant fields: Variant(Type) or Variant(T, U)
+  if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  flowc_parser_advance(p);
+  int32_t pdepth = 1;
+  while (pdepth > 0 && flowc_parser_check(p[0], TOK_EOF) == 0) {
+  if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
+  pdepth = (pdepth + 1);
+} else {
+  if (flowc_parser_check(p[0], TOK_RPAREN) == 1) {
+  pdepth = (pdepth - 1);
+}
+}
+  if (pdepth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_check(p[0], TOK_RPAREN) == 1) {
+  flowc_parser_advance(p);
+}
+}
+  variants = flowc_ast_chain_push((&(p[0]).arena), variants, vid);
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
+  flowc_parser_advance(p);
+}
+}
+  if (flowc_parser_eat(p, TOK_RBRACE) == 0) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_ENUM, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).name_start = ns;
+  (((p[0]).arena).nodes[id]).name_end = ne;
+  (((p[0]).arena).nodes[id]).a = variants;
+  return id;
+}
+
 int32_t flowc_parse_extern(Parser* p) {
   int32_t start = ((p[0]).cur).start;
   if (flowc_parser_eat_kw(p, KW_EXTERN) == 0) {
@@ -2834,6 +2935,9 @@ int32_t flowc_parse_program(Parser* p) {
   if (flowc_parser_check_kw(p[0], KW_STRUCT) == 1) {
   item = flowc_parse_struct(p);
 } else {
+  if (flowc_parser_check_kw(p[0], KW_ENUM) == 1) {
+  item = flowc_parse_enum(p);
+} else {
   if (flowc_parser_check_kw(p[0], KW_EXTERN) == 1) {
   item = flowc_parse_extern(p);
 } else {
@@ -2865,6 +2969,7 @@ int32_t flowc_parse_program(Parser* p) {
 } else {
   (p[0]).err = 1;
   return AST_NONE;
+}
 }
 }
 }
@@ -4766,6 +4871,32 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   int32_t st = flowc_cgen_unwrap(arena, item, AST_STRUCT);
   if (st != AST_NONE) {
   flowc_cgen_emit_struct((&w), arena, src, st);
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t en = flowc_cgen_unwrap(arena, item, AST_ENUM);
+  if (en != AST_NONE) {
+  // Emit C-style enum: typedef enum { Name_Variant0, Name_Variant1, ... } Name;
+  flowc_cgen_puts((&w), "typedef enum {");
+  int32_t var = ((arena).nodes[en]).a;
+  int32_t first = 1;
+  while (var != AST_NONE) {
+  if (first == 0) {
+  flowc_cgen_puts((&w), ", ");
+} else {
+  flowc_cgen_putc((&w), 32);
+}
+  first = 0;
+  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
+  flowc_cgen_putc((&w), 95);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end);
+  var = ((arena).nodes[var]).next;
+}
+  flowc_cgen_puts((&w), " } ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
+  flowc_cgen_puts((&w), ";\n");
 }
   item = ((arena).nodes[item]).next;
 }

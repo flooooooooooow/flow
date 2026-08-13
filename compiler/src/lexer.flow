@@ -14,7 +14,7 @@ import .token {
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM
 }
 
 function flowc_lex_is_alpha(c: i32) -> i32 {
@@ -127,6 +127,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let cap_kw: array<u8, 10> = [99, 97, 112, 97, 98, 105, 108, 105, 116, 121]
     let not_kw: array<u8, 3> = [110, 111, 116]
     let defer_kw: array<u8, 5> = [100, 101, 102, 101, 114]
+    let enum_kw: array<u8, 4> = [101, 110, 117, 109]
     let p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
@@ -189,6 +190,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_NOT }
     p = defer_kw
     if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_DEFER }
+    p = enum_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_ENUM }
     return 0
 }
 

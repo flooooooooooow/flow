@@ -1,0 +1,59 @@
+# Test for enum parsing and C-style enum code generation.
+# Tests that the self-hosted parser recognizes enum declarations
+# and the bootstrap compiler generates C typedef enum.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_enum.flow
+# Also testable with bootstrap: compiler/bootstrap/flowc_stage_a
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Direction {
+    North,
+    South,
+    East,
+    West
+}
+
+function main() -> i32 {
+    # Use i32 to hold the enum tag values (works with both
+    # bootstrap C-style enum and Python tagged union)
+    let red: i32 = Color_Red as i32
+    let green: i32 = Color_Green as i32
+    let blue: i32 = Color_Blue as i32
+
+    if red != 0 {
+        printf("FAIL: Red should be 0, got %d\n", red)
+        return 1
+    }
+    if green != 1 {
+        printf("FAIL: Green should be 1, got %d\n", green)
+        return 2
+    }
+    if blue != 2 {
+        printf("FAIL: Blue should be 2, got %d\n", blue)
+        return 3
+    }
+
+    let n: i32 = Direction_North as i32
+    let s: i32 = Direction_South as i32
+    let e: i32 = Direction_East as i32
+    let w: i32 = Direction_West as i32
+
+    if n != 0 or s != 1 or e != 2 or w != 3 {
+        printf("FAIL: Direction values wrong: %d %d %d %d\n", n, s, e, w)
+        return 4
+    }
+
+    printf("Color: Red=%d Green=%d Blue=%d\n", red, green, blue)
+    printf("Direction: N=%d S=%d E=%d W=%d\n", n, s, e, w)
+    puts("All enum tests passed")
+    return 0
+}
