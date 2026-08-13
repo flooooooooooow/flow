@@ -4027,10 +4027,38 @@ void flowc_cgen_emit_block(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id)
   return;
 }
   flowc_cgen_puts(w, "{\n");
+  // Collect deferred statements to emit at block end (LIFO order).
+  int32_t defers[64];
+  int32_t n_defers = 0;
   int32_t st = ((arena).nodes[id]).a;
   while (st != AST_NONE) {
+  if (((arena).nodes[st]).kind == AST_DEFER) {
+  if (n_defers < 64) {
+  defers[n_defers] = st;
+  n_defers = (n_defers + 1);
+}
+} else {
+  // Before return: emit all pending defers in reverse order.
+  if (((arena).nodes[st]).kind == AST_RETURN) {
+  int32_t d = (n_defers - 1);
+  while (d >= 0) {
+  flowc_cgen_puts(w, "  ");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[defers[d]]).a);
+  flowc_cgen_puts(w, ";\n");
+  d = (d - 1);
+}
+}
   flowc_cgen_emit_stmt(w, arena, src, st);
+}
   st = ((arena).nodes[st]).next;
+}
+  // Emit deferred statements in reverse order (LIFO) at block end.
+  int32_t i = (n_defers - 1);
+  while (i >= 0) {
+  flowc_cgen_puts(w, "  ");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[defers[i]]).a);
+  flowc_cgen_puts(w, ";\n");
+  i = (i - 1);
 }
   flowc_cgen_puts(w, "}\n");
 }
