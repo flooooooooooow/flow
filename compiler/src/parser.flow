@@ -14,7 +14,7 @@ import .token {
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
     KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM,
-    KW_TRAIT, KW_IMPL
+    KW_TRAIT, KW_IMPL, KW_TEST
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -2225,10 +2225,10 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                                             flowc_parser_skip_brace_block(p)
                                             item = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, eff_start, p[0].cur.start)
                                         } else {
-                                            if flowc_parser_check_kw(p[0], KW_TRAIT) == 1 or flowc_parser_check_kw(p[0], KW_IMPL) == 1 {
-                                                # Skip trait/impl blocks: the Python compiler
-                                                # handles full trait/impl semantics. The
-                                                # self-hosted parser just skips them.
+                                            if flowc_parser_check_kw(p[0], KW_TRAIT) == 1 or flowc_parser_check_kw(p[0], KW_IMPL) == 1 or flowc_parser_check_kw(p[0], KW_TEST) == 1 {
+                                                # Skip trait/impl/test blocks: the Python compiler
+                                                # handles full semantics. The self-hosted parser
+                                                # just skips them.
                                                 let ti_start: i32 = p[0].cur.start
                                                 flowc_parser_advance(p)
                                                 if flowc_parser_check(p[0], TOK_IDENT) == 1 {
