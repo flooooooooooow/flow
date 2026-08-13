@@ -4,6 +4,16 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `examples/morphogenesis/hexagonal_ca.flow` reseeded to a permanent dot. The
+  crystal span and frozen count were only recomputed inside the growth step,
+  and that step was itself gated on the span. Once the crystal filled the
+  lattice the gate latched shut: every restart (auto, `R`, or a preset change)
+  reseeded the lattice while the HUD kept reporting the stale pre-restart
+  figures, and the crystal never grew again. Restarts now clear the span and
+  frozen count, and the three duplicated restart paths are one branch.
+
 ### Release engineering
 
 - `scripts/sync_version.py` makes `src/flow/version.py` the single source of

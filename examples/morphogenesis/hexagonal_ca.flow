@@ -259,19 +259,14 @@ function main() -> i32 {
         if gfx_key_down(g, KEY_1) { want = 0 }
         if gfx_key_down(g, KEY_2) { want = 1 }
         if gfx_key_down(g, KEY_3) { want = 2 }
+        let mut restart: bool = false
         if want >= 0 and want != preset {
             preset = want
-            seed_field(s, preset_beta(preset))
-            steps = 0
-            hold = 0
+            restart = true
         }
 
         if gfx_key_down(g, KEY_R) {
-            if !reset_held {
-                seed_field(s, preset_beta(preset))
-                steps = 0
-                hold = 0
-            }
+            if !reset_held { restart = true }
             reset_held = true
         } else {
             reset_held = false
@@ -284,17 +279,25 @@ function main() -> i32 {
             pause_held = false
         }
 
-        let full: bool = span > 56
-        if full {
+        # The crystal fills the lattice, holds for a beat, then starts over.
+        if span > 56 {
             hold = hold + 1
-            if hold > 120 {
-                seed_field(s, preset_beta(preset))
-                steps = 0
-                hold = 0
-            }
+            if hold > 120 { restart = true }
         }
 
-        if !paused and !full {
+        # span and frozen are only recomputed while the crystal is growing, and
+        # growth is itself gated on span. A restart therefore has to clear span
+        # here: leaving it above the threshold latches the gate shut, and the
+        # lattice reseeds to a stationary dot every 120 frames forever.
+        if restart {
+            seed_field(s, preset_beta(preset))
+            steps = 0
+            hold = 0
+            span = 0
+            frozen = 1
+        }
+
+        if !paused and span <= 56 {
             for k in 0 to STEPS_PER_FRAME {
                 step(s, sn, u, preset_alpha(preset), preset_beta(preset),
                      preset_gamma(preset))
