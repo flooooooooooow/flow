@@ -1,0 +1,49 @@
+# Test for @cImport with complex struct headers.
+# Tests stat() from sys/stat.h which uses a struct stat.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_struct.flow
+# Exit 0 on success.
+
+@cImport("sys/stat.h")
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function stat(path: string, buf: ptr<void>) -> i32
+}
+
+function main() -> i32 {
+    # Allocate a struct stat (144 bytes on macOS arm64)
+    let buf: ptr<u8> = malloc(144)
+    if buf == null {
+        puts("FAIL: could not allocate stat buffer")
+        return 1
+    }
+
+    # Stat the current directory
+    let rc: i32 = stat(".", buf as ptr<void>)
+    if rc != 0 {
+        puts("FAIL: stat(\".\") returned non-zero")
+        free(buf)
+        return 2
+    }
+
+    # The st_size field is at offset 96 on macOS (after st_dev, st_mode, etc.)
+    let size_ptr: ptr<i64> = (buf + 96) as ptr<i64>
+    let size: i64 = size_ptr[0]
+    printf("stat(\".\"): st_size = %lld\n", size)
+
+    # Stat a non-existent file should fail
+    rc = stat("/nonexistent/path/that/does/not/exist", buf as ptr<void>)
+    if rc == 0 {
+        puts("FAIL: stat of non-existent path should fail")
+        free(buf)
+        return 3
+    }
+    puts("stat of non-existent path correctly failed")
+
+    free(buf)
+    puts("All c_import_struct tests passed")
+    return 0
+}

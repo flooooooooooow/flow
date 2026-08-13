@@ -1,0 +1,73 @@
+# Test for @cImport with string.h and time.h.
+# Tests strlen from string.h and time() from time.h.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_string_time.flow
+# Exit 0 on success.
+
+@cImport("string.h")
+@cImport("time.h")
+
+extern {
+    function puts(s: string) -> i32
+    function printf(fmt: string) -> i32
+}
+
+function main() -> i32 {
+    # Test strlen from string.h
+    let s: string = "Hello, Flow!"
+    let len: u64 = strlen(s)
+    if len != 12 {
+        printf("FAIL: strlen(\"Hello, Flow!\") should be 12 but got %llu\n", len)
+        return 1
+    }
+    printf("strlen(\"Hello, Flow!\") = %llu\n", len)
+
+    # Test strcmp from string.h
+    let cmp: i32 = strcmp("abc", "abc")
+    if cmp != 0 {
+        printf("FAIL: strcmp(\"abc\", \"abc\") should be 0 but got %d\n", cmp)
+        return 2
+    }
+    printf("strcmp(\"abc\", \"abc\") = %d\n", cmp)
+
+    # Test time() from time.h
+    let t: u64 = time(null as ptr<u64>)
+    if t == 0 {
+        puts("FAIL: time() returned 0")
+        return 3
+    }
+    printf("time(NULL) = %llu\n", t)
+
+    # Test memcpy from string.h
+    let src_buf: ptr<u8> = malloc(16)
+    let dst_buf: ptr<u8> = malloc(16)
+    if src_buf == null or dst_buf == null {
+        puts("FAIL: could not allocate buffers")
+        return 4
+    }
+    src_buf[0] = 65  # 'A'
+    src_buf[1] = 66  # 'B'
+    src_buf[2] = 67  # 'C'
+    src_buf[3] = 0
+    memcpy(dst_buf, src_buf, 4)
+    if dst_buf[0] != 65 or dst_buf[1] != 66 or dst_buf[2] != 67 {
+        puts("FAIL: memcpy did not copy correctly")
+        free(src_buf)
+        free(dst_buf)
+        return 5
+    }
+    printf("memcpy copied: %c%c%c\n", dst_buf[0], dst_buf[1], dst_buf[2])
+
+    free(src_buf)
+    free(dst_buf)
+    puts("All c_import_string_time tests passed")
+    return 0
+}
+
+extern {
+    function strlen(s: string) -> u64
+    function strcmp(a: string, b: string) -> i32
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: u64) -> ptr<void>
+    function time(t: ptr<u64>) -> u64
+    function malloc(n: i32) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}

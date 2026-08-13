@@ -1016,7 +1016,9 @@ class CGenerator:
                            # pthread — provided by pthread.h
                            'pthread_create', 'pthread_join', 'pthread_exit',
                            'pthread_mutex_init', 'pthread_mutex_destroy',
-                           'pthread_mutex_lock', 'pthread_mutex_unlock'}
+                           'pthread_mutex_lock', 'pthread_mutex_unlock',
+                           # sys/stat.h — provided by sys/stat.h
+                           'stat', 'fstat', 'lstat', 'mkdir', 'chmod'}
         primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
