@@ -354,4 +354,4 @@ another turn of the loop. Not yet “`flowc` compiles all of Flow.”
   (“Self-hosting bootstrap strategy”)
 - Historical lexer seeds: `examples/compilers/flow_lexer.flow`,
   `flow_identifier_lexer.flow`
-- Roadmap status: [ROADMAP.md](../docs/project/ROADMAP.md)
+- Roadmap status: [ROADMAP.md](../ROADMAP.md)

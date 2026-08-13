@@ -75,7 +75,7 @@ API freeze. Wrap packages that need system libs (`http`, `sqlite`) stay registry
 
 ### 2026-08-04: Concurrency vs Go — Phase 2 priorities
 
-**Context:** Phase 1 shipped ([docs/language/concurrency-vs-go.md](docs/language/concurrency-vs-go.md)):
+**Context:** Phase 1 shipped ([docs/language/concurrency-vs-go.md](../language/concurrency-vs-go.md)):
 real channels, WaitGroup wait, TLS effect handlers, `parallel for`→OpenMP,
 `ThreadedAsync` over pthreads. (Later the same day: `select2`, FiberAsync M:N,
 asm fctx, `NetpollAsyncIO`. Still no delimited continuations / N-way `select`.)
@@ -89,7 +89,7 @@ asm fctx, `NetpollAsyncIO`. Still no delimited continuations / N-way `select`.)
 **Recommendation:** (3) then (1) — measure channel/ping-pong and parallel-for
 vs Go before inventing fibers; keep effect surface stable.
 
-**Status:** ✅ Resolved (2026-08-04) — through M:N + netpoll ([replace-go.md](docs/language/replace-go.md)).
+**Status:** ✅ Resolved (2026-08-04) — through M:N + netpoll ([replace-go.md](../language/replace-go.md)).
 Flow wins ping-pong + fan-out vs Go. Follow-ups shipped: `select4`, fiber-park
 IO, HTTP microbench, `FLOW_RACE=1` hooks, `flow_cont` scaffold. Remaining:
 true Flow-frame suspend, generic channels, TSAN-class races. GitHub CI disabled.
@@ -298,7 +298,7 @@ passes.
 
 ### 2026-07-28: Package registry design
 
-**Answer:** Defer + design doc — no central registry until 3+ real third-party packages; git/path deps are the supported path. See [docs/project/package-registry.md](docs/project/package-registry.md).
+**Answer:** Defer + design doc — no central registry until 3+ real third-party packages; git/path deps are the supported path. See [docs/project/package-registry.md](package-registry.md).
 
 **Resolved:** 2026-07-28
 

@@ -38,7 +38,7 @@ Foundational domains — Peano arithmetic, logic, data structures, and algebra s
 | `Order` | Order theory | basic lemmas |
 | `Group`, `Monoid`, `Ring`, `Ideal`, `Subgroup`, `GroupHom`, `RingHom` | Abstract algebra | definitions + early lemmas |
 
-Open any module proof: e.g. [lib/verify/Nat.proof.md](../../third-party/flow-verify/proofs/lib/Nat.proof.md)
+Open any module proof: e.g. [lib/verify/Nat.proof.md](../../lib/verify/Nat.proof.md)
 
 ---
 
@@ -115,10 +115,10 @@ Provenance uses `@from` tags (peano, euclid, boole, church, brook taylor, …) w
 
 Use the wiki sidebar under **Third-Party → Proof Catalog**, or jump directly to a section:
 
-- [Core library proofs](../../third-party/flow-verify/proofs/lib/)
-- [Math derived](../../third-party/flow-verify/proofs/examples/math/derived/)
-- [Euclid Book I](../../third-party/flow-verify/proofs/examples/euclid/book-i/)
-- [Geometry & analysis](../../third-party/flow-verify/proofs/examples/geometry/)
+- [Core library proofs](../../lib/verify/)
+- [Math derived](../../examples/verify/math/derived/)
+- [Euclid Book I](../../examples/verify/euclid/book-i/)
+- [Geometry & analysis](../../examples/verify/geometry/)
 
 ---
 
