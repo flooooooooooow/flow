@@ -3023,6 +3023,13 @@ int32_t flowc_parse_program(Parser* p) {
   if (flowc_parser_check(p[0], TOK_RPAREN) == 1) {
   flowc_parser_advance(p);
 }
+  // Skip optional `as alias` clause
+  if (flowc_parser_check_kw(p[0], KW_AS) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+}
   int32_t cid3 = flowc_ast_alloc((&(p[0]).arena), AST_C_IMPORT, hdr_start2, hdr_end2);
   if (cid3 != AST_NONE) {
   ((p[0]).arena).nodes[cid3].name_start = hdr_start2;
