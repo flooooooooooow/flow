@@ -4422,6 +4422,200 @@ int32_t flowc_cgen_unwrap(AstArena arena, int32_t item, int32_t want) {
   return AST_NONE;
 }
 
+// Preprocess a C header and emit function prototypes into the CgenBuf.
+// This runs cpp via popen, scans for function-like declarations, and
+// emits them as C prototypes. Filters out keywords, uppercase names,
+// and preprocessor artifacts.
+int32_t flowc_cgen_pp_is_keyword(uint8_t* text, int32_t start, int32_t end);
+int32_t flowc_cgen_pp_contains(uint8_t* text, int32_t start, int32_t end, const char* lit);
+void flowc_cgen_emit_cimport(CgenBuf* w, uint8_t* src, int32_t name_start, int32_t name_end) {
+  // Build command: echo '#include <header>' | cpp -P -
+  uint8_t cmd[1024];
+  int32_t cpos = 0;
+  const char* prefix = "echo '#include <";
+  int32_t plen = 0;
+  while (prefix[plen] != 0 && cpos < 1023) { cmd[cpos] = prefix[plen]; cpos++; plen++; }
+  int32_t hi = name_start + 1;
+  while (hi < name_end - 1 && cpos < 1023) { cmd[cpos] = src[hi]; cpos++; hi++; }
+  const char* suffix = ">' | cpp -P -";
+  int32_t slen = 0;
+  while (suffix[slen] != 0 && cpos < 1023) { cmd[cpos] = suffix[slen]; cpos++; slen++; }
+  cmd[cpos] = 0;
+
+  FILE* fp = popen((char*)cmd, "r");
+  if (fp == 0) { return; }
+
+  // Read preprocessed output
+  uint8_t* pp_buf = (uint8_t*)(malloc(1048576));
+  if (pp_buf == 0) { pclose(fp); return; }
+  int32_t pp_len = 0;
+  int32_t got = fread(pp_buf + pp_len, 1, 4096, fp);
+  while (got > 0 && pp_len < 1048576 - 4096) {
+  pp_len = pp_len + got;
+  got = fread(pp_buf + pp_len, 1, 4096, fp);
+}
+  pclose(fp);
+
+  // Also emit the #include so the prototypes match the system types
+  flowc_cgen_puts(w, "#include <");
+  flowc_cgen_put_span(w, src, name_start + 1, name_end - 1);
+  flowc_cgen_puts(w, ">\n");
+
+  // Scan for function declarations: type name(params);
+  // Statements are semicolon-delimited (not line-delimited, since
+  // cpp -P can split declarations across lines).
+  int32_t pos = 0;
+  while (pos < pp_len) {
+  // Skip whitespace
+  while (pos < pp_len && (pp_buf[pos] == 32 || pp_buf[pos] == 10 || pp_buf[pos] == 9 || pp_buf[pos] == 13)) {
+  pos = pos + 1;
+}
+  if (pos >= pp_len) { break; }
+
+  // Find end of statement (semicolon)
+  int32_t line_start = pos;
+  while (pos < pp_len && pp_buf[pos] != 59) {
+  pos = pos + 1;
+}
+  int32_t line_end = pos;
+  if (pos < pp_len && pp_buf[pos] == 59) { pos = pos + 1; }
+
+  // Trim trailing whitespace/newlines from the statement
+  while (line_end > line_start && (pp_buf[line_end - 1] == 10 || pp_buf[line_end - 1] == 13 || pp_buf[line_end - 1] == 32 || pp_buf[line_end - 1] == 9)) {
+  line_end = line_end - 1;
+}
+
+  // Skip statements that contain braces (function bodies, not prototypes)
+  int32_t has_brace = 0;
+  int32_t scan_br = line_start;
+  while (scan_br < line_end) {
+  if (pp_buf[scan_br] == 123 || pp_buf[scan_br] == 125) { has_brace = 1; break; }
+  scan_br = scan_br + 1;
+}
+  if (has_brace == 1) { continue; }
+
+  // Check if this line has parens (function-like)
+  int32_t paren_pos = 0 - 1;
+  int32_t j = line_start;
+  while (j < line_end) {
+  if (pp_buf[j] == 40) { paren_pos = j; break; }
+  j = j + 1;
+}
+  if (paren_pos < 0) { continue; }
+
+  // Find matching close paren
+  int32_t depth = 1;
+  int32_t close_pos = paren_pos + 1;
+  while (close_pos < line_end && depth > 0) {
+  if (pp_buf[close_pos] == 40) { depth = depth + 1; }
+  else { if (pp_buf[close_pos] == 41) { depth = depth - 1; } }
+  close_pos = close_pos + 1;
+}
+  if (depth != 0) { continue; }
+  close_pos = close_pos - 1;
+
+  // Extract function name (last identifier before paren)
+  int32_t fn_end = paren_pos;
+  while (fn_end > line_start && (pp_buf[fn_end - 1] == 32 || pp_buf[fn_end - 1] == 9 || pp_buf[fn_end - 1] == 10 || pp_buf[fn_end - 1] == 13)) {
+  fn_end = fn_end - 1;
+}
+  int32_t fn_start = fn_end;
+  while (fn_start > line_start && ((pp_buf[fn_start - 1] >= 65 && pp_buf[fn_start - 1] <= 90) || (pp_buf[fn_start - 1] >= 97 && pp_buf[fn_start - 1] <= 122) || (pp_buf[fn_start - 1] >= 48 && pp_buf[fn_start - 1] <= 57) || pp_buf[fn_start - 1] == 95)) {
+  fn_start = fn_start - 1;
+}
+  int32_t fn_len = fn_end - fn_start;
+  if (fn_len <= 0) { continue; }
+
+  // Skip double-underscore names
+  if (fn_len >= 2 && pp_buf[fn_start] == 95 && pp_buf[fn_start + 1] == 95) { continue; }
+
+  // Skip uppercase names (macro expansions)
+  if (pp_buf[fn_start] >= 65 && pp_buf[fn_start] <= 90) { continue; }
+
+  // Skip C keywords as function names
+  if (flowc_cgen_pp_is_keyword(pp_buf, fn_start, fn_end) == 1) { continue; }
+
+  // Return type is everything before the function name
+  int32_t ret_end = fn_start;
+  while (ret_end > line_start && (pp_buf[ret_end - 1] == 32 || pp_buf[ret_end - 1] == 9 || pp_buf[ret_end - 1] == 10 || pp_buf[ret_end - 1] == 13)) {
+  ret_end = ret_end - 1;
+}
+  if (ret_end <= line_start) { continue; }
+
+  // Skip if return type contains "defined"
+  if (flowc_cgen_pp_contains(pp_buf, line_start, ret_end, "defined") == 1) { continue; }
+
+  // Emit the prototype
+  flowc_cgen_put_span(w, pp_buf, line_start, ret_end);
+  flowc_cgen_putc(w, 32);
+  flowc_cgen_put_span(w, pp_buf, fn_start, fn_end);
+  flowc_cgen_putc(w, 40);
+  flowc_cgen_put_span(w, pp_buf, paren_pos + 1, close_pos);
+  flowc_cgen_puts(w, ");\n");
+}
+
+  free(pp_buf);
+}
+
+// Check if a span is a C keyword.
+int32_t flowc_cgen_pp_is_keyword(uint8_t* text, int32_t start, int32_t end) {
+  if (flowc_cgen_span_is(text, start, end, "void")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "int")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "char")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "long")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "short")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "float")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "double")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "unsigned")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "signed")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "const")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "struct")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "union")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "enum")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "typedef")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "static")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "extern")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "inline")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "return")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "if")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "else")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "while")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "for")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "do")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "switch")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "case")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "break")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "continue")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "default")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "sizeof")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "defined")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "goto")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "restrict")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "auto")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "register")) { return 1; }
+  if (flowc_cgen_span_is(text, start, end, "volatile")) { return 1; }
+  return 0;
+}
+
+// Check if a span contains a substring.
+int32_t flowc_cgen_pp_contains(uint8_t* text, int32_t start, int32_t end, const char* lit) {
+  int32_t lit_len = 0;
+  while (lit[lit_len] != 0) { lit_len++; }
+  if (lit_len <= 0 || end - start < lit_len) { return 0; }
+  int32_t i = start;
+  while (i + lit_len <= end) {
+  int32_t is_match = 1;
+  int32_t j = 0;
+  while (j < lit_len) {
+  if (text[i + j] != (uint8_t)(lit[j])) { is_match = 0; break; }
+  j = j + 1;
+}
+  if (is_match == 1) { return 1; }
+  i = i + 1;
+}
+  return 0;
+}
+
 int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len) {
   if (root == AST_NONE || root < 0) {
   return (0 - 1);
@@ -4463,9 +4657,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "\"\n");
 }
   if (((arena).nodes[item]).kind == AST_C_IMPORT) {
-  flowc_cgen_puts((&w), "#include <");
-  flowc_cgen_put_span((&w), src, ((arena).nodes[item]).name_start + 1, ((arena).nodes[item]).name_end - 1);
-  flowc_cgen_puts((&w), ">\n");
+  flowc_cgen_emit_cimport((&w), src, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end);
 }
   item = ((arena).nodes[item]).next;
 }
