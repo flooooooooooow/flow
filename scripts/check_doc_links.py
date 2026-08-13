@@ -23,7 +23,7 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -53,6 +53,18 @@ GENERATED = frozenset(
 EXTERNAL = ("http://", "https://", "mailto:", "#", "<")
 
 
+def tracked_paths() -> set[str]:
+    """Every path git knows about, as posix strings relative to the repo root."""
+    out = subprocess.run(
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=True,
+    ).stdout.splitlines()
+    return {line.strip() for line in out if line.strip()}
+
+
 def tracked_markdown() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files", "*.md"],
@@ -62,6 +74,28 @@ def tracked_markdown() -> list[str]:
         check=True,
     ).stdout.split()
     return [f for f in out if not f.startswith(SKIP_PREFIXES)]
+
+
+def resolves(source: str, target: str, tracked: set[str]) -> bool:
+    """Does `target`, written inside `source`, point at something git tracks?
+
+    Deliberately checked against the index rather than the filesystem. A working
+    tree accumulates untracked build output (a stale docs/VISION.md, for one),
+    and resolving against it lets a link pass locally and fail in CI's fresh
+    checkout. Comparing against tracked paths makes the two agree.
+    """
+    base = PurePosixPath(source).parent
+    try:
+        resolved = os.path.normpath(str(base / target))
+    except ValueError:
+        return False
+    if resolved.startswith(".."):     # escapes the repo; not ours to verify
+        return True
+    resolved = PurePosixPath(resolved).as_posix()
+    if resolved in tracked:
+        return True
+    prefix = resolved.rstrip("/") + "/"      # directory link
+    return any(p.startswith(prefix) for p in tracked)
 
 
 def main() -> int:
@@ -76,8 +110,10 @@ def main() -> int:
     broken: list[tuple[str, str]] = []
     skipped: list[tuple[str, str]] = []
     checked = 0
+    tracked = tracked_paths()
+    sources = tracked_markdown()
 
-    for rel in tracked_markdown():
+    for rel in sources:
         path = ROOT / rel
         try:
             text = path.read_text(errors="ignore")
@@ -91,14 +127,14 @@ def main() -> int:
             bare = target.split("#")[0]
             if not bare:
                 continue
-            if (path.parent / bare).resolve().exists():
+            if resolves(rel, bare, tracked):
                 continue
             if os.path.basename(bare) in GENERATED:
                 skipped.append((rel, target))
                 continue
             broken.append((rel, target))
 
-    print(f"checked {checked} relative links across {len(tracked_markdown())} files")
+    print(f"checked {checked} relative links across {len(sources)} files")
     if skipped:
         print(f"skipped {len(skipped)} link(s) to build-time generated targets")
         if args.list_ok:
