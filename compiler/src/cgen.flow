@@ -1102,10 +1102,39 @@ function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
         return
     }
     flowc_cgen_puts(w, "{\n")
+    # Collect deferred statements to emit at block end (LIFO order).
+    let mut defers: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut n_defers: i32 = 0
     let mut st: i32 = arena.nodes[id].a
     while st != AST_NONE {
-        flowc_cgen_emit_stmt(w, arena, src, st)
+        if arena.nodes[st].kind == AST_DEFER {
+            if n_defers < 64 {
+                defers[n_defers] = st
+                n_defers = n_defers + 1
+            }
+        } else {
+            # Before return: emit all pending defers in reverse order.
+            if arena.nodes[st].kind == AST_RETURN {
+                let mut d: i32 = n_defers - 1
+                while d >= 0 {
+                    flowc_cgen_puts(w, "  ")
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[defers[d]].a)
+                    flowc_cgen_puts(w, ";\n")
+                    d = d - 1
+                }
+            }
+            flowc_cgen_emit_stmt(w, arena, src, st)
+        }
         st = arena.nodes[st].next
+    }
+    # Emit deferred statements in reverse order (LIFO) at block end
+    # (for fall-through, i.e. no trailing return).
+    let mut i: i32 = n_defers - 1
+    while i >= 0 {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[defers[i]].a)
+        flowc_cgen_puts(w, ";\n")
+        i = i - 1
     }
     flowc_cgen_puts(w, "}\n")
 }
