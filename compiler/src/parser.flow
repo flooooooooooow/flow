@@ -306,6 +306,8 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
             p[0].err = 1
             return AST_NONE
         }
+        p[0].arena.nodes[id].name_start = tok.start
+        p[0].arena.nodes[id].name_end = tok.end
         p[0].arena.nodes[id].ival = flowc_parse_int_span(p[0].lex.input, tok.start, tok.end)
         flowc_parser_advance(p)
         return id
