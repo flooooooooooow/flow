@@ -6957,6 +6957,7 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
   int32_t pfn = flowc_tc_unwrap_fn(arena, prev);
   if (pfn != AST_NONE && ((arena).nodes[pfn]).c != AST_NONE) {
   if (flowc_tc_span_eq((ctx[0]).src, ns, ne, ((arena).nodes[pfn]).name_start, ((arena).nodes[pfn]).name_end) == 1) {
+  flowc_tc_note(ctx, "flowc tc: duplicate function name (overloads not supported)", ns, ne);
   flowc_tc_err(ctx);
 }
 }
