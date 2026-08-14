@@ -664,7 +664,93 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
             p[0].arena.nodes[id].name_end = fe
             base = id
         } else {
-            if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
+            # Generic call: name<Type>(args) — try to parse <Type> and check
+            # if ( follows. If not, it's a comparison, so backtrack.
+            if flowc_parser_check(p[0], TOK_LT) == 1 and base != AST_NONE and p[0].arena.nodes[base].kind == AST_IDENT {
+                let save_pos: i32 = p[0].lex.pos
+                let save_line: i32 = p[0].lex.line
+                let save_col: i32 = p[0].lex.col
+                let save_kind: i32 = p[0].cur.kind
+                let save_kw: i32 = p[0].cur.kw
+                let save_start: i32 = p[0].cur.start
+                let save_end: i32 = p[0].cur.end
+                let save_cur_line: i32 = p[0].cur.line
+                let save_cur_col: i32 = p[0].cur.col
+                flowc_parser_advance(p)
+                let mut parse_ok: i32 = 1
+                let mut depth: i32 = 1
+                while depth > 0 and parse_ok == 1 {
+                    if flowc_parser_check(p[0], TOK_EOF) == 1 {
+                        parse_ok = 0
+                    } elif flowc_parser_check(p[0], TOK_GT) == 1 {
+                        depth = depth - 1
+                        if depth > 0 {
+                            flowc_parser_advance(p)
+                        }
+                    } elif flowc_parser_check(p[0], TOK_SHR) == 1 {
+                        depth = depth - 2
+                        if depth > 0 {
+                            flowc_parser_advance(p)
+                        }
+                    } elif flowc_parser_check(p[0], TOK_LT) == 1 {
+                        depth = depth + 1
+                        flowc_parser_advance(p)
+                    } else {
+                        flowc_parser_advance(p)
+                    }
+                }
+                if parse_ok == 1 and depth == 0 {
+                    flowc_parser_advance(p)
+                    if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                        flowc_parser_advance(p)
+                        let mut args: i32 = AST_NONE
+                        if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+                            let first: i32 = flowc_parse_expr(p)
+                            args = flowc_ast_chain_push(&p[0].arena, args, first)
+                            while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                                flowc_parser_advance(p)
+                                let a: i32 = flowc_parse_expr(p)
+                                args = flowc_ast_chain_push(&p[0].arena, args, a)
+                            }
+                        }
+                        if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+                            return AST_NONE
+                        }
+                        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CALL, 0, 0)
+                        if id == AST_NONE {
+                            p[0].err = 1
+                            return AST_NONE
+                        }
+                        p[0].arena.nodes[id].name_start = p[0].arena.nodes[base].name_start
+                        p[0].arena.nodes[id].name_end = p[0].arena.nodes[base].name_end
+                        p[0].arena.nodes[id].a = args
+                        base = id
+                    } else {
+                        p[0].lex.pos = save_pos
+                        p[0].lex.line = save_line
+                        p[0].lex.col = save_col
+                        p[0].cur.kind = save_kind
+                        p[0].cur.kw = save_kw
+                        p[0].cur.start = save_start
+                        p[0].cur.end = save_end
+                        p[0].cur.line = save_cur_line
+                        p[0].cur.col = save_cur_col
+                        break
+                    }
+                } else {
+                    p[0].lex.pos = save_pos
+                    p[0].lex.line = save_line
+                    p[0].lex.col = save_col
+                    p[0].cur.kind = save_kind
+                    p[0].cur.kw = save_kw
+                    p[0].cur.start = save_start
+                    p[0].cur.end = save_end
+                    p[0].cur.line = save_cur_line
+                    p[0].cur.col = save_cur_col
+                    break
+                }
+            } else {
+                if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
                 # Special case: sortBy [desc .score, asc .name] — the bracket
                 # contains sort key descriptors with leading dots, which the
                 # expression parser can't handle. Skip the bracket contents.
