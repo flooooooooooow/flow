@@ -707,6 +707,7 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
                     let pfn: i32 = flowc_tc_unwrap_fn(arena, prev)
                     if pfn != AST_NONE and arena.nodes[pfn].c != AST_NONE {
                         if flowc_tc_span_eq(ctx[0].src, ns, ne, arena.nodes[pfn].name_start, arena.nodes[pfn].name_end) == 1 {
+                            flowc_tc_note(ctx, "flowc tc: duplicate function name (overloads not supported)", ns, ne)
                             flowc_tc_err(ctx)
                         }
                     }
