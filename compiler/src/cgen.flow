@@ -400,6 +400,19 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
     let ns: i32 = arena.nodes[ty].name_start
     let ne: i32 = arena.nodes[ty].name_end
     let inner: i32 = arena.nodes[ty].a
+    # &[T] or &mut [T] → the & is stripped, leaving [T] with no name span.
+    # Treat as span<T>. Only match when the type has an inner type and no
+    # name, and the inner type is a basic type (not a function pointer etc).
+    if inner != AST_NONE and ns == 0 and ne == 0 and arena.nodes[ty].ival == 0 {
+        if arena.nodes[inner].kind == AST_TYPE {
+            # Inner is itself a type node (e.g. i32). Check it has a name.
+            if arena.nodes[inner].name_start > 0 {
+                flowc_cgen_puts(w, "flowc_span_")
+                flowc_cgen_emit_type(w, arena, src, inner)
+                return
+            }
+        }
+    }
     if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "ptr") == 1 {
         flowc_cgen_emit_type(w, arena, src, inner)
         flowc_cgen_putc(w, 42)
@@ -416,6 +429,12 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
     if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "array") == 1 and arena.nodes[ty].ival > 0 {
         flowc_cgen_emit_type(w, arena, src, inner)
         flowc_cgen_putc(w, 42)
+        return
+    }
+    # span<T> → flowc_span_T (a struct with data pointer + len).
+    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "span") == 1 {
+        flowc_cgen_puts(w, "flowc_span_")
+        flowc_cgen_emit_type(w, arena, src, inner)
         return
     }
     if flowc_cgen_is_struct_type(arena, src, ty) == 1 {
@@ -1168,6 +1187,44 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_INDEX {
+        if arena.nodes[id].ival == 1 {
+            # Slice: xs[a..b] → (flowc_span_T){ xs + a, b - a }
+            # or xs[a..] → (flowc_span_T){ xs + a, n - a }
+            # For Stage-A, emit a span construction. The element type is
+            # unknown here, so use int32_t as the default.
+            flowc_cgen_puts(w, "((flowc_span_int32_t){ (int32_t*)")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, " + ")
+            if arena.nodes[id].b != AST_NONE {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            } else {
+                flowc_cgen_puts(w, "0")
+            }
+            flowc_cgen_puts(w, ", ")
+            if arena.nodes[id].c != AST_NONE {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
+                flowc_cgen_puts(w, " - ")
+                if arena.nodes[id].b != AST_NONE {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                } else {
+                    flowc_cgen_puts(w, "0")
+                }
+            } else {
+                # xs[a..] → length = sizeof(xs)/sizeof(xs[0]) - a
+                flowc_cgen_puts(w, "(int32_t)(sizeof(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ")/sizeof((")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ")[0])) - ")
+                if arena.nodes[id].b != AST_NONE {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                } else {
+                    flowc_cgen_puts(w, "0")
+                }
+            }
+            flowc_cgen_puts(w, "})")
+            return
+        }
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_putc(w, 91)
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
@@ -1182,6 +1239,16 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "print") == 1 {
             flowc_cgen_emit_print_intrinsic(w, arena, src, id, 0)
+            return
+        }
+        # len(span) → (span).len
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "len") == 1 {
+            flowc_cgen_putc(w, 40)
+            let mut arg: i32 = arena.nodes[id].a
+            if arg != AST_NONE {
+                flowc_cgen_emit_expr(w, arena, src, arg)
+            }
+            flowc_cgen_puts(w, ").len")
             return
         }
         # Complex constructors: c64(re, im) → ((float)(re) + (float)(im) * I)
@@ -1303,6 +1370,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_FIELD_ACCESS {
         # (base).field
+        # Special case: .len on a span → (base).len
         flowc_cgen_putc(w, 40)
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_putc(w, 41)
@@ -3020,6 +3088,32 @@ export function flowc_cgen_emit_sigs(
             flowc_cgen_puts(&w, ";\n")
         }
         item = arena.nodes[item].next
+    }
+
+    # Pass 1.5: emit span typedefs by scanning all AST_TYPE nodes for span<T>.
+    # Use guard macros for dedup since inner type nodes differ across modules.
+    let mut ti: i32 = 0
+    while ti < arena.len {
+        if arena.nodes[ti].kind == AST_TYPE {
+            let tns: i32 = arena.nodes[ti].name_start
+            let tne: i32 = arena.nodes[ti].name_end
+            if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
+                let inner: i32 = arena.nodes[ti].a
+                if inner != AST_NONE {
+                    # Emit with guard macro: #ifndef FLOWC_SPAN_int32_t
+                    flowc_cgen_puts(&w, "#ifndef FLOWC_SPAN_")
+                    flowc_cgen_emit_type(&w, arena, src, inner)
+                    flowc_cgen_puts(&w, "\n#define FLOWC_SPAN_")
+                    flowc_cgen_emit_type(&w, arena, src, inner)
+                    flowc_cgen_puts(&w, "\ntypedef struct { ")
+                    flowc_cgen_emit_type(&w, arena, src, inner)
+                    flowc_cgen_puts(&w, "* data; int32_t len; } flowc_span_")
+                    flowc_cgen_emit_type(&w, arena, src, inner)
+                    flowc_cgen_puts(&w, ";\n#endif\n")
+                }
+            }
+        }
+        ti = ti + 1
     }
 
     # Pass 2: consts (export const is AST_CONST with ival=1, not wrapped)
