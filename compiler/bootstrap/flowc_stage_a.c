@@ -5914,6 +5914,22 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_putc((&w), 10);
   flowc_cgen_puts((&w), "#define __flow_dbg(x) (__extension__ ({ int32_t __flow_dbg_v = (x); fprintf(stderr, \"dbg: %s = %d\\n\", #x, __flow_dbg_v); __flow_dbg_v; }))\n");
   flowc_cgen_putc((&w), 10);
+  flowc_cgen_puts((&w), "#include <sys/stat.h>\n");
+  flowc_cgen_puts((&w), "void* flowc_io_fopen(const char* path, const char* mode) { return fopen(path, mode); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_fclose(void* fp) { return fclose(fp); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_fread(uint8_t* buf, int32_t size, int32_t n, void* fp) { return fread(buf, size, n, fp); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_fwrite(uint8_t* buf, int32_t size, int32_t n, void* fp) { return fwrite(buf, size, n, fp); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_fseek(void* fp, int64_t offset, int32_t whence) { return fseek(fp, offset, whence); }\n");
+  flowc_cgen_puts((&w), "int64_t flowc_io_ftell(void* fp) { return ftell(fp); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_read_file(const char* path, uint8_t* buf, int32_t cap) { void* fp = fopen(path, \"rb\"); if (fp == 0) { return -1; } if (cap <= 0) { fclose(fp); return 0; } int32_t n = fread(buf, 1, cap, fp); fclose(fp); return n < 0 ? -1 : n; }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_write_file(const char* path, uint8_t* buf, int32_t n) { void* fp = fopen(path, \"wb\"); if (fp == 0) { return -1; } if (n <= 0) { fclose(fp); return 0; } int32_t w = fwrite(buf, 1, n, fp); fclose(fp); return w != n ? -1 : 0; }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_remove(const char* path) { return remove(path); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_mkdir(const char* path) { return mkdir(path, 493); }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_exists(const char* path) { struct stat st; return stat(path, &st) == 0 ? 1 : 0; }\n");
+  flowc_cgen_puts((&w), "int64_t flowc_io_file_size(const char* path) { void* fp = fopen(path, \"rb\"); if (fp == 0) { return -1; } fseek(fp, 0, 2); int64_t sz = ftell(fp); fclose(fp); return sz; }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_popen_read(const char* cmd, uint8_t* buf, int32_t cap) { void* fp = popen(cmd, \"r\"); if (fp == 0) { return -1; } if (cap <= 0) { pclose(fp); return 0; } int32_t n = fread(buf, 1, cap, fp); pclose(fp); return n < 0 ? -1 : n; }\n");
+  flowc_cgen_puts((&w), "int32_t flowc_io_system(const char* cmd) { return system(cmd); }\n");
+  flowc_cgen_putc((&w), 10);
 }
   int32_t item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
