@@ -60,9 +60,9 @@ them as part of Phase D; call them via the escape hatch:
 | Repo stats counter | [`scripts/tools/repo_stats/main.flow`](../../scripts/tools/repo_stats/main.flow) via [`scripts/update_repo_stats.sh`](../../scripts/update_repo_stats.sh) (git dump stays in shell) |
 | Claim Coordinates | [`compiler/src/claim_address.flow`](../../compiler/src/claim_address.flow) |
 | Claim path + fingerprint | [`compiler/src/claim_path.flow`](../../compiler/src/claim_path.flow) |
-| Math prose (core) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow) |
+| Math prose (**complete**) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow) — the whole of `math_prose.py`: coordinates and tier openings, plus `flowc_flow_expr_to_mathematical_english` / `flowc_flow_expr_to_latex` / `flowc_geometry_expr_to_latex` / `flowc_analysis_expr_to_latex` / `flowc_invoke_premise_mathematical`. Regex replaced by hand-written single-pass scans. Gated by [`parity_math_prose_expr.py`](../../compiler/scripts/parity_math_prose_expr.py) |
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
-| `flow know` helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow) — normalize/qualify/match/print + theorem-header scan |
+| `flow know` helpers + **index and rendering** | [`compiler/src/know.flow`](../../compiler/src/know.flow) — normalize/qualify/match/print, plus `flowc_default_search_roots` / `flowc_claim_index_keys` / `flowc_lookup_matches` / `flowc_format_know`. The rendered entry runs the claim expression through the Flow English and LaTeX ports. Walking the search roots and reading files stay Python. Gated by [`parity_know_index.py`](../../compiler/scripts/parity_know_index.py) |
 | Require/prefer constraints | [`compiler/src/constraints.flow`](../../compiler/src/constraints.flow) — `flowc_parse_require` / `flowc_parse_prefer` / tighter-value picker |
 | Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow) — `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
 | MISRA/CERT C scanner | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow) — `flowc_scan_c_source` flags heap/stdio/abort calls |
@@ -74,7 +74,7 @@ them as part of Phase D; call them via the escape hatch:
 | LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow) — `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` (markdown hover stays Python) |
 | LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow) — `flowc_receiver_before_dot` / `flowc_field_access_at` (URI parsing and typecheck stay Python) |
 | Geometry diagram helpers | [`compiler/src/geometry_diagram.flow`](../../compiler/src/geometry_diagram.flow) — `flowc_svg_escape` / `flowc_vec2_unit` / `flowc_lerp` (full SVG rendering stays Python) |
-| Proof document formatting | [`compiler/src/proof_document.flow`](../../compiler/src/proof_document.flow) — `flowc_circled` / `flowc_step_label_latex` / `flowc_fmt_refs` / `flowc_from_refs` (full document construction stays Python) |
+| Proof document formatting + **parsing** | [`compiler/src/proof_document.flow`](../../compiler/src/proof_document.flow) — `flowc_circled` / `flowc_step_label_latex` / `flowc_fmt_refs` / `flowc_from_refs` / `flowc_under_refs` / `flowc_slug_label`, plus the text half of `parse_proof_file`: `flowc_proof_meta_key` / `flowc_proof_meta_value` / `flowc_extract_brace_body` / `flowc_extract_brace_end` / `flowc_proof_step_kind` / `flowc_proof_step_text` / `flowc_proof_step_detail` / `flowc_proof_claim_from_therefore` / `flowc_latex_escape` / `flowc_latex_escape_params`, and the per-item renderers `flowc_claim_path_phrase` / `flowc_natural_claim_sentence` / `flowc_facet_title` / `flowc_natural_let` / `flowc_theorem_ref_plain` / `flowc_theorem_ref_latex` / `flowc_render_math_cell_latex` / `flowc_trace_legend_row` / `flowc_diagram_markdown_embed` / `flowc_latex_preamble`. File reading, document assembly, the theorem catalogue, and PDF stay Python. Gated by [`parity_proof_parse.py`](../../compiler/scripts/parity_proof_parse.py) |
 | Dynamics DSL line helpers | [`compiler/src/dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow) — `flowc_strip_comments` / `flowc_strip_dynamics_namespace` (full DSL parsing and expansion stay Python) |
 | LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow) — `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` (full LSP protocol stays Python) |
 | DSL detection | [`compiler/src/dsl_detect.flow`](../../compiler/src/dsl_detect.flow) — `flowc_has_field_dsl` / `flowc_has_dynamics_dsl` / `flowc_has_fill_shader_dsl` (full DSL parsing and expansion stay Python) |
@@ -95,9 +95,32 @@ loudly if `update_repo_stats.py` disagrees with what Flow wrote.
 | Still rewrite priority | Target |
 |---|---|
 | Grow parser/cgen | more of production C path |
-| Full proof parse / `flow doc proof` | remaining `proof_document.py` |
-| Expr→English / LaTeX | remaining `math_prose.py` |
-| Recursive claim index over disk | wrap `know` + `fileio` + directory walk |
+| `flow doc proof` rendering | remaining `proof_document.py` — the parse helpers have landed; document assembly, Markdown/LaTeX rendering, and PDF are next |
+| Recursive claim index over disk | the key aliases, lookup predicate, and rendering have landed; what remains is the directory walk itself (`fileio` + `popen("find")`, as `update_repo_stats.sh` does for git) |
+
+## Porting notes
+
+**Module-private helpers share one namespace inside a bundle.** Stage-A emits a
+non-exported `function` under its plain name, so two modules that each define
+their own `str_append` collide the moment an `import` puts them in the same
+bundle. Nine modules under `compiler/src` defined one. The audit catches it as
+`redefinition of 'str_append'` in the emitted C.
+
+Prefix private helpers with the module (`mp_`, `pd_`, `kn_`) before adding an
+import. `math_prose.flow`, `proof_document.flow`, and `know.flow` are already
+prefixed. `attributes`, `conventions`, `geometry_diagram`, `misra_scan`,
+`proof_sub`, `proof_kernel`, and `claim_path` still define a bare
+`str_append`, so importing any two of those into one bundle will fail until
+they are renamed or a shared `flowc_str_append` moves into `strutil.flow`.
+
+**Regex has no Stage-A equivalent.** Every `re.sub` becomes a hand-written
+left-to-right scan that advances past what it consumed, which is the same
+non-overlapping rule `re.sub` uses. Where Python relies on iteration order of a
+dict or a set, say so in a comment: `_latex_escape` depends on its dict order,
+and the claim index keys do not depend on set order.
+
+**Reserved words bite.** `from` and `to` are Flow keywords, so a helper ported
+from `replace(s, from, to)` needs different parameter names.
 
 ## Phases
 
@@ -114,9 +137,15 @@ FLOW_HOST=python ./flow run compiler/src/main.flow
 ./compiler/scripts/roundtrip.sh
 FLOWC_EMIT_ONLY=1 ./compiler/scripts/emit_basics.sh
 ./compiler/scripts/smoke_math_prose.sh
+python3 compiler/scripts/parity_math_prose_expr.py
+python3 compiler/scripts/parity_proof_parse.py
+python3 compiler/scripts/parity_know_index.py
 ./compiler/scripts/smoke_know.sh
 FLOW_HOST=python ./flow run examples/compilers/claim_address_demo.flow
 FLOW_HOST=python ./flow run examples/compilers/math_prose_demo.flow
+FLOW_HOST=python ./flow run examples/compilers/math_prose_expr_demo.flow
+FLOW_HOST=python ./flow run examples/compilers/proof_parse_demo.flow
+FLOW_HOST=python ./flow run examples/compilers/know_index_demo.flow
 FLOW_HOST=python ./flow run examples/compilers/know_demo.flow
 ```
 

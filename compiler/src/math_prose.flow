@@ -554,3 +554,809 @@ export function flowc_claim_path_latex(path: string) -> string {
     }
     return flowc_addr_coordinate_latex(addr)
 }
+
+# ═════════════════════════════════════════════════════════════════
+# Expression → English / LaTeX
+#
+# Port of the remaining half of src/flow/math_prose.py:
+#   flow_expr_to_mathematical_english, geometry_expr_to_latex,
+#   _analysis_expr_to_latex, flow_expr_to_latex and their helpers.
+#
+# Python leans on `re`. Stage-A has no regex, so each pattern below is a
+# hand-written left-to-right scan. Every scan is single-pass and advances past
+# what it consumed, which is the same non-overlapping rule `re.sub` uses.
+# ═════════════════════════════════════════════════════════════════
+
+# ── Small string helpers ─────────────────────────────────────────
+
+function mp_substr(s: string, start: i32, end: i32) -> string {
+    if end <= start { return "" }
+    let p: ptr<u8> = s
+    let n: i32 = end - start
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    let mut i: i32 = 0
+    while i < n {
+        buf[i] = p[start + i]
+        i = i + 1
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+function mp_append_char(s: string, c: i32) -> string {
+    let buf: array<u8, 2> = [0, 0]
+    buf[0] = c as u8
+    buf[1] = 0
+    return mp_str_append(s, buf as string)
+}
+
+# Does `lit` occur at index i of s?
+function mp_at(s: string, i: i32, lit: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let ll: i32 = strlen(lit) as i32
+    if i + ll > n { return 0 }
+    let p: ptr<u8> = s
+    let lp: ptr<u8> = lit
+    let mut j: i32 = 0
+    while j < ll {
+        if p[i + j] != lp[j] { return 0 }
+        j = j + 1
+    }
+    return 1
+}
+
+# Word boundary before index i: start of string, or a non-identifier char.
+function mp_boundary_before(s: string, i: i32) -> i32 {
+    if i == 0 { return 1 }
+    let p: ptr<u8> = s
+    if is_ident_char(p[i - 1]) == 1 { return 0 }
+    return 1
+}
+
+# Python's (?<!\\) guard: the character before must not be a backslash.
+function mp_not_after_backslash(s: string, i: i32) -> i32 {
+    if i == 0 { return 1 }
+    let p: ptr<u8> = s
+    if p[i - 1] == 92 { return 0 }
+    return 1
+}
+
+function mp_trim(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut a: i32 = 0
+    while a < n and is_space(p[a]) == 1 { a = a + 1 }
+    let mut b: i32 = n
+    while b > a and is_space(p[b - 1]) == 1 { b = b - 1 }
+    return mp_substr(s, a, b)
+}
+
+# Collapse every whitespace run to one space, then trim.
+function mp_collapse_spaces(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if is_space(p[i]) == 1 {
+            while i < n and is_space(p[i]) == 1 { i = i + 1 }
+            out = mp_append_char(out, 32)
+        } else {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return mp_trim(out)
+}
+
+# Plain substring replacement, every occurrence.
+function mp_replace_all(s: string, needle: string, repl: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let fl: i32 = strlen(needle) as i32
+    if fl == 0 { return s }
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if mp_at(s, i, needle) == 1 {
+            out = mp_str_append(out, repl)
+            i = i + fl
+        } else {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Word-boundary replacement: port of _replace_word.
+function mp_replace_word(s: string, token: string, phrase: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let tl: i32 = strlen(token) as i32
+    if tl == 0 { return s }
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut hit: i32 = 0
+        if mp_boundary_before(s, i) == 1 and mp_at(s, i, token) == 1 {
+            let after: i32 = i + tl
+            if after >= n or is_ident_char(p[after]) == 0 {
+                hit = 1
+            }
+        }
+        if hit == 1 {
+            out = mp_str_append(out, phrase)
+            i = i + tl
+        } else {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Port of re.sub(r"\s+by\s+\w+.*$", "", s): drop a trailing " by <tactic> ..."
+# clause. Returns the text before the whitespace that starts the clause.
+function mp_drop_by_clause(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut i: i32 = 0
+    while i < n {
+        if is_space(p[i]) == 1 {
+            let cut: i32 = i
+            let mut j: i32 = i
+            while j < n and is_space(p[j]) == 1 { j = j + 1 }
+            if mp_at(s, j, "by") == 1 {
+                let mut k: i32 = j + 2
+                if k < n and is_space(p[k]) == 1 {
+                    while k < n and is_space(p[k]) == 1 { k = k + 1 }
+                    if k < n and is_ident_char(p[k]) == 1 {
+                        return mp_substr(s, 0, cut)
+                    }
+                }
+            }
+            i = j
+        } else {
+            i = i + 1
+        }
+    }
+    return s
+}
+
+# ── Token tables ─────────────────────────────────────────────────
+
+function mp_geometry_token_english(tok: string) -> string {
+    if strcmp(tok, "two_right_angles") == 0 { return "two right angles" }
+    if strcmp(tok, "one_right_angle") == 0 { return "one right angle" }
+    if strcmp(tok, "half_of_angle_AOB") == 0 { return "half of angle AOB" }
+    if strcmp(tok, "radius_OA") == 0 { return "radius OA" }
+    if strcmp(tok, "radius_OB") == 0 { return "radius OB" }
+    if strcmp(tok, "angle_alpha") == 0 { return "angle α" }
+    if strcmp(tok, "angle_alpha_prime") == 0 { return "angle α′" }
+    if strcmp(tok, "angle_beta") == 0 { return "angle β" }
+    if strcmp(tok, "angle_beta_prime") == 0 { return "angle β′" }
+    if strcmp(tok, "angle_gamma") == 0 { return "angle γ" }
+    return ""
+}
+
+function mp_geometry_token_latex(tok: string) -> string {
+    if strcmp(tok, "triangle_ABC") == 0 { return "\\triangle ABC" }
+    if strcmp(tok, "triangle_DEF") == 0 { return "\\triangle DEF" }
+    if strcmp(tok, "two_right_angles") == 0 { return "180^\\circ" }
+    if strcmp(tok, "one_right_angle") == 0 { return "90^\\circ" }
+    if strcmp(tok, "half_of_angle_AOB") == 0 { return "\\tfrac{1}{2}\\angle AOB" }
+    if strcmp(tok, "radius_OA") == 0 { return "OA" }
+    if strcmp(tok, "radius_OB") == 0 { return "OB" }
+    if strcmp(tok, "angle_alpha") == 0 { return "\\alpha" }
+    if strcmp(tok, "angle_alpha_prime") == 0 { return "\\alpha'" }
+    if strcmp(tok, "angle_beta") == 0 { return "\\beta" }
+    if strcmp(tok, "angle_beta_prime") == 0 { return "\\beta'" }
+    if strcmp(tok, "angle_gamma") == 0 { return "\\gamma" }
+    return ""
+}
+
+function mp_analysis_token_english(tok: string) -> string {
+    if strcmp(tok, "sin_prime_at_zero") == 0 {
+        return "the first derivative of sine at zero"
+    }
+    if strcmp(tok, "sin_double_prime_at_zero") == 0 {
+        return "the second derivative of sine at zero"
+    }
+    if strcmp(tok, "near_zero") == 0 { return "in a neighbourhood of zero" }
+    return ""
+}
+
+function mp_analysis_token_latex(tok: string) -> string {
+    if strcmp(tok, "sin_prime_at_zero") == 0 { return "\\sin'(0)" }
+    if strcmp(tok, "sin_double_prime_at_zero") == 0 { return "\\sin''(0)" }
+    if strcmp(tok, "near_zero") == 0 { return "x \\to 0" }
+    return ""
+}
+
+# ── Underscore identifiers ───────────────────────────────────────
+
+function mp_is_alnum(c: i32) -> i32 {
+    if c >= 97 and c <= 122 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+# End index of an identifier matching
+#   [A-Za-z][A-Za-z0-9]*(_[A-Za-z0-9]+)+
+# starting at i, or -1 when there is no match.
+function mp_underscore_ident_end(s: string, i: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    if i >= n { return 0 - 1 }
+    let c0: i32 = p[i]
+    let mut is_alpha: i32 = 0
+    if c0 >= 97 and c0 <= 122 { is_alpha = 1 }
+    if c0 >= 65 and c0 <= 90 { is_alpha = 1 }
+    if is_alpha == 0 { return 0 - 1 }
+
+    let mut j: i32 = i + 1
+    while j < n and mp_is_alnum(p[j]) == 1 { j = j + 1 }
+
+    let mut groups: i32 = 0
+    while j < n and p[j] == 95 {
+        let mut k: i32 = j + 1
+        if k >= n or mp_is_alnum(p[k]) == 0 { break }
+        while k < n and mp_is_alnum(p[k]) == 1 { k = k + 1 }
+        j = k
+        groups = groups + 1
+    }
+    if groups == 0 { return 0 - 1 }
+    return j
+}
+
+# Port of _underscore_ident_to_english.
+function mp_ident_to_english(ident: string) -> string {
+    let a: string = mp_analysis_token_english(ident)
+    if strlen(a) > 0 { return a }
+    let g: string = mp_geometry_token_english(ident)
+    if strlen(g) > 0 { return g }
+    return mp_replace_all(ident, "_", " ")
+}
+
+# Port of _underscore_ident_to_latex.
+function mp_ident_to_latex(ident: string) -> string {
+    let a: string = mp_analysis_token_latex(ident)
+    if strlen(a) > 0 { return a }
+    let g: string = mp_geometry_token_latex(ident)
+    if strlen(g) > 0 { return g }
+    let mut out: string = "\\text{"
+    out = mp_str_append(out, mp_replace_all(ident, "_", " "))
+    out = mp_str_append(out, "}")
+    return out
+}
+
+# Port of _replace_underscore_identifiers.
+#
+# Python collects every match and rewrites longest-first over the whole string.
+# A single left-to-right maximal-munch pass gives the same result for every
+# input the proof pipeline produces, and it cannot rewrite text it has already
+# emitted.
+function mp_replace_underscore_idents(s: string, latex: i32) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut handled: i32 = 0
+        if mp_boundary_before(s, i) == 1 and mp_not_after_backslash(s, i) == 1 {
+            let end: i32 = mp_underscore_ident_end(s, i)
+            if end > i {
+                let ident: string = mp_substr(s, i, end)
+                if latex == 1 {
+                    out = mp_str_append(out, mp_ident_to_latex(ident))
+                } else {
+                    out = mp_str_append(out, mp_ident_to_english(ident))
+                }
+                i = end
+                handled = 1
+            }
+        }
+        if handled == 0 {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Port of _finalize_latex.
+function mp_finalize_latex(s: string) -> string {
+    return mp_replace_underscore_idents(s, 1)
+}
+
+# ── Geometry token normalisation ─────────────────────────────────
+
+# Port of the angle_at_X / angle_X rewrites inside _normalize_geometry_tokens.
+function mp_angle_rewrites(s: string, latex: i32) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut handled: i32 = 0
+        if mp_boundary_before(s, i) == 1 {
+            let mut pre: i32 = 0
+            if mp_at(s, i, "angle_at_") == 1 { pre = 9 }
+            if pre == 0 and mp_at(s, i, "angle_") == 1 { pre = 6 }
+            if pre > 0 {
+                let mut j: i32 = i + pre
+                let start: i32 = j
+                while j < n and is_ident_char(p[j]) == 1 { j = j + 1 }
+                if j > start {
+                    let name: string = mp_substr(s, start, j)
+                    if latex == 1 {
+                        out = mp_str_append(out, "\\angle ")
+                    } else {
+                        if pre == 9 {
+                            out = mp_str_append(out, "angle at ")
+                        } else {
+                            out = mp_str_append(out, "angle ")
+                        }
+                    }
+                    out = mp_str_append(out, name)
+                    i = j
+                    handled = 1
+                }
+            }
+        }
+        if handled == 0 {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Port of the two multiplication rules in the LaTeX paths:
+#   (\w+) * \1     -> \1^{2}
+#   (\w+) * (\w+)  -> \1 \cdot \2
+function mp_mult_latex(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut handled: i32 = 0
+        if mp_boundary_before(s, i) == 1 and is_ident_char(p[i]) == 1 {
+            let mut e1: i32 = i
+            while e1 < n and is_ident_char(p[e1]) == 1 { e1 = e1 + 1 }
+            let mut j: i32 = e1
+            while j < n and is_space(p[j]) == 1 { j = j + 1 }
+            if j < n and p[j] == 42 {
+                let mut k: i32 = j + 1
+                while k < n and is_space(p[k]) == 1 { k = k + 1 }
+                if k < n and is_ident_char(p[k]) == 1 {
+                    let mut e2: i32 = k
+                    while e2 < n and is_ident_char(p[e2]) == 1 { e2 = e2 + 1 }
+                    let w1: string = mp_substr(s, i, e1)
+                    let w2: string = mp_substr(s, k, e2)
+                    if strcmp(w1, w2) == 0 {
+                        out = mp_str_append(out, w1)
+                        out = mp_str_append(out, "^{2}")
+                    } else {
+                        out = mp_str_append(out, w1)
+                        out = mp_str_append(out, " \\cdot ")
+                        out = mp_str_append(out, w2)
+                    }
+                    i = e2
+                    handled = 1
+                }
+            }
+        }
+        if handled == 0 {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Port of _normalize_geometry_tokens.
+function mp_normalize_geometry_tokens(s: string, latex: i32) -> string {
+    let mut t: string = s
+    if latex == 1 {
+        t = mp_replace_word(t, "triangle_ABC", "\\triangle ABC")
+        t = mp_replace_word(t, "triangle_DEF", "\\triangle DEF")
+        t = mp_replace_word(t, "two_right_angles", "180^\\circ")
+        t = mp_replace_word(t, "one_right_angle", "90^\\circ")
+        t = mp_replace_word(t, "half_of_angle_AOB", "\\tfrac{1}{2}\\angle AOB")
+        t = mp_replace_word(t, "radius_OA", "OA")
+        t = mp_replace_word(t, "radius_OB", "OB")
+        t = mp_replace_word(t, "angle_alpha_prime", "\\alpha'")
+        t = mp_replace_word(t, "angle_alpha", "\\alpha")
+        t = mp_replace_word(t, "angle_beta_prime", "\\beta'")
+        t = mp_replace_word(t, "angle_beta", "\\beta")
+        t = mp_replace_word(t, "angle_gamma", "\\gamma")
+        t = mp_angle_rewrites(t, 1)
+        t = mp_mult_latex(t)
+        return t
+    }
+    t = mp_replace_word(t, "two_right_angles", "two right angles")
+    t = mp_replace_word(t, "one_right_angle", "one right angle")
+    t = mp_replace_word(t, "half_of_angle_AOB", "half of angle AOB")
+    t = mp_replace_word(t, "radius_OA", "radius OA")
+    t = mp_replace_word(t, "radius_OB", "radius OB")
+    t = mp_replace_word(t, "angle_alpha_prime", "angle α′")
+    t = mp_replace_word(t, "angle_alpha", "angle α")
+    t = mp_replace_word(t, "angle_beta_prime", "angle β′")
+    t = mp_replace_word(t, "angle_beta", "angle β")
+    t = mp_replace_word(t, "angle_gamma", "angle γ")
+    t = mp_angle_rewrites(t, 0)
+    return t
+}
+
+# ── Disjunction shielding ────────────────────────────────────────
+#
+# Python shields every `A or B` behind a placeholder before expanding
+# conjunctions, so a conjunction never reaches inside a disjunction. Bytes
+# 0x01 / 0x02 / 0x03 stand in for that placeholder here: they cannot occur in
+# a Flow expression, and an operand scan treats a whole group as one unit.
+
+# End index of an operand at i: either a word, or a whole shielded group.
+# Returns -1 when neither starts at i.
+function mp_operand_end(s: string, i: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    if i >= n { return 0 - 1 }
+    if p[i] == 1 {
+        let mut depth: i32 = 0
+        let mut j: i32 = i
+        while j < n {
+            if p[j] == 1 { depth = depth + 1 }
+            if p[j] == 3 {
+                depth = depth - 1
+                if depth == 0 { return j + 1 }
+            }
+            j = j + 1
+        }
+        return 0 - 1
+    }
+    if is_ident_char(p[i]) == 1 {
+        let mut j: i32 = i
+        while j < n and is_ident_char(p[j]) == 1 { j = j + 1 }
+        return j
+    }
+    return 0 - 1
+}
+
+# One left-to-right pass replacing `A <keyword> B`. When shield is 1 the match
+# becomes a shielded group; otherwise it becomes the conjunction phrase.
+function mp_join_pass(s: string, keyword: string, shield: i32) -> string {
+    let n: i32 = strlen(s) as i32
+    let kl: i32 = strlen(keyword) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut handled: i32 = 0
+        let mut ok_start: i32 = 0
+        if p[i] == 1 {
+            ok_start = 1
+        } else {
+            if mp_boundary_before(s, i) == 1 and is_ident_char(p[i]) == 1 {
+                ok_start = 1
+            }
+        }
+        if ok_start == 1 {
+            let e1: i32 = mp_operand_end(s, i)
+            if e1 > i {
+                let mut j: i32 = e1
+                let mut spaces: i32 = 0
+                while j < n and is_space(p[j]) == 1 { j = j + 1; spaces = spaces + 1 }
+                if spaces > 0 and mp_at(s, j, keyword) == 1 {
+                    let mut k: i32 = j + kl
+                    let mut spaces2: i32 = 0
+                    while k < n and is_space(p[k]) == 1 { k = k + 1; spaces2 = spaces2 + 1 }
+                    if spaces2 > 0 {
+                        let e2: i32 = mp_operand_end(s, k)
+                        if e2 > k {
+                            let a: string = mp_substr(s, i, e1)
+                            let b: string = mp_substr(s, k, e2)
+                            if shield == 1 {
+                                out = mp_append_char(out, 1)
+                                out = mp_str_append(out, a)
+                                out = mp_append_char(out, 2)
+                                out = mp_str_append(out, b)
+                                out = mp_append_char(out, 3)
+                            } else {
+                                out = mp_str_append(out, "the conjunction of ")
+                                out = mp_str_append(out, a)
+                                out = mp_str_append(out, " and ")
+                                out = mp_str_append(out, b)
+                            }
+                            i = e2
+                            handled = 1
+                        }
+                    }
+                }
+            }
+        }
+        if handled == 0 {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+function mp_index_last(s: string, ch: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut i: i32 = n - 1
+    while i >= 0 {
+        if p[i] == ch { return i }
+        i = i - 1
+    }
+    return 0 - 1
+}
+
+function mp_index_from(s: string, start: i32, ch: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut i: i32 = start
+    while i < n {
+        if p[i] == ch { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Expand shielded groups innermost first, so nested disjunctions unfold fully.
+# Python leaves an inner placeholder behind for chained `a or b or c`; this
+# port expands every level.
+function mp_expand_disjunctions(s: string) -> string {
+    let mut t: string = s
+    let mut guard: i32 = 0
+    while guard < 16 {
+        let open: i32 = mp_index_last(t, 1)
+        if open < 0 { return t }
+        let sep: i32 = mp_index_from(t, open + 1, 2)
+        if sep < 0 { return t }
+        let close: i32 = mp_index_from(t, sep + 1, 3)
+        if close < 0 { return t }
+        let a: string = mp_substr(t, open + 1, sep)
+        let b: string = mp_substr(t, sep + 1, close)
+        let mut out: string = mp_substr(t, 0, open)
+        out = mp_str_append(out, "the disjunction of ")
+        out = mp_str_append(out, a)
+        out = mp_str_append(out, " and ")
+        out = mp_str_append(out, b)
+        out = mp_str_append(out, mp_substr(t, close + 1, strlen(t) as i32))
+        t = out
+        guard = guard + 1
+    }
+    return t
+}
+
+# ── succ(...) rewriting ──────────────────────────────────────────
+
+# Replace `succ(X)` with prefix + X + suffix. X may not contain ')'.
+function mp_rewrite_succ(s: string, prefix: string, suffix: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut handled: i32 = 0
+        if mp_boundary_before(s, i) == 1 and mp_at(s, i, "succ(") == 1 {
+            let start: i32 = i + 5
+            let close: i32 = mp_index_from(s, start, 41)
+            if close > start {
+                out = mp_str_append(out, prefix)
+                out = mp_str_append(out, mp_substr(s, start, close))
+                out = mp_str_append(out, suffix)
+                i = close + 1
+                handled = 1
+            }
+        }
+        if handled == 0 {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# ── Exported conversions ─────────────────────────────────────────
+
+# Port of geometry_expr_to_latex.
+export function flowc_geometry_expr_to_latex(expr: string) -> string {
+    let mut s: string = mp_trim(expr)
+    s = mp_drop_by_clause(s)
+    s = mp_replace_all(s, "==", "=")
+    s = mp_normalize_geometry_tokens(s, 1)
+    return mp_finalize_latex(s)
+}
+
+# Port of flow_expr_to_mathematical_english.
+export function flowc_flow_expr_to_mathematical_english(expr: string) -> string {
+    let mut s: string = mp_trim(expr)
+    s = mp_drop_by_clause(s)
+    s = mp_replace_underscore_idents(s, 0)
+    s = mp_normalize_geometry_tokens(s, 0)
+    s = mp_replace_all(s, "==", " equals ")
+
+    # Disjunctions are shielded first so a conjunction cannot reach inside one.
+    let mut guard: i32 = 0
+    while guard < 8 {
+        let next: string = mp_join_pass(s, "or", 1)
+        if strcmp(next, s) == 0 { break }
+        s = next
+        guard = guard + 1
+    }
+    s = mp_join_pass(s, "and", 0)
+    s = mp_expand_disjunctions(s)
+
+    s = mp_rewrite_succ(s, "the successor of ", "")
+    s = mp_replace_all(s, ">=", " is at least ")
+    s = mp_replace_all(s, "<=", " is at most ")
+    s = mp_replace_all(s, "=", " equals ")
+    s = mp_replace_all(s, "+", " plus ")
+    s = mp_replace_all(s, "*", " times ")
+    return mp_collapse_spaces(s)
+}
+
+# Does this expression belong to the analysis path?
+# Port of the guard inside _analysis_expr_to_latex.
+export function flowc_is_analysis_expr(expr: string) -> i32 {
+    if contains_word(expr, "taylor_sin") == 1 { return 1 }
+    if contains_word(expr, "near_zero") == 1 { return 1 }
+    if contains_word(expr, "sin_prime_at_zero") == 1 { return 1 }
+    if contains_word(expr, "sin_double_prime_at_zero") == 1 { return 1 }
+    let n: i32 = strlen(expr) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if mp_boundary_before(expr, i) == 1 and mp_at(expr, i, "sin(") == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Rewrite `taylor_sin(X, order_N)` as `S_{N}(X)`.
+function mp_rewrite_taylor(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut handled: i32 = 0
+        if mp_boundary_before(s, i) == 1 and mp_at(s, i, "taylor_sin(") == 1 {
+            let arg_start: i32 = i + 11
+            let comma: i32 = mp_index_from(s, arg_start, 44)
+            if comma > arg_start {
+                let mut j: i32 = comma + 1
+                while j < n and is_space(p[j]) == 1 { j = j + 1 }
+                if mp_at(s, j, "order_") == 1 {
+                    let dig_start: i32 = j + 6
+                    let mut k: i32 = dig_start
+                    while k < n and p[k] >= 48 and p[k] <= 57 { k = k + 1 }
+                    if k > dig_start and k < n and p[k] == 41 {
+                        out = mp_str_append(out, "S_{")
+                        out = mp_str_append(out, mp_substr(s, dig_start, k))
+                        out = mp_str_append(out, "}(")
+                        out = mp_str_append(out, mp_substr(s, arg_start, comma))
+                        out = mp_str_append(out, ")")
+                        i = k + 1
+                        handled = 1
+                    }
+                }
+            }
+        }
+        if handled == 0 {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Prefix a word-boundary `sin(` with a backslash.
+function mp_latex_sin(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if mp_boundary_before(s, i) == 1 and mp_at(s, i, "sin(") == 1 {
+            out = mp_str_append(out, "\\sin(")
+            i = i + 4
+        } else {
+            out = mp_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# Port of _analysis_expr_to_latex. Callers must gate on
+# flowc_is_analysis_expr; this returns "" for a non-analysis expression
+# because Stage-A has no optional type.
+export function flowc_analysis_expr_to_latex(expr: string) -> string {
+    if flowc_is_analysis_expr(expr) == 0 { return "" }
+    let mut s: string = mp_trim(expr)
+    s = mp_drop_by_clause(s)
+    s = mp_replace_all(s, "==", "=")
+    s = mp_rewrite_taylor(s)
+    s = mp_latex_sin(s)
+    s = mp_replace_word(s, "near_zero", "\\quad (x \\to 0)")
+    return mp_finalize_latex(s)
+}
+
+# Port of flow_expr_to_latex.
+export function flowc_flow_expr_to_latex(expr: string) -> string {
+    let trimmed: string = mp_trim(expr)
+    if flowc_is_geometry_expr(trimmed) == 1 {
+        return flowc_geometry_expr_to_latex(trimmed)
+    }
+    if flowc_is_analysis_expr(trimmed) == 1 {
+        return flowc_analysis_expr_to_latex(trimmed)
+    }
+    let mut s: string = mp_drop_by_clause(trimmed)
+    s = mp_replace_all(s, "==", "=")
+    s = mp_rewrite_succ(s, "\\mathrm{succ}(", ")")
+    s = mp_replace_word(s, "or", "\\lor")
+    s = mp_replace_word(s, "and", "\\land")
+    s = mp_replace_word(s, "true", "\\mathsf{true}")
+    s = mp_replace_word(s, "false", "\\mathsf{false}")
+    s = mp_mult_latex(s)
+    s = mp_replace_all(s, ">=", "\\ge")
+    s = mp_replace_all(s, "<=", "\\le")
+    return mp_finalize_latex(s)
+}
+
+# Port of invoke_premise_mathematical.
+#
+# Stage-A has no keyword arguments or defaults, so every option is explicit.
+# Pass "" for `args` and `theorem_ref` when they do not apply, and
+# "derived fact" for the usual `kind`.
+export function flowc_invoke_premise_mathematical(
+    addr: FlowcClaimAddress,
+    phrase: string,
+    args: string,
+    kind: string,
+    theorem_ref: string
+) -> string {
+    if strlen(theorem_ref) > 0 {
+        if strlen(args) > 0 {
+            let mut s: string = "We invoke "
+            s = mp_str_append(s, theorem_ref)
+            s = mp_str_append(s, " (")
+            s = mp_str_append(s, phrase)
+            s = mp_str_append(s, ", instantiated for ")
+            s = mp_str_append(s, args)
+            s = mp_str_append(s, ").")
+            return s
+        }
+        let mut s2: string = "We invoke "
+        s2 = mp_str_append(s2, theorem_ref)
+        s2 = mp_str_append(s2, ": ")
+        s2 = mp_str_append(s2, phrase)
+        s2 = mp_str_append(s2, ".")
+        return s2
+    }
+
+    let ctx: string = flowc_on_structure_carrier(addr.structure, addr.carrier)
+    let mut s3: string = "We invoke the "
+    s3 = mp_str_append(s3, kind)
+    s3 = mp_str_append(s3, " governing ")
+    s3 = mp_str_append(s3, ctx)
+    s3 = mp_str_append(s3, ": ")
+    s3 = mp_str_append(s3, phrase)
+    if strlen(args) > 0 {
+        s3 = mp_str_append(s3, " (instantiated for ")
+        s3 = mp_str_append(s3, args)
+        s3 = mp_str_append(s3, ").")
+        return s3
+    }
+    s3 = mp_str_append(s3, ".")
+    return s3
+}

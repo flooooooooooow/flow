@@ -210,6 +210,26 @@ jobs:
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
           timeout 20m ./compiler/scripts/roundtrip.sh
 
+      # Where a Flow port replaces Python that still exists, the Python stays
+      # the reference and the port is diffed against it on every run.
+      - name: math_prose expression parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_math_prose_expr.py
+
+      - name: proof parse parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_proof_parse.py
+
+      - name: know index parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_know_index.py
+
       - name: Stage flowc driver for artifact
         run: |
           mkdir -p /tmp/flowc-driver
