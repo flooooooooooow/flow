@@ -1452,6 +1452,7 @@ int32_t flowc_parse_postfix(Parser* p) {
   if (flowc_parser_span_is(p[0], bns, bne, "sortBy") == 1) {
   flowc_parser_advance(p);
   int32_t depth = 1;
+  int32_t has_desc = 0;
   while (depth > 0 && (p[0]).err == 0) {
   if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
   depth = (depth + 1);
@@ -1460,12 +1461,23 @@ int32_t flowc_parse_postfix(Parser* p) {
   depth = (depth - 1);
 }
   if (depth > 0) {
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  int32_t ts = ((p[0]).cur).start;
+  int32_t te = ((p[0]).cur).end;
+  if (flowc_parser_span_is(p[0], ts, te, "desc") == 1) {
+  has_desc = 1;
+}
+  if (flowc_parser_span_is(p[0], ts, te, "descending") == 1) {
+  has_desc = 1;
+}
+}
   flowc_parser_advance(p);
 }
 }
   if (depth == 0) {
   flowc_parser_advance(p);
 }
+  (((p[0]).arena).nodes[base]).ival = has_desc;
 } else {
   flowc_parser_advance(p);
   int32_t idx = flowc_parse_expr(p);
@@ -1861,6 +1873,7 @@ int32_t flowc_parse_apply_pipe(Parser* p, int32_t left, int32_t right) {
   (((p[0]).arena).nodes[id]).a = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, left);
   (((p[0]).arena).nodes[id]).name_start = (((p[0]).arena).nodes[name_src]).name_start;
   (((p[0]).arena).nodes[id]).name_end = (((p[0]).arena).nodes[name_src]).name_end;
+  (((p[0]).arena).nodes[id]).ival = (((p[0]).arena).nodes[name_src]).ival;
   return id;
 }
 
@@ -4589,7 +4602,7 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   return;
 }
   if (flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "sortBy") == 1) {
-  int32_t descending = 0;
+  int32_t descending = ((arena).nodes[id]).ival;
   int32_t arg = ((arena).nodes[id]).a;
   while (arg != AST_NONE) {
   if (((arena).nodes[arg]).kind == AST_IDENT) {
@@ -4599,7 +4612,7 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
   arg = ((arena).nodes[arg]).next;
 }
-  flowc_cgen_puts(w, "(flowc_sort_dispatch((void*)");
+  flowc_cgen_puts(w, "(flowc_sort_struct((void*)");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_puts(w, ", (int32_t)(sizeof(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
@@ -6528,7 +6541,8 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "static int flowc_cmp_f64(const void* a, const void* b) { double x = *(const double*)a; double y = *(const double*)b; int xu = (x != x), yu = (y != y); if (xu && yu) { union { double d; uint64_t u; } ux, uy; ux.d = x; uy.d = y; return (ux.u < uy.u) - (ux.u > uy.u); } if (xu) { union { double d; uint64_t u; } ux; ux.d = x; return (ux.u >> 63) ? -1 : 1; } if (yu) { union { double d; uint64_t u; } uy; uy.d = y; return (uy.u >> 63) ? 1 : -1; } if (x == y) { union { double d; uint64_t u; } ux, uy; ux.d = x; uy.d = y; return (ux.u < uy.u) - (ux.u > uy.u); } return (x > y) - (x < y); }\n");
   flowc_cgen_puts((&w), "static int flowc_cmp_f32(const void* a, const void* b) { float x = *(const float*)a; float y = *(const float*)b; if (x != x) return 1; if (y != y) return -1; return (x > y) - (x < y); }\n");
   flowc_cgen_puts((&w), "static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; memcpy(tmp, (char*)a + i * sz, sz); memcpy((char*)a + i * sz, (char*)a + j * sz, sz); memcpy((char*)a + j * sz, tmp, sz); i++; j--; } } return 0; }\n");
-  flowc_cgen_puts((&w), "static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { int32_t lo = 0, hi = n - 1; while (lo <= hi) { int32_t mid = lo + (hi - lo) / 2; if (a[mid] == target) return mid; if (a[mid] < target) lo = mid + 1; else hi = mid - 1; } return -1; }\n");
+  flowc_cgen_puts((&w), "static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { for (int32_t i = 0; i < n; i++) { if (a[i] == target) return i; } return -1; }\n");
+  flowc_cgen_puts((&w), "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } free(tmp); return 0; }\n");
   flowc_cgen_puts((&w), "#endif\n");
   flowc_cgen_putc((&w), 10);
 }
