@@ -862,14 +862,19 @@ function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32 {
         return right
     }
     # right is not a call: build a call with right's name and left as arg.
+    # For index nodes (e.g. sortBy[asc .key]), extract name from the base.
+    let name_src: i32 = right
+    if p[0].arena.nodes[right].kind == AST_INDEX {
+        name_src = p[0].arena.nodes[right].a
+    }
     let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CALL, 0, 0)
     if id == AST_NONE {
         p[0].err = 1
         return AST_NONE
     }
     p[0].arena.nodes[id].a = flowc_ast_chain_push(&p[0].arena, AST_NONE, left)
-    p[0].arena.nodes[id].name_start = p[0].arena.nodes[right].name_start
-    p[0].arena.nodes[id].name_end = p[0].arena.nodes[right].name_end
+    p[0].arena.nodes[id].name_start = p[0].arena.nodes[name_src].name_start
+    p[0].arena.nodes[id].name_end = p[0].arena.nodes[name_src].name_end
     return id
 }
 

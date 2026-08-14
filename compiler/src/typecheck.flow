@@ -351,6 +351,30 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "dbg") == 1 {
         return 1
     }
+    if flowc_tc_span_is(ctx.src, start, end, "find") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_new") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_send") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_recv") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_try_send") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_try_recv") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_close") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_destroy") == 1 {
+        return 1
+    }
     let mut i: i32 = ctx.nlen
     while i > 0 {
         i = i - 1
@@ -443,6 +467,14 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
+        # Sort DSL modifiers used as identifiers in pipe expressions.
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "descending") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "ascending") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "unique") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "adaptive") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "general") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "asc") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "desc") == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown idents
             # (e.g. function pointers declared in extern blocks).
