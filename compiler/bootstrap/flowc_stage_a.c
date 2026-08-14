@@ -6660,6 +6660,48 @@ int32_t flowc_tc_lookup_fn(TcCtx ctx, int32_t start, int32_t end) {
   if (flowc_tc_span_is((ctx).src, start, end, "puts") == 1) {
   return 1;
 }
+  if (flowc_tc_span_is((ctx).src, start, end, "sort") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "sortBy") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "len") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "push") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "pop") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "map") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "filter") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "reduce") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "fold") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "reverse") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "keys") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "values") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "assert") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is((ctx).src, start, end, "dbg") == 1) {
+  return 1;
+}
   int32_t i = (ctx).nlen;
   while (i > 0) {
   i = (i - 1);
