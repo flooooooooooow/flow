@@ -1368,17 +1368,26 @@ run_gfx_program() {
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
+    # The Flow runtime pack (FLOW_RUNTIME_FLOW_SOURCES) references C symbols
+    # spread across runtime/*.c — flow_rt_uname_machine in flow_rt_sysinfo.c,
+    # the TLS entry points in flow_tls.c, and so on. Linking only
+    # flow_rt_support.c left those undefined, so a gfx program that touched
+    # get_time(), sysinfo or crypto failed to link. FLOW_CONC_SOURCES is the
+    # canonical set `flow run` uses; use it here too so the windowed, recorded
+    # and console builds all accept the same programs.
+    flow_concurrency_flags
     flow_runtime_flow_sources
+    local gfx_link_err="$build_dir/.gfx_link_err"
     local gfx_ok=0
     local host_kernel
     host_kernel="$(uname -s)"
     if [[ "$host_kernel" == "Darwin" ]]; then
-        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
-            "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
+            "${FLOW_CONC_SOURCES[@]}" \
             "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
             -framework Cocoa -framework CoreGraphics -framework QuartzCore \
-            "${py_ldflags[@]}" \
-            -o "$exe_file" -lm 2>/dev/null; then
+            "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
+            -o "$exe_file" -lm 2>"$gfx_link_err"; then
             gfx_ok=1
         fi
     elif [[ "$host_kernel" == MINGW* || "$host_kernel" == MSYS* || "$host_kernel" == CYGWIN* ]]; then
@@ -1432,6 +1441,11 @@ run_gfx_program() {
     fi
     if [[ "$gfx_ok" -ne 1 ]]; then
         print_error "Native gfx build failed (clang / platform graphics libs)"
+        # The link errors used to go to /dev/null, which turned a missing
+        # symbol into an unexplained one-line failure. Show them.
+        if [ -s "$gfx_link_err" ]; then
+            sed 's/^/    /' "$gfx_link_err" >&2
+        fi
         exit 1
     fi
     print_success "Built: $exe_file"
@@ -1563,7 +1577,8 @@ record_gfx_program() {
     print_success "FLOW → C: $(basename "$c_file")"
 
     # Recorder logic lives in lib/runtime/gfx_record.flow; transpile just that
-    # module (the recorder stays a slim standalone build, no runtime pack).
+    # module. flow_runtime_flow_sources deliberately skips gfx_record, so the
+    # two compose without a duplicate definition.
     local rec_logic_c="$build_dir/runtime_flow/gfx_record.c"
     mkdir -p "$build_dir/runtime_flow"
     if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/gfx_record.flow" \
@@ -1573,11 +1588,34 @@ record_gfx_program() {
     fi
     print_success "FLOW → C: runtime_flow/gfx_record.c"
 
+    # The recorder used to link only the program plus gfx_record.c. Anything
+    # backed by lib/runtime/ — get_time, audio, crypto, threads, tcp — then
+    # compiled fine and failed at link time with an undefined symbol, which is
+    # the worst possible moment: the program works under `./flow gfx` and only
+    # dies when you try to record its GIF. Link the same runtime pack the
+    # windowed path uses so the two build modes accept the same programs.
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+
+    # flow_rt_support.c raises its fatal-error popup through
+    # CFUserNotificationDisplayNotice on Darwin. The windowed build picks
+    # CoreFoundation up transitively from Cocoa; the recorder links no
+    # frameworks at all, so it has to ask for it explicitly.
+    local rec_frameworks=()
+    if [ "$(uname -s)" = "Darwin" ]; then
+        rec_frameworks=(-framework CoreFoundation)
+    fi
+
     if ! clang -O2 -fno-omit-frame-pointer \
         -Wno-error=implicit-function-declaration \
+        "${FLOW_CONC_CFLAGS[@]}" \
         "$c_file" \
         "$rec_logic_c" \
         "$SCRIPT_DIR/runtime/gfx_record.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_CONC_LDFLAGS[@]}" \
+        "${rec_frameworks[@]+"${rec_frameworks[@]}"}" \
         -o "$exe_file" -lm; then
         print_error "Recorder build failed"
         exit 1
