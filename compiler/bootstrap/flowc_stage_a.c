@@ -6452,6 +6452,9 @@ int32_t flowc_tc_lookup_fn(TcCtx ctx, int32_t start, int32_t end) {
 }
 
 int32_t flowc_tc_lookup_fn_arity(TcCtx ctx, int32_t start, int32_t end) {
+  if (flowc_tc_span_is((ctx).src, start, end, "printf") == 1) {
+  return (-1);
+}
   int32_t i = (ctx).nlen;
   while (i > 0) {
   i = (i - 1);

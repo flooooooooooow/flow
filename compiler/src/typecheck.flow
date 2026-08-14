@@ -323,6 +323,9 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
 
 # Known fn arity, or -1 if missing / imported (arity not tracked).
 function flowc_tc_lookup_fn_arity(ctx: TcCtx, start: i32, end: i32) -> i32 {
+    if flowc_tc_span_is(ctx.src, start, end, "printf") == 1 {
+        return -1
+    }
     let mut i: i32 = ctx.nlen
     while i > 0 {
         i = i - 1
