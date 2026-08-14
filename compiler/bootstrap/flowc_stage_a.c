@@ -7441,6 +7441,34 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
 }
   if ((e - s) > 7 && import_span_src[s] == 115 && import_span_src[(s + 1)] == 116 && import_span_src[(s + 2)] == 100 && import_span_src[(s + 3)] == 108 && import_span_src[(s + 4)] == 105 && import_span_src[(s + 5)] == 98 && import_span_src[(s + 6)] == 47) {
   s = (s + 7);
+  int32_t namelen = (e - s);
+  int32_t total = (11 + namelen);
+  if ((total + 1) > out_path_cap) {
+  return (0 - 1);
+}
+  out_path[0] = 108;
+  out_path[1] = 105;
+  out_path[2] = 98;
+  out_path[3] = 47;
+  out_path[4] = 115;
+  out_path[5] = 116;
+  out_path[6] = 100;
+  out_path[7] = 108;
+  out_path[8] = 105;
+  out_path[9] = 98;
+  out_path[10] = 47;
+  int32_t ni = 0;
+  while (ni < namelen) {
+  out_path[(11 + ni)] = import_span_src[(s + ni)];
+  ni = (ni + 1);
+}
+  out_path[total] = 0;
+  FILE* fp = fopen((const char*)out_path, "rb");
+  if (fp != NULL) {
+  fclose(fp);
+  return total;
+}
+  return (0 - 1);
 } else {
   if ((e - s) > 11 && import_span_src[s] == 108 && import_span_src[(s + 1)] == 105 && import_span_src[(s + 2)] == 98 && import_span_src[(s + 3)] == 47 && import_span_src[(s + 4)] == 115 && import_span_src[(s + 5)] == 116 && import_span_src[(s + 6)] == 100 && import_span_src[(s + 7)] == 108 && import_span_src[(s + 8)] == 105 && import_span_src[(s + 9)] == 98 && import_span_src[(s + 10)] == 47) {
   s = (s + 11);
