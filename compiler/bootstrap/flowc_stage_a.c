@@ -2167,6 +2167,8 @@ int32_t flowc_parse_stmt(Parser* p) {
   (p[0]).err = 1;
   return AST_NONE;
 }
+  (((p[0]).arena).nodes[pat]).name_start = (tok).start;
+  (((p[0]).arena).nodes[pat]).name_end = (tok).end;
   int32_t v = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end);
   if (neg == 1) {
   v = (0 - v);
