@@ -2131,6 +2131,27 @@ int32_t flowc_parse_stmt(Parser* p) {
   neg = 1;
   flowc_parser_advance(p);
 }
+  // `true` / `false` patterns → AST_BOOL
+  if (flowc_parser_check_kw(p[0], KW_TRUE) == 1) {
+  pat = flowc_ast_alloc((&(p[0]).arena), AST_BOOL, ((p[0]).cur).start, ((p[0]).cur).end);
+  if (pat == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[pat]).ival = 1;
+  flowc_parser_advance(p);
+  pat_kind = 0;
+} else {
+  if (flowc_parser_check_kw(p[0], KW_FALSE) == 1) {
+  pat = flowc_ast_alloc((&(p[0]).arena), AST_BOOL, ((p[0]).cur).start, ((p[0]).cur).end);
+  if (pat == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[pat]).ival = 0;
+  flowc_parser_advance(p);
+  pat_kind = 0;
+} else {
   if (flowc_parser_check(p[0], TOK_INT) == 1) {
   Token tok = (p[0]).cur;
   pat = flowc_ast_alloc((&(p[0]).arena), AST_INT, (tok).start, (tok).end);
@@ -2167,6 +2188,8 @@ int32_t flowc_parse_stmt(Parser* p) {
   pat_kind = 1;
 } else {
   pat_kind = 2;
+}
+}
 }
 }
   if (flowc_parser_check_kw(p[0], KW_IF) == 1) {
