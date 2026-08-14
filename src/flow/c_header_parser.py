@@ -177,9 +177,17 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
 
 
 def _strip_attributes(text: str) -> str:
-    """Remove __attribute__((...)) and __builtin annotations."""
+    """Remove __attribute__((...)), __builtin, and nullability annotations.
+
+    Apple's headers annotate pointers with `_Nonnull` / `_Nullable`. They are
+    qualifiers, not part of the type, but they used to survive into generated
+    type names: two distinct signatures both mangled to
+    `ptr_int_____Nonnull___compar___void_____void_` and the second typedef was
+    rejected as a redefinition.
+    """
     text = re.sub(r"__attribute__\s*\(\([^)]*\)\)", "", text)
     text = re.sub(r"__builtin_\w+", "", text)
+    text = re.sub(r"\b_(?:Nonnull|Nullable|Null_unspecified)\b", "", text)
     return text
 
 
@@ -610,7 +618,7 @@ def _split_params(params_str: str) -> List[str]:
 def resolve_c_imports(declarations: List, source_dir: str) -> List:
     """Process CImportDecl objects in declarations, replacing them with
     generated extern declarations."""
-    from .parser import CImportDecl, CIncludeDecl, FunctionDecl
+    from .parser import CImportDecl, CIncludeDecl
 
     result = []
     for decl in declarations:
