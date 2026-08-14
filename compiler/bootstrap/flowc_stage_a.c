@@ -1046,6 +1046,9 @@ int32_t flowc_parser_eat_gt(Parser* p) {
 int32_t flowc_parse_type(Parser* p) {
   if (flowc_parser_check(p[0], TOK_AMP) == 1) {
   flowc_parser_advance(p);
+  if (flowc_parser_check_kw(p[0], KW_MUT) == 1) {
+  flowc_parser_advance(p);
+}
   return flowc_parse_type(p);
 }
   if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
@@ -1157,6 +1160,9 @@ int32_t flowc_parse_type(Parser* p) {
 }
   if (flowc_parser_check(p[0], TOK_LT) == 1) {
   flowc_parser_advance(p);
+  if (flowc_parser_check_kw(p[0], KW_MUT) == 1) {
+  flowc_parser_advance(p);
+}
   int32_t inner = flowc_parse_type(p);
   if (inner == AST_NONE) {
   return AST_NONE;
@@ -1553,6 +1559,26 @@ int32_t flowc_parse_postfix(Parser* p) {
 } else {
   flowc_parser_advance(p);
   int32_t idx = flowc_parse_expr(p);
+  if (flowc_parser_check(p[0], TOK_DOTDOT) == 1) {
+  flowc_parser_advance(p);
+  int32_t end_idx = AST_NONE;
+  if (flowc_parser_check(p[0], TOK_RBRACK) == 0) {
+  end_idx = flowc_parse_expr(p);
+}
+  if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
+  return AST_NONE;
+}
+  int32_t sid = flowc_ast_alloc((&(p[0]).arena), AST_INDEX, 0, 0);
+  if (sid == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[sid]).a = base;
+  (((p[0]).arena).nodes[sid]).b = idx;
+  (((p[0]).arena).nodes[sid]).c = end_idx;
+  (((p[0]).arena).nodes[sid]).ival = 1;
+  base = sid;
+} else {
   if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
   return AST_NONE;
 }
@@ -1564,10 +1590,31 @@ int32_t flowc_parse_postfix(Parser* p) {
   (((p[0]).arena).nodes[id]).a = base;
   (((p[0]).arena).nodes[id]).b = idx;
   base = id;
+}
 }
 } else {
   flowc_parser_advance(p);
   int32_t idx = flowc_parse_expr(p);
+  if (flowc_parser_check(p[0], TOK_DOTDOT) == 1) {
+  flowc_parser_advance(p);
+  int32_t end_idx = AST_NONE;
+  if (flowc_parser_check(p[0], TOK_RBRACK) == 0) {
+  end_idx = flowc_parse_expr(p);
+}
+  if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
+  return AST_NONE;
+}
+  int32_t sid = flowc_ast_alloc((&(p[0]).arena), AST_INDEX, 0, 0);
+  if (sid == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[sid]).a = base;
+  (((p[0]).arena).nodes[sid]).b = idx;
+  (((p[0]).arena).nodes[sid]).c = end_idx;
+  (((p[0]).arena).nodes[sid]).ival = 1;
+  base = sid;
+} else {
   if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
   return AST_NONE;
 }
@@ -1579,6 +1626,7 @@ int32_t flowc_parse_postfix(Parser* p) {
   (((p[0]).arena).nodes[id]).a = base;
   (((p[0]).arena).nodes[id]).b = idx;
   base = id;
+}
 }
 } else {
   if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
