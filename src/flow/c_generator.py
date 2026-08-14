@@ -5092,11 +5092,37 @@ def flow_to_c(
         # emitting our own definition is a redefinition. Reconstructing a
         # scalar typedef as `typedef struct dev_t dev_t;` is wrong twice over:
         # dev_t is an int, not a struct.
-        generator._c_import_types = {
+        _c_import_types = {
             d.name
             for d in declarations
             if getattr(d, 'is_c_import', False) and getattr(d, 'name', None)
         }
+        # Types named in an imported signature come from that header too, even
+        # when the parser produced no declaration for them. Without this the
+        # generator sees an unknown name in `devname(dev_t, mode_t)`, assumes
+        # it is a struct, and forward-declares `typedef struct dev_t dev_t;`
+        # against a header where dev_t is an int.
+        _own_structs = {
+            d.name
+            for d in declarations
+            if isinstance(d, StructDecl) and not getattr(d, 'is_c_import', False)
+        }
+        import re as _re_ctypes
+        for d in declarations:
+            if not getattr(d, 'is_c_import', False) or not isinstance(d, FunctionDecl):
+                continue
+            sigs = [p.type for p in d.parameters]
+            if getattr(d, 'return_type', None) is not None:
+                sigs.append(d.return_type)
+            for t in sigs:
+                try:
+                    rendered = generator._type_to_string(t)
+                except Exception:
+                    continue
+                for ident in _re_ctypes.findall(r'[A-Za-z_]\w*', rendered or ''):
+                    if ident not in _own_structs:
+                        _c_import_types.add(ident)
+        generator._c_import_types = _c_import_types
 
         # Extract function names from @cEmbed code so the generator can
         # skip emitting conflicting extern prototypes for them.

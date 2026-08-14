@@ -4,6 +4,36 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### Fixed — @cImport on Linux
+
+`@cImport` emitted C that clang rejected on glibc, so every `@cImport` test
+failed in CI while macOS stayed green. Four defects, each hiding the next:
+
+- `monomorphize` rebuilt declarations without carrying `is_c_import` across
+  (133 marks in, 12 out). The C generator uses that flag to suppress what the
+  imported header's own `#include` already provides, so every imported
+  prototype and type was re-emitted and collided with the real header. This
+  also silently disabled the existing prototype skip.
+- `resolve_c_imports` marked only `FunctionDecl`, leaving imported types
+  unmarked. A header with an anonymous struct typedef (glibc's `lldiv_t`)
+  produced a second `typedef struct lldiv_t lldiv_t;`.
+- Types named only in an imported signature were assumed to be structs and
+  forward-declared, so `devname(dev_t, mode_t)` emitted
+  `typedef struct dev_t dev_t;` against a header where `dev_t` is an `int`.
+- `_preprocess_header` fell back to another preprocessor only on
+  `FileNotFoundError`. Where `cpp -P -` exists but fails (some macOS
+  installs), it returned empty and `@cImport` imported nothing at all, which
+  is why the feature looked fine locally while being broken in CI. Empty
+  output now falls through to `clang -E`, then `gcc -E`.
+
+Also strips `_Nonnull` / `_Nullable` / `_Null_unspecified` when parsing. Those
+are qualifiers, not part of the type, and two distinct signatures were
+mangling to the same C identifier.
+
+Covered by `tests/unit/test_c_import_no_redeclare.py`, which uses a fixture
+header rather than a system one so it asserts the same thing on every
+platform, and compiles the generated C with clang.
+
 ### Fixed
 
 - `examples/morphogenesis/hexagonal_ca.flow` reseeded to a permanent dot. The
