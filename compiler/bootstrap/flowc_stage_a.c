@@ -7412,7 +7412,12 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   ai = (ai + 1);
 }
   out_path[nabs] = 0;
+  FILE* fp = fopen((const char*)out_path, "rb");
+  if (fp != NULL) {
+  fclose(fp);
   return nabs;
+}
+  return (0 - 1);
 }
   uint8_t* dirp = (uint8_t*)(search_dir);
   int32_t dlen = (int32_t)(strlen(search_dir));
@@ -7474,7 +7479,12 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   o = (o + 1);
 }
   out_path[o] = 0;
+  FILE* fp = fopen((const char*)out_path, "rb");
+  if (fp != NULL) {
+  fclose(fp);
   return o;
+}
+  return (0 - 1);
 }
 
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
@@ -7633,12 +7643,16 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
 }
   uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
   uint8_t* imp_path = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
-  if (src == NULL || imp_path == NULL) {
+  uint8_t* mod_dir = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  if (src == NULL || imp_path == NULL || mod_dir == NULL) {
   if (src != NULL) {
   free(src);
 }
   if (imp_path != NULL) {
   free(imp_path);
+}
+  if (mod_dir != NULL) {
+  free(mod_dir);
 }
   return (0 - 1);
 }
@@ -7654,17 +7668,24 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   int32_t nsrc = flowc_read_file(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   puts("flowc gather: read failed");
+  free(mod_dir);
   free(imp_path);
   free(src);
   return (0 - 1);
 }
   src[nsrc] = 0;
+  int32_t mod_dlen = flowc_resolve_dirname(mpath, mod_dir, FLOWC_RESOLVE_PATH_CAP);
+  const char* mod_search = search_dir;
+  if (mod_dlen > 0) {
+  mod_search = (const char*)mod_dir;
+}
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
   int32_t root = flowc_parse_program((&p));
   if (root < 0 || (p).err != 0) {
   puts("flowc gather: parse failed");
   printf("flowc gather: nsrc=%d\n", nsrc);
   flowc_parser_free(p);
+  free(mod_dir);
   free(imp_path);
   free(src);
   return (0 - 1);
@@ -7674,9 +7695,13 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
   int32_t form = (((p).arena).nodes[ii]).ival;
   if (form == 1 || form == 2) {
-  int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen < 0 && mod_search != search_dir) {
+  plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
   if (plen < 0) {
   flowc_parser_free(p);
+  free(mod_dir);
   free(imp_path);
   free(src);
   return (0 - 1);
@@ -7685,6 +7710,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   int32_t n2 = flowc_resolve_append_path(path_store, n, dep);
   if (n2 < 0) {
   flowc_parser_free(p);
+  free(mod_dir);
   free(imp_path);
   free(src);
   return (0 - 1);
@@ -7695,6 +7721,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   int32_t plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
   if (plen < 0) {
   flowc_parser_free(p);
+  free(mod_dir);
   free(imp_path);
   free(src);
   return (0 - 1);
@@ -7703,6 +7730,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   int32_t n2 = flowc_resolve_append_path(path_store, n, dep);
   if (n2 < 0) {
   flowc_parser_free(p);
+  free(mod_dir);
   free(imp_path);
   free(src);
   return (0 - 1);
@@ -7715,6 +7743,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   flowc_parser_free(p);
   qi = (qi + 1);
 }
+  free(mod_dir);
   free(imp_path);
   free(src);
   return n;
@@ -7731,6 +7760,12 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8
   return 0;
 }
   src[nsrc] = 0;
+  uint8_t mod_dir_buf[1024] = {  };
+  int32_t mod_dlen = flowc_resolve_dirname(path, mod_dir_buf, 1024);
+  const char* mod_search = search_dir;
+  if (mod_dlen > 0) {
+  mod_search = (const char*)mod_dir_buf;
+}
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
   int32_t root = flowc_parse_program((&p));
   if (root < 0 || (p).err != 0) {
@@ -7742,7 +7777,10 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8
   if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
   int32_t form = (((p).arena).nodes[ii]).ival;
   if (form == 1 || form == 2) {
-  int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen < 0 && mod_search != search_dir) {
+  plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
   if (plen < 0) {
   flowc_parser_free(p);
   return 0;
