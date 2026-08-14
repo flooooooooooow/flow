@@ -2192,15 +2192,15 @@ function flowc_cgen_is_cembed_fn(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32
         if w[0].cembed_lens[idx] == n {
             let off: i32 = w[0].cembed_offs[idx]
             let mut k: i32 = 0
-            let mut match: i32 = 1
+            let mut is_match: i32 = 1
             while k < n {
                 if w[0].cembed_names[off + k] != src[ns + k] {
-                    match = 0
+                    is_match = 0
                     k = n
                 }
                 k = k + 1
             }
-            if match == 1 {
+            if is_match == 1 {
                 return 1
             }
         }

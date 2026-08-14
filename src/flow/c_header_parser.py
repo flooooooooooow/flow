@@ -36,6 +36,14 @@ from .parser import (
     Literal,
 )
 
+# Functions that the type checker flags as dangerous FFI (#276).
+# @cImport pulls these from system headers; skip them so the user doesn't
+# need @unsafe for declarations they never wrote.
+_DANGEROUS_IMPORT_NAMES = frozenset({
+    "system", "gets", "strcpy", "strcat", "sprintf", "vsprintf",
+    "scanf", "sscanf", "realpath", "getwd",
+})
+
 
 # C type to Flow type mapping
 _C_TO_FLOW = {
@@ -638,6 +646,14 @@ def resolve_c_imports(declarations: List, source_dir: str) -> List:
             # The type checker still sees these declarations; only C output
             # is suppressed.
             for p in parsed:
+                # Skip dangerous FFI functions imported from system headers.
+                # The user didn't declare these; they came in via @cImport
+                # parsing. Adding them triggers the dangerous-FFI check in
+                # the type checker, which requires @unsafe extern. The
+                # #include already provides the prototype, so dropping them
+                # is safe.
+                if isinstance(p, FunctionDecl) and p.name in _DANGEROUS_IMPORT_NAMES:
+                    continue
                 p.is_c_import = True
                 result.append(p)
         else:
