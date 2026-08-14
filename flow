@@ -324,7 +324,7 @@ show_help() {
     echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
     echo "  window <program>  Run with SDL2 window backend"
     echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
-    echo "  record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]] [--keys SPEC]"
+    echo "  record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]] [--keys SPEC] [--mouse SPEC]"
     echo "                   [--fps N] [--stride N] [--width PX]"
     echo "                    Run a gfx program headless; write PPM frames, or a GIF with --gif"
     echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
@@ -1458,10 +1458,20 @@ run_gfx_program() {
 # frames come from the real program instead of a mock-up. Configured through
 # FLOW_GFX_RECORD_* — see runtime/gfx_record.c.
 # flow record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]]
-#                       [--keys SPEC] [--fps N] [--stride N] [--width PX]
+#                       [--keys SPEC] [--mouse SPEC] [--fps N] [--stride N]
+#                       [--width PX]
 #
-# --frames/--skip/--out/--keys shape the capture; --fps/--stride/--width shape
-# the GIF and are handed to scripts/frames_to_gif.py.
+# --frames/--skip/--out/--keys/--mouse shape the capture; --fps/--stride/--width
+# shape the GIF and are handed to scripts/frames_to_gif.py.
+#
+# --mouse drives a scripted pointer so mouse-driven demos still record. Its
+# spec is ';'-separated segments of
+#   first,last,x0,y0,x1,y1,buttons,wheel
+# where the cursor lerps from (x0,y0) to (x1,y1) across the frame window,
+# `buttons` is a mask held throughout (1 left, 2 right, 4 middle), and `wheel`
+# is added once per frame. Integer interpolation, so it is bit-identical on
+# every platform. Example: sweep while dragging, then right-click and hold:
+#   --mouse '0,30,10,10,300,200,1,0;31,60,300,200,300,200,2,0'
 #
 # Flags win; the FLOW_GFX_RECORD_* environment variables remain as a fallback
 # so existing scripts keep working.
@@ -1471,6 +1481,7 @@ record_gfx_program() {
     local rec_skip=""
     local rec_dir=""
     local rec_keys=""
+    local rec_mouse=""
     local rec_gif=""
     local want_gif=0
     local gif_fps=""
@@ -1511,6 +1522,11 @@ record_gfx_program() {
                 shift 2
                 ;;
             --keys=*) rec_keys="${1#*=}"; shift ;;
+            --mouse)
+                rec_mouse="${2:-}"
+                shift 2
+                ;;
+            --mouse=*) rec_mouse="${1#*=}"; shift ;;
             --gif)
                 want_gif=1
                 case "${2:-}" in
@@ -1562,6 +1578,7 @@ record_gfx_program() {
     [ -n "$rec_skip" ] && export FLOW_GFX_RECORD_SKIP="$rec_skip"
     [ -n "$rec_dir" ] && export FLOW_GFX_RECORD_DIR="$rec_dir"
     [ -n "$rec_keys" ] && export FLOW_GFX_RECORD_KEYS="$rec_keys"
+    [ -n "$rec_mouse" ] && export FLOW_GFX_RECORD_MOUSE="$rec_mouse"
 
     check_deps
     mkdir -p "$build_dir"

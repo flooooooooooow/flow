@@ -276,6 +276,69 @@ EM_JS(double, flow_gfx_js_now, (void), {
     return performance.now();
 });
 
+/* Pointer state into out[0..6]: x, y, left, right, middle, wheel, inside.
+ *
+ * The canvas backing store and its CSS display size are set independently
+ * (see flow_gfx_js_init), so clientX/clientY are in CSS pixels and must be
+ * scaled by width/rect.width to land in framebuffer coordinates. Using the
+ * raw event coordinates would drift as soon as the page scales the canvas.
+ *
+ * Pointer events rather than mouse events, so a touchscreen works too. */
+EM_JS(int32_t, flow_gfx_js_mouse, (int32_t *out), {
+    var st = (typeof window !== "undefined") ? window.flowGfx : null;
+    if (!st || !st.canvas) return 0;
+    if (!st.mouse) {
+        st.mouse = { x: 0, y: 0, l: 0, r: 0, m: 0, wheel: 0, inside: 0 };
+        var cv = st.canvas;
+        var toBuf = function (ev) {
+            var rect = cv.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+            st.mouse.x = Math.floor((ev.clientX - rect.left) * (cv.width / rect.width));
+            st.mouse.y = Math.floor((ev.clientY - rect.top) * (cv.height / rect.height));
+            st.mouse.inside = (st.mouse.x >= 0 && st.mouse.x < cv.width &&
+                               st.mouse.y >= 0 && st.mouse.y < cv.height) ? 1 : 0;
+        };
+        cv.addEventListener("pointermove", toBuf);
+        cv.addEventListener("pointerdown", function (ev) {
+            toBuf(ev);
+            if (ev.button === 0) st.mouse.l = 1;
+            else if (ev.button === 2) st.mouse.r = 1;
+            else if (ev.button === 1) st.mouse.m = 1;
+            try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
+        });
+        cv.addEventListener("pointerup", function (ev) {
+            toBuf(ev);
+            if (ev.button === 0) st.mouse.l = 0;
+            else if (ev.button === 2) st.mouse.r = 0;
+            else if (ev.button === 1) st.mouse.m = 0;
+        });
+        cv.addEventListener("pointerleave", function () { st.mouse.inside = 0; });
+        cv.addEventListener("pointerenter", function () { st.mouse.inside = 1; });
+        /* Without preventDefault the page scrolls out from under the demo. */
+        cv.addEventListener("wheel", function (ev) {
+            st.mouse.wheel += (ev.deltaY > 0) ? 1 : ((ev.deltaY < 0) ? -1 : 0);
+            ev.preventDefault();
+        }, { passive: false });
+        /* Right-drag is a demo control, not a context menu. */
+        cv.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+    }
+    var m = st.mouse;
+    HEAP32[(out >> 2) + 0] = m.x;
+    HEAP32[(out >> 2) + 1] = m.y;
+    HEAP32[(out >> 2) + 2] = m.l;
+    HEAP32[(out >> 2) + 3] = m.r;
+    HEAP32[(out >> 2) + 4] = m.m;
+    HEAP32[(out >> 2) + 5] = m.wheel;
+    HEAP32[(out >> 2) + 6] = m.inside;
+    return 1;
+});
+
+int32_t flow_gfx_mouse(void *handle, int32_t *out) {
+    (void)handle;
+    if (!out) return 0;
+    return flow_gfx_js_mouse(out);
+}
+
 /* Milliseconds since the first call. */
 double flow_gfx_time_ms(void *handle) {
     (void)handle;

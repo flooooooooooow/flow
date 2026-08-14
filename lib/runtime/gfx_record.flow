@@ -211,3 +211,138 @@ export function flow_gfx_rec_present(dir: ptr<u8>, width: i32, height: i32, pixe
     }
     return 0
 }
+
+# Parses FLOW_GFX_RECORD_MOUSE: segments separated by ';', eight integers per
+# segment separated by ','.
+#
+#   first,last,x0,y0,x1,y1,buttons,wheel
+#
+# The cursor moves in a straight line from (x0,y0) at frame `first` to (x1,y1)
+# at frame `last`. `buttons` is a bitmask held for the whole window
+# (1 = left, 2 = right, 4 = middle). `wheel` is added once per frame in the
+# window, so a scripted scroll accumulates the same way a real one does.
+#
+# Outside every segment the cursor holds its last position with no buttons
+# down. Interpolation is integer arithmetic so a recorded run is bit-identical
+# across platforms.
+@flow_api
+export function flow_gfx_rec_parse_mouse(first: ptr<i32>, last: ptr<i32>, x0: ptr<i32>, y0: ptr<i32>, x1: ptr<i32>, y1: ptr<i32>, btn: ptr<i32>, whl: ptr<i32>, cap: i32) -> i32 {
+    let spec: ptr<u8> = getenv("FLOW_GFX_RECORD_MOUSE")
+    if spec == null {
+        return 0
+    }
+    let pos_a: array<i64, 1> = [0]
+    let val_a: array<i64, 1> = [0]
+    let pos: ptr<i64> = pos_a
+    let val: ptr<i64> = val_a
+    let fields: array<i64, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut count: i32 = 0
+    while spec[pos[0]] != 0 and count < cap {
+        # Skip separators and spaces between segments.
+        while spec[pos[0]] == 59 or spec[pos[0]] == 32 {
+            pos[0] = pos[0] + 1
+        }
+        if spec[pos[0]] == 0 {
+            break
+        }
+        let mut i: i32 = 0
+        let mut ok: bool = true
+        while i < 8 {
+            if i > 0 {
+                if spec[pos[0]] != 44 {
+                    ok = false
+                    i = 8
+                } else {
+                    pos[0] = pos[0] + 1
+                }
+            }
+            if ok and i < 8 {
+                if !rec_parse_i64(spec, pos, val) {
+                    ok = false
+                    i = 8
+                } else {
+                    fields[i] = val[0]
+                    i = i + 1
+                }
+            }
+        }
+        if !ok {
+            break
+        }
+        if fields[1] < fields[0] {
+            fields[1] = fields[0]
+        }
+        first[count] = fields[0] as i32
+        last[count] = fields[1] as i32
+        x0[count] = fields[2] as i32
+        y0[count] = fields[3] as i32
+        x1[count] = fields[4] as i32
+        y1[count] = fields[5] as i32
+        btn[count] = fields[6] as i32
+        whl[count] = fields[7] as i32
+        count = count + 1
+    }
+    return count
+}
+
+# Scripted pointer state for the current presented frame. Fills out[0..6] as
+# x, y, left, right, middle, wheel (cumulative), inside. Returns 1 always: the
+# recorder does have a (virtual) pointer, so demos take the mouse path.
+@flow_api
+export function flow_gfx_rec_mouse(presented: i32, out: ptr<i32>, first: ptr<i32>, last: ptr<i32>, x0: ptr<i32>, y0: ptr<i32>, x1: ptr<i32>, y1: ptr<i32>, btn: ptr<i32>, whl: ptr<i32>, count: i32) -> i32 {
+    # No script means no pointer. Report absence rather than parking a phantom
+    # cursor at (0,0) marked inside, which a demo would read as a real hover.
+    if count <= 0 {
+        out[0] = 0
+        out[1] = 0
+        out[2] = 0
+        out[3] = 0
+        out[4] = 0
+        out[5] = 0
+        out[6] = 0
+        return 0
+    }
+    let mut cx: i32 = 0
+    let mut cy: i32 = 0
+    let mut buttons: i32 = 0
+    let mut wheel: i32 = 0
+    let mut i: i32 = 0
+    while i < count {
+        let f: i32 = first[i]
+        let l: i32 = last[i]
+        # Wheel accumulates over every frame of every window already passed,
+        # so the total matches what a real cumulative counter would read.
+        if presented >= f {
+            let mut upto: i32 = presented
+            if upto > l {
+                upto = l
+            }
+            wheel = wheel + whl[i] * (upto - f + 1)
+        }
+        if presented >= f and presented <= l {
+            let span: i32 = l - f
+            if span <= 0 {
+                cx = x1[i]
+                cy = y1[i]
+            } else {
+                # Integer lerp: identical on every platform.
+                cx = x0[i] + (x1[i] - x0[i]) * (presented - f) / span
+                cy = y0[i] + (y1[i] - y0[i]) * (presented - f) / span
+            }
+            buttons = btn[i]
+        } elif presented > l {
+            # Hold the end of the most recent window.
+            cx = x1[i]
+            cy = y1[i]
+        }
+        i = i + 1
+    }
+    out[0] = cx
+    out[1] = cy
+    out[2] = buttons & 1
+    out[3] = (buttons >> 1) & 1
+    out[4] = (buttons >> 2) & 1
+    out[5] = wheel
+    out[6] = 1
+    return 1
+}

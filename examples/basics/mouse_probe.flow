@@ -1,0 +1,97 @@
+# MOUSE PROBE — confirms the pointer lands where the pixels are.
+#
+# WHY THIS EXISTS
+#
+# Mouse coordinates and framebuffer coordinates can disagree vertically, and
+# the failure is silent: everything still runs, the cursor is just mirrored
+# top-to-bottom. macOS is the risk. Buffer row 0 is the TOP of the image
+# (drawRect: hands the buffer to CGBitmapContextCreate, and CGContextDrawImage
+# puts row 0 at the top), while NSView here is not flipped, so
+# locationInWindow measures y UP from the bottom. runtime/gfx_macos.m inverts
+# it. This demo is how you check that inversion is right, by eye, in seconds.
+#
+# WHAT YOU SHOULD SEE
+#
+# A white crosshair that sits exactly under the cursor, and a filled square
+# that lights up only while the cursor is inside it. Move to the TOP of the
+# window: y should read near 0. Move to the BOTTOM: y should read near 239.
+# If y counts the wrong way, the crosshair mirrors vertically and the readout
+# runs backwards.
+#
+# Buttons tint the crosshair: left red, right blue, middle green. The wheel
+# total is cumulative, so scrolling up then down should return it near zero.
+#
+# Run: ./flow gfx examples/basics/mouse_probe.flow
+
+import "stdlib/gfx.flow"
+import "stdlib/text.flow"
+
+const WIN_W: i32 = 320
+const WIN_H: i32 = 240
+const MAX_FRAMES: i32 = 100000
+
+# A target square in the lower-right quadrant. Because it is off-centre in
+# BOTH axes, a flipped y is obvious: the square would light up when the
+# cursor is in the upper-right instead.
+const BOX_X: i32 = 200
+const BOX_Y: i32 = 150
+const BOX_W: i32 = 80
+const BOX_H: i32 = 60
+
+function main() -> i32 {
+    let g: Gfx = gfx_open(WIN_W, WIN_H, "Mouse probe - Flow")
+    let mut frame: i32 = 0
+
+    while frame < MAX_FRAMES {
+        if !gfx_frame_pump(g) { break }
+
+        let m: Mouse = gfx_mouse(g)
+        let over: bool = m.x >= BOX_X and m.x < BOX_X + BOX_W and
+                         m.y >= BOX_Y and m.y < BOX_Y + BOX_H
+
+        gfx_clear(g, 8, 10, 16)
+
+        # Reference marks: a bar on the top edge and one on the bottom, so
+        # "which way is up" is unambiguous on screen.
+        gfx_fill_rect(g, 0, 0, WIN_W, 3, 70, 90, 120)
+        gfx_fill_rect(g, 0, WIN_H - 3, WIN_W, 3, 30, 40, 60)
+
+        if over {
+            gfx_fill_rect(g, BOX_X, BOX_Y, BOX_W, BOX_H, 40, 120, 70)
+        } else {
+            gfx_fill_rect(g, BOX_X, BOX_Y, BOX_W, BOX_H, 30, 40, 55)
+        }
+
+        if m.inside != 0 {
+            let mut cr: i32 = 235
+            let mut cg: i32 = 240
+            let mut cb: i32 = 250
+            if m.left != 0 { cr = 255  cg = 90   cb = 90 }
+            if m.right != 0 { cr = 90  cg = 150  cb = 255 }
+            if m.middle != 0 { cr = 90 cg = 255  cb = 150 }
+            gfx_fill_rect(g, m.x - 10, m.y, 21, 1, cr, cg, cb)
+            gfx_fill_rect(g, m.x, m.y - 10, 1, 21, cr, cg, cb)
+        }
+
+        let t1: i32 = gfx_draw_text(g, 8, 10, "MOUSE PROBE", 2, 235, 240, 250)
+        let t2: i32 = gfx_draw_text(g, 8, 32, "x", 1, 150, 165, 190)
+        let t3: i32 = gfx_draw_int(g, 24, 32, m.x, 1, 255, 205, 110)
+        let t4: i32 = gfx_draw_text(g, 60, 32, "y", 1, 150, 165, 190)
+        let t5: i32 = gfx_draw_int(g, 76, 32, m.y, 1, 255, 205, 110)
+        let t6: i32 = gfx_draw_text(g, 112, 32, "wheel", 1, 150, 165, 190)
+        let t7: i32 = gfx_draw_int(g, 156, 32, m.wheel, 1, 255, 205, 110)
+        let t8: i32 = gfx_draw_text(g, 200, 32, "inside", 1, 150, 165, 190)
+        let t9: i32 = gfx_draw_int(g, 246, 32, m.inside, 1, 255, 205, 110)
+        let ta: i32 = gfx_draw_text(g, 8, 46, "top edge y~0   bottom edge y~239", 1, 110, 125, 150)
+        if over {
+            let tb: i32 = gfx_draw_text(g, BOX_X, BOX_Y - 12, "OVER BOX", 1, 120, 255, 170)
+        }
+
+        gfx_present(g)
+        gfx_wait_frame(g, 60)
+        frame = frame + 1
+    }
+
+    gfx_close(g)
+    return 0
+}

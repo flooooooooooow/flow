@@ -50,6 +50,16 @@ typedef struct FlowGfxContext {
     int height;
     int should_close;
     uint8_t keys[256];
+
+    /* Pointer state, already in framebuffer coordinates: SDL reports
+     * top-left origin, which matches the buffer, so no flip is needed. */
+    int32_t mouse_x;
+    int32_t mouse_y;
+    uint8_t mouse_left;
+    uint8_t mouse_right;
+    uint8_t mouse_middle;
+    int32_t mouse_wheel;   /* cumulative signed total */
+    uint8_t mouse_inside;
 } FlowGfxContext;
 
 /* Map SDL scancode → macOS-style virtual keycode used by lib/stdlib/gfx.flow.
@@ -238,6 +248,27 @@ void flow_gfx_poll(void* handle) {
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                 ctx->should_close = 1;
             }
+        } else if (ev.type == SDL_MOUSEMOTION) {
+            ctx->mouse_x = ev.motion.x;
+            ctx->mouse_y = ev.motion.y;
+            ctx->mouse_inside = (ev.motion.x >= 0 && ev.motion.x < ctx->width &&
+                                 ev.motion.y >= 0 && ev.motion.y < ctx->height) ? 1 : 0;
+        } else if (ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP) {
+            uint8_t down = (ev.type == SDL_MOUSEBUTTONDOWN) ? 1 : 0;
+            ctx->mouse_x = ev.button.x;
+            ctx->mouse_y = ev.button.y;
+            if (ev.button.button == SDL_BUTTON_LEFT) ctx->mouse_left = down;
+            else if (ev.button.button == SDL_BUTTON_RIGHT) ctx->mouse_right = down;
+            else if (ev.button.button == SDL_BUTTON_MIDDLE) ctx->mouse_middle = down;
+        } else if (ev.type == SDL_MOUSEWHEEL) {
+            int32_t dy = ev.wheel.y;
+            /* SDL inverts y on some platforms and flags it rather than
+             * normalising, so honour the flag. */
+            if (ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) dy = -dy;
+            ctx->mouse_wheel += dy;
+        } else if (ev.type == SDL_WINDOWEVENT) {
+            if (ev.window.event == SDL_WINDOWEVENT_ENTER) ctx->mouse_inside = 1;
+            else if (ev.window.event == SDL_WINDOWEVENT_LEAVE) ctx->mouse_inside = 0;
         }
     }
 }
@@ -253,6 +284,26 @@ int32_t flow_gfx_key_down(void* handle, int32_t keycode) {
     if (!ctx) return 0;
     if (keycode < 0 || keycode >= 256) return 0;
     return ctx->keys[keycode] ? 1 : 0;
+}
+
+/* Whole pointer state in one call. See runtime/gfx_macos.m for the layout:
+ *   out[0..6] = x, y, left, right, middle, wheel(cumulative), inside
+ * Returns 0 when there is no pointer, leaving out[] zeroed. */
+int32_t flow_gfx_mouse(void* handle, int32_t* out) {
+    if (!out) return 0;
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx) {
+        for (int i = 0; i < 7; i++) out[i] = 0;
+        return 0;
+    }
+    out[0] = ctx->mouse_x;
+    out[1] = ctx->mouse_y;
+    out[2] = ctx->mouse_left ? 1 : 0;
+    out[3] = ctx->mouse_right ? 1 : 0;
+    out[4] = ctx->mouse_middle ? 1 : 0;
+    out[5] = ctx->mouse_wheel;
+    out[6] = ctx->mouse_inside ? 1 : 0;
+    return 1;
 }
 
 void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
@@ -428,6 +479,14 @@ int32_t flow_gfx_should_close(void* handle) {
 int32_t flow_gfx_key_down(void* handle, int32_t keycode) {
     (void)handle;
     (void)keycode;
+    return 0;
+}
+
+/* No window, so no pointer: report absence and leave out[] zeroed. */
+int32_t flow_gfx_mouse(void* handle, int32_t* out) {
+    (void)handle;
+    if (!out) return 0;
+    for (int i = 0; i < 7; i++) out[i] = 0;
     return 0;
 }
 
