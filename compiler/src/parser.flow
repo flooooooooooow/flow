@@ -1209,29 +1209,120 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
                 flowc_parser_advance(p)
                 pat_kind = 0
             } else {
-                if neg == 1 or flowc_parser_check(p[0], TOK_IDENT) == 0 {
-                    if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
-                        puts("flowc parse: list patterns not supported in Stage-A match")
-                    } else {
-                        puts("flowc parse: unsupported match pattern (Stage-A: int literal, `_`, or binding ident)")
+                if flowc_parser_check(p[0], TOK_FLOAT) == 1 {
+                    let tok: Token = p[0].cur
+                    pat = flowc_ast_alloc(&p[0].arena, AST_FLOAT, tok.start, tok.end)
+                    if pat == AST_NONE {
+                        p[0].err = 1
+                        return AST_NONE
                     }
-                    p[0].err = 1
-                    return AST_NONE
-                }
-                bind_s = p[0].cur.start
-                bind_e = p[0].cur.end
-                flowc_parser_advance(p)
-                # ident( → struct pattern (unsupported in Stage-A).
-                if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
-                    puts("flowc parse: struct patterns not supported in Stage-A match")
-                    p[0].err = 1
-                    return AST_NONE
-                }
-                # bare `_` is a wildcard; any other ident binds the scrutinee.
-                if bind_e - bind_s == 1 and p[0].lex.input[bind_s] == 95 {
-                    pat_kind = 1
+                    p[0].arena.nodes[pat].name_start = tok.start
+                    p[0].arena.nodes[pat].name_end = tok.end
+                    flowc_parser_advance(p)
+                    pat_kind = 3
                 } else {
-                    pat_kind = 2
+                    if flowc_parser_check(p[0], TOK_STRING) == 1 {
+                        let tok: Token = p[0].cur
+                        pat = flowc_ast_alloc(&p[0].arena, AST_STRING, tok.start, tok.end)
+                        if pat == AST_NONE {
+                            p[0].err = 1
+                            return AST_NONE
+                        }
+                        p[0].arena.nodes[pat].name_start = tok.start
+                        p[0].arena.nodes[pat].name_end = tok.end
+                        flowc_parser_advance(p)
+                        pat_kind = 4
+                    } else {
+                        if neg == 1 or flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                            if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
+                                flowc_parser_advance(p)
+                                let mut elems: i32 = AST_NONE
+                                while flowc_parser_check(p[0], TOK_RBRACK) == 0 {
+                                    let mut sub: i32 = AST_NONE
+                                    if flowc_parser_check(p[0], TOK_INT) == 1 {
+                                        let tok: Token = p[0].cur
+                                        sub = flowc_ast_alloc(&p[0].arena, AST_INT, tok.start, tok.end)
+                                        if sub == AST_NONE {
+                                            p[0].err = 1
+                                            return AST_NONE
+                                        }
+                                        p[0].arena.nodes[sub].name_start = tok.start
+                                        p[0].arena.nodes[sub].name_end = tok.end
+                                        p[0].arena.nodes[sub].ival = flowc_parse_int_span(p[0].lex.input, tok.start, tok.end)
+                                        flowc_parser_advance(p)
+                                    } else {
+                                        if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                                            let bs: i32 = p[0].cur.start
+                                            let be: i32 = p[0].cur.end
+                                            sub = flowc_ast_alloc(&p[0].arena, AST_IDENT, bs, be)
+                                            if sub == AST_NONE {
+                                                p[0].err = 1
+                                                return AST_NONE
+                                            }
+                                            p[0].arena.nodes[sub].name_start = bs
+                                            p[0].arena.nodes[sub].name_end = be
+                                            flowc_parser_advance(p)
+                                        } else {
+                                            puts("flowc parse: unsupported list pattern element")
+                                            p[0].err = 1
+                                            return AST_NONE
+                                        }
+                                    }
+                                    elems = flowc_ast_chain_push(&p[0].arena, elems, sub)
+                                    if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                                        flowc_parser_advance(p)
+                                    }
+                                }
+                                flowc_parser_advance(p)
+                                pat = elems
+                                pat_kind = 6
+                            } else {
+                                puts("flowc parse: unsupported match pattern (Stage-A: int literal, `_`, or binding ident)")
+                                p[0].err = 1
+                                return AST_NONE
+                            }
+                        } else {
+                        bind_s = p[0].cur.start
+                        bind_e = p[0].cur.end
+                        flowc_parser_advance(p)
+                        # ident( → struct pattern P(a, b)
+                        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+                            flowc_parser_advance(p)
+                            let mut binds: i32 = AST_NONE
+                            while flowc_parser_check(p[0], TOK_RPAREN) == 0 {
+                                if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                                    puts("flowc parse: expected binding in struct pattern")
+                                    p[0].err = 1
+                                    return AST_NONE
+                                }
+                                let bs: i32 = p[0].cur.start
+                                let be: i32 = p[0].cur.end
+                                let bnode: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, bs, be)
+                                if bnode == AST_NONE {
+                                    p[0].err = 1
+                                    return AST_NONE
+                                }
+                                p[0].arena.nodes[bnode].name_start = bs
+                                p[0].arena.nodes[bnode].name_end = be
+                                binds = flowc_ast_chain_push(&p[0].arena, binds, bnode)
+                                flowc_parser_advance(p)
+                                if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                                    flowc_parser_advance(p)
+                                }
+                            }
+                            flowc_parser_advance(p)
+                            pat = binds
+                            pat_kind = 5
+                        } else {
+                            # bare `_` is a wildcard; any other ident binds the scrutinee.
+                            if bind_e - bind_s == 1 and p[0].lex.input[bind_s] == 95 {
+                                pat_kind = 1
+                            } else {
+                                pat_kind = 2
+                            }
+                        }
+                        }
+                    }
                 }
             }
             }
