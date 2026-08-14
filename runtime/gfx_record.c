@@ -114,6 +114,32 @@ void flow_gfx_poll(void *handle) {
     (void)handle; // No event source to drain when running headless.
 }
 
+/* Virtual clock. The recorder deliberately does not report wall time: a
+ * recorded run must produce the same frames whatever the machine's speed, and
+ * it should not burn real seconds sleeping. Time advances exactly one frame
+ * per present, at FLOW_GFX_RECORD_FPS (default 60), so a demo that integrates
+ * against gfx_time_ms gets identical output on every run and every host.
+ *
+ * This is simulated time, distinct from GIF playback rate, which
+ * scripts/frames_to_gif.py sets separately with --fps/--stride. */
+double flow_gfx_time_ms(void *handle) {
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
+    if (!rec) return 0.0;
+    int fps = 60;
+    const char *env = getenv("FLOW_GFX_RECORD_FPS");
+    if (env && *env) {
+        int v = atoi(env);
+        if (v > 0) fps = v;
+    }
+    return (double)rec->presented * 1000.0 / (double)fps;
+}
+
+/* No-op headless: the recorder should run as fast as the CPU allows. */
+void flow_gfx_wait_frame(void *handle, int32_t target_fps) {
+    (void)handle;
+    (void)target_fps;
+}
+
 int32_t flow_gfx_key_down(void *handle, int32_t keycode) {
     FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
     if (!rec) return 0;

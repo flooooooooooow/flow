@@ -277,6 +277,33 @@ void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h
     }
 }
 
+/* Milliseconds since the first call. CACurrentMediaTime is the mach monotonic
+ * clock, so it does not jump when the wall clock is adjusted. */
+double flow_gfx_time_ms(void* handle) {
+    (void)handle;
+    static double origin = -1.0;
+    double now = CACurrentMediaTime() * 1000.0;
+    if (origin < 0.0) origin = now;
+    return now - origin;
+}
+
+/* Sleep out the remainder of a frame at target_fps. There is no vsync on this
+ * path, so without this a demo runs as fast as the machine allows and its
+ * animation speed becomes hardware-dependent. */
+void flow_gfx_wait_frame(void* handle, int32_t target_fps) {
+    static double next = 0.0;
+    if (target_fps <= 0) return;
+    double period = 1000.0 / (double)target_fps;
+    double now = flow_gfx_time_ms(handle);
+    if (next <= 0.0) { next = now + period; return; }
+    double wait = next - now;
+    if (wait > 0.0) {
+        if (wait > period) wait = period;   /* clock jumped; do not stall */
+        usleep((useconds_t)(wait * 1000.0));
+    }
+    next = (wait < -period) ? now + period : next + period;  /* resync if far behind */
+}
+
 void flow_gfx_present(void* handle) {
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
     if (!ctx || !ctx->view) return;

@@ -328,6 +328,33 @@ void flow_gfx_blit_rgb(void* handle, int32_t x, int32_t y, int32_t w, int32_t h,
     }
 }
 
+/* Milliseconds since the first call, from SDL's monotonic performance counter. */
+double flow_gfx_time_ms(void* handle) {
+    (void)handle;
+    static Uint64 origin = 0;
+    Uint64 freq = SDL_GetPerformanceFrequency();
+    Uint64 now = SDL_GetPerformanceCounter();
+    if (origin == 0) origin = now;
+    if (freq == 0) return 0.0;
+    return (double)(now - origin) * 1000.0 / (double)freq;
+}
+
+/* Sleep out the remainder of a frame at target_fps. The SDL window is created
+ * without vsync, so without this a demo's speed is hardware-dependent. */
+void flow_gfx_wait_frame(void* handle, int32_t target_fps) {
+    static double next = 0.0;
+    if (target_fps <= 0) return;
+    double period = 1000.0 / (double)target_fps;
+    double now = flow_gfx_time_ms(handle);
+    if (next <= 0.0) { next = now + period; return; }
+    double wait = next - now;
+    if (wait > 0.0) {
+        if (wait > period) wait = period;   /* clock jumped; do not stall */
+        SDL_Delay((Uint32)wait);
+    }
+    next = (wait < -period) ? now + period : next + period;  /* resync if far behind */
+}
+
 void flow_gfx_present(void* handle) {
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
     if (!ctx || !ctx->texture || !ctx->renderer || !ctx->pixels) return;
@@ -434,6 +461,20 @@ void flow_gfx_blit_rgb(void* handle, int32_t x, int32_t y, int32_t w, int32_t h,
     (void)h;
     (void)src;
     flow_gfx_sdl_warn_once();
+}
+
+/* No window, but the clock still has to advance monotonically so a program
+ * that paces itself does not divide by zero or spin. */
+double flow_gfx_time_ms(void* handle) {
+    (void)handle;
+    static double t = 0.0;
+    t += 1000.0 / 60.0;
+    return t;
+}
+
+void flow_gfx_wait_frame(void* handle, int32_t target_fps) {
+    (void)handle;
+    (void)target_fps;
 }
 
 void flow_gfx_present(void* handle) {
