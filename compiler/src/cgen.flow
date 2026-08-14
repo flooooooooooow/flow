@@ -1043,6 +1043,14 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             return
         }
         # Sort DSL modifiers: emit as 0 (no-op expression statements).
+        #
+        # KNOWN HAZARD: this fires on the identifier anywhere, not only inside a
+        # sort/sortBy argument list, so `general`, `adaptive`, `descending`,
+        # `ascending` and `unique` cannot be used as ordinary variable names in
+        # any Flow program. Self-compilation caught it: a `let mut descending`
+        # in this file emitted `0 = 1;`. The locals below are named desc_flag
+        # for that reason. The real fix is to recognise these only in the
+        # argument position of a sort call.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "general") == 1 {
             flowc_cgen_puts(w, "0")
             return
@@ -1291,12 +1299,12 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         # sortBy(xs, ...) → same as sort for Stage-A
         # Check for descending modifier in args.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sort") == 1 {
-            let mut descending: i32 = 0
+            let mut desc_flag: i32 = 0
             let mut arg: i32 = arena.nodes[id].a
             while arg != AST_NONE {
                 if arena.nodes[arg].kind == AST_IDENT {
                     if flowc_cgen_span_is(src, arena.nodes[arg].name_start, arena.nodes[arg].name_end, "descending") == 1 {
-                        descending = 1
+                        desc_flag = 1
                     }
                 }
                 arg = arena.nodes[arg].next
@@ -1310,17 +1318,17 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, ")[0])), (int32_t)sizeof((")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_puts(w, ")[0]), ")
-            flowc_cgen_put_i32(w, descending)
+            flowc_cgen_put_i32(w, desc_flag)
             flowc_cgen_puts(w, "), 0)")
             return
         }
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sortBy") == 1 {
-            let mut descending: i32 = arena.nodes[id].ival
+            let mut desc_flag: i32 = arena.nodes[id].ival
             let mut arg: i32 = arena.nodes[id].a
             while arg != AST_NONE {
                 if arena.nodes[arg].kind == AST_IDENT {
                     if flowc_cgen_span_is(src, arena.nodes[arg].name_start, arena.nodes[arg].name_end, "descending") == 1 {
-                        descending = 1
+                        desc_flag = 1
                     }
                 }
                 arg = arena.nodes[arg].next
@@ -1335,7 +1343,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, ")[0])), (int32_t)sizeof((")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_puts(w, ")[0]), ")
-            flowc_cgen_put_i32(w, descending)
+            flowc_cgen_put_i32(w, desc_flag)
             flowc_cgen_puts(w, "), 0)")
             return
         }
@@ -1928,7 +1936,13 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 } else {
                     flowc_cgen_puts(w, "} else if (__flowc_match == ")
                 }
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[arm].a)
+                # A negative arm keeps its sign in ival; the source span covers only
+                # the digits, so emitting the span would turn -1 into 1.
+                if arena.nodes[arena.nodes[arm].a].kind == AST_INT {
+                    flowc_cgen_put_i32(w, arena.nodes[arena.nodes[arm].a].ival)
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[arm].a)
+                }
                 flowc_cgen_puts(w, ") {\n")
                 n_lit = n_lit + 1
                 chain_open = 1

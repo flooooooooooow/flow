@@ -179,7 +179,9 @@ echo "PASS compile_module ast greps"
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/token_flowc.c compiler/build/token_flowc.h
 compile_module lexer compiler/src/lexer.flow compiler/build/token_flowc.h
-for needle in 'flowc_lexer_new' 'flowc_lexer_next' 'flowc_lex_classify_keyword'; do
+# 'NULL' covers the null literal lowering, which fileio.flow no longer
+# exercises now that its io wrappers are emitted as builtin shims.
+for needle in 'flowc_lexer_new' 'flowc_lexer_next' 'flowc_lex_classify_keyword' 'NULL'; do
     if ! grep -Fq "$needle" compiler/build/lexer_flowc.c; then
         echo "FAIL compile_module lexer: missing '${needle}' in emitted C" >&2
         exit 1
@@ -198,9 +200,12 @@ if ! nm compiler/build/token_flowc.o | grep 'TOK_EOF' >/dev/null; then
 fi
 echo "PASS compile_module lexer greps+link"
 
-# Fourth module: fileio.flow (extern → #include <stdio.h>; null → NULL; string → const char*).
+# Fourth module: fileio.flow (extern → #include <stdio.h>; string → const char*).
+# The io wrappers lower to the builtin shims in the cgen preamble rather than
+# to Flow bodies, so this module no longer emits a null literal; the NULL
+# lowering is checked on lexer.flow above.
 compile_module fileio compiler/src/fileio.flow
-for needle in 'flowc_read_file' 'flowc_write_file' '#include <stdio.h>' 'NULL' 'const char*'; do
+for needle in 'flowc_read_file' 'flowc_write_file' '#include <stdio.h>' 'const char*'; do
     if ! grep -Fq "$needle" compiler/build/fileio_flowc.c; then
         echo "FAIL compile_module fileio: missing '${needle}' in emitted C" >&2
         exit 1
@@ -713,7 +718,7 @@ if [[ -f compiler/build/match_unsupported.c ]]; then
     echo "FAIL stage_a_match: unsupported-pattern fixture should not write C" >&2
     exit 1
 fi
-if ! grep -Fq 'struct patterns not supported in Stage-A match' compiler/build/match_unsupported.log; then
+if ! grep -Fq 'or/struct/list patterns unsupported in Stage-A' compiler/build/match_unsupported.log; then
     echo "FAIL stage_a_match: expected unsupported-pattern diagnostic" >&2
     cat compiler/build/match_unsupported.log >&2
     exit 1

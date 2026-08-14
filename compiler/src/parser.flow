@@ -912,6 +912,7 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
                     return base
                 }
             }
+            }
         }
     }
     return base

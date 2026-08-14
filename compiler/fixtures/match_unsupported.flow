@@ -1,19 +1,18 @@
-# Stage-A match: struct patterns are NOT supported — emit must fail with a
-# clear diagnostic (roundtrip asserts the message and that no C is written).
-
-struct Point {
-    x: i32,
-    y: i32
-}
+# Stage-A match: or-patterns are NOT supported — emit must fail with a clear
+# diagnostic (roundtrip asserts the message and that no C is written).
+#
+# This fixture used to use a struct pattern. Struct patterns now lower for
+# real (`Point(a, b)` destructures to field reads), so the negative case moved
+# to an or-pattern, which the parser still rejects.
 
 function main() -> i32 {
-    let p: Point = Point { x: 1, y: 2 }
-    match p {
-        Point(a, b) => {
-            return a
+    let v: i32 = 1
+    match v {
+        1 | 2 => {
+            return 0
         }
         _ => {
-            return 0
+            return 1
         }
     }
     return 0
