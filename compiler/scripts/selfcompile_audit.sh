@@ -46,8 +46,20 @@ for f in compiler/src/*.flow; do
     out="compiler/build/audit/${name}.c"
     log="compiler/build/audit/${name}.log"
     rm -f "$out"
-    if ! FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src "$DRV" "$f" "$out" >"$log" 2>&1; then
+    # driver.flow binaries take argv; a binary built from main.flow reads
+    # FLOWC_IN / FLOWC_OUT instead. Pass both so either bootstrap works, the
+    # same way self_host_full.sh does.
+    if ! FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
+            FLOWC_IN="$f" FLOWC_OUT="$out" "$DRV" "$f" "$out" >"$log" 2>&1; then
         echo "FAIL ${name}: flowc could not emit"
+        tail -5 "$log"
+        fail=1
+        continue
+    fi
+    # A driver that exits 0 without writing anything used to surface three
+    # steps later as "clang: no input files". Name it here instead.
+    if [[ ! -s "$out" ]]; then
+        echo "FAIL ${name}: flowc exited 0 but wrote no C to ${out}"
         tail -5 "$log"
         fail=1
         continue
