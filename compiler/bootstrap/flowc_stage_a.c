@@ -5034,6 +5034,18 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   if (flowc_cgen_span_is(src, ns, ne, "pthread_self") == 1) {
   return 1;
 }
+  if (flowc_cgen_span_is(src, ns, ne, "stat") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "fstat") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "lstat") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "mkdir") == 1) {
+  return 1;
+}
   return 0;
 }
 
