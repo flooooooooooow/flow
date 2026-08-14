@@ -2296,6 +2296,9 @@ int32_t flowc_parse_stmt(Parser* p) {
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
   int32_t saved_start = ((p[0]).cur).start;
   int32_t expr = flowc_parse_expr(p);
+  if (expr == AST_NONE) {
+  return AST_NONE;
+}
   int32_t lk = (((p[0]).arena).nodes[expr]).kind;
   if (flowc_parser_check(p[0], TOK_EQ) == 1 && (lk == AST_IDENT || lk == AST_FIELD_ACCESS || lk == AST_INDEX)) {
   flowc_parser_advance(p);
