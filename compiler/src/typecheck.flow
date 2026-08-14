@@ -666,11 +666,14 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             flowc_tc_bind_value(ctx, arena.nodes[item].name_start, arena.nodes[item].name_end, ty)
         }
         if kind == AST_ENUM {
-            # Bind enum variant names as global constants.
+            # Bind qualified enum variant names (EnumName_VariantName) as
+            # global constants, matching the C generator's naming.
+            let ens: i32 = arena.nodes[item].name_start
+            let ene: i32 = arena.nodes[item].name_end
             let mut var: i32 = arena.nodes[item].a
             while var != AST_NONE {
-                flowc_tc_bind(ctx, arena.nodes[var].name_start, arena.nodes[var].name_end, 1, -1)
-                flowc_tc_bind(ctx, arena.nodes[var].name_start, arena.nodes[var].name_end, 0, -1)
+                # Construct "EnumName_VariantName" in the seed buffer.
+                flowc_tc_seed_bind_enum_variant(ctx, ctx[0].src, ens, ene, arena.nodes[var].name_start, arena.nodes[var].name_end)
                 var = arena.nodes[var].next
             }
         }
@@ -771,6 +774,49 @@ function flowc_tc_seed_bind(ctx: ptr<TcCtx>, dep_src: ptr<u8>, start: i32, end: 
     ctx[0].ne[bi] = off + n
     ctx[0].nk[bi] = kind
     ctx[0].na[bi] = arity
+    ctx[0].nlen = bi + 1
+    ctx[0].seed_nlen = ctx[0].nlen
+}
+
+# Bind "EnumName_VariantName" as a global constant by constructing the
+# qualified name in the seed buffer.
+function flowc_tc_seed_bind_enum_variant(ctx: ptr<TcCtx>, src: ptr<u8>, ens: i32, ene: i32, vns: i32, vne: i32) {
+    if ctx[0].seed_buf == null {
+        flowc_tc_err(ctx)
+        return
+    }
+    let en_len: i32 = ene - ens
+    let vn_len: i32 = vne - vns
+    let total: i32 = en_len + 1 + vn_len
+    if ctx[0].seed_len + total > ctx[0].seed_cap {
+        puts("flowc tc: seed buffer full (raise seed_cap)")
+        flowc_tc_err(ctx)
+        return
+    }
+    if ctx[0].nlen >= ctx[0].ncap {
+        puts("flowc tc: name table full while seeding (raise ncap)")
+        flowc_tc_err(ctx)
+        return
+    }
+    ctx[0].nlen = ctx[0].seed_nlen
+    let off: i32 = ctx[0].seed_len
+    let mut i: i32 = 0
+    while i < en_len {
+        ctx[0].seed_buf[off + i] = src[ens + i]
+        i = i + 1
+    }
+    ctx[0].seed_buf[off + en_len] = 95
+    i = 0
+    while i < vn_len {
+        ctx[0].seed_buf[off + en_len + 1 + i] = src[vns + i]
+        i = i + 1
+    }
+    ctx[0].seed_len = off + total
+    let bi: i32 = ctx[0].nlen
+    ctx[0].ns[bi] = off
+    ctx[0].ne[bi] = off + total
+    ctx[0].nk[bi] = 0
+    ctx[0].na[bi] = -1
     ctx[0].nlen = bi + 1
     ctx[0].seed_nlen = ctx[0].nlen
 }

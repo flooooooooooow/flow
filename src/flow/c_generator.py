@@ -904,6 +904,9 @@ class CGenerator:
                 continue
             if struct_name in self._enums or struct_name in type_alias_names or struct_name in distinct_type_names:
                 continue
+            # Defined by the @cImport header's own #include.
+            if struct_name in getattr(self, '_c_import_types', ()):
+                continue
             safe_name = _c_ident(struct_name)
             lines.append(f"typedef struct {safe_name} {safe_name};")
             forward_declared.add(struct_name)
@@ -966,6 +969,8 @@ class CGenerator:
             emitted.add(name)
         
         for struct_name in sorted(self._structs.keys()):
+            if struct_name in getattr(self, '_c_import_types', ()):
+                continue
             emit_struct(struct_name)
 
         # Forward declarations for capability methods (mangled names: CapabilityName_methodName)
@@ -5082,6 +5087,17 @@ def flow_to_c(
         c_includes = [d for d in declarations if isinstance(d, (CIncludeDecl, CImportDecl))]
         c_embeds = [d for d in declarations if isinstance(d, CEmbedDecl)]
 
+        # Names of every type that came from a @cImport header. The generator
+        # emits an #include for that header, which already defines them, so
+        # emitting our own definition is a redefinition. Reconstructing a
+        # scalar typedef as `typedef struct dev_t dev_t;` is wrong twice over:
+        # dev_t is an int, not a struct.
+        generator._c_import_types = {
+            d.name
+            for d in declarations
+            if getattr(d, 'is_c_import', False) and getattr(d, 'name', None)
+        }
+
         # Extract function names from @cEmbed code so the generator can
         # skip emitting conflicting extern prototypes for them.
         import re as _re_embed
@@ -5124,6 +5140,11 @@ def flow_to_c(
         for inc in c_includes:
             prelude_lines.append(f'#include "{inc.header}"')
         for et in extern_types:
+            # Types imported by @cImport are already declared by the #include
+            # this generator emits for that header. Re-declaring them is a
+            # typedef redefinition, which clang rejects on glibc.
+            if getattr(et, 'is_c_import', False):
+                continue
             prelude_lines.append(f"typedef struct {et.name} {et.name};")
         if prelude_lines:
             out = "\n".join(prelude_lines) + "\n" + out
