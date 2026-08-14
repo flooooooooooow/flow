@@ -838,11 +838,47 @@ function flowc_parse_expr(p: ptr<Parser>) -> i32 {
     }
     let mut result: i32 = flowc_parse_binop_rhs(p, 1, lhs)
     # Pipeline: x |> f(args) → f(x, args)
+    # For sort/sortBy, trailing identifiers (descending, adaptive, etc.) are
+    # sort DSL modifiers, not separate statements. Consume them as extra args.
     while flowc_parser_check(p[0], TOK_PIPELINE) == 1 {
         flowc_parser_advance(p)
         let rhs: i32 = flowc_parse_cast(p)
         if rhs == AST_NONE {
             return AST_NONE
+        }
+        # If rhs is an ident named sort/sortBy, consume trailing idents as
+        # sort DSL modifier arguments.
+        if p[0].arena.nodes[rhs].kind == AST_IDENT {
+            let ns: i32 = p[0].arena.nodes[rhs].name_start
+            let ne: i32 = p[0].arena.nodes[rhs].name_end
+            if flowc_parser_span_is(p[0], ns, ne, "sort") == 1 or flowc_parser_span_is(p[0], ns, ne, "sortBy") == 1 {
+                let mut mods: i32 = AST_NONE
+                while flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                    let ms: i32 = p[0].cur.start
+                    let me: i32 = p[0].cur.end
+                    let mnode: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, ms, me)
+                    if mnode == AST_NONE {
+                        p[0].err = 1
+                        return AST_NONE
+                    }
+                    p[0].arena.nodes[mnode].name_start = ms
+                    p[0].arena.nodes[mnode].name_end = me
+                    mods = flowc_ast_chain_push(&p[0].arena, mods, mnode)
+                    flowc_parser_advance(p)
+                }
+                if mods != AST_NONE {
+                    # Build a call with the modifiers as extra args.
+                    let call: i32 = flowc_ast_alloc(&p[0].arena, AST_CALL, ns, ne)
+                    if call == AST_NONE {
+                        p[0].err = 1
+                        return AST_NONE
+                    }
+                    p[0].arena.nodes[call].name_start = ns
+                    p[0].arena.nodes[call].name_end = ne
+                    p[0].arena.nodes[call].a = mods
+                    rhs = call
+                }
+            }
         }
         result = flowc_parse_apply_pipe(p, result, rhs)
         if result == AST_NONE {
