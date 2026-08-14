@@ -272,6 +272,28 @@ void flow_gfx_shutdown(void *handle) {
     free(g);
 }
 
+EM_JS(double, flow_gfx_js_now, (void), {
+    return performance.now();
+});
+
+/* Milliseconds since the first call. */
+double flow_gfx_time_ms(void *handle) {
+    (void)handle;
+    static double origin = -1.0;
+    double now = flow_gfx_js_now();
+    if (origin < 0.0) origin = now;
+    return now - origin;
+}
+
+/* Deliberately a no-op. flow_gfx_present already awaits one
+ * requestAnimationFrame (see flow_gfx_js_yield), so the browser paces this
+ * backend to the display refresh. Sleeping here on top of that would halve
+ * the frame rate. */
+void flow_gfx_wait_frame(void *handle, int32_t target_fps) {
+    (void)handle;
+    (void)target_fps;
+}
+
 int32_t flow_gfx_should_close(void *handle) {
     FlowGfxWasm *g = (FlowGfxWasm *)handle;
     if (!g) return 1;
