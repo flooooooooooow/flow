@@ -395,6 +395,14 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_puts(w, "int64_t")
         return
     }
+    if flowc_cgen_span_is(src, ns, ne, "i128") == 1 {
+        flowc_cgen_puts(w, "__int128")
+        return
+    }
+    if flowc_cgen_span_is(src, ns, ne, "u128") == 1 {
+        flowc_cgen_puts(w, "unsigned __int128")
+        return
+    }
     if flowc_cgen_span_is(src, ns, ne, "f32") == 1 {
         flowc_cgen_puts(w, "float")
         return
@@ -878,7 +886,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     let kind: i32 = arena.nodes[id].kind
     if kind == AST_INT {
-        flowc_cgen_put_i32(w, arena.nodes[id].ival)
+        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         return
     }
     if kind == AST_FLOAT {

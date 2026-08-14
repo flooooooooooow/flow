@@ -1255,6 +1255,8 @@ int32_t flowc_parse_atom(Parser* p) {
   (p[0]).err = 1;
   return AST_NONE;
 }
+  (((p[0]).arena).nodes[id]).name_start = (tok).start;
+  (((p[0]).arena).nodes[id]).name_end = (tok).end;
   (((p[0]).arena).nodes[id]).ival = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end);
   flowc_parser_advance(p);
   return id;
@@ -3401,6 +3403,8 @@ void flowc_cgen_putc(CgenBuf* w, int32_t c);
 void flowc_cgen_puts(CgenBuf* w, const char* s);
 void flowc_cgen_put_span(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
 void flowc_cgen_put_i32(CgenBuf* w, int32_t val);
+void flowc_cgen_put_u64_hex(CgenBuf* w, unsigned long long val);
+void flowc_cgen_emit_int_literal(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_cgen_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
 int32_t flowc_cgen_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit);
 void flowc_cgen_put_ident(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
@@ -3491,6 +3495,30 @@ void flowc_cgen_put_i32(CgenBuf* w, int32_t val) {
   while (v > 0) {
   digits[n] = ((v % 10) + 48);
   v = (v / 10);
+  n = (n + 1);
+}
+  int32_t i = n;
+  while (i > 0) {
+  i = (i - 1);
+  flowc_cgen_putc(w, digits[i]);
+}
+}
+
+void flowc_cgen_put_u64_hex(CgenBuf* w, unsigned long long val) {
+  if (val == 0) {
+  flowc_cgen_putc(w, 48);
+  return;
+}
+  uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  int32_t n = 0;
+  while (val > 0) {
+  int32_t d = (int32_t)(val & 15);
+  if (d < 10) {
+  digits[n] = (d + 48);
+} else {
+  digits[n] = (d + 87);
+}
+  val = (val >> 4);
   n = (n + 1);
 }
   int32_t i = n;
@@ -3771,6 +3799,14 @@ void flowc_cgen_emit_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ty) 
 }
   if (flowc_cgen_span_is(src, ns, ne, "i64") == 1) {
   flowc_cgen_puts(w, "int64_t");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "i128") == 1) {
+  flowc_cgen_puts(w, "__int128");
+  return;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "u128") == 1) {
+  flowc_cgen_puts(w, "unsigned __int128");
   return;
 }
   if (flowc_cgen_span_is(src, ns, ne, "f32") == 1) {
@@ -4197,13 +4233,58 @@ void flowc_cgen_emit_print_intrinsic(CgenBuf* w, AstArena arena, uint8_t* src, i
   flowc_cgen_putc(w, 41);
 }
 
+void flowc_cgen_emit_int_literal(CgenBuf* w, uint8_t* src, int32_t start, int32_t end) {
+  int32_t n_digits = 0;
+  int32_t i = start;
+  while (i < end) {
+  if (src[i] >= 48 && src[i] <= 57) {
+  n_digits = (n_digits + 1);
+}
+  i = (i + 1);
+}
+  if (n_digits <= 18) {
+  flowc_cgen_put_span(w, src, start, end);
+  return;
+}
+  unsigned long long lo = 0;
+  unsigned long long hi = 0;
+  unsigned long long mod_hi = 10000000000000000000ULL;
+  i = start;
+  while (i < end) {
+  if (src[i] < 48 || src[i] > 57) {
+  i = (i + 1);
+  continue;
+}
+  unsigned long long d = (src[i] - 48);
+  unsigned long long carry = (hi / mod_hi);
+  hi = (hi % mod_hi);
+  unsigned long long new_hi = (hi * 10 + carry);
+  unsigned long long new_lo = (lo * 10 + d);
+  if (new_lo < lo) {
+  new_hi = (new_hi + 1);
+}
+  hi = new_hi;
+  lo = new_lo;
+  i = (i + 1);
+}
+  if (hi == 0) {
+  flowc_cgen_put_span(w, src, start, end);
+  return;
+}
+  flowc_cgen_puts(w, "((__int128)0x");
+  flowc_cgen_put_u64_hex(w, hi);
+  flowc_cgen_puts(w, "ULL << 64 | (__int128)0x");
+  flowc_cgen_put_u64_hex(w, lo);
+  flowc_cgen_puts(w, "ULL)");
+}
+
 void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   if (id == AST_NONE || (w[0]).err != 0) {
   return;
 }
   int32_t kind = ((arena).nodes[id]).kind;
   if (kind == AST_INT) {
-  flowc_cgen_put_i32(w, ((arena).nodes[id]).ival);
+  flowc_cgen_emit_int_literal(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   return;
 }
   if (kind == AST_FLOAT) {
