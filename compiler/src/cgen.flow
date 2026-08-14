@@ -962,6 +962,35 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "NULL")
             return
         }
+        # Sort DSL modifiers: emit as 0 (no-op expression statements).
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "general") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "adaptive") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "descending") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "ascending") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "unique") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "asc") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "desc") == 1 {
+            flowc_cgen_puts(w, "0")
+            return
+        }
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         return
     }
@@ -1121,6 +1150,46 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 flowc_cgen_puts(w, ") + 0.0 * I)")
                 return
             }
+        }
+        # sort(xs) → qsort dispatch by element size
+        # sortBy(xs, ...) → same as sort for Stage-A
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sort") == 1 {
+            flowc_cgen_puts(w, "(flowc_sort_dispatch((void*)")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ", (int32_t)(sizeof(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")/sizeof((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")[0])), (int32_t)sizeof((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")[0]), 0), 0)")
+            return
+        }
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sortBy") == 1 {
+            flowc_cgen_puts(w, "(flowc_sort_dispatch((void*)")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ", (int32_t)(sizeof(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")/sizeof((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")[0])), (int32_t)sizeof((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")[0]), 0), 0)")
+            return
+        }
+        # find(xs, target) → flowc_find_i32(xs, n, target)
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 {
+            flowc_cgen_puts(w, "flowc_find_i32(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ", (int32_t)(sizeof(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")/sizeof(int32_t))")
+            if n_args >= 2 {
+                flowc_cgen_puts(w, ", ")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[arena.nodes[id].a].next)
+            }
+            flowc_cgen_puts(w, ")")
+            return
         }
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_putc(w, 40)
@@ -2662,6 +2731,13 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_puts(&w, "#ifndef FLOWC_IO_SYSTEM\n#define FLOWC_IO_SYSTEM\n")
         flowc_cgen_puts(&w, "int32_t flowc_io_system(const char* cmd) { return system(cmd); }\n")
+        flowc_cgen_puts(&w, "#endif\n")
+        # Sort and find runtime helpers.
+        flowc_cgen_puts(&w, "#ifndef FLOWC_SORT\n#define FLOWC_SORT\n")
+        flowc_cgen_puts(&w, "static int flowc_cmp_i32(const void* a, const void* b) { int32_t x = *(const int32_t*)a; int32_t y = *(const int32_t*)b; return (x > y) - (x < y); }\n")
+        flowc_cgen_puts(&w, "static int flowc_cmp_u8(const void* a, const void* b) { uint8_t x = *(const uint8_t*)a; uint8_t y = *(const uint8_t*)b; return (x > y) - (x < y); }\n")
+        flowc_cgen_puts(&w, "static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t unused) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else qsort(a, n, 4, flowc_cmp_i32); return 0; }\n")
+        flowc_cgen_puts(&w, "static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { int32_t lo = 0, hi = n - 1; while (lo <= hi) { int32_t mid = lo + (hi - lo) / 2; if (a[mid] == target) return mid; if (a[mid] < target) lo = mid + 1; else hi = mid - 1; } return -1; }\n")
         flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_putc(&w, 10)
     }
