@@ -155,9 +155,13 @@ function flowc_parser_eat_gt(p: ptr<Parser>) -> i32 {
 # Plain name, ptr<T> (a=inner, ival=0), array<T, N> (a=inner, ival=N),
 # or function pointer (A, B) -> R (a=param chain, b=return type).
 function flowc_parse_type(p: ptr<Parser>) -> i32 {
-    # Reference type: &[T] or &T — skip the & and parse the inner type.
+    # Reference type: &[T] or &T or &mut [T] — skip the & and optional mut.
     if flowc_parser_check(p[0], TOK_AMP) == 1 {
         flowc_parser_advance(p)
+        # Skip `mut` keyword after & (e.g. &mut [i32]).
+        if flowc_parser_check_kw(p[0], KW_MUT) == 1 {
+            flowc_parser_advance(p)
+        }
         return flowc_parse_type(p)
     }
     # Slice type: [T] — skip brackets and inner type.
@@ -273,6 +277,10 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
     }
     if flowc_parser_check(p[0], TOK_LT) == 1 {
         flowc_parser_advance(p)
+        # Skip `mut` keyword inside type parameters (e.g. span<mut i32>).
+        if flowc_parser_check_kw(p[0], KW_MUT) == 1 {
+            flowc_parser_advance(p)
+        }
         let inner: i32 = flowc_parse_type(p)
         if inner == AST_NONE {
             return AST_NONE
@@ -697,7 +705,67 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
                         p[0].arena.nodes[base].ival = has_desc
                     } else {
                         flowc_parser_advance(p)
+                        # Check for slice syntax: xs[a..b] or xs[a..]
                         let idx: i32 = flowc_parse_expr(p)
+                        if flowc_parser_check(p[0], TOK_DOTDOT) == 1 {
+                            # Slice: xs[a..b] or xs[a..]
+                            flowc_parser_advance(p)
+                            let mut end_idx: i32 = AST_NONE
+                            if flowc_parser_check(p[0], TOK_RBRACK) == 0 {
+                                end_idx = flowc_parse_expr(p)
+                            }
+                            if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+                                return AST_NONE
+                            }
+                            # Store as AST_INDEX with a=base, b=start, c=end
+                            let sid: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
+                            if sid == AST_NONE {
+                                p[0].err = 1
+                                return AST_NONE
+                            }
+                            p[0].arena.nodes[sid].a = base
+                            p[0].arena.nodes[sid].b = idx
+                            p[0].arena.nodes[sid].c = end_idx
+                            p[0].arena.nodes[sid].ival = 1  # mark as slice
+                            base = sid
+                        } else {
+                            if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+                                return AST_NONE
+                            }
+                            let id: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
+                            if id == AST_NONE {
+                                p[0].err = 1
+                                return AST_NONE
+                            }
+                            p[0].arena.nodes[id].a = base
+                            p[0].arena.nodes[id].b = idx
+                            base = id
+                        }
+                    }
+                } else {
+                    flowc_parser_advance(p)
+                    # Check for slice syntax: xs[a..b] or xs[a..]
+                    let idx: i32 = flowc_parse_expr(p)
+                    if flowc_parser_check(p[0], TOK_DOTDOT) == 1 {
+                        flowc_parser_advance(p)
+                        let mut end_idx: i32 = AST_NONE
+                        if flowc_parser_check(p[0], TOK_RBRACK) == 0 {
+                            end_idx = flowc_parse_expr(p)
+                        }
+                        if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+                            return AST_NONE
+                        }
+                        let sid: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
+                        if sid == AST_NONE {
+                            p[0].err = 1
+                            return AST_NONE
+                        }
+                        p[0].arena.nodes[sid].a = base
+                        p[0].arena.nodes[sid].b = idx
+                        p[0].arena.nodes[sid].c = end_idx
+                        p[0].arena.nodes[sid].ival = 1  # mark as slice
+                        base = sid
+                    } else {
                         if flowc_parser_eat(p, TOK_RBRACK) == 0 {
                             return AST_NONE
                         }
@@ -710,20 +778,6 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
                         p[0].arena.nodes[id].b = idx
                         base = id
                     }
-                } else {
-                    flowc_parser_advance(p)
-                    let idx: i32 = flowc_parse_expr(p)
-                    if flowc_parser_eat(p, TOK_RBRACK) == 0 {
-                        return AST_NONE
-                    }
-                    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
-                    if id == AST_NONE {
-                        p[0].err = 1
-                        return AST_NONE
-                    }
-                    p[0].arena.nodes[id].a = base
-                    p[0].arena.nodes[id].b = idx
-                    base = id
                 }
             } else {
                 if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
