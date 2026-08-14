@@ -36,6 +36,7 @@ extern { function flow_gfx_present(ctx: ptr<void>) -> void }
 extern { function flow_gfx_run(ctx: ptr<void>, max_frames: i32) -> i32 }
 extern { function flow_gfx_time_ms(ctx: ptr<void>) -> f64 }
 extern { function flow_gfx_wait_frame(ctx: ptr<void>, target_fps: i32) -> void }
+extern { function flow_gfx_mouse(ctx: ptr<void>, out: ptr<i32>) -> i32 }
 
 export function gfx_open(w: i32, h: i32, title: string) -> Gfx {
     return Gfx { ctx: flow_gfx_init(w, h, title) }
@@ -122,4 +123,66 @@ export function gfx_time_ms(g: Gfx) -> f64 {
 # already awaits requestAnimationFrame).
 export function gfx_wait_frame(g: Gfx, target_fps: i32) -> void {
     flow_gfx_wait_frame(g.ctx, target_fps)
+}
+
+# Pointer state for this frame.
+#
+# Coordinates are framebuffer pixels with y measured down from the top row,
+# matching gfx_fill_rect and gfx_blit_rgb. Each backend converts into that
+# convention: macOS inverts y because NSView is not flipped while buffer row 0
+# is the top; SDL and the browser already agree; the recorder synthesises a
+# scripted pointer so mouse-driven demos still record deterministically.
+#
+# `wheel` is a cumulative signed total, never reset by reading it. Diff it
+# against your own previous value, the same way demos already track keys with
+# a *_held bool. That keeps the runtime stateless and stops two readers in one
+# frame from stealing each other's scroll.
+#
+# `inside` is 0 when the cursor is outside the framebuffer, and every field is
+# 0 on a backend with no pointer, so a demo degrades instead of failing.
+struct Mouse {
+    x: i32,
+    y: i32,
+    left: i32,
+    right: i32,
+    middle: i32,
+    wheel: i32,
+    inside: i32
+}
+
+export function gfx_mouse(g: Gfx) -> Mouse {
+    let buf: array<i32, 7> = [0, 0, 0, 0, 0, 0, 0]
+    let p: ptr<i32> = buf
+    flow_gfx_mouse(g.ctx, p)
+    return Mouse {
+        x: p[0],
+        y: p[1],
+        left: p[2],
+        right: p[3],
+        middle: p[4],
+        wheel: p[5],
+        inside: p[6]
+    }
+}
+
+export function gfx_mouse_x(g: Gfx) -> i32 {
+    return gfx_mouse(g).x
+}
+
+export function gfx_mouse_y(g: Gfx) -> i32 {
+    return gfx_mouse(g).y
+}
+
+# button: 0 = left, 1 = right, 2 = middle
+export function gfx_mouse_down(g: Gfx, button: i32) -> bool {
+    let m: Mouse = gfx_mouse(g)
+    if button == 0 { return m.left != 0 }
+    if button == 1 { return m.right != 0 }
+    if button == 2 { return m.middle != 0 }
+    return false
+}
+
+# Cumulative scroll total. Diff against your own previous value.
+export function gfx_mouse_wheel(g: Gfx) -> i32 {
+    return gfx_mouse(g).wheel
 }
