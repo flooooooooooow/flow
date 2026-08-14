@@ -1,0 +1,25 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+effect Log {
+    emit(message: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function emit(message: string) -> void {
+        printf("[console] %s\n", message)
+    },
+}
+
+function report() -> void with Log {
+    Log.emit("handler installed")
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        report()
+    }
+    return 0
+}

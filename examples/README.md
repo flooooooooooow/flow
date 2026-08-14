@@ -8,6 +8,7 @@ Comprehensive examples demonstrating Flow's capabilities across multiple domains
 examples/
 ├── ai/               # Game-AI training (Q-learning, GA, policy gradients)
 ├── basics/           # Fundamental algorithms, Result, match
+├── book/             # Verified programs from Introduction to Flow
 ├── audio/            # Real-time audio DSP (@rt_safe demos)
 ├── compilers/        # Language implementation demos
 ├── concurrency/      # Channels / pipelines (Go-style runtime)
@@ -450,5 +451,4 @@ A few examples known to compile *and run* successfully:
 2. Include a `main() -> i32` function
 3. Test with `./flow run path/to/example.flow`
 4. Update this README (and the canonical entrypoints table when adding a domain)
-
 

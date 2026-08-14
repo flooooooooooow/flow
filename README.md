@@ -121,6 +121,21 @@ Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
 Longer walkthrough: [Getting started](docs/getting-started.md).
 
+New to programming: [Start here](docs/start-here.md) goes from an empty
+terminal to a running simulation, and sets up an AI assistant to write Flow
+with you.
+
+### Working with an AI assistant
+
+Flow is not in any model's training data, so an assistant does much better with
+the current facts in front of it. Two things help:
+
+- [Working with AI on Flow](docs/AI_FLOW_HANDBOOK.md), the operating handbook.
+- [flow-skills](https://github.com/flooooooooooow/flow-skills), a pack of
+  skills, references, and command-line tools. `./install.sh` and your
+  assistant knows the syntax, the compiler hosts, and how to verify its own
+  work.
+
 ---
 
 ## Examples

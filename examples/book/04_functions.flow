@@ -1,0 +1,31 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function clamp(x: f64, lo: f64, hi: f64) -> f64 {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+function pow_i(base: f64, exponent: i32) -> f64 {
+    let mut result: f64 = 1.0
+    for n in 0 to exponent {
+        result = result * base
+    }
+    return result
+}
+
+function compound(principal: f64, rate: f64, years: i32) -> f64 {
+    return principal * pow_i(1.0 + clamp(rate, 0.0, 1.0), years)
+}
+
+function main() -> i32 {
+    let balance: f64 = compound(1000.0, 0.05, 3)
+    printf("balance after 3 years: %.2f\n", balance)
+    return 0
+}

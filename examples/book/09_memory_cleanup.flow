@@ -1,0 +1,32 @@
+extern {
+    function calloc(count: i64, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function printf(fmt: string, ...) -> i32
+}
+
+function sum(data: ptr<i32>, count: i32) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to count {
+        total = total + data[i]
+    }
+    return total
+}
+
+function main() -> i32 {
+    let data: ptr<i32> = calloc(4, 4)
+    if data == null {
+        return 1
+    }
+    defer free(data)
+
+    for i in 0 to 4 {
+        data[i] = (i + 1) * 10
+    }
+
+    let total: i32 = sum(data, 4)
+    printf("heap total: %d\n", total)
+    if total != 100 {
+        return 2
+    }
+    return 0
+}

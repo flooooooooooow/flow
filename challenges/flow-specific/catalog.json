@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "challenges": [
+    {
+      "id": "F01",
+      "title": "Pipeline Calibration",
+      "track": "Data flow",
+      "difficulty": 1,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "pipeline operator |>", "pattern": "\\|>"},
+        {"label": "pipeline placeholder _", "pattern": "\\|>[^\\n]*\\([^\\n]*_[^\\n]*\\)"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F02",
+      "title": "Forked Statistics",
+      "track": "Data flow",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "typed pipeline fork", "pattern": "\\|>\\s*[A-Z][A-Za-z0-9_]*\\s*\\{"},
+        {"label": "three named branches", "pattern": "\\{[^}]*=[^}]*=[^}]*="}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F03",
+      "title": "Choose the Route",
+      "track": "Data flow",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "choose pipeline stage", "pattern": "\\|>\\s*choose\\b"},
+        {"label": "pipeline after choose", "pattern": "choose[\\s\\S]*\\}\\s*\\|>"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F04",
+      "title": "Declarative Leaderboard",
+      "track": "Data flow",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "sortBy stage", "pattern": "\\|>\\s*sortBy\\b"},
+        {"label": "descending field order", "pattern": "desc\\s+\\.[A-Za-z_]"},
+        {"label": "find stage", "pattern": "\\|>\\s*find\\s*\\("}
+      ],
+      "forbidden": [
+        {"label": "hand-written sorting loop", "pattern": "while[\\s\\S]{0,240}(swap|temp)"}
+      ]
+    },
+    {
+      "id": "F05",
+      "title": "Pattern Decoder",
+      "track": "Data flow",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "match expression", "pattern": "\\bmatch\\s+[^\\{]+\\{"},
+        {"label": "guarded binding", "pattern": "\\b[A-Za-z_]\\w*\\s+if\\s+[^=]+=>"},
+        {"label": "alternation pattern", "pattern": "[^\\n]+\\|[^\\n]+=>"},
+        {"label": "wildcard or default arm", "pattern": "(_\\s*=>|default\\s*\\{)"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F06",
+      "title": "Snapshot Closure",
+      "track": "Data flow",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "typed closure variable", "pattern": ":\\s*\\([^)]*\\)\\s*->\\s*\\w+\\s*=\\s*\\|"},
+        {"label": "capturing lambda", "pattern": "\\|[^|]+\\|\\s*->"},
+        {"label": "mutation after closure creation", "pattern": "let\\s+[^\\n]*=\\s*\\|[\\s\\S]+\\n\\s*[A-Za-z_]\\w*\\s*="}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F07",
+      "title": "Nominal Identifier Wall",
+      "track": "Types",
+      "difficulty": 1,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "two distinct types", "pattern": "distinct\\s+type[\\s\\S]+distinct\\s+type"},
+        {"label": "explicit as conversion", "pattern": "\\bas\\s+[A-Z][A-Za-z0-9_]*"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F08",
+      "title": "Dimensional Flight Plan",
+      "track": "Types",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "base unit declarations", "pattern": "\\bunit\\s+\\w+[\\s\\S]+\\bunit\\s+\\w+"},
+        {"label": "derived unit", "pattern": "\\bunit\\s+\\w+\\s*=.+[/^*]"},
+        {"label": "unit-typed bindings", "pattern": "let\\s+\\w+\\s*:\\s*[A-Z]\\w*"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F09",
+      "title": "Generic Sample Window",
+      "track": "Types",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "generic struct", "pattern": "struct\\s+\\w+\\s*<[^>]+>"},
+        {"label": "generic function", "pattern": "function\\s+\\w+\\s*<[^>]+>"},
+        {"label": "two explicit instantiations", "pattern": "<i32>[\\s\\S]+<f64>"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F10",
+      "title": "Overloaded Normaliser",
+      "track": "Types",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "two overloads named normalise", "pattern": "function\\s+normalise\\s*\\([^)]*i32[\\s\\S]+function\\s+normalise\\s*\\([^)]*f64"},
+        {"label": "calls to both overloads", "pattern": "normalise\\s*\\([^)]*\\)[\\s\\S]+normalise\\s*\\([^)]*\\)"}
+      ],
+      "forbidden": [
+        {"label": "type suffix workaround", "pattern": "function\\s+normalise_(i32|f64)"}
+      ]
+    },
+    {
+      "id": "F11",
+      "title": "Deferred Buffer Owner",
+      "track": "Memory",
+      "difficulty": 2,
+      "host": "flowc",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "heap allocation", "pattern": "\\b(calloc|malloc)\\s*\\("},
+        {"label": "null check", "pattern": "==\\s*null"},
+        {"label": "deferred free", "pattern": "defer\\s+free\\s*\\("}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F12",
+      "title": "Borrowed Signal Window",
+      "track": "Memory",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "immutable span parameter", "pattern": "span\\s*<\\s*f32\\s*>"},
+        {"label": "mutable span parameter", "pattern": "span\\s*<\\s*mut\\s+f32\\s*>"},
+        {"label": "slice expression", "pattern": "\\[[^]]*\\.\\.[^]]*\\]"}
+      ],
+      "forbidden": [
+        {"label": "raw pointer parameter", "pattern": "function\\s+\\w+\\s*\\([^)]*ptr\\s*<"}
+      ]
+    },
+    {
+      "id": "F13",
+      "title": "Lifetime Domain Ladder",
+      "track": "Memory",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "callback lifetime", "pattern": "@lifetime\\s*\\(\\s*callback\\s*\\)"},
+        {"label": "frame lifetime", "pattern": "@lifetime\\s*\\(\\s*frame\\s*\\)"},
+        {"label": "session lifetime", "pattern": "@lifetime\\s*\\(\\s*session\\s*\\)"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F14",
+      "title": "Real-Time Gain Stage",
+      "track": "Memory",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "compile", "{submission}"],
+      "required": [
+        {"label": "@rt_safe function", "pattern": "@rt_safe[\\s\\S]{0,120}function"},
+        {"label": "callback lifetime", "pattern": "@lifetime\\s*\\(\\s*callback\\s*\\)"},
+        {"label": "mutable output span", "pattern": "span\\s*<\\s*mut\\s+f32\\s*>"}
+      ],
+      "forbidden": [
+        {"label": "allocation in submission", "pattern": "\\b(malloc|calloc|realloc)\\s*\\("},
+        {"label": "blocking file operation", "pattern": "\\b(fopen|read|write)\\s*\\("}
+      ]
+    },
+    {
+      "id": "F15",
+      "title": "Opaque C Handle",
+      "track": "Interop",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "compile", "{submission}"],
+      "required": [
+        {"label": "C include directive", "pattern": "@cInclude\\s*\\("},
+        {"label": "opaque extern type", "pattern": "extern\\s+type\\s+\\w+"},
+        {"label": "pointer to opaque type", "pattern": "ptr\\s*<\\s*[A-Z]\\w*\\s*>"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F16",
+      "title": "Dynamic C Callback",
+      "track": "Interop",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "dlsym lookup", "pattern": "\\bdlsym\\s*\\("},
+        {"label": "raw C function pointer type", "pattern": "cfn\\s*\\([^)]*\\)\\s*->"},
+        {"label": "cast to cfn", "pattern": "\\bas\\s+cfn\\s*\\("}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F17",
+      "title": "Replaceable Logger",
+      "track": "Effects",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "effect declaration", "pattern": "\\beffect\\s+\\w+\\s*\\{"},
+        {"label": "two capabilities", "pattern": "capability\\s+\\w+[\\s\\S]+capability\\s+\\w+"},
+        {"label": "handle block", "pattern": "handle\\s+\\w+\\s+with\\s+\\w+\\s*\\{"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F18",
+      "title": "Strict Effect Row",
+      "track": "Effects",
+      "difficulty": 3,
+      "host": "python",
+      "env": {"FLOW_STRICT_EFFECTS": "1"},
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "function effect row", "pattern": "function\\s+\\w+\\s*\\([^)]*\\)[^{\\n]*\\bwith\\s+\\w+"},
+        {"label": "matching handler", "pattern": "handle\\s+\\w+\\s+with\\s+\\w+"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F19",
+      "title": "Parallel Image Row",
+      "track": "Concurrency",
+      "difficulty": 2,
+      "host": "flowc",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "parallel for", "pattern": "parallel\\s+for\\s+\\w+\\s+in"},
+        {"label": "indexed disjoint output", "pattern": "parallel\\s+for[^\\{]*\\{[^}]*\\w+\\s*\\[\\s*\\w+\\s*\\]\\s*="}
+      ],
+      "forbidden": [
+        {"label": "shared total inside loop", "pattern": "parallel\\s+for[^\\{]*\\{[^}]*total\\s*="}
+      ]
+    },
+    {
+      "id": "F20",
+      "title": "Bounded Producer Consumer",
+      "track": "Concurrency",
+      "difficulty": 3,
+      "host": "flowc",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "concurrent library import", "pattern": "import\\s+\"stdlib/concurrent\\.flow\""},
+        {"label": "channel send", "pattern": "channel_\\w+_send\\s*\\("},
+        {"label": "channel receive", "pattern": "channel_\\w+_recv\\s*\\("},
+        {"label": "channel close and destroy", "pattern": "channel_\\w+_close[\\s\\S]+channel_\\w+_destroy"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F21",
+      "title": "First Ready Channel",
+      "track": "Concurrency",
+      "difficulty": 4,
+      "host": "flowc",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "select2 or select4", "pattern": "\\bselect(2|4)\\w*\\s*\\("},
+        {"label": "default or try form", "pattern": "\\b(select(2|4)_try|default)\\b"}
+      ],
+      "forbidden": [
+        {"label": "manual polling sleep loop", "pattern": "while[\\s\\S]{0,300}(sleep|delay)\\s*\\("}
+      ]
+    },
+    {
+      "id": "F22",
+      "title": "Swappable Async Scheduler",
+      "track": "Concurrency",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "async library import", "pattern": "import\\s+\"stdlib/async\\.flow\""},
+        {"label": "Async effect row", "pattern": "\\bwith\\s+Async\\b"},
+        {"label": "Async operation", "pattern": "Async\\.\\w+\\s*\\("},
+        {"label": "Async handler", "pattern": "handle\\s+Async\\s+with\\s+\\w+Async"}
+      ],
+      "forbidden": [
+        {"label": "async keyword", "pattern": "\\basync\\s+function\\b"},
+        {"label": "await keyword", "pattern": "\\bawait\\b"}
+      ]
+    },
+    {
+      "id": "F23",
+      "title": "Declared Exponential Decay",
+      "track": "Evolution",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "flow declaration", "pattern": "\\bflow\\s+\\w+\\s*\\{"},
+        {"label": "state declaration", "pattern": "\\bstate\\s+\\w+\\s*:"},
+        {"label": "parameter declaration", "pattern": "\\bparam\\s+\\w+\\s*:"},
+        {"label": "evolves as equation", "pattern": "\\w+\\s+evolves\\s+as"}
+      ],
+      "forbidden": [
+        {"label": "manual Euler update in main", "pattern": "function\\s+main[\\s\\S]+\\w+\\s*=\\s*\\w+\\s*[-+]\\s*dt"}
+      ]
+    },
+    {
+      "id": "F24",
+      "title": "Solver Selection Study",
+      "track": "Evolution",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "solver block", "pattern": "solver\\s*\\{"},
+        {"label": "time unit", "pattern": "\\bdt\\s+[0-9.]+\\s*(ms|s)"},
+        {"label": "RK4 method", "pattern": "\\bmethod\\s+rk4\\b"},
+        {"label": "flow equation", "pattern": "\\bevolves\\s+as\\b"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F25",
+      "title": "Sampled Thermostat",
+      "track": "Evolution",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "sampled every block", "pattern": "every\\s+[0-9.]+\\s*(ms|s)\\s*\\{"},
+        {"label": "becomes assignment", "pattern": "\\w+\\s+becomes\\s+"},
+        {"label": "continuous equation", "pattern": "\\w+\\s+evolves\\s+as"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F26",
+      "title": "Bouncing Ball Reset",
+      "track": "Evolution",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "reaches event", "pattern": "when\\s+\\w+\\s+reaches\\s+[^\\{]+\\{"},
+        {"label": "two reset assignments", "pattern": "when[\\s\\S]+becomes[\\s\\S]+becomes"},
+        {"label": "continuous state equations", "pattern": "evolves\\s+as[\\s\\S]+evolves\\s+as"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F27",
+      "title": "Runtime Invariant Fence",
+      "track": "Evolution",
+      "difficulty": 2,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "always invariant block", "pattern": "always\\s*\\{"},
+        {"label": "upper and lower checks", "pattern": "always\\s*\\{[\\s\\S]*<[\\s\\S]*>"},
+        {"label": "evolving state", "pattern": "\\bevolves\\s+as\\b"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F28",
+      "title": "Connected Plant and Controller",
+      "track": "Evolution",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "three flow declarations", "pattern": "flow\\s+\\w+[\\s\\S]+flow\\s+\\w+[\\s\\S]+flow\\s+\\w+"},
+        {"label": "child flow fields", "pattern": "\\w+\\s*:\\s*[A-Z]\\w+[\\s\\S]+\\w+\\s*:\\s*[A-Z]\\w+"},
+        {"label": "connect block", "pattern": "connect\\s*\\{"},
+        {"label": "two connections", "pattern": "connect\\s*\\{[\\s\\S]*->[\\s\\S]*->"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F29",
+      "title": "Linearised Pendulum",
+      "track": "Dynamics",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "linear representation", "pattern": "represent\\s+linear\\s*\\{"},
+        {"label": "linearisation point", "pattern": "\\bat\\s*\\("},
+        {"label": "A, B, and C matrices", "pattern": "\\bA\\s+[0-9.-]+[\\s\\S]+\\bB\\s+[0-9.-]+[\\s\\S]+\\bC\\s+[0-9.-]+"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F30",
+      "title": "State-Space Health Report",
+      "track": "Dynamics",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "dsys declaration", "pattern": "\\bdsys\\s+\\w+\\s*\\{"},
+        {"label": "sense block", "pattern": "sense\\s+on\\s+\\w+\\s*\\{"},
+        {"label": "controllability check", "pattern": "\\bcontrollable\\s*->"},
+        {"label": "observability check", "pattern": "\\bobservable\\s*->"},
+        {"label": "spectral check", "pattern": "\\bspectral\\s*->"}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F31",
+      "title": "Stable Heat Field",
+      "track": "Dynamics",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "field declaration", "pattern": "\\bfield\\s+\\w+\\s*:"},
+        {"label": "Laplacian evolution", "pattern": "evolves\\s+as\\s+laplacian\\s*\\("},
+        {"label": "boundary block", "pattern": "boundary\\s+\\w+\\s*\\{"}
+      ],
+      "forbidden": [
+        {"label": "manual neighbour stencil", "pattern": "\\w+\\s*\\[\\s*\\w+\\s*[-+]\\s*1\\s*\\]"}
+      ]
+    },
+    {
+      "id": "F32",
+      "title": "Animated Fill Shader",
+      "track": "Device code",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "shader", "{submission}"],
+      "syntax_only": true,
+      "required": [
+        {"label": "fill shader declaration", "pattern": "shader\\s+fill\\s+\\w+\\s*\\("},
+        {"label": "fragment coordinate", "pattern": "\\bfrag_coord\\b"},
+        {"label": "time-dependent expression", "pattern": "\\btime\\b[\\s\\S]+\\b(sin|cos)\\s*\\("},
+        {"label": "vec4 colour", "pattern": "return\\s+vec4\\s*\\("}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F33",
+      "title": "Metal SAXPY Kernel",
+      "track": "Device code",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "gpu", "{submission}"],
+      "syntax_only": true,
+      "required": [
+        {"label": "@gpu function", "pattern": "@gpu[\\s\\S]{0,120}function"},
+        {"label": "GPU thread id", "pattern": "gpu_thread_id\\s*\\("},
+        {"label": "bounds guard", "pattern": "if\\s+\\w+\\s*<\\s*\\w+"},
+        {"label": "pointer output write", "pattern": "\\w+\\s*\\[\\s*\\w+\\s*\\]\\s*="}
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "F34",
+      "title": "Real-Time Audio Block",
+      "track": "Device code",
+      "difficulty": 4,
+      "host": "python",
+      "runner": ["./flow", "compile-audio", "{submission}"],
+      "required": [
+        {"label": "real-time safe marker", "pattern": "@rt_safe"},
+        {"label": "callback lifetime", "pattern": "@lifetime\\s*\\(\\s*callback\\s*\\)"},
+        {"label": "input span", "pattern": "span\\s*<\\s*f32\\s*>"},
+        {"label": "mutable output span", "pattern": "span\\s*<\\s*mut\\s+f32\\s*>"}
+      ],
+      "forbidden": [
+        {"label": "allocation", "pattern": "\\b(malloc|calloc|realloc)\\s*\\("},
+        {"label": "logging in callback", "pattern": "\\b(print|println|printf)\\s*\\("}
+      ]
+    },
+    {
+      "id": "F35",
+      "title": "Stable WebAssembly Boundary",
+      "track": "Targets",
+      "difficulty": 3,
+      "host": "python",
+      "runner": ["./flow", "compile", "{submission}"],
+      "required": [
+        {"label": "stable API marker", "pattern": "@flow_api[\\s\\S]{0,120}function"},
+        {"label": "numeric exported function", "pattern": "@flow_api[\\s\\S]{0,120}function\\s+\\w+\\s*\\([^)]*(i32|f64)[^)]*\\)\\s*->\\s*(i32|f64)"},
+        {"label": "main self-test", "pattern": "function\\s+main\\s*\\(\\s*\\)\\s*->\\s*i32"}
+      ],
+      "forbidden": [
+        {"label": "pointer in public signature", "pattern": "@flow_api[\\s\\S]{0,120}ptr\\s*<"}
+      ]
+    },
+    {
+      "id": "F36",
+      "title": "Instrument Control Capstone",
+      "track": "Capstone",
+      "difficulty": 5,
+      "host": "python",
+      "runner": ["./flow", "run", "{submission}"],
+      "required": [
+        {"label": "declared flow model", "pattern": "\\bflow\\s+\\w+\\s*\\{"},
+        {"label": "unit declaration", "pattern": "\\bunit\\s+\\w+"},
+        {"label": "pipeline with placeholder", "pattern": "\\|>[^\\n]*\\([^\\n]*_[^\\n]*\\)"},
+        {"label": "effect declaration", "pattern": "\\beffect\\s+\\w+\\s*\\{"},
+        {"label": "effect handler", "pattern": "handle\\s+\\w+\\s+with\\s+\\w+"},
+        {"label": "runtime invariant", "pattern": "always\\s*\\{"},
+        {"label": "distinct identifier type", "pattern": "distinct\\s+type\\s+\\w+"}
+      ],
+      "forbidden": []
+    }
+  ]
+}

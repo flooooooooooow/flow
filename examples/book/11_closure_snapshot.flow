@@ -1,0 +1,23 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function apply(f: (i32) -> i32, value: i32) -> i32 {
+    return f(value)
+}
+
+function main() -> i32 {
+    let mut base: i32 = 10
+    let add_base: (i32) -> i32 = |value: i32| -> i32 {
+        return value + base
+    }
+
+    base = 100
+    let result: i32 = apply(add_base, 5)
+
+    printf("captured result: %d\n", result)
+    if result != 15 {
+        return 1
+    }
+    return 0
+}
