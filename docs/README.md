@@ -8,6 +8,8 @@ Welcome to the Flow programming language documentation!
 
 | Document | Description |
 |----------|-------------|
+| **[Introduction to Flow](book/README.md)** | Formal, example-led book |
+| **[Flow Coding Challenges](book/19-coding-challenge-series.md)** | 36 syntax-enforced problems |
 | **[Getting Started](getting-started.md)** | Installation and first program |
 | **[Language Spec](LANGUAGE_SPEC.md)** | Complete language reference |
 | **[Grammar](grammar.ebnf)** | Formal EBNF grammar |

@@ -52,9 +52,11 @@ markdown_extensions:
 
 nav:
   - Home: wiki-home.md
+  - Start Here (Beginners): start-here.md
   - Vision: vision.md
   - Playground: playground/index.html
   - Getting Started: getting-started.md
+  - Working with AI: AI_FLOW_HANDBOOK.md
   - Comparison: comparison.md
   - Tutorials:
     - Beginner: tutorials/beginner.md

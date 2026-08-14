@@ -1,0 +1,30 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function objective(x: f64) -> f64 {
+    return x * x * x + 2.0 * x
+}
+
+function analytic_gradient(x: f64) -> f64 {
+    return 3.0 * x * x + 2.0
+}
+
+function centred_gradient(x: f64, h: f64) -> f64 {
+    return (objective(x + h) - objective(x - h)) / (2.0 * h)
+}
+
+function main() -> i32 {
+    let x: f64 = 3.0
+    let estimate: f64 = centred_gradient(x, 0.0001)
+    let reference: f64 = analytic_gradient(x)
+    let error: f64 = estimate - reference
+
+    printf("estimate: %.6f reference: %.6f error: %.9f\n",
+           estimate, reference, error)
+
+    if error < -0.000001 or error > 0.000001 {
+        return 1
+    }
+    return 0
+}

@@ -1,0 +1,40 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+distinct type UserId = i64
+
+struct Box<T> {
+    value: T
+}
+
+function identity<T>(value: T) -> T {
+    return value
+}
+
+function main() -> i32 {
+    let raw: i64 = 42
+    let user: UserId = raw as UserId
+    let restored: i64 = user as i64
+
+    let box: Box<i32> = Box<i32> { value: identity<i32>(21) }
+    let magnitude: i32 = if box.value >= 0 { box.value } else { -box.value }
+
+    let offset: i32 = 21
+    let add_offset = |value: i32| -> i32 { return value + offset }
+
+    let mut class: i32 = 0
+    match magnitude {
+        0 => { class = 1 }
+        x if x < 100 => { class = 2 }
+        default { class = 3 }
+    }
+
+    printf("user=%lld magnitude=%d closure=%d class=%d\n",
+           restored, magnitude, add_offset(21), class)
+
+    if restored != 42 or magnitude != 21 or add_offset(21) != 42 or class != 2 {
+        return 1
+    }
+    return 0
+}

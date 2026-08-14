@@ -12,7 +12,8 @@ C / MLIR backends.
 </p>
 
 <div class="wiki-hero-actions">
-  <a href="getting-started.md" class="wiki-cta wiki-cta-primary">Install &amp; run</a>
+  <a href="start-here.md" class="wiki-cta wiki-cta-primary">Start here</a>
+  <a href="getting-started.md" class="wiki-cta">Install &amp; run</a>
   <a href="tutorials/index.html" class="wiki-cta">257 interactive lessons</a>
 </div>
 
@@ -27,26 +28,32 @@ C / MLIR backends.
 
 </div>
 
-## Three ways in
+## Four ways in
 
 Pick one path. Everything else lives in the sidebar tabs.
 
 <nav class="wiki-paths" aria-label="Ways into the docs">
 
-<a class="wiki-path" href="getting-started.md">
+<a class="wiki-path" href="start-here.md">
 <span class="wiki-path-kicker">01 · Start</span>
+<strong>Never programmed before</strong>
+<span>Install, run your first program, then have an AI assistant write Flow with you.</span>
+</a>
+
+<a class="wiki-path" href="getting-started.md">
+<span class="wiki-path-kicker">02 · Install</span>
 <strong>Install in five minutes</strong>
 <span>Compile `hello_world`, then open the tutorial app in the browser.</span>
 </a>
 
 <a class="wiki-path" href="demos/overview.md">
-<span class="wiki-path-kicker">02 · Watch</span>
+<span class="wiki-path-kicker">03 · Watch</span>
 <strong>See compiled programs run</strong>
 <span>Games, morphogenesis, neurons, planets — real `gfx` recordings, not mocks.</span>
 </a>
 
 <a class="wiki-path" href="language/spec-index.md">
-<span class="wiki-path-kicker">03 · Reference</span>
+<span class="wiki-path-kicker">04 · Reference</span>
 <strong>Language &amp; library</strong>
 <span>Spec, grammar, stdlib, effects, autodiff, memory, and RT safety.</span>
 </a>
