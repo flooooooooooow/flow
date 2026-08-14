@@ -43,11 +43,15 @@ export struct CgenBuf {
     len: i32,
     err: i32,
     sigs: ptr<u8>,
-    sigs_len: i32
+    sigs_len: i32,
+    cembed_names: ptr<u8>,
+    cembed_offs: ptr<i32>,
+    cembed_lens: ptr<i32>,
+    cembed_count: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -1534,6 +1538,19 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "fscanf") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "sscanf") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "scanf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_create") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_join") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_exit") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_mutex_init") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_mutex_destroy") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_mutex_lock") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_mutex_unlock") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_cond_init") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_cond_destroy") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_cond_wait") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_cond_signal") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_cond_broadcast") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pthread_self") == 1 { return 1 }
     return 0
 }
 
@@ -2090,6 +2107,108 @@ function flowc_cgen_emit_cimport(w: ptr<CgenBuf>, src: ptr<u8>, name_start: i32,
     free(pp_buf)
 }
 
+# Scan @cEmbed code for function definition names. Looks for patterns like
+# `int name(`, `void name(`, `int32_t name(`, etc. and stores the names
+# in w.cembed_names so the extern prototype pass can skip them.
+function flowc_cgen_scan_cembed_names(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    let mut i: i32 = start
+    while i < end {
+        # Look for a type keyword followed by whitespace and an identifier
+        # followed by `(`. We check for common C type keywords.
+        let mut kw_len: i32 = 0
+        if flowc_cgen_span_is(src, i, i + 3, "int") == 1 { kw_len = 3 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 4, "void") == 1 { kw_len = 4 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 4, "char") == 1 { kw_len = 4 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 5, "float") == 1 { kw_len = 5 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 5, "short") == 1 { kw_len = 5 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 4, "long") == 1 { kw_len = 4 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 5, "double") == 1 { kw_len = 5 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 4, "bool") == 1 { kw_len = 4 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 7, "int32_t") == 1 { kw_len = 7 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 7, "int64_t") == 1 { kw_len = 7 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 8, "uint32_t") == 1 { kw_len = 8 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 8, "uint64_t") == 1 { kw_len = 8 }
+        if kw_len == 0 and flowc_cgen_span_is(src, i, i + 7, "size_t") == 1 { kw_len = 6 }
+        if kw_len > 0 {
+            # Check that the keyword is not part of a longer identifier.
+            if i > start {
+                let prev: i32 = src[i - 1]
+                if (prev >= 65 and prev <= 90) or (prev >= 97 and prev <= 122) or prev == 95 or (prev >= 48 and prev <= 57) {
+                    i = i + 1
+                    continue
+                }
+            }
+            # Skip whitespace after the keyword.
+            let mut j: i32 = i + kw_len
+            while j < end and (src[j] == 32 or src[j] == 9 or src[j] == 10) {
+                j = j + 1
+            }
+            # Skip optional `*` (pointer return type).
+            while j < end and src[j] == 42 {
+                j = j + 1
+                while j < end and (src[j] == 32 or src[j] == 9) {
+                    j = j + 1
+                }
+            }
+            # Read the function name identifier.
+            let name_start: i32 = j
+            while j < end and ((src[j] >= 65 and src[j] <= 90) or (src[j] >= 97 and src[j] <= 122) or src[j] == 95 or (src[j] >= 48 and src[j] <= 57)) {
+                j = j + 1
+            }
+            let name_end: i32 = j
+            # Skip whitespace and check for `(`.
+            while j < end and (src[j] == 32 or src[j] == 9) {
+                j = j + 1
+            }
+            if name_end > name_start and j < end and src[j] == 40 {
+                # Found a function definition. Store the name.
+                if w[0].cembed_count < 32 {
+                    let nlen: i32 = name_end - name_start
+                    if w[0].cembed_count * 128 + nlen <= 4096 {
+                        let off: i32 = w[0].cembed_count * 128
+                        let mut k: i32 = 0
+                        while k < nlen {
+                            w[0].cembed_names[off + k] = src[name_start + k]
+                            k = k + 1
+                        }
+                        w[0].cembed_offs[w[0].cembed_count] = off
+                        w[0].cembed_lens[w[0].cembed_count] = nlen
+                        w[0].cembed_count = w[0].cembed_count + 1
+                    }
+                }
+            }
+            i = j
+            continue
+        }
+        i = i + 1
+    }
+}
+
+# Check if a function name (by source span) is in the cembed table.
+function flowc_cgen_is_cembed_fn(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let n: i32 = ne - ns
+    let mut idx: i32 = 0
+    while idx < w[0].cembed_count {
+        if w[0].cembed_lens[idx] == n {
+            let off: i32 = w[0].cembed_offs[idx]
+            let mut k: i32 = 0
+            let mut match: i32 = 1
+            while k < n {
+                if w[0].cembed_names[off + k] != src[ns + k] {
+                    match = 0
+                    k = n
+                }
+                k = k + 1
+            }
+            if match == 1 {
+                return 1
+            }
+        }
+        idx = idx + 1
+    }
+    return 0
+}
+
 export function flowc_cgen_emit_sigs(
     arena: AstArena,
     root: i32,
@@ -2109,6 +2228,14 @@ export function flowc_cgen_emit_sigs(
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
     w.sigs = sigs
     w.sigs_len = sigs_len
+    # Allocate cembed function name table (up to 32 entries).
+    let cembed_name_buf: array<u8, 4096> = []
+    let cembed_off_arr: array<i32, 32> = []
+    let cembed_len_arr: array<i32, 32> = []
+    w.cembed_names = &cembed_name_buf[0]
+    w.cembed_offs = &cembed_off_arr[0]
+    w.cembed_lens = &cembed_len_arr[0]
+    w.cembed_count = 0
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
@@ -2178,6 +2305,8 @@ export function flowc_cgen_emit_sigs(
             # @cEmbed: emit the raw C code verbatim (strip quotes)
             flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
             flowc_cgen_putc(&w, 10)  # newline
+            # Scan the embed code for function definition names.
+            flowc_cgen_scan_cembed_names(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
         }
         item = arena.nodes[item].next
     }
@@ -2312,7 +2441,9 @@ export function flowc_cgen_emit_sigs(
                 }
                 if arena.nodes[ef].kind == AST_FN {
                     if flowc_cgen_is_libc_fn(arena, src, ef) == 0 {
-                        flowc_cgen_emit_fn(&w, arena, src, ef)
+                        if flowc_cgen_is_cembed_fn(&w, src, arena.nodes[ef].name_start, arena.nodes[ef].name_end) == 0 {
+                            flowc_cgen_emit_fn(&w, arena, src, ef)
+                        }
                     }
                 }
                 ef = arena.nodes[ef].next

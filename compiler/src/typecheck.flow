@@ -399,8 +399,12 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
-            flowc_tc_note(ctx, "flowc tc: unbound ident", ns, ne)
-            flowc_tc_err(ctx)
+            # extern { ... } bodies are brace-skipped — allow unknown idents
+            # (e.g. function pointers declared in extern blocks).
+            if ctx[0].has_extern == 0 {
+                flowc_tc_note(ctx, "flowc tc: unbound ident", ns, ne)
+                flowc_tc_err(ctx)
+            }
         }
         return
     }
