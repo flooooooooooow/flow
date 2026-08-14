@@ -1446,6 +1446,27 @@ int32_t flowc_parse_postfix(Parser* p) {
   base = id;
 } else {
   if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
+  if (base != AST_NONE && (((p[0]).arena).nodes[base]).kind == AST_IDENT) {
+  int32_t bns = (((p[0]).arena).nodes[base]).name_start;
+  int32_t bne = (((p[0]).arena).nodes[base]).name_end;
+  if (flowc_parser_span_is(p[0], bns, bne, "sortBy") == 1) {
+  flowc_parser_advance(p);
+  int32_t depth = 1;
+  while (depth > 0 && (p[0]).err == 0) {
+  if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
+  depth = (depth + 1);
+}
+  if (flowc_parser_check(p[0], TOK_RBRACK) == 1) {
+  depth = (depth - 1);
+}
+  if (depth > 0) {
+  flowc_parser_advance(p);
+}
+}
+  if (depth == 0) {
+  flowc_parser_advance(p);
+}
+} else {
   flowc_parser_advance(p);
   int32_t idx = flowc_parse_expr(p);
   if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
@@ -1459,6 +1480,22 @@ int32_t flowc_parse_postfix(Parser* p) {
   (((p[0]).arena).nodes[id]).a = base;
   (((p[0]).arena).nodes[id]).b = idx;
   base = id;
+}
+} else {
+  flowc_parser_advance(p);
+  int32_t idx = flowc_parse_expr(p);
+  if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_INDEX, 0, 0);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = base;
+  (((p[0]).arena).nodes[id]).b = idx;
+  base = id;
+}
 } else {
   if (flowc_parser_check(p[0], TOK_LPAREN) == 1) {
   int32_t call_start = ((p[0]).cur).start;
