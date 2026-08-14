@@ -1551,6 +1551,13 @@ int32_t flowc_parse_postfix(Parser* p) {
   (p[0]).err = 1;
   return AST_NONE;
 }
+  if ((((p[0]).arena).nodes[base]).kind == AST_FIELD_ACCESS) {
+  int32_t recv = (((p[0]).arena).nodes[base]).a;
+  if (recv != AST_NONE) {
+  (((p[0]).arena).nodes[recv]).next = args;
+  args = recv;
+}
+}
   (((p[0]).arena).nodes[id]).a = args;
   (((p[0]).arena).nodes[id]).name_start = (((p[0]).arena).nodes[base]).name_start;
   (((p[0]).arena).nodes[id]).name_end = (((p[0]).arena).nodes[base]).name_end;
