@@ -3111,6 +3111,9 @@ int32_t flowc_parse_export(Parser* p) {
   if (flowc_parser_eat_kw(p, KW_EXPORT) == 0) {
   return AST_NONE;
 }
+  if (flowc_parser_check_kw(p[0], KW_IMPORT) == 1) {
+  return flowc_parse_import(p);
+}
   if (flowc_parser_check_kw(p[0], KW_FUNCTION) == 1) {
   int32_t fn = flowc_parse_function(p);
   if (fn == AST_NONE) {

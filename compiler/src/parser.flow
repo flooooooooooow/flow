@@ -2171,6 +2171,9 @@ function flowc_parse_export(p: ptr<Parser>) -> i32 {
     if flowc_parser_eat_kw(p, KW_EXPORT) == 0 {
         return AST_NONE
     }
+    if flowc_parser_check_kw(p[0], KW_IMPORT) == 1 {
+        return flowc_parse_import(p)
+    }
     if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
         let fn: i32 = flowc_parse_function(p)
         if fn == AST_NONE {
