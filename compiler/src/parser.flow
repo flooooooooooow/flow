@@ -614,6 +614,15 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
                         p[0].err = 1
                         return AST_NONE
                     }
+                    # Method call: if base is a field access (expr.method),
+                    # prepend the receiver expr as the implicit first argument.
+                    if p[0].arena.nodes[base].kind == AST_FIELD_ACCESS {
+                        let recv: i32 = p[0].arena.nodes[base].a
+                        if recv != AST_NONE {
+                            p[0].arena.nodes[recv].next = args
+                            args = recv
+                        }
+                    }
                     p[0].arena.nodes[id].a = args
                     # For postfix calls, the callee is the base expression.
                     # Store base span as the call name for cgen.
