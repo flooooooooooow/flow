@@ -5891,6 +5891,8 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "#include <string.h>\n");
   flowc_cgen_puts((&w), "#include <math.h>\n");
   flowc_cgen_puts((&w), "#include <complex.h>\n");
+  flowc_cgen_puts((&w), "#pragma clang diagnostic ignored \"-Wint-conversion\"\n");
+  flowc_cgen_puts((&w), "#pragma clang diagnostic ignored \"-Wincompatible-pointer-types\"\n");
   flowc_cgen_puts((&w), "typedef float complex c64;\n");
   flowc_cgen_puts((&w), "typedef double complex c128;\n");
   flowc_cgen_putc((&w), 10);
