@@ -507,6 +507,88 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].name_end = name_e
         return id
     }
+    # Lambda: |params| -> ret_type { body }
+    # Stage-A: parse and lower to a static function, return an AST_IDENT
+    # referencing the generated function name.
+    if tok.kind == TOK_BAR {
+        let lam_start: i32 = tok.start
+        flowc_parser_advance(p)
+        # Parse parameters: |x: i32, y: i32|
+        let mut params: i32 = AST_NONE
+        if flowc_parser_check(p[0], TOK_BAR) == 0 {
+            let mut loop: i32 = 1
+            while loop == 1 {
+                if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                    puts("flowc parse: expected param name in lambda")
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                let pname_s: i32 = p[0].cur.start
+                let pname_e: i32 = p[0].cur.end
+                flowc_parser_advance(p)
+                if flowc_parser_eat(p, TOK_COLON) == 0 {
+                    return AST_NONE
+                }
+                let pty: i32 = flowc_parse_type(p)
+                if pty == AST_NONE {
+                    return AST_NONE
+                }
+                let param: i32 = flowc_ast_alloc(&p[0].arena, AST_PARAM, pname_s, pname_e)
+                if param == AST_NONE {
+                    p[0].err = 1
+                    return AST_NONE
+                }
+                p[0].arena.nodes[param].name_start = pname_s
+                p[0].arena.nodes[param].name_end = pname_e
+                p[0].arena.nodes[param].b = pty
+                params = flowc_ast_chain_push(&p[0].arena, params, param)
+                if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                    flowc_parser_advance(p)
+                } else {
+                    loop = 0
+                }
+            }
+        }
+        if flowc_parser_eat(p, TOK_BAR) == 0 {
+            return AST_NONE
+        }
+        # Optional return type: -> type
+        let mut ret_ty: i32 = AST_NONE
+        if flowc_parser_check(p[0], TOK_ARROW) == 1 {
+            flowc_parser_advance(p)
+            ret_ty = flowc_parse_type(p)
+            if ret_ty == AST_NONE {
+                return AST_NONE
+            }
+        }
+        # Body: { ... }
+        if flowc_parser_check(p[0], TOK_LBRACE) == 0 {
+            puts("flowc parse: expected lambda body { ... }")
+            p[0].err = 1
+            return AST_NONE
+        }
+        let body: i32 = flowc_parse_block(p)
+        if body == AST_NONE {
+            return AST_NONE
+        }
+        # Build an AST_FN node for the lambda.
+        let lam_fn: i32 = flowc_ast_alloc(&p[0].arena, AST_FN, lam_start, p[0].cur.start)
+        if lam_fn == AST_NONE {
+            p[0].err = 1
+            return AST_NONE
+        }
+        p[0].arena.nodes[lam_fn].a = params
+        p[0].arena.nodes[lam_fn].b = ret_ty
+        p[0].arena.nodes[lam_fn].c = body
+        p[0].arena.nodes[lam_fn].ival = 0
+        # Generate a unique name: __flowc_lambda_<id>
+        let lam_name: i32 = p[0].arena.len
+        p[0].arena.nodes[lam_fn].name_start = 0 - lam_name
+        p[0].arena.nodes[lam_fn].name_end = 0 - lam_name
+        # Store the lambda FN on a special list for the C generator to emit.
+        # For now, return the FN node directly; the C generator handles it.
+        return lam_fn
+    }
     if tok.kind == TOK_LPAREN {
         flowc_parser_advance(p)
         let inner: i32 = flowc_parse_expr(p)
@@ -1065,7 +1147,7 @@ function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
         let mut val: i32 = AST_NONE
         let k: i32 = p[0].cur.kind
         let mut is_expr: i32 = 0
-        if k == TOK_INT or k == TOK_FLOAT or k == TOK_STRING or k == TOK_IDENT or k == TOK_LPAREN or k == TOK_LBRACK {
+        if k == TOK_INT or k == TOK_FLOAT or k == TOK_STRING or k == TOK_IDENT or k == TOK_LPAREN or k == TOK_LBRACK or k == TOK_BAR {
             is_expr = 1
         }
         if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP or k == TOK_TILDE {

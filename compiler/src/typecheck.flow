@@ -464,6 +464,18 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_INT or kind == AST_BOOL or kind == AST_STRING or kind == AST_FLOAT {
         return
     }
+    if kind == AST_FN {
+        # Lambda expression: check the body. Bind params as i32.
+        flowc_tc_push_mark(ctx)
+        let mut param: i32 = arena.nodes[id].a
+        while param != AST_NONE {
+            flowc_tc_bind(ctx, arena.nodes[param].name_start, arena.nodes[param].name_end, 0, -1)
+            param = arena.nodes[param].next
+        }
+        flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
+        flowc_tc_pop_mark(ctx)
+        return
+    }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
@@ -489,10 +501,13 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
-            # extern { ... } bodies are brace-skipped — allow unknown calls.
-            if ctx[0].has_extern == 0 {
-                flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
-                flowc_tc_err(ctx)
+            # Check if it's a bound local variable (e.g. a lambda function pointer).
+            if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+                # extern { ... } bodies are brace-skipped — allow unknown calls.
+                if ctx[0].has_extern == 0 {
+                    flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
+                    flowc_tc_err(ctx)
+                }
             }
         } else {
             let arity: i32 = flowc_tc_lookup_fn_arity(ctx[0], ns, ne)

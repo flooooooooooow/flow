@@ -47,11 +47,15 @@ export struct CgenBuf {
     cembed_names: ptr<u8>,
     cembed_offs: ptr<i32>,
     cembed_lens: ptr<i32>,
-    cembed_count: i32
+    cembed_count: i32,
+    # Captured variable name spans (start/end pairs) for lambda capture.
+    cap_starts: ptr<i32>,
+    cap_ends: ptr<i32>,
+    cap_count: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -939,6 +943,63 @@ function flowc_cgen_emit_print_intrinsic(w: ptr<CgenBuf>, arena: AstArena, src: 
     flowc_cgen_putc(w, 41)
 }
 
+# Scan an AST subtree for AST_IDENT nodes that aren't in the param_spans list.
+# Add them to the captured variables buffer on the writer.
+function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, param_spans: ptr<i32>, nparams: i32) {
+    if id == AST_NONE {
+        return
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_IDENT {
+        let ns: i32 = arena.nodes[id].name_start
+        let ne: i32 = arena.nodes[id].name_end
+        # Check if it's a parameter by comparing source text.
+        let mut is_param: i32 = 0
+        let mut i: i32 = 0
+        while i < nparams * 2 {
+            if flowc_cgen_span_eq(src, ns, ne, param_spans[i], param_spans[i + 1]) == 1 {
+                is_param = 1
+            }
+            i = i + 2
+        }
+        # Skip builtins and function names (they resolve to C functions).
+        if is_param == 0 {
+            # Check if already in captured list (by text comparison).
+            let mut found: i32 = 0
+            let mut j: i32 = 0
+            while j < w[0].cap_count {
+                if flowc_cgen_span_eq(src, ns, ne, w[0].cap_starts[j], w[0].cap_ends[j]) == 1 {
+                    found = 1
+                }
+                j = j + 1
+            }
+            if found == 0 and w[0].cap_count < 64 {
+                w[0].cap_starts[w[0].cap_count] = ns
+                w[0].cap_ends[w[0].cap_count] = ne
+                w[0].cap_count = w[0].cap_count + 1
+            }
+        }
+        return
+    }
+    # Recurse into children.
+    flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].a, param_spans, nparams)
+    flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
+    flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams)
+    flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams)
+}
+
+# Check if a name span matches a captured variable.
+function flowc_cgen_is_captured(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < w[0].cap_count {
+        if flowc_cgen_span_eq(src, ns, ne, w[0].cap_starts[i], w[0].cap_ends[i]) == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -992,6 +1053,14 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             return
         }
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        return
+    }
+    if kind == AST_FN {
+        # Lambda expression: emit the generated function name.
+        # name_start is negative, encoding the unique lambda id.
+        let lam_id: i32 = 0 - arena.nodes[id].name_start
+        flowc_cgen_puts(w, "__flowc_lambda_")
+        flowc_cgen_put_i32(w, lam_id)
         return
     }
     if kind == AST_STRING {
@@ -1338,6 +1407,18 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if ann == AST_NONE {
             ty = flowc_cgen_infer_type_node(arena, src, init)
         }
+        # Check if this variable is captured by a lambda. If so, emit an
+        # assignment to the static global instead of a local declaration.
+        let is_captured: i32 = flowc_cgen_is_captured(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if is_captured == 1 {
+            # Simple captured variable: assign to the static global.
+            flowc_cgen_puts(w, "  ")
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, init)
+            flowc_cgen_puts(w, ";\n")
+            return
+        }
         let mut arr_n: i32 = 0
         let mut arr_inner: i32 = AST_NONE
         if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
@@ -1357,6 +1438,34 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 wrote = flowc_cgen_write_lit_type(w, arena, src, init)
             }
             if wrote == 0 {
+                # Handle lambda initializer without type annotation: emit
+                # function pointer type from the lambda's signature.
+                if ty == AST_NONE and init != AST_NONE and arena.nodes[init].kind == AST_FN {
+                    let lam_ret: i32 = arena.nodes[init].b
+                    if lam_ret == AST_NONE {
+                        flowc_cgen_puts(w, "void")
+                    } else {
+                        flowc_cgen_emit_type(w, arena, src, lam_ret)
+                    }
+                    flowc_cgen_puts(w, " (*")
+                    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                    flowc_cgen_puts(w, ")(")
+                    let mut lam_param: i32 = arena.nodes[init].a
+                    let mut lam_first: i32 = 1
+                    while lam_param != AST_NONE {
+                        if lam_first == 0 {
+                            flowc_cgen_puts(w, ", ")
+                        }
+                        flowc_cgen_emit_type(w, arena, src, arena.nodes[lam_param].b)
+                        lam_first = 0
+                        lam_param = arena.nodes[lam_param].next
+                    }
+                    flowc_cgen_putc(w, 41)
+                    flowc_cgen_puts(w, " = ")
+                    flowc_cgen_emit_expr(w, arena, src, init)
+                    flowc_cgen_puts(w, ";\n")
+                    return
+                }
                 if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and (arena.nodes[ty].ival == -1 or arena.nodes[ty].ival == -2) {
                     flowc_cgen_emit_type(w, arena, src, arena.nodes[ty].b)
                     flowc_cgen_puts(w, " (*")
@@ -2008,11 +2117,16 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     }
 
     # Stage-A: emit return type; omitted (AST_NONE) → void.
+    # Function pointer return types are emitted as void* (simplification).
     let ret_ty: i32 = arena.nodes[id].b
     if ret_ty == AST_NONE {
         flowc_cgen_puts(w, "void")
     } else {
-        flowc_cgen_emit_type(w, arena, src, ret_ty)
+        if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
+            flowc_cgen_puts(w, "void*")
+        } else {
+            flowc_cgen_emit_type(w, arena, src, ret_ty)
+        }
     }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -2054,7 +2168,11 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     if ret_ty == AST_NONE {
         flowc_cgen_puts(w, "void")
     } else {
-        flowc_cgen_emit_type(w, arena, src, ret_ty)
+        if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
+            flowc_cgen_puts(w, "void*")
+        } else {
+            flowc_cgen_emit_type(w, arena, src, ret_ty)
+        }
     }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -2668,6 +2786,12 @@ export function flowc_cgen_emit_sigs(
     w.cembed_names = &cembed_name_buf[0]
     w.cembed_offs = &cembed_off_arr[0]
     w.cembed_lens = &cembed_len_arr[0]
+    # Allocate captured variables buffer (up to 64 captured vars).
+    let cap_start_arr: array<i32, 64> = []
+    let cap_end_arr: array<i32, 64> = []
+    w.cap_starts = &cap_start_arr[0]
+    w.cap_ends = &cap_end_arr[0]
+    w.cap_count = 0
     w.cembed_count = 0
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
@@ -2770,6 +2894,39 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } free(tmp); return 0; }\n")
         flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_putc(&w, 10)
+    }
+
+    # Pass 0.4: scan lambda bodies for captured variables.
+    # For each lambda FN (negative name_start), collect identifiers in the
+    # body that aren't parameters. These will be hoisted to static globals.
+    let param_span_buf: array<i32, 32> = []
+    let mut li: i32 = 0
+    while li < arena.len {
+        if arena.nodes[li].kind == AST_FN {
+            if arena.nodes[li].name_start < 0 {
+                # Collect parameter name spans.
+                let mut nparams: i32 = 0
+                let mut param: i32 = arena.nodes[li].a
+                while param != AST_NONE and nparams < 16 {
+                    param_span_buf[nparams * 2] = arena.nodes[param].name_start
+                    param_span_buf[nparams * 2 + 1] = arena.nodes[param].name_end
+                    nparams = nparams + 1
+                    param = arena.nodes[param].next
+                }
+                # Scan body for captured variables.
+                flowc_cgen_scan_captures(&w, arena, src, arena.nodes[li].c, &param_span_buf[0], nparams)
+            }
+        }
+        li = li + 1
+    }
+
+    # Pass 0.5: emit static globals for captured variables.
+    let mut ci: i32 = 0
+    while ci < w.cap_count {
+        flowc_cgen_puts(&w, "static int32_t ")
+        flowc_cgen_put_span(&w, src, w.cap_starts[ci], w.cap_ends[ci])
+        flowc_cgen_puts(&w, " = 0;\n")
+        ci = ci + 1
     }
 
     # Pass 0.5a: @cInclude and @cImport directives first, so embedded C
@@ -2951,6 +3108,37 @@ export function flowc_cgen_emit_sigs(
         item = arena.nodes[item].next
     }
 
+    # Pass 2.7: forward declarations for lambda functions (negative name_start).
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if arena.nodes[i].name_start < 0 {
+                let lam_id: i32 = 0 - arena.nodes[i].name_start
+                let ret_ty: i32 = arena.nodes[i].b
+                if ret_ty == AST_NONE {
+                    flowc_cgen_puts(&w, "void")
+                } else {
+                    flowc_cgen_emit_type(&w, arena, src, ret_ty)
+                }
+                flowc_cgen_puts(&w, " __flowc_lambda_")
+                flowc_cgen_put_i32(&w, lam_id)
+                flowc_cgen_putc(&w, 40)
+                let mut param: i32 = arena.nodes[i].a
+                let mut first: i32 = 1
+                while param != AST_NONE {
+                    if first == 0 {
+                        flowc_cgen_puts(&w, ", ")
+                    }
+                    first = 0
+                    flowc_cgen_emit_param(&w, arena, src, param)
+                    param = arena.nodes[param].next
+                }
+                flowc_cgen_puts(&w, ");\n")
+            }
+        }
+        i = i + 1
+    }
+
     # Pass 2.8: forward declarations for all non-generic, non-libc functions
     # with a body, so functions called before their definition compile.
     item = arena.nodes[root].a
@@ -2981,6 +3169,43 @@ export function flowc_cgen_emit_sigs(
             }
         }
         item = arena.nodes[item].next
+    }
+
+    # Pass 3.5: emit lambda function bodies (AST_FN nodes with negative
+    # name_start). Forward declarations were emitted in pass 2.7.
+    i = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if arena.nodes[i].name_start < 0 {
+                # Emit the lambda function with its generated name.
+                let lam_id: i32 = 0 - arena.nodes[i].name_start
+                # Return type
+                let ret_ty: i32 = arena.nodes[i].b
+                if ret_ty == AST_NONE {
+                    flowc_cgen_puts(&w, "void")
+                } else {
+                    flowc_cgen_emit_type(&w, arena, src, ret_ty)
+                }
+                flowc_cgen_puts(&w, " __flowc_lambda_")
+                flowc_cgen_put_i32(&w, lam_id)
+                flowc_cgen_putc(&w, 40)
+                # Parameters
+                let mut param: i32 = arena.nodes[i].a
+                let mut first: i32 = 1
+                while param != AST_NONE {
+                    if first == 0 {
+                        flowc_cgen_puts(&w, ", ")
+                    }
+                    first = 0
+                    flowc_cgen_emit_param(&w, arena, src, param)
+                    param = arena.nodes[param].next
+                }
+                flowc_cgen_puts(&w, ") ")
+                flowc_cgen_emit_block(&w, arena, src, arena.nodes[i].c)
+                flowc_cgen_putc(&w, 10)
+            }
+        }
+        i = i + 1
     }
 
     if w.err != 0 {
