@@ -5,6 +5,18 @@
 #         exposes the step label and cross-reference formatting helpers.
 #         Full document construction and parsing stay in Python.
 
+import .claim_address {
+    FlowcClaimAddress,
+    flowc_claim_try_parse,
+    flowc_claim_address_phrase
+}
+import .claim_path {
+    flowc_claim_path_tier_label
+}
+import .math_prose {
+    flowc_flow_expr_to_mathematical_english
+}
+
 extern {
     function strcmp(a: string, b: string) -> i32
     function strlen(s: string) -> i64
@@ -16,7 +28,7 @@ extern {
 
 # ── String helpers ───────────────────────────────────────────────
 
-function str_append(a: string, b: string) -> string {
+function pd_str_append(a: string, b: string) -> string {
     let la: i32 = strlen(a) as i32
     let lb: i32 = strlen(b) as i32
     let total: i32 = la + lb
@@ -77,8 +89,8 @@ export function flowc_circled(n: i32) -> string {
     }
     # Fallback: (n)
     let mut s: string = "("
-    s = str_append(s, int_to_str(n))
-    s = str_append(s, ")")
+    s = pd_str_append(s, int_to_str(n))
+    s = pd_str_append(s, ")")
     return s
 }
 
@@ -87,8 +99,8 @@ export function flowc_circled(n: i32) -> string {
 # \textbf{N.}
 export function flowc_step_label_latex(n: i32) -> string {
     let mut s: string = "\\textbf{"
-    s = str_append(s, int_to_str(n))
-    s = str_append(s, ".}")
+    s = pd_str_append(s, int_to_str(n))
+    s = pd_str_append(s, ".}")
     return s
 }
 
@@ -97,7 +109,7 @@ export function flowc_step_label_latex(n: i32) -> string {
 # Format a single step number as "step N".
 function fmt_single_ref(n: i32) -> string {
     let mut s: string = "step "
-    s = str_append(s, int_to_str(n))
+    s = pd_str_append(s, int_to_str(n))
     return s
 }
 
@@ -141,8 +153,8 @@ export function flowc_fmt_refs(nums: string) -> string {
     }
     if count == 2 {
         let mut s: string = fmt_single_ref(values[0])
-        s = str_append(s, " and ")
-        s = str_append(s, fmt_single_ref(values[1]))
+        s = pd_str_append(s, " and ")
+        s = pd_str_append(s, fmt_single_ref(values[1]))
         return s
     }
 
@@ -151,11 +163,11 @@ export function flowc_fmt_refs(nums: string) -> string {
     let mut k: i32 = 0
     while k < count {
         if k == count - 1 {
-            s = str_append(s, "and ")
+            s = pd_str_append(s, "and ")
         }
-        s = str_append(s, fmt_single_ref(values[k]))
+        s = pd_str_append(s, fmt_single_ref(values[k]))
         if k < count - 1 {
-            s = str_append(s, ", ")
+            s = pd_str_append(s, ", ")
         }
         k = k + 1
     }
@@ -169,8 +181,8 @@ export function flowc_from_refs(nums: string) -> string {
         return ""
     }
     let mut s: string = "From "
-    s = str_append(s, refs)
-    s = str_append(s, ", ")
+    s = pd_str_append(s, refs)
+    s = pd_str_append(s, ", ")
     return s
 }
 
@@ -194,13 +206,13 @@ export function flowc_under_refs(nums: string) -> string {
     let refs: string = flowc_fmt_refs(nums)
     if commas == 0 {
         let mut s: string = "Under the supposition in "
-        s = str_append(s, refs)
-        s = str_append(s, ", ")
+        s = pd_str_append(s, refs)
+        s = pd_str_append(s, ", ")
         return s
     }
     let mut s: string = "Under the suppositions in "
-    s = str_append(s, refs)
-    s = str_append(s, ", ")
+    s = pd_str_append(s, refs)
+    s = pd_str_append(s, ", ")
     return s
 }
 
@@ -216,32 +228,32 @@ export function flowc_slug_label(path: string) -> string {
     while i < n {
         let c: i32 = p[i]
         if c == 47 {
-            result = str_append(result, "-")
+            result = pd_str_append(result, "-")
         } else {
             if c == 43 {
-                result = str_append(result, "plus")
+                result = pd_str_append(result, "plus")
             } else {
                 if c == 42 {
-                    result = str_append(result, "star")
+                    result = pd_str_append(result, "star")
                 } else {
                     if c == 124 {
-                        result = str_append(result, "or")
+                        result = pd_str_append(result, "or")
                     } else {
                         if c == 46 {
-                            result = str_append(result, "-")
+                            result = pd_str_append(result, "-")
                         } else {
                             if c == 61 {
-                                result = str_append(result, "eq")
+                                result = pd_str_append(result, "eq")
                             } else {
                                 if c == 171 or c == 187 {
                                     # « and » -> skip
                                 } else {
                                     if c == 32 {
-                                        result = str_append(result, "-")
+                                        result = pd_str_append(result, "-")
                                     } else {
                                         let buf: array<u8, 2> = [0, 0]
                                         buf[0] = c
-                                        result = str_append(result, buf as string)
+                                        result = pd_str_append(result, buf as string)
                                     }
                                 }
                             }
@@ -253,4 +265,747 @@ export function flowc_slug_label(path: string) -> string {
         i = i + 1
     }
     return result
+}
+
+# ═════════════════════════════════════════════════════════════════
+# Proof-file parsing
+#
+# Port of the pure text half of parse_proof_file: the meta block, brace-body
+# extraction, and proof-step classification. The Python original drives these
+# from regexes; Stage-A has none, so each is a hand-written scan.
+#
+# File reading and document assembly stay in Python. These entry points are
+# line-at-a-time so a host loop is a direct translation of _parse_steps.
+# ═════════════════════════════════════════════════════════════════
+
+function pd_is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 or c == 10 { return 1 }
+    return 0
+}
+
+function pd_is_word_char(c: i32) -> i32 {
+    if c >= 97 and c <= 122 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 48 and c <= 57 { return 1 }
+    if c == 95 { return 1 }
+    return 0
+}
+
+function pd_substr(s: string, start: i32, end: i32) -> string {
+    if end <= start { return "" }
+    let p: ptr<u8> = s
+    let n: i32 = end - start
+    let buf: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        buf[i] = p[start + i]
+        i = i + 1
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+function pd_append_char(s: string, c: i32) -> string {
+    let buf: array<u8, 2> = [0, 0]
+    buf[0] = c as u8
+    buf[1] = 0
+    return pd_str_append(s, buf as string)
+}
+
+function pd_at(s: string, i: i32, lit: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let ll: i32 = strlen(lit) as i32
+    if i + ll > n { return 0 }
+    let p: ptr<u8> = s
+    let lp: ptr<u8> = lit
+    let mut j: i32 = 0
+    while j < ll {
+        if p[i + j] != lp[j] { return 0 }
+        j = j + 1
+    }
+    return 1
+}
+
+function pd_trim(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut a: i32 = 0
+    while a < n and pd_is_space(p[a]) == 1 { a = a + 1 }
+    let mut b: i32 = n
+    while b > a and pd_is_space(p[b - 1]) == 1 { b = b - 1 }
+    return pd_substr(s, a, b)
+}
+
+function pd_index_from(s: string, start: i32, ch: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut i: i32 = start
+    while i < n {
+        if p[i] == ch { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function pd_replace_all(s: string, needle: string, repl: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let nl: i32 = strlen(needle) as i32
+    if nl == 0 { return s }
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if pd_at(s, i, needle) == 1 {
+            out = pd_str_append(out, repl)
+            i = i + nl
+        } else {
+            out = pd_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# ── Meta block ───────────────────────────────────────────────────
+#
+# META_LINE = ^\s*#\s*@(?P<key>[a-z-]+)\s+(?P<value>.+?)\s*$   (case-insensitive)
+#
+# Index of the first key character, or -1 when the line has no `# @` prefix.
+function pd_meta_key_start(line: string) -> i32 {
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = 0
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if i >= n or p[i] != 35 { return 0 - 1 }
+    i = i + 1
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if i >= n or p[i] != 64 { return 0 - 1 }
+    return i + 1
+}
+
+# Index just past the key, or -1 when the line is not a complete meta line.
+function pd_meta_key_end(line: string) -> i32 {
+    let start: i32 = pd_meta_key_start(line)
+    if start < 0 { return 0 - 1 }
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = start
+    while i < n {
+        let c: i32 = p[i]
+        let mut ok: i32 = 0
+        if c >= 97 and c <= 122 { ok = 1 }
+        if c >= 65 and c <= 90 { ok = 1 }
+        if c == 45 { ok = 1 }
+        if ok == 0 { break }
+        i = i + 1
+    }
+    if i == start { return 0 - 1 }
+
+    # At least one space must separate key from value, and the value must
+    # contain a non-space character.
+    let mut j: i32 = i
+    let mut spaces: i32 = 0
+    while j < n and pd_is_space(p[j]) == 1 { j = j + 1; spaces = spaces + 1 }
+    if spaces == 0 { return 0 - 1 }
+    if j >= n { return 0 - 1 }
+    return i
+}
+
+# Normalised meta key, or "" when the line is not a meta line.
+# Lowercased, '-' becomes '_', and "from" becomes "from_source".
+export function flowc_proof_meta_key(line: string) -> string {
+    let end: i32 = pd_meta_key_end(line)
+    if end < 0 { return "" }
+    let key_start: i32 = pd_meta_key_start(line)
+
+    let raw: string = pd_substr(line, key_start, end)
+    let rn: i32 = strlen(raw) as i32
+    let rp: ptr<u8> = raw
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < rn {
+        let mut c: i32 = rp[i]
+        if c >= 65 and c <= 90 { c = c + 32 }
+        if c == 45 { c = 95 }
+        out = pd_append_char(out, c)
+        i = i + 1
+    }
+    if strcmp(out, "from") == 0 { return "from_source" }
+    return out
+}
+
+# Trimmed meta value, or "" when the line is not a meta line.
+export function flowc_proof_meta_value(line: string) -> string {
+    let end: i32 = pd_meta_key_end(line)
+    if end < 0 { return "" }
+    return pd_trim(pd_substr(line, end, strlen(line) as i32))
+}
+
+# ── Brace bodies ─────────────────────────────────────────────────
+
+# Body between the brace at open_index and its match, exclusive.
+# Port of _extract_brace_body's first return value.
+export function flowc_extract_brace_body(text: string, open_index: i32) -> string {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let mut depth: i32 = 0
+    let mut i: i32 = open_index
+    while i < n {
+        if p[i] == 123 { depth = depth + 1 }
+        if p[i] == 125 {
+            depth = depth - 1
+            if depth == 0 {
+                return pd_substr(text, open_index + 1, i)
+            }
+        }
+        i = i + 1
+    }
+    return pd_substr(text, open_index + 1, n)
+}
+
+# Index just past the matching close brace, or the length of the text when the
+# brace is never closed. Port of _extract_brace_body's second return value.
+export function flowc_extract_brace_end(text: string, open_index: i32) -> i32 {
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text
+    let mut depth: i32 = 0
+    let mut i: i32 = open_index
+    while i < n {
+        if p[i] == 123 { depth = depth + 1 }
+        if p[i] == 125 {
+            depth = depth - 1
+            if depth == 0 { return i + 1 }
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# ── Proof steps ──────────────────────────────────────────────────
+#
+# _parse_steps strips each line and drops blanks and comments, then tries the
+# patterns in this order: if, elif, else, assume, therefore, let. The kind and
+# the two text fields are exposed separately so a host loop can build the
+# ProofStep list without Stage-A needing a list return.
+
+# For `^\s*\}?\s*<kw>\s+(.+?)\s*\{`: index just past the keyword, or -1.
+function pd_block_kw_end(line: string, kw: string) -> i32 {
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = 0
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if i < n and p[i] == 125 { i = i + 1 }
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if pd_at(line, i, kw) == 0 { return 0 - 1 }
+    return i + (strlen(kw) as i32)
+}
+
+# Condition inside `if <cond> {` / `elif <cond> {`, or "" when unmatched.
+# The lazy `(.+?)\s*\{` capture ends at the first brace, trailing space cut.
+function pd_block_condition(line: string, kw: string) -> string {
+    let after: i32 = pd_block_kw_end(line, kw)
+    if after < 0 { return "" }
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = after
+    let mut spaces: i32 = 0
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1; spaces = spaces + 1 }
+    if spaces == 0 { return "" }
+    let start: i32 = i
+    let brace: i32 = pd_index_from(line, start, 123)
+    if brace < 0 { return "" }
+    let mut end: i32 = brace
+    while end > start and pd_is_space(p[end - 1]) == 1 { end = end - 1 }
+    if end <= start { return "" }
+    return pd_substr(line, start, end)
+}
+
+# `^\s*\}?\s*else\s*\{`
+function pd_is_else_line(line: string) -> i32 {
+    let after: i32 = pd_block_kw_end(line, "else")
+    if after < 0 { return 0 }
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = after
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if i < n and p[i] == 123 { return 1 }
+    return 0
+}
+
+# `<kw>\s+(.+)` anchored at the start of the stripped line. Returns the
+# remainder, or "" when the line does not start with the keyword.
+function pd_prefix_rest(line: string, kw: string) -> string {
+    if pd_at(line, 0, kw) == 0 { return "" }
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let kl: i32 = strlen(kw) as i32
+    let mut i: i32 = kl
+    let mut spaces: i32 = 0
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1; spaces = spaces + 1 }
+    if spaces == 0 { return "" }
+    if i >= n { return "" }
+    return pd_substr(line, i, n)
+}
+
+# `let\s+(?:mut\s+)?(\w+)\s*=\s*(.+)`: index of the name, or -1.
+function pd_let_name_start(line: string) -> i32 {
+    if pd_at(line, 0, "let") == 0 { return 0 - 1 }
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = 3
+    let mut spaces: i32 = 0
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1; spaces = spaces + 1 }
+    if spaces == 0 { return 0 - 1 }
+    if pd_at(line, i, "mut") == 1 {
+        let mut j: i32 = i + 3
+        let mut sp2: i32 = 0
+        while j < n and pd_is_space(p[j]) == 1 { j = j + 1; sp2 = sp2 + 1 }
+        if sp2 > 0 { i = j }
+    }
+    if i >= n or pd_is_word_char(p[i]) == 0 { return 0 - 1 }
+    return i
+}
+
+# "name = value" for a let line, or "" when it does not match.
+function pd_let_text(line: string) -> string {
+    let start: i32 = pd_let_name_start(line)
+    if start < 0 { return "" }
+    let n: i32 = strlen(line) as i32
+    let p: ptr<u8> = line
+    let mut i: i32 = start
+    while i < n and pd_is_word_char(p[i]) == 1 { i = i + 1 }
+    let name: string = pd_substr(line, start, i)
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if i >= n or p[i] != 61 { return "" }
+    i = i + 1
+    while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+    if i >= n { return "" }
+    let value: string = pd_trim(pd_substr(line, i, n))
+    let mut out: string = name
+    out = pd_str_append(out, " = ")
+    out = pd_str_append(out, value)
+    return out
+}
+
+# ProofStep.kind for one raw line: "", "if", "case", "assume", "therefore",
+# or "let". Blank lines and comments give "", matching the _parse_steps filter.
+export function flowc_proof_step_kind(line: string) -> string {
+    let t: string = pd_trim(line)
+    let n: i32 = strlen(t) as i32
+    if n == 0 { return "" }
+    let p: ptr<u8> = t
+    if p[0] == 35 { return "" }
+
+    if strlen(pd_block_condition(t, "if")) > 0 { return "if" }
+    if strlen(pd_block_condition(t, "elif")) > 0 { return "case" }
+    if pd_is_else_line(t) == 1 { return "case" }
+    if strlen(pd_prefix_rest(t, "assume")) > 0 { return "assume" }
+    if strlen(pd_prefix_rest(t, "therefore")) > 0 { return "therefore" }
+    if strlen(pd_let_text(t)) > 0 { return "let" }
+    return ""
+}
+
+# ProofStep.text for one raw line, or "" when the line is not a step.
+export function flowc_proof_step_text(line: string) -> string {
+    let t: string = pd_trim(line)
+    let kind: string = flowc_proof_step_kind(t)
+    if strcmp(kind, "if") == 0 {
+        return pd_trim(pd_block_condition(t, "if"))
+    }
+    if strcmp(kind, "case") == 0 {
+        let cond: string = pd_block_condition(t, "elif")
+        if strlen(cond) > 0 {
+            let mut out: string = "case "
+            out = pd_str_append(out, pd_trim(cond))
+            return out
+        }
+        return "inductive step"
+    }
+    if strcmp(kind, "assume") == 0 {
+        return pd_trim(pd_prefix_rest(t, "assume"))
+    }
+    if strcmp(kind, "therefore") == 0 {
+        return pd_trim(pd_prefix_rest(t, "therefore"))
+    }
+    if strcmp(kind, "let") == 0 {
+        return pd_let_text(t)
+    }
+    return ""
+}
+
+# ProofStep.detail for one raw line. Only the block forms carry one.
+export function flowc_proof_step_detail(line: string) -> string {
+    let t: string = pd_trim(line)
+    let kind: string = flowc_proof_step_kind(t)
+    if strcmp(kind, "if") == 0 {
+        return pd_block_condition(t, "if")
+    }
+    if strcmp(kind, "case") == 0 {
+        let cond: string = pd_block_condition(t, "elif")
+        if strlen(cond) > 0 { return cond }
+        return "else"
+    }
+    return ""
+}
+
+# The claim a `therefore` line establishes: the expression with any trailing
+# " by <tactic>" clause removed. "" for every other line.
+export function flowc_proof_claim_from_therefore(line: string) -> string {
+    let t: string = pd_trim(line)
+    if strcmp(flowc_proof_step_kind(t), "therefore") != 0 { return "" }
+    let expr: string = pd_trim(pd_prefix_rest(t, "therefore"))
+    let n: i32 = strlen(expr) as i32
+    let mut i: i32 = 0
+    while i + 4 <= n {
+        if pd_at(expr, i, " by ") == 1 {
+            return pd_trim(pd_substr(expr, 0, i))
+        }
+        i = i + 1
+    }
+    return expr
+}
+
+# ── LaTeX escaping ───────────────────────────────────────────────
+
+# Port of _latex_escape. The replacements run in the Python dict's insertion
+# order, and that order is load-bearing: the backslash rule runs first, so the
+# braces it introduces are escaped by the later brace rules, while the
+# backslashes those rules introduce are not. Reordering changes the output.
+export function flowc_latex_escape(text: string) -> string {
+    let mut s: string = text
+    s = pd_replace_all(s, "\\", "\\textbackslash{}")
+    s = pd_replace_all(s, "&", "\\&")
+    s = pd_replace_all(s, "%", "\\%")
+    s = pd_replace_all(s, "$", "\\$")
+    s = pd_replace_all(s, "#", "\\#")
+    s = pd_replace_all(s, "_", "\\_")
+    s = pd_replace_all(s, "{", "\\{")
+    s = pd_replace_all(s, "}", "\\}")
+    s = pd_replace_all(s, "~", "\\textasciitilde{}")
+    s = pd_replace_all(s, "^", "\\textasciicircum{}")
+    s = pd_replace_all(s, "·", "\\textperiodcentered{}")
+    s = pd_replace_all(s, "«", "\\guillemotleft{}")
+    s = pd_replace_all(s, "»", "\\guillemotright{}")
+    s = pd_replace_all(s, "α", "$\\alpha$")
+    s = pd_replace_all(s, "β", "$\\beta$")
+    s = pd_replace_all(s, "γ", "$\\gamma$")
+    s = pd_replace_all(s, "′", "$'$")
+    return s
+}
+
+# Port of _latex_escape_params.
+export function flowc_latex_escape_params(params: string) -> string {
+    return pd_replace_all(flowc_latex_escape(params), ",", ",\\;")
+}
+
+# ═════════════════════════════════════════════════════════════════
+# Rendering helpers for `flow doc proof`
+#
+# The per-item text of the Markdown and LaTeX renderers. Document assembly,
+# the theorem catalogue, and PDF compilation stay in Python; everything here
+# takes plain values and returns a string.
+# ═════════════════════════════════════════════════════════════════
+
+# Python's str.capitalize: upper the first character, lower the rest.
+function pd_capitalize(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    if n == 0 { return "" }
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let mut c: i32 = p[i]
+        if i == 0 {
+            if c >= 97 and c <= 122 { c = c - 32 }
+        } else {
+            if c >= 65 and c <= 90 { c = c + 32 }
+        }
+        out = pd_append_char(out, c)
+        i = i + 1
+    }
+    return out
+}
+
+# Upper the first character, leave the rest alone.
+function pd_upper_first(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    if n == 0 { return "" }
+    let p: ptr<u8> = s
+    let mut c: i32 = p[0]
+    if c >= 97 and c <= 122 { c = c - 32 }
+    let mut out: string = ""
+    out = pd_append_char(out, c)
+    out = pd_str_append(out, pd_substr(s, 1, n))
+    return out
+}
+
+function pd_starts_with_ci(s: string, lit: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let ll: i32 = strlen(lit) as i32
+    if ll > n { return 0 }
+    let p: ptr<u8> = s
+    let lp: ptr<u8> = lit
+    let mut i: i32 = 0
+    while i < ll {
+        let mut a: i32 = p[i]
+        let mut b: i32 = lp[i]
+        if a >= 65 and a <= 90 { a = a + 32 }
+        if b >= 65 and b <= 90 { b = b + 32 }
+        if a != b { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+function pd_contains(s: string, needle: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let nl: i32 = strlen(needle) as i32
+    if nl == 0 { return 1 }
+    if nl > n { return 0 }
+    let mut i: i32 = 0
+    while i + nl <= n {
+        if pd_at(s, i, needle) == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+# Python's str.rstrip("."): drop every trailing period.
+function pd_rstrip_dots(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut end: i32 = n
+    while end > 0 and p[end - 1] == 46 { end = end - 1 }
+    return pd_substr(s, 0, end)
+}
+
+# Collapse every whitespace run to one space. No trim: Python's
+# re.sub(r"\s+", " ", key) does not strip the ends.
+function pd_collapse_ws(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if pd_is_space(p[i]) == 1 {
+            while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+            out = pd_append_char(out, 32)
+        } else {
+            out = pd_append_char(out, p[i])
+            i = i + 1
+        }
+    }
+    return out
+}
+
+# ── Claim phrasing ───────────────────────────────────────────────
+
+# Port of _claim_path_phrase.
+export function flowc_claim_path_phrase(path: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(path)
+    if addr.ok == 0 { return path }
+    return flowc_claim_address_phrase(addr)
+}
+
+# Port of _natural_claim_sentence, taking the two theorem fields it reads.
+#
+# The gloss table below is copied from the Python verbatim, including the fact
+# that its keys are pre-conversion expressions ("0 + m = m") while the lookup
+# key is post-conversion English ("0 plus m equals m"). No key can match, so
+# the table never fires in either implementation. Kept so the two stay in step
+# if the Python keys are ever corrected.
+export function flowc_natural_claim_sentence(means: string, claim_expr: string) -> string {
+    if strlen(means) > 0 {
+        return pd_rstrip_dots(means)
+    }
+    if strlen(claim_expr) > 0 {
+        let key: string = pd_collapse_ws(
+            flowc_flow_expr_to_mathematical_english(claim_expr))
+        if strcmp(key, "0 + m = m") == 0 {
+            return "Adding zero on the left gives you the same number."
+        }
+        if strcmp(key, "n + succ(m) = succ(n + m)") == 0 {
+            return "Adding one more on the right just steps the sum by one."
+        }
+        if strcmp(key, "n + 0 = n") == 0 {
+            return "Adding zero on the right gives you the same number."
+        }
+        if strcmp(key, "a + b = b + a") == 0 {
+            return "You can swap the order when you add."
+        }
+        if strcmp(key, "x = x") == 0 {
+            return "Anything is always equal to itself."
+        }
+        if strcmp(key, "a or b = b or a") == 0 {
+            return "Order doesn't matter for or — either way you get the same truth."
+        }
+        if strcmp(key, "sq >= 0") == 0 {
+            return "Squaring never gives you a negative number."
+        }
+        let mut out: string = "We're showing that "
+        out = pd_str_append(out, key)
+        out = pd_str_append(out, ".")
+        return out
+    }
+    return "We're showing this claim holds."
+}
+
+# Port of _facet_title.
+export function flowc_facet_title(claim_path: string, means: string) -> string {
+    if strlen(means) > 0 {
+        let dot: i32 = pd_index_from(means, 0, 46)
+        let mut first: string = means
+        if dot >= 0 {
+            first = pd_substr(means, 0, dot)
+        }
+        first = pd_trim(first)
+        if pd_starts_with_ci(first, "adding") == 1 {
+            return pd_upper_first(first)
+        }
+        return first
+    }
+
+    let n: i32 = strlen(claim_path) as i32
+    let p: ptr<u8> = claim_path
+    let mut last: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 46 { last = i }
+        i = i + 1
+    }
+    let mut facet: string = claim_path
+    if last >= 0 {
+        facet = pd_substr(claim_path, last + 1, n)
+    }
+    return pd_capitalize(pd_replace_all(facet, "-", " "))
+}
+
+# ── Proof step narration ─────────────────────────────────────────
+
+# Port of _natural_let. `refs` is the comma-separated context step list that
+# flowc_under_refs takes, or "" when there is no supposition in scope.
+export function flowc_natural_let(step_text: string, refs: string) -> string {
+    let lead: string = flowc_under_refs(refs)
+    let t: string = pd_trim(step_text)
+
+    # re.match(r"(\w+)\s*=\s*pred\((\w+)\)", t)
+    let mut body: string = ""
+    let n: i32 = strlen(t) as i32
+    let p: ptr<u8> = t
+    let mut i: i32 = 0
+    while i < n and pd_is_word_char(p[i]) == 1 { i = i + 1 }
+    let name_end: i32 = i
+    if name_end > 0 {
+        while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+        if i < n and p[i] == 61 {
+            i = i + 1
+            while i < n and pd_is_space(p[i]) == 1 { i = i + 1 }
+            if pd_at(t, i, "pred(") == 1 {
+                let arg_start: i32 = i + 5
+                let mut j: i32 = arg_start
+                while j < n and pd_is_word_char(p[j]) == 1 { j = j + 1 }
+                if j > arg_start and j < n and p[j] == 41 {
+                    body = "let "
+                    body = pd_str_append(body, pd_substr(t, 0, name_end))
+                    body = pd_str_append(body, " denote the predecessor of ")
+                    body = pd_str_append(body, pd_substr(t, arg_start, j))
+                    body = pd_str_append(body, ".")
+                }
+            }
+        }
+    }
+
+    if strlen(body) == 0 {
+        if pd_contains(step_text, "pred(n)") == 1 {
+            body = "let k denote the predecessor of n."
+        } else {
+            body = "let "
+            body = pd_str_append(body, step_text)
+            body = pd_str_append(body, ".")
+        }
+    }
+
+    if strlen(lead) > 0 {
+        return pd_str_append(lead, body)
+    }
+    return pd_upper_first(body)
+}
+
+# ── Cross references and table cells ─────────────────────────────
+
+# Port of _theorem_ref_plain.
+export function flowc_theorem_ref_plain(tier: string, number: i32) -> string {
+    let mut s: string = flowc_claim_path_tier_label(tier)
+    s = pd_str_append(s, " ")
+    s = pd_str_append(s, int_to_str(number))
+    return s
+}
+
+# Port of _theorem_ref_latex.
+export function flowc_theorem_ref_latex(label: string, tier: string, number: i32) -> string {
+    let mut s: string = "\\hyperref[thm:"
+    s = pd_str_append(s, label)
+    s = pd_str_append(s, "]{")
+    s = pd_str_append(s, flowc_claim_path_tier_label(tier))
+    s = pd_str_append(s, " ")
+    s = pd_str_append(s, int_to_str(number))
+    s = pd_str_append(s, "}")
+    return s
+}
+
+# Port of _render_math_cell_latex.
+export function flowc_render_math_cell_latex(math_latex: string) -> string {
+    if strlen(math_latex) == 0 { return "&" }
+    let mut s: string = "& $\\displaystyle "
+    s = pd_str_append(s, math_latex)
+    s = pd_str_append(s, "$")
+    return s
+}
+
+# One row of the trace legend table. Port of the loop body in
+# _render_trace_legend.
+export function flowc_trace_legend_row(number: i32, refs: string) -> string {
+    let mut s: string = "| "
+    s = pd_str_append(s, flowc_circled(number))
+    s = pd_str_append(s, " | ")
+    s = pd_str_append(s, flowc_fmt_refs(refs))
+    s = pd_str_append(s, " |")
+    return s
+}
+
+# Port of diagram_markdown_embed, newline-joined.
+export function flowc_diagram_markdown_embed(svg_filename: string) -> string {
+    let mut s: string = "**Figure.**\n\n!["
+    s = pd_str_append(s, svg_filename)
+    s = pd_str_append(s, "](")
+    s = pd_str_append(s, svg_filename)
+    s = pd_str_append(s, ")\n")
+    return s
+}
+
+# Port of _latex_preamble, newline-joined.
+export function flowc_latex_preamble(stem: string, title_prefix: string) -> string {
+    let mut title: string = title_prefix
+    title = pd_str_append(title, ": ")
+    title = pd_str_append(title, stem)
+
+    let mut s: string = "\\documentclass[11pt]{article}\n"
+    s = pd_str_append(s, "\\usepackage[T1]{fontenc}\n")
+    s = pd_str_append(s, "\\usepackage{textcomp}\n")
+    s = pd_str_append(s, "\\usepackage[margin=0.75in]{geometry}\n")
+    s = pd_str_append(s, "\\usepackage{amsmath,amssymb,amsthm}\n")
+    s = pd_str_append(s, "\\usepackage{array,booktabs}\n")
+    s = pd_str_append(s, "\\usepackage{hyperref}\n")
+    s = pd_str_append(s, "\\setlength{\\parindent}{0pt}\n")
+    s = pd_str_append(s, "\\newtheorem{theorem}{Theorem}\n")
+    s = pd_str_append(s, "\\theoremstyle{definition}\n")
+    s = pd_str_append(s, "\\newtheorem{definition}{Definition}\n")
+    s = pd_str_append(s, "\\title{")
+    s = pd_str_append(s, flowc_latex_escape(title))
+    s = pd_str_append(s, "}\n")
+    s = pd_str_append(s, "\\author{Generated by \\texttt{flow doc proof}}\n")
+    s = pd_str_append(s, "\\date{Flow Proof Book}\n")
+    s = pd_str_append(s, "\\begin{document}\n")
+    s = pd_str_append(s, "\\maketitle")
+    return s
 }

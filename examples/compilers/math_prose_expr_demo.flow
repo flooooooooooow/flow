@@ -1,0 +1,105 @@
+# math_prose expression → English / LaTeX dogfood.
+#
+# Prints one `KIND|expr|result` line per case. The companion parity script
+# feeds the same corpus through src/flow/math_prose.py and fails if the two
+# disagree:
+#
+#   python3 compiler/scripts/parity_math_prose_expr.py
+#
+# Run directly:  FLOW_HOST=python ./flow run examples/compilers/math_prose_expr_demo.flow
+
+import "compiler/src/claim_address.flow"
+import "compiler/src/claim_path.flow"
+import "compiler/src/math_prose.flow"
+
+extern {
+    function printf(fmt: string, a: string, b: string, c: string) -> i32
+}
+
+function emit_en(expr: string) -> void {
+    printf("%s|%s|%s\n", "EN", expr, flowc_flow_expr_to_mathematical_english(expr))
+}
+
+function emit_tex(expr: string) -> void {
+    printf("%s|%s|%s\n", "TEX", expr, flowc_flow_expr_to_latex(expr))
+}
+
+function emit_geo(expr: string) -> void {
+    printf("%s|%s|%s\n", "GEO", expr, flowc_geometry_expr_to_latex(expr))
+}
+
+function main() -> i32 {
+    # Arithmetic and equality
+    emit_en("zero + n == n")
+    emit_en("m + n == n + m")
+    emit_en("succ(m) + n == succ(m + n)")
+    emit_en("x * x >= zero")
+    emit_en("a <= b")
+    emit_en("n = n")
+    emit_en("  spaced   +   out  ")
+
+    # Logic
+    emit_en("p or q")
+    emit_en("p and q")
+    emit_en("p and q or r")
+    emit_en("true or false")
+    # Chained `or`: Python leaves an unexpanded placeholder here. See
+    # KNOWN_DIVERGENCE in compiler/scripts/parity_math_prose_expr.py.
+    emit_en("a or b or c")
+
+    # By-clause is dropped
+    emit_en("zero + n == n by induction on n")
+    emit_en("x * x >= zero by cases")
+
+    # Underscore identifiers
+    emit_en("total_count + step_size == final_total")
+    emit_en("sin_prime_at_zero == one")
+    emit_en("taylor_sin(x, order_3) near_zero")
+
+    # LaTeX, non-geometry
+    emit_tex("zero + n == n")
+    emit_tex("succ(m) + n == succ(m + n)")
+    emit_tex("x * x >= zero")
+    emit_tex("p or q and true")
+    emit_tex("a <= b")
+    emit_tex("total_count == final_total")
+    emit_tex("zero + n == n by induction on n")
+
+    # LaTeX, analysis path
+    emit_tex("taylor_sin(x, order_3) == sin(x) near_zero")
+    emit_tex("sin_prime_at_zero == one")
+    emit_tex("sin_double_prime_at_zero == zero")
+
+    # LaTeX, geometry path
+    emit_tex("angle_alpha + angle_beta == two_right_angles")
+    emit_tex("triangle_ABC == triangle_DEF")
+    emit_tex("half_of_angle_AOB == angle_gamma")
+    emit_tex("radius_OA == radius_OB")
+    emit_tex("angle_at_ABC == one_right_angle")
+
+    emit_geo("angle_alpha + angle_beta == two_right_angles")
+    emit_geo("angle_alpha_prime == angle_beta_prime")
+    emit_geo("side_AB * side_AB == area_square")
+
+    # English, geometry vocabulary
+    emit_en("angle_alpha + angle_beta == two_right_angles")
+    emit_en("angle_at_ABC == one_right_angle")
+    emit_en("half_of_angle_AOB == angle_gamma")
+
+    # Premise invocation, all four argument shapes.
+    let addr: FlowcClaimAddress = flowc_claim_parse("Nat/+.zero-left")
+    printf("%s|%s|%s\n", "INV", "plain",
+        flowc_invoke_premise_mathematical(addr,
+            "zero is the left identity", "", "derived fact", ""))
+    printf("%s|%s|%s\n", "INV", "args",
+        flowc_invoke_premise_mathematical(addr,
+            "zero is the left identity", "n", "definition", ""))
+    printf("%s|%s|%s\n", "INV", "ref",
+        flowc_invoke_premise_mathematical(addr,
+            "zero is the left identity", "", "derived fact", "Theorem 1"))
+    printf("%s|%s|%s\n", "INV", "ref+args",
+        flowc_invoke_premise_mathematical(addr,
+            "zero is the left identity", "m and n", "derived fact", "Theorem 1"))
+
+    return 0
+}
