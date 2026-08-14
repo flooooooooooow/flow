@@ -2131,7 +2131,6 @@ int32_t flowc_parse_stmt(Parser* p) {
   neg = 1;
   flowc_parser_advance(p);
 }
-  // `true` / `false` patterns → AST_BOOL
   if (flowc_parser_check_kw(p[0], KW_TRUE) == 1) {
   pat = flowc_ast_alloc((&(p[0]).arena), AST_BOOL, ((p[0]).cur).start, ((p[0]).cur).end);
   if (pat == AST_NONE) {
@@ -3427,9 +3426,9 @@ int32_t flowc_cgen_pp_is_keyword(uint8_t* text, int32_t start, int32_t end);
 int32_t flowc_cgen_pp_is_macro_fn(uint8_t* text, int32_t start, int32_t end);
 int32_t flowc_cgen_pp_contains(uint8_t* text, int32_t start, int32_t end, const char* lit);
 void flowc_cgen_emit_cimport(CgenBuf* w, uint8_t* src, int32_t name_start, int32_t name_end);
-int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len);
 void flowc_cgen_scan_cembed_names(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_cgen_is_cembed_fn(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne);
+int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len);
 int32_t flowc_cgen_emit_ex(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags);
 int32_t flowc_cgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap);
 int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len);
@@ -5748,23 +5747,49 @@ void flowc_cgen_scan_cembed_names(CgenBuf* w, uint8_t* src, int32_t start, int32
   int32_t i = start;
   while (i < end) {
   int32_t kw_len = 0;
-  if (flowc_cgen_span_is(src, i, (i + 3), "int") == 1) { kw_len = 3; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "void") == 1) { kw_len = 4; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "char") == 1) { kw_len = 4; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 5), "float") == 1) { kw_len = 5; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 5), "short") == 1) { kw_len = 5; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "long") == 1) { kw_len = 4; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 5), "double") == 1) { kw_len = 5; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "bool") == 1) { kw_len = 4; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 7), "int32_t") == 1) { kw_len = 7; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 7), "int64_t") == 1) { kw_len = 7; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 8), "uint32_t") == 1) { kw_len = 8; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 8), "uint64_t") == 1) { kw_len = 8; }
-  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 6), "size_t") == 1) { kw_len = 6; }
+  if (flowc_cgen_span_is(src, i, (i + 3), "int") == 1) {
+  kw_len = 3;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "void") == 1) {
+  kw_len = 4;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "char") == 1) {
+  kw_len = 4;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 5), "float") == 1) {
+  kw_len = 5;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 5), "short") == 1) {
+  kw_len = 5;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "long") == 1) {
+  kw_len = 4;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 5), "double") == 1) {
+  kw_len = 5;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 4), "bool") == 1) {
+  kw_len = 4;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 7), "int32_t") == 1) {
+  kw_len = 7;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 7), "int64_t") == 1) {
+  kw_len = 7;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 8), "uint32_t") == 1) {
+  kw_len = 8;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 8), "uint64_t") == 1) {
+  kw_len = 8;
+}
+  if (kw_len == 0 && flowc_cgen_span_is(src, i, (i + 7), "size_t") == 1) {
+  kw_len = 6;
+}
   if (kw_len > 0) {
   if (i > start) {
   int32_t prev = src[(i - 1)];
-  if ((prev >= 65 && prev <= 90) || (prev >= 97 && prev <= 122) || prev == 95 || (prev >= 48 && prev <= 57)) {
+  if (prev >= 65 && prev <= 90 || prev >= 97 && prev <= 122 || prev == 95 || prev >= 48 && prev <= 57) {
   i = (i + 1);
   continue;
 }
@@ -5780,7 +5805,7 @@ void flowc_cgen_scan_cembed_names(CgenBuf* w, uint8_t* src, int32_t start, int32
 }
 }
   int32_t name_start = j;
-  while (j < end && ((src[j] >= 65 && src[j] <= 90) || (src[j] >= 97 && src[j] <= 122) || src[j] == 95 || (src[j] >= 48 && src[j] <= 57))) {
+  while (j < end && (src[j] >= 65 && src[j] <= 90 || src[j] >= 97 && src[j] <= 122 || src[j] == 95 || src[j] >= 48 && src[j] <= 57)) {
   j = (j + 1);
 }
   int32_t name_end = j;
@@ -5790,7 +5815,7 @@ void flowc_cgen_scan_cembed_names(CgenBuf* w, uint8_t* src, int32_t start, int32
   if (name_end > name_start && j < end && src[j] == 40) {
   if ((w[0]).cembed_count < 32) {
   int32_t nlen = (name_end - name_start);
-  if (((w[0]).cembed_count * 128 + nlen) <= 4096) {
+  if ((((w[0]).cembed_count * 128) + nlen) <= 4096) {
   int32_t off = ((w[0]).cembed_count * 128);
   int32_t k = 0;
   while (k < nlen) {
@@ -5817,15 +5842,15 @@ int32_t flowc_cgen_is_cembed_fn(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne
   if ((w[0]).cembed_lens[idx] == n) {
   int32_t off = (w[0]).cembed_offs[idx];
   int32_t k = 0;
-  int32_t match = 1;
+  int32_t is_match = 1;
   while (k < n) {
   if ((w[0]).cembed_names[(off + k)] != src[(ns + k)]) {
-  match = 0;
+  is_match = 0;
   k = n;
 }
   k = (k + 1);
 }
-  if (match == 1) {
+  if (is_match == 1) {
   return 1;
 }
 }
@@ -5844,12 +5869,12 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   CgenBuf w = flowc_cgen_buf_init(out, out_cap);
   (w).sigs = sigs;
   (w).sigs_len = sigs_len;
-  static uint8_t cembed_name_buf[4096];
-  static int32_t cembed_off_arr[32];
-  static int32_t cembed_len_arr[32];
-  (w).cembed_names = cembed_name_buf;
-  (w).cembed_offs = cembed_off_arr;
-  (w).cembed_lens = cembed_len_arr;
+  uint8_t cembed_name_buf[4096] = {  };
+  int32_t cembed_off_arr[32] = {  };
+  int32_t cembed_len_arr[32] = {  };
+  (w).cembed_names = (&cembed_name_buf[0]);
+  (w).cembed_offs = (&cembed_off_arr[0]);
+  (w).cembed_lens = (&cembed_len_arr[0]);
   (w).cembed_count = 0;
   if ((flags % 2) == 0) {
   flowc_cgen_puts((&w), "#include <stdint.h>\n");
@@ -6869,7 +6894,7 @@ void flowc_tc_seed_bind_enum_variant(TcCtx* ctx, uint8_t* src, int32_t ens, int3
 }
   int32_t en_len = (ene - ens);
   int32_t vn_len = (vne - vns);
-  int32_t total = (en_len + 1 + vn_len);
+  int32_t total = ((en_len + 1) + vn_len);
   if (((ctx[0]).seed_len + total) > (ctx[0]).seed_cap) {
   puts("flowc tc: seed buffer full (raise seed_cap)");
   flowc_tc_err(ctx);
@@ -6890,7 +6915,7 @@ void flowc_tc_seed_bind_enum_variant(TcCtx* ctx, uint8_t* src, int32_t ens, int3
   (ctx[0]).seed_buf[(off + en_len)] = 95;
   i = 0;
   while (i < vn_len) {
-  (ctx[0]).seed_buf[((off + en_len) + 1 + i)] = src[(vns + i)];
+  (ctx[0]).seed_buf[(((off + en_len) + 1) + i)] = src[(vns + i)];
   i = (i + 1);
 }
   (ctx[0]).seed_len = (off + total);
