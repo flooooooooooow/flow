@@ -7238,6 +7238,7 @@ int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap);
 int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
+int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap);
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
 int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uint8_t* path_store);
@@ -7390,6 +7391,97 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   return o;
 }
 
+int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
+  int32_t s = name_start;
+  int32_t e = name_end;
+  if (e <= s || out_path_cap <= 1) {
+  return (0 - 1);
+}
+  int32_t dlen = (int32_t)(strlen(search_dir));
+  int32_t namelen = (e - s);
+  int32_t total = ((dlen + 1) + namelen + 5);
+  if ((total + 1) > out_path_cap) {
+  return (0 - 1);
+}
+  int32_t o = 0;
+  int32_t di = 0;
+  while (di < dlen) {
+  out_path[o] = ((uint8_t*)search_dir)[di];
+  o = (o + 1);
+  di = (di + 1);
+}
+  out_path[o] = 47;
+  o = (o + 1);
+  int32_t ni = 0;
+  while (ni < namelen) {
+  uint8_t c = import_span_src[(s + ni)];
+  if (c == 46) {
+  out_path[o] = 47;
+} else {
+  out_path[o] = c;
+}
+  o = (o + 1);
+  ni = (ni + 1);
+}
+  out_path[o] = 46;
+  o = (o + 1);
+  out_path[o] = 102;
+  o = (o + 1);
+  out_path[o] = 108;
+  o = (o + 1);
+  out_path[o] = 111;
+  o = (o + 1);
+  out_path[o] = 119;
+  o = (o + 1);
+  out_path[o] = 0;
+  FILE* fp = fopen((const char*)out_path, "rb");
+  if (fp != NULL) {
+  fclose(fp);
+  return o;
+}
+  int32_t lib_total = (4 + namelen + 5);
+  if ((lib_total + 1) > out_path_cap) {
+  return (0 - 1);
+}
+  o = 0;
+  out_path[o] = 108;
+  o = (o + 1);
+  out_path[o] = 105;
+  o = (o + 1);
+  out_path[o] = 98;
+  o = (o + 1);
+  out_path[o] = 47;
+  o = (o + 1);
+  ni = 0;
+  while (ni < namelen) {
+  uint8_t c = import_span_src[(s + ni)];
+  if (c == 46) {
+  out_path[o] = 47;
+} else {
+  out_path[o] = c;
+}
+  o = (o + 1);
+  ni = (ni + 1);
+}
+  out_path[o] = 46;
+  o = (o + 1);
+  out_path[o] = 102;
+  o = (o + 1);
+  out_path[o] = 108;
+  o = (o + 1);
+  out_path[o] = 111;
+  o = (o + 1);
+  out_path[o] = 119;
+  o = (o + 1);
+  out_path[o] = 0;
+  fp = fopen((const char*)out_path, "rb");
+  if (fp != NULL) {
+  fclose(fp);
+  return o;
+}
+  return (0 - 1);
+}
+
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap) {
   uint8_t* p = (uint8_t*)(path);
   int32_t n = (int32_t)(strlen(path));
@@ -7513,6 +7605,24 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
 }
   n = n2;
 }
+  if (form == 0) {
+  int32_t plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen < 0) {
+  flowc_parser_free(p);
+  free(imp_path);
+  free(src);
+  return (0 - 1);
+}
+  const char* dep = imp_path;
+  int32_t n2 = flowc_resolve_append_path(path_store, n, dep);
+  if (n2 < 0) {
+  flowc_parser_free(p);
+  free(imp_path);
+  free(src);
+  return (0 - 1);
+}
+  n = n2;
+}
 }
   ii = (ii + 1);
 }
@@ -7547,6 +7657,19 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8
   int32_t form = (((p).arena).nodes[ii]).ival;
   if (form == 1 || form == 2) {
   int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen < 0) {
+  flowc_parser_free(p);
+  return 0;
+}
+  if (flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0) {
+  if (flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0) {
+  flowc_parser_free(p);
+  return 0;
+}
+}
+}
+  if (form == 0) {
+  int32_t plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
   if (plen < 0) {
   flowc_parser_free(p);
   return 0;
