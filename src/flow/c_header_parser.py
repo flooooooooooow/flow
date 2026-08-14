@@ -122,48 +122,58 @@ def _c_type_to_flow(c_type: str) -> str:
 
 
 def _preprocess_header(header: str, include_dirs: List[str]) -> str:
-    """Run cpp -P on a header and return the preprocessed text.
+    """Preprocess a header and return the expanded text.
 
-    On macOS, cpp (which is clang) can't take a header name directly.
-    We pipe `#include <header>` through cpp instead.
+    A header name cannot be passed to the preprocessor directly, so we pipe
+    `#include <header>` through it on stdin.
+
+    Two preprocessors are tried in order. On some macOS installs `cpp` is a
+    wrapper that mishandles the `-` stdin argument and fails with
+    "no such file or directory: 'c'", writing nothing to stdout. Falling back
+    only on FileNotFoundError missed that case, so @cImport silently parsed
+    zero declarations there and every @cImport test passed without exercising
+    the feature. Empty output now falls through to `clang -E` as well.
     """
-    # Build the include directive
     if header.startswith("/") or header.startswith('"'):
         include_line = f"#include {header}\n"
     else:
         include_line = f"#include <{header}>\n"
 
-    cmd = ["cpp", "-P"]
-    for d in include_dirs:
-        cmd.extend(["-I", d])
-    cmd.append("-")  # read from stdin
-    try:
+    def run(argv: List[str]) -> str:
+        argv = list(argv)
+        for d in include_dirs:
+            argv.extend(["-I", d])
+        argv.append("-")  # read from stdin
         result = subprocess.run(
-            cmd,
+            argv,
             input=include_line,
             capture_output=True,
             text=True,
             timeout=30,
         )
         return result.stdout
-    except FileNotFoundError:
-        cmd[0] = "clang"
-        cmd.insert(1, "-E")
+
+    last_error: Optional[Exception] = None
+    for argv in (["cpp", "-P"], ["clang", "-E", "-P"], ["gcc", "-E", "-P"]):
         try:
-            result = subprocess.run(
-                cmd,
-                input=include_line,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            return result.stdout
-        except Exception as e:
-            print(f"Warning: @cImport preprocessing failed: {e}", file=sys.stderr)
-            return ""
-    except Exception as e:
-        print(f"Warning: @cImport preprocessing failed: {e}", file=sys.stderr)
-        return ""
+            text = run(argv)
+        except FileNotFoundError:
+            continue
+        except Exception as e:  # timeout, permissions, ...
+            last_error = e
+            continue
+        if text.strip():
+            return text
+
+    if last_error is not None:
+        print(f"Warning: @cImport preprocessing failed: {last_error}", file=sys.stderr)
+    else:
+        print(
+            f"Warning: @cImport could not preprocess {header!r}; "
+            "no declarations were imported",
+            file=sys.stderr,
+        )
+    return ""
 
 
 def _strip_attributes(text: str) -> str:
@@ -610,12 +620,17 @@ def resolve_c_imports(declarations: List, source_dir: str) -> List:
             # Parse the header
             include_dirs = [source_dir, "/usr/include", "/usr/local/include"]
             parsed = parse_c_header(decl.header, include_dirs)
-            # Mark function declarations as c_import so the C generator
-            # skips emitting duplicate prototypes (the #include above
-            # already provides them). The type checker still sees them.
+            # Mark every parsed declaration as c_import so the C generator
+            # emits none of them: the #include above already provides the
+            # real ones, and re-emitting collides with it. Marking only
+            # FunctionDecl left types behind, so a header with an anonymous
+            # struct typedef (glibc's lldiv_t, for one) produced a second
+            # `typedef struct lldiv_t lldiv_t;` and clang rejected the file:
+            #   error: typedef redefinition with different types
+            # The type checker still sees these declarations; only C output
+            # is suppressed.
             for p in parsed:
-                if isinstance(p, FunctionDecl):
-                    p.is_c_import = True
+                p.is_c_import = True
                 result.append(p)
         else:
             result.append(decl)

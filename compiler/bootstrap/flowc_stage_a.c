@@ -6005,6 +6005,7 @@ void flowc_tc_check_stmt(TcCtx* ctx, AstArena arena, int32_t id);
 void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root);
 void flowc_tc_check_fns(TcCtx* ctx, AstArena arena, int32_t root);
 void flowc_tc_seed_bind(TcCtx* ctx, uint8_t* dep_src, int32_t start, int32_t end, int32_t kind, int32_t arity);
+void flowc_tc_seed_bind_enum_variant(TcCtx* ctx, uint8_t* src, int32_t ens, int32_t ene, int32_t vns, int32_t vne);
 void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint8_t* dep_src);
 TcCtx flowc_tc_init(uint8_t* src);
 void flowc_tc_free(TcCtx* ctx);
@@ -6611,10 +6612,11 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_bind_value(ctx, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end, ty);
 }
   if (kind == AST_ENUM) {
+  int32_t ens = ((arena).nodes[item]).name_start;
+  int32_t ene = ((arena).nodes[item]).name_end;
   int32_t var = ((arena).nodes[item]).a;
   while (var != AST_NONE) {
-  flowc_tc_bind(ctx, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end, 1, (-1));
-  flowc_tc_bind(ctx, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end, 0, (-1));
+  flowc_tc_seed_bind_enum_variant(ctx, (ctx[0]).src, ens, ene, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end);
   var = ((arena).nodes[var]).next;
 }
 }
@@ -6709,6 +6711,47 @@ void flowc_tc_seed_bind(TcCtx* ctx, uint8_t* dep_src, int32_t start, int32_t end
   (ctx[0]).ne[bi] = (off + n);
   (ctx[0]).nk[bi] = kind;
   (ctx[0]).na[bi] = arity;
+  (ctx[0]).nlen = (bi + 1);
+  (ctx[0]).seed_nlen = (ctx[0]).nlen;
+}
+
+void flowc_tc_seed_bind_enum_variant(TcCtx* ctx, uint8_t* src, int32_t ens, int32_t ene, int32_t vns, int32_t vne) {
+  if ((ctx[0]).seed_buf == NULL) {
+  flowc_tc_err(ctx);
+  return;
+}
+  int32_t en_len = (ene - ens);
+  int32_t vn_len = (vne - vns);
+  int32_t total = (en_len + 1 + vn_len);
+  if (((ctx[0]).seed_len + total) > (ctx[0]).seed_cap) {
+  puts("flowc tc: seed buffer full (raise seed_cap)");
+  flowc_tc_err(ctx);
+  return;
+}
+  if ((ctx[0]).nlen >= (ctx[0]).ncap) {
+  puts("flowc tc: name table full while seeding (raise ncap)");
+  flowc_tc_err(ctx);
+  return;
+}
+  (ctx[0]).nlen = (ctx[0]).seed_nlen;
+  int32_t off = (ctx[0]).seed_len;
+  int32_t i = 0;
+  while (i < en_len) {
+  (ctx[0]).seed_buf[(off + i)] = src[(ens + i)];
+  i = (i + 1);
+}
+  (ctx[0]).seed_buf[(off + en_len)] = 95;
+  i = 0;
+  while (i < vn_len) {
+  (ctx[0]).seed_buf[((off + en_len) + 1 + i)] = src[(vns + i)];
+  i = (i + 1);
+}
+  (ctx[0]).seed_len = (off + total);
+  int32_t bi = (ctx[0]).nlen;
+  (ctx[0]).ns[bi] = off;
+  (ctx[0]).ne[bi] = (off + total);
+  (ctx[0]).nk[bi] = 0;
+  (ctx[0]).na[bi] = (-1);
   (ctx[0]).nlen = (bi + 1);
   (ctx[0]).seed_nlen = (ctx[0]).nlen;
 }
