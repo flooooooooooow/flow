@@ -4494,6 +4494,27 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   wrote = flowc_cgen_write_lit_type(w, arena, src, init);
 }
   if (wrote == 0) {
+  if (ty != AST_NONE && ((arena).nodes[ty]).kind == AST_TYPE && (((arena).nodes[ty]).ival == (0 - 1) || ((arena).nodes[ty]).ival == (0 - 2))) {
+  flowc_cgen_emit_type(w, arena, src, ((arena).nodes[ty]).b);
+  flowc_cgen_puts(w, " (*");
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_puts(w, ")(");
+  int32_t cfn_param = ((arena).nodes[ty]).a;
+  int32_t cfn_first = 1;
+  while (cfn_param != AST_NONE) {
+  if (cfn_first == 0) {
+  flowc_cgen_puts(w, ", ");
+}
+  flowc_cgen_emit_type(w, arena, src, cfn_param);
+  cfn_first = 0;
+  cfn_param = ((arena).nodes[cfn_param]).next;
+}
+  flowc_cgen_putc(w, 41);
+  flowc_cgen_puts(w, " = ");
+  flowc_cgen_emit_expr(w, arena, src, init);
+  flowc_cgen_puts(w, ";\n");
+  return;
+}
   flowc_cgen_emit_type(w, arena, src, ty);
 }
 }
