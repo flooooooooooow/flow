@@ -420,6 +420,32 @@ function flowc_tc_unwrap_fn(arena: AstArena, item: i32) -> i32 {
     return AST_NONE
 }
 
+# Compare parameter type spans of two functions. Returns 1 if all params
+# have the same source text, 0 otherwise.
+function flowc_tc_params_eq(arena: AstArena, src: ptr<u8>, fn_a: i32, fn_b: i32) -> i32 {
+    let mut pa: i32 = arena.nodes[fn_a].a
+    let mut pb: i32 = arena.nodes[fn_b].a
+    while pa != AST_NONE and pb != AST_NONE {
+        let ta: i32 = arena.nodes[pa].a
+        let tb: i32 = arena.nodes[pb].a
+        if ta == AST_NONE and tb == AST_NONE {
+            let unused: i32 = 0
+        } elif ta == AST_NONE or tb == AST_NONE {
+            return 0
+        } else {
+            if flowc_tc_span_eq(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, arena.nodes[tb].name_start, arena.nodes[tb].name_end) == 0 {
+                return 0
+            }
+        }
+        pa = arena.nodes[pa].next
+        pb = arena.nodes[pb].next
+    }
+    if pa != AST_NONE or pb != AST_NONE {
+        return 0
+    }
+    return 1
+}
+
 function flowc_tc_is_i32_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
     if ty == AST_NONE {
         return 0
@@ -785,15 +811,21 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             let ne: i32 = arena.nodes[fn].name_end
             let body: i32 = arena.nodes[fn].c
             let arity: i32 = flowc_ast_chain_len(arena, arena.nodes[fn].a)
-            # Duplicate bodies with the same name → error.
+            # Duplicate bodies with the same name are allowed (overloads).
+            # The codegen resolves them by mangling based on parameter types.
             if body != AST_NONE {
                 let mut prev: i32 = arena.nodes[root].a
                 while prev != item {
                     let pfn: i32 = flowc_tc_unwrap_fn(arena, prev)
                     if pfn != AST_NONE and arena.nodes[pfn].c != AST_NONE {
                         if flowc_tc_span_eq(ctx[0].src, ns, ne, arena.nodes[pfn].name_start, arena.nodes[pfn].name_end) == 1 {
-                            flowc_tc_note(ctx, "flowc tc: duplicate function name (overloads not supported)", ns, ne)
-                            flowc_tc_err(ctx)
+                            # Check if parameter types differ. If so, allow.
+                            # If parameter types are identical, it's a real error.
+                            let params_same: i32 = flowc_tc_params_eq(arena, ctx[0].src, fn, pfn)
+                            if params_same == 1 {
+                                flowc_tc_note(ctx, "flowc tc: duplicate function with same signature", ns, ne)
+                                flowc_tc_err(ctx)
+                            }
                         }
                     }
                     prev = arena.nodes[prev].next
