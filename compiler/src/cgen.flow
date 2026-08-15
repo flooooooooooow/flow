@@ -1056,6 +1056,79 @@ function flowc_cgen_is_span_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     return 0
 }
 
+# Check if the nth parameter of a function is span-typed.
+# fn_id is the AST_FN node. Returns 1 if the nth param is span, 0 otherwise.
+function flowc_cgen_fn_param_is_span(arena: AstArena, src: ptr<u8>, fn_id: i32, param_idx: i32) -> i32 {
+    if fn_id == AST_NONE {
+        return 0
+    }
+    let mut param: i32 = arena.nodes[fn_id].a
+    let mut idx: i32 = 0
+    while param != AST_NONE {
+        if idx == param_idx {
+            let ty: i32 = arena.nodes[param].a
+            if ty != AST_NONE {
+                let tns: i32 = arena.nodes[ty].name_start
+                let tne: i32 = arena.nodes[ty].name_end
+                if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
+                    return 1
+                }
+                let inner: i32 = arena.nodes[ty].a
+                if inner != AST_NONE and tns == 0 and tne == 0 {
+                    return 1
+                }
+            }
+            return 0
+        }
+        idx = idx + 1
+        param = arena.nodes[param].next
+    }
+    return 0
+}
+
+# Check if an identifier refers to an array variable (has array type).
+function flowc_cgen_is_array_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                let ty: i32 = arena.nodes[i].a
+                if ty != AST_NONE {
+                    # Array type: ival > 0 means fixed-size array
+                    if arena.nodes[ty].ival > 0 {
+                        return 1
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Get the array size of a variable's type. Returns the size or 0.
+function flowc_cgen_array_var_size(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                let ty: i32 = arena.nodes[i].a
+                if ty != AST_NONE {
+                    if arena.nodes[ty].ival > 0 {
+                        return arena.nodes[ty].ival
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 function flowc_cgen_find_enum_variant(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
     let mut i: i32 = 0
     while i < arena.len {
@@ -1459,15 +1532,34 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_putc(w, 40)
+        # Look up the function to check for span parameters.
+        let fn_id: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         let mut arg: i32 = arena.nodes[id].a
         let mut first: i32 = 1
+        let mut param_idx: i32 = 0
         while arg != AST_NONE {
             if first == 0 {
                 flowc_cgen_puts(w, ", ")
             }
             first = 0
+            # If the function parameter is span-typed and the argument is an
+            # array variable, wrap it in a span compound literal.
+            if fn_id != AST_NONE and flowc_cgen_fn_param_is_span(arena, src, fn_id, param_idx) == 1 {
+                if arena.nodes[arg].kind == AST_IDENT and flowc_cgen_is_array_var(arena, src, arg) == 1 {
+                    let arr_size: i32 = flowc_cgen_array_var_size(arena, src, arg)
+                    flowc_cgen_puts(w, "((flowc_span_int32_t){ ")
+                    flowc_cgen_emit_expr(w, arena, src, arg)
+                    flowc_cgen_puts(w, ", ")
+                    flowc_cgen_put_i32(w, arr_size)
+                    flowc_cgen_puts(w, " })")
+                    arg = arena.nodes[arg].next
+                    param_idx = param_idx + 1
+                    continue
+                }
+            }
             flowc_cgen_emit_expr(w, arena, src, arg)
             arg = arena.nodes[arg].next
+            param_idx = param_idx + 1
         }
         flowc_cgen_putc(w, 41)
         return
