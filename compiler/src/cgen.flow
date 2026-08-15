@@ -51,11 +51,20 @@ export struct CgenBuf {
     # Captured variable name spans (start/end pairs) for lambda capture.
     cap_starts: ptr<i32>,
     cap_ends: ptr<i32>,
-    cap_count: i32
+    cap_count: i32,
+    # Nonzero when emitting inside a lambda body. Captured variable
+    # references are redirected to __flowc_cap_<name> static globals.
+    in_lambda: i32,
+    # Per-lambda capture map: lambda_cap_lambda[i] = lambda ID,
+    # lambda_cap_start[i] / lambda_cap_end[i] = captured variable name span.
+    lambda_cap_lambda: ptr<i32>,
+    lambda_cap_start: ptr<i32>,
+    lambda_cap_end: ptr<i32>,
+    lambda_cap_count: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -969,6 +978,22 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         return
     }
     let kind: i32 = arena.nodes[id].kind
+    # When encountering a nested lambda, add its parameters to the
+    # param_spans list and continue scanning its body. This way the
+    # outer lambda transitively captures variables used in nested
+    # lambdas, but not the nested lambda's own parameters.
+    if kind == AST_FN {
+        let mut nparams2: i32 = nparams
+        let mut param: i32 = arena.nodes[id].a
+        while param != AST_NONE and nparams2 < 16 {
+            param_spans[nparams2 * 2] = arena.nodes[param].name_start
+            param_spans[nparams2 * 2 + 1] = arena.nodes[param].name_end
+            nparams2 = nparams2 + 1
+            param = arena.nodes[param].next
+        }
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams2)
+        return
+    }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
@@ -1005,6 +1030,65 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
     flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams)
     flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams)
+}
+
+# Per-lambda capture scan: collect captured variable name spans into
+# a separate buffer (not the global CgenBuf list). Returns the count.
+# Same logic as flowc_cgen_scan_captures but uses a local buffer.
+function flowc_cgen_scan_lambda_caps(
+    arena: AstArena, src: ptr<u8>, id: i32,
+    buf: ptr<i32>, count: i32,
+    param_spans: ptr<i32>, nparams: i32
+) -> i32 {
+    if id == AST_NONE {
+        return count
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_FN {
+        # Nested lambda: add its params and recurse into its body.
+        let mut nparams2: i32 = nparams
+        let mut param: i32 = arena.nodes[id].a
+        while param != AST_NONE and nparams2 < 16 {
+            param_spans[nparams2 * 2] = arena.nodes[param].name_start
+            param_spans[nparams2 * 2 + 1] = arena.nodes[param].name_end
+            nparams2 = nparams2 + 1
+            param = arena.nodes[param].next
+        }
+        return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, count, param_spans, nparams2)
+    }
+    if kind == AST_IDENT {
+        let ns: i32 = arena.nodes[id].name_start
+        let ne: i32 = arena.nodes[id].name_end
+        let mut is_param: i32 = 0
+        let mut i: i32 = 0
+        while i < nparams * 2 {
+            if flowc_cgen_span_eq(src, ns, ne, param_spans[i], param_spans[i + 1]) == 1 {
+                is_param = 1
+            }
+            i = i + 2
+        }
+        if is_param == 0 {
+            # Check if already in this buffer.
+            let mut found: i32 = 0
+            let mut j: i32 = 0
+            while j < count {
+                if flowc_cgen_span_eq(src, ns, ne, buf[j * 2], buf[j * 2 + 1]) == 1 {
+                    found = 1
+                }
+                j = j + 1
+            }
+            if found == 0 and count < 16 {
+                buf[count * 2] = ns
+                buf[count * 2 + 1] = ne
+                return count + 1
+            }
+        }
+        return count
+    }
+    count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, count, param_spans, nparams)
+    count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, count, param_spans, nparams)
+    count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, count, param_spans, nparams)
+    return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, count, param_spans, nparams)
 }
 
 # Check if a name span matches a captured variable.
@@ -1169,6 +1253,15 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "NULL")
             return
         }
+        # Inside a lambda body, captured variable references read from
+        # the __flowc_cap_<name> static global (snapshotted at creation).
+        if w[0].in_lambda != 0 {
+            if flowc_cgen_is_captured(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                flowc_cgen_puts(w, "__flowc_cap_")
+                flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                return
+            }
+        }
         # Enum variant reference: emit as EnumName_VariantName
         let en_id: i32 = flowc_cgen_find_enum_variant(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         if en_id != AST_NONE {
@@ -1218,11 +1311,43 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_FN {
-        # Lambda expression: emit the generated function name.
+        # Lambda expression: snapshot captured variables into their
+        # static globals, then emit the generated function name.
         # name_start is negative, encoding the unique lambda id.
         let lam_id: i32 = 0 - arena.nodes[id].name_start
+        # Snapshot: copy each captured variable's current value into
+        # __flowc_cap_<name> so the lambda sees the value at creation.
+        # Use comma expressions so the whole thing is one C expression.
+        let mut ci: i32 = 0
+        let mut has_snap: i32 = 0
+        while ci < w[0].lambda_cap_count {
+            if w[0].lambda_cap_lambda[ci] == lam_id {
+                if has_snap == 0 {
+                    flowc_cgen_putc(w, 40)
+                    has_snap = 1
+                } else {
+                    flowc_cgen_puts(w, ", ")
+                }
+                flowc_cgen_puts(w, "__flowc_cap_")
+                flowc_cgen_put_span(w, src, w[0].lambda_cap_start[ci], w[0].lambda_cap_end[ci])
+                flowc_cgen_puts(w, " = ")
+                # Inside a lambda body, read from the outer lambda's
+                # capture global. In the creation scope, read the local.
+                if w[0].in_lambda != 0 {
+                    flowc_cgen_puts(w, "__flowc_cap_")
+                }
+                flowc_cgen_put_span(w, src, w[0].lambda_cap_start[ci], w[0].lambda_cap_end[ci])
+            }
+            ci = ci + 1
+        }
+        if has_snap == 1 {
+            flowc_cgen_puts(w, ", ")
+        }
         flowc_cgen_puts(w, "__flowc_lambda_")
         flowc_cgen_put_i32(w, lam_id)
+        if has_snap == 1 {
+            flowc_cgen_putc(w, 41)
+        }
         return
     }
     if kind == AST_STRING {
@@ -1671,17 +1796,15 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if ann == AST_NONE {
             ty = flowc_cgen_infer_type_node(arena, src, init)
         }
-        # Check if this variable is captured by a lambda. If so, emit an
-        # assignment to the static global instead of a local declaration.
+        # Check if this variable is captured by a lambda. If so, still
+        # declare a local. The lambda expression will snapshot the local
+        # into the __flowc_cap_<name> static global at creation time.
+        # The lambda body reads from the static global (redirected by
+        # the in_lambda flag in the identifier emission).
         let is_captured: i32 = flowc_cgen_is_captured(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         if is_captured == 1 {
-            # Simple captured variable: assign to the static global.
-            flowc_cgen_puts(w, "  ")
-            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-            flowc_cgen_puts(w, " = ")
-            flowc_cgen_emit_expr(w, arena, src, init)
-            flowc_cgen_puts(w, ";\n")
-            return
+            # Fall through to the normal local declaration path below.
+            # The snapshot happens in the lambda expression emission.
         }
         let mut arr_n: i32 = 0
         let mut arr_inner: i32 = AST_NONE
@@ -3062,6 +3185,14 @@ export function flowc_cgen_emit_sigs(
     w.cap_starts = &cap_start_arr[0]
     w.cap_ends = &cap_end_arr[0]
     w.cap_count = 0
+    # Allocate per-lambda capture map (up to 64 lambdas x 16 captures = 1024).
+    let lam_cap_lambda_arr: array<i32, 256> = []
+    let lam_cap_start_arr: array<i32, 256> = []
+    let lam_cap_end_arr: array<i32, 256> = []
+    w.lambda_cap_lambda = &lam_cap_lambda_arr[0]
+    w.lambda_cap_start = &lam_cap_start_arr[0]
+    w.lambda_cap_end = &lam_cap_end_arr[0]
+    w.lambda_cap_count = 0
     w.cembed_count = 0
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
@@ -3169,11 +3300,14 @@ export function flowc_cgen_emit_sigs(
     # Pass 0.4: scan lambda bodies for captured variables.
     # For each lambda FN (negative name_start), collect identifiers in the
     # body that aren't parameters. These will be hoisted to static globals.
+    # Also record per-lambda captures for snapshot emission.
     let param_span_buf: array<i32, 32> = []
+    let per_lam_buf: array<i32, 32> = []
     let mut li: i32 = 0
     while li < arena.len {
         if arena.nodes[li].kind == AST_FN {
             if arena.nodes[li].name_start < 0 {
+                let lam_id: i32 = 0 - arena.nodes[li].name_start
                 # Collect parameter name spans.
                 let mut nparams: i32 = 0
                 let mut param: i32 = arena.nodes[li].a
@@ -3183,8 +3317,20 @@ export function flowc_cgen_emit_sigs(
                     nparams = nparams + 1
                     param = arena.nodes[param].next
                 }
-                # Scan body for captured variables.
+                # Scan body for captured variables (global list).
                 flowc_cgen_scan_captures(&w, arena, src, arena.nodes[li].c, &param_span_buf[0], nparams)
+                # Per-lambda scan: collect captures for this lambda only.
+                # Use a separate buffer to avoid duplicate-checking against
+                # the global list.
+                let per_lam_count: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[li].c, &per_lam_buf[0], 0, &param_span_buf[0], nparams)
+                let mut pi: i32 = 0
+                while pi < per_lam_count and w.lambda_cap_count < 256 {
+                    w.lambda_cap_lambda[w.lambda_cap_count] = lam_id
+                    w.lambda_cap_start[w.lambda_cap_count] = per_lam_buf[pi * 2]
+                    w.lambda_cap_end[w.lambda_cap_count] = per_lam_buf[pi * 2 + 1]
+                    w.lambda_cap_count = w.lambda_cap_count + 1
+                    pi = pi + 1
+                }
             }
         }
         li = li + 1
@@ -3193,7 +3339,7 @@ export function flowc_cgen_emit_sigs(
     # Pass 0.5: emit static globals for captured variables.
     let mut ci: i32 = 0
     while ci < w.cap_count {
-        flowc_cgen_puts(&w, "static int32_t ")
+        flowc_cgen_puts(&w, "static int32_t __flowc_cap_")
         flowc_cgen_put_span(&w, src, w.cap_starts[ci], w.cap_ends[ci])
         flowc_cgen_puts(&w, " = 0;\n")
         ci = ci + 1
@@ -3504,7 +3650,9 @@ export function flowc_cgen_emit_sigs(
                     param = arena.nodes[param].next
                 }
                 flowc_cgen_puts(&w, ") ")
+                w.in_lambda = 1
                 flowc_cgen_emit_block(&w, arena, src, arena.nodes[i].c)
+                w.in_lambda = 0
                 flowc_cgen_putc(&w, 10)
             }
         }
