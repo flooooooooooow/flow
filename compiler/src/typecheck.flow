@@ -806,14 +806,14 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             }
         }
         let fn: i32 = flowc_tc_unwrap_fn(arena, item)
-        if fn != AST_NONE and arena.nodes[fn].ival == 0 {
+        if fn != AST_NONE {
             let ns: i32 = arena.nodes[fn].name_start
             let ne: i32 = arena.nodes[fn].name_end
             let body: i32 = arena.nodes[fn].c
             let arity: i32 = flowc_ast_chain_len(arena, arena.nodes[fn].a)
             # Duplicate bodies with the same name are allowed (overloads).
             # The codegen resolves them by mangling based on parameter types.
-            if body != AST_NONE {
+            if body != AST_NONE and arena.nodes[fn].ival == 0 {
                 let mut prev: i32 = arena.nodes[root].a
                 while prev != item {
                     let pfn: i32 = flowc_tc_unwrap_fn(arena, prev)
@@ -831,6 +831,7 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
                     prev = arena.nodes[prev].next
                 }
             }
+            # Bind both generic and non-generic functions so calls resolve.
             flowc_tc_bind(ctx, ns, ne, 1, arity)
         }
         item = arena.nodes[item].next

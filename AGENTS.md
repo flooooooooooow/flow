@@ -55,7 +55,7 @@ If multiple agents are editing `compiler/src/` simultaneously:
 
 No active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
 env vars (not positional args, which trigger the self-test). The Python unit
-suite is at 1356 passed, 3 failed (numpy-dependent FIR route tests), 10 skipped.
+suite is at 1424 passed, 0 failed, 6 skipped (all clean).
 
 Bootstrap C was regenerated on 2026-08-14 to pick up span subscript, span
 slicing, and array-to-span conversion at call sites. Fixed point verified.
@@ -79,14 +79,15 @@ done
 echo "pass=$pass fail=$fail"
 ```
 
-Current: 79/11. The 11 failures by category:
+Current: 84/6 (with `-Itests/lang`). The 6 failures by category:
 
 - DSL keywords (3): test_effects, test_hybrid_events, test_time_blocks
-- Generic monomorphization (2): test_generics, test_generic_channels
-- Overload resolution (1): test_unsigned_ints
-- Closure snapshots (1): test_closures
-- Stdlib codegen (2): test_gif_encoder, test_fir_opts
+- Cross-module generics (1): test_generic_channels
 - External C headers (2): test_c_import_julia, test_c_import_python
+
+Note: test_c_import and test_extern_type pass with `-Itests/lang` (the helper
+header lives in tests/lang/). The suite runner needs that include path.
+test_generics now passes after adding generic monomorphization.
 
 Recently landed: enum tagged unions, enum variant references, span indexing
 with .data, span slicing with .data, array-to-span conversion at call sites.
