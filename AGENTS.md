@@ -57,6 +57,9 @@ No active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
 env vars (not positional args, which trigger the self-test). The Python unit
 suite is at 1356 passed, 3 failed (numpy-dependent FIR route tests), 10 skipped.
 
+Bootstrap C was regenerated on 2026-08-14 to pick up span subscript, span
+slicing, and array-to-span conversion at call sites. Fixed point verified.
+
 ### Bootstrap suite
 
 The "Bootstrap suite" is the 90 `.flow` files in `tests/lang/` run through

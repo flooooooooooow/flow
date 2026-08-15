@@ -543,6 +543,138 @@ function flowc_cgen_find_fn(arena: AstArena, src: ptr<u8>, start: i32, end: i32)
     return AST_NONE
 }
 
+# Count functions with the same name and a body (overloads). Returns count >= 1.
+# Forward declarations (no body) are not counted as overloads.
+function flowc_cgen_count_overloads(arena: AstArena, src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if arena.nodes[i].c != AST_NONE {
+                if flowc_cgen_span_eq(src, start, end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    count = count + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return count
+}
+
+# Emit a mangled function name: name_type1_type2_...
+# For example, pick(x: i32) -> pick_i32, pick(x: u32) -> pick_u32
+function flowc_cgen_put_mangled_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fn_id: i32) {
+    flowc_cgen_put_span(w, src, arena.nodes[fn_id].name_start, arena.nodes[fn_id].name_end)
+    let mut param: i32 = arena.nodes[fn_id].a
+    while param != AST_NONE {
+        let ty: i32 = arena.nodes[param].a
+        if ty != AST_NONE {
+            flowc_cgen_putc(w, 95)
+            flowc_cgen_put_span(w, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
+        }
+        param = arena.nodes[param].next
+    }
+}
+
+# Find the best overload for a call based on argument types.
+# Returns the AST_FN node index of the best match.
+# For unsuffixed integer literals, prefers i32 over unsigned types.
+function flowc_cgen_resolve_overload(arena: AstArena, src: ptr<u8>, start: i32, end: i32, call_id: i32) -> i32 {
+    let mut best: i32 = AST_NONE
+    let mut best_score: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if arena.nodes[i].c != AST_NONE {
+                if flowc_cgen_span_eq(src, start, end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                # Score this candidate against the call arguments.
+                let mut score: i32 = 0
+                let mut arg: i32 = arena.nodes[call_id].a
+                let mut param: i32 = arena.nodes[i].a
+                let mut exact: i32 = 1
+                while arg != AST_NONE and param != AST_NONE {
+                    let arg_ty: i32 = flowc_cgen_infer_arg_type(arena, src, arg)
+                    let param_ty: i32 = arena.nodes[param].a
+                    if arg_ty != AST_NONE and param_ty != AST_NONE {
+                        if flowc_cgen_span_eq(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end) == 1 {
+                            score = score + 10
+                        } else {
+                            # Type mismatch: penalize but don't reject.
+                            score = score + 1
+                            exact = 0
+                        }
+                    } else {
+                        # Can't determine arg type. Give a small score.
+                        score = score + 1
+                    }
+                    arg = arena.nodes[arg].next
+                    param = arena.nodes[param].next
+                }
+                # Prefer exact matches. Among exact matches, prefer the
+                # first one (i32 before u32 in source order for literals).
+                if exact == 1 and score > best_score {
+                    best = i
+                    best_score = score
+                } elif best == AST_NONE {
+                    best = i
+                    best_score = score
+                }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+# Infer the type of a call argument. Returns an AST_TYPE node or AST_NONE.
+function flowc_cgen_infer_arg_type(arena: AstArena, src: ptr<u8>, arg_id: i32) -> i32 {
+    if arg_id == AST_NONE {
+        return AST_NONE
+    }
+    let kind: i32 = arena.nodes[arg_id].kind
+    # Integer literals default to i32.
+    if kind == AST_INT {
+        let i32_name: array<u8, 4> = [105, 51, 50, 0]
+        return flowc_cgen_find_type_by_name(arena, src, &i32_name[0])
+    }
+    # Cast: use the target type.
+    if kind == AST_CAST {
+        return arena.nodes[arg_id].b
+    }
+    # Identifier: look up the variable's declared type.
+    if kind == AST_IDENT {
+        let mut i: i32 = 0
+        while i < arena.len {
+            if arena.nodes[i].kind == AST_LET or arena.nodes[i].kind == AST_PARAM {
+                if flowc_cgen_span_eq(src, arena.nodes[arg_id].name_start, arena.nodes[arg_id].name_end,
+                                      arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    let ty: i32 = arena.nodes[i].a
+                    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
+                        return ty
+                    }
+                }
+            }
+            i = i + 1
+        }
+    }
+    return AST_NONE
+}
+
+# Find an AST_TYPE node by source text name. Returns AST_NONE if not found.
+function flowc_cgen_find_type_by_name(arena: AstArena, src: ptr<u8>, name: ptr<u8>) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_TYPE {
+            if flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, name) == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
 # AST_TYPE node describing `init`, or AST_NONE when no node applies.
 function flowc_cgen_infer_type_node(arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
     if init == AST_NONE {
@@ -1655,10 +1787,22 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, ")")
             return
         }
-        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        # Check for overloads. If there are multiple functions with this
+        # name, resolve the best match and use the mangled name.
+        let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        let fn_id: i32 = 0
+        if n_overloads > 1 {
+            fn_id = flowc_cgen_resolve_overload(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end, id)
+            if fn_id != AST_NONE {
+                flowc_cgen_put_mangled_fn(w, arena, src, fn_id)
+            } else {
+                flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            }
+        } else {
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            fn_id = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        }
         flowc_cgen_putc(w, 40)
-        # Look up the function to check for span parameters.
-        let fn_id: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         let mut arg: i32 = arena.nodes[id].a
         let mut first: i32 = 1
         let mut param_idx: i32 = 0
@@ -2522,7 +2666,13 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
         }
     }
     flowc_cgen_putc(w, 32)
-    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    # If this function has overloads, use a mangled name.
+    let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    if n_overloads > 1 and cli_main == 0 {
+        flowc_cgen_put_mangled_fn(w, arena, src, id)
+    } else {
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    }
     flowc_cgen_putc(w, 40)
     let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
@@ -2568,7 +2718,13 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         }
     }
     flowc_cgen_putc(w, 32)
-    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    # If this function has overloads, use a mangled name.
+    let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    if n_overloads > 1 and cli_main == 0 {
+        flowc_cgen_put_mangled_fn(w, arena, src, id)
+    } else {
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    }
     flowc_cgen_putc(w, 40)
     let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
