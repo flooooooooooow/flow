@@ -168,7 +168,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Real applications | DONE | Doom port; Game, Morphogenesis, Numerical galleries, SDK. |
 | C interop | DONE | `extern "C"` FFI incl. variadic externs; example stubs. |
 | Libraries | PARTIAL | Networking (std/language), JSON, HTTP; GUI via SDL2/graphics. |
-| Self-hosting | DONE | `flowc` compiles substantial parts of FLOW with FLOW (three-stage). |
+| Self-hosting | PARTIAL | `flowc` compiles itself (three-stage fixed-point) and passes 79 of 90 `tests/lang` files. 11 failures: DSL keywords (effects, flow blocks), generic monomorphization, overload resolution, closure snapshots, stdlib codegen, external C headers. See [self-hosting.md](self-hosting.md). |
 | Large project | DONE | Doom as a flagship real codebase. |
 | Ecosystem libraries | PARTIAL | Not a curated, blessed marketplace outside the built-in registry. |
 

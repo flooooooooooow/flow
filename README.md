@@ -299,6 +299,41 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 
 ---
 
+## Self-hosting status
+
+The self-hosted compiler (`compiler/src/`, written in Flow) is the default host
+for `./flow run` and `./flow compile`. It compiles itself end to end: three
+consecutive generation fixed-points are byte-identical, and a clean checkout
+needs no Python to build a working compiler.
+
+The bootstrap language suite (`tests/lang/`, 90 `.flow` files) is the
+regression target for self-hosted parity. Current result, run with
+`FLOWC_IN`/`FLOWC_OUT` environment variables:
+
+```
+pass=79  fail=11
+```
+
+The 11 failures fall into five categories:
+
+| Category | Tests | Root cause |
+|----------|-------|------------|
+| DSL parse failures | `test_effects`, `test_hybrid_events`, `test_time_blocks` | `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` keywords are not parsed |
+| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts generic syntax but the monomorphizer is missing; `struct Box<T>` emits `T value` instead of a concrete type |
+| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names; overload selection is not implemented |
+| Closure snapshot semantics | `test_closures` | Captured variables are hoisted to globals without snapshotting the value at closure creation time |
+| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder emits a variable used as a function call; FIR inline-pure bonus constant gets a float-to-int truncation |
+| External C headers | `test_c_import_julia`, `test_c_import_python` | System headers for Julia and Python embedding are not available in the test environment |
+
+The Python-host compiler (`src/flow/`, 46,695 lines) remains the full language
+surface: generics, effects, MLIR, GPU, DSLs, and all advanced type checking.
+The self-hosted compiler (`compiler/src/`, 10,863 lines) covers the subset
+needed to compile itself plus a growing set of language features. See
+[docs/project/self-hosting.md](docs/project/self-hosting.md) for the full plan
+and [compiler/README.md](compiler/README.md) for the supported syntax list.
+
+---
+
 ## Build and develop
 
 ```bash

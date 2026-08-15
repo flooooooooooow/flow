@@ -53,7 +53,7 @@ If multiple agents are editing `compiler/src/` simultaneously:
 
 ### Current in-flight work
 
-No active agents. The bootstrap suite is at 77/13 using FLOWC_IN/FLOWC_OUT
+No active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
 env vars (not positional args, which trigger the self-test). The Python unit
 suite is at 1356 passed, 3 failed (numpy-dependent FIR route tests), 10 skipped.
 
@@ -76,6 +76,14 @@ done
 echo "pass=$pass fail=$fail"
 ```
 
-Current: 77/13. Remaining failures: generics, closures, effects, spans,
-time_blocks, unsigned_ints, fir_opts, hybrid_events, lifetime_domains,
-generic_channels, gif_encoder, c_import_julia, c_import_python.
+Current: 79/11. The 11 failures by category:
+
+- DSL keywords (3): test_effects, test_hybrid_events, test_time_blocks
+- Generic monomorphization (2): test_generics, test_generic_channels
+- Overload resolution (1): test_unsigned_ints
+- Closure snapshots (1): test_closures
+- Stdlib codegen (2): test_gif_encoder, test_fir_opts
+- External C headers (2): test_c_import_julia, test_c_import_python
+
+Recently landed: enum tagged unions, enum variant references, span indexing
+with .data, span slicing with .data, array-to-span conversion at call sites.
