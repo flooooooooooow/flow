@@ -6904,6 +6904,25 @@ class MLIRGenerator:
             f"{ind}}}",
         ]
 
+    def _emit_string_static_global(self, name: str, value: Literal) -> List[str]:
+        """Emit a mutable ``!llvm.ptr`` global initialized to a string constant.
+
+        ``let mut x: string = "..."`` must start at the string's address,
+        not null. The string constant is interned and referenced via
+        ``llvm.mlir.addressof`` (flow#471).
+        """
+        ind = self.indent()
+        gname = self._intern_string_const(str(value.value))
+        ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        return [
+            f"{ind}// Module static (string): {name}",
+            f"{ind}llvm.mlir.global internal @{name}() {{addr_space = 0 : i32}} : !llvm.ptr {{",
+            f"{ind}  {ssa} = llvm.mlir.addressof @{gname} : !llvm.ptr",
+            f"{ind}  llvm.return {ssa} : !llvm.ptr",
+            f"{ind}}}",
+        ]
+
     def _emit_struct_static_global(
         self,
         name: str,
@@ -6984,6 +7003,28 @@ class MLIRGenerator:
             return "\n".join(mlir_code)
 
         # Scalar pointers must be null-initialized (not undef).
+        # But string literals (which are !llvm.ptr) need their constant
+        # address as the initializer, not null. Without this, `let mut
+        # x: string = "..."` globals start at 0 and string-returning
+        # functions return null (flow#471).
+        if (
+            isinstance(static.value, Literal)
+            and getattr(static.value.type, "name", None) == "string"
+        ):
+            mlir_code.extend(
+                self._emit_string_static_global(
+                    static.name, static.value
+                )
+            )
+            self.symbol_table[static.name] = {
+                "type": "variable",
+                "mlir_type": "!llvm.ptr",
+                "flow_type": static.type,
+                "is_module_global": True,
+                "is_const": False,
+            }
+            return "\n".join(mlir_code)
+
         if (
             mlir_type == "!llvm.ptr"
             or (
