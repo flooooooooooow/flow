@@ -2587,10 +2587,18 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
 # non-export stays `static const int32_t`.
 function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if arena.nodes[id].ival == 1 {
-        flowc_cgen_puts(w, "const int32_t ")
+        flowc_cgen_puts(w, "const ")
     } else {
-        flowc_cgen_puts(w, "static const int32_t ")
+        flowc_cgen_puts(w, "static const ")
     }
+    # Use the declared type if available, otherwise default to int32_t.
+    let ty: i32 = arena.nodes[id].a
+    if ty != AST_NONE {
+        flowc_cgen_emit_type(w, arena, src, ty)
+    } else {
+        flowc_cgen_puts(w, "int32_t")
+    }
+    flowc_cgen_putc(w, 32)
     flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_puts(w, " = ")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
