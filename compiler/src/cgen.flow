@@ -60,11 +60,19 @@ export struct CgenBuf {
     lambda_cap_lambda: ptr<i32>,
     lambda_cap_start: ptr<i32>,
     lambda_cap_end: ptr<i32>,
-    lambda_cap_count: i32
+    lambda_cap_count: i32,
+    # Monomorphization substitution context. When mono_ntp > 0, type
+    # emission checks type param names and substitutes concrete types.
+    mono_tp_starts: ptr<i32>,
+    mono_tp_ends: ptr<i32>,
+    mono_tp_concrete: ptr<i32>,
+    mono_ntp: i32,
+    # Current function being emitted (for scoped param lookups).
+    cur_fn: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -387,6 +395,46 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_puts(w, "int32_t")
         return
     }
+    # Monomorphization substitution: check if type name matches a type param.
+    if w[0].mono_ntp > 0 {
+        let ns: i32 = arena.nodes[ty].name_start
+        let ne: i32 = arena.nodes[ty].name_end
+        let inner: i32 = arena.nodes[ty].a
+        if inner == AST_NONE and ns > 0 {
+            let idx: i32 = flowc_cgen_find_tp(src, ns, ne, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+            if idx >= 0 {
+                flowc_cgen_emit_type(w, arena, src, w[0].mono_tp_concrete[idx])
+                return
+            }
+        }
+        # ptr<T> where T is a type param.
+        if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "ptr") == 1 {
+            let inner_idx: i32 = flowc_cgen_find_tp(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+            if inner_idx >= 0 {
+                flowc_cgen_emit_type(w, arena, src, w[0].mono_tp_concrete[inner_idx])
+                flowc_cgen_putc(w, 42)
+                return
+            }
+        }
+        # Generic struct type with type param args: Box<T> → Box_i32.
+        if inner != AST_NONE and flowc_cgen_is_struct_type(arena, src, ty) == 1 {
+            flowc_cgen_put_span(w, src, ns, ne)
+            let mut ta: i32 = inner
+            while ta != AST_NONE {
+                if arena.nodes[ta].kind == AST_TYPE {
+                    let ta_idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+                    flowc_cgen_putc(w, 95)
+                    if ta_idx >= 0 {
+                        flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[ta_idx]].name_start, arena.nodes[w[0].mono_tp_concrete[ta_idx]].name_end)
+                    } else {
+                        flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+                    }
+                }
+                ta = arena.nodes[ta].next
+            }
+            return
+        }
+    }
     # Function pointer type: (A, B) -> R  ->  R (*)(A, B)
     # cfn type: cfn(A, B) -> R  ->  R (*)(A, B)  (plain C function pointer)
     if arena.nodes[ty].ival == 0 - 1 or arena.nodes[ty].ival == 0 - 2 {
@@ -448,6 +496,15 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
     }
     if flowc_cgen_is_struct_type(arena, src, ty) == 1 {
         flowc_cgen_put_span(w, src, ns, ne)
+        # If the struct has type args, emit mangled name: name_type1_type2
+        let mut ta: i32 = inner
+        while ta != AST_NONE {
+            if arena.nodes[ta].kind == AST_TYPE {
+                flowc_cgen_putc(w, 95)
+                flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+            }
+            ta = arena.nodes[ta].next
+        }
         return
     }
     if flowc_cgen_span_is(src, ns, ne, "void") == 1 {
@@ -1787,6 +1844,29 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, ")")
             return
         }
+        # Generic call: name<TypeArgs>(args) — emit mangled name name_type1_type2
+        if arena.nodes[id].b != AST_NONE {
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            let mut ta: i32 = arena.nodes[id].b
+            while ta != AST_NONE {
+                flowc_cgen_putc(w, 95)
+                flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+                ta = arena.nodes[ta].next
+            }
+            flowc_cgen_putc(w, 40)
+            let mut arg: i32 = arena.nodes[id].a
+            let mut first: i32 = 1
+            while arg != AST_NONE {
+                if first == 0 {
+                    flowc_cgen_puts(w, ", ")
+                }
+                first = 0
+                flowc_cgen_emit_expr(w, arena, src, arg)
+                arg = arena.nodes[arg].next
+            }
+            flowc_cgen_puts(w, ")")
+            return
+        }
         # Check for overloads. If there are multiple functions with this
         # name, resolve the best match and use the mangled name.
         let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -1834,19 +1914,62 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_FIELD_ACCESS {
-        # (base).field
-        # Special case: .len on a span → (base).len
-        flowc_cgen_putc(w, 40)
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_cgen_putc(w, 41)
-        flowc_cgen_putc(w, 46)
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        # (base).field or base->field if base is a pointer.
+        let base: i32 = arena.nodes[id].a
+        let mut is_ptr: i32 = 0
+        if base != AST_NONE and arena.nodes[base].kind == AST_IDENT and w[0].cur_fn != AST_NONE {
+            # Look up variable type only in the current function's params.
+            let mut param: i32 = arena.nodes[w[0].cur_fn].a
+            while param != AST_NONE {
+                if arena.nodes[param].kind == AST_PARAM {
+                    if flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, arena.nodes[param].name_start, arena.nodes[param].name_end) == 1 {
+                        let ty: i32 = arena.nodes[param].a
+                        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
+                            if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr") == 1 {
+                                is_ptr = 1
+                            }
+                        }
+                    }
+                }
+                param = arena.nodes[param].next
+            }
+        }
+        if is_ptr == 1 {
+            flowc_cgen_emit_expr(w, arena, src, base)
+            flowc_cgen_puts(w, "->")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        } else {
+            flowc_cgen_putc(w, 40)
+            flowc_cgen_emit_expr(w, arena, src, base)
+            flowc_cgen_putc(w, 41)
+            flowc_cgen_putc(w, 46)
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        }
         return
     }
     if kind == AST_STRUCT_LIT {
         # (Name){ .f1 = e1, .f2 = e2 }
+        # For generic struct literals, use mangled name: Name_type1_type2
+        # When mono context is active, substitute type params with concrete types.
         flowc_cgen_putc(w, 40)
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        let mut ta: i32 = arena.nodes[id].b
+        while ta != AST_NONE {
+            if arena.nodes[ta].kind == AST_TYPE {
+                flowc_cgen_putc(w, 95)
+                if w[0].mono_ntp > 0 {
+                    let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+                    if idx >= 0 {
+                        flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[idx]].name_start, arena.nodes[w[0].mono_tp_concrete[idx]].name_end)
+                    } else {
+                        flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+                    }
+                } else {
+                    flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+                }
+            }
+            ta = arena.nodes[ta].next
+        }
         flowc_cgen_puts(w, "){ ")
         let mut field: i32 = arena.nodes[id].a
         let mut first: i32 = 1
@@ -2636,6 +2759,8 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
 function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     # Stage-A CLI: main(argc, argv) → int main(int …, char **…) regardless of Flow types.
     let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
+    # Set current function for scoped param lookups (pointer field access).
+    w[0].cur_fn = id
     if cli_main == 1 {
         let p0: i32 = arena.nodes[id].a
         let p1: i32 = arena.nodes[p0].next
@@ -2666,9 +2791,16 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
         }
     }
     flowc_cgen_putc(w, 32)
-    # If this function has overloads, use a mangled name.
-    let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    if n_overloads > 1 and cli_main == 0 {
+    # Monomorphization: emit mangled name when mono context is active.
+    if w[0].mono_ntp > 0 and cli_main == 0 {
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        let mut mi: i32 = 0
+        while mi < w[0].mono_ntp {
+            flowc_cgen_putc(w, 95)
+            flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[mi]].name_start, arena.nodes[w[0].mono_tp_concrete[mi]].name_end)
+            mi = mi + 1
+        }
+    } elif flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) > 1 and cli_main == 0 {
         flowc_cgen_put_mangled_fn(w, arena, src, id)
     } else {
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -2718,9 +2850,16 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         }
     }
     flowc_cgen_putc(w, 32)
-    # If this function has overloads, use a mangled name.
-    let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    if n_overloads > 1 and cli_main == 0 {
+    # Monomorphization: emit mangled name when mono context is active.
+    if w[0].mono_ntp > 0 and cli_main == 0 {
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        let mut mi: i32 = 0
+        while mi < w[0].mono_ntp {
+            flowc_cgen_putc(w, 95)
+            flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[mi]].name_start, arena.nodes[w[0].mono_tp_concrete[mi]].name_end)
+            mi = mi + 1
+        }
+    } elif flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) > 1 and cli_main == 0 {
         flowc_cgen_put_mangled_fn(w, arena, src, id)
     } else {
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -2763,6 +2902,138 @@ function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
 
 # typedef struct Name { <type> f1; ... } Name;
 # Field types via flowc_cgen_emit_type (ptr<u8> → uint8_t*, etc.).
+# Max type parameters per generic declaration.
+const FLOWC_CGEN_MAX_TP: i32 = 8
+
+# Check if a type name span matches any type parameter. Returns the index
+# of the matching type param, or -1 if no match.
+function flowc_cgen_find_tp(src: ptr<u8>, ns: i32, ne: i32, tp_starts: ptr<i32>, tp_ends: ptr<i32>, ntp: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < ntp {
+        if flowc_cgen_span_eq(src, ns, ne, tp_starts[i], tp_ends[i]) == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Emit a type with substitution. If the type name matches a type param,
+# emit the concrete type instead. Otherwise emit normally.
+function flowc_cgen_emit_type_subst(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32, tp_starts: ptr<i32>, tp_ends: ptr<i32>, tp_concrete: ptr<i32>, ntp: i32) {
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        flowc_cgen_puts(w, "int32_t")
+        return
+    }
+    # Function pointer types: emit normally (no substitution needed).
+    if arena.nodes[ty].ival == 0 - 1 or arena.nodes[ty].ival == 0 - 2 {
+        flowc_cgen_emit_type(w, arena, src, ty)
+        return
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+    # Check if the type name matches a type parameter.
+    if inner == AST_NONE {
+        let idx: i32 = flowc_cgen_find_tp(src, ns, ne, tp_starts, tp_ends, ntp)
+        if idx >= 0 {
+            flowc_cgen_emit_type(w, arena, src, tp_concrete[idx])
+            return
+        }
+    }
+    # ptr<T> with T being a type param.
+    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "ptr") == 1 {
+        let inner_idx: i32 = flowc_cgen_find_tp(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, tp_starts, tp_ends, ntp)
+        if inner_idx >= 0 {
+            flowc_cgen_emit_type(w, arena, src, tp_concrete[inner_idx])
+            flowc_cgen_putc(w, 42)
+            return
+        }
+    }
+    # span<T> with T being a type param.
+    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "span") == 1 {
+        let inner_idx: i32 = flowc_cgen_find_tp(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, tp_starts, tp_ends, ntp)
+        if inner_idx >= 0 {
+            flowc_cgen_puts(w, "flowc_span_")
+            flowc_cgen_emit_type(w, arena, src, tp_concrete[inner_idx])
+            return
+        }
+    }
+    # Generic struct type: Box<T> where T is a type param → Box_i32.
+    if inner != AST_NONE and flowc_cgen_is_struct_type(arena, src, ty) == 1 {
+        flowc_cgen_put_span(w, src, ns, ne)
+        let mut ta: i32 = inner
+        while ta != AST_NONE {
+            if arena.nodes[ta].kind == AST_TYPE {
+                let ta_idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, tp_starts, tp_ends, ntp)
+                flowc_cgen_putc(w, 95)
+                if ta_idx >= 0 {
+                    flowc_cgen_put_span(w, src, arena.nodes[tp_concrete[ta_idx]].name_start, arena.nodes[tp_concrete[ta_idx]].name_end)
+                } else {
+                    flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+                }
+            }
+            ta = arena.nodes[ta].next
+        }
+        return
+    }
+    # Default: emit normally.
+    flowc_cgen_emit_type(w, arena, src, ty)
+}
+
+# Emit a specialized struct: Name_type1_type2 { fields with substitution }
+function flowc_cgen_emit_struct_mono(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, tp_starts: ptr<i32>, tp_ends: ptr<i32>, tp_concrete: ptr<i32>, ntp: i32) {
+    flowc_cgen_puts(w, "typedef struct ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    # Emit mangled name with type args.
+    let mut i: i32 = 0
+    while i < ntp {
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_span(w, src, arena.nodes[tp_concrete[i]].name_start, arena.nodes[tp_concrete[i]].name_end)
+        i = i + 1
+    }
+    flowc_cgen_puts(w, " {\n")
+    let mut field: i32 = arena.nodes[id].a
+    while field != AST_NONE {
+        flowc_cgen_puts(w, "  ")
+        let fty: i32 = arena.nodes[field].a
+        # Check for array<T, N> with T being a type param.
+        let mut arr_n: i32 = 0
+        let mut arr_inner: i32 = AST_NONE
+        if fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
+            if arena.nodes[fty].a != AST_NONE and arena.nodes[fty].ival > 0 {
+                if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "array") == 1 {
+                    arr_n = arena.nodes[fty].ival
+                    arr_inner = arena.nodes[fty].a
+                }
+            }
+        }
+        if arr_n > 0 {
+            flowc_cgen_emit_type_subst(w, arena, src, arr_inner, tp_starts, tp_ends, tp_concrete, ntp)
+        } else {
+            flowc_cgen_emit_type_subst(w, arena, src, fty, tp_starts, tp_ends, tp_concrete, ntp)
+        }
+        flowc_cgen_putc(w, 32)
+        flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+        if arr_n > 0 {
+            flowc_cgen_putc(w, 91)
+            flowc_cgen_put_i32(w, arr_n)
+            flowc_cgen_putc(w, 93)
+        }
+        flowc_cgen_puts(w, ";\n")
+        field = arena.nodes[field].next
+    }
+    flowc_cgen_puts(w, "} ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    i = 0
+    while i < ntp {
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_span(w, src, arena.nodes[tp_concrete[i]].name_start, arena.nodes[tp_concrete[i]].name_end)
+        i = i + 1
+    }
+    flowc_cgen_puts(w, ";\n\n")
+}
+
 function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     flowc_cgen_puts(w, "typedef struct ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -3553,10 +3824,11 @@ export function flowc_cgen_emit_sigs(
     }
 
     # Pass 1: struct typedefs (including export struct)
+    # Skip generic structs (b != AST_NONE means type params present).
     item = arena.nodes[root].a
     while item != AST_NONE {
         let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
-        if st != AST_NONE {
+        if st != AST_NONE and arena.nodes[st].b == AST_NONE {
             flowc_cgen_emit_struct(&w, arena, src, st)
         }
         item = arena.nodes[item].next
@@ -3634,6 +3906,10 @@ export function flowc_cgen_emit_sigs(
         }
         ti = ti + 1
     }
+
+    # Pass 1.6: monomorphization — emit specialized generic structs and functions.
+    # Scan all AST nodes for type-arg instantiations and emit specialized C.
+    flowc_cgen_emit_mono(&w, arena, src, root)
 
     # Pass 2: consts (export const is AST_CONST with ival=1, not wrapped)
     item = arena.nodes[root].a
@@ -3831,6 +4107,294 @@ export function flowc_cgen_emit_sigs(
 
 export function flowc_cgen_emit_ex(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32, flags: i32) -> i32 {
     return flowc_cgen_emit_sigs(arena, root, src, out, out_cap, flags, null, 0)
+}
+
+# Monomorphization pass: scan for generic instantiations and emit specialized C.
+# Scans all AST nodes for:
+# - AST_CALL with type args (b != AST_NONE): generic function call
+# - AST_STRUCT_LIT with type args (b != AST_NONE): generic struct literal
+# - AST_TYPE with inner type args on a struct: generic type reference
+# For each unique instantiation, finds the generic declaration and emits
+# a specialized struct typedef and/or function definition.
+# Check if a name span matches any type param name of any generic decl.
+function flowc_cgen_is_type_param_name(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_STRUCT and arena.nodes[i].b != AST_NONE {
+            let mut tp: i32 = arena.nodes[i].b
+            while tp != AST_NONE {
+                if flowc_cgen_span_eq(src, ns, ne, arena.nodes[tp].name_start, arena.nodes[tp].name_end) == 1 {
+                    return 1
+                }
+                tp = arena.nodes[tp].next
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Compute a hash from a name span + type arg node chain for dedup.
+function flowc_cgen_mono_hash(src: ptr<u8>, ns: i32, ne: i32, type_args: i32, arena: AstArena) -> i32 {
+    let mut h: i32 = 5381
+    let mut i: i32 = ns
+    while i < ne {
+        h = h * 31 + src[i]
+        i = i + 1
+    }
+    let mut ta: i32 = type_args
+    while ta != AST_NONE {
+        let tas: i32 = arena.nodes[ta].name_start
+        let tae: i32 = arena.nodes[ta].name_end
+        let mut j: i32 = tas
+        while j < tae {
+            h = h * 31 + src[j]
+            j = j + 1
+        }
+        ta = arena.nodes[ta].next
+    }
+    return h
+}
+
+function flowc_cgen_emit_mono(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, root: i32) {
+    # Track emitted instantiations by hash for dedup.
+    let mut emitted_hashes: array<i32, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut emitted_count: i32 = 0
+
+    let mut tp_starts: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut tp_ends: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut tp_concrete: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+
+    let mut i: i32 = 0
+    while i < arena.len {
+        let kind: i32 = arena.nodes[i].kind
+        # Check AST_CALL with type args.
+        if kind == AST_CALL and arena.nodes[i].b != AST_NONE {
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            # Collect concrete type args.
+            let mut ntp: i32 = 0
+            let mut ta: i32 = arena.nodes[i].b
+            let mut is_param: i32 = 0
+            while ta != AST_NONE and ntp < 8 {
+                tp_concrete[ntp] = ta
+                if flowc_cgen_is_type_param_name(arena, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end) == 1 {
+                    is_param = 1
+                }
+                ntp = ntp + 1
+                ta = arena.nodes[ta].next
+            }
+            if ntp > 0 and is_param == 0 {
+                # Dedup check: compute hash of name + type args.
+                let cur_hash: i32 = flowc_cgen_mono_hash(src, ns, ne, arena.nodes[i].b, arena)
+                let mut already: i32 = 0
+                let mut ei: i32 = 0
+                while ei < emitted_count {
+                    if emitted_hashes[ei] == cur_hash {
+                        already = 1
+                    }
+                    ei = ei + 1
+                }
+                if already == 0 {
+                    # Find the generic function.
+                    let mut fn_id: i32 = AST_NONE
+                    let mut j: i32 = 0
+                    while j < arena.len {
+                        if arena.nodes[j].kind == AST_FN and arena.nodes[j].ival > 0 {
+                            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+                                fn_id = j
+                            }
+                        }
+                        j = j + 1
+                    }
+                    if fn_id != AST_NONE {
+                        # Find type param names by scanning source after name.
+                        # The type params are between name_end and the ( that
+                        # starts the param list. They are enclosed in <...>.
+                        let mut ntp_names: i32 = 0
+                        let mut pos: i32 = arena.nodes[fn_id].name_end
+                        # Skip whitespace to find <.
+                        while pos < 200000 and src[pos] != 60 and src[pos] != 40 {
+                            pos = pos + 1
+                        }
+                        if src[pos] == 60 {
+                            pos = pos + 1
+                            # Read identifiers separated by commas, skipping : Trait.
+                            while pos < 200000 and src[pos] != 62 {
+                                # Skip whitespace.
+                                while pos < 200000 and (src[pos] == 32 or src[pos] == 10 or src[pos] == 9) {
+                                    pos = pos + 1
+                                }
+                                if src[pos] == 62 {
+                                    break
+                                }
+                                if src[pos] == 44 {
+                                    pos = pos + 1
+                                } else {
+                                    # Read identifier.
+                                    let id_start: i32 = pos
+                                    while pos < 200000 and ((src[pos] >= 65 and src[pos] <= 90) or (src[pos] >= 97 and src[pos] <= 122) or (src[pos] >= 48 and src[pos] <= 57) or src[pos] == 95) {
+                                        pos = pos + 1
+                                    }
+                                    if ntp_names < 8 {
+                                        tp_starts[ntp_names] = id_start
+                                        tp_ends[ntp_names] = pos
+                                        ntp_names = ntp_names + 1
+                                    }
+                                    # Skip : Trait if present.
+                                    while pos < 200000 and src[pos] != 44 and src[pos] != 62 {
+                                        pos = pos + 1
+                                    }
+                                }
+                            }
+                        }
+                        # Also find and emit specialized struct if the return
+                        # type or param types reference a generic struct.
+                        # For now, just emit the function.
+                        if ntp_names == ntp {
+                            # Set mono context.
+                            w[0].mono_tp_starts = &tp_starts[0]
+                            w[0].mono_tp_ends = &tp_ends[0]
+                            w[0].mono_tp_concrete = &tp_concrete[0]
+                            w[0].mono_ntp = ntp
+                            # Emit forward declaration.
+                            flowc_cgen_emit_fn_proto(w, arena, src, fn_id)
+                            # Emit function definition.
+                            flowc_cgen_emit_fn(w, arena, src, fn_id)
+                            # Clear mono context.
+                            w[0].mono_ntp = 0
+                            # Record as emitted.
+                            if emitted_count < 256 {
+                                emitted_hashes[emitted_count] = cur_hash
+                                emitted_count = emitted_count + 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        # Check AST_STRUCT_LIT with type args.
+        if kind == AST_STRUCT_LIT and arena.nodes[i].b != AST_NONE {
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            let mut ntp: i32 = 0
+            let mut ta: i32 = arena.nodes[i].b
+            let mut is_param: i32 = 0
+            while ta != AST_NONE and ntp < 8 {
+                tp_concrete[ntp] = ta
+                if flowc_cgen_is_type_param_name(arena, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end) == 1 {
+                    is_param = 1
+                }
+                ntp = ntp + 1
+                ta = arena.nodes[ta].next
+            }
+            if ntp > 0 and is_param == 0 {
+                # Check dedup.
+                let cur_hash: i32 = flowc_cgen_mono_hash(src, ns, ne, arena.nodes[i].b, arena)
+                let mut already: i32 = 0
+                let mut ei: i32 = 0
+                while ei < emitted_count {
+                    if emitted_hashes[ei] == cur_hash {
+                        already = 1
+                    }
+                    ei = ei + 1
+                }
+                if already == 0 {
+                    # Find the generic struct.
+                    let mut st_id: i32 = AST_NONE
+                    let mut j: i32 = 0
+                    while j < arena.len {
+                        if arena.nodes[j].kind == AST_STRUCT and arena.nodes[j].b != AST_NONE {
+                            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+                                st_id = j
+                            }
+                        }
+                        j = j + 1
+                    }
+                    if st_id != AST_NONE {
+                        # Get type param names from struct's b field.
+                        let mut ntp_names: i32 = 0
+                        let mut tp: i32 = arena.nodes[st_id].b
+                        while tp != AST_NONE and ntp_names < 8 {
+                            tp_starts[ntp_names] = arena.nodes[tp].name_start
+                            tp_ends[ntp_names] = arena.nodes[tp].name_end
+                            ntp_names = ntp_names + 1
+                            tp = arena.nodes[tp].next
+                        }
+                        if ntp_names == ntp {
+                            flowc_cgen_emit_struct_mono(w, arena, src, st_id, &tp_starts[0], &tp_ends[0], &tp_concrete[0], ntp)
+                            if emitted_count < 256 {
+                                emitted_hashes[emitted_count] = cur_hash
+                                emitted_count = emitted_count + 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        # Check AST_TYPE with inner type args on a struct (e.g. let b: Box<i32>).
+        if kind == AST_TYPE and arena.nodes[i].a != AST_NONE and arena.nodes[i].ival == 0 {
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            # Check if this is a struct type (not ptr/array/span).
+            if flowc_cgen_is_struct_type(arena, src, i) == 1 {
+                let mut ntp: i32 = 0
+                let mut ta: i32 = arena.nodes[i].a
+                let mut is_param: i32 = 0
+                while ta != AST_NONE and ntp < 8 {
+                    tp_concrete[ntp] = ta
+                    if flowc_cgen_is_type_param_name(arena, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end) == 1 {
+                        is_param = 1
+                    }
+                    ntp = ntp + 1
+                    ta = arena.nodes[ta].next
+                }
+                if ntp > 0 and is_param == 0 {
+                    # Check dedup.
+                    let cur_hash: i32 = flowc_cgen_mono_hash(src, ns, ne, arena.nodes[i].a, arena)
+                    let mut already: i32 = 0
+                    let mut ei: i32 = 0
+                    while ei < emitted_count {
+                        if emitted_hashes[ei] == cur_hash {
+                            already = 1
+                        }
+                        ei = ei + 1
+                    }
+                    if already == 0 {
+                        # Find the generic struct.
+                        let mut st_id: i32 = AST_NONE
+                        let mut j: i32 = 0
+                        while j < arena.len {
+                            if arena.nodes[j].kind == AST_STRUCT and arena.nodes[j].b != AST_NONE {
+                                if flowc_cgen_span_eq(src, ns, ne, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+                                    st_id = j
+                                }
+                            }
+                            j = j + 1
+                        }
+                        if st_id != AST_NONE {
+                            let mut ntp_names: i32 = 0
+                            let mut tp: i32 = arena.nodes[st_id].b
+                            while tp != AST_NONE and ntp_names < 8 {
+                                tp_starts[ntp_names] = arena.nodes[tp].name_start
+                                tp_ends[ntp_names] = arena.nodes[tp].name_end
+                                ntp_names = ntp_names + 1
+                                tp = arena.nodes[tp].next
+                            }
+                            if ntp_names == ntp {
+                                flowc_cgen_emit_struct_mono(w, arena, src, st_id, &tp_starts[0], &tp_ends[0], &tp_concrete[0], ntp)
+                                if emitted_count < 256 {
+                                    emitted_hashes[emitted_count] = cur_hash
+                                    emitted_count = emitted_count + 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
 }
 
 export function flowc_cgen_emit(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32) -> i32 {
