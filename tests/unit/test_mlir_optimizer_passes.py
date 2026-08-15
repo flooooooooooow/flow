@@ -120,6 +120,7 @@ class TestMLIROptCLIFlags:
 
         args = SimpleNamespace(
             no_vectorization=False,
+            loop_fusion=False,
             no_loop_fusion=False,
             no_mem2reg=False,
             no_sccp=False,
@@ -133,6 +134,7 @@ class TestMLIROptCLIFlags:
         assert kwargs["enable_vectorization"] is True
         assert kwargs["enable_inline"] is True
         assert kwargs["enable_sccp"] is True
+        assert kwargs["enable_loop_fusion"] is False
         assert kwargs["optimization_level"] == "O2"
 
     def test_kwargs_from_args_disables(self):
@@ -141,6 +143,7 @@ class TestMLIROptCLIFlags:
 
         args = SimpleNamespace(
             no_vectorization=True,
+            loop_fusion=False,
             no_loop_fusion=True,
             no_mem2reg=True,
             no_sccp=True,
