@@ -52,7 +52,9 @@ def mlir_opt_kwargs_from_args(args) -> dict:
     """Map CLI `--no-*` / `--opt-level` flags to MLIROptimizer.optimize kwargs."""
     return {
         "enable_vectorization": not getattr(args, "no_vectorization", False),
-        "enable_loop_fusion": not getattr(args, "no_loop_fusion", False),
+        # loop_fusion is opt-in (--loop-fusion) since the generator emits
+        # scf/cf, not affine. Default off to avoid mlir-opt hangs (flow#466).
+        "enable_loop_fusion": getattr(args, "loop_fusion", False),
         "enable_mem2reg": not getattr(args, "no_mem2reg", False),
         "enable_sccp": not getattr(args, "no_sccp", False),
         "enable_licm": not getattr(args, "no_licm", False),
@@ -135,7 +137,12 @@ def main():
         "--no-vectorization", action="store_true", help="Disable loop vectorization"
     )
     parser.add_argument(
-        "--no-loop-fusion", action="store_true", help="Disable loop fusion"
+        "--loop-fusion", action="store_true",
+        help="Enable affine loop fusion (disabled by default; flow#466)",
+    )
+    parser.add_argument(
+        "--no-loop-fusion", action="store_true",
+        help="Deprecated: loop fusion is off by default (flow#466)",
     )
     parser.add_argument(
         "--no-mem2reg", action="store_true", help="Disable mem2reg (O2+)"
