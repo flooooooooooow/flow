@@ -1567,7 +1567,11 @@ int32_t flowc_parse_postfix(Parser* p) {
   depth = (depth + 1);
   flowc_parser_advance(p);
 } else {
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1 || flowc_parser_check(p[0], TOK_IDENT) == 1 || flowc_parser_check(p[0], TOK_DOT) == 1) {
   flowc_parser_advance(p);
+} else {
+  parse_ok = 0;
+}
 }
 }
 }

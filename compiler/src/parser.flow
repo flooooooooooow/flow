@@ -695,8 +695,10 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
                     } elif flowc_parser_check(p[0], TOK_LT) == 1 {
                         depth = depth + 1
                         flowc_parser_advance(p)
-                    } else {
+                    } elif flowc_parser_check(p[0], TOK_COMMA) == 1 or flowc_parser_check(p[0], TOK_IDENT) == 1 or flowc_parser_check(p[0], TOK_DOT) == 1 {
                         flowc_parser_advance(p)
+                    } else {
+                        parse_ok = 0
                     }
                 }
                 if parse_ok == 1 and depth == 0 {
