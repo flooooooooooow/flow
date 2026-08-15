@@ -78,7 +78,14 @@ class MLIRGenerator:
         return self._is_tensor_struct(mlir_type) or mlir_type.startswith("!llvm.struct")
 
     def _uses_alloca_storage(self, mlir_type: str, flow_type: Any = None) -> bool:
-        """Aggregate locals live in dedicated alloca slots to avoid arm64 return-slot aliasing."""
+        """Aggregate locals live in dedicated alloca slots to avoid arm64 return-slot aliasing.
+
+        On wasm32 the alloca patterns conflict with ASYNCIFY stack rewind
+        (flow#467). The arm64 return-slot aliasing that motivates alloca does
+        not occur on wasm32, so skip alloca storage there.
+        """
+        if self.size_t_bits == 32:
+            return False
         return self._is_aggregate_mlir_type(mlir_type)
 
     def _emit_alloca_store(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
@@ -192,7 +199,14 @@ class MLIRGenerator:
     def _roundtrip_alloca(
         self, value_ssa: str, mlir_type: str, ops: Optional[List[str]] = None
     ) -> tuple[str, List[str]]:
-        """Force aggregate through an alloca slot so LLVM cannot reuse return-stack memory."""
+        """Force aggregate through an alloca slot so LLVM cannot reuse return-stack memory.
+
+        Skipped on wasm32 to avoid ASYNCIFY stack rewind corruption (flow#467).
+        """
+        if self.size_t_bits == 32:
+            if ops is None:
+                ops = []
+            return value_ssa, ops
         if ops is None:
             ops = []
         ptr, store_ops = self._emit_alloca_store(value_ssa, mlir_type)
@@ -204,7 +218,11 @@ class MLIRGenerator:
     def _stabilize_aggregate_ssa(
         self, value_ssa: str, mlir_type: str, callee_name: str = ""
     ) -> tuple[str, List[str]]:
-        """Break arm64 aggregate-return stack aliasing via field copy + alloca roundtrip."""
+        """Break arm64 aggregate-return stack aliasing via field copy + alloca roundtrip.
+
+        On wasm32 the alloca roundtrip is skipped (flow#467). Field copy still
+        runs to avoid aliasing within SSA.
+        """
         if not self._is_aggregate_mlir_type(mlir_type):
             return value_ssa, []
         if self._is_tensor_struct(mlir_type):
