@@ -292,7 +292,50 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   language, far beyond Stage-A)
 - Generics, effects, DSLs; `jsgen` / `fmt` do not lower `AST_MATCH`
 - Note: Stage-A already round-trips `examples/basics/fibonacci.flow` twin
-  (`compiler/fixtures/stage_a_fib.flow` → exit 55) via `./compiler/scripts/roundtrip.sh`
+  (`compiler/fixtures/stage_a_fib.flow` -> exit 55) via `./compiler/scripts/roundtrip.sh`
+
+### Bootstrap language suite: 79 pass, 11 fail
+
+The 90 `.flow` files in `tests/lang/` are the parity target. Run them with
+`FLOWC_IN`/`FLOWC_OUT` (positional args trigger the self-test instead of
+compilation):
+
+```bash
+BOOT=compiler/build/flowc_bootstrap
+pass=0; fail=0
+for f in $(find tests/lang -name "*.flow" | sort); do
+  if FLOWC_BUNDLE=1 FLOWC_DIR=. "$BOOT" "$f" "/tmp/out.c" \
+     && cc -O0 -o /tmp/out "/tmp/out.c" && /tmp/out; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1)); echo "  FAIL $f"
+  fi
+done
+echo "pass=$pass fail=$fail"
+```
+
+Current: `pass=79 fail=11`. The 11 failures by root cause:
+
+| Category | Tests | What is missing |
+|----------|-------|-----------------|
+| DSL keywords | `test_effects`, `test_hybrid_events`, `test_time_blocks` | Parser does not recognize `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` |
+| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts generic syntax but the monomorphizer that replaces `T` with concrete types is not ported |
+| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names |
+| Closure snapshots | `test_closures` | Captured variables are hoisted to globals without snapshotting at creation time |
+| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder codegen bug; FIR inline-pure bonus constant truncates float to int |
+| External C headers | `test_c_import_julia`, `test_c_import_python` | Julia and Python embedding headers not in the test environment |
+
+Recently landed features that closed earlier gaps:
+
+- Enum tagged unions (`Name_Tag` enum + `Name` struct with `tag` field)
+- Enum variant references (bare `Red` emits as `Color_Red`)
+- Span indexing (`values[i]` on `span<T>` emits as `values.data[i]`)
+- Span slicing (`xs[a..b]` on a span uses `.data` as the pointer base)
+- Array-to-span conversion at call sites
+- Lambda parsing and capturing lambdas via static globals
+- Generic call syntax (`name<Type>(args)`)
+- Stable struct sort by first field
+- `span<mut T>`, `&mut [T]`, `&[T]`, slice syntax `a..b`
 
 ### Stage-A vs `examples/basics`
 
