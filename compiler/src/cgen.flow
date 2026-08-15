@@ -1019,6 +1019,60 @@ function flowc_cgen_is_captured(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32)
     return 0
 }
 
+# Check if an identifier span matches any enum variant name.
+# Returns the enum name span as a packed (start, end) pair in ival,
+# or AST_NONE if no match. Scans all AST_ENUM nodes in the arena.
+# Check if an identifier span refers to a span-typed variable.
+# Scans AST_PARAM and AST_LET nodes for matching name with a span type.
+function flowc_cgen_is_span_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                # AST_PARAM stores type in a (regular params) or b (lambda params);
+                # AST_LET stores type in a.
+                let mut ty: i32 = arena.nodes[i].a
+                if arena.nodes[i].kind == AST_PARAM and arena.nodes[i].a == AST_NONE {
+                    ty = arena.nodes[i].b
+                }
+                if ty != AST_NONE {
+                    let tns: i32 = arena.nodes[ty].name_start
+                    let tne: i32 = arena.nodes[ty].name_end
+                    if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
+                        return 1
+                    }
+                    # &[T] or &mut [T] sugar: nameless type with inner type
+                    let inner: i32 = arena.nodes[ty].a
+                    if inner != AST_NONE and tns == 0 and tne == 0 {
+                        return 1
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function flowc_cgen_find_enum_variant(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_ENUM {
+            let mut var: i32 = arena.nodes[i].a
+            while var != AST_NONE {
+                if flowc_cgen_span_eq(src, ns, ne, arena.nodes[var].name_start, arena.nodes[var].name_end) == 1 {
+                    return i
+                }
+                var = arena.nodes[var].next
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -1040,6 +1094,14 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     if kind == AST_IDENT {
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "null") == 1 {
             flowc_cgen_puts(w, "NULL")
+            return
+        }
+        # Enum variant reference: emit as EnumName_VariantName
+        let en_id: i32 = flowc_cgen_find_enum_variant(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if en_id != AST_NONE {
+            flowc_cgen_put_span(w, src, arena.nodes[en_id].name_start, arena.nodes[en_id].name_end)
+            flowc_cgen_putc(w, 95)
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
             return
         }
         # Sort DSL modifiers: emit as 0 (no-op expression statements).
@@ -1201,7 +1263,17 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             # For Stage-A, emit a span construction. The element type is
             # unknown here, so use int32_t as the default.
             flowc_cgen_puts(w, "((flowc_span_int32_t){ (int32_t*)")
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            # If base is a span variable, use .data as the pointer base.
+            if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
+                if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                    flowc_cgen_puts(w, ".data")
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                }
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
             flowc_cgen_puts(w, " + ")
             if arena.nodes[id].b != AST_NONE {
                 flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
@@ -1219,11 +1291,25 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
             } else {
                 # xs[a..] → length = sizeof(xs)/sizeof(xs[0]) - a
-                flowc_cgen_puts(w, "(int32_t)(sizeof(")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                flowc_cgen_puts(w, ")/sizeof((")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                flowc_cgen_puts(w, ")[0])) - ")
+                # For span variables, use .len instead of sizeof.
+                if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
+                    if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
+                        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                        flowc_cgen_puts(w, ".len - ")
+                    } else {
+                        flowc_cgen_puts(w, "(int32_t)(sizeof(")
+                        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                        flowc_cgen_puts(w, ")/sizeof((")
+                        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                        flowc_cgen_puts(w, ")[0])) - ")
+                    }
+                } else {
+                    flowc_cgen_puts(w, "(int32_t)(sizeof(")
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                    flowc_cgen_puts(w, ")/sizeof((")
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                    flowc_cgen_puts(w, ")[0])) - ")
+                }
                 if arena.nodes[id].b != AST_NONE {
                     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
                 } else {
@@ -1232,6 +1318,16 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
             flowc_cgen_puts(w, "})")
             return
+        }
+        # Span indexing: if base is a span variable, emit base.data[index]
+        if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
+            if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ".data[")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_putc(w, 93)
+                return
+            }
         }
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_putc(w, 91)
@@ -3064,7 +3160,9 @@ export function flowc_cgen_emit_sigs(
         item = arena.nodes[item].next
     }
 
-    # Pass 1.5a: enum typedefs -> typedef enum { Name_Variant0, ... } Name;
+    # Pass 1.5a: enum typedefs.
+    # Emits: typedef enum { Name_V0, Name_V1, ... } Name_Tag;
+    #        typedef struct { Name_Tag tag; } Name;
     item = arena.nodes[root].a
     while item != AST_NONE {
         let en: i32 = flowc_cgen_unwrap(arena, item, AST_ENUM)
@@ -3085,6 +3183,11 @@ export function flowc_cgen_emit_sigs(
                 var = arena.nodes[var].next
             }
             flowc_cgen_puts(&w, " } ")
+            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            flowc_cgen_puts(&w, "_Tag;\n")
+            flowc_cgen_puts(&w, "typedef struct { ")
+            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            flowc_cgen_puts(&w, "_Tag tag; } ")
             flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
             flowc_cgen_puts(&w, ";\n")
         }
