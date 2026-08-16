@@ -1636,6 +1636,16 @@ class Parser:
             token = self.current_token
             self.advance()
             return token
+
+        # Handle nested generics splitting: e.g. ptr<ptr<u8>>
+        # If we expect GREATER ('>') but see RSHIFT ('>>'), split the token
+        if token_type == TokenType.GREATER and self.current_token.type == TokenType.RSHIFT:
+            # We matched the first '>', so the token to return is a GREATER
+            token = Token(TokenType.GREATER, ">", self.current_token.line, self.current_token.column)
+            # Create the remaining '>' token and set it as the current token
+            self.current_token = Token(TokenType.GREATER, ">", self.current_token.line, self.current_token.column + 1)
+            return token
+
         if (
             token_type == TokenType.IDENTIFIER
             and self.current_token.type in self._SOFT_IDENTIFIER_TYPES
