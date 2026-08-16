@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from flow.fir_analysis import analyse, propagate_effects, reachable_functions
+from flow.fir_analysis import analyse, propagate_effects, reachable_functions, dead_functions
 from flow.fir_cli import build_fir_g
 from flow.fir_g import EFF_IO, OpCode, FirG
 from flow.fir_graphify import graphify
@@ -110,3 +110,32 @@ def test_fir_g_cli_hello():
     report = analyse(g)
     assert g.num_funcs() >= 1
     assert "main" in report["reachable"]
+
+
+def test_dead_functions_with_custom_roots(tmp_path: Path):
+    src = tmp_path / "dead_custom_roots.flow"
+    src.write_text(
+        """
+function isolated() -> i32 { return 1 }
+function callee() -> i32 { return 2 }
+function custom_root() -> i32 {
+    return callee()
+}
+function main() -> i32 { return 0 }
+"""
+    )
+    g = build_fir_g(str(src))
+
+    # default roots (main)
+    dead_default = dead_functions(g)
+    assert "isolated" in dead_default
+    assert "callee" in dead_default
+    assert "custom_root" in dead_default
+    assert "main" not in dead_default
+
+    # custom roots
+    dead_custom = dead_functions(g, roots=["custom_root"])
+    assert "isolated" in dead_custom
+    assert "main" in dead_custom
+    assert "callee" not in dead_custom
+    assert "custom_root" not in dead_custom
