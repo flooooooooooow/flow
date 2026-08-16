@@ -10,6 +10,7 @@
 #   let scale: array<i32, 7> = scale_major(60)  # C major scale
 
 import "stdlib/audio.flow"
+import "stdlib/string.flow"
 
 # =============================================================================
 # Note Names to MIDI
@@ -19,9 +20,48 @@ import "stdlib/audio.flow"
 # "C4" = 60 (middle C), "A4" = 69 (concert A = 440Hz)
 # Supports: C, C#, Db, D, D#, Eb, E, F, F#, Gb, G, G#, Ab, A, A#, Bb, B
 export function note_to_midi(note_name: string) -> i32 {
-    # For now, return common notes
-    # TODO: Implement full parser when string parsing is available
-    return 60  # Default to middle C
+    let len: i64 = str_len(note_name)
+    if len == 0 {
+        return 60
+    }
+
+    let p: ptr<i8> = note_name as ptr<i8>
+    let c: i8 = p[0]
+    let mut base_note: i32 = 0
+
+    if c == 67 { base_note = 0 }      # C
+    elif c == 68 { base_note = 2 }    # D
+    elif c == 69 { base_note = 4 }    # E
+    elif c == 70 { base_note = 5 }    # F
+    elif c == 71 { base_note = 7 }    # G
+    elif c == 65 { base_note = 9 }    # A
+    elif c == 66 { base_note = 11 }   # B
+    else { return 60 }
+
+    let mut octave: i32 = 4
+    let mut i: i32 = 1
+
+    if (i as i64) < len {
+        let n: i8 = p[i]
+        if n == 35 { # '#'
+            base_note = base_note + 1
+            i = i + 1
+        } elif n == 98 { # 'b'
+            base_note = base_note - 1
+            i = i + 1
+        }
+    }
+
+    if (i as i64) < len {
+        let o: i8 = p[i]
+        if o >= 48 { # '0'
+            if o <= 57 { # '9'
+                octave = (o as i32) - 48
+            }
+        }
+    }
+
+    return (octave + 1) * 12 + base_note
 }
 
 # Quick note constructors for common notes
