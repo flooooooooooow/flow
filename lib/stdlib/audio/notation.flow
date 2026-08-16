@@ -13,6 +13,7 @@
 #   }
 
 import "stdlib/audio.flow"
+import "stdlib/string.flow"
 
 # =============================================================================
 # Note Structure
@@ -40,18 +41,52 @@ export effect Notation {
 
 # Parse note name to MIDI number (e.g., "C4" -> 60)
 export function parse_note_name(name: string) -> i32 {
-    # For now, return common notes
-    # TODO: Implement full parser when string operations available
-    # Format: C4, D4, E4, etc.
-    # This is a placeholder - would need string parsing
-    return 60  # Default to C4
+    let len: i32 = str_len(name) as i32
+    if len < 2 {
+        return 60
+    }
+
+    let p: ptr<u8> = name as ptr<u8>
+    let note_char: i32 = p[0] as i32
+    let mut base_note: i32 = 0
+
+    if note_char == 67 { base_note = 0 } # C
+    elif note_char == 68 { base_note = 2 } # D
+    elif note_char == 69 { base_note = 4 } # E
+    elif note_char == 70 { base_note = 5 } # F
+    elif note_char == 71 { base_note = 7 } # G
+    elif note_char == 65 { base_note = 9 } # A
+    elif note_char == 66 { base_note = 11 } # B
+    else { return 60 }
+
+    let mut octave_idx: i32 = 1
+    let mut accidental: i32 = 0
+
+    if len > 2 {
+        let acc_char: i32 = p[1] as i32
+        if acc_char == 35 { # '#'
+            accidental = 1
+            octave_idx = 2
+        } elif acc_char == 98 { # 'b'
+            accidental = -1
+            octave_idx = 2
+        }
+    }
+
+    let octave_char: i32 = p[octave_idx] as i32
+    let octave: i32 = octave_char - 48 # '0'
+
+    if octave < 0 or octave > 9 {
+        return 60
+    }
+
+    return (octave + 1) * 12 + base_note + accidental
 }
 
 # Helper: Parse a single note/duration pair
 # Format: "C4/4" means C4 for 4 sixteenth notes (quarter note)
 export function parse_note_simple(note_str: string, duration: i32) -> MusicNote {
-    # Simplified version - would parse string properly
-    let midi: i32 = 60  # Default C4
+    let midi: i32 = parse_note_name(note_str)
     return MusicNote { midi: midi, duration: duration }
 }
 
