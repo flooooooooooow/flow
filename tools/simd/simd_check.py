@@ -90,15 +90,17 @@ def main() -> int:
             r"\b(vpadd|vpmul)\w+\b",
         ]
 
-    if any(re.search(p, asm) for p in patterns):
+    compiled_patterns = [re.compile(p) for p in patterns]
+    if any(p.search(asm) for p in compiled_patterns):
         print(f"SIMD detected in asm: {asm_path}")
         return 0
 
     print(f"No SIMD patterns detected in asm: {asm_path}")
     # Help debug false negatives by printing likely-interesting lines.
     interesting = []
+    debug_pattern = re.compile(r"\.4s\b|\bldr\s+q|\bstr\s+q|\bld1\b|\bst1\b|\bymm\d+|\bzmm\d+|\bv(add|mul|fmadd)ps\b")
     for line in asm.splitlines():
-        if re.search(r"\.4s\b|\bldr\s+q|\bstr\s+q|\bld1\b|\bst1\b|\bymm\d+|\bzmm\d+|\bv(add|mul|fmadd)ps\b", line):
+        if debug_pattern.search(line):
             interesting.append(line)
             if len(interesting) >= 30:
                 break
