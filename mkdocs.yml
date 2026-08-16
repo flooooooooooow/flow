@@ -24,6 +24,9 @@ theme:
     - navigation.sections
     - navigation.expand
     - navigation.top
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
     - search.highlight
     - search.share
     - content.code.copy
