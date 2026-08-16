@@ -57,6 +57,68 @@ def test_graphify_call_and_effects():
     assert "main" in report["reachable"]
 
 
+def test_analyse_comprehensive():
+    # Use graphify to create a realistic graph instead of hand-building one
+    decls = [
+        FunctionDecl(
+            name="helper",
+            parameters=[],
+            return_type=Type("i32"),
+            body=Block([ReturnStatement(Literal("42", Type("i32")))]),
+            attributes=[],
+        ),
+        FunctionDecl(
+            name="dead_func",
+            parameters=[],
+            return_type=Type("void"),
+            body=Block([]),
+            attributes=[],
+        ),
+        FunctionDecl(
+            name="main",
+            parameters=[],
+            return_type=Type("i32"),
+            body=Block(
+                [
+                    ReturnStatement(FunctionCall("helper", [])),
+                ]
+            ),
+            attributes=[],
+        ),
+    ]
+    g = graphify(decls)
+
+    # We will manually set an effect bit just to see it propagates
+    helper_id = g._func_by_name["helper"]
+    g.func_effect_bits[helper_id] |= 1  # some custom effect (non-dirty)
+
+    report = analyse(g)
+
+    # Assert all keys are present
+    assert "summary" in report
+    assert "call_edges" in report
+    assert "effects" in report
+    assert "pure" in report
+    assert "reachable" in report
+    assert "dead" in report
+    assert "num_call_ops" in report
+
+    # Assert values are as expected
+    assert report["num_call_ops"] == 1
+
+    edges = [(caller, callee) for caller, callee, _ in report["call_edges"]]
+    assert ("main", "helper") in edges
+
+    assert "main" in report["reachable"]
+    assert "helper" in report["reachable"]
+
+    assert "dead_func" in report["dead"]
+    assert "dead_func" not in report["reachable"]
+
+    assert report["pure"]["helper"] is True # 1 is not in dirty mask, so pure is True
+    assert report["effects"]["main"] & 1
+
+
 def test_dead_function_detection(tmp_path: Path):
     src = tmp_path / "dead.flow"
     src.write_text(
