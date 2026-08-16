@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from flow.fir_analysis import analyse, propagate_effects, reachable_functions
+from flow.fir_analysis import analyse, propagate_effects, reachable_functions, purity_flags
 from flow.fir_cli import build_fir_g
-from flow.fir_g import EFF_IO, OpCode, FirG
+from flow.fir_g import EFF_NONE, EFF_IO, OpCode, FirG
 from flow.fir_graphify import graphify
 from flow.parser import FunctionDecl, Parameter, Type, Block, ReturnStatement, Literal, FunctionCall
 
@@ -99,6 +99,26 @@ function main() -> i32 {
     main = g._func_by_name["main"]
     assert bits[mid] & EFF_IO
     assert bits[main] & EFF_IO
+
+
+def test_purity_flags():
+    g = FirG()
+    f_pure = g.add_function("pure_func", effect_bits=EFF_NONE)
+    f_impure = g.add_function("impure_func", effect_bits=EFF_IO)
+    f_caller = g.add_function("calls_impure", effect_bits=EFF_NONE)
+
+    g.add_block(f_pure)
+    g.add_block(f_impure)
+    b_caller = g.add_block(f_caller)
+
+    g.add_op(OpCode.CALL, f_caller, b_caller, callee=f_impure)
+
+    propagate_effects(g)
+    flags = purity_flags(g)
+
+    assert flags["pure_func"] is True
+    assert flags["impure_func"] is False
+    assert flags["calls_impure"] is False
 
 
 def test_fir_g_cli_hello():
