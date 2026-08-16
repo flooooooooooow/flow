@@ -32,6 +32,9 @@ theme:
     - content.code.copy
     - content.code.annotate
 
+extra_css:
+  - stylesheets/extra.css
+
 plugins:
   - search:
       lang: en
