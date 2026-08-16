@@ -287,15 +287,18 @@ class OverloadResolver:
         if len(overloads) == 1:
             entry = overloads[0]
             if len(entry.param_types) == len(arg_types):
-                all_compatible = True
-                any_unknown = False
-                for param_type, arg_type in zip(entry.param_types, arg_types):
-                    if arg_type is None:
-                        any_unknown = True
-                        continue
-                    if param_type != arg_type and not self._types_compatible(param_type, arg_type):
-                        all_compatible = False
-                        break
+                # Unknown arg types must be discovered up front: a later
+                # incompatibility used to `break` the scan before reaching
+                # them, so a sole overload with (e.g.) an int literal for a
+                # u32 parameter plus an untyped constant argument resolved to
+                # nothing and the backend emitted an unmangled call
+                # (ga_flappy's `fly` was exactly this shape).
+                any_unknown = any(at is None for at in arg_types)
+                all_compatible = all(
+                    param_type == arg_type
+                    or self._types_compatible(param_type, arg_type)
+                    for param_type, arg_type in zip(entry.param_types, arg_types)
+                )
                 if all_compatible:
                     return entry.mangled_name
                 if any_unknown:
@@ -368,6 +371,8 @@ class OverloadResolver:
 
     def _types_compatible(self, expected: str, actual: str) -> bool:
         """Check if actual type is compatible with expected type."""
+        if expected is None or actual is None:
+            return False
         if expected == actual:
             return True
         # Spans auto-borrow from arrays and other spans of the same element.

@@ -61,7 +61,7 @@ import "stdlib/text.flow"
 
 extern {
     function calloc(n: i64, size: i64) -> ptr<void>
-    function clock() -> i64
+    function clock() -> i32  # clock_t: i32 on emscripten; µs values fit i32 on both
 }
 
 # ============================================================================
@@ -1055,7 +1055,7 @@ function main() -> i32 {
     let mut p_p: bool = false
     let mut p_r: bool = false
 
-    let mut fps_t0: i64 = clock()
+    let mut fps_t0: i32 = clock()
     let mut fps_n: i32 = 0
 
     while !gfx_should_close(g) {
@@ -1167,7 +1167,7 @@ function main() -> i32 {
 
         fps_n = fps_n + 1
         if fps_n >= 15 {
-            let t1: i64 = clock()
+            let t1: i32 = clock()
             let dt: f64 = ((t1 - fps_t0) as f64) / 1000000.0
             if dt > 0.0 {
                 fps = (fps_n as f64) / dt

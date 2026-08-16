@@ -162,6 +162,21 @@ export function add(a: i32, b: i32) -> i32 {
 
 
 class TestModuleResolver:
+    def test_get_module_resolver(self):
+        root = os.path.join(FIXTURES, "consumer_dot.flow")
+        resolver = get_module_resolver(root)
+        assert isinstance(resolver, ModuleResolver)
+        assert resolver.root_file == os.path.abspath(root)
+        assert len(resolver.modules) > 0
+        assert "greet" in resolver.symbol_table
+
+    def test_resolve_modules(self):
+        from flow.module_resolver import resolve_modules
+        root = os.path.join(FIXTURES, "consumer_dot.flow")
+        decls = resolve_modules(root)
+        assert isinstance(decls, list)
+        assert len(decls) > 0
+
     def test_resolve_dot_import_with_braces(self):
         root = os.path.join(FIXTURES, "consumer_brace.flow")
         resolver = get_module_resolver(root)
@@ -372,3 +387,24 @@ module video {
         code = "module a {\n    " + body + "\n}"
         with pytest.raises(SyntaxError, match="Unexpected declaration inside module"):
             Parser(Lexer(code)).parse()
+
+    def test_resolve_modules(self, tmp_path):
+        from flow.module_resolver import resolve_modules
+
+        code = """
+module audio {
+    function gain() -> i32 {
+        return 1
+    }
+}
+function video() -> i32 {
+    return 2
+}
+"""
+        root = tmp_path / "root.flow"
+        root.write_text(code, encoding="utf-8")
+
+        decls = resolve_modules(str(root))
+
+        assert len(decls) == 2
+        assert [getattr(d, "name", None) for d in decls] == ["gain", "video"]

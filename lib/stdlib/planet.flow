@@ -48,12 +48,6 @@
 #   the stages consume it in a fixed order. The same seed and the same
 #   parameters reproduce a planet bit for bit.
 #
-# NOISE
-#   planet_noise_* is a self-contained 3D gradient-noise set (hash, gradient,
-#   fBm, ridged, domain warp) kept private to this module so planet.flow has
-#   no dependency but libm. It should be folded into stdlib/procgen.flow once
-#   that lands.
-#
 # WHAT IS NOT MODELLED
 #   No plate history: plates are placed once and their motion is applied as a
 #   single steady-state boundary forcing rather than integrated over Myr, so
@@ -63,6 +57,8 @@
 #   means), no orbital eccentricity or obliquity, no atmosphere chemistry.
 #
 # Related: docs/library/planet.md, examples/planet/
+
+import "stdlib/procgen.flow"
 
 extern {
     function calloc(n: i64, size: i64) -> ptr<void>
@@ -79,7 +75,7 @@ extern {
     function powf(x: f32, y: f32) -> f32
     function fabsf(x: f32) -> f32
     function floorf(x: f32) -> f32
-    function clock() -> i64
+    function clock() -> i32  # clock_t: i32 on emscripten; µs values fit i32 on both
 }
 
 # ---------------------------------------------------------------------------
@@ -202,7 +198,7 @@ let mut pl_target_land: f32 = 0.29
 
 # Per-stage wall time, milliseconds, index 1..7.
 let mut pl_ms: ptr<f32> = null
-let mut pl_t0: i64 = 0
+let mut pl_t0: i32 = 0
 
 # RNG
 let mut pl_rng: u32 = 1
@@ -252,6 +248,7 @@ export function pl_lerpf(a: f32, b: f32, t: f32) -> f32 {
 
 export function planet_seed(s: u32) -> void {
     pl_seed0 = s
+    procgen_seed(s)
     pl_rng = s * 2654435761 + 1
     if pl_rng == 0 { pl_rng = 1 }
 }
@@ -279,132 +276,6 @@ function pl_range(a: f32, b: f32) -> f32 {
 function pl_below(n: i32) -> i32 {
     if n <= 1 { return 0 }
     return ((pl_next() >> 7) % (n as u32)) as i32
-}
-
-# ---------------------------------------------------------------------------
-# planet_noise: 3D gradient noise, self-contained.
-#
-# TODO: call through stdlib/procgen.flow (now landed) instead of this private
-# copy. Nothing here depends on the planet state, so the move is a rename.
-# ---------------------------------------------------------------------------
-
-# Integer hash. Three rounds of xor-multiply, seeded from pl_seed0 so noise
-# fields move with the planet seed.
-export function planet_noise_hash(ix: i32, iy: i32, iz: i32, salt: i32) -> u32 {
-    let mut h: u32 = (ix as u32) * 374761393
-    h = h + (iy as u32) * 668265263
-    h = h + (iz as u32) * 2246822519
-    h = h + (salt as u32) * 3266489917
-    h = h + pl_seed0 * 374761393
-    h = h ^ (h >> 13)
-    h = h * 1274126177
-    h = h ^ (h >> 16)
-    h = h * 2654435761
-    h = h ^ (h >> 15)
-    return h
-}
-
-# Perlin's improved gradient set: the 12 edge midpoints of a cube, plus 4
-# repeats to make the selection a cheap 4-bit mask.
-function pl_grad(h: u32, x: f32, y: f32, z: f32) -> f32 {
-    let g: i32 = (h % 16) as i32
-    let mut u: f32 = x
-    if g >= 8 { u = y }
-    let mut v: f32 = z
-    if g < 4 { v = y }
-    if g == 12 or g == 14 { v = x }
-    let mut a: f32 = u
-    if (g % 2) == 1 { a = -u }
-    let mut b: f32 = v
-    if (g % 4) >= 2 { b = -v }
-    return a + b
-}
-
-function pl_fade(t: f32) -> f32 {
-    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
-}
-
-# Gradient noise in [-1, 1] (approximately; the theoretical bound is wider).
-export function planet_noise3(x: f32, y: f32, z: f32, salt: i32) -> f32 {
-    let fx: f32 = floorf(x)
-    let fy: f32 = floorf(y)
-    let fz: f32 = floorf(z)
-    let ix: i32 = fx as i32
-    let iy: i32 = fy as i32
-    let iz: i32 = fz as i32
-    let tx: f32 = x - fx
-    let ty: f32 = y - fy
-    let tz: f32 = z - fz
-    let ux: f32 = pl_fade(tx)
-    let uy: f32 = pl_fade(ty)
-    let uz: f32 = pl_fade(tz)
-
-    let n000: f32 = pl_grad(planet_noise_hash(ix, iy, iz, salt), tx, ty, tz)
-    let n100: f32 = pl_grad(planet_noise_hash(ix + 1, iy, iz, salt), tx - 1.0, ty, tz)
-    let n010: f32 = pl_grad(planet_noise_hash(ix, iy + 1, iz, salt), tx, ty - 1.0, tz)
-    let n110: f32 = pl_grad(planet_noise_hash(ix + 1, iy + 1, iz, salt), tx - 1.0, ty - 1.0, tz)
-    let n001: f32 = pl_grad(planet_noise_hash(ix, iy, iz + 1, salt), tx, ty, tz - 1.0)
-    let n101: f32 = pl_grad(planet_noise_hash(ix + 1, iy, iz + 1, salt), tx - 1.0, ty, tz - 1.0)
-    let n011: f32 = pl_grad(planet_noise_hash(ix, iy + 1, iz + 1, salt), tx, ty - 1.0, tz - 1.0)
-    let n111: f32 = pl_grad(planet_noise_hash(ix + 1, iy + 1, iz + 1, salt), tx - 1.0, ty - 1.0, tz - 1.0)
-
-    let x00: f32 = pl_lerpf(n000, n100, ux)
-    let x10: f32 = pl_lerpf(n010, n110, ux)
-    let x01: f32 = pl_lerpf(n001, n101, ux)
-    let x11: f32 = pl_lerpf(n011, n111, ux)
-    let y0: f32 = pl_lerpf(x00, x10, uy)
-    let y1: f32 = pl_lerpf(x01, x11, uy)
-    return pl_lerpf(y0, y1, uz)
-}
-
-# Fractional Brownian motion: octaves of gradient noise at doubling
-# frequency and halving amplitude, normalised to roughly [-1, 1].
-export function planet_noise_fbm(x: f32, y: f32, z: f32, octaves: i32,
-                                 salt: i32) -> f32 {
-    let mut sum: f32 = 0.0
-    let mut amp: f32 = 1.0
-    let mut norm: f32 = 0.0
-    let mut freq: f32 = 1.0
-    for o in 0 to octaves {
-        sum = sum + amp * planet_noise3(x * freq, y * freq, z * freq, salt + o * 131)
-        norm = norm + amp
-        amp = amp * 0.5
-        freq = freq * 2.0
-    }
-    if norm < PL_TINY { return 0.0 }
-    return sum / norm
-}
-
-# Ridged multifractal: 1 - |noise| per octave, which turns the zero crossings
-# into creases. Used for mountain-belt texture, in [0, 1].
-export function planet_noise_ridged(x: f32, y: f32, z: f32, octaves: i32,
-                                    salt: i32) -> f32 {
-    let mut sum: f32 = 0.0
-    let mut amp: f32 = 1.0
-    let mut norm: f32 = 0.0
-    let mut freq: f32 = 1.0
-    for o in 0 to octaves {
-        let n: f32 = planet_noise3(x * freq, y * freq, z * freq, salt + o * 977)
-        let r: f32 = 1.0 - fabsf(n)
-        sum = sum + amp * r * r
-        norm = norm + amp
-        amp = amp * 0.5
-        freq = freq * 2.0
-    }
-    if norm < PL_TINY { return 0.0 }
-    return sum / norm
-}
-
-# Domain-warped fBm: the sample point is displaced by another noise field
-# first, which breaks the axis-aligned look of plain fBm and gives coastlines
-# their folded, non-fractal-looking character.
-export function planet_noise_warped(x: f32, y: f32, z: f32, octaves: i32,
-                                    warp: f32, salt: i32) -> f32 {
-    let wx: f32 = planet_noise_fbm(x + 11.3, y + 4.7, z + 2.1, 3, salt + 7001)
-    let wy: f32 = planet_noise_fbm(x - 3.9, y + 17.2, z - 8.4, 3, salt + 7101)
-    let wz: f32 = planet_noise_fbm(x + 6.5, y - 12.8, z + 19.6, 3, salt + 7201)
-    return planet_noise_fbm(x + warp * wx, y + warp * wy, z + warp * wz,
-                            octaves, salt)
 }
 
 # ---------------------------------------------------------------------------
@@ -598,7 +469,7 @@ function pl_clock_start() -> void {
 }
 
 function pl_clock_stop(slot: i32) -> void {
-    let dt: i64 = clock() - pl_t0
+    let dt: i32 = clock() - pl_t0
     pl_ms[slot] = (dt as f32) / 1000.0
 }
 
@@ -794,13 +665,13 @@ export function planet_stage_tectonics(nplates: i32) -> void {
         let x: f32 = pl_px[i]
         let y: f32 = pl_py[i]
         let z: f32 = pl_pz[i]
-        let jitter: f32 = 0.10 * planet_noise_fbm(x * 3.2, y * 3.2, z * 3.2, 4, 5501)
+        let jitter: f32 = 0.10 * procgen_fbm3(x * 3.2, y * 3.2, z * 3.2, 4, 5501)
         let mut best: i32 = 0
         let mut bestv: f32 = -2.0
         for p in 0 to np {
             let d: f32 = x * pl_seed_x[p] + y * pl_seed_y[p] + z * pl_seed_z[p]
-            let v: f32 = d + jitter * planet_noise3(x * 5.0 + (p as f32) * 13.0,
-                                                    y * 5.0, z * 5.0, 6100 + p)
+            let v: f32 = d + jitter * procgen_noise3(x * 5.0 + (p as f32) * 13.0,
+                                                     y * 5.0, z * 5.0, 6100 + p)
             if v > bestv {
                 bestv = v
                 best = p
@@ -981,7 +852,7 @@ export function planet_stage_elevation() -> void {
         let y: f32 = pl_py[i]
         let z: f32 = pl_pz[i]
         let cs: f32 = pl_h[i]
-        let broad: f32 = planet_noise_warped(x * 1.9, y * 1.9, z * 1.9, 5, 0.45, 211)
+        let broad: f32 = procgen_warped3(x * 1.9, y * 1.9, z * 1.9, 5, 0.45, 211)
         let cont: f32 = cs + 0.42 * broad - 0.045
         # A narrow transition band is the continental slope: most of the
         # surface sits at one of the two plateaus, which is the bimodality.
@@ -990,13 +861,13 @@ export function planet_stage_elevation() -> void {
 
         # Fractal relief, scaled down over the abyss (the deep ocean floor is
         # genuinely smoother than land at this wavelength).
-        let detail: f32 = planet_noise_warped(x * 6.5, y * 6.5, z * 6.5, 6, 0.30, 977)
+        let detail: f32 = procgen_warped3(x * 6.5, y * 6.5, z * 6.5, 6, 0.30, 977)
         let amp: f32 = pl_lerpf(0.28, 0.95, mix) * pl_relief
 
         # Ridged noise only where tectonics is already lifting: mountain
         # belts are creased, cratons are not.
         let t: f32 = pl_tect[i]
-        let ridge: f32 = planet_noise_ridged(x * 9.0, y * 9.0, z * 9.0, 5, 3301)
+        let ridge: f32 = procgen_ridged3(x * 9.0, y * 9.0, z * 9.0, 5, 3301)
         let crease: f32 = pl_maxf(0.0, t) * (0.45 * ridge - 0.12)
 
         pl_h[i] = base + amp * detail + t + crease

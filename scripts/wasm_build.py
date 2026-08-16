@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -89,16 +90,15 @@ def resolve_backend(explicit: Optional[str] = None) -> str:
     return mode
 
 
-def flow_to_c(program: Path, c_out: Path) -> str:
-    """Transpile a Flow program to C. Returns the generated C source."""
+def flow_to_c(program: Path, c_out: Path, library: bool = False) -> str:
+    """Transpile a Flow program (or, with library=True, a runtime library) to
+    C. Returns the generated C source."""
     c_out.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(
-        [sys.executable, "-m", TRANSPILER, str(program), "--c", "--lenient",
-         "-o", str(c_out)],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
+    cmd = [sys.executable, "-m", TRANSPILER, str(program), "--c"]
+    if library:
+        cmd.append("--library")
+    cmd += ["--lenient", "-o", str(c_out)]
+    proc = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True)
     if proc.returncode != 0 or not c_out.exists():
         detail = (proc.stderr or proc.stdout or "").strip().splitlines()
         raise BuildError("flow->c: " + (detail[-1] if detail else "transpiler failed"))
@@ -106,7 +106,12 @@ def flow_to_c(program: Path, c_out: Path) -> str:
 
 
 def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
-    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text."""
+    """Transpile Flow → MLIR → LLVM IR for emcc. Returns the IR text.
+
+    Always passes ``--wasm32`` so libc size_t/long lower as i32 (ILP32). Without
+    that, emcc/wasm-ld sees i64 size_t decls and signature-mismatch warnings that
+    break real programs (doom-flow #230).
+    """
     ll_out.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         [
@@ -116,6 +121,7 @@ def flow_to_llvm_ir(program: Path, ll_out: Path) -> str:
             str(program),
             "--mlir",
             "--llvm",
+            "--wasm32",
             "--lenient",
             "-o",
             str(ll_out),
@@ -172,6 +178,8 @@ def emcc_command(
     initial_memory: str = "32MB",
     asyncify_stack_size: int = 32768,
     emcc_flags: Optional[list[str]] = None,
+    threads: bool = False,
+    workers: int = 8,
 ) -> list:
     sources: list[str] = [str(input_file)]
     if gfx:
@@ -189,19 +197,41 @@ def emcc_command(
         ]
     cmd += [
         "-o", str(out_js),
-        "-sENVIRONMENT=web",
-        "-sALLOW_MEMORY_GROWTH=1",
-        # Flow puts fixed-size arrays on the stack, and a field simulation
-        # holds several 128x128 grids of doubles at once. wasm32 defaults to a
-        # 64 KB stack, which those overrun instantly.
-        "-sSTACK_SIZE=16MB",
         f"-sINITIAL_MEMORY={initial_memory}",
         "-sMODULARIZE=1",
-        "-sEXPORT_NAME=createFlowModule",
-        "-sINVOKE_RUN=0",
-        "-sEXIT_RUNTIME=0",
-        "-sEXPORTED_RUNTIME_METHODS=callMain,ccall",
-        "-sEXPORTED_FUNCTIONS=_main,_malloc,_free",
+    ]
+    if threads:
+        # Real pthreads over SharedArrayBuffer: one pre-spawned worker per
+        # shard, plus one for the proxied main thread. main() runs on a worker
+        # (the browser main thread must never block), and the module factory
+        # resolves once the program exits, so the page never calls callMain.
+        # No -sSTACK_SIZE here: with -pthread the stack setting is applied per
+        # pthread and carved out of the fixed SAB heap, so a 16MB stack per
+        # worker would exhaust it (Aborted(OOM) on first spawn).
+        cmd += [
+            "-sENVIRONMENT=web,worker",
+            "-sEXPORT_NAME=createFlowThreaded",
+            "-pthread",
+            f"-sPTHREAD_POOL_SIZE={workers + 1}",
+            "-sPROXY_TO_PTHREAD",
+            f"-DFLOW_PAR_WORKERS={workers}",
+            "-sEXIT_RUNTIME=1",
+        ]
+    else:
+        cmd += [
+            "-sENVIRONMENT=web",
+            "-sALLOW_MEMORY_GROWTH=1",
+            # Flow puts fixed-size arrays on the stack, and a field simulation
+            # holds several 128x128 grids of doubles at once. wasm32 defaults
+            # to a 64 KB stack, which those overrun instantly.
+            "-sSTACK_SIZE=16MB",
+            "-sEXPORT_NAME=createFlowModule",
+            "-sINVOKE_RUN=0",
+            "-sEXIT_RUNTIME=0",
+            "-sEXPORTED_RUNTIME_METHODS=callMain,ccall",
+            "-sEXPORTED_FUNCTIONS=_main,_malloc,_free",
+        ]
+    cmd += [
         "-Wno-implicit-function-declaration",
         "-lm",
     ]
@@ -227,6 +257,8 @@ def compile_wasm(
     initial_memory: str = "32MB",
     asyncify_stack_size: int = 32768,
     emcc_flags: Optional[list[str]] = None,
+    threads: bool = False,
+    workers: int = 8,
 ) -> None:
     out_js.parent.mkdir(parents=True, exist_ok=True)
     cmd = emcc_command(
@@ -239,6 +271,8 @@ def compile_wasm(
         initial_memory=initial_memory,
         asyncify_stack_size=asyncify_stack_size,
         emcc_flags=emcc_flags,
+        threads=threads,
+        workers=workers,
     )
     try:
         proc = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True,
@@ -251,6 +285,82 @@ def compile_wasm(
         raise BuildError("emcc: no .wasm emitted")
     if preload and not out_js.with_suffix(".data").exists():
         raise BuildError("emcc: --preload requested but no .data package emitted")
+
+
+# ---------------------------------------------------------------------------
+# Browser stubs for host-only externs
+# ---------------------------------------------------------------------------
+
+# Host-only C symbols the wasm build cannot link natively (no host OS, CPU
+# feature probes, GPU, tape runtime, ...). Each entry maps the missing symbol
+# to a browser-facing definition appended to the generated C before emcc runs.
+# EM_ASM reads real host facts (OS, core count) from the browser tab itself;
+# anything genuinely unprobeable from wasm degrades to an honest default.
+EXTERN_STUBS = {
+    "num_cores": "int32_t num_cores(void) { return EM_ASM_INT(return (navigator.hardwareConcurrency || 1) | 0); }",
+    "os_is_linux": "bool os_is_linux(void) { return EM_ASM_INT(return /linux/i.test(navigator.platform || '') ? 1 : 0); }",
+    "os_is_windows": "bool os_is_windows(void) { return EM_ASM_INT(return /win/i.test(navigator.platform || '') ? 1 : 0); }",
+    "os_is_macos": "bool os_is_macos(void) { return EM_ASM_INT(return /mac/i.test(navigator.platform || '') ? 1 : 0); }",
+    "has_sse4": "bool has_sse4(void) { return 0; }",
+    "has_avx": "bool has_avx(void) { return 0; }",
+    "has_avx2": "bool has_avx2(void) { return 0; }",
+    "has_avx512f": "bool has_avx512f(void) { return 0; }",
+    "has_avx512_vnni": "bool has_avx512_vnni(void) { return 0; }",
+    "has_neon": "bool has_neon(void) { return 0; }",
+    "is_apple_m1": "bool is_apple_m1(void) { return 0; }",
+    "has_intel_amx": "bool has_intel_amx(void) { return 0; }",
+    "current_cpu": "char* current_cpu(void) { return \"web browser\"; }",
+    "current_arch": "char* current_arch(void) { return \"wasm32\"; }",
+    "_cpu_features_string": "char* _cpu_features_string(void) { return \"n/a (browser)\"; }",
+    "print_kv_str": "void print_kv_str(char* label, char* val) { printf(\"%s %s\\n\", label, val); }",
+    "print_kv_i32": "void print_kv_i32(char* label, int32_t val) { printf(\"%s %d\\n\", label, val); }",
+    # digits_mlp_metal: the Metal runtime has no browser counterpart. These
+    # stubs emulate the unified-buffer API on CPU so the example's correctness
+    # gate (relu backward dh = da * mask, checked against a CPU reference)
+    # runs for real; the "gpu ms" timing rows become plain CPU loops. The
+    # card note says so (PAGE_EXTRAS), and flow_gpu_backend_name prints it in
+    # the page's own output.
+    "flow_gpu_available": "int32_t flow_gpu_available(void) { return 1; }",
+    "flow_gpu_backend_name": "char* flow_gpu_backend_name(void) { return \"cpu-emulated (wasm)\"; }",
+    "flow_gpu_alloc": "void* flow_gpu_alloc(int64_t size, int32_t flags) { (void)flags; return malloc((size_t)size); }",
+    "flow_gpu_free": "void flow_gpu_free(void* buf) { free(buf); }",
+    "flow_gpu_host_ptr": "void* flow_gpu_host_ptr(void* buf) { return buf; }",
+    "flow_gpu_mul_f32": "int32_t flow_gpu_mul_f32(void* out, void* a, void* b, int64_t n) { float* o = (float*)out; const float* x = (const float*)a; const float* y = (const float*)b; for (int64_t i = 0; i < n; i++) o[i] = x[i] * y[i]; return 0; }",
+    # flow_parallel_for_i32 / flow_rt_par_workers are NOT stubbed: examples that
+    # use them build in threads mode, where the parallel-for orchestration
+    # (lib/runtime/concurrency_parallel.flow) compiles as a library and lands on
+    # real pthread_create over SharedArrayBuffer (see build() threads=True).
+}
+
+
+def _append_extern_stubs(c_source: str) -> str:
+    """Append browser-facing definitions for host-only externs the generated
+    C references but does not define (os_is_linux, num_cores, ...).
+
+    Only symbols that are *called* and *missing* from the generated C get a
+    stub. Caveat: the check inspects the generated C only, not the `extra_link`
+    translation units — keep EXTERN_STUBS free of symbols that linked runtime
+    files provide (e.g. flow_rt_monotonic_ns comes from flow_rt_support.c),
+    or a later entry would double-define them at link time.
+    """
+    missing = []
+    for sym, stub in EXTERN_STUBS.items():
+        referenced = re.search(rf"\b{re.escape(sym)}\s*\(", c_source)
+        # A definition is `TYPE sym(...) {`; a call like `if (sym()) {` must
+        # not count as one, so require the name to be preceded by a type token
+        # (not an open paren / word char) and the `)` to be followed by `{`.
+        defined = re.search(
+            rf"(?<![\w(])\b{re.escape(sym)}\s*\([^;]*\)\s*{{",
+            c_source,
+        )
+        if referenced and not defined:
+            missing.append(stub)
+    if not missing:
+        return c_source
+    block = ["", "/* Browser stubs for host-only externs (see EXTERN_STUBS). */",
+             "#include <emscripten/emscripten.h>"]
+    block.extend(missing)
+    return c_source + "\n" + "\n".join(block) + "\n"
 
 
 def tidy(line: str) -> str:
@@ -333,6 +443,24 @@ pre#out:empty { display: none; }
 .keys { color: #6d7183; font-size: 12px; text-align: center;
         max-width: 60ch; }
 .err { color: #f7768e; }
+/* Per-example note card (e.g. the tiny-pointers abstract-claim coverage map). */
+details.coverage {
+  width: min(880px, 100%); margin: 12px auto 0; padding: 10px 14px;
+  background: #101219; border: 1px solid #1e2029; border-radius: 4px;
+}
+details.coverage summary {
+  cursor: pointer; font-weight: 600; color: #d8dae4;
+  font-size: 13px; user-select: none;
+}
+details.coverage summary:hover { color: #7aa2f7; }
+details.coverage .note { color: #6d7183; font-size: 12px; margin: 8px 0 4px; }
+details.coverage table { border-collapse: collapse; width: 100%; margin: 6px 0;
+                         font-size: 12.5px; }
+details.coverage th, details.coverage td { text-align: left; padding: 4px 8px;
+  border-bottom: 1px solid #1a1c24; vertical-align: top; }
+details.coverage th { color: #8a8fa3; font-weight: 600; white-space: nowrap; }
+details.coverage a { color: #7aa2f7; text-decoration: none; }
+details.coverage a:hover { text-decoration: underline; }
 """
 
 GFX_BODY = """
@@ -475,6 +603,84 @@ CONSOLE_SCRIPT = """
 </script>
 """
 
+THREADS_BODY = """
+<main>
+  <div class="bar">
+    <button id="start">Run (pthreads)</button>
+    <button id="clear">Clear</button>
+    <span id="status">idle</span>
+  </div>
+  <pre id="out"></pre>
+  <div class="keys">This build runs on real pthreads over SharedArrayBuffer and
+  Web Workers. The browser only allows SharedArrayBuffer on cross-origin-isolated
+  pages: open this page in a tab and let its service worker reload once.</div>
+</main>
+"""
+
+THREADS_SCRIPT = """
+<script src="__NAME__.js"></script>
+<script>
+(function () {
+  var startBtn = document.getElementById('start');
+  var clearBtn = document.getElementById('clear');
+  var status = document.getElementById('status');
+  var out = document.getElementById('out');
+
+  function log(text, isErr) {
+    var line = document.createElement('span');
+    if (isErr) { line.className = 'err'; }
+    line.textContent = text + '\\n';
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  }
+
+  var isolated = self.crossOriginIsolated && typeof SharedArrayBuffer === 'function';
+
+  function showIsolation() {
+    status.textContent = 'needs cross-origin isolation';
+    startBtn.disabled = true;
+    log('The browser blocks SharedArrayBuffer unless the page is cross-origin isolated,');
+    log('and an iframe cannot become isolated on its own. Open this page in a tab:');
+    log('the service worker adds the isolation headers and reloads once.');
+  }
+
+  function run() {
+    startBtn.disabled = true;
+    status.textContent = 'spawning workers...';
+    var done = false;
+    function finish(code) {
+      if (done) { return; }
+      done = true;
+      log((out.textContent ? '\\n' : '') + 'main returned ' + code);
+      status.textContent = 'exit ' + code;
+      startBtn.disabled = false;
+    }
+    // With PROXY_TO_PTHREAD the module factory resolves as soon as the
+    // runtime is initialised, before main() has run on its worker thread.
+    // Only onExit fires when main() really returns, so it alone finishes.
+    createFlowThreaded({
+      print: function (t) { log(t, false); },
+      printErr: function (t) { log(t, true); },
+      onExit: function (code) { finish(code === undefined ? 0 : code); }
+    }).then(function () {
+      if (!done) { status.textContent = 'running (pthreads)...'; }
+    }).catch(function (e) {
+      if (done) { return; }
+      done = true;
+      log('' + e, true);
+      status.textContent = 'failed to load';
+      startBtn.disabled = false;
+    });
+  }
+
+  if (!isolated) { showIsolation(); }
+  startBtn.addEventListener('click', run);
+  clearBtn.addEventListener('click', function () { out.textContent = ''; });
+  if (location.search.indexOf('autostart=1') >= 0 && isolated) { run(); }
+})();
+</script>
+"""
+
 
 def html_escape(text: str) -> str:
     return (text.replace("&", "&amp;").replace("<", "&lt;")
@@ -527,7 +733,8 @@ def key_hints(flow_source: str) -> str:
 
 
 def write_page(out_dir: Path, name: str, title: str, gfx: bool,
-               flow_source: str, source_url: str, backend: str = "c") -> Path:
+               flow_source: str, source_url: str, backend: str = "c",
+               extra_html: str = "", threads: bool = False) -> Path:
     if gfx:
         width, height = canvas_size(flow_source)
         body = (GFX_BODY.replace("__W__", str(width))
@@ -535,25 +742,33 @@ def write_page(out_dir: Path, name: str, title: str, gfx: bool,
                         .replace("__TITLE__", html_escape(title))
                         .replace("__KEYS__", key_hints(flow_source)))
         script = GFX_SCRIPT.replace("__NAME__", name)
+    elif threads:
+        body = THREADS_BODY
+        script = THREADS_SCRIPT.replace("__NAME__", name)
     else:
         body = CONSOLE_BODY
         script = CONSOLE_SCRIPT.replace("__NAME__", name)
 
     pipe = "MLIR &rarr; LLVM &rarr; WebAssembly" if backend == "mlir" else "C &rarr; WebAssembly"
+    # The COI service worker must load before anything touches
+    # SharedArrayBuffer: it reloads once to put the isolation headers in place.
+    coi = '<script src="coi-serviceworker.js"></script>\n' if threads else ""
+    kind = "gfx canvas backend" if gfx else ("console &middot; pthreads over SharedArrayBuffer" if threads else "console")
     page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html_escape(title)} — Flow on WebAssembly</title>
-<style>{PAGE_CSS}</style>
+{coi}<style>{PAGE_CSS}</style>
 </head>
 <body>
 <header>
   <h1>{html_escape(title)}</h1>
-  <span class="meta">Flow &rarr; {pipe}{' &middot; gfx canvas backend' if gfx else ' &middot; console'}</span>
+  <span class="meta">Flow &rarr; {pipe} &middot; {kind}</span>
   <span class="meta"><a href="{html_escape(source_url)}">source</a></span>
 </header>
+{extra_html}
 {body}
 {script}
 </body>
@@ -574,12 +789,39 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
           extra_link: Optional[list[Path]] = None,
           initial_memory: str = "32MB",
           asyncify_stack_size: int = 32768,
-          emcc_flags: Optional[list[str]] = None) -> dict:
-    """Build one program. Returns a result dict; raises BuildError on failure."""
+          emcc_flags: Optional[list[str]] = None,
+          extra_c: tuple = (),
+          extra_flow_runtime: tuple = (),
+          extra_html: str = "",
+          threads: bool = False,
+          workers: int = 8) -> dict:
+    """Build one program. Returns a result dict; raises BuildError on failure.
+
+    threads=True compiles the program on real pthreads: Flow's parallel-for
+    orchestration (lib/runtime/concurrency_parallel.flow) is compiled in as a
+    library TU and lands on pthread_create over SharedArrayBuffer, backed by
+    the pthread kernel runtime/flow_rt_parallel.c. The page ships a COI service
+    worker because the browser only allows SharedArrayBuffer on
+    cross-origin-isolated pages.
+
+    ``extra_c`` is accepted for gallery callers (paths relative to repo root)
+    and merged into ``extra_link``. ``extra_html`` is injected into the host
+    page (e.g. tiny-pointers coverage card).
+
+    extra_flow_runtime lists lib/runtime/*.flow modules (repo-root-relative
+    like extra_c) to compile as library TUs and link alongside the program —
+    the wasm analogue of the native launcher's flow_runtime_flow_sources().
+    It backs extern declarations that have a real Flow implementation (e.g.
+    lib/runtime/tape.flow defines flow_tape_*) instead of a host C symbol.
+    """
     program = program.resolve()
     if not program.exists():
         raise BuildError(f"no such file: {program}")
     backend = resolve_backend(backend)
+    if threads and backend == "mlir":
+        raise BuildError("threads mode requires the C backend")
+    if extra_flow_runtime and backend == "mlir":
+        raise BuildError("extra_flow_runtime requires the C backend")
     name = name or program.stem
     title = title or name.replace("_gfx", "").replace("_", " ")
     out_dir = out_dir.resolve()
@@ -590,18 +832,58 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
     if not have_emcc():
         raise BuildError("emcc not on PATH (see docs/language/wasm.md)")
 
+    # Merge gallery-style extra_c (repo-root-relative paths) into extra_link.
+    for c in extra_c:
+        p = Path(c)
+        extra_link = list(extra_link or []) + [
+            p if p.is_absolute() else PROJECT_ROOT / p
+        ]
+
+    artifacts: list[Path] = []
     if backend == "mlir":
         ir_file = out_dir / f"{name}.ll"
         ir_text = flow_to_llvm_ir(program, ir_file)
         gfx = uses_gfx(ir_text) or uses_gfx_flow_source(flow_source)
         compile_input = ir_file
-        keep_artifact = ir_file
+        artifacts.append(ir_file)
     else:
         c_file = out_dir / f"{name}.c"
         c_source = flow_to_c(program, c_file)
+        c_source = _append_extern_stubs(c_source)
+        c_file.write_text(c_source)
         gfx = uses_gfx(c_source)
         compile_input = c_file
-        keep_artifact = c_file
+        artifacts.append(c_file)
+        if threads:
+            # Flow's parallel-for chunk orchestration, compiled as a library
+            # (it defines flow_parallel_for_i32; the program declares it
+            # extern), plus the pthread create/join kernel and the monotonic
+            # clock.
+            lib_c = out_dir / f"{name}_parallel_lib.c"
+            flow_to_c(PROJECT_ROOT / "lib" / "runtime" / "concurrency_parallel.flow",
+                      lib_c, library=True)
+            artifacts.append(lib_c)
+            merged = list(extra_link or [])
+            for path in (lib_c,
+                         PROJECT_ROOT / "runtime" / "flow_rt_parallel.c",
+                         PROJECT_ROOT / "runtime" / "flow_rt_support.c"):
+                if path.resolve() not in [p.resolve() for p in merged]:
+                    merged.append(path)
+            extra_link = merged
+        # Extra lib/runtime/*.flow modules as library TUs (native launcher
+        # always links these; the wasm build opts in per example).
+        for mod in extra_flow_runtime:
+            mod_path = Path(mod)
+            if not mod_path.is_absolute():
+                mod_path = PROJECT_ROOT / mod_path
+            mod_name = mod_path.stem
+            lib_c = out_dir / f"{name}_{mod_name}_lib.c"
+            flow_to_c(mod_path, lib_c, library=True)
+            artifacts.append(lib_c)
+            merged = list(extra_link or [])
+            if lib_c.resolve() not in [p.resolve() for p in merged]:
+                merged.append(lib_c)
+            extra_link = merged
 
     started = time.time()
     out_js = out_dir / f"{name}.js"
@@ -616,8 +898,16 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         initial_memory=initial_memory,
         asyncify_stack_size=asyncify_stack_size,
         emcc_flags=emcc_flags,
+        threads=threads,
+        workers=workers,
     )
     elapsed = time.time() - started
+
+    if threads:
+        # Client-side cross-origin isolation: the service worker injects
+        # COOP/COEP and reloads once, so the SAB heap works on static hosts.
+        sw = PROJECT_ROOT / "wasm" / "crossing_assets" / "coi-serviceworker.js"
+        shutil.copyfile(sw, out_dir / "coi-serviceworker.js")
 
     try:
         rel = program.relative_to(PROJECT_ROOT)
@@ -626,9 +916,11 @@ def build(program: Path, out_dir: Path, name: str = "", title: str = "",
         rel = program.name
         source_url = str(program)
 
-    write_page(out_dir, name, title, gfx, flow_source, source_url, backend=backend)
+    write_page(out_dir, name, title, gfx, flow_source, source_url,
+               backend=backend, extra_html=extra_html, threads=threads)
     if not keep_c:
-        keep_artifact.unlink(missing_ok=True)
+        for artifact in artifacts:
+            artifact.unlink(missing_ok=True)
 
     wasm = out_js.with_suffix(".wasm")
     data = out_js.with_suffix(".data")
@@ -706,6 +998,19 @@ def main(argv=None) -> int:
         help="extra flag passed through to emcc (repeatable). "
              "Example: --emcc-flag=-DNORMALUNIX",
     )
+    parser.add_argument(
+        "--threads",
+        action="store_true",
+        help="build on real pthreads (-pthread over SharedArrayBuffer, "
+             "PROXY_TO_PTHREAD). The page ships a COI service worker because "
+             "the browser only allows SAB on cross-origin-isolated pages.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="pthread pool size / shard count for --threads (default 8)",
+    )
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep-c", action="store_true",
                         help="keep the generated C / LLVM IR next to the output")
@@ -734,6 +1039,8 @@ def main(argv=None) -> int:
             initial_memory=args.initial_memory,
             asyncify_stack_size=args.asyncify_stack_size,
             emcc_flags=args.emcc_flag or None,
+            threads=args.threads,
+            workers=args.workers,
         )
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)
