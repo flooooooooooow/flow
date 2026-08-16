@@ -13,6 +13,7 @@
 #   }
 
 import "stdlib/audio.flow"
+import "stdlib/string.flow"
 
 # =============================================================================
 # Note Structure
@@ -40,11 +41,41 @@ export effect Notation {
 
 # Parse note name to MIDI number (e.g., "C4" -> 60)
 export function parse_note_name(name: string) -> i32 {
-    # For now, return common notes
-    # TODO: Implement full parser when string operations available
-    # Format: C4, D4, E4, etc.
-    # This is a placeholder - would need string parsing
-    return 60  # Default to C4
+    let len: i32 = str_len(name) as i32
+    if len < 2 {
+        return 60
+    }
+
+    let p: ptr<i8> = name as ptr<i8>
+    let c0: i32 = p[0] as i32
+
+    let mut note: i32 = 0
+    if c0 == 67 { note = 0 }      # C
+    elif c0 == 68 { note = 2 }    # D
+    elif c0 == 69 { note = 4 }    # E
+    elif c0 == 70 { note = 5 }    # F
+    elif c0 == 71 { note = 7 }    # G
+    elif c0 == 65 { note = 9 }    # A
+    elif c0 == 66 { note = 11 }   # B
+    else { return 60 }
+
+    let mut octave_idx: i32 = 1
+
+    if len > 2 {
+        let c1: i32 = p[1] as i32
+        if c1 == 35 {             # #
+            note = note + 1
+            octave_idx = 2
+        } elif c1 == 98 {         # b
+            note = note - 1
+            octave_idx = 2
+        }
+    }
+
+    let c_oct: i32 = p[octave_idx] as i32
+    let octave: i32 = c_oct - 48
+
+    return (octave + 1) * 12 + note
 }
 
 # Helper: Parse a single note/duration pair
