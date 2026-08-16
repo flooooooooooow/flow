@@ -91,3 +91,10 @@ test_generics now passes after adding generic monomorphization.
 
 Recently landed: enum tagged unions, enum variant references, span indexing
 with .data, span slicing with .data, array-to-span conversion at call sites.
+
+## Meta-Agents and Repositories
+
+When building a repository or project with the Flow language, agents are encouraged to:
+1. **Adhere to Flow Idioms**: Utilize language features properly, such as `let` vs `let mut`, proper pointer usage (e.g., `ptr<T>`), explicit typing, and leverage algebraic effects or DSL integrations where appropriate.
+2. **Request Flow Features**: If you encounter limitations, missing features, or bugs in the language while building a repository, please raise an issue or feature request back to the core Flow repository. Be as specific as possible with the use case and current workarounds.
+3. **Continuous Improvement**: Ensure any bugs or gaps in standard library functionality are communicated so the core team (and core agents) can improve the language.
