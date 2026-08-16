@@ -372,3 +372,22 @@ module video {
         code = "module a {\n    " + body + "\n}"
         with pytest.raises(SyntaxError, match="Unexpected declaration inside module"):
             Parser(Lexer(code)).parse()
+
+def test_flatten_module_declarations_recursive():
+    from flow.module_resolver import flatten_module_declarations
+    from flow.parser import ModuleDecl
+
+    # Deeply nested module: module a { module b { decl1, decl2 } decl3 }
+    decl1 = "decl1"
+    decl2 = "decl2"
+    decl3 = "decl3"
+
+    mod_b = ModuleDecl(name="b", declarations=[decl1, decl2])
+    mod_a = ModuleDecl(name="a", declarations=[mod_b, decl3])
+
+    flat = flatten_module_declarations([mod_a])
+    assert flat == ["decl1", "decl2", "decl3"]
+
+def test_flatten_module_declarations_empty():
+    from flow.module_resolver import flatten_module_declarations
+    assert flatten_module_declarations([]) == []
