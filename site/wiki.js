@@ -224,12 +224,17 @@ function setTab(tabId) {
 
 function tabForPath(path) {
     if (!navData || !navData.sections) return 'start';
+    let startHit = null;
     for (const section of navData.sections) {
-        if (section.items.some((item) => item.path === path)) {
-            return section.tab;
+        if (!section.items.some((item) => item.path === path)) continue;
+        // Prefer the topical tab when a path is also listed under Start shortcuts.
+        if (section.tab === 'start') {
+            startHit = 'start';
+            continue;
         }
+        return section.tab;
     }
-    return activeTab || 'start';
+    return startHit || activeTab || 'start';
 }
 
 function syncTabToPath(path) {
@@ -809,8 +814,9 @@ function renderNotFound(path, message) {
             <div class="not-found-links">
                 <a href="#" class="wiki-cta wiki-cta-primary" data-goto="wiki-home.md">Home</a>
                 <a href="#" class="wiki-cta" data-goto="getting-started.md">Quick Start</a>
+                <a href="#" class="wiki-cta" data-goto="demos/overview.md">Galleries</a>
+                <a href="#" class="wiki-cta" data-goto="book/README.md">Book</a>
                 <a href="#" class="wiki-cta" data-goto="tutorials/beginner.md">Tutorials</a>
-                <a href="#" class="wiki-cta" data-goto="third-party/flow-verify-catalog.md">Proof catalog</a>
             </div>
         </div>
     `;
