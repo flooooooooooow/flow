@@ -110,3 +110,69 @@ def test_fir_g_cli_hello():
     report = analyse(g)
     assert g.num_funcs() >= 1
     assert "main" in report["reachable"]
+
+def test_reachable_functions_explicit_roots():
+    g = FirG()
+    main = g.add_function("main")
+    a = g.add_function("A")
+    b = g.add_function("B")
+    c = g.add_function("C")
+    d = g.add_function("D")
+    e = g.add_function("E") # isolated function
+
+    main_b = g.add_block(main)
+    a_b = g.add_block(a)
+    b_b = g.add_block(b)
+    c_b = g.add_block(c)
+    d_b = g.add_block(d)
+    e_b = g.add_block(e)
+
+    # Call graph:
+    # main -> A, B
+    # A -> C
+    # C -> A (cycle)
+    # D -> C
+    # E -> E (isolated cycle)
+
+    # main -> A
+    g.add_op(OpCode.CALL, main, main_b, callee=a)
+    # main -> B
+    g.add_op(OpCode.CALL, main, main_b, callee=b)
+    # A -> C
+    g.add_op(OpCode.CALL, a, a_b, callee=c)
+    # C -> A
+    g.add_op(OpCode.CALL, c, c_b, callee=a)
+    # D -> C
+    g.add_op(OpCode.CALL, d, d_b, callee=c)
+    # E -> E
+    g.add_op(OpCode.CALL, e, e_b, callee=e)
+
+    # build the call graph csr manually or by calling the method
+    g.build_call_graph_csr()
+
+    # Reachability from default roots ("main")
+    # should reach main, A, B, C
+    reachable_default = reachable_functions(g)
+    assert reachable_default == {main, a, b, c}
+
+    # Reachability from "D"
+    # should reach D, C, A
+    reachable_d = reachable_functions(g, ["D"])
+    assert reachable_d == {d, c, a}
+
+    # Reachability from "B"
+    # should reach B
+    reachable_b = reachable_functions(g, ["B"])
+    assert reachable_b == {b}
+
+    # Reachability from "B" and "D"
+    reachable_bd = reachable_functions(g, ["B", "D"])
+    assert reachable_bd == {b, d, c, a}
+
+    # Reachability from non-existent root
+    # fallback to 0 (main) if no explicit roots matched but roots array was not empty?
+    # the code says:
+    # if not start and g.num_funcs() > 0:
+    #     start = [0]
+    reachable_none = reachable_functions(g, ["UNKNOWN"])
+    assert reachable_none == {main, a, b, c} # Fallback to 0 (which is main)
