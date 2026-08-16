@@ -22,3 +22,4 @@ To achieve 100% test coverage across the Flow compiler (`src/flow/*.py`), the fo
 
 **Continuous Integration**:
 We should integrate `pytest --cov=src/flow --cov-fail-under=100` into the CI pipeline once coverage reaches 100%, and progressively increase the `fail-under` threshold until then.
+
