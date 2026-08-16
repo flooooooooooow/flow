@@ -162,6 +162,21 @@ export function add(a: i32, b: i32) -> i32 {
 
 
 class TestModuleResolver:
+    def test_get_module_resolver(self):
+        root = os.path.join(FIXTURES, "consumer_dot.flow")
+        resolver = get_module_resolver(root)
+        assert isinstance(resolver, ModuleResolver)
+        assert resolver.root_file == os.path.abspath(root)
+        assert len(resolver.modules) > 0
+        assert "greet" in resolver.symbol_table
+
+    def test_resolve_modules(self):
+        from flow.module_resolver import resolve_modules
+        root = os.path.join(FIXTURES, "consumer_dot.flow")
+        decls = resolve_modules(root)
+        assert isinstance(decls, list)
+        assert len(decls) > 0
+
     def test_resolve_dot_import_with_braces(self):
         root = os.path.join(FIXTURES, "consumer_brace.flow")
         resolver = get_module_resolver(root)
