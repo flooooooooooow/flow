@@ -56,6 +56,24 @@ pre#out:empty { display: none; }
 .keys { color: #6d7183; font-size: 12px; text-align: center;
         max-width: 60ch; }
 .err { color: #f7768e; }
+/* Per-example note card (e.g. the tiny-pointers abstract-claim coverage map). */
+details.coverage {
+  width: min(880px, 100%); margin: 12px auto 0; padding: 10px 14px;
+  background: #101219; border: 1px solid #1e2029; border-radius: 4px;
+}
+details.coverage summary {
+  cursor: pointer; font-weight: 600; color: #d8dae4;
+  font-size: 13px; user-select: none;
+}
+details.coverage summary:hover { color: #7aa2f7; }
+details.coverage .note { color: #6d7183; font-size: 12px; margin: 8px 0 4px; }
+details.coverage table { border-collapse: collapse; width: 100%; margin: 6px 0;
+                         font-size: 12.5px; }
+details.coverage th, details.coverage td { text-align: left; padding: 4px 8px;
+  border-bottom: 1px solid #1a1c24; vertical-align: top; }
+details.coverage th { color: #8a8fa3; font-weight: 600; white-space: nowrap; }
+details.coverage a { color: #7aa2f7; text-decoration: none; }
+details.coverage a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -64,6 +82,7 @@ pre#out:empty { display: none; }
   <span class="meta">Flow &rarr; C &rarr; WebAssembly &middot; console</span>
   <span class="meta"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/generics_traits/oop_counter.flow">source</a></span>
 </header>
+
 
 <main>
   <div class="bar">

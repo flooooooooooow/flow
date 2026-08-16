@@ -472,6 +472,21 @@ class CGenerator:
         lines.append("#include <stdio.h>")
         lines.append("#include <stdlib.h>")  # For malloc/free
         lines.append("#include <string.h>")  # For memcpy/memset
+        # Skip-listed POSIX libc externs (usleep, gettimeofday, ...) are never
+        # given Flow-style declarations — their real headers must be included
+        # so the calls compile. Only add the header when the extern is present.
+        posix_headers = {
+            "usleep": "unistd.h", "sleep": "unistd.h",
+            "unlink": "unistd.h", "rmdir": "unistd.h", "chdir": "unistd.h",
+            "getcwd": "unistd.h", "getuid": "unistd.h", "getgid": "unistd.h",
+            "geteuid": "unistd.h", "getegid": "unistd.h",
+            "gethostname": "unistd.h", "mkdir": "sys/stat.h",
+            "gettimeofday": "sys/time.h", "time": "time.h", "kill": "signal.h",
+        }
+        for fn in functions or []:
+            hdr = posix_headers.get(fn.name)
+            if hdr and getattr(fn, "is_extern", False):
+                lines.append(f"#include <{hdr}>")
         lines.append("")
         lines.append("/* Flow runtime helpers */")
         # Temp arena for strcat results + escaping closure envs (#267 / #268).

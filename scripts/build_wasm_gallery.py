@@ -53,7 +53,9 @@ CATEGORIES = [
         "blurb": "Pure computation. No graphics, no host services: the "
                  "program runs and prints into the page.",
         "globs": [("examples/basics", "*.flow")],
-        "files": ["examples/wasm/hello_wasm.flow"],
+        "files": ["examples/wasm/hello_wasm.flow",
+                  "examples/wasm/parallel_scaling.flow",
+                  "examples/wasm/parallel_sum.flow"],
     },
     {
         "id": "language",
@@ -102,6 +104,100 @@ CATEGORIES = [
         ],
     },
 ]
+
+TINY_POINTERS_COVERAGE_CARD = """
+<details class="coverage">
+  <summary>Abstract-claim coverage — every promise in the paper's abstract, mapped to the phase that measures it</summary>
+  <p class="note">The same map prints at the top of this program's run output.
+  Each row links to its section in the docs
+  (<a href="../../library/tiny-pointers.md">tiny-pointers.md</a> ·
+  <a href="../../library/tiny-pointers-variable-values.md">variable-size values</a>).</p>
+  <table>
+    <tr><th>Abstract claim</th><th>Row</th></tr>
+    <tr><td>Fixed-size pointers of Θ(log log log n + log k) bits</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-1-fixed-size-tiny-pointers-3-phases-14">Theorem 1 (Phases 1–4) · §3</a></td></tr>
+    <tr><td>Variable-size pointers of Θ(log k) expected bits</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-2-variable-size-tiny-pointers-4-phases-56">Theorem 2 (Phases 5–6) · §4</a></td></tr>
+    <tr><td>① relaxed retrieval: nv + O(n log⁽ʳ⁾ n), O(1)-expected hints, O(r) insert/delete</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-6-relaxed-retrieval-tiny-retrievers-62-phases-78">Theorem 6 (Phases 7–8, 8b) · §6.2</a></td></tr>
+    <tr><td>② succinct rotation-based BSTs, rotations included</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-7-succinct-rotation-based-bsts-63-phases-910">Theorem 7 (Phases 9–10) · §6.3</a></td></tr>
+    <tr><td>③ stable fixed-capacity dicts, 1 + o(1) overhead</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-8-stable-dictionaries-64-phases-34">Theorem 8 (Phases 3–4) · §6.4</a></td></tr>
+    <tr><td>④ arbitrary-size values at log⁽ʳ⁾ n + O(log j) bits per j-bit value</td>
+        <td><a href="../../library/tiny-pointers-variable-values.md#theorem-9-and-the-size-class-construction">Theorem 9 (Phases 11/12/14/15) · §6.5</a></td></tr>
+    <tr><td>⑤ optimal internal-memory stash, O(n log ε⁻¹) bits, no IOs</td>
+        <td><a href="../../library/tiny-pointers.md#theorem-10-the-optimal-internal-memory-stash-66-phase-16">Theorem 10 (Phase 16) · §6.6</a></td></tr>
+  </table>
+  <p class="note">Theorems 3–5 are lower bounds / intermediate steps, not constructions.
+  Full theorem table: <a href="../../library/tiny-pointers.md">tiny-pointers.md</a>.</p>
+</details>
+"""
+
+# Per-example extras for the build pipeline. `extra_link` adds C/runtime
+# files to the emcc link step (tiny_pointers needs the monotonic clock in
+# runtime/flow_rt_support.c, which the plain console build does not link);
+# `html` injects an HTML fragment between the page header and the run body.
+PAGE_EXTRAS = {
+    # Examples that call flow_rt_monotonic_ns link the real runtime file
+    # (host monotonic clock) instead of a stub.
+    "tiny_pointers": {
+        "extra_link": ["runtime/flow_rt_support.c"],
+        "html": TINY_POINTERS_COVERAGE_CARD,
+    },
+    "digits_mlp": {"extra_link": ["runtime/flow_rt_support.c"]},
+    # Real pthreads: wasm_build compiles the parallel-for library TU and links
+    # runtime/flow_rt_parallel.c + flow_rt_support.c itself (threads mode).
+    # The browser blocks SharedArrayBuffer without cross-origin isolation, so
+    # the page ships a COI service worker and needs to be opened in a tab.
+    "digits_mlp_parallel": {"threads": True, "workers": 8, "initial_memory": "128MB"},
+    "parallel_sum": {"threads": True, "workers": 8},
+    "parallel_scaling": {"threads": True, "workers": 8},
+    # The reverse-mode AD tape lives in lib/runtime/tape.flow (pure Flow,
+    # replaces the deleted runtime/flow_tape.c). The native launcher links all
+    # lib/runtime modules; the wasm build opts in per example.
+    "tape_mul": {"extra_flow_runtime": ["lib/runtime/tape.flow"]},
+    # stdlib/blas.flow externs are Accelerate/OpenBLAS-backed natively; the
+    # wasm pages get runtime/blas_wasm.c, a plain correct shim for the exact
+    # routines these examples call (daxpy/dcopy/ddot/dnrm2/dscal/dgemv/dgemm
+    # + dgesv_).
+    "blas_demo": {"extra_c": ["runtime/blas_wasm.c"]},
+    "lu_decomposition": {"extra_c": ["runtime/blas_wasm.c"]},
+    # Real cooperative fibers on wasm: the FiberAsync runtime (fiber_wasm.c +
+    # flow_rt_fiber_async.c) plus the Flow glue (lib/runtime/fiber_async.flow)
+    # need ASYNCIFY — emscripten_fiber_swap is Asyncify stack switching, the
+    # wasm analogue of the native asm context switch.
+    "async_primitives": {
+        "extra_c": ["runtime/fiber_wasm.c", "runtime/flow_rt_fiber_async.c"],
+        "extra_flow_runtime": ["lib/runtime/fiber_async.flow"],
+        "emcc_flags": ["-sASYNCIFY=1", "-sASYNCIFY_STACK_SIZE=65536"],
+    },
+    # lib/runtime/crypto.flow is pure Flow — SHA-256 is Flow code with no
+    # externs, so it runs unchanged in the browser (extra_flow_runtime). Only
+    # the OS CSPRNG is host-bound; runtime/crypto_wasm.c supplies it via
+    # WebCrypto's synchronous crypto.getRandomValues. `note` renders on the
+    # card so the one behavioural difference is visible.
+    "runtime_sha256": {
+        "extra_c": ["runtime/crypto_wasm.c"],
+        "extra_flow_runtime": ["lib/runtime/crypto.flow"],
+        "note": "SHA-256 runs Flow's own implementation (lib/runtime/crypto.flow), "
+                "same code as native; only the random bytes come from the "
+                "browser's WebCrypto CSPRNG (crypto.getRandomValues) instead "
+                "of the native OS kernel.",
+    },
+    # digits_mlp_metal: flow_gpu_* are CPU-emulated on wasm (EXTERN_STUBS) —
+    # unified buffers are plain malloc'd memory and flow_gpu_mul_f32 is an
+    # elementwise CPU loop — so the example's correctness gate still runs and
+    # passes, but nothing dispatches to a GPU. flow_rt_support.c supplies the
+    # monotonic clock for the timing rows (same as tiny_pointers/digits_mlp).
+    "digits_mlp_metal": {
+        "extra_link": ["runtime/flow_rt_support.c"],
+        "note": "The Metal GPU is CPU-emulated on wasm: buffers are plain "
+                "memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so "
+                "the relu-gate correctness check runs and passes, but the "
+                "'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.",
+    },
+}
 
 
 def pretty_title(stem: str) -> str:
@@ -175,6 +271,7 @@ def collect(categories) -> list:
 
 
 def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
+    extras = PAGE_EXTRAS.get(target["name"], {})
     record = {
         "name": target["name"],
         "title": target["title"],
@@ -182,10 +279,23 @@ def build_one(target: dict, out_root: Path, opt: str, timeout: int) -> dict:
         "source": str(target["path"].relative_to(PROJECT_ROOT)),
         "summary": one_line_summary(target["path"].read_text()),
     }
+    if extras.get("threads"):
+        record["threads"] = True
+    if extras.get("note"):
+        record["note"] = extras["note"]
     out_dir = out_root / target["name"]
     try:
         result = build(target["path"], out_dir, name=target["name"],
-                       title=target["title"], opt=opt, timeout=timeout)
+                       title=target["title"], opt=opt, timeout=timeout,
+                       extra_link=[PROJECT_ROOT / p for p in extras.get("extra_link", [])]
+                       or None,
+                       extra_html=extras.get("html", ""),
+                       extra_c=extras.get("extra_c", ()),
+                       extra_flow_runtime=extras.get("extra_flow_runtime", ()),
+                       emcc_flags=list(extras.get("emcc_flags", ())),
+                       threads=extras.get("threads", False),
+                       workers=extras.get("workers", 8),
+                       initial_memory=extras.get("initial_memory", "32MB"))
     except BuildError as exc:
         shutil.rmtree(out_dir, ignore_errors=True)
         record.update(status="failed", error=str(exc))
@@ -245,6 +355,9 @@ h2 .count { color: #575c6e; font-weight: 400; font-size: 13px; }
 .card.failed { opacity: .72; border-style: dashed; }
 .card.failed .why { color: #d08770; font-size: 11.5px;
   font-family: ui-monospace, Menlo, monospace; word-break: break-word; }
+.card .degrade { color: #d8a657; font-size: 11.5px; line-height: 1.45;
+  background: rgba(216, 166, 87, .07); border: 1px solid rgba(216, 166, 87, .22);
+  border-radius: 4px; padding: 5px 7px; margin: 7px 0; word-break: break-word; }
 .tag { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
        color: #575c6e; border: 1px solid #232631; border-radius: 3px;
        padding: 1px 5px; }
@@ -315,9 +428,11 @@ STATUS_ROWS = [
     ("gfx graphics and keyboard", "runs", "Runs today",
      "runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM "
      "key events to the macOS keycodes the programs already use."),
-    ("Threads and channels", "wip", "In progress",
-     "Emscripten -pthread over SharedArrayBuffer and Web Workers; needs the "
-     "page to be cross-origin isolated. Not built here."),
+    ("Threads and channels", "runs", "Runs today",
+     "digits_mlp_parallel and parallel_sum run on real Emscripten pthreads over "
+     "SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a "
+     "cross-origin-isolated page, so open those cards in a tab and let their "
+     "service worker reload once."),
     ("Sockets and HTTP", "wip", "In progress",
      "Emscripten's WebSocket-backed POSIX socket bridge "
      "(-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here."),
@@ -361,12 +476,18 @@ def render_gallery(records: list, out: Path) -> None:
                    + rec["source"])
             if rec["status"] == "ok":
                 kind = "canvas" if rec.get("gfx") else "console"
+                tags = f'<span class="tag">{kind}</span>'
+                if rec.get("threads"):
+                    tags += ' <span class="tag">threads</span>'
+                note = (f'<div class="degrade">{esc(rec["note"])}</div>'
+                        if rec.get("note") else "")
                 cards.append(f"""      <div class="card">
         <h3>{esc(rec['title'])}</h3>
         <p>{esc(rec['summary'])}</p>
+        {note}
         <div class="row">
           <button data-run="{esc(rec['page'])}" data-title="{esc(rec['title'])}">Run</button>
-          <span class="tag">{kind}</span>
+          {tags}
           <span>{kb(rec['total_bytes'])}</span>
           <a href="{esc(src)}">source</a>
         </div>
@@ -418,9 +539,10 @@ def render_gallery(records: list, out: Path) -> None:
 {chr(10).join(sections)}
 
   <h2>What runs, and what is still being crossed</h2>
-  <p class="blurb">Only the first two rows are things verified in a browser
-  on this page. The rest name the mechanism and say plainly that it is not
-  built here yet.</p>
+  <p class="blurb">Rows marked “runs” are verified in a browser. The
+  threads row needs the card opened in a tab (an iframe cannot become
+  cross-origin isolated on its own). The rest name the mechanism and say
+  plainly that it is not built here yet.</p>
   <table class="status">
     <tr><th>Capability</th><th>State</th><th>Route</th></tr>
 {status}

@@ -1,9 +1,9 @@
 # WASM crossings
 
-Five things people assume a systems language cannot take to WebAssembly: OS
-threads, the GPU, sockets, files, and an embedded CPython. Flow does all five
-in runtime C or in its own codegen, so each one is a concrete question with a
-concrete answer.
+Six things people assume a systems language cannot take to WebAssembly: OS
+threads, the GPU, sockets, files, an embedded CPython, and stackful
+cooperative fibers. Flow does all six in runtime C or in its own codegen, so
+each one is a concrete question with a concrete answer.
 
 Each section below gives the mechanism, the constraint that made people think
 it was impossible, the workaround, and a number measured in a real browser.
@@ -22,6 +22,7 @@ open http://127.0.0.1:8000/wasm-crossings/threads/
 | 3. Sockets | proven in Chrome | 8 / 8 round trips, best rtt 2.20 ms |
 | 4. Embedded CPython | proven in Chrome | CPython 3.12.7 via Pyodide, 11 / 11 checks |
 | 5. Filesystem | proven in Chrome | GIF byte-identical to native; counter survives reload |
+| 6. Cooperative fibers | proven in Chrome | 3 fibers, strict round-robin interleave, join = 3039 |
 
 Measurements below were taken in Chrome 141 on an Apple M-series laptop
 (`navigator.hardwareConcurrency` = 14: 10 performance cores, 4 efficiency
@@ -147,22 +148,23 @@ against.
 
 That 19 microseconds is roughly 20x what a native `pthread_create` costs, and
 it is the whole story for fine-grained work. `examples/ml/digits_mlp_parallel.flow`
-splits every minibatch across 8 shards, which is 5,760 spawn-join round trips
-over a full run. Compiled to WASM with the identical flags and run under
-Node 25:
+splits every minibatch across 8 shards. With its original 250-sample batch that
+was 5,760 spawn-join round trips over a full 3-rep run, and compiled to WASM
+the parallel pass lost to its own dispatch — a shard was worth ~16
+microseconds of work and cost ~19 microseconds to hand over, so the measured
+speedup was 0.46x while the runs still agreed to the last bit. The gallery's
+threaded build of the same example raises the batch to 1000 (60 parallel-for
+calls per run, ~1,440 spawns, ~5x more work per shard) and measures ~1.9x in
+Chrome.
 
-```
-  serial:   grad+update ms  93.59   test_acc 99.00%
-  parallel: grad+update ms 204.40   test_acc 99.00%
-  speedup: 0.46x
-```
-
-Natively the same program gets 4.16x. The parallel build is still *correct*
-under WASM (the two runs agree to the last bit), it is just slower, because a
-shard is worth ~16 microseconds of work and costs ~19 microseconds to
-dispatch. Nothing about the browser is broken here; the grain is simply below
-the threshold. Coarsen the shards and the speedup comes back, which is what
-`parallel_sum.flow` demonstrates.
+The parallel build is always *correct* under WASM; the grain just has to clear
+the dispatch threshold. Coarsen the shards and the speedup comes back, which is
+what `parallel_sum.flow` demonstrates — it is also a gallery card now, at
+~6.1–6.5x in Chrome with a ~0.4 ms floor for 8 empty spawn+join round trips.
+`examples/wasm/parallel_scaling.flow` is the same lesson as a whole speedup
+curve: one threaded gallery card that times the same Monte Carlo work at 2, 4
+and 8 workers against per-count serial baselines, measuring ~3.8x → ~7.5x →
+~15x in Chrome.
 
 ### First-run numbers lie
 
@@ -561,3 +563,59 @@ a few lines of JavaScript), but it is not free, and a Flow program that links
 
 The page needs network for the Pyodide CDN. Vendoring Pyodide locally is
 possible and costs about 10 MB.
+
+---
+
+## 6. Cooperative fibers
+
+Flow's concurrency story leans on stackful fibers (`lib/runtime/fiber_async.flow`
+over `runtime/flow_fiber.c`): `main` runs as a fiber so `async_delay` and
+`join` can suspend a Flow frame *mid-function* — locals intact — and the
+scheduler resumes it later. Natively the context switch is assembly
+(`runtime/flow_fctx_*.S`). WebAssembly has no instruction to switch the stack
+pointer, so the obvious port does not exist. The crossing is the Emscripten
+fiber API, which is itself setjmp/longjmp-family machinery built on Asyncify:
+`emscripten_fiber_swap` saves one fiber's register + stack state and rewinds
+the other's, JS stack included.
+
+### Mechanism
+
+`runtime/fiber_wasm.c` implements the whole `flow_fiber_*` surface
+(`init`, `spawn`, `yield`, `park`, `unpark`, `run`, `run_until`, `current_id`,
+`run_main`, fiber-aware `flow_netpoll_fiber_sleep_ms`, …) on top of
+`emscripten_fiber_*`. Each fiber gets its own malloc'd C stack plus its own
+Asyncify stack, so suspended frames never collide; a FIFO ready queue plus a
+wake-by-deadline pass give deterministic round-robin scheduling. wasm has one
+OS thread, so the scheduler is M:1 regardless of `flow_fiber_set_maxprocs`
+(the demo pins `async_set_maxprocs(1)`). The pages build with `-sASYNCIFY`.
+
+`async_primitives` was the last gallery failure that was not actually
+host-bound: it stopped at `flow_fiber_run_main`, the C-backend's fiber main
+wrapper. It now links `runtime/fiber_wasm.c` + `runtime/flow_rt_fiber_async.c`
+plus `lib/runtime/fiber_async.flow` as a library TU, and its FiberAsync section
+registers three Flow task bodies that print a step and park on `async_delay`
+between steps.
+
+### The constraint people trip over
+
+A plain `setjmp`/`longjmp` pair cannot move a running program between stacks:
+`longjmp` restores the stack pointer saved at `setjmp`, and `jmp_buf` layout is
+compiler-private, so there is no portable "first entry" on a fresh stack. The
+shared-stack trick (all coroutines on one stack, save/restore the pointer)
+corrupts suspended frames the moment two fibers park at different depths.
+Emscripten fibers solve both with Asyncify, which records enough state to
+rewind a full wasm+JS call stack onto a private stack.
+
+### Measured, in Chrome
+
+`examples/effects/async_primitives.flow`, three tasks × three steps of 5 ms:
+
+```
+trace: T100:0 T101:0 T102:0 T100:1 T101:1 T102:1 T100:2 T101:2 T102:2 (done 100) (done 101) (done 102)
+join(100)+join(101)+join(102) = 3039 (expect 1003+1013+1023 = 3039)
+```
+
+Strict round-robin — every task's step `k` lands before any step `k+1` — with
+`main returned 0` and zero console errors. The same binary shape runs
+identically under node and natively (`./flow run`, M:1 pinned). The demo's
+pass gate is the join sum; the trace is the interleaving proof.

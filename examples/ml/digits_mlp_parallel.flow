@@ -9,6 +9,12 @@
 # runtime's flow_parallel_for_i32. The reduction runs serially in fixed
 # shard order, so serial and parallel training are bit-for-bit identical.
 #
+# BATCH is deliberately large (4x digits_mlp.flow's 250). One parallel-for
+# call spawns and joins every shard, and the browser proxies those through
+# the main thread at ~1 ms a call, so a shard has to be worth milliseconds
+# before threading pays (see examples/wasm/parallel_sum.flow). 1000 keeps
+# the demo at 60 calls per training run while each shard does 125 samples.
+#
 # The program times an identical training run serially and in parallel,
 # reports the measured speedup, checks the two runs agree exactly, and
 # gates PASS on the 90% test-accuracy bar.
@@ -32,7 +38,7 @@ const TRAIN_PER_CLASS: i32 = 200
 const TEST_PER_CLASS: i32 = 40
 const N_TRAIN: i32 = 2000
 const N_TEST: i32 = 400
-const BATCH: i32 = 250
+const BATCH: i32 = 1000
 const SHARDS: i32 = 8
 const EPOCHS: i32 = 30
 const LR: f32 = 0.3

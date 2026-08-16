@@ -1,9 +1,9 @@
 {
   "generated_by": "scripts/build_wasm_gallery.py",
-  "examples": 131,
-  "built": 118,
-  "failed": 13,
-  "total_bytes": 3745285,
+  "examples": 161,
+  "built": 161,
+  "failed": 0,
+  "total_bytes": 6027028,
   "categories": [
     {
       "id": "games",
@@ -89,9 +89,9 @@
       "summary": "CHECKERS - two-player hotseat",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 25142,
+      "wasm_bytes": 25560,
       "js_bytes": 21327,
-      "total_bytes": 46469,
+      "total_bytes": 46887,
       "page": "checkers_gfx/index.html"
     },
     {
@@ -121,6 +121,19 @@
       "page": "connect4_gfx/index.html"
     },
     {
+      "name": "falling_sand_gfx",
+      "title": "Falling Sand",
+      "category": "games",
+      "source": "examples/games/falling_sand_gfx.flow",
+      "summary": "THE FALLING SAND GAME",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 27808,
+      "js_bytes": 21006,
+      "total_bytes": 48814,
+      "page": "falling_sand_gfx/index.html"
+    },
+    {
       "name": "flappy_gfx",
       "title": "Flappy",
       "category": "games",
@@ -141,9 +154,9 @@
       "summary": "FROGGER - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 15615,
+      "wasm_bytes": 14983,
       "js_bytes": 20335,
-      "total_bytes": 35950,
+      "total_bytes": 35318,
       "page": "frogger_gfx/index.html"
     },
     {
@@ -154,10 +167,23 @@
       "summary": "TOWER OF HANOI - classic disk puzzle",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 22985,
+      "wasm_bytes": 23358,
       "js_bytes": 21324,
-      "total_bytes": 44309,
+      "total_bytes": 44682,
       "page": "hanoi_gfx/index.html"
+    },
+    {
+      "name": "icy_tower_gfx",
+      "title": "Icy Tower",
+      "category": "games",
+      "source": "examples/games/icy_tower_gfx.flow",
+      "summary": "ICY TOWER - momentum platformer",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 18784,
+      "js_bytes": 20337,
+      "total_bytes": 39121,
+      "page": "icy_tower_gfx/index.html"
     },
     {
       "name": "invaders_gfx",
@@ -167,9 +193,9 @@
       "summary": "SPACE INVADERS - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 17439,
+      "wasm_bytes": 16532,
       "js_bytes": 20336,
-      "total_bytes": 37775,
+      "total_bytes": 36868,
       "page": "invaders_gfx/index.html"
     },
     {
@@ -180,9 +206,9 @@
       "summary": "JUMPER - doodle-jump style vertical platformer",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 13438,
+      "wasm_bytes": 14065,
       "js_bytes": 20334,
-      "total_bytes": 33772,
+      "total_bytes": 34399,
       "page": "jumper_gfx/index.html"
     },
     {
@@ -206,9 +232,9 @@
       "summary": "LIGHTS OUT - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 12367,
+      "wasm_bytes": 11801,
       "js_bytes": 20337,
-      "total_bytes": 32704,
+      "total_bytes": 32138,
       "page": "lightsout_gfx/index.html"
     },
     {
@@ -219,9 +245,9 @@
       "summary": "MATCH-3 - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 22275,
+      "wasm_bytes": 22546,
       "js_bytes": 21325,
-      "total_bytes": 43600,
+      "total_bytes": 43871,
       "page": "match3_gfx/index.html"
     },
     {
@@ -232,9 +258,9 @@
       "summary": "MAZE CHASE - Pac-Man style maze game",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 16463,
+      "wasm_bytes": 16446,
       "js_bytes": 20338,
-      "total_bytes": 36801,
+      "total_bytes": 36784,
       "page": "maze_chase_gfx/index.html"
     },
     {
@@ -245,9 +271,9 @@
       "summary": "MINESWEEPER - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 22610,
+      "wasm_bytes": 21983,
       "js_bytes": 21330,
-      "total_bytes": 43940,
+      "total_bytes": 43313,
       "page": "minesweeper_gfx/index.html"
     },
     {
@@ -258,9 +284,9 @@
       "summary": "MISSILE COMMAND - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 27463,
+      "wasm_bytes": 27874,
       "js_bytes": 21326,
-      "total_bytes": 48789,
+      "total_bytes": 49200,
       "page": "missile_gfx/index.html"
     },
     {
@@ -271,9 +297,9 @@
       "summary": "OTHELLO / REVERSI vs AI",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 24546,
+      "wasm_bytes": 24345,
       "js_bytes": 21326,
-      "total_bytes": 45872,
+      "total_bytes": 45671,
       "page": "othello_gfx/index.html"
     },
     {
@@ -297,9 +323,9 @@
       "summary": "SIMON - memory game",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 21338,
+      "wasm_bytes": 21712,
       "js_bytes": 21324,
-      "total_bytes": 42662,
+      "total_bytes": 43036,
       "page": "simon_gfx/index.html"
     },
     {
@@ -310,9 +336,9 @@
       "summary": "SNAKE - Complete Implementation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 21033,
+      "wasm_bytes": 21338,
       "js_bytes": 21324,
-      "total_bytes": 42357,
+      "total_bytes": 42662,
       "page": "snake_gfx/index.html"
     },
     {
@@ -342,6 +368,32 @@
       "page": "tetris_gfx/index.html"
     },
     {
+      "name": "allen_cahn",
+      "title": "Allen Cahn",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/allen_cahn.flow",
+      "summary": "curvature-driven interface motion toward mean-curvature flow",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 35932,
+      "js_bytes": 21075,
+      "total_bytes": 57007,
+      "page": "allen_cahn/index.html"
+    },
+    {
+      "name": "ant_pheromone",
+      "title": "Ant Pheromone",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/ant_pheromone.flow",
+      "summary": "stigmergy finds the short bridge without a map",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 44462,
+      "js_bytes": 21078,
+      "total_bytes": 65540,
+      "page": "ant_pheromone/index.html"
+    },
+    {
       "name": "belousov",
       "title": "Belousov",
       "category": "morphogenesis",
@@ -349,10 +401,23 @@
       "summary": "spiral waves in an excitable medium",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 14636,
+      "wasm_bytes": 14639,
       "js_bytes": 20332,
-      "total_bytes": 34968,
+      "total_bytes": 34971,
       "page": "belousov/index.html"
+    },
+    {
+      "name": "bone_remodelling",
+      "title": "Bone Remodelling",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/bone_remodelling.flow",
+      "summary": "Wolff's law as a mechanostat on a lattice of bars",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 50784,
+      "js_bytes": 21081,
+      "total_bytes": 71865,
+      "page": "bone_remodelling/index.html"
     },
     {
       "name": "branching_vessels",
@@ -362,10 +427,36 @@
       "summary": "leaf venation by space colonization",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 29782,
+      "wasm_bytes": 29488,
       "js_bytes": 20341,
-      "total_bytes": 50123,
+      "total_bytes": 49829,
       "page": "branching_vessels/index.html"
+    },
+    {
+      "name": "brusselator",
+      "title": "Brusselator",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/brusselator.flow",
+      "summary": "Prigogine's dissipative structure, and its wavelength predicted",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 23855,
+      "js_bytes": 20335,
+      "total_bytes": 44190,
+      "page": "brusselator/index.html"
+    },
+    {
+      "name": "bz_3d_slice",
+      "title": "Bz 3d Slice",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/bz_3d_slice.flow",
+      "summary": "a scroll wave in a cube, shown as a moving z-cut",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 34331,
+      "js_bytes": 21076,
+      "total_bytes": 55407,
+      "page": "bz_3d_slice/index.html"
     },
     {
       "name": "cahn_hilliard",
@@ -375,9 +466,9 @@
       "summary": "phase separation and spinodal decomposition",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 14879,
+      "wasm_bytes": 14891,
       "js_bytes": 20337,
-      "total_bytes": 35216,
+      "total_bytes": 35228,
       "page": "cahn_hilliard/index.html"
     },
     {
@@ -388,9 +479,9 @@
       "summary": "differential adhesion, and tissue layers that sort",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 21029,
+      "wasm_bytes": 20777,
       "js_bytes": 20336,
-      "total_bytes": 41365,
+      "total_bytes": 41113,
       "page": "cell_sorting/index.html"
     },
     {
@@ -401,10 +492,23 @@
       "summary": "ballistic deposition and the shadowing instability",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 14581,
+      "wasm_bytes": 14734,
       "js_bytes": 20339,
-      "total_bytes": 34920,
+      "total_bytes": 35073,
       "page": "coral_ballistic/index.html"
+    },
+    {
+      "name": "crack_propagation",
+      "title": "Crack Propagation",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/crack_propagation.flow",
+      "summary": "fracture through a disordered fuse lattice",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 39077,
+      "js_bytes": 21415,
+      "total_bytes": 60492,
+      "page": "crack_propagation/index.html"
     },
     {
       "name": "cyclic_ca",
@@ -414,9 +518,9 @@
       "summary": "spirals out of pure noise",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 14087,
-      "js_bytes": 20333,
-      "total_bytes": 34420,
+      "wasm_bytes": 23272,
+      "js_bytes": 21324,
+      "total_bytes": 44596,
       "page": "cyclic_ca/index.html"
     },
     {
@@ -427,9 +531,9 @@
       "summary": "growth where the shape is the history",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 26292,
-      "js_bytes": 20327,
-      "total_bytes": 46619,
+      "wasm_bytes": 35854,
+      "js_bytes": 21318,
+      "total_bytes": 57172,
       "page": "dla/index.html"
     },
     {
@@ -440,10 +544,49 @@
       "summary": "a compact cluster with a rough surface, and the roughness",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 14641,
+      "wasm_bytes": 14644,
       "js_bytes": 20335,
-      "total_bytes": 34976,
+      "total_bytes": 34979,
       "page": "eden_growth/index.html"
+    },
+    {
+      "name": "fitzhugh_waves",
+      "title": "Fitzhugh Waves",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/fitzhugh_waves.flow",
+      "summary": "spiral waves in a 2D FitzHugh-Nagumo excitable medium",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 34451,
+      "js_bytes": 21079,
+      "total_bytes": 55530,
+      "page": "fitzhugh_waves/index.html"
+    },
+    {
+      "name": "flocking_patterns",
+      "title": "Flocking Patterns",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/flocking_patterns.flow",
+      "summary": "a direction chosen by nobody, and the noise that destroys it",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 46214,
+      "js_bytes": 21082,
+      "total_bytes": 67296,
+      "page": "flocking_patterns/index.html"
+    },
+    {
+      "name": "gierer_meinhardt",
+      "title": "Gierer Meinhardt",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/gierer_meinhardt.flow",
+      "summary": "activator-inhibitor Turing patterns with a predicted wavelength",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 41631,
+      "js_bytes": 21081,
+      "total_bytes": 62712,
+      "page": "gierer_meinhardt/index.html"
     },
     {
       "name": "gray_scott",
@@ -453,9 +596,9 @@
       "summary": "the canonical morphogenesis model",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 17697,
+      "wasm_bytes": 17711,
       "js_bytes": 20334,
-      "total_bytes": 38031,
+      "total_bytes": 38045,
       "page": "gray_scott/index.html"
     },
     {
@@ -466,9 +609,9 @@
       "summary": "anisotropic diffusion sculpting a shape out of noise",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 13878,
+      "wasm_bytes": 13881,
       "js_bytes": 20334,
-      "total_bytes": 34212,
+      "total_bytes": 34215,
       "page": "heat_morph/index.html"
     },
     {
@@ -479,10 +622,36 @@
       "summary": "snow crystal growth on a triangular lattice",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 15845,
+      "wasm_bytes": 15576,
       "js_bytes": 20336,
-      "total_bytes": 36181,
+      "total_bytes": 35912,
       "page": "hexagonal_ca/index.html"
+    },
+    {
+      "name": "kuramoto_sivashinsky",
+      "title": "Kuramoto Sivashinsky",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/kuramoto_sivashinsky.flow",
+      "summary": "1D spatiotemporal chaos, drawn as a space-time field",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 40583,
+      "js_bytes": 21085,
+      "total_bytes": 61668,
+      "page": "kuramoto_sivashinsky/index.html"
+    },
+    {
+      "name": "laplacian_growth",
+      "title": "Laplacian Growth",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/laplacian_growth.flow",
+      "summary": "dielectric breakdown, and its fractal dimension from Rg",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 49311,
+      "js_bytes": 21081,
+      "total_bytes": 70392,
+      "page": "laplacian_growth/index.html"
     },
     {
       "name": "life_variants",
@@ -492,9 +661,9 @@
       "summary": "three outer-totalistic rules on the same soup",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 13148,
-      "js_bytes": 20337,
-      "total_bytes": 33485,
+      "wasm_bytes": 22381,
+      "js_bytes": 21328,
+      "total_bytes": 43709,
       "page": "life_variants/index.html"
     },
     {
@@ -505,9 +674,9 @@
       "summary": "a stochastic rewriting grammar, drawn as it grows",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 22387,
+      "wasm_bytes": 22358,
       "js_bytes": 20337,
-      "total_bytes": 42724,
+      "total_bytes": 42695,
       "page": "lsystem_plant/index.html"
     },
     {
@@ -518,10 +687,88 @@
       "summary": "a three-dimensional branching grammar, projected and",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 21415,
+      "wasm_bytes": 21418,
       "js_bytes": 20336,
-      "total_bytes": 41751,
+      "total_bytes": 41754,
       "page": "lsystem_tree/index.html"
+    },
+    {
+      "name": "mycelium",
+      "title": "Mycelium",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/mycelium.flow",
+      "summary": "hyphal branching under nutrient depletion, and its dimension measured",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 54993,
+      "js_bytes": 21073,
+      "total_bytes": 76066,
+      "page": "mycelium/index.html"
+    },
+    {
+      "name": "phase_field_dendrite",
+      "title": "Phase Field Dendrite",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/phase_field_dendrite.flow",
+      "summary": "anisotropic solidification from a seed crystal",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 47526,
+      "js_bytes": 21418,
+      "total_bytes": 68944,
+      "page": "phase_field_dendrite/index.html"
+    },
+    {
+      "name": "river_erosion",
+      "title": "River Erosion",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/river_erosion.flow",
+      "summary": "drainage networks from the stream-power law",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 49923,
+      "js_bytes": 21411,
+      "total_bytes": 71334,
+      "page": "river_erosion/index.html"
+    },
+    {
+      "name": "sandpile",
+      "title": "Sandpile",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/sandpile.flow",
+      "summary": "grains in, grains out, and a straight line over two decades",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 49527,
+      "js_bytes": 21406,
+      "total_bytes": 70933,
+      "page": "sandpile/index.html"
+    },
+    {
+      "name": "schelling_segregation",
+      "title": "Schelling Segregation",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/schelling_segregation.flow",
+      "summary": "mild preferences, and the pattern nobody wanted",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 40214,
+      "js_bytes": 21086,
+      "total_bytes": 61300,
+      "page": "schelling_segregation/index.html"
+    },
+    {
+      "name": "schnakenberg",
+      "title": "Schnakenberg",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/schnakenberg.flow",
+      "summary": "a cubic autocatalytic Turing system with a predicted wavelength",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 41767,
+      "js_bytes": 21077,
+      "total_bytes": 62844,
+      "page": "schnakenberg/index.html"
     },
     {
       "name": "slime_mold",
@@ -531,9 +778,9 @@
       "summary": "Physarum agents building a transport network",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 22825,
+      "wasm_bytes": 22828,
       "js_bytes": 20334,
-      "total_bytes": 43159,
+      "total_bytes": 43162,
       "page": "slime_mold/index.html"
     },
     {
@@ -544,9 +791,9 @@
       "summary": "segmentation by a clock and a wavefront",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 33140,
+      "wasm_bytes": 33451,
       "js_bytes": 21327,
-      "total_bytes": 54467,
+      "total_bytes": 54778,
       "page": "somite_clock/index.html"
     },
     {
@@ -557,10 +804,23 @@
       "summary": "rolls and hexagons from a wavelength-selecting operator",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 14601,
+      "wasm_bytes": 14615,
       "js_bytes": 20339,
-      "total_bytes": 34940,
+      "total_bytes": 34954,
       "page": "swift_hohenberg/index.html"
+    },
+    {
+      "name": "turing_hex_ca",
+      "title": "Turing Hex Ca",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/turing_hex_ca.flow",
+      "summary": "a Turing pattern with no differential equation in it",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 47099,
+      "js_bytes": 21411,
+      "total_bytes": 68510,
+      "page": "turing_hex_ca/index.html"
     },
     {
       "name": "turing_spots",
@@ -570,9 +830,9 @@
       "summary": "the activator-inhibitor system behind animal coats",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 15178,
+      "wasm_bytes": 15181,
       "js_bytes": 20336,
-      "total_bytes": 35514,
+      "total_bytes": 35517,
       "page": "turing_spots/index.html"
     },
     {
@@ -583,10 +843,36 @@
       "summary": "the same activator-inhibitor system, one parameter away",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 15108,
+      "wasm_bytes": 15122,
       "js_bytes": 20338,
-      "total_bytes": 35446,
+      "total_bytes": 35460,
       "page": "turing_stripes/index.html"
+    },
+    {
+      "name": "viscous_fingering",
+      "title": "Viscous Fingering",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/viscous_fingering.flow",
+      "summary": "a Saffman-Taylor finger in a Hele-Shaw channel",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 45818,
+      "js_bytes": 21082,
+      "total_bytes": 66900,
+      "page": "viscous_fingering/index.html"
+    },
+    {
+      "name": "voronoi_growth",
+      "title": "Voronoi Growth",
+      "category": "morphogenesis",
+      "source": "examples/morphogenesis/voronoi_growth.flow",
+      "summary": "Johnson-Mehl nucleation, and the Avrami exponent",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 47010,
+      "js_bytes": 21412,
+      "total_bytes": 68422,
+      "page": "voronoi_growth/index.html"
     },
     {
       "name": "wfc_growth",
@@ -596,10 +882,23 @@
       "summary": "structure appearing by constraint propagation",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 19219,
-      "js_bytes": 20334,
-      "total_bytes": 39553,
+      "wasm_bytes": 28908,
+      "js_bytes": 21325,
+      "total_bytes": 50233,
       "page": "wfc_growth/index.html"
+    },
+    {
+      "name": "bigint_smoke",
+      "title": "Bigint Smoke",
+      "category": "basics",
+      "source": "examples/basics/bigint_smoke.flow",
+      "summary": "BigInt smoke (#252) \u2014 standalone subset of lib/stdlib/bigint.flow",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 7001,
+      "js_bytes": 10829,
+      "total_bytes": 17830,
+      "page": "bigint_smoke/index.html"
     },
     {
       "name": "bubble_sort",
@@ -613,6 +912,19 @@
       "js_bytes": 10828,
       "total_bytes": 17830,
       "page": "bubble_sort/index.html"
+    },
+    {
+      "name": "checked_arith_smoke",
+      "title": "Checked Arith Smoke",
+      "category": "basics",
+      "source": "examples/basics/checked_arith_smoke.flow",
+      "summary": "Smoke for checked / saturating / wrapping arith (#275)",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 7001,
+      "js_bytes": 10836,
+      "total_bytes": 17837,
+      "page": "checked_arith_smoke/index.html"
     },
     {
       "name": "declarative_sort",
@@ -680,11 +992,24 @@
       "page": "gcd/index.html"
     },
     {
+      "name": "hashmap_i64_smoke",
+      "title": "Hashmap I64 Smoke",
+      "category": "basics",
+      "source": "examples/basics/hashmap_i64_smoke.flow",
+      "summary": "HashMap_i64_i64 smoke (#252)",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 8106,
+      "js_bytes": 10834,
+      "total_bytes": 18940,
+      "page": "hashmap_i64_smoke/index.html"
+    },
+    {
       "name": "hello_wasm",
       "title": "Hello WASM",
       "category": "basics",
       "source": "examples/wasm/hello_wasm.flow",
-      "summary": "Minimal Flow program for the WASM path (Flow \u2192 C \u2192 emcc)",
+      "summary": "Minimal Flow program for the WASM path (Flow \u2192 C|MLIR \u2192 emcc)",
       "status": "ok",
       "gfx": false,
       "wasm_bytes": 13346,
@@ -743,6 +1068,34 @@
       "js_bytes": 10827,
       "total_bytes": 17828,
       "page": "palindrome/index.html"
+    },
+    {
+      "name": "parallel_scaling",
+      "title": "Parallel Scaling",
+      "category": "basics",
+      "source": "examples/wasm/parallel_scaling.flow",
+      "summary": "Coarse-grained Monte Carlo pi, timed at 2, 4 and 8 pthread workers",
+      "threads": true,
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 34806,
+      "js_bytes": 23412,
+      "total_bytes": 58218,
+      "page": "parallel_scaling/index.html"
+    },
+    {
+      "name": "parallel_sum",
+      "title": "Parallel Sum",
+      "category": "basics",
+      "source": "examples/wasm/parallel_sum.flow",
+      "summary": "Coarse-grained data-parallel reduction, built for the WASM threads crossing",
+      "threads": true,
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 35173,
+      "js_bytes": 23408,
+      "total_bytes": 58581,
+      "page": "parallel_sum/index.html"
     },
     {
       "name": "pipeline_choose",
@@ -905,9 +1258,13 @@
       "title": "Async Primitives",
       "category": "language",
       "source": "examples/effects/async_primitives.flow",
-      "summary": "Async primitives (effects-based) \u2014 minimal runnable slice",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_fiber_run_main"
+      "summary": "Async primitives (effects-based) \u2014 SimulatedAsync / BlockingAsyncIO / FiberAsync",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 31017,
+      "js_bytes": 20041,
+      "total_bytes": 51058,
+      "page": "async_primitives/index.html"
     },
     {
       "name": "calculator",
@@ -930,9 +1287,9 @@
       "summary": "Claim Coordinates demo \u2014 Flow port of src/flow/claim_address.py",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 20146,
+      "wasm_bytes": 20564,
       "js_bytes": 11288,
-      "total_bytes": 31434,
+      "total_bytes": 31852,
       "page": "claim_address_demo/index.html"
     },
     {
@@ -1073,9 +1430,9 @@
       "summary": "know + fingerprint dogfood",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 25093,
+      "wasm_bytes": 18595,
       "js_bytes": 11279,
-      "total_bytes": 36372,
+      "total_bytes": 29874,
       "page": "know_demo/index.html"
     },
     {
@@ -1188,8 +1545,12 @@
       "category": "numerics",
       "source": "examples/linalg/blas_demo.flow",
       "summary": "BLAS Demo: Comparing naive vs Accelerate-backed matrix operations",
-      "status": "failed",
-      "error": "emcc: undefined symbol cblas_dgemm"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 21820,
+      "js_bytes": 11945,
+      "total_bytes": 33765,
+      "page": "blas_demo/index.html"
     },
     {
       "name": "controllability_demo",
@@ -1199,10 +1560,36 @@
       "summary": "Controllability + similarity transform on mass-spring-damper",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 12963,
+      "wasm_bytes": 12149,
       "js_bytes": 10837,
-      "total_bytes": 23800,
+      "total_bytes": 22986,
       "page": "controllability_demo/index.html"
+    },
+    {
+      "name": "fmm_adaptive",
+      "title": "Fmm Adaptive",
+      "category": "numerics",
+      "source": "examples/numerical/fmm_adaptive.flow",
+      "summary": "Carrier-Greengard-Rokhlin 1988 in the unit square",
+      "status": "ok",
+      "gfx": true,
+      "wasm_bytes": 60967,
+      "js_bytes": 21743,
+      "total_bytes": 82710,
+      "page": "fmm_adaptive/index.html"
+    },
+    {
+      "name": "fmm_selftest",
+      "title": "Fmm Selftest",
+      "category": "numerics",
+      "source": "examples/numerical/fmm_selftest.flow",
+      "summary": "FMM self-test: Theorem 2.1 multipole vs direct for a well-separated cluster",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 35650,
+      "js_bytes": 11948,
+      "total_bytes": 47598,
+      "page": "fmm_selftest/index.html"
     },
     {
       "name": "ga_control",
@@ -1212,9 +1599,9 @@
       "summary": "GA search for stabilizing feedback on discrete double integrator",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 17502,
+      "wasm_bytes": 17112,
       "js_bytes": 11613,
-      "total_bytes": 29115,
+      "total_bytes": 28725,
       "page": "ga_control/index.html"
     },
     {
@@ -1225,9 +1612,9 @@
       "summary": "Same GA + sense pipeline as ga_dsys_syntax.flow, using the dynamics namespace",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 32557,
+      "wasm_bytes": 31082,
       "js_bytes": 11621,
-      "total_bytes": 44178,
+      "total_bytes": 42703,
       "page": "ga_dsys_namespaced/index.html"
     },
     {
@@ -1238,9 +1625,9 @@
       "summary": "GA + control analysis via the dsys surface syntax",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 33951,
+      "wasm_bytes": 32175,
       "js_bytes": 11617,
-      "total_bytes": 45568,
+      "total_bytes": 43792,
       "page": "ga_dsys_syntax/index.html"
     },
     {
@@ -1251,9 +1638,9 @@
       "summary": "GA control search + unified dynamical systems analysis",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 32924,
+      "wasm_bytes": 31387,
       "js_bytes": 11619,
-      "total_bytes": 44543,
+      "total_bytes": 43006,
       "page": "ga_full_analysis/index.html"
     },
     {
@@ -1264,9 +1651,9 @@
       "summary": "GA + WFC coupled pipeline via dsys syntax",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 36272,
+      "wasm_bytes": 34277,
       "js_bytes": 11617,
-      "total_bytes": 47889,
+      "total_bytes": 45894,
       "page": "ga_wfc_coupled/index.html"
     },
     {
@@ -1277,9 +1664,9 @@
       "summary": "Finite vs infinite horizon controllability Gramian",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 11853,
+      "wasm_bytes": 10746,
       "js_bytes": 10829,
-      "total_bytes": 22682,
+      "total_bytes": 21575,
       "page": "gramian_demo/index.html"
     },
     {
@@ -1290,9 +1677,9 @@
       "summary": "Lorenz attractor integration + Lyapunov separation proxy",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 9780,
+      "wasm_bytes": 15485,
       "js_bytes": 11619,
-      "total_bytes": 21399,
+      "total_bytes": 27104,
       "page": "lorenz_attractor/index.html"
     },
     {
@@ -1301,8 +1688,12 @@
       "category": "numerics",
       "source": "examples/linalg/lu_decomposition.flow",
       "summary": "LU / linear solve via stdlib BLAS (pattern-adoption #168)",
-      "status": "failed",
-      "error": "emcc: undefined symbol cblas_dcopy"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 21061,
+      "js_bytes": 11286,
+      "total_bytes": 32347,
+      "page": "lu_decomposition/index.html"
     },
     {
       "name": "lu_decomposition_pedagogical",
@@ -1312,9 +1703,9 @@
       "summary": "LU Decomposition (pedagogical) \u2014 hand-written Doolittle / pivoted LU",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 20111,
+      "wasm_bytes": 19671,
       "js_bytes": 11298,
-      "total_bytes": 31409,
+      "total_bytes": 30969,
       "page": "lu_decomposition_pedagogical/index.html"
     },
     {
@@ -1325,9 +1716,9 @@
       "summary": "Basic Matrix Operations",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 19378,
+      "wasm_bytes": 19411,
       "js_bytes": 11280,
-      "total_bytes": 30658,
+      "total_bytes": 30691,
       "page": "matrix_ops/index.html"
     },
     {
@@ -1364,9 +1755,9 @@
       "summary": "Ordinary Differential Equation Solvers",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 23105,
+      "wasm_bytes": 23101,
       "js_bytes": 11280,
-      "total_bytes": 34385,
+      "total_bytes": 34381,
       "page": "ode_solver/index.html"
     },
     {
@@ -1377,9 +1768,9 @@
       "summary": "Numerical Optimization",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 20092,
+      "wasm_bytes": 20099,
       "js_bytes": 11282,
-      "total_bytes": 31374,
+      "total_bytes": 31381,
       "page": "optimization/index.html"
     },
     {
@@ -1403,9 +1794,9 @@
       "summary": "Wave Function Collapse on a tiny tile grid",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 8852,
+      "wasm_bytes": 9042,
       "js_bytes": 10825,
-      "total_bytes": 19677,
+      "total_bytes": 19867,
       "page": "wfc_demo/index.html"
     },
     {
@@ -1414,8 +1805,12 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp.flow",
       "summary": "Multi-class digits MLP trained from scratch on the CPU",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_rt_monotonic_ns"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 24537,
+      "js_bytes": 11946,
+      "total_bytes": 36483,
+      "page": "digits_mlp/index.html"
     },
     {
       "name": "digits_mlp_metal",
@@ -1423,8 +1818,13 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp_metal.flow",
       "summary": "Metal GPU status check for the digits MLP: what runs on the GPU today",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_gpu_alloc"
+      "note": "The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 20603,
+      "js_bytes": 11952,
+      "total_bytes": 32555,
+      "page": "digits_mlp_metal/index.html"
     },
     {
       "name": "digits_mlp_parallel",
@@ -1432,8 +1832,13 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp_parallel.flow",
       "summary": "Data-parallel gradient accumulation for the digits MLP",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_rt_monotonic_ns"
+      "threads": true,
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 41985,
+      "js_bytes": 23416,
+      "total_bytes": 65401,
+      "page": "digits_mlp_parallel/index.html"
     },
     {
       "name": "flowlm_charlm",
@@ -1443,9 +1848,9 @@
       "summary": "flowlm \u2014 train a character language model from scratch, in Flow",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 66462,
+      "wasm_bytes": 66539,
       "js_bytes": 11616,
-      "total_bytes": 78078,
+      "total_bytes": 78155,
       "page": "flowlm_charlm/index.html"
     },
     {
@@ -1454,8 +1859,12 @@
       "category": "learning",
       "source": "examples/ai/ga_flappy.flow",
       "summary": "GA-FLAPPY - neuroevolution on headless flappy",
-      "status": "failed",
-      "error": "emcc: undefined symbol fly"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 23452,
+      "js_bytes": 11612,
+      "total_bytes": 35064,
+      "page": "ga_flappy/index.html"
     },
     {
       "name": "mlir_tensor_bench",
@@ -1465,9 +1874,9 @@
       "summary": "MLIR-first tensor benchmark \u2014 matmul + activations",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 17929,
+      "wasm_bytes": 17747,
       "js_bytes": 11287,
-      "total_bytes": 29216,
+      "total_bytes": 29034,
       "page": "mlir_tensor_bench/index.html"
     },
     {
@@ -1478,9 +1887,9 @@
       "summary": "Neural Network Layers",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 19194,
+      "wasm_bytes": 18905,
       "js_bytes": 11279,
-      "total_bytes": 30473,
+      "total_bytes": 30184,
       "page": "nn_layers/index.html"
     },
     {
@@ -1491,9 +1900,9 @@
       "summary": "Neural Network Optimizers",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 18634,
+      "wasm_bytes": 18010,
       "js_bytes": 11280,
-      "total_bytes": 29914,
+      "total_bytes": 29290,
       "page": "optimizers/index.html"
     },
     {
@@ -1504,9 +1913,9 @@
       "summary": "POLICY-PONG - REINFORCE policy gradient on headless pong",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 25585,
+      "wasm_bytes": 26107,
       "js_bytes": 11614,
-      "total_bytes": 37199,
+      "total_bytes": 37721,
       "page": "policy_pong/index.html"
     },
     {
@@ -1517,9 +1926,9 @@
       "summary": "Q-SNAKE - tabular Q-learning on headless snake",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 20466,
+      "wasm_bytes": 20550,
       "js_bytes": 11610,
-      "total_bytes": 32076,
+      "total_bytes": 32160,
       "page": "q_snake/index.html"
     },
     {
@@ -1528,8 +1937,12 @@
       "category": "learning",
       "source": "examples/ml/tape_mul.flow",
       "summary": "Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_tape_reset"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 17828,
+      "js_bytes": 11278,
+      "total_bytes": 29106,
+      "page": "tape_mul/index.html"
     },
     {
       "name": "tensor",
@@ -1539,9 +1952,9 @@
       "summary": "Tensor demo \u2014 uses stdlib/tensor.flow",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 17936,
+      "wasm_bytes": 17965,
       "js_bytes": 11276,
-      "total_bytes": 29212,
+      "total_bytes": 29241,
       "page": "tensor/index.html"
     },
     {
@@ -1550,8 +1963,12 @@
       "category": "systems",
       "source": "examples/systems/arena_frame.flow",
       "summary": "Per-frame arena: bump allocate, then arena_reset each frame",
-      "status": "failed",
-      "error": "emcc: site/wasm/arena_frame/arena_frame.c:81:9: error: redefinition of 'sizeof_i32'"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 13922,
+      "js_bytes": 11281,
+      "total_bytes": 25203,
+      "page": "arena_frame/index.html"
     },
     {
       "name": "csv_parser",
@@ -1561,9 +1978,9 @@
       "summary": "Streaming CSV parser demonstrating data processing in Flow",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 15695,
+      "wasm_bytes": 15842,
       "js_bytes": 11613,
-      "total_bytes": 27308,
+      "total_bytes": 27455,
       "page": "csv_parser/index.html"
     },
     {
@@ -1574,9 +1991,9 @@
       "summary": "Animated GIF from pure Flow: 24 frames of a square bouncing over a",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 19073,
-      "js_bytes": 59707,
-      "total_bytes": 78780,
+      "wasm_bytes": 18642,
+      "js_bytes": 59757,
+      "total_bytes": 78399,
       "page": "gif_writer/index.html"
     },
     {
@@ -1585,8 +2002,12 @@
       "category": "systems",
       "source": "examples/graphics/graphics.flow",
       "summary": "Graphics Module for FLOW",
-      "status": "failed",
-      "error": "emcc: undefined symbol main"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 18020,
+      "js_bytes": 11278,
+      "total_bytes": 29298,
+      "page": "graphics/index.html"
     },
     {
       "name": "hash_table",
@@ -1607,8 +2028,12 @@
       "category": "systems",
       "source": "examples/systems/manual_memory.flow",
       "summary": "Manual heap + arena demo (stdlib/memory.flow)",
-      "status": "failed",
-      "error": "emcc: site/wasm/manual_memory/manual_memory.c:81:9: error: redefinition of 'sizeof_i32'"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 13747,
+      "js_bytes": 11283,
+      "total_bytes": 25030,
+      "page": "manual_memory/index.html"
     },
     {
       "name": "memory_pool",
@@ -1631,9 +2056,9 @@
       "summary": "Lock-Free Ring Buffer",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 16181,
+      "wasm_bytes": 16151,
       "js_bytes": 11281,
-      "total_bytes": 27462,
+      "total_bytes": 27432,
       "page": "ring_buffer/index.html"
     },
     {
@@ -1642,8 +2067,13 @@
       "category": "systems",
       "source": "examples/crypto/runtime_sha256.flow",
       "summary": "Crypto self-test via always-linked lib/runtime/crypto.flow",
-      "status": "failed",
-      "error": "emcc: undefined symbol flow_sha256"
+      "note": "SHA-256 runs Flow's own implementation (lib/runtime/crypto.flow), same code as native; only the random bytes come from the browser's WebCrypto CSPRNG (crypto.getRandomValues) instead of the native OS kernel.",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 10255,
+      "js_bytes": 11958,
+      "total_bytes": 22213,
+      "page": "runtime_sha256/index.html"
     },
     {
       "name": "sha256",
@@ -1653,9 +2083,9 @@
       "summary": "SHA-256 Implementation",
       "status": "ok",
       "gfx": false,
-      "wasm_bytes": 16190,
-      "js_bytes": 11276,
-      "total_bytes": 27466,
+      "wasm_bytes": 14295,
+      "js_bytes": 11609,
+      "total_bytes": 25904,
       "page": "sha256/index.html"
     },
     {
@@ -1677,8 +2107,12 @@
       "category": "systems",
       "source": "examples/systems/system_info.flow",
       "summary": "System info demo in FLOW (extern-backed)",
-      "status": "failed",
-      "error": "emcc: undefined symbol os_is_linux"
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 13993,
+      "js_bytes": 12074,
+      "total_bytes": 26067,
+      "page": "system_info/index.html"
     },
     {
       "name": "text_demo",
@@ -1688,10 +2122,23 @@
       "summary": "Text rendering: full character set, scales, alignment, numeric helpers",
       "status": "ok",
       "gfx": true,
-      "wasm_bytes": 12797,
+      "wasm_bytes": 12822,
       "js_bytes": 20333,
-      "total_bytes": 33130,
+      "total_bytes": 33155,
       "page": "text_demo/index.html"
+    },
+    {
+      "name": "tiny_pointers",
+      "title": "Tiny Pointers",
+      "category": "systems",
+      "source": "examples/systems/tiny_pointers.flow",
+      "summary": "Tiny Pointers \u2014 arXiv:2111.12800 (Bender, Conway, Farach-Colton, Kuszmaul,",
+      "status": "ok",
+      "gfx": false,
+      "wasm_bytes": 119719,
+      "js_bytes": 12146,
+      "total_bytes": 131865,
+      "page": "tiny_pointers/index.html"
     }
   ]
 }
