@@ -7,14 +7,15 @@
 
 <p class="wiki-hero-lead">
 A statically typed language where evolution through time is the primary
-abstraction — dynamics, algebraic effects, and built-in autodiff on dual
+abstraction: dynamics, algebraic effects, and built-in autodiff on dual
 C / MLIR backends.
 </p>
 
 <div class="wiki-hero-actions">
   <a href="start-here.md" class="wiki-cta wiki-cta-primary">Start here</a>
-  <a href="getting-started.md" class="wiki-cta">Install &amp; run</a>
-  <a href="tutorials/index.html" class="wiki-cta">257 interactive lessons</a>
+  <a href="getting-started.md" class="wiki-cta">Install</a>
+  <a href="demos/overview.md" class="wiki-cta">Galleries</a>
+  <a href="tutorials/index.html" class="wiki-cta">Interactive tutorials</a>
 </div>
 
 <pre class="wiki-hero-code"><code class="language-flow">flow Pendulum {
@@ -28,43 +29,150 @@ C / MLIR backends.
 
 </div>
 
-## Four ways in
+<div class="wiki-stat-row" aria-label="Documentation at a glance">
+<span><strong>19</strong> book chapters</span>
+<span><strong>257</strong> interactive lessons</span>
+<span><strong>150+</strong> recorded demos</span>
+<span><strong>9</strong> galleries</span>
+<span><strong>C + MLIR</strong> backends</span>
+</div>
 
-Pick one path. Everything else lives in the sidebar tabs.
+## Documentation
 
-<nav class="wiki-paths" aria-label="Ways into the docs">
+Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 
-<a class="wiki-path" href="start-here.md">
-<span class="wiki-path-kicker">01 · Start</span>
-<strong>Never programmed before</strong>
-<span>Install, run your first program, then have an AI assistant write Flow with you.</span>
+<nav class="wiki-doc-index" aria-label="Documentation sections">
+
+<a class="wiki-doc" href="book/README.md">
+<strong>The Flow Book</strong>
+<span>Guided chapters from first program through effects, evolution, autodiff, and media.</span>
 </a>
 
-<a class="wiki-path" href="getting-started.md">
-<span class="wiki-path-kicker">02 · Install</span>
-<strong>Install in five minutes</strong>
-<span>Compile `hello_world`, then open the tutorial app in the browser.</span>
+<a class="wiki-doc" href="tutorials/index.html">
+<strong>Interactive tutorials</strong>
+<span>Browser lessons with a live runner: beginner tracks through graphics, shaders, and RT audio.</span>
 </a>
 
-<a class="wiki-path" href="demos/overview.md">
-<span class="wiki-path-kicker">03 · Watch</span>
-<strong>See compiled programs run</strong>
-<span>Games, morphogenesis, neurons, planets — real `gfx` recordings, not mocks.</span>
+<a class="wiki-doc" href="getting-started.md">
+<strong>Install &amp; quick start</strong>
+<span>Clone, compile <code>hello_world</code>, open a native window, run the test suite.</span>
 </a>
 
-<a class="wiki-path" href="language/spec-index.md">
-<span class="wiki-path-kicker">04 · Reference</span>
-<strong>Language &amp; library</strong>
-<span>Spec, grammar, stdlib, effects, autodiff, memory, and RT safety.</span>
+<a class="wiki-doc" href="start-here.md">
+<strong>Start here (beginners)</strong>
+<span>Zero-to-running path for people new to programming or new to Flow.</span>
+</a>
+
+<a class="wiki-doc" href="demos/overview.md">
+<strong>Galleries</strong>
+<span>Games, morphogenesis, neurons, planets, evolution, WASM. Real <code>gfx</code> recordings.</span>
+</a>
+
+<a class="wiki-doc" href="language/spec-index.md">
+<strong>Language reference</strong>
+<span>Spec index, syntax, types, modules, grammar, spans, WASM, graphics.</span>
+</a>
+
+<a class="wiki-doc" href="library/stdlib-reference.md">
+<strong>Standard library</strong>
+<span>Core APIs, autodiff, audio DSP, RT safety, and memory helpers.</span>
+</a>
+
+<a class="wiki-doc" href="effects-showcase.md">
+<strong>Effects showcase</strong>
+<span>One checkout service, four handler worlds: production, test, nested scope, composition.</span>
+</a>
+
+<a class="wiki-doc" href="DEVELOPMENT.md">
+<strong>CLI &amp; tooling</strong>
+<span>Commands, LSP, targets, and how to work on the compiler itself.</span>
+</a>
+
+<a class="wiki-doc" href="vision.md">
+<strong>Vision</strong>
+<span>Why evolution is the primary abstraction, and what that buys you at compile time.</span>
+</a>
+
+<a class="wiki-doc" href="comparison.md">
+<strong>Comparison</strong>
+<span>Flow vs C, Rust, Zig, Mojo, and the MATLAB / Simulink lane.</span>
+</a>
+
+<a class="wiki-doc" href="third-party/flow-verify.md">
+<strong>Optional proofs</strong>
+<span>flow-verify is third-party. Useful for formal claims; not required to write Flow.</span>
 </a>
 
 </nav>
 
 ---
 
+## What Flow looks like
+
+Three signatures of the language. Full write-ups live under Language and Library.
+
+<div class="wiki-showcase">
+
+<div class="wiki-showcase-item">
+<p class="wiki-showcase-label">Algebraic effects</p>
+<p class="wiki-showcase-desc">Call sites stay pure. Handlers swap I/O, inventory, and logging for the dynamic scope.</p>
+
+```flow
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+    reserve(sku: i32, qty: i32) -> i32,
+}
+
+handle Inventory, Notify with TestBackend {
+    let order_id: i32 = place_order(2002, 1)
+}
+```
+
+<p class="wiki-showcase-more"><a href="effects-showcase.md">Effects showcase →</a></p>
+</div>
+
+<div class="wiki-showcase-item">
+<p class="wiki-showcase-label">Evolution</p>
+<p class="wiki-showcase-desc"><code>flow</code> / <code>evolves</code> make continuous and hybrid dynamics syntax, with solvers attached.</p>
+
+```flow
+flow Pendulum {
+    state angle: f64 = 0.5
+    state velocity: f64 = 0.0
+    param damping: f64 = 0.3
+
+    angle evolves as velocity
+    velocity evolves as -9.81 * sin(angle) - damping * velocity
+}
+```
+
+<p class="wiki-showcase-more"><a href="book/13-evolution-and-dynamics.md">Book · Evolution →</a></p>
+</div>
+
+<div class="wiki-showcase-item">
+<p class="wiki-showcase-label">Built-in autodiff</p>
+<p class="wiki-showcase-desc">Forward mode with dual numbers in the language, not a bolted-on library.</p>
+
+```flow
+function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
+    return a * x * x + b * x + c
+}
+
+let x: Dual = dx(2.0)
+let q: Dual = quadratic(x, 2.0, 3.0, 1.0)
+# q.val = 15, q.grad = 11
+```
+
+<p class="wiki-showcase-more"><a href="library/autodiff-guide.md">Autodiff guide →</a></p>
+</div>
+
+</div>
+
+---
+
 ## See it run
 
-Frames below come straight from the native `gfx` backend.
+Frames below come from the native `gfx` backend: the same drawing calls a window receives.
 
 <div class="wiki-demo-grid">
 
@@ -97,38 +205,44 @@ Frames below come straight from the native `gfx` backend.
 
 </div>
 
+### Galleries
+
+| Gallery | What you get |
+|---|---|
+| [Games](demos/games.md) | Snake, Tetris, Asteroids, Flappy, and more (25 GIFs) |
+| [Morphogenesis](demos/morphogenesis.md) | Reaction-diffusion, Turing patterns, Physarum (40) |
+| [Neurons](demos/neuro.md) | Hodgkin-Huxley, Izhikevich, Hopfield, CPG (15) |
+| [Evolutionary biology](demos/evoleco.md) | Wright-Fisher, SIR, Red Queen (25) |
+| [Evolution suite](demos/evolution.md) | Systems through time, checked against theory (34) |
+| [Planets](demos/planet.md) · [Procgen](demos/procgen.md) · [Numerical](demos/numerical.md) · [WASM](demos/wasm.md) | Cubesphere, WFC, FMM, live browser demos |
+
 <p class="wiki-section-foot">
 <a href="demos/overview.md">All galleries →</a>
 <span class="wiki-dot">·</span>
-games, morphogenesis, neurons, evolution, planets, procgen, numerical, WASM
+<a href="wasm/index.html">Live WASM demos →</a>
 </p>
 
 ---
 
-## What only Flow does this way
+## Install in five minutes
 
-| | |
-|---|---|
-| **Algebraic effects** | Swap I/O and state at the handler — call sites stay pure. |
-| **Built-in autodiff** | Forward and reverse mode in the language, not a library bolt-on. |
-| **`flow` / `evolves`** | Continuous + hybrid dynamics as syntax, with solvers and analysis. |
-| **Dual backends** | Portable C by default; MLIR when you want JIT. |
+```bash
+git clone https://github.com/flooooooooooow/flow.git
+cd flow
+./flow run examples/basics/hello_world.flow
+./flow gfx examples/evolution/lorenz_gfx.flow   # native window
+./flow test --strict --tier2                    # type-check + corpus
+```
 
-Full thesis: [Vision](vision.md) · vs others: [Comparison](comparison.md)
+More detail: [Quick start](getting-started.md) · [CLI reference](DEVELOPMENT.md) · [Start here](start-here.md)
 
----
-
-## Everyday commands
+Everyday commands:
 
 ```bash
 ./flow run program.flow        # C backend (default)
-./flow gfx examples/...        # native window
-./flow test --strict --tier2   # type-check + corpus
 ./flow mlir-run program.flow   # MLIR pipeline
 ./flow lsp                     # editor support
 ```
-
-[CLI &amp; development →](DEVELOPMENT.md)
 
 ---
 
@@ -140,4 +254,4 @@ Full thesis: [Vision](vision.md) · vs others: [Comparison](comparison.md)
 | License | MIT |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |
-| Optional proofs | [flow-verify](third-party/flow-verify.md) — third-party, not required to use Flow |
+| Optional proofs | [flow-verify](third-party/flow-verify.md) (third-party, not required to use Flow) |
