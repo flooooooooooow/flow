@@ -2286,8 +2286,15 @@ class CGenerator:
         # (a `return self(...)` in tail position) and has no defers, rewrite the
         # body into a `for(;;)` loop that reassigns the parameters and continues.
         # This converts recursion into constant-stack iteration (Roc's loop story).
-        tco_tail = self._tail_self_calls(fn)
-        self._current_tco_fn = fn.name if tco_tail else None
+        # A self-call is recognized by EXACT name match against the function's
+        # own names — the unmangled source name AND its mangled C name (e.g.
+        # `foo` / `foo_i32`). A loose prefix match would also catch extern /
+        # @cEmbed shims whose declared name happens to start with the wrapper's
+        # name (e.g. `foo_get_c` inside `foo_get`), rewriting a real call into
+        # an infinite loop (#517).
+        self_names = frozenset((fn.name, self._mangled_names.get(id(fn), fn.name)))
+        tco_tail = self._tail_self_calls(fn, self_names)
+        self._current_tco_fn = self_names if tco_tail else None
         self._current_tco_params = [p.name for p in fn.parameters] if tco_tail else []
         if tco_tail:
             lines.append(f"{self._i()}for (;;) {{")
@@ -2343,14 +2350,16 @@ class CGenerator:
             return "NULL"
         return "0"
 
-    def _tail_self_calls(self, fn: FunctionDecl) -> bool:
+    def _tail_self_calls(self, fn: FunctionDecl, self_names: frozenset) -> bool:
         """Detect whether a function has a self-recursive call in tail position.
 
         Tail position means the call's value is what the function returns on
         every path (the last statement of the body, or the last statement of
         every branch of a trailing if/else). When true, `_gen_function` wraps
         the body in a `for(;;)` loop and `return self(...)` becomes a parameter
-        reassignment + `continue`.
+        reassignment + `continue`. `self_names` holds the function's own names
+        (unmangled + mangled); only calls to exactly one of them count as
+        self-calls (#517).
         """
         if getattr(fn, "has_self", False) or getattr(fn, "is_closure", False):
             return False
@@ -2360,16 +2369,16 @@ class CGenerator:
         body = fn.body
         if any(isinstance(s, DeferStatement) for s in body.statements):
             return False
-        return self._block_has_tail_self_call(body, fn.name, len(fn.parameters))
+        return self._block_has_tail_self_call(body, self_names, len(fn.parameters))
 
-    def _block_has_tail_self_call(self, block: "Block", fn_name: str, nparams: int) -> bool:
+    def _block_has_tail_self_call(self, block: "Block", self_names: frozenset, nparams: int) -> bool:
         """Recursively check a block's tail statements for a self-call."""
         if not block.statements:
             return False
-        return self._statement_is_tail_self_call(block.statements[-1], fn_name, nparams)
+        return self._statement_is_tail_self_call(block.statements[-1], self_names, nparams)
 
     def _statement_is_tail_self_call(
-        self, st: "Statement", fn_name: str, nparams: int
+        self, st: "Statement", self_names: frozenset, nparams: int
     ) -> bool:
         """Check a single tail statement (or trailing if/else) for a self-call.
 
@@ -2379,7 +2388,7 @@ class CGenerator:
         and (b) contains at least one self-call among those terminal returns.
         """
         if isinstance(st, ReturnStatement):
-            return self._return_is_self_call(st, fn_name, nparams)
+            return self._return_is_self_call(st, self_names, nparams)
         if isinstance(st, IfStatement):
             # Every branch must terminate the function for the if to be in tail
             # position (then the whole if returns → the loop can resume only via
@@ -2393,28 +2402,28 @@ class CGenerator:
                 return False
             has_self = False
             for b in branches:
-                if not self._statement_terminates(b, fn_name, nparams):
+                if not self._statement_terminates(b, self_names, nparams):
                     return False
-                if self._statement_is_tail_self_call(b, fn_name, nparams):
+                if self._statement_is_tail_self_call(b, self_names, nparams):
                     has_self = True
             return has_self
         if isinstance(st, Block):
-            return self._block_has_tail_self_call(st, fn_name, nparams)
+            return self._block_has_tail_self_call(st, self_names, nparams)
         return False
 
-    def _statement_terminates(self, st: "Statement", fn_name: str, nparams: int) -> bool:
+    def _statement_terminates(self, st: "Statement", self_names: frozenset, nparams: int) -> bool:
         """Whether every path through `st` ends in a return (or self tail call)."""
         if isinstance(st, ReturnStatement):
-            return st.value is not None or fn_name is not None
+            return st.value is not None or self_names is not None
         if isinstance(st, IfStatement):
             if st.else_block is None:
                 return False
             branches = [st.then_block] + [b for _, b in st.elif_blocks] + [st.else_block]
-            return all(self._statement_terminates(b, fn_name, nparams) for b in branches)
+            return all(self._statement_terminates(b, self_names, nparams) for b in branches)
         if isinstance(st, Block):
             if not st.statements:
                 return False
-            return self._statement_terminates(st.statements[-1], fn_name, nparams)
+            return self._statement_terminates(st.statements[-1], self_names, nparams)
         return False
 
     def _statement_has_nonlocal_return(self, st: "Statement") -> bool:
@@ -2434,15 +2443,19 @@ class CGenerator:
             return self._statement_has_nonlocal_return(st)
         return False
 
-    def _return_is_self_call(self, st: "ReturnStatement", fn_name: str, nparams: int) -> bool:
+    def _return_is_self_call(self, st: "ReturnStatement", self_names: frozenset, nparams: int) -> bool:
         if not st.value:
             return False
         if not isinstance(st.value, FunctionCall):
             return False
-        # The body references the (mangled) call name, e.g. `countdown_i32_i32`,
-        # while `fn_name` is the unmangled `countdown`. Compare base names.
+        # A self tail call references the function under its unmangled source
+        # name OR its mangled C name (e.g. `countdown` / `countdown_i32_i32`).
+        # Match either EXACTLY — a prefix match would also swallow extern /
+        # @cEmbed shims whose name starts with the wrapper's name (e.g.
+        # `foo_get_c` inside `foo_get`) and silently rewrite the call into an
+        # infinite reassignment loop (#517).
         call_name = st.value.name
-        if fn_name != call_name and not call_name.startswith(fn_name + "_"):
+        if call_name not in self_names:
             return False
         # A self tail call must pass exactly the function's parameters (the
         # loop reassigns them), which is the usual accumulator pattern.
@@ -2642,14 +2655,13 @@ class CGenerator:
             if st.value is None:
                 return [f"{self._i()}return;"]
             # Tail-call optimization: a self-recursive call in tail position
-            # becomes parameter reassignment + `continue` inside the loop.
+            # becomes parameter reassignment + `continue` inside the loop. Only
+            # an exact match on one of the function's own names (unmangled or
+            # mangled) counts (#517) — not a prefix match.
             if (
                 self._current_tco_fn
                 and isinstance(st.value, FunctionCall)
-                and (
-                    st.value.name == self._current_tco_fn
-                    or st.value.name.startswith(self._current_tco_fn + "_")
-                )
+                and st.value.name in self._current_tco_fn
                 and len(st.value.arguments) == len(self._current_tco_params)
             ):
                 return self._tco_loop_continue(st.value)
