@@ -1,0 +1,10 @@
+import "stdlib/audio.flow"
+import "stdlib/audio/effects.flow"
+
+export function main() -> i32 {
+    let rev: Reverb = reverb_plate()
+    let input: f32 = 0.5
+    let out: f32 = reverb_process(rev, input)
+    print("Reverb output computed successfully.")
+    return 0
+}
