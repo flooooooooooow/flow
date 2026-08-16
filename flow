@@ -116,7 +116,10 @@ flowc_emit_to_c() {
         return 1
     fi
     print_info "flowc emit via $driver"
-    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" "$driver" "$program" "$c_out"
+    # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
+    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+    FLOWC_IN="$program" FLOWC_OUT="$c_out" \
+        "$driver"
 }
 
 # ---------------------------------------------------------------------------
