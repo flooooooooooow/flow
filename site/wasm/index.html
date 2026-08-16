@@ -42,6 +42,9 @@ h2 .count { color: #575c6e; font-weight: 400; font-size: 13px; }
 .card.failed { opacity: .72; border-style: dashed; }
 .card.failed .why { color: #d08770; font-size: 11.5px;
   font-family: ui-monospace, Menlo, monospace; word-break: break-word; }
+.card .degrade { color: #d8a657; font-size: 11.5px; line-height: 1.45;
+  background: rgba(216, 166, 87, .07); border: 1px solid rgba(216, 166, 87, .22);
+  border-radius: 4px; padding: 5px 7px; margin: 7px 0; word-break: break-word; }
 .tag { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
        color: #575c6e; border: 1px solid #232631; border-radius: 3px;
        padding: 1px 5px; }
@@ -79,7 +82,7 @@ footer a { color: #6b7ca8; }
 <body>
 <div class="wrap">
   <h1>Flow in the browser</h1>
-  <p class="lede">118 Flow examples compiled to WebAssembly and running
+  <p class="lede">161 Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
   through Flow &rarr; C &rarr; <code>emcc</code>. Graphics programs link
   <code>runtime/gfx_wasm.c</code>, a canvas backend for the same gfx API that
@@ -89,12 +92,13 @@ footer a { color: #6b7ca8; }
   keyboard. Esc closes the frame.</p>
 
     <h2>Games
-      <span class="count">23 of 23 running</span></h2>
+      <span class="count">25 of 25 running</span></h2>
     <p class="blurb">The same sources docs/demos/games.md records as GIFs, running live on the gfx canvas backend.</p>
     <div class="grid">
       <div class="card">
         <h3>2048</h3>
         <p>2048 in an actual native window (FLOW gfx backend)</p>
+        
         <div class="row">
           <button data-run="2048_gfx/index.html" data-title="2048">Run</button>
           <span class="tag">canvas</span>
@@ -105,6 +109,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Asteroids</h3>
         <p>ASTEROIDS - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="asteroids_gfx/index.html" data-title="Asteroids">Run</button>
           <span class="tag">canvas</span>
@@ -115,6 +120,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Breakout</h3>
         <p>BREAKOUT - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="breakout_gfx/index.html" data-title="Breakout">Run</button>
           <span class="tag">canvas</span>
@@ -125,16 +131,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Checkers</h3>
         <p>CHECKERS - two-player hotseat</p>
+        
         <div class="row">
           <button data-run="checkers_gfx/index.html" data-title="Checkers">Run</button>
           <span class="tag">canvas</span>
-          <span>45 KB</span>
+          <span>46 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/checkers_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Chetris</h3>
         <p>Chetris: Chess + Tetris Hybrid (Graphical Version)</p>
+        
         <div class="row">
           <button data-run="chetris_gfx/index.html" data-title="Chetris">Run</button>
           <span class="tag">canvas</span>
@@ -145,6 +153,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Connect Four</h3>
         <p>CONNECT FOUR vs AI</p>
+        
         <div class="row">
           <button data-run="connect4_gfx/index.html" data-title="Connect Four">Run</button>
           <span class="tag">canvas</span>
@@ -153,8 +162,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Falling Sand</h3>
+        <p>THE FALLING SAND GAME</p>
+        
+        <div class="row">
+          <button data-run="falling_sand_gfx/index.html" data-title="Falling Sand">Run</button>
+          <span class="tag">canvas</span>
+          <span>48 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/falling_sand_gfx.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Flappy</h3>
         <p>FLAPPY - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="flappy_gfx/index.html" data-title="Flappy">Run</button>
           <span class="tag">canvas</span>
@@ -165,26 +186,40 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Frogger</h3>
         <p>FROGGER - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="frogger_gfx/index.html" data-title="Frogger">Run</button>
           <span class="tag">canvas</span>
-          <span>35 KB</span>
+          <span>34 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/frogger_gfx.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Icy Tower</h3>
+        <p>ICY TOWER - momentum platformer</p>
+        
+        <div class="row">
+          <button data-run="icy_tower_gfx/index.html" data-title="Icy Tower">Run</button>
+          <span class="tag">canvas</span>
+          <span>38 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/icy_tower_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Jumper</h3>
         <p>JUMPER - doodle-jump style vertical platformer</p>
+        
         <div class="row">
           <button data-run="jumper_gfx/index.html" data-title="Jumper">Run</button>
           <span class="tag">canvas</span>
-          <span>33 KB</span>
+          <span>34 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/jumper_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Lane Racer</h3>
         <p>LANE RACER - top-down 4-lane racing game</p>
+        
         <div class="row">
           <button data-run="lane_racer_gfx/index.html" data-title="Lane Racer">Run</button>
           <span class="tag">canvas</span>
@@ -195,16 +230,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Lights Out</h3>
         <p>LIGHTS OUT - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="lightsout_gfx/index.html" data-title="Lights Out">Run</button>
           <span class="tag">canvas</span>
-          <span>32 KB</span>
+          <span>31 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/lightsout_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Match-3</h3>
         <p>MATCH-3 - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="match3_gfx/index.html" data-title="Match-3">Run</button>
           <span class="tag">canvas</span>
@@ -215,6 +252,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Maze Chase</h3>
         <p>MAZE CHASE - Pac-Man style maze game</p>
+        
         <div class="row">
           <button data-run="maze_chase_gfx/index.html" data-title="Maze Chase">Run</button>
           <span class="tag">canvas</span>
@@ -225,16 +263,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Minesweeper</h3>
         <p>MINESWEEPER - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="minesweeper_gfx/index.html" data-title="Minesweeper">Run</button>
           <span class="tag">canvas</span>
-          <span>43 KB</span>
+          <span>42 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/minesweeper_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Missile Command</h3>
         <p>MISSILE COMMAND - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="missile_gfx/index.html" data-title="Missile Command">Run</button>
           <span class="tag">canvas</span>
@@ -245,6 +285,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Othello</h3>
         <p>OTHELLO / REVERSI vs AI</p>
+        
         <div class="row">
           <button data-run="othello_gfx/index.html" data-title="Othello">Run</button>
           <span class="tag">canvas</span>
@@ -255,6 +296,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Pong</h3>
         <p>PONG - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="pong_gfx/index.html" data-title="Pong">Run</button>
           <span class="tag">canvas</span>
@@ -265,6 +307,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Simon</h3>
         <p>SIMON - memory game</p>
+        
         <div class="row">
           <button data-run="simon_gfx/index.html" data-title="Simon">Run</button>
           <span class="tag">canvas</span>
@@ -275,16 +318,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Snake</h3>
         <p>SNAKE - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="snake_gfx/index.html" data-title="Snake">Run</button>
           <span class="tag">canvas</span>
-          <span>41 KB</span>
+          <span>42 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/snake_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Sokoban</h3>
         <p>SOKOBAN - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="sokoban_gfx/index.html" data-title="Sokoban">Run</button>
           <span class="tag">canvas</span>
@@ -295,16 +340,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Space Invaders</h3>
         <p>SPACE INVADERS - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="invaders_gfx/index.html" data-title="Space Invaders">Run</button>
           <span class="tag">canvas</span>
-          <span>37 KB</span>
+          <span>36 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/invaders_gfx.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Tetris</h3>
         <p>TETRIS - Complete Implementation</p>
+        
         <div class="row">
           <button data-run="tetris_gfx/index.html" data-title="Tetris">Run</button>
           <span class="tag">canvas</span>
@@ -315,21 +362,45 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Tower of Hanoi</h3>
         <p>TOWER OF HANOI - classic disk puzzle</p>
+        
         <div class="row">
           <button data-run="hanoi_gfx/index.html" data-title="Tower of Hanoi">Run</button>
           <span class="tag">canvas</span>
-          <span>43 KB</span>
+          <span>44 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/games/hanoi_gfx.flow">source</a>
         </div>
       </div>
     </div>
     <h2>Morphogenesis
-      <span class="count">20 of 20 running</span></h2>
+      <span class="count">40 of 40 running</span></h2>
     <p class="blurb">Reaction-diffusion, growth and cellular automata fields. Number keys switch presets, R reseeds, P pauses.</p>
     <div class="grid">
       <div class="card">
+        <h3>Allen Cahn</h3>
+        <p>curvature-driven interface motion toward mean-curvature flow</p>
+        
+        <div class="row">
+          <button data-run="allen_cahn/index.html" data-title="Allen Cahn">Run</button>
+          <span class="tag">canvas</span>
+          <span>56 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/allen_cahn.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Ant Pheromone</h3>
+        <p>stigmergy finds the short bridge without a map</p>
+        
+        <div class="row">
+          <button data-run="ant_pheromone/index.html" data-title="Ant Pheromone">Run</button>
+          <span class="tag">canvas</span>
+          <span>64 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/ant_pheromone.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Belousov</h3>
         <p>spiral waves in an excitable medium</p>
+        
         <div class="row">
           <button data-run="belousov/index.html" data-title="Belousov">Run</button>
           <span class="tag">canvas</span>
@@ -338,8 +409,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Bone Remodelling</h3>
+        <p>Wolff's law as a mechanostat on a lattice of bars</p>
+        
+        <div class="row">
+          <button data-run="bone_remodelling/index.html" data-title="Bone Remodelling">Run</button>
+          <span class="tag">canvas</span>
+          <span>70 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/bone_remodelling.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Branching Vessels</h3>
         <p>leaf venation by space colonization</p>
+        
         <div class="row">
           <button data-run="branching_vessels/index.html" data-title="Branching Vessels">Run</button>
           <span class="tag">canvas</span>
@@ -348,8 +431,31 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Brusselator</h3>
+        <p>Prigogine's dissipative structure, and its wavelength predicted</p>
+        
+        <div class="row">
+          <button data-run="brusselator/index.html" data-title="Brusselator">Run</button>
+          <span class="tag">canvas</span>
+          <span>43 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/brusselator.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Bz 3d Slice</h3>
+        <p>a scroll wave in a cube, shown as a moving z-cut</p>
+        
+        <div class="row">
+          <button data-run="bz_3d_slice/index.html" data-title="Bz 3d Slice">Run</button>
+          <span class="tag">canvas</span>
+          <span>54 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/bz_3d_slice.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Cahn Hilliard</h3>
         <p>phase separation and spinodal decomposition</p>
+        
         <div class="row">
           <button data-run="cahn_hilliard/index.html" data-title="Cahn Hilliard">Run</button>
           <span class="tag">canvas</span>
@@ -360,6 +466,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Cell Sorting</h3>
         <p>differential adhesion, and tissue layers that sort</p>
+        
         <div class="row">
           <button data-run="cell_sorting/index.html" data-title="Cell Sorting">Run</button>
           <span class="tag">canvas</span>
@@ -370,6 +477,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Coral Ballistic</h3>
         <p>ballistic deposition and the shadowing instability</p>
+        
         <div class="row">
           <button data-run="coral_ballistic/index.html" data-title="Coral Ballistic">Run</button>
           <span class="tag">canvas</span>
@@ -378,28 +486,42 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Crack Propagation</h3>
+        <p>fracture through a disordered fuse lattice</p>
+        
+        <div class="row">
+          <button data-run="crack_propagation/index.html" data-title="Crack Propagation">Run</button>
+          <span class="tag">canvas</span>
+          <span>59 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/crack_propagation.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Cyclic CA</h3>
         <p>spirals out of pure noise</p>
+        
         <div class="row">
           <button data-run="cyclic_ca/index.html" data-title="Cyclic CA">Run</button>
           <span class="tag">canvas</span>
-          <span>34 KB</span>
+          <span>44 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/cyclic_ca.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>DLA</h3>
         <p>growth where the shape is the history</p>
+        
         <div class="row">
           <button data-run="dla/index.html" data-title="DLA">Run</button>
           <span class="tag">canvas</span>
-          <span>46 KB</span>
+          <span>56 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/dla.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Eden Growth</h3>
         <p>a compact cluster with a rough surface, and the roughness</p>
+        
         <div class="row">
           <button data-run="eden_growth/index.html" data-title="Eden Growth">Run</button>
           <span class="tag">canvas</span>
@@ -408,8 +530,42 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Fitzhugh Waves</h3>
+        <p>spiral waves in a 2D FitzHugh-Nagumo excitable medium</p>
+        
+        <div class="row">
+          <button data-run="fitzhugh_waves/index.html" data-title="Fitzhugh Waves">Run</button>
+          <span class="tag">canvas</span>
+          <span>54 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/fitzhugh_waves.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Flocking Patterns</h3>
+        <p>a direction chosen by nobody, and the noise that destroys it</p>
+        
+        <div class="row">
+          <button data-run="flocking_patterns/index.html" data-title="Flocking Patterns">Run</button>
+          <span class="tag">canvas</span>
+          <span>66 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/flocking_patterns.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Gierer Meinhardt</h3>
+        <p>activator-inhibitor Turing patterns with a predicted wavelength</p>
+        
+        <div class="row">
+          <button data-run="gierer_meinhardt/index.html" data-title="Gierer Meinhardt">Run</button>
+          <span class="tag">canvas</span>
+          <span>61 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/gierer_meinhardt.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Gray Scott</h3>
         <p>the canonical morphogenesis model</p>
+        
         <div class="row">
           <button data-run="gray_scott/index.html" data-title="Gray Scott">Run</button>
           <span class="tag">canvas</span>
@@ -420,6 +576,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Heat Morph</h3>
         <p>anisotropic diffusion sculpting a shape out of noise</p>
+        
         <div class="row">
           <button data-run="heat_morph/index.html" data-title="Heat Morph">Run</button>
           <span class="tag">canvas</span>
@@ -430,6 +587,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Hexagonal CA</h3>
         <p>snow crystal growth on a triangular lattice</p>
+        
         <div class="row">
           <button data-run="hexagonal_ca/index.html" data-title="Hexagonal CA">Run</button>
           <span class="tag">canvas</span>
@@ -438,8 +596,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Kuramoto Sivashinsky</h3>
+        <p>1D spatiotemporal chaos, drawn as a space-time field</p>
+        
+        <div class="row">
+          <button data-run="kuramoto_sivashinsky/index.html" data-title="Kuramoto Sivashinsky">Run</button>
+          <span class="tag">canvas</span>
+          <span>60 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/kuramoto_sivashinsky.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>L-System Plant</h3>
         <p>a stochastic rewriting grammar, drawn as it grows</p>
+        
         <div class="row">
           <button data-run="lsystem_plant/index.html" data-title="L-System Plant">Run</button>
           <span class="tag">canvas</span>
@@ -450,6 +620,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>L-System Tree</h3>
         <p>a three-dimensional branching grammar, projected and</p>
+        
         <div class="row">
           <button data-run="lsystem_tree/index.html" data-title="L-System Tree">Run</button>
           <span class="tag">canvas</span>
@@ -458,18 +629,97 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Laplacian Growth</h3>
+        <p>dielectric breakdown, and its fractal dimension from Rg</p>
+        
+        <div class="row">
+          <button data-run="laplacian_growth/index.html" data-title="Laplacian Growth">Run</button>
+          <span class="tag">canvas</span>
+          <span>69 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/laplacian_growth.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Life Variants</h3>
         <p>three outer-totalistic rules on the same soup</p>
+        
         <div class="row">
           <button data-run="life_variants/index.html" data-title="Life Variants">Run</button>
           <span class="tag">canvas</span>
-          <span>33 KB</span>
+          <span>43 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/life_variants.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Mycelium</h3>
+        <p>hyphal branching under nutrient depletion, and its dimension measured</p>
+        
+        <div class="row">
+          <button data-run="mycelium/index.html" data-title="Mycelium">Run</button>
+          <span class="tag">canvas</span>
+          <span>74 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/mycelium.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Phase Field Dendrite</h3>
+        <p>anisotropic solidification from a seed crystal</p>
+        
+        <div class="row">
+          <button data-run="phase_field_dendrite/index.html" data-title="Phase Field Dendrite">Run</button>
+          <span class="tag">canvas</span>
+          <span>67 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/phase_field_dendrite.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>River Erosion</h3>
+        <p>drainage networks from the stream-power law</p>
+        
+        <div class="row">
+          <button data-run="river_erosion/index.html" data-title="River Erosion">Run</button>
+          <span class="tag">canvas</span>
+          <span>70 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/river_erosion.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Sandpile</h3>
+        <p>grains in, grains out, and a straight line over two decades</p>
+        
+        <div class="row">
+          <button data-run="sandpile/index.html" data-title="Sandpile">Run</button>
+          <span class="tag">canvas</span>
+          <span>69 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/sandpile.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Schelling Segregation</h3>
+        <p>mild preferences, and the pattern nobody wanted</p>
+        
+        <div class="row">
+          <button data-run="schelling_segregation/index.html" data-title="Schelling Segregation">Run</button>
+          <span class="tag">canvas</span>
+          <span>60 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/schelling_segregation.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Schnakenberg</h3>
+        <p>a cubic autocatalytic Turing system with a predicted wavelength</p>
+        
+        <div class="row">
+          <button data-run="schnakenberg/index.html" data-title="Schnakenberg">Run</button>
+          <span class="tag">canvas</span>
+          <span>61 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/schnakenberg.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Slime Mold</h3>
         <p>Physarum agents building a transport network</p>
+        
         <div class="row">
           <button data-run="slime_mold/index.html" data-title="Slime Mold">Run</button>
           <span class="tag">canvas</span>
@@ -480,6 +730,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Somite Clock</h3>
         <p>segmentation by a clock and a wavefront</p>
+        
         <div class="row">
           <button data-run="somite_clock/index.html" data-title="Somite Clock">Run</button>
           <span class="tag">canvas</span>
@@ -490,6 +741,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Swift Hohenberg</h3>
         <p>rolls and hexagons from a wavelength-selecting operator</p>
+        
         <div class="row">
           <button data-run="swift_hohenberg/index.html" data-title="Swift Hohenberg">Run</button>
           <span class="tag">canvas</span>
@@ -498,8 +750,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Turing Hex Ca</h3>
+        <p>a Turing pattern with no differential equation in it</p>
+        
+        <div class="row">
+          <button data-run="turing_hex_ca/index.html" data-title="Turing Hex Ca">Run</button>
+          <span class="tag">canvas</span>
+          <span>67 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/turing_hex_ca.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Turing Spots</h3>
         <p>the activator-inhibitor system behind animal coats</p>
+        
         <div class="row">
           <button data-run="turing_spots/index.html" data-title="Turing Spots">Run</button>
           <span class="tag">canvas</span>
@@ -510,6 +774,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Turing Stripes</h3>
         <p>the same activator-inhibitor system, one parameter away</p>
+        
         <div class="row">
           <button data-run="turing_stripes/index.html" data-title="Turing Stripes">Run</button>
           <span class="tag">canvas</span>
@@ -518,23 +783,58 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Viscous Fingering</h3>
+        <p>a Saffman-Taylor finger in a Hele-Shaw channel</p>
+        
+        <div class="row">
+          <button data-run="viscous_fingering/index.html" data-title="Viscous Fingering">Run</button>
+          <span class="tag">canvas</span>
+          <span>65 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/viscous_fingering.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Voronoi Growth</h3>
+        <p>Johnson-Mehl nucleation, and the Avrami exponent</p>
+        
+        <div class="row">
+          <button data-run="voronoi_growth/index.html" data-title="Voronoi Growth">Run</button>
+          <span class="tag">canvas</span>
+          <span>67 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/voronoi_growth.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>WFC Growth</h3>
         <p>structure appearing by constraint propagation</p>
+        
         <div class="row">
           <button data-run="wfc_growth/index.html" data-title="WFC Growth">Run</button>
           <span class="tag">canvas</span>
-          <span>39 KB</span>
+          <span>49 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/morphogenesis/wfc_growth.flow">source</a>
         </div>
       </div>
     </div>
     <h2>Basics
-      <span class="count">22 of 22 running</span></h2>
+      <span class="count">27 of 27 running</span></h2>
     <p class="blurb">Pure computation. No graphics, no host services: the program runs and prints into the page.</p>
     <div class="grid">
       <div class="card">
+        <h3>Bigint Smoke</h3>
+        <p>BigInt smoke (#252) — standalone subset of lib/stdlib/bigint.flow</p>
+        
+        <div class="row">
+          <button data-run="bigint_smoke/index.html" data-title="Bigint Smoke">Run</button>
+          <span class="tag">console</span>
+          <span>17 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/basics/bigint_smoke.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Bubble Sort</h3>
         <p>Bubble Sort - FLOW version of C++ bubble sort</p>
+        
         <div class="row">
           <button data-run="bubble_sort/index.html" data-title="Bubble Sort">Run</button>
           <span class="tag">console</span>
@@ -543,8 +843,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Checked Arith Smoke</h3>
+        <p>Smoke for checked / saturating / wrapping arith (#275)</p>
+        
+        <div class="row">
+          <button data-run="checked_arith_smoke/index.html" data-title="Checked Arith Smoke">Run</button>
+          <span class="tag">console</span>
+          <span>17 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/basics/checked_arith_smoke.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Declarative Sort</h3>
         <p>Declarative ordering (Phase 1)</p>
+        
         <div class="row">
           <button data-run="declarative_sort/index.html" data-title="Declarative Sort">Run</button>
           <span class="tag">console</span>
@@ -555,6 +867,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Dot Product</h3>
         <p></p>
+        
         <div class="row">
           <button data-run="dot_product/index.html" data-title="Dot Product">Run</button>
           <span class="tag">console</span>
@@ -565,6 +878,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Factorial</h3>
         <p>Factorial - FLOW version of C++ factorial example</p>
+        
         <div class="row">
           <button data-run="factorial/index.html" data-title="Factorial">Run</button>
           <span class="tag">console</span>
@@ -575,6 +889,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Fibonacci</h3>
         <p></p>
+        
         <div class="row">
           <button data-run="fibonacci/index.html" data-title="Fibonacci">Run</button>
           <span class="tag">console</span>
@@ -585,6 +900,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>GCD</h3>
         <p>Greatest Common Divisor - FLOW version of C++ Euclidean algorithm</p>
+        
         <div class="row">
           <button data-run="gcd/index.html" data-title="GCD">Run</button>
           <span class="tag">console</span>
@@ -593,8 +909,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Hashmap I64 Smoke</h3>
+        <p>HashMap_i64_i64 smoke (#252)</p>
+        
+        <div class="row">
+          <button data-run="hashmap_i64_smoke/index.html" data-title="Hashmap I64 Smoke">Run</button>
+          <span class="tag">console</span>
+          <span>18 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/basics/hashmap_i64_smoke.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Hello WASM</h3>
-        <p>Minimal Flow program for the WASM path (Flow → C → emcc)</p>
+        <p>Minimal Flow program for the WASM path (Flow → C|MLIR → emcc)</p>
+        
         <div class="row">
           <button data-run="hello_wasm/index.html" data-title="Hello WASM">Run</button>
           <span class="tag">console</span>
@@ -605,6 +933,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Hello World</h3>
         <p>Hello World in FLOW</p>
+        
         <div class="row">
           <button data-run="hello_world/index.html" data-title="Hello World">Run</button>
           <span class="tag">console</span>
@@ -615,6 +944,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Loops</h3>
         <p>Loop examples in FLOW</p>
+        
         <div class="row">
           <button data-run="loops/index.html" data-title="Loops">Run</button>
           <span class="tag">console</span>
@@ -625,6 +955,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Match Enums</h3>
         <p>Basics: match on a simple enum</p>
+        
         <div class="row">
           <button data-run="match_enums/index.html" data-title="Match Enums">Run</button>
           <span class="tag">console</span>
@@ -635,6 +966,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Palindrome</h3>
         <p>Palindrome Checker - FLOW version of C++ string palindrome</p>
+        
         <div class="row">
           <button data-run="palindrome/index.html" data-title="Palindrome">Run</button>
           <span class="tag">console</span>
@@ -643,8 +975,31 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Parallel Scaling</h3>
+        <p>Coarse-grained Monte Carlo pi, timed at 2, 4 and 8 pthread workers</p>
+        
+        <div class="row">
+          <button data-run="parallel_scaling/index.html" data-title="Parallel Scaling">Run</button>
+          <span class="tag">console</span> <span class="tag">threads</span>
+          <span>57 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/wasm/parallel_scaling.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Parallel Sum</h3>
+        <p>Coarse-grained data-parallel reduction, built for the WASM threads crossing</p>
+        
+        <div class="row">
+          <button data-run="parallel_sum/index.html" data-title="Parallel Sum">Run</button>
+          <span class="tag">console</span> <span class="tag">threads</span>
+          <span>57 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/wasm/parallel_sum.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Pipeline Choose</h3>
         <p>Pipeline `choose` — a state-driven stage that picks which pipeline runs</p>
+        
         <div class="row">
           <button data-run="pipeline_choose/index.html" data-title="Pipeline Choose">Run</button>
           <span class="tag">console</span>
@@ -655,6 +1010,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Pipeline Fork</h3>
         <p>Pipeline fork block — apply several pipelines to one value, collect a record</p>
+        
         <div class="row">
           <button data-run="pipeline_fork/index.html" data-title="Pipeline Fork">Run</button>
           <span class="tag">console</span>
@@ -665,6 +1021,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Pipeline Fork Inferred</h3>
         <p>Anonymous fork block — the record type is inferred, no struct declaration</p>
+        
         <div class="row">
           <button data-run="pipeline_fork_inferred/index.html" data-title="Pipeline Fork Inferred">Run</button>
           <span class="tag">console</span>
@@ -675,6 +1032,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Pipeline Placeholder</h3>
         <p>Pipeline placeholder `_` — route the piped value to any argument slot</p>
+        
         <div class="row">
           <button data-run="pipeline_placeholder/index.html" data-title="Pipeline Placeholder">Run</button>
           <span class="tag">console</span>
@@ -685,6 +1043,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Power</h3>
         <p>Power Function - FLOW version of C++ pow() function</p>
+        
         <div class="row">
           <button data-run="power/index.html" data-title="Power">Run</button>
           <span class="tag">console</span>
@@ -695,6 +1054,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Prime Numbers</h3>
         <p>Prime Numbers - FLOW version of C++ prime number checker</p>
+        
         <div class="row">
           <button data-run="prime_numbers/index.html" data-title="Prime Numbers">Run</button>
           <span class="tag">console</span>
@@ -705,6 +1065,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Result Pipeline</h3>
         <p>Result pipeline — chain fallible steps with stdlib Result helpers</p>
+        
         <div class="row">
           <button data-run="result_pipeline/index.html" data-title="Result Pipeline">Run</button>
           <span class="tag">console</span>
@@ -715,6 +1076,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Simple For</h3>
         <p></p>
+        
         <div class="row">
           <button data-run="simple_for/index.html" data-title="Simple For">Run</button>
           <span class="tag">console</span>
@@ -725,6 +1087,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Simple Search</h3>
         <p>Simple Search - FLOW version</p>
+        
         <div class="row">
           <button data-run="simple_search/index.html" data-title="Simple Search">Run</button>
           <span class="tag">console</span>
@@ -735,6 +1098,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Spans</h3>
         <p>Spans: a borrowed view over contiguous storage</p>
+        
         <div class="row">
           <button data-run="spans/index.html" data-title="Spans">Run</button>
           <span class="tag">console</span>
@@ -745,6 +1109,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Type Safety Demo</h3>
         <p>Advanced Type Safety with Type Aliases and Distinct Types</p>
+        
         <div class="row">
           <button data-run="type_safety_demo/index.html" data-title="Type Safety Demo">Run</button>
           <span class="tag">console</span>
@@ -754,12 +1119,13 @@ footer a { color: #6b7ca8; }
       </div>
     </div>
     <h2>Language and compilers
-      <span class="count">22 of 23 running</span></h2>
+      <span class="count">23 of 23 running</span></h2>
     <p class="blurb">Generics, traits, enums, effect rows, and Flow tools written in Flow. Output goes to the page.</p>
     <div class="grid">
       <div class="card">
         <h3>Async Effects</h3>
         <p>Async / Timeout / Retry as Policy Effects</p>
+        
         <div class="row">
           <button data-run="async_effects/index.html" data-title="Async Effects">Run</button>
           <span class="tag">console</span>
@@ -768,8 +1134,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Async Primitives</h3>
+        <p>Async primitives (effects-based) — SimulatedAsync / BlockingAsyncIO / FiberAsync</p>
+        
+        <div class="row">
+          <button data-run="async_primitives/index.html" data-title="Async Primitives">Run</button>
+          <span class="tag">console</span>
+          <span>50 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/effects/async_primitives.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Calculator</h3>
         <p>Expression Calculator</p>
+        
         <div class="row">
           <button data-run="calculator/index.html" data-title="Calculator">Run</button>
           <span class="tag">console</span>
@@ -780,6 +1158,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Claim Address Demo</h3>
         <p>Claim Coordinates demo — Flow port of src/flow/claim_address.py</p>
+        
         <div class="row">
           <button data-run="claim_address_demo/index.html" data-title="Claim Address Demo">Run</button>
           <span class="tag">console</span>
@@ -790,6 +1169,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Closures Demo</h3>
         <p>Closures/Lambda Demo</p>
+        
         <div class="row">
           <button data-run="closures_demo/index.html" data-title="Closures Demo">Run</button>
           <span class="tag">console</span>
@@ -800,6 +1180,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Composition Car Engine</h3>
         <p>Composition Example: Car has-an Engine</p>
+        
         <div class="row">
           <button data-run="composition_car_engine/index.html" data-title="Composition Car Engine">Run</button>
           <span class="tag">console</span>
@@ -810,6 +1191,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Composition Team Employee</h3>
         <p>Composition Example: Team has Employees</p>
+        
         <div class="row">
           <button data-run="composition_team_employee/index.html" data-title="Composition Team Employee">Run</button>
           <span class="tag">console</span>
@@ -820,6 +1202,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Dependency Injection</h3>
         <p>Dependency Injection via Effects</p>
+        
         <div class="row">
           <button data-run="dependency_injection/index.html" data-title="Dependency Injection">Run</button>
           <span class="tag">console</span>
@@ -830,6 +1213,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Effect Rows</h3>
         <p>Effect-row Phase 2: declare effects on the signature with `with E`</p>
+        
         <div class="row">
           <button data-run="effect_rows/index.html" data-title="Effect Rows">Run</button>
           <span class="tag">console</span>
@@ -840,6 +1224,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Enum Match Exhaustive</h3>
         <p>Enum/ADT match demo - exercises path/const patterns and exhaustiveness</p>
+        
         <div class="row">
           <button data-run="enum_match_exhaustive/index.html" data-title="Enum Match Exhaustive">Run</button>
           <span class="tag">console</span>
@@ -850,6 +1235,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Enums Demo</h3>
         <p>Enums / Algebraic Data Types Demo</p>
+        
         <div class="row">
           <button data-run="enums_demo/index.html" data-title="Enums Demo">Run</button>
           <span class="tag">console</span>
@@ -860,6 +1246,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Flow Identifier Lexer</h3>
         <p>Flow identifier / keyword lexer (self-hosting seed)</p>
+        
         <div class="row">
           <button data-run="flow_identifier_lexer/index.html" data-title="Flow Identifier Lexer">Run</button>
           <span class="tag">console</span>
@@ -870,6 +1257,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Flow Lexer</h3>
         <p>Flow lexer Phase 2 (self-hosting) — historical seed demo</p>
+        
         <div class="row">
           <button data-run="flow_lexer/index.html" data-title="Flow Lexer">Run</button>
           <span class="tag">console</span>
@@ -880,6 +1268,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Generics Demo</h3>
         <p>Generics Demo</p>
+        
         <div class="row">
           <button data-run="generics_demo/index.html" data-title="Generics Demo">Run</button>
           <span class="tag">console</span>
@@ -890,16 +1279,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Know Demo</h3>
         <p>know + fingerprint dogfood</p>
+        
         <div class="row">
           <button data-run="know_demo/index.html" data-title="Know Demo">Run</button>
           <span class="tag">console</span>
-          <span>36 KB</span>
+          <span>29 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/compilers/know_demo.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>LSP Ordering Port</h3>
         <p>Flow port of src/flow/lsp_ordering.py — ordering IntelliSense strings</p>
+        
         <div class="row">
           <button data-run="lsp_ordering_port/index.html" data-title="LSP Ordering Port">Run</button>
           <span class="tag">console</span>
@@ -910,6 +1301,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Math Prose Demo</h3>
         <p>math_prose + proof_sub dogfood demo</p>
+        
         <div class="row">
           <button data-run="math_prose_demo/index.html" data-title="Math Prose Demo">Run</button>
           <span class="tag">console</span>
@@ -920,6 +1312,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>OOP Counter</h3>
         <p>OOP-style Example: Counter with encapsulated state</p>
+        
         <div class="row">
           <button data-run="oop_counter/index.html" data-title="OOP Counter">Run</button>
           <span class="tag">console</span>
@@ -930,6 +1323,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>OOP Person</h3>
         <p>OOP-style Example: Person with &quot;method&quot; function</p>
+        
         <div class="row">
           <button data-run="oop_person/index.html" data-title="OOP Person">Run</button>
           <span class="tag">console</span>
@@ -940,6 +1334,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Option Result Demo</h3>
         <p>Option and Result Types Demo</p>
+        
         <div class="row">
           <button data-run="option_result_demo/index.html" data-title="Option Result Demo">Run</button>
           <span class="tag">console</span>
@@ -950,6 +1345,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Showcase</h3>
         <p>Effect System Showcase: One Service, Many Worlds</p>
+        
         <div class="row">
           <button data-run="showcase/index.html" data-title="Showcase">Run</button>
           <span class="tag">console</span>
@@ -960,6 +1356,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>State Effects</h3>
         <p>State Effects: Policy Effects with Explicitly-Threaded State</p>
+        
         <div class="row">
           <button data-run="state_effects/index.html" data-title="State Effects">Run</button>
           <span class="tag">console</span>
@@ -970,6 +1367,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Traits Demo</h3>
         <p>Demonstrates trait-based polymorphism</p>
+        
         <div class="row">
           <button data-run="traits_demo/index.html" data-title="Traits Demo">Run</button>
           <span class="tag">console</span>
@@ -977,40 +1375,70 @@ footer a { color: #6b7ca8; }
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/generics_traits/traits_demo.flow">source</a>
         </div>
       </div>
-      <div class="card failed">
-        <h3>Async Primitives</h3>
-        <p>Async primitives (effects-based) — minimal runnable slice</p>
-        <div class="why">does not build: emcc: undefined symbol flow_fiber_run_main</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/effects/async_primitives.flow">source</a></div>
-      </div>
     </div>
     <h2>Numerics and dynamics
-      <span class="count">16 of 18 running</span></h2>
+      <span class="count">20 of 20 running</span></h2>
     <p class="blurb">Solvers, optimisers, linear algebra and control theory. The ones that reach a native BLAS do not link here.</p>
     <div class="grid">
       <div class="card">
+        <h3>BLAS Demo</h3>
+        <p>BLAS Demo: Comparing naive vs Accelerate-backed matrix operations</p>
+        
+        <div class="row">
+          <button data-run="blas_demo/index.html" data-title="BLAS Demo">Run</button>
+          <span class="tag">console</span>
+          <span>33 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/blas_demo.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Controllability Demo</h3>
         <p>Controllability + similarity transform on mass-spring-damper</p>
+        
         <div class="row">
           <button data-run="controllability_demo/index.html" data-title="Controllability Demo">Run</button>
           <span class="tag">console</span>
-          <span>23 KB</span>
+          <span>22 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/controllability_demo.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Fmm Adaptive</h3>
+        <p>Carrier-Greengard-Rokhlin 1988 in the unit square</p>
+        
+        <div class="row">
+          <button data-run="fmm_adaptive/index.html" data-title="Fmm Adaptive">Run</button>
+          <span class="tag">canvas</span>
+          <span>81 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/numerical/fmm_adaptive.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Fmm Selftest</h3>
+        <p>FMM self-test: Theorem 2.1 multipole vs direct for a well-separated cluster</p>
+        
+        <div class="row">
+          <button data-run="fmm_selftest/index.html" data-title="Fmm Selftest">Run</button>
+          <span class="tag">console</span>
+          <span>46 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/numerical/fmm_selftest.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>GA + WFC Coupled</h3>
         <p>GA + WFC coupled pipeline via dsys syntax</p>
+        
         <div class="row">
           <button data-run="ga_wfc_coupled/index.html" data-title="GA + WFC Coupled">Run</button>
           <span class="tag">console</span>
-          <span>47 KB</span>
+          <span>45 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/ga_wfc_coupled.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>GA Control</h3>
         <p>GA search for stabilizing feedback on discrete double integrator</p>
+        
         <div class="row">
           <button data-run="ga_control/index.html" data-title="GA Control">Run</button>
           <span class="tag">console</span>
@@ -1021,66 +1449,84 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>GA Dsys (namespaced)</h3>
         <p>Same GA + sense pipeline as ga_dsys_syntax.flow, using the dynamics namespace</p>
+        
         <div class="row">
           <button data-run="ga_dsys_namespaced/index.html" data-title="GA Dsys (namespaced)">Run</button>
           <span class="tag">console</span>
-          <span>43 KB</span>
+          <span>42 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/ga_dsys_namespaced.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>GA Dsys Syntax</h3>
         <p>GA + control analysis via the dsys surface syntax</p>
+        
         <div class="row">
           <button data-run="ga_dsys_syntax/index.html" data-title="GA Dsys Syntax">Run</button>
           <span class="tag">console</span>
-          <span>44 KB</span>
+          <span>43 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/ga_dsys_syntax.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>GA Full Analysis</h3>
         <p>GA control search + unified dynamical systems analysis</p>
+        
         <div class="row">
           <button data-run="ga_full_analysis/index.html" data-title="GA Full Analysis">Run</button>
           <span class="tag">console</span>
-          <span>43 KB</span>
+          <span>42 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/ga_full_analysis.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Gramian Demo</h3>
         <p>Finite vs infinite horizon controllability Gramian</p>
+        
         <div class="row">
           <button data-run="gramian_demo/index.html" data-title="Gramian Demo">Run</button>
           <span class="tag">console</span>
-          <span>22 KB</span>
+          <span>21 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/gramian_demo.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>LU Decomposition</h3>
+        <p>LU / linear solve via stdlib BLAS (pattern-adoption #168)</p>
+        
+        <div class="row">
+          <button data-run="lu_decomposition/index.html" data-title="LU Decomposition">Run</button>
+          <span class="tag">console</span>
+          <span>32 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>LU Decomposition (pedagogical)</h3>
         <p>LU Decomposition (pedagogical) — hand-written Doolittle / pivoted LU</p>
+        
         <div class="row">
           <button data-run="lu_decomposition_pedagogical/index.html" data-title="LU Decomposition (pedagogical)">Run</button>
           <span class="tag">console</span>
-          <span>31 KB</span>
+          <span>30 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition_pedagogical.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Lorenz Attractor</h3>
         <p>Lorenz attractor integration + Lyapunov separation proxy</p>
+        
         <div class="row">
           <button data-run="lorenz_attractor/index.html" data-title="Lorenz Attractor">Run</button>
           <span class="tag">console</span>
-          <span>21 KB</span>
+          <span>26 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/lorenz_attractor.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Matrix Ops</h3>
         <p>Basic Matrix Operations</p>
+        
         <div class="row">
           <button data-run="matrix_ops/index.html" data-title="Matrix Ops">Run</button>
           <span class="tag">console</span>
@@ -1091,6 +1537,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Natural Physics</h3>
         <p>Natural Physics in Flow</p>
+        
         <div class="row">
           <button data-run="natural_physics/index.html" data-title="Natural Physics">Run</button>
           <span class="tag">console</span>
@@ -1101,6 +1548,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Natural Syntax Demo</h3>
         <p>Natural Physics Syntax Demo</p>
+        
         <div class="row">
           <button data-run="natural_syntax_demo/index.html" data-title="Natural Syntax Demo">Run</button>
           <span class="tag">console</span>
@@ -1111,6 +1559,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>ODE Solver</h3>
         <p>Ordinary Differential Equation Solvers</p>
+        
         <div class="row">
           <button data-run="ode_solver/index.html" data-title="ODE Solver">Run</button>
           <span class="tag">console</span>
@@ -1121,6 +1570,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Optimization</h3>
         <p>Numerical Optimization</p>
+        
         <div class="row">
           <button data-run="optimization/index.html" data-title="Optimization">Run</button>
           <span class="tag">console</span>
@@ -1131,6 +1581,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Regression (GD)</h3>
         <p>Linear regression via plain f32 gradient descent</p>
+        
         <div class="row">
           <button data-run="regression_gd/index.html" data-title="Regression (GD)">Run</button>
           <span class="tag">console</span>
@@ -1141,6 +1592,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>WFC Demo</h3>
         <p>Wave Function Collapse on a tiny tile grid</p>
+        
         <div class="row">
           <button data-run="wfc_demo/index.html" data-title="WFC Demo">Run</button>
           <span class="tag">console</span>
@@ -1148,26 +1600,48 @@ footer a { color: #6b7ca8; }
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/dynamics/wfc_demo.flow">source</a>
         </div>
       </div>
-      <div class="card failed">
-        <h3>BLAS Demo</h3>
-        <p>BLAS Demo: Comparing naive vs Accelerate-backed matrix operations</p>
-        <div class="why">does not build: emcc: undefined symbol cblas_dgemm</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/blas_demo.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>LU Decomposition</h3>
-        <p>LU / linear solve via stdlib BLAS (pattern-adoption #168)</p>
-        <div class="why">does not build: emcc: undefined symbol cblas_dcopy</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/linalg/lu_decomposition.flow">source</a></div>
-      </div>
     </div>
     <h2>Learning
-      <span class="count">7 of 12 running</span></h2>
+      <span class="count">12 of 12 running</span></h2>
     <p class="blurb">Small models and agents. The Metal and tape-runtime variants need host services that are not linked here.</p>
     <div class="grid">
       <div class="card">
+        <h3>Digits MLP</h3>
+        <p>Multi-class digits MLP trained from scratch on the CPU</p>
+        
+        <div class="row">
+          <button data-run="digits_mlp/index.html" data-title="Digits MLP">Run</button>
+          <span class="tag">console</span>
+          <span>36 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Digits MLP (Metal)</h3>
+        <p>Metal GPU status check for the digits MLP: what runs on the GPU today</p>
+        <div class="degrade">The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.</div>
+        <div class="row">
+          <button data-run="digits_mlp_metal/index.html" data-title="Digits MLP (Metal)">Run</button>
+          <span class="tag">console</span>
+          <span>32 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_metal.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Digits MLP (parallel)</h3>
+        <p>Data-parallel gradient accumulation for the digits MLP</p>
+        
+        <div class="row">
+          <button data-run="digits_mlp_parallel/index.html" data-title="Digits MLP (parallel)">Run</button>
+          <span class="tag">console</span> <span class="tag">threads</span>
+          <span>64 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_parallel.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>FlowLM Char-LM</h3>
         <p>flowlm — train a character language model from scratch, in Flow</p>
+        
         <div class="row">
           <button data-run="flowlm_charlm/index.html" data-title="FlowLM Char-LM">Run</button>
           <span class="tag">console</span>
@@ -1176,28 +1650,42 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>GA Flappy</h3>
+        <p>GA-FLAPPY - neuroevolution on headless flappy</p>
+        
+        <div class="row">
+          <button data-run="ga_flappy/index.html" data-title="GA Flappy">Run</button>
+          <span class="tag">console</span>
+          <span>34 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ai/ga_flappy.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>MLIR Tensor Bench</h3>
         <p>MLIR-first tensor benchmark — matmul + activations</p>
+        
         <div class="row">
           <button data-run="mlir_tensor_bench/index.html" data-title="MLIR Tensor Bench">Run</button>
           <span class="tag">console</span>
-          <span>29 KB</span>
+          <span>28 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/mlir_tensor_bench.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>NN Layers</h3>
         <p>Neural Network Layers</p>
+        
         <div class="row">
           <button data-run="nn_layers/index.html" data-title="NN Layers">Run</button>
           <span class="tag">console</span>
-          <span>30 KB</span>
+          <span>29 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/nn_layers.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Optimizers</h3>
         <p>Neural Network Optimizers</p>
+        
         <div class="row">
           <button data-run="optimizers/index.html" data-title="Optimizers">Run</button>
           <span class="tag">console</span>
@@ -1208,16 +1696,18 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Policy Pong</h3>
         <p>POLICY-PONG - REINFORCE policy gradient on headless pong</p>
+        
         <div class="row">
           <button data-run="policy_pong/index.html" data-title="Policy Pong">Run</button>
           <span class="tag">console</span>
-          <span>36 KB</span>
+          <span>37 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ai/policy_pong.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Q-Snake</h3>
         <p>Q-SNAKE - tabular Q-learning on headless snake</p>
+        
         <div class="row">
           <button data-run="q_snake/index.html" data-title="Q-Snake">Run</button>
           <span class="tag">console</span>
@@ -1226,8 +1716,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Tape Mul</h3>
+        <p>Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)</p>
+        
+        <div class="row">
+          <button data-run="tape_mul/index.html" data-title="Tape Mul">Run</button>
+          <span class="tag">console</span>
+          <span>28 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/tape_mul.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Tensor</h3>
         <p>Tensor demo — uses stdlib/tensor.flow</p>
+        
         <div class="row">
           <button data-run="tensor/index.html" data-title="Tensor">Run</button>
           <span class="tag">console</span>
@@ -1235,44 +1737,26 @@ footer a { color: #6b7ca8; }
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/tensor.flow">source</a>
         </div>
       </div>
-      <div class="card failed">
-        <h3>Digits MLP</h3>
-        <p>Multi-class digits MLP trained from scratch on the CPU</p>
-        <div class="why">does not build: emcc: undefined symbol flow_rt_monotonic_ns</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Digits MLP (Metal)</h3>
-        <p>Metal GPU status check for the digits MLP: what runs on the GPU today</p>
-        <div class="why">does not build: emcc: undefined symbol flow_gpu_alloc</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_metal.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Digits MLP (parallel)</h3>
-        <p>Data-parallel gradient accumulation for the digits MLP</p>
-        <div class="why">does not build: emcc: undefined symbol flow_rt_monotonic_ns</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/digits_mlp_parallel.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>GA Flappy</h3>
-        <p>GA-FLAPPY - neuroevolution on headless flappy</p>
-        <div class="why">does not build: emcc: undefined symbol fly</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ai/ga_flappy.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Tape Mul</h3>
-        <p>Live reverse-mode Tape via ArrayTape (runtime/flow_tape.c)</p>
-        <div class="why">does not build: emcc: undefined symbol flow_tape_reset</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/ml/tape_mul.flow">source</a></div>
-      </div>
     </div>
     <h2>Systems and data
-      <span class="count">8 of 13 running</span></h2>
+      <span class="count">14 of 14 running</span></h2>
     <p class="blurb">Allocators, hash tables, hashing, parsers, file formats. Anything asking the OS about itself stops at the link step.</p>
     <div class="grid">
       <div class="card">
+        <h3>Arena Frame</h3>
+        <p>Per-frame arena: bump allocate, then arena_reset each frame</p>
+        
+        <div class="row">
+          <button data-run="arena_frame/index.html" data-title="Arena Frame">Run</button>
+          <span class="tag">console</span>
+          <span>25 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/arena_frame.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>CSV Parser</h3>
         <p>Streaming CSV parser demonstrating data processing in Flow</p>
+        
         <div class="row">
           <button data-run="csv_parser/index.html" data-title="CSV Parser">Run</button>
           <span class="tag">console</span>
@@ -1283,6 +1767,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>GIF Writer</h3>
         <p>Animated GIF from pure Flow: 24 frames of a square bouncing over a</p>
+        
         <div class="row">
           <button data-run="gif_writer/index.html" data-title="GIF Writer">Run</button>
           <span class="tag">console</span>
@@ -1291,8 +1776,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Graphics</h3>
+        <p>Graphics Module for FLOW</p>
+        
+        <div class="row">
+          <button data-run="graphics/index.html" data-title="Graphics">Run</button>
+          <span class="tag">console</span>
+          <span>29 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/graphics.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Hash Table</h3>
         <p>Hash Table Implementation</p>
+        
         <div class="row">
           <button data-run="hash_table/index.html" data-title="Hash Table">Run</button>
           <span class="tag">console</span>
@@ -1301,8 +1798,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Manual Memory</h3>
+        <p>Manual heap + arena demo (stdlib/memory.flow)</p>
+        
+        <div class="row">
+          <button data-run="manual_memory/index.html" data-title="Manual Memory">Run</button>
+          <span class="tag">console</span>
+          <span>24 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/manual_memory.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Memory Pool</h3>
         <p>Memory Pool Allocator</p>
+        
         <div class="row">
           <button data-run="memory_pool/index.html" data-title="Memory Pool">Run</button>
           <span class="tag">console</span>
@@ -1313,6 +1822,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Ring Buffer</h3>
         <p>Lock-Free Ring Buffer</p>
+        
         <div class="row">
           <button data-run="ring_buffer/index.html" data-title="Ring Buffer">Run</button>
           <span class="tag">console</span>
@@ -1321,18 +1831,31 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>Runtime SHA-256</h3>
+        <p>Crypto self-test via always-linked lib/runtime/crypto.flow</p>
+        <div class="degrade">SHA-256 runs Flow's own implementation (lib/runtime/crypto.flow), same code as native; only the random bytes come from the browser's WebCrypto CSPRNG (crypto.getRandomValues) instead of the native OS kernel.</div>
+        <div class="row">
+          <button data-run="runtime_sha256/index.html" data-title="Runtime SHA-256">Run</button>
+          <span class="tag">console</span>
+          <span>22 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/crypto/runtime_sha256.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>SHA-256</h3>
         <p>SHA-256 Implementation</p>
+        
         <div class="row">
           <button data-run="sha256/index.html" data-title="SHA-256">Run</button>
           <span class="tag">console</span>
-          <span>27 KB</span>
+          <span>25 KB</span>
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/crypto/sha256.flow">source</a>
         </div>
       </div>
       <div class="card">
         <h3>Shader Demo</h3>
         <p>FLOW Shader Demo</p>
+        
         <div class="row">
           <button data-run="shader_demo/index.html" data-title="Shader Demo">Run</button>
           <span class="tag">console</span>
@@ -1341,8 +1864,20 @@ footer a { color: #6b7ca8; }
         </div>
       </div>
       <div class="card">
+        <h3>System Info</h3>
+        <p>System info demo in FLOW (extern-backed)</p>
+        
+        <div class="row">
+          <button data-run="system_info/index.html" data-title="System Info">Run</button>
+          <span class="tag">console</span>
+          <span>25 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/system_info.flow">source</a>
+        </div>
+      </div>
+      <div class="card">
         <h3>Text Demo</h3>
         <p>Text rendering: full character set, scales, alignment, numeric helpers</p>
+        
         <div class="row">
           <button data-run="text_demo/index.html" data-title="Text Demo">Run</button>
           <span class="tag">canvas</span>
@@ -1350,42 +1885,24 @@ footer a { color: #6b7ca8; }
           <a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/text_demo.flow">source</a>
         </div>
       </div>
-      <div class="card failed">
-        <h3>Arena Frame</h3>
-        <p>Per-frame arena: bump allocate, then arena_reset each frame</p>
-        <div class="why">does not build: emcc: site/wasm/arena_frame/arena_frame.c:81:9: error: redefinition of 'sizeof_i32'</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/arena_frame.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Graphics</h3>
-        <p>Graphics Module for FLOW</p>
-        <div class="why">does not build: emcc: undefined symbol main</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/graphics/graphics.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Manual Memory</h3>
-        <p>Manual heap + arena demo (stdlib/memory.flow)</p>
-        <div class="why">does not build: emcc: site/wasm/manual_memory/manual_memory.c:81:9: error: redefinition of 'sizeof_i32'</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/manual_memory.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>Runtime SHA-256</h3>
-        <p>Crypto self-test via always-linked lib/runtime/crypto.flow</p>
-        <div class="why">does not build: emcc: undefined symbol flow_sha256</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/crypto/runtime_sha256.flow">source</a></div>
-      </div>
-      <div class="card failed">
-        <h3>System Info</h3>
-        <p>System info demo in FLOW (extern-backed)</p>
-        <div class="why">does not build: emcc: undefined symbol os_is_linux</div>
-        <div class="row"><a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/system_info.flow">source</a></div>
+      <div class="card">
+        <h3>Tiny Pointers</h3>
+        <p>Tiny Pointers — arXiv:2111.12800 (Bender, Conway, Farach-Colton, Kuszmaul,</p>
+        
+        <div class="row">
+          <button data-run="tiny_pointers/index.html" data-title="Tiny Pointers">Run</button>
+          <span class="tag">console</span>
+          <span>129 KB</span>
+          <a href="https://github.com/flooooooooooow/flow/blob/main/examples/systems/tiny_pointers.flow">source</a>
+        </div>
       </div>
     </div>
 
   <h2>What runs, and what is still being crossed</h2>
-  <p class="blurb">Only the first two rows are things verified in a browser
-  on this page. The rest name the mechanism and say plainly that it is not
-  built here yet.</p>
+  <p class="blurb">Rows marked “runs” are verified in a browser. The
+  threads row needs the card opened in a tab (an iframe cannot become
+  cross-origin isolated on its own). The rest name the mechanism and say
+  plainly that it is not built here yet.</p>
   <table class="status">
     <tr><th>Capability</th><th>State</th><th>Route</th></tr>
       <tr><td>Pure computation</td>
@@ -1395,8 +1912,8 @@ footer a { color: #6b7ca8; }
         <td class="state runs">Runs today</td>
         <td>runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM key events to the macOS keycodes the programs already use.</td></tr>
       <tr><td>Threads and channels</td>
-        <td class="state wip">In progress</td>
-        <td>Emscripten -pthread over SharedArrayBuffer and Web Workers; needs the page to be cross-origin isolated. Not built here.</td></tr>
+        <td class="state runs">Runs today</td>
+        <td>digits_mlp_parallel and parallel_sum run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so open those cards in a tab and let their service worker reload once.</td></tr>
       <tr><td>Sockets and HTTP</td>
         <td class="state wip">In progress</td>
         <td>Emscripten's WebSocket-backed POSIX socket bridge (-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here.</td></tr>
@@ -1416,7 +1933,7 @@ footer a { color: #6b7ca8; }
 
   <footer>
     Built by <code>python3 scripts/build_wasm_gallery.py</code>.
-    Total payload 3.6 MB across 118 examples.
+    Total payload 5.7 MB across 161 examples.
     Machine-readable index: <a href="manifest.json">manifest.json</a>.
   </footer>
 </div>

@@ -1,14 +1,26 @@
-# Async primitives (effects-based) — minimal runnable slice
+# Async primitives (effects-based) — SimulatedAsync / BlockingAsyncIO / FiberAsync
 #
 # Uses stdlib `Async` / `AsyncIO` with `handle ... with ...` (not the older
-# `capability Async` parameter style). No fiber scheduler: SimulatedAsync is a
-# deterministic sync stand-in; BlockingAsyncIO.sleep_ms blocks via usleep.
+# `capability Async` parameter style). Three backends:
+#   - SimulatedAsync: deterministic sync stand-in (pure Flow, no I/O).
+#   - BlockingAsyncIO: sleep_ms blocks via usleep (ASYNCIFY on wasm).
+#   - FiberAsync: REAL cooperative fibers — main runs as a fiber, tasks are
+#     spawned as fibers that suspend mid-body on async_delay, and the
+#     scheduler interleaves them (round-robin on equal delays) before join
+#     collects the results. On wasm this is M:1 over the emscripten fiber
+#     API (runtime/fiber_wasm.c); natively it is M:N over flow_fiber.c.
 #
 # Run:  ./flow run examples/effects/async_primitives.flow
 #
 # See docs/language/async-effects.md for implemented vs deferred.
 
 import "stdlib/async.flow"
+
+extern {
+    function flow_fiber_async_delay(ms: i32) -> void
+    function flow_rt_fiber_task_set_fn(id: i32, fn: ptr<void>) -> void
+    function flow_fiber_current_id() -> i32
+}
 
 # Business logic depends only on the Async effect — no handler parameters.
 function fetch_user(user_id: i32) -> i32 {
@@ -75,6 +87,55 @@ function demo_blocking_io() -> i32 {
     return 0
 }
 
+# Task body registered via flow_rt_fiber_task_set_fn: runs on its own fiber.
+# Each step prints, then async_delay parks the fiber so the scheduler can run
+# the other tasks — with equal delays the trace is strictly round-robin:
+#   T100:0 T101:0 T102:0 T100:1 T101:1 T102:1 T100:2 T101:2 T102:2
+# Returns task_id * 10 + steps, or -1 if the body is not running on a fiber.
+# @flow_api keeps the plain C name so the body's address can be handed to
+# flow_rt_fiber_task_set_fn (fn: ptr<void>).
+@flow_api
+function fiber_task_worker(task_id: i32) -> i32 {
+    let fid: i32 = flow_fiber_current_id()
+    if fid < 0 {
+        return -1
+    }
+    let mut steps: i32 = 0
+    for k in 0 to 3 {
+        printf("T%d:%d ", task_id, k)
+        flow_fiber_async_delay(5)
+        steps = steps + 1
+    }
+    printf("(done %d) ", task_id)
+    return task_id * 10 + steps
+}
+
+function demo_fiber_async() -> i32 {
+    printf("=== FiberAsync (real cooperative fibers) ===\n")
+    async_set_maxprocs(1)
+    printf("  maxprocs = %d (wasm is M:1; fibers interleave cooperatively)\n",
+           async_maxprocs())
+    flow_rt_fiber_task_set_fn(100, fiber_task_worker)
+    flow_rt_fiber_task_set_fn(101, fiber_task_worker)
+    flow_rt_fiber_task_set_fn(102, fiber_task_worker)
+    printf("  trace: ")
+    let mut total: i32 = 0
+    handle Async with FiberAsync {
+        async_spawn(100)
+        async_spawn(101)
+        async_spawn(102)
+        total = async_join(100) + async_join(101) + async_join(102)
+    }
+    printf("\n  join(100)+join(101)+join(102) = %d (expect 1003+1013+1023 = 3039)\n",
+           total)
+    if total != 3039 {
+        printf("FAIL: fiber demo (%d)\n", total)
+        return 4
+    }
+    printf("  OK — three fibers interleaved mid-body on async_delay.\n")
+    return 0
+}
+
 function main() -> i32 {
     printf("Async primitives demo\n")
     printf("=====================\n\n")
@@ -90,8 +151,15 @@ function main() -> i32 {
         printf("FAIL: blocking I/O demo (%d)\n", b)
         return b
     }
+    printf("\n")
+    let c: i32 = demo_fiber_async()
+    if c != 0 {
+        printf("FAIL: fiber demo (%d)\n", c)
+        return c
+    }
 
-    printf("\nOK — effects-based async helpers work with handle/with.\n")
-    printf("Deferred: fiber scheduler, resumable continuations, real poll.\n")
+    printf("\nOK — effects-based async helpers work with handle/with, and\n")
+    printf("FiberAsync runs real cooperative fibers on this target.\n")
+    printf("Deferred: resumable continuations, real poll.\n")
     return 0
 }
