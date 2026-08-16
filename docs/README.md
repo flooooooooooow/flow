@@ -8,6 +8,8 @@ Welcome to the Flow programming language documentation!
 
 | Document | Description |
 |----------|-------------|
+| **[Introduction to Flow](book/README.md)** | Formal, example-led book |
+| **[Flow Coding Challenges](book/19-coding-challenge-series.md)** | 36 syntax-enforced problems |
 | **[Getting Started](getting-started.md)** | Installation and first program |
 | **[Language Spec](LANGUAGE_SPEC.md)** | Complete language reference |
 | **[Grammar](grammar.ebnf)** | Formal EBNF grammar |
@@ -62,7 +64,7 @@ Welcome to the Flow programming language documentation!
 - [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
 - [Changelog](project/CHANGELOG.md) - Version history and audit fixes
 - [What's Next](NEXT.md) - Prioritized roadmap
-- [Audit Report (2026-02-10)](project/AUDIT_2026-02-10.md) - Latest full audit findings
+- [Audit Report (2026-02-10)](project/archive/AUDIT_2026-02-10.md) - Latest full audit findings
 - [Development](DEVELOPMENT.md) - Building Flow
 
 ## Examples

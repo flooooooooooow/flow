@@ -48,7 +48,7 @@ function main() -> i32 {
 
     # Create the thread
     let tid: u64 = 0
-    let rc: i32 = pthread_create(&tid, null as ptr<void>, flow_thread_fn as ptr<void>, arg as ptr<void>)
+    let mut rc: i32 = pthread_create(&tid, null as ptr<void>, flow_thread_fn as ptr<void>, arg as ptr<void>)
     if rc != 0 {
         printf("FAIL: pthread_create returned %d\n", rc)
         free(arg)

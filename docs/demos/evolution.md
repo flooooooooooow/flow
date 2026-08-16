@@ -79,4 +79,4 @@ nonzero if the check fails, so the suite doubles as a regression test.
 
 [Morphogenesis gallery](morphogenesis.md) · [Game gallery](games.md) ·
 [Example Atlas](../project/example-atlas.md) ·
-[dynamics DSL](../language/dynamics-dsl.md) · [VISION](../VISION.md)
+[dynamics DSL](../language/dynamics-dsl.md) · [VISION](../../VISION.md)

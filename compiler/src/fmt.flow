@@ -4,7 +4,8 @@
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
-    TOK_AMPAMP, TOK_BARBAR
+    TOK_AMPAMP, TOK_BARBAR, TOK_IN,
+    KW_DBG, KW_EXPECT
 }
 import .ast {
     AstArena, AST_NONE,
@@ -13,7 +14,7 @@ import .ast {
     AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
     AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
     AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT,
-    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS
+    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS, AST_IF_EXPR
 }
 
 extern {
@@ -152,6 +153,10 @@ function flowc_fmt_emit_binop_op(w: ptr<FmtBuf>, op: i32) {
         flowc_fmt_puts(w, " || ")
         return
     }
+    if op == TOK_IN {
+        flowc_fmt_puts(w, " in ")
+        return
+    }
     flowc_fmt_puts(w, " ")
 }
 
@@ -214,6 +219,17 @@ function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
         return
     }
     if kind == AST_UNARY {
+        if arena.nodes[id].ival == KW_DBG {
+            flowc_fmt_puts(w, "dbg ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+            return
+        }
+        if arena.nodes[id].ival == KW_EXPECT {
+            flowc_fmt_puts(w, "expect ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_fmt_putc(w, 10)
+            return
+        }
         if arena.nodes[id].ival == TOK_MINUS {
             flowc_fmt_putc(w, 45)
         } else {
@@ -232,6 +248,16 @@ function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_fmt_puts(w, " as ")
         flowc_fmt_emit_type(w, arena, src, arena.nodes[id].b)
+        return
+    }
+    if kind == AST_IF_EXPR {
+        flowc_fmt_puts(w, "if ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_fmt_puts(w, " { ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_fmt_puts(w, " } else { ")
+        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].c)
+        flowc_fmt_puts(w, " }")
         return
     }
     if kind == AST_INDEX {
@@ -374,6 +400,10 @@ function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_fmt_puts(w, " to ")
         flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+        if arena.nodes[id].ival != AST_NONE and arena.nodes[id].ival != 0 {
+            flowc_fmt_puts(w, " step ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].ival)
+        }
         flowc_fmt_puts(w, " {\n")
         flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, indent + 1)
         flowc_fmt_indent(w, indent)

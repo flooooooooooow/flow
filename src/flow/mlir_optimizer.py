@@ -44,7 +44,7 @@ class MLIROptimizer:
     @staticmethod
     def build_pass_pipeline(
         enable_vectorization: bool = True,
-        enable_loop_fusion: bool = True,
+        enable_loop_fusion: bool = False,
         enable_mem2reg: bool = True,
         enable_sccp: bool = True,
         enable_licm: bool = True,
@@ -61,9 +61,12 @@ class MLIROptimizer:
         Nesting notes:
         - ``inline`` and ``symbol-dce`` are module-level (need a symbol table).
         - Most other passes nest under ``func.func(...)``.
-        - ``affine-super-vectorize`` requires affine/scf loop IR from the
-          generator; on today's func/arith-only FLOW MLIR it is a no-op / soft
-          no-effect until the generator emits affine or scf loops.
+        - ``affine-super-vectorize`` and ``affine-loop-fusion`` require affine
+          dialect loop IR from the generator. The Flow MLIR generator currently
+          emits scf/cf loops, not affine, so these passes are disabled by
+          default. Enabling them on large non-affine modules causes mlir-opt to
+          hang (flow#466). They will be re-enabled when the generator emits
+          affine dialect operations.
         - MLIR has no standalone ``gvn`` pass; ``enable_gvn`` maps to ``cse``.
         """
         level = optimization_level
@@ -181,9 +184,9 @@ class MLIROptimizer:
             Path(probe_out).unlink(missing_ok=True)
         return self._opt_capable
 
-    def optimize(self, input_mlir: str, output_mlir: str, 
+    def optimize(self, input_mlir: str, output_mlir: str,
                  enable_vectorization: bool = True,
-                 enable_loop_fusion: bool = True,
+                 enable_loop_fusion: bool = False,
                  enable_mem2reg: bool = True,
                  enable_sccp: bool = True,
                  enable_licm: bool = True,
@@ -193,12 +196,13 @@ class MLIROptimizer:
                  optimization_level: str = "O2") -> int:
         """
         Apply MLIR optimization passes.
-        
+
         Args:
             input_mlir: Path to input MLIR file
             output_mlir: Path to output MLIR file
             enable_vectorization: Enable loop vectorization (O3; needs affine/scf)
-            enable_loop_fusion: Enable affine loop fusion (O2+)
+            enable_loop_fusion: Enable affine loop fusion (O2+; disabled by
+                default since the generator emits scf/cf, not affine. See flow#466.)
             enable_mem2reg: Enable memory-to-register promotion (O2+)
             enable_sccp: Enable sparse conditional constant propagation (O2+)
             enable_licm: Enable loop invariant code motion (O2+)

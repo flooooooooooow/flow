@@ -6,8 +6,18 @@ Provides CUDA and OpenCL integration for FLOW GPU programs.
 
 import os
 import ctypes
-import numpy as np
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+# Use Any for numpy types when numpy is unavailable so type annotations
+# in class definitions don't crash at import time.
+if TYPE_CHECKING:
+    import numpy as np
+_NdArray = "np.ndarray" if np is None else np.ndarray
 
 # Suppress warnings by default
 SUPPRESS_GPU_WARNINGS = os.environ.get('FLOW_SUPPRESS_GPU_WARNINGS', '1') == '1'
@@ -32,11 +42,11 @@ class GPUBackend:
         """Free GPU memory."""
         raise NotImplementedError
     
-    def copy_to_device(self, host_data: np.ndarray, device_ptr: int) -> None:
+    def copy_to_device(self, host_data: _NdArray, device_ptr: int) -> None:
         """Copy data from host to device."""
         raise NotImplementedError
     
-    def copy_from_device(self, device_ptr: int, host_data: np.ndarray) -> None:
+    def copy_from_device(self, device_ptr: int, host_data: _NdArray) -> None:
         """Copy data from device to host."""
         raise NotImplementedError
     
@@ -166,7 +176,7 @@ class CUDABackend(GPUBackend):
         
         self.cuda_lib.cudaFree(ctypes.c_void_p(ptr))
     
-    def copy_to_device(self, host_data: np.ndarray, device_ptr: int) -> None:
+    def copy_to_device(self, host_data: _NdArray, device_ptr: int) -> None:
         """Copy data from host to device."""
         if not self.initialized:
             raise RuntimeError("CUDA not initialized")
@@ -181,7 +191,7 @@ class CUDABackend(GPUBackend):
         if result != 0:
             raise RuntimeError(f"CUDA memcpy to device failed: {result}")
     
-    def copy_from_device(self, device_ptr: int, host_data: np.ndarray) -> None:
+    def copy_from_device(self, device_ptr: int, host_data: _NdArray) -> None:
         """Copy data from device to host."""
         if not self.initialized:
             raise RuntimeError("CUDA not initialized")
@@ -295,11 +305,11 @@ class OpenCLBackend(GPUBackend):
         """Free OpenCL memory."""
         pass
     
-    def copy_to_device(self, host_data: np.ndarray, device_ptr: int) -> None:
+    def copy_to_device(self, host_data: _NdArray, device_ptr: int) -> None:
         """Copy data from host to device."""
         pass
     
-    def copy_from_device(self, device_ptr: int, host_data: np.ndarray) -> None:
+    def copy_from_device(self, device_ptr: int, host_data: _NdArray) -> None:
         """Copy data from device to host."""
         pass
     
@@ -373,13 +383,13 @@ def gpu_free(ptr: int, backend: str = "cuda") -> None:
     gpu_backend = runtime.get_backend(backend)
     gpu_backend.free_memory(ptr)
 
-def gpu_copy_to_device(host_data: np.ndarray, device_ptr: int, backend: str = "cuda") -> None:
+def gpu_copy_to_device(host_data: _NdArray, device_ptr: int, backend: str = "cuda") -> None:
     """Copy data from host to device."""
     runtime = get_gpu_runtime()
     gpu_backend = runtime.get_backend(backend)
     gpu_backend.copy_to_device(host_data, device_ptr)
 
-def gpu_copy_from_device(device_ptr: int, host_data: np.ndarray, backend: str = "cuda") -> None:
+def gpu_copy_from_device(device_ptr: int, host_data: _NdArray, backend: str = "cuda") -> None:
     """Copy data from device to host."""
     runtime = get_gpu_runtime()
     gpu_backend = runtime.get_backend(backend)

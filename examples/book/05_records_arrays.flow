@@ -1,0 +1,30 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+struct Sample {
+    time_ms: i32,
+    value: f64
+}
+
+function mean4(samples: array<Sample, 4>) -> f64 {
+    let mut total: f64 = 0.0
+    for i in 0 to 4 {
+        total = total + samples[i].value
+    }
+    return total / 4.0
+}
+
+function main() -> i32 {
+    let mut samples: array<Sample, 4> = [
+        Sample { time_ms: 0, value: 1.0 },
+        Sample { time_ms: 10, value: 1.5 },
+        Sample { time_ms: 20, value: 2.0 },
+        Sample { time_ms: 30, value: 2.5 }
+    ]
+
+    samples[3].value = 3.5
+    printf("last sample: t=%d value=%.1f\n", samples[3].time_ms, samples[3].value)
+    printf("mean: %.3f\n", mean4(samples))
+    return 0
+}

@@ -24,10 +24,16 @@ theme:
     - navigation.sections
     - navigation.expand
     - navigation.top
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
     - search.highlight
     - search.share
     - content.code.copy
     - content.code.annotate
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search:
@@ -52,9 +58,11 @@ markdown_extensions:
 
 nav:
   - Home: wiki-home.md
+  - Start Here (Beginners): start-here.md
   - Vision: vision.md
   - Playground: playground/index.html
   - Getting Started: getting-started.md
+  - Working with AI: AI_FLOW_HANDBOOK.md
   - Comparison: comparison.md
   - Tutorials:
     - Beginner: tutorials/beginner.md

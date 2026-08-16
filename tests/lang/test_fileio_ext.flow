@@ -75,8 +75,8 @@ function main() -> i32 {
     printf("read back %d bytes: %s\n", nread, read_buf as string)
 
     # Verify content
-    let is_match: i32 = 1
-    let i: i32 = 0
+    let mut is_match: i32 = 1
+    let mut i: i32 = 0
     while i < nread and i < data_len {
         if read_buf[i] != data_ptr[i] {
             is_match = 0

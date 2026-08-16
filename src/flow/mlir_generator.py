@@ -78,7 +78,14 @@ class MLIRGenerator:
         return self._is_tensor_struct(mlir_type) or mlir_type.startswith("!llvm.struct")
 
     def _uses_alloca_storage(self, mlir_type: str, flow_type: Any = None) -> bool:
-        """Aggregate locals live in dedicated alloca slots to avoid arm64 return-slot aliasing."""
+        """Aggregate locals live in dedicated alloca slots to avoid arm64 return-slot aliasing.
+
+        On wasm32 the alloca patterns conflict with ASYNCIFY stack rewind
+        (flow#467). The arm64 return-slot aliasing that motivates alloca does
+        not occur on wasm32, so skip alloca storage there.
+        """
+        if self.size_t_bits == 32:
+            return False
         return self._is_aggregate_mlir_type(mlir_type)
 
     def _emit_alloca_store(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
@@ -192,7 +199,14 @@ class MLIRGenerator:
     def _roundtrip_alloca(
         self, value_ssa: str, mlir_type: str, ops: Optional[List[str]] = None
     ) -> tuple[str, List[str]]:
-        """Force aggregate through an alloca slot so LLVM cannot reuse return-stack memory."""
+        """Force aggregate through an alloca slot so LLVM cannot reuse return-stack memory.
+
+        Skipped on wasm32 to avoid ASYNCIFY stack rewind corruption (flow#467).
+        """
+        if self.size_t_bits == 32:
+            if ops is None:
+                ops = []
+            return value_ssa, ops
         if ops is None:
             ops = []
         ptr, store_ops = self._emit_alloca_store(value_ssa, mlir_type)
@@ -204,7 +218,11 @@ class MLIRGenerator:
     def _stabilize_aggregate_ssa(
         self, value_ssa: str, mlir_type: str, callee_name: str = ""
     ) -> tuple[str, List[str]]:
-        """Break arm64 aggregate-return stack aliasing via field copy + alloca roundtrip."""
+        """Break arm64 aggregate-return stack aliasing via field copy + alloca roundtrip.
+
+        On wasm32 the alloca roundtrip is skipped (flow#467). Field copy still
+        runs to avoid aliasing within SSA.
+        """
         if not self._is_aggregate_mlir_type(mlir_type):
             return value_ssa, []
         if self._is_tensor_struct(mlir_type):
@@ -6886,6 +6904,25 @@ class MLIRGenerator:
             f"{ind}}}",
         ]
 
+    def _emit_string_static_global(self, name: str, value: Literal) -> List[str]:
+        """Emit a mutable ``!llvm.ptr`` global initialized to a string constant.
+
+        ``let mut x: string = "..."`` must start at the string's address,
+        not null. The string constant is interned and referenced via
+        ``llvm.mlir.addressof`` (flow#471).
+        """
+        ind = self.indent()
+        gname = self._intern_string_const(str(value.value))
+        ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        return [
+            f"{ind}// Module static (string): {name}",
+            f"{ind}llvm.mlir.global internal @{name}() {{addr_space = 0 : i32}} : !llvm.ptr {{",
+            f"{ind}  {ssa} = llvm.mlir.addressof @{gname} : !llvm.ptr",
+            f"{ind}  llvm.return {ssa} : !llvm.ptr",
+            f"{ind}}}",
+        ]
+
     def _emit_struct_static_global(
         self,
         name: str,
@@ -6966,6 +7003,28 @@ class MLIRGenerator:
             return "\n".join(mlir_code)
 
         # Scalar pointers must be null-initialized (not undef).
+        # But string literals (which are !llvm.ptr) need their constant
+        # address as the initializer, not null. Without this, `let mut
+        # x: string = "..."` globals start at 0 and string-returning
+        # functions return null (flow#471).
+        if (
+            isinstance(static.value, Literal)
+            and getattr(static.value.type, "name", None) == "string"
+        ):
+            mlir_code.extend(
+                self._emit_string_static_global(
+                    static.name, static.value
+                )
+            )
+            self.symbol_table[static.name] = {
+                "type": "variable",
+                "mlir_type": "!llvm.ptr",
+                "flow_type": static.type,
+                "is_module_global": True,
+                "is_const": False,
+            }
+            return "\n".join(mlir_code)
+
         if (
             mlir_type == "!llvm.ptr"
             or (

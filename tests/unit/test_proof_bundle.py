@@ -30,6 +30,10 @@ from flow.proof_document import (
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 
 
+
+import shutil
+has_tex = shutil.which("pdflatex") or shutil.which("xelatex") or shutil.which("tectonic")
+
 class TestProofBundle:
     def test_basic_bundle_loads_two_hundred_sixty_four_theorems(self):
         docs = load_basic_proof_bundle(ROOT)
@@ -249,12 +253,14 @@ class TestProofBundle:
         assert r"\tableofcontents" in tex
         assert "Taylor" in tex or "taylor" in tex
 
+    @pytest.mark.skipif(not has_tex, reason="No LaTeX compiler available")
     def test_basic_pdf_compiles(self):
         tex, pdf = write_basic_proof_bundle_pdf(ROOT)
         assert os.path.isfile(tex)
         assert os.path.isfile(pdf)
         assert os.path.getsize(pdf) > 1000
 
+    @pytest.mark.skipif(not has_tex, reason="No LaTeX compiler available")
     def test_unified_book_pdf_compiles(self):
         tex, pdf = write_proof_book_pdf(ROOT)
         assert os.path.isfile(tex)

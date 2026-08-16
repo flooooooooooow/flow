@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Introduction to Flow</title>
+  <script src="../../site/vendor/marked.min.js"></script>
+  <script src="../../site/vendor/highlight.min.js"></script>
+  <script src="../../site/flow-lang.js"></script>
+  <style>
+    :root {
+      --ink: #18212b;
+      --muted: #576575;
+      --accent: #087f95;
+      --rule: #cad4dc;
+      --paper-soft: #f4f7f8;
+      --code-bg: #101820;
+      --code-ink: #e8eff4;
+    }
+
+    @page {
+      size: A4;
+      margin: 19mm 17mm 21mm;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      color: var(--ink);
+      background: white;
+      font-family: Charter, "Iowan Old Style", Georgia, serif;
+      font-size: 10.6pt;
+      line-height: 1.52;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    body { margin: 0; }
+
+    .cover {
+      height: 252mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      page-break-after: always;
+    }
+
+    .cover img {
+      width: 80mm;
+      height: auto;
+      margin-bottom: 24mm;
+    }
+
+    .cover h1 {
+      margin: 0;
+      font-family: "Avenir Next", Avenir, sans-serif;
+      font-size: 31pt;
+      line-height: 1.08;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: #13222c;
+    }
+
+    .cover .subtitle {
+      max-width: 110mm;
+      margin: 8mm 0 0;
+      color: var(--muted);
+      font-family: "Avenir Next", Avenir, sans-serif;
+      font-size: 13pt;
+      line-height: 1.5;
+    }
+
+    .cover .edition {
+      margin-top: 36mm;
+      color: #687684;
+      font-family: "Avenir Next", Avenir, sans-serif;
+      font-size: 8.5pt;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .publication {
+      height: 252mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      page-break-after: always;
+      color: var(--muted);
+      font-size: 9pt;
+    }
+
+    .publication strong {
+      color: var(--ink);
+      font-family: "Avenir Next", Avenir, sans-serif;
+    }
+
+    main { width: 100%; }
+
+    .front-matter { page-break-after: always; }
+
+    .chapter {
+      page-break-before: always;
+    }
+
+    .chapter:first-of-type { page-break-before: auto; }
+
+    .appendix-card h2 {
+      margin-top: 6mm;
+      margin-bottom: 2mm;
+    }
+
+    .appendix-card pre {
+      margin-top: 2.5mm;
+      margin-bottom: 3.5mm;
+      padding-top: 3mm;
+      padding-bottom: 3mm;
+      line-height: 1.35;
+    }
+
+    h1, h2, h3 {
+      font-family: "Avenir Next", Avenir, sans-serif;
+      color: #13222c;
+      page-break-after: avoid;
+      break-after: avoid-page;
+    }
+
+    h1 {
+      margin: 0 0 10mm;
+      padding-bottom: 4mm;
+      border-bottom: 2px solid var(--accent);
+      font-size: 25pt;
+      line-height: 1.15;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    h2 {
+      margin: 9mm 0 3mm;
+      font-size: 15pt;
+      line-height: 1.25;
+      font-weight: 600;
+    }
+
+    h3 {
+      margin: 6mm 0 2mm;
+      font-size: 11.5pt;
+      font-weight: 600;
+    }
+
+    p { margin: 0 0 3.5mm; }
+
+    a {
+      color: #056b7e;
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    strong { color: #101820; }
+
+    code {
+      font-family: Menlo, Monaco, monospace;
+      font-size: 0.84em;
+    }
+
+    :not(pre) > code {
+      padding: 0.5mm 1mm;
+      border: 1px solid #dce3e8;
+      border-radius: 2px;
+      background: var(--paper-soft);
+      color: #17384a;
+    }
+
+    pre {
+      margin: 4mm 0 5mm;
+      padding: 4mm 4.5mm;
+      border-radius: 3px;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      font-size: 7.75pt;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      orphans: 3;
+      widows: 3;
+    }
+
+    pre code { font-size: inherit; }
+
+    .hljs-comment { color: #8b9baa; }
+    .hljs-keyword { color: #d5a6ff; }
+    .hljs-built_in { color: #59d7e8; }
+    .hljs-type { color: #82d8ff; }
+    .hljs-string { color: #a9df78; }
+    .hljs-number, .hljs-literal { color: #ffb284; }
+    .hljs-title, .hljs-function_ { color: #9bbcff; }
+    .hljs-meta { color: #ff91a8; }
+    .hljs-operator { color: #91e4ff; }
+
+    blockquote {
+      margin: 4mm 0;
+      padding: 1mm 0 1mm 4mm;
+      border-left: 2px solid var(--accent);
+      color: var(--muted);
+    }
+
+    ul, ol {
+      margin: 2mm 0 4mm;
+      padding-left: 7mm;
+    }
+
+    li { margin: 1mm 0; }
+
+    table {
+      width: 100%;
+      margin: 4mm 0 5mm;
+      border-collapse: collapse;
+      font-size: 9pt;
+      page-break-inside: avoid;
+      break-inside: avoid-page;
+    }
+
+    th, td {
+      padding: 2.2mm 2.5mm;
+      border: 1px solid var(--rule);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eaf1f3;
+      color: #17323f;
+      font-family: "Avenir Next", Avenir, sans-serif;
+      font-weight: 600;
+    }
+
+    tr { page-break-inside: avoid; }
+
+    hr {
+      margin: 8mm 0;
+      border: 0;
+      border-top: 1px solid var(--rule);
+    }
+
+    .load-error {
+      padding: 8mm;
+      border: 2px solid #b42318;
+      color: #7a271a;
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <img src="../assets/flow-logo-with-text.png" alt="Flow">
+    <h1>Introduction to Flow</h1>
+    <p class="subtitle">A technical guide to programs, models, and systems written in Flow</p>
+    <p class="edition">Complete feature edition · August 2026</p>
+  </section>
+
+  <section class="publication">
+    <p><strong>Introduction to Flow</strong></p>
+    <p>Complete feature edition, August 2026.</p>
+    <p>Examples are part of the Flow repository and are tested against the compiler version supplied with that repository.</p>
+  </section>
+
+  <main id="book"><p>Preparing the manuscript…</p></main>
+
+  <script>
+    const sections = [
+      { path: "README.md", className: "front-matter", stripTitle: true },
+      { path: "01-a-complete-program.md", className: "chapter" },
+      { path: "02-values-and-types.md", className: "chapter" },
+      { path: "03-decisions-and-repetition.md", className: "chapter" },
+      { path: "04-functions.md", className: "chapter" },
+      { path: "05-records-and-arrays.md", className: "chapter" },
+      { path: "06-pipelines-and-results.md", className: "chapter" },
+      { path: "07-from-updates-to-flows.md", className: "chapter" },
+      { path: "08-types-and-declarations.md", className: "chapter" },
+      { path: "09-expressions-and-matching.md", className: "chapter" },
+      { path: "10-memory-and-lifetimes.md", className: "chapter" },
+      { path: "11-modules-packages-and-interop.md", className: "chapter" },
+      { path: "12-effects-and-concurrency.md", className: "chapter" },
+      { path: "13-evolution-and-dynamics.md", className: "chapter" },
+      { path: "14-numerics-autodiff-and-ml.md", className: "chapter" },
+      { path: "15-media-gpu-and-audio.md", className: "chapter" },
+      { path: "16-targets-and-distribution.md", className: "chapter" },
+      { path: "17-engineering-and-verification.md", className: "chapter" },
+      { path: "18-a-complete-instrument.md", className: "chapter" },
+      { path: "19-coding-challenge-series.md", className: "chapter" },
+      { path: "appendix-a-language-card.md", className: "chapter appendix appendix-card" },
+      { path: "appendix-b-feature-coverage.md", className: "chapter appendix" },
+      { path: "appendix-c-command-reference.md", className: "chapter appendix" },
+      { path: "appendix-d-standard-library-map.md", className: "chapter appendix" }
+    ];
+
+    async function buildBook() {
+      const target = document.getElementById("book");
+      target.innerHTML = "";
+
+      for (const section of sections) {
+        const response = await fetch(section.path);
+        if (!response.ok) throw new Error(`${section.path}: HTTP ${response.status}`);
+        let markdown = await response.text();
+        if (section.stripTitle) markdown = markdown.replace(/^# .+\n+/, "");
+
+        const article = document.createElement("article");
+        article.className = section.className;
+        article.innerHTML = marked.parse(markdown, { mangle: false, headerIds: true });
+        target.appendChild(article);
+      }
+
+      document.querySelectorAll("pre code").forEach((block) => hljs.highlightElement(block));
+      document.body.dataset.ready = "true";
+    }
+
+    buildBook().catch((error) => {
+      document.getElementById("book").innerHTML = `<p class="load-error">Book rendering failed: ${error.message}</p>`;
+      document.body.dataset.ready = "error";
+    });
+  </script>
+</body>
+</html>

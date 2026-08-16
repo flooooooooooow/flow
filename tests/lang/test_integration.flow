@@ -54,7 +54,7 @@ function run_test(ft: FileTest) -> i32 {
     }
 
     # Verify content
-    let i: i32 = 0
+    let mut i: i32 = 0
     while i < n {
         if buf[i] != dp[i] {
             return Result_Failure as i32

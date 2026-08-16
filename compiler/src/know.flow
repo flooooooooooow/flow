@@ -5,6 +5,22 @@
 #         indexing; this port exposes the query and qualification
 #         helpers. Filesystem scanning stays in Python.
 
+import .claim_address {
+    FlowcClaimAddress,
+    flowc_claim_try_parse,
+    flowc_claim_guillemets,
+    flowc_claim_slug,
+    flowc_claim_display,
+    flowc_claim_to_legacy_path
+}
+import .claim_path {
+    flowc_claim_path_tier_label
+}
+import .math_prose {
+    flowc_flow_expr_to_mathematical_english,
+    flowc_flow_expr_to_latex
+}
+
 extern {
     function strcmp(a: string, b: string) -> i32
     function strlen(s: string) -> i64
@@ -14,14 +30,14 @@ extern {
 
 # ── Character helpers ────────────────────────────────────────────
 
-function is_space(c: i32) -> i32 {
+function kn_is_space(c: i32) -> i32 {
     if c == 32 or c == 9 or c == 13 or c == 10 { return 1 }
     return 0
 }
 
 # ── String helpers ───────────────────────────────────────────────
 
-function str_append(a: string, b: string) -> string {
+function kn_str_append(a: string, b: string) -> string {
     let la: i64 = strlen(a)
     let lb: i64 = strlen(b)
     let buf: ptr<u8> = malloc(la + lb + 1) as ptr<u8>
@@ -36,7 +52,7 @@ function str_append(a: string, b: string) -> string {
     return buf as string
 }
 
-function substr(src: string, start: i32, end: i32) -> string {
+function kn_substr(src: string, start: i32, end: i32) -> string {
     let n: i32 = strlen(src) as i32
     let mut s: i32 = start
     let mut e: i32 = end
@@ -52,7 +68,7 @@ function substr(src: string, start: i32, end: i32) -> string {
 }
 
 # Check if s starts with prefix at position 0.
-function starts_with(s: string, prefix: string) -> i32 {
+function kn_starts_with(s: string, prefix: string) -> i32 {
     let sl: i32 = strlen(s) as i32
     let pl: i32 = strlen(prefix) as i32
     if pl > sl { return 0 }
@@ -68,18 +84,18 @@ function starts_with(s: string, prefix: string) -> i32 {
 
 # ── Strip leading and trailing whitespace ────────────────────────
 
-function strip(s: string) -> string {
+function kn_strip(s: string) -> string {
     let n: i32 = strlen(s) as i32
     let p: ptr<u8> = s
     let mut start: i32 = 0
-    while start < n and is_space(p[start]) == 1 {
+    while start < n and kn_is_space(p[start]) == 1 {
         start = start + 1
     }
     let mut end: i32 = n
-    while end > start and is_space(p[end - 1]) == 1 {
+    while end > start and kn_is_space(p[end - 1]) == 1 {
         end = end - 1
     }
-    return substr(s, start, end)
+    return kn_substr(s, start, end)
 }
 
 # ── Normalize query ──────────────────────────────────────────────
@@ -87,15 +103,15 @@ function strip(s: string) -> string {
 # Strip known prefixes from a query string.
 # Port of _normalize_query.
 export function flowc_normalize_query(query: string) -> string {
-    let q: string = strip(query)
-    if starts_with(q, "verify.") == 1 {
-        return substr(q, 7, strlen(q) as i32)
+    let q: string = kn_strip(query)
+    if kn_starts_with(q, "verify.") == 1 {
+        return kn_substr(q, 7, strlen(q) as i32)
     }
-    if starts_with(q, "examples.verify.") == 1 {
-        return substr(q, 16, strlen(q) as i32)
+    if kn_starts_with(q, "examples.verify.") == 1 {
+        return kn_substr(q, 16, strlen(q) as i32)
     }
-    if starts_with(q, "lib.verify.") == 1 {
-        return substr(q, 11, strlen(q) as i32)
+    if kn_starts_with(q, "lib.verify.") == 1 {
+        return kn_substr(q, 11, strlen(q) as i32)
     }
     return q
 }
@@ -132,11 +148,11 @@ export function flowc_package_prefix(mod_path: string) -> string {
                 k = k + 1
             }
             if has_slash_seg == 0 and seg_len > 0 {
-                let seg: string = substr(mod_path, start, j)
+                let seg: string = kn_substr(mod_path, start, j)
                 if strlen(result) > 0 {
-                    result = str_append(result, ".")
+                    result = kn_str_append(result, ".")
                 }
-                result = str_append(result, seg)
+                result = kn_str_append(result, seg)
             }
             start = j + 1
         }
@@ -152,9 +168,165 @@ export function flowc_package_prefix(mod_path: string) -> string {
 export function flowc_qualify(mod_path: string, claim_path: string) -> string {
     let prefix: string = flowc_package_prefix(mod_path)
     if strlen(prefix) > 0 {
-        let mut s: string = str_append(prefix, ".")
-        s = str_append(s, claim_path)
+        let mut s: string = kn_str_append(prefix, ".")
+        s = kn_str_append(s, claim_path)
         return s
     }
     return claim_path
+}
+
+# ═════════════════════════════════════════════════════════════════
+# Claim index and `flow know` rendering
+#
+# The pure half of scan_claim_index and format_know. Walking the search roots
+# and reading files stays in Python; the key aliases a claim answers to, the
+# lookup predicate, and the rendered entry are all computed here.
+# ═════════════════════════════════════════════════════════════════
+
+# Port of _default_search_roots, newline-joined.
+export function flowc_default_search_roots(project_root: string) -> string {
+    let mut s: string = project_root
+    s = kn_str_append(s, "/lib/verify\n")
+    s = kn_str_append(s, project_root)
+    s = kn_str_append(s, "/examples/verify")
+    return s
+}
+
+# Is `needle` already one of the newline-separated entries in `acc`?
+function kn_has_line(acc: string, needle: string) -> i32 {
+    let an: i32 = strlen(acc) as i32
+    let nn: i32 = strlen(needle) as i32
+    let ap: ptr<u8> = acc
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= an {
+        if i == an or ap[i] == 10 {
+            if i - start == nn {
+                let seg: string = kn_substr(acc, start, i)
+                if strcmp(seg, needle) == 0 { return 1 }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function kn_push_key(acc: string, key: string) -> string {
+    if strlen(key) == 0 { return acc }
+    if kn_has_line(acc, key) == 1 { return acc }
+    if strlen(acc) == 0 { return key }
+    let mut s: string = kn_str_append(acc, "\n")
+    s = kn_str_append(s, key)
+    return s
+}
+
+# Every key a claim is indexed under, newline-separated and deduplicated.
+# Port of the key set built inside scan_claim_index. Python uses a set, so the
+# order here carries no meaning; compare as a set.
+export function flowc_claim_index_keys(mod_path: string, claim_path: string) -> string {
+    let mut keys: string = ""
+    keys = kn_push_key(keys, claim_path)
+    keys = kn_push_key(keys, flowc_qualify(mod_path, claim_path))
+
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(claim_path)
+    if addr.ok == 1 {
+        let guillemets: string = flowc_claim_guillemets(addr)
+        let legacy: string = flowc_claim_to_legacy_path(addr)
+        keys = kn_push_key(keys, guillemets)
+        keys = kn_push_key(keys, flowc_claim_slug(addr))
+        keys = kn_push_key(keys, flowc_claim_display(addr))
+        keys = kn_push_key(keys, legacy)
+        keys = kn_push_key(keys, flowc_qualify(mod_path, guillemets))
+        keys = kn_push_key(keys, flowc_qualify(mod_path, legacy))
+    }
+    return keys
+}
+
+function kn_ends_with(s: string, suffix: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let sl: i32 = strlen(suffix) as i32
+    if sl > n { return 0 }
+    let p: ptr<u8> = s
+    let sp: ptr<u8> = suffix
+    let off: i32 = n - sl
+    let mut i: i32 = 0
+    while i < sl {
+        if p[off + i] != sp[i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+# The fuzzy fallback in lookup_claim: an index key ending with the normalised
+# query, or a query ending with the entry's claim path.
+export function flowc_lookup_matches(key: string, query: string, claim_path: string) -> i32 {
+    if kn_ends_with(key, query) == 1 { return 1 }
+    if kn_ends_with(query, claim_path) == 1 { return 1 }
+    return 0
+}
+
+# Port of format_know. Every field the Python reads off ClaimEntry is passed
+# in; `needs` and `used_by` arrive already comma-joined.
+export function flowc_format_know(
+    qualified_path: string,
+    claim_path: string,
+    means: string,
+    claim_expr: string,
+    tier: string,
+    from_source: string,
+    needs: string,
+    used_by: string,
+    file_path: string
+) -> string {
+    let mut s: string = qualified_path
+    s = kn_str_append(s, "\n\n")
+
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(claim_path)
+    if addr.ok == 1 {
+        s = kn_str_append(s, "  coordinate: ")
+        s = kn_str_append(s, flowc_claim_display(addr))
+        s = kn_str_append(s, "\n  syntax:     ")
+        s = kn_str_append(s, flowc_claim_guillemets(addr))
+        s = kn_str_append(s, "\n")
+    }
+    if strlen(means) > 0 {
+        s = kn_str_append(s, "  means:   ")
+        s = kn_str_append(s, means)
+        s = kn_str_append(s, "\n")
+    }
+    if strlen(claim_expr) > 0 {
+        s = kn_str_append(s, "  claim:   ")
+        s = kn_str_append(s, flowc_flow_expr_to_mathematical_english(claim_expr))
+        s = kn_str_append(s, "\n           $")
+        s = kn_str_append(s, flowc_flow_expr_to_latex(claim_expr))
+        s = kn_str_append(s, "$\n")
+    }
+    if strlen(tier) > 0 {
+        s = kn_str_append(s, "  tier:    ")
+        s = kn_str_append(s, flowc_claim_path_tier_label(tier))
+        s = kn_str_append(s, " (")
+        s = kn_str_append(s, tier)
+        s = kn_str_append(s, ")\n")
+    }
+    if strlen(from_source) > 0 {
+        s = kn_str_append(s, "  from:    ")
+        s = kn_str_append(s, from_source)
+        s = kn_str_append(s, "\n")
+    }
+    if strlen(needs) > 0 {
+        s = kn_str_append(s, "  needs:   ")
+        s = kn_str_append(s, needs)
+        s = kn_str_append(s, "\n")
+    }
+    if strlen(used_by) > 0 {
+        s = kn_str_append(s, "  used-by: ")
+        s = kn_str_append(s, used_by)
+        s = kn_str_append(s, "\n")
+    }
+
+    s = kn_str_append(s, "\n  source:  ")
+    s = kn_str_append(s, file_path)
+    s = kn_str_append(s, "\n\n  proof:   run `flow doc proof` on the source file for the full trace")
+    return s
 }

@@ -9,12 +9,13 @@ import .token {
     TOK_EQ, TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_AMPAMP, TOK_BARBAR, TOK_BANG,
     TOK_ERROR, TOK_AMP, TOK_FATARROW, TOK_TILDE, TOK_AT, TOK_BAR, TOK_CARET,
-    TOK_SHL, TOK_SHR,
+    TOK_SHL, TOK_SHR, TOK_PIPELINE,
     TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
     KW_LET, KW_FUNCTION, KW_RETURN, KW_IF, KW_ELSE, KW_WHILE, KW_FOR, KW_IN, KW_TO,
     KW_STRUCT, KW_MUT, KW_EXTERN, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
-    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM
+    KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM,
+    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL, KW_DBG, KW_EXPECT, KW_DEFAULT
 }
 
 function flowc_lex_is_alpha(c: i32) -> i32 {
@@ -128,7 +129,14 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let not_kw: array<u8, 3> = [110, 111, 116]
     let defer_kw: array<u8, 5> = [100, 101, 102, 101, 114]
     let enum_kw: array<u8, 4> = [101, 110, 117, 109]
-    let p: ptr<u8> = let_kw
+    let trait_kw: array<u8, 5> = [116, 114, 97, 105, 116]
+    let impl_kw: array<u8, 4> = [105, 109, 112, 108]
+    let test_kw: array<u8, 4> = [116, 101, 115, 116]
+    let parallel_kw: array<u8, 8> = [112, 97, 114, 97, 108, 108, 101, 108]
+    let dbg_kw: array<u8, 3> = [100, 98, 103]
+    let expect_kw: array<u8, 6> = [101, 120, 112, 101, 99, 116]
+    let default_kw: array<u8, 7> = [100, 101, 102, 97, 117, 108, 116]
+    let mut p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
     if flowc_lex_ident_eq(src, start, end, p, 8) == 1 { return KW_FUNCTION }
@@ -192,6 +200,20 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_DEFER }
     p = enum_kw
     if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_ENUM }
+    p = trait_kw
+    if flowc_lex_ident_eq(src, start, end, p, 5) == 1 { return KW_TRAIT }
+    p = impl_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_IMPL }
+    p = test_kw
+    if flowc_lex_ident_eq(src, start, end, p, 4) == 1 { return KW_TEST }
+    p = parallel_kw
+    if flowc_lex_ident_eq(src, start, end, p, 8) == 1 { return KW_PARALLEL }
+    p = dbg_kw
+    if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_DBG }
+    p = expect_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_EXPECT }
+    p = default_kw
+    if flowc_lex_ident_eq(src, start, end, p, 7) == 1 { return KW_DEFAULT }
     return 0
 }
 
@@ -282,7 +304,7 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
         return flowc_make_tok(TOK_ERROR, 0, start, lex[0].pos, line, col)
     }
 
-    let n1: i32 = 0
+    let mut n1: i32 = 0
     if lex[0].pos + 1 < lex[0].len {
         n1 = lex[0].input[lex[0].pos + 1]
     }
@@ -361,6 +383,11 @@ export function flowc_lexer_next(lex: ptr<Lexer>) -> Token {
         flowc_lexer_bump(lex)
         flowc_lexer_bump(lex)
         return flowc_make_tok(TOK_BARBAR, 0, start, start + 2, line, col)
+    }
+    if c == 124 and n1 == 62 {
+        flowc_lexer_bump(lex)
+        flowc_lexer_bump(lex)
+        return flowc_make_tok(TOK_PIPELINE, 0, start, start + 2, line, col)
     }
 
     flowc_lexer_bump(lex)

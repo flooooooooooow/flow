@@ -64,7 +64,7 @@ export function flowc_score_inline(
 
     let base: f64 = ((FLOWC_INLINE_MAX_CALLEE_OPS - callee_ops + 1) as f64) / (num_sites as f64)
 
-    let score: f64 = base
+    let mut score: f64 = base
     if num_sites == 1 {
         score = score * FLOWC_INLINE_SINGLE_SITE_BONUS
     }

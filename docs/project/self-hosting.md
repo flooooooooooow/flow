@@ -39,6 +39,52 @@ Python remains acceptable for **tooling** (wiki build, LSP glue, benches) until 
 
 Detail: [`compiler/README.md`](../../compiler/README.md).
 
+### Bootstrap language suite: 79 pass, 11 fail
+
+The 90 `.flow` files in `tests/lang/` are the regression target for
+self-hosted parity with the Python compiler. Run with `FLOWC_IN`/`FLOWC_OUT`
+environment variables (positional arguments trigger the self-test, not
+compilation):
+
+```bash
+BOOT=compiler/build/flowc_bootstrap
+pass=0; fail=0
+for f in $(find tests/lang -name "*.flow" | sort); do
+  if FLOWC_BUNDLE=1 FLOWC_DIR=. "$BOOT" "$f" "/tmp/out.c" \
+     && cc -O0 -o /tmp/out "/tmp/out.c" && /tmp/out; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1)); echo "  FAIL $f"
+  fi
+done
+echo "pass=$pass fail=$fail"
+```
+
+Current result: `pass=79 fail=11`.
+
+The 11 failures, by root cause:
+
+| Category | Tests | What is missing |
+|----------|-------|-----------------|
+| DSL keywords | `test_effects`, `test_hybrid_events`, `test_time_blocks` | Parser does not recognize `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` |
+| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts `struct Box<T>` and `box_make<i32>(7)` but the monomorphizer that replaces `T` with concrete types is not ported |
+| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names; the Python compiler resolves overloads by signature |
+| Closure snapshots | `test_closures` | Captured variables are hoisted to file-scope globals; the value at closure creation time is not snapshotted |
+| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder in `lib/stdlib/gif.flow` emits a variable name where a function call is expected; FIR inline-pure bonus constant truncates float to int |
+| External C headers | `test_c_import_julia`, `test_c_import_python` | Julia and Python embedding headers are not installed in the test environment |
+
+Features landed in the self-hosted compiler that closed earlier gaps:
+
+- Enum tagged unions: `typedef enum { Name_V0 } Name_Tag; typedef struct { Name_Tag tag; } Name;`
+- Enum variant references: bare `Red` emits as `Color_Red`
+- Span indexing: `values[i]` on a `span<T>` variable emits as `values.data[i]`
+- Span slicing: `xs[a..b]` on a span uses `.data` as the pointer base
+- Array-to-span conversion: passing an `array<T, N>` to a `span<T>` parameter wraps it in `((flowc_span_T){ arr, N })`
+- Lambda parsing and capturing lambdas via static globals
+- Generic call syntax: `name<Type>(args)`
+- Stable struct sort by first field with descending support
+- `span<mut T>`, `&mut [T]`, `&[T]`, and slice syntax `a..b`
+
 ---
 
 ## Architecture target

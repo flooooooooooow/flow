@@ -2904,6 +2904,19 @@ class TypeChecker:
         if target.kind == TypeKind.POINTER and actual.kind in ints:
             return True
 
+        # ptr<void> <-> cfn (C function pointer) casts are allowed for FFI.
+        if actual.kind == TypeKind.POINTER and target.kind == TypeKind.FUNCTION:
+            return True
+        if target.kind == TypeKind.POINTER and actual.kind == TypeKind.FUNCTION:
+            return True
+
+        # array<T, N> as ptr<T> (explicit decay to pointer)
+        if actual.kind == TypeKind.ARRAY and target.kind == TypeKind.POINTER:
+            if target.element_type is None or target.element_type.kind == TypeKind.VOID:
+                return True
+            if actual.element_type == target.element_type:
+                return True
+
         # `string` is a byte pointer at the C level, so casting between it and
         # a byte-sized pointer preserves the representation. This is what FFI
         # code needs when it hands buffers to C and reads C strings back.
@@ -3046,6 +3059,10 @@ class TypeChecker:
                     or (self._is_numeric(left_type) and self._is_tensor(right_type))
                 ):
                     return SemanticType(TypeKind.STRUCT, name="Tensor")
+
+        # `in` operator: T in array<T,N> or T in string -> bool
+        if op.operator == "in":
+            return SemanticType(TypeKind.BOOL)
 
         # Allow numeric coercions
         if self._is_numeric(left_type) and self._is_numeric(right_type):

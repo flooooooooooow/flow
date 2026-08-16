@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR,
     flowc_ast_chain_len
 }
 
@@ -57,7 +57,7 @@ function flowc_tc_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i
         return 0
     }
     let mut i: i32 = 0
-    let n: i32 = a1 - a0
+    let mut n: i32 = a1 - a0
     while i < n {
         if src[a0 + i] != src[b0 + i] {
             return 0
@@ -73,7 +73,7 @@ function flowc_tc_span_eq2(src_a: ptr<u8>, a0: i32, a1: i32, src_b: ptr<u8>, b0:
         return 0
     }
     let mut i: i32 = 0
-    let n: i32 = a1 - a0
+    let mut n: i32 = a1 - a0
     while i < n {
         if src_a[a0 + i] != src_b[b0 + i] {
             return 0
@@ -98,7 +98,7 @@ function flowc_tc_name_eq(ctx: TcCtx, start: i32, end: i32, i: i32) -> i32 {
 
 function flowc_tc_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
     let p: ptr<u8> = lit
-    let n: i32 = strlen(lit) as i32
+    let mut n: i32 = strlen(lit) as i32
     if end - start != n {
         return 0
     }
@@ -148,7 +148,7 @@ function flowc_tc_note(ctx: ptr<TcCtx>, label: string, start: i32, end: i32) {
     if end <= start {
         return
     }
-    let n: i32 = end - start
+    let mut n: i32 = end - start
     if n > 120 {
         n = 120
     }
@@ -309,6 +309,72 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "puts") == 1 {
         return 1
     }
+    if flowc_tc_span_is(ctx.src, start, end, "sort") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "sortBy") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "len") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "push") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "pop") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "map") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "filter") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "reduce") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "fold") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "reverse") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "keys") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "values") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "assert") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "dbg") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "find") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_new") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_send") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_recv") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_try_send") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_try_recv") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_close") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "channel_destroy") == 1 {
+        return 1
+    }
     let mut i: i32 = ctx.nlen
     while i > 0 {
         i = i - 1
@@ -323,6 +389,9 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
 
 # Known fn arity, or -1 if missing / imported (arity not tracked).
 function flowc_tc_lookup_fn_arity(ctx: TcCtx, start: i32, end: i32) -> i32 {
+    if flowc_tc_span_is(ctx.src, start, end, "printf") == 1 {
+        return -1
+    }
     let mut i: i32 = ctx.nlen
     while i > 0 {
         i = i - 1
@@ -349,6 +418,32 @@ function flowc_tc_unwrap_fn(arena: AstArena, item: i32) -> i32 {
         }
     }
     return AST_NONE
+}
+
+# Compare parameter type spans of two functions. Returns 1 if all params
+# have the same source text, 0 otherwise.
+function flowc_tc_params_eq(arena: AstArena, src: ptr<u8>, fn_a: i32, fn_b: i32) -> i32 {
+    let mut pa: i32 = arena.nodes[fn_a].a
+    let mut pb: i32 = arena.nodes[fn_b].a
+    while pa != AST_NONE and pb != AST_NONE {
+        let ta: i32 = arena.nodes[pa].a
+        let tb: i32 = arena.nodes[pb].a
+        if ta == AST_NONE and tb == AST_NONE {
+            let unused: i32 = 0
+        } elif ta == AST_NONE or tb == AST_NONE {
+            return 0
+        } else {
+            if flowc_tc_span_eq(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, arena.nodes[tb].name_start, arena.nodes[tb].name_end) == 0 {
+                return 0
+            }
+        }
+        pa = arena.nodes[pa].next
+        pb = arena.nodes[pb].next
+    }
+    if pa != AST_NONE or pb != AST_NONE {
+        return 0
+    }
+    return 1
 }
 
 function flowc_tc_is_i32_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
@@ -395,12 +490,36 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_INT or kind == AST_BOOL or kind == AST_STRING or kind == AST_FLOAT {
         return
     }
+    if kind == AST_FN {
+        # Lambda expression: check the body. Bind params as i32.
+        flowc_tc_push_mark(ctx)
+        let mut param: i32 = arena.nodes[id].a
+        while param != AST_NONE {
+            flowc_tc_bind(ctx, arena.nodes[param].name_start, arena.nodes[param].name_end, 0, -1)
+            param = arena.nodes[param].next
+        }
+        flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
+        flowc_tc_pop_mark(ctx)
+        return
+    }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
+        # Sort DSL modifiers used as identifiers in pipe expressions.
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "descending") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "ascending") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "unique") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "adaptive") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "general") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "asc") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "desc") == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
-            flowc_tc_note(ctx, "flowc tc: unbound ident", ns, ne)
-            flowc_tc_err(ctx)
+            # extern { ... } bodies are brace-skipped — allow unknown idents
+            # (e.g. function pointers declared in extern blocks).
+            if ctx[0].has_extern == 0 {
+                flowc_tc_note(ctx, "flowc tc: unbound ident", ns, ne)
+                flowc_tc_err(ctx)
+            }
         }
         return
     }
@@ -408,10 +527,13 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
-            # extern { ... } bodies are brace-skipped — allow unknown calls.
-            if ctx[0].has_extern == 0 {
-                flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
-                flowc_tc_err(ctx)
+            # Check if it's a bound local variable (e.g. a lambda function pointer).
+            if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+                # extern { ... } bodies are brace-skipped — allow unknown calls.
+                if ctx[0].has_extern == 0 {
+                    flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)
+                    flowc_tc_err(ctx)
+                }
             }
         } else {
             let arity: i32 = flowc_tc_lookup_fn_arity(ctx[0], ns, ne)
@@ -568,40 +690,36 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_MATCH {
         let scrut: i32 = arena.nodes[id].a
         flowc_tc_check_expr(ctx, arena, scrut)
-        # Scrutinee must be integer-typed: reject obvious non-integer forms
-        # (string/float literal, or ident with a known string/f32/f64 type).
-        if scrut != AST_NONE {
-            let sk: i32 = arena.nodes[scrut].kind
-            if sk == AST_STRING or sk == AST_FLOAT {
-                flowc_tc_note(ctx, "flowc tc: match scrutinee must be integer-typed", arena.nodes[scrut].start, arena.nodes[scrut].end)
-                flowc_tc_err(ctx)
-            }
-            if sk == AST_IDENT {
-                let sty: i32 = flowc_tc_lookup_val_type(ctx[0], arena.nodes[scrut].name_start, arena.nodes[scrut].name_end)
-                if sty != AST_NONE and arena.nodes[sty].kind == AST_TYPE {
-                    let tns: i32 = arena.nodes[sty].name_start
-                    let tne: i32 = arena.nodes[sty].name_end
-                    let mut bad: i32 = 0
-                    if flowc_tc_span_is(ctx[0].src, tns, tne, "string") == 1 { bad = 1 }
-                    if flowc_tc_span_is(ctx[0].src, tns, tne, "f32") == 1 { bad = 1 }
-                    if flowc_tc_span_is(ctx[0].src, tns, tne, "f64") == 1 { bad = 1 }
-                    if bad == 1 {
-                        flowc_tc_note(ctx, "flowc tc: match scrutinee must be integer-typed", arena.nodes[scrut].name_start, arena.nodes[scrut].name_end)
-                        flowc_tc_err(ctx)
-                    }
-                }
-            }
-        }
+        # Stage-A allows match on any scrutinee type (int, string, float, struct, array).
+        # The C generator handles the lowering based on the first arm's pattern kind.
         let mut arm: i32 = arena.nodes[id].b
         while arm != AST_NONE {
             # Wildcard / binding arm is a catch-all — must be the last arm.
-            if arena.nodes[arm].ival != 0 and arena.nodes[arm].next != AST_NONE {
+            if (arena.nodes[arm].ival == 1 or arena.nodes[arm].ival == 2) and arena.nodes[arm].next != AST_NONE {
                 flowc_tc_note(ctx, "flowc tc: catch-all match arm must be last", arena.nodes[arm].start, arena.nodes[arm].end)
                 flowc_tc_err(ctx)
             }
             flowc_tc_push_mark(ctx)
             if arena.nodes[arm].ival == 2 {
                 flowc_tc_bind(ctx, arena.nodes[arm].name_start, arena.nodes[arm].name_end, 0, -1)
+            }
+            if arena.nodes[arm].ival == 5 {
+                # Struct pattern: bind each field binding as int32.
+                let mut bind: i32 = arena.nodes[arm].a
+                while bind != AST_NONE {
+                    flowc_tc_bind(ctx, arena.nodes[bind].name_start, arena.nodes[bind].name_end, 0, -1)
+                    bind = arena.nodes[bind].next
+                }
+            }
+            if arena.nodes[arm].ival == 6 {
+                # List pattern: bind each identifier element as int32.
+                let mut elem: i32 = arena.nodes[arm].a
+                while elem != AST_NONE {
+                    if arena.nodes[elem].kind == AST_IDENT {
+                        flowc_tc_bind(ctx, arena.nodes[elem].name_start, arena.nodes[elem].name_end, 0, -1)
+                    }
+                    elem = arena.nodes[elem].next
+                }
             }
             flowc_tc_check_block(ctx, arena, arena.nodes[arm].b)
             flowc_tc_pop_mark(ctx)
@@ -634,6 +752,12 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         return
     }
+    if kind == AST_IF_EXPR {
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].b)
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].c)
+        return
+    }
     if kind == AST_EXPR_STMT {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         return
@@ -660,11 +784,14 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             flowc_tc_bind_value(ctx, arena.nodes[item].name_start, arena.nodes[item].name_end, ty)
         }
         if kind == AST_ENUM {
-            # Bind enum variant names as global constants.
+            # Bind qualified enum variant names (EnumName_VariantName) as
+            # global constants, matching the C generator's naming.
+            let ens: i32 = arena.nodes[item].name_start
+            let ene: i32 = arena.nodes[item].name_end
             let mut var: i32 = arena.nodes[item].a
             while var != AST_NONE {
-                flowc_tc_bind(ctx, arena.nodes[var].name_start, arena.nodes[var].name_end, 1, -1)
-                flowc_tc_bind(ctx, arena.nodes[var].name_start, arena.nodes[var].name_end, 0, -1)
+                # Construct "EnumName_VariantName" in the seed buffer.
+                flowc_tc_seed_bind_enum_variant(ctx, ctx[0].src, ens, ene, arena.nodes[var].name_start, arena.nodes[var].name_end)
                 var = arena.nodes[var].next
             }
         }
@@ -679,24 +806,32 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             }
         }
         let fn: i32 = flowc_tc_unwrap_fn(arena, item)
-        if fn != AST_NONE and arena.nodes[fn].ival == 0 {
+        if fn != AST_NONE {
             let ns: i32 = arena.nodes[fn].name_start
             let ne: i32 = arena.nodes[fn].name_end
             let body: i32 = arena.nodes[fn].c
             let arity: i32 = flowc_ast_chain_len(arena, arena.nodes[fn].a)
-            # Duplicate bodies with the same name → error.
-            if body != AST_NONE {
+            # Duplicate bodies with the same name are allowed (overloads).
+            # The codegen resolves them by mangling based on parameter types.
+            if body != AST_NONE and arena.nodes[fn].ival == 0 {
                 let mut prev: i32 = arena.nodes[root].a
                 while prev != item {
                     let pfn: i32 = flowc_tc_unwrap_fn(arena, prev)
                     if pfn != AST_NONE and arena.nodes[pfn].c != AST_NONE {
                         if flowc_tc_span_eq(ctx[0].src, ns, ne, arena.nodes[pfn].name_start, arena.nodes[pfn].name_end) == 1 {
-                            flowc_tc_err(ctx)
+                            # Check if parameter types differ. If so, allow.
+                            # If parameter types are identical, it's a real error.
+                            let params_same: i32 = flowc_tc_params_eq(arena, ctx[0].src, fn, pfn)
+                            if params_same == 1 {
+                                flowc_tc_note(ctx, "flowc tc: duplicate function with same signature", ns, ne)
+                                flowc_tc_err(ctx)
+                            }
                         }
                     }
                     prev = arena.nodes[prev].next
                 }
             }
+            # Bind both generic and non-generic functions so calls resolve.
             flowc_tc_bind(ctx, ns, ne, 1, arity)
         }
         item = arena.nodes[item].next
@@ -733,7 +868,7 @@ function flowc_tc_check_fns(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
 
 # Copy a dep name into seed_buf and bind (kind/arity). Spans refer to seed_buf.
 function flowc_tc_seed_bind(ctx: ptr<TcCtx>, dep_src: ptr<u8>, start: i32, end: i32, kind: i32, arity: i32) {
-    let n: i32 = end - start
+    let mut n: i32 = end - start
     if n <= 0 {
         return
     }
@@ -765,6 +900,49 @@ function flowc_tc_seed_bind(ctx: ptr<TcCtx>, dep_src: ptr<u8>, start: i32, end: 
     ctx[0].ne[bi] = off + n
     ctx[0].nk[bi] = kind
     ctx[0].na[bi] = arity
+    ctx[0].nlen = bi + 1
+    ctx[0].seed_nlen = ctx[0].nlen
+}
+
+# Bind "EnumName_VariantName" as a global constant by constructing the
+# qualified name in the seed buffer.
+function flowc_tc_seed_bind_enum_variant(ctx: ptr<TcCtx>, src: ptr<u8>, ens: i32, ene: i32, vns: i32, vne: i32) {
+    if ctx[0].seed_buf == null {
+        flowc_tc_err(ctx)
+        return
+    }
+    let en_len: i32 = ene - ens
+    let vn_len: i32 = vne - vns
+    let total: i32 = en_len + 1 + vn_len
+    if ctx[0].seed_len + total > ctx[0].seed_cap {
+        puts("flowc tc: seed buffer full (raise seed_cap)")
+        flowc_tc_err(ctx)
+        return
+    }
+    if ctx[0].nlen >= ctx[0].ncap {
+        puts("flowc tc: name table full while seeding (raise ncap)")
+        flowc_tc_err(ctx)
+        return
+    }
+    ctx[0].nlen = ctx[0].seed_nlen
+    let off: i32 = ctx[0].seed_len
+    let mut i: i32 = 0
+    while i < en_len {
+        ctx[0].seed_buf[off + i] = src[ens + i]
+        i = i + 1
+    }
+    ctx[0].seed_buf[off + en_len] = 95
+    i = 0
+    while i < vn_len {
+        ctx[0].seed_buf[off + en_len + 1 + i] = src[vns + i]
+        i = i + 1
+    }
+    ctx[0].seed_len = off + total
+    let bi: i32 = ctx[0].nlen
+    ctx[0].ns[bi] = off
+    ctx[0].ne[bi] = off + total
+    ctx[0].nk[bi] = 0
+    ctx[0].na[bi] = -1
     ctx[0].nlen = bi + 1
     ctx[0].seed_nlen = ctx[0].nlen
 }

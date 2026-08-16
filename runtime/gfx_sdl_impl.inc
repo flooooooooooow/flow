@@ -50,17 +50,95 @@ typedef struct FlowGfxContext {
     int height;
     int should_close;
     uint8_t keys[256];
+
+    /* Pointer state, already in framebuffer coordinates: SDL reports
+     * top-left origin, which matches the buffer, so no flip is needed. */
+    int32_t mouse_x;
+    int32_t mouse_y;
+    uint8_t mouse_left;
+    uint8_t mouse_right;
+    uint8_t mouse_middle;
+    int32_t mouse_wheel;   /* cumulative signed total */
+    uint8_t mouse_inside;
 } FlowGfxContext;
 
-/* Map SDL scancode → macOS-style virtual keycode used by lib/stdlib/gfx.flow */
+/* Map SDL scancode → macOS-style virtual keycode used by lib/stdlib/gfx.flow.
+ *
+ * Examples hardcode macOS NSEvent keycodes (KEY_P = 35, KEY_1 = 18, ...), so
+ * every backend has to speak those numbers. This table mirrors the one in
+ * runtime/gfx_wasm.c, which is the de-facto spec.
+ *
+ * SDL_Scancode is deliberate: it is the physical key position, which is what
+ * NSEvent.keyCode reports. SDL_Keycode would be the layout-mapped symbol and
+ * would break on any non-QWERTY keyboard. */
 static int flow_gfx_map_scancode(SDL_Scancode sc) {
     switch (sc) {
+        /* Letters */
         case SDL_SCANCODE_A: return 0;
         case SDL_SCANCODE_S: return 1;
         case SDL_SCANCODE_D: return 2;
+        case SDL_SCANCODE_F: return 3;
+        case SDL_SCANCODE_H: return 4;
+        case SDL_SCANCODE_G: return 5;
+        case SDL_SCANCODE_Z: return 6;
+        case SDL_SCANCODE_X: return 7;
+        case SDL_SCANCODE_C: return 8;
+        case SDL_SCANCODE_V: return 9;
+        case SDL_SCANCODE_B: return 11;
+        case SDL_SCANCODE_Q: return 12;
         case SDL_SCANCODE_W: return 13;
+        case SDL_SCANCODE_E: return 14;
         case SDL_SCANCODE_R: return 15;
+        case SDL_SCANCODE_Y: return 16;
+        case SDL_SCANCODE_T: return 17;
+        case SDL_SCANCODE_O: return 31;
+        case SDL_SCANCODE_U: return 32;
+        case SDL_SCANCODE_I: return 34;
+        case SDL_SCANCODE_P: return 35;
+        case SDL_SCANCODE_L: return 37;
+        case SDL_SCANCODE_J: return 38;
+        case SDL_SCANCODE_K: return 40;
+        case SDL_SCANCODE_N: return 45;
+        case SDL_SCANCODE_M: return 46;
+        /* Digits (note 5 and 6 are swapped relative to their order) */
+        case SDL_SCANCODE_1: return 18;
+        case SDL_SCANCODE_2: return 19;
+        case SDL_SCANCODE_3: return 20;
+        case SDL_SCANCODE_4: return 21;
+        case SDL_SCANCODE_6: return 22;
+        case SDL_SCANCODE_5: return 23;
+        case SDL_SCANCODE_9: return 25;
+        case SDL_SCANCODE_7: return 26;
+        case SDL_SCANCODE_8: return 28;
+        case SDL_SCANCODE_0: return 29;
+        /* Punctuation */
+        case SDL_SCANCODE_EQUALS: return 24;
+        case SDL_SCANCODE_MINUS: return 27;
+        case SDL_SCANCODE_RIGHTBRACKET: return 30;
+        case SDL_SCANCODE_LEFTBRACKET: return 33;
+        case SDL_SCANCODE_APOSTROPHE: return 39;
+        case SDL_SCANCODE_SEMICOLON: return 41;
+        case SDL_SCANCODE_BACKSLASH: return 42;
+        case SDL_SCANCODE_COMMA: return 43;
+        case SDL_SCANCODE_SLASH: return 44;
+        case SDL_SCANCODE_PERIOD: return 47;
+        case SDL_SCANCODE_GRAVE: return 50;
+        /* Control keys */
+        case SDL_SCANCODE_RETURN: return 36;
+        case SDL_SCANCODE_TAB: return 48;
+        case SDL_SCANCODE_SPACE: return 49;
+        case SDL_SCANCODE_BACKSPACE: return 51;
         case SDL_SCANCODE_ESCAPE: return 53;
+        /* Modifiers (macOS NSEvent keycodes) */
+        case SDL_SCANCODE_LSHIFT: return 56;
+        case SDL_SCANCODE_RSHIFT: return 60;
+        case SDL_SCANCODE_LCTRL: return 59;
+        case SDL_SCANCODE_RCTRL: return 62;
+        case SDL_SCANCODE_LALT: return 58;
+        case SDL_SCANCODE_RALT: return 61;
+        case SDL_SCANCODE_LGUI: return 55;
+        case SDL_SCANCODE_RGUI: return 54;
+        /* Arrows */
         case SDL_SCANCODE_LEFT: return 123;
         case SDL_SCANCODE_RIGHT: return 124;
         case SDL_SCANCODE_DOWN: return 125;
@@ -170,6 +248,27 @@ void flow_gfx_poll(void* handle) {
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                 ctx->should_close = 1;
             }
+        } else if (ev.type == SDL_MOUSEMOTION) {
+            ctx->mouse_x = ev.motion.x;
+            ctx->mouse_y = ev.motion.y;
+            ctx->mouse_inside = (ev.motion.x >= 0 && ev.motion.x < ctx->width &&
+                                 ev.motion.y >= 0 && ev.motion.y < ctx->height) ? 1 : 0;
+        } else if (ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP) {
+            uint8_t down = (ev.type == SDL_MOUSEBUTTONDOWN) ? 1 : 0;
+            ctx->mouse_x = ev.button.x;
+            ctx->mouse_y = ev.button.y;
+            if (ev.button.button == SDL_BUTTON_LEFT) ctx->mouse_left = down;
+            else if (ev.button.button == SDL_BUTTON_RIGHT) ctx->mouse_right = down;
+            else if (ev.button.button == SDL_BUTTON_MIDDLE) ctx->mouse_middle = down;
+        } else if (ev.type == SDL_MOUSEWHEEL) {
+            int32_t dy = ev.wheel.y;
+            /* SDL inverts y on some platforms and flags it rather than
+             * normalising, so honour the flag. */
+            if (ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) dy = -dy;
+            ctx->mouse_wheel += dy;
+        } else if (ev.type == SDL_WINDOWEVENT) {
+            if (ev.window.event == SDL_WINDOWEVENT_ENTER) ctx->mouse_inside = 1;
+            else if (ev.window.event == SDL_WINDOWEVENT_LEAVE) ctx->mouse_inside = 0;
         }
     }
 }
@@ -185,6 +284,26 @@ int32_t flow_gfx_key_down(void* handle, int32_t keycode) {
     if (!ctx) return 0;
     if (keycode < 0 || keycode >= 256) return 0;
     return ctx->keys[keycode] ? 1 : 0;
+}
+
+/* Whole pointer state in one call. See runtime/gfx_macos.m for the layout:
+ *   out[0..6] = x, y, left, right, middle, wheel(cumulative), inside
+ * Returns 0 when there is no pointer, leaving out[] zeroed. */
+int32_t flow_gfx_mouse(void* handle, int32_t* out) {
+    if (!out) return 0;
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx) {
+        for (int i = 0; i < 7; i++) out[i] = 0;
+        return 0;
+    }
+    out[0] = ctx->mouse_x;
+    out[1] = ctx->mouse_y;
+    out[2] = ctx->mouse_left ? 1 : 0;
+    out[3] = ctx->mouse_right ? 1 : 0;
+    out[4] = ctx->mouse_middle ? 1 : 0;
+    out[5] = ctx->mouse_wheel;
+    out[6] = ctx->mouse_inside ? 1 : 0;
+    return 1;
 }
 
 void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
@@ -222,6 +341,69 @@ void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h
             p[idx + 3] = 255;
         }
     }
+}
+
+/* Blit a packed RGB8 buffer (w*h*3 bytes, row-major, no padding) into the
+ * framebuffer at (x, y). Per-pixel work belongs here rather than in a
+ * fill_rect call per pixel: a 320x240 particle field is 76800 rects a frame,
+ * which the rect path cannot sustain. Clipped like fill_rect.
+ *
+ * The framebuffer is SDL_PIXELFORMAT_RGBA32, which SDL defines to give byte
+ * order R,G,B,A on both endiannesses — the same layout flow_gfx_clear and
+ * flow_gfx_fill_rect above already write. So this is byte-identical to the
+ * Cocoa implementation in runtime/gfx_macos.m. */
+void flow_gfx_blit_rgb(void* handle, int32_t x, int32_t y, int32_t w, int32_t h,
+                       const uint8_t* src) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || !ctx->pixels || !src) return;
+    if (w <= 0 || h <= 0) return;
+
+    int x0 = x < 0 ? 0 : (int)x;
+    int y0 = y < 0 ? 0 : (int)y;
+    int x1 = (int)x + (int)w; if (x1 > ctx->width) x1 = ctx->width;
+    int y1 = (int)y + (int)h; if (y1 > ctx->height) y1 = ctx->height;
+    if (x0 >= x1 || y0 >= y1) return;
+
+    uint8_t* dst = ctx->pixels;
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t* srow = src + ((size_t)(yy - y) * (size_t)w + (size_t)(x0 - x)) * 3u;
+        uint8_t* drow = dst + ((size_t)yy * (size_t)ctx->width + (size_t)x0) * 4u;
+        for (int xx = x0; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
+/* Milliseconds since the first call, from SDL's monotonic performance counter. */
+double flow_gfx_time_ms(void* handle) {
+    (void)handle;
+    static Uint64 origin = 0;
+    Uint64 freq = SDL_GetPerformanceFrequency();
+    Uint64 now = SDL_GetPerformanceCounter();
+    if (origin == 0) origin = now;
+    if (freq == 0) return 0.0;
+    return (double)(now - origin) * 1000.0 / (double)freq;
+}
+
+/* Sleep out the remainder of a frame at target_fps. The SDL window is created
+ * without vsync, so without this a demo's speed is hardware-dependent. */
+void flow_gfx_wait_frame(void* handle, int32_t target_fps) {
+    static double next = 0.0;
+    if (target_fps <= 0) return;
+    double period = 1000.0 / (double)target_fps;
+    double now = flow_gfx_time_ms(handle);
+    if (next <= 0.0) { next = now + period; return; }
+    double wait = next - now;
+    if (wait > 0.0) {
+        if (wait > period) wait = period;   /* clock jumped; do not stall */
+        SDL_Delay((Uint32)wait);
+    }
+    next = (wait < -period) ? now + period : next + period;  /* resync if far behind */
 }
 
 void flow_gfx_present(void* handle) {
@@ -300,6 +482,14 @@ int32_t flow_gfx_key_down(void* handle, int32_t keycode) {
     return 0;
 }
 
+/* No window, so no pointer: report absence and leave out[] zeroed. */
+int32_t flow_gfx_mouse(void* handle, int32_t* out) {
+    (void)handle;
+    if (!out) return 0;
+    for (int i = 0; i < 7; i++) out[i] = 0;
+    return 0;
+}
+
 void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
     (void)handle;
     (void)r;
@@ -319,6 +509,31 @@ void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h
     (void)g;
     (void)b;
     flow_gfx_sdl_warn_once();
+}
+
+void flow_gfx_blit_rgb(void* handle, int32_t x, int32_t y, int32_t w, int32_t h,
+                       const uint8_t* src) {
+    (void)handle;
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+    (void)src;
+    flow_gfx_sdl_warn_once();
+}
+
+/* No window, but the clock still has to advance monotonically so a program
+ * that paces itself does not divide by zero or spin. */
+double flow_gfx_time_ms(void* handle) {
+    (void)handle;
+    static double t = 0.0;
+    t += 1000.0 / 60.0;
+    return t;
+}
+
+void flow_gfx_wait_frame(void* handle, int32_t target_fps) {
+    (void)handle;
+    (void)target_fps;
 }
 
 void flow_gfx_present(void* handle) {

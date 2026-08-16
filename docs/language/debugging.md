@@ -71,6 +71,6 @@ If LLDB is missing and GDB is on `PATH`, `flow debug` launches GDB:
 
 ## Related
 
-- Roadmap status: [ROADMAP.md](../project/ROADMAP.md) § Debugger Integration
+- Roadmap status: [ROADMAP.md](../../ROADMAP.md) § Debugger Integration
 - Graphics / GPU runs use other CLI verbs (`gfx`, etc.); prefer `flow debug`
   for ordinary non-window programs.

@@ -1,0 +1,19 @@
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function main() -> i32 {
+    let celsius: f64 = 21.5
+    let fahrenheit: f64 = celsius * 9.0 / 5.0 + 32.0
+    let sample_count: i32 = 4
+    let mut total: f64 = 87.5
+    total = total + 1.0
+    let mean: f64 = total / 4.0
+    let comfortable: bool = celsius >= 18.0 and celsius <= 24.0
+
+    printf("samples: %d\n", sample_count)
+    printf("mean: %.3f C\n", mean)
+    printf("converted: %.1f F\n", fahrenheit)
+    printf("comfortable: %d\n", comfortable)
+    return 0
+}

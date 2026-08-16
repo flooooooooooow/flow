@@ -919,6 +919,9 @@ class CGenerator:
                 continue
             if struct_name in self._enums or struct_name in type_alias_names or struct_name in distinct_type_names:
                 continue
+            # Defined by the @cImport header's own #include.
+            if struct_name in getattr(self, '_c_import_types', ()):
+                continue
             safe_name = _c_ident(struct_name)
             lines.append(f"typedef struct {safe_name} {safe_name};")
             forward_declared.add(struct_name)
@@ -981,6 +984,8 @@ class CGenerator:
             emitted.add(name)
         
         for struct_name in sorted(self._structs.keys()):
+            if struct_name in getattr(self, '_c_import_types', ()):
+                continue
             emit_struct(struct_name)
 
         # Forward declarations for capability methods (mangled names: CapabilityName_methodName)
@@ -1041,7 +1046,19 @@ class CGenerator:
                            'pthread_mutex_init', 'pthread_mutex_destroy',
                            'pthread_mutex_lock', 'pthread_mutex_unlock',
                            # sys/stat.h — provided by sys/stat.h
-                           'stat', 'fstat', 'lstat', 'mkdir', 'chmod'}
+                           'stat', 'fstat', 'lstat', 'mkdir', 'chmod',
+                           # stdlib.h string conversion — provided by <stdlib.h>
+                           'atoi', 'atof', 'atol', 'strtol', 'strtoul',
+                           # math.h — provided by <math.h>
+                           'sqrt', 'fabs', 'pow', 'abs', 'labs',
+                           'sin', 'cos', 'tan', 'log', 'log2', 'log10', 'exp',
+                           'floor', 'ceil', 'round', 'fmod',
+                           # stdio.h scanf family
+                           'fscanf', 'sscanf', 'scanf',
+                           # string.h
+                           'strrchr',
+                           # stdlib.h
+                           'exit', 'abort'}
         primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
@@ -1052,6 +1069,12 @@ class CGenerator:
                 continue
             # Emit extern function declarations (needed for linking with runtime)
             if getattr(fn, 'is_extern', False):
+                # Skip c_import functions: the #include already provides
+                # the prototype. Emitting our own causes conflicting-type
+                # errors on Linux where system headers use __attribute__
+                # and different typedef aliases.
+                if getattr(fn, 'is_c_import', False):
+                    continue
                 lines.append(self._c_function_decl(fn) + ";")
                 continue
             # Skip math functions only if they take primitive types
@@ -5079,6 +5102,43 @@ def flow_to_c(
         c_includes = [d for d in declarations if isinstance(d, (CIncludeDecl, CImportDecl))]
         c_embeds = [d for d in declarations if isinstance(d, CEmbedDecl)]
 
+        # Names of every type that came from a @cImport header. The generator
+        # emits an #include for that header, which already defines them, so
+        # emitting our own definition is a redefinition. Reconstructing a
+        # scalar typedef as `typedef struct dev_t dev_t;` is wrong twice over:
+        # dev_t is an int, not a struct.
+        _c_import_types = {
+            d.name
+            for d in declarations
+            if getattr(d, 'is_c_import', False) and getattr(d, 'name', None)
+        }
+        # Types named in an imported signature come from that header too, even
+        # when the parser produced no declaration for them. Without this the
+        # generator sees an unknown name in `devname(dev_t, mode_t)`, assumes
+        # it is a struct, and forward-declares `typedef struct dev_t dev_t;`
+        # against a header where dev_t is an int.
+        _own_structs = {
+            d.name
+            for d in declarations
+            if isinstance(d, StructDecl) and not getattr(d, 'is_c_import', False)
+        }
+        import re as _re_ctypes
+        for d in declarations:
+            if not getattr(d, 'is_c_import', False) or not isinstance(d, FunctionDecl):
+                continue
+            sigs = [p.type for p in d.parameters]
+            if getattr(d, 'return_type', None) is not None:
+                sigs.append(d.return_type)
+            for t in sigs:
+                try:
+                    rendered = generator._type_to_string(t)
+                except Exception:
+                    continue
+                for ident in _re_ctypes.findall(r'[A-Za-z_]\w*', rendered or ''):
+                    if ident not in _own_structs:
+                        _c_import_types.add(ident)
+        generator._c_import_types = _c_import_types
+
         # Extract function names from @cEmbed code so the generator can
         # skip emitting conflicting extern prototypes for them.
         import re as _re_embed
@@ -5121,6 +5181,11 @@ def flow_to_c(
         for inc in c_includes:
             prelude_lines.append(f'#include "{inc.header}"')
         for et in extern_types:
+            # Types imported by @cImport are already declared by the #include
+            # this generator emits for that header. Re-declaring them is a
+            # typedef redefinition, which clang rejects on glibc.
+            if getattr(et, 'is_c_import', False):
+                continue
             prelude_lines.append(f"typedef struct {et.name} {et.name};")
         if prelude_lines:
             out = "\n".join(prelude_lines) + "\n" + out

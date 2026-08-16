@@ -48,6 +48,8 @@ export const TOK_MINUS_EQ: i32 = 43
 export const TOK_STAR_EQ: i32 = 44
 export const TOK_SLASH_EQ: i32 = 45
 export const TOK_PERCENT_EQ: i32 = 46
+export const TOK_IN: i32 = 47
+export const TOK_PIPELINE: i32 = 48
 
 export const KW_LET: i32 = 1
 export const KW_FUNCTION: i32 = 2
@@ -81,6 +83,13 @@ export const KW_CAPABILITY: i32 = 29
 export const KW_NOT: i32 = 30
 export const KW_DEFER: i32 = 31
 export const KW_ENUM: i32 = 32
+export const KW_TRAIT: i32 = 33
+export const KW_IMPL: i32 = 34
+export const KW_TEST: i32 = 35
+export const KW_PARALLEL: i32 = 36
+export const KW_DBG: i32 = 37
+export const KW_EXPECT: i32 = 38
+export const KW_DEFAULT: i32 = 39
 
 export struct Token {
     kind: i32,

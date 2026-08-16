@@ -1,0 +1,121 @@
+# `flow know` index and rendering dogfood.
+#
+# Prints one `KIND|input|result` line per case. The companion parity script
+# feeds the same inputs through src/flow/know.py and fails if the two
+# disagree:
+#
+#   python3 compiler/scripts/parity_know_index.py
+#
+# Run directly:  FLOW_HOST=python ./flow run examples/compilers/know_index_demo.flow
+
+import "compiler/src/claim_address.flow"
+import "compiler/src/claim_path.flow"
+import "compiler/src/math_prose.flow"
+import "compiler/src/know.flow"
+
+extern {
+    function printf(fmt: string, a: string, b: string, c: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<u8>
+}
+
+function join2(a: string, b: string) -> string {
+    let la: i32 = strlen(a) as i32
+    let lb: i32 = strlen(b) as i32
+    let buf: ptr<u8> = malloc((la + lb + 1) as i64)
+    let mut i: i32 = 0
+    while i < la { buf[i] = (a as ptr<u8>)[i]; i = i + 1 }
+    let mut j: i32 = 0
+    while j < lb { buf[la + j] = (b as ptr<u8>)[j]; j = j + 1 }
+    buf[la + lb] = 0
+    return buf as string
+}
+
+function emit(kind: string, input: string, result: string) -> void {
+    printf("%s|%s|%s\n", kind, input, result)
+}
+
+function emit_keys(mod_path: string, claim_path: string) -> void {
+    let mut key: string = mod_path
+    key = join2(key, "~")
+    key = join2(key, claim_path)
+    emit("KEYS", key, flowc_claim_index_keys(mod_path, claim_path))
+}
+
+function emit_match(key: string, query: string, claim_path: string) -> void {
+    let mut spec: string = key
+    spec = join2(spec, "~")
+    spec = join2(spec, query)
+    spec = join2(spec, "~")
+    spec = join2(spec, claim_path)
+    let mut got: string = "0"
+    if flowc_lookup_matches(key, query, claim_path) == 1 { got = "1" }
+    emit("MATCH", spec, got)
+}
+
+function main() -> i32 {
+    # Search roots
+    emit("ROOTS", "/home/me/flow", flowc_default_search_roots("/home/me/flow"))
+    emit("ROOTS", ".", flowc_default_search_roots("."))
+
+    # Query normalisation
+    emit("QUERY", "verify.Nat/+.zero-left", flowc_normalize_query("verify.Nat/+.zero-left"))
+    emit("QUERY", "  lib.verify.Eq  ", flowc_normalize_query("  lib.verify.Eq  "))
+    emit("QUERY", "examples.verify.Bool", flowc_normalize_query("examples.verify.Bool"))
+    emit("QUERY", "Nat/+.zero-left", flowc_normalize_query("Nat/+.zero-left"))
+
+    # Package prefix and qualification
+    emit("PREFIX", "verify.Nat/+", flowc_package_prefix("verify.Nat/+"))
+    emit("PREFIX", "verify.nat.plus", flowc_package_prefix("verify.nat.plus"))
+    emit("PREFIX", "", flowc_package_prefix(""))
+    emit("QUAL", "verify.nat~Nat/+.zero-left", flowc_qualify("verify.nat", "Nat/+.zero-left"))
+
+    # Index keys
+    emit_keys("verify.nat", "Nat/+.zero-left")
+    emit_keys("verify.eq", "«Eq» «equality» «everything equals itself»")
+    emit_keys("", "Nat/+.order-does-not-matter")
+    emit_keys("verify.misc/Nat/+", "not-a-claim-address")
+
+    # Lookup predicate
+    emit_match("verify.nat.Nat/+.zero-left", "Nat/+.zero-left", "Nat/+.zero-left")
+    emit_match("verify.eq.Eq/=.refl", "zero-left", "Nat/+.zero-left")
+    emit_match("something-else", "verify.nat.Nat/+.zero-left", "Nat/+.zero-left")
+    emit_match("a", "b", "c")
+
+    # Rendered entry
+    emit("KNOW", "full", flowc_format_know(
+        "verify.nat.Nat/+.zero-left",
+        "Nat/+.zero-left",
+        "Adding zero on the left does not change the number.",
+        "zero + n == n",
+        "definition",
+        "Peano axioms",
+        "Nat/+.succ-right, Eq/=.refl",
+        "Nat/+.order-does-not-matter",
+        "lib/verify/nat_plus.flow"))
+
+    emit("KNOW", "minimal", flowc_format_know(
+        "verify.misc.thing",
+        "not-a-claim-address",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "lib/verify/misc.flow"))
+
+    emit("KNOW", "geometry", flowc_format_know(
+        "verify.geo.«Geometry» «triangle» «interior angles sum to two right angles»",
+        "«Geometry» «triangle» «interior angles sum to two right angles»",
+        "",
+        "angle_alpha + angle_beta + angle_gamma == two_right_angles",
+        "derived",
+        "",
+        "",
+        "",
+        "lib/verify/geometry.flow"))
+
+    printf("%s%s%s\n", "##", "END", "##")
+    return 0
+}

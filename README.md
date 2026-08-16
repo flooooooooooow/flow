@@ -39,7 +39,7 @@ Flow is a statically typed, compiled language with algebraic effects, autodiff i
 
 | | |
 |--|--|
-| Version | 0.11.0 |
+| Version | 0.11.1 |
 | Install | `brew tap flooooooooooow/flow && brew install flow` |
 | License | [MIT](LICENSE) |
 | Cite | [CITATION.cff](CITATION.cff) |
@@ -80,7 +80,7 @@ flow Pendulum {
 
 That is a complete program. The compiler hands the right-hand side to an RK4 solver and runs it at native speed. No notebook, no glue code, no translation step between model and deployment.
 
-Full thesis: [VISION.md](VISION.md). Domain architecture: [docs/vision/physical-systems.md](docs/vision/physical-systems.md).
+Full thesis: [VISION.md](VISION.md). Vision mapped onto grammar: [docs/vision/north-star.md](docs/vision/north-star.md). Phase sequencing: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -120,6 +120,21 @@ Needs Python 3.9+ and Clang or GCC (Xcode Command Line Tools on macOS).
 Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
 Longer walkthrough: [Getting started](docs/getting-started.md).
+
+New to programming: [Start here](docs/start-here.md) goes from an empty
+terminal to a running simulation, and sets up an AI assistant to write Flow
+with you.
+
+### Working with an AI assistant
+
+Flow is not in any model's training data, so an assistant does much better with
+the current facts in front of it. Two things help:
+
+- [Working with AI on Flow](docs/AI_FLOW_HANDBOOK.md), the operating handbook.
+- [flow-skills](https://github.com/flooooooooooow/flow-skills), a pack of
+  skills, references, and command-line tools. `./install.sh` and your
+  assistant knows the syntax, the compiler hosts, and how to verify its own
+  work.
 
 ---
 
@@ -249,8 +264,8 @@ extern {
 | Resource | Description |
 |----------|-------------|
 | [Getting started](docs/getting-started.md) | Install, first program, basics |
-| [Best practices](docs/language/best-practices.md) | Idioms and why Flow favors fluid abstraction |
 | [Language overview](docs/language/overview.md) | Features and design |
+| [Language design](docs/language/language_design.md) | Idioms and why Flow favors fluid abstraction |
 | [Language spec](docs/LANGUAGE_SPEC.md) | Full reference |
 | [Effects showcase](docs/effects-showcase.md) | Algebraic effects end to end |
 | [Examples index](examples/README.md) | Demos by domain |
@@ -281,6 +296,41 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 | [`docs/`](docs/) | Spec, tutorials, demos, project docs |
 | [`third_party/integrations/vscode/`](third_party/integrations/vscode/) | VS Code / Cursor extension |
 | [`site/`](site/) | Wiki shell and site assets |
+
+---
+
+## Self-hosting status
+
+The self-hosted compiler (`compiler/src/`, written in Flow) is the default host
+for `./flow run` and `./flow compile`. It compiles itself end to end: three
+consecutive generation fixed-points are byte-identical, and a clean checkout
+needs no Python to build a working compiler.
+
+The bootstrap language suite (`tests/lang/`, 90 `.flow` files) is the
+regression target for self-hosted parity. Current result, run with
+`FLOWC_IN`/`FLOWC_OUT` environment variables:
+
+```
+pass=79  fail=11
+```
+
+The 11 failures fall into five categories:
+
+| Category | Tests | Root cause |
+|----------|-------|------------|
+| DSL parse failures | `test_effects`, `test_hybrid_events`, `test_time_blocks` | `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` keywords are not parsed |
+| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts generic syntax but the monomorphizer is missing; `struct Box<T>` emits `T value` instead of a concrete type |
+| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names; overload selection is not implemented |
+| Closure snapshot semantics | `test_closures` | Captured variables are hoisted to globals without snapshotting the value at closure creation time |
+| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder emits a variable used as a function call; FIR inline-pure bonus constant gets a float-to-int truncation |
+| External C headers | `test_c_import_julia`, `test_c_import_python` | System headers for Julia and Python embedding are not available in the test environment |
+
+The Python-host compiler (`src/flow/`, 46,695 lines) remains the full language
+surface: generics, effects, MLIR, GPU, DSLs, and all advanced type checking.
+The self-hosted compiler (`compiler/src/`, 10,863 lines) covers the subset
+needed to compile itself plus a growing set of language features. See
+[docs/project/self-hosting.md](docs/project/self-hosting.md) for the full plan
+and [compiler/README.md](compiler/README.md) for the supported syntax list.
 
 ---
 

@@ -4,30 +4,42 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
-### Fixed
+## [0.11.1] - 2026-08-14
 
-- `examples/morphogenesis/hexagonal_ca.flow` reseeded to a permanent dot. The
-  crystal span and frozen count were only recomputed inside the growth step,
-  and that step was itself gated on the span. Once the crystal filled the
-  lattice the gate latched shut: every restart (auto, `R`, or a preset change)
-  reseeded the lattice while the HUD kept reporting the stale pre-restart
-  figures, and the crystal never grew again. Restarts now clear the span and
-  frozen count, and the three duplicated restart paths are one branch.
+Patch release. 0.11.0 shipped its headline feature broken on Linux: every
+`@cImport` program emitted C that clang rejected against glibc headers. macOS
+was unaffected and its own tests could not catch it, for the reason in the
+last bullet below.
 
-### Release engineering
+### Fixed — @cImport on Linux
 
-- `scripts/sync_version.py` makes `src/flow/version.py` the single source of
-  truth for the version and rewrites every mirror from it: `flow.toml`,
-  `pyproject.toml`, `CITATION.cff`, the README table, the language spec
-  header, the three strings in the `flow` driver, and the Homebrew formula.
-  `--check` verifies without writing, `--set X.Y.Z` bumps.
-- CI gains an ungated `Version consistency` job running `--check`. The
-  drift-prone files sit outside every existing paths filter, so the job
-  deliberately runs on every push.
-- `.github/workflows/version-bump.yml` syncs the tree on a `v*` tag push (or
-  manual dispatch) and opens a PR. The Homebrew formula is only touched once
-  the release tarball is actually published, with a digest computed from it
-  rather than guessed.
+`@cImport` emitted C that clang rejected on glibc, so every `@cImport` test
+failed in CI while macOS stayed green. Four defects, each hiding the next:
+
+- `monomorphize` rebuilt declarations without carrying `is_c_import` across
+  (133 marks in, 12 out). The C generator uses that flag to suppress what the
+  imported header's own `#include` already provides, so every imported
+  prototype and type was re-emitted and collided with the real header. This
+  also silently disabled the existing prototype skip.
+- `resolve_c_imports` marked only `FunctionDecl`, leaving imported types
+  unmarked. A header with an anonymous struct typedef (glibc's `lldiv_t`)
+  produced a second `typedef struct lldiv_t lldiv_t;`.
+- Types named only in an imported signature were assumed to be structs and
+  forward-declared, so `devname(dev_t, mode_t)` emitted
+  `typedef struct dev_t dev_t;` against a header where `dev_t` is an `int`.
+- `_preprocess_header` fell back to another preprocessor only on
+  `FileNotFoundError`. Where `cpp -P -` exists but fails (some macOS
+  installs), it returned empty and `@cImport` imported nothing at all, which
+  is why the feature looked fine locally while being broken in CI. Empty
+  output now falls through to `clang -E`, then `gcc -E`.
+
+Also strips `_Nonnull` / `_Nullable` / `_Null_unspecified` when parsing. Those
+are qualifiers, not part of the type, and two distinct signatures were
+mangling to the same C identifier.
+
+Covered by `tests/unit/test_c_import_no_redeclare.py`, which uses a fixture
+header rather than a system one so it asserts the same thing on every
+platform, and compiles the generated C with clang.
 
 ## [0.11.0] - 2026-08-13
 
@@ -145,6 +157,43 @@ host on real language surface:
   Both were introduced during the 0.10.0 cycle and removed before this
   release, so the corresponding 0.10.0 notes below no longer describe
   shipped behaviour.
+
+### Fixed
+
+- `examples/morphogenesis/hexagonal_ca.flow` reseeded to a permanent dot. The
+  crystal span and frozen count were only recomputed inside the growth step,
+  and that step was itself gated on the span. Once the crystal filled the
+  lattice the gate latched shut: every restart (auto, `R`, or a preset change)
+  reseeded the lattice while the HUD kept reporting the stale pre-restart
+  figures, and the crystal never grew again. Restarts now clear the span and
+  frozen count, and the three duplicated restart paths are one branch.
+
+### Documentation
+
+- Repaired 16 broken relative links across README, ROADMAP, and the docs tree.
+  Most were stale paths (`docs/project/ROADMAP.md` for a file at the repo root,
+  proof directories still pointing at the retired `third-party/flow-verify/`
+  tree). Two README entries pointed at documents that were never written
+  (`docs/vision/physical-systems.md`, `docs/language/best-practices.md`) and now
+  point at the material that exists.
+- `scripts/check_doc_links.py` verifies relative links resolve in the tree, and
+  runs as an ungated CI job. It skips the six basenames `build_wiki.py`
+  generates into the published site, which are absent from the tree by design.
+
+### Release engineering
+
+- `scripts/sync_version.py` makes `src/flow/version.py` the single source of
+  truth for the version and rewrites every mirror from it: `flow.toml`,
+  `pyproject.toml`, `CITATION.cff`, the README table, the language spec
+  header, the three strings in the `flow` driver, and the Homebrew formula.
+  `--check` verifies without writing, `--set X.Y.Z` bumps.
+- CI gains an ungated `Version consistency` job running `--check`. The
+  drift-prone files sit outside every existing paths filter, so the job
+  deliberately runs on every push.
+- `.github/workflows/version-bump.yml` syncs the tree on a `v*` tag push (or
+  manual dispatch) and opens a PR. The Homebrew formula is only touched once
+  the release tarball is actually published, with a digest computed from it
+  rather than guessed.
 
 ## [0.10.0] - 2026-08-08
 

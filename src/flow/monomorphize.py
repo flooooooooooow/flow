@@ -572,7 +572,9 @@ class Monomorphizer:
             specialized.has_self = original.has_self
         if hasattr(original, "is_forward_decl"):
             specialized.is_forward_decl = original.is_forward_decl
-        
+        if hasattr(original, "is_c_import"):
+            specialized.is_c_import = original.is_c_import
+
         self.generated_functions[req.mangled_name] = specialized
     
     def _resolve_struct_literal_mangled_name(self, struct_name: str, type_map: Dict[str, Type] = None) -> str:
@@ -889,6 +891,12 @@ class Monomorphizer:
             new_fn.is_forward_decl = fn.is_forward_decl
         if hasattr(fn, "is_variadic"):
             new_fn.is_variadic = fn.is_variadic
+        # Preserve is_c_import: the C generator uses it to suppress
+        # declarations the @cImport header's own #include already provides.
+        # Losing it here re-emitted every imported prototype and typedef,
+        # which clang rejects as conflicting with the real header.
+        if hasattr(fn, "is_c_import"):
+            new_fn.is_c_import = fn.is_c_import
         return new_fn
     
     def _rewrite_type(self, t: Type) -> Type:

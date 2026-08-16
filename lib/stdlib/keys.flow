@@ -1,0 +1,92 @@
+# Keyboard constants for gfx programs.
+#
+# Every backend speaks macOS NSEvent virtual keycodes, because that is what the
+# examples hardcoded first: runtime/gfx_macos.m passes them straight through,
+# and runtime/gfx_sdl_impl.inc and runtime/gfx_wasm.c both translate into them.
+# This module is the single table.
+#
+# WHY THIS IS NOT IN gfx.flow
+#
+# Constants emit as `static const int32_t NAME = value;` and are not
+# deduplicated. Around 131 example files declare their own `const KEY_P: i32 =
+# 35` because gfx.flow ships only ten codes. Adding those names to gfx.flow
+# would inject them into every file that imports it and produce a C
+# redefinition error in all 131.
+#
+# So this is a separate module holding exactly the codes gfx.flow does *not*
+# export. Nothing imports it yet, so no existing program is affected. New
+# programs import both:
+#
+#     import "stdlib/gfx.flow"
+#     import "stdlib/keys.flow"
+#
+# gfx.flow already provides: KEY_ESC KEY_R KEY_W KEY_A KEY_S KEY_D
+#                            KEY_LEFT KEY_RIGHT KEY_DOWN KEY_UP
+# Do not redeclare those here, or the two modules collide.
+
+# --- Letters (minus A S D W R, which gfx.flow owns) -------------------------
+const KEY_F: i32 = 3
+const KEY_H: i32 = 4
+const KEY_G: i32 = 5
+const KEY_Z: i32 = 6
+const KEY_X: i32 = 7
+const KEY_C: i32 = 8
+const KEY_V: i32 = 9
+const KEY_B: i32 = 11
+const KEY_Q: i32 = 12
+const KEY_E: i32 = 14
+const KEY_Y: i32 = 16
+const KEY_T: i32 = 17
+const KEY_O: i32 = 31
+const KEY_U: i32 = 32
+const KEY_I: i32 = 34
+const KEY_P: i32 = 35
+const KEY_L: i32 = 37
+const KEY_J: i32 = 38
+const KEY_K: i32 = 40
+const KEY_N: i32 = 45
+const KEY_M: i32 = 46
+
+# --- Digits ----------------------------------------------------------------
+# 5 and 6 are not in numeric order. That is the real hardware layout, not a
+# typo: NSEvent gives 6 the lower code.
+const KEY_1: i32 = 18
+const KEY_2: i32 = 19
+const KEY_3: i32 = 20
+const KEY_4: i32 = 21
+const KEY_6: i32 = 22
+const KEY_5: i32 = 23
+const KEY_9: i32 = 25
+const KEY_7: i32 = 26
+const KEY_8: i32 = 28
+const KEY_0: i32 = 29
+
+# --- Punctuation -----------------------------------------------------------
+const KEY_EQUAL: i32 = 24
+const KEY_MINUS: i32 = 27
+const KEY_RBRACKET: i32 = 30
+const KEY_LBRACKET: i32 = 33
+const KEY_QUOTE: i32 = 39
+const KEY_SEMICOLON: i32 = 41
+const KEY_BACKSLASH: i32 = 42
+const KEY_COMMA: i32 = 43
+const KEY_SLASH: i32 = 44
+const KEY_PERIOD: i32 = 47
+const KEY_BACKQUOTE: i32 = 50
+
+# --- Control ---------------------------------------------------------------
+const KEY_ENTER: i32 = 36
+const KEY_TAB: i32 = 48
+const KEY_SPACE: i32 = 49
+const KEY_BACKSPACE: i32 = 51
+
+# --- Modifiers -------------------------------------------------------------
+# Reported by macOS through flagsChanged: and by SDL as ordinary key events.
+const KEY_LGUI: i32 = 55
+const KEY_LSHIFT: i32 = 56
+const KEY_LALT: i32 = 58
+const KEY_LCTRL: i32 = 59
+const KEY_RSHIFT: i32 = 60
+const KEY_RALT: i32 = 61
+const KEY_RCTRL: i32 = 62
+const KEY_RGUI: i32 = 54

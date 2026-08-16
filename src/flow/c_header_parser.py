@@ -21,7 +21,6 @@ inline functions, and compiler-specific attributes.
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -31,12 +30,19 @@ from .parser import (
     FunctionDecl,
     ExternTypeDecl,
     ConstDecl,
-    StructDecl,
     Parameter,
     Type as ParsedType,
     Block,
     Literal,
 )
+
+# Functions that the type checker flags as dangerous FFI (#276).
+# @cImport pulls these from system headers; skip them so the user doesn't
+# need @unsafe for declarations they never wrote.
+_DANGEROUS_IMPORT_NAMES = frozenset({
+    "system", "gets", "strcpy", "strcat", "sprintf", "vsprintf",
+    "scanf", "sscanf", "realpath", "getwd",
+})
 
 
 # C type to Flow type mapping
@@ -83,6 +89,25 @@ _C_TO_FLOW = {
     "va_list": "ptr<void>",
 }
 
+# Functions that are already declared in user extern blocks or are
+# standard libc functions that conflict with system headers.
+# The auto-prototype generator skips these to avoid duplicate declarations.
+_LIBC_SKIP_FUNCS = {
+    "atoi", "atof", "atol", "strtol", "strtod", "strtoul",
+    "exit", "abort", "malloc", "free", "calloc", "realloc",
+    "sqrt", "fabs", "pow", "abs", "labs",
+    "sin", "cos", "tan", "log", "log2", "log10", "exp",
+    "floor", "ceil", "round", "fmod",
+    "strcmp", "strncmp", "strlen", "strchr", "strrchr", "strstr",
+    "popen", "pclose", "fscanf", "sscanf", "scanf",
+    "memcpy", "memmove", "memset", "strcpy", "strncpy",
+    "strcat", "strncat", "sprintf", "snprintf", "fprintf", "printf",
+    "vsnprintf", "vsprintf", "vfprintf", "vprintf",
+    "fgets", "fread", "fwrite", "fputc", "fputs", "putc", "putchar",
+    "getchar", "fgetc", "getc", "strdup", "bcopy", "bzero",
+    "puts",
+}
+
 
 def _c_type_to_flow(c_type: str) -> str:
     """Convert a C type string to a Flow type string."""
@@ -105,54 +130,72 @@ def _c_type_to_flow(c_type: str) -> str:
 
 
 def _preprocess_header(header: str, include_dirs: List[str]) -> str:
-    """Run cpp -P on a header and return the preprocessed text.
+    """Preprocess a header and return the expanded text.
 
-    On macOS, cpp (which is clang) can't take a header name directly.
-    We pipe `#include <header>` through cpp instead.
+    A header name cannot be passed to the preprocessor directly, so we pipe
+    `#include <header>` through it on stdin.
+
+    Two preprocessors are tried in order. On some macOS installs `cpp` is a
+    wrapper that mishandles the `-` stdin argument and fails with
+    "no such file or directory: 'c'", writing nothing to stdout. Falling back
+    only on FileNotFoundError missed that case, so @cImport silently parsed
+    zero declarations there and every @cImport test passed without exercising
+    the feature. Empty output now falls through to `clang -E` as well.
     """
-    # Build the include directive
     if header.startswith("/") or header.startswith('"'):
         include_line = f"#include {header}\n"
     else:
         include_line = f"#include <{header}>\n"
 
-    cmd = ["cpp", "-P"]
-    for d in include_dirs:
-        cmd.extend(["-I", d])
-    cmd.append("-")  # read from stdin
-    try:
+    def run(argv: List[str]) -> str:
+        argv = list(argv)
+        for d in include_dirs:
+            argv.extend(["-I", d])
+        argv.append("-")  # read from stdin
         result = subprocess.run(
-            cmd,
+            argv,
             input=include_line,
             capture_output=True,
             text=True,
             timeout=30,
         )
         return result.stdout
-    except FileNotFoundError:
-        cmd[0] = "clang"
-        cmd.insert(1, "-E")
+
+    last_error: Optional[Exception] = None
+    for argv in (["cpp", "-P"], ["clang", "-E", "-P"], ["gcc", "-E", "-P"]):
         try:
-            result = subprocess.run(
-                cmd,
-                input=include_line,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            return result.stdout
-        except Exception as e:
-            print(f"Warning: @cImport preprocessing failed: {e}", file=sys.stderr)
-            return ""
-    except Exception as e:
-        print(f"Warning: @cImport preprocessing failed: {e}", file=sys.stderr)
-        return ""
+            text = run(argv)
+        except FileNotFoundError:
+            continue
+        except Exception as e:  # timeout, permissions, ...
+            last_error = e
+            continue
+        if text.strip():
+            return text
+
+    if last_error is not None:
+        print(f"Warning: @cImport preprocessing failed: {last_error}", file=sys.stderr)
+    else:
+        print(
+            f"Warning: @cImport could not preprocess {header!r}; "
+            "no declarations were imported",
+            file=sys.stderr,
+        )
+    return ""
 
 
 def _strip_attributes(text: str) -> str:
-    """Remove __attribute__((...)) and __builtin annotations."""
+    """Remove __attribute__((...)), __builtin, and nullability annotations.
+
+    Apple's headers annotate pointers with `_Nonnull` / `_Nullable`. They are
+    qualifiers, not part of the type, but they used to survive into generated
+    type names: two distinct signatures both mangled to
+    `ptr_int_____Nonnull___compar___void_____void_` and the second typedef was
+    rejected as a redefinition.
+    """
     text = re.sub(r"__attribute__\s*\(\([^)]*\)\)", "", text)
     text = re.sub(r"__builtin_\w+", "", text)
+    text = re.sub(r"\b_(?:Nonnull|Nullable|Null_unspecified)\b", "", text)
     return text
 
 
@@ -457,6 +500,10 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
     if fn_name.startswith("__"):
         return None
 
+    # Skip known libc functions that conflict with system headers
+    if fn_name in _LIBC_SKIP_FUNCS:
+        return None
+
     # Parse parameters
     params = _parse_params(params_str)
 
@@ -589,7 +636,26 @@ def resolve_c_imports(declarations: List, source_dir: str) -> List:
             # Parse the header
             include_dirs = [source_dir, "/usr/include", "/usr/local/include"]
             parsed = parse_c_header(decl.header, include_dirs)
-            result.extend(parsed)
+            # Mark every parsed declaration as c_import so the C generator
+            # emits none of them: the #include above already provides the
+            # real ones, and re-emitting collides with it. Marking only
+            # FunctionDecl left types behind, so a header with an anonymous
+            # struct typedef (glibc's lldiv_t, for one) produced a second
+            # `typedef struct lldiv_t lldiv_t;` and clang rejected the file:
+            #   error: typedef redefinition with different types
+            # The type checker still sees these declarations; only C output
+            # is suppressed.
+            for p in parsed:
+                # Skip dangerous FFI functions imported from system headers.
+                # The user didn't declare these; they came in via @cImport
+                # parsing. Adding them triggers the dangerous-FFI check in
+                # the type checker, which requires @unsafe extern. The
+                # #include already provides the prototype, so dropping them
+                # is safe.
+                if isinstance(p, FunctionDecl) and p.name in _DANGEROUS_IMPORT_NAMES:
+                    continue
+                p.is_c_import = True
+                result.append(p)
         else:
             result.append(decl)
     return result

@@ -41,6 +41,13 @@ int32_t flow_gfx_rec_env_int(const char *name, int32_t fallback);
 void flow_gfx_rec_env_dir(uint8_t *out, int64_t cap);
 int32_t flow_gfx_rec_parse_keys(int32_t *first, int32_t *last, int32_t *code,
                                 int32_t cap);
+int32_t flow_gfx_rec_parse_mouse(int32_t *first, int32_t *last, int32_t *x0,
+                                 int32_t *y0, int32_t *x1, int32_t *y1,
+                                 int32_t *btn, int32_t *whl, int32_t cap);
+int32_t flow_gfx_rec_mouse(int32_t presented, int32_t *out, int32_t *first,
+                           int32_t *last, int32_t *x0, int32_t *y0, int32_t *x1,
+                           int32_t *y1, int32_t *btn, int32_t *whl,
+                           int32_t count);
 int32_t flow_gfx_rec_key_down(int32_t presented, int32_t keycode,
                               int32_t *first, int32_t *last, int32_t *code,
                               int32_t count);
@@ -66,6 +73,16 @@ typedef struct {
     int32_t key_last[FLOW_GFX_MAX_KEY_WINDOWS];
     int32_t key_code[FLOW_GFX_MAX_KEY_WINDOWS];
     int32_t key_count;
+
+    int32_t m_first[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_last[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_x0[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_y0[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_x1[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_y1[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_btn[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_whl[FLOW_GFX_MAX_KEY_WINDOWS];
+    int32_t m_count;
 } FlowGfxRecorder;
 
 void *flow_gfx_init(int32_t w, int32_t h, const char *title_utf8) {
@@ -87,6 +104,11 @@ void *flow_gfx_init(int32_t w, int32_t h, const char *title_utf8) {
     rec->key_count = flow_gfx_rec_parse_keys(rec->key_first, rec->key_last,
                                              rec->key_code,
                                              FLOW_GFX_MAX_KEY_WINDOWS);
+    rec->m_count = flow_gfx_rec_parse_mouse(rec->m_first, rec->m_last,
+                                            rec->m_x0, rec->m_y0,
+                                            rec->m_x1, rec->m_y1,
+                                            rec->m_btn, rec->m_whl,
+                                            FLOW_GFX_MAX_KEY_WINDOWS);
 
     fprintf(stderr, "[gfx-record] %s — %dx%d, up to %d frames → %s\n",
             title_utf8 ? title_utf8 : "(untitled)", w, h, rec->max_frames,
@@ -114,11 +136,54 @@ void flow_gfx_poll(void *handle) {
     (void)handle; // No event source to drain when running headless.
 }
 
+/* Virtual clock. The recorder deliberately does not report wall time: a
+ * recorded run must produce the same frames whatever the machine's speed, and
+ * it should not burn real seconds sleeping. Time advances exactly one frame
+ * per present, at FLOW_GFX_RECORD_FPS (default 60), so a demo that integrates
+ * against gfx_time_ms gets identical output on every run and every host.
+ *
+ * This is simulated time, distinct from GIF playback rate, which
+ * scripts/frames_to_gif.py sets separately with --fps/--stride. */
+double flow_gfx_time_ms(void *handle) {
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
+    if (!rec) return 0.0;
+    int fps = 60;
+    const char *env = getenv("FLOW_GFX_RECORD_FPS");
+    if (env && *env) {
+        int v = atoi(env);
+        if (v > 0) fps = v;
+    }
+    return (double)rec->presented * 1000.0 / (double)fps;
+}
+
+/* No-op headless: the recorder should run as fast as the CPU allows. */
+void flow_gfx_wait_frame(void *handle, int32_t target_fps) {
+    (void)handle;
+    (void)target_fps;
+}
+
 int32_t flow_gfx_key_down(void *handle, int32_t keycode) {
     FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
     if (!rec) return 0;
     return flow_gfx_rec_key_down(rec->presented, keycode, rec->key_first,
                                  rec->key_last, rec->key_code, rec->key_count);
+}
+
+/* Scripted pointer, so a mouse-driven demo can still be recorded as a GIF.
+ * FLOW_GFX_RECORD_MOUSE holds ';'-separated segments of
+ *   first,last,x0,y0,x1,y1,buttons,wheel
+ * and the cursor lerps across each window with integer arithmetic, so the
+ * result is bit-identical on every platform. */
+int32_t flow_gfx_mouse(void *handle, int32_t *out) {
+    if (!out) return 0;
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
+    if (!rec) {
+        for (int i = 0; i < 7; i++) out[i] = 0;
+        return 0;
+    }
+    return flow_gfx_rec_mouse(rec->presented, out, rec->m_first, rec->m_last,
+                              rec->m_x0, rec->m_y0, rec->m_x1, rec->m_y1,
+                              rec->m_btn, rec->m_whl, rec->m_count);
 }
 
 void flow_gfx_clear(void *handle, uint8_t r, uint8_t g, uint8_t b) {

@@ -16,6 +16,9 @@ extern {
     function stat(path: string, buf: ptr<u8>) -> i32
     function popen(cmd: string, mode: string) -> ptr<void>
     function pclose(fp: ptr<void>) -> i32
+}
+
+@unsafe extern {
     function system(cmd: string) -> i32
 }
 

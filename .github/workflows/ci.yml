@@ -102,6 +102,16 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 scripts/sync_version.py --check
 
+  # Relative links in tracked markdown, as a reader meets them on GitHub.
+  # check_wiki_links.py validates the built site instead; the two catch
+  # different breakage. Both stdlib-only, so no toolchain setup.
+  doc-links:
+    name: Doc links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/check_doc_links.py
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -199,6 +209,26 @@ jobs:
           chmod +x ./flow compiler/scripts/*.sh
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
           timeout 20m ./compiler/scripts/roundtrip.sh
+
+      # Where a Flow port replaces Python that still exists, the Python stays
+      # the reference and the port is diffed against it on every run.
+      - name: math_prose expression parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_math_prose_expr.py
+
+      - name: proof parse parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_proof_parse.py
+
+      - name: know index parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_know_index.py
 
       - name: Stage flowc driver for artifact
         run: |
