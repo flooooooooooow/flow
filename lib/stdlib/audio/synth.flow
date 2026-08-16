@@ -23,6 +23,7 @@ export struct Synth {
     osc1: Phasor
     osc2: Phasor
     env: ADSREnvelope
+    filter: Biquad
     filter_cutoff: f32
     filter_res: f32
     mix: f32              # Osc1/Osc2 mix (0.0 = osc1, 1.0 = osc2)
@@ -88,6 +89,7 @@ export function synth_bass() -> Synth {
         osc1: phasor_new(100.0, rate),
         osc2: phasor_new(100.0, rate),
         env: env,
+        filter: biquad_lowpass(800.0, 0.7, rate),
         filter_cutoff: 800.0,
         filter_res: 0.7,
         mix: 0.5,
@@ -111,6 +113,7 @@ export function synth_lead() -> Synth {
         osc1: phasor_new(440.0, rate),
         osc2: phasor_new(440.0, rate),
         env: env,
+        filter: biquad_lowpass(3000.0, 0.5, rate),
         filter_cutoff: 3000.0,
         filter_res: 0.5,
         mix: 0.7,
@@ -134,6 +137,7 @@ export function synth_pad() -> Synth {
         osc1: phasor_new(220.0, rate),
         osc2: phasor_new(220.0, rate),
         env: env,
+        filter: biquad_lowpass(1200.0, 0.3, rate),
         filter_cutoff: 1200.0,
         filter_res: 0.3,
         mix: 0.5,
@@ -157,6 +161,7 @@ export function synth_pluck() -> Synth {
         osc1: phasor_new(330.0, rate),
         osc2: phasor_new(330.0, rate),
         env: env,
+        filter: biquad_lowpass(2000.0, 0.4, rate),
         filter_cutoff: 2000.0,
         filter_res: 0.4,
         mix: 0.3,
@@ -180,6 +185,7 @@ export function synth_organ() -> Synth {
         osc1: phasor_new(262.0, rate),
         osc2: phasor_new(262.0, rate),
         env: env,
+        filter: biquad_lowpass(5000.0, 0.2, rate),
         filter_cutoff: 5000.0,
         filter_res: 0.2,
         mix: 0.5,
@@ -203,6 +209,7 @@ export function synth_fm() -> Synth {
         osc1: phasor_new(440.0, rate),
         osc2: phasor_new(880.0, rate),  # 2x frequency for FM
         env: env,
+        filter: biquad_lowpass(8000.0, 0.3, rate),
         filter_cutoff: 8000.0,
         filter_res: 0.3,
         mix: 0.4,
@@ -226,6 +233,7 @@ export function synth_sub() -> Synth {
         osc1: phasor_new(55.0, rate),
         osc2: phasor_new(55.0, rate),
         env: env,
+        filter: biquad_lowpass(150.0, 0.8, rate),
         filter_cutoff: 150.0,   # Very low cutoff
         filter_res: 0.8,        # High resonance
         mix: 0.5,
@@ -249,6 +257,7 @@ export function synth_brass() -> Synth {
         osc1: phasor_new(220.0, rate),
         osc2: phasor_new(220.0, rate),
         env: env,
+        filter: biquad_lowpass(2500.0, 0.6, rate),
         filter_cutoff: 2500.0,
         filter_res: 0.6,
         mix: 0.6,
@@ -345,7 +354,8 @@ export function synth_tick(synth: Synth, freq: f32, gate: bool) -> f32 {
     let env: ADSREnvelope = envelope_tick(synth.env, gate)
     let output: f32 = mixed * env.current
 
-    # TODO: Apply filter when filter module is ready
+    # Apply filter
+    let filtered_output: f32 = biquad_process(synth.filter, output)
 
-    return output
+    return filtered_output
 }
