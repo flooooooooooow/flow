@@ -114,3 +114,11 @@ def test_fill_shader_modules_resolve_for_c_transpile():
         path = Path("examples/gpu") / name
         decls = resolve_modules(str(path))
         assert any(getattr(d, "name", None) == "main" for d in decls)
+def test_shader_dsl_parse():
+    from flow.shader_dsl import parse_shader_body
+    src = """
+    let x: vec4 = vec4(1.0, 1.0, 1.0, 1.0)
+    out_color = x
+    """
+    stmts = parse_shader_body(src)
+    assert len(stmts) == 2

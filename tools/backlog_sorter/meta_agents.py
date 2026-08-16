@@ -449,6 +449,26 @@ class ArchitecturalFitAgent(Agent):
 
 
 # Export all meta agents
+
+
+# Export all meta agents
+class FlowIdiomAgent(Agent):
+    """Encourages Flow idioms and best practices."""
+
+    name = "FlowIdiomAgent"
+    weight = 0.9
+
+    def evaluate(self, item: BacklogItem) -> int:
+        title_lower = item.title.lower()
+
+        # Tasks related to encouraging idioms, style, effects, pointers
+        idioms = ["idiom", "style", "lint", "effect", "pointer", "mutability"]
+        if any(kw in title_lower for kw in idioms):
+            return 5
+
+        return 3
+
+
 META_AGENTS = [
     BiasDetectorAgent,
     ConsensusBuilderAgent,
@@ -469,4 +489,8 @@ META_AGENTS = [
     DocumentationDebtAgent,
     TestCoverageAgent,
     ArchitecturalFitAgent,
+    FlowIdiomAgent,
 ]
+
+
+# Need to update META_AGENTS list
