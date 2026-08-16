@@ -1555,6 +1555,141 @@ kbd.key {
 
 .wiki-hero-code code { background: none; border: none; padding: 0; }
 
+/* ── Home stats strip ───────────────────────────────────────────────────── */
+
+.markdown-body .wiki-stat-row,
+.wiki-stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1.35rem;
+    margin: -0.75rem 0 2.25rem;
+    padding: 0.85rem 0 0;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.1rem;
+}
+
+.wiki-stat-row strong {
+    color: var(--text);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Documentation index (Python docs–style section grid) ───────────────── */
+
+.markdown-body nav.wiki-doc-index,
+.wiki-doc-index {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    margin: 1rem 0 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.markdown-body a.wiki-doc,
+.wiki-doc {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1.05rem 1.2rem 1.15rem;
+    text-decoration: none !important;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    transition: background var(--fast);
+}
+
+.markdown-body a.wiki-doc:nth-child(2n),
+.wiki-doc:nth-child(2n) {
+    border-right: none;
+}
+
+.markdown-body a.wiki-doc:nth-last-child(-n+2),
+.wiki-doc:nth-last-child(-n+2) {
+    border-bottom: none;
+}
+
+.markdown-body a.wiki-doc:hover,
+.wiki-doc:hover {
+    background: var(--accent-soft);
+}
+
+.markdown-body a.wiki-doc strong,
+.wiki-doc strong {
+    font-size: 0.98rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: var(--accent);
+}
+
+.markdown-body a.wiki-doc span,
+.wiki-doc span {
+    font-size: 0.84rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.markdown-body a.wiki-doc code,
+.wiki-doc code {
+    font-size: 0.8em;
+}
+
+/* ── Feature showcase (code + one-line thesis) ──────────────────────────── */
+
+.markdown-body .wiki-showcase,
+.wiki-showcase {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+    margin: 1.15rem 0 2rem;
+}
+
+.wiki-showcase-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 1rem 1.05rem 1.05rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    min-width: 0;
+}
+
+.wiki-showcase-label {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.wiki-showcase-desc {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.wiki-showcase-item pre {
+    margin: 0.15rem 0 0;
+    flex: 1;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow-x: auto;
+}
+
+.wiki-showcase-more {
+    margin: 0.25rem 0 0;
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
 /* ── Home path strip (not cards — navigation with one job) ─────────────── */
 
 .markdown-body nav.wiki-paths,
@@ -1956,6 +2091,10 @@ body.page-wide .markdown-body { max-width: none; }
 @media (max-width: 1080px) {
     .toc-column { display: none; }
     .main-column { max-width: none; }
+    .markdown-body .wiki-showcase,
+    .wiki-showcase {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 860px) {
@@ -2002,6 +2141,27 @@ body.page-wide .markdown-body { max-width: none; }
     .wiki-hero-actions { gap: 0.5rem; }
     .wiki-cta { flex: 1 1 auto; justify-content: center; }
     .wiki-card-grid { grid-template-columns: 1fr; }
+    .wiki-stat-row { gap: 0.45rem 1rem; font-size: 0.8rem; }
+    .markdown-body nav.wiki-doc-index,
+    .wiki-doc-index {
+        grid-template-columns: 1fr;
+    }
+    .markdown-body a.wiki-doc,
+    .wiki-doc {
+        border-right: none;
+    }
+    .markdown-body a.wiki-doc:nth-last-child(-n+2),
+    .wiki-doc:nth-last-child(-n+2) {
+        border-bottom: 1px solid var(--border);
+    }
+    .markdown-body a.wiki-doc:last-child,
+    .wiki-doc:last-child {
+        border-bottom: none;
+    }
+    .markdown-body .wiki-showcase,
+    .wiki-showcase {
+        grid-template-columns: 1fr;
+    }
     .markdown-body nav.wiki-paths,
     .wiki-paths {
         grid-template-columns: 1fr;

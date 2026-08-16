@@ -36,10 +36,11 @@ The wiki is **not** a dump of markdown files. It is a product with:
 ## Information architecture
 
 ```
-Home (wiki-home.md) — brand, three paths, demos, differentiators
-├── Start       → vision, install, tutorials app, playground, comparison
-├── Learn       → Core · Systems · Vision features · Applied
+Home (wiki-home.md) — brand, docs index, showcases, demos, install
+├── Start       → install, vision, book/tutorials shortcuts, popular galleries
 ├── Gallery     → recorded demos + live WASM
+├── Book        → 19 chapters + appendices
+├── Tutorials   → interactive tracks (core · systems · vision · applied)
 ├── Language    → spec, grammar, types, effects, graphics, wasm, spans
 ├── Library     → stdlib reference (core, autodiff, audio, memory)
 ├── Tooling     → CLI, Python target

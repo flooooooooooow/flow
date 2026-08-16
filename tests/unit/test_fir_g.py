@@ -193,6 +193,33 @@ def test_fir_g_cli_hello():
     assert g.num_funcs() >= 1
     assert "main" in report["reachable"]
 
+def test_call_graph_edges(tmp_path: Path):
+    src = tmp_path / "edges.flow"
+    src.write_text(
+        """
+function callee1() -> i32 { return 1 }
+function callee2() -> i32 { return 2 }
+function caller() -> i32 {
+    callee1()
+    callee2()
+    return callee1()
+}
+"""
+    )
+    from flow.fir_analysis import call_graph_edges
+    g = build_fir_g(str(src))
+    edges = call_graph_edges(g)
+
+    # We expect 'caller' to call 'callee1' (weight 2) and 'callee2' (weight 1)
+    caller_edges = [e for e in edges if e[0] == "caller"]
+    assert len(caller_edges) == 2
+
+    # Verify the weights
+    weights = {callee: weight for _, callee, weight in caller_edges}
+    assert weights["callee1"] == 2
+    assert weights["callee2"] == 1
+
+
 def test_reachable_functions_explicit_roots():
     g = FirG()
     main = g.add_function("main")

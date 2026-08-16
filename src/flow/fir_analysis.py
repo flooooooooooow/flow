@@ -87,17 +87,22 @@ def dead_functions(g: FirG, roots: Optional[List[str]] = None) -> List[str]:
 
 
 def call_graph_edges(g: FirG) -> List[Tuple[str, str, int]]:
-    """List (caller, callee, callsite_op) for dumping/tests."""
+    """Extract call graph edges with weights."""
     if not g.call_row_offsets:
         g.build_call_graph_csr()
-    out: List[Tuple[str, str, int]] = []
+
+    edges = {}
     for f in range(g.num_funcs()):
+        caller_name = g.func_name[f]
         lo = g.call_row_offsets[f]
         hi = g.call_row_offsets[f + 1]
         for ei in range(lo, hi):
-            out.append(
-                (g.func_name[f], g.func_name[g.call_columns[ei]], g.call_edge_sites[ei])
-            )
+            callee_name = g.func_name[g.call_columns[ei]]
+            edges[(caller_name, callee_name)] = edges.get((caller_name, callee_name), 0) + 1
+
+    out: List[Tuple[str, str, int]] = []
+    for (caller, callee), weight in edges.items():
+        out.append((caller, callee, weight))
     return out
 
 
