@@ -350,18 +350,154 @@ export function bitcrusher_process(crusher: Bitcrusher, input: f32) -> f32 {
 # Reverb (Simple Freeverb-style)
 # =============================================================================
 
+export struct CombFilter {
+    buffer: DelayLineF32
+    damp: f32
+    filter_store: f32
+}
+
+export function comb_new(delay_ms: f32, sr: SampleRate) -> CombFilter {
+    let mut base: DelayLineF32 = delay_line_new(delay_ms + 1.0, sr)
+    base = delay_line_set_time(base, delay_ms, sr)
+    return CombFilter {
+        buffer: base,
+        damp: 0.5,
+        filter_store: 0.0
+    }
+}
+
+export function comb_tick(comb: CombFilter, input: f32) -> CombFilter {
+    let max_frames: i32 = comb.buffer.buffer.frames
+    if max_frames <= 0 {
+        return comb
+    }
+    let mut read_pos: i32 = comb.buffer.write_pos - comb.buffer.delay_samples
+    if read_pos < 0 { read_pos = read_pos + max_frames }
+    let delayed: f32 = audio_buffer_get_f32(comb.buffer.buffer, read_pos, 0)
+
+    let filter_store: f32 = delayed * (1.0 - comb.damp) + comb.filter_store * comb.damp
+
+    let write_val: f32 = input + filter_store * comb.buffer.feedback
+    audio_buffer_set_f32(comb.buffer.buffer, comb.buffer.write_pos, 0, write_val)
+
+    let mut next_pos: i32 = comb.buffer.write_pos + 1
+    if next_pos >= max_frames { next_pos = 0 }
+
+    let updated_buffer: DelayLineF32 = DelayLineF32 {
+        buffer: comb.buffer.buffer,
+        write_pos: next_pos,
+        delay_samples: comb.buffer.delay_samples,
+        feedback: comb.buffer.feedback,
+        wet: comb.buffer.wet,
+        last: delayed
+    }
+
+    return CombFilter {
+        buffer: updated_buffer,
+        damp: comb.damp,
+        filter_store: filter_store
+    }
+}
+
+export struct AllpassFilter {
+    buffer: DelayLineF32
+}
+
+export function allpass_new(delay_ms: f32, sr: SampleRate) -> AllpassFilter {
+    let mut base: DelayLineF32 = delay_line_new(delay_ms + 1.0, sr)
+    base = delay_line_set_time(base, delay_ms, sr)
+    return AllpassFilter {
+        buffer: base
+    }
+}
+
+export function allpass_tick(allpass: AllpassFilter, input: f32) -> AllpassFilter {
+    let max_frames: i32 = allpass.buffer.buffer.frames
+    if max_frames <= 0 {
+        return allpass
+    }
+    let mut read_pos: i32 = allpass.buffer.write_pos - allpass.buffer.delay_samples
+    if read_pos < 0 { read_pos = read_pos + max_frames }
+
+    let delayed: f32 = audio_buffer_get_f32(allpass.buffer.buffer, read_pos, 0)
+
+    # Allpass filter standard Schroeder implementation:
+    # v[n] = x[n] + g * v[n-D] (written to delay line)
+    # y[n] = -g * v[n] + v[n-D]
+    # feedback g is typically 0.5 for Reverb allpass
+    let g: f32 = 0.5
+
+    let v_n: f32 = input + delayed * g
+    audio_buffer_set_f32(allpass.buffer.buffer, allpass.buffer.write_pos, 0, v_n)
+
+    let out: f32 = -g * v_n + delayed
+
+    let mut next_pos: i32 = allpass.buffer.write_pos + 1
+    if next_pos >= max_frames { next_pos = 0 }
+
+    let updated_buffer: DelayLineF32 = DelayLineF32 {
+        buffer: allpass.buffer.buffer,
+        write_pos: next_pos,
+        delay_samples: allpass.buffer.delay_samples,
+        feedback: allpass.buffer.feedback,
+        wet: allpass.buffer.wet,
+        last: out
+    }
+
+    return AllpassFilter {
+        buffer: updated_buffer
+    }
+}
+
 export struct Reverb {
     room_size: f32     # Room size (0.0 to 1.0)
     damping: f32       # High frequency damping (0.0 to 1.0)
     mix: f32           # Dry/wet mix
-    # TODO: Add comb filters and allpass filters
+    c1: CombFilter
+    c2: CombFilter
+    c3: CombFilter
+    c4: CombFilter
+    a1: AllpassFilter
+    a2: AllpassFilter
+    last_out: f32
 }
 
 export function reverb_new(room_size: f32, damping: f32, mix: f32) -> Reverb {
+    let sr: SampleRate = sample_rate_44100()
+
+    # Schroeder reverberator typical delay times (ms)
+    let mut c1: CombFilter = comb_new(29.7, sr)
+    let mut c2: CombFilter = comb_new(37.1, sr)
+    let mut c3: CombFilter = comb_new(41.1, sr)
+    let mut c4: CombFilter = comb_new(43.7, sr)
+
+    let a1: AllpassFilter = allpass_new(5.0, sr)
+    let a2: AllpassFilter = allpass_new(1.7, sr)
+
+    # Set feedback based on room_size
+    let fb: f32 = room_size * 0.28 + 0.7  # scaled to standard range (0.7 to 0.98)
+
+    c1.buffer.feedback = fb
+    c2.buffer.feedback = fb
+    c3.buffer.feedback = fb
+    c4.buffer.feedback = fb
+
+    c1.damp = damping
+    c2.damp = damping
+    c3.damp = damping
+    c4.damp = damping
+
     return Reverb {
         room_size: room_size,
         damping: damping,
-        mix: mix
+        mix: mix,
+        c1: c1,
+        c2: c2,
+        c3: c3,
+        c4: c4,
+        a1: a1,
+        a2: a2,
+        last_out: 0.0
     }
 }
 
@@ -382,7 +518,42 @@ export function reverb_plate() -> Reverb {
     return reverb_new(0.7, 0.6, 0.35)
 }
 
+# Process one sample, updating the Reverb state and returning the updated Reverb struct
+export function reverb_tick(rev: Reverb, input: f32) -> Reverb {
+    let in_mix: f32 = input * 0.015  # simple scaling to avoid blowing up
+
+    # 4 Parallel Comb Filters
+    let nc1: CombFilter = comb_tick(rev.c1, in_mix)
+    let nc2: CombFilter = comb_tick(rev.c2, in_mix)
+    let nc3: CombFilter = comb_tick(rev.c3, in_mix)
+    let nc4: CombFilter = comb_tick(rev.c4, in_mix)
+
+    let combs_out: f32 = nc1.buffer.last + nc2.buffer.last + nc3.buffer.last + nc4.buffer.last
+
+    # 2 Series Allpass Filters
+    let na1: AllpassFilter = allpass_tick(rev.a1, combs_out)
+    let na2: AllpassFilter = allpass_tick(rev.a2, na1.buffer.last)
+
+    # Output mix
+    let wet_out: f32 = na2.buffer.last
+    let out: f32 = input * (1.0 - rev.mix) + wet_out * rev.mix
+
+    return Reverb {
+        room_size: rev.room_size,
+        damping: rev.damping,
+        mix: rev.mix,
+        c1: nc1,
+        c2: nc2,
+        c3: nc3,
+        c4: nc4,
+        a1: na1,
+        a2: na2,
+        last_out: out
+    }
+}
+
 # Process one sample (simplified - full reverb needs comb filters)
+# Note: To use the true stateful comb/allpass reverb, use reverb_tick instead.
 export function reverb_process(rev: Reverb, input: f32) -> f32 {
     # Placeholder - real reverb is complex
     # For now, just mix dry signal
