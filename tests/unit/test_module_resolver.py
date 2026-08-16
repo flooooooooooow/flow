@@ -387,3 +387,24 @@ module video {
         code = "module a {\n    " + body + "\n}"
         with pytest.raises(SyntaxError, match="Unexpected declaration inside module"):
             Parser(Lexer(code)).parse()
+
+    def test_resolve_modules(self, tmp_path):
+        from flow.module_resolver import resolve_modules
+
+        code = """
+module audio {
+    function gain() -> i32 {
+        return 1
+    }
+}
+function video() -> i32 {
+    return 2
+}
+"""
+        root = tmp_path / "root.flow"
+        root.write_text(code, encoding="utf-8")
+
+        decls = resolve_modules(str(root))
+
+        assert len(decls) == 2
+        assert [getattr(d, "name", None) for d in decls] == ["gain", "video"]
