@@ -162,6 +162,22 @@ export function add(a: i32, b: i32) -> i32 {
 
 
 class TestModuleResolver:
+    def test_get_module_resolver_returns_resolved_instance(self, tmp_path):
+        root = tmp_path / "root.flow"
+        root.write_text(
+            "function main() -> i32 { return 0 }", encoding="utf-8"
+        )
+
+        resolver = get_module_resolver(str(root))
+
+        from flow.module_resolver import ModuleResolver
+        assert isinstance(resolver, ModuleResolver)
+        assert resolver.root_file == str(root)
+        assert str(root) in resolver.modules
+        assert resolver.modules[str(root)].is_loaded
+        assert len(resolver.all_declarations) == 1
+        assert getattr(resolver.all_declarations[0], "name", None) == "main"
+
     def test_resolve_dot_import_with_braces(self):
         root = os.path.join(FIXTURES, "consumer_brace.flow")
         resolver = get_module_resolver(root)
