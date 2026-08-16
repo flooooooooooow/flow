@@ -39,7 +39,7 @@ extern {
     function cos(x: f64) -> f64
     function sin(x: f64) -> f64
     function fabs(x: f64) -> f64
-    function clock() -> i64
+    function clock() -> i32  # clock_t: i32 on emscripten; µs values fit i32 on both
     function calloc(n: i64, size: i64) -> ptr<void>
 }
 
@@ -687,7 +687,7 @@ export function fmm2d_evaluate() -> bool {
     if fmm_n < 1 { return false }
     fmm_m2l_count = 0
     fmm_p2p_count = 0
-    let t0: i64 = clock()
+    let t0: i32 = clock()
     build_tree()
     upward_pass()
     # clear locals
@@ -707,7 +707,7 @@ export function fmm2d_evaluate() -> bool {
             eval_local_at_leaf(b)
         }
     }
-    let t1: i64 = clock()
+    let t1: i32 = clock()
     # clock() is microseconds on this platform; report milliseconds
     fmm_ms = ((t1 - t0) as f64) / 1000.0
     return true
@@ -715,7 +715,7 @@ export function fmm2d_evaluate() -> bool {
 
 export function fmm2d_direct_evaluate() -> bool {
     if !fmm_ensure() { return false }
-    let t0: i64 = clock()
+    let t0: i32 = clock()
     for i in 0 to fmm_n {
         fmm_phi_d[i] = 0.0
         fmm_ex_d[i] = 0.0
@@ -736,7 +736,7 @@ export function fmm2d_direct_evaluate() -> bool {
             fmm_ey_d[i] = fmm_ey_d[i] - qj * inv.im
         }
     }
-    let t1: i64 = clock()
+    let t1: i32 = clock()
     fmm_direct_ms = ((t1 - t0) as f64) / 1000.0
     return true
 }

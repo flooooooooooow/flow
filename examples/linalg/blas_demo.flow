@@ -9,7 +9,7 @@ import "stdlib/blas.flow"
 
 extern {
     function printf(fmt: string, val: f64) -> i32
-    function clock() -> i64
+    function clock() -> i32  # clock_t: i64 on macOS, i32 on emscripten; µs values fit both
 }
 
 const CLOCKS_PER_SEC: f64 = 1000000.0
@@ -35,9 +35,9 @@ function benchmark_matmul(n: i32) -> void {
     }
     
     # Benchmark BLAS gemm
-    let t0: i64 = clock()
+    let t0: i32 = clock()
     gemm(A, B, C)
-    let t1: i64 = clock()
+    let t1: i32 = clock()
     
     let elapsed: f64 = (t1 - t0) / CLOCKS_PER_SEC
     let flops: f64 = 2.0 * n * n * n
@@ -213,9 +213,9 @@ function benchmark_solve(n: i32) -> void {
         b[i] = 1.0
     }
     
-    let t0: i64 = clock()
+    let t0: i32 = clock()
     let info: i32 = solve(A, b, x)
-    let t1: i64 = clock()
+    let t1: i32 = clock()
     
     let elapsed: f64 = (t1 - t0) / CLOCKS_PER_SEC
     
