@@ -3,7 +3,7 @@
 ## Bootstrap C regeneration workflow
 
 The checked-in `compiler/bootstrap/flowc_stage_a.c` must stay byte-identical to
-what flowc emits from `compiler/src/driver.flow` in bundle mode. When you edit
+what flowc emits from `compiler/src/main.flow` in bundle mode. When you edit
 any file under `compiler/src/`, you must regenerate the bootstrap C before
 committing, or the `bootstrap_from_c.sh --verify` fixed-point check will fail.
 
@@ -13,16 +13,17 @@ committing, or the `bootstrap_from_c.sh --verify` fixed-point check will fail.
 # 1. Build a temporary bootstrap binary from the CURRENT checked-in C
 cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c
 
-# 2. Emit driver.flow in bundle mode using the Python host (picks up your edits)
+# 2. Emit main.flow in bundle mode using the Python host (picks up your edits)
 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-  FLOWC_IN=compiler/src/driver.flow FLOWC_OUT=compiler/build/bootstrap_regen.c \
+  FLOWC_IN=compiler/src/main.flow FLOWC_OUT=compiler/build/bootstrap_regen.c \
   FLOW_HOST=python ./flow run compiler/src/main.flow
 
 # 3. Verify fixed point: the new binary emits the same C
 cp compiler/build/bootstrap_regen.c compiler/bootstrap/flowc_stage_a.c
 cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c
 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-  ./compiler/build/flowc_bootstrap compiler/src/driver.flow /tmp/verify.c
+  FLOWC_IN=compiler/src/main.flow FLOWC_OUT=/tmp/verify.c \
+  ./compiler/build/flowc_bootstrap
 cmp -s compiler/bootstrap/flowc_stage_a.c /tmp/verify.c \
   && echo "FIXED POINT OK" || echo "DRIFT"
 
