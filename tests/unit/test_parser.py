@@ -579,6 +579,18 @@ class TestParserIntegration:
 
 @pytest.mark.unit
 class TestParserUnit:
+
+    def test_nested_generics(self):
+        """Test that nested generics like ptr<ptr<f32>> parse correctly."""
+        code = "export struct TestStruct { data: ptr<ptr<f32>> }"
+        lexer = Lexer(code)
+        parser = Parser(lexer)
+        statements = parser.parse()
+        assert len(statements) == 1
+        decl = statements[0]
+        assert decl.name == "TestStruct"
+        assert decl.fields[0].type.name == "ptr_ptr_f32"
+
     """Unit tests for parser components."""
 
     def test_type_parsing(self, parser):
