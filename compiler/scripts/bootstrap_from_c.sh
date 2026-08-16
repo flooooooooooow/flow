@@ -29,7 +29,10 @@ echo "=== cc ${BOOT_C} -> ${BOOT_BIN} ==="
 $CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C"
 
 # Smoke: the bootstrap compiler compiles an ordinary Stage-A program.
-"$BOOT_BIN" compiler/fixtures/stage_a_sum.flow compiler/build/bootstrap_sum.c
+# Positional argv runs the self-test suite; emit needs FLOWC_IN / FLOWC_OUT.
+FLOWC_IN=compiler/fixtures/stage_a_sum.flow \
+FLOWC_OUT=compiler/build/bootstrap_sum.c \
+    "$BOOT_BIN"
 $CC -O0 -o compiler/build/bootstrap_sum compiler/build/bootstrap_sum.c
 set +e
 ./compiler/build/bootstrap_sum
@@ -63,7 +66,8 @@ if [[ "$mode" == "--regen" ]]; then
     emitter="$(pick_emitter)"
     echo "=== regen with ${emitter} ==="
     FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-        "$emitter" compiler/src/driver.flow "$BOOT_C"
+    FLOWC_IN=compiler/src/driver.flow FLOWC_OUT="$BOOT_C" \
+        "$emitter"
     echo "REGEN ${BOOT_C} ($(wc -c <"$BOOT_C") bytes)"
     exit 0
 fi
@@ -72,7 +76,8 @@ if [[ "$mode" == "--verify" ]]; then
     emitter="$(pick_emitter)"
     echo "=== verify against ${emitter} emit of compiler/src ==="
     FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-        "$emitter" compiler/src/driver.flow compiler/build/bootstrap_regen.c
+    FLOWC_IN=compiler/src/driver.flow FLOWC_OUT=compiler/build/bootstrap_regen.c \
+        "$emitter"
     if ! cmp -s "$BOOT_C" compiler/build/bootstrap_regen.c; then
         echo "FAIL bootstrap drift: ${BOOT_C} != flowc emit of compiler/src" >&2
         echo "  regenerate with: ./compiler/scripts/bootstrap_from_c.sh --regen" >&2

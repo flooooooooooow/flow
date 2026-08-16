@@ -22,7 +22,8 @@ FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
 cp compiler/build/bootstrap_regen.c compiler/bootstrap/flowc_stage_a.c
 cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c
 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-  ./compiler/build/flowc_bootstrap compiler/src/driver.flow /tmp/verify.c
+  FLOWC_IN=compiler/src/driver.flow FLOWC_OUT=/tmp/verify.c \
+  ./compiler/build/flowc_bootstrap
 cmp -s compiler/bootstrap/flowc_stage_a.c /tmp/verify.c \
   && echo "FIXED POINT OK" || echo "DRIFT"
 
