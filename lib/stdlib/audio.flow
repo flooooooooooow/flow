@@ -196,7 +196,7 @@ export struct Buffer {
     frames: i32       # Number of frames (not samples)
     channels: i32     # 1 = mono, 2 = stereo
     layout: Layout    # Interleaved or Planar
-    # data: ptr<f32> # TODO: Add when pointer arrays work
+    data: ptr<ptr<f32>>
 }
 
 # Create a buffer descriptor
@@ -204,7 +204,8 @@ export function buffer_create(frames: i32, channels: i32) -> Buffer {
     return Buffer { 
         frames: frames, 
         channels: channels, 
-        layout: layout_interleaved() 
+        layout: layout_interleaved(),
+        data: null
     }
 }
 

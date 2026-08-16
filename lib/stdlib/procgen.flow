@@ -12,7 +12,7 @@
 #   procgen_noise2 / noise3    gradient (Perlin-style) noise ~[-1, 1]
 #   procgen_fbm2 / fbm3        fractional Brownian motion, normalised ~[-1, 1]
 #   procgen_ridged2 / ridged3  ridged multifractal in [0, 1]
-#   procgen_warped2            domain-warped fBm (2D)
+#   procgen_warped2 / warped3  domain-warped fBm (2D/3D)
 #   procgen_value2             value noise in [0, 1] (heightmap parity)
 #
 # DETERMINISM
@@ -221,6 +221,14 @@ export function procgen_ridged2(x: f32, y: f32, octaves: i32, salt: i32) -> f32 
 
 # Domain-warped fBm: the sample point is displaced by another noise field
 # first, which breaks the axis-aligned look of plain fBm.
+export function procgen_warped3(x: f32, y: f32, z: f32, octaves: i32, warp: f32,
+                                salt: i32) -> f32 {
+    let wx: f32 = procgen_fbm3(x + 11.3, y + 4.7, z + 2.1, 3, salt + 7001)
+    let wy: f32 = procgen_fbm3(x - 3.9, y + 17.2, z - 8.4, 3, salt + 7101)
+    let wz: f32 = procgen_fbm3(x + 6.5, y - 12.8, z + 19.6, 3, salt + 7201)
+    return procgen_fbm3(x + warp * wx, y + warp * wy, z + warp * wz, octaves, salt)
+}
+
 export function procgen_warped2(x: f32, y: f32, octaves: i32, warp: f32,
                                 salt: i32) -> f32 {
     let wx: f32 = procgen_fbm2(x + 11.3, y + 4.7, 3, salt + 7001)
