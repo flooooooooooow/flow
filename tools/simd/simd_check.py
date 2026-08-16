@@ -97,8 +97,9 @@ def main() -> int:
     print(f"No SIMD patterns detected in asm: {asm_path}")
     # Help debug false negatives by printing likely-interesting lines.
     interesting = []
+    pattern = re.compile(r"\.4s\b|\bldr\s+q|\bstr\s+q|\bld1\b|\bst1\b|\bymm\d+|\bzmm\d+|\bv(add|mul|fmadd)ps\b")
     for line in asm.splitlines():
-        if re.search(r"\.4s\b|\bldr\s+q|\bstr\s+q|\bld1\b|\bst1\b|\bymm\d+|\bzmm\d+|\bv(add|mul|fmadd)ps\b", line):
+        if pattern.search(line):
             interesting.append(line)
             if len(interesting) >= 30:
                 break
