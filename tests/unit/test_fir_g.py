@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from flow.fir_analysis import analyse, propagate_effects, reachable_functions
+from flow.fir_analysis import analyse, call_graph_edges, propagate_effects
 from flow.fir_cli import build_fir_g
 from flow.fir_g import EFF_IO, OpCode, FirG
 from flow.fir_graphify import graphify
@@ -110,3 +110,27 @@ def test_fir_g_cli_hello():
     report = analyse(g)
     assert g.num_funcs() >= 1
     assert "main" in report["reachable"]
+
+def test_call_graph_edges(tmp_path: Path):
+    src = tmp_path / "edges.flow"
+    src.write_text(
+        """
+function a() -> i32 { return 0 }
+function b() -> i32 { return a() }
+function c() -> i32 { return b() + a() + a() + a() }
+function main() -> i32 { return c() }
+"""
+    )
+    g = build_fir_g(str(src))
+
+    edges = call_graph_edges(g)
+
+    # call_graph_edges returns tuples of (caller, callee, weight)
+    # We map them to a dict for easy lookup
+    weights = {(u, v): w for u, v, w in edges}
+
+    assert weights[("main", "c")] == 1
+    assert weights[("c", "b")] == 1
+    assert weights[("c", "a")] == 3
+    assert weights[("b", "a")] == 1
+    assert len(weights) == 4
