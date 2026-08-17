@@ -52,7 +52,10 @@ export function kernel_boot_magic_valid(magic: u32) -> bool {
 }
 
 export function kernel_page_count(bytes: u64) -> u64 {
-    return (bytes + 4095) / 4096
+    if bytes == 0 {
+        return 0
+    }
+    return ((bytes - 1) / 4096) + 1
 }
 
 export function kernel_main(multiboot_magic: u32, multiboot_info: ptr<void>) -> i32 {
