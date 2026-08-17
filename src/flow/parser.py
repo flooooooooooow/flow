@@ -384,6 +384,19 @@ class ForStatement:
 
 
 @dataclass
+class RangeExpression:
+    """Exclusive-end arithmetic range used by range-aware builtins.
+
+    Kept separate from ForStatement so range algebra can become a
+    first-class expression without changing loop representation.
+    """
+
+    start: "Expression"
+    end: "Expression"
+    step: "Expression"
+
+
+@dataclass
 class ReturnStatement:
     value: Optional["Expression"]
 
@@ -4878,17 +4891,36 @@ class Parser:
         loc = SourceLocation(line=start.line, column=start.column)
         return IfExpression(condition, then_expr, else_expr, location=loc)
 
-    def parse_function_call(self, name: str) -> FunctionCall:
+    def parse_function_call(self, name: str) -> Expression:
         self.expect(TokenType.LPAREN)
         arguments = []
 
         if self.current_token.type != TokenType.RPAREN:
-            arguments.append(self.parse_expression_without_assign())
+            first = self.parse_expression_without_assign()
+            if name == "sum" and self.current_token.type in (TokenType.DOTDOT, TokenType.TO):
+                self.advance()
+                end = self.parse_expression_without_assign()
+                step: Expression = Literal("1", Type("i32"))
+                if (
+                    self.current_token.type == TokenType.STEP
+                    or (
+                        self.current_token.type == TokenType.IDENTIFIER
+                        and self.current_token.value == "step"
+                    )
+                ):
+                    self.advance()
+                    step = self.parse_expression_without_assign()
+                first = RangeExpression(first, end, step)
+            arguments.append(first)
             while self.current_token.type == TokenType.COMMA:
                 self.advance()
                 arguments.append(self.parse_expression_without_assign())
 
         self.expect(TokenType.RPAREN)
+        if name == "sum" and len(arguments) == 1 and isinstance(arguments[0], RangeExpression):
+            from .range_sums import lower_range_sum
+
+            return lower_range_sum(arguments[0])
         return FunctionCall(name, arguments)
 
     def _collect_free_variables(self, node: Any, param_names: set, found: Optional[set] = None) -> List[str]:
