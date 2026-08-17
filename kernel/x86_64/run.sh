@@ -14,7 +14,7 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || {
     exit 1
 }
 
-"$HERE/build.sh" "$BUILD"
+bash "$HERE/build.sh" "$BUILD"
 
 rm -rf "$ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot/grub"
