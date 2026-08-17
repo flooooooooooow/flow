@@ -40,8 +40,15 @@ runs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends "${packages[@]}"
         fi
-        if [ "${{ inputs.mlir }}" = "true" ] && [ -f /usr/bin/mlir-opt-14 ] && [ ! -e /usr/local/bin/mlir-opt ]; then
-          sudo ln -sf /usr/bin/mlir-opt-14 /usr/local/bin/mlir-opt
+        if [ "${{ inputs.mlir }}" = "true" ]; then
+          if [ -f /usr/bin/mlir-opt-14 ] && [ ! -e /usr/local/bin/mlir-opt ]; then
+            sudo ln -sf /usr/bin/mlir-opt-14 /usr/local/bin/mlir-opt
+          fi
+          if [ -f /usr/bin/mlir-translate-14 ] && [ ! -e /usr/local/bin/mlir-translate ]; then
+            sudo ln -sf /usr/bin/mlir-translate-14 /usr/local/bin/mlir-translate
+          fi
+          mlir-opt --version
+          mlir-translate --version
         fi
         if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ] && [ "${#packages[@]}" -gt 0 ]; then
           mkdir -p ~/flow-apt-cache
