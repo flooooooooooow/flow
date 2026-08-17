@@ -20,7 +20,7 @@ runs:
       with:
         path: |
           ~/flow-apt-cache
-        key: ${{ runner.os }}-flow-apt-v1-${{ inputs.mlir }}-${{ inputs.shellcheck }}
+        key: ${{ runner.os }}-flow-apt-v2-${{ inputs.mlir }}-${{ inputs.shellcheck }}
 
     - name: Install packages
       shell: bash
@@ -31,7 +31,7 @@ runs:
         fi
         packages=()
         if [ "${{ inputs.mlir }}" = "true" ]; then
-          packages+=(mlir-14-tools)
+          packages+=(mlir-18-tools)
         fi
         if [ "${{ inputs.shellcheck }}" = "true" ]; then
           packages+=(shellcheck)
@@ -40,8 +40,11 @@ runs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends "${packages[@]}"
         fi
-        if [ "${{ inputs.mlir }}" = "true" ] && [ -f /usr/bin/mlir-opt-14 ] && [ ! -e /usr/local/bin/mlir-opt ]; then
-          sudo ln -sf /usr/bin/mlir-opt-14 /usr/local/bin/mlir-opt
+        if [ "${{ inputs.mlir }}" = "true" ]; then
+          sudo ln -sf /usr/bin/mlir-opt-18 /usr/local/bin/mlir-opt
+          sudo ln -sf /usr/bin/mlir-translate-18 /usr/local/bin/mlir-translate
+          mlir-opt --version
+          mlir-translate --version
         fi
         if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ] && [ "${#packages[@]}" -gt 0 ]; then
           mkdir -p ~/flow-apt-cache

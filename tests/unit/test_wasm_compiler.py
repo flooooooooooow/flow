@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import flow.wasm_compiler as wasm
 
 
@@ -31,6 +33,24 @@ def test_llvm_to_wasm_uses_wasm32_target(monkeypatch, tmp_path):
     assert "-Wl,--export=add" in command
     assert "-Wl,--export-memory" in command
     assert output.read_bytes() == b"\x00asm"
+
+
+def test_llvm_to_wasm_rejects_missing_requested_export(tmp_path):
+    with pytest.raises(RuntimeError, match=r"missing.*Defined functions: add"):
+        wasm.llvm_to_wasm(
+            "define i32 @add() { ret i32 42 }",
+            tmp_path / "kernel.wasm",
+            exports=["missing"],
+        )
+
+
+def test_defined_llvm_functions_handles_quoted_symbols():
+    llvm_ir = '\n'.join([
+        'define i32 @plain() { ret i32 0 }',
+        'define void @"quoted.name"() { ret void }',
+        'declare i32 @external()',
+    ])
+    assert wasm._defined_llvm_functions(llvm_ir) == {"plain", "quoted.name"}
 
 
 def test_flow_to_wasm_goes_through_mlir_llvm_not_c(monkeypatch, tmp_path):
