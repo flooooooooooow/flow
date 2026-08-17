@@ -38,6 +38,19 @@ class BPFTarget:
     little_endian: bool = True
 
 
+@dataclass(frozen=True)
+class BPFProgram:
+    """Kernel-facing metadata for one exported Flow eBPF program."""
+
+    entry: str
+    section: str
+    license: str = "GPL"
+
+    @property
+    def export_symbol(self) -> str:
+        return f"flow_export_{self.entry}"
+
+
 BPFEL = BPFTarget()
 
 _FORBIDDEN_EXTERNALS = (
@@ -87,6 +100,49 @@ def with_bpf_target_header(llvm_ir: str, target: BPFTarget = BPFEL) -> str:
     return "\n".join(header + filtered) + "\n"
 
 
+def _llvm_c_string(value: str) -> tuple[int, str]:
+    raw = value.encode("utf-8") + b"\x00"
+    escaped = "".join(
+        chr(byte) if 32 <= byte <= 126 and byte not in {34, 92} else f"\\{byte:02X}"
+        for byte in raw
+    )
+    return len(raw), escaped
+
+
+def with_bpf_program_metadata(llvm_ir: str, program: BPFProgram) -> str:
+    """Place an exported Flow entry in a BPF section and add license metadata."""
+    if not program.entry or not program.section:
+        raise BPFTargetError("BPF program entry and section must be non-empty")
+
+    symbol = f"@{program.export_symbol}("
+    decorated: list[str] = []
+    found = False
+    for line in llvm_ir.splitlines():
+        if line.startswith("define ") and symbol in line:
+            if found:
+                raise BPFTargetError(f"duplicate exported BPF entry '{program.entry}'")
+            if "{" not in line:
+                raise BPFTargetError(
+                    f"cannot decorate multiline definition for BPF entry '{program.entry}'"
+                )
+            prefix, brace, suffix = line.partition("{")
+            line = f'{prefix.rstrip()} section "{program.section}" {brace}{suffix}'
+            found = True
+        decorated.append(line)
+
+    if not found:
+        raise BPFTargetError(
+            f"exported BPF entry '{program.entry}' not found as {program.export_symbol}"
+        )
+
+    license_len, license_data = _llvm_c_string(program.license)
+    decorated.append(
+        f'@_flow_bpf_license = dso_local constant [{license_len} x i8] '
+        f'c"{license_data}", section "license", align 1'
+    )
+    return "\n".join(decorated) + "\n"
+
+
 def validate_bpf_llvm_ir(llvm_ir: str) -> None:
     """Reject known verifier/runtime-invalid constructs before object emission."""
     padded = f" {llvm_ir} "
@@ -118,12 +174,15 @@ def emit_bpf_object(
     llvm_ir: str,
     output: str | Path,
     *,
+    program: BPFProgram | None = None,
     clang: str | None = None,
     optimize: str = "2",
 ) -> Path:
     """Validate LLVM IR and emit a little-endian ELF eBPF object with clang."""
     validate_bpf_llvm_ir(llvm_ir)
     targeted_ir = with_bpf_target_header(llvm_ir)
+    if program is not None:
+        targeted_ir = with_bpf_program_metadata(targeted_ir, program)
 
     compiler = clang or shutil.which("clang")
     if not compiler:
@@ -161,6 +220,7 @@ def compile_flow_to_bpf(
     source: str | Path,
     output: str | Path,
     *,
+    program: BPFProgram | None = None,
     clang: str | None = None,
     optimize: str = "2",
 ) -> Path:
@@ -199,7 +259,13 @@ def compile_flow_to_bpf(
             raise BPFTargetError("Flow LLVM lowering completed without producing LLVM IR")
 
         llvm_ir = llvm_path.read_text(encoding="utf-8")
-        return emit_bpf_object(llvm_ir, output, clang=clang, optimize=optimize)
+        return emit_bpf_object(
+            llvm_ir,
+            output,
+            program=program,
+            clang=clang,
+            optimize=optimize,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -207,17 +273,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("input", help="Input .flow or .ll file")
     parser.add_argument("-o", "--output", required=True, help="Output .o path")
     parser.add_argument("--target", default="bpfel", choices=["bpfel"])
+    parser.add_argument("--entry", help="Exported Flow function to expose as a BPF program")
+    parser.add_argument("--section", help="ELF BPF program section, for example socket or xdp")
+    parser.add_argument("--license", default="GPL", help="BPF license string")
     parser.add_argument("-O", dest="optimize", default="2", choices=["0", "1", "2", "3"])
     args = parser.parse_args(argv)
 
     try:
         target_for_name(args.target)
+        if bool(args.entry) != bool(args.section):
+            raise BPFTargetError("--entry and --section must be supplied together")
+        program = (
+            BPFProgram(entry=args.entry, section=args.section, license=args.license)
+            if args.entry
+            else None
+        )
         input_path = Path(args.input)
         if input_path.suffix == ".flow":
-            compile_flow_to_bpf(input_path, args.output, optimize=args.optimize)
+            compile_flow_to_bpf(
+                input_path,
+                args.output,
+                program=program,
+                optimize=args.optimize,
+            )
         else:
             llvm_ir = input_path.read_text(encoding="utf-8")
-            emit_bpf_object(llvm_ir, args.output, optimize=args.optimize)
+            emit_bpf_object(
+                llvm_ir,
+                args.output,
+                program=program,
+                optimize=args.optimize,
+            )
     except (OSError, BPFTargetError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
