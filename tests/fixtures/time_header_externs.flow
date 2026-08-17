@@ -1,0 +1,9 @@
+extern {
+    function time(p: ptr<i64>) -> i64
+    function localtime_r(t: ptr<i64>, tm: ptr<u8>) -> ptr<u8>
+    function strftime(out: ptr<u8>, max: i64, fmt: string, tm: ptr<u8>) -> i64
+}
+
+function main() -> i32 {
+    return 0
+}
