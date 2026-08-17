@@ -5,12 +5,30 @@ import subprocess
 import sys
 from pathlib import Path
 
+from flow.module_resolver import resolve_modules
+from flow.monomorphize import monomorphize
+from flow.parser import FunctionDecl
+
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests" / "fixtures" / "module_collision" / "main.flow"
 
 
+def _same_signatures(declarations) -> list[tuple[str, ...]]:
+    return [
+        tuple(param.type.name for param in decl.parameters)
+        for decl in declarations
+        if isinstance(decl, FunctionDecl) and decl.name == "_same"
+    ]
+
+
 def test_private_same_name_functions_in_distinct_modules_compile_and_run(tmp_path: Path) -> None:
+    resolved = resolve_modules(str(FIXTURE))
+    assert sorted(_same_signatures(resolved)) == [("f32",), ("i32",)]
+
+    rewritten = monomorphize(resolved)
+    assert sorted(_same_signatures(rewritten)) == [("f32",), ("i32",)]
+
     output = tmp_path / "module_collision"
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
