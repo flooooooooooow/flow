@@ -1035,7 +1035,7 @@ class CGenerator:
                            'fputc', 'fgetc',
                            # POSIX / libc — approximate Flow types clash with real headers
                            'remove', 'rename', 'unlink', 'mkdir', 'rmdir', 'chdir', 'getcwd',
-                           'usleep', 'sleep', 'gettimeofday', 'time', 'system',
+                           'usleep', 'sleep', 'gettimeofday', 'time', 'localtime_r', 'strftime', 'system',
                            'kill', 'getuid', 'getgid', 'geteuid', 'getegid', 'gethostname',
                            # POSIX popen/pclose — provided by stdio.h
                            'popen', 'pclose',
