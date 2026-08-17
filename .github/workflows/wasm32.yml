@@ -36,14 +36,20 @@ jobs:
             -o /tmp/main_42.wasm \
             --export answer \
             -O O2
+          python -m flow.wasm_compiler tests/fixtures/wasm/sum_pair.flow \
+            -o /tmp/sum_pair.wasm \
+            --export sum_pair \
+            -O O2
           test -s /tmp/main_42.wasm
+          test -s /tmp/sum_pair.wasm
           python - <<'PY'
           from pathlib import Path
-          data = Path('/tmp/main_42.wasm').read_bytes()
-          assert data[:4] == b'\x00asm', data[:4]
-          print(f'wasm bytes: {len(data)}')
+          for path in ('/tmp/main_42.wasm', '/tmp/sum_pair.wasm'):
+              data = Path(path).read_bytes()
+              assert data[:4] == b'\x00asm', (path, data[:4])
+              print(f'{path}: {len(data)} wasm bytes')
           PY
-      - name: Instantiate and execute WebAssembly under Node
+      - name: Instantiate and execute scalar WebAssembly export under Node
         run: |
           node - <<'JS'
           const fs = require('fs');
@@ -58,6 +64,33 @@ jobs:
               throw new Error(`expected answer() == 42, got ${result}`);
             }
             console.log(`answer()=${result}; exports=${names.join(',')}`);
+          }).catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          JS
+      - name: Marshal Float32 values through WebAssembly linear memory
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const bytes = fs.readFileSync('/tmp/sum_pair.wasm');
+          WebAssembly.instantiate(bytes, {}).then(({instance}) => {
+            const {memory, sum_pair} = instance.exports;
+            if (!(memory instanceof WebAssembly.Memory)) {
+              throw new Error('memory export missing');
+            }
+            if (typeof sum_pair !== 'function') {
+              throw new Error('sum_pair export missing');
+            }
+            const byteOffset = 4096;
+            const values = new Float32Array(memory.buffer, byteOffset, 2);
+            values[0] = 1.5;
+            values[1] = 2.25;
+            const result = sum_pair(byteOffset);
+            if (result !== 3.75) {
+              throw new Error(`expected sum_pair(memory[${byteOffset}]) == 3.75, got ${result}`);
+            }
+            console.log(`sum_pair([${values[0]}, ${values[1]}])=${result}`);
           }).catch(error => {
             console.error(error);
             process.exit(1);
