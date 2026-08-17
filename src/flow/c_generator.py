@@ -5091,7 +5091,10 @@ def flow_to_c(
             if getattr(fn, "is_exported", False) and not is_sizeof:
                 _deduped.append(fn)
                 continue
-            key = fn.name
+            key = (
+                fn.name,
+                tuple(generator._type_to_string(p.type) for p in fn.parameters),
+            )
             has_body = bool(getattr(fn, "body", None) and fn.body.statements)
             if not has_body:
                 # Forward declaration: keep it, but don't mark the name as seen
