@@ -1,0 +1,65 @@
+name: wasm32 direct backend
+
+on:
+  push:
+    paths:
+      - 'src/flow/wasm_compiler.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/fixtures/wasm/**'
+      - '.github/actions/install-toolchain/action.yml'
+      - '.github/workflows/wasm32.yml'
+  pull_request:
+    paths:
+      - 'src/flow/wasm_compiler.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/fixtures/wasm/**'
+      - '.github/actions/install-toolchain/action.yml'
+      - '.github/workflows/wasm32.yml'
+  workflow_dispatch:
+
+jobs:
+  direct-wasm32:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+      - name: Compile Flow through MLIR and LLVM IR to WebAssembly
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m flow.wasm_compiler tests/fixtures/wasm/main_42.flow \
+            -o /tmp/main_42.wasm \
+            --export answer \
+            -O O2
+          test -s /tmp/main_42.wasm
+          python - <<'PY'
+          from pathlib import Path
+          data = Path('/tmp/main_42.wasm').read_bytes()
+          assert data[:4] == b'\x00asm', data[:4]
+          print(f'wasm bytes: {len(data)}')
+          PY
+      - name: Instantiate and execute WebAssembly under Node
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const bytes = fs.readFileSync('/tmp/main_42.wasm');
+          WebAssembly.instantiate(bytes, {}).then(({instance}) => {
+            const names = Object.keys(instance.exports);
+            if (!names.includes('answer')) {
+              throw new Error(`answer export missing; exports=${names.join(',')}`);
+            }
+            const result = instance.exports.answer();
+            if (result !== 42) {
+              throw new Error(`expected answer() == 42, got ${result}`);
+            }
+            console.log(`answer()=${result}; exports=${names.join(',')}`);
+          }).catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          JS
