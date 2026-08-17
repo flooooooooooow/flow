@@ -105,7 +105,7 @@ def validate_bpf_llvm_ir(llvm_ir: str) -> None:
     # Variable-sized allocas make stack bounds opaque to the verifier. Constant
     # allocas remain eligible; the backend/verifier enforces the final 512-byte
     # aggregate stack limit.
-    for match in re.finditer(r"\balloca\s+[^,\n]+,\s+i\d+\s+([^,\n]+)", llvm_ir):
+    for match in re.finditer(r"\balloca\s+[^,\n]+,\s+i\d+\s+([^\s,]+)", llvm_ir):
         count = match.group(1).strip()
         if not re.fullmatch(r"\d+", count):
             raise BPFTargetError(
