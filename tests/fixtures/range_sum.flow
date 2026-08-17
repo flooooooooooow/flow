@@ -1,0 +1,23 @@
+export function sum_default() -> i32 {
+    return sum(0..10)
+}
+
+export function sum_step() -> i32 {
+    return sum(0..10 step 3)
+}
+
+export function sum_offset() -> i32 {
+    return sum(5..10 step 2)
+}
+
+export function sum_descending() -> i32 {
+    return sum(10..0 step -3)
+}
+
+export function sum_empty_direction() -> i32 {
+    return sum(0..10 step -1)
+}
+
+export function sum_runtime(start: i32, end: i32, step: i32) -> i32 {
+    return sum(start..end step step)
+}
