@@ -6,6 +6,7 @@ on:
       - 'src/flow/wasm_compiler.py'
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
+      - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
@@ -14,6 +15,7 @@ on:
       - 'src/flow/wasm_compiler.py'
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
+      - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
@@ -103,24 +105,28 @@ jobs:
           JS
       - name: Execute allocation-backed Flow under WebAssembly
         run: |
-          node - <<'JS'
-          const fs = require('fs');
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          import {createFlowWasmRuntime} from './runtime/wasm/flow_runtime.mjs';
+
           const bytes = fs.readFileSync('/tmp/alloc_sum.wasm');
           const module = new WebAssembly.Module(bytes);
           const imports = WebAssembly.Module.imports(module);
-          console.log(`alloc_sum imports=${JSON.stringify(imports)}`);
-          WebAssembly.instantiate(module, {}).then(instance => {
-            const {alloc_sum} = instance.exports;
-            if (typeof alloc_sum !== 'function') {
-              throw new Error('alloc_sum export missing');
-            }
-            const result = alloc_sum();
-            if (result !== 3.75) {
-              throw new Error(`expected alloc_sum() == 3.75, got ${result}`);
-            }
-            console.log(`alloc_sum()=${result}`);
-          }).catch(error => {
-            console.error(error);
-            process.exit(1);
-          });
+          if (imports.length !== 1 || imports[0].module !== 'env' || imports[0].name !== 'malloc') {
+            throw new Error(`unexpected alloc_sum imports=${JSON.stringify(imports)}`);
+          }
+
+          const runtime = createFlowWasmRuntime();
+          const instance = await WebAssembly.instantiate(module, runtime.imports);
+          runtime.attach(instance);
+
+          const {alloc_sum} = instance.exports;
+          if (typeof alloc_sum !== 'function') {
+            throw new Error('alloc_sum export missing');
+          }
+          const result = alloc_sum();
+          if (result !== 3.75) {
+            throw new Error(`expected alloc_sum() == 3.75, got ${result}`);
+          }
+          console.log(`alloc_sum()=${result}; imports=${JSON.stringify(imports)}`);
           JS
