@@ -6,6 +6,7 @@ on:
       - 'src/flow/wasm_compiler.py'
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
+      - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
@@ -14,6 +15,7 @@ on:
       - 'src/flow/wasm_compiler.py'
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
+      - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
@@ -40,11 +42,16 @@ jobs:
             -o /tmp/sum_pair.wasm \
             --export sum_pair \
             -O O2
+          python -m flow.wasm_compiler tests/fixtures/wasm/alloc_sum.flow \
+            -o /tmp/alloc_sum.wasm \
+            --export alloc_sum \
+            -O O2
           test -s /tmp/main_42.wasm
           test -s /tmp/sum_pair.wasm
+          test -s /tmp/alloc_sum.wasm
           python - <<'PY'
           from pathlib import Path
-          for path in ('/tmp/main_42.wasm', '/tmp/sum_pair.wasm'):
+          for path in ('/tmp/main_42.wasm', '/tmp/sum_pair.wasm', '/tmp/alloc_sum.wasm'):
               data = Path(path).read_bytes()
               assert data[:4] == b'\x00asm', (path, data[:4])
               print(f'{path}: {len(data)} wasm bytes')
@@ -95,4 +102,37 @@ jobs:
             console.error(error);
             process.exit(1);
           });
+          JS
+      - name: Execute allocation-backed Flow under WebAssembly
+        run: |
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          import {createFlowWasmRuntime} from './runtime/wasm/flow_runtime.mjs';
+
+          const bytes = fs.readFileSync('/tmp/alloc_sum.wasm');
+          const module = new WebAssembly.Module(bytes);
+          const imports = WebAssembly.Module.imports(module);
+          if (imports.length !== 1 || imports[0].module !== 'env' || imports[0].name !== 'malloc') {
+            throw new Error(`unexpected alloc_sum imports=${JSON.stringify(imports)}`);
+          }
+
+          const runtime = createFlowWasmRuntime();
+          const instance = await WebAssembly.instantiate(module, runtime.imports);
+          runtime.attach(instance);
+
+          const {alloc_sum, memory} = instance.exports;
+          if (typeof alloc_sum !== 'function') {
+            throw new Error('alloc_sum export missing');
+          }
+          const initialBytes = memory.buffer.byteLength;
+          for (let i = 0; i < 32; i += 1) {
+            const result = alloc_sum();
+            if (result !== 3.75) {
+              throw new Error(`expected alloc_sum() == 3.75 on iteration ${i}, got ${result}`);
+            }
+          }
+          if (memory.buffer.byteLength <= initialBytes) {
+            throw new Error('allocator did not grow WebAssembly linear memory');
+          }
+          console.log(`alloc_sum() x32=3.75; memory ${initialBytes} -> ${memory.buffer.byteLength}; imports=${JSON.stringify(imports)}`);
           JS

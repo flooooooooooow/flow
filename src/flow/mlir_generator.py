@@ -5381,10 +5381,16 @@ class MLIRGenerator:
             if info.get("is_closure") and info.get("fn_mlir_type"):
                 return self._generate_closure_call(func_call, info)
 
-        # Handle array<T>(size) constructor specially
+        # Handle array<T>(...) constructors specially. The parser normalizes
+        # generic constructor names to array_T; keep the legacy spelling for
+        # direct AST producers. Never steal a real declared array_* function.
+        elem_type = None
         if func_call.name.startswith('array<') and func_call.name.endswith('>'):
-            # Extract element type from array<type>
-            elem_type = func_call.name[6:-1]  # Remove 'array<' and '>'
+            elem_type = func_call.name[6:-1]
+        elif func_call.name.startswith('array_') and func_call.name not in self.symbol_table:
+            elem_type = func_call.name[len('array_'):]
+
+        if elem_type is not None:
             
             if len(func_call.arguments) == 1:
                 # Array with specified size: array<i32>(10)
