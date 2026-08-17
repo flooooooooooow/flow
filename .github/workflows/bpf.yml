@@ -38,17 +38,11 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
+            "linux-tools-$(uname -r)" \
             linux-tools-common \
-            linux-tools-generic \
             llvm-18
-          if command -v bpftool >/dev/null 2>&1; then
-            bpftool version
-          else
-            BPFTOOL="$(find /usr/lib/linux-tools -name bpftool -print -quit 2>/dev/null || true)"
-            test -n "$BPFTOOL"
-            sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
-            bpftool version
-          fi
+          command -v bpftool
+          bpftool version
 
       - name: Run BPF target unit tests
         env:
