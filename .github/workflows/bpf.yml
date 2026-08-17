@@ -1,0 +1,89 @@
+name: bpfel backend
+
+on:
+  push:
+    paths:
+      - 'src/flow/bpf_target.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/unit/test_bpf_target.py'
+      - 'tests/fixtures/bpf/**'
+      - '.github/actions/install-toolchain/action.yml'
+      - '.github/workflows/bpf.yml'
+  pull_request:
+    paths:
+      - 'src/flow/bpf_target.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/unit/test_bpf_target.py'
+      - 'tests/fixtures/bpf/**'
+      - '.github/actions/install-toolchain/action.yml'
+      - '.github/workflows/bpf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bpfel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+
+      - name: Run BPF target unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q tests/unit/test_bpf_target.py
+
+      - name: Verify LLVM BPF backend is available
+        run: |
+          clang --print-targets | grep -E '(^|[[:space:]])bpf([[:space:]]|$)'
+          command -v llvm-readelf
+
+      - name: Compile Flow through MLIR and LLVM to eBPF ELF
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m flow.bpf_target tests/fixtures/bpf/answer.flow \
+            --target bpfel \
+            -O 2 \
+            -o /tmp/answer.bpf.o
+          test -s /tmp/answer.bpf.o
+
+          llvm-readelf -h /tmp/answer.bpf.o | tee /tmp/answer.readelf.txt
+          grep -Eq 'Machine:[[:space:]]+(Linux BPF|EM_BPF|BPF)' /tmp/answer.readelf.txt
+
+          llvm-objdump -h /tmp/answer.bpf.o | tee /tmp/answer.sections.txt
+
+      - name: Reject userspace-runtime LLVM IR
+        env:
+          PYTHONPATH: src
+        run: |
+          cat >/tmp/invalid.ll <<'EOF'
+          declare ptr @malloc(i64)
+          define i32 @bad() {
+            %p = call ptr @malloc(i64 8)
+            ret i32 0
+          }
+          EOF
+          if python -m flow.bpf_target /tmp/invalid.ll -o /tmp/invalid.o 2>/tmp/reject.log; then
+            echo 'bpfel unexpectedly accepted malloc dependency' >&2
+            exit 1
+          fi
+          grep -F "cannot depend on userspace runtime symbol 'malloc'" /tmp/reject.log
+
+      - name: Upload BPF object inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-bpfel-object
+          path: |
+            /tmp/answer.bpf.o
+            /tmp/answer.readelf.txt
+            /tmp/answer.sections.txt
+          if-no-files-found: warn
+          retention-days: 7
