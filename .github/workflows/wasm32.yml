@@ -8,6 +8,7 @@ on:
       - 'src/flow/transpiler.py'
       - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
+      - 'tests/wasm/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
   pull_request:
@@ -17,6 +18,7 @@ on:
       - 'src/flow/transpiler.py'
       - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
+      - 'tests/wasm/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
   workflow_dispatch:
@@ -136,3 +138,7 @@ jobs:
           }
           console.log(`alloc_sum() x32=3.75; memory ${initialBytes} -> ${memory.buffer.byteLength}; imports=${JSON.stringify(imports)}`);
           JS
+      - name: Compare native MLIR and wasm32 numerical results
+        env:
+          PYTHONPATH: src
+        run: python tests/wasm/compare_native_wasm.py
