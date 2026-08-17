@@ -1,0 +1,6 @@
+export function alloc_sum() -> f32 {
+    let mut values: array<f32> = array<f32>(2)
+    values[0] = 1.5
+    values[1] = 2.25
+    return values[0] + values[1]
+}
