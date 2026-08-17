@@ -22,34 +22,17 @@ jobs:
 
           path = Path('src/flow/c_generator.py')
           source = path.read_text()
-
-          old_comment = '''        # Deduplicate functions by name: when multiple imported modules define
-          # the same helper (e.g. str_append, substr), only the first definition
-          # is emitted. sizeof_ intrinsics are also deduped even when exported,
-          '''
-          new_comment = '''        # Deduplicate identical function signatures: when multiple imported modules
-          # define the same helper with the same parameter types, only the first
-          # definition is emitted. Distinct overloads must survive to name mangling.
-          # sizeof_ intrinsics are also deduped even when exported,
-          '''
-          old_comment = old_comment.replace('\n          #', '\n        #').replace('\n          ', '\n')
-          new_comment = new_comment.replace('\n          #', '\n        #').replace('\n          ', '\n')
-          if source.count(old_comment) != 1:
-              raise SystemExit('expected dedup comment exactly once')
-          source = source.replace(old_comment, new_comment, 1)
-
-          old_key = '            key = fn.name\n            has_body = bool(getattr(fn, "body", None) and fn.body.statements)\n'
-          new_key = (
+          old = '            key = fn.name\n            has_body = bool(getattr(fn, "body", None) and fn.body.statements)\n'
+          new = (
               '            key = (\n'
               '                fn.name,\n'
               '                tuple(generator._type_to_string(p.type) for p in fn.parameters),\n'
               '            )\n'
               '            has_body = bool(getattr(fn, "body", None) and fn.body.statements)\n'
           )
-          if source.count(old_key) != 1:
-              raise SystemExit('expected name-only dedup key exactly once')
-          source = source.replace(old_key, new_key, 1)
-          path.write_text(source)
+          if source.count(old) != 1:
+              raise SystemExit(f'expected name-only dedup key exactly once, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
           PY
           git diff --check
           git diff -- src/flow/c_generator.py
