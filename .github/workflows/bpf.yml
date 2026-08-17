@@ -42,7 +42,13 @@ jobs:
             "$KERNEL_TOOLS" \
             linux-tools-common \
             llvm-18
-          BPFTOOL="$(dpkg -L "$KERNEL_TOOLS" | grep '/bpftool$' | head -n1)"
+
+          PAYLOAD_PACKAGE="$(apt-cache depends "$KERNEL_TOOLS" \
+            | awk '/Depends: linux-.*-tools-/ {print $2; exit}')"
+          test -n "$PAYLOAD_PACKAGE"
+          sudo apt-get install -y --no-install-recommends "$PAYLOAD_PACKAGE"
+
+          BPFTOOL="$(dpkg -L "$PAYLOAD_PACKAGE" | grep '/bpftool$' | head -n1)"
           test -x "$BPFTOOL"
           sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
           /usr/local/bin/bpftool version
