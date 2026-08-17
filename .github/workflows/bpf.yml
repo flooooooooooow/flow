@@ -41,10 +41,14 @@ jobs:
             linux-tools-common \
             linux-tools-generic \
             llvm-18
-          BPFTOOL="$(find /usr/lib/linux-tools -type f -name bpftool -print -quit)"
-          test -n "$BPFTOOL"
-          sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
-          bpftool version
+          if command -v bpftool >/dev/null 2>&1; then
+            bpftool version
+          else
+            BPFTOOL="$(find /usr/lib/linux-tools -name bpftool -print -quit 2>/dev/null || true)"
+            test -n "$BPFTOOL"
+            sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
+            bpftool version
+          fi
 
       - name: Run BPF target unit tests
         env:
