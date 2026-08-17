@@ -1,0 +1,74 @@
+# Flow base kernel core.
+#
+# Phase one deliberately keeps the architecture shim tiny: Flow owns boot
+# validation and kernel policy; the shim owns privileged CPU/serial operations.
+
+@cEmbed("
+#include <stdint.h>
+
+static inline void flow_kernel_outb(uint16_t port, uint8_t value) {
+    __asm__ volatile (\"outb %0, %1\" : : \"a\"(value), \"Nd\"(port));
+}
+
+void flow_kernel_serial_init(void) {
+    flow_kernel_outb(0x3f8 + 1, 0x00);
+    flow_kernel_outb(0x3f8 + 3, 0x80);
+    flow_kernel_outb(0x3f8 + 0, 0x03);
+    flow_kernel_outb(0x3f8 + 1, 0x00);
+    flow_kernel_outb(0x3f8 + 3, 0x03);
+    flow_kernel_outb(0x3f8 + 2, 0xc7);
+    flow_kernel_outb(0x3f8 + 4, 0x0b);
+}
+
+void flow_kernel_serial_write(const char* text) {
+    while (*text) {
+        flow_kernel_outb(0x3f8, (uint8_t)*text++);
+    }
+}
+
+__attribute__((noreturn)) void flow_kernel_halt(void) {
+    for (;;) {
+        __asm__ volatile (\"cli; hlt\");
+    }
+}
+")
+
+extern {
+    function flow_kernel_serial_init() -> void
+    function flow_kernel_serial_write(text: string) -> void
+    function flow_kernel_halt() -> void
+}
+
+export function kernel_abi_version() -> u32 {
+    return 1
+}
+
+export function kernel_page_size() -> u64 {
+    return 4096
+}
+
+export function kernel_boot_magic_valid(magic: u32) -> bool {
+    return magic == 920085129
+}
+
+export function kernel_page_count(bytes: u64) -> u64 {
+    return (bytes + 4095) / 4096
+}
+
+export function kernel_main(multiboot_magic: u32, multiboot_info: ptr<void>) -> i32 {
+    flow_kernel_serial_init()
+    flow_kernel_serial_write("Flow kernel: entry\n")
+
+    if not kernel_boot_magic_valid(multiboot_magic) {
+        flow_kernel_serial_write("Flow kernel: invalid Multiboot2 magic\n")
+        return 1
+    }
+
+    if multiboot_info == null {
+        flow_kernel_serial_write("Flow kernel: missing Multiboot2 info\n")
+        return 2
+    }
+
+    flow_kernel_serial_write("Flow kernel: boot contract accepted\n")
+    return 0
+}
