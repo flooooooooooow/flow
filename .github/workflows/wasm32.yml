@@ -120,13 +120,19 @@ jobs:
           const instance = await WebAssembly.instantiate(module, runtime.imports);
           runtime.attach(instance);
 
-          const {alloc_sum} = instance.exports;
+          const {alloc_sum, memory} = instance.exports;
           if (typeof alloc_sum !== 'function') {
             throw new Error('alloc_sum export missing');
           }
-          const result = alloc_sum();
-          if (result !== 3.75) {
-            throw new Error(`expected alloc_sum() == 3.75, got ${result}`);
+          const initialBytes = memory.buffer.byteLength;
+          for (let i = 0; i < 32; i += 1) {
+            const result = alloc_sum();
+            if (result !== 3.75) {
+              throw new Error(`expected alloc_sum() == 3.75 on iteration ${i}, got ${result}`);
+            }
           }
-          console.log(`alloc_sum()=${result}; imports=${JSON.stringify(imports)}`);
+          if (memory.buffer.byteLength <= initialBytes) {
+            throw new Error('allocator did not grow WebAssembly linear memory');
+          }
+          console.log(`alloc_sum() x32=3.75; memory ${initialBytes} -> ${memory.buffer.byteLength}; imports=${JSON.stringify(imports)}`);
           JS
