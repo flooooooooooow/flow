@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from flow.parser import FlowSyntaxError, parse_flow_code
+from flow.parser import FlowSyntaxError, Literal, ReturnStatement, parse_flow_code
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +28,20 @@ def _function_body(source: str, signature_fragment: str) -> str:
             if depth == 0:
                 return source[brace : index + 1]
     raise AssertionError(f"unterminated generated function: {signature_fragment}")
+
+
+def test_literal_sum_range_folds_during_parsing() -> None:
+    declarations = parse_flow_code(
+        """
+function folded() -> i32 {
+    return sum(0..1000 step 3)
+}
+"""
+    )
+    return_statement = declarations[0].body.statements[0]
+    assert isinstance(return_statement, ReturnStatement)
+    assert isinstance(return_statement.value, Literal)
+    assert return_statement.value.value == "166833"
 
 
 def test_sum_range_compiles_to_closed_form_and_preserves_results(tmp_path: Path) -> None:
