@@ -120,6 +120,16 @@ def llvm_to_wasm(
     return output_path
 
 
+def _transpiler_failure(result: subprocess.CompletedProcess[str], detail: str) -> RuntimeError:
+    diagnostics = []
+    if result.stdout.strip():
+        diagnostics.append("stdout:\n" + result.stdout.strip())
+    if result.stderr.strip():
+        diagnostics.append("stderr:\n" + result.stderr.strip())
+    suffix = "\n" + "\n".join(diagnostics) if diagnostics else ""
+    return RuntimeError(detail + suffix)
+
+
 def flow_to_wasm(
     source: str | Path,
     output: str | Path,
@@ -146,11 +156,17 @@ def flow_to_wasm(
         ]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(
-                "Flow to LLVM IR compilation failed:\n" + result.stderr.strip()
+            raise _transpiler_failure(result, "Flow to LLVM IR compilation failed")
+
+        llvm_ir = llvm_path.read_text() if llvm_path.exists() else ""
+        if not llvm_ir.strip():
+            raise _transpiler_failure(
+                result,
+                "Flow transpiler returned success but produced empty LLVM IR",
             )
+
         return llvm_to_wasm(
-            llvm_path.read_text(),
+            llvm_ir,
             output,
             exports=exports,
             optimize=optimize,
