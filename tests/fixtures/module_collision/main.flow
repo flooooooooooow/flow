@@ -1,0 +1,6 @@
+import "tests/fixtures/module_collision/module_a.flow"
+import "tests/fixtures/module_collision/module_b.flow"
+
+function main() -> i32 {
+    return module_a_value() + module_b_value()
+}
