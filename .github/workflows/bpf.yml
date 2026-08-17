@@ -37,7 +37,14 @@ jobs:
       - name: Install BPF and LLVM inspection tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bpftool llvm-18
+          sudo apt-get install -y --no-install-recommends \
+            linux-tools-common \
+            linux-tools-generic \
+            llvm-18
+          BPFTOOL="$(find /usr/lib/linux-tools -type f -name bpftool -print -quit)"
+          test -n "$BPFTOOL"
+          sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
+          bpftool version
 
       - name: Run BPF target unit tests
         env:
