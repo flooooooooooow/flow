@@ -1,0 +1,17 @@
+name: Issue 521 regression smoke
+
+on:
+  push:
+    paths:
+      - '.github/workflows/smoke-521.yml'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+      - name: Verify time.h owns POSIX prototypes
+        env:
+          PYTHONPATH: src
+        run: pytest -q tests/integration/test_time_header_externs.py
