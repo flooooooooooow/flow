@@ -34,10 +34,10 @@ jobs:
         with:
           mlir: 'true'
 
-      - name: Install LLVM object inspection tools
+      - name: Install BPF and LLVM inspection tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends llvm-18
+          sudo apt-get install -y --no-install-recommends bpftool llvm-18
 
       - name: Run BPF target unit tests
         env:
@@ -49,6 +49,7 @@ jobs:
           clang --print-targets | grep -E '(^|[[:space:]])bpf([[:space:]]|$)'
           command -v llvm-readelf-18
           command -v llvm-objdump-18
+          command -v bpftool
 
       - name: Compile Flow through MLIR and LLVM to eBPF ELF
         env:
@@ -62,8 +63,39 @@ jobs:
 
           llvm-readelf-18 -h /tmp/answer.bpf.o | tee /tmp/answer.readelf.txt
           grep -Eq 'Machine:[[:space:]]+(Linux BPF|EM_BPF|BPF)' /tmp/answer.readelf.txt
-
           llvm-objdump-18 -h /tmp/answer.bpf.o | tee /tmp/answer.sections.txt
+
+      - name: Compile Flow socket-filter program with BPF metadata
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m flow.bpf_target tests/fixtures/bpf/socket_filter.flow \
+            --target bpfel \
+            --entry socket_filter \
+            --section socket \
+            --license GPL \
+            -O 2 \
+            -o /tmp/socket-filter.bpf.o
+          test -s /tmp/socket-filter.bpf.o
+
+          llvm-objdump-18 -h /tmp/socket-filter.bpf.o | tee /tmp/socket-filter.sections.txt
+          grep -E '[[:space:]]socket[[:space:]]' /tmp/socket-filter.sections.txt
+          grep -E '[[:space:]]license[[:space:]]' /tmp/socket-filter.sections.txt
+
+      - name: Load Flow program through the Linux BPF verifier
+        run: |
+          sudo mkdir -p /sys/fs/bpf
+          if ! mountpoint -q /sys/fs/bpf; then
+            sudo mount -t bpf bpf /sys/fs/bpf
+          fi
+          sudo rm -f /sys/fs/bpf/flow_socket_filter
+          sudo bpftool prog load \
+            /tmp/socket-filter.bpf.o \
+            /sys/fs/bpf/flow_socket_filter \
+            type socket_filter \
+            2>&1 | tee /tmp/verifier.log
+          sudo bpftool prog show pinned /sys/fs/bpf/flow_socket_filter | tee /tmp/loaded-program.txt
+          sudo rm -f /sys/fs/bpf/flow_socket_filter
 
       - name: Reject userspace-runtime LLVM IR
         env:
@@ -91,5 +123,9 @@ jobs:
             /tmp/answer.bpf.o
             /tmp/answer.readelf.txt
             /tmp/answer.sections.txt
+            /tmp/socket-filter.bpf.o
+            /tmp/socket-filter.sections.txt
+            /tmp/verifier.log
+            /tmp/loaded-program.txt
           if-no-files-found: warn
           retention-days: 7
