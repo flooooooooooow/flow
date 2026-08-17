@@ -1,0 +1,7 @@
+function _same(x: i32) -> i32 {
+    return x + 1
+}
+
+export function module_a_value() -> i32 {
+    return _same(40)
+}
