@@ -1,0 +1,6 @@
+import .module_a
+import .module_b
+
+function main() -> i32 {
+    return module_a_value() + module_b_value()
+}

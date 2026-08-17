@@ -1,0 +1,7 @@
+function _same(x: f32) -> f32 {
+    return x + 1.0
+}
+
+export function module_b_value() -> i32 {
+    return _same(0.0) as i32
+}
