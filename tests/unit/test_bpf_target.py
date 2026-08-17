@@ -1,12 +1,12 @@
-from pathlib import Path
-
 import pytest
 
 from flow.bpf_target import (
     BPFEL,
+    BPFProgram,
     BPFTargetError,
     target_for_name,
     validate_bpf_llvm_ir,
+    with_bpf_program_metadata,
     with_bpf_target_header,
 )
 
@@ -42,6 +42,32 @@ define i64 @entry(i64 %x) {
     assert f'target datalayout = "{BPFEL.data_layout}"' in targeted
     assert "x86_64-unknown-linux-gnu" not in targeted
     assert "host-layout" not in targeted
+
+
+def test_program_metadata_decorates_stable_flow_export_and_license():
+    llvm_ir = '''define i32 @answer() {
+  ret i32 42
+}
+define i32 @flow_export_answer() {
+  %r = call i32 @answer()
+  ret i32 %r
+}
+'''
+    decorated = with_bpf_program_metadata(
+        llvm_ir,
+        BPFProgram(entry="answer", section="socket", license="GPL"),
+    )
+    assert 'define i32 @flow_export_answer() section "socket" {' in decorated
+    assert 'section "license"' in decorated
+    assert 'c"GPL\\00"' in decorated
+
+
+def test_program_metadata_requires_exported_entry():
+    with pytest.raises(BPFTargetError, match="exported BPF entry 'missing' not found"):
+        with_bpf_program_metadata(
+            "define i32 @something_else() { ret i32 0 }\n",
+            BPFProgram(entry="missing", section="socket"),
+        )
 
 
 @pytest.mark.parametrize(
