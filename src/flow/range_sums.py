@@ -53,7 +53,9 @@ def _sum_for_count(rng: RangeExpression, count):
 def _literal_int(expr) -> int | None:
     if not isinstance(expr, Literal):
         return None
-    if getattr(expr.type, "name", None) not in ("i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"):
+    if getattr(expr.type, "name", None) not in (
+        "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"
+    ):
         return None
     try:
         return int(str(expr.value), 0)
@@ -61,16 +63,41 @@ def _literal_int(expr) -> int | None:
         return None
 
 
+def _constant_range_sum(rng: RangeExpression) -> Literal | None:
+    start = _literal_int(rng.start)
+    end = _literal_int(rng.end)
+    step = _literal_int(rng.step)
+    if start is None or end is None or step is None:
+        return None
+    if step == 0:
+        raise FlowSyntaxError("sum(range) step must not be zero")
+
+    if (step > 0 and start >= end) or (step < 0 and start <= end):
+        total = 0
+    elif step > 0:
+        count = (end - start + step - 1) // step
+        total = count * (2 * start + (count - 1) * step) // 2
+    else:
+        magnitude = -step
+        count = (start - end + magnitude - 1) // magnitude
+        total = count * (2 * start + (count - 1) * step) // 2
+
+    result_type = getattr(rng.start, "type", None) or Type("i32")
+    return Literal(str(total), result_type)
+
+
 def lower_range_sum(rng: RangeExpression):
     """Lower an exclusive-end arithmetic range sum to O(1) arithmetic.
 
-    Positive and negative steps preserve ``for`` range semantics. A literal
-    zero step is rejected at compile time; a runtime zero step evaluates to
-    zero rather than introducing a divide-by-zero path.
+    Literal ranges fold immediately to a single literal. Runtime positive and
+    negative steps preserve ``for`` range semantics. A literal zero step is
+    rejected at compile time; a runtime zero step evaluates to zero rather
+    than introducing a divide-by-zero path.
     """
 
-    if _literal_int(rng.step) == 0:
-        raise FlowSyntaxError("sum(range) step must not be zero")
+    constant = _constant_range_sum(rng)
+    if constant is not None:
+        return constant
 
     zero = _i32(0)
     positive_count = _count_positive(rng)
