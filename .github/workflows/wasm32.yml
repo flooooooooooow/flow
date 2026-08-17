@@ -40,11 +40,16 @@ jobs:
             -o /tmp/sum_pair.wasm \
             --export sum_pair \
             -O O2
+          python -m flow.wasm_compiler tests/fixtures/wasm/alloc_sum.flow \
+            -o /tmp/alloc_sum.wasm \
+            --export alloc_sum \
+            -O O2
           test -s /tmp/main_42.wasm
           test -s /tmp/sum_pair.wasm
+          test -s /tmp/alloc_sum.wasm
           python - <<'PY'
           from pathlib import Path
-          for path in ('/tmp/main_42.wasm', '/tmp/sum_pair.wasm'):
+          for path in ('/tmp/main_42.wasm', '/tmp/sum_pair.wasm', '/tmp/alloc_sum.wasm'):
               data = Path(path).read_bytes()
               assert data[:4] == b'\x00asm', (path, data[:4])
               print(f'{path}: {len(data)} wasm bytes')
@@ -91,6 +96,29 @@ jobs:
               throw new Error(`expected sum_pair(memory[${byteOffset}]) == 3.75, got ${result}`);
             }
             console.log(`sum_pair([${values[0]}, ${values[1]}])=${result}`);
+          }).catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          JS
+      - name: Execute allocation-backed Flow under WebAssembly
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const bytes = fs.readFileSync('/tmp/alloc_sum.wasm');
+          const module = new WebAssembly.Module(bytes);
+          const imports = WebAssembly.Module.imports(module);
+          console.log(`alloc_sum imports=${JSON.stringify(imports)}`);
+          WebAssembly.instantiate(module, {}).then(instance => {
+            const {alloc_sum} = instance.exports;
+            if (typeof alloc_sum !== 'function') {
+              throw new Error('alloc_sum export missing');
+            }
+            const result = alloc_sum();
+            if (result !== 3.75) {
+              throw new Error(`expected alloc_sum() == 3.75, got ${result}`);
+            }
+            console.log(`alloc_sum()=${result}`);
           }).catch(error => {
             console.error(error);
             process.exit(1);
