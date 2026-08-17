@@ -7,6 +7,7 @@ on:
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
       - 'tests/fixtures/wasm/**'
+      - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
       - 'tests/fixtures/wasm/**'
+      - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/wasm32.yml'
   workflow_dispatch:
 
@@ -26,18 +28,6 @@ jobs:
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
-      - name: Expose MLIR translator
-        run: |
-          translator="$(command -v mlir-translate || true)"
-          if [ -z "$translator" ]; then
-            translator="$(command -v mlir-translate-14 || true)"
-          fi
-          if [ -z "$translator" ]; then
-            echo "mlir-translate is missing from the installed MLIR toolchain"
-            exit 1
-          fi
-          sudo ln -sf "$translator" /usr/local/bin/mlir-translate
-          mlir-translate --version
       - name: Compile Flow through MLIR and LLVM IR to WebAssembly
         env:
           PYTHONPATH: src
