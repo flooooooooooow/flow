@@ -34,6 +34,11 @@ jobs:
         with:
           mlir: 'true'
 
+      - name: Install LLVM object inspection tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends llvm-18
+
       - name: Run BPF target unit tests
         env:
           PYTHONPATH: src
@@ -42,7 +47,8 @@ jobs:
       - name: Verify LLVM BPF backend is available
         run: |
           clang --print-targets | grep -E '(^|[[:space:]])bpf([[:space:]]|$)'
-          command -v llvm-readelf
+          command -v llvm-readelf-18
+          command -v llvm-objdump-18
 
       - name: Compile Flow through MLIR and LLVM to eBPF ELF
         env:
@@ -54,10 +60,10 @@ jobs:
             -o /tmp/answer.bpf.o
           test -s /tmp/answer.bpf.o
 
-          llvm-readelf -h /tmp/answer.bpf.o | tee /tmp/answer.readelf.txt
+          llvm-readelf-18 -h /tmp/answer.bpf.o | tee /tmp/answer.readelf.txt
           grep -Eq 'Machine:[[:space:]]+(Linux BPF|EM_BPF|BPF)' /tmp/answer.readelf.txt
 
-          llvm-objdump -h /tmp/answer.bpf.o | tee /tmp/answer.sections.txt
+          llvm-objdump-18 -h /tmp/answer.bpf.o | tee /tmp/answer.sections.txt
 
       - name: Reject userspace-runtime LLVM IR
         env:
