@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,33 @@ def _find_clang() -> str:
     )
 
 
+def _defined_llvm_functions(llvm_ir: str) -> set[str]:
+    """Return defined LLVM function symbols, excluding declarations."""
+    symbols: set[str] = set()
+    pattern = re.compile(
+        r'^\s*define\b[^@]*@(?:"([^"]+)"|([A-Za-z$._][A-Za-z0-9$._-]*))\s*\(',
+        re.MULTILINE,
+    )
+    for match in pattern.finditer(llvm_ir):
+        symbols.add(match.group(1) or match.group(2))
+    return symbols
+
+
+def _validate_exports(llvm_ir: str, exports: Iterable[str]) -> None:
+    requested = list(exports)
+    if not requested:
+        return
+    defined = _defined_llvm_functions(llvm_ir)
+    missing = [name for name in requested if name not in defined]
+    if missing:
+        available = ", ".join(sorted(defined)) or "<none>"
+        raise RuntimeError(
+            "requested WebAssembly export(s) are not defined in generated LLVM IR: "
+            + ", ".join(missing)
+            + f". Defined functions: {available}"
+        )
+
+
 def llvm_to_wasm(
     llvm_ir: str,
     output: str | Path,
@@ -54,6 +82,9 @@ def llvm_to_wasm(
     if optimize not in {"O0", "O1", "O2", "O3", "Os", "Oz"}:
         raise ValueError(f"unsupported optimization level: {optimize}")
 
+    export_names = list(exports or [])
+    _validate_exports(llvm_ir, export_names)
+
     with tempfile.TemporaryDirectory(prefix="flow_wasm_") as temp_dir:
         llvm_path = Path(temp_dir) / "module.ll"
         llvm_path.write_text(llvm_ir)
@@ -69,7 +100,6 @@ def llvm_to_wasm(
             "-Wl,--no-entry",
         ]
 
-        export_names = list(exports or [])
         if export_names:
             command.extend(f"-Wl,--export={name}" for name in export_names)
         else:
