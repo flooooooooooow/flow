@@ -100,7 +100,6 @@ def test_legacy_run_and_interactive_still_parse():
         "flow ignore=",
         # Designed but not implemented: must not parse while it does nothing.
         "flow host=python",
-        "flow preamble=docs/_preambles/gfx.flow",
         "flow from=examples/book/01_hello.flow",
     ],
 )
@@ -325,3 +324,49 @@ def test_a_missing_ledger_is_a_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chk, "LEDGER", tmp_path / "absent.json")
     assert chk.check_ledger([]) == 1
+
+
+# --------------------------------------------------------------------------
+# preamble=
+# --------------------------------------------------------------------------
+
+def test_a_preamble_supplies_declarations_the_chapter_already_showed(tmp_path, monkeypatch):
+    import check_doc_examples as chk
+
+    (tmp_path / "ctx.flow").write_text("struct Sample {\n    value: f64\n}\n")
+    monkeypatch.setattr(chk, "ROOT", tmp_path)
+    block = Block(
+        path="p.md", line=1, info="flow", lang="flow",
+        code="function first_value(s: Sample) -> f64 {\n    return s.value\n}",
+        opts={"preamble": "ctx.flow"},
+    )
+    assert chk.verify(block).status == "verified"
+
+
+def test_the_preamble_sits_outside_the_harness(tmp_path, monkeypatch):
+    """A struct must not end up nested inside a synthesized main."""
+    import check_doc_examples as chk
+
+    (tmp_path / "ctx.flow").write_text("struct Sample {\n    value: f64\n}\n")
+    monkeypatch.setattr(chk, "ROOT", tmp_path)
+    block = Block(
+        path="p.md", line=1, info="flow", lang="flow",
+        code="let s: Sample = Sample { value: 1.0 }",  # statements, needs stmt-wrap
+        opts={"preamble": "ctx.flow"},
+    )
+    result = chk.verify(block)
+    assert result.status == "verified", result.detail
+    assert result.mode == "stmt-wrap"
+
+
+def test_a_missing_preamble_is_a_failure(tmp_path, monkeypatch):
+    import check_doc_examples as chk
+
+    monkeypatch.setattr(chk, "ROOT", tmp_path)
+    block = Block(
+        path="p.md", line=1, info="flow", lang="flow", code=COMPLETE,
+        opts={"preamble": "nope.flow"},
+    )
+    result = chk.verify(block)
+    assert result.status == "unverified"
+    assert result.stage == "preamble"

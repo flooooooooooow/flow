@@ -20,12 +20,13 @@ offers and which nothing previously used::
     ```flow expect-error                     must FAIL to compile
     ```flow ignore="needs a GPU device"      excluded, reason required
     ```flow no-harness                       verify as written or not at all
+    ```flow preamble=<path>                  compile after that file's contents
 
 Both older extractors already tolerated a suffix after `flow` (they accepted
 `run` and `interactive`), so every form above is backward compatible.
 
-`host=`, `preamble=` and `from=` are designed but deliberately absent until
-something honours them. A key that parses and does nothing is worse than no key:
+`host=` and `from=` are designed but deliberately absent until something
+honours them. A key that parses and does nothing is worse than no key:
 an author writes `preamble=...`, the block is checked without it, and a green
 result means nothing.
 """
@@ -60,11 +61,11 @@ KNOWN_FLAGS = frozenset(
     }
 )
 
-# Only keys the checker actually honours. `host=`, `preamble=` and `from=` are
-# designed but not implemented; shipping them as no-ops would be worse than
-# leaving them out, because an author would write `preamble=...`, the block
-# would be checked without it, and a passing result would mean nothing.
-KNOWN_KEYS = frozenset({"ignore"})
+# Only keys the checker actually honours. `host=` and `from=` are designed but
+# not implemented; shipping them as no-ops would be worse than leaving them
+# out, because an author would write one, the block would be checked without
+# it, and a passing result would mean nothing.
+KNOWN_KEYS = frozenset({"ignore", "preamble"})
 
 
 @dataclass
@@ -103,6 +104,16 @@ class Block:
     @property
     def ignored(self) -> Optional[str]:
         return self.opts.get("ignore")
+
+    @property
+    def preamble(self) -> Optional[str]:
+        """Repo-relative file whose contents precede this block when compiling.
+
+        For a chapter with a running example: the prose has already shown the
+        reader the struct, so the checker should see it too rather than the
+        page repeating it in every block.
+        """
+        return self.opts.get("preamble")
 
     @property
     def expects_error(self) -> bool:

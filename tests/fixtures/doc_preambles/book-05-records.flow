@@ -1,0 +1,9 @@
+# Context for docs/book/05-records-and-arrays.md.
+#
+# The chapter declares Sample once in 5.1 and then uses it throughout. Blocks
+# tagged `preamble=` compile against this, so the checker sees what the reader
+# has already been shown instead of the page repeating the struct every time.
+struct Sample {
+    time_ms: i32,
+    value: f64
+}
