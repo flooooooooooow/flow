@@ -91,12 +91,17 @@ def _stdlib_modules() -> set[str]:
     }
 
 
+# Suffixes a backend module can carry. `_target` is here because a BPF target
+# on an unmerged branch would otherwise have landed as a whole new compilation
+# target that the coverage gate could not see.
+_BACKEND_SUFFIXES = ("_generator", "_codegen", "_compiler", "_target", "_backend")
+
+
 def _backends() -> set[str]:
     names = set()
     for path in (ROOT / "src" / "flow").glob("*.py"):
-        stem = path.stem
-        if stem.endswith(("_generator", "_codegen", "_compiler")):
-            names.add(stem)
+        if path.stem.endswith(_BACKEND_SUFFIXES):
+            names.add(path.stem)
     return names
 
 
