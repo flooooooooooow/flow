@@ -114,3 +114,80 @@ function bad() -> i32 {
 }
 """
         )
+
+
+def _run(source: str) -> str:
+    """Compile and run, returning stdout."""
+    import subprocess, sys, tempfile, os
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    env = {**os.environ, "PYTHONPATH": str(root / "src")}
+    with tempfile.TemporaryDirectory() as td:
+        src = Path(td) / "p.flow"; c = Path(td) / "p.c"; exe = Path(td) / "p"
+        src.write_text(source)
+        assert subprocess.run(
+            [sys.executable, "-m", "flow.transpiler", str(src), "--c", "-o", str(c)],
+            cwd=root, env=env, capture_output=True, text=True).returncode == 0
+        assert subprocess.run(["clang", "-O0", "-o", str(exe), str(c), "-lm"],
+                              capture_output=True, text=True).returncode == 0
+        return subprocess.run([str(exe)], capture_output=True, text=True).stdout
+
+
+def test_runtime_sum_does_not_overflow_where_a_loop_does_not():
+    """The closed form must not form twice the answer on the way there.
+
+    n * (2a + (n-1)d) / 2 builds an intermediate of exactly 2*sum, so it wrapped
+    once the real answer passed 2^30 even though i32 reaches 2^31-1. This range
+    sums to 1500013378, which fits comfortably; the doubled value, 3000026756,
+    does not.
+    """
+    out = _run("""
+function loop_sum(limit: i32, stride: i32) -> i32 {
+    let mut total: i32 = 0
+    let mut n: i32 = 0
+    while n < limit {
+        total = total + n
+        n = n + stride
+    }
+    return total
+}
+
+function closed_sum(limit: i32, stride: i32) -> i32 {
+    return sum(0..limit step stride)
+}
+
+function main() -> i32 {
+    printf("%d %d\\n", closed_sum(54773, 1), loop_sum(54773, 1))
+    return 0
+}
+""")
+    closed, looped = out.split()
+    assert closed == looped == "1500013378"
+
+
+def test_each_bound_is_evaluated_exactly_once():
+    """A `for` loop over the same range evaluates each bound once.
+
+    While the sum was inlined at the call site the bounds appeared many times
+    in the generated expression, so a bound with a side effect ran 4, 3 and 8
+    times respectively.
+    """
+    out = _run("""
+let mut start_calls: i32 = 0
+let mut end_calls: i32 = 0
+let mut step_calls: i32 = 0
+
+function a_start(v: i32) -> i32 { start_calls = start_calls + 1 return v }
+function an_end(v: i32) -> i32 { end_calls = end_calls + 1 return v }
+function a_step(v: i32) -> i32 { step_calls = step_calls + 1 return v }
+
+function main() -> i32 {
+    let total: i32 = sum(a_start(0)..an_end(1000) step a_step(3))
+    printf("%d %d %d %d\\n", total, start_calls, end_calls, step_calls)
+    return 0
+}
+""")
+    total, starts, ends, steps = out.split()
+    assert total == "166833"
+    assert (starts, ends, steps) == ("1", "1", "1"), out

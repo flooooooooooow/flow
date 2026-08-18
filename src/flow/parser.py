@@ -1887,6 +1887,13 @@ class Parser:
             from .fork_records import desugar_forks
 
             declarations = desugar_forks(declarations)
+        # `sum(a..b step c)` lowers to a call; the module has to carry the
+        # function it calls. Appended once, only when something used it.
+        if getattr(self, "_needs_range_sum_helper", False):
+            from .range_sums import helper_declarations
+
+            declarations.extend(helper_declarations())
+
         return declarations
 
     def parse_module(self) -> ModuleDecl:
@@ -4918,9 +4925,12 @@ class Parser:
 
         self.expect(TokenType.RPAREN)
         if name == "sum" and len(arguments) == 1 and isinstance(arguments[0], RangeExpression):
-            from .range_sums import lower_range_sum
+            from .range_sums import HELPER_NAME, lower_range_sum
 
-            return lower_range_sum(arguments[0])
+            lowered = lower_range_sum(arguments[0])
+            if isinstance(lowered, FunctionCall) and lowered.name == HELPER_NAME:
+                self._needs_range_sum_helper = True
+            return lowered
         return FunctionCall(name, arguments)
 
     def _collect_free_variables(self, node: Any, param_names: set, found: Optional[set] = None) -> List[str]:
