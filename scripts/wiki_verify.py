@@ -76,7 +76,6 @@ def main() -> int:
             # Callouts converted, no raw [!tip] left in the text.
             raw = page.evaluate("document.getElementById('markdownContent').innerText.includes('[!')")
             check("no raw admonition markers", not raw)
-            check("admonition rendered", page.locator(".admonition").count() >= 2)
 
             # The empty warning bar bug.
             banner_shown = page.evaluate(
@@ -86,6 +85,16 @@ def main() -> int:
 
             # Code blocks get a header + working copy button.
             check("code block chrome", page.locator(".code-block .code-copy").count() > 0)
+
+            # Callouts render as styled blocks. Asserted on a page that has
+            # one: this used to be checked on the home page, which carries no
+            # callout markers at all, so it could only ever fail.
+            page.goto(BASE + "#library/tiny-pointers.md", wait_until="networkidle")
+            page.wait_for_timeout(900)
+            check("admonition rendered", page.locator(".admonition").count() >= 1)
+            check("no raw admonition markers (callout page)", not page.evaluate(
+                "document.getElementById('markdownContent').innerText.includes('[!')"
+            ))
 
             page.goto(BASE + "#LANGUAGE_SPEC.md", wait_until="networkidle")
             page.wait_for_timeout(900)
