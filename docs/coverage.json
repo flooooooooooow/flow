@@ -34,6 +34,7 @@
     "backend:mlir_gpu_codegen": "coverage_plan.md",
     "backend:python_generator": "language/modules-namespacing.md",
     "backend:shader_codegen": "language/shaders.md",
+    "backend:wasm_compiler": "language/wasm.md",
     "backend:wgsl_codegen": "language/wasm-crossings.md",
     "cli:add": "AI_FLOW_HANDBOOK.md",
     "cli:analyze": "language/dynamics-dsl.md",
@@ -242,7 +243,6 @@
     "stdlib:wfc_ga_coupling": "library/dynamics.md"
   },
   "exempt": {
-    "backend:wasm_compiler": "the direct MLIR to wasm32 target; documented by docs/language/wasm.md in PR #539, which is open at the time of writing",
     "cli:firg": "spelling alias for `flow fir-g`, which is documented",
     "cli:install-tools": "alias for `flow setup`, which is documented",
     "cli:ui-layout": "compatibility alias for `flow demo ...`; the documented spelling is the `demo` subcommand",
