@@ -1,0 +1,116 @@
+name: bpfel backend
+
+on:
+  push:
+    paths:
+      - 'src/flow/bpf_target.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/unit/test_bpf_target.py'
+      - 'tests/fixtures/bpf/**'
+      - '.github/actions/install-toolchain/action.yml'
+      - '.github/workflows/bpf.yml'
+  pull_request:
+    paths:
+      - 'src/flow/bpf_target.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/unit/test_bpf_target.py'
+      - 'tests/fixtures/bpf/**'
+      - '.github/actions/install-toolchain/action.yml'
+      - '.github/workflows/bpf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bpfel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+
+      - name: Install LLVM inspection tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends llvm-18
+
+      - name: Run BPF target unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q tests/unit/test_bpf_target.py
+
+      - name: Verify LLVM BPF backend is available
+        run: |
+          clang --print-targets | grep -E '(^|[[:space:]])bpf([[:space:]]|$)'
+          command -v llvm-readelf-18
+          command -v llvm-objdump-18
+
+      - name: Compile Flow through MLIR and LLVM to eBPF ELF
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m flow.bpf_target tests/fixtures/bpf/answer.flow \
+            --target bpfel \
+            -O 2 \
+            -o /tmp/answer.bpf.o
+          test -s /tmp/answer.bpf.o
+
+          llvm-readelf-18 -h /tmp/answer.bpf.o | tee /tmp/answer.readelf.txt
+          grep -Eq 'Machine:[[:space:]]+(Linux BPF|EM_BPF|BPF)' /tmp/answer.readelf.txt
+          llvm-objdump-18 -h /tmp/answer.bpf.o | tee /tmp/answer.sections.txt
+
+      - name: Compile Flow socket-filter program with BPF metadata
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m flow.bpf_target tests/fixtures/bpf/socket_filter.flow \
+            --target bpfel \
+            --entry socket_filter \
+            --section socket \
+            --license GPL \
+            -O 2 \
+            -o /tmp/socket-filter.bpf.o
+          test -s /tmp/socket-filter.bpf.o
+
+          llvm-readelf-18 -h /tmp/socket-filter.bpf.o | tee /tmp/socket-filter.readelf.txt
+          grep -Eq 'Machine:[[:space:]]+(Linux BPF|EM_BPF|BPF)' /tmp/socket-filter.readelf.txt
+          llvm-objdump-18 -h /tmp/socket-filter.bpf.o | tee /tmp/socket-filter.sections.txt
+          grep -E '[[:space:]]socket[[:space:]]' /tmp/socket-filter.sections.txt
+          grep -E '[[:space:]]license[[:space:]]' /tmp/socket-filter.sections.txt
+
+      - name: Reject userspace-runtime LLVM IR
+        env:
+          PYTHONPATH: src
+        run: |
+          cat >/tmp/invalid.ll <<'EOF'
+          declare ptr @malloc(i64)
+          define i32 @bad() {
+            %p = call ptr @malloc(i64 8)
+            ret i32 0
+          }
+          EOF
+          if python -m flow.bpf_target /tmp/invalid.ll -o /tmp/invalid.o 2>/tmp/reject.log; then
+            echo 'bpfel unexpectedly accepted malloc dependency' >&2
+            exit 1
+          fi
+          grep -F "cannot depend on userspace runtime symbol 'malloc'" /tmp/reject.log
+
+      - name: Upload BPF object inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-bpfel-object
+          path: |
+            /tmp/answer.bpf.o
+            /tmp/answer.readelf.txt
+            /tmp/answer.sections.txt
+            /tmp/socket-filter.bpf.o
+            /tmp/socket-filter.readelf.txt
+            /tmp/socket-filter.sections.txt
+          if-no-files-found: warn
+          retention-days: 7
