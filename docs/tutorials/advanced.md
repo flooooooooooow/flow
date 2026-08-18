@@ -189,7 +189,7 @@ function matmul(A: array<f32>, B: array<f32>, C: array<f32>, M: i32, N: i32, K: 
     let col = gpu_thread_id() % N
     
     if row < M && col < N {
-        let sum = 0.0
+        let mut sum = 0.0
         for k in 0..K {
             sum = sum + A[row * K + k] * B[k * N + col]
         }
@@ -318,8 +318,8 @@ function main() -> i32 {
 ```flow
 function main() -> i32 {
     # 4-element float vector
-    let a: vec4<f32> = [1.0, 2.0, 3.0, 4.0]
-    let b: vec4<f32> = [5.0, 6.0, 7.0, 8.0]
+    let a: vec4<f32> = <1.0, 2.0, 3.0, 4.0>
+    let b: vec4<f32> = <5.0, 6.0, 7.0, 8.0>
     
     # Vector operations
     let sum = a + b        # Element-wise addition
@@ -338,9 +338,9 @@ function simd_saxpy(x: array<f32>, y: array<f32>, a: f32, n: i32) {
     
     if i + 3 < n {
         # Load 4 elements
-        let vx: vec4<f32> = [x[i], x[i+1], x[i+2], x[i+3]]
-        let vy: vec4<f32> = [y[i], y[i+1], y[i+2], y[i+3]]
-        let va: vec4<f32> = [a, a, a, a]
+        let vx: vec4<f32> = <x[i], x[i+1], x[i+2], x[i+3]>
+        let vy: vec4<f32> = <y[i], y[i+1], y[i+2], y[i+3]>
+        let va: vec4<f32> = <a, a, a, a>
         
         # y = a*x + y
         let result = va * vx + vy
@@ -396,19 +396,26 @@ The `third_party/integrations/vscode/` directory contains a VS Code extension wi
 ### 8.1 Test Declarations
 
 ```flow
+function fibonacci(n: i32) -> i32 {
+    if n < 2 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
 test "addition works" {
     let result = 2 + 2
     if result != 4 {
-        return 1  # Test failed
+        return false  # Test failed
     }
-    return 0  # Test passed
+    return true  # Test passed
 }
 
 test "fibonacci is correct" {
     if fibonacci(10) != 55 {
-        return 1
+        return false
     }
-    return 0
+    return true
 }
 ```
 

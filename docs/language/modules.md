@@ -239,7 +239,7 @@ reproductions of what breaks, and the cost of making blocks real namespaces.
 
 Every module file starts with a header — same spirit as theorem headers in [verification.md](verification.md):
 
-```flow
+```flow ignore="proof metadata header, not code"
 # @module verify.nat
 # @means  The two Peano recursion clauses that define addition on naturals.
 # @from   https://en.wikipedia.org/wiki/Peano_axioms
