@@ -370,3 +370,44 @@ def test_a_missing_preamble_is_a_failure(tmp_path, monkeypatch):
     result = chk.verify(block)
     assert result.status == "unverified"
     assert result.stage == "preamble"
+
+
+# --------------------------------------------------------------------------
+# split-wrap: declarations, then statements
+# --------------------------------------------------------------------------
+
+def test_declarations_followed_by_statements(tmp_path, monkeypatch):
+    """The commonest documentation shape, and neither other rung fits it.
+
+    `handle` is not legal at top level, so standalone fails; `capability` is
+    not legal inside a function, so stmt-wrap fails. The block has to be cut
+    in two.
+    """
+    import check_doc_examples as chk
+
+    code = (
+        "struct Point {\n    x: i32\n}\n"
+        "\n"
+        "let p: Point = Point { x: 1 }\n"
+        "println(p.x)"
+    )
+    result = chk.verify(Block(path="p.md", line=1, info="flow", lang="flow", code=code))
+    assert result.status == "verified", result.detail
+    assert result.mode == "split-wrap"
+
+
+def test_the_split_keeps_declarations_out_of_the_synthesized_main():
+    from check_doc_examples import _split_declarations
+
+    decls, stmts = _split_declarations(
+        "effect Log {\n    info(m: string) -> void,\n}\n\nhandle Log with C {\n    f()\n}"
+    )
+    assert decls.startswith("effect Log")
+    assert stmts.strip().startswith("handle Log")
+
+
+def test_a_block_that_is_only_declarations_does_not_use_split_wrap():
+    from check_doc_examples import _split_declarations
+
+    decls, stmts = _split_declarations("struct A {\n    x: i32\n}")
+    assert stmts.strip() == ""

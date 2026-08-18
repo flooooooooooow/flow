@@ -1,0 +1,97 @@
+# Effects, capabilities and helpers declared across docs/tutorials/effects-basics.md.
+#
+# The page introduces each of these once and then shows how they are used.
+# Blocks tagged `preamble=` compile against this, so the checker sees the same
+# declarations the reader has already been shown.
+#
+# Three tiers, narrowest first: most blocks declare their own handlers and need
+# only the effects, so pulling in more would collide with them. Where a page
+# declares one name twice, the fullest version wins.
+
+effect Logger {
+    log_info(msg: string) -> void,
+    log_error(msg: string) -> void,
+}
+
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}
+
+capability ConsoleLogger {
+    effect Logger,
+
+    function log_info(msg: string) -> void {
+        let m: string = msg
+        printf("[INFO] %s\n", m)
+    },
+
+    function log_error(msg: string) -> void {
+        let m: string = msg
+        printf("[ERROR] %s\n", m)
+    },
+}
+
+capability NullLogger {
+    effect Logger,
+
+    function log_info(msg: string) -> void {
+    },
+
+    function log_error(msg: string) -> void {
+    },
+}
+
+capability TestBackend {
+    effect Inventory, Notify,
+
+    function stock_of(sku: i32) -> i32 {
+        return 99
+    },
+
+    function send(recipient: string, msg: string) -> void {
+        let r: string = recipient
+        printf("captured for %s\n", r)
+    },
+}
+
+function pure_add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function main() -> i32 {
+    printf("pure=%d\n", pure_add(2, 3))
+    printf("printf performs observable I/O\n")
+    return 0
+}
+
+function do_work(log_enabled: bool) -> i32 {
+    let x: i32 = 10
+    if log_enabled {
+        printf("x=%d\n", x)
+    }
+    return x * 2
+}
+
+function emit(backend: i32, msg: string) -> void {
+    if backend == 0 {
+        printf("[stdout] %s\n", msg)
+    } else {
+        printf("[null] dropped\n")
+    }
+}
+
+function step(state: ptr<i32>) -> void {
+    state[0] = state[0] + 1
+}
+
+function work() -> void with Logger {
+    Logger.log_info("hello")
+}
+
+function greet(name: string) -> void with Logger {
+    Logger.log_info(name)
+}

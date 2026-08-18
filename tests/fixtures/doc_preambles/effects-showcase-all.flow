@@ -1,0 +1,238 @@
+# Effects, capabilities and helpers declared across docs/effects-showcase.md.
+#
+# The page introduces each of these once and then shows how they are used.
+# Blocks tagged `preamble=` compile against this, so the checker sees the same
+# declarations the reader has already been shown.
+#
+# Three tiers, narrowest first: most blocks declare their own handlers and need
+# only the effects, so pulling in more would collide with them. Where a page
+# declares one name twice, the fullest version wins.
+
+effect Log {
+    info(msg: string) -> void,
+    warn(msg: string) -> void,
+}
+
+effect Clock {
+    now() -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}
+
+effect Database {
+    query(sql: string) -> string,
+    execute(sql: string) -> i32,
+}
+
+effect Config {
+    get_config(key: string) -> string,
+}
+
+effect Counter {
+    next(current: i32) -> i32,
+}
+
+effect Timeout {
+    has_expired(elapsed_ms: i32, deadline_ms: i32) -> i32,
+}
+
+effect Retry {
+    should_retry(attempt: i32, max_attempts: i32) -> i32,
+}
+
+effect Async {
+    delay(ms: i32) -> void,
+    spawn(task_id: i32) -> void,
+    join(task_id: i32) -> i32,
+}
+
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+    reserve(sku: i32, qty: i32) -> i32,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("%s\n", msg)
+    },
+}
+
+capability FrozenClock {
+    effect Clock,
+    function now() -> i32 {
+        return 0
+    },
+}
+
+capability WallClock {
+    effect Clock,
+    function now() -> i32 {
+        return 1721224800
+    },
+}
+
+capability TestBackend {
+    effect Inventory, Notify,
+
+    function stock_of(sku: i32) -> i32 {
+        return 99
+    },
+
+    function reserve(sku: i32, qty: i32) -> i32 {
+        return 42
+    },
+
+    function send(recipient: string, msg: string) -> void {
+        let r: string = recipient
+        printf("captured notification for %s\n", r)
+    },
+}
+
+capability OpsLogger {
+    effect Log,
+
+    function info(msg: string) -> void {
+        let t: i32 = Clock.now()
+        let m: string = msg
+        printf("[%d] %s\n", t, m)
+    },
+}
+
+capability EnvConfig {
+    effect Config,
+    function get_config(key: string) -> string {
+        return "from-environment"
+    },
+}
+
+capability TestConfig {
+    effect Config,
+    function get_config(key: string) -> string {
+        return "fixture-value"
+    },
+}
+
+capability NullLogger {
+    effect Log,
+
+    function info(msg: string) -> void {
+    },
+
+    function warn(msg: string) -> void {
+    },
+}
+
+capability UnitCounter {
+    effect Counter,
+    function next(current: i32) -> i32 {
+        return current + 1
+    },
+}
+
+capability DoubleStepCounter {
+    effect Counter,
+    function next(current: i32) -> i32 {
+        return current + 2
+    },
+}
+
+capability SimpleTimeout {
+    effect Timeout,
+
+    function has_expired(elapsed_ms: i32, deadline_ms: i32) -> i32 {
+        if elapsed_ms >= deadline_ms {
+            return 1
+        }
+        return 0
+    },
+}
+
+capability LinearRetry {
+    effect Retry,
+
+    function should_retry(attempt: i32, max_attempts: i32) -> i32 {
+        if attempt < max_attempts {
+            return 1
+        }
+        return 0
+    },
+}
+
+capability SyncAsync {
+    effect Async,
+
+    function delay(ms: i32) -> void {
+        return
+    },
+
+    function spawn(task_id: i32) -> void {
+        return
+    },
+
+    function join(task_id: i32) -> i32 {
+        return task_id * 10
+    },
+}
+
+function work() -> void with Log {
+    Log.info("hello")
+}
+
+function main() -> i32 {
+    let t: i32 = Clock.now()
+    printf("%d\n", t)   # 0 when no Clock handler is installed
+    return 0
+}
+
+function announce() -> void {
+    let t: i32 = Clock.now()
+    printf("time=%d\n", t)
+    Notify.send("ops@example.com", "started")
+}
+
+function print_time() -> void {
+    printf("%d\n", Clock.now())
+}
+
+function greet(name: string) -> void with Log {
+    Log.info("hello")
+    Log.info(name)
+}
+
+function shout() -> void with Log {
+    greet("world")
+    Log.info("!")
+}
+
+function get_user_name(user_id: i32) -> string {
+    return Database.query("SELECT name FROM users WHERE id = 1")
+}
+
+function get_app_setting(key: string) -> string {
+    return Config.get_config(key)
+}
+
+function count_up_to(start: i32, target: i32) -> i32 {
+    let mut count: i32 = start
+    while count < target {
+        count = Counter.next(count)
+    }
+    return count
+}
+
+function place_order(sku: i32, qty: i32) -> i32 {
+    Log.info("order received")
+    let available: i32 = Inventory.stock_of(sku)
+    if available < qty {
+        Log.warn("insufficient stock -- rejecting order")
+        Notify.send("ops@shop.example", "restock needed")
+        return -1
+    }
+    let order_id: i32 = Inventory.reserve(sku, qty)
+    Log.info("stock reserved")
+    Notify.send("customer@shop.example", "order confirmed")
+    return order_id
+}

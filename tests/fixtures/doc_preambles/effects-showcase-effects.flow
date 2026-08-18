@@ -1,0 +1,54 @@
+# Effects declared across docs/effects-showcase.md.
+#
+# The page introduces each of these once and then shows how they are used.
+# Blocks tagged `preamble=` compile against this, so the checker sees the same
+# declarations the reader has already been shown.
+#
+# Three tiers, narrowest first: most blocks declare their own handlers and need
+# only the effects, so pulling in more would collide with them. Where a page
+# declares one name twice, the fullest version wins.
+
+effect Log {
+    info(msg: string) -> void,
+    warn(msg: string) -> void,
+}
+
+effect Clock {
+    now() -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}
+
+effect Database {
+    query(sql: string) -> string,
+    execute(sql: string) -> i32,
+}
+
+effect Config {
+    get_config(key: string) -> string,
+}
+
+effect Counter {
+    next(current: i32) -> i32,
+}
+
+effect Timeout {
+    has_expired(elapsed_ms: i32, deadline_ms: i32) -> i32,
+}
+
+effect Retry {
+    should_retry(attempt: i32, max_attempts: i32) -> i32,
+}
+
+effect Async {
+    delay(ms: i32) -> void,
+    spawn(task_id: i32) -> void,
+    join(task_id: i32) -> i32,
+}
+
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+    reserve(sku: i32, qty: i32) -> i32,
+}
