@@ -612,10 +612,6 @@
           "path": "library/stdlib-api.md"
         },
         {
-          "label": "Core",
-          "path": "library/core.md"
-        },
-        {
           "label": "Memory",
           "path": "library/memory.md"
         },
