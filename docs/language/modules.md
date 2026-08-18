@@ -13,7 +13,7 @@ The module system should extend those ideas — not bolt on a second import dial
 
 **Imports name modules, not files.**
 
-```flow
+```flow ignore="import forms over illustrative module names"
 import verify.Nat/+ { zero-left, succ-right }
 import verify.Nat/+.commutes
 import std.math.sin
@@ -21,7 +21,7 @@ import std.math.sin
 
 Never:
 
-```flow
+```flow expect-error
 import "../../../../lib/verify/nat.flow"   # forbidden
 import "../../vulkan_abi/renderer.flow"     # forbidden
 ```
@@ -86,7 +86,7 @@ They stay in sync by convention, not by counting `../`.
 
 Five forms. Same keywords as the rest of Flow — explicit, no sigils.
 
-```flow
+```flow ignore="import forms over illustrative module names"
 # 1. Single symbol
 import verify.nat.nat_zero_add
 
@@ -108,7 +108,7 @@ No `import *`. If you need more than a handful of symbols, your module is too bi
 
 ### Aliasing (when domain prefix is noisy locally)
 
-```flow
+```flow ignore="illustrative aliased import"
 import verify.derived.nat_add_commutes as nat_add_commutes
 ```
 
@@ -147,7 +147,7 @@ For theorems: **if it's not exported, no other package can `assume` it** — for
 A package usually wants one name that stands for the whole thing. `export
 import` forwards another module's exports as exports of this file.
 
-```flow
+```flow ignore="relative-import form; the sibling module is illustrative"
 # registry/packages/flowlm/src/lib.flow
 
 export import .util
@@ -164,7 +164,7 @@ export function flm_version() -> i32 {
 
 Consumers name the aggregator and get the whole surface:
 
-```flow
+```flow ignore="flowlm is a registry package, not vendored here"
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
 
