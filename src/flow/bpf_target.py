@@ -48,7 +48,23 @@ class BPFProgram:
 
     @property
     def export_symbol(self) -> str:
-        return f"flow_export_{self.entry}"
+        """The symbol to decorate, as the MLIR path actually names it.
+
+        `flow_export_<name>` is a C-backend alias: c_generator emits it for
+        `--export`, and the MLIR path does not. Since this target lowers with
+        `--llvm`, the definition in the IR carries the plain Flow name.
+        """
+        return self.entry
+
+    @property
+    def candidate_symbols(self) -> tuple[str, ...]:
+        """Names the entry may appear under, most explicit first.
+
+        The C backend emits both the mangled definition and a visible
+        `flow_export_<name>` alias, so when both are present the alias is the
+        one to decorate. The MLIR path emits only the plain name.
+        """
+        return (f"flow_export_{self.entry}", self.entry)
 
 
 BPFEL = BPFTarget()
@@ -114,11 +130,20 @@ def with_bpf_program_metadata(llvm_ir: str, program: BPFProgram) -> str:
     if not program.entry or not program.section:
         raise BPFTargetError("BPF program entry and section must be non-empty")
 
-    symbol = f"@{program.export_symbol}("
+    # Settle on one symbol before rewriting anything: if both the alias and the
+    # plain definition are present, decorating both is a duplicate-entry error.
+    lines = llvm_ir.splitlines()
+    symbol = ""
+    for candidate in program.candidate_symbols:
+        needle = f"@{candidate}("
+        if any(line.startswith("define ") and needle in line for line in lines):
+            symbol = needle
+            break
+
     decorated: list[str] = []
     found = False
-    for line in llvm_ir.splitlines():
-        if line.startswith("define ") and symbol in line:
+    for line in lines:
+        if symbol and line.startswith("define ") and symbol in line:
             if found:
                 raise BPFTargetError(f"duplicate exported BPF entry '{program.entry}'")
             if "{" not in line:
@@ -132,7 +157,8 @@ def with_bpf_program_metadata(llvm_ir: str, program: BPFProgram) -> str:
 
     if not found:
         raise BPFTargetError(
-            f"exported BPF entry '{program.entry}' not found as {program.export_symbol}"
+            f"exported BPF entry '{program.entry}' not found; looked for "
+            + " or ".join(f"@{n}" for n in program.candidate_symbols)
         )
 
     license_len, license_data = _llvm_c_string(program.license)
