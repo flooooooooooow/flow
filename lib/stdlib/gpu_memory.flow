@@ -187,7 +187,7 @@ export function gpu_mul_backward_b_f32(grad_b: GpuBuffer, grad_out: GpuBuffer, a
     return flow_gpu_mul_backward_b_f32(grad_b.device, grad_out.device, a.device, n)
 }
 
-# Aliases matching docs/library/core.md naming
+# Short aliases for the allocation helpers above
 export function gpu_allocate(size: i64) -> GpuBuffer {
     return gpu_alloc(size)
 }
