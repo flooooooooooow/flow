@@ -1,0 +1,945 @@
+{
+  "_note": [
+    "Single source of truth for the wiki sidebar. scripts/build_wiki.py reads",
+    "this; page_category, llms.txt and the mkdocs nav are all derived from it.",
+    "JSON rather than YAML because the wiki CI job runs bare `python3` with no",
+    "setup-python and no pip install, so build_wiki.py must stay stdlib-only.",
+    "Sections marked \"generated\" are filled in at build time from the proof corpus.",
+    "Every page under docs/ must appear here or in \"unlisted\" below."
+  ],
+  "default": "wiki-home.md",
+  "tabs": [
+    {
+      "id": "start",
+      "label": "Start"
+    },
+    {
+      "id": "gallery",
+      "label": "Gallery"
+    },
+    {
+      "id": "book",
+      "label": "Book"
+    },
+    {
+      "id": "tutorials",
+      "label": "Tutorials"
+    },
+    {
+      "id": "lang",
+      "label": "Language"
+    },
+    {
+      "id": "stdlib",
+      "label": "Library"
+    },
+    {
+      "id": "tooling",
+      "label": "Tooling"
+    },
+    {
+      "id": "project",
+      "label": "Project"
+    },
+    {
+      "id": "thirdparty",
+      "label": "Proofs"
+    }
+  ],
+  "sections": [
+    {
+      "id": "start",
+      "tab": "start",
+      "title": "Start here",
+      "items": [
+        {
+          "label": "Home",
+          "path": "wiki-home.md"
+        },
+        {
+          "label": "Start Here (Beginners)",
+          "path": "start-here.md"
+        },
+        {
+          "label": "Quick Start",
+          "path": "getting-started.md"
+        },
+        {
+          "label": "Vision",
+          "path": "vision.md"
+        },
+        {
+          "label": "North Star",
+          "path": "vision/north-star.md"
+        },
+        {
+          "label": "Comparison",
+          "path": "comparison.md"
+        },
+        {
+          "label": "The Flow Book",
+          "path": "book/README.md"
+        },
+        {
+          "label": "Interactive Tutorials",
+          "path": "tutorials/index.html",
+          "external": true
+        },
+        {
+          "label": "Playground",
+          "path": "playground/index.html",
+          "external": true
+        },
+        {
+          "label": "Docs Index",
+          "path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "start-galleries",
+      "tab": "start",
+      "title": "Popular galleries",
+      "items": [
+        {
+          "label": "All Galleries",
+          "path": "demos/overview.md"
+        },
+        {
+          "label": "Games",
+          "path": "demos/games.md"
+        },
+        {
+          "label": "Morphogenesis",
+          "path": "demos/morphogenesis.md"
+        },
+        {
+          "label": "Evolution Suite",
+          "path": "demos/evolution.md"
+        },
+        {
+          "label": "Live WASM demos",
+          "path": "wasm/index.html",
+          "external": true
+        }
+      ]
+    },
+    {
+      "id": "gallery",
+      "tab": "gallery",
+      "title": "Galleries",
+      "items": [
+        {
+          "label": "All Galleries",
+          "path": "demos/overview.md"
+        },
+        {
+          "label": "Games",
+          "path": "demos/games.md"
+        },
+        {
+          "label": "Morphogenesis",
+          "path": "demos/morphogenesis.md"
+        },
+        {
+          "label": "Neurons",
+          "path": "demos/neuro.md"
+        },
+        {
+          "label": "Evolutionary Biology",
+          "path": "demos/evoleco.md"
+        },
+        {
+          "label": "Planets",
+          "path": "demos/planet.md"
+        },
+        {
+          "label": "Procedural Generation",
+          "path": "demos/procgen.md"
+        },
+        {
+          "label": "Numerical Methods",
+          "path": "demos/numerical.md"
+        },
+        {
+          "label": "Evolution Suite",
+          "path": "demos/evolution.md"
+        },
+        {
+          "label": "WebAssembly",
+          "path": "demos/wasm.md"
+        },
+        {
+          "label": "Live WASM demos",
+          "path": "wasm/index.html",
+          "external": true
+        }
+      ]
+    },
+    {
+      "id": "book",
+      "tab": "book",
+      "title": "The Flow Book",
+      "items": [
+        {
+          "label": "Introduction",
+          "path": "book/README.md"
+        },
+        {
+          "label": "1 \u00b7 A Complete Program",
+          "path": "book/01-a-complete-program.md"
+        },
+        {
+          "label": "2 \u00b7 Values and Types",
+          "path": "book/02-values-and-types.md"
+        },
+        {
+          "label": "3 \u00b7 Decisions and Repetition",
+          "path": "book/03-decisions-and-repetition.md"
+        },
+        {
+          "label": "4 \u00b7 Functions",
+          "path": "book/04-functions.md"
+        },
+        {
+          "label": "5 \u00b7 Records and Arrays",
+          "path": "book/05-records-and-arrays.md"
+        },
+        {
+          "label": "6 \u00b7 Pipelines and Results",
+          "path": "book/06-pipelines-and-results.md"
+        },
+        {
+          "label": "7 \u00b7 Updates to Flows",
+          "path": "book/07-from-updates-to-flows.md"
+        },
+        {
+          "label": "8 \u00b7 Types and Declarations",
+          "path": "book/08-types-and-declarations.md"
+        },
+        {
+          "label": "9 \u00b7 Expressions and Matching",
+          "path": "book/09-expressions-and-matching.md"
+        },
+        {
+          "label": "10 \u00b7 Memory and Lifetimes",
+          "path": "book/10-memory-and-lifetimes.md"
+        },
+        {
+          "label": "11 \u00b7 Modules and Packages",
+          "path": "book/11-modules-packages-and-interop.md"
+        },
+        {
+          "label": "12 \u00b7 Effects and Concurrency",
+          "path": "book/12-effects-and-concurrency.md"
+        },
+        {
+          "label": "13 \u00b7 Evolution and Dynamics",
+          "path": "book/13-evolution-and-dynamics.md"
+        },
+        {
+          "label": "14 \u00b7 Numerics, Autodiff, and ML",
+          "path": "book/14-numerics-autodiff-and-ml.md"
+        },
+        {
+          "label": "15 \u00b7 Media, GPU, and Audio",
+          "path": "book/15-media-gpu-and-audio.md"
+        },
+        {
+          "label": "16 \u00b7 Targets and Distribution",
+          "path": "book/16-targets-and-distribution.md"
+        },
+        {
+          "label": "17 \u00b7 Engineering and Verification",
+          "path": "book/17-engineering-and-verification.md"
+        },
+        {
+          "label": "18 \u00b7 Complete Instrument",
+          "path": "book/18-a-complete-instrument.md"
+        },
+        {
+          "label": "19 \u00b7 Coding Challenges",
+          "path": "book/19-coding-challenge-series.md"
+        }
+      ]
+    },
+    {
+      "id": "book-appendix",
+      "tab": "book",
+      "title": "Appendices",
+      "items": [
+        {
+          "label": "Language Card",
+          "path": "book/appendix-a-language-card.md"
+        },
+        {
+          "label": "Feature Coverage",
+          "path": "book/appendix-b-feature-coverage.md"
+        },
+        {
+          "label": "Command Reference",
+          "path": "book/appendix-c-command-reference.md"
+        },
+        {
+          "label": "Standard Library Map",
+          "path": "book/appendix-d-standard-library-map.md"
+        }
+      ]
+    },
+    {
+      "id": "tutorials-core",
+      "tab": "tutorials",
+      "title": "Core language",
+      "items": [
+        {
+          "label": "Tutorials Index",
+          "path": "tutorials/README.md"
+        },
+        {
+          "label": "Interactive App",
+          "path": "tutorials/index.html",
+          "external": true
+        },
+        {
+          "label": "Beginner",
+          "path": "tutorials/beginner.md"
+        },
+        {
+          "label": "Control Flow",
+          "path": "tutorials/control.md"
+        },
+        {
+          "label": "Functions",
+          "path": "tutorials/functions.md"
+        },
+        {
+          "label": "Pipelines",
+          "path": "tutorials/pipelines.md"
+        },
+        {
+          "label": "Structs",
+          "path": "tutorials/structs.md"
+        },
+        {
+          "label": "Arrays",
+          "path": "tutorials/arrays.md"
+        },
+        {
+          "label": "Spans",
+          "path": "tutorials/spans.md"
+        },
+        {
+          "label": "Strings",
+          "path": "tutorials/strings.md"
+        },
+        {
+          "label": "Errors",
+          "path": "tutorials/errors.md"
+        },
+        {
+          "label": "Intermediate",
+          "path": "tutorials/intermediate.md"
+        },
+        {
+          "label": "Mini Projects",
+          "path": "tutorials/projects.md"
+        }
+      ]
+    },
+    {
+      "id": "tutorials-systems",
+      "tab": "tutorials",
+      "title": "Systems",
+      "items": [
+        {
+          "label": "Pointers",
+          "path": "tutorials/pointers.md"
+        },
+        {
+          "label": "Manual Memory",
+          "path": "tutorials/memory.md"
+        },
+        {
+          "label": "Concurrency",
+          "path": "tutorials/concurrency.md"
+        },
+        {
+          "label": "Algorithms",
+          "path": "tutorials/algorithms.md"
+        },
+        {
+          "label": "Systems",
+          "path": "tutorials/systems.md"
+        },
+        {
+          "label": "Audio Basics",
+          "path": "tutorials/audio-basics.md"
+        },
+        {
+          "label": "RT Audio",
+          "path": "tutorials/rt-audio.md"
+        },
+        {
+          "label": "WASM",
+          "path": "tutorials/wasm.md"
+        },
+        {
+          "label": "Advanced",
+          "path": "tutorials/advanced.md"
+        }
+      ]
+    },
+    {
+      "id": "tutorials-vision",
+      "tab": "tutorials",
+      "title": "Vision features",
+      "items": [
+        {
+          "label": "Effects Basics",
+          "path": "tutorials/effects-basics.md"
+        },
+        {
+          "label": "Autodiff Basics",
+          "path": "tutorials/autodiff-basics.md"
+        },
+        {
+          "label": "Evolution",
+          "path": "tutorials/evolution.md"
+        },
+        {
+          "label": "Dynamics",
+          "path": "tutorials/dynamics.md"
+        },
+        {
+          "label": "Graphics",
+          "path": "tutorials/gfx-basics.md"
+        },
+        {
+          "label": "Shaders",
+          "path": "tutorials/shaders.md"
+        }
+      ]
+    },
+    {
+      "id": "tutorials-applied",
+      "tab": "tutorials",
+      "title": "Applied",
+      "items": [
+        {
+          "label": "ML on MacBook",
+          "path": "tutorials/ml-on-macbook.md"
+        },
+        {
+          "label": "Game AI",
+          "path": "tutorials/game-ai.md"
+        },
+        {
+          "label": "Domains",
+          "path": "tutorials/domains.md"
+        }
+      ]
+    },
+    {
+      "id": "lang-ref",
+      "tab": "lang",
+      "title": "Reference",
+      "items": [
+        {
+          "label": "Index",
+          "path": "language/README.md"
+        },
+        {
+          "label": "Spec Index",
+          "path": "language/spec-index.md"
+        },
+        {
+          "label": "Language Spec",
+          "path": "LANGUAGE_SPEC.md"
+        },
+        {
+          "label": "Grammar",
+          "path": "language/grammar.md"
+        },
+        {
+          "label": "Formal EBNF",
+          "path": "grammar.ebnf"
+        },
+        {
+          "label": "Overview",
+          "path": "language/overview.md"
+        },
+        {
+          "label": "Syntax",
+          "path": "language/syntax.md"
+        },
+        {
+          "label": "Types",
+          "path": "language/types.md"
+        },
+        {
+          "label": "Variables",
+          "path": "language/variables.md"
+        },
+        {
+          "label": "Functions",
+          "path": "language/functions.md"
+        },
+        {
+          "label": "Modules",
+          "path": "language/modules.md"
+        },
+        {
+          "label": "Modules & Namespacing",
+          "path": "language/modules-namespacing.md"
+        }
+      ]
+    },
+    {
+      "id": "lang-features",
+      "tab": "lang",
+      "title": "Language features",
+      "items": [
+        {
+          "label": "Spans",
+          "path": "language/spans.md"
+        },
+        {
+          "label": "Lifetime Domains",
+          "path": "language/lifetime-domains.md"
+        },
+        {
+          "label": "Effects Showcase",
+          "path": "effects-showcase.md"
+        },
+        {
+          "label": "Async via Effects",
+          "path": "language/async-effects.md"
+        },
+        {
+          "label": "Declarative Ordering",
+          "path": "language/ordering.md"
+        },
+        {
+          "label": "Safety Profiles",
+          "path": "language/safety-profiles.md"
+        },
+        {
+          "label": "Multi-Implementation",
+          "path": "language/multi-implementation.md"
+        },
+        {
+          "label": "Design Notes",
+          "path": "language/language_design.md"
+        }
+      ]
+    },
+    {
+      "id": "lang-dsl",
+      "tab": "lang",
+      "title": "Domain surfaces",
+      "items": [
+        {
+          "label": "Dynamics DSL",
+          "path": "language/dynamics-dsl.md"
+        },
+        {
+          "label": "Shaders",
+          "path": "language/shaders.md"
+        },
+        {
+          "label": "Graphics",
+          "path": "language/graphics.md"
+        },
+        {
+          "label": "Graphics 3D",
+          "path": "language/graphics-3d.md"
+        }
+      ]
+    },
+    {
+      "id": "lang-targets",
+      "tab": "lang",
+      "title": "Targets & interop",
+      "items": [
+        {
+          "label": "WebAssembly",
+          "path": "language/wasm.md"
+        },
+        {
+          "label": "WASM Crossings",
+          "path": "language/wasm-crossings.md"
+        },
+        {
+          "label": "MLIR Opt Flags",
+          "path": "language/mlir-opt-flags.md"
+        },
+        {
+          "label": "Export ABI",
+          "path": "language/export-abi.md"
+        },
+        {
+          "label": "C Function Pointers",
+          "path": "language/c-fnptr-call.md"
+        }
+      ]
+    },
+    {
+      "id": "lang-compare",
+      "tab": "lang",
+      "title": "Comparisons",
+      "items": [
+        {
+          "label": "Concurrency vs Go",
+          "path": "language/concurrency-vs-go.md"
+        },
+        {
+          "label": "Replacing Go",
+          "path": "language/replace-go.md"
+        }
+      ]
+    },
+    {
+      "id": "stdlib",
+      "tab": "stdlib",
+      "title": "Standard library",
+      "items": [
+        {
+          "label": "API Reference",
+          "path": "library/stdlib-reference.md"
+        },
+        {
+          "label": "API (generated)",
+          "path": "library/stdlib-api.md"
+        },
+        {
+          "label": "Core",
+          "path": "library/core.md"
+        },
+        {
+          "label": "Memory",
+          "path": "library/memory.md"
+        },
+        {
+          "label": "GPU Memory",
+          "path": "library/gpu-memory.md"
+        },
+        {
+          "label": "Tiny Pointers",
+          "path": "library/tiny-pointers.md"
+        },
+        {
+          "label": "Tiny Pointers: Variable Values",
+          "path": "library/tiny-pointers-variable-values.md"
+        }
+      ]
+    },
+    {
+      "id": "stdlib-domains",
+      "tab": "stdlib",
+      "title": "Domain libraries",
+      "items": [
+        {
+          "label": "Audio DSP",
+          "path": "library/audio.md"
+        },
+        {
+          "label": "Audio Safety",
+          "path": "library/audio-safety.md"
+        },
+        {
+          "label": "RT Safety",
+          "path": "library/rt-safety.md"
+        },
+        {
+          "label": "Autodiff",
+          "path": "library/autodiff.md"
+        },
+        {
+          "label": "Autodiff Guide",
+          "path": "library/autodiff-guide.md"
+        },
+        {
+          "label": "Dynamics",
+          "path": "library/dynamics.md"
+        },
+        {
+          "label": "Planet",
+          "path": "library/planet.md"
+        },
+        {
+          "label": "Procedural Generation",
+          "path": "library/procgen.md"
+        },
+        {
+          "label": "Fast Multipole (2D)",
+          "path": "library/fmm2d.md"
+        },
+        {
+          "label": "BLAS Bindings",
+          "path": "blas-bindings.md"
+        }
+      ]
+    },
+    {
+      "id": "tooling",
+      "tab": "tooling",
+      "title": "Tooling & targets",
+      "items": [
+        {
+          "label": "Development / CLI",
+          "path": "DEVELOPMENT.md"
+        },
+        {
+          "label": "Running Flow",
+          "path": "language/flow-run.md"
+        },
+        {
+          "label": "Debugging",
+          "path": "language/debugging.md"
+        },
+        {
+          "label": "Explainable Compilation",
+          "path": "language/explainable-compilation.md"
+        },
+        {
+          "label": "Python Target",
+          "path": "python-target.md"
+        },
+        {
+          "label": "Working with AI on Flow",
+          "path": "AI_FLOW_HANDBOOK.md"
+        },
+        {
+          "label": "What's Next",
+          "path": "NEXT.md"
+        }
+      ]
+    },
+    {
+      "id": "tooling-cert",
+      "tab": "tooling",
+      "title": "Certification & compliance",
+      "items": [
+        {
+          "label": "Overview",
+          "path": "certification/README.md"
+        },
+        {
+          "label": "MISRA C:2024",
+          "path": "certification/misra-c-2024-compliance.md"
+        },
+        {
+          "label": "CERT C",
+          "path": "certification/cert-c-compliance.md"
+        },
+        {
+          "label": "WCET & Stack Analysis",
+          "path": "certification/wcet-stack-analysis.md"
+        },
+        {
+          "label": "Reproducible Builds",
+          "path": "certification/reproducible-builds.md"
+        }
+      ]
+    },
+    {
+      "id": "project",
+      "tab": "project",
+      "title": "Project",
+      "items": [
+        {
+          "label": "Changelog",
+          "path": "project/CHANGELOG.md"
+        },
+        {
+          "label": "Release History",
+          "path": "releases.md"
+        },
+        {
+          "label": "Benchmarks",
+          "path": "project/benchmark-results.md"
+        },
+        {
+          "label": "Contributing",
+          "path": "project/CONTRIBUTING.md"
+        },
+        {
+          "label": "Release Process",
+          "path": "project/RELEASING.md"
+        },
+        {
+          "label": "Package Registry",
+          "path": "project/package-registry.md"
+        },
+        {
+          "label": "Self-Hosting",
+          "path": "project/self-hosting.md"
+        },
+        {
+          "label": "Architecture",
+          "path": "project/architecture-writeup.md"
+        },
+        {
+          "label": "Maturity",
+          "path": "project/maturity.md"
+        },
+        {
+          "label": "Open Questions",
+          "path": "project/Questions.md"
+        },
+        {
+          "label": "Example Atlas",
+          "path": "project/example-atlas.md"
+        },
+        {
+          "label": "Pattern Adoption",
+          "path": "project/pattern-adoption.md"
+        },
+        {
+          "label": "FIR-G",
+          "path": "project/fir-g.md"
+        },
+        {
+          "label": "Issues Checklist",
+          "path": "project/issues-checklist.md"
+        },
+        {
+          "label": "Python in Flow",
+          "path": "project/python-in-flow.md"
+        },
+        {
+          "label": "Tests in Flow",
+          "path": "project/tests-in-flow.md"
+        },
+        {
+          "label": "Runtime in Flow",
+          "path": "project/runtime-in-flow.md"
+        },
+        {
+          "label": "Linguist Registration",
+          "path": "project/linguist.md"
+        }
+      ]
+    },
+    {
+      "id": "wiki-meta",
+      "tab": "project",
+      "title": "Docs meta",
+      "items": [
+        {
+          "label": "Wiki Strategy",
+          "path": "wiki-strategy.md"
+        },
+        {
+          "label": "Wiki Roadmap",
+          "path": "wiki-roadmap.md"
+        },
+        {
+          "label": "Language Roadmap",
+          "path": "project/language-roadmap.md"
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "tab": "project",
+      "title": "Research",
+      "items": [
+        {
+          "label": "Research Paper",
+          "path": "research/FLOW_RESEARCH_PAPER.md"
+        },
+        {
+          "label": "Turing Proof",
+          "path": "research/turing_proof.md"
+        },
+        {
+          "label": "Compiler Architecture",
+          "path": "research/flow_compiler_architecture/README.md"
+        },
+        {
+          "label": "Schur Lattice Allpass",
+          "path": "research/schur_lattice_allpass/README.md"
+        }
+      ]
+    },
+    {
+      "id": "thirdparty",
+      "tab": "thirdparty",
+      "title": "flow-verify (optional)",
+      "items": [
+        {
+          "label": "Overview",
+          "path": "third-party/README.md"
+        },
+        {
+          "label": "flow-verify",
+          "path": "third-party/flow-verify.md"
+        },
+        {
+          "label": "Proof Catalog",
+          "path": "third-party/flow-verify-catalog.md"
+        },
+        {
+          "label": "Proof Dependency Graph",
+          "path": "third-party/proof-graph.md"
+        },
+        {
+          "label": "Parser Status",
+          "path": "third-party/flow-verify-parser-status.md"
+        }
+      ]
+    },
+    {
+      "id": "verify-docs",
+      "tab": "thirdparty",
+      "title": "Verification design",
+      "items": [
+        {
+          "label": "Verification Spec",
+          "path": "language/verification.md"
+        },
+        {
+          "label": "Claim Paths",
+          "path": "language/epistemology.md"
+        },
+        {
+          "label": "Coordinates",
+          "path": "language/claim-coordinates.md"
+        },
+        {
+          "label": "Proof Book",
+          "path": "language/math-proof-book.md"
+        },
+        {
+          "label": "Mathlib Roadmap",
+          "path": "language/mathlib-equivalence-toc.md"
+        }
+      ]
+    },
+    {
+      "id": "proofs-euclid",
+      "tab": "thirdparty",
+      "title": "Euclid corpus",
+      "collapsed": true,
+      "generated": "euclid"
+    },
+    {
+      "id": "proofs-corpus",
+      "tab": "thirdparty",
+      "title": "Proof corpus",
+      "collapsed": true,
+      "generated": "proofs"
+    }
+  ],
+  "unlisted": {
+    "coverage_plan.md": "internal test-coverage plan for src/flow, not reader documentation",
+    "discord-webhooks.md": "operations runbook for the project's Discord integration",
+    "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",
+    "project/dangling-claude-agents.md": "internal note on agent housekeeping",
+    "project/archive/README.md": "archived; kept for history",
+    "project/archive/AUDIT_2026-02-10.md": "archived; kept for history",
+    "project/archive/PROJECT_STRUCTURE.md": "archived; the sidebar entry pointing here was dead and has been removed",
+    "project/linguist/PR_TEMPLATE.md": "template body for the upstream github-linguist PR, not a wiki page"
+  }
+}
