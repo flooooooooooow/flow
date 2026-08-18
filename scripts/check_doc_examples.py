@@ -83,16 +83,6 @@ def _rel(path: Path) -> str:
 # to blocks that were otherwise empty, defeating the vacuity check.
 MODES = ("standalone", "stmt-wrap")
 
-# Declarations that put something in the translation unit.
-_SUBSTANTIVE = (
-    "FunctionDecl",
-    "StructDecl",
-    "EnumDecl",
-    "EffectDecl",
-    "CapabilityDecl",
-    "TraitDecl",
-    "ImplDecl",
-)
 
 
 def _indent(code: str) -> str:
@@ -260,6 +250,12 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     # otherwise the synthesized `main` supplies the substance and every empty
     # block passes. A block that is only comments, or only a `theorem` the
     # compiler erases, must still be reported as vacuous.
+    # Vacuous means the block declares nothing, which is only true of a block
+    # that is entirely comments. It does not mean "emits no functions": a page
+    # about type aliases legitimately shows one type alias, and `const PI`,
+    # `type Bytes = array<u8>` and `unit Meter` each generate real C. An
+    # earlier whitelist of "substantive" declaration kinds got this wrong and
+    # reported 26 correct examples as empty.
     substantive = own
     if mode == "stmt-wrap":
         # Everything except the bare `return 0` the harness appended.
@@ -267,8 +263,8 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
             d for d in own
             if len(getattr(getattr(d, "body", None), "statements", None) or []) > 1
         ]
-    if not any(type(d).__name__ in _SUBSTANTIVE for d in substantive):
-        return None, "vacuous", "compiles to an empty translation unit"
+    if not substantive:
+        return None, "vacuous", "declares nothing; the block is only comments"
 
     try:
         with redirect_stdout(sink), redirect_stderr(sink):

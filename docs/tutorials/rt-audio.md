@@ -138,7 +138,7 @@ function main() -> i32 {
 
 ## Part 2: What gets rejected
 
-```flow
+```flow ignore="illegal code shown commented out, so the page does not ship it"
 # Illegal under --strict @rt_safe checking:
 # extern { function malloc(size: i64) -> ptr<void> }
 # @rt_safe

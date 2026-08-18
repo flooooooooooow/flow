@@ -1,13 +1,21 @@
 # FLOW String Utilities
 
 extern {
-    function sprintf(buf: ptr<i8>, fmt: string, val: i32) -> i32
     function snprintf(buf: ptr<i8>, size: i64, fmt: string, val: i32) -> i32
     function strlen(s: string) -> i64
     function strcmp(a: string, b: string) -> i32
-    function strcpy(dst: ptr<i8>, src: string) -> ptr<i8>
     function malloc(size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
+}
+
+# sprintf and strcpy write without a bound. The type checker requires the
+# unbounded ones to be declared under `@unsafe extern` (CERT, #276), and
+# without this every program importing this module failed strict checking.
+# Prefer snprintf and the str_* helpers below.
+@unsafe
+extern {
+    function sprintf(buf: ptr<i8>, fmt: string, val: i32) -> i32
+    function strcpy(dst: ptr<i8>, src: string) -> ptr<i8>
 }
 
 const ITOA_BUF_SIZE: i32 = 32

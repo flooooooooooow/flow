@@ -181,7 +181,7 @@ Everything else (`nat_add_zero`, `nat_add_commutes`, …) lives in `derived/` an
 
 ### Circuits — function + theorem, literature link to the architecture
 
-```flow
+```flow ignore="proof metadata header, not code"
 # means:  The full adder output matches binary addition with carry.
 # from:   Patterson & Hennessy, *Computer Organization and Design*, §A.5
 #         https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder
@@ -191,7 +191,7 @@ Everything else (`nat_add_zero`, `nat_add_commutes`, …) lives in `derived/` an
 
 ### Compiler opts — run both, therefore equal
 
-```flow
+```flow ignore="proof metadata header, not code"
 # means:  Vectorized matmul writes the same matrix as the naive version.
 # from:   BLIS design paper (Van Zee & van de Geijn, 2015) for why we vectorize;
 #         this theorem states the optimisation is sound, not why we want it.

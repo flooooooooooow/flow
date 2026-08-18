@@ -1,9 +1,9 @@
 {
   "generated": "2026-08-18",
   "totals": {
-    "verified": 407,
-    "unverified": 283,
-    "ignored": 60,
+    "verified": 430,
+    "unverified": 255,
+    "ignored": 65,
     "expected-error": 1
   },
   "blocks": [
@@ -476,9 +476,9 @@
       "key": "docs/LANGUAGE_SPEC.md#94d3388749e9",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 253,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#580aa6123514",
@@ -524,9 +524,9 @@
       "key": "docs/LANGUAGE_SPEC.md#fcedd2b3013d",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 373,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#a5d8600a87b2",
@@ -1190,9 +1190,9 @@
       "key": "docs/book/08-types-and-declarations.md#58ee32b314ad",
       "path": "docs/book/08-types-and-declarations.md",
       "line": 66,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#db42c77cbd48",
@@ -1215,8 +1215,9 @@
       "path": "docs/book/08-types-and-declarations.md",
       "line": 108,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Node'"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#3575b8152e04",
@@ -1446,9 +1447,9 @@
       "key": "docs/book/11-modules-packages-and-interop.md#989ca6416b42",
       "path": "docs/book/11-modules-packages-and-interop.md",
       "line": 51,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/11-modules-packages-and-interop.md#334f8b8dbe9d",
@@ -1974,9 +1975,9 @@
       "key": "docs/language/dynamics-dsl.md#d7c9bfea8da2",
       "path": "docs/language/dynamics-dsl.md",
       "line": 76,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "ignored",
+      "detail": "horizon declarations expand to no code on their own",
+      "reason": "horizon declarations expand to no code on their own"
     },
     {
       "key": "docs/language/dynamics-dsl.md#2ad54c1c11df",
@@ -2022,17 +2023,17 @@
       "key": "docs/language/epistemology.md#40a2237a9f06",
       "path": "docs/language/epistemology.md",
       "line": 64,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/epistemology.md#6792de9f8187",
       "path": "docs/language/epistemology.md",
       "line": 76,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/epistemology.md#0bbbb39b51f4",
@@ -2046,9 +2047,9 @@
       "key": "docs/language/epistemology.md#159c72afb166",
       "path": "docs/language/epistemology.md",
       "line": 106,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/epistemology.md#2855dab7bef8",
@@ -2062,9 +2063,9 @@
       "key": "docs/language/epistemology.md#440ad79fe6e9",
       "path": "docs/language/epistemology.md",
       "line": 153,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/epistemology.md#f41e5f48637c",
@@ -2102,9 +2103,9 @@
       "key": "docs/language/epistemology.md#157f67e45f6a",
       "path": "docs/language/epistemology.md",
       "line": 222,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/graphics-3d.md#59b83d46796d",
@@ -2183,9 +2184,9 @@
       "key": "docs/language/lifetime-domains.md#71e63214c2ab",
       "path": "docs/language/lifetime-domains.md",
       "line": 62,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/lifetime-domains.md#c84c5f8180fe",
@@ -2256,17 +2257,17 @@
       "key": "docs/language/modules-namespacing.md#7819a1b3d57b",
       "path": "docs/language/modules-namespacing.md",
       "line": 87,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/modules-namespacing.md#7336d9635cd6",
       "path": "docs/language/modules-namespacing.md",
       "line": 120,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/modules.md#bb2ebc4366d7",
@@ -2328,9 +2329,9 @@
       "key": "docs/language/modules.md#0c6dcdf7b237",
       "path": "docs/language/modules.md",
       "line": 242,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "ignored",
+      "detail": "proof metadata header, not code",
+      "reason": "proof metadata header, not code"
     },
     {
       "key": "docs/language/modules.md#2edfe6da4674",
@@ -2642,17 +2643,17 @@
       "key": "docs/language/types.md#a45f04b32e01",
       "path": "docs/language/types.md",
       "line": 414,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/types.md#0adee0aee37e",
       "path": "docs/language/types.md",
       "line": 423,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/types.md#df846d6d4ef6",
@@ -2762,9 +2763,9 @@
       "key": "docs/language/verification.md#288baa41bef4",
       "path": "docs/language/verification.md",
       "line": 97,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/verification.md#a13e4745795f",
@@ -2794,25 +2795,25 @@
       "key": "docs/language/verification.md#4dfa8ff54240",
       "path": "docs/language/verification.md",
       "line": 162,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/verification.md#91e7fd6f5d58",
       "path": "docs/language/verification.md",
       "line": 184,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "ignored",
+      "detail": "proof metadata header, not code",
+      "reason": "proof metadata header, not code"
     },
     {
       "key": "docs/language/verification.md#2e502119cc3c",
       "path": "docs/language/verification.md",
       "line": 194,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "ignored",
+      "detail": "proof metadata header, not code",
+      "reason": "proof metadata header, not code"
     },
     {
       "key": "docs/language/wasm.md#705313eec8f0",
@@ -3103,8 +3104,9 @@
       "path": "docs/library/stdlib-reference.md",
       "line": 307,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "expected identifier or '('"
     },
     {
       "key": "docs/library/stdlib-reference.md#d5f1313f8e87",
@@ -3136,9 +3138,9 @@
       "key": "docs/library/stdlib-reference.md#922a22bbe272",
       "path": "docs/library/stdlib-reference.md",
       "line": 388,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/stdlib-reference.md#0ea87a17383a",
@@ -3453,12 +3455,12 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/advanced.md#9478d20db08d",
+      "key": "docs/tutorials/advanced.md#d64ef7ab262b",
       "path": "docs/tutorials/advanced.md",
       "line": 185,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Cannot assign to immutable variable 'sum' (use 'let mut')"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/advanced.md#4322b90d99a8",
@@ -3475,7 +3477,7 @@
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
-      "detail": "redefinition of '__stdinp' as different kind of symbol"
+      "detail": "conflicting types for 'read'"
     },
     {
       "key": "docs/tutorials/advanced.md#dce70cddf25c",
@@ -3484,7 +3486,7 @@
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
-      "detail": "redefinition of '__stdinp' as different kind of symbol"
+      "detail": "conflicting types for 'read'"
     },
     {
       "key": "docs/tutorials/advanced.md#786fa85b8ca0",
@@ -3493,31 +3495,31 @@
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
-      "detail": "redefinition of '__stdinp' as different kind of symbol"
+      "detail": "conflicting types for 'read'"
     },
     {
-      "key": "docs/tutorials/advanced.md#b718879606fc",
+      "key": "docs/tutorials/advanced.md#2cc5efdf7df2",
       "path": "docs/tutorials/advanced.md",
       "line": 318,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Variable 'a' initialized with array<f32, 4> but annotated as vec4_f32"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/advanced.md#fdff94419f34",
+      "key": "docs/tutorials/advanced.md#2cdc81768fac",
       "path": "docs/tutorials/advanced.md",
       "line": 334,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Variable 'vx' initialized with array<f32, 4> but annotated as vec4_f32"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/advanced.md#a0adf88fe547",
+      "key": "docs/tutorials/advanced.md#01f2a89655ee",
       "path": "docs/tutorials/advanced.md",
       "line": 398,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Function 'test_addition_works' returns i32 but should return bool"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/algorithms.md#fa113546a761",
@@ -3828,8 +3830,9 @@
       "path": "docs/tutorials/beginner.md",
       "line": 280,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Dangerous FFI 'sprintf' must be declared under '@unsafe extern' (CERT / #276)"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "call to undeclared function 'sin_f32'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
     },
     {
       "key": "docs/tutorials/beginner.md#a95194868d9f",
@@ -5012,7 +5015,7 @@
       "path": "docs/tutorials/ml-on-macbook.md",
       "line": 48,
       "status": "verified",
-      "mode": "stmt-wrap",
+      "mode": "standalone",
       "stage": "codegen"
     },
     {
@@ -5339,9 +5342,9 @@
       "key": "docs/tutorials/rt-audio.md#9baa368a82f6",
       "path": "docs/tutorials/rt-audio.md",
       "line": 141,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "ignored",
+      "detail": "illegal code shown commented out, so the page does not ship it",
+      "reason": "illegal code shown commented out, so the page does not ship it"
     },
     {
       "key": "docs/tutorials/rt-audio.md#44bad6c7e993",
@@ -5747,9 +5750,9 @@
       "key": "docs/vision/north-star.md#6056f22dac46",
       "path": "docs/vision/north-star.md",
       "line": 503,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/vision/north-star.md#c4c53c48d7c8",
@@ -6003,9 +6006,9 @@
       "key": "registry/packages/flowlm/README.md#f36a8765c44d",
       "path": "registry/packages/flowlm/README.md",
       "line": 99,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "registry/packages/flowlm/README.md#f659347c9e86",
