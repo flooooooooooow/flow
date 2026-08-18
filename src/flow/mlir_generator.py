@@ -19,6 +19,9 @@ from .parser import (
     EnumDecl, Parameter, Lambda,
 )
 
+from .mlir_canonicalize import canonicalize_counted_loops, find_trivial_accessors
+
+
 class MLIRGenerator:
     def _cast_for_printf(self, arg_ssa: str, arg_type: str) -> tuple[str, str, List[str]]:
         """Cast MLIR values to printf-compatible LLVM types."""
@@ -860,6 +863,7 @@ class MLIRGenerator:
         self._enums = {}
         self._pending_lambdas: List[str] = []
         self._lambda_counter = 0
+        self._trivial_accessors = {}
 
         # Split GPU kernels from CPU declarations (GPU kernels are handled separately)
         gpu_functions = []
@@ -998,7 +1002,14 @@ class MLIRGenerator:
             k: dict(v) if isinstance(v, dict) else v
             for k, v in self.symbol_table.items()
         }
-        
+
+        # #474: parameterless `return &global` / `return global` accessors are
+        # substituted at their call sites instead of being called. The
+        # definitions are still emitted, so external linkage is unchanged.
+        self._trivial_accessors = find_trivial_accessors(
+            cpu_decls, self._is_module_global_symbol
+        )
+
         # Second pass: generate all declarations to collect string constants
         decl_code = []
         for decl in cpu_decls:
@@ -1199,7 +1210,10 @@ class MLIRGenerator:
         if func.name == 'main' and self._needs_effect_init:
             mlir_code.append(f"{self.indent()}func.call @_flow_effects_init() : () -> ()")
 
-        body_mlir = self.generate_block(func.body)
+        # #473: rotate counted `while true { ... if c == 0 { break } ... }`
+        # loops so the exit test lands on the latch, where LLVM can read a
+        # trip count off it.
+        body_mlir = self.generate_block(canonicalize_counted_loops(func.body))
         if body_mlir.strip():
             mlir_code.append(body_mlir)
         
@@ -5374,12 +5388,41 @@ class MLIRGenerator:
         # Return the static-typed allocation (field access casts locally as needed)
         return alloc_name, ops
     
+    def _is_module_global_symbol(self, name: str) -> bool:
+        info = self.symbol_table.get(name)
+        return bool(isinstance(info, dict) and info.get("is_module_global"))
+
+    def _inline_trivial_accessor(
+        self, func_call: FunctionCall
+    ) -> Optional[tuple[str, List[str]]]:
+        """Substitute a trivial accessor's body for a call to it (#474).
+
+        `drawshim_dc_yh_addr()` becomes the `llvm.mlir.addressof @dc_yh` it
+        would have returned, so hot loops carry loads instead of call+load
+        pairs. Skipped when a local has shadowed the global at this call site.
+        """
+        target = getattr(self, "_trivial_accessors", {}).get(func_call.name)
+        if target is None or func_call.arguments:
+            return None
+        referenced = (
+            target.operand.name
+            if isinstance(target, UnaryOperation)
+            else target.name
+        )
+        if not self._is_module_global_symbol(referenced):
+            return None
+        return self.generate_expression(target)
+
     def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
         # Indirect call through a non-capturing lambda / fn-typed local.
         if func_call.name in self.symbol_table:
             info = self.symbol_table[func_call.name]
             if info.get("is_closure") and info.get("fn_mlir_type"):
                 return self._generate_closure_call(func_call, info)
+
+        inlined = self._inline_trivial_accessor(func_call)
+        if inlined is not None:
+            return inlined
 
         # Handle array<T>(...) constructors specially. The parser normalizes
         # generic constructor names to array_T; keep the legacy spelling for

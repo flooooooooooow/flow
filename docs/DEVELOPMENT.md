@@ -277,6 +277,24 @@ corpus keeps compiling while unit tests pin strict behavior.
   `tests/unit/test_mlir_while_cf.py`. Clang link failures in `test-runtime`
   print a short error snippet without `--verbose`.
 
+### Phase 5 notes
+
+- `src/flow/mlir_canonicalize.py` runs two AST rewrites ahead of MLIR
+  generation. Both came out of compiling Doom through the MLIR backend.
+- Counted-loop rotation (#473): `while true { P; if c == 0 { break }; S }`
+  becomes `P; while c != 0 { S; P }`. The exit test moves to the loop latch, so
+  LLVM's vectorizer and unroller can recover a trip count. Both forms evaluate
+  the test at the same program points; the rewrite is declined when the body
+  holds another `break`/`continue`, a `defer`, a second write to the counter,
+  or a declaration in the peeled prefix.
+- Trivial accessor inlining (#474): a parameterless function whose whole body is
+  `return &g` or `return g` for a module-scope `g` is substituted at its call
+  sites, turning call+load pairs in hot loops into plain loads. The definition
+  is still emitted, so external linkage is unchanged.
+- Pins live in `tests/unit/test_mlir_canonicalize.py`;
+  `tests/integration/test_counted_loop_rotation.py` compiles each loop shape
+  before and after rotation through the C backend and compares what it returns.
+
 ## 📚 References
 
 - [MLIR Documentation](https://mlir.llvm.org/)
