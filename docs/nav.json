@@ -566,6 +566,10 @@
           "path": "language/wasm.md"
         },
         {
+          "label": "eBPF",
+          "path": "language/bpf.md"
+        },
+        {
           "label": "WASM Crossings",
           "path": "language/wasm-crossings.md"
         },
