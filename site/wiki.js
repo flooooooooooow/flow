@@ -359,14 +359,19 @@ function makePagerLink(item, dir) {
     return a;
 }
 
-/** GitHub/GFM-style heading id (matches LANGUAGE_SPEC.md TOC anchors). */
+/** GitHub/GFM-style heading id (matches LANGUAGE_SPEC.md TOC anchors).
+ *
+ * GitHub does not collapse runs of dashes, so neither can this. A heading like
+ * `10. Domain / DSL Surfaces` loses the slash and keeps the two spaces around
+ * it, giving `10-domain--dsl-surfaces`. Collapsing to a single dash here made
+ * 11 anchors that resolve on GitHub dead on the published wiki, including
+ * every link into the spec's Domain / DSL Surfaces section. */
 function headingSlug(text) {
     return String(text || '')
         .trim()
         .toLowerCase()
         .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
+        .replace(/\s/g, '-')
         .replace(/^-|-$/g, '');
 }
 

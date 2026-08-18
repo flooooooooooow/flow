@@ -30,7 +30,6 @@ Welcome to the Flow programming language documentation!
 
 ## Standard Library
 
-- [Core](library/core.md) - Built-in functions
 - [Autodiff](library/autodiff.md) - Automatic differentiation
 - [Audio DSP](library/audio.md) - Real-time audio DSP utilities
 - [Memory](library/memory.md) - Memory management

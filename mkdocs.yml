@@ -85,6 +85,8 @@ nav:
     - Functions: language/functions.md
     - Dynamics DSL: language/dynamics-dsl.md
     - Graphics: language/graphics.md
+    - WebAssembly: language/wasm.md
+    - WASM Crossings: language/wasm-crossings.md
     - Design: language/language_design.md
   - Standard Library:
     - API Reference: library/stdlib-reference.md

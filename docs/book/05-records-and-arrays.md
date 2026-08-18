@@ -15,20 +15,20 @@ struct Sample {
 The declaration defines a type. A struct literal constructs a value of that
 type:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
 let first: Sample = Sample { time_ms: 0, value: 1.0 }
 ```
 
 Fields are selected with `.`:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
 let t: i32 = first.time_ms
 let measurement: f64 = first.value
 ```
 
 A mutable struct permits field assignment:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
 let mut current: Sample = Sample { time_ms: 0, value: 0.0 }
 current.time_ms = 10
 current.value = 1.25
@@ -45,7 +45,7 @@ let values: array<i32, 4> = [10, 20, 30, 40]
 Indices begin at zero. The valid indices above are `0`, `1`, `2`, and `3`.
 The natural traversal is therefore:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
 for i in 0 to 4 {
     print(values[i])
 }
@@ -60,7 +60,7 @@ values[1] = 25
 
 ## 5.3 Arrays of records
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
 let samples: array<Sample, 4> = [
     Sample { time_ms: 0,  value: 1.0 },
     Sample { time_ms: 10, value: 1.5 },
@@ -71,7 +71,7 @@ let samples: array<Sample, 4> = [
 
 Indexing and field selection compose:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
 let third_value: f64 = samples[2].value
 ```
 
@@ -81,6 +81,11 @@ A reduction converts a collection into one summary value. Summation is the
 standard example:
 
 ```flow
+struct Sample {
+    time_ms: i32,
+    value: f64
+}
+
 function mean4(samples: array<Sample, 4>) -> f64 {
     let mut total: f64 = 0.0
     for i in 0 to 4 {

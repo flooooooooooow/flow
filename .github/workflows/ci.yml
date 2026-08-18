@@ -18,6 +18,13 @@ on:
       - 'requirements.lock'
       - 'scripts/**'
       - 'plugins/**'
+      # Version consistency and Doc links are deliberately ungated at the job
+      # level so markdown drift gets caught. That only works if the workflow
+      # itself fires, so docs-only changes have to be in this list too.
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
+      - '**.md'
   pull_request:
     branches: [main, master]
     paths:
@@ -35,6 +42,13 @@ on:
       - 'requirements.lock'
       - 'scripts/**'
       - 'plugins/**'
+      # Version consistency and Doc links are deliberately ungated at the job
+      # level so markdown drift gets caught. That only works if the workflow
+      # itself fires, so docs-only changes have to be in this list too.
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
+      - '**.md'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -51,6 +65,7 @@ jobs:
     outputs:
       src: ${{ steps.filter.outputs.src }}
       compiler: ${{ steps.filter.outputs.compiler }}
+      docs: ${{ steps.filter.outputs.docs }}
       tests: ${{ steps.filter.outputs.tests }}
       examples: ${{ steps.filter.outputs.examples }}
       libs: ${{ steps.filter.outputs.libs }}
@@ -84,6 +99,9 @@ jobs:
               - 'scripts/**'
             plugins:
               - 'plugins/**'
+            docs:
+              - 'docs/**'
+              - '**.md'
             deps:
               - 'requirements.lock'
               - 'requirements.txt'
@@ -111,6 +129,35 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 scripts/check_doc_links.py
+
+  # Every part of the language needs a page. The feature list is read from the
+  # compiler, so this fails when something is added and left undocumented.
+  # Stdlib-only, like the checkers above, so no toolchain setup.
+  doc-coverage:
+    name: Doc coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/check_doc_coverage.py
+
+  # Documented examples are compiled. A ratchet, not a wall: the examples that
+  # do not build today are recorded in docs/generated/example-status.json and
+  # grandfathered. Rows are keyed by a hash of the block, so editing one
+  # revokes its exemption and the new text has to compile.
+  doc-examples:
+    name: Doc examples
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.src == 'true' ||
+      needs.changes.outputs.docs == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+      - name: Compile every ```flow block in the documentation
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/check_doc_examples.py --check-ledger
 
   lint:
     name: Lint
@@ -496,6 +543,8 @@ jobs:
       - changes
       - lint
       - security
+      - doc-coverage
+      - doc-examples
       - flow-tier2
       - flowc-bootstrap
       - flowc-selfhost
@@ -550,6 +599,13 @@ jobs:
           compiler_req=false; if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
           plugin_req=false; if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
           gfx_req=false;   if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
+          docs='${{ needs.changes.outputs.docs }}'
+          # Coverage is ungated: a new keyword or subcommand in src/ must not
+          # land undocumented just because the PR touched no markdown.
+          doccov_req=true
+          docex_req=false; if [ "$src" = "true" ] || [ "$docs" = "true" ]; then docex_req=true; fi
+          add doc-coverage      '${{ needs.doc-coverage.result }}'      "$doccov_req"
+          add doc-examples      '${{ needs.doc-examples.result }}'      "$docex_req"
           add lint              '${{ needs.lint.result }}'              "$lint_req"
           add security          '${{ needs.security.result }}'          "$sec_req"
           add flow-tier2        '${{ needs.flow-tier2.result }}'        "$tier_req"

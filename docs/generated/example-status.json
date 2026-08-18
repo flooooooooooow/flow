@@ -1,0 +1,6022 @@
+{
+  "generated": "2026-08-18",
+  "totals": {
+    "verified": 436,
+    "unverified": 249,
+    "ignored": 65,
+    "expected-error": 1
+  },
+  "blocks": [
+    {
+      "key": "README.md#4cdecf27f98e",
+      "path": "README.md",
+      "line": 47,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "README.md#7dbb128f9b73",
+      "path": "README.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "README.md#449f229d6210",
+      "path": "README.md",
+      "line": 206,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "README.md#caf06a8aad02",
+      "path": "README.md",
+      "line": 232,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "README.md#1fa4df611254",
+      "path": "README.md",
+      "line": 253,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "ROADMAP.md#7476f864c0fb",
+      "path": "ROADMAP.md",
+      "line": 441,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "ROADMAP.md#cd3e425c1c9b",
+      "path": "ROADMAP.md",
+      "line": 459,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "ROADMAP.md#a8574cf4e93a",
+      "path": "ROADMAP.md",
+      "line": 491,
+      "status": "unverified",
+      "mode": "stmt-wrap",
+      "stage": "clang",
+      "detail": "redefinition of 'x'"
+    },
+    {
+      "key": "ROADMAP.md#32ae05a2eca6",
+      "path": "ROADMAP.md",
+      "line": 517,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "key": "ROADMAP.md#cfeeeab1fa18",
+      "path": "ROADMAP.md",
+      "line": 547,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'Err'"
+    },
+    {
+      "key": "ROADMAP.md#ab221c9e76ba",
+      "path": "ROADMAP.md",
+      "line": 579,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Field 'x' not found on type Point"
+    },
+    {
+      "key": "ROADMAP.md#d38c90c41d1a",
+      "path": "ROADMAP.md",
+      "line": 608,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.COLON at line 2, column 16\n\n     2 |     return fn(x: i32) -> i32 {\n       |                ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+    },
+    {
+      "key": "ROADMAP.md#eaf5c7a12793",
+      "path": "ROADMAP.md",
+      "line": 731,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "VISION.md#8707a3f22d05",
+      "path": "VISION.md",
+      "line": 53,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+    },
+    {
+      "key": "VISION.md#bb179312e0f9",
+      "path": "VISION.md",
+      "line": 91,
+      "status": "ignored",
+      "detail": "proposed temporal syntax, not implemented",
+      "reason": "proposed temporal syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#dec4da08481c",
+      "path": "VISION.md",
+      "line": 102,
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
+    },
+    {
+      "key": "VISION.md#0c188899d42a",
+      "path": "VISION.md",
+      "line": 112,
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
+    },
+    {
+      "key": "VISION.md#e55e372e4183",
+      "path": "VISION.md",
+      "line": 118,
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
+    },
+    {
+      "key": "VISION.md#98bc804b525f",
+      "path": "VISION.md",
+      "line": 124,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+    },
+    {
+      "key": "VISION.md#a4ee7648f3aa",
+      "path": "VISION.md",
+      "line": 139,
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
+    },
+    {
+      "key": "VISION.md#c116ef3e4861",
+      "path": "VISION.md",
+      "line": 176,
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
+    },
+    {
+      "key": "VISION.md#b06ba2d9d1cc",
+      "path": "VISION.md",
+      "line": 183,
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
+    },
+    {
+      "key": "VISION.md#ac15ca7a2d52",
+      "path": "VISION.md",
+      "line": 189,
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
+    },
+    {
+      "key": "VISION.md#18ce92f92623",
+      "path": "VISION.md",
+      "line": 195,
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
+    },
+    {
+      "key": "VISION.md#397fb232f792",
+      "path": "VISION.md",
+      "line": 202,
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
+    },
+    {
+      "key": "VISION.md#48ab2bd52fa0",
+      "path": "VISION.md",
+      "line": 210,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#39a2169d42c7",
+      "path": "VISION.md",
+      "line": 218,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#cc2ffdd90529",
+      "path": "VISION.md",
+      "line": 226,
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
+    },
+    {
+      "key": "VISION.md#83acfa12edca",
+      "path": "VISION.md",
+      "line": 234,
+      "status": "ignored",
+      "detail": "proposed temporal syntax, not implemented",
+      "reason": "proposed temporal syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#626580d5a7e2",
+      "path": "VISION.md",
+      "line": 244,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+    },
+    {
+      "key": "VISION.md#d4815722d583",
+      "path": "VISION.md",
+      "line": 275,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#30bc8af339e9",
+      "path": "VISION.md",
+      "line": 283,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#a2e3a53c3616",
+      "path": "VISION.md",
+      "line": 299,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#bfc1a670e02e",
+      "path": "VISION.md",
+      "line": 318,
+      "status": "ignored",
+      "detail": "illustrates a units mismatch; too small to compile as written",
+      "reason": "illustrates a units mismatch; too small to compile as written"
+    },
+    {
+      "key": "VISION.md#3c099e822924",
+      "path": "VISION.md",
+      "line": 337,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+    },
+    {
+      "key": "VISION.md#c4c53c48d7c8",
+      "path": "VISION.md",
+      "line": 354,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+    },
+    {
+      "key": "VISION.md#52bf4850ff43",
+      "path": "VISION.md",
+      "line": 370,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+    },
+    {
+      "key": "VISION.md#c0693e70632f",
+      "path": "VISION.md",
+      "line": 383,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#483e80b1785d",
+      "path": "VISION.md",
+      "line": 400,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#4445c6e42eff",
+      "path": "VISION.md",
+      "line": 414,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#acd0c30844f5",
+      "path": "VISION.md",
+      "line": 428,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "VISION.md#904b43b9808f",
+      "path": "VISION.md",
+      "line": 443,
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
+    },
+    {
+      "key": "apps/http_json_cache/README.md#5b1362ca76b4",
+      "path": "apps/http_json_cache/README.md",
+      "line": 55,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "demos/vulkan_scene/flow_style.md#4ee5b1302578",
+      "path": "demos/vulkan_scene/flow_style.md",
+      "line": 10,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.LBRACE"
+    },
+    {
+      "key": "demos/vulkan_scene/flow_style.md#92f564171243",
+      "path": "demos/vulkan_scene/flow_style.md",
+      "line": 92,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#8d364bae4b7e",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 502,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#ef2e33ff539e",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 557,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#4454ad502186",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 580,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#e8163ee23708",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 601,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#7dbb128f9b73",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 621,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#53e83062d626",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 635,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#162b3bf8760d",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 654,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#026de532b371",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 703,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#8d0b3eacab35",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 721,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#7c3d1d32c4ed",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 749,
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
+    },
+    {
+      "key": "docs/AI_FLOW_HANDBOOK.md#763b4d6ceda5",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 964,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Expected decorator argument, got TokenType.NUMBER"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#0b42dfaf3a07",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 150,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.SLASH"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#1dece0dbbc55",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 223,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#94d3388749e9",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 253,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#580aa6123514",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 268,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#7434f98369cb",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 280,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#3013243e9322",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#552b841ebaff",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 327,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#0ab0dffe953c",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 356,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#fcedd2b3013d",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 373,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#a5d8600a87b2",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 397,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Node'"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#0b59ab2e6047",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 424,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#100cfe4eeb26",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 448,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#105a129a674b",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 462,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#8b941731e66d",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 601,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#bbd9e8574657",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 618,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#34fd20767900",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 642,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#b136addd97ea",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 687,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#baf117bec488",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 707,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#89e14ab3148a",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 729,
+      "status": "unverified",
+      "mode": "stmt-wrap",
+      "stage": "clang",
+      "detail": "use of undeclared identifier 'data'"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#dedd395a1169",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 786,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#b85acee55272",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 809,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#febeebcdb59c",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 834,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Unknown effect 'Log' in handle statement"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#c3c98e4f2f78",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 867,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#ed5299a703a2",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 902,
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 921,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#da749fa6cb42",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 950,
+      "status": "ignored",
+      "detail": "relative-import form; the sibling module is illustrative",
+      "reason": "relative-import form; the sibling module is illustrative"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#5eaee9ca5dec",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 957,
+      "status": "ignored",
+      "detail": "flowlm is a registry package, not vendored here",
+      "reason": "flowlm is a registry package, not vendored here"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 1014,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#151b03520808",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 1041,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'frame_arena_create'"
+    },
+    {
+      "key": "docs/LANGUAGE_SPEC.md#eb8d99f2c3b0",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 1213,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined variable 'pixels'"
+    },
+    {
+      "key": "docs/blas-bindings.md#4bd5e7f4fa12",
+      "path": "docs/blas-bindings.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#dace703a8b6d",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 6,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#d56c77ed904d",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#0c3343f3af9f",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 55,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#30d103f14b46",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#ec14ef59bdb4",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#06c8b87f6ee9",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 107,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#f9d74bb46cf4",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/01-a-complete-program.md#9a1224019cc3",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 137,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#6319d6a73c28",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#20451a288086",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 37,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#39184971a4f7",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 50,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#4916588247e9",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 57,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#1aa350320406",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 69,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#4bf29c613a7a",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 79,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#7d566178b1cc",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 91,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/02-values-and-types.md#51d4102022c8",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 138,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#f4816087e712",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 8,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#39cd1b027c65",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 25,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#05aa878f0d1b",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 38,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#03fdd28042fd",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#f4f4f2dd64fc",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 67,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#42dc1a2643f4",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/03-decisions-and-repetition.md#e771a5c151e1",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#b987c4ed5a99",
+      "path": "docs/book/04-functions.md",
+      "line": 6,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#c8c72f6644c0",
+      "path": "docs/book/04-functions.md",
+      "line": 14,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#6c4190e12464",
+      "path": "docs/book/04-functions.md",
+      "line": 30,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/04-functions.md#fd0265c3aae1",
+      "path": "docs/book/04-functions.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#ad57c76e9014",
+      "path": "docs/book/04-functions.md",
+      "line": 60,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#b3a52c5ce50d",
+      "path": "docs/book/04-functions.md",
+      "line": 95,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#9667f3dd4900",
+      "path": "docs/book/04-functions.md",
+      "line": 140,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/04-functions.md#0321e9384893",
+      "path": "docs/book/04-functions.md",
+      "line": 161,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#a3b3c4bd5fa6",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 8,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#210844b00dac",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 18,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#a0c1feca09f0",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 24,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 11 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#336bf1ae7eb4",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 31,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#d2aa1efcfc88",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#54d51a20b6e2",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 48,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.FOR"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#55e6ff18738c",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#921e80c4413b",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#8d566805f7a8",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 74,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 11 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#ebd3fe28fd80",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 83,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/05-records-and-arrays.md#f97a3bb695a1",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 108,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#9681455a95ca",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 13,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#872a3c56866a",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 21,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#1fd170813360",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 29,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#53de48332d24",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 35,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#9b01cecf31d4",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 47,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 7 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#74e7041d301f",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 59,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#7aaad9dca12b",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 71,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#612092e1472d",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 80,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Function 'parse_port' returns ResultI32 but should return ResultI32"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#92702c928e65",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 94,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/06-pipelines-and-results.md#dff3873fc4dd",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 152,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'parse_port'"
+    },
+    {
+      "key": "docs/book/07-from-updates-to-flows.md#55bd2b1ccae1",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/07-from-updates-to-flows.md#0e1b7f27da20",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 43,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/07-from-updates-to-flows.md#f2434d564f65",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 86,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/07-from-updates-to-flows.md#7905a1083366",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 109,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/07-from-updates-to-flows.md#26ec616bf71e",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 144,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/07-from-updates-to-flows.md#2f7ddcd97775",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 174,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#2591c67543b2",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#6a7e04e741da",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 48,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#58ee32b314ad",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 66,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#db42c77cbd48",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 72,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#90ae8f213a65",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 85,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#b6143fbcc138",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 108,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Node'"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#3575b8152e04",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 123,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 8 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#1ac407be1920",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 140,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 9 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#6b51a5efb080",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 166,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#e15fdc3452e4",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 177,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#fabb710549fa",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 205,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/08-types-and-declarations.md#6eaf2843297a",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 229,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#88ba40802f00",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#462c8b157fec",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 43,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#991960facd00",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 53,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 9 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#1953ee9dd15d",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 82,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#959ff8d29d59",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 123,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#cb59d22334d2",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 137,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#2e67d3876bc0",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 163,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#ef71706fa77f",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 179,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#b84126f91e98",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 193,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.PARALLEL"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#3a3014859515",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 210,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#6b49c0dd6ec2",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 235,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/09-expressions-and-matching.md#42cc652a2ee3",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 246,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#dd3bf0b4bd6c",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 13,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#d454c3d6a871",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#8549768ad56a",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 45,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#77528550ec6a",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 79,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#2f8bdfb86fd5",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 97,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 1, column 39\n\n     1 | let mut signal: array<f32, 256> = [0.0; 256]\n       |                                       ^"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#c72d6c08ea0c",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 115,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.DEFER"
+    },
+    {
+      "key": "docs/book/10-memory-and-lifetimes.md#c5cc5019d9bf",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 139,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#869af235e3a7",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 12,
+      "status": "ignored",
+      "detail": "module system forms over illustrative module names",
+      "reason": "module system forms over illustrative module names"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#b07ec74b3f77",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#03474a04d08a",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 41,
+      "status": "ignored",
+      "detail": "relative-import form; the sibling module is illustrative",
+      "reason": "relative-import form; the sibling module is illustrative"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#989ca6416b42",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#334f8b8dbe9d",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 110,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#5076fce567e1",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 127,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.EOF"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#be16deb11364",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 142,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.EOF"
+    },
+    {
+      "key": "docs/book/11-modules-packages-and-interop.md#0a0c7596cb0a",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 164,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#d30c80aadc4f",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#7c0dfc6d9bde",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#78ec2bf3dda4",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 43,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#89abe343e481",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 56,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#21a515ac4053",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 67,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#2a2146dd508c",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 113,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#83ce7a5c9d28",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 154,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/12-effects-and-concurrency.md#802ae518b277",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 179,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#5d06adabee6e",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#63c7a09ec1ec",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 28,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#15b8235a70ac",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 45,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#a7cd7aa80339",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 63,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#91cedbdfae28",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 91,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#8431efb438e4",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#13b965a6ca5e",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 132,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#28b9a192b861",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 148,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant: Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#e9805244cf6e",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 175,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: represent linear { ... } at top level needs a flow name: `represent linear Name { ... }` or place the block inside `flow Name { ... }`"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#b3732ed23f93",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 200,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#ffc17c04f548",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 217,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#9e2189c97978",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 232,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/book/13-evolution-and-dynamics.md#3ad10e4c58c5",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 246,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/14-numerics-autodiff-and-ml.md#c1ff29c83944",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 28,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'abs'"
+    },
+    {
+      "key": "docs/book/14-numerics-autodiff-and-ml.md#cfc8b6d2a2f0",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 54,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/14-numerics-autodiff-and-ml.md#65dd86a2cf7c",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 70,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/14-numerics-autodiff-and-ml.md#3edc7e51169c",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 97,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/14-numerics-autodiff-and-ml.md#9d6cf9c55c9d",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 128,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/15-media-gpu-and-audio.md#172b1e7840e6",
+      "path": "docs/book/15-media-gpu-and-audio.md",
+      "line": 65,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/15-media-gpu-and-audio.md#647d272f6236",
+      "path": "docs/book/15-media-gpu-and-audio.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/16-targets-and-distribution.md#eb44a7f5ff5d",
+      "path": "docs/book/16-targets-and-distribution.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/17-engineering-and-verification.md#321bfed2f221",
+      "path": "docs/book/17-engineering-and-verification.md",
+      "line": 178,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ASSIGN"
+    },
+    {
+      "key": "docs/book/18-a-complete-instrument.md#0b0a640f3b06",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/18-a-complete-instrument.md#698dc33bc6c3",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 54,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'clamp'"
+    },
+    {
+      "key": "docs/book/18-a-complete-instrument.md#059b351fdf5e",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 72,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'process_sample'"
+    },
+    {
+      "key": "docs/book/18-a-complete-instrument.md#121def7c434a",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 91,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/appendix-a-language-card.md#1090cd9d3c1a",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/appendix-a-language-card.md#45310e0f2aa0",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 16,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/appendix-a-language-card.md#307a18894973",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 28,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/book/appendix-a-language-card.md#1fb66cf41f6a",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 52,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/book/appendix-a-language-card.md#33254af191d7",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 65,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/book/appendix-a-language-card.md#dd0d32f2a853",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 76,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/demos/evolution.md#7dbb128f9b73",
+      "path": "docs/demos/evolution.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/demos/morphogenesis.md#225e1f842d6f",
+      "path": "docs/demos/morphogenesis.md",
+      "line": 19,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'GrayScottCell' body at line 5, column 5\n\n     5 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events "
+    },
+    {
+      "key": "docs/demos/neuro.md#1c04fa72daaf",
+      "path": "docs/demos/neuro.md",
+      "line": 14,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/effects-showcase.md#2addc2f4528e",
+      "path": "docs/effects-showcase.md",
+      "line": 22,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined variable 'Log'"
+    },
+    {
+      "key": "docs/effects-showcase.md#9aa946994b24",
+      "path": "docs/effects-showcase.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#a8b652fd0f5c",
+      "path": "docs/effects-showcase.md",
+      "line": 51,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/effects-showcase.md#cae3f29a0f0f",
+      "path": "docs/effects-showcase.md",
+      "line": 223,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Function 'greet' declares unknown effect 'Log' in its `with` row"
+    },
+    {
+      "key": "docs/getting-started.md#961dc32e5a1e",
+      "path": "docs/getting-started.md",
+      "line": 34,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/getting-started.md#a2bd2d589223",
+      "path": "docs/getting-started.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/getting-started.md#f8be657b905a",
+      "path": "docs/getting-started.md",
+      "line": 64,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/getting-started.md#59e841e00346",
+      "path": "docs/getting-started.md",
+      "line": 76,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/getting-started.md#d2df93bf89d8",
+      "path": "docs/getting-started.md",
+      "line": 101,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/README.md#c7481a84e968",
+      "path": "docs/language/README.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/README.md#2e465ad3d003",
+      "path": "docs/language/README.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/README.md#c83e3fc38802",
+      "path": "docs/language/README.md",
+      "line": 55,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/README.md#5fc4c393eca7",
+      "path": "docs/language/README.md",
+      "line": 61,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/language/async-effects.md#a0a5238dd2fb",
+      "path": "docs/language/async-effects.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/c-fnptr-call.md#a63012f87494",
+      "path": "docs/language/c-fnptr-call.md",
+      "line": 31,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/claim-coordinates.md#9bbaa3107865",
+      "path": "docs/language/claim-coordinates.md",
+      "line": 27,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.ASSUME"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#a8c95826004b",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 38,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Variable 'ok' requires either a type annotation or an initializer"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#1433f3dd3de6",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 59,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#d7c9bfea8da2",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 76,
+      "status": "ignored",
+      "detail": "horizon declarations expand to no code on their own",
+      "reason": "horizon declarations expand to no code on their own"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#2ad54c1c11df",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 86,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#ceb0ace95230",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 101,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#ebf1ad898734",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 116,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#561046776f07",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 129,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/language/dynamics-dsl.md#e5183655ba47",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 160,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/epistemology.md#40a2237a9f06",
+      "path": "docs/language/epistemology.md",
+      "line": 64,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/epistemology.md#6792de9f8187",
+      "path": "docs/language/epistemology.md",
+      "line": 76,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/epistemology.md#0bbbb39b51f4",
+      "path": "docs/language/epistemology.md",
+      "line": 97,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.ASSUME"
+    },
+    {
+      "key": "docs/language/epistemology.md#159c72afb166",
+      "path": "docs/language/epistemology.md",
+      "line": 106,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/epistemology.md#2855dab7bef8",
+      "path": "docs/language/epistemology.md",
+      "line": 112,
+      "status": "ignored",
+      "detail": "claim-path import forms over illustrative modules",
+      "reason": "claim-path import forms over illustrative modules"
+    },
+    {
+      "key": "docs/language/epistemology.md#440ad79fe6e9",
+      "path": "docs/language/epistemology.md",
+      "line": 153,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/epistemology.md#f41e5f48637c",
+      "path": "docs/language/epistemology.md",
+      "line": 168,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 2, column 27\n\n     2 | theorem Nat/+.succ-right(n, m)   { therefore n + succ(m) == succ(n + m) }\n       |                           ^"
+    },
+    {
+      "key": "docs/language/epistemology.md#66520f588a77",
+      "path": "docs/language/epistemology.md",
+      "line": 177,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.ELLIPSIS at line 1, column 20\n\n     1 | function FullAdder(...) -> ... { ... }\n       |                    ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "key": "docs/language/epistemology.md#9c3e0a98b3cb",
+      "path": "docs/language/epistemology.md",
+      "line": 193,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 1, column 43\n\n     1 | theorem Matmul/vectorize.semantics-equal(m, n, k) {\n       |                                           ^"
+    },
+    {
+      "key": "docs/language/epistemology.md#9ddca4d08238",
+      "path": "docs/language/epistemology.md",
+      "line": 207,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 1, column 38\n\n     1 | theorem RingBuffer/fifo.order-kept(rb, q, x) {\n       |                                      ^"
+    },
+    {
+      "key": "docs/language/epistemology.md#157f67e45f6a",
+      "path": "docs/language/epistemology.md",
+      "line": 222,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/graphics-3d.md#59b83d46796d",
+      "path": "docs/language/graphics-3d.md",
+      "line": 30,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/graphics.md#604cf2f7ecb1",
+      "path": "docs/language/graphics.md",
+      "line": 32,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/language_design.md#2c0bc747a39e",
+      "path": "docs/language/language_design.md",
+      "line": 359,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/language_design.md#742f79faf7fc",
+      "path": "docs/language/language_design.md",
+      "line": 366,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/language_design.md#1fecc29cb638",
+      "path": "docs/language/language_design.md",
+      "line": 379,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/language_design.md#3bf83e43d1e5",
+      "path": "docs/language/language_design.md",
+      "line": 399,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/language_design.md#ebb7d31e51aa",
+      "path": "docs/language/language_design.md",
+      "line": 457,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/language_design.md#cbe5c1c347db",
+      "path": "docs/language/language_design.md",
+      "line": 477,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#0e4a26aaa95d",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 53,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'FilterState'"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#71e63214c2ab",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#c84c5f8180fe",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 99,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 6, column 39\n\n     6 |     let scratch: array<f32, 64> = [0.0; 64]\n       |                                       ^"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#c90549d95a51",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 123,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 3, column 36\n\n     3 |     let scratch: array<i32, 8> = [0; 8]\n       |                                    ^"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#5fceaa119014",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 149,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "RT-safety violation: 'process' is in the `callback` lifetime domain, which forbids allocation, but calls 'malloc', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see docs/language/lifetime-domains.md)"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#c089d3b9670f",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 202,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "lifetime domain violation: 'process' is in the `callback` domain but calls 'reload_preset', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#f1c79a04414f",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 276,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Arena'"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#7b6abff51fb7",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 287,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/lifetime-domains.md#7394d235aca3",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 299,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'frame_begin'"
+    },
+    {
+      "key": "docs/language/modules-namespacing.md#d5de1b3b69bc",
+      "path": "docs/language/modules-namespacing.md",
+      "line": 47,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'gain'"
+    },
+    {
+      "key": "docs/language/modules-namespacing.md#7819a1b3d57b",
+      "path": "docs/language/modules-namespacing.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/modules-namespacing.md#7336d9635cd6",
+      "path": "docs/language/modules-namespacing.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/modules.md#bb2ebc4366d7",
+      "path": "docs/language/modules.md",
+      "line": 16,
+      "status": "ignored",
+      "detail": "import forms over illustrative module names",
+      "reason": "import forms over illustrative module names"
+    },
+    {
+      "key": "docs/language/modules.md#3c178c94a485",
+      "path": "docs/language/modules.md",
+      "line": 24,
+      "status": "expected-error",
+      "stage": "parse",
+      "detail": "FileNotFoundError: Unsafe import path: ../../../../lib/verify/nat.flow"
+    },
+    {
+      "key": "docs/language/modules.md#2b678a0fe005",
+      "path": "docs/language/modules.md",
+      "line": 89,
+      "status": "ignored",
+      "detail": "import forms over illustrative module names",
+      "reason": "import forms over illustrative module names"
+    },
+    {
+      "key": "docs/language/modules.md#41d0184a9bec",
+      "path": "docs/language/modules.md",
+      "line": 111,
+      "status": "ignored",
+      "detail": "illustrative aliased import",
+      "reason": "illustrative aliased import"
+    },
+    {
+      "key": "docs/language/modules.md#58e507f11b4a",
+      "path": "docs/language/modules.md",
+      "line": 121,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/language/modules.md#db9748eee7a1",
+      "path": "docs/language/modules.md",
+      "line": 150,
+      "status": "ignored",
+      "detail": "relative-import form; the sibling module is illustrative",
+      "reason": "relative-import form; the sibling module is illustrative"
+    },
+    {
+      "key": "docs/language/modules.md#420b05da2a58",
+      "path": "docs/language/modules.md",
+      "line": 167,
+      "status": "ignored",
+      "detail": "flowlm is a registry package, not vendored here",
+      "reason": "flowlm is a registry package, not vendored here"
+    },
+    {
+      "key": "docs/language/modules.md#0c6dcdf7b237",
+      "path": "docs/language/modules.md",
+      "line": 242,
+      "status": "ignored",
+      "detail": "proof metadata header, not code",
+      "reason": "proof metadata header, not code"
+    },
+    {
+      "key": "docs/language/modules.md#2edfe6da4674",
+      "path": "docs/language/modules.md",
+      "line": 284,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.EFFECT at line 1, column 17\n\n     1 | import std.io { effect Log }\n       |                 ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "key": "docs/language/modules.md#41eb445eb25c",
+      "path": "docs/language/modules.md",
+      "line": 307,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/language/modules.md#755bb25f2176",
+      "path": "docs/language/modules.md",
+      "line": 321,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/language/ordering.md#d19a443e4a6c",
+      "path": "docs/language/ordering.md",
+      "line": 5,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/ordering.md#1b392c5b2b16",
+      "path": "docs/language/ordering.md",
+      "line": 154,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/overview.md#1fe0f720949d",
+      "path": "docs/language/overview.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/replace-go.md#d2e3586ec31f",
+      "path": "docs/language/replace-go.md",
+      "line": 28,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "call to undeclared function 'pthread_mutex_init'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
+    },
+    {
+      "key": "docs/language/safety-profiles.md#e5c51903c679",
+      "path": "docs/language/safety-profiles.md",
+      "line": 28,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Expected decorator argument, got TokenType.NUMBER"
+    },
+    {
+      "key": "docs/language/shaders.md#226fbe4da600",
+      "path": "docs/language/shaders.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "shader"
+    },
+    {
+      "key": "docs/language/spans.md#3ae148c11ab1",
+      "path": "docs/language/spans.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/spans.md#ad33eb3de2cd",
+      "path": "docs/language/spans.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/spans.md#518e6950c187",
+      "path": "docs/language/spans.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/spans.md#0e64ed1280d5",
+      "path": "docs/language/spans.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/spans.md#ab7bd3a2db8d",
+      "path": "docs/language/spans.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/spans.md#ba63a89ddbb4",
+      "path": "docs/language/spans.md",
+      "line": 109,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/spans.md#9a2daf755967",
+      "path": "docs/language/spans.md",
+      "line": 119,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/spans.md#f20af5f97f03",
+      "path": "docs/language/spans.md",
+      "line": 165,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "span outlives borrowed storage `local` at line 3, column 5"
+    },
+    {
+      "key": "docs/language/spans.md#82181f61c982",
+      "path": "docs/language/spans.md",
+      "line": 233,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/syntax.md#40c1236b0772",
+      "path": "docs/language/syntax.md",
+      "line": 12,
+      "status": "ignored",
+      "detail": "catalogue of literal forms, not an expression",
+      "reason": "catalogue of literal forms, not an expression"
+    },
+    {
+      "key": "docs/language/syntax.md#124fbdf10ce3",
+      "path": "docs/language/syntax.md",
+      "line": 32,
+      "status": "ignored",
+      "detail": "comment syntax only",
+      "reason": "comment syntax only"
+    },
+    {
+      "key": "docs/language/syntax.md#ee8367a44632",
+      "path": "docs/language/syntax.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/syntax.md#ce589787ce0c",
+      "path": "docs/language/syntax.md",
+      "line": 67,
+      "status": "ignored",
+      "detail": "assignment forms over placeholder names",
+      "reason": "assignment forms over placeholder names"
+    },
+    {
+      "key": "docs/language/syntax.md#1c81b3b51584",
+      "path": "docs/language/syntax.md",
+      "line": 74,
+      "status": "ignored",
+      "detail": "declaration template; Type and ReturnType are metasyntactic",
+      "reason": "declaration template; Type and ReturnType are metasyntactic"
+    },
+    {
+      "key": "docs/language/syntax.md#a3e9a1ebfa3f",
+      "path": "docs/language/syntax.md",
+      "line": 81,
+      "status": "ignored",
+      "detail": "control-flow shapes with elided bodies",
+      "reason": "control-flow shapes with elided bodies"
+    },
+    {
+      "key": "docs/language/syntax.md#48260fcce41f",
+      "path": "docs/language/syntax.md",
+      "line": 101,
+      "status": "ignored",
+      "detail": "match arm forms over an undeclared subject",
+      "reason": "match arm forms over an undeclared subject"
+    },
+    {
+      "key": "docs/language/syntax.md#2b1e4aa3a5c1",
+      "path": "docs/language/syntax.md",
+      "line": 133,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Type1'"
+    },
+    {
+      "key": "docs/language/syntax.md#1fa4df611254",
+      "path": "docs/language/syntax.md",
+      "line": 141,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/syntax.md#1df2f1f4d825",
+      "path": "docs/language/syntax.md",
+      "line": 151,
+      "status": "ignored",
+      "detail": "call syntax with placeholder names",
+      "reason": "call syntax with placeholder names"
+    },
+    {
+      "key": "docs/language/syntax.md#262453d93453",
+      "path": "docs/language/syntax.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/syntax.md#0c049903ce23",
+      "path": "docs/language/syntax.md",
+      "line": 161,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/syntax.md#fc0551e101f0",
+      "path": "docs/language/syntax.md",
+      "line": 166,
+      "status": "ignored",
+      "detail": "field-access notation",
+      "reason": "field-access notation"
+    },
+    {
+      "key": "docs/language/syntax.md#ef796faac3d7",
+      "path": "docs/language/syntax.md",
+      "line": 172,
+      "status": "ignored",
+      "detail": "index notation",
+      "reason": "index notation"
+    },
+    {
+      "key": "docs/language/syntax.md#d4b87f972da3",
+      "path": "docs/language/syntax.md",
+      "line": 183,
+      "status": "ignored",
+      "detail": "pipe desugaring shown as equivalences",
+      "reason": "pipe desugaring shown as equivalences"
+    },
+    {
+      "key": "docs/language/syntax.md#c74b4bde8358",
+      "path": "docs/language/syntax.md",
+      "line": 194,
+      "status": "ignored",
+      "detail": "pipe placeholder forms shown as equivalences",
+      "reason": "pipe placeholder forms shown as equivalences"
+    },
+    {
+      "key": "docs/language/syntax.md#0096dd2801f4",
+      "path": "docs/language/syntax.md",
+      "line": 208,
+      "status": "ignored",
+      "detail": "fork-block notation over undeclared helpers",
+      "reason": "fork-block notation over undeclared helpers"
+    },
+    {
+      "key": "docs/language/syntax.md#93bffa04a67b",
+      "path": "docs/language/syntax.md",
+      "line": 227,
+      "status": "ignored",
+      "detail": "inferred-record notation over undeclared helpers",
+      "reason": "inferred-record notation over undeclared helpers"
+    },
+    {
+      "key": "docs/language/syntax.md#6c55260d9c46",
+      "path": "docs/language/syntax.md",
+      "line": 254,
+      "status": "ignored",
+      "detail": "fragment of a piped return expression",
+      "reason": "fragment of a piped return expression"
+    },
+    {
+      "key": "docs/language/types.md#444e10514455",
+      "path": "docs/language/types.md",
+      "line": 82,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/types.md#a45f04b32e01",
+      "path": "docs/language/types.md",
+      "line": 414,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/types.md#0adee0aee37e",
+      "path": "docs/language/types.md",
+      "line": 423,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/types.md#df846d6d4ef6",
+      "path": "docs/language/types.md",
+      "line": 431,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/types.md#cc85227bd6b1",
+      "path": "docs/language/types.md",
+      "line": 438,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/types.md#1c27634862ff",
+      "path": "docs/language/types.md",
+      "line": 451,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/language/types.md#d9d4d930d0e2",
+      "path": "docs/language/types.md",
+      "line": 465,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "key": "docs/language/variables.md#c831c8907d4c",
+      "path": "docs/language/variables.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/variables.md#3852c414a284",
+      "path": "docs/language/variables.md",
+      "line": 15,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/variables.md#009e79b1e912",
+      "path": "docs/language/variables.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/variables.md#0d295570616f",
+      "path": "docs/language/variables.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/variables.md#a8375beda9de",
+      "path": "docs/language/variables.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/variables.md#31262ba9a62e",
+      "path": "docs/language/variables.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/variables.md#65fd4b347ada",
+      "path": "docs/language/variables.md",
+      "line": 72,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/verification.md#b2f3841b2489",
+      "path": "docs/language/verification.md",
+      "line": 26,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/language/verification.md#9c2022e0f1eb",
+      "path": "docs/language/verification.md",
+      "line": 79,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Statement attributes are only supported on `while` (got ['from'] before TokenType.IDENTIFIER)"
+    },
+    {
+      "key": "docs/language/verification.md#288baa41bef4",
+      "path": "docs/language/verification.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/verification.md#a13e4745795f",
+      "path": "docs/language/verification.md",
+      "line": 126,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "key": "docs/language/verification.md#b06ddce94ebe",
+      "path": "docs/language/verification.md",
+      "line": 133,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.THEREFORE"
+    },
+    {
+      "key": "docs/language/verification.md#988833863779",
+      "path": "docs/language/verification.md",
+      "line": 143,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/language/verification.md#4dfa8ff54240",
+      "path": "docs/language/verification.md",
+      "line": 162,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/verification.md#91e7fd6f5d58",
+      "path": "docs/language/verification.md",
+      "line": 184,
+      "status": "ignored",
+      "detail": "proof metadata header, not code",
+      "reason": "proof metadata header, not code"
+    },
+    {
+      "key": "docs/language/verification.md#2e502119cc3c",
+      "path": "docs/language/verification.md",
+      "line": 194,
+      "status": "ignored",
+      "detail": "proof metadata header, not code",
+      "reason": "proof metadata header, not code"
+    },
+    {
+      "key": "docs/language/wasm.md#705313eec8f0",
+      "path": "docs/language/wasm.md",
+      "line": 183,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/audio-safety.md#c4226392b77c",
+      "path": "docs/library/audio-safety.md",
+      "line": 23,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/audio-safety.md#ca4135ce8c49",
+      "path": "docs/library/audio-safety.md",
+      "line": 106,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/library/audio-safety.md#73842d234763",
+      "path": "docs/library/audio-safety.md",
+      "line": 164,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/audio-safety.md#967988c5edd1",
+      "path": "docs/library/audio-safety.md",
+      "line": 201,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/library/autodiff-guide.md#f8c91799da43",
+      "path": "docs/library/autodiff-guide.md",
+      "line": 24,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/dynamics.md#b5015bd5a279",
+      "path": "docs/library/dynamics.md",
+      "line": 33,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/dynamics.md#b1918f2dbbe4",
+      "path": "docs/library/dynamics.md",
+      "line": 61,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#71dff86b4a3c",
+      "path": "docs/library/dynamics.md",
+      "line": 75,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Matrix'"
+    },
+    {
+      "key": "docs/library/dynamics.md#7b6bfc6ac46b",
+      "path": "docs/library/dynamics.md",
+      "line": 101,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#3c9fb867f487",
+      "path": "docs/library/dynamics.md",
+      "line": 128,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#f9efbba35951",
+      "path": "docs/library/dynamics.md",
+      "line": 156,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#5c4c7194a590",
+      "path": "docs/library/dynamics.md",
+      "line": 183,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#9c348ca34391",
+      "path": "docs/library/dynamics.md",
+      "line": 202,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/dynamics.md#df2dc84eb0f2",
+      "path": "docs/library/dynamics.md",
+      "line": 218,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#23ef16959ab5",
+      "path": "docs/library/dynamics.md",
+      "line": 235,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/dynamics.md#8e71945ba3fa",
+      "path": "docs/library/dynamics.md",
+      "line": 260,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/dynamics.md#0a8c61f002e8",
+      "path": "docs/library/dynamics.md",
+      "line": 276,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/dynamics.md#e383400d3e8e",
+      "path": "docs/library/dynamics.md",
+      "line": 305,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/fmm2d.md#f71a44cf58d5",
+      "path": "docs/library/fmm2d.md",
+      "line": 51,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/library/gpu-memory.md#078e00fc53a1",
+      "path": "docs/library/gpu-memory.md",
+      "line": 5,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/library/memory.md#0b8a54360d12",
+      "path": "docs/library/memory.md",
+      "line": 12,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/memory.md#2ecc7ae9ff1e",
+      "path": "docs/library/memory.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/memory.md#426fdaa2598b",
+      "path": "docs/library/memory.md",
+      "line": 88,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'frame_begin'"
+    },
+    {
+      "key": "docs/library/planet.md#c30bb9956137",
+      "path": "docs/library/planet.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/procgen.md#05671b9bcbba",
+      "path": "docs/library/procgen.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/rt-safety.md#75f9918e2d2b",
+      "path": "docs/library/rt-safety.md",
+      "line": 14,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'FilterState'"
+    },
+    {
+      "key": "docs/library/rt-safety.md#3096c3694a25",
+      "path": "docs/library/rt-safety.md",
+      "line": 77,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'FilterState'"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#5b97ffdd6525",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#4bff9c31dceb",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 141,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#926a6d5ec93c",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 159,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#b7284ce63b44",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 180,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'HashEntry_string_i32'; did you mean 'HashMap_string_i32'?"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#74cb71a9b8d3",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 226,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#45ef45f9b145",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 244,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#e960eea0c988",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 270,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#eaffcd57d24d",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 307,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "expected identifier or '('"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#d5f1313f8e87",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 354,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Socket'"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#a56dd5d61a9b",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 367,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "unknown type name 'Socket'"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#892c1e43d14b",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 377,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#922a22bbe272",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 388,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#0ea87a17383a",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 404,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#87d774826d7e",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 435,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/library/stdlib-reference.md#8a29f2952bfd",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 497,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/project/archive/PROJECT_STRUCTURE.md#e186faf116d6",
+      "path": "docs/project/archive/PROJECT_STRUCTURE.md",
+      "line": 80,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/project/archive/PROJECT_STRUCTURE.md#0122884d48a8",
+      "path": "docs/project/archive/PROJECT_STRUCTURE.md",
+      "line": 98,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.SEMICOLON"
+    },
+    {
+      "key": "docs/project/archive/PROJECT_STRUCTURE.md#cc0708a685a4",
+      "path": "docs/project/archive/PROJECT_STRUCTURE.md",
+      "line": 133,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/project/example-atlas.md#e91ecd666d61",
+      "path": "docs/project/example-atlas.md",
+      "line": 16,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Unexpected statement in 'when' body of flow 'Neuron' at line 9, column 42\n\n     9 |     when v reaches 30.0 { v becomes -65.0; u becomes u + 8.0 }\n       |                                          ^\n\n  Hint: 'when' bodies contain resets in this version: 'x becomes expr'"
+    },
+    {
+      "key": "docs/project/package-registry.md#649aad5bed38",
+      "path": "docs/project/package-registry.md",
+      "line": 46,
+      "status": "ignored",
+      "detail": "hello_lib is the example package the page walks through",
+      "reason": "hello_lib is the example package the page walks through"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#339b46f6fbc1",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 55,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#4b6abaf3dd75",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 69,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected type token: TokenType.SLASH"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#166ef4f6946a",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 87,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#13f6b9dee704",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 106,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#f4b29e7478b5",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 188,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: analyze plant lqr: unknown dsys 'plant'"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#57ca04ceff06",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 215,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined variable 'AMBIENT'"
+    },
+    {
+      "key": "docs/project/pattern-adoption.md#805d1d7ddd8b",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 241,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/python-target.md#cc9e80e9873a",
+      "path": "docs/python-target.md",
+      "line": 35,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "key": "docs/python-target.md#1eb8a4795a0a",
+      "path": "docs/python-target.md",
+      "line": 96,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/python-target.md#04e0c9e028ce",
+      "path": "docs/python-target.md",
+      "line": 158,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.ASSIGN at line 2, column 13\n\n     2 | @python(name=\"py_func_name\")\n       |             ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+    },
+    {
+      "key": "docs/research/FLOW_RESEARCH_PAPER.md#3db930337e08",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 126,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/research/FLOW_RESEARCH_PAPER.md#5a9440b3b82e",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 152,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/research/FLOW_RESEARCH_PAPER.md#28fd1ddd38b5",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 267,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/research/FLOW_RESEARCH_PAPER.md#d7bfbb9955c9",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 337,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Unknown effect 'GPU' in handle statement"
+    },
+    {
+      "key": "docs/research/turing_proof.md#df4dad208d46",
+      "path": "docs/research/turing_proof.md",
+      "line": 20,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/research/turing_proof.md#1b3e95cb4b1d",
+      "path": "docs/research/turing_proof.md",
+      "line": 29,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/research/turing_proof.md#5a027c5e700f",
+      "path": "docs/research/turing_proof.md",
+      "line": 41,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "key": "docs/research/turing_proof.md#9306ef43c5aa",
+      "path": "docs/research/turing_proof.md",
+      "line": 51,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "key": "docs/research/turing_proof.md#8bffd09378f9",
+      "path": "docs/research/turing_proof.md",
+      "line": 71,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "key": "docs/research/turing_proof.md#accae6307e92",
+      "path": "docs/research/turing_proof.md",
+      "line": 80,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "key": "docs/research/turing_proof.md#f7bd98c37211",
+      "path": "docs/research/turing_proof.md",
+      "line": 89,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "key": "docs/research/turing_proof.md#1481bdabedd1",
+      "path": "docs/research/turing_proof.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/research/turing_proof.md#b04a451f94d8",
+      "path": "docs/research/turing_proof.md",
+      "line": 131,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.ARROW, got TokenType.LBRACE at line 1, column 68\n\n     1 |    function transition(state: i32, symbol: i32) -> (i32, i32, i32) {\n       |                                                                    ^"
+    },
+    {
+      "key": "docs/research/turing_proof.md#3901ec668aa0",
+      "path": "docs/research/turing_proof.md",
+      "line": 138,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#1710bad81097",
+      "path": "docs/tutorials/advanced.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#464035e39900",
+      "path": "docs/tutorials/advanced.md",
+      "line": 25,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Function 'greet' declares unknown effect 'Console' in its `with` row"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#36510cba2742",
+      "path": "docs/tutorials/advanced.md",
+      "line": 37,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FOR at line 1, column 25\n\n     1 | capability StdioConsole for Console {\n       |                         ^"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#200f1f6f2e6a",
+      "path": "docs/tutorials/advanced.md",
+      "line": 71,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'dual'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#cdaab2ce8dcf",
+      "path": "docs/tutorials/advanced.md",
+      "line": 90,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'dual'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#8da1697d8dde",
+      "path": "docs/tutorials/advanced.md",
+      "line": 111,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'net2x2x1_new'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#af9e4ee16b7b",
+      "path": "docs/tutorials/advanced.md",
+      "line": 137,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#d64ef7ab262b",
+      "path": "docs/tutorials/advanced.md",
+      "line": 185,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#4322b90d99a8",
+      "path": "docs/tutorials/advanced.md",
+      "line": 203,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined function 'gpu_barrier'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#606c906086d9",
+      "path": "docs/tutorials/advanced.md",
+      "line": 262,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "conflicting types for 'read'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#dce70cddf25c",
+      "path": "docs/tutorials/advanced.md",
+      "line": 285,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "conflicting types for 'read'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#786fa85b8ca0",
+      "path": "docs/tutorials/advanced.md",
+      "line": 299,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "conflicting types for 'read'"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#2cc5efdf7df2",
+      "path": "docs/tutorials/advanced.md",
+      "line": 318,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#2cdc81768fac",
+      "path": "docs/tutorials/advanced.md",
+      "line": 334,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/advanced.md#01f2a89655ee",
+      "path": "docs/tutorials/advanced.md",
+      "line": 398,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#fa113546a761",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#15e4a88571bc",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#fa41980a5544",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#5e094268c444",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#5a6989caf53f",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 103,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#1011fa5d375d",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 122,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/algorithms.md#f64abed6b428",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 147,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#31d986a96aac",
+      "path": "docs/tutorials/arrays.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#0deab3d5944a",
+      "path": "docs/tutorials/arrays.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#86cd171b65c6",
+      "path": "docs/tutorials/arrays.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#bd7e708e53e0",
+      "path": "docs/tutorials/arrays.md",
+      "line": 53,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#a483f5b58535",
+      "path": "docs/tutorials/arrays.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#3d6175426079",
+      "path": "docs/tutorials/arrays.md",
+      "line": 92,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#aaf32306e21a",
+      "path": "docs/tutorials/arrays.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/arrays.md#343a8f7d5c77",
+      "path": "docs/tutorials/arrays.md",
+      "line": 125,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/audio-basics.md#44d280a2e501",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/audio-basics.md#da651b9b4526",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 24,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/audio-basics.md#4746267f72d1",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/audio-basics.md#b1fb8fed352b",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 58,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/audio-basics.md#a9d05c0012cf",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/audio-basics.md#6aec7215176f",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#3a7eb8a951ba",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#ff49023cd703",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 29,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#32f74a382853",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#e9c580aeb54d",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 69,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#85415aef7fb9",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#b0acfb61f132",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 114,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/autodiff-basics.md#4ce3e5597ca6",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 134,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#c172a194519f",
+      "path": "docs/tutorials/beginner.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#8e83f23fd588",
+      "path": "docs/tutorials/beginner.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#70de54f6a3aa",
+      "path": "docs/tutorials/beginner.md",
+      "line": 57,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#941c538dd5b5",
+      "path": "docs/tutorials/beginner.md",
+      "line": 90,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#8d0283332c1b",
+      "path": "docs/tutorials/beginner.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#50a1245c2e88",
+      "path": "docs/tutorials/beginner.md",
+      "line": 135,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#5ec1a1c7af61",
+      "path": "docs/tutorials/beginner.md",
+      "line": 159,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#a32efcb95aca",
+      "path": "docs/tutorials/beginner.md",
+      "line": 189,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#04c995b94edd",
+      "path": "docs/tutorials/beginner.md",
+      "line": 217,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#d01d8b24a2fb",
+      "path": "docs/tutorials/beginner.md",
+      "line": 254,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#8ee653735945",
+      "path": "docs/tutorials/beginner.md",
+      "line": 280,
+      "status": "unverified",
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "call to undeclared function 'sin_f32'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#a95194868d9f",
+      "path": "docs/tutorials/beginner.md",
+      "line": 296,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#118c1cfbdd2f",
+      "path": "docs/tutorials/beginner.md",
+      "line": 308,
+      "status": "ignored",
+      "detail": "mylib is the illustrative module the lesson creates",
+      "reason": "mylib is the illustrative module the lesson creates"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#73fa909facc8",
+      "path": "docs/tutorials/beginner.md",
+      "line": 324,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#7b928f5bbfd6",
+      "path": "docs/tutorials/beginner.md",
+      "line": 350,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#5299d7767b24",
+      "path": "docs/tutorials/beginner.md",
+      "line": 388,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#09af363d2a13",
+      "path": "docs/tutorials/beginner.md",
+      "line": 413,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/beginner.md#99a3272b0d49",
+      "path": "docs/tutorials/beginner.md",
+      "line": 449,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#39601f36de12",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 18,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#1617dce16a0e",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#5af2a39db980",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 84,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#df18742ef298",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#8860868b7725",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 172,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#241987d9d0e9",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 219,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#9a372ded70a7",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 266,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/concurrency.md#1dd0e583e0ab",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#1c4aa8654568",
+      "path": "docs/tutorials/control.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#5f04e70f9d9b",
+      "path": "docs/tutorials/control.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#bd36206bea18",
+      "path": "docs/tutorials/control.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#5355205a681c",
+      "path": "docs/tutorials/control.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#15bc67c4c8ba",
+      "path": "docs/tutorials/control.md",
+      "line": 71,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#b57dc71cc913",
+      "path": "docs/tutorials/control.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/control.md#110da683388f",
+      "path": "docs/tutorials/control.md",
+      "line": 105,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#4fb54a9e088d",
+      "path": "docs/tutorials/domains.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#6a1b18dbdd83",
+      "path": "docs/tutorials/domains.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#f3a90f053a75",
+      "path": "docs/tutorials/domains.md",
+      "line": 67,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#3da05c13223b",
+      "path": "docs/tutorials/domains.md",
+      "line": 96,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#d663c9407e7a",
+      "path": "docs/tutorials/domains.md",
+      "line": 114,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#af6be0c3b9b1",
+      "path": "docs/tutorials/domains.md",
+      "line": 132,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#cbbabf0be4d6",
+      "path": "docs/tutorials/domains.md",
+      "line": 155,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#248f4be9f24f",
+      "path": "docs/tutorials/domains.md",
+      "line": 178,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/domains.md#4bf14177e142",
+      "path": "docs/tutorials/domains.md",
+      "line": 206,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#f81c9ac038ea",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#791a8d89cc5b",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#981db7f021e7",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 86,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#660046d7d1eb",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 101,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#6dadf2945e5e",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#a6e91eb967a1",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 146,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#abf147cd64b9",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 172,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#ebfa4566d723",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 191,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#9e2189c97978",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 223,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "KeyError: 'plant'"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#e8e5cdc858ed",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 237,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#92a36726e401",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 263,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#c5f0357362de",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 284,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#b98eeb1022a2",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 301,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/dynamics.md#82d46174347b",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#c4c0c2281e59",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 12,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#4e9845ab1e0b",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#650cea263a8b",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 45,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#0e1dba26d128",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#89824533c43d",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 80,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#f75c73dd92ca",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#3c864db61e5a",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 121,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#0feec00715aa",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 142,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#55c7641a4802",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 163,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/tutorials/errors.md#b1212f1512cc",
+      "path": "docs/tutorials/errors.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#3dee78a6f309",
+      "path": "docs/tutorials/errors.md",
+      "line": 26,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#414c7398e4d9",
+      "path": "docs/tutorials/errors.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#830bf506b466",
+      "path": "docs/tutorials/errors.md",
+      "line": 75,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#184a42d99c5b",
+      "path": "docs/tutorials/errors.md",
+      "line": 103,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#b6268c619c14",
+      "path": "docs/tutorials/errors.md",
+      "line": 130,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#40d0134da044",
+      "path": "docs/tutorials/errors.md",
+      "line": 176,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/errors.md#047256b7f2b6",
+      "path": "docs/tutorials/errors.md",
+      "line": 196,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#715b72371f51",
+      "path": "docs/tutorials/evolution.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#545c83452d52",
+      "path": "docs/tutorials/evolution.md",
+      "line": 40,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#40e5b235046f",
+      "path": "docs/tutorials/evolution.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#9d16999aee31",
+      "path": "docs/tutorials/evolution.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#50f8b0c18ad5",
+      "path": "docs/tutorials/evolution.md",
+      "line": 94,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#ffef06d146f8",
+      "path": "docs/tutorials/evolution.md",
+      "line": 109,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#aa34163371a8",
+      "path": "docs/tutorials/evolution.md",
+      "line": 132,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#34662875dc21",
+      "path": "docs/tutorials/evolution.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#c4a43661d3ae",
+      "path": "docs/tutorials/evolution.md",
+      "line": 170,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#371f8d1a8634",
+      "path": "docs/tutorials/evolution.md",
+      "line": 196,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#8480e950cde9",
+      "path": "docs/tutorials/evolution.md",
+      "line": 220,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#21f9acdcfe1a",
+      "path": "docs/tutorials/evolution.md",
+      "line": 266,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#6f23f1f0725c",
+      "path": "docs/tutorials/evolution.md",
+      "line": 278,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#113df5275c5f",
+      "path": "docs/tutorials/evolution.md",
+      "line": 299,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/evolution.md#237d8860e8bc",
+      "path": "docs/tutorials/evolution.md",
+      "line": 328,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#300a5cb849ef",
+      "path": "docs/tutorials/functions.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#d100f33e49d4",
+      "path": "docs/tutorials/functions.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#509c0e5c4787",
+      "path": "docs/tutorials/functions.md",
+      "line": 37,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#500296dad3f8",
+      "path": "docs/tutorials/functions.md",
+      "line": 52,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#96ccff76d3f8",
+      "path": "docs/tutorials/functions.md",
+      "line": 73,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#03595b8448f2",
+      "path": "docs/tutorials/functions.md",
+      "line": 84,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#fb336d01bc10",
+      "path": "docs/tutorials/functions.md",
+      "line": 100,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#90c888836866",
+      "path": "docs/tutorials/functions.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/functions.md#2987bcda943f",
+      "path": "docs/tutorials/functions.md",
+      "line": 135,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#f0ceae8171dc",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 31,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#e8e61074cc26",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 46,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#c73b8c9f0cee",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 81,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#cefa15c98d70",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 89,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#c4a41293dda0",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 128,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#97a68e99adfc",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 138,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#81912d74d96c",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 203,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#4e73b7f3e316",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 226,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#c58d8ee293cf",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 242,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#8c32c5f41fec",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 261,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#b45954790fa4",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 278,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/game-ai.md#5a1a48be5011",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 292,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#3b0fa19e6d2f",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 44,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#0c9606ceb47a",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#635ed67144d8",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#a0c47b9d221b",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#2fbd6d4345d8",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 139,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#c60ecdef9cc7",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 181,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#08b76692827f",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 201,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/gfx-basics.md#3bfaf7c728a6",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 245,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#8a0c10805627",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 9,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#3e2a4de1f9a3",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#e016a40dd513",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#1e8aab89820c",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#549ec466919b",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#ee6a4f59d4fd",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 122,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#0734da2f0786",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 154,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#53506f1a5822",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 180,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#fb9988ec94dc",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 200,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#2f44bd43e83d",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 221,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#5dc71d86a9f6",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 245,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#dbbee96b12a1",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 272,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#d21cdc667e8b",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 286,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#555cc987f8ab",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 302,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#08680b9bf57c",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 324,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#d2b292449e21",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 355,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#50e66a0757ce",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 392,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#401c487c17d1",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 419,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#6294f7d20002",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 432,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#c026f8f46e5f",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 450,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#ba7bc8125c8b",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 463,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#73e09bbff579",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 480,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#e031bac3587c",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 490,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/intermediate.md#cbec78de1c29",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 501,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#7ab50f6b5509",
+      "path": "docs/tutorials/memory.md",
+      "line": 8,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#11add047e988",
+      "path": "docs/tutorials/memory.md",
+      "line": 28,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#facc9d82d5d6",
+      "path": "docs/tutorials/memory.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#964e3399bb11",
+      "path": "docs/tutorials/memory.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#4265d1df6739",
+      "path": "docs/tutorials/memory.md",
+      "line": 100,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#ed2922203964",
+      "path": "docs/tutorials/memory.md",
+      "line": 127,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#76985c277896",
+      "path": "docs/tutorials/memory.md",
+      "line": 154,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#f309d1fc38e8",
+      "path": "docs/tutorials/memory.md",
+      "line": 179,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#aaae7b6236c9",
+      "path": "docs/tutorials/memory.md",
+      "line": 202,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#73714e7328b7",
+      "path": "docs/tutorials/memory.md",
+      "line": 240,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#c23d5cda147c",
+      "path": "docs/tutorials/memory.md",
+      "line": 266,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#569e82871965",
+      "path": "docs/tutorials/memory.md",
+      "line": 282,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#ba9e937266e2",
+      "path": "docs/tutorials/memory.md",
+      "line": 300,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#3ecf2779c72f",
+      "path": "docs/tutorials/memory.md",
+      "line": 328,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#8c97f3ed3dc7",
+      "path": "docs/tutorials/memory.md",
+      "line": 360,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#944a219045af",
+      "path": "docs/tutorials/memory.md",
+      "line": 420,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/memory.md#b8bbadbb1970",
+      "path": "docs/tutorials/memory.md",
+      "line": 481,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#02cf9c614b7a",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#3c848638c9be",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 69,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#c6e2cc41fa5b",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 127,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#64772dbb5db2",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 245,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#549c4db8dc6a",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 262,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#b4234c5d9975",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 280,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#02d5408bd370",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 297,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#5d20ad5b0985",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 315,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/ml-on-macbook.md#9c032d8c4432",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 331,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#f2f6c5a3a702",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 15,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#ce7c29620a01",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 36,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#13108a3b96ff",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 52,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#c854afdfa513",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#7cc35e61833d",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#105ab03960b2",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 110,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#ab980ed9a8aa",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 130,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#17833fd6822e",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 149,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#0e7edb21a00f",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 180,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/tutorials/pipelines.md#cc9d2c5eaf84",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 202,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#87a802820a6a",
+      "path": "docs/tutorials/pointers.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#c451a103e596",
+      "path": "docs/tutorials/pointers.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#3e304bfa1b10",
+      "path": "docs/tutorials/pointers.md",
+      "line": 33,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#5ecf700014a5",
+      "path": "docs/tutorials/pointers.md",
+      "line": 50,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#bc1063a056c7",
+      "path": "docs/tutorials/pointers.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#e19b2d4325f6",
+      "path": "docs/tutorials/pointers.md",
+      "line": 80,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#882733788fe8",
+      "path": "docs/tutorials/pointers.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/pointers.md#aa51308108d2",
+      "path": "docs/tutorials/pointers.md",
+      "line": 115,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#9ae33b247885",
+      "path": "docs/tutorials/projects.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#aa388334d34e",
+      "path": "docs/tutorials/projects.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#85c62c3969c7",
+      "path": "docs/tutorials/projects.md",
+      "line": 46,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#6e5e6c693089",
+      "path": "docs/tutorials/projects.md",
+      "line": 59,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#504639df38ea",
+      "path": "docs/tutorials/projects.md",
+      "line": 75,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#c468bfd947d4",
+      "path": "docs/tutorials/projects.md",
+      "line": 93,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/projects.md#22f6aa68e6b1",
+      "path": "docs/tutorials/projects.md",
+      "line": 105,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#19af06cfb106",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#e427420f497b",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#416e067696c0",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#02c0a1a40cae",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#c0df379f217c",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 94,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#a666c5368585",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 114,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#2ffe2b6eff49",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 128,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#9baa368a82f6",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 141,
+      "status": "ignored",
+      "detail": "illegal code shown commented out, so the page does not ship it",
+      "reason": "illegal code shown commented out, so the page does not ship it"
+    },
+    {
+      "key": "docs/tutorials/rt-audio.md#44bad6c7e993",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 155,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#226fbe4da600",
+      "path": "docs/tutorials/shaders.md",
+      "line": 14,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "shader"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#9ce19490cb32",
+      "path": "docs/tutorials/shaders.md",
+      "line": 34,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#f8d62ae0f80c",
+      "path": "docs/tutorials/shaders.md",
+      "line": 50,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#fa5b9342d527",
+      "path": "docs/tutorials/shaders.md",
+      "line": 64,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#eaf8e038cfe8",
+      "path": "docs/tutorials/shaders.md",
+      "line": 86,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#8a57cbc90a63",
+      "path": "docs/tutorials/shaders.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#ee47149c97e5",
+      "path": "docs/tutorials/shaders.md",
+      "line": 127,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/shaders.md#b8035f1c03f1",
+      "path": "docs/tutorials/shaders.md",
+      "line": 142,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#cbaccad75e81",
+      "path": "docs/tutorials/spans.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#507e4333f3a5",
+      "path": "docs/tutorials/spans.md",
+      "line": 40,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#7cb4c648cdeb",
+      "path": "docs/tutorials/spans.md",
+      "line": 57,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#967ebf33dd30",
+      "path": "docs/tutorials/spans.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#03dcb435448f",
+      "path": "docs/tutorials/spans.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#fa5eceead1e3",
+      "path": "docs/tutorials/spans.md",
+      "line": 117,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#10c94795967e",
+      "path": "docs/tutorials/spans.md",
+      "line": 133,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#51ad1dc68195",
+      "path": "docs/tutorials/spans.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/spans.md#15ebb36cf5c6",
+      "path": "docs/tutorials/spans.md",
+      "line": 177,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#d1621b3ee1a5",
+      "path": "docs/tutorials/strings.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#68f4653c23e1",
+      "path": "docs/tutorials/strings.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#e7752d4dbfc0",
+      "path": "docs/tutorials/strings.md",
+      "line": 31,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#b2950fa9dbb5",
+      "path": "docs/tutorials/strings.md",
+      "line": 43,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#8b467c0f0f3b",
+      "path": "docs/tutorials/strings.md",
+      "line": 58,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#03fb49e7d7ca",
+      "path": "docs/tutorials/strings.md",
+      "line": 68,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#9897c73d9b6a",
+      "path": "docs/tutorials/strings.md",
+      "line": 81,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#76952a551838",
+      "path": "docs/tutorials/strings.md",
+      "line": 107,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/strings.md#d12aa43485de",
+      "path": "docs/tutorials/strings.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#b10e62986a3b",
+      "path": "docs/tutorials/structs.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#7ebf097e6db1",
+      "path": "docs/tutorials/structs.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#9626e080bff4",
+      "path": "docs/tutorials/structs.md",
+      "line": 39,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#05246a1a2ee2",
+      "path": "docs/tutorials/structs.md",
+      "line": 54,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#e03606190df8",
+      "path": "docs/tutorials/structs.md",
+      "line": 73,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#1a9a70f8f129",
+      "path": "docs/tutorials/structs.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/structs.md#d5fb9faf122d",
+      "path": "docs/tutorials/structs.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#7fe8b204416d",
+      "path": "docs/tutorials/systems.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#9fc414d8d006",
+      "path": "docs/tutorials/systems.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#4b1ef5a97057",
+      "path": "docs/tutorials/systems.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#61a097b3b988",
+      "path": "docs/tutorials/systems.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#9218264bc89a",
+      "path": "docs/tutorials/systems.md",
+      "line": 124,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#36d9b4c130cd",
+      "path": "docs/tutorials/systems.md",
+      "line": 138,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#c7a992850624",
+      "path": "docs/tutorials/systems.md",
+      "line": 153,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#375c6ffdedd3",
+      "path": "docs/tutorials/systems.md",
+      "line": 172,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/systems.md#421de1762098",
+      "path": "docs/tutorials/systems.md",
+      "line": 186,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/wasm.md#633ea7c28b51",
+      "path": "docs/tutorials/wasm.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/wasm.md#b83f086d9eca",
+      "path": "docs/tutorials/wasm.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/wasm.md#b137c416127e",
+      "path": "docs/tutorials/wasm.md",
+      "line": 60,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/wasm.md#6be5e65feaf5",
+      "path": "docs/tutorials/wasm.md",
+      "line": 79,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/wasm.md#bb8488f99323",
+      "path": "docs/tutorials/wasm.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/wasm.md#28decaa09818",
+      "path": "docs/tutorials/wasm.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/vision.md#8707a3f22d05",
+      "path": "docs/vision.md",
+      "line": 7,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: nested flow member 'angle' in flow 'Pendulum' has type 'Angle', which is not a flow in this file at line 2\n\n     2 |     angle : Angle\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "key": "docs/vision/north-star.md#6056f22dac46",
+      "path": "docs/vision/north-star.md",
+      "line": 503,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/vision/north-star.md#c4c53c48d7c8",
+      "path": "docs/vision/north-star.md",
+      "line": 604,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant : Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "key": "docs/vision/north-star.md#d98d1beb04d2",
+      "path": "docs/vision/north-star.md",
+      "line": 623,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: flow 'Chain' declares no state at line 1\n\n     1 | flow Chain {\n\n  Hint: add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite"
+    },
+    {
+      "key": "docs/vision/north-star.md#6d64bb0fb043",
+      "path": "docs/vision/north-star.md",
+      "line": 639,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "docs/vision/north-star.md#ac99567c9222",
+      "path": "docs/vision/north-star.md",
+      "line": 713,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: represent linear for 'Pendulum': linearization coefficients required (operating point at {'angle': 0.0, 'velocity': 0.0} was given, but automatic Jacobian linearization is not yet implemented); supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 "
+    },
+    {
+      "key": "docs/vision/north-star.md#a18cd6da7185",
+      "path": "docs/vision/north-star.md",
+      "line": 859,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: represent linear for 'Pendulum': linearization coefficients required (operating point at {'angle': 0.0, 'velocity': 0.0} was given, but automatic Jacobian linearization is not yet implemented); supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 "
+    },
+    {
+      "key": "docs/vision/north-star.md#19a4acb08cf1",
+      "path": "docs/vision/north-star.md",
+      "line": 896,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/vision/north-star.md#256aaa2b4dfc",
+      "path": "docs/vision/north-star.md",
+      "line": 922,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Motor' body at line 12, column 25\n\n    12 |     param damping : f64 > 0.0 = 0.1\n       |                         ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'"
+    },
+    {
+      "key": "docs/wiki-home.md#c7bdbf1d0781",
+      "path": "docs/wiki-home.md",
+      "line": 120,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "key": "docs/wiki-home.md#7dbb128f9b73",
+      "path": "docs/wiki-home.md",
+      "line": 138,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/wiki-home.md#4c20c0278687",
+      "path": "docs/wiki-home.md",
+      "line": 156,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "examples/circuits/README.md#4d3276bd1eee",
+      "path": "examples/circuits/README.md",
+      "line": 30,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "examples/demos/vulkan_scene/flow_style.md#4ee5b1302578",
+      "path": "examples/demos/vulkan_scene/flow_style.md",
+      "line": 10,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.LBRACE"
+    },
+    {
+      "key": "examples/demos/vulkan_scene/flow_style.md#92f564171243",
+      "path": "examples/demos/vulkan_scene/flow_style.md",
+      "line": 92,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "examples/morphogenesis/README.md#225e1f842d6f",
+      "path": "examples/morphogenesis/README.md",
+      "line": 23,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'GrayScottCell' body at line 5, column 5\n\n     5 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events "
+    },
+    {
+      "key": "examples/neuro/README.md#e119e216f0e7",
+      "path": "examples/neuro/README.md",
+      "line": 23,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'HH' body at line 8, column 5\n\n     8 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x re"
+    },
+    {
+      "key": "examples/neuro/README.md#1c04fa72daaf",
+      "path": "examples/neuro/README.md",
+      "line": 46,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#230210e0a7e0",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#3b357211aee9",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 33,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#2ca0f9c091b5",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 47,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "No matching overload for function 'pattern_4' with arguments (array<i32, 4>, Clock, i32, (i32) -> f32)"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#e2d6ad218513",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 61,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "No matching overload for function 'pattern_4' with arguments (array<i32, 4>, Clock, i64, (i32) -> f32)"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#6086078e52bc",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 148,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "No matching overload for function 'euclidean_pattern' with arguments (i32, i32, Clock, i32, () -> f32)"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#00726b1ce382",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 163,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined variable 'clock'"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#20210a613179",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 180,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined variable 'clock'"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#3e6304cef452",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 200,
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Undefined variable 'clock'"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#bcc939450a73",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 239,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#02042f4462a3",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 262,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#780b0064b9b8",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 319,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#4ab302d9366a",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 328,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#0db6d57fa116",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 337,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "key": "registry/packages/flowlm/README.md#420b05da2a58",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 80,
+      "status": "ignored",
+      "detail": "flowlm's own README; the package is not vendored into this repo",
+      "reason": "flowlm's own README; the package is not vendored into this repo"
+    },
+    {
+      "key": "registry/packages/flowlm/README.md#a6cca3601607",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 88,
+      "status": "ignored",
+      "detail": "flowlm's own README; the package is not vendored into this repo",
+      "reason": "flowlm's own README; the package is not vendored into this repo"
+    },
+    {
+      "key": "registry/packages/flowlm/README.md#f36a8765c44d",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "registry/packages/flowlm/README.md#f659347c9e86",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 197,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    }
+  ]
+}

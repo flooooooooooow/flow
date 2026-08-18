@@ -3,6 +3,13 @@
 Honest status of shipping Flow programs to the browser. This is **not** a
 self-hosted Flow-in-WASM compiler.
 
+There are two routes to a `.wasm`, and they are for different jobs. `./flow
+wasm` goes through Emscripten and gives you a whole page: libc, a filesystem, a
+canvas, JS glue. `python -m flow.wasm_compiler` goes through MLIR and LLVM
+straight to a freestanding module with no libc and no glue, for embedding in a
+host that already has its own runtime. The Emscripten route is the rest of this
+page; the direct one is [its own section](#direct-wasm32-no-emscripten).
+
 ## The gallery
 
 118 examples are compiled and playable at
@@ -51,6 +58,7 @@ limit.
 | Capability | State | Route |
 |---|---|---|
 | Pure computation | **Runs today** | Arithmetic, arrays, structs, strings, printf. Flow → C → wasm32 with nothing else linked in. |
+| Freestanding wasm32 modules | **Runs today** | Flow → MLIR → LLVM IR → `clang --target=wasm32-unknown-unknown`. No Emscripten, no libc. See below. |
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` blits the framebuffer to a canvas; DOM key events map to the macOS keycodes the programs already use. |
 | Threads and channels | In progress | Emscripten `-pthread` over SharedArrayBuffer and Web Workers. Needs cross-origin isolation, obtainable on GitHub Pages with a service-worker shim. |
 | Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js`, `PROXY_POSIX_SOCKETS`). |
@@ -131,8 +139,101 @@ See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`, an
 `wasm/flow_wasm.py` / `wasm/wasm_examples/` — those are the browser gallery;
 `build_wasm_hello.sh` is the documented minimal path for issue #121.
 
+## Direct wasm32 (no Emscripten)
+
+`src/flow/wasm_compiler.py` compiles a Flow file to a freestanding wasm32
+module without going near the C backend or Emscripten:
+
+```text
+Flow source  →  MLIR  →  LLVM IR (wasm32)  →  clang --target=wasm32-unknown-unknown  →  .wasm
+```
+
+```bash
+PYTHONPATH=src python3 -m flow.wasm_compiler tests/fixtures/wasm/main_42.flow \
+  -o build/main_42.wasm --export answer -O O2
+```
+
+| Flag | Meaning |
+|------|---------|
+| `-o`, `--output` | Output `.wasm` path. Required. |
+| `--export NAME` | Export one LLVM symbol. Repeat for several. Omit and the module is built with `--export-all`. |
+| `-O`, `--opt-level` | `O0`, `O1`, `O2`, `O3`, `Os`, `Oz`. Defaults to `O2`. |
+
+Names passed to `--export` are checked against the symbols actually defined in
+the generated LLVM IR before clang runs, so a typo fails with the list of
+symbols that do exist rather than with a linker error.
+
+The module is linked `-nostdlib --no-entry --allow-undefined --export-memory`.
+Linear memory is exported, so a host reads and writes arguments through it:
+
+```js
+const {memory, sum_pair} = instance.exports;
+const values = new Float32Array(memory.buffer, 4096, 2);
+values[0] = 1.5;
+values[1] = 2.25;
+sum_pair(4096);   // 3.75
+```
+
+### The host supplies the allocator
+
+`--allow-undefined` means anything Flow needs but the module does not define
+becomes an import the host must provide. Today that is `env.malloc`, pulled in
+by any Flow code that allocates:
+
+```flow
+export function alloc_sum() -> f32 {
+    let mut values: array<f32> = array<f32>(2)
+    values[0] = 1.5
+    values[1] = 2.25
+    return values[0] + values[1]
+}
+```
+
+`runtime/wasm/flow_runtime.mjs` is a bump allocator that grows linear memory on
+demand and is enough to run modules like that one:
+
+```js
+import {createFlowWasmRuntime} from './runtime/wasm/flow_runtime.mjs';
+
+const runtime = createFlowWasmRuntime();
+const instance = await WebAssembly.instantiate(module, runtime.imports);
+runtime.attach(instance);        // must come before the first allocating call
+instance.exports.alloc_sum();    // 3.75
+```
+
+It never frees. It is a test runtime, not a general-purpose heap, and a real
+host should import its own `malloc`.
+
+### Toolchain
+
+The clang on `PATH` must have the WebAssembly target compiled in. Apple's
+system clang does not, and fails with `No available targets are compatible with
+triple "wasm32-unknown-unknown"`. Point `FLOW_WASM_CLANG` or `LLVM_PATH` at an
+LLVM build that does, or install one (`brew install llvm`).
+
+The MLIR step emits the triple `wasm32-unknown-emscripten` with an ILP32
+datalayout; the linker step overrides it to `wasm32-unknown-unknown`, which is
+where the `-Woverride-module` warning in the output comes from.
+
+### What CI verifies
+
+`.github/workflows/wasm32.yml` runs on every change to the compiler, the
+runtime shim, or the fixtures, and each step executes the module rather than
+just building it:
+
+| Fixture | Checked |
+|---|---|
+| `main_42.flow` | Node instantiates the module and `answer()` returns 42 |
+| `sum_pair.flow` | Two `f32` values written into exported linear memory sum to 3.75 |
+| `alloc_sum.flow` | Imports exactly `env.malloc`; 32 calls each return 3.75 and linear memory grows |
+| `alloc_sum.flow` | `tests/wasm/compare_native_wasm.py` compares the wasm result against the same function compiled natively through MLIR |
+
+Unit coverage for the export validation and the clang command lives in
+`tests/unit/test_wasm_compiler.py`.
+
 ## What works today
 
+- ✅ Direct wasm32 modules with no Emscripten and no libc, executed under Node in CI (`python -m flow.wasm_compiler`)
 - ✅ C backend output is valid input for `emcc` for small programs (`main` returning `i32`, stdio)
 - ✅ Checked-in harness + optional script for a hello artifact (`wasm/hello_harness.c`)
 - ✅ Playground **Run (native local)** — loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))
@@ -146,12 +247,14 @@ See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`, an
 | Goal | Why deferred |
 |------|----------------|
 | Full clang-in-browser execution | Needs WASI toolchain in-tab; Pyodide covers Flow→C only |
-| Direct WASM emission (skip C) | No IR→WASM backend planned near-term |
+| libc under direct wasm32 | The freestanding target links nothing; `printf` and friends need a WASI shim or Emscripten |
 
-Roadmap row: [ROADMAP.md](../../ROADMAP.md) — **WASM target** is partial ✅ via C→Emscripten + playground WASM/Pyodide.
+Roadmap row: [ROADMAP.md](../../ROADMAP.md) — **WASM target** is partial ✅ via C→Emscripten, direct MLIR→LLVM→wasm32, and playground WASM/Pyodide.
 
 ## Related docs
 
+- Direct wasm32 CI — [`.github/workflows/wasm32.yml`](https://github.com/flooooooooooow/flow/blob/main/.github/workflows/wasm32.yml)
+- Threads, GPU, sockets, files, CPython in the browser — [wasm-crossings.md](wasm-crossings.md)
 - Language Spec §9.3 WebAssembly — [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 - Wiki Phase 3 playground row — [wiki-roadmap.md](../wiki-roadmap.md)
 - Playground UI — [playground/index.html](../playground/index.html)

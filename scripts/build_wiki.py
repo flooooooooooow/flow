@@ -9,6 +9,11 @@ import shutil
 from datetime import date
 from pathlib import Path
 
+from functools import lru_cache
+
+import wiki_nav
+from docs_blocks import tutorial_lessons
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 SITE = ROOT / "site"
@@ -140,22 +145,22 @@ def proof_group_label(group: str, rows: list[dict]) -> str:
     return f"{base} ({len(rows)})"
 
 
+@lru_cache(maxsize=1)
+def _nav_manifest() -> dict:
+    return wiki_nav.load()
+
+
 def page_category(wiki_path: str) -> str:
+    """Pagefind category for a page, taken from where the sidebar files it.
+
+    This was a separate prefix-match, so a page could sit under Language in the
+    sidebar and be reported as a guide in search. Deriving it from the manifest
+    means the two cannot disagree.
+    """
     p = wiki_path.replace("\\", "/")
-    if p.startswith("tutorials/"):
-        return "tutorial"
     if "flow-verify" in p or p.endswith(".proof.md"):
         return "proof"
-    if p.startswith("library/") or p.startswith("language/") or p in {
-        "LANGUAGE_SPEC.md",
-        "grammar.ebnf",
-    }:
-        return "reference"
-    if p in {"DEVELOPMENT.md", "python-target.md", "NEXT.md"} or p.startswith("project/"):
-        return "tooling" if "CHANGELOG" not in p and "CONTRIBUTING" not in p else "guide"
-    if p.startswith("third-party/"):
-        return "proof"
-    return "guide"
+    return wiki_nav.category_for(p, _nav_manifest())
 
 
 def sync_proofs() -> tuple[list[dict], list[dict]]:
@@ -544,41 +549,24 @@ def build_tutorial_exercises() -> None:
         "projects": 28,
     }
 
-    for md_path in sorted((DOCS / "tutorials").glob("*.md")):
-        if md_path.name == "README.md":
-            continue
-        text = md_path.read_text(encoding="utf-8", errors="replace")
-        track = md_path.stem
-        exercise = 0
-
-        for block in re.finditer(
-            r"```(?:flow(?:\s+(?:run|interactive))?)\n(.*?)```",
-            text,
-            re.DOTALL,
-        ):
-            code = block.group(1).strip()
-            if "function main" not in code:
-                continue
-
-            # Find nearest preceding heading
-            pos = block.start()
-            before = text[:pos]
-            sec_m = list(re.finditer(r"^## (.+)$", before, re.MULTILINE))
-            sub_m = list(re.finditer(r"^### (.+)$", before, re.MULTILINE))
-            section = sec_m[-1].group(1) if sec_m else track.title()
-            part_title = sub_m[-1].group(1) if sub_m else "Exercise"
-            exercise += 1
-
-            lessons.append(
-                {
-                    "id": f"{track}-{exercise}",
-                    "track": track,
-                    "title": part_title,
-                    "section": section,
-                    "description": f"{section} — edit and run in the browser.",
-                    "code": code,
-                }
-            )
+    # Extraction lives in scripts/docs_blocks.py so this and
+    # verify_browser_interp.py cannot drift apart again. They previously held
+    # two copies of the same regex, and only this one derived a section.
+    counts: dict[str, int] = {}
+    for block in tutorial_lessons():
+        track = Path(block.path).stem
+        counts[track] = counts.get(track, 0) + 1
+        section = block.section or track.title()
+        lessons.append(
+            {
+                "id": f"{track}-{counts[track]}",
+                "track": track,
+                "title": block.title or "Exercise",
+                "section": section,
+                "description": f"{section} — edit and run in the browser.",
+                "code": block.code,
+            }
+        )
 
     def lesson_key(lesson: dict) -> tuple:
         m = re.search(r"-(\d+)$", lesson["id"])
@@ -593,6 +581,13 @@ def build_tutorial_exercises() -> None:
 
 
 def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict]) -> None:
+    """Emit wiki-nav.json from docs/nav.json.
+
+    The sidebar used to be a 280-line dict literal right here, and the same
+    information was repeated in page_category, write_llms_txt and mkdocs.yml.
+    They drifted, and one entry pointed at a file that does not exist. The
+    manifest is now the single source and is validated on every build.
+    """
     other_groups = []
     for group, rows in group_examples(ex_rows).items():
         if group.startswith("euclid/"):
@@ -604,283 +599,21 @@ def write_nav(lib_rows: list[dict], ex_rows: list[dict], euclid_nav: list[dict])
             }
         )
 
+    manifest = wiki_nav.load()
+    problems = wiki_nav.validate(manifest)
+    if problems:
+        detail = "\n  ".join(problems[:20])
+        more = f"\n  ... and {len(problems) - 20} more" if len(problems) > 20 else ""
+        raise SystemExit(
+            f"docs/nav.json does not match docs/:\n  {detail}{more}"
+        )
+
     nav = {
-        "default": "wiki-home.md",
-        "tabs": [
-            {"id": "start", "label": "Start"},
-            {"id": "gallery", "label": "Gallery"},
-            {"id": "book", "label": "Book"},
-            {"id": "tutorials", "label": "Tutorials"},
-            {"id": "lang", "label": "Language"},
-            {"id": "stdlib", "label": "Library"},
-            {"id": "tooling", "label": "Tooling"},
-            {"id": "project", "label": "Project"},
-            {"id": "thirdparty", "label": "Proofs"},
-        ],
-        "sections": [
-            {
-                "id": "start",
-                "tab": "start",
-                "title": "Start here",
-                "items": [
-                    {"label": "Home", "path": "wiki-home.md"},
-                    {"label": "Start Here (Beginners)", "path": "start-here.md"},
-                    {"label": "Quick Start", "path": "getting-started.md"},
-                    {"label": "Vision", "path": "vision.md"},
-                    {"label": "Comparison", "path": "comparison.md"},
-                    {"label": "The Flow Book", "path": "book/README.md"},
-                    {"label": "Interactive Tutorials", "path": "tutorials/index.html", "external": True},
-                    {"label": "Playground", "path": "playground/index.html", "external": True},
-                ],
-            },
-            {
-                "id": "start-galleries",
-                "tab": "start",
-                "title": "Popular galleries",
-                "items": [
-                    {"label": "All Galleries", "path": "demos/overview.md"},
-                    {"label": "Games", "path": "demos/games.md"},
-                    {"label": "Morphogenesis", "path": "demos/morphogenesis.md"},
-                    {"label": "Evolution Suite", "path": "demos/evolution.md"},
-                    {"label": "Live WASM demos", "path": "wasm/index.html", "external": True},
-                ],
-            },
-            {
-                "id": "gallery",
-                "tab": "gallery",
-                "title": "Galleries",
-                "items": [
-                    {"label": "All Galleries", "path": "demos/overview.md"},
-                    {"label": "Games", "path": "demos/games.md"},
-                    {"label": "Morphogenesis", "path": "demos/morphogenesis.md"},
-                    {"label": "Neurons", "path": "demos/neuro.md"},
-                    {"label": "Evolutionary Biology", "path": "demos/evoleco.md"},
-                    {"label": "Planets", "path": "demos/planet.md"},
-                    {"label": "Procedural Generation", "path": "demos/procgen.md"},
-                    {"label": "Numerical Methods", "path": "demos/numerical.md"},
-                    {"label": "Evolution Suite", "path": "demos/evolution.md"},
-                    {"label": "WebAssembly", "path": "demos/wasm.md"},
-                    {"label": "Live WASM demos", "path": "wasm/index.html", "external": True},
-                ],
-            },
-            {
-                "id": "book",
-                "tab": "book",
-                "title": "The Flow Book",
-                "items": [
-                    {"label": "Introduction", "path": "book/README.md"},
-                    {"label": "1 · A Complete Program", "path": "book/01-a-complete-program.md"},
-                    {"label": "2 · Values and Types", "path": "book/02-values-and-types.md"},
-                    {"label": "3 · Decisions and Repetition", "path": "book/03-decisions-and-repetition.md"},
-                    {"label": "4 · Functions", "path": "book/04-functions.md"},
-                    {"label": "5 · Records and Arrays", "path": "book/05-records-and-arrays.md"},
-                    {"label": "6 · Pipelines and Results", "path": "book/06-pipelines-and-results.md"},
-                    {"label": "7 · Updates to Flows", "path": "book/07-from-updates-to-flows.md"},
-                    {"label": "8 · Types and Declarations", "path": "book/08-types-and-declarations.md"},
-                    {"label": "9 · Expressions and Matching", "path": "book/09-expressions-and-matching.md"},
-                    {"label": "10 · Memory and Lifetimes", "path": "book/10-memory-and-lifetimes.md"},
-                    {"label": "11 · Modules and Packages", "path": "book/11-modules-packages-and-interop.md"},
-                    {"label": "12 · Effects and Concurrency", "path": "book/12-effects-and-concurrency.md"},
-                    {"label": "13 · Evolution and Dynamics", "path": "book/13-evolution-and-dynamics.md"},
-                    {"label": "14 · Numerics, Autodiff, and ML", "path": "book/14-numerics-autodiff-and-ml.md"},
-                    {"label": "15 · Media, GPU, and Audio", "path": "book/15-media-gpu-and-audio.md"},
-                    {"label": "16 · Targets and Distribution", "path": "book/16-targets-and-distribution.md"},
-                    {"label": "17 · Engineering and Verification", "path": "book/17-engineering-and-verification.md"},
-                    {"label": "18 · Complete Instrument", "path": "book/18-a-complete-instrument.md"},
-                    {"label": "19 · Coding Challenges", "path": "book/19-coding-challenge-series.md"},
-                ],
-            },
-            {
-                "id": "book-appendix",
-                "tab": "book",
-                "title": "Appendices",
-                "items": [
-                    {"label": "Language Card", "path": "book/appendix-a-language-card.md"},
-                    {"label": "Feature Coverage", "path": "book/appendix-b-feature-coverage.md"},
-                    {"label": "Command Reference", "path": "book/appendix-c-command-reference.md"},
-                    {"label": "Standard Library Map", "path": "book/appendix-d-standard-library-map.md"},
-                ],
-            },
-            {
-                "id": "tutorials-core",
-                "tab": "tutorials",
-                "title": "Core language",
-                "items": [
-                    {"label": "Interactive App", "path": "tutorials/index.html", "external": True},
-                    {"label": "Beginner", "path": "tutorials/beginner.md"},
-                    {"label": "Control Flow", "path": "tutorials/control.md"},
-                    {"label": "Functions", "path": "tutorials/functions.md"},
-                    {"label": "Pipelines", "path": "tutorials/pipelines.md"},
-                    {"label": "Structs", "path": "tutorials/structs.md"},
-                    {"label": "Arrays", "path": "tutorials/arrays.md"},
-                    {"label": "Spans", "path": "tutorials/spans.md"},
-                    {"label": "Strings", "path": "tutorials/strings.md"},
-                    {"label": "Errors", "path": "tutorials/errors.md"},
-                    {"label": "Intermediate", "path": "tutorials/intermediate.md"},
-                    {"label": "Mini Projects", "path": "tutorials/projects.md"},
-                ],
-            },
-            {
-                "id": "tutorials-systems",
-                "tab": "tutorials",
-                "title": "Systems",
-                "items": [
-                    {"label": "Pointers", "path": "tutorials/pointers.md"},
-                    {"label": "Manual Memory", "path": "tutorials/memory.md"},
-                    {"label": "Concurrency", "path": "tutorials/concurrency.md"},
-                    {"label": "Algorithms", "path": "tutorials/algorithms.md"},
-                    {"label": "Systems", "path": "tutorials/systems.md"},
-                    {"label": "Audio Basics", "path": "tutorials/audio-basics.md"},
-                    {"label": "RT Audio", "path": "tutorials/rt-audio.md"},
-                    {"label": "WASM", "path": "tutorials/wasm.md"},
-                    {"label": "Advanced", "path": "tutorials/advanced.md"},
-                ],
-            },
-            {
-                "id": "tutorials-vision",
-                "tab": "tutorials",
-                "title": "Vision features",
-                "items": [
-                    {"label": "Effects Basics", "path": "tutorials/effects-basics.md"},
-                    {"label": "Autodiff Basics", "path": "tutorials/autodiff-basics.md"},
-                    {"label": "Evolution", "path": "tutorials/evolution.md"},
-                    {"label": "Dynamics", "path": "tutorials/dynamics.md"},
-                    {"label": "Graphics", "path": "tutorials/gfx-basics.md"},
-                    {"label": "Shaders", "path": "tutorials/shaders.md"},
-                ],
-            },
-            {
-                "id": "tutorials-applied",
-                "tab": "tutorials",
-                "title": "Applied",
-                "items": [
-                    {"label": "ML on MacBook", "path": "tutorials/ml-on-macbook.md"},
-                    {"label": "Game AI", "path": "tutorials/game-ai.md"},
-                    {"label": "Domains", "path": "tutorials/domains.md"},
-                ],
-            },
-            {
-                "id": "lang-ref",
-                "tab": "lang",
-                "title": "Language reference",
-                "items": [
-                    {"label": "Spec Index", "path": "language/spec-index.md"},
-                    {"label": "Language Spec", "path": "LANGUAGE_SPEC.md"},
-                    {"label": "Overview", "path": "language/overview.md"},
-                    {"label": "Syntax", "path": "language/syntax.md"},
-                    {"label": "Types", "path": "language/types.md"},
-                    {"label": "Variables", "path": "language/variables.md"},
-                    {"label": "Functions", "path": "language/functions.md"},
-                    {"label": "Modules", "path": "language/modules.md"},
-                    {"label": "Grammar", "path": "language/grammar.md"},
-                    {"label": "Formal EBNF", "path": "grammar.ebnf"},
-                    {"label": "Effects Showcase", "path": "effects-showcase.md"},
-                    {"label": "Async via Effects", "path": "language/async-effects.md"},
-                    {"label": "Graphics", "path": "language/graphics.md"},
-                    {"label": "WebAssembly", "path": "language/wasm.md"},
-                    {"label": "Spans", "path": "language/spans.md"},
-                    {"label": "Design Notes", "path": "language/language_design.md"},
-                ],
-            },
-            {
-                "id": "stdlib",
-                "tab": "stdlib",
-                "title": "Standard library",
-                "items": [
-                    {"label": "API Reference", "path": "library/stdlib-reference.md"},
-                    {"label": "API (generated)", "path": "library/stdlib-api.md"},
-                    {"label": "Core", "path": "library/core.md"},
-                    {"label": "Autodiff", "path": "library/autodiff.md"},
-                    {"label": "Autodiff Guide", "path": "library/autodiff-guide.md"},
-                    {"label": "Audio DSP", "path": "library/audio.md"},
-                    {"label": "RT Safety", "path": "library/rt-safety.md"},
-                    {"label": "Memory", "path": "library/memory.md"},
-                ],
-            },
-            {
-                "id": "tooling",
-                "tab": "tooling",
-                "title": "Tooling & targets",
-                "items": [
-                    {"label": "Development / CLI", "path": "DEVELOPMENT.md"},
-                    {"label": "Working with AI on Flow", "path": "AI_FLOW_HANDBOOK.md"},
-                    {"label": "Python Target", "path": "python-target.md"},
-                    {"label": "What's Next", "path": "NEXT.md"},
-                ],
-            },
-            {
-                "id": "project",
-                "tab": "project",
-                "title": "Project",
-                "items": [
-                    {"label": "Changelog", "path": "project/CHANGELOG.md"},
-                    {"label": "Release History", "path": "releases.md"},
-                    {"label": "Benchmarks", "path": "project/benchmark-results.md"},
-                    {"label": "Contributing", "path": "project/CONTRIBUTING.md"},
-                    {"label": "Release Process", "path": "project/RELEASING.md"},
-                    {"label": "Structure", "path": "project/PROJECT_STRUCTURE.md"},
-                    {"label": "Package Registry", "path": "project/package-registry.md"},
-                    {"label": "Self-Hosting", "path": "project/self-hosting.md"},
-                ],
-            },
-            {
-                "id": "wiki-meta",
-                "tab": "project",
-                "title": "Docs meta",
-                "items": [
-                    {"label": "Wiki Strategy", "path": "wiki-strategy.md"},
-                    {"label": "Wiki Roadmap", "path": "wiki-roadmap.md"},
-                    {"label": "Language Roadmap", "path": "project/language-roadmap.md"},
-                ],
-            },
-            {
-                "id": "research",
-                "tab": "project",
-                "title": "Research",
-                "items": [
-                    {"label": "Research Paper", "path": "research/FLOW_RESEARCH_PAPER.md"},
-                    {"label": "Turing Proof", "path": "research/turing_proof.md"},
-                ],
-            },
-            {
-                "id": "thirdparty",
-                "tab": "thirdparty",
-                "title": "flow-verify (optional)",
-                "items": [
-                    {"label": "Overview", "path": "third-party/README.md"},
-                    {"label": "flow-verify", "path": "third-party/flow-verify.md"},
-                    {"label": "Proof Catalog", "path": "third-party/flow-verify-catalog.md"},
-                    {"label": "Proof Dependency Graph", "path": "third-party/proof-graph.md"},
-                    {"label": "Parser Status", "path": "third-party/flow-verify-parser-status.md"},
-                ],
-            },
-            {
-                "id": "verify-docs",
-                "tab": "thirdparty",
-                "title": "Verification design",
-                "items": [
-                    {"label": "Verification Spec", "path": "language/verification.md"},
-                    {"label": "Claim Paths", "path": "language/epistemology.md"},
-                    {"label": "Coordinates", "path": "language/claim-coordinates.md"},
-                    {"label": "Proof Book", "path": "language/math-proof-book.md"},
-                    {"label": "Mathlib Roadmap", "path": "language/mathlib-equivalence-toc.md"},
-                ],
-            },
-            {
-                "id": "proofs-euclid",
-                "tab": "thirdparty",
-                "title": "Euclid corpus",
-                "collapsed": True,
-                "items": euclid_nav,
-            },
-            {
-                "id": "proofs-corpus",
-                "tab": "thirdparty",
-                "title": "Proof corpus",
-                "collapsed": True,
-                "items": other_groups,
-            },
-        ],
+        "default": manifest["default"],
+        "tabs": manifest["tabs"],
+        "sections": wiki_nav.sections_for_build(
+            manifest, {"euclid": euclid_nav, "proofs": other_groups}
+        ),
     }
 
     (OUT / "wiki-nav.json").write_text(json.dumps(nav, indent=2) + "\n", encoding="utf-8")
@@ -976,47 +709,38 @@ def run_pagefind() -> None:
 
 
 def write_llms_txt() -> None:
-    """Machine-readable doc index (Mojo-style llms.txt)."""
+    """Machine-readable doc index, generated from docs/nav.json.
+
+    This was a third hand-written list of about 25 links, unvalidated by either
+    link checker because llms.txt is not markdown. Generating it from the
+    manifest means it covers everything and cannot point at a page that moved.
+    """
+    manifest = _nav_manifest()
+    labels = {tab["id"]: tab["label"] for tab in manifest["tabs"]}
     lines = [
         "# Flow Programming Language Documentation",
         "",
         "> https://abhishek-shivakumar.com/transpile/",
         "",
-        "## Start",
-        "- [Home](wiki-home.md): Language overview and quick links",
-        "- [Quick Start](getting-started.md): Install and first program",
-        "- [Comparison](comparison.md): Flow vs C, Rust, Zig, Mojo",
-        "- [Interactive Tutorials](tutorials/index.html): Browser lessons",
-        "",
-        "## Language Reference",
-        "- [Spec Index](language/spec-index.md)",
-        "- [Language Spec](LANGUAGE_SPEC.md)",
-        "- [Grammar](language/grammar.md)",
-        "- [Types](language/types.md)",
-        "- [Functions](language/functions.md)",
-        "- [Modules](language/modules.md)",
-        "",
-        "## Standard Library",
-        "- [API Reference](library/stdlib-reference.md)",
-        "- [Audio DSP](library/audio.md)",
-        "- [RT Safety](library/rt-safety.md)",
-        "- [Memory](library/memory.md)",
-        "",
-        "## Tutorials",
-        "- [Beginner](tutorials/beginner.md)",
-        "- [Intermediate](tutorials/intermediate.md)",
-        "- [Advanced](tutorials/advanced.md)",
-        "",
-        "## Third-Party",
-        "- [flow-verify](third-party/flow-verify.md): Formal math library (optional)",
-        "- [Parser Status](third-party/flow-verify-parser-status.md): verify corpus vs. shipped parser",
-        "- [Proof Catalog](third-party/flow-verify-catalog.md)",
-        "",
-        "## Tooling",
-        "- [Development](DEVELOPMENT.md)",
-        "",
-        "Append `.md` to any doc path for raw markdown, e.g. `getting-started.md`.",
     ]
+    current_tab = None
+    for section in manifest["sections"]:
+        items = section.get("items")
+        if not items:
+            continue  # the proof corpus is generated and far too large here
+        if section["tab"] != current_tab:
+            current_tab = section["tab"]
+            lines += [f"## {labels.get(current_tab, current_tab)}", ""]
+        lines.append(f"### {section['title']}")
+        for item in items:
+            path = item.get("path")
+            if not path:
+                continue
+            lines.append(f"- [{item['label']}]({path})")
+        lines.append("")
+    lines.append(
+        "Append `.md` to any doc path for raw markdown, e.g. `getting-started.md`."
+    )
     (OUT / "llms.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
