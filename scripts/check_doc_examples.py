@@ -57,6 +57,14 @@ from docs_blocks import Block, InfoStringError, collect  # noqa: E402
 
 LEDGER = ROOT / "docs" / "generated" / "example-status.json"
 
+
+def _rel(path: Path) -> str:
+    """Repo-relative when it can be, absolute otherwise (tests point elsewhere)."""
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
 # Harness rungs, loosest last. `standalone` means the block is already a
 # complete compilation unit.
 #
@@ -393,8 +401,12 @@ def write_ledger(results: list[Result]) -> None:
     resolve it blindly. A content key changes exactly when the code changes,
     which is also the moment a block genuinely needs re-verifying.
     """
-    rows = [r.row() for r in results]
-    rows.sort(key=lambda r: (r["path"], r["line"]))
+    # Identical text repeated in one page shares a key and one row; the two
+    # copies always verify the same way, so a second row would say nothing.
+    by_key: dict[str, dict] = {}
+    for res in results:
+        by_key.setdefault(res.block.key, res.row())
+    rows = sorted(by_key.values(), key=lambda r: (r["path"], r["line"]))
     payload = {
         "generated": date.today().isoformat(),
         "totals": dict(Counter(r.status for r in results)),
@@ -402,7 +414,65 @@ def write_ledger(results: list[Result]) -> None:
     }
     LEDGER.parent.mkdir(parents=True, exist_ok=True)
     LEDGER.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"\nledger written to {LEDGER.relative_to(ROOT)}")
+    print(f"\nledger written to {_rel(LEDGER)}")
+
+
+def check_ledger(results: list[Result]) -> int:
+    """Fail on regressions only; report progress without demanding a rewrite.
+
+    The ledger records the examples that do not compile today. A block is
+    allowed to be unverified only if the ledger already says so, keyed by the
+    hash of its own text. Edit the block and the key changes, so the exemption
+    evaporates and the new text has to compile. That is the ratchet: existing
+    debt is grandfathered, new and edited content is not.
+
+    Debt that has since been paid off is reported rather than failed. Making an
+    unrelated pull request fail because someone else fixed a doc example would
+    teach people to regenerate the file without reading it.
+    """
+    if not LEDGER.exists():
+        print(f"no ledger at {_rel(LEDGER)}; run --write-ledger", file=sys.stderr)
+        return 1
+    ledger = json.loads(LEDGER.read_text())
+    known = {
+        row["key"]: row["status"]
+        for row in ledger["blocks"]
+    }
+
+    regressions: list[Result] = []
+    resolved: list[Result] = []
+    for res in results:
+        was = known.get(res.block.key)
+        if res.status == "unverified":
+            if was != "unverified":
+                regressions.append(res)
+        elif was == "unverified":
+            resolved.append(res)
+
+    debt = sum(1 for r in results if r.status == "unverified")
+    print(f"\nexamples: {len(results)}   unverified: {debt}"
+          f"   ledger: {sum(1 for v in known.values() if v == 'unverified')}")
+
+    if resolved:
+        print(f"\n{len(resolved)} example(s) now compile that the ledger lists as "
+              f"failing. Refresh it with:")
+        print("    python3 scripts/check_doc_examples.py --write-ledger")
+
+    if not regressions:
+        print("\nno new unverified examples")
+        return 0
+
+    print(f"\n{len(regressions)} example(s) do not compile and are not in the "
+          f"ledger:")
+    for res in regressions:
+        head = (res.detail or "").splitlines()
+        print(f"    {res.block.ident} [{res.stage}] "
+              f"{head[0][:100] if head else ''}")
+    print()
+    print("A new or edited example has to compile. Tag it `expect-error` if it "
+          "is meant to fail,")
+    print("or ignore=\"reason\" if it cannot be checked.")
+    return 1
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -413,9 +483,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="stop after codegen; skip the clang stage")
     ap.add_argument("--write-ledger", action="store_true")
     ap.add_argument("--fail-on-unverified", action="store_true")
+    ap.add_argument("--check-ledger", action="store_true",
+                    help="fail only on examples that regressed against the ledger")
     args = ap.parse_args(argv)
 
     results = run(use_clang=not args.no_clang)
+    if args.check_ledger:
+        return check_ledger(results)
     if args.report or not args.write_ledger:
         report(results, verbose=args.verbose)
     if args.write_ledger:
