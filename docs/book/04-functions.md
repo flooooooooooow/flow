@@ -58,6 +58,16 @@ that `lo <= hi`.
 Larger operations can be expressed by calls to smaller ones:
 
 ```flow
+function clamp(x: f64, lo: f64, hi: f64) -> f64 {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
 function pow_i(base: f64, exponent: i32) -> f64 {
     let mut result: f64 = 1.0
     for n in 0 to exponent {
