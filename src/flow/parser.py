@@ -384,6 +384,19 @@ class ForStatement:
 
 
 @dataclass
+class RangeExpression:
+    """Exclusive-end arithmetic range used by range-aware builtins.
+
+    Kept separate from ForStatement so range algebra can become a
+    first-class expression without changing loop representation.
+    """
+
+    start: "Expression"
+    end: "Expression"
+    step: "Expression"
+
+
+@dataclass
 class ReturnStatement:
     value: Optional["Expression"]
 
@@ -1874,6 +1887,13 @@ class Parser:
             from .fork_records import desugar_forks
 
             declarations = desugar_forks(declarations)
+        # `sum(a..b step c)` lowers to a call; the module has to carry the
+        # function it calls. Appended once, only when something used it.
+        if getattr(self, "_needs_range_sum_helper", False):
+            from .range_sums import helper_declarations
+
+            declarations.extend(helper_declarations())
+
         return declarations
 
     def parse_module(self) -> ModuleDecl:
@@ -4878,17 +4898,39 @@ class Parser:
         loc = SourceLocation(line=start.line, column=start.column)
         return IfExpression(condition, then_expr, else_expr, location=loc)
 
-    def parse_function_call(self, name: str) -> FunctionCall:
+    def parse_function_call(self, name: str) -> Expression:
         self.expect(TokenType.LPAREN)
         arguments = []
 
         if self.current_token.type != TokenType.RPAREN:
-            arguments.append(self.parse_expression_without_assign())
+            first = self.parse_expression_without_assign()
+            if name == "sum" and self.current_token.type in (TokenType.DOTDOT, TokenType.TO):
+                self.advance()
+                end = self.parse_expression_without_assign()
+                step: Expression = Literal("1", Type("i32"))
+                if (
+                    self.current_token.type == TokenType.STEP
+                    or (
+                        self.current_token.type == TokenType.IDENTIFIER
+                        and self.current_token.value == "step"
+                    )
+                ):
+                    self.advance()
+                    step = self.parse_expression_without_assign()
+                first = RangeExpression(first, end, step)
+            arguments.append(first)
             while self.current_token.type == TokenType.COMMA:
                 self.advance()
                 arguments.append(self.parse_expression_without_assign())
 
         self.expect(TokenType.RPAREN)
+        if name == "sum" and len(arguments) == 1 and isinstance(arguments[0], RangeExpression):
+            from .range_sums import HELPER_NAME, lower_range_sum
+
+            lowered = lower_range_sum(arguments[0])
+            if isinstance(lowered, FunctionCall) and lowered.name == HELPER_NAME:
+                self._needs_range_sum_helper = True
+            return lowered
         return FunctionCall(name, arguments)
 
     def _collect_free_variables(self, node: Any, param_names: set, found: Optional[set] = None) -> List[str]:
