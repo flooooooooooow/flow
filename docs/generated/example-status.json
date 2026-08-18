@@ -1,0 +1,5434 @@
+{
+  "generated": "2026-08-18",
+  "totals": {
+    "verified": 569,
+    "unverified": 206
+  },
+  "blocks": [
+    {
+      "id": "README.md:47",
+      "path": "README.md",
+      "line": 47,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "README.md:70",
+      "path": "README.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "README.md:206",
+      "path": "README.md",
+      "line": 206,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "README.md:232",
+      "path": "README.md",
+      "line": 232,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "README.md:253",
+      "path": "README.md",
+      "line": 253,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "ROADMAP.md:441",
+      "path": "ROADMAP.md",
+      "line": 441,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "ROADMAP.md:459",
+      "path": "ROADMAP.md",
+      "line": 459,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "ROADMAP.md:491",
+      "path": "ROADMAP.md",
+      "line": 491,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "ROADMAP.md:517",
+      "path": "ROADMAP.md",
+      "line": 517,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "id": "ROADMAP.md:547",
+      "path": "ROADMAP.md",
+      "line": 547,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "ROADMAP.md:579",
+      "path": "ROADMAP.md",
+      "line": 579,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "ROADMAP.md:608",
+      "path": "ROADMAP.md",
+      "line": 608,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.COLON at line 2, column 16\n\n     2 |     return fn(x: i32) -> i32 {\n       |                ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+    },
+    {
+      "id": "ROADMAP.md:731",
+      "path": "ROADMAP.md",
+      "line": 731,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "VISION.md:53",
+      "path": "VISION.md",
+      "line": 53,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'angle' in flow 'Pendulum' has type 'Angle', which is not a flow in this file at line 2\n\n     2 |     angle : Angle\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "VISION.md:91",
+      "path": "VISION.md",
+      "line": 91,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:102",
+      "path": "VISION.md",
+      "line": 102,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:112",
+      "path": "VISION.md",
+      "line": 112,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:118",
+      "path": "VISION.md",
+      "line": 118,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:124",
+      "path": "VISION.md",
+      "line": 124,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'motor' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     motor : Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "VISION.md:139",
+      "path": "VISION.md",
+      "line": 139,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:176",
+      "path": "VISION.md",
+      "line": 176,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:183",
+      "path": "VISION.md",
+      "line": 183,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:189",
+      "path": "VISION.md",
+      "line": 189,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:195",
+      "path": "VISION.md",
+      "line": 195,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:202",
+      "path": "VISION.md",
+      "line": 202,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:210",
+      "path": "VISION.md",
+      "line": 210,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:218",
+      "path": "VISION.md",
+      "line": 218,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:226",
+      "path": "VISION.md",
+      "line": 226,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:234",
+      "path": "VISION.md",
+      "line": 234,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:244",
+      "path": "VISION.md",
+      "line": 244,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'MotorController' body at line 2, column 5\n\n     2 |     realtime\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'"
+    },
+    {
+      "id": "VISION.md:275",
+      "path": "VISION.md",
+      "line": 275,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:283",
+      "path": "VISION.md",
+      "line": 283,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:299",
+      "path": "VISION.md",
+      "line": 299,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:318",
+      "path": "VISION.md",
+      "line": 318,
+      "status": "unverified",
+      "detail": "no-op BinaryOperation statement; the text is not statements"
+    },
+    {
+      "id": "VISION.md:324",
+      "path": "VISION.md",
+      "line": 324,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'angle' in flow 'Pendulum' has type 'Angle', which is not a flow in this file at line 2\n\n     2 |     angle : Angle\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "VISION.md:337",
+      "path": "VISION.md",
+      "line": 337,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Ball' body at line 3, column 22\n\n     3 |     velocity : Meter / Second\n       |                      ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 1"
+    },
+    {
+      "id": "VISION.md:354",
+      "path": "VISION.md",
+      "line": 354,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant : Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "VISION.md:370",
+      "path": "VISION.md",
+      "line": 370,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Pendulum' body at line 2, column 5\n\n     2 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), compositi"
+    },
+    {
+      "id": "VISION.md:383",
+      "path": "VISION.md",
+      "line": 383,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:400",
+      "path": "VISION.md",
+      "line": 400,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:414",
+      "path": "VISION.md",
+      "line": 414,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:428",
+      "path": "VISION.md",
+      "line": 428,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "VISION.md:443",
+      "path": "VISION.md",
+      "line": 443,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "apps/http_json_cache/README.md:55",
+      "path": "apps/http_json_cache/README.md",
+      "line": 55,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "demos/vulkan_scene/flow_style.md:10",
+      "path": "demos/vulkan_scene/flow_style.md",
+      "line": 10,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.LBRACE"
+    },
+    {
+      "id": "demos/vulkan_scene/flow_style.md:92",
+      "path": "demos/vulkan_scene/flow_style.md",
+      "line": 92,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:502",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 502,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:557",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 557,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:580",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 580,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:601",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 601,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:621",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 621,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:635",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 635,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:654",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 654,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:703",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 703,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:721",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 721,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:749",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 749,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/AI_FLOW_HANDBOOK.md:964",
+      "path": "docs/AI_FLOW_HANDBOOK.md",
+      "line": 964,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:150",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 150,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.SLASH"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:223",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 223,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:253",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 253,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:268",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 268,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:280",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 280,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 7 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:313",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:327",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 327,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:356",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 356,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:373",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 373,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:397",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 397,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:424",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 424,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:448",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 448,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:462",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 462,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:601",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 601,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:618",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 618,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:642",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 642,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:687",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 687,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:707",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 707,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:729",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 729,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:786",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 786,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:809",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 809,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:834",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 834,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:867",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 867,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:902",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 902,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:921",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 921,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:950",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 950,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:957",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 957,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:1014",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 1014,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:1041",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 1041,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/LANGUAGE_SPEC.md:1213",
+      "path": "docs/LANGUAGE_SPEC.md",
+      "line": 1213,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/blas-bindings.md:7",
+      "path": "docs/blas-bindings.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:6",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 6,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:32",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:55",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 55,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:62",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:98",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:107",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 107,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:120",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/01-a-complete-program.md:137",
+      "path": "docs/book/01-a-complete-program.md",
+      "line": 137,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:27",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:37",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 37,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:50",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 50,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:57",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 57,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:69",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 69,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:79",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 79,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:91",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 91,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/02-values-and-types.md:138",
+      "path": "docs/book/02-values-and-types.md",
+      "line": 138,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:8",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 8,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:25",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:38",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 38,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:56",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:67",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 67,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:78",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/03-decisions-and-repetition.md:97",
+      "path": "docs/book/03-decisions-and-repetition.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:6",
+      "path": "docs/book/04-functions.md",
+      "line": 6,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:14",
+      "path": "docs/book/04-functions.md",
+      "line": 14,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:30",
+      "path": "docs/book/04-functions.md",
+      "line": 30,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/04-functions.md:41",
+      "path": "docs/book/04-functions.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:60",
+      "path": "docs/book/04-functions.md",
+      "line": 60,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:85",
+      "path": "docs/book/04-functions.md",
+      "line": 85,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:130",
+      "path": "docs/book/04-functions.md",
+      "line": 130,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/04-functions.md:151",
+      "path": "docs/book/04-functions.md",
+      "line": 151,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:8",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 8,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:18",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 18,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:24",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 24,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:31",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 31,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:41",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:48",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:56",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:63",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:74",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:83",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 83,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/05-records-and-arrays.md:103",
+      "path": "docs/book/05-records-and-arrays.md",
+      "line": 103,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:13",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:21",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:29",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 29,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:35",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:47",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 47,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 7 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:59",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 59,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:71",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 71,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:80",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 80,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:94",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 94,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/06-pipelines-and-results.md:152",
+      "path": "docs/book/06-pipelines-and-results.md",
+      "line": 152,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/07-from-updates-to-flows.md:23",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/07-from-updates-to-flows.md:43",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 43,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/07-from-updates-to-flows.md:86",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 86,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/07-from-updates-to-flows.md:109",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 109,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/07-from-updates-to-flows.md:144",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 144,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/07-from-updates-to-flows.md:174",
+      "path": "docs/book/07-from-updates-to-flows.md",
+      "line": 174,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:21",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:48",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 48,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:66",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 66,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:72",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 72,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:85",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 85,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:108",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 108,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:123",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 123,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 8 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:140",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 140,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 9 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:166",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 166,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:177",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 177,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:200",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 200,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/08-types-and-declarations.md:224",
+      "path": "docs/book/08-types-and-declarations.md",
+      "line": 224,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:23",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:43",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 43,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:53",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 53,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 9 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:82",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 82,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:123",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 123,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:137",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 137,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:163",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 163,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:179",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 179,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:193",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 193,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:210",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 210,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:235",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 235,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/09-expressions-and-matching.md:246",
+      "path": "docs/book/09-expressions-and-matching.md",
+      "line": 246,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:13",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:23",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:45",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 45,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:79",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 79,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:97",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 97,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 1, column 39\n\n     1 | let mut signal: array<f32, 256> = [0.0; 256]\n       |                                       ^"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:115",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 115,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/10-memory-and-lifetimes.md:139",
+      "path": "docs/book/10-memory-and-lifetimes.md",
+      "line": 139,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:12",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 12,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:27",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:41",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:51",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:110",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 110,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:127",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 127,
+      "status": "verified",
+      "mode": "decl-wrap"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:142",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 142,
+      "status": "verified",
+      "mode": "decl-wrap"
+    },
+    {
+      "id": "docs/book/11-modules-packages-and-interop.md:164",
+      "path": "docs/book/11-modules-packages-and-interop.md",
+      "line": 164,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:10",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:22",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:43",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 43,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:56",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:67",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 67,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:113",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 113,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:154",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 154,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/12-effects-and-concurrency.md:179",
+      "path": "docs/book/12-effects-and-concurrency.md",
+      "line": 179,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:11",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:28",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 28,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:45",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 45,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:63",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:91",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 91,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:102",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:132",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 132,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:148",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 148,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant: Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:175",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 175,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:200",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 200,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:217",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 217,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:232",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 232,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/13-evolution-and-dynamics.md:246",
+      "path": "docs/book/13-evolution-and-dynamics.md",
+      "line": 246,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/14-numerics-autodiff-and-ml.md:28",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 28,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/14-numerics-autodiff-and-ml.md:54",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 54,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/14-numerics-autodiff-and-ml.md:70",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/14-numerics-autodiff-and-ml.md:97",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 97,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/14-numerics-autodiff-and-ml.md:128",
+      "path": "docs/book/14-numerics-autodiff-and-ml.md",
+      "line": 128,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/15-media-gpu-and-audio.md:65",
+      "path": "docs/book/15-media-gpu-and-audio.md",
+      "line": 65,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/book/15-media-gpu-and-audio.md:88",
+      "path": "docs/book/15-media-gpu-and-audio.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/16-targets-and-distribution.md:56",
+      "path": "docs/book/16-targets-and-distribution.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/17-engineering-and-verification.md:178",
+      "path": "docs/book/17-engineering-and-verification.md",
+      "line": 178,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ASSIGN"
+    },
+    {
+      "id": "docs/book/18-a-complete-instrument.md:25",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/18-a-complete-instrument.md:54",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 54,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/18-a-complete-instrument.md:72",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 72,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/18-a-complete-instrument.md:91",
+      "path": "docs/book/18-a-complete-instrument.md",
+      "line": 91,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/appendix-a-language-card.md:7",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/appendix-a-language-card.md:16",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 16,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/book/appendix-a-language-card.md:28",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 28,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/book/appendix-a-language-card.md:52",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 52,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/book/appendix-a-language-card.md:65",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 65,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/book/appendix-a-language-card.md:76",
+      "path": "docs/book/appendix-a-language-card.md",
+      "line": 76,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/demos/evolution.md:7",
+      "path": "docs/demos/evolution.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/demos/morphogenesis.md:19",
+      "path": "docs/demos/morphogenesis.md",
+      "line": 19,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'GrayScottCell' body at line 5, column 5\n\n     5 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), comp"
+    },
+    {
+      "id": "docs/demos/neuro.md:14",
+      "path": "docs/demos/neuro.md",
+      "line": 14,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/effects-showcase.md:22",
+      "path": "docs/effects-showcase.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/effects-showcase.md:41",
+      "path": "docs/effects-showcase.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/effects-showcase.md:51",
+      "path": "docs/effects-showcase.md",
+      "line": 51,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "id": "docs/effects-showcase.md:223",
+      "path": "docs/effects-showcase.md",
+      "line": 223,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/getting-started.md:34",
+      "path": "docs/getting-started.md",
+      "line": 34,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/getting-started.md:56",
+      "path": "docs/getting-started.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/getting-started.md:64",
+      "path": "docs/getting-started.md",
+      "line": 64,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/getting-started.md:76",
+      "path": "docs/getting-started.md",
+      "line": 76,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/getting-started.md:101",
+      "path": "docs/getting-started.md",
+      "line": 101,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/README.md:42",
+      "path": "docs/language/README.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/README.md:48",
+      "path": "docs/language/README.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/README.md:55",
+      "path": "docs/language/README.md",
+      "line": 55,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/README.md:61",
+      "path": "docs/language/README.md",
+      "line": 61,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/language/async-effects.md:17",
+      "path": "docs/language/async-effects.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/c-fnptr-call.md:31",
+      "path": "docs/language/c-fnptr-call.md",
+      "line": 31,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/claim-coordinates.md:27",
+      "path": "docs/language/claim-coordinates.md",
+      "line": 27,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.ASSUME"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:38",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 38,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:59",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 59,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:76",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 76,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:86",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 86,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:101",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 101,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:116",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 116,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:129",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 129,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/dynamics-dsl.md:160",
+      "path": "docs/language/dynamics-dsl.md",
+      "line": 160,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/epistemology.md:64",
+      "path": "docs/language/epistemology.md",
+      "line": 64,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/epistemology.md:76",
+      "path": "docs/language/epistemology.md",
+      "line": 76,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/epistemology.md:97",
+      "path": "docs/language/epistemology.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/epistemology.md:106",
+      "path": "docs/language/epistemology.md",
+      "line": 106,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/epistemology.md:112",
+      "path": "docs/language/epistemology.md",
+      "line": 112,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/epistemology.md:153",
+      "path": "docs/language/epistemology.md",
+      "line": 153,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/epistemology.md:168",
+      "path": "docs/language/epistemology.md",
+      "line": 168,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 2, column 27\n\n     2 | theorem Nat/+.succ-right(n, m)   { therefore n + succ(m) == succ(n + m) }\n       |                           ^"
+    },
+    {
+      "id": "docs/language/epistemology.md:177",
+      "path": "docs/language/epistemology.md",
+      "line": 177,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.ELLIPSIS at line 1, column 20\n\n     1 | function FullAdder(...) -> ... { ... }\n       |                    ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "id": "docs/language/epistemology.md:193",
+      "path": "docs/language/epistemology.md",
+      "line": 193,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 1, column 43\n\n     1 | theorem Matmul/vectorize.semantics-equal(m, n, k) {\n       |                                           ^"
+    },
+    {
+      "id": "docs/language/epistemology.md:207",
+      "path": "docs/language/epistemology.md",
+      "line": 207,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 1, column 38\n\n     1 | theorem RingBuffer/fifo.order-kept(rb, q, x) {\n       |                                      ^"
+    },
+    {
+      "id": "docs/language/epistemology.md:222",
+      "path": "docs/language/epistemology.md",
+      "line": 222,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/graphics-3d.md:30",
+      "path": "docs/language/graphics-3d.md",
+      "line": 30,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/graphics.md:32",
+      "path": "docs/language/graphics.md",
+      "line": 32,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/language_design.md:359",
+      "path": "docs/language/language_design.md",
+      "line": 359,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/language_design.md:366",
+      "path": "docs/language/language_design.md",
+      "line": 366,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/language_design.md:379",
+      "path": "docs/language/language_design.md",
+      "line": 379,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/language_design.md:399",
+      "path": "docs/language/language_design.md",
+      "line": 399,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/language_design.md:457",
+      "path": "docs/language/language_design.md",
+      "line": 457,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/language_design.md:477",
+      "path": "docs/language/language_design.md",
+      "line": 477,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:53",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 53,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:62",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:99",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 99,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 6, column 39\n\n     6 |     let scratch: array<f32, 64> = [0.0; 64]\n       |                                       ^"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:123",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 123,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 3, column 36\n\n     3 |     let scratch: array<i32, 8> = [0; 8]\n       |                                    ^"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:149",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 149,
+      "status": "unverified",
+      "detail": "RT-safety violation: 'process' is in the `callback` lifetime domain, which forbids allocation, but calls 'malloc', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see docs/language/lifetime-domains.md)"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:202",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 202,
+      "status": "unverified",
+      "detail": "lifetime domain violation: 'process' is in the `callback` domain but calls 'reload_preset', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:276",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 276,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:287",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 287,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/lifetime-domains.md:299",
+      "path": "docs/language/lifetime-domains.md",
+      "line": 299,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules-namespacing.md:47",
+      "path": "docs/language/modules-namespacing.md",
+      "line": 47,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules-namespacing.md:87",
+      "path": "docs/language/modules-namespacing.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules-namespacing.md:120",
+      "path": "docs/language/modules-namespacing.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:16",
+      "path": "docs/language/modules.md",
+      "line": 16,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:24",
+      "path": "docs/language/modules.md",
+      "line": 24,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:89",
+      "path": "docs/language/modules.md",
+      "line": 89,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:111",
+      "path": "docs/language/modules.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:121",
+      "path": "docs/language/modules.md",
+      "line": 121,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/language/modules.md:150",
+      "path": "docs/language/modules.md",
+      "line": 150,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:167",
+      "path": "docs/language/modules.md",
+      "line": 167,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:242",
+      "path": "docs/language/modules.md",
+      "line": 242,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/modules.md:284",
+      "path": "docs/language/modules.md",
+      "line": 284,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.EFFECT at line 1, column 17\n\n     1 | import std.io { effect Log }\n       |                 ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "id": "docs/language/modules.md:307",
+      "path": "docs/language/modules.md",
+      "line": 307,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/language/modules.md:321",
+      "path": "docs/language/modules.md",
+      "line": 321,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/language/ordering.md:5",
+      "path": "docs/language/ordering.md",
+      "line": 5,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/ordering.md:154",
+      "path": "docs/language/ordering.md",
+      "line": 154,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/overview.md:19",
+      "path": "docs/language/overview.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/replace-go.md:28",
+      "path": "docs/language/replace-go.md",
+      "line": 28,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/safety-profiles.md:28",
+      "path": "docs/language/safety-profiles.md",
+      "line": 28,
+      "status": "unverified",
+      "detail": "SyntaxError: Expected decorator argument, got TokenType.NUMBER"
+    },
+    {
+      "id": "docs/language/shaders.md:13",
+      "path": "docs/language/shaders.md",
+      "line": 13,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/spans.md:19",
+      "path": "docs/language/spans.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/spans.md:32",
+      "path": "docs/language/spans.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/spans.md:56",
+      "path": "docs/language/spans.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/spans.md:70",
+      "path": "docs/language/spans.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/spans.md:99",
+      "path": "docs/language/spans.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/spans.md:109",
+      "path": "docs/language/spans.md",
+      "line": 109,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/spans.md:119",
+      "path": "docs/language/spans.md",
+      "line": 119,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/spans.md:165",
+      "path": "docs/language/spans.md",
+      "line": 165,
+      "status": "unverified",
+      "detail": "span outlives borrowed storage `local` at line 3, column 5"
+    },
+    {
+      "id": "docs/language/spans.md:233",
+      "path": "docs/language/spans.md",
+      "line": 233,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/syntax.md:12",
+      "path": "docs/language/syntax.md",
+      "line": 12,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.NUMBER"
+    },
+    {
+      "id": "docs/language/syntax.md:32",
+      "path": "docs/language/syntax.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/syntax.md:61",
+      "path": "docs/language/syntax.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:67",
+      "path": "docs/language/syntax.md",
+      "line": 67,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/syntax.md:74",
+      "path": "docs/language/syntax.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/syntax.md:81",
+      "path": "docs/language/syntax.md",
+      "line": 81,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/language/syntax.md:101",
+      "path": "docs/language/syntax.md",
+      "line": 101,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+    },
+    {
+      "id": "docs/language/syntax.md:133",
+      "path": "docs/language/syntax.md",
+      "line": 133,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/syntax.md:141",
+      "path": "docs/language/syntax.md",
+      "line": 141,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/syntax.md:151",
+      "path": "docs/language/syntax.md",
+      "line": 151,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:156",
+      "path": "docs/language/syntax.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:161",
+      "path": "docs/language/syntax.md",
+      "line": 161,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:166",
+      "path": "docs/language/syntax.md",
+      "line": 166,
+      "status": "unverified",
+      "detail": "no-op FieldAccess statement; the text is not statements"
+    },
+    {
+      "id": "docs/language/syntax.md:172",
+      "path": "docs/language/syntax.md",
+      "line": 172,
+      "status": "unverified",
+      "detail": "no-op ArrayAccess statement; the text is not statements"
+    },
+    {
+      "id": "docs/language/syntax.md:183",
+      "path": "docs/language/syntax.md",
+      "line": 183,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:194",
+      "path": "docs/language/syntax.md",
+      "line": 194,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:208",
+      "path": "docs/language/syntax.md",
+      "line": 208,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/syntax.md:227",
+      "path": "docs/language/syntax.md",
+      "line": 227,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/syntax.md:254",
+      "path": "docs/language/syntax.md",
+      "line": 254,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.RETURN"
+    },
+    {
+      "id": "docs/language/types.md:82",
+      "path": "docs/language/types.md",
+      "line": 82,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/types.md:414",
+      "path": "docs/language/types.md",
+      "line": 414,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/types.md:423",
+      "path": "docs/language/types.md",
+      "line": 423,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/types.md:431",
+      "path": "docs/language/types.md",
+      "line": 431,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/types.md:438",
+      "path": "docs/language/types.md",
+      "line": 438,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/types.md:451",
+      "path": "docs/language/types.md",
+      "line": 451,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/types.md:465",
+      "path": "docs/language/types.md",
+      "line": 465,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/language/variables.md:7",
+      "path": "docs/language/variables.md",
+      "line": 7,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/variables.md:15",
+      "path": "docs/language/variables.md",
+      "line": 15,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/variables.md:25",
+      "path": "docs/language/variables.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/variables.md:35",
+      "path": "docs/language/variables.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/variables.md:51",
+      "path": "docs/language/variables.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/variables.md:63",
+      "path": "docs/language/variables.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/variables.md:72",
+      "path": "docs/language/variables.md",
+      "line": 72,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/verification.md:26",
+      "path": "docs/language/verification.md",
+      "line": 26,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/language/verification.md:79",
+      "path": "docs/language/verification.md",
+      "line": 79,
+      "status": "unverified",
+      "detail": "SyntaxError: Statement attributes are only supported on `while` (got ['from'] before TokenType.IDENTIFIER)"
+    },
+    {
+      "id": "docs/language/verification.md:97",
+      "path": "docs/language/verification.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/verification.md:126",
+      "path": "docs/language/verification.md",
+      "line": 126,
+      "status": "unverified",
+      "detail": "no-op Variable statement; the text is not statements"
+    },
+    {
+      "id": "docs/language/verification.md:133",
+      "path": "docs/language/verification.md",
+      "line": 133,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/language/verification.md:143",
+      "path": "docs/language/verification.md",
+      "line": 143,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/language/verification.md:162",
+      "path": "docs/language/verification.md",
+      "line": 162,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/verification.md:184",
+      "path": "docs/language/verification.md",
+      "line": 184,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/verification.md:194",
+      "path": "docs/language/verification.md",
+      "line": 194,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/language/wasm.md:183",
+      "path": "docs/language/wasm.md",
+      "line": 183,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/audio-safety.md:23",
+      "path": "docs/library/audio-safety.md",
+      "line": 23,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/library/audio-safety.md:106",
+      "path": "docs/library/audio-safety.md",
+      "line": 106,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/audio-safety.md:164",
+      "path": "docs/library/audio-safety.md",
+      "line": 164,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/audio-safety.md:201",
+      "path": "docs/library/audio-safety.md",
+      "line": 201,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/library/autodiff-guide.md:24",
+      "path": "docs/library/autodiff-guide.md",
+      "line": 24,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:11",
+      "path": "docs/library/core.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:25",
+      "path": "docs/library/core.md",
+      "line": 25,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 6, column 54\n\n     6 | function metal_execute_shader(shader: str, args: [any]) -> bool\n       |                                                      ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:36",
+      "path": "docs/library/core.md",
+      "line": 36,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:53",
+      "path": "docs/library/core.md",
+      "line": 53,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/library/core.md:70",
+      "path": "docs/library/core.md",
+      "line": 70,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 2, column 49\n\n     2 | function gpu_launch_kernel(name: str, grid: [i32], block: [i32], args: [any]) -> void\n       |                                                 ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:85",
+      "path": "docs/library/core.md",
+      "line": 85,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 5, column 61\n\n     5 | function gpu_measure_kernel(kernel: KernelHandle, args: [any]) -> f64\n       |                                                             ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:97",
+      "path": "docs/library/core.md",
+      "line": 97,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.TYPE at line 8, column 33\n\n     8 | function graphics_create_shader(type: ShaderType, source: str) -> Shader\n       |                                 ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "id": "docs/library/core.md:112",
+      "path": "docs/library/core.md",
+      "line": 112,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.TYPE at line 2, column 33\n\n     2 | function graphics_create_buffer(type: BufferType, size: i64) -> Buffer\n       |                                 ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "id": "docs/library/core.md:125",
+      "path": "docs/library/core.md",
+      "line": 125,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:136",
+      "path": "docs/library/core.md",
+      "line": 136,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 4, column 49\n\n     4 | function gpu_check_memory_leaks() -> [MemoryLeak]\n       |                                                 ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:148",
+      "path": "docs/library/core.md",
+      "line": 148,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 4, column 36\n\n     4 | function get_gpu_info() -> [GPUInfo]\n       |                                    ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:159",
+      "path": "docs/library/core.md",
+      "line": 159,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:180",
+      "path": "docs/library/core.md",
+      "line": 180,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:192",
+      "path": "docs/library/core.md",
+      "line": 192,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:204",
+      "path": "docs/library/core.md",
+      "line": 204,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 2, column 33\n\n     2 | function array_length<T>(arr: [T]) -> i32\n       |                                 ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:217",
+      "path": "docs/library/core.md",
+      "line": 217,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 2, column 26\n\n     2 | function simd_add(a: [f32], b: [f32]) -> [f32]\n       |                          ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:230",
+      "path": "docs/library/core.md",
+      "line": 230,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 3, column 36\n\n     3 | function parallel_map<T, U>(arr: [T], fn: (T) -> U) -> [U]\n       |                                    ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:242",
+      "path": "docs/library/core.md",
+      "line": 242,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.TYPE at line 12, column 5\n\n    12 |     type: ErrorType,\n       |     ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+    },
+    {
+      "id": "docs/library/core.md:264",
+      "path": "docs/library/core.md",
+      "line": 264,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:277",
+      "path": "docs/library/core.md",
+      "line": 277,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:289",
+      "path": "docs/library/core.md",
+      "line": 289,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/core.md:311",
+      "path": "docs/library/core.md",
+      "line": 311,
+      "status": "unverified",
+      "detail": "If condition must be bool, got void"
+    },
+    {
+      "id": "docs/library/core.md:329",
+      "path": "docs/library/core.md",
+      "line": 329,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.SEMICOLON, got TokenType.RBRACKET at line 1, column 37\n\n     1 | function gpu_array_example() -> [f32] {\n       |                                     ^\n\n  Hint: Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point."
+    },
+    {
+      "id": "docs/library/core.md:352",
+      "path": "docs/library/core.md",
+      "line": 352,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.COLON at line 2, column 33\n\n     2 |     set_error_handler(func(error: Error) {\n       |                                 ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+    },
+    {
+      "id": "docs/library/dynamics.md:33",
+      "path": "docs/library/dynamics.md",
+      "line": 33,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/dynamics.md:61",
+      "path": "docs/library/dynamics.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:75",
+      "path": "docs/library/dynamics.md",
+      "line": 75,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/dynamics.md:101",
+      "path": "docs/library/dynamics.md",
+      "line": 101,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:128",
+      "path": "docs/library/dynamics.md",
+      "line": 128,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:156",
+      "path": "docs/library/dynamics.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:183",
+      "path": "docs/library/dynamics.md",
+      "line": 183,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:202",
+      "path": "docs/library/dynamics.md",
+      "line": 202,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/dynamics.md:218",
+      "path": "docs/library/dynamics.md",
+      "line": 218,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:235",
+      "path": "docs/library/dynamics.md",
+      "line": 235,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/dynamics.md:260",
+      "path": "docs/library/dynamics.md",
+      "line": 260,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/library/dynamics.md:276",
+      "path": "docs/library/dynamics.md",
+      "line": 276,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/dynamics.md:305",
+      "path": "docs/library/dynamics.md",
+      "line": 305,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/fmm2d.md:51",
+      "path": "docs/library/fmm2d.md",
+      "line": 51,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/library/gpu-memory.md:5",
+      "path": "docs/library/gpu-memory.md",
+      "line": 5,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/library/memory.md:12",
+      "path": "docs/library/memory.md",
+      "line": 12,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/memory.md:61",
+      "path": "docs/library/memory.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/memory.md:88",
+      "path": "docs/library/memory.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/planet.md:56",
+      "path": "docs/library/planet.md",
+      "line": 56,
+      "status": "unverified",
+      "detail": "Unary '!' requires bool type, got void"
+    },
+    {
+      "id": "docs/library/procgen.md:42",
+      "path": "docs/library/procgen.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/rt-safety.md:14",
+      "path": "docs/library/rt-safety.md",
+      "line": 14,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/rt-safety.md:77",
+      "path": "docs/library/rt-safety.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:123",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:141",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 141,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:159",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 159,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:180",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 180,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:226",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 226,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:244",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 244,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:270",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 270,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:307",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 307,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:354",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 354,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:367",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 367,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:377",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 377,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:388",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 388,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:404",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 404,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:435",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 435,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/library/stdlib-reference.md:497",
+      "path": "docs/library/stdlib-reference.md",
+      "line": 497,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/project/archive/PROJECT_STRUCTURE.md:80",
+      "path": "docs/project/archive/PROJECT_STRUCTURE.md",
+      "line": 80,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/project/archive/PROJECT_STRUCTURE.md:98",
+      "path": "docs/project/archive/PROJECT_STRUCTURE.md",
+      "line": 98,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.SEMICOLON"
+    },
+    {
+      "id": "docs/project/archive/PROJECT_STRUCTURE.md:133",
+      "path": "docs/project/archive/PROJECT_STRUCTURE.md",
+      "line": 133,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/project/example-atlas.md:16",
+      "path": "docs/project/example-atlas.md",
+      "line": 16,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected statement in 'when' body of flow 'Neuron' at line 9, column 42\n\n     9 |     when v reaches 30.0 { v becomes -65.0; u becomes u + 8.0 }\n       |                                          ^\n\n  Hint: 'when' bodies contain resets in this version: 'x becomes expr'"
+    },
+    {
+      "id": "docs/project/package-registry.md:46",
+      "path": "docs/project/package-registry.md",
+      "line": 46,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:55",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 55,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:69",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 69,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected type token: TokenType.SLASH"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:87",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 87,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:106",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 106,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Lorenz' body at line 15, column 5\n\n    15 |     represent phase_portrait(x, z) {\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:188",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 188,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:215",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 215,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/project/pattern-adoption.md:241",
+      "path": "docs/project/pattern-adoption.md",
+      "line": 241,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/python-target.md:35",
+      "path": "docs/python-target.md",
+      "line": 35,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+    },
+    {
+      "id": "docs/python-target.md:96",
+      "path": "docs/python-target.md",
+      "line": 96,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/python-target.md:158",
+      "path": "docs/python-target.md",
+      "line": 158,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.ASSIGN at line 2, column 13\n\n     2 | @python(name=\"py_func_name\")\n       |             ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+    },
+    {
+      "id": "docs/research/FLOW_RESEARCH_PAPER.md:126",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 126,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/research/FLOW_RESEARCH_PAPER.md:152",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 152,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/research/FLOW_RESEARCH_PAPER.md:267",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 267,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/research/FLOW_RESEARCH_PAPER.md:337",
+      "path": "docs/research/FLOW_RESEARCH_PAPER.md",
+      "line": 337,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/research/turing_proof.md:20",
+      "path": "docs/research/turing_proof.md",
+      "line": 20,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/research/turing_proof.md:29",
+      "path": "docs/research/turing_proof.md",
+      "line": 29,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/research/turing_proof.md:41",
+      "path": "docs/research/turing_proof.md",
+      "line": 41,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+    },
+    {
+      "id": "docs/research/turing_proof.md:51",
+      "path": "docs/research/turing_proof.md",
+      "line": 51,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "id": "docs/research/turing_proof.md:71",
+      "path": "docs/research/turing_proof.md",
+      "line": 71,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "id": "docs/research/turing_proof.md:80",
+      "path": "docs/research/turing_proof.md",
+      "line": 80,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "id": "docs/research/turing_proof.md:89",
+      "path": "docs/research/turing_proof.md",
+      "line": 89,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "id": "docs/research/turing_proof.md:99",
+      "path": "docs/research/turing_proof.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/research/turing_proof.md:131",
+      "path": "docs/research/turing_proof.md",
+      "line": 131,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.ARROW, got TokenType.LBRACE at line 1, column 68\n\n     1 |    function transition(state: i32, symbol: i32) -> (i32, i32, i32) {\n       |                                                                    ^"
+    },
+    {
+      "id": "docs/research/turing_proof.md:138",
+      "path": "docs/research/turing_proof.md",
+      "line": 138,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:11",
+      "path": "docs/tutorials/advanced.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:25",
+      "path": "docs/tutorials/advanced.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:37",
+      "path": "docs/tutorials/advanced.md",
+      "line": 37,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FOR at line 1, column 25\n\n     1 | capability StdioConsole for Console {\n       |                         ^"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:71",
+      "path": "docs/tutorials/advanced.md",
+      "line": 71,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:90",
+      "path": "docs/tutorials/advanced.md",
+      "line": 90,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:111",
+      "path": "docs/tutorials/advanced.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:137",
+      "path": "docs/tutorials/advanced.md",
+      "line": 137,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:185",
+      "path": "docs/tutorials/advanced.md",
+      "line": 185,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:203",
+      "path": "docs/tutorials/advanced.md",
+      "line": 203,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:262",
+      "path": "docs/tutorials/advanced.md",
+      "line": 262,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:285",
+      "path": "docs/tutorials/advanced.md",
+      "line": 285,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:299",
+      "path": "docs/tutorials/advanced.md",
+      "line": 299,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:318",
+      "path": "docs/tutorials/advanced.md",
+      "line": 318,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:334",
+      "path": "docs/tutorials/advanced.md",
+      "line": 334,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/advanced.md:398",
+      "path": "docs/tutorials/advanced.md",
+      "line": 398,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:10",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:35",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:56",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:77",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:103",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 103,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:122",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 122,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/algorithms.md:147",
+      "path": "docs/tutorials/algorithms.md",
+      "line": 147,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:10",
+      "path": "docs/tutorials/arrays.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:22",
+      "path": "docs/tutorials/arrays.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:35",
+      "path": "docs/tutorials/arrays.md",
+      "line": 35,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:53",
+      "path": "docs/tutorials/arrays.md",
+      "line": 53,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:74",
+      "path": "docs/tutorials/arrays.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:92",
+      "path": "docs/tutorials/arrays.md",
+      "line": 92,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:111",
+      "path": "docs/tutorials/arrays.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/arrays.md:125",
+      "path": "docs/tutorials/arrays.md",
+      "line": 125,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/audio-basics.md:10",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/audio-basics.md:24",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 24,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/audio-basics.md:41",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/audio-basics.md:58",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 58,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/audio-basics.md:74",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/audio-basics.md:87",
+      "path": "docs/tutorials/audio-basics.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:10",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:29",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 29,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:56",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:69",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 69,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:87",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:114",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 114,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/autodiff-basics.md:134",
+      "path": "docs/tutorials/autodiff-basics.md",
+      "line": 134,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:11",
+      "path": "docs/tutorials/beginner.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:32",
+      "path": "docs/tutorials/beginner.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:57",
+      "path": "docs/tutorials/beginner.md",
+      "line": 57,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:90",
+      "path": "docs/tutorials/beginner.md",
+      "line": 90,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:111",
+      "path": "docs/tutorials/beginner.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:135",
+      "path": "docs/tutorials/beginner.md",
+      "line": 135,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:159",
+      "path": "docs/tutorials/beginner.md",
+      "line": 159,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:189",
+      "path": "docs/tutorials/beginner.md",
+      "line": 189,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:217",
+      "path": "docs/tutorials/beginner.md",
+      "line": 217,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:254",
+      "path": "docs/tutorials/beginner.md",
+      "line": 254,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:280",
+      "path": "docs/tutorials/beginner.md",
+      "line": 280,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:296",
+      "path": "docs/tutorials/beginner.md",
+      "line": 296,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:308",
+      "path": "docs/tutorials/beginner.md",
+      "line": 308,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:324",
+      "path": "docs/tutorials/beginner.md",
+      "line": 324,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:350",
+      "path": "docs/tutorials/beginner.md",
+      "line": 350,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:388",
+      "path": "docs/tutorials/beginner.md",
+      "line": 388,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:413",
+      "path": "docs/tutorials/beginner.md",
+      "line": 413,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/beginner.md:449",
+      "path": "docs/tutorials/beginner.md",
+      "line": 449,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:18",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 18,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:56",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 56,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:84",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 84,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:120",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:172",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 172,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:219",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 219,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:266",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 266,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/concurrency.md:313",
+      "path": "docs/tutorials/concurrency.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:10",
+      "path": "docs/tutorials/control.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:23",
+      "path": "docs/tutorials/control.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:48",
+      "path": "docs/tutorials/control.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:61",
+      "path": "docs/tutorials/control.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:71",
+      "path": "docs/tutorials/control.md",
+      "line": 71,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:87",
+      "path": "docs/tutorials/control.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/control.md:105",
+      "path": "docs/tutorials/control.md",
+      "line": 105,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:23",
+      "path": "docs/tutorials/domains.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:42",
+      "path": "docs/tutorials/domains.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:67",
+      "path": "docs/tutorials/domains.md",
+      "line": 67,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:96",
+      "path": "docs/tutorials/domains.md",
+      "line": 96,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:114",
+      "path": "docs/tutorials/domains.md",
+      "line": 114,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:132",
+      "path": "docs/tutorials/domains.md",
+      "line": 132,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:155",
+      "path": "docs/tutorials/domains.md",
+      "line": 155,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:178",
+      "path": "docs/tutorials/domains.md",
+      "line": 178,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/domains.md:206",
+      "path": "docs/tutorials/domains.md",
+      "line": 206,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:21",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:51",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:86",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 86,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:101",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 101,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:123",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:146",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 146,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:172",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 172,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:191",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 191,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:223",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 223,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:237",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 237,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:263",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 263,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:284",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 284,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:301",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 301,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/dynamics.md:313",
+      "path": "docs/tutorials/dynamics.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:12",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 12,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:25",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 25,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:45",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 45,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:62",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:80",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 80,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:99",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:121",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 121,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:142",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 142,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/effects-basics.md:163",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 163,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+    },
+    {
+      "id": "docs/tutorials/errors.md:10",
+      "path": "docs/tutorials/errors.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:26",
+      "path": "docs/tutorials/errors.md",
+      "line": 26,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:51",
+      "path": "docs/tutorials/errors.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:75",
+      "path": "docs/tutorials/errors.md",
+      "line": 75,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:103",
+      "path": "docs/tutorials/errors.md",
+      "line": 103,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:130",
+      "path": "docs/tutorials/errors.md",
+      "line": 130,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:176",
+      "path": "docs/tutorials/errors.md",
+      "line": 176,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/errors.md:196",
+      "path": "docs/tutorials/errors.md",
+      "line": 196,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:19",
+      "path": "docs/tutorials/evolution.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:40",
+      "path": "docs/tutorials/evolution.md",
+      "line": 40,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:61",
+      "path": "docs/tutorials/evolution.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:78",
+      "path": "docs/tutorials/evolution.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:94",
+      "path": "docs/tutorials/evolution.md",
+      "line": 94,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:109",
+      "path": "docs/tutorials/evolution.md",
+      "line": 109,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:132",
+      "path": "docs/tutorials/evolution.md",
+      "line": 132,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:156",
+      "path": "docs/tutorials/evolution.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:170",
+      "path": "docs/tutorials/evolution.md",
+      "line": 170,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:196",
+      "path": "docs/tutorials/evolution.md",
+      "line": 196,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:220",
+      "path": "docs/tutorials/evolution.md",
+      "line": 220,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:266",
+      "path": "docs/tutorials/evolution.md",
+      "line": 266,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:278",
+      "path": "docs/tutorials/evolution.md",
+      "line": 278,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:299",
+      "path": "docs/tutorials/evolution.md",
+      "line": 299,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/evolution.md:328",
+      "path": "docs/tutorials/evolution.md",
+      "line": 328,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:10",
+      "path": "docs/tutorials/functions.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:22",
+      "path": "docs/tutorials/functions.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:37",
+      "path": "docs/tutorials/functions.md",
+      "line": 37,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:52",
+      "path": "docs/tutorials/functions.md",
+      "line": 52,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:73",
+      "path": "docs/tutorials/functions.md",
+      "line": 73,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:84",
+      "path": "docs/tutorials/functions.md",
+      "line": 84,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:100",
+      "path": "docs/tutorials/functions.md",
+      "line": 100,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:123",
+      "path": "docs/tutorials/functions.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/functions.md:135",
+      "path": "docs/tutorials/functions.md",
+      "line": 135,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:31",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 31,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:46",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 46,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:81",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 81,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:89",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 89,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:128",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 128,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:138",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 138,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:203",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 203,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:226",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 226,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:242",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 242,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:261",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 261,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:278",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 278,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/game-ai.md:292",
+      "path": "docs/tutorials/game-ai.md",
+      "line": 292,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:44",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 44,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:61",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:99",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:123",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:139",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 139,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:181",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 181,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:201",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 201,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/gfx-basics.md:245",
+      "path": "docs/tutorials/gfx-basics.md",
+      "line": 245,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:9",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 9,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:32",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 32,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:62",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:77",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:102",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:122",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 122,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:154",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 154,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:180",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 180,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:200",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 200,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:221",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 221,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:245",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 245,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:272",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 272,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:286",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 286,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:302",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 302,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:324",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 324,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:355",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 355,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:392",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 392,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:419",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 419,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:432",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 432,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:450",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 450,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:463",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 463,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:480",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 480,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:490",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 490,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/intermediate.md:501",
+      "path": "docs/tutorials/intermediate.md",
+      "line": 501,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:8",
+      "path": "docs/tutorials/memory.md",
+      "line": 8,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:28",
+      "path": "docs/tutorials/memory.md",
+      "line": 28,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:51",
+      "path": "docs/tutorials/memory.md",
+      "line": 51,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:78",
+      "path": "docs/tutorials/memory.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:100",
+      "path": "docs/tutorials/memory.md",
+      "line": 100,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:127",
+      "path": "docs/tutorials/memory.md",
+      "line": 127,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:154",
+      "path": "docs/tutorials/memory.md",
+      "line": 154,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:179",
+      "path": "docs/tutorials/memory.md",
+      "line": 179,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:202",
+      "path": "docs/tutorials/memory.md",
+      "line": 202,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:240",
+      "path": "docs/tutorials/memory.md",
+      "line": 240,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:266",
+      "path": "docs/tutorials/memory.md",
+      "line": 266,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:282",
+      "path": "docs/tutorials/memory.md",
+      "line": 282,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:300",
+      "path": "docs/tutorials/memory.md",
+      "line": 300,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:328",
+      "path": "docs/tutorials/memory.md",
+      "line": 328,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:360",
+      "path": "docs/tutorials/memory.md",
+      "line": 360,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:420",
+      "path": "docs/tutorials/memory.md",
+      "line": 420,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/memory.md:481",
+      "path": "docs/tutorials/memory.md",
+      "line": 481,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:48",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:69",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 69,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:127",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 127,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:245",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 245,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:262",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 262,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:280",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 280,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:297",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 297,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:315",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 315,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/ml-on-macbook.md:331",
+      "path": "docs/tutorials/ml-on-macbook.md",
+      "line": 331,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:15",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 15,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:36",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 36,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:52",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 52,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:74",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 74,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:88",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:110",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 110,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:130",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 130,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:149",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 149,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:180",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 180,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/tutorials/pipelines.md:202",
+      "path": "docs/tutorials/pipelines.md",
+      "line": 202,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:10",
+      "path": "docs/tutorials/pointers.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:21",
+      "path": "docs/tutorials/pointers.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:33",
+      "path": "docs/tutorials/pointers.md",
+      "line": 33,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:50",
+      "path": "docs/tutorials/pointers.md",
+      "line": 50,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:63",
+      "path": "docs/tutorials/pointers.md",
+      "line": 63,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:80",
+      "path": "docs/tutorials/pointers.md",
+      "line": 80,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:98",
+      "path": "docs/tutorials/pointers.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/pointers.md:115",
+      "path": "docs/tutorials/pointers.md",
+      "line": 115,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:10",
+      "path": "docs/tutorials/projects.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:27",
+      "path": "docs/tutorials/projects.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:46",
+      "path": "docs/tutorials/projects.md",
+      "line": 46,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:59",
+      "path": "docs/tutorials/projects.md",
+      "line": 59,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:75",
+      "path": "docs/tutorials/projects.md",
+      "line": 75,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:93",
+      "path": "docs/tutorials/projects.md",
+      "line": 93,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/projects.md:105",
+      "path": "docs/tutorials/projects.md",
+      "line": 105,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:13",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:41",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 41,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:62",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 62,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:77",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 77,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:94",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 94,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:114",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 114,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:128",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 128,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:141",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 141,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/rt-audio.md:155",
+      "path": "docs/tutorials/rt-audio.md",
+      "line": 155,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:14",
+      "path": "docs/tutorials/shaders.md",
+      "line": 14,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:34",
+      "path": "docs/tutorials/shaders.md",
+      "line": 34,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:50",
+      "path": "docs/tutorials/shaders.md",
+      "line": 50,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:64",
+      "path": "docs/tutorials/shaders.md",
+      "line": 64,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:86",
+      "path": "docs/tutorials/shaders.md",
+      "line": 86,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:102",
+      "path": "docs/tutorials/shaders.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:127",
+      "path": "docs/tutorials/shaders.md",
+      "line": 127,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/shaders.md:142",
+      "path": "docs/tutorials/shaders.md",
+      "line": 142,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:19",
+      "path": "docs/tutorials/spans.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:40",
+      "path": "docs/tutorials/spans.md",
+      "line": 40,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:57",
+      "path": "docs/tutorials/spans.md",
+      "line": 57,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:78",
+      "path": "docs/tutorials/spans.md",
+      "line": 78,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:98",
+      "path": "docs/tutorials/spans.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:117",
+      "path": "docs/tutorials/spans.md",
+      "line": 117,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:133",
+      "path": "docs/tutorials/spans.md",
+      "line": 133,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:156",
+      "path": "docs/tutorials/spans.md",
+      "line": 156,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/spans.md:177",
+      "path": "docs/tutorials/spans.md",
+      "line": 177,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:10",
+      "path": "docs/tutorials/strings.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:19",
+      "path": "docs/tutorials/strings.md",
+      "line": 19,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:31",
+      "path": "docs/tutorials/strings.md",
+      "line": 31,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:43",
+      "path": "docs/tutorials/strings.md",
+      "line": 43,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:58",
+      "path": "docs/tutorials/strings.md",
+      "line": 58,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:68",
+      "path": "docs/tutorials/strings.md",
+      "line": 68,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:81",
+      "path": "docs/tutorials/strings.md",
+      "line": 81,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:107",
+      "path": "docs/tutorials/strings.md",
+      "line": 107,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/strings.md:123",
+      "path": "docs/tutorials/strings.md",
+      "line": 123,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:10",
+      "path": "docs/tutorials/structs.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:21",
+      "path": "docs/tutorials/structs.md",
+      "line": 21,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:39",
+      "path": "docs/tutorials/structs.md",
+      "line": 39,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:54",
+      "path": "docs/tutorials/structs.md",
+      "line": 54,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:73",
+      "path": "docs/tutorials/structs.md",
+      "line": 73,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:88",
+      "path": "docs/tutorials/structs.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/structs.md:102",
+      "path": "docs/tutorials/structs.md",
+      "line": 102,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:10",
+      "path": "docs/tutorials/systems.md",
+      "line": 10,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:48",
+      "path": "docs/tutorials/systems.md",
+      "line": 48,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:70",
+      "path": "docs/tutorials/systems.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:97",
+      "path": "docs/tutorials/systems.md",
+      "line": 97,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:124",
+      "path": "docs/tutorials/systems.md",
+      "line": 124,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:138",
+      "path": "docs/tutorials/systems.md",
+      "line": 138,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:153",
+      "path": "docs/tutorials/systems.md",
+      "line": 153,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:172",
+      "path": "docs/tutorials/systems.md",
+      "line": 172,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/systems.md:186",
+      "path": "docs/tutorials/systems.md",
+      "line": 186,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/wasm.md:22",
+      "path": "docs/tutorials/wasm.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/wasm.md:42",
+      "path": "docs/tutorials/wasm.md",
+      "line": 42,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/wasm.md:60",
+      "path": "docs/tutorials/wasm.md",
+      "line": 60,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/wasm.md:79",
+      "path": "docs/tutorials/wasm.md",
+      "line": 79,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/wasm.md:98",
+      "path": "docs/tutorials/wasm.md",
+      "line": 98,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/tutorials/wasm.md:120",
+      "path": "docs/tutorials/wasm.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/vision.md:7",
+      "path": "docs/vision.md",
+      "line": 7,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'angle' in flow 'Pendulum' has type 'Angle', which is not a flow in this file at line 2\n\n     2 |     angle : Angle\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "docs/vision/north-star.md:503",
+      "path": "docs/vision/north-star.md",
+      "line": 503,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/vision/north-star.md:604",
+      "path": "docs/vision/north-star.md",
+      "line": 604,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant : Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+    },
+    {
+      "id": "docs/vision/north-star.md:623",
+      "path": "docs/vision/north-star.md",
+      "line": 623,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: flow 'Chain' declares no state at line 1\n\n     1 | flow Chain {\n\n  Hint: add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite"
+    },
+    {
+      "id": "docs/vision/north-star.md:639",
+      "path": "docs/vision/north-star.md",
+      "line": 639,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "docs/vision/north-star.md:713",
+      "path": "docs/vision/north-star.md",
+      "line": 713,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Pendulum' body at line 10, column 5\n\n    10 |     represent linear {\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes exp"
+    },
+    {
+      "id": "docs/vision/north-star.md:859",
+      "path": "docs/vision/north-star.md",
+      "line": 859,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Pendulum' body at line 22, column 5\n\n    22 |     represent linear {\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes exp"
+    },
+    {
+      "id": "docs/vision/north-star.md:896",
+      "path": "docs/vision/north-star.md",
+      "line": 896,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/vision/north-star.md:922",
+      "path": "docs/vision/north-star.md",
+      "line": 922,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Motor' body at line 12, column 25\n\n    12 |     param damping : f64 > 0.0 = 0.1\n       |                         ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete block"
+    },
+    {
+      "id": "docs/wiki-home.md:120",
+      "path": "docs/wiki-home.md",
+      "line": 120,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "docs/wiki-home.md:138",
+      "path": "docs/wiki-home.md",
+      "line": 138,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "docs/wiki-home.md:156",
+      "path": "docs/wiki-home.md",
+      "line": 156,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "examples/circuits/README.md:30",
+      "path": "examples/circuits/README.md",
+      "line": 30,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "examples/demos/vulkan_scene/flow_style.md:10",
+      "path": "examples/demos/vulkan_scene/flow_style.md",
+      "line": 10,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected token in expression: TokenType.LBRACE"
+    },
+    {
+      "id": "examples/demos/vulkan_scene/flow_style.md:92",
+      "path": "examples/demos/vulkan_scene/flow_style.md",
+      "line": 92,
+      "status": "verified",
+      "mode": "stmt-wrap"
+    },
+    {
+      "id": "examples/morphogenesis/README.md:23",
+      "path": "examples/morphogenesis/README.md",
+      "line": 23,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'GrayScottCell' body at line 5, column 5\n\n     5 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), comp"
+    },
+    {
+      "id": "examples/neuro/README.md:23",
+      "path": "examples/neuro/README.md",
+      "line": 23,
+      "status": "unverified",
+      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'HH' body at line 8, column 5\n\n     8 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('c"
+    },
+    {
+      "id": "examples/neuro/README.md:46",
+      "path": "examples/neuro/README.md",
+      "line": 46,
+      "status": "unverified",
+      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:22",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:33",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 33,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:47",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 47,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:61",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:148",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 148,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:163",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 163,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:180",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 180,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:200",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 200,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:239",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 239,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:262",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 262,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:286",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 286,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:319",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 319,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:328",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 328,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "lib/stdlib/audio/README.md:337",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 337,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    },
+    {
+      "id": "registry/packages/flowlm/README.md:80",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 80,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "registry/packages/flowlm/README.md:88",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 88,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "registry/packages/flowlm/README.md:99",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 99,
+      "status": "verified",
+      "mode": "standalone"
+    },
+    {
+      "id": "registry/packages/flowlm/README.md:197",
+      "path": "registry/packages/flowlm/README.md",
+      "line": 197,
+      "status": "unverified",
+      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+    }
+  ]
+}

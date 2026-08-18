@@ -9,6 +9,8 @@ import shutil
 from datetime import date
 from pathlib import Path
 
+from docs_blocks import tutorial_lessons
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 SITE = ROOT / "site"
@@ -544,41 +546,24 @@ def build_tutorial_exercises() -> None:
         "projects": 28,
     }
 
-    for md_path in sorted((DOCS / "tutorials").glob("*.md")):
-        if md_path.name == "README.md":
-            continue
-        text = md_path.read_text(encoding="utf-8", errors="replace")
-        track = md_path.stem
-        exercise = 0
-
-        for block in re.finditer(
-            r"```(?:flow(?:\s+(?:run|interactive))?)\n(.*?)```",
-            text,
-            re.DOTALL,
-        ):
-            code = block.group(1).strip()
-            if "function main" not in code:
-                continue
-
-            # Find nearest preceding heading
-            pos = block.start()
-            before = text[:pos]
-            sec_m = list(re.finditer(r"^## (.+)$", before, re.MULTILINE))
-            sub_m = list(re.finditer(r"^### (.+)$", before, re.MULTILINE))
-            section = sec_m[-1].group(1) if sec_m else track.title()
-            part_title = sub_m[-1].group(1) if sub_m else "Exercise"
-            exercise += 1
-
-            lessons.append(
-                {
-                    "id": f"{track}-{exercise}",
-                    "track": track,
-                    "title": part_title,
-                    "section": section,
-                    "description": f"{section} — edit and run in the browser.",
-                    "code": code,
-                }
-            )
+    # Extraction lives in scripts/docs_blocks.py so this and
+    # verify_browser_interp.py cannot drift apart again. They previously held
+    # two copies of the same regex, and only this one derived a section.
+    counts: dict[str, int] = {}
+    for block in tutorial_lessons():
+        track = Path(block.path).stem
+        counts[track] = counts.get(track, 0) + 1
+        section = block.section or track.title()
+        lessons.append(
+            {
+                "id": f"{track}-{counts[track]}",
+                "track": track,
+                "title": block.title or "Exercise",
+                "section": section,
+                "description": f"{section} — edit and run in the browser.",
+                "code": block.code,
+            }
+        )
 
     def lesson_key(lesson: dict) -> tuple:
         m = re.search(r"-(\d+)$", lesson["id"])
