@@ -1,7 +1,7 @@
 {
   "generated": "2026-08-18",
   "totals": {
-    "verified": 391,
+    "verified": 392,
     "unverified": 359
   },
   "blocks": [
@@ -277,14 +277,6 @@
       "status": "unverified",
       "stage": "parse",
       "detail": "no-op BinaryOperation statement; the text is not statements"
-    },
-    {
-      "key": "VISION.md#8707a3f22d05",
-      "path": "VISION.md",
-      "line": 324,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: nested flow member 'angle' in flow 'Pendulum' has type 'Angle', which is not a flow in this file at line 2\n\n     2 |     angle : Angle\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
     },
     {
       "key": "VISION.md#3c099e822924",
@@ -2818,6 +2810,14 @@
       "status": "unverified",
       "stage": "vacuous",
       "detail": "compiles to an empty translation unit"
+    },
+    {
+      "key": "docs/language/wasm.md#705313eec8f0",
+      "path": "docs/language/wasm.md",
+      "line": 183,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/audio-safety.md#c4226392b77c",
@@ -5949,14 +5949,6 @@
       "key": "lib/stdlib/audio/README.md#02042f4462a3",
       "path": "lib/stdlib/audio/README.md",
       "line": 262,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
-    },
-    {
-      "key": "lib/stdlib/audio/README.md#bcc939450a73",
-      "path": "lib/stdlib/audio/README.md",
-      "line": 286,
       "status": "unverified",
       "stage": "parse",
       "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"

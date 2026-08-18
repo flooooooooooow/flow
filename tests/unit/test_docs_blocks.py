@@ -252,3 +252,76 @@ def test_tutorial_extraction_matches_the_shipped_lesson_rule():
     assert all(lesson.has_main for lesson in lessons)
     assert all(lesson.path.startswith("docs/tutorials/") for lesson in lessons)
     assert not any(lesson.path.endswith("README.md") for lesson in lessons)
+
+
+# --------------------------------------------------------------------------
+# The ratchet
+# --------------------------------------------------------------------------
+
+def _ledger(tmp_path, rows):
+    import json
+
+    path = tmp_path / "ledger.json"
+    path.write_text(json.dumps({"generated": "2026-01-01", "totals": {}, "blocks": rows}))
+    return path
+
+
+def test_a_new_failing_example_is_a_regression(tmp_path, monkeypatch):
+    import check_doc_examples as chk
+
+    monkeypatch.setattr(chk, "LEDGER", _ledger(tmp_path, []))
+    bad = Block(path="p.md", line=1, info="flow", lang="flow", code="function f( -> i32 {")
+    assert chk.check_ledger([chk.verify(bad)]) == 1
+
+
+def test_an_example_already_in_the_ledger_is_grandfathered(tmp_path, monkeypatch):
+    import check_doc_examples as chk
+
+    bad = Block(path="p.md", line=1, info="flow", lang="flow", code="function f( -> i32 {")
+    monkeypatch.setattr(
+        chk, "LEDGER",
+        _ledger(tmp_path, [{"key": bad.key, "path": "p.md", "line": 1,
+                            "status": "unverified"}]),
+    )
+    assert chk.check_ledger([chk.verify(bad)]) == 0
+
+
+def test_editing_a_grandfathered_example_revokes_it(tmp_path, monkeypatch):
+    """The property the whole ratchet rests on.
+
+    Rows are keyed by a hash of the block, so any edit produces a key the
+    ledger has never seen and the new text has to compile on its own.
+    """
+    import check_doc_examples as chk
+
+    old = Block(path="p.md", line=1, info="flow", lang="flow", code="function f( -> i32 {")
+    monkeypatch.setattr(
+        chk, "LEDGER",
+        _ledger(tmp_path, [{"key": old.key, "path": "p.md", "line": 1,
+                            "status": "unverified"}]),
+    )
+    edited = Block(path="p.md", line=1, info="flow", lang="flow",
+                   code="function f( -> i32 {  # touched")
+    assert chk.check_ledger([chk.verify(edited)]) == 1
+
+
+def test_paying_off_debt_is_reported_not_punished(tmp_path, monkeypatch, capsys):
+    # An unrelated pull request must not fail because someone else fixed a doc
+    # example; that teaches people to regenerate the ledger without reading it.
+    import check_doc_examples as chk
+
+    good = Block(path="p.md", line=1, info="flow", lang="flow", code=COMPLETE)
+    monkeypatch.setattr(
+        chk, "LEDGER",
+        _ledger(tmp_path, [{"key": good.key, "path": "p.md", "line": 1,
+                            "status": "unverified"}]),
+    )
+    assert chk.check_ledger([chk.verify(good)]) == 0
+    assert "now compile" in capsys.readouterr().out
+
+
+def test_a_missing_ledger_is_a_failure(tmp_path, monkeypatch):
+    import check_doc_examples as chk
+
+    monkeypatch.setattr(chk, "LEDGER", tmp_path / "absent.json")
+    assert chk.check_ledger([]) == 1
