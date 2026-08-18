@@ -1,8 +1,9 @@
 {
   "generated": "2026-08-18",
   "totals": {
-    "verified": 392,
-    "unverified": 359
+    "verified": 407,
+    "unverified": 300,
+    "ignored": 44
   },
   "blocks": [
     {
@@ -114,233 +115,233 @@
       "key": "VISION.md#8707a3f22d05",
       "path": "VISION.md",
       "line": 53,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: nested flow member 'angle' in flow 'Pendulum' has type 'Angle', which is not a flow in this file at line 2\n\n     2 |     angle : Angle\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#bb179312e0f9",
       "path": "VISION.md",
       "line": 91,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "proposed temporal syntax, not implemented",
+      "reason": "proposed temporal syntax, not implemented"
     },
     {
       "key": "VISION.md#dec4da08481c",
       "path": "VISION.md",
       "line": 102,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
     },
     {
       "key": "VISION.md#0c188899d42a",
       "path": "VISION.md",
       "line": 112,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
     },
     {
       "key": "VISION.md#e55e372e4183",
       "path": "VISION.md",
       "line": 118,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
     },
     {
       "key": "VISION.md#98bc804b525f",
       "path": "VISION.md",
       "line": 124,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: nested flow member 'motor' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     motor : Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#a4ee7648f3aa",
       "path": "VISION.md",
       "line": 139,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
     },
     {
       "key": "VISION.md#c116ef3e4861",
       "path": "VISION.md",
       "line": 176,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
     },
     {
       "key": "VISION.md#b06ba2d9d1cc",
       "path": "VISION.md",
       "line": 183,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
     },
     {
       "key": "VISION.md#ac15ca7a2d52",
       "path": "VISION.md",
       "line": 189,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
     },
     {
       "key": "VISION.md#18ce92f92623",
       "path": "VISION.md",
       "line": 195,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed dimensioned flow members; flow state is f32/f64 today",
+      "reason": "proposed dimensioned flow members; flow state is f32/f64 today"
     },
     {
       "key": "VISION.md#397fb232f792",
       "path": "VISION.md",
       "line": 202,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
     },
     {
       "key": "VISION.md#48ab2bd52fa0",
       "path": "VISION.md",
       "line": 210,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#39a2169d42c7",
       "path": "VISION.md",
       "line": 218,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#cc2ffdd90529",
       "path": "VISION.md",
       "line": 226,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "fragment of a flow body shown on its own, not a compilation unit",
+      "reason": "fragment of a flow body shown on its own, not a compilation unit"
     },
     {
       "key": "VISION.md#83acfa12edca",
       "path": "VISION.md",
       "line": 234,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "proposed temporal syntax, not implemented",
+      "reason": "proposed temporal syntax, not implemented"
     },
     {
       "key": "VISION.md#626580d5a7e2",
       "path": "VISION.md",
       "line": 244,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'MotorController' body at line 2, column 5\n\n     2 |     realtime\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), "
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#d4815722d583",
       "path": "VISION.md",
       "line": 275,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#30bc8af339e9",
       "path": "VISION.md",
       "line": 283,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#a2e3a53c3616",
       "path": "VISION.md",
       "line": 299,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#bfc1a670e02e",
       "path": "VISION.md",
       "line": 318,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op BinaryOperation statement; the text is not statements"
+      "status": "ignored",
+      "detail": "illustrates a units mismatch; too small to compile as written",
+      "reason": "illustrates a units mismatch; too small to compile as written"
     },
     {
       "key": "VISION.md#3c099e822924",
       "path": "VISION.md",
       "line": 337,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Ball' body at line 3, column 22\n\n     3 |     velocity : Meter / Second\n       |                      ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics"
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#c4c53c48d7c8",
       "path": "VISION.md",
       "line": 354,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant : Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#52bf4850ff43",
       "path": "VISION.md",
       "line": 370,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'Pendulum' body at line 2, column 5\n\n     2 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('whe"
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#c0693e70632f",
       "path": "VISION.md",
       "line": 383,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: represent koopman: not yet implemented (Stage-1 ships `represent linear` with explicit A/B/C; see docs/vision/north-star.md \u00a79)"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#483e80b1785d",
       "path": "VISION.md",
       "line": 400,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: analyze Pendulum: Stage-1 supports `lqr { \u2026 }` only; got 'poles'"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#4445c6e42eff",
       "path": "VISION.md",
       "line": 414,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#acd0c30844f5",
       "path": "VISION.md",
       "line": 428,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "VISION.md#904b43b9808f",
       "path": "VISION.md",
       "line": 443,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "proposed syntax, not implemented",
+      "reason": "proposed syntax, not implemented"
     },
     {
       "key": "apps/http_json_cache/README.md#5b1362ca76b4",
@@ -443,8 +444,8 @@
       "path": "docs/AI_FLOW_HANDBOOK.md",
       "line": 749,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.nat'"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#763b4d6ceda5",
@@ -645,8 +646,8 @@
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 902,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.nat'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
@@ -661,16 +662,16 @@
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 950,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve relative import '.util' from /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_doc_mod_rsfne_4q"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#5eaee9ca5dec",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 957,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'flowlm.lib'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
@@ -694,15 +695,15 @@
       "line": 1213,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'gif_begin'"
+      "detail": "Undefined variable 'pixels'"
     },
     {
       "key": "docs/blas-bindings.md#4bd5e7f4fa12",
       "path": "docs/blas-bindings.md",
       "line": 7,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'eye'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/01-a-complete-program.md#dace703a8b6d",
@@ -1421,8 +1422,8 @@
       "path": "docs/book/11-modules-packages-and-interop.md",
       "line": 12,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.nat.nat_zero_add'"
     },
     {
       "key": "docs/book/11-modules-packages-and-interop.md#b07ec74b3f77",
@@ -1437,8 +1438,8 @@
       "path": "docs/book/11-modules-packages-and-interop.md",
       "line": 41,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve relative import '.filters' from /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_doc_mod_emoctma2"
     },
     {
       "key": "docs/book/11-modules-packages-and-interop.md#989ca6416b42",
@@ -1540,9 +1541,9 @@
       "key": "docs/book/12-effects-and-concurrency.md#802ae518b277",
       "path": "docs/book/12-effects-and-concurrency.md",
       "line": 179,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Function 'work' declares unknown effect 'Async' in its `with` row"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#5d06adabee6e",
@@ -1620,9 +1621,9 @@
       "key": "docs/book/13-evolution-and-dynamics.md#b3732ed23f93",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 200,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'dsys_continuous'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#ffc17c04f548",
@@ -1644,9 +1645,9 @@
       "key": "docs/book/13-evolution-and-dynamics.md#3ad10e4c58c5",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 246,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'heat_euler_step_1d'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/14-numerics-autodiff-and-ml.md#c1ff29c83944",
@@ -1932,9 +1933,9 @@
       "key": "docs/language/async-effects.md#a0a5238dd2fb",
       "path": "docs/language/async-effects.md",
       "line": 17,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'Async'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/c-fnptr-call.md#a63012f87494",
@@ -1964,9 +1965,9 @@
       "key": "docs/language/dynamics-dsl.md#1433f3dd3de6",
       "path": "docs/language/dynamics-dsl.md",
       "line": 59,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'dsys_discrete'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/dynamics-dsl.md#d7c9bfea8da2",
@@ -2012,9 +2013,9 @@
       "key": "docs/language/dynamics-dsl.md#e5183655ba47",
       "path": "docs/language/dynamics-dsl.md",
       "line": 160,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'horizon_finite'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/epistemology.md#40a2237a9f06",
@@ -2053,8 +2054,8 @@
       "path": "docs/language/epistemology.md",
       "line": 112,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.Nat/+'"
     },
     {
       "key": "docs/language/epistemology.md#440ad79fe6e9",
@@ -2271,32 +2272,32 @@
       "path": "docs/language/modules.md",
       "line": 16,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.Nat/+'"
     },
     {
       "key": "docs/language/modules.md#3c178c94a485",
       "path": "docs/language/modules.md",
       "line": 24,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Unsafe import path: ../../../../lib/verify/nat.flow"
     },
     {
       "key": "docs/language/modules.md#2b678a0fe005",
       "path": "docs/language/modules.md",
       "line": 89,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.nat.nat_zero_add'"
     },
     {
       "key": "docs/language/modules.md#41d0184a9bec",
       "path": "docs/language/modules.md",
       "line": 111,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'verify.derived.nat_add_commutes'"
     },
     {
       "key": "docs/language/modules.md#58e507f11b4a",
@@ -2310,17 +2311,17 @@
       "key": "docs/language/modules.md#db9748eee7a1",
       "path": "docs/language/modules.md",
       "line": 150,
-      "status": "verified",
-      "mode": "standalone",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve relative import '.util' from /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_doc_mod_txuac_b1"
     },
     {
       "key": "docs/language/modules.md#420b05da2a58",
       "path": "docs/language/modules.md",
       "line": 167,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'flowlm.lib'"
     },
     {
       "key": "docs/language/modules.md#0c6dcdf7b237",
@@ -2383,8 +2384,9 @@
       "path": "docs/language/replace-go.md",
       "line": 28,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'async_set_maxprocs'"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "call to undeclared function 'pthread_mutex_init'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
     },
     {
       "key": "docs/language/safety-profiles.md#e5c51903c679",
@@ -2478,17 +2480,17 @@
       "key": "docs/language/syntax.md#40c1236b0772",
       "path": "docs/language/syntax.md",
       "line": 12,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.NUMBER"
+      "status": "ignored",
+      "detail": "catalogue of literal forms, not an expression",
+      "reason": "catalogue of literal forms, not an expression"
     },
     {
       "key": "docs/language/syntax.md#124fbdf10ce3",
       "path": "docs/language/syntax.md",
       "line": 32,
-      "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "status": "ignored",
+      "detail": "comment syntax only",
+      "reason": "comment syntax only"
     },
     {
       "key": "docs/language/syntax.md#ee8367a44632",
@@ -2502,33 +2504,33 @@
       "key": "docs/language/syntax.md#ce589787ce0c",
       "path": "docs/language/syntax.md",
       "line": 67,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "assignment forms over placeholder names",
+      "reason": "assignment forms over placeholder names"
     },
     {
       "key": "docs/language/syntax.md#1c81b3b51584",
       "path": "docs/language/syntax.md",
       "line": 74,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'value'"
+      "status": "ignored",
+      "detail": "declaration template; Type and ReturnType are metasyntactic",
+      "reason": "declaration template; Type and ReturnType are metasyntactic"
     },
     {
       "key": "docs/language/syntax.md#a3e9a1ebfa3f",
       "path": "docs/language/syntax.md",
       "line": 81,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "status": "ignored",
+      "detail": "control-flow shapes with elided bodies",
+      "reason": "control-flow shapes with elided bodies"
     },
     {
       "key": "docs/language/syntax.md#48260fcce41f",
       "path": "docs/language/syntax.md",
       "line": 101,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+      "status": "ignored",
+      "detail": "match arm forms over an undeclared subject",
+      "reason": "match arm forms over an undeclared subject"
     },
     {
       "key": "docs/language/syntax.md#2b1e4aa3a5c1",
@@ -2551,9 +2553,9 @@
       "key": "docs/language/syntax.md#1df2f1f4d825",
       "path": "docs/language/syntax.md",
       "line": 151,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "call syntax with placeholder names",
+      "reason": "call syntax with placeholder names"
     },
     {
       "key": "docs/language/syntax.md#262453d93453",
@@ -2575,57 +2577,57 @@
       "key": "docs/language/syntax.md#fc0551e101f0",
       "path": "docs/language/syntax.md",
       "line": 166,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op FieldAccess statement; the text is not statements"
+      "status": "ignored",
+      "detail": "field-access notation",
+      "reason": "field-access notation"
     },
     {
       "key": "docs/language/syntax.md#ef796faac3d7",
       "path": "docs/language/syntax.md",
       "line": 172,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op ArrayAccess statement; the text is not statements"
+      "status": "ignored",
+      "detail": "index notation",
+      "reason": "index notation"
     },
     {
       "key": "docs/language/syntax.md#d4b87f972da3",
       "path": "docs/language/syntax.md",
       "line": 183,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "pipe desugaring shown as equivalences",
+      "reason": "pipe desugaring shown as equivalences"
     },
     {
       "key": "docs/language/syntax.md#c74b4bde8358",
       "path": "docs/language/syntax.md",
       "line": 194,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "pipe placeholder forms shown as equivalences",
+      "reason": "pipe placeholder forms shown as equivalences"
     },
     {
       "key": "docs/language/syntax.md#0096dd2801f4",
       "path": "docs/language/syntax.md",
       "line": 208,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "ignored",
+      "detail": "fork-block notation over undeclared helpers",
+      "reason": "fork-block notation over undeclared helpers"
     },
     {
       "key": "docs/language/syntax.md#93bffa04a67b",
       "path": "docs/language/syntax.md",
       "line": 227,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "ignored",
+      "detail": "inferred-record notation over undeclared helpers",
+      "reason": "inferred-record notation over undeclared helpers"
     },
     {
       "key": "docs/language/syntax.md#6c55260d9c46",
       "path": "docs/language/syntax.md",
       "line": 254,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.RETURN"
+      "status": "ignored",
+      "detail": "fragment of a piped return expression",
+      "reason": "fragment of a piped return expression"
     },
     {
       "key": "docs/language/types.md#444e10514455",
@@ -2984,17 +2986,17 @@
       "key": "docs/library/memory.md#0b8a54360d12",
       "path": "docs/library/memory.md",
       "line": 12,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'alloc_i32'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/memory.md#2ecc7ae9ff1e",
       "path": "docs/library/memory.md",
       "line": 61,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'arena_create'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/memory.md#426fdaa2598b",
@@ -3008,17 +3010,17 @@
       "key": "docs/library/planet.md#c30bb9956137",
       "path": "docs/library/planet.md",
       "line": 56,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'planet_init'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/procgen.md#05671b9bcbba",
       "path": "docs/library/procgen.md",
       "line": 42,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'procgen_seed'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/rt-safety.md#75f9918e2d2b",
@@ -3198,8 +3200,8 @@
       "path": "docs/project/package-registry.md",
       "line": 46,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'hello_lib.lib'"
     },
     {
       "key": "docs/project/pattern-adoption.md#339b46f6fbc1",
@@ -3229,9 +3231,9 @@
       "key": "docs/project/pattern-adoption.md#13f6b9dee704",
       "path": "docs/project/pattern-adoption.md",
       "line": 106,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'trail_push_2d'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/project/pattern-adoption.md#f4b29e7478b5",
@@ -3247,7 +3249,7 @@
       "line": 215,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'heat_euler_step_1d'"
+      "detail": "Undefined variable 'AMBIENT'"
     },
     {
       "key": "docs/project/pattern-adoption.md#805d1d7ddd8b",
@@ -3470,24 +3472,24 @@
       "path": "docs/tutorials/advanced.md",
       "line": 262,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'open'"
+      "stage": "imports",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FUNCTION at line 49, column 8\n\n    49 | extern function open(path: string, flags: i32, mode: i32) -> i32\n       |        ^"
     },
     {
       "key": "docs/tutorials/advanced.md#dce70cddf25c",
       "path": "docs/tutorials/advanced.md",
       "line": 285,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'getpid'"
+      "stage": "imports",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FUNCTION at line 49, column 8\n\n    49 | extern function open(path: string, flags: i32, mode: i32) -> i32\n       |        ^"
     },
     {
       "key": "docs/tutorials/advanced.md#786fa85b8ca0",
       "path": "docs/tutorials/advanced.md",
       "line": 299,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'getenv'"
+      "stage": "imports",
+      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FUNCTION at line 49, column 8\n\n    49 | extern function open(path: string, flags: i32, mode: i32) -> i32\n       |        ^"
     },
     {
       "key": "docs/tutorials/advanced.md#b718879606fc",
@@ -3821,9 +3823,9 @@
       "key": "docs/tutorials/beginner.md#8ee653735945",
       "path": "docs/tutorials/beginner.md",
       "line": 280,
-      "status": "verified",
-      "mode": "standalone",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "Dangerous FFI 'sprintf' must be declared under '@unsafe extern' (CERT / #276)"
     },
     {
       "key": "docs/tutorials/beginner.md#a95194868d9f",
@@ -3838,8 +3840,8 @@
       "path": "docs/tutorials/beginner.md",
       "line": 308,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'double'"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'mylib.flow'"
     },
     {
       "key": "docs/tutorials/beginner.md#73fa909facc8",
@@ -4117,9 +4119,9 @@
       "key": "docs/tutorials/dynamics.md#a6e91eb967a1",
       "path": "docs/tutorials/dynamics.md",
       "line": 146,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'horizon_finite'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/dynamics.md#abf147cd64b9",
@@ -4149,9 +4151,9 @@
       "key": "docs/tutorials/dynamics.md#e8e5cdc858ed",
       "path": "docs/tutorials/dynamics.md",
       "line": 237,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'dsys_continuous'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/dynamics.md#92a36726e401",
@@ -4413,9 +4415,9 @@
       "key": "docs/tutorials/evolution.md#21f9acdcfe1a",
       "path": "docs/tutorials/evolution.md",
       "line": 266,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'heat_euler_step_1d'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/evolution.md#6f23f1f0725c",
@@ -5877,17 +5879,17 @@
       "key": "lib/stdlib/audio/README.md#230210e0a7e0",
       "path": "lib/stdlib/audio/README.md",
       "line": 22,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'bass'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "lib/stdlib/audio/README.md#3b357211aee9",
       "path": "lib/stdlib/audio/README.md",
       "line": 33,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'clock_house'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "lib/stdlib/audio/README.md#2ca0f9c091b5",
@@ -5895,7 +5897,7 @@
       "line": 47,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'clock_medium'"
+      "detail": "No matching overload for function 'pattern_4' with arguments (array<i32, 4>, Clock, i32, (i32) -> f32)"
     },
     {
       "key": "lib/stdlib/audio/README.md#e2d6ad218513",
@@ -5903,7 +5905,7 @@
       "line": 61,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'clock_new'"
+      "detail": "No matching overload for function 'pattern_4' with arguments (array<i32, 4>, Clock, i64, (i32) -> f32)"
     },
     {
       "key": "lib/stdlib/audio/README.md#6086078e52bc",
@@ -5911,7 +5913,7 @@
       "line": 148,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'clock_medium'"
+      "detail": "No matching overload for function 'euclidean_pattern' with arguments (i32, i32, Clock, i32, () -> f32)"
     },
     {
       "key": "lib/stdlib/audio/README.md#00726b1ce382",
@@ -5919,7 +5921,7 @@
       "line": 163,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'progression_pop'"
+      "detail": "Undefined variable 'clock'"
     },
     {
       "key": "lib/stdlib/audio/README.md#20210a613179",
@@ -5927,7 +5929,7 @@
       "line": 180,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'scale_pentatonic_major'"
+      "detail": "Undefined variable 'clock'"
     },
     {
       "key": "lib/stdlib/audio/README.md#3e6304cef452",
@@ -5935,7 +5937,7 @@
       "line": 200,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'bass'"
+      "detail": "Undefined variable 'clock'"
     },
     {
       "key": "lib/stdlib/audio/README.md#bcc939450a73",
@@ -5982,16 +5984,16 @@
       "path": "registry/packages/flowlm/README.md",
       "line": 80,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'flowlm.lib'"
     },
     {
       "key": "registry/packages/flowlm/README.md#a6cca3601607",
       "path": "registry/packages/flowlm/README.md",
       "line": 88,
       "status": "unverified",
-      "stage": "vacuous",
-      "detail": "compiles to an empty translation unit"
+      "stage": "imports",
+      "detail": "FileNotFoundError: Could not resolve import 'flowlm.model'"
     },
     {
       "key": "registry/packages/flowlm/README.md#f36a8765c44d",
