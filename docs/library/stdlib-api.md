@@ -1,8 +1,8 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-08-08 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` on 2026-08-18 by `scripts/gen_stdlib_docs.py`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**105** modules scanned.
+**111** modules scanned.
 
 ## Modules
 
@@ -207,7 +207,7 @@ Delay Line (F32) with Real Buffer Storage  Uses AudioBufferF32 for a real ring b
 
 Audio Effects Module - Common Effects Processors  Ready-to-use effects: reverb, delay, distortion, chorus, etc.
 
-**Structs:** `Delay`, `Distortion`, `Chorus`, `Compressor`, `Bitcrusher`, `Reverb`
+**Structs:** `Delay`, `Distortion`, `Chorus`, `Compressor`, `Bitcrusher`, `CombFilter`, `AllpassFilter`, `Reverb`
 
 **Functions:**
 
@@ -244,12 +244,17 @@ Audio Effects Module - Common Effects Processors  Ready-to-use effects: reverb, 
 | `bitcrusher_telephone` | `() -> Bitcrusher` | — |
 | `bitcrusher_crushed` | `() -> Bitcrusher` | — |
 | `bitcrusher_process` | `(crusher: Bitcrusher, input: f32) -> f32` | Process one sample |
+| `comb_new` | `(delay_ms: f32, sr: SampleRate) -> CombFilter` | — |
+| `comb_tick` | `(comb: CombFilter, input: f32) -> CombFilter` | — |
+| `allpass_new` | `(delay_ms: f32, sr: SampleRate) -> AllpassFilter` | — |
+| `allpass_tick` | `(allpass: AllpassFilter, input: f32) -> AllpassFilter` | — |
 | `reverb_new` | `(room_size: f32, damping: f32, mix: f32) -> Reverb` | — |
 | `reverb_small_room` | `() -> Reverb` | Presets |
 | `reverb_medium_hall` | `() -> Reverb` | — |
 | `reverb_large_hall` | `() -> Reverb` | — |
 | `reverb_plate` | `() -> Reverb` | — |
-| `reverb_process` | `(rev: Reverb, input: f32) -> f32` | Process one sample (simplified - full reverb needs comb filters) |
+| `reverb_tick` | `(rev: Reverb, input: f32) -> Reverb` | Process one sample, updating the Reverb state and returning the updated Reverb struct |
+| `reverb_process` | `(rev: Reverb, input: f32) -> f32` | Process one sample (simplified - full reverb needs comb filters) Note: To use the true stateful comb/allpass reverb, use reverb_tick instead. |
 
 ### `audio/envelopes.flow`
 
@@ -1134,6 +1139,12 @@ automata: a cellular-automaton framework.  Import: import "stdlib/automata.flow"
                              pal: ptr<u8>, nstates: i32,
                              out: ptr<u8>) -> void` | Pack a grid into an RGB8 buffer for one gfx_blit_rgb call, scaling each cell to `px` by `px` device pixels. `pal` holds 3 bytes per state. A dense grid drawn cell by cell with fill_rect is tens of thousands of calls a frame; this is one. |
 
+### `bigint.flow`
+
+Big integer support for Project Euler (#252). Limb-based unsigned magnitude + separate sign. Ops are functions (no operator overloading yet). Enough for factorial / binomial / mod_pow style problems.
+
+*No `export` items found (internal / extern-only module).*
+
 ### `blas.flow`
 
 BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import "stdlib/blas.flow"
@@ -1163,6 +1174,12 @@ BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import 
 | `eye` | `(n: i32) -> Mat` | n×n identity matrix (ones on diagonal). |
 | `zeros` | `(rows: i32, cols: i32) -> Mat` | rows×cols zero matrix (alias for mat_new). |
 | `ones` | `(rows: i32, cols: i32) -> Mat` | rows×cols matrix filled with 1.0. |
+
+### `checked_arith.flow`
+
+Checked / saturating / wrapping integer arithmetic (#275). Prefer these helpers when you need defined overflow behaviour outside the safety-profile default (which aborts via FLOW_CHECKED_*).
+
+*No `export` items found (internal / extern-only module).*
 
 ### `circuit.flow`
 
@@ -1230,6 +1247,32 @@ FLOW Concurrency Standard Library Threads, mutexes, channels, atomics — real p
 Cryptographic primitives (FFI to platform or bundled implementations)
 
 *No `export` items found (internal / extern-only module).*
+
+### `dsp.flow`
+
+DSP Pipeline Module  Functional DSP primitives that compose with the |> operator.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `map_f32` | `(arr: ptr<f32>, n: i32, f: (f32) -> f32) -> ptr<f32>` | Apply a function element-wise: out[i] = f(arr[i]). |
+| `filter_f32` | `(arr: ptr<f32>, n: i32, pred: (f32) -> bool, out_n: ptr<i32>) -> ptr<f32>` | Keep only elements where pred returns true. Returns a pointer; writes the filtered count to out_n. |
+| `reduce_f32` | `(arr: ptr<f32>, n: i32, init: f32, f: (f32, f32) -> f32) -> f32` | Left fold: acc = f(acc, arr[0]), then f(acc, arr[1]), etc. |
+| `scan_f32` | `(arr: ptr<f32>, n: i32, init: f32, f: (f32, f32) -> f32) -> ptr<f32>` | Prefix scan: out[0] = init, out[i] = f(out[i-1], arr[i]). |
+| `zip_with_f32` | `(a: ptr<f32>, b: ptr<f32>, n: i32, f: (f32, f32) -> f32) -> ptr<f32>` | Element-wise combine two buffers: out[i] = f(a[i], b[i]). |
+| `scale_f32` | `(arr: ptr<f32>, n: i32, gain: f32) -> ptr<f32>` | Scale every element by a scalar gain. |
+| `offset_f32` | `(arr: ptr<f32>, n: i32, dc: f32) -> ptr<f32>` | Add a constant offset to every element. |
+| `clip_f32` | `(arr: ptr<f32>, n: i32, lo: f32, hi: f32) -> ptr<f32>` | Clip elements to [lo, hi]. |
+| `sum_f32` | `(arr: ptr<f32>, n: i32) -> f32` | Sum all elements. |
+| `dot_f32` | `(a: ptr<f32>, b: ptr<f32>, n: i32) -> f32` | Dot product of two buffers. |
+| `map_f64` | `(arr: ptr<f64>, n: i32, f: (f64) -> f64) -> ptr<f64>` | f64 primitives |
+| `reduce_f64` | `(arr: ptr<f64>, n: i32, init: f64, f: (f64, f64) -> f64) -> f64` | — |
+| `scan_f64` | `(arr: ptr<f64>, n: i32, init: f64, f: (f64, f64) -> f64) -> ptr<f64>` | — |
+| `zip_with_f64` | `(a: ptr<f64>, b: ptr<f64>, n: i32, f: (f64, f64) -> f64) -> ptr<f64>` | — |
+| `scale_f64` | `(arr: ptr<f64>, n: i32, gain: f64) -> ptr<f64>` | — |
+| `sum_f64` | `(arr: ptr<f64>, n: i32) -> f64` | — |
+| `dot_f64` | `(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64` | — |
 
 ### `dynamics/attractor.flow`
 
@@ -1552,6 +1595,13 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_present` | `(g: Gfx) -> void` | — |
 | `gfx_frame_pump` | `(g: Gfx) -> bool` | Poll events; return false if the window should close or Esc is down. |
 | `gfx_run` | `(g: Gfx, max_frames: i32) -> i32` | Run up to max_frames, calling user-defined flow_gfx_frame(ctx, frame) each tick. Returns the number of frames completed. Requires linking the gfx runtime. |
+| `gfx_time_ms` | `(g: Gfx) -> f64` | Milliseconds since the window opened. The clock lives on the gfx ABI rather than in stdlib/time.flow because it has to mean the right thing in every build mode, and the backends disagree on purpose: |
+| `gfx_wait_frame` | `(g: Gfx, target_fps: i32) -> void` | Sleep out the remainder of the current frame at target_fps. There is no vsync on the native paths, so without this a demo runs as fast as the machine allows and its speed becomes hardware-dependent. No-op in the recorder (which should run flat out) and in the browser (where present |
+| `gfx_mouse` | `(g: Gfx) -> Mouse` | — |
+| `gfx_mouse_x` | `(g: Gfx) -> i32` | — |
+| `gfx_mouse_y` | `(g: Gfx) -> i32` | — |
+| `gfx_mouse_down` | `(g: Gfx, button: i32) -> bool` | button: 0 = left, 1 = right, 2 = middle |
+| `gfx_mouse_wheel` | `(g: Gfx) -> i32` | Cumulative scroll total. Diff against your own previous value. |
 
 ### `gif.flow`
 
@@ -1640,6 +1690,12 @@ GPU simulation layer (CPU-backed) to model DeviceContext/Queue/Buffer/Layouts. T
 |------|-----------|------|
 | `print_benchmark` | `(name: string, time: f64) -> void` | — |
 
+### `keys.flow`
+
+Keyboard constants for gfx programs.  Every backend speaks macOS NSEvent virtual keycodes, because that is what the
+
+*No `export` items found (internal / extern-only module).*
+
 ### `logpkg.flow`
 
 Minimal logging package for tests/examples.
@@ -1709,6 +1765,9 @@ Manual memory management — real libc heap (C backend)  Flow has no GC. Heap me
 | `alloc_f64` | `(count: i64) -> ptr<f64>` | — |
 | `memory_zero_i32` | `(p: ptr<i32>, count: i64) -> void` | — |
 | `memory_copy_i32` | `(dst: ptr<i32>, src: ptr<i32>, count: i64) -> void` | — |
+| `grow_uninit` | `(p: ptr<void>, new_size: i64) -> ptr<void>` | ── Uninitialized growth helpers (#424) ───────────────────────────── realloc without zeroing the new region. Callers must initialize every new element before reading it. Use grow_zeroed when zero-fill is needed. |
+| `grow_zeroed` | `(p: ptr<void>, old_size: i64, new_size: i64) -> ptr<void>` | — |
+| `alloc_uninit` | `(elem_size: i64, count: i64) -> ptr<void>` | Allocate exactly count * elem_size bytes, no minimum capacity floor. Callers must initialize elements before reading. |
 | `arena_create` | `(capacity: i64) -> Arena` | — |
 | `arena_alloc` | `(arena: ptr<Arena>, size: i64) -> ptr<void>` | — |
 | `arena_alloc_i32` | `(arena: ptr<Arena>, count: i64) -> ptr<i32>` | — |
@@ -1922,14 +1981,6 @@ planet: a procedural planet as a system that evolves through time.  A planet is 
 | `pl_lerpf` | `(a: f32, b: f32, t: f32) -> f32` | — |
 | `planet_seed` | `(s: u32) -> void` | Deterministic RNG: a 32-bit LCG (Numerical Recipes constants). |
 | `planet_current_seed` | `() -> u32` | — |
-| `planet_noise_hash` | `(ix: i32, iy: i32, iz: i32, salt: i32) -> u32` | Integer hash. Three rounds of xor-multiply, seeded from pl_seed0 so noise fields move with the planet seed. |
-| `planet_noise3` | `(x: f32, y: f32, z: f32, salt: i32) -> f32` | Gradient noise in [-1, 1] (approximately; the theoretical bound is wider). |
-| `planet_noise_fbm` | `(x: f32, y: f32, z: f32, octaves: i32,
-                                 salt: i32) -> f32` | Fractional Brownian motion: octaves of gradient noise at doubling frequency and halving amplitude, normalised to roughly [-1, 1]. |
-| `planet_noise_ridged` | `(x: f32, y: f32, z: f32, octaves: i32,
-                                    salt: i32) -> f32` | Ridged multifractal: 1 - \|noise\| per octave, which turns the zero crossings into creases. Used for mountain-belt texture, in [0, 1]. |
-| `planet_noise_warped` | `(x: f32, y: f32, z: f32, octaves: i32,
-                                    warp: f32, salt: i32) -> f32` | Domain-warped fBm: the sample point is displaced by another noise field first, which breaks the axis-aligned look of plain fBm and gives coastlines their folded, non-fractal-looking character. |
 | `pvec3` | `(x: f32, y: f32, z: f32) -> PVec3` | Vector helpers |
 | `pv_norm` | `(a: PVec3) -> PVec3` | — |
 | `pv_dot` | `(a: PVec3, b: PVec3) -> f32` | — |
@@ -2000,7 +2051,12 @@ planet: a procedural planet as a system that evolves through time.  A planet is 
                                       lake: f32) -> i32` | STAGE 6 --- biomes Whittaker's classification: mean annual temperature against annual precipitation, with the polar and alpine cutoffs that Whittaker's diagram leaves implicit. Precipitation thresholds are in millimetres per year. |
 | `planet_stage_biomes` | `() -> void` | — |
 | `planet_biome` | `(i: i32) -> i32` | — |
-| … | 19 more | |
+| `planet_biome_name` | `(b: i32) -> string` | — |
+| `planet_biome_r` | `(b: i32) -> f32` | — |
+| `planet_biome_g` | `(b: i32) -> f32` | — |
+| `planet_biome_b` | `(b: i32) -> f32` | — |
+| `planet_biome_land_fraction` | `(b: i32) -> f32` | Area-weighted fraction of land covered by biome `b`. Lakes count as land. |
+| … | 14 more | |
 
 ### `posix.flow`
 
@@ -2040,8 +2096,10 @@ procgen: self-contained 2D/3D gradient and value noise for general use.  A proce
 | `procgen_ridged3` | `(x: f32, y: f32, z: f32, octaves: i32,
                                 salt: i32) -> f32` | Ridged multifractal: 1 - \|noise\| per octave, which turns the zero crossings into creases. Range [0, 1]. |
 | `procgen_ridged2` | `(x: f32, y: f32, octaves: i32, salt: i32) -> f32` | — |
-| `procgen_warped2` | `(x: f32, y: f32, octaves: i32, warp: f32,
+| `procgen_warped3` | `(x: f32, y: f32, z: f32, octaves: i32, warp: f32,
                                 salt: i32) -> f32` | Domain-warped fBm: the sample point is displaced by another noise field first, which breaks the axis-aligned look of plain fBm. |
+| `procgen_warped2` | `(x: f32, y: f32, octaves: i32, warp: f32,
+                                salt: i32) -> f32` | — |
 | `procgen_value2` | `(x: f32, y: f32, salt: i32) -> f32` | Value noise in [0, 1]. Hashes the integer lattice and interpolates the four corner values with a smoothstep weight, matching examples/threed/heightmap_terrain. |
 
 ### `psychstats.flow`
@@ -2246,6 +2304,19 @@ render3d: a software 3D renderer written in Flow.  Everything below runs on the 
 Result Type Represents either success (Ok(value)) or failure (Err(error))
 
 *No `export` items found (internal / extern-only module).*
+
+### `rf.flow`
+
+RF / SDR Module - IQ Samples and Rate-Typed Signals  Complex baseband processing primitives for software-defined radio.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `iq` | `(re: f32, im: f32) -> IQ` | IQ constructors |
+| `iq_from_real` | `(re: f32) -> IQ` | — |
+| `iq_sample` | `(re: f32, im: f32) -> IQSample` | — |
+| `iq_sample_from_iq` | `(z: IQ) -> IQSample` | — |
 
 ### `sdl2.flow`
 
@@ -2539,6 +2610,13 @@ Simple UI layout helpers for DSL blocks
 | `ui_stack_begin` | `(state: ptr<UiLayoutState>) -> void` | — |
 | `ui_stack_end` | `(state: ptr<UiLayoutState>) -> void` | — |
 | `ui_box` | `(state: ptr<UiLayoutState>) -> UiRect` | — |
+| `ui_layout_unit` | `(state: ptr<UiLayoutState>) -> f32` | — |
+
+### `units_si.flow`
+
+SI Units Module - Base dimensions and SI-prefixed units  Provides base SI dimensions and common derived units with SI prefixes.
+
+*No `export` items found (internal / extern-only module).*
 
 ### `vec.flow`
 

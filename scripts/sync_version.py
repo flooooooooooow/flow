@@ -57,6 +57,15 @@ MIRRORS: tuple[Mirror, ...] = (
     Mirror("pyproject.toml", (r'^version = "(?P<version>[^"]+)"$',)),
     Mirror("CITATION.cff", (r"^version: (?P<version>\S+)$",)),
     Mirror("README.md", (r"^\| Version \| (?P<version>\S+) \|$",)),
+    # The wiki front page. It was advertising v0.10 while the canonical version
+    # was 0.11.1, because nothing pointed sync_version at it.
+    Mirror(
+        "docs/wiki-home.md",
+        (
+            r'^<p class="wiki-hero-eyebrow">v(?P<version>\S+) ·',
+            r"^\| Version \| (?P<version>\S+) ·",
+        ),
+    ),
     Mirror(
         "docs/LANGUAGE_SPEC.md",
         (
