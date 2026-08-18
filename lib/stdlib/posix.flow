@@ -9,16 +9,21 @@ struct FileDescriptor {
     fd: i32
 }
 
-# Standard file descriptors
-function stdin() -> FileDescriptor {
+# Standard file descriptors.
+#
+# Not named stdin/stdout/stderr: those are libc macros. On macOS `stdin`
+# expands to `__stdinp`, so the generated C declared `FileDescriptor
+# __stdinp(void)` against libc's `FILE *__stdinp`, and every program importing
+# this module failed to compile.
+function stdin_fd() -> FileDescriptor {
     return FileDescriptor { fd: 0 }
 }
 
-function stdout() -> FileDescriptor {
+function stdout_fd() -> FileDescriptor {
     return FileDescriptor { fd: 1 }
 }
 
-function stderr() -> FileDescriptor {
+function stderr_fd() -> FileDescriptor {
     return FileDescriptor { fd: 2 }
 }
 
