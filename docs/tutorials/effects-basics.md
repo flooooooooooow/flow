@@ -125,7 +125,7 @@ capability ConsoleLogger {
 
 ### 3.3 Call the effect from business logic
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-effects.flow
 function work() -> void with Logger {
     Logger.log_info("hello")
 }
@@ -135,7 +135,7 @@ There is no handler parameter on `work`.
 
 ### 3.4 Install the capability for one dynamic scope
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-all.flow
 function main() -> i32 {
     handle Logger with ConsoleLogger {
         work()
@@ -146,7 +146,7 @@ function main() -> i32 {
 
 ### 3.5 Swap the handler
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-all.flow
 capability NullLogger {
     effect Logger,
 
@@ -166,7 +166,7 @@ The body of `work` does not change.
 
 ### 3.6 Override one nested region
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-basics.flow
 handle Logger with ConsoleLogger {
     Logger.log_info("visible")
 
@@ -212,7 +212,7 @@ handle Inventory, Notify with TestBackend {
 
 ### 3.8 Strict effect rows
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-effects.flow
 function greet(name: string) -> void with Logger {
     Logger.log_info(name)
 }

@@ -1,9 +1,9 @@
 {
   "generated": "2026-08-18",
   "totals": {
-    "verified": 436,
-    "unverified": 249,
-    "ignored": 65,
+    "verified": 476,
+    "unverified": 235,
+    "ignored": 66,
     "expected-error": 1
   },
   "blocks": [
@@ -492,9 +492,9 @@
       "key": "docs/LANGUAGE_SPEC.md#7434f98369cb",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 280,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#3013243e9322",
@@ -1198,17 +1198,17 @@
       "key": "docs/book/08-types-and-declarations.md#db42c77cbd48",
       "path": "docs/book/08-types-and-declarations.md",
       "line": 72,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#90ae8f213a65",
       "path": "docs/book/08-types-and-declarations.md",
       "line": 85,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#b6143fbcc138",
@@ -1223,17 +1223,17 @@
       "key": "docs/book/08-types-and-declarations.md#3575b8152e04",
       "path": "docs/book/08-types-and-declarations.md",
       "line": 123,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 8 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#1ac407be1920",
       "path": "docs/book/08-types-and-declarations.md",
       "line": 140,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 9 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#6b51a5efb080",
@@ -1287,9 +1287,9 @@
       "key": "docs/book/09-expressions-and-matching.md#991960facd00",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 53,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 9 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#1953ee9dd15d",
@@ -1783,9 +1783,9 @@
       "key": "docs/book/appendix-a-language-card.md#1fb66cf41f6a",
       "path": "docs/book/appendix-a-language-card.md",
       "line": 52,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/appendix-a-language-card.md#33254af191d7",
@@ -1828,36 +1828,220 @@
       "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
     },
     {
-      "key": "docs/effects-showcase.md#2addc2f4528e",
+      "key": "docs/effects-showcase.md#7191faf9e6e5",
       "path": "docs/effects-showcase.md",
       "line": 22,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'Log'"
-    },
-    {
-      "key": "docs/effects-showcase.md#9aa946994b24",
-      "path": "docs/effects-showcase.md",
-      "line": 41,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/effects-showcase.md#a8b652fd0f5c",
+      "key": "docs/effects-showcase.md#7375383f195c",
       "path": "docs/effects-showcase.md",
-      "line": 51,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "line": 55,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
-      "key": "docs/effects-showcase.md#cae3f29a0f0f",
+      "key": "docs/effects-showcase.md#5f2224f46282",
       "path": "docs/effects-showcase.md",
-      "line": 223,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Function 'greet' declares unknown effect 'Log' in its `with` row"
+      "line": 69,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#8a31d881a0fc",
+      "path": "docs/effects-showcase.md",
+      "line": 81,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#b5f36fef5d53",
+      "path": "docs/effects-showcase.md",
+      "line": 94,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#2a34007008f6",
+      "path": "docs/effects-showcase.md",
+      "line": 105,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#7a6734106f57",
+      "path": "docs/effects-showcase.md",
+      "line": 137,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#5190313dfb63",
+      "path": "docs/effects-showcase.md",
+      "line": 155,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#e1bacf2fe62e",
+      "path": "docs/effects-showcase.md",
+      "line": 184,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#d0621e6ad971",
+      "path": "docs/effects-showcase.md",
+      "line": 198,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#55c7b5e0d8d6",
+      "path": "docs/effects-showcase.md",
+      "line": 210,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#cc380f5766c9",
+      "path": "docs/effects-showcase.md",
+      "line": 228,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#7c682e2a31a5",
+      "path": "docs/effects-showcase.md",
+      "line": 239,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#3634a12147df",
+      "path": "docs/effects-showcase.md",
+      "line": 254,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#93cc8b826921",
+      "path": "docs/effects-showcase.md",
+      "line": 287,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#f2b369ad233d",
+      "path": "docs/effects-showcase.md",
+      "line": 300,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#0e0af157b81b",
+      "path": "docs/effects-showcase.md",
+      "line": 313,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#0e1bb2d5dbbb",
+      "path": "docs/effects-showcase.md",
+      "line": 328,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#9a48adee0be9",
+      "path": "docs/effects-showcase.md",
+      "line": 364,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#6c16fa2854db",
+      "path": "docs/effects-showcase.md",
+      "line": 387,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#b5cd304c99fc",
+      "path": "docs/effects-showcase.md",
+      "line": 417,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#bd29de113a2e",
+      "path": "docs/effects-showcase.md",
+      "line": 431,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#373b72d1b197",
+      "path": "docs/effects-showcase.md",
+      "line": 455,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#141739ca2307",
+      "path": "docs/effects-showcase.md",
+      "line": 476,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#786c4672ef4b",
+      "path": "docs/effects-showcase.md",
+      "line": 486,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#5d9676834c09",
+      "path": "docs/effects-showcase.md",
+      "line": 530,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#2addc2f4528e",
+      "path": "docs/effects-showcase.md",
+      "line": 552,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/getting-started.md#961dc32e5a1e",
@@ -1919,9 +2103,9 @@
       "key": "docs/language/README.md#c83e3fc38802",
       "path": "docs/language/README.md",
       "line": 55,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/README.md#5fc4c393eca7",
@@ -1938,6 +2122,14 @@
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
+    },
+    {
+      "key": "docs/language/bpf.md#9866c7855825",
+      "path": "docs/language/bpf.md",
+      "line": 37,
+      "status": "ignored",
+      "detail": "compiled by the bpfel target rather than the host toolchain",
+      "reason": "compiled by the bpfel target rather than the host toolchain"
     },
     {
       "key": "docs/language/c-fnptr-call.md#a63012f87494",
@@ -4102,9 +4294,9 @@
       "key": "docs/tutorials/dynamics.md#981db7f021e7",
       "path": "docs/tutorials/dynamics.md",
       "line": 86,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/dynamics.md#660046d7d1eb",
@@ -4195,7 +4387,7 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#c4c0c2281e59",
+      "key": "docs/tutorials/effects-basics.md#2322eadef4f6",
       "path": "docs/tutorials/effects-basics.md",
       "line": 12,
       "status": "verified",
@@ -4205,15 +4397,15 @@
     {
       "key": "docs/tutorials/effects-basics.md#4e9845ab1e0b",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 25,
+      "line": 26,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#650cea263a8b",
+      "key": "docs/tutorials/effects-basics.md#42284695429e",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 45,
+      "line": 53,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -4221,50 +4413,74 @@
     {
       "key": "docs/tutorials/effects-basics.md#0e1dba26d128",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 62,
+      "line": 71,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#89824533c43d",
+      "key": "docs/tutorials/effects-basics.md#8bc1c08a0d7e",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 80,
+      "line": 101,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#f75c73dd92ca",
+      "key": "docs/tutorials/effects-basics.md#273a3a89ecdc",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 99,
+      "line": 110,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#3c864db61e5a",
+      "key": "docs/tutorials/effects-basics.md#78685a90b4e0",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 121,
+      "line": 128,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#0feec00715aa",
+      "key": "docs/tutorials/effects-basics.md#ae55d95de4b4",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 142,
+      "line": 138,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/tutorials/effects-basics.md#55c7641a4802",
+      "key": "docs/tutorials/effects-basics.md#fb86da4cc165",
       "path": "docs/tutorials/effects-basics.md",
-      "line": 163,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "line": 149,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#cd46eac448e0",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 169,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#0fbb1a036bd8",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 185,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/effects-basics.md#b33346195270",
+      "path": "docs/tutorials/effects-basics.md",
+      "line": 215,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/errors.md#b1212f1512cc",
@@ -5813,7 +6029,7 @@
     {
       "key": "docs/wiki-home.md#c7bdbf1d0781",
       "path": "docs/wiki-home.md",
-      "line": 120,
+      "line": 149,
       "status": "unverified",
       "stage": "parse",
       "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
@@ -5821,7 +6037,7 @@
     {
       "key": "docs/wiki-home.md#7dbb128f9b73",
       "path": "docs/wiki-home.md",
-      "line": 138,
+      "line": 167,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -5829,7 +6045,7 @@
     {
       "key": "docs/wiki-home.md#4c20c0278687",
       "path": "docs/wiki-home.md",
-      "line": 156,
+      "line": 185,
       "status": "unverified",
       "stage": "parse",
       "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
@@ -5958,9 +6174,9 @@
       "key": "lib/stdlib/audio/README.md#02042f4462a3",
       "path": "lib/stdlib/audio/README.md",
       "line": 262,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "lib/stdlib/audio/README.md#780b0064b9b8",

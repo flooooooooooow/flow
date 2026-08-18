@@ -1,0 +1,22 @@
+# Effects declared across docs/tutorials/effects-basics.md.
+#
+# The page introduces each of these once and then shows how they are used.
+# Blocks tagged `preamble=` compile against this, so the checker sees the same
+# declarations the reader has already been shown.
+#
+# Three tiers, narrowest first: most blocks declare their own handlers and need
+# only the effects, so pulling in more would collide with them. Where a page
+# declares one name twice, the fullest version wins.
+
+effect Logger {
+    log_info(msg: string) -> void,
+    log_error(msg: string) -> void,
+}
+
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}

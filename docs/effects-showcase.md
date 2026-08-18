@@ -66,7 +66,7 @@ effect Notify {
 
 Business logic calls the interface directly.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function announce() -> void {
     let t: i32 = Clock.now()
     printf("time=%d\n", t)
@@ -91,7 +91,7 @@ A capability is the handler implementation installed by `handle`.
 
 ### 4. Install a handler for one scope
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase.flow
 handle Clock with FrozenClock {
     let t: i32 = Clock.now()
     printf("%d\n", t)
@@ -102,7 +102,7 @@ The handler is active only inside the block.
 
 ### 5. Swap implementations without changing business code
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 capability WallClock {
     effect Clock,
     function now() -> i32 {
@@ -134,7 +134,7 @@ handle Clock with FrozenClock {
 
 ### 6. Override a handler in a nested dynamic scope
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Log with OpsLogger {
     Log.info("loud")
 
@@ -152,7 +152,7 @@ The outer handler is restored automatically when the inner block exits.
 
 A capability can implement more than one effect.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 capability TestBackend {
     effect Inventory, Notify,
 
@@ -181,7 +181,7 @@ This is useful for test fixtures or adapters that naturally own several related 
 
 Handlers compose. The logger below asks the `Clock` effect for its timestamp.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 capability OpsLogger {
     effect Log,
 
@@ -195,7 +195,7 @@ capability OpsLogger {
 
 Now changing only the clock changes every log timestamp.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase.flow
 handle Clock with FrozenClock {
     handle Log with OpsLogger {
         Log.info("deterministic test")
@@ -207,7 +207,7 @@ handle Clock with FrozenClock {
 
 You do not need an all-production or all-test stack.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Clock with FrozenClock {
     handle Log with OpsLogger {
         handle Inventory with WarehouseInventory {
@@ -225,7 +225,7 @@ This keeps real inventory behaviour, freezes time, and captures outbound notific
 
 Under `--strict-effects`, functions can state which effects they may perform.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function greet(name: string) -> void with Log {
     Log.info("hello")
     Log.info(name)
@@ -236,7 +236,7 @@ This is the current effect-row syntax used by `examples/effects/effect_rows.flow
 
 ### 11. Propagate an effect requirement through callers
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function greet(name: string) -> void with Log {
     Log.info(name)
 }
@@ -251,7 +251,7 @@ A caller may either install a handler or declare the same requirement on its own
 
 ### 12. Close the effect row at the application boundary
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 function main() -> i32 {
     handle Log with Console {
         shout()
@@ -284,7 +284,7 @@ This is useful when you want fail-loud behaviour without changing source syntax.
 Without strict effects, an unhandled operation returns its zeroed default and `void` operations
 become no-ops.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function main() -> i32 {
     let t: i32 = Clock.now()
     printf("%d\n", t)   # 0 when no Clock handler is installed
@@ -310,7 +310,7 @@ function get_user_name(user_id: i32) -> string {
 
 Production and test database capabilities can be swapped at the call boundary.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Database with ProductionDB {
     let name: string = get_user_name(1)
 }
@@ -330,6 +330,20 @@ effect Config {
     get_config(key: string) -> string,
 }
 
+capability EnvConfig {
+    effect Config,
+    function get_config(key: string) -> string {
+        return "from-environment"
+    },
+}
+
+capability TestConfig {
+    effect Config,
+    function get_config(key: string) -> string {
+        return "fixture-value"
+    },
+}
+
 function get_app_setting(key: string) -> string {
     return Config.get_config(key)
 }
@@ -347,19 +361,19 @@ The function stays unaware of environment variables, files, fixtures, or test ha
 
 ### 18. Silence or redirect logging for one region
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 capability NullLogger {
-    effect Logger,
+    effect Log,
 
-    function log_info(msg: string) -> void {
+    function info(msg: string) -> void {
     },
 
-    function log_error(msg: string) -> void {
+    function warn(msg: string) -> void {
     },
 }
 
-handle Logger with NullLogger {
-    create_user("Alice")
+handle Log with NullLogger {
+    place_order(1, 1)
 }
 ```
 
@@ -400,7 +414,7 @@ function count_up_to(start: i32, target: i32) -> i32 {
 
 The same loop can use either policy.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Counter with UnitCounter {
     let result: i32 = count_up_to(0, 5)
 }
@@ -535,7 +549,7 @@ effect Notify {
 
 Its business function is written once:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function place_order(sku: i32, qty: i32) -> i32 {
     Log.info("order received")
     let available: i32 = Inventory.stock_of(sku)
