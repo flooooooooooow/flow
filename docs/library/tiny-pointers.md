@@ -523,4 +523,4 @@ reallocated to another key.
 - Source: [`examples/systems/tiny_pointers.flow`](../../examples/systems/tiny_pointers.flow)
 - Application deep dive: [variable-size value dictionaries](tiny-pointers-variable-values.md)
 - Paper: [Tiny Pointers, arXiv:2111.12800](https://arxiv.org/abs/2111.12800)
-- Related stdlib: [memory.md](memory.md), [core.md](core.md)
+- Related stdlib: [memory.md](memory.md), [stdlib-api.md](stdlib-api.md)

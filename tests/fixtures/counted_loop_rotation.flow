@@ -1,0 +1,33 @@
+# Doom-shaped hot loop: global accessors plus a `while true` countdown whose
+# exit test sits in the middle of the body. Covers issues #473 and #474.
+
+let mut dc_yh: i32 = 0
+let mut dc_iscale: i32 = 3
+
+function dc_yh_addr() -> ptr<i32> {
+    return &dc_yh
+}
+
+function dc_iscale_value() -> i32 {
+    return dc_iscale
+}
+
+function draw_column(count_in: i32) -> i32 {
+    let mut count: i32 = count_in
+    let mut frac: i32 = 0
+    let mut checksum: i32 = 0
+    while true {
+        checksum = checksum + (frac & 127)
+        frac = frac + dc_iscale_value()
+        if count == 0 {
+            break
+        }
+        count = count - 1
+    }
+    return checksum
+}
+
+function main() -> i32 {
+    let slot: ptr<i32> = dc_yh_addr()
+    return draw_column(40) % 251
+}

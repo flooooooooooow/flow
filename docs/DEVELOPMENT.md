@@ -8,7 +8,8 @@ This document provides detailed information for FLOW language developers.
 
 ```
 FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
-                           └─→ MLIR Backend → MLIR (experimental)
+                           └─→ MLIR Backend → MLIR ─→ LLVM IR → clang → Executable
+                                                   └─→ LLVM IR (wasm32) → clang → .wasm
 ```
 
 ### Core Components
@@ -27,6 +28,16 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 - **Dialect Generation**: Emits MLIR func, arith, and cf dialects
 - **Type Mapping**: Converts FLOW types to MLIR types
 - **SSA Form**: Generates proper MLIR SSA values
+
+#### WebAssembly Target (`src/flow/wasm_compiler.py`)
+- **Freestanding wasm32**: Lowers MLIR to LLVM IR and links it with
+  `clang --target=wasm32-unknown-unknown`, skipping the C backend and Emscripten
+- **Export Validation**: Checks requested exports against the symbols defined in
+  the IR before invoking clang
+- **Host Imports**: Links `--allow-undefined`, so `malloc` and anything else
+  unresolved is imported from the host
+- Documented in [WebAssembly](language/wasm.md); exercised by
+  `.github/workflows/wasm32.yml`
 
 ## 🔧 Language Implementation
 
@@ -167,6 +178,21 @@ build/
 4. Verify with `./flow test`
 5. Add documentation
 
+### Project conventions (`flow check`)
+
+`./flow check` lints `.flow` sources against the conventions a project declares
+for itself. It reads `[conventions].avoid` from `flow.toml` and warns on every
+source line that matches one of those patterns.
+
+```bash
+./flow check                       # every .flow file under the working directory
+./flow check src/thing.flow        # just these files
+```
+
+Files under `build/` and `.freebuff/` are skipped. With no `avoid` patterns
+declared it prints that and exits 0, so it is safe to run in any project. The
+exit code is non-zero when a file matches, which makes it usable as a gate.
+
 ### Debugging Tips
 
 #### Parser Issues
@@ -276,6 +302,24 @@ corpus keeps compiling while unit tests pin strict behavior.
 - Parity suite covers nested while / array mutate; pins in
   `tests/unit/test_mlir_while_cf.py`. Clang link failures in `test-runtime`
   print a short error snippet without `--verbose`.
+
+### Phase 5 notes
+
+- `src/flow/mlir_canonicalize.py` runs two AST rewrites ahead of MLIR
+  generation. Both came out of compiling Doom through the MLIR backend.
+- Counted-loop rotation (#473): `while true { P; if c == 0 { break }; S }`
+  becomes `P; while c != 0 { S; P }`. The exit test moves to the loop latch, so
+  LLVM's vectorizer and unroller can recover a trip count. Both forms evaluate
+  the test at the same program points; the rewrite is declined when the body
+  holds another `break`/`continue`, a `defer`, a second write to the counter,
+  or a declaration in the peeled prefix.
+- Trivial accessor inlining (#474): a parameterless function whose whole body is
+  `return &g` or `return g` for a module-scope `g` is substituted at its call
+  sites, turning call+load pairs in hot loops into plain loads. The definition
+  is still emitted, so external linkage is unchanged.
+- Pins live in `tests/unit/test_mlir_canonicalize.py`;
+  `tests/integration/test_counted_loop_rotation.py` compiles each loop shape
+  before and after rotation through the C backend and compares what it returns.
 
 ## 📚 References
 
