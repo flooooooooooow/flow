@@ -81,7 +81,35 @@ def _rel(path: Path) -> str:
 # no entry point to parse, type-check or generate C, so a block with real
 # declarations already passes standalone. All it ever did was supply substance
 # to blocks that were otherwise empty, defeating the vacuity check.
-MODES = ("standalone", "stmt-wrap")
+MODES = ("standalone", "stmt-wrap", "split-wrap")
+
+# Keywords that open a top-level declaration. Anything at brace depth zero that
+# does not start with one of these is a statement.
+_DECL_KEYWORDS = (
+    "function", "export", "struct", "enum", "trait", "impl", "effect",
+    "capability", "const", "type", "distinct", "unit", "import", "extern",
+    "module", "flow", "test", "theorem", "let mut", "@",
+)
+
+
+def _split_declarations(code: str) -> tuple[str, str]:
+    """Partition a block into leading declarations and trailing statements.
+
+    Documentation very often declares a few things and then shows them being
+    used: a `capability` or two followed by a bare `handle ... with ... { }`.
+    That shape fits neither rung on its own, because `handle` is not legal at
+    top level and `capability` is not legal inside a function.
+    """
+    lines = code.splitlines()
+    depth, boundary = 0, len(lines)
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if depth == 0 and stripped and not stripped.startswith("#"):
+            if not stripped.startswith(_DECL_KEYWORDS):
+                boundary = i
+                break
+        depth += line.count("{") - line.count("}")
+    return "\n".join(lines[:boundary]), "\n".join(lines[boundary:])
 
 
 
@@ -96,7 +124,17 @@ def _harness(code: str, mode: str) -> str:
         return code
     if mode == "stmt-wrap":
         return f"function main() -> i32 {{\n{_indent(code)}\n    return 0\n}}\n"
+    if mode == "split-wrap":
+        decls, stmts = _split_declarations(code)
+        if not stmts.strip():
+            raise _NotApplicable
+        body = f"function main() -> i32 {{\n{_indent(stmts)}\n    return 0\n}}\n"
+        return (decls + "\n\n" if decls.strip() else "") + body
     raise ValueError(mode)
+
+
+class _NotApplicable(Exception):
+    """This rung has nothing to offer for this block."""
 
 
 @dataclass
@@ -257,7 +295,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     # earlier whitelist of "substantive" declaration kinds got this wrong and
     # reported 26 correct examples as empty.
     substantive = own
-    if mode == "stmt-wrap":
+    if mode in ("stmt-wrap", "split-wrap"):
         # Everything except the bare `return 0` the harness appended.
         substantive = [
             d for d in own
@@ -298,8 +336,12 @@ def verify(block: Block) -> Result:
     reached_meaning = False
 
     for mode in modes:
+        try:
+            source = preamble + _harness(block.code, mode)
+        except _NotApplicable:
+            continue
         csource, stage, detail = _compile(
-            preamble + _harness(block.code, mode),
+            source,
             guard_noop=(mode != "standalone"),
             mode=mode,
         )

@@ -13,6 +13,7 @@ C / MLIR backends.
 
 <div class="wiki-hero-actions">
   <a href="start-here.md" class="wiki-cta wiki-cta-primary">Start here</a>
+  <a href="effects-showcase.md" class="wiki-cta">Effects &amp; capabilities</a>
   <a href="getting-started.md" class="wiki-cta">Install</a>
   <a href="demos/overview.md" class="wiki-cta">Galleries</a>
   <a href="tutorials/index.html" class="wiki-cta">Interactive tutorials</a>
@@ -32,6 +33,7 @@ C / MLIR backends.
 <div class="wiki-stat-row" aria-label="Documentation at a glance">
 <span><strong>19</strong> book chapters</span>
 <span><strong>257</strong> interactive lessons</span>
+<span><strong>24</strong> effect patterns</span>
 <span><strong>150+</strong> recorded demos</span>
 <span><strong>9</strong> galleries</span>
 <span><strong>C + MLIR</strong> backends</span>
@@ -63,6 +65,11 @@ Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 <span>Zero-to-running path for people new to programming or new to Flow.</span>
 </a>
 
+<a class="wiki-doc" href="effects-showcase.md">
+<strong>Effects &amp; capabilities cookbook</strong>
+<span>24 concrete patterns: handler swaps, nested scopes, multi-effect capabilities, DI, testing, strict rows, state policy, retry, timeout, and async.</span>
+</a>
+
 <a class="wiki-doc" href="demos/overview.md">
 <strong>Galleries</strong>
 <span>Games, morphogenesis, neurons, planets, evolution, WASM. Real <code>gfx</code> recordings.</span>
@@ -76,11 +83,6 @@ Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 <a class="wiki-doc" href="library/stdlib-reference.md">
 <strong>Standard library</strong>
 <span>Core APIs, autodiff, audio DSP, RT safety, and memory helpers.</span>
-</a>
-
-<a class="wiki-doc" href="effects-showcase.md">
-<strong>Effects showcase</strong>
-<span>One checkout service, four handler worlds: production, test, nested scope, composition.</span>
 </a>
 
 <a class="wiki-doc" href="DEVELOPMENT.md">
@@ -107,6 +109,33 @@ Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 
 ---
 
+## Effects & capabilities
+
+If you are evaluating Flow's effect system, start with the cookbook rather than the language spec.
+It uses the syntax the current compiler actually accepts and links directly to runnable programs.
+
+| I want to see… | Jump straight to |
+|---|---|
+| the smallest complete effect | [The model in 30 seconds](effects-showcase.md#the-model-in-30-seconds) |
+| swapping production and test implementations | [Swap implementations](effects-showcase.md#5-swap-implementations-without-changing-business-code) |
+| nested dynamic scoping | [Nested handler override](effects-showcase.md#6-override-a-handler-in-a-nested-dynamic-scope) |
+| one capability handling several effects | [Multi-effect capability](effects-showcase.md#7-handle-several-effects-with-one-capability) |
+| handlers calling other effects | [Handler composition](effects-showcase.md#8-let-one-handler-perform-another-effect) |
+| dependency injection without a framework | [Database DI](effects-showcase.md#16-use-effects-for-dependency-injection) |
+| strict effect rows | [Effect rows](effects-showcase.md#10-declare-an-effect-row-on-a-function) |
+| stateful loops with stateless capabilities | [Explicit state + policy](effects-showcase.md#19-keep-mutable-state-explicit-use-the-effect-as-policy) |
+| timeout and retry | [Timeout](effects-showcase.md#20-model-timeout-policy-as-an-effect) · [Retry](effects-showcase.md#21-model-retry-policy-as-an-effect) |
+| async through effects | [Async](effects-showcase.md#22-express-async-operations-through-an-effect-interface) |
+| every runnable effect example | [Runnable example map](effects-showcase.md#runnable-example-map) |
+
+<p class="wiki-section-foot">
+<a href="effects-showcase.md">Open the effects &amp; capabilities cookbook →</a>
+<span class="wiki-dot">·</span>
+<a href="../examples/effects/showcase.flow">Open the runnable checkout showcase →</a>
+</p>
+
+---
+
 ## What Flow looks like
 
 Three signatures of the language. Full write-ups live under Language and Library.
@@ -115,7 +144,7 @@ Three signatures of the language. Full write-ups live under Language and Library
 
 <div class="wiki-showcase-item">
 <p class="wiki-showcase-label">Algebraic effects</p>
-<p class="wiki-showcase-desc">Call sites stay pure. Handlers swap I/O, inventory, and logging for the dynamic scope.</p>
+<p class="wiki-showcase-desc">Call sites name typed effect interfaces. Enclosing handlers swap I/O, inventory, logging, time, configuration, and test policy for a dynamic scope.</p>
 
 ```flow
 effect Inventory {
@@ -128,7 +157,7 @@ handle Inventory, Notify with TestBackend {
 }
 ```
 
-<p class="wiki-showcase-more"><a href="effects-showcase.md">Effects showcase →</a></p>
+<p class="wiki-showcase-more"><a href="effects-showcase.md">24-pattern effects cookbook →</a></p>
 </div>
 
 <div class="wiki-showcase-item">

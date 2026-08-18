@@ -1,9 +1,9 @@
 # Effects Basics
 
-> Effect-**shaped** control flow that runs in the browser.
+> The browser lessons below use ordinary functions to teach the shape of dependency selection.
+> The native compiler supports the real `effect` / `capability` / `handle` / `with` system.
 >
-> These lessons use plain functions as stand-ins. Real algebraic effects
-> (`effect` / `capability` / `handle` / `with`) compile natively — see Part 4.
+> For the full native cookbook, see [Effects & Capabilities](../effects-showcase.md).
 
 ## Part 1: Motivation
 
@@ -16,11 +16,12 @@ function pure_add(a: i32, b: i32) -> i32 {
 
 function main() -> i32 {
     printf("pure=%d\n", pure_add(2, 3))
-    printf("printf is an effect\n")
+    printf("printf performs observable I/O\n")
     return 0
 }
 ```
-### 1.2 Injected logger
+
+### 1.2 Why passing flags everywhere gets noisy
 
 ```flow
 function do_work(log_enabled: bool) -> i32 {
@@ -38,16 +39,23 @@ function main() -> i32 {
 }
 ```
 
-## Part 2: Handler-shaped
+This is manageable for one flag. It becomes plumbing when every function needs logger, clock,
+configuration, storage, notification, or scheduling parameters just so a deeper function can use
+them.
 
-### 2.1 Choose backend
+## Part 2: Handler-shaped ideas in the browser
+
+The interactive browser runner does not currently parse native effect declarations, so these
+examples use plain functions to introduce the idea before moving to the real syntax.
+
+### 2.1 Choose a backend
 
 ```flow
 function emit(backend: i32, msg: string) -> void {
     if backend == 0 {
         printf("[stdout] %s\n", msg)
     } else {
-        printf("[null] (dropped)\n")
+        printf("[null] dropped\n")
     }
 }
 
@@ -57,7 +65,8 @@ function main() -> i32 {
     return 0
 }
 ```
-### 2.2 State thread
+
+### 2.2 Keep mutable state explicit
 
 ```flow
 function step(state: ptr<i32>) -> void {
@@ -73,107 +82,160 @@ function main() -> i32 {
 }
 ```
 
-### 2.3 Resume-shaped continuation
+This remains useful with native effects: capabilities are stateless today, so mutable application
+state normally stays in ordinary values and pointers.
 
-Handlers resume the caller with a value. Model that as a callback result:
+## Part 3: Native Flow effects
 
-```flow
-function ask(prompt: string) -> i32 {
-    printf("ask: %s\n", prompt)
-    return 42
-}
-
-function work() -> i32 {
-    let n: i32 = ask("n?")
-    return n * 2
-}
-
-function main() -> i32 {
-    printf("%d\n", work())
-    return 0
-}
-```
-
-### 2.4 Multi-operation handler table
-
-```flow
-function on_op(op: i32, arg: i32) -> i32 {
-    if op == 0 {
-        printf("log %d\n", arg)
-        return 0
-    }
-    if op == 1 {
-        return arg + 1
-    }
-    return -1
-}
-
-function main() -> i32 {
-    on_op(0, 7)
-    printf("inc=%d\n", on_op(1, 10))
-    printf("unknown=%d\n", on_op(9, 0))
-    return 0
-}
-```
-
-### 2.5 Capability-shaped gate
-
-```flow
-function write_file(allowed: bool, name: string) -> i32 {
-    if !allowed {
-        printf("denied: %s\n", name)
-        return 1
-    }
-    printf("wrote: %s\n", name)
-    return 0
-}
-
-function main() -> i32 {
-    printf("rc=%d\n", write_file(false, "a.txt"))
-    printf("rc=%d\n", write_file(true, "a.txt"))
-    return 0
-}
-```
-
-## Part 3: Limits
-
-### 3.1 Document the boundary
-
-```flow
-function main() -> i32 {
-    printf("Full effect handlers: see effects-showcase.md\n")
-    printf("This lesson uses plain functions as stand-ins\n")
-    return 0
-}
-```
-
-## Part 4: Native effects (run with `./flow`)
-
-The browser interpreter rejects `effect` / `handle` / `capability`. On the
-real compiler:
+Run native examples with `./flow`:
 
 ```bash
 ./flow run examples/effects/showcase.flow
+./flow run examples/effects/dependency_injection.flow
+./flow run examples/effects/state_effects.flow
+./flow run examples/effects/async_effects.flow
 ```
 
-Read the walkthrough: [effects-showcase.md](../effects-showcase.md).
-
-Typical surface (native):
+### 3.1 Declare an effect
 
 ```flow
 effect Logger {
-    log(msg: string) -> void
+    log_info(msg: string) -> void,
+    log_error(msg: string) -> void,
 }
+```
 
+### 3.2 Implement it with a capability
+
+```flow
+capability ConsoleLogger {
+    effect Logger,
+
+    function log_info(msg: string) -> void {
+        let m: string = msg
+        printf("[INFO] %s\n", m)
+    },
+
+    function log_error(msg: string) -> void {
+        let m: string = msg
+        printf("[ERROR] %s\n", m)
+    },
+}
+```
+
+### 3.3 Call the effect from business logic
+
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-effects.flow
 function work() -> void with Logger {
-    perform Logger.log("hello")
+    Logger.log_info("hello")
+}
+```
+
+There is no handler parameter on `work`.
+
+### 3.4 Install the capability for one dynamic scope
+
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-all.flow
+function main() -> i32 {
+    handle Logger with ConsoleLogger {
+        work()
+    }
+    return 0
+}
+```
+
+### 3.5 Swap the handler
+
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-all.flow
+capability NullLogger {
+    effect Logger,
+
+    function log_info(msg: string) -> void {
+    },
+
+    function log_error(msg: string) -> void {
+    },
 }
 
-handle Logger with {
-    log(msg) => { printf("%s\n", msg); resume() }
-} in {
+handle Logger with NullLogger {
     work()
 }
 ```
 
-Swap handlers (stdout vs null vs file) without rewriting `work`.
+The body of `work` does not change.
+
+### 3.6 Override one nested region
+
+```flow preamble=tests/fixtures/doc_preambles/effects-basics.flow
+handle Logger with ConsoleLogger {
+    Logger.log_info("visible")
+
+    handle Logger with NullLogger {
+        Logger.log_info("hidden")
+    }
+
+    Logger.log_info("visible again")
+}
+```
+
+The outer handler is restored when the nested block ends.
+
+### 3.7 Handle several effects with one capability
+
+```flow
+effect Inventory {
+    stock_of(sku: i32) -> i32,
+}
+
+effect Notify {
+    send(recipient: string, msg: string) -> void,
+}
+
+capability TestBackend {
+    effect Inventory, Notify,
+
+    function stock_of(sku: i32) -> i32 {
+        return 99
+    },
+
+    function send(recipient: string, msg: string) -> void {
+        let r: string = recipient
+        printf("captured for %s\n", r)
+    },
+}
+
+handle Inventory, Notify with TestBackend {
+    let stock: i32 = Inventory.stock_of(1001)
+    Notify.send("test@example.com", "done")
+}
+```
+
+### 3.8 Strict effect rows
+
+```flow preamble=tests/fixtures/doc_preambles/effects-basics-effects.flow
+function greet(name: string) -> void with Logger {
+    Logger.log_info(name)
+}
+```
+
+Compile with effect coverage checking:
+
+```bash
+./flow transpile program.flow --c --strict-effects -o build/program.c
+```
+
+A caller must then handle `Logger` or declare the requirement on its own signature.
+
+## Part 4: What native handlers do not mean
+
+Current Flow handlers are not general resumable continuations. The supported syntax is named
+`capability` declarations installed by `handle ... with ...`; there is no current inline
+`resume()` handler syntax.
+
+For retry, timeout, counters, accumulators, and similar stateful patterns, keep state explicit and
+use the effect as a swappable policy. The runnable examples demonstrate that exact shape.
+
+## Next
+
+Read the main [Effects & Capabilities cookbook](../effects-showcase.md) for more than twenty concrete
+patterns, then inspect the runnable sources under [`examples/effects/`](../../examples/effects/).
