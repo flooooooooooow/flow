@@ -8,7 +8,8 @@ This document provides detailed information for FLOW language developers.
 
 ```
 FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
-                           └─→ MLIR Backend → MLIR (experimental)
+                           └─→ MLIR Backend → MLIR ─→ LLVM IR → clang → Executable
+                                                   └─→ LLVM IR (wasm32) → clang → .wasm
 ```
 
 ### Core Components
@@ -27,6 +28,16 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 - **Dialect Generation**: Emits MLIR func, arith, and cf dialects
 - **Type Mapping**: Converts FLOW types to MLIR types
 - **SSA Form**: Generates proper MLIR SSA values
+
+#### WebAssembly Target (`src/flow/wasm_compiler.py`)
+- **Freestanding wasm32**: Lowers MLIR to LLVM IR and links it with
+  `clang --target=wasm32-unknown-unknown`, skipping the C backend and Emscripten
+- **Export Validation**: Checks requested exports against the symbols defined in
+  the IR before invoking clang
+- **Host Imports**: Links `--allow-undefined`, so `malloc` and anything else
+  unresolved is imported from the host
+- Documented in [WebAssembly](language/wasm.md); exercised by
+  `.github/workflows/wasm32.yml`
 
 ## 🔧 Language Implementation
 
