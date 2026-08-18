@@ -166,7 +166,7 @@ def test_generated_sections_are_filled_in_at_build_time(nav):
 
 def test_search_category_follows_the_tab_a_page_sits_under(nav):
     assert wiki_nav.category_for("language/types.md", nav) == "reference"
-    assert wiki_nav.category_for("library/core.md", nav) == "reference"
+    assert wiki_nav.category_for("library/memory.md", nav) == "reference"
     assert wiki_nav.category_for("tutorials/beginner.md", nav) == "tutorial"
     assert wiki_nav.category_for("DEVELOPMENT.md", nav) == "tooling"
 
