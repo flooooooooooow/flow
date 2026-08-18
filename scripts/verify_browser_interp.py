@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -38,11 +37,14 @@ import tempfile
 from collections import Counter, OrderedDict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from docs_blocks import tutorial_lessons  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 ENGINE = ROOT / "site" / "flow-compile.js"
 
-BLOCK_RE = re.compile(r"```(?:flow(?:\s+(?:run|interactive))?)\n(.*?)```", re.DOTALL)
 
 NODE_SHIM = r"""
 'use strict';
@@ -76,29 +78,24 @@ process.stdout.write(JSON.stringify(out));
 
 
 def extract_snippets() -> list[dict]:
-    """Same extraction rule as build_wiki.build_tutorial_exercises()."""
+    """The tutorial lessons, from the shared extractor in docs_blocks.py.
+
+    This used to be a second copy of build_wiki's regex and filter, kept in
+    sync by a comment. They had already diverged.
+    """
     lessons: list[dict] = []
-    for md_path in sorted((DOCS / "tutorials").glob("*.md")):
-        if md_path.name == "README.md":
-            continue
-        text = md_path.read_text(encoding="utf-8", errors="replace")
-        track = md_path.stem
-        exercise = 0
-        for block in BLOCK_RE.finditer(text):
-            code = block.group(1).strip()
-            if "function main" not in code:
-                continue
-            exercise += 1
-            before = text[: block.start()]
-            sub_m = list(re.finditer(r"^### (.+)$", before, re.MULTILINE))
-            lessons.append(
-                {
-                    "id": f"{track}-{exercise}",
-                    "track": track,
-                    "title": sub_m[-1].group(1) if sub_m else "Exercise",
-                    "code": code,
-                }
-            )
+    counts: dict[str, int] = {}
+    for block in tutorial_lessons():
+        track = Path(block.path).stem
+        counts[track] = counts.get(track, 0) + 1
+        lessons.append(
+            {
+                "id": f"{track}-{counts[track]}",
+                "track": track,
+                "title": block.title or "Exercise",
+                "code": block.code,
+            }
+        )
     return lessons
 
 
