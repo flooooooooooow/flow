@@ -167,6 +167,21 @@ build/
 4. Verify with `./flow test`
 5. Add documentation
 
+### Project conventions (`flow check`)
+
+`./flow check` lints `.flow` sources against the conventions a project declares
+for itself. It reads `[conventions].avoid` from `flow.toml` and warns on every
+source line that matches one of those patterns.
+
+```bash
+./flow check                       # every .flow file under the working directory
+./flow check src/thing.flow        # just these files
+```
+
+Files under `build/` and `.freebuff/` are skipped. With no `avoid` patterns
+declared it prints that and exits 0, so it is safe to run in any project. The
+exit code is non-zero when a file matches, which makes it usable as a gate.
+
 ### Debugging Tips
 
 #### Parser Issues
