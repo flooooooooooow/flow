@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from check_doc_examples import _harness, _try_compile, verify  # noqa: E402
+from check_doc_examples import _compile, _harness, verify  # noqa: E402
 from docs_blocks import (  # noqa: E402
     Block,
     InfoStringError,
@@ -74,10 +74,10 @@ def test_bare_language_tag():
 
 
 def test_flags_and_options():
-    lang, flags, opts = parse_info('flow expect-error host=python')
+    lang, flags, opts = parse_info('flow expect-error ignore="why"')
     assert lang == "flow"
     assert flags == frozenset({"expect-error"})
-    assert opts == {"host": "python"}
+    assert opts == {"ignore": "why"}
 
 
 def test_quoted_ignore_reason_survives_spaces():
@@ -93,7 +93,16 @@ def test_legacy_run_and_interactive_still_parse():
 
 @pytest.mark.parametrize(
     "info",
-    ["flow expect_error", "flow nonsense", "flow mode=fast", "flow ignore="],
+    [
+        "flow expect_error",
+        "flow nonsense",
+        "flow mode=fast",
+        "flow ignore=",
+        # Designed but not implemented: must not parse while it does nothing.
+        "flow host=python",
+        "flow preamble=docs/_preambles/gfx.flow",
+        "flow from=examples/book/01_hello.flow",
+    ],
 )
 def test_unknown_info_words_are_rejected(info):
     # A typo must fail loudly; silently treating it as an ordinary block
@@ -120,9 +129,9 @@ def test_complete_program_verifies_standalone():
 
 
 def test_declaration_fragment_needs_no_entry_point():
-    # A translation unit does not need a `main` to parse and type-check, so a
-    # bare declaration verifies as written. The decl-wrap rung only earns its
-    # keep in the deep tier, where linking does need one.
+    # A Flow translation unit needs no entry point to parse, type-check or
+    # generate C, so a bare declaration verifies as written. This is why the
+    # decl-wrap rung was removed: it never rescued anything.
     code = "struct Point {\n    x: i32,\n    y: i32\n}"
     result = verify(Block(path="p.md", line=1, info="flow", lang="flow", code=code))
     assert result.status == "verified"
@@ -154,8 +163,48 @@ def test_prose_shaped_fragments_are_not_counted_as_verified(code):
 
 
 def test_the_no_op_guard_leaves_real_statements_alone():
-    ok, err = _try_compile(_harness("println(1)", "stmt-wrap"), guard_noop=True)
-    assert ok, err
+    csource, stage, detail = _compile(
+        _harness("println(1)", "stmt-wrap"), guard_noop=True, mode="stmt-wrap"
+    )
+    assert csource is not None, f"{stage}: {detail}"
+
+
+def test_a_no_op_hidden_inside_an_if_is_still_caught():
+    # The guard has to recurse; a bare identifier nested in a block is just as
+    # meaningless as one at the top level.
+    result = verify(
+        Block(path="p.md", line=1, info="flow", lang="flow",
+              code="if true {\n    continuous\n    every 1 ms\n}")
+    )
+    assert result.status == "unverified"
+
+
+def test_a_block_that_compiles_to_nothing_is_not_verified():
+    # `theorem` declarations and unused generics are erased before codegen, so
+    # the C is empty and clang is trivially happy.
+    result = verify(
+        Block(path="p.md", line=1, info="flow", lang="flow",
+              code="# just a comment, nothing else")
+    )
+    assert result.status == "unverified"
+    assert result.stage == "vacuous"
+
+
+def test_undefined_names_are_caught_by_the_strict_checker():
+    # In lenient mode the checker does not resolve names and this reaches clang.
+    result = verify(
+        Block(path="p.md", line=1, info="flow", lang="flow",
+              code="function f() -> i32 {\n    return undefined_thing\n}")
+    )
+    assert result.status == "unverified"
+
+
+def test_dynamics_dsl_blocks_go_through_the_source_expanders():
+    # `dsys` is expanded by module_resolver before parsing. Without the
+    # expander the checker calls working documentation broken.
+    code = "dsys plant {\n    discrete\n    dt 0.1\n    n 2 m 1 p 1\n}"
+    csource, stage, detail = _compile(code, guard_noop=False)
+    assert stage != "parse", f"expander not applied: {detail}"
 
 
 def test_ignore_needs_no_compilation_and_keeps_its_reason():

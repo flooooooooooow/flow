@@ -1,28 +1,36 @@
 #!/usr/bin/env python3
 """Verify the Flow code examples embedded in the documentation.
 
-Every ```flow block is compiled. A block passes when it verifies as written, or
-verifies inside a generated harness, or is tagged `expect-error` and does fail,
-or carries `ignore="reason"`. Anything else is unverified.
+Every ```flow block goes through the same front end a real build uses: the
+fill-shader / field / dynamics source expanders, the parser, the strict type
+checker, the C generator, and clang. A block passes when it survives that as
+written, or survives inside a generated harness, or is tagged `expect-error`
+and is genuinely rejected, or carries `ignore="reason"`.
 
-Two tiers:
+Three things here are load-bearing, and each exists because leaving it out
+produced a checker that reported success on documentation that does not work.
 
-* **fast** (default) parses and type-checks in process. All 775 blocks take
-  about a tenth of a second, so this is cheap enough to run on every commit.
-* **deep** (`--deep`) additionally transpiles to C and runs clang over the
-  blocks that carry a `main`, which are the ones that could actually execute.
+**The type checker runs strict.** In lenient mode it does not resolve names, so
+undefined identifiers survive all the way to clang. Of the first 120 blocks a
+lenient run called verified, 52 failed transpile or clang.
+
+**Blocks go all the way to clang**, for the same reason.
+
+**A block that compiles to nothing does not count.** `theorem nat_zero_add(...)`
+and unused generic declarations are erased before codegen, so the C is empty and
+clang is trivially happy. A translation unit holding no functions, structs,
+enums, effects or capabilities is vacuous, and vacuous is not verified.
 
 The harness exists because most documented examples are fragments by design: a
-page about struct syntax shows a struct, not a program around it. Rather than
-padding every snippet with a ceremonial `main`, the checker tries a short ladder
-of wrappers and records which rung each block needed. That record is the point.
-A block that only verifies under the loosest wrapper stays visible in the ledger
-instead of vanishing into a green count.
+page about struct syntax shows a struct, not a program wrapped around one. The
+checker tries a short ladder of wrappers and records which rung each block
+needed, so a block leaning on the loosest wrapper stays visible in the ledger
+rather than disappearing into a green count.
 
 Usage:
     python3 scripts/check_doc_examples.py --report
     python3 scripts/check_doc_examples.py --write-ledger
-    python3 scripts/check_doc_examples.py --deep
+    python3 scripts/check_doc_examples.py --no-clang     # front end only
 """
 
 from __future__ import annotations
@@ -30,10 +38,13 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import shutil
+import subprocess
 import sys
+import tempfile
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -48,60 +59,81 @@ LEDGER = ROOT / "docs" / "generated" / "example-status.json"
 
 # Harness rungs, loosest last. `standalone` means the block is already a
 # complete compilation unit.
-MODES = ("standalone", "decl-wrap", "stmt-wrap", "flow-body")
+#
+# Two rungs that were designed and then measured out again:
+#
+# `flow-body` (wrap in `flow Demo { ... }`) rescues zero blocks repo-wide.
+# `flow_blocks._validate_flow` rejects a flow that declares no state and
+# restricts members to f32/f64, while the documentation writes
+# `state angle : Angle`. Its intended cases are either aspirational syntax (an
+# `ignore=` case) or already-complete `flow` blocks, where wrapping only
+# replaces a useful diagnostic with a worse one.
+#
+# `decl-wrap` (append a `main`) also rescues zero. A Flow translation unit needs
+# no entry point to parse, type-check or generate C, so a block with real
+# declarations already passes standalone. All it ever did was supply substance
+# to blocks that were otherwise empty, defeating the vacuity check.
+MODES = ("standalone", "stmt-wrap")
 
-MAIN_STUB = "\nfunction main() -> i32 {\n    return 0\n}\n"
+# Declarations that put something in the translation unit.
+_SUBSTANTIVE = (
+    "FunctionDecl",
+    "StructDecl",
+    "EnumDecl",
+    "EffectDecl",
+    "CapabilityDecl",
+    "TraitDecl",
+    "ImplDecl",
+)
+
+
+def _indent(code: str) -> str:
+    return "\n".join(
+        "    " + line if line.strip() else line for line in code.splitlines()
+    )
 
 
 def _harness(code: str, mode: str) -> str:
     if mode == "standalone":
         return code
-    if mode == "decl-wrap":
-        # Declarations with no entry point: give them one.
-        return code + MAIN_STUB
     if mode == "stmt-wrap":
-        # Bare statements: put them in a body.
-        body = "\n".join("    " + line if line.strip() else line
-                         for line in code.splitlines())
-        return f"function main() -> i32 {{\n{body}\n    return 0\n}}\n"
-    if mode == "flow-body":
-        # Dynamics fragments: `state x: f64 = 0.0`, `x evolves as -x`, and the
-        # rest of the `flow` block vocabulary, which is only legal inside one.
-        body = "\n".join("    " + line if line.strip() else line
-                         for line in code.splitlines())
-        return f"flow Demo {{\n{body}\n}}\n" + MAIN_STUB
+        return f"function main() -> i32 {{\n{_indent(code)}\n    return 0\n}}\n"
     raise ValueError(mode)
 
 
 @dataclass
 class Result:
     block: Block
-    status: str  # verified | ignored | expected-error | unverified | bad-info
+    status: str  # verified | ignored | expected-error | unverified
     mode: Optional[str] = None
     detail: str = ""
+    stage: str = ""  # parse | types | codegen | clang | vacuous | degenerate
+    csource: Optional[str] = None  # held only for the batched clang pass
+    modes_tried: list = field(default_factory=list)
 
     def row(self) -> dict:
         out = {
-            "id": self.block.ident,
+            "key": self.block.key,
             "path": self.block.path,
             "line": self.block.line,
             "status": self.status,
         }
         if self.mode:
             out["mode"] = self.mode
+        if self.stage:
+            out["stage"] = self.stage
         if self.detail:
-            out["detail"] = self.detail[:400]
+            out["detail"] = self.detail[:300]
         if self.block.ignored:
             out["reason"] = self.block.ignored
         return out
 
 
-# Expression forms that do nothing when they stand alone as a statement.
-# Their presence after wrapping means the text was never statements: Flow reads
+# Expression forms that do nothing when they stand alone as a statement. Their
+# presence after wrapping means the text was never statements: Flow reads
 # `state angle` as two bare variables and `angle evolves as velocity` as a
 # variable followed by a cast of `evolves` to type `velocity`. Both parse, and
-# both mean nothing like what the surrounding prose says. Counting those as
-# verified would make the whole check worthless.
+# neither means anything like what the surrounding prose says.
 _NOOP_STATEMENTS = (
     "Variable",
     "Literal",
@@ -112,85 +144,198 @@ _NOOP_STATEMENTS = (
     "UnaryOperation",
 )
 
+_BLOCK_FIELDS = ("body", "then_block", "else_block", "block")
+
+
+def _walk_statements(node):
+    """Yield statements at every depth, so a no-op inside an `if` still counts."""
+    for name in _BLOCK_FIELDS:
+        inner = getattr(node, name, None)
+        for stmt in getattr(inner, "statements", None) or []:
+            yield stmt
+            yield from _walk_statements(stmt)
+    for pair in getattr(node, "elif_blocks", None) or []:
+        for stmt in getattr(pair[1], "statements", None) or []:
+            yield stmt
+            yield from _walk_statements(stmt)
+
 
 def _degenerate(decls) -> str:
-    """Report a no-op statement in a synthesized main, if there is one."""
     for decl in decls:
         if getattr(decl, "name", None) != "main":
             continue
-        body = getattr(getattr(decl, "body", None), "statements", [])
-        for stmt in body:
+        for stmt in _walk_statements(decl):
             kind = type(stmt).__name__
             if kind in _NOOP_STATEMENTS:
                 return f"no-op {kind} statement; the text is not statements"
     return ""
 
 
-def _try_compile(source: str, guard_noop: bool = False) -> tuple[bool, str]:
-    """Parse and type-check one unit. Returns (ok, first diagnostic)."""
+def _expand(code: str) -> str:
+    """Apply the source expanders that module_resolver applies before parsing.
+
+    Without these, `dsys plant { ... }` and `field T: f64[32] on Line` are
+    reported as syntax errors even though both are working Flow that the real
+    pipeline compiles.
+    """
+    from flow.dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
+    from flow.field_dsl import expand_field_dsl, has_field_dsl
+
+    if has_field_dsl(code):
+        code = expand_field_dsl(code)
+    if has_dynamics_dsl(code):
+        code = expand_dynamics_dsl(code)
+    return code
+
+
+def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[Optional[str], str, str]:
+    """Front end plus codegen. Returns (c_source, stage, detail).
+
+    c_source is None when the block did not get that far.
+    """
+    from flow.c_generator import flow_to_c
+    from flow.monomorphize import monomorphize
     from flow.parser import parse_flow_code
+    from flow.shader_dsl import extract_shader_module, has_fill_shader_dsl
     from flow.type_checker import TypeChecker
 
-    # The compiler prints notes to stdout on some paths; keep the report clean.
     sink = io.StringIO()
     try:
         with redirect_stdout(sink), redirect_stderr(sink):
-            decls = parse_flow_code(source)
-            checker = TypeChecker()
-            checker.strict = False
-            report = checker.check(decls)
-    except Exception as exc:  # parse errors are exceptions, not diagnostics
-        return False, f"{type(exc).__name__}: {exc}"
-    if report.errors:
-        return False, str(report.errors[0])
+            if has_fill_shader_dsl(source):
+                # A fill-shader module is a different language with its own
+                # validator and no host translation unit to check.
+                mod = extract_shader_module(source)
+                if not mod.fills:
+                    return None, "parse", "no `shader fill` block in a shader module"
+                return "", "shader", ""
+            decls = parse_flow_code(_expand(source))
+    except Exception as exc:
+        return None, "parse", f"{type(exc).__name__}: {exc}"
+
     if guard_noop:
         problem = _degenerate(decls)
         if problem:
-            return False, problem
-    return True, ""
+            return None, "degenerate", problem
+
+    try:
+        with redirect_stdout(sink), redirect_stderr(sink):
+            checker = TypeChecker()
+            checker.strict = True
+            report = checker.check(decls)
+    except Exception as exc:
+        return None, "types", f"{type(exc).__name__}: {exc}"
+    if report.errors:
+        return None, "types", str(report.errors[0])
+
+    # The vacuity check has to ignore anything the harness itself added,
+    # otherwise the synthesized `main` supplies the substance and every empty
+    # block passes. A block that is only comments, or only a `theorem` the
+    # compiler erases, must still be reported as vacuous.
+    if mode == "stmt-wrap":
+        own = []
+        for decl in decls:
+            body = getattr(getattr(decl, "body", None), "statements", None) or []
+            # Everything except the trailing `return 0` the harness appended.
+            if len(body) > 1:
+                own.append(decl)
+    else:
+        own = list(decls)
+    if not any(type(d).__name__ in _SUBSTANTIVE for d in own):
+        return None, "vacuous", "compiles to an empty translation unit"
+
+    try:
+        with redirect_stdout(sink), redirect_stderr(sink):
+            return flow_to_c(monomorphize(decls)), "codegen", ""
+    except Exception as exc:
+        return None, "codegen", f"{type(exc).__name__}: {exc}"
 
 
-def verify(block: Block, allowed_modes: tuple[str, ...] = MODES) -> Result:
+def verify(block: Block) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
 
-    # An explicit mode pins the block to one rung.
-    if "flow-body" in block.flags:
-        allowed_modes = ("flow-body",)
-    elif "no-harness" in block.flags:
-        allowed_modes = ("standalone",)
+    modes = ("standalone",) if "no-harness" in block.flags else MODES
+    first: tuple[str, str] = ("", "")
+    best_noop = ""
+    reached_meaning = False
 
-    first_error = ""
-    noop_error = ""
-    for mode in allowed_modes:
-        # Only the wrapping rungs can manufacture a no-op body. A standalone
-        # block that contains one is the page's own business.
-        ok, detail = _try_compile(
-            _harness(block.code, mode), guard_noop=(mode != "standalone")
+    for mode in modes:
+        csource, stage, detail = _compile(
+            _harness(block.code, mode), guard_noop=(mode != "standalone"), mode=mode
         )
-        if not ok and detail.startswith("no-op") and not noop_error:
-            # The most informative diagnostic available: the block parsed, and
-            # what it parsed into was nothing. Prefer it over the syntax error
-            # that the stricter rungs produced first.
-            noop_error = detail
-        if ok:
+        if stage in ("types", "vacuous", "codegen", "degenerate"):
+            reached_meaning = True
+        if stage == "degenerate" and not best_noop:
+            best_noop = detail
+        if csource is not None:
             if block.expects_error:
                 return Result(
-                    block,
-                    "unverified",
-                    mode,
-                    f"tagged expect-error but compiles under {mode}",
+                    block, "unverified", mode,
+                    f"tagged expect-error but compiles under {mode}", "types",
+                    modes_tried=list(modes),
                 )
-            return Result(block, "verified", mode)
-        if not first_error:
-            first_error = detail
+            return Result(block, "verified", mode, "", stage, csource, list(modes))
+        if not first[0]:
+            first = (stage, detail)
 
     if block.expects_error:
-        return Result(block, "expected-error", detail=noop_error or first_error)
-    return Result(block, "unverified", detail=noop_error or first_error)
+        # A block only demonstrates a rejection when the compiler got far enough
+        # to reject it on meaning. A syntax error the harness itself
+        # manufactured proves nothing, so record which of the two happened.
+        return Result(
+            block,
+            "expected-error",
+            detail=best_noop or first[1],
+            stage="types" if reached_meaning else "parse",
+        )
+    return Result(block, "unverified", detail=best_noop or first[1], stage=first[0])
 
 
-def run(deep: bool = False) -> list[Result]:
+def _batch_clang(results: list[Result], batch: int = 150) -> None:
+    """Run clang over every candidate, a few hundred translation units per call.
+
+    One clang process per block costs several times the whole rest of the run.
+    Batching keeps the complete check inside a few seconds.
+    """
+    if not shutil.which("clang"):
+        print("note: clang not found, skipping the clang stage", file=sys.stderr)
+        return
+
+    pending = [r for r in results if r.status == "verified" and r.csource]
+    if not pending:
+        return
+
+    with tempfile.TemporaryDirectory(prefix="flow_doc_c_") as td:
+        work = Path(td)
+        by_name: dict[str, Result] = {}
+        for i, res in enumerate(pending):
+            path = work / f"b{i:04d}.c"
+            path.write_text(res.csource or "")
+            by_name[path.name] = res
+
+        names = list(by_name)
+        for start in range(0, len(names), batch):
+            chunk = names[start : start + batch]
+            proc = subprocess.run(
+                ["clang", "-fsyntax-only", "-w", "-Wreturn-type"]
+                + [str(work / name) for name in chunk],
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode == 0:
+                continue
+            for line in proc.stderr.splitlines():
+                if ": error:" not in line:
+                    continue
+                res = by_name.get(Path(line.split(":", 1)[0]).name)
+                if res is not None and res.status == "verified":
+                    res.status = "unverified"
+                    res.stage = "clang"
+                    res.detail = line.split(": error:", 1)[1].strip()[:200]
+
+
+def run(use_clang: bool = True) -> list[Result]:
     try:
         blocks = collect(lang="flow")
     except InfoStringError as exc:
@@ -198,57 +343,15 @@ def run(deep: bool = False) -> list[Result]:
         raise SystemExit(2)
 
     results = [verify(b) for b in blocks]
-    if deep:
-        _deepen(results)
+    if use_clang:
+        _batch_clang(results)
+    for res in results:
+        res.csource = None  # do not keep every translation unit alive
     return results
-
-
-def _deepen(results: list[Result]) -> None:
-    """Transpile and clang the blocks that carry a `main`.
-
-    Reuses the native runner in verify_browser_interp rather than adding a
-    third compile path to the repo.
-    """
-    import shutil
-    import subprocess
-    import tempfile
-
-    if not shutil.which("clang"):
-        print("note: clang not found, skipping the deep tier", file=sys.stderr)
-        return
-
-    targets = [r for r in results if r.status == "verified" and r.block.has_main]
-    with tempfile.TemporaryDirectory(prefix="flow_doc_deep_") as td:
-        work = Path(td)
-        for res in targets:
-            src = work / "block.flow"
-            out = work / "block.c"
-            src.write_text(_harness(res.block.code, res.mode or "standalone"))
-            proc = subprocess.run(
-                [sys.executable, "-m", "flow.transpiler", str(src), "--c",
-                 "-o", str(out)],
-                cwd=ROOT,
-                env={**__import__("os").environ, "PYTHONPATH": str(ROOT / "src")},
-                capture_output=True,
-                text=True,
-            )
-            if proc.returncode != 0:
-                res.status = "unverified"
-                res.detail = "transpile failed: " + (proc.stderr or proc.stdout)[-300:]
-                continue
-            cc = subprocess.run(
-                ["clang", "-fsyntax-only", "-w", str(out)],
-                capture_output=True,
-                text=True,
-            )
-            if cc.returncode != 0:
-                res.status = "unverified"
-                res.detail = "clang failed: " + cc.stderr[-300:]
 
 
 def report(results: list[Result], verbose: bool = False) -> None:
     counts = Counter(r.status for r in results)
-    modes = Counter(r.mode for r in results if r.status == "verified")
     total = len(results)
 
     print(f"Flow examples in documentation: {total}\n")
@@ -257,6 +360,7 @@ def report(results: list[Result], verbose: bool = False) -> None:
         pct = (100 * n / total) if total else 0
         print(f"  {status:16s} {n:4d}  ({pct:4.1f}%)")
 
+    modes = Counter(r.mode for r in results if r.status == "verified")
     print("\n  verified by harness rung:")
     for mode in MODES:
         if modes.get(mode):
@@ -264,22 +368,37 @@ def report(results: list[Result], verbose: bool = False) -> None:
 
     unverified = [r for r in results if r.status == "unverified"]
     if unverified:
-        by_file = Counter(r.block.path for r in unverified)
+        print("\n  unverified stops at:")
+        for stage, n in Counter(r.stage for r in unverified).most_common():
+            print(f"    {stage or 'unknown':14s} {n:4d}")
         print("\n  unverified concentrates in:")
-        for path, n in by_file.most_common(12):
+        for path, n in Counter(r.block.path for r in unverified).most_common(12):
             print(f"    {n:4d}  {path}")
 
     if verbose:
         print()
         for res in unverified:
-            print(f"  {res.block.ident}: {res.detail.splitlines()[0][:120]}")
+            head = (res.detail or "").splitlines()
+            print(f"  {res.block.ident} [{res.stage}] {head[0][:110] if head else ''}")
 
 
 def write_ledger(results: list[Result]) -> None:
+    """Write the ratchet ledger.
+
+    Rows are keyed by content hash rather than by line number. Inserting one
+    paragraph at the top of VISION.md shifts all 30 of its blocks; a line key
+    would rewrite those 30 rows. Across this repository 178 of the last 813
+    commits would have renumbered at least one row, up to 223 at once, which
+    turns the ledger into a permanent merge conflict and trains reviewers to
+    resolve it blindly. A content key changes exactly when the code changes,
+    which is also the moment a block genuinely needs re-verifying.
+    """
+    rows = [r.row() for r in results]
+    rows.sort(key=lambda r: (r["path"], r["line"]))
     payload = {
         "generated": date.today().isoformat(),
         "totals": dict(Counter(r.status for r in results)),
-        "blocks": [r.row() for r in sorted(results, key=lambda r: (r.block.path, r.block.line))],
+        "blocks": rows,
     }
     LEDGER.parent.mkdir(parents=True, exist_ok=True)
     LEDGER.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -288,17 +407,15 @@ def write_ledger(results: list[Result]) -> None:
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--report", action="store_true", help="print the summary")
+    ap.add_argument("--report", action="store_true")
     ap.add_argument("--verbose", action="store_true", help="list every failure")
-    ap.add_argument("--deep", action="store_true",
-                    help="also transpile and clang blocks that have a main")
-    ap.add_argument("--write-ledger", action="store_true",
-                    help=f"write {LEDGER.relative_to(ROOT)}")
-    ap.add_argument("--fail-on-unverified", action="store_true",
-                    help="exit non-zero when any block is unverified")
+    ap.add_argument("--no-clang", action="store_true",
+                    help="stop after codegen; skip the clang stage")
+    ap.add_argument("--write-ledger", action="store_true")
+    ap.add_argument("--fail-on-unverified", action="store_true")
     args = ap.parse_args(argv)
 
-    results = run(deep=args.deep)
+    results = run(use_clang=not args.no_clang)
     if args.report or not args.write_ledger:
         report(results, verbose=args.verbose)
     if args.write_ledger:

@@ -14,22 +14,25 @@ rule: a fence opened with N backticks closes on the next line of N or more of
 the same character.
 
 Per-block metadata lives in the info string, which is the only place markdown
-offers and which nothing currently uses::
+offers and which nothing previously used::
 
     ```flow                                  verify as written
     ```flow expect-error                     must FAIL to compile
     ```flow ignore="needs a GPU device"      excluded, reason required
-    ```flow host=python                      verify under FLOW_HOST=python
-    ```flow flow-body                        wrap in `flow Demo { ... }`
-    ```flow preamble=docs/_preambles/gfx.flow
-    ```flow from=examples/book/01_hello.flow  assert the inline copy matches
+    ```flow no-harness                       verify as written or not at all
 
 Both older extractors already tolerated a suffix after `flow` (they accepted
 `run` and `interactive`), so every form above is backward compatible.
+
+`host=`, `preamble=` and `from=` are designed but deliberately absent until
+something honours them. A key that parses and does nothing is worse than no key:
+an author writes `preamble=...`, the block is checked without it, and a green
+result means nothing.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shlex
 import subprocess
@@ -53,12 +56,15 @@ KNOWN_FLAGS = frozenset(
         "run",  # legacy, honoured by the tutorial runner
         "interactive",  # legacy
         "expect-error",
-        "flow-body",
         "no-harness",
     }
 )
 
-KNOWN_KEYS = frozenset({"ignore", "host", "preamble", "from"})
+# Only keys the checker actually honours. `host=`, `preamble=` and `from=` are
+# designed but not implemented; shipping them as no-ops would be worse than
+# leaving them out, because an author would write `preamble=...`, the block
+# would be checked without it, and a passing result would mean nothing.
+KNOWN_KEYS = frozenset({"ignore"})
 
 
 @dataclass
@@ -78,6 +84,17 @@ class Block:
     @property
     def ident(self) -> str:
         return f"{self.path}:{self.line}"
+
+    @property
+    def key(self) -> str:
+        """Stable identity for the ledger: the path plus a hash of the code.
+
+        Line numbers move whenever anything above a block is edited, which in
+        this repository is most markdown commits. Hashing the body means a
+        ledger row changes exactly when the block does.
+        """
+        digest = hashlib.sha256(self.code.encode("utf-8")).hexdigest()[:12]
+        return f"{self.path}#{digest}"
 
     @property
     def has_main(self) -> bool:
