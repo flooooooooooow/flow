@@ -18,6 +18,13 @@ on:
       - 'requirements.lock'
       - 'scripts/**'
       - 'plugins/**'
+      # Version consistency and Doc links are deliberately ungated at the job
+      # level so markdown drift gets caught. That only works if the workflow
+      # itself fires, so docs-only changes have to be in this list too.
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
+      - '**.md'
   pull_request:
     branches: [main, master]
     paths:
@@ -35,6 +42,13 @@ on:
       - 'requirements.lock'
       - 'scripts/**'
       - 'plugins/**'
+      # Version consistency and Doc links are deliberately ungated at the job
+      # level so markdown drift gets caught. That only works if the workflow
+      # itself fires, so docs-only changes have to be in this list too.
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
+      - '**.md'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
