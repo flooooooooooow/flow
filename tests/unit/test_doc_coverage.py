@@ -48,6 +48,24 @@ def test_backends_are_discovered():
     assert {"c_generator", "mlir_generator", "wasm_compiler"} <= cov._backends()
 
 
+def test_backend_discovery_covers_every_naming_convention(tmp_path, monkeypatch):
+    """A new target must not slip past the gate because of its filename.
+
+    A BPF target on an unmerged branch was named bpf_target.py, which the
+    original three suffixes did not match, so a whole new compilation target
+    would have landed undocumented.
+    """
+    src = tmp_path / "src" / "flow"
+    src.mkdir(parents=True)
+    for name in ("x_generator.py", "y_codegen.py", "z_compiler.py",
+                 "bpf_target.py", "w_backend.py", "parser.py"):
+        (src / name).write_text("")
+    monkeypatch.setattr(cov, "ROOT", tmp_path)
+    found = cov._backends()
+    assert found == {"x_generator", "y_codegen", "z_compiler",
+                     "bpf_target", "w_backend"}
+
+
 # --------------------------------------------------------------------------
 # The shipped map
 # --------------------------------------------------------------------------

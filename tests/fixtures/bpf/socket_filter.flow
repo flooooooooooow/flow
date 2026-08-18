@@ -1,0 +1,3 @@
+export function socket_filter(context: ptr<void>) -> i32 {
+    return 0
+}
