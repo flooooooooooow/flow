@@ -60,6 +60,7 @@ BUILD_GENERATED = {
     "project/language-roadmap.md",  # from ROADMAP.md
     "project/benchmark-results.md",  # from benchmarks/suite/RESULTS.md
     "third-party/flow-verify-catalog.md",
+    "project/example-status.md",  # from docs/generated/example-status.json
 }
 
 

@@ -1078,6 +1078,10 @@ kbd.key {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    /* The status badge can push this past a narrow column, so let the row
+       wrap rather than clip the label or the copy button. */
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
     gap: 0.75rem;
     padding: 0.42rem 0.7rem 0.42rem 0.95rem;
     background: color-mix(in srgb, var(--surface-3) 60%, transparent);
@@ -1093,6 +1097,39 @@ kbd.key {
     color: var(--text-faint);
 }
 
+/* Whether CI compiles this block. Sits in the code header next to the
+   language label, so the claim is attached to the thing it is about. */
+.code-status {
+    font-family: var(--sans);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    margin-left: auto;
+    margin-right: 0.55rem;
+    border: 1px solid transparent;
+}
+
+.code-status-verified {
+    color: var(--green);
+    background: var(--green-soft);
+    border-color: color-mix(in srgb, var(--green) 30%, transparent);
+}
+
+.code-status-expected-error {
+    color: var(--purple);
+    background: var(--purple-soft);
+    border-color: color-mix(in srgb, var(--purple) 30%, transparent);
+}
+
+.code-status-ignored,
+.code-status-unverified {
+    color: var(--text-faint);
+    background: var(--surface-3);
+    border-color: var(--border-light);
+}
 .code-copy {
     display: inline-flex;
     align-items: center;
