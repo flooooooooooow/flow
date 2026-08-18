@@ -46,11 +46,13 @@ const S_IROTH: i32 = 4     # Other read
 const DEFAULT_MODE: i32 = 420  # 0644 in octal
 
 # Open a file, returns fd or -1 on error
-extern function open(path: string, flags: i32, mode: i32) -> i32
-extern function close(fd: i32) -> i32
-extern function read(fd: i32, buf: ptr<i8>, count: i32) -> i32
-extern function write(fd: i32, buf: ptr<i8>, count: i32) -> i32
-extern function lseek(fd: i32, offset: i64, whence: i32) -> i64
+extern {
+    function open(path: string, flags: i32, mode: i32) -> i32
+    function close(fd: i32) -> i32
+    function read(fd: i32, buf: ptr<i8>, count: i32) -> i32
+    function write(fd: i32, buf: ptr<i8>, count: i32) -> i32
+    function lseek(fd: i32, offset: i64, whence: i32) -> i64
+}
 
 # Seek whence values
 const SEEK_SET: i32 = 0
@@ -75,12 +77,14 @@ function file_is_valid(f: FileDescriptor) -> bool {
 # Process Management
 # =============================================================================
 
-extern function fork() -> i32
-extern function execve(path: string, argv: ptr<string>, envp: ptr<string>) -> i32
-extern function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
-extern function getpid() -> i32
-extern function getppid() -> i32
-extern function exit(status: i32) -> void
+extern {
+    function fork() -> i32
+    function execve(path: string, argv: ptr<string>, envp: ptr<string>) -> i32
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function getpid() -> i32
+    function getppid() -> i32
+    function exit(status: i32) -> void
+}
 
 # Wait options
 const WNOHANG: i32 = 1
@@ -90,9 +94,11 @@ const WUNTRACED: i32 = 2
 # Environment
 # =============================================================================
 
-extern function getenv(name: string) -> string
-extern function setenv(name: string, value: string, overwrite: i32) -> i32
-extern function unsetenv(name: string) -> i32
+extern {
+    function getenv(name: string) -> string
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function unsetenv(name: string) -> i32
+}
 
 # =============================================================================
 # Signals
@@ -115,33 +121,41 @@ const SIGCHLD: i32 = 17
 const SIGCONT: i32 = 18
 const SIGSTOP: i32 = 19
 
-extern function kill(pid: i32, sig: i32) -> i32
+extern {
+    function kill(pid: i32, sig: i32) -> i32
+}
 
 # =============================================================================
 # Directory Operations
 # =============================================================================
 
-extern function mkdir(path: string, mode: i32) -> i32
-extern function rmdir(path: string) -> i32
-extern function chdir(path: string) -> i32
-extern function getcwd(buf: ptr<i8>, size: i32) -> ptr<i8>
-extern function unlink(path: string) -> i32
-extern function rename(old_path: string, new_path: string) -> i32
+extern {
+    function mkdir(path: string, mode: i32) -> i32
+    function rmdir(path: string) -> i32
+    function chdir(path: string) -> i32
+    function getcwd(buf: ptr<i8>, size: i32) -> ptr<i8>
+    function unlink(path: string) -> i32
+    function rename(old_path: string, new_path: string) -> i32
+}
 
 # =============================================================================
 # System Information
 # =============================================================================
 
-extern function gethostname(name: ptr<i8>, len: i32) -> i32
-extern function getuid() -> i32
-extern function getgid() -> i32
-extern function geteuid() -> i32
-extern function getegid() -> i32
+extern {
+    function gethostname(name: ptr<i8>, len: i32) -> i32
+    function getuid() -> i32
+    function getgid() -> i32
+    function geteuid() -> i32
+    function getegid() -> i32
+}
 
 # =============================================================================
 # Time
 # =============================================================================
 
-extern function time(t: ptr<i64>) -> i64
-extern function sleep(seconds: i32) -> i32
-extern function usleep(usec: i32) -> i32
+extern {
+    function time(t: ptr<i64>) -> i64
+    function sleep(seconds: i32) -> i32
+    function usleep(usec: i32) -> i32
+}

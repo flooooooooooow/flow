@@ -48,20 +48,22 @@ function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
 # Low-level Socket Functions (extern to libc)
 # =============================================================================
 
-extern function socket(domain: i32, socket_type: i32, protocol: i32) -> i32
-extern function bind(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
-extern function listen(sockfd: i32, backlog: i32) -> i32
-extern function accept(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: ptr<i32>) -> i32
-extern function connect(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
-extern function send(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
-extern function recv(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
-extern function shutdown(sockfd: i32, how: i32) -> i32
-extern function htons(hostshort: i16) -> i16
-extern function htonl(hostlong: i32) -> i32
-extern function ntohs(netshort: i16) -> i16
-extern function ntohl(netlong: i32) -> i32
-extern function inet_addr(cp: string) -> i32
-extern function inet_ntoa(addr: i32) -> string
+extern {
+    function socket(domain: i32, socket_type: i32, protocol: i32) -> i32
+    function bind(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
+    function listen(sockfd: i32, backlog: i32) -> i32
+    function accept(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: ptr<i32>) -> i32
+    function connect(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
+    function send(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
+    function recv(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
+    function shutdown(sockfd: i32, how: i32) -> i32
+    function htons(hostshort: i16) -> i16
+    function htonl(hostlong: i32) -> i32
+    function ntohs(netshort: i16) -> i16
+    function ntohl(netlong: i32) -> i32
+    function inet_addr(cp: string) -> i32
+    function inet_ntoa(addr: i32) -> string
+}
 
 # Shutdown how values
 const SHUT_RD: i32 = 0
@@ -147,7 +149,9 @@ function http_post(url: string, body: string) -> HttpResponse {
 # DNS Resolution
 # =============================================================================
 
-extern function gethostbyname(name: string) -> ptr<i8>
+extern {
+    function gethostbyname(name: string) -> ptr<i8>
+}
 
 function resolve_hostname(hostname: string) -> i32 {
     # Returns IPv4 address as i32, or 0 on failure
