@@ -899,7 +899,7 @@ import_decl := 'import' STRING
 Prefer named modules; see [language/modules.md](language/modules.md).
 
 **Example:**
-```flow
+```flow ignore="catalogue of import forms over illustrative module names"
 import "lib/stdlib/math.flow"          # legacy string path
 import std.math { sin, cos }           # named module + symbols
 import verify.nat as nat               # aliased module
@@ -947,14 +947,14 @@ as well. `export import M { a, b }` forwards only the named symbols, which must
 be exported by `M`. A package's `lib.flow` can therefore aggregate its
 submodules under one name.
 
-```flow
+```flow ignore="relative-import form; the sibling module is illustrative"
 # registry/packages/flowlm/src/lib.flow
 export import .util
 export import .model
 export import .train { flm_train_step, flm_sample }
 ```
 
-```flow
+```flow ignore="flowlm is a registry package, not vendored here"
 # consumer
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```

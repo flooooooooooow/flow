@@ -9,7 +9,7 @@ stable exported symbols.
 Flow supports logical dot paths, selected names, aliases, and package-local
 siblings:
 
-```flow
+```flow ignore="module system forms over illustrative module names"
 import std.math { sin, cos }
 import verify.nat.nat_zero_add
 import verify.nat as nat
@@ -38,7 +38,7 @@ export gain, FilterState
 
 An aggregator can re-export names from another module:
 
-```flow
+```flow ignore="relative-import form; the sibling module is illustrative"
 export import .filters
 export import .meters { rms, peak }
 ```

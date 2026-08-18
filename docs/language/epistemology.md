@@ -109,7 +109,7 @@ export Nat/+.zero-left, Nat/+.succ-right
 
 ### Import by morphism
 
-```flow
+```flow ignore="claim-path import forms over illustrative modules"
 import verify.Nat/+ { zero-left, succ-right }
 import verify.Nat/+.zero-right
 import .Nat/+.zero-right

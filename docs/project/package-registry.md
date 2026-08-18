@@ -43,7 +43,7 @@ URL shorthand works from the CLI:
 ./flow add --git https://github.com/org/mono --name ringbuf --subdir packages/ringbuf --tag v1
 ```
 
-```flow
+```flow ignore="hello_lib is the example package the page walks through"
 import hello_lib.lib { greet, add }
 ```
 

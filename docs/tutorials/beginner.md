@@ -305,7 +305,7 @@ export function triple(n: i32) -> i32 {
 
 Use it in `main.flow`:
 
-```flow
+```flow ignore="mylib is the illustrative module the lesson creates"
 import "mylib.flow"
 
 function main() -> i32 {

@@ -746,7 +746,7 @@ The module rule is simple: imports name modules, not file-system traversal.
 
 Preferred forms include:
 
-```flow
+```flow ignore="catalogue of import forms over illustrative module names"
 import std.math.sin
 import verify.nat { nat_zero_add, nat_add_succ }
 import .sibling { helper }

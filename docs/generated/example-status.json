@@ -2,8 +2,9 @@
   "generated": "2026-08-18",
   "totals": {
     "verified": 407,
-    "unverified": 300,
-    "ignored": 44
+    "unverified": 283,
+    "ignored": 60,
+    "expected-error": 1
   },
   "blocks": [
     {
@@ -443,9 +444,9 @@
       "key": "docs/AI_FLOW_HANDBOOK.md#7c3d1d32c4ed",
       "path": "docs/AI_FLOW_HANDBOOK.md",
       "line": 749,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.nat'"
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#763b4d6ceda5",
@@ -645,9 +646,9 @@
       "key": "docs/LANGUAGE_SPEC.md#ed5299a703a2",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 902,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.nat'"
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
@@ -661,17 +662,17 @@
       "key": "docs/LANGUAGE_SPEC.md#da749fa6cb42",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 950,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve relative import '.util' from /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_doc_mod_rsfne_4q"
+      "status": "ignored",
+      "detail": "relative-import form; the sibling module is illustrative",
+      "reason": "relative-import form; the sibling module is illustrative"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#5eaee9ca5dec",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 957,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'flowlm.lib'"
+      "status": "ignored",
+      "detail": "flowlm is a registry package, not vendored here",
+      "reason": "flowlm is a registry package, not vendored here"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
@@ -1421,9 +1422,9 @@
       "key": "docs/book/11-modules-packages-and-interop.md#869af235e3a7",
       "path": "docs/book/11-modules-packages-and-interop.md",
       "line": 12,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.nat.nat_zero_add'"
+      "status": "ignored",
+      "detail": "module system forms over illustrative module names",
+      "reason": "module system forms over illustrative module names"
     },
     {
       "key": "docs/book/11-modules-packages-and-interop.md#b07ec74b3f77",
@@ -1437,9 +1438,9 @@
       "key": "docs/book/11-modules-packages-and-interop.md#03474a04d08a",
       "path": "docs/book/11-modules-packages-and-interop.md",
       "line": 41,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve relative import '.filters' from /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_doc_mod_emoctma2"
+      "status": "ignored",
+      "detail": "relative-import form; the sibling module is illustrative",
+      "reason": "relative-import form; the sibling module is illustrative"
     },
     {
       "key": "docs/book/11-modules-packages-and-interop.md#989ca6416b42",
@@ -2053,9 +2054,9 @@
       "key": "docs/language/epistemology.md#2855dab7bef8",
       "path": "docs/language/epistemology.md",
       "line": 112,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.Nat/+'"
+      "status": "ignored",
+      "detail": "claim-path import forms over illustrative modules",
+      "reason": "claim-path import forms over illustrative modules"
     },
     {
       "key": "docs/language/epistemology.md#440ad79fe6e9",
@@ -2271,33 +2272,33 @@
       "key": "docs/language/modules.md#bb2ebc4366d7",
       "path": "docs/language/modules.md",
       "line": 16,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.Nat/+'"
+      "status": "ignored",
+      "detail": "import forms over illustrative module names",
+      "reason": "import forms over illustrative module names"
     },
     {
       "key": "docs/language/modules.md#3c178c94a485",
       "path": "docs/language/modules.md",
       "line": 24,
-      "status": "unverified",
-      "stage": "imports",
+      "status": "expected-error",
+      "stage": "parse",
       "detail": "FileNotFoundError: Unsafe import path: ../../../../lib/verify/nat.flow"
     },
     {
       "key": "docs/language/modules.md#2b678a0fe005",
       "path": "docs/language/modules.md",
       "line": 89,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.nat.nat_zero_add'"
+      "status": "ignored",
+      "detail": "import forms over illustrative module names",
+      "reason": "import forms over illustrative module names"
     },
     {
       "key": "docs/language/modules.md#41d0184a9bec",
       "path": "docs/language/modules.md",
       "line": 111,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'verify.derived.nat_add_commutes'"
+      "status": "ignored",
+      "detail": "illustrative aliased import",
+      "reason": "illustrative aliased import"
     },
     {
       "key": "docs/language/modules.md#58e507f11b4a",
@@ -2311,17 +2312,17 @@
       "key": "docs/language/modules.md#db9748eee7a1",
       "path": "docs/language/modules.md",
       "line": 150,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve relative import '.util' from /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_doc_mod_txuac_b1"
+      "status": "ignored",
+      "detail": "relative-import form; the sibling module is illustrative",
+      "reason": "relative-import form; the sibling module is illustrative"
     },
     {
       "key": "docs/language/modules.md#420b05da2a58",
       "path": "docs/language/modules.md",
       "line": 167,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'flowlm.lib'"
+      "status": "ignored",
+      "detail": "flowlm is a registry package, not vendored here",
+      "reason": "flowlm is a registry package, not vendored here"
     },
     {
       "key": "docs/language/modules.md#0c6dcdf7b237",
@@ -3199,9 +3200,9 @@
       "key": "docs/project/package-registry.md#649aad5bed38",
       "path": "docs/project/package-registry.md",
       "line": 46,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'hello_lib.lib'"
+      "status": "ignored",
+      "detail": "hello_lib is the example package the page walks through",
+      "reason": "hello_lib is the example package the page walks through"
     },
     {
       "key": "docs/project/pattern-adoption.md#339b46f6fbc1",
@@ -3472,24 +3473,27 @@
       "path": "docs/tutorials/advanced.md",
       "line": 262,
       "status": "unverified",
-      "stage": "imports",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FUNCTION at line 49, column 8\n\n    49 | extern function open(path: string, flags: i32, mode: i32) -> i32\n       |        ^"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "redefinition of '__stdinp' as different kind of symbol"
     },
     {
       "key": "docs/tutorials/advanced.md#dce70cddf25c",
       "path": "docs/tutorials/advanced.md",
       "line": 285,
       "status": "unverified",
-      "stage": "imports",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FUNCTION at line 49, column 8\n\n    49 | extern function open(path: string, flags: i32, mode: i32) -> i32\n       |        ^"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "redefinition of '__stdinp' as different kind of symbol"
     },
     {
       "key": "docs/tutorials/advanced.md#786fa85b8ca0",
       "path": "docs/tutorials/advanced.md",
       "line": 299,
       "status": "unverified",
-      "stage": "imports",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FUNCTION at line 49, column 8\n\n    49 | extern function open(path: string, flags: i32, mode: i32) -> i32\n       |        ^"
+      "mode": "standalone",
+      "stage": "clang",
+      "detail": "redefinition of '__stdinp' as different kind of symbol"
     },
     {
       "key": "docs/tutorials/advanced.md#b718879606fc",
@@ -3839,9 +3843,9 @@
       "key": "docs/tutorials/beginner.md#118c1cfbdd2f",
       "path": "docs/tutorials/beginner.md",
       "line": 308,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'mylib.flow'"
+      "status": "ignored",
+      "detail": "mylib is the illustrative module the lesson creates",
+      "reason": "mylib is the illustrative module the lesson creates"
     },
     {
       "key": "docs/tutorials/beginner.md#73fa909facc8",
@@ -5983,17 +5987,17 @@
       "key": "registry/packages/flowlm/README.md#420b05da2a58",
       "path": "registry/packages/flowlm/README.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'flowlm.lib'"
+      "status": "ignored",
+      "detail": "flowlm's own README; the package is not vendored into this repo",
+      "reason": "flowlm's own README; the package is not vendored into this repo"
     },
     {
       "key": "registry/packages/flowlm/README.md#a6cca3601607",
       "path": "registry/packages/flowlm/README.md",
       "line": 88,
-      "status": "unverified",
-      "stage": "imports",
-      "detail": "FileNotFoundError: Could not resolve import 'flowlm.model'"
+      "status": "ignored",
+      "detail": "flowlm's own README; the package is not vendored into this repo",
+      "reason": "flowlm's own README; the package is not vendored into this repo"
     },
     {
       "key": "registry/packages/flowlm/README.md#f36a8765c44d",
