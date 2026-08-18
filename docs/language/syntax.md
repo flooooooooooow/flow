@@ -9,7 +9,7 @@ let, mut, true, false, effect, capability, extern, and, or, not
 
 ## Literals
 
-```flow
+```flow ignore="catalogue of literal forms, not an expression"
 # Integers (decimal and hex)
 42, -17, 0xFF
 # Binary 0b… is not lexed yet — use decimal/hex
@@ -29,7 +29,7 @@ null
 
 ## Comments
 
-```flow
+```flow ignore="comment syntax only"
 # Single line comment
 ```
 
@@ -64,21 +64,21 @@ let mut counter: i32 = 0
 ```
 
 ### Assignment
-```flow
+```flow ignore="assignment forms over placeholder names"
 counter = counter + 1
 point.x = 10.0
 arr[0] = 42
 ```
 
 ### Function Definition
-```flow
+```flow ignore="declaration template; Type and ReturnType are metasyntactic"
 function name(param: Type) -> ReturnType {
     return value
 }
 ```
 
 ### Control Flow
-```flow
+```flow ignore="control-flow shapes with elided bodies"
 if condition {
     # ...
 } elif other {
@@ -98,7 +98,7 @@ for i in 0 to n {
 
 ### Match
 
-```flow
+```flow ignore="match arm forms over an undeclared subject"
 match n {
     0 => { return "zero" }
     1 | 2 | 3 => { return "small" }        # `|` alternation (literal patterns only)
@@ -148,7 +148,7 @@ extern {
 ## Expressions
 
 ### Function Call
-```flow
+```flow ignore="call syntax with placeholder names"
 function_name(arg1, arg2)
 ```
 
@@ -163,13 +163,13 @@ Point { x: 1.0, y: 2.0 }
 ```
 
 ### Field Access
-```flow
+```flow ignore="field-access notation"
 point.x
 person.address.city
 ```
 
 ### Index Access
-```flow
+```flow ignore="index notation"
 arr[0]
 matrix[i * width + j]
 ```
@@ -180,7 +180,7 @@ matrix[i * width + j]
 call on the right. It is left-associative, so a chain reads top-to-bottom in
 the order the data flows.
 
-```flow
+```flow ignore="pipe desugaring shown as equivalences"
 x |> f            # f(x)
 x |> f(y)         # f(x, y)      — piped value is prepended
 x |> obj.m(y)     # obj.m(x, y)  — works for method calls too
@@ -191,7 +191,7 @@ By default the piped value is inserted as the **first** argument. A single `_`
 placeholder overrides that, routing the piped value to whichever slot you mark
 instead:
 
-```flow
+```flow ignore="pipe placeholder forms shown as equivalences"
 signal |> lowpass(cutoff)      # lowpass(signal, cutoff)
 value  |> clamp(0.0, _, 1.0)   # clamp(0.0, value, 1.0)
 x      |> mix(_, sidechain, k) # mix(x, sidechain, k)  — explicit leading slot
@@ -205,7 +205,7 @@ so two placeholders would duplicate it and are rejected at parse time.
 A **fork block** applies several pipelines to the *same* value and collects the
 results into a record:
 
-```flow
+```flow ignore="fork-block notation over undeclared helpers"
 let s: Stats = n |> Stats {
     doubled  = twice,
     squared  = square,
@@ -224,7 +224,7 @@ result is itself a value, so a fork can sit mid-pipeline: `x |> R { … } |> f`.
 Dropping the record name makes it **anonymous** — the record type is inferred
 rather than declared:
 
-```flow
+```flow ignore="inferred-record notation over undeclared helpers"
 let s = n |> {
     doubled  = twice,
     squared  = square,
@@ -251,7 +251,7 @@ it.
 A `choose` stage selects which pipeline runs based on a value, so the shape of
 the computation can depend on state:
 
-```flow
+```flow ignore="fragment of a piped return expression"
 return x
     |> choose mode.tag {
         Mode_Double => double,

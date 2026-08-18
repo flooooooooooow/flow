@@ -202,6 +202,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     c_source is None when the block did not get that far.
     """
     from flow.c_generator import flow_to_c
+    from flow.module_resolver import resolve_modules
     from flow.monomorphize import monomorphize
     from flow.parser import parse_flow_code
     from flow.shader_dsl import extract_shader_module, has_fill_shader_dsl
@@ -217,14 +218,33 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
                 if not mod.fills:
                     return None, "parse", "no `shader fill` block in a shader module"
                 return "", "shader", ""
-            decls = parse_flow_code(_expand(source))
+            own = parse_flow_code(_expand(source))
     except Exception as exc:
         return None, "parse", f"{type(exc).__name__}: {exc}"
 
     if guard_noop:
-        problem = _degenerate(decls)
+        problem = _degenerate(own)
         if problem:
             return None, "degenerate", problem
+
+    # Imports have to be resolved, or a page that correctly demonstrates a
+    # library reads as broken. lib/stdlib/audio/README.md is fourteen complete
+    # programs calling functions that all exist; without this they failed as
+    # "Undefined function 'bass'".
+    #
+    # The vacuity and no-op checks stay on the block's own declarations. The
+    # resolved unit carries every imported declaration too, and counting those
+    # would let `import` alone make an empty block look substantial.
+    decls = own
+    if any(type(d).__name__ == "ImportDecl" for d in own):
+        with tempfile.TemporaryDirectory(prefix="flow_doc_mod_") as td:
+            unit = Path(td) / "block.flow"
+            unit.write_text(source)
+            try:
+                with redirect_stdout(sink), redirect_stderr(sink):
+                    decls = resolve_modules(str(unit))
+            except Exception as exc:
+                return None, "imports", f"{type(exc).__name__}: {exc}"
 
     try:
         with redirect_stdout(sink), redirect_stderr(sink):
@@ -240,16 +260,14 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     # otherwise the synthesized `main` supplies the substance and every empty
     # block passes. A block that is only comments, or only a `theorem` the
     # compiler erases, must still be reported as vacuous.
+    substantive = own
     if mode == "stmt-wrap":
-        own = []
-        for decl in decls:
-            body = getattr(getattr(decl, "body", None), "statements", None) or []
-            # Everything except the trailing `return 0` the harness appended.
-            if len(body) > 1:
-                own.append(decl)
-    else:
-        own = list(decls)
-    if not any(type(d).__name__ in _SUBSTANTIVE for d in own):
+        # Everything except the bare `return 0` the harness appended.
+        substantive = [
+            d for d in own
+            if len(getattr(getattr(d, "body", None), "statements", None) or []) > 1
+        ]
+    if not any(type(d).__name__ in _SUBSTANTIVE for d in substantive):
         return None, "vacuous", "compiles to an empty translation unit"
 
     try:
