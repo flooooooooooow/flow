@@ -273,9 +273,24 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
         return None, "codegen", f"{type(exc).__name__}: {exc}"
 
 
+def _preamble_text(block: Block) -> tuple[str, str]:
+    """Return (text, error) for a block's preamble. Empty text when it has none."""
+    rel = block.preamble
+    if not rel:
+        return "", ""
+    path = ROOT / rel
+    if not path.exists():
+        return "", f"preamble {rel!r} does not exist"
+    return path.read_text().rstrip() + "\n\n", ""
+
+
 def verify(block: Block) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
+
+    preamble, problem = _preamble_text(block)
+    if problem:
+        return Result(block, "unverified", detail=problem, stage="preamble")
 
     modes = ("standalone",) if "no-harness" in block.flags else MODES
     first: tuple[str, str] = ("", "")
@@ -284,7 +299,9 @@ def verify(block: Block) -> Result:
 
     for mode in modes:
         csource, stage, detail = _compile(
-            _harness(block.code, mode), guard_noop=(mode != "standalone"), mode=mode
+            preamble + _harness(block.code, mode),
+            guard_noop=(mode != "standalone"),
+            mode=mode,
         )
         if stage in ("types", "vacuous", "codegen", "degenerate"):
             reached_meaning = True

@@ -175,6 +175,11 @@ consumers use export aliases or `@flow_api`, not mangled names.
 ## 8.10 Traits and implementations
 
 ```flow
+struct Point {
+    x: i32,
+    y: i32
+}
+
 trait Comparable {
     function compare(self: Point, other: Point) -> i32
 }

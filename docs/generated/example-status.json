@@ -1,8 +1,8 @@
 {
   "generated": "2026-08-18",
   "totals": {
-    "verified": 430,
-    "unverified": 255,
+    "verified": 436,
+    "unverified": 249,
     "ignored": 65,
     "expected-error": 1
   },
@@ -923,17 +923,17 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/04-functions.md#5ece4b91440d",
+      "key": "docs/book/04-functions.md#ad57c76e9014",
       "path": "docs/book/04-functions.md",
       "line": 60,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'clamp'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/04-functions.md#b3a52c5ce50d",
       "path": "docs/book/04-functions.md",
-      "line": 85,
+      "line": 95,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -941,7 +941,7 @@
     {
       "key": "docs/book/04-functions.md#9667f3dd4900",
       "path": "docs/book/04-functions.md",
-      "line": 130,
+      "line": 140,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -949,7 +949,7 @@
     {
       "key": "docs/book/04-functions.md#0321e9384893",
       "path": "docs/book/04-functions.md",
-      "line": 151,
+      "line": 161,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -966,9 +966,9 @@
       "key": "docs/book/05-records-and-arrays.md#210844b00dac",
       "path": "docs/book/05-records-and-arrays.md",
       "line": 18,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#a0c1feca09f0",
@@ -976,15 +976,15 @@
       "line": 24,
       "status": "unverified",
       "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "detail": "SyntaxError: Top-level 'let' at line 11 must be 'let mut' (module static); use 'const' for immutable module-level values"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#336bf1ae7eb4",
       "path": "docs/book/05-records-and-arrays.md",
       "line": 31,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#d2aa1efcfc88",
@@ -1014,9 +1014,9 @@
       "key": "docs/book/05-records-and-arrays.md#921e80c4413b",
       "path": "docs/book/05-records-and-arrays.md",
       "line": 63,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#8d566805f7a8",
@@ -1024,20 +1024,20 @@
       "line": 74,
       "status": "unverified",
       "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "detail": "SyntaxError: Top-level 'let' at line 11 must be 'let mut' (module static); use 'const' for immutable module-level values"
     },
     {
-      "key": "docs/book/05-records-and-arrays.md#fb79b7b9f501",
+      "key": "docs/book/05-records-and-arrays.md#ebd3fe28fd80",
       "path": "docs/book/05-records-and-arrays.md",
       "line": 83,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Field 'value' not found on type Sample"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#f97a3bb695a1",
       "path": "docs/book/05-records-and-arrays.md",
-      "line": 103,
+      "line": 108,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1244,17 +1244,17 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/08-types-and-declarations.md#35cb6f0b7739",
+      "key": "docs/book/08-types-and-declarations.md#e15fdc3452e4",
       "path": "docs/book/08-types-and-declarations.md",
       "line": 177,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Field 'x' not found on type Point"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#fabb710549fa",
       "path": "docs/book/08-types-and-declarations.md",
-      "line": 200,
+      "line": 205,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1262,7 +1262,7 @@
     {
       "key": "docs/book/08-types-and-declarations.md#6eaf2843297a",
       "path": "docs/book/08-types-and-declarations.md",
-      "line": 224,
+      "line": 229,
       "status": "unverified",
       "stage": "parse",
       "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
