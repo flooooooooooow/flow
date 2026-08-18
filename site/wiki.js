@@ -626,6 +626,7 @@ async function loadDoc(path) {
             // After the runners claim their blocks, so interactive embeds keep
             // their own chrome instead of getting a second header.
             enhanceCodeBlocks(content);
+            markExampleStatus(content, path);
             wrapTables(content);
             buildPageToc(content);
             addHeadingAnchors(content);
@@ -722,6 +723,68 @@ const LANG_LABELS = {
     js: 'javascript', ts: 'typescript', py: 'python',
     md: 'markdown', yml: 'yaml', 'c++': 'cpp',
 };
+
+/* ── Example verification status ──────────────────────────────────────────
+   Every ```flow block in the docs is compiled in CI. The result per block
+   lives in generated/example-status.json, keyed by the page path and a hash
+   of the block's own text, which is the same key the ratchet uses. Showing it
+   next to the code means a reader can tell at a glance whether the thing in
+   front of them is known to build. */
+
+let exampleStatus = null;
+let exampleStatusPromise = null;
+
+function loadExampleStatus() {
+    if (exampleStatusPromise) return exampleStatusPromise;
+    exampleStatusPromise = fetch('generated/example-status.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+            exampleStatus = new Map();
+            (data?.blocks || []).forEach((b) => exampleStatus.set(b.key, b));
+            return exampleStatus;
+        })
+        .catch(() => {
+            exampleStatus = new Map();
+            return exampleStatus;
+        });
+    return exampleStatusPromise;
+}
+
+async function blockKey(path, text) {
+    const body = text.replace(/^\n+|\n+$/g, '');
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body));
+    const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return `${path}#${hex.slice(0, 12)}`;
+}
+
+const STATUS_LABEL = {
+    verified: ['Compiles', 'This example is compiled in CI.'],
+    'expected-error': ['Rejected on purpose', 'This example is expected not to compile, and does not.'],
+    ignored: ['Not compiled', 'Excluded from the build check.'],
+    unverified: ['Not compiling yet', 'This example does not build today and is tracked as known debt.'],
+};
+
+/** Mark each Flow block with whether CI compiles it. */
+async function markExampleStatus(container, path) {
+    if (!window.crypto?.subtle) return;      // needs a secure context
+    const status = await loadExampleStatus();
+    if (!status.size) return;
+    const blocks = [...container.querySelectorAll('.code-block[data-lang="flow"]')];
+    await Promise.all(blocks.map(async (wrap) => {
+        const code = wrap.querySelector('code');
+        const head = wrap.querySelector('.code-block-head');
+        if (!code || !head || head.querySelector('.code-status')) return;
+        const row = status.get(await blockKey(`docs/${path}`, code.textContent));
+        if (!row) return;
+        const [label, title] = STATUS_LABEL[row.status] || [];
+        if (!label) return;
+        const tag = document.createElement('span');
+        tag.className = `code-status code-status-${row.status}`;
+        tag.textContent = label;
+        tag.title = row.reason ? `${title} ${row.reason}` : title;
+        head.insertBefore(tag, head.querySelector('.code-copy'));
+    }));
+}
 
 function enhanceCodeBlocks(container) {
     container.querySelectorAll('pre').forEach((pre) => {
