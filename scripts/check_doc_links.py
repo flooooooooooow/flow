@@ -48,6 +48,7 @@ GENERATED = frozenset(
         "flow-verify-catalog.md",
         "language-roadmap.md",
         "benchmark-results.md",
+        "example-status.md",
     }
 )
 

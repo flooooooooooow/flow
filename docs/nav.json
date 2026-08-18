@@ -827,6 +827,10 @@
       "title": "Docs meta",
       "items": [
         {
+          "label": "Example status",
+          "path": "project/example-status.md"
+        },
+        {
           "label": "Wiki Strategy",
           "path": "wiki-strategy.md"
         },
