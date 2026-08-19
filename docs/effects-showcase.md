@@ -531,7 +531,7 @@ handler is obvious, and scoped dynamic dispatch through deeper call chains.
 The runnable checkout demo at [`examples/effects/showcase.flow`](../examples/effects/showcase.flow)
 uses four interfaces:
 
-```flow
+```flow from=examples/effects/showcase.flow
 effect Log {
     info(msg: string) -> void,
     warn(msg: string) -> void,
@@ -553,7 +553,7 @@ effect Notify {
 
 Its business function is written once:
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow from=examples/effects/showcase.flow
 function place_order(sku: i32, qty: i32) -> i32 {
     Log.info("order received")
     let available: i32 = Inventory.stock_of(sku)

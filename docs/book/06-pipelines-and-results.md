@@ -91,7 +91,7 @@ of the result type instead of an unstated convention.
 
 ## 6.4 Complete demonstration
 
-```flow
+```flow from=examples/book/06_pipeline_result.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }
