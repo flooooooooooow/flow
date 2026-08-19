@@ -1,8 +1,8 @@
 {
   "generated": "2026-08-19",
   "totals": {
-    "verified": 503,
-    "unverified": 220,
+    "verified": 504,
+    "unverified": 219,
     "expected-error": 4,
     "ignored": 66
   },
@@ -4109,10 +4109,9 @@
       "key": "docs/tutorials/beginner.md#8ee653735945",
       "path": "docs/tutorials/beginner.md",
       "line": 280,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "call to undeclared function 'sin_f32'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/beginner.md#a95194868d9f",
