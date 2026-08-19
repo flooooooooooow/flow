@@ -74,7 +74,9 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
   `poll_write` **park the fiber** (`flow_netpoll_fiber_*`); off-fiber they
   block the OS thread. `sleep_ms` still uses the blocking timer path.
 - **Unhandled ops** still default to zero / no-op unless `--strict-effects` /
-  `FLOW_STRICT_EFFECTS=1` is set ([effects-showcase.md](../effects-showcase.md)).
+  `FLOW_STRICT_EFFECTS=1` is set. The three ways to treat an unhandled effect are
+  recipes 13-15 of the
+  [Effects Showcase](../effects-showcase.md#13-turn-unhandled-effects-into-compile-time-errors).
 
 ## Deferred
 
@@ -95,7 +97,8 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 
 Effect-row typing (`function f() -> T with E1, E2`) and `--strict-effects` already
 ship — see [LANGUAGE_SPEC §6.3.1](../LANGUAGE_SPEC.md#631-signature-effect-rows)
-and [effects-showcase.md](../effects-showcase.md).
+and recipes 10-12 of the
+[Effects Showcase](../effects-showcase.md#10-declare-an-effect-row-on-a-function).
 
 ## Older demos
 
