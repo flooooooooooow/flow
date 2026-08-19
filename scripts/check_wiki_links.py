@@ -60,6 +60,19 @@ def resolve_link(source: Path, href: str) -> Path | None:
         if repo_target.is_relative_to(ROOT) and repo_target.exists():
             return repo_target
 
+    # A page copied out of the repo (examples/**/README.md) links to its
+    # siblings by bare name. wiki.js sends every non-.md file under a source
+    # directory to GitHub rather than serving it, so the file has to exist in
+    # the repo, not in the built site.
+    if source.as_posix().startswith(REPO_LINK_PREFIXES):
+        sibling = (ROOT / source.parent / href).resolve()
+        if (
+            sibling.is_relative_to(ROOT)
+            and sibling.exists()
+            and sibling.suffix != ".md"
+        ):
+            return sibling
+
     if absolute.is_relative_to(WIKI):
         return absolute
     return None

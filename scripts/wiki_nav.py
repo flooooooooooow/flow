@@ -127,7 +127,10 @@ def validate(nav: dict, docs: Path = DOCS) -> list[str]:
             continue
         if path in BUILD_GENERATED:
             continue
-        if not (docs / path).exists():
+        # build_wiki also publishes the markdown under examples/, so a nav
+        # entry may name a page that lives outside docs/ but is copied to the
+        # same place in the built site.
+        if not (docs / path).exists() and not (docs.parent / path).exists():
             problems.append(
                 f"section {section['id']!r} points at {path!r}, which does not exist"
             )
