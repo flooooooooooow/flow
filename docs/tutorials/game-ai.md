@@ -28,7 +28,7 @@ demo print byte-identical output.
 Snake has a small trick to it: the head only ever needs local information.
 Compress the board into 7 bits, and a lookup table can hold the whole policy.
 
-```text
+```flow-pseudocode
 # 3 danger bits + 4 food-direction bits, all relative to the heading
 let mut s: i32 = 0
 if cell_deadly(sxp, syp, len, hx + lx, hy + ly) { s = s + 1 }   # left
@@ -43,7 +43,7 @@ if cross > 0 { s = s + 64 }   # food right
 128 states, 3 actions (turn left, straight, turn right). The training loop is
 four calls:
 
-```text
+```flow-pseudocode
 q_init(1234 as u32)
 let eps: f32 = q_epsilon(ep, 3000, 1.0, 0.05)   # linear decay
 let a: i32 = q_select(s, 3, eps)                 # epsilon-greedy
@@ -78,7 +78,7 @@ learning quietly. Keep your encoding compact when you can.
 Flappy's controller is one decision (flap or not) from three numbers. That is
 a 4-gene linear threshold:
 
-```text
+```flow-pseudocode
 # flap when w0*(gap_center - bird_y) + w1*vel + w2*dist + w3 > 0
 if w0 * x0 + w1 * x1 + w2 * x2 + w3 > 0.0 { flap = true }
 ```
@@ -125,7 +125,7 @@ regime: a tiny MLP trained with REINFORCE.
 The MLP in `ai.flow` is one hidden tanh layer with linear output logits,
 sized at init (within static budgets of 8 inputs, 16 hidden, 4 outputs):
 
-```text
+```flow-pseudocode
 mlp_init(3, 8, 3, 1337 as u32)   # ball dx, dy, relative y -> up/stay/down
 mlp_forward(xp)
 let a: i32 = mlp_sample()        # softmax sample while training

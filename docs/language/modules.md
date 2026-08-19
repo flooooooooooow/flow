@@ -281,7 +281,7 @@ Dots mirror directories. Predictable forever.
 
 Effects are symbols. Capabilities are symbols. Same import rules.
 
-```text
+```flow-future
 import std.io { effect Log }
 import my_app.handlers { capability ConsoleLogger }
 
