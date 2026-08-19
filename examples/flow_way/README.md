@@ -93,17 +93,17 @@ function control_step(sample: i32) -> i32 with Telemetry {
 
 function main() -> i32 {
     let mut production: i32 = 0
-    let mut test: i32 = 0
+    let mut quiet_result: i32 = 0
 
     handle Telemetry with ConsoleTelemetry {
         production = control_step(21)
     }
 
     handle Telemetry with QuietTelemetry {
-        test = control_step(21)
+        quiet_result = control_step(21)
     }
 
-    if production != 42 || test != 42 { return 1 }
+    if production != 42 || quiet_result != 42 { return 1 }
     return 0
 }
 ```
