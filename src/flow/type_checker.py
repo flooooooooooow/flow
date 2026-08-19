@@ -212,6 +212,10 @@ class TypeCheckResult:
     symbol_table: Dict[str, Symbol]
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    # Errors that --lenient must not downgrade, because compiling anyway would
+    # emit C that cannot build. Reported to the author in Flow terms instead of
+    # surfacing as a clang error about an identifier they never wrote.
+    fatal_errors: List[str] = field(default_factory=list)
     # LSP / IDE extras (optional; safe defaults for existing callers)
     struct_fields: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
     # Ordered local/param bindings seen during check: {name,type,kind,container,mutable}
@@ -460,6 +464,7 @@ class TypeChecker:
         self.global_scope = Scope()
         self.current_scope = self.global_scope
         self.errors: List[str] = []
+        self.fatal_errors: List[str] = []
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
         self.generic_struct_types: Dict[str, StructDecl] = {}
@@ -1077,6 +1082,7 @@ class TypeChecker:
     def check(self, declarations: List[Any]) -> TypeCheckResult:
         """Main entry point for type checking."""
         self.errors = []
+        self.fatal_errors = []
         self.warnings = []
         self._lsp_locals: List[Dict[str, Any]] = []
 
@@ -1127,6 +1133,7 @@ class TypeChecker:
             symbol_table=dict(self.global_scope.symbols),
             errors=self.errors,
             warnings=self.warnings,
+            fatal_errors=list(self.fatal_errors),
             struct_fields=struct_fields,
             locals=list(self._lsp_locals),
         )
@@ -3016,7 +3023,19 @@ class TypeChecker:
         """Type check a variable reference."""
         symbol = self.current_scope.lookup(var.name)
         if not symbol:
-            if self.strict:
+            if var.name in self.capability_types:
+                # A capability is a handler, not a value. Reported in lenient
+                # mode too: the generator lowers this to a reference to a C
+                # identifier that nothing ever defines, so letting it through
+                # only moves the failure to clang and renames it.
+                message = (
+                    f"Capability '{var.name}' is not a value and cannot be passed "
+                    f"as an argument. Install it for the call instead: "
+                    f"handle <Effect> with {var.name} {{ ... }}"
+                )
+                self.errors.append(message)
+                self.fatal_errors.append(message)
+            elif self.strict:
                 self.errors.append(f"Undefined variable '{var.name}'")
             return SemanticType(TypeKind.I32)
         return symbol.type
