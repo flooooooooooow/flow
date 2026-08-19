@@ -6,7 +6,7 @@ The goal is not to prove that Flow can reproduce ordinary imperative programs. T
 
 For this corpus, a numerically correct low-level solution is not automatically a good Flow solution. If the problem is naturally a pipeline, effect, hybrid system, field, real-time callback, or connected dynamical system, the example should use that abstraction rather than manually rebuilding it from loops, flags, dependency objects, or bookkeeping.
 
-The executable examples in this directory are intentionally small. Larger examples link to the canonical programs elsewhere in the repository rather than duplicating them.
+The executable examples in this directory are intentionally small. Larger examples link to the canonical programs elsewhere in the repository rather than duplicating them. Every fenced `flow` example below is also expected to compile in CI.
 
 ## Start here
 
@@ -28,11 +28,30 @@ The executable examples in this directory are intentionally small. Larger exampl
 The arithmetic is trivial. The useful part is that the source value visibly travels through the transformation topology:
 
 ```flow
+function subtract_offset(x: i32, offset: i32) -> i32 {
+    return x - offset
+}
+
+function multiply(x: i32, factor: i32) -> i32 {
+    return x * factor
+}
+
+function clamp(lo: i32, x: i32, hi: i32) -> i32 {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}
+
 function calibrate(raw: i32) -> i32 {
     return raw
         |> subtract_offset(10)
         |> multiply(2)
         |> clamp(0, _, 100)
+}
+
+function main() -> i32 {
+    if calibrate(20) != 20 { return 1 }
+    return 0
 }
 ```
 
@@ -46,24 +65,46 @@ The non-Flow-way version for this gallery would be a pile of temporary variables
 
 **Problem:** a control algorithm needs telemetry in production, but deterministic tests should be able to silence or replace it. The control algorithm should not receive a logger object, callback, Boolean flag, or environment bundle.
 
-The algorithm names what it may do:
+The algorithm names what it may do; the application chooses what that effect means for a scope:
 
 ```flow
+effect Telemetry {
+    emit(msg: string) -> void,
+}
+
+capability ConsoleTelemetry {
+    effect Telemetry,
+    function emit(msg: string) -> void {
+        println(msg)
+    },
+}
+
+capability QuietTelemetry {
+    effect Telemetry,
+    function emit(msg: string) -> void {
+        return
+    },
+}
+
 function control_step(sample: i32) -> i32 with Telemetry {
     Telemetry.emit("control step")
     return sample * 2
 }
-```
 
-The application chooses what `Telemetry` means for a scope:
+function main() -> i32 {
+    let mut production: i32 = 0
+    let mut test: i32 = 0
 
-```flow
-handle Telemetry with ConsoleTelemetry {
-    production = control_step(21)
-}
+    handle Telemetry with ConsoleTelemetry {
+        production = control_step(21)
+    }
 
-handle Telemetry with QuietTelemetry {
-    test = control_step(21)
+    handle Telemetry with QuietTelemetry {
+        test = control_step(21)
+    }
+
+    if production != 42 || test != 42 { return 1 }
+    return 0
 }
 ```
 
@@ -78,10 +119,26 @@ The non-Flow-way version for this gallery would thread a logger dependency or `q
 Use the existing [pipeline fork example](../basics/pipeline_fork.flow):
 
 ```flow
-let s: Stats = n |> Stats {
-    doubled = twice,
-    squared = square,
-    plus_ten = add(_, 10),
+struct Stats {
+    doubled: i32,
+    squared: i32,
+    plus_ten: i32,
+}
+
+function twice(x: i32) -> i32 { return x * 2 }
+function square(x: i32) -> i32 { return x * x }
+function add(x: i32, k: i32) -> i32 { return x + k }
+
+function main() -> i32 {
+    let n: i32 = 6
+    let s: Stats = n |> Stats {
+        doubled = twice,
+        squared = square,
+        plus_ten = add(_, 10),
+    }
+
+    if s.doubled != 12 || s.squared != 36 || s.plus_ten != 16 { return 1 }
+    return 0
 }
 ```
 
@@ -94,12 +151,26 @@ This keeps the fan-out topology in the expression instead of scattering three un
 Use the existing [pipeline choose example](../basics/pipeline_choose.flow):
 
 ```flow
-return x
-    |> choose m.tag {
-        Mode_Double => double,
-        Mode_Triple => triple,
-    }
-    |> double
+enum Mode { Double, Triple }
+
+function double(x: i32) -> i32 { return x * 2 }
+function triple(x: i32) -> i32 { return x * 3 }
+
+function run(m: Mode, x: i32) -> i32 {
+    return x
+        |> choose m.tag {
+            Mode_Double => double,
+            Mode_Triple => triple,
+        }
+        |> double
+}
+
+function main() -> i32 {
+    let d: Mode = Mode { tag: Mode_Double }
+    let t: Mode = Mode { tag: Mode_Triple }
+    if run(d, 10) != 40 || run(t, 10) != 60 { return 1 }
+    return 0
+}
 ```
 
 The non-Flow-way version is an `if` ladder that performs the routing outside the pipeline and then manually reconnects the result.
@@ -111,9 +182,20 @@ The non-Flow-way version is an `if` ladder that performs the routing outside the
 The canonical [thermostat example](../evolution/thermostat_evolves.flow) expresses both time scales in the model:
 
 ```flow
+function bang(temp: f64, heater: f64, low: f64, high: f64) -> f64 {
+    if temp < low { return 1.0 }
+    if temp > high { return 0.0 }
+    return heater
+}
+
 flow Thermostat {
     state temperature : f64 = 12.0
     state heater      : f64 = 1.0
+    param ambient     : f64 = 8.0
+    param leak        : f64 = 0.12
+    param power       : f64 = 1.8
+    param low         : f64 = 19.5
+    param high        : f64 = 20.5
 
     solver { dt 1 ms  method euler }
 
@@ -122,6 +204,12 @@ flow Thermostat {
     every 100 ms {
         heater becomes bang(temperature, heater, low, high)
     }
+}
+
+function main() -> i32 {
+    let mut room: Thermostat = Thermostat_new()
+    Thermostat_step(&room, 0.001)
+    return 0
 }
 ```
 
