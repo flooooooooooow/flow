@@ -1,6 +1,11 @@
 name: Migrate documentation examples
 
 on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'scripts/retag_noncompiling_doc_examples.py'
+      - '.github/workflows/doc-examples-migrate.yml'
   push:
     branches: ['agent/compile-all-doc-examples']
     paths:
@@ -12,6 +17,7 @@ permissions:
 
 jobs:
   migrate:
+    if: github.head_ref == 'agent/compile-all-doc-examples' || github.ref_name == 'agent/compile-all-doc-examples'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
