@@ -1677,6 +1677,12 @@ class CGenerator:
             return self._infer_expr_type(
                 FunctionCall(expr.method, [expr.object] + list(expr.arguments))
             )
+        elif isinstance(expr, CastExpression):
+            # `x as T` is a T. Without this the cast fell through to the
+            # default, so `"a" + (buf as string)` saw a non-string operand and
+            # ran it through _gen_stringify_expr, which printed the pointer
+            # with "%d" into a 64-byte buffer (#577).
+            return expr.target_type
         elif isinstance(expr, UnaryOperation):
             operand = self._infer_expr_type(expr.operand)
             if expr.operator == "!":
@@ -1689,6 +1695,14 @@ class CGenerator:
                 return Type("bool")
             left = self._infer_expr_type(expr.left)
             right = self._infer_expr_type(expr.right)
+            # Concatenation wins over every numeric promotion below: `"n=" + v`
+            # is a string whatever v is. Without this the numeric rules claimed
+            # the whole expression, so `"i64=" + v` printed the concatenated
+            # pointer with "%lld" and `"f64=" + f` printed 0.000000. It only
+            # ever worked because an unrecognised operand fell through to
+            # `left or right`; anything the rules did recognise broke (#577).
+            if expr.operator == "+" and "string" in (left.name, right.name):
+                return Type("string")
             # Dual arithmetic promotes to Dual (pattern-adoption #161).
             if left.name == "Dual" or right.name == "Dual":
                 return Type("Dual")
