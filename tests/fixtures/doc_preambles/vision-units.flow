@@ -1,0 +1,13 @@
+import "stdlib/units_si.flow"
+
+# Dimensions the VISION examples name that are not already SI.
+# Meter and Kilogram come from units_si.flow above. Declared here rather than in every
+# block, so the prose shows the model and not the bookkeeping around it.
+# An angle is in radians, which is what sin and cos accept.
+type Angle = Radian
+unit AngularVelocity
+unit Voltage
+unit Torque
+
+const gravity: f64 = 9.81
+const length: f64 = 1.0

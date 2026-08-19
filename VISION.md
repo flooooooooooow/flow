@@ -50,7 +50,7 @@ Programming should describe behavior, not implementation.
 
 A programmer should write:
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```flow preamble=tests/fixtures/doc_preambles/vision-units.flow
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity
@@ -321,7 +321,7 @@ length + voltage
 
 ## Continuous Flows
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```flow preamble=tests/fixtures/doc_preambles/vision-units.flow
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity

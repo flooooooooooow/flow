@@ -250,18 +250,21 @@ flow F {
             "two 'evolves' declarations",
         )
 
-    def test_state_needs_initializer(self):
-        self.check_error(
+    def test_state_without_an_initializer_starts_at_zero(self):
+        """Requiring `= 0.0` on every member made the common case noisier
+        than the model it describes, and `angle : Angle` has nowhere to put
+        one."""
+        decls = parse_lowered(
             """
 flow F {
     state x : f64
     x evolves as x
 }
-""",
-            "needs an initial value",
+"""
         )
+        assert decls, "flow with an uninitialized state should still lower"
 
-    def test_member_type_must_be_float(self):
+    def test_member_type_must_be_a_float_or_a_unit(self):
         self.check_error(
             """
 flow F {
@@ -269,8 +272,36 @@ flow F {
     x evolves as x
 }
 """,
-            "must be f64 or f32",
+            "a flow member is f64, f32, or a declared unit",
         )
+
+    def test_a_declared_unit_is_a_valid_member_type(self):
+        decls = parse_lowered(
+            """
+unit Angle
+
+flow F {
+    state x : Angle
+    x evolves as 1.0
+}
+"""
+        )
+        assert decls
+
+    def test_a_bare_member_of_unit_type_is_state_not_a_nested_flow(self):
+        """`angle : Angle` used to be read as composition and rejected
+        because Angle is not a flow."""
+        decls = parse_lowered(
+            """
+unit Angle
+
+flow F {
+    angle : Angle
+    angle evolves as 1.0
+}
+"""
+        )
+        assert decls
 
     def test_output_needs_inline_map(self):
         self.check_error(

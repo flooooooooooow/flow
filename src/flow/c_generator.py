@@ -865,15 +865,6 @@ class CGenerator:
             lines.extend(self._gen_enum(enum_decl))
             lines.append("")
 
-        # Emit type aliases (transparent typedefs in C)
-        if type_aliases:
-            lines.append("/* Type aliases (transparent) */")
-            for alias in type_aliases:
-                base_c_type = self._c_type(alias.base_type)
-                alias_name = _c_ident(alias.name)
-                lines.append(f"typedef {base_c_type} {alias_name};")
-            lines.append("")
-
         # Emit distinct types (typedefs in C - same representation but different type name)
         # Note: C doesn't enforce type safety for typedefs, but the type checker does
         if distinct_types:
@@ -882,6 +873,17 @@ class CGenerator:
                 base_c_type = self._c_type(distinct.base_type)
                 distinct_name = _c_ident(distinct.name)
                 lines.append(f"typedef {base_c_type} {distinct_name};")
+            lines.append("")
+
+        # Emit type aliases last of the typedefs: an alias may name a unit or
+        # a distinct type, so those have to exist first. `type Angle = Radian`
+        # emitted `typedef Radian Angle;` above `typedef double Radian;`.
+        if type_aliases:
+            lines.append("/* Type aliases (transparent) */")
+            for alias in type_aliases:
+                base_c_type = self._c_type(alias.base_type)
+                alias_name = _c_ident(alias.name)
+                lines.append(f"typedef {base_c_type} {alias_name};")
             lines.append("")
 
         # Emit struct definitions in dependency order
