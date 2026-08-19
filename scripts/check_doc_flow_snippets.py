@@ -11,43 +11,67 @@ reader cannot mistake them for shipped syntax.
 from __future__ import annotations
 
 import re
-import sys
 from collections import Counter
 
 import check_doc_examples as checker
 from docs_blocks import collect
 
-# High-signal Flow surface forms. These deliberately target syntax rather than
-# ordinary programming words so shell transcripts, JSON, C, Python, output, and
-# prose examples do not get swept into the Flow compiler.
-_FLOW_LINE = re.compile(
-    r"^\s*(?:"
-    r"(?:export\s+)?function\s+|"
-    r"struct\s+|enum\s+|trait\s+|impl\s+|effect\s+|capability\s+|"
-    r"flow\s+|state\s+|input\s+|output\s+|param\s+|"
-    r"let(?:\s+mut)?\s+|const\s+|distinct\s+type\s+|type\s+|unit\s+|"
-    r"extern\s*\{|import\s+|module\s+|"
-    r"if\s+|elif\s+|while\s+|(?:parallel\s+)?for\s+|match\s+|"
-    r"handle\s+|return\s+|defer\s+|expect\s+|"
-    r"theorem\s+|assume\s+|therefore\s+|"
-    r"solver\s*\{|every\s+|when\s+|always\s*\{|"
-    r"dsys\s+|horizon\s+|sense\s+|ga\s+evolve\s+|closed\s+|analyze\s+|"
-    r"represent\s+|control\s+|guarantee\s*\{|deploy\s*\{|"
-    r"field\s+|boundary\s+|shader\s+fill\s+|"
-    r"@[A-Za-z_]"
+# Strong signals are syntax-shaped rather than keyword-shaped. In particular,
+# output such as `flow  ~21,000 us` or `closed loop stable: yes` must not be
+# mistaken for a Flow declaration just because the first word is also a Flow
+# keyword.
+_STRONG = re.compile(
+    r"(?:"
+    r"^\s*(?:export\s+)?function\s+[A-Za-z_]\w*(?:<[^\n>]+>)?\s*\([^\n]*\)\s*->|"
+    r"^\s*(?:struct|enum|trait|impl|effect|capability)\s+[A-Za-z_]\w*[^\n]*\{|"
+    r"^\s*flow\s+[A-Za-z_]\w*[^\n]*\{|"
+    r"^\s*(?:state|input|output|param)\s+[A-Za-z_]\w*\s*(?::|=)|"
+    r"^\s*let(?:\s+mut)?\s+[A-Za-z_]\w*\s*(?::|=)|"
+    r"^\s*(?:const|type|unit)\s+[A-Za-z_]\w*\s*(?::|=)|"
+    r"^\s*distinct\s+type\s+|"
+    r"^\s*extern\s*\{|"
+    r"^\s*import\s+[\"']|"
+    r"^\s*module\s+[A-Za-z_]\w*\s*\{|"
+    r"^\s*handle\s+[A-Za-z_]\w*\s+with\s+[A-Za-z_]\w*\s*\{|"
+    r"^\s*(?:theorem|assume|therefore)\b|"
+    r"^\s*(?:solver|always|guarantee|deploy)\s*\{|"
+    r"^\s*every\s+[^\n]+\{|"
+    r"^\s*when\s+[^\n]+\{|"
+    r"^\s*dsys\s+[A-Za-z_]\w*\s*\{|"
+    r"^\s*horizon\s+[A-Za-z_]\w*\s+(?:finite|infinite)\b|"
+    r"^\s*sense\s+on\s+[A-Za-z_]\w*\s*\{|"
+    r"^\s*ga\s+evolve\s+on\s+|"
+    r"^\s*closed\s+[A-Za-z_]\w*\s+with\s+|"
+    r"^\s*analyze\s+[A-Za-z_]\w*\s+|"
+    r"^\s*represent\s+(?:linear|koopman)\b|"
+    r"^\s*field\s+[A-Za-z_]\w*\s*:|"
+    r"^\s*shader\s+fill\b|"
+    r"^\s*@[A-Za-z_]\w*|"
+    r"\bevolves\s+as\b|"
+    r"\bbecomes\b|"
+    r"\b(?:ptr|span|array)<[^\n>]+>|"
+    r"\|>"
     r")",
     re.MULTILINE,
 )
 
-_FLOW_INFIX = re.compile(r"\b(?:evolves\s+as|becomes)\b|\|>")
-
-# These tags are intentionally explicit. They are not executable current Flow,
-# and the name says that directly to readers and tooling.
-EXPLICIT_NONCURRENT = {"flow-pseudocode", "flow-future"}
+# Control-flow-only fragments are common in the book. Require actual source
+# punctuation so English prose and command output do not count.
+_CONTROL = re.compile(
+    r"^\s*(?:if|elif|while|match|(?:parallel\s+)?for)\b[^\n]*\{",
+    re.MULTILINE,
+)
+_RETURN = re.compile(r"^\s*return(?:\s+[^#\n]+)?\s*(?:#.*)?$", re.MULTILINE)
 
 
 def looks_like_flow(code: str) -> bool:
-    return bool(_FLOW_LINE.search(code) or _FLOW_INFIX.search(code))
+    if _STRONG.search(code) or _CONTROL.search(code):
+        return True
+    # A bare return by itself is too generic, but in a multi-line snippet with
+    # a Flow comment or typed token it is useful supporting evidence.
+    if _RETURN.search(code) and re.search(r"\b(?:i32|i64|f32|f64|bool|string|void)\b", code):
+        return True
+    return False
 
 
 def main() -> int:
