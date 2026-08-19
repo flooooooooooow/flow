@@ -381,3 +381,4 @@ def test_bare_null_arg_mangles_to_callee_ptr_param():
     )
     assert "flowc_tc_init_ptr_u8(NULL)" in c
     assert "flowc_tc_init(NULL)" not in c
+
