@@ -1,5 +1,27 @@
 # FLOW POSIX Standard Library
 # File I/O, processes, environment, and system calls
+#
+# Prototypes and constants come from the system headers rather than being
+# written out here. Both halves of this module used to be hand-copied, and
+# both were wrong:
+#
+#   - The prototypes disagreed with libc (`read` returns ssize_t, not i32), and
+#     the generated C includes <unistd.h> either way, so every program that
+#     imported this module failed with "conflicting types for 'read'".
+#   - The constants were macOS values. O_CREAT is 0x200 on macOS and 0x40 on
+#     Linux; SIGCHLD is 20 on macOS and 17 on Linux. The numbers here said 512
+#     and 17, so one platform was always wrong.
+#
+# @cImport reads both from the headers, so the values are the platform's own
+# and the C output keeps using the macro. See issue #550.
+
+@cImport("fcntl.h")
+@cImport("unistd.h")
+@cImport("sys/stat.h")
+@cImport("sys/wait.h")
+@cImport("signal.h")
+@cImport("stdlib.h")
+@cImport("time.h")
 
 # =============================================================================
 # File Descriptors
@@ -31,42 +53,11 @@ function stderr_fd() -> FileDescriptor {
 # File Operations
 # =============================================================================
 
-# Open flags (can be OR'd together)
-const O_RDONLY: i32 = 0
-const O_WRONLY: i32 = 1
-const O_RDWR: i32 = 2
-const O_CREAT: i32 = 512
-const O_TRUNC: i32 = 1024
-const O_APPEND: i32 = 8
+# 0644. Not a macro in any header, so it stays a Flow constant.
+const DEFAULT_MODE: i32 = 420
 
-# File modes
-const S_IRUSR: i32 = 256   # Owner read
-const S_IWUSR: i32 = 128   # Owner write
-const S_IXUSR: i32 = 64    # Owner execute
-const S_IRGRP: i32 = 32    # Group read
-const S_IWGRP: i32 = 16    # Group write
-const S_IROTH: i32 = 4     # Other read
-
-# Default file mode: rw-r--r--
-const DEFAULT_MODE: i32 = 420  # 0644 in octal
-
-# Open a file, returns fd or -1 on error
-extern {
-    function open(path: string, flags: i32, mode: i32) -> i32
-    function close(fd: i32) -> i32
-    function read(fd: i32, buf: ptr<i8>, count: i32) -> i32
-    function write(fd: i32, buf: ptr<i8>, count: i32) -> i32
-    function lseek(fd: i32, offset: i64, whence: i32) -> i64
-}
-
-# Seek whence values
-const SEEK_SET: i32 = 0
-const SEEK_CUR: i32 = 1
-const SEEK_END: i32 = 2
-
-# High-level file operations
 function file_open(path: string, flags: i32) -> FileDescriptor {
-    let fd = open(path, flags, DEFAULT_MODE)
+    let fd: i32 = open(path, flags, DEFAULT_MODE)
     return FileDescriptor { fd: fd }
 }
 
@@ -76,91 +67,4 @@ function file_close(f: FileDescriptor) -> i32 {
 
 function file_is_valid(f: FileDescriptor) -> bool {
     return f.fd >= 0
-}
-
-# =============================================================================
-# Process Management
-# =============================================================================
-
-extern {
-    function fork() -> i32
-    function execve(path: string, argv: ptr<string>, envp: ptr<string>) -> i32
-    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
-    function getpid() -> i32
-    function getppid() -> i32
-    function exit(status: i32) -> void
-}
-
-# Wait options
-const WNOHANG: i32 = 1
-const WUNTRACED: i32 = 2
-
-# =============================================================================
-# Environment
-# =============================================================================
-
-extern {
-    function getenv(name: string) -> string
-    function setenv(name: string, value: string, overwrite: i32) -> i32
-    function unsetenv(name: string) -> i32
-}
-
-# =============================================================================
-# Signals
-# =============================================================================
-
-const SIGHUP: i32 = 1
-const SIGINT: i32 = 2
-const SIGQUIT: i32 = 3
-const SIGILL: i32 = 4
-const SIGABRT: i32 = 6
-const SIGFPE: i32 = 8
-const SIGKILL: i32 = 9
-const SIGSEGV: i32 = 11
-const SIGPIPE: i32 = 13
-const SIGALRM: i32 = 14
-const SIGTERM: i32 = 15
-const SIGUSR1: i32 = 10
-const SIGUSR2: i32 = 12
-const SIGCHLD: i32 = 17
-const SIGCONT: i32 = 18
-const SIGSTOP: i32 = 19
-
-extern {
-    function kill(pid: i32, sig: i32) -> i32
-}
-
-# =============================================================================
-# Directory Operations
-# =============================================================================
-
-extern {
-    function mkdir(path: string, mode: i32) -> i32
-    function rmdir(path: string) -> i32
-    function chdir(path: string) -> i32
-    function getcwd(buf: ptr<i8>, size: i32) -> ptr<i8>
-    function unlink(path: string) -> i32
-    function rename(old_path: string, new_path: string) -> i32
-}
-
-# =============================================================================
-# System Information
-# =============================================================================
-
-extern {
-    function gethostname(name: ptr<i8>, len: i32) -> i32
-    function getuid() -> i32
-    function getgid() -> i32
-    function geteuid() -> i32
-    function getegid() -> i32
-}
-
-# =============================================================================
-# Time
-# =============================================================================
-
-extern {
-    function time(t: ptr<i64>) -> i64
-    function sleep(seconds: i32) -> i32
-    function usleep(usec: i32) -> i32
 }

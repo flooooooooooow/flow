@@ -1133,6 +1133,13 @@ class CGenerator:
 
         # Emit constant declarations (after forward declarations)
         for const in constants:
+            # A constant read out of a C header is a macro there. The #include
+            # is already in this file, so defining it again is a redefinition
+            # of a macro expansion: `static const int32_t 0x0000 = 0;`. Flow
+            # knows the value for type checking; C keeps using the macro, which
+            # is also what makes the value right on each platform (#550).
+            if getattr(const, "is_c_import", False):
+                continue
             lines.append(f"static const {self._c_type(const.type)} {_c_ident(const.name)} = {self._gen_expr(const.value)};")
             # Track constant types for print formatting
             self._var_types[const.name] = const.type

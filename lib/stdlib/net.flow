@@ -13,14 +13,12 @@ struct Socket {
 }
 
 # Socket domains
-const AF_UNIX: i32 = 1
-const AF_INET: i32 = 2      # IPv4
-const AF_INET6: i32 = 30    # IPv6 (macOS)
 
 # Socket types
-const SOCK_STREAM: i32 = 1  # TCP
-const SOCK_DGRAM: i32 = 2   # UDP
-const SOCK_RAW: i32 = 3
+
+@cImport("sys/socket.h")
+@cImport("arpa/inet.h")
+@cImport("netinet/in.h")
 
 # =============================================================================
 # Socket Address
@@ -48,27 +46,12 @@ function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
 # Low-level Socket Functions (extern to libc)
 # =============================================================================
 
-extern {
-    function socket(domain: i32, socket_type: i32, protocol: i32) -> i32
-    function bind(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
-    function listen(sockfd: i32, backlog: i32) -> i32
-    function accept(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: ptr<i32>) -> i32
-    function connect(sockfd: i32, addr: ptr<SockAddr_in>, addrlen: i32) -> i32
-    function send(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
-    function recv(sockfd: i32, buf: ptr<i8>, len: i32, flags: i32) -> i32
-    function shutdown(sockfd: i32, how: i32) -> i32
-    function htons(hostshort: i16) -> i16
-    function htonl(hostlong: i32) -> i32
-    function ntohs(netshort: i16) -> i16
-    function ntohl(netlong: i32) -> i32
-    function inet_addr(cp: string) -> i32
-    function inet_ntoa(addr: i32) -> string
-}
+# socket, bind, listen, accept, connect, send, recv and shutdown come from
+# <sys/socket.h>, which <netinet/in.h> includes above. Declaring them here as
+# well produced "conflicting types for 'bind'": libc takes `struct sockaddr *`
+# and a socklen_t, not this module's own SockAddr_in and an i32.
 
 # Shutdown how values
-const SHUT_RD: i32 = 0
-const SHUT_WR: i32 = 1
-const SHUT_RDWR: i32 = 2
 
 # =============================================================================
 # High-level TCP API
@@ -162,6 +145,3 @@ function resolve_hostname(hostname: string) -> i32 {
 # Common IP Addresses
 # =============================================================================
 
-const INADDR_ANY: i32 = 0
-const INADDR_LOOPBACK: i32 = 2130706433  # 127.0.0.1
-const INADDR_BROADCAST: i32 = -1         # 255.255.255.255

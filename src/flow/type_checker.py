@@ -465,6 +465,8 @@ class TypeChecker:
         self.current_scope = self.global_scope
         self.errors: List[str] = []
         self.fatal_errors: List[str] = []
+        # Set only while retrying overload resolution; see _is_c_string_pair.
+        self._relax_c_strings = False
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
         self.generic_struct_types: Dict[str, StructDecl] = {}
@@ -3411,23 +3413,33 @@ class TypeChecker:
         variadic = bool(getattr(variadic_decl, "is_variadic", False))
 
         matching_overload = None
-        for candidate in candidates:
-            if variadic:
-                # A variadic extern takes any number of trailing args; only the
-                # fixed-prefix parameters are type checked.
-                if len(arg_types) < len(candidate.param_types):
+        # Exact first. Only if nothing matches is a Flow string allowed to
+        # stand in for the `ptr<u8>` that @cImport reads out of a C header,
+        # which is what lets `open(path, flags, mode)` resolve against libc's
+        # own prototype (#550). Allowing it in the first pass let a string
+        # literal match a ptr<u8> overload ahead of the exact `string` one.
+        for relax in (False, True):
+            self._relax_c_strings = relax
+            for candidate in candidates:
+                if variadic:
+                    # A variadic extern takes any number of trailing args; only
+                    # the fixed-prefix parameters are type checked.
+                    if len(arg_types) < len(candidate.param_types):
+                        continue
+                elif len(candidate.param_types) != len(arg_types):
                     continue
-            elif len(candidate.param_types) != len(arg_types):
-                continue
 
-            match = True
-            for expected, actual in zip(candidate.param_types, arg_types):
-                if not self._is_compatible(actual, expected):
-                    match = False
+                match = True
+                for expected, actual in zip(candidate.param_types, arg_types):
+                    if not self._is_compatible(actual, expected):
+                        match = False
+                        break
+                if match:
+                    matching_overload = candidate
                     break
-            if match:
-                matching_overload = candidate
+            if matching_overload is not None:
                 break
+        self._relax_c_strings = False
 
         if matching_overload:
             self._check_span_arguments(call, matching_overload)
@@ -3593,6 +3605,22 @@ class TypeChecker:
             return True
         return False
 
+    @staticmethod
+    def _is_c_string_pair(actual: SemanticType, expected: SemanticType) -> bool:
+        """True when one side is `string` and the other a byte pointer."""
+        byte_ptrs = {"ptr<i8>", "ptr<u8>", "ptr<char>"}
+
+        def is_string(t) -> bool:
+            # A string literal's SemanticType carries the kind and no name.
+            return getattr(t, "kind", None) == TypeKind.STRING or getattr(t, "name", "") == "string"
+
+        def is_byte_ptr(t) -> bool:
+            return getattr(t, "name", "") in byte_ptrs
+
+        return (is_string(actual) and is_byte_ptr(expected)) or (
+            is_byte_ptr(actual) and is_string(expected)
+        )
+
     def _is_compatible(self, actual: SemanticType, expected: SemanticType) -> bool:
         """Check if actual type is compatible with expected type."""
         if actual == expected:
@@ -3602,6 +3630,14 @@ class TypeChecker:
         # will be instantiated at, so it is compatible with anything. Concrete
         # instances are checked at their call sites.
         if self._is_type_param(actual) or self._is_type_param(expected):
+            return True
+
+        # A Flow string is a char*, so it can satisfy a C signature that spells
+        # the same pointer as ptr<i8> or ptr<u8>. Only when a caller asks:
+        # allowing it everywhere let a string literal match a ptr<u8> overload
+        # ahead of the exact `string` one, and the call resolved to the wrong
+        # function.
+        if self._relax_c_strings and self._is_c_string_pair(actual, expected):
             return True
 
         # Function types: compare signatures, ignoring the synthetic name
