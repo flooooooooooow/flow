@@ -265,10 +265,12 @@ distinct type UserId = i64
 
 Use `as` to convert between compatible types (including to/from distinct types):
 
-```text
-let raw: i64 = 42
-let id: UserId = raw as UserId
-let back: i64 = id as i64
+```flow
+distinct type SpecUserId = i64
+function distinct_roundtrip(raw: i64) -> i64 {
+    let id: SpecUserId = raw as SpecUserId
+    return id as i64
+}
 ```
 
 ### 2.6 Units of Measure
@@ -645,8 +647,11 @@ of lowerings with cost models and applicability predicates.
 
 Value-producing conditionals (issue #252):
 
-```text
-let x: i32 = if n > 0 { n } else { -n }
+```flow
+function spec_abs(n: i32) -> i32 {
+    let x: i32 = if n > 0 { n } else { -n }
+    return x
+}
 ```
 
 - Arms are **expressions** (not statement blocks).

@@ -136,7 +136,7 @@ keeps the embedded story honest from day one.
 
 ### 1.1 Syntax
 
-```
+```flow-future
 flow_decl      := "flow" IDENT "{" flow_item* "}"
 flow_item      := state_decl | input_decl | output_decl | param_decl
                 | evolves_stmt | every_block | when_block
@@ -215,7 +215,7 @@ This ordering is normative.
 
 ### 2.1 Syntax
 
-```
+```flow-future
 evolves_stmt := IDENT "evolves" "as" expression
 ```
 
@@ -256,7 +256,7 @@ priority order:
    the hardware timer measured. This is the only mode that never lies.
 2. **`solver` block** (optional, inside the flow):
 
-   ```
+   ```flow-future
    solver { dt 1 ms  method euler }        # method: euler | rk4 (rk4 later)
    ```
 
@@ -306,7 +306,7 @@ purity; documented error message tells the user to lift impure work into an
 
 ### 3.1 Syntax
 
-```
+```flow-future
 becomes_stmt := IDENT "becomes" expression
 ```
 
@@ -337,7 +337,7 @@ struct, assign at block end. Cost: one local per written state, zero heap.
 
 ### 4.1 Duration literal syntax
 
-```
+```flow-future
 duration := NUMBER unit_suffix
 unit_suffix := "ns" | "us" | "ms" | "s" | "min"
 ```
@@ -363,7 +363,7 @@ expected: `every`, `solver dt`, and (future) `after`/`within`. A general
 
 ### 4.2 `every` block syntax
 
-```
+```flow-future
 every_block := "every" duration "{" statement* "}"
 ```
 
@@ -409,7 +409,7 @@ accumulators if it bites).
 
 ### 5.1 Syntax
 
-```
+```flow-future
 when_block  := "when" when_guard "{" statement* "}"
 when_guard  := IDENT "reaches" expression            # zero-crossing form
              | expression                            # boolean edge form
@@ -457,7 +457,7 @@ s->__guard_0_prev = g;
 
 ### 5.4 `always { }` / `never { }` — runtime-checked invariants
 
-```
+```flow-future
 always_block := "always" "{" expression+ "}"     # each line: boolean expr
 never_block  := "never"  "{" expression+ "}"
 ```
@@ -493,7 +493,7 @@ them as `SemanticType(kind=DISTINCT, name, base_type)`
 
 New contextual top-level declaration (same triple-lookahead trick as `flow`):
 
-```
+```flow-future
 unit_decl := "unit" IDENT                          # new base dimension
            | "unit" IDENT "=" unit_expr            # derived unit
 unit_expr := IDENT | unit_expr "*" unit_expr | unit_expr "/" unit_expr
@@ -588,7 +588,7 @@ Known grammar conflicts, decided:
 
 ### 8.1 Syntax
 
-```
+```flow-future
 connect_block := "connect" "{" connection* "}"
 connection    := source "->" IDENT "." IDENT
 source        := IDENT "." IDENT   // a sibling child's output/state
@@ -601,7 +601,7 @@ child at the start of the child-stepping phase, just like a sibling source.
 
 Flow-body only, in a flow whose fields include flow-typed members:
 
-```text
+```flow-future
 flow Robot {
     plant : Motor
     controller : PID
@@ -620,7 +620,7 @@ this a *composite* flow.
 **Flows as pipeline stages.** An `output` whose value pipes through flow-typed
 stages is sugar for the children + wiring above:
 
-```text
+```flow-future
 flow Chain {
     input signal : f64
     output result : f64 = signal |> Gain |> Limiter
@@ -636,7 +636,7 @@ sampled, state-broken pipeline (§8.3).
 A stage may override the stage flow's params with a `{ param: value }` block
 (the `:` value form, distinct from a fork block's `=` pipeline form):
 
-```text
+```flow-future
 output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
 ```
 
@@ -692,7 +692,7 @@ these blocks into calls against `lib/stdlib/dynamics/` (`core.flow`,
 `ga_analysis.flow`) injected at the top of `main()`
 (`inject_dynamics_setup`):
 
-```
+```flow-future
 dsys plant { discrete  dt 0.1  n 2 m 1 p 1  A 1.0 0.1 0.0 1.0  B 0.0 0.1  C 1.0 0.0 }
 horizon rollout finite 50
 sense on plant { controllable -> plant_ok  spectral -> rho_open  gramian finite rollout trace -> wc_fin }
@@ -710,7 +710,7 @@ is the bridge.
 
 Inside a flow body:
 
-```text
+```flow-future
 flow Pendulum {
     state angle : f64 = 0.0
     state velocity : f64 = 0.0
@@ -758,7 +758,7 @@ recorded, honest about the approximation).
 
 ### 9.3 `analyze Name { ... }` — syntax and desugaring
 
-```
+```flow-future
 analyze Pendulum {
     poles            # -> eigenvalues of A (spectral data)
     stability        # -> spectral radius < 1 (discrete) / Re λ < 0 (continuous)
@@ -856,7 +856,7 @@ self-contained. Grammar exactly as specified above.
 
 ### A.1 Pendulum — continuous + units + analysis
 
-```text
+```flow-future
 # docs/vision/examples/pendulum.flow
 unit Radian
 unit Second
@@ -919,7 +919,7 @@ flow Ball {
 
 ### A.3 Robot — PID + motor + connect
 
-```text
+```flow-future
 # docs/vision/examples/robot.flow
 flow Motor {
     state speed   : f64 = 0.0

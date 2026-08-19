@@ -46,7 +46,7 @@ SRIR is a tree-based intermediate representation that bridges high-level scene d
 - **World-Space Bounding**: Pre-computed bounding boxes for culling
 
 Example SRIR output:
-```
+```flow-pseudocode
 SRIR nodes=4 root=0
 node 0 kind=Group fc=1 ns=-1
 node 1 kind=Transform tx=12 ty=12 fc=2 ns=-1
@@ -149,7 +149,7 @@ FLOW's effect system provides capability-based safety and modularity. By decoupl
 
 For example, a `GPU` effect can define abstract operations like `allocate` and `launch_kernel`, which are then implemented by specific capabilities like `CUDAGPU` or `OpenCLGPU`. This allows high-level algorithms (e.g., FFT) to be written once and executed on different hardware targets simply by switching the effect handler.
 
-```text
+```flow-pseudocode
 effect GPU {
     allocate(size: i32) -> GPUBuffer,
     launch_kernel(kernel: GPUKernel, grid: i32, block: i32) -> void

@@ -13,16 +13,18 @@ least one of them visibly:
 **1. The dynamics are declared, not hand-integrated.** A `flow` block states
 what a quantity *is* and how it changes; the integrator is generated:
 
-```text
+```flow
 flow Neuron {
     state v: f64 = -65.0
     state u: f64 = -13.0
+    input I: f64
     param a: f64 = 0.02
-
     v evolves as 0.04 * v * v + 5.0 * v + 140.0 - u + I
     u evolves as a * (0.2 * v - u)
-
-    when v reaches 30.0 { v becomes -65.0; u becomes u + 8.0 }
+    when v reaches 30.0 {
+        v becomes -65.0
+        u becomes u + 8.0
+    }
 }
 ```
 

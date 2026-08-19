@@ -66,7 +66,7 @@ while frame < MAX {
 
 **Sketch A — callback (no new syntax):**
 
-```text
+```flow-pseudocode
 # lib/stdlib/gfx.flow
 export function gfx_run(g: Gfx, max_frames: i32, frame_fn: /* FrameFn */) -> i32
 # FrameFn(g, frame) -> bool   # return false to quit
@@ -84,7 +84,7 @@ with Flow demos implementing `function flow_gfx_frame(g: Gfx, frame: i32) -> i32
 
 **Sketch B — block sugar (later card):**
 
-```text
+```flow-pseudocode
 gfx_run(g, max_frames: 2000) {
     # body is the frame; `break` / return false ends
     gfx_clear(g, 8, 8, 16)
@@ -185,7 +185,7 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 `cartpole_lqr_gains` is a thin wrapper (no private Riccati loop).
 
 **Also shipped:** vision-form DSL
-```text
+```flow-pseudocode
 analyze plant {
     lqr {
         Q 1.0 1.0 1.0 1.0
@@ -212,7 +212,7 @@ analyze plant {
 `examples/evolution/heat_diffusion.flow` steps via the helper.
 
 **Also shipped:** Stage-1 grammar expander (`field_dsl.py`):
-```text
+```flow-pseudocode
 field T : f64[32] on Line
 T evolves as laplacian(T)
 boundary T { left = AMBIENT  right = AMBIENT }
@@ -238,7 +238,7 @@ Matmul stays `tensor_matmul`.
 
 **Still open:** compiler `loss.grad` (optional follow-on).
 
-```text
+```flow-pseudocode
 let y: Dual = sin(a * a + b)   # shipped
 let mut n: Net2x2x1 = net
 n.w00 = n.w00 - lr * g.dw00    # shipped

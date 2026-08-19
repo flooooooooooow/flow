@@ -29,7 +29,7 @@ clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
   -framework Cocoa -framework CoreGraphics -framework QuartzCore -o tetris_gfx
 ```
 
-```text
+```flow-pseudocode
 # Sketch — see examples that use gfx.flow
 let g = gfx_open(640, 480, "Demo")
 let mut frame: i32 = 0

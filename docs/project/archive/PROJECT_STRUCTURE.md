@@ -40,7 +40,7 @@ Cleaned up temporary and debug files:
 
 ## 📁 Cleaned Project Structure
 
-```
+```flow-pseudocode
 transpile/
 ├── src/                          # Source code
 │   ├── flow/                     # Main compiler
@@ -95,7 +95,7 @@ function rect2d(x: i32, y: i32, w: i32, h: i32) -> Rect2D { ... }
 - **Extensible**: Easy to add new graphics primitives
 
 ### **Usage Example**
-```text
+```flow-pseudocode
 # When import system is implemented:
 import graphics;
 
@@ -142,7 +142,7 @@ function main() -> i32 {
 ## 📚 Documentation Organization
 
 ### **Examples Gallery Structure**
-```
+```flow-pseudocode
 docs/examples/
 ├── README.md                 # Overview and navigation
 ├── basic/                    # 🆕 3 basic examples + README

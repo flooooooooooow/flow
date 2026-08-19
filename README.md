@@ -226,7 +226,7 @@ for i in 0 to 10 { ... }
 
 ### Types
 
-```
+```flow-pseudocode
 Primitives:  i32, i64, f32, f64, bool, string, void
 Pointers:    ptr<T>, ptr<void>
 Arrays:      array<T, N>

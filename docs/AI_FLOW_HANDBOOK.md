@@ -577,9 +577,12 @@ array syntax for the chosen host and context.
 Use `let mut` for values that change. Do not ask the AI to invent a second
 mutation convention.
 
-```text
-let mut position: f64 = 0.0
-position = position + velocity * dt
+```flow
+function advance(position: f64, velocity: f64, dt: f64) -> f64 {
+    let mut next: f64 = position
+    next = next + velocity * dt
+    return next
+}
 ```
 
 ### 8.3 Keep interfaces narrow
@@ -632,10 +635,7 @@ flow Pendulum {
 The compiler lowers the declaration to an ordinary representation and step
 functions. The caller owns the instance and advances it.
 
-```text
-let mut p: Pendulum = Pendulum_new()
-Pendulum_step(&p, 0.001)
-```
+The generated constructor/step API is exercised by the complete program `examples/evolution/pendulum_evolves.flow`.
 
 Important current rules include:
 
@@ -651,10 +651,18 @@ changes these rules.
 
 ### 9.2 Use events for hybrid systems
 
-```text
-when height reaches 0.0 {
-    velocity becomes -restitution * velocity
-    height becomes 0.0
+```flow
+flow HandbookBall {
+    state height: f64 = 2.0
+    state velocity: f64 = 0.0
+    param gravity: f64 = 9.81
+    param restitution: f64 = 0.8
+    height evolves as velocity
+    velocity evolves as -gravity
+    when height reaches 0.0 {
+        velocity becomes -restitution * velocity
+        height becomes 0.0
+    }
 }
 ```
 
@@ -718,9 +726,18 @@ capability QuietLog {
 
 Install a handler for a dynamic scope:
 
-```text
-handle Log with QuietLog {
-    do_work()
+```flow
+effect ScopedLog {
+    info(msg: string) -> void,
+}
+capability ScopedQuietLog {
+    effect ScopedLog,
+    function info(msg: string) -> void { },
+}
+function scoped_work() -> void with ScopedLog { ScopedLog.info("work") }
+function scoped_handler_demo() -> i32 {
+    handle ScopedLog with ScopedQuietLog { scoped_work() }
+    return 0
 }
 ```
 
@@ -961,10 +978,12 @@ Flow can tighten generated C and static restrictions:
 Safety and flight profiles currently reject recursion and require a maximum
 iteration annotation on `while` loops.
 
-```text
-@max_iterations(1000)
-while condition {
-    step()
+```flow
+function bounded_iteration(limit: i32) -> i32 {
+    let mut i: i32 = 0
+    @max_iterations(1000)
+    while i < limit { i = i + 1 }
+    return i
 }
 ```
 
