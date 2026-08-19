@@ -504,6 +504,10 @@
           "path": "language/spans.md"
         },
         {
+          "label": "Ranges and Range Algebra",
+          "path": "language/ranges.md"
+        },
+        {
           "label": "Lifetime Domains",
           "path": "language/lifetime-domains.md"
         },

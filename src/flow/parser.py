@@ -397,6 +397,20 @@ class RangeExpression:
 
 
 @dataclass
+class RangeSetOperation:
+    """Set algebra over two range operands: union (``|``) or intersection (``&``).
+
+    Operands are ``RangeExpression`` or a nested ``RangeSetOperation``. Like
+    ``RangeExpression`` this never escapes the parser; ``range_sums`` rewrites
+    the whole tree into ordinary arithmetic before type checking sees it.
+    """
+
+    left: "Expression"
+    operator: str
+    right: "Expression"
+
+
+@dataclass
 class ReturnStatement:
     value: Optional["Expression"]
 
@@ -1889,7 +1903,11 @@ class Parser:
             declarations = desugar_forks(declarations)
         # `sum(a..b step c)` lowers to a call; the module has to carry the
         # function it calls. Appended once, only when something used it.
-        if getattr(self, "_needs_range_sum_helper", False):
+        if getattr(self, "_needs_range_set_helper", False):
+            from .range_sums import set_helper_declarations
+
+            declarations.extend(set_helper_declarations())
+        elif getattr(self, "_needs_range_sum_helper", False):
             from .range_sums import helper_declarations
 
             declarations.extend(helper_declarations())
@@ -4905,33 +4923,68 @@ class Parser:
         if self.current_token.type != TokenType.RPAREN:
             first = self.parse_expression_without_assign()
             if name == "sum" and self.current_token.type in (TokenType.DOTDOT, TokenType.TO):
-                self.advance()
-                end = self.parse_expression_without_assign()
-                step: Expression = Literal("1", Type("i32"))
-                if (
-                    self.current_token.type == TokenType.STEP
-                    or (
-                        self.current_token.type == TokenType.IDENTIFIER
-                        and self.current_token.value == "step"
-                    )
-                ):
-                    self.advance()
-                    step = self.parse_expression_without_assign()
-                first = RangeExpression(first, end, step)
+                first = self.parse_range_set(self.parse_range_tail(first))
             arguments.append(first)
             while self.current_token.type == TokenType.COMMA:
                 self.advance()
                 arguments.append(self.parse_expression_without_assign())
 
         self.expect(TokenType.RPAREN)
-        if name == "sum" and len(arguments) == 1 and isinstance(arguments[0], RangeExpression):
-            from .range_sums import HELPER_NAME, lower_range_sum
+        if name == "sum" and len(arguments) == 1 and isinstance(
+            arguments[0], (RangeExpression, RangeSetOperation)
+        ):
+            from .range_sums import lower_range_sum
 
-            lowered = lower_range_sum(arguments[0])
-            if isinstance(lowered, FunctionCall) and lowered.name == HELPER_NAME:
+            lowered, helpers = lower_range_sum(arguments[0])
+            if helpers == "set":
+                self._needs_range_set_helper = True
+            elif helpers == "sum":
                 self._needs_range_sum_helper = True
             return lowered
         return FunctionCall(name, arguments)
+
+    def parse_range_tail(self, start: Expression) -> "RangeExpression":
+        """Finish a range once its ``..`` has been seen.
+
+        End and step parse at equality precedence rather than as full
+        expressions, so a following ``|`` or ``&`` reads as range algebra
+        instead of as a bitwise operator on the step.
+        """
+        self.advance()
+        end = self.parse_equality()
+        step: Expression = Literal("1", Type("i32"))
+        if self.current_token.type == TokenType.STEP or (
+            self.current_token.type == TokenType.IDENTIFIER
+            and self.current_token.value == "step"
+        ):
+            self.advance()
+            step = self.parse_equality()
+        return RangeExpression(start, end, step)
+
+    def parse_range_operand(self) -> "RangeExpression":
+        start = self.parse_equality()
+        if self.current_token.type not in (TokenType.DOTDOT, TokenType.TO):
+            raise FlowSyntaxError(
+                "range set operators '|' and '&' need a range on both sides, "
+                "like 0..1000 step 3 | 0..1000 step 5",
+                self.current_token.line,
+            )
+        return self.parse_range_tail(start)
+
+    def parse_range_intersection(self, left: Expression) -> Expression:
+        while self.current_token.type == TokenType.AMPERSAND:
+            self.advance()
+            left = RangeSetOperation(left, "&", self.parse_range_operand())
+        return left
+
+    def parse_range_set(self, first: Expression) -> Expression:
+        """Parse ``|``/``&`` chains, with ``&`` binding tighter than ``|``."""
+        left = self.parse_range_intersection(first)
+        while self.current_token.type == TokenType.PIPE:
+            self.advance()
+            right = self.parse_range_intersection(self.parse_range_operand())
+            left = RangeSetOperation(left, "|", right)
+        return left
 
     def _collect_free_variables(self, node: Any, param_names: set, found: Optional[set] = None) -> List[str]:
         """Collect variable names referenced in an expression/block but not bound.
