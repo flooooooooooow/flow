@@ -65,7 +65,7 @@ KNOWN_FLAGS = frozenset(
 # implemented; shipping it as a no-op would be worse than leaving it out,
 # because an author would write one, the block would be checked without it,
 # and a passing result would mean nothing.
-KNOWN_KEYS = frozenset({"ignore", "preamble", "from"})
+KNOWN_KEYS = frozenset({"ignore", "preamble", "from", "id", "uses"})
 
 
 @dataclass
@@ -111,6 +111,24 @@ class Block:
     @property
     def ignored(self) -> Optional[str]:
         return self.opts.get("ignore")
+
+    @property
+    def block_id(self) -> Optional[str]:
+        """Name this block so a later one on the same page can build on it."""
+        return self.opts.get("id")
+
+    @property
+    def uses(self) -> list:
+        """Ids of earlier blocks on this page whose code this one needs.
+
+        A chapter builds up a program: the struct is shown once, then the
+        functions over it. Repeating the struct in every fence would be worse
+        prose, and concatenating whatever came before would verify something
+        the page never says. Naming the dependency is the middle: explicit,
+        and it fails loudly when the named block moves or is renamed.
+        """
+        raw = self.opts.get("uses")
+        return [part for part in (raw.split(",") if raw else []) if part.strip()]
 
     @property
     def source_file(self) -> Optional[str]:

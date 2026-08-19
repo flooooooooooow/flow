@@ -68,7 +68,7 @@ rejected because it would duplicate that value implicitly.
 A return code can report failure for an entire process. A reusable function
 needs a value-level representation:
 
-```flow
+```flow id=result-type
 struct ResultI32 {
     ok: bool,
     value: i32
@@ -77,7 +77,7 @@ struct ResultI32 {
 
 A validator constructs either state explicitly:
 
-```flow
+```flow uses=result-type id=parse-port
 function parse_port(raw: i32) -> ResultI32 {
     if raw < 1 or raw > 65535 {
         return ResultI32 { ok: false, value: 0 }
@@ -149,7 +149,7 @@ valid: 1 invalid: 0
 
 When each stage can fail, test the result before continuing:
 
-```flow
+```flow uses=result-type,parse-port
 function configure(raw: i32) -> ResultI32 {
     let port: ResultI32 = parse_port(raw)
     if !port.ok {
