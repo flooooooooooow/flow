@@ -2,9 +2,9 @@
   "generated": "2026-08-19",
   "totals": {
     "verified": 476,
-    "unverified": 235,
-    "ignored": 67,
-    "expected-error": 1
+    "unverified": 232,
+    "expected-error": 4,
+    "ignored": 67
   },
   "blocks": [
     {
@@ -51,9 +51,9 @@
       "key": "ROADMAP.md#7476f864c0fb",
       "path": "ROADMAP.md",
       "line": 441,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "Variable 'x' initialized with string but annotated as i32"
     },
     {
       "key": "ROADMAP.md#cd3e425c1c9b",
@@ -279,6 +279,14 @@
       "status": "ignored",
       "detail": "illustrates a units mismatch; too small to compile as written",
       "reason": "illustrates a units mismatch; too small to compile as written"
+    },
+    {
+      "key": "VISION.md#8707a3f22d05#2",
+      "path": "VISION.md",
+      "line": 324,
+      "status": "ignored",
+      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
+      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
     },
     {
       "key": "VISION.md#3c099e822924",
@@ -798,9 +806,9 @@
       "key": "docs/book/02-values-and-types.md#4916588247e9",
       "path": "docs/book/02-values-and-types.md",
       "line": 57,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "Cannot assign to immutable variable 'total' (use 'let mut')"
     },
     {
       "key": "docs/book/02-values-and-types.md#1aa350320406",
@@ -2030,7 +2038,7 @@
     {
       "key": "docs/effects-showcase.md#5d9676834c09",
       "path": "docs/effects-showcase.md",
-      "line": 529,
+      "line": 534,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2038,7 +2046,7 @@
     {
       "key": "docs/effects-showcase.md#2addc2f4528e",
       "path": "docs/effects-showcase.md",
-      "line": 551,
+      "line": 556,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2046,7 +2054,7 @@
     {
       "key": "docs/effects-showcase.md#ea7da790f152",
       "path": "docs/effects-showcase.md",
-      "line": 615,
+      "line": 620,
       "status": "ignored",
       "detail": "shown as a pattern; the counter is module-level state",
       "reason": "shown as a pattern; the counter is module-level state"
@@ -2666,7 +2674,7 @@
       "key": "docs/language/spans.md#f20af5f97f03",
       "path": "docs/language/spans.md",
       "line": 165,
-      "status": "unverified",
+      "status": "expected-error",
       "stage": "types",
       "detail": "span outlives borrowed storage `local` at line 3, column 5"
     },
@@ -6185,6 +6193,14 @@
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
+    },
+    {
+      "key": "lib/stdlib/audio/README.md#bcc939450a73#2",
+      "path": "lib/stdlib/audio/README.md",
+      "line": 286,
+      "status": "unverified",
+      "stage": "parse",
+      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
     },
     {
       "key": "lib/stdlib/audio/README.md#780b0064b9b8",

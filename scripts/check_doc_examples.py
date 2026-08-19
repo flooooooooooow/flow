@@ -334,6 +334,7 @@ def verify(block: Block) -> Result:
     first: tuple[str, str] = ("", "")
     best_noop = ""
     reached_meaning = False
+    meaning_detail = ""
 
     for mode in modes:
         try:
@@ -347,6 +348,12 @@ def verify(block: Block) -> Result:
         )
         if stage in ("types", "vacuous", "codegen", "degenerate"):
             reached_meaning = True
+        if stage in ("types", "codegen") and not meaning_detail:
+            # The rejection the block is there to demonstrate. Without this the
+            # ledger records the standalone parse error instead, which is the
+            # harness failing to wrap a fragment rather than the compiler
+            # rejecting the program.
+            meaning_detail = detail
         if stage == "degenerate" and not best_noop:
             best_noop = detail
         if csource is not None:
@@ -367,7 +374,7 @@ def verify(block: Block) -> Result:
         return Result(
             block,
             "expected-error",
-            detail=best_noop or first[1],
+            detail=meaning_detail or best_noop or first[1],
             stage="types" if reached_meaning else "parse",
         )
     return Result(block, "unverified", detail=best_noop or first[1], stage=first[0])
