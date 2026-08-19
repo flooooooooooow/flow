@@ -187,8 +187,7 @@ capability OpsLogger {
 
     function info(msg: string) -> void {
         let t: i32 = Clock.now()
-        let m: string = msg
-        printf("[%d] %s\n", t, m)
+        printf("[%d] %s\n", t, msg)
     },
 }
 ```
@@ -381,7 +380,7 @@ The business function is unchanged and no global logging mode is mutated.
 
 ### 19. Keep mutable state explicit; use the effect as policy
 
-Capabilities are stateless today, so stateful loops should keep their state in ordinary locals
+Capability methods have no `self`, so stateful loops usually keep their state in ordinary locals
 and let the effect decide the policy.
 
 ```flow
@@ -609,12 +608,29 @@ These are important when designing real programs around the feature.
 handlers and declared function rows. Without it, the language keeps soft defaults for unhandled
 operations.
 
-**Capabilities are stateless.** Capability methods have no `self` or stored fields. Keep mutable
-state in ordinary values and pointers, or use the explicit-state policy pattern shown above.
+**Capability methods have no `self`.** They are plain functions, so a handler cannot carry
+per-instance fields. It can still keep state: a module-level `let mut` is mutable from inside a
+handler, which covers a metrics counter or a test spy collecting numbers.
 
-**Dynamic capability objects are not wired to dispatch.** The retired `capability EffectName`
-parameter style should not be used. Install named capability blocks with `handle ... with ...`.
-The older examples were rewritten to this supported form in issue #119.
+```flow ignore="shown as a pattern; the counter is module-level state"
+let mut call_count: i32 = 0
+
+capability CountingLogger {
+    effect Log,
+    function info(msg: string) -> void {
+        call_count = call_count + 1
+    },
+}
+```
+
+The real limit is the type: module statics must be a primitive, a fixed array of primitives, or
+`ptr<T>`. A handler accumulating strings or structs has nowhere to put them, and should use the
+explicit-state policy pattern shown above. See issue #562.
+
+**Dynamic capability objects are not supported.** The `capability EffectName` parameter style is
+rejected by the type checker, and under `--lenient` it reaches the backend and emits C that does
+not compile. Install named capability blocks with `handle ... with ...` instead. The older
+examples were rewritten to this supported form in issue #119; see issue #561.
 
 **Handlers do not expose general resumable continuations.** An operation returns to its call site.
 A handler cannot currently abort the whole computation, replay it, or resume it multiple times.
