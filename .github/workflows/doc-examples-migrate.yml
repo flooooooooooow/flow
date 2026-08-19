@@ -52,7 +52,7 @@ jobs:
           PY
       - name: Refresh documentation example status
         env:
-          PYTHONPATH: src
+          PYTHONPATH: src:scripts
         run: |
           python3 - <<'PY'
           import check_doc_examples_strict  # installs the strict harness
