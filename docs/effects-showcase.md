@@ -500,8 +500,13 @@ capability SyncAsync {
 }
 ```
 
-For the stdlib `Async` / `AsyncIO` path, use `examples/effects/async_primitives.flow`. For timeout
-and retry policy examples, use `examples/effects/async_effects.flow`.
+This is the pattern, declared locally so the recipe stands alone. The stdlib ships the same
+`Async` effect and the same stand-in under the name `SimulatedAsync`, along with the real backends
+(`ThreadedAsync`, `FiberAsync`) and an `AsyncIO` effect for polling and sleeping. For which of
+those are implemented and how they behave today, read
+[Async via Effects](language/async-effects.md). For the stdlib path in runnable form, use
+`examples/effects/async_primitives.flow`; for timeout and retry policy,
+`examples/effects/async_effects.flow`.
 
 ### 23. Know when *not* to use an effect
 
@@ -526,7 +531,7 @@ handler is obvious, and scoped dynamic dispatch through deeper call chains.
 The runnable checkout demo at [`examples/effects/showcase.flow`](../examples/effects/showcase.flow)
 uses four interfaces:
 
-```flow
+```flow from=examples/effects/showcase.flow
 effect Log {
     info(msg: string) -> void,
     warn(msg: string) -> void,
@@ -548,7 +553,7 @@ effect Notify {
 
 Its business function is written once:
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
+```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow from=examples/effects/showcase.flow
 function place_order(sku: i32, qty: i32) -> i32 {
     Log.info("order received")
     let available: i32 = Inventory.stock_of(sku)
@@ -627,10 +632,12 @@ The real limit is the type: module statics must be a primitive, a fixed array of
 `ptr<T>`. A handler accumulating strings or structs has nowhere to put them, and should use the
 explicit-state policy pattern shown above. See issue #562.
 
-**Dynamic capability objects are not supported.** The `capability EffectName` parameter style is
-rejected by the type checker, and under `--lenient` it reaches the backend and emits C that does
-not compile. Install named capability blocks with `handle ... with ...` instead. The older
-examples were rewritten to this supported form in issue #119; see issue #561.
+**Dynamic capability objects are not supported.** A function may declare a `capability EffectName`
+parameter and call operations on it, but there is no way to produce the value to pass. A capability
+is a handler rather than a value, so naming one at a call site is a type error in both strict and
+lenient mode, with a message pointing at `handle`. Install named capability blocks with
+`handle ... with ...` instead. The older examples were rewritten to this supported form in
+issue #119; see issue #561.
 
 **Handlers do not expose general resumable continuations.** An operation returns to its call site.
 A handler cannot currently abort the whole computation, replay it, or resume it multiple times.

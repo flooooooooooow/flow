@@ -113,6 +113,33 @@ Should compile to C switch statements where possible."
 - [ ] Demonstrate one concept clearly
 - [ ] Use current syntax (not deprecated patterns)
 
+### Code Blocks in Documentation
+
+CI compiles every ` ```flow ` block in every tracked markdown file
+(`scripts/check_doc_examples.py`). A block that neither compiles nor carries a
+reason is a build failure, and the unverified count can only go down.
+
+A block does not need a `main`. The checker wraps a bare fragment in one and
+records which wrapping it needed, so a two-line snippet is fine.
+
+Four words go after `flow` on the opening fence:
+
+| Word | Use it when |
+|---|---|
+| `expect-error` | The block is there to show a rejection. It must fail on meaning, so a syntax error the harness caused does not count. |
+| `ignore="reason"` | The block cannot be checked. The reason is required and is read by a human. |
+| `preamble=path` | The block needs declarations from a file to make sense on its own. |
+| `no-harness` | The block must compile exactly as written, with no wrapping. |
+| `from=path` | The block is a copy of that `.flow` file. CI fails if the two drift apart. |
+
+An unknown word is an error rather than a silent pass, so `expect_error` fails
+loudly instead of being verified as ordinary code.
+
+Use `from=` whenever a page inlines a program and also links the real file.
+Without it there are two copies and only the file is covered by the test
+suite, so the page drifts: one such copy renamed a variable to `test`, which
+is a keyword, while the linked file kept the name that parses.
+
 ---
 
 ## Session Workflow

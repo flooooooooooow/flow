@@ -212,6 +212,10 @@ class TypeCheckResult:
     symbol_table: Dict[str, Symbol]
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    # Errors that --lenient must not downgrade, because compiling anyway would
+    # emit C that cannot build. Reported to the author in Flow terms instead of
+    # surfacing as a clang error about an identifier they never wrote.
+    fatal_errors: List[str] = field(default_factory=list)
     # LSP / IDE extras (optional; safe defaults for existing callers)
     struct_fields: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
     # Ordered local/param bindings seen during check: {name,type,kind,container,mutable}
@@ -460,6 +464,7 @@ class TypeChecker:
         self.global_scope = Scope()
         self.current_scope = self.global_scope
         self.errors: List[str] = []
+        self.fatal_errors: List[str] = []
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
         self.generic_struct_types: Dict[str, StructDecl] = {}
@@ -972,6 +977,22 @@ class TypeChecker:
                     )
         return len(self.errors) > before
 
+    def _undeclared_type_name(self, *types) -> Optional[str]:
+        """Name of an annotation that resolves to no declared type, if any.
+
+        A SemanticType renders by name, so an undeclared `Point` on one side
+        and a `Point` struct literal on the other read as "initialized with
+        Point but annotated as Point". The mismatch is real, but the message
+        describes it as a type failing to match itself. The actual fault is
+        that the annotation names nothing in scope.
+        """
+        for candidate in types:
+            if candidate is None:
+                continue
+            if candidate.kind == TypeKind.UNKNOWN and getattr(candidate, "name", None):
+                return candidate.name
+        return None
+
     def _can_coerce(self, actual: SemanticType, expected: SemanticType) -> bool:
         if actual is None or expected is None:
             return True
@@ -1061,6 +1082,7 @@ class TypeChecker:
     def check(self, declarations: List[Any]) -> TypeCheckResult:
         """Main entry point for type checking."""
         self.errors = []
+        self.fatal_errors = []
         self.warnings = []
         self._lsp_locals: List[Dict[str, Any]] = []
 
@@ -1111,6 +1133,7 @@ class TypeChecker:
             symbol_table=dict(self.global_scope.symbols),
             errors=self.errors,
             warnings=self.warnings,
+            fatal_errors=list(self.fatal_errors),
             struct_fields=struct_fields,
             locals=list(self._lsp_locals),
         )
@@ -1803,7 +1826,13 @@ class TypeChecker:
                 for rt in returns:
                     if not self._can_coerce(rt, expected_return):
                         self.errors.append(
-                            f"Function '{func.name}' returns {rt} but should return {expected_return}"
+                            (
+                                f"Function '{func.name}' is declared to return unknown type "
+                                f"'{self._undeclared_type_name(expected_return, rt)}', which is "
+                                f"not declared in this scope"
+                            )
+                            if self._undeclared_type_name(expected_return, rt)
+                            else f"Function '{func.name}' returns {rt} but should return {expected_return}"
                         )
 
         finally:
@@ -2427,9 +2456,16 @@ class TypeChecker:
         if var.type and var.type.name != "auto":  # Explicit type annotation
             expected_type = self._parse_type(var.type)
             if not self._can_coerce(expr_type, expected_type):
-                self.errors.append(
-                    f"Variable '{var.name}' initialized with {expr_type} but annotated as {expected_type}"
-                )
+                undeclared = self._undeclared_type_name(expected_type, expr_type)
+                if undeclared:
+                    self.errors.append(
+                        f"Variable '{var.name}' is annotated with unknown type "
+                        f"'{undeclared}', which is not declared in this scope"
+                    )
+                else:
+                    self.errors.append(
+                        f"Variable '{var.name}' initialized with {expr_type} but annotated as {expected_type}"
+                    )
         else:
             # Type inference - for now, just use the expression type
             expected_type = expr_type
@@ -2987,7 +3023,19 @@ class TypeChecker:
         """Type check a variable reference."""
         symbol = self.current_scope.lookup(var.name)
         if not symbol:
-            if self.strict:
+            if var.name in self.capability_types:
+                # A capability is a handler, not a value. Reported in lenient
+                # mode too: the generator lowers this to a reference to a C
+                # identifier that nothing ever defines, so letting it through
+                # only moves the failure to clang and renames it.
+                message = (
+                    f"Capability '{var.name}' is not a value and cannot be passed "
+                    f"as an argument. Install it for the call instead: "
+                    f"handle <Effect> with {var.name} {{ ... }}"
+                )
+                self.errors.append(message)
+                self.fatal_errors.append(message)
+            elif self.strict:
                 self.errors.append(f"Undefined variable '{var.name}'")
             return SemanticType(TypeKind.I32)
         return symbol.type

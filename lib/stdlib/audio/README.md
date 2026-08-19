@@ -51,7 +51,7 @@ function main() -> i32 {
     let clock: Clock = clock_medium(sample_rate_44100())
     let pattern: array<i32, 4> = [note_C(2), note_C(2), note_G(2), note_F(2)]
 
-    let bassline: f32 = pattern_4(pattern, clock, 0, bass)
+    let bassline: f32 = pattern_4(pattern, clock, 0)
     return 0
 }
 ```
@@ -70,7 +70,7 @@ function main() -> i32 {
 
     # Bass
     let bass_pattern: array<i32, 4> = [note_C(2), note_C(2), note_G(2), note_Bb(2)]
-    let bassline: f32 = pattern_4(bass_pattern, clock, pos, bass)
+    let bassline: f32 = pattern_4(bass_pattern, clock, pos)
 
     # Chords
     let chords: array<array<i32, 3>, 4> = progression_pop(note_C(4))
@@ -152,7 +152,7 @@ function main() -> i32 {
     let clock: Clock = clock_medium(sample_rate_44100())
 
     # 5 hits in 8 steps - automatically generates funky patterns!
-    let rhythm: f32 = euclidean_pattern(5, 8, clock, 0, kick)
+    let rhythm: f32 = euclidean_pattern(5, 8, clock, 0)
 
     return 0
 }
@@ -165,6 +165,8 @@ import "stdlib/audio/scales.flow"
 import "stdlib/audio/livecode.flow"
 
 function main() -> i32 {
+    let clock: Clock = clock_medium(sample_rate_44100())
+
     # I - V - vi - IV (pop progression)
     let chords: array<array<i32, 3>, 4> = progression_pop(note_C(4))
 
@@ -188,8 +190,9 @@ function main() -> i32 {
     # Create melody from scale degrees
     let melody: array<i32, 4> = [scale[0], scale[2], scale[4], scale[3]]
 
-    # Play with lead synth
-    let lead_line: f32 = pattern_4(melody, clock, 0, lead)
+    # pattern_4 sequences through the bass voice; pattern_8 uses lead
+    let clock: Clock = clock_medium(sample_rate_44100())
+    let melody_line: f32 = pattern_4(melody, clock, 0)
 
     return 0
 }
@@ -201,6 +204,8 @@ function main() -> i32 {
 import "stdlib/audio/livecode.flow"
 
 function main() -> i32 {
+    let clock: Clock = clock_medium(sample_rate_44100())
+
     # Dry signal
     let dry: f32 = bass(note_C(2))
 
@@ -239,8 +244,15 @@ Pbind(\instrument, \bass, \note, Pseq([0, 0, 7, 5], inf)).play;
 ```flow
 import "stdlib/audio/livecode.flow"
 
-let pattern: array<i32, 4> = [note_C(2), note_C(2), note_G(2), note_F(2)]
-let bassline: f32 = pattern_4(pattern, clock, pos, bass)
+function main() -> i32 {
+    let clock: Clock = clock_medium(sample_rate_44100())
+    let pos: i64 = 0
+
+    let pattern: array<i32, 4> = [note_C(2), note_C(2), note_G(2), note_F(2)]
+    let bassline: f32 = pattern_4(pattern, clock, pos)
+
+    return 0
+}
 ```
 
 ### ChucK
@@ -286,8 +298,15 @@ end
 ```flow
 import "stdlib/audio/livecode.flow"
 
-let pattern: array<i32, 4> = [note_C(2), note_C(2), note_G(2), note_F(2)]
-let bassline: f32 = pattern_4(pattern, clock, pos, bass)
+function main() -> i32 {
+    let clock: Clock = clock_medium(sample_rate_44100())
+    let pos: i64 = 0
+
+    let pattern: array<i32, 4> = [note_C(2), note_C(2), note_G(2), note_F(2)]
+    let bassline: f32 = pattern_4(pattern, clock, pos)
+
+    return 0
+}
 ```
 
 ## Key Advantages
@@ -316,32 +335,66 @@ let bassline: f32 = pattern_4(pattern, clock, pos, bass)
 
 ### GPU-Accelerated Audio
 
-```flow
+A backend value selects the CPU or GPU path; the block operations take it as
+their first argument. The GPU path falls back to CPU logic where Metal is
+unavailable.
+
+```flow ignore="links runtime/audio_gpu_metal.m, which the doc example build does not compile"
 import "stdlib/audio/gpu.flow"
 
-# Process 1024 samples on GPU
-let gpu_output: AudioBufferF32 = gpu_process_buffer(input, effect_kernel)
+function main() -> i32 {
+    let backend: AudioComputeBackend = audio_backend_gpu()
+    let buffer: AudioBufferF32 = audio_buffer_alloc_f32(1024, 2, layout_interleaved())
+
+    audio_gain_block(backend, buffer, 0.5)
+
+    audio_buffer_free_f32(buffer)
+    return 0
+}
 ```
+
+Building this needs the Metal shim linked in:
+`clang program.c runtime/audio_gpu_metal.m -framework Metal -framework Foundation`.
 
 ### SIMD Optimization
 
+The interleaved helpers work over a whole buffer rather than a fixed lane width.
+
 ```flow
+import "stdlib/audio.flow"
 import "stdlib/audio/simd.flow"
 
-# Process 8 samples at once
-let simd_output: f32 = simd_gain_f32x8(samples, gain)
+function main() -> i32 {
+    let buffer: AudioBufferF32 = audio_buffer_alloc_f32(256, 2, layout_interleaved())
+
+    audio_gain_interleaved_f32(buffer.data, buffer.frames, buffer.channels, 0.5)
+
+    audio_buffer_free_f32(buffer)
+    return 0
+}
 ```
 
-### Graph-Based Processing
+### Effect Chains
+
+An `EffectChain` is a value. Each stage returns a new chain, so a signal path
+reads as a sequence of assignments.
 
 ```flow
 import "stdlib/audio/graph.flow"
 
-# Build effect chains as graphs
-let graph: AudioGraph = graph_new()
-let osc_node: i32 = graph_add_oscillator(graph, 440.0)
-let filt_node: i32 = graph_add_filter(graph, 1000.0)
-graph_connect(graph, osc_node, filt_node)
+function main() -> i32 {
+    let rate: SampleRate = sample_rate_44100()
+    let mut chain: EffectChain = effect_chain_new(rate)
+
+    chain = effect_chain_set_gain_db(chain, -6.0)
+    chain = effect_chain_enable_lowpass(chain, 1000.0, 0.707, rate)
+
+    chain = effect_chain_tick(chain, frame_new(0.25, 0.25))
+    let out: Frame = effect_chain_output(chain)
+
+    printf("%.3f %.3f\n", out.left, out.right)
+    return 0
+}
 ```
 
 ## Getting Started

@@ -54,7 +54,7 @@ total = total + 1.0
 
 The following program is rejected:
 
-```flow
+```flow expect-error
 let total: f64 = 87.5
 total = 88.5  # error: assignment to an immutable binding
 ```
@@ -88,7 +88,7 @@ true. In `a or b`, `b` is evaluated only when `a` is false.
 
 ## 2.5 A complete measurement
 
-```flow
+```flow from=examples/book/02_values.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

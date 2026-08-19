@@ -1196,7 +1196,11 @@ def content_box(paths: list[Path], pad: int = 12) -> tuple[int, int, int, int] |
         width, height = img.size
         bg = img.getpixel((0, 0))
         mask = Image.new("L", img.size)
-        mask.putdata([0 if px == bg else 255 for px in img.getdata()])
+        # Raw RGB bytes rather than getdata(), which Pillow 14 removes.
+        raw, bg_bytes = img.tobytes(), bytes(bg)
+        mask.putdata(
+            [0 if raw[i : i + 3] == bg_bytes else 255 for i in range(0, len(raw), 3)]
+        )
         found = mask.getbbox()
         if not found:
             continue

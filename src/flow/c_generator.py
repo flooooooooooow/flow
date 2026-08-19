@@ -151,6 +151,17 @@ class CGenerator:
     ) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
+        # One list per open block. A `return` runs every pending defer, not
+        # only the enclosing block's, and runs them after the return value has
+        # been read (#594).
+        self._defer_scopes: List[List[Any]] = []
+        # Wrappers for `array<T, N>` returns; see _array_return_struct (#573).
+        self._array_return_structs = {}  # struct name -> (elem C type, size)
+        self._array_return_fns = {}  # flow function name -> its array return Type
+        # `array<array<T, N>, M>` rows: typedef T name[N], so every declarator
+        # (local, parameter, struct member) stays writable in C (#575).
+        self._array_row_typedefs = {}  # typedef name -> (elem C type, N)
+        self._array_ret_unwrapping = set()  # guards the `.v` rewrite from recursing
         self._enums = {}  # name -> EnumDecl
         self._enum_variant_owner = {}  # "Enum_Variant" -> "Enum" (for path/const match patterns)
         self._var_types = {}  # name -> Type
@@ -1060,6 +1071,25 @@ class CGenerator:
                            # stdlib.h
                            'exit', 'abort'}
         primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
+
+        # An `array<T, N>` return needs its wrapper struct typedef'd before any
+        # prototype mentions it, so register them all up front (#573).
+        for fn in functions:
+            sized = self._sized_array_type(getattr(fn, "return_type", None))
+            if sized:
+                self._array_return_struct(fn.return_type)
+            # Overloads that disagree cannot be told apart from the call name
+            # alone, so leave those on the old path rather than guess.
+            if fn.name in self._array_return_fns and not sized:
+                self._array_return_fns[fn.name] = None
+            elif sized and self._array_return_fns.get(fn.name, "unset") == "unset":
+                self._array_return_fns[fn.name] = fn.return_type
+            elif not sized:
+                self._array_return_fns.setdefault(fn.name, None)
+        # Emitted at the end, into this slot: a row typedef or wrapper can be
+        # discovered while generating a body, long after this point.
+        array_insert_idx = len(lines)
+
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
             if fn.name in stdlib_functions:
@@ -1171,6 +1201,19 @@ class CGenerator:
             lines = lines[:insert_idx] + insert_extra + lines[insert_idx:]
             if span_insert_idx >= insert_idx:
                 span_insert_idx += len(insert_extra)
+            if array_insert_idx >= insert_idx:
+                array_insert_idx += len(insert_extra)
+
+        if self._array_row_typedefs or self._array_return_structs:
+            array_block = ["/* Fixed-size array rows and by-value array returns */"]
+            for name, (elem_c, size) in sorted(self._array_row_typedefs.items()):
+                array_block.append(f"typedef {elem_c} {name}[{size}];")
+            for name, (elem_c, size) in sorted(self._array_return_structs.items()):
+                array_block.append(f"typedef struct {{ {elem_c} v[{size}]; }} {name};")
+            array_block.append("")
+            lines = lines[:array_insert_idx] + array_block + lines[array_insert_idx:]
+            if span_insert_idx >= array_insert_idx:
+                span_insert_idx += len(array_block)
 
         if self._pending_span_typedefs:
             span_block = ["/* Spans: borrowed {pointer, length} views */"]
@@ -1634,6 +1677,12 @@ class CGenerator:
             return self._infer_expr_type(
                 FunctionCall(expr.method, [expr.object] + list(expr.arguments))
             )
+        elif isinstance(expr, CastExpression):
+            # `x as T` is a T. Without this the cast fell through to the
+            # default, so `"a" + (buf as string)` saw a non-string operand and
+            # ran it through _gen_stringify_expr, which printed the pointer
+            # with "%d" into a 64-byte buffer (#577).
+            return expr.target_type
         elif isinstance(expr, UnaryOperation):
             operand = self._infer_expr_type(expr.operand)
             if expr.operator == "!":
@@ -1646,6 +1695,14 @@ class CGenerator:
                 return Type("bool")
             left = self._infer_expr_type(expr.left)
             right = self._infer_expr_type(expr.right)
+            # Concatenation wins over every numeric promotion below: `"n=" + v`
+            # is a string whatever v is. Without this the numeric rules claimed
+            # the whole expression, so `"i64=" + v` printed the concatenated
+            # pointer with "%lld" and `"f64=" + f` printed 0.000000. It only
+            # ever worked because an unrecognised operand fell through to
+            # `left or right`; anything the rules did recognise broke (#577).
+            if expr.operator == "+" and "string" in (left.name, right.name):
+                return Type("string")
             # Dual arithmetic promotes to Dual (pattern-adoption #161).
             if left.name == "Dual" or right.name == "Dual":
                 return Type("Dual")
@@ -2100,6 +2157,11 @@ class CGenerator:
             return f"{elem_c_type} __attribute__((vector_size({byte_size})))"
         # Array types: array_i32, array_f32, array_5_f32, etc.
         if t.name.startswith("array_"):
+            if self._is_nested_sized_array(t):
+                # `int32_t**` would index through two loads; a 2D array is one
+                # load at a computed offset, so the row typedef is required
+                # for correctness and not only for spelling (#575).
+                return f"{self._array_row_typedef(t.element_type)}*"
             if t.element_type:
                 elem_c_type = self._c_type(t.element_type)
                 return f"{elem_c_type}*"  # Arrays as pointers in C
@@ -2191,8 +2253,89 @@ class CGenerator:
 
         return (" ".join(parts) + " ") if parts else ""
 
+    def _sized_array_type(self, t) -> bool:
+        """True for `array<T, N>` of a non-array element.
+
+        A nested `array<array<T, N>, M>` is represented as an array of
+        pointers everywhere in this generator, not as `T[M][N]`, so wrapping
+        only its return value would still hand back pointers into the dead
+        frame. Left on the old path until the representation changes; see
+        the follow-up issue referenced from #573.
+        """
+        if t is None or not getattr(t, "name", "").startswith("array_"):
+            return False
+        element = getattr(t, "element_type", None)
+        if not getattr(t, "size", None) or element is None:
+            return False
+        if getattr(element, "name", "").startswith("array_"):
+            return self._is_nested_sized_array(t)
+        return True
+
+    def _array_row_typedef(self, element) -> str:
+        """Name a typedef for one row of a nested sized array.
+
+        C cannot spell "array of arrays" in the places this generator needs
+        it without declarator gymnastics: a parameter wants `int32_t (*)[3]`,
+        a local wants `int32_t x[4][3]`, a struct member wants the same. A
+        row typedef makes all three ordinary, so `_flow_row_int32_t_3 x[4]`
+        is a real 2D array and `_flow_row_int32_t_3*` is what it decays to.
+        """
+        return self._row_typedef_named(self._c_type(element.element_type), element.size)
+
+    def _row_typedef_named(self, elem_c: str, size) -> str:
+        name = f"_flow_row_{_c_ident(elem_c.replace(' ', '_').replace('*', 'p'))}_{size}"
+        self._array_row_typedefs[name] = (elem_c, size)
+        return name
+
+    def _nested_rows(self, value, declared) -> Optional[List[str]]:
+        """Row expressions of a nested array literal built from non-literals.
+
+        `[I, V, vi, IV]` where each name is an `array<T, N>` local cannot be a
+        compound literal: that produces an array of pointers into the current
+        frame. The caller copies each row instead.
+        """
+        if not self._is_nested_sized_array(declared):
+            return None
+        if not isinstance(value, ArrayLiteral) or not value.elements:
+            return None
+        if all(isinstance(elem, ArrayLiteral) for elem in value.elements):
+            return None  # a real 2D literal initializes in place
+        return [self._gen_expr(elem) for elem in value.elements]
+
+    def _is_nested_sized_array(self, t) -> bool:
+        element = getattr(t, "element_type", None) if t is not None else None
+        return bool(
+            t is not None
+            and getattr(t, "name", "").startswith("array_")
+            and getattr(t, "size", None)
+            and element is not None
+            and getattr(element, "name", "").startswith("array_")
+            and getattr(element, "size", None)
+            and getattr(element, "element_type", None)
+        )
+
+    def _array_return_struct(self, t) -> str:
+        """Name the struct that carries an `array<T, N>` return value.
+
+        Returning `T*` hands the caller a pointer into the callee's frame,
+        which stops existing the moment the call returns (#573). A struct
+        holding the array is returned by value, so the data comes back with
+        it. Every consumer reads `.v`, which decays to the same `T*` the old
+        signature produced, so nothing downstream changes.
+        """
+        if self._is_nested_sized_array(t):
+            elem_c = self._array_row_typedef(t.element_type)
+        else:
+            elem_c = self._c_type(t.element_type)
+        name = f"_flow_arr_{_c_ident(elem_c.replace(' ', '_').replace('*', 'p'))}_{t.size}"
+        self._array_return_structs[name] = (elem_c, t.size)
+        return name
+
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
-        ret = self._c_type(fn.return_type)
+        if self._sized_array_type(fn.return_type):
+            ret = self._array_return_struct(fn.return_type)
+        else:
+            ret = self._c_type(fn.return_type)
         if getattr(fn, "is_variadic", False):
             if fn.parameters:
                 params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in fn.parameters])
@@ -2504,6 +2647,40 @@ class CGenerator:
         lines.append(f"{self._i()}continue;")
         return lines
 
+    def _gen_return_running_defers(self, st, pending: List[Any]) -> List[str]:
+        """Return, running every pending defer after reading the return value.
+
+        The defers used to be emitted ahead of the return statement, so
+
+            defer free(data)
+            return data[3] - 40
+
+        became `free(data); return data[3] - 40;`: a read of freed memory,
+        deterministically wrong rather than occasionally. Binding the value
+        first keeps the defer's own effect while making the value safe.
+
+        A return inside a nested block also used to skip defers altogether,
+        because only the enclosing block's list was consulted (#594).
+        """
+        if st.value is None:
+            return self._gen_defers(list(reversed(pending))) + [f"{self._i()}return;"]
+
+        tmp = f"__flow_defer_ret_{id(st) & 0xFFFFFF}"
+        declared = self._current_return_type or Type("i32")
+        hoist = VarDecl(tmp, declared, st.value, is_mutable=False)
+        saved_type = self._var_types.get(tmp)
+        self._var_types[tmp] = declared
+        try:
+            lines = self._gen_statement_body(hoist, [])
+            lines.extend(self._gen_defers(list(reversed(pending))))
+            lines.extend(self._gen_statement_body(ReturnStatement(Variable(tmp)), []))
+        finally:
+            if saved_type is None:
+                self._var_types.pop(tmp, None)
+            else:
+                self._var_types[tmp] = saved_type
+        return lines
+
     def _gen_defers(self, defers: List[DeferStatement]) -> List[str]:
         """Emit deferred expressions in LIFO order."""
         lines: List[str] = []
@@ -2515,21 +2692,34 @@ class CGenerator:
                 lines.append(f"{self._i()}(void)({self._gen_expr(expr)});")
         return lines
 
+    def _pending_defers(self) -> List[Any]:
+        """Every defer owed by an open block, innermost block first.
+
+        Already in the order they must run, so it is handed to _gen_defers
+        reversed, which reverses it back.
+        """
+        pending: List[Any] = []
+        for scope in reversed(self._defer_scopes):
+            pending.extend(reversed(scope))
+        return pending
+
     def _gen_block(self, block: Block) -> List[str]:
         lines: List[str] = []
-        defer_stack: List[DeferStatement] = []
+        scope: List[DeferStatement] = []
+        self._defer_scopes.append(scope)
         returned = False
-        for st in block.statements:
-            if isinstance(st, DeferStatement):
-                defer_stack.append(st)
-                continue
-            if isinstance(st, ReturnStatement):
-                lines.extend(self._gen_defers(defer_stack))
-                defer_stack.clear()
-                returned = True
-            lines.extend(self._gen_statement(st, defer_stack))
-        if defer_stack and not returned:
-            lines.extend(self._gen_defers(defer_stack))
+        try:
+            for st in block.statements:
+                if isinstance(st, DeferStatement):
+                    scope.append(st)
+                    continue
+                if isinstance(st, ReturnStatement):
+                    returned = True
+                lines.extend(self._gen_statement(st, scope))
+            if scope and not returned:
+                lines.extend(self._gen_defers(scope))
+        finally:
+            self._defer_scopes.pop()
         return lines
 
     def _debug_line_for(self, node: Any) -> List[str]:
@@ -2611,18 +2801,33 @@ class CGenerator:
 
             # Sized arrays: prefer real stack arrays (e.g. `int32_t a[16]`) so indexing works.
             if decl_type and decl_type.name.startswith("array_") and decl_type.size and decl_type.element_type:
-                elem_c = self._c_type(decl_type.element_type)
+                if self._is_nested_sized_array(decl_type):
+                    elem_c = self._array_row_typedef(decl_type.element_type)
+                else:
+                    elem_c = self._c_type(decl_type.element_type)
                 size = decl_type.size
+                # Use sites sanitize, so a name that is a C keyword (`inline`)
+                # was declared raw and referenced as `_flow_inline`.
+                arr_name = _sanitize_identifier(st.name)
                 if st.initializer is None:
-                    return [f"{self._i()}{elem_c} {st.name}[{size}];"]
+                    return [f"{self._i()}{elem_c} {arr_name}[{size}];"]
+                rows = self._nested_rows(st.initializer, decl_type)
+                if rows is not None:
+                    out = [f"{self._i()}{elem_c} {arr_name}[{size}];"]
+                    for index, row in enumerate(rows):
+                        out.append(
+                            f"{self._i()}memcpy({arr_name}[{index}], {row}, "
+                            f"sizeof({arr_name}[{index}]));"
+                        )
+                    return out
                 if isinstance(st.initializer, ArrayLiteral):
-                    return [f"{self._i()}{elem_c} {st.name}[{size}] = {self._gen_array_literal(st.initializer, as_initializer=True)};"]
+                    return [f"{self._i()}{elem_c} {arr_name}[{size}] = {self._gen_array_literal(st.initializer, as_initializer=True)};"]
                 # For other initializers (e.g., function call returning array, variable copy),
                 # declare the array and use memcpy
                 init_expr = self._gen_expr(st.initializer)
                 return [
-                    f"{self._i()}{elem_c} {st.name}[{size}];",
-                    f"{self._i()}memcpy({st.name}, {init_expr}, sizeof({st.name}));"
+                    f"{self._i()}{elem_c} {arr_name}[{size}];",
+                    f"{self._i()}memcpy({arr_name}, {init_expr}, sizeof({arr_name}));"
                 ]
 
             c_t = self._c_type(decl_type)
@@ -2674,6 +2879,14 @@ class CGenerator:
             return [f"{self._i()}{target_name} = {self._gen_expr(st.value)};"]
 
         if isinstance(st, ReturnStatement):
+            pending = self._pending_defers()
+            if pending:
+                self._defer_scopes, saved = [], self._defer_scopes
+                try:
+                    lines = self._gen_return_running_defers(st, pending)
+                finally:
+                    self._defer_scopes = saved
+                return lines
             if st.value is None:
                 return [f"{self._i()}return;"]
             # Tail-call optimization: a self-recursive call in tail position
@@ -2701,6 +2914,27 @@ class CGenerator:
                     f"{self._i()}return "
                     f"{self._gen_span_borrow(st.value, self._current_return_type)};"
                 ]
+            # `array<T, N>` travels home inside its wrapper struct, so the data
+            # is copied out of the frame instead of pointed at (#573).
+            if self._sized_array_type(self._current_return_type):
+                wrapper = self._array_return_struct(self._current_return_type)
+                tmp = f"_flow_arr_ret_{id(st) & 0xFFFFFF}"
+                lines = [f"{self._i()}{wrapper} {tmp};"]
+                rows = self._nested_rows(st.value, self._current_return_type)
+                if rows is not None:
+                    # `return [I, V, vi, IV]` where each row is a variable: a
+                    # compound literal would hold four pointers into this
+                    # frame, so copy each row into the wrapper instead.
+                    for index, row in enumerate(rows):
+                        lines.append(
+                            f"{self._i()}memcpy({tmp}.v[{index}], {row}, "
+                            f"sizeof({tmp}.v[{index}]));"
+                        )
+                else:
+                    value = self._gen_expr(st.value)
+                    lines.append(f"{self._i()}memcpy({tmp}.v, {value}, sizeof({tmp}.v));")
+                lines.append(f"{self._i()}return {tmp};")
+                return lines
             return [f"{self._i()}return {self._gen_expr(st.value)};"]
 
         if isinstance(st, IfStatement):
@@ -3784,6 +4018,16 @@ class CGenerator:
             return self._gen_find_expr(e)
 
         if isinstance(e, FunctionCall):
+            # A function returning `array<T, N>` hands back a wrapper struct
+            # (#573). Reading `.v` gives the same `T*` the old signature
+            # produced, so every consumer below stays as it was.
+            arr_ret = self._array_return_fns.get(e.name)
+            if arr_ret is not None and id(e) not in self._array_ret_unwrapping:
+                self._array_ret_unwrapping.add(id(e))
+                try:
+                    return f"{self._gen_expr(e)}.v"
+                finally:
+                    self._array_ret_unwrapping.discard(id(e))
             # array<T>(N) constructor → calloc(N, sizeof(elem)).
             # The parser lowers `array<f32>(10)` to FunctionCall("array_f32", [10]);
             # emit a calloc so the call resolves without a missing symbol (#270).
@@ -4266,10 +4510,31 @@ class CGenerator:
         When used as an initializer (in variable declarations), generates: { elem, elem, ... }
         When used as an expression (function arguments), generates compound literal: (type[]){ elem, ... }
         """
-        elements = ", ".join(self._gen_expr(elem) for elem in e.elements)
-        
+        # A literal whose elements are themselves array literals is a 2D array,
+        # so each row is a brace initializer. Emitting a compound literal per
+        # row would build an array of pointers into the enclosing frame (#575).
+        rows_are_arrays = bool(e.elements) and all(
+            isinstance(elem, ArrayLiteral) for elem in e.elements
+        )
+        if rows_are_arrays:
+            elements = ", ".join(
+                self._gen_array_literal(elem, as_initializer=True) for elem in e.elements
+            )
+        else:
+            elements = ", ".join(self._gen_expr(elem) for elem in e.elements)
+
         if as_initializer:
             return f"{{ {elements} }}"
+
+        if rows_are_arrays:
+            first_row = e.elements[0]
+            row_elem = "int32_t"
+            if first_row.elements:
+                inferred = self._infer_expr_type(first_row.elements[0])
+                if inferred is not None:
+                    row_elem = self._c_type(inferred)
+            row = self._row_typedef_named(row_elem, len(first_row.elements))
+            return f"({row}[]){{ {elements} }}"
         
         # As expression - need compound literal
         # Infer element type from first element

@@ -3,7 +3,7 @@
 A Flow source file is plain text, conventionally stored with the `.flow`
 extension. The smallest useful program defines `main`:
 
-```flow
+```flow from=examples/book/01_hello.flow
 function main() -> i32 {
     println("Hello, Flow.")
     return 0

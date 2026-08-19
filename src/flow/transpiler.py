@@ -336,13 +336,22 @@ def main():
                 )
                 sys.exit(1)
             else:
-                print("Type warnings (lenient mode):", file=sys.stderr)
-                for error in type_result.errors[:5]:
-                    print(f"  ⚠ {error}", file=sys.stderr)
-                if len(type_result.errors) > 5:
-                    print(
-                        f"  ... and {len(type_result.errors) - 5} more", file=sys.stderr
-                    )
+                fatal = getattr(type_result, "fatal_errors", [])
+                lenient = [e for e in type_result.errors if e not in fatal]
+                if lenient:
+                    print("Type warnings (lenient mode):", file=sys.stderr)
+                    for error in lenient[:5]:
+                        print(f"  ⚠ {error}", file=sys.stderr)
+                    if len(lenient) > 5:
+                        print(f"  ... and {len(lenient) - 5} more", file=sys.stderr)
+                if fatal:
+                    # --lenient means "compile anyway", not "emit C that cannot
+                    # build". These would fail in clang against an identifier
+                    # the author never wrote.
+                    print("Type errors (not downgraded by --lenient):", file=sys.stderr)
+                    for error in fatal:
+                        print(f"  ✗ {error}", file=sys.stderr)
+                    sys.exit(1)
 
         # Monomorphization pass: expand generics to concrete types
         declarations = monomorphize(declarations)

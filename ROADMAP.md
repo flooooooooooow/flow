@@ -438,7 +438,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 Turn type checker warnings into errors. A program with type errors should not compile.
 
-```flow
+```flow expect-error
 # This should ERROR, not warn
 let x: i32 = "hello"  # Type mismatch: expected i32, got string
 ```
