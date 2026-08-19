@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from pathlib import Path
 
+import check_doc_examples_strict  # noqa: F401  # install the strict harness rung
 from check_doc_examples import ROOT, run
 
 FENCE = re.compile(r"^(?P<indent>\s{0,3})(?P<fence>`{3,}|~{3,})(?P<info>.*?)(?P<eol>\r?\n)?$")
