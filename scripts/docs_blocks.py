@@ -81,6 +81,7 @@ class Block:
     opts: dict = field(default_factory=dict)
     section: Optional[str] = None  # nearest preceding `## `
     title: Optional[str] = None  # nearest preceding `### `
+    occurrence: int = 1  # nth block with this exact code in this file
 
     @property
     def ident(self) -> str:
@@ -95,6 +96,12 @@ class Block:
         ledger row changes exactly when the block does.
         """
         digest = hashlib.sha256(self.code.encode("utf-8")).hexdigest()[:12]
+        if self.occurrence > 1:
+            # Two byte-identical blocks in one file would otherwise share a row,
+            # so the ledger would hold fewer entries than there are blocks. The
+            # suffix counts occurrences rather than using the line number, which
+            # would churn every time anything above the block is edited.
+            return f"{self.path}#{digest}#{self.occurrence}"
         return f"{self.path}#{digest}"
 
     @property
@@ -167,6 +174,7 @@ def iter_blocks(text: str, path: str) -> Iterator[Block]:
     lines = text.splitlines()
     section: Optional[str] = None
     title: Optional[str] = None
+    seen: dict[str, int] = {}
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -204,16 +212,19 @@ def iter_blocks(text: str, path: str) -> Iterator[Block]:
         i += 1  # step past the closing fence
 
         lang, flags, opts = parse_info(info)
+        code = "\n".join(body).strip("\n")
+        seen[code] = seen.get(code, 0) + 1
         yield Block(
             path=path,
             line=start,
             info=info,
             lang=lang,
-            code="\n".join(body).strip("\n"),
+            code=code,
             flags=flags,
             opts=opts,
             section=section,
             title=title,
+            occurrence=seen[code],
         )
 
 
