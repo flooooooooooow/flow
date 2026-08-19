@@ -1221,9 +1221,31 @@ class CGenerator:
         params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in method.parameters])
         
         lines.append(f"{ret} {mangled_name}({params}) {{")
+
+        # Register the parameters the way _gen_function does. Without this the
+        # body generates with no idea what its own arguments are, so `print(n)`
+        # on an i32 parameter fell back to "%g" and the program printed a
+        # double read from an int slot. Effects are a headline feature and
+        # every capability method was affected.
+        saved_var_types = self._var_types.copy()
+        saved_resolver_var_types = self._overload_resolver._var_types.copy()
+        saved_return_type = self._current_return_type
+        self._current_return_type = method.return_type
+        for param in method.parameters:
+            self._overload_resolver.set_var_type(
+                param.name, self._type_to_string(param.type)
+            )
+            self._var_types[param.name] = param.type
+
         self._indent += 1
-        lines.extend(self._gen_block(method.body))
-        self._indent -= 1
+        try:
+            lines.extend(self._gen_block(method.body))
+        finally:
+            self._indent -= 1
+            self._var_types = saved_var_types
+            self._overload_resolver._var_types = saved_resolver_var_types
+            self._current_return_type = saved_return_type
+
         lines.append("}")
         return lines
     
