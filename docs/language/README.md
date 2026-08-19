@@ -32,16 +32,12 @@ Detailed documentation for the Flow programming language.
 
 ## Quick Reference
 
-### Types
-```
-i32, i64, f32, f64, bool, string, void
-ptr<T>, array<T, N>
-```
+The common scalar types are `i32`, `i64`, `f32`, `f64`, `bool`, `string`, and `void`. Pointers use `ptr<T>` and fixed arrays use `array<T, N>`.
 
 ### Variable Declaration
 ```flow
-let x: i32 = 42           # Immutable
-let mut y: i32 = 0        # Mutable
+let x: i32 = 42
+let mut y: i32 = 0
 ```
 
 ### Function
