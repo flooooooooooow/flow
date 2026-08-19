@@ -1,9 +1,9 @@
 {
-  "generated": "2026-08-18",
+  "generated": "2026-08-19",
   "totals": {
     "verified": 476,
     "unverified": 235,
-    "ignored": 66,
+    "ignored": 67,
     "expected-error": 1
   },
   "blocks": [
@@ -1892,7 +1892,7 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/effects-showcase.md#e1bacf2fe62e",
+      "key": "docs/effects-showcase.md#ad12bd3952c2",
       "path": "docs/effects-showcase.md",
       "line": 184,
       "status": "verified",
@@ -1902,7 +1902,7 @@
     {
       "key": "docs/effects-showcase.md#d0621e6ad971",
       "path": "docs/effects-showcase.md",
-      "line": 198,
+      "line": 197,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1910,7 +1910,7 @@
     {
       "key": "docs/effects-showcase.md#55c7b5e0d8d6",
       "path": "docs/effects-showcase.md",
-      "line": 210,
+      "line": 209,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1918,7 +1918,7 @@
     {
       "key": "docs/effects-showcase.md#cc380f5766c9",
       "path": "docs/effects-showcase.md",
-      "line": 228,
+      "line": 227,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1926,7 +1926,7 @@
     {
       "key": "docs/effects-showcase.md#7c682e2a31a5",
       "path": "docs/effects-showcase.md",
-      "line": 239,
+      "line": 238,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1934,7 +1934,7 @@
     {
       "key": "docs/effects-showcase.md#3634a12147df",
       "path": "docs/effects-showcase.md",
-      "line": 254,
+      "line": 253,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1942,7 +1942,7 @@
     {
       "key": "docs/effects-showcase.md#93cc8b826921",
       "path": "docs/effects-showcase.md",
-      "line": 287,
+      "line": 286,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1950,7 +1950,7 @@
     {
       "key": "docs/effects-showcase.md#f2b369ad233d",
       "path": "docs/effects-showcase.md",
-      "line": 300,
+      "line": 299,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1958,7 +1958,7 @@
     {
       "key": "docs/effects-showcase.md#0e0af157b81b",
       "path": "docs/effects-showcase.md",
-      "line": 313,
+      "line": 312,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1966,7 +1966,7 @@
     {
       "key": "docs/effects-showcase.md#0e1bb2d5dbbb",
       "path": "docs/effects-showcase.md",
-      "line": 328,
+      "line": 327,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -1974,7 +1974,7 @@
     {
       "key": "docs/effects-showcase.md#9a48adee0be9",
       "path": "docs/effects-showcase.md",
-      "line": 364,
+      "line": 363,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1982,7 +1982,7 @@
     {
       "key": "docs/effects-showcase.md#6c16fa2854db",
       "path": "docs/effects-showcase.md",
-      "line": 387,
+      "line": 386,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1990,7 +1990,7 @@
     {
       "key": "docs/effects-showcase.md#b5cd304c99fc",
       "path": "docs/effects-showcase.md",
-      "line": 417,
+      "line": 416,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1998,7 +1998,7 @@
     {
       "key": "docs/effects-showcase.md#bd29de113a2e",
       "path": "docs/effects-showcase.md",
-      "line": 431,
+      "line": 430,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2006,7 +2006,7 @@
     {
       "key": "docs/effects-showcase.md#373b72d1b197",
       "path": "docs/effects-showcase.md",
-      "line": 455,
+      "line": 454,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2014,7 +2014,7 @@
     {
       "key": "docs/effects-showcase.md#141739ca2307",
       "path": "docs/effects-showcase.md",
-      "line": 476,
+      "line": 475,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2022,7 +2022,7 @@
     {
       "key": "docs/effects-showcase.md#786c4672ef4b",
       "path": "docs/effects-showcase.md",
-      "line": 486,
+      "line": 485,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2030,7 +2030,7 @@
     {
       "key": "docs/effects-showcase.md#5d9676834c09",
       "path": "docs/effects-showcase.md",
-      "line": 530,
+      "line": 529,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2038,10 +2038,18 @@
     {
       "key": "docs/effects-showcase.md#2addc2f4528e",
       "path": "docs/effects-showcase.md",
-      "line": 552,
+      "line": 551,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
+    },
+    {
+      "key": "docs/effects-showcase.md#ea7da790f152",
+      "path": "docs/effects-showcase.md",
+      "line": 615,
+      "status": "ignored",
+      "detail": "shown as a pattern; the counter is module-level state",
+      "reason": "shown as a pattern; the counter is module-level state"
     },
     {
       "key": "docs/getting-started.md#961dc32e5a1e",
