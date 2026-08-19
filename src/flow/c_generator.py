@@ -151,6 +151,10 @@ class CGenerator:
     ) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
+        # One list per open block. A `return` runs every pending defer, not
+        # only the enclosing block's, and runs them after the return value has
+        # been read (#594).
+        self._defer_scopes: List[List[Any]] = []
         # Wrappers for `array<T, N>` returns; see _array_return_struct (#573).
         self._array_return_structs = {}  # struct name -> (elem C type, size)
         self._array_return_fns = {}  # flow function name -> its array return Type
@@ -2629,6 +2633,40 @@ class CGenerator:
         lines.append(f"{self._i()}continue;")
         return lines
 
+    def _gen_return_running_defers(self, st, pending: List[Any]) -> List[str]:
+        """Return, running every pending defer after reading the return value.
+
+        The defers used to be emitted ahead of the return statement, so
+
+            defer free(data)
+            return data[3] - 40
+
+        became `free(data); return data[3] - 40;`: a read of freed memory,
+        deterministically wrong rather than occasionally. Binding the value
+        first keeps the defer's own effect while making the value safe.
+
+        A return inside a nested block also used to skip defers altogether,
+        because only the enclosing block's list was consulted (#594).
+        """
+        if st.value is None:
+            return self._gen_defers(list(reversed(pending))) + [f"{self._i()}return;"]
+
+        tmp = f"__flow_defer_ret_{id(st) & 0xFFFFFF}"
+        declared = self._current_return_type or Type("i32")
+        hoist = VarDecl(tmp, declared, st.value, is_mutable=False)
+        saved_type = self._var_types.get(tmp)
+        self._var_types[tmp] = declared
+        try:
+            lines = self._gen_statement_body(hoist, [])
+            lines.extend(self._gen_defers(list(reversed(pending))))
+            lines.extend(self._gen_statement_body(ReturnStatement(Variable(tmp)), []))
+        finally:
+            if saved_type is None:
+                self._var_types.pop(tmp, None)
+            else:
+                self._var_types[tmp] = saved_type
+        return lines
+
     def _gen_defers(self, defers: List[DeferStatement]) -> List[str]:
         """Emit deferred expressions in LIFO order."""
         lines: List[str] = []
@@ -2640,21 +2678,34 @@ class CGenerator:
                 lines.append(f"{self._i()}(void)({self._gen_expr(expr)});")
         return lines
 
+    def _pending_defers(self) -> List[Any]:
+        """Every defer owed by an open block, innermost block first.
+
+        Already in the order they must run, so it is handed to _gen_defers
+        reversed, which reverses it back.
+        """
+        pending: List[Any] = []
+        for scope in reversed(self._defer_scopes):
+            pending.extend(reversed(scope))
+        return pending
+
     def _gen_block(self, block: Block) -> List[str]:
         lines: List[str] = []
-        defer_stack: List[DeferStatement] = []
+        scope: List[DeferStatement] = []
+        self._defer_scopes.append(scope)
         returned = False
-        for st in block.statements:
-            if isinstance(st, DeferStatement):
-                defer_stack.append(st)
-                continue
-            if isinstance(st, ReturnStatement):
-                lines.extend(self._gen_defers(defer_stack))
-                defer_stack.clear()
-                returned = True
-            lines.extend(self._gen_statement(st, defer_stack))
-        if defer_stack and not returned:
-            lines.extend(self._gen_defers(defer_stack))
+        try:
+            for st in block.statements:
+                if isinstance(st, DeferStatement):
+                    scope.append(st)
+                    continue
+                if isinstance(st, ReturnStatement):
+                    returned = True
+                lines.extend(self._gen_statement(st, scope))
+            if scope and not returned:
+                lines.extend(self._gen_defers(scope))
+        finally:
+            self._defer_scopes.pop()
         return lines
 
     def _debug_line_for(self, node: Any) -> List[str]:
@@ -2814,6 +2865,14 @@ class CGenerator:
             return [f"{self._i()}{target_name} = {self._gen_expr(st.value)};"]
 
         if isinstance(st, ReturnStatement):
+            pending = self._pending_defers()
+            if pending:
+                self._defer_scopes, saved = [], self._defer_scopes
+                try:
+                    lines = self._gen_return_running_defers(st, pending)
+                finally:
+                    self._defer_scopes = saved
+                return lines
             if st.value is None:
                 return [f"{self._i()}return;"]
             # Tail-call optimization: a self-recursive call in tail position

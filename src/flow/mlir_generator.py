@@ -371,6 +371,9 @@ class MLIRGenerator:
         self.block_counter = 0
         self.string_constants = {}  # Maps string value -> global name
         self.string_counter = 0
+        # One list per open block; a return runs every pending defer (#594).
+        self._defer_scopes: List[List[Any]] = []
+        self._return_defer_lines: List[str] = []
         self._symbol_stack: List[Dict[str, Any]] = []
         self.needs_printf = False  # Track if we need printf declaration
         self.source_file = source_file  # For debug info
@@ -1242,13 +1245,21 @@ class MLIRGenerator:
         }
 
         defer_stack: List[DeferStatement] = []
+        self._defer_scopes.append(defer_stack)
         exited = False
         for stmt in block.statements:
             if isinstance(stmt, DeferStatement):
                 defer_stack.append(stmt)
                 continue
-            # Deferred expressions run before leaving the scope, LIFO.
-            if isinstance(stmt, (ReturnStatement, BreakStatement, ContinueStatement)) and defer_stack:
+            # Deferred expressions run before leaving the scope, LIFO. A
+            # `return` runs every pending defer rather than only this block's,
+            # and runs them after its value has been computed (#594); break and
+            # continue carry no value, so they still run theirs up front.
+            if isinstance(stmt, ReturnStatement):
+                self._return_defer_lines = self._generate_defers(
+                    list(reversed(self._pending_defers()))
+                )
+            elif isinstance(stmt, (BreakStatement, ContinueStatement)) and defer_stack:
                 mlir_code.extend(self._generate_defers(defer_stack))
                 defer_stack.clear()
             stmt_mlir = self.generate_statement(stmt)
@@ -1261,6 +1272,7 @@ class MLIRGenerator:
                 break
         if defer_stack and not exited:
             mlir_code.extend(self._generate_defers(defer_stack))
+        self._defer_scopes.pop()
 
         child_symbols = self.symbol_table
         self.symbol_table = self._symbol_stack.pop()
@@ -1454,6 +1466,13 @@ class MLIRGenerator:
                     return True
         return False
 
+    def _pending_defers(self) -> List[DeferStatement]:
+        """Every defer owed by an open block, innermost block first."""
+        pending: List[DeferStatement] = []
+        for scope in reversed(self._defer_scopes):
+            pending.extend(reversed(scope))
+        return pending
+
     def _generate_defers(self, defers: List[DeferStatement]) -> List[str]:
         """Emit deferred expressions in LIFO order (mirrors the C backend)."""
         lines: List[str] = []
@@ -1574,6 +1593,8 @@ class MLIRGenerator:
             return f"{self.indent()}{ssa_name} = llvm.mlir.undef : {mlir_type}"
     
     def generate_return(self, return_stmt: ReturnStatement) -> str:
+        deferred = self._return_defer_lines
+        self._return_defer_lines = []
         if return_stmt.value:
             # Special handling for string literals
             if isinstance(return_stmt.value, Literal) and return_stmt.value.type.name == 'string':
@@ -1590,6 +1611,7 @@ class MLIRGenerator:
                 value_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 lines = [f"{self.indent()}{value_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+                lines.extend(deferred)
                 return_type = self.flow_type_to_mlir(self.current_function_return_type)
                 lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
                 return "\n".join(lines)
@@ -1610,10 +1632,12 @@ class MLIRGenerator:
                 value_ssa, mat_ops = self._stabilize_aggregate_ssa(value_ssa, return_type)
                 lines.extend(mat_ops)
 
+            # After the value is in hand, before control leaves.
+            lines.extend(deferred)
             lines.append(f"{self.indent()}func.return {value_ssa} : {return_type}")
             return "\n".join(lines)
         else:
-            return f"{self.indent()}func.return"
+            return "\n".join(deferred + [f"{self.indent()}func.return"])
     
     def generate_assignment(self, assignment: Assignment) -> str:
         value_ssa, value_ops = self.generate_expression(assignment.value)
