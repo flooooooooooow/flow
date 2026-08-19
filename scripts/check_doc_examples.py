@@ -81,7 +81,7 @@ def _rel(path: Path) -> str:
 # no entry point to parse, type-check or generate C, so a block with real
 # declarations already passes standalone. All it ever did was supply substance
 # to blocks that were otherwise empty, defeating the vacuity check.
-MODES = ("standalone", "stmt-wrap", "split-wrap")
+MODES = ("standalone", "stmt-wrap", "split-wrap", "partition-wrap")
 
 # Keywords that open a top-level declaration. Anything at brace depth zero that
 # does not start with one of these is a statement.
@@ -113,6 +113,72 @@ def _split_declarations(code: str) -> tuple[str, str]:
 
 
 
+def _partition_declarations(code: str) -> tuple[str, str]:
+    """Separate declarations from executable top-level fragments anywhere in a block."""
+    block_decls = (
+        "function ", "export function ", "struct ", "enum ", "trait ",
+        "impl ", "effect ", "capability ", "flow ", "test ", "theorem ",
+    )
+    one_line_decls = (
+        "const ", "type ", "distinct ", "unit ", "import ", "extern ", "module ",
+    )
+    decls: list[str] = []
+    stmts: list[str] = []
+    pending_attrs: list[str] = []
+    current: list[str] = []
+    current_is_decl = False
+    depth = 0
+    waiting_for_brace = False
+
+    def flush() -> None:
+        nonlocal current, current_is_decl, waiting_for_brace
+        if not current:
+            return
+        (decls if current_is_decl else stmts).extend(current)
+        current = []
+        current_is_decl = False
+        waiting_for_brace = False
+
+    for line in code.splitlines():
+        stripped = line.strip()
+        if current:
+            current.append(line)
+            depth += line.count("{") - line.count("}")
+            if waiting_for_brace and "{" in line:
+                waiting_for_brace = False
+            if not waiting_for_brace and depth <= 0:
+                flush()
+                depth = 0
+            continue
+        if stripped.startswith("@"):
+            pending_attrs.append(line)
+            continue
+        if stripped.startswith(block_decls):
+            current_is_decl = True
+            current = pending_attrs + [line]
+            pending_attrs = []
+            depth = line.count("{") - line.count("}")
+            waiting_for_brace = "{" not in line
+            if not waiting_for_brace and depth <= 0:
+                flush()
+                depth = 0
+            continue
+        if stripped.startswith(one_line_decls):
+            decls.extend(pending_attrs)
+            pending_attrs = []
+            decls.append(line)
+            continue
+        if pending_attrs:
+            stmts.extend(pending_attrs)
+            pending_attrs = []
+        stmts.append(line)
+
+    flush()
+    if pending_attrs:
+        stmts.extend(pending_attrs)
+    return "\n".join(decls), "\n".join(stmts)
+
+
 def _indent(code: str) -> str:
     return "\n".join(
         "    " + line if line.strip() else line for line in code.splitlines()
@@ -126,6 +192,12 @@ def _harness(code: str, mode: str) -> str:
         return f"function main() -> i32 {{\n{_indent(code)}\n    return 0\n}}\n"
     if mode == "split-wrap":
         decls, stmts = _split_declarations(code)
+        if not stmts.strip():
+            raise _NotApplicable
+        body = f"function main() -> i32 {{\n{_indent(stmts)}\n    return 0\n}}\n"
+        return (decls + "\n\n" if decls.strip() else "") + body
+    if mode == "partition-wrap":
+        decls, stmts = _partition_declarations(code)
         if not stmts.strip():
             raise _NotApplicable
         body = f"function main() -> i32 {{\n{_indent(stmts)}\n    return 0\n}}\n"
@@ -295,7 +367,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     # earlier whitelist of "substantive" declaration kinds got this wrong and
     # reported 26 correct examples as empty.
     substantive = own
-    if mode in ("stmt-wrap", "split-wrap"):
+    if mode in ("stmt-wrap", "split-wrap", "partition-wrap"):
         # Everything except the bare `return 0` the harness appended.
         substantive = [
             d for d in own
