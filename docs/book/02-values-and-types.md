@@ -1,7 +1,6 @@
 # 2. Values and types
 
-A type defines the values an expression may produce and the operations allowed
-on those values. Flow checks these rules before native execution.
+A type defines the values an expression may produce and the operations allowed on those values. Flow checks these rules before native execution. Every `flow` block in this chapter is compiler-checked in CI.
 
 ## 2.1 Primitive types
 
@@ -16,75 +15,92 @@ The central primitive types are:
 | `string` | text | `"ready"` |
 | `void` | no returned value | function return type |
 
-Use a type whose range and precision match the quantity. `i32` is the ordinary
-choice for small counts and status values. `f64` is the ordinary choice for
-numerical models where accumulated rounding error matters.
+Use a type whose range and precision match the quantity. `i32` is the ordinary choice for small counts and status values. `f64` is the ordinary choice for numerical models where accumulated rounding error matters.
 
 ## 2.2 Bindings
 
-`let` introduces an immutable binding:
+`let` introduces an immutable local binding:
 
 ```flow
-let sample_count: i32 = 4
-let celsius: f64 = 21.5
-let ready: bool = true
-let label: string = "room A"
+function binding_example() -> i32 {
+    let sample_count: i32 = 4
+    let celsius: f64 = 21.5
+    let ready: bool = true
+    let label: string = "room A"
+
+    if ready and celsius > 0.0 and label == "room A" {
+        return sample_count
+    }
+    return 0
+}
 ```
 
-The annotation follows the name. When the initializer gives sufficient
-information, the compiler can infer the type:
+When the initializer gives sufficient information, the compiler can infer the type:
 
 ```flow
-let sample_count = 4
-let celsius = 21.5
+function inferred_values() -> i32 {
+    let sample_count = 4
+    let celsius = 21.5
+    if celsius > 20.0 {
+        return sample_count
+    }
+    return 0
+}
 ```
 
-Explicit types are useful at interfaces, in numerical work, and whenever a
-reader should not have to infer intent from a literal.
+Explicit types are useful at interfaces, in numerical work, and whenever a reader should not have to infer intent from a literal.
 
 ## 2.3 Mutation
 
-An ordinary binding cannot be assigned again. State that changes must be
-declared with `let mut`:
+State that changes must be declared with `let mut`:
 
 ```flow
-let mut total: f64 = 87.5
-total = total + 1.0
+function accumulated_total() -> f64 {
+    let mut total: f64 = 87.5
+    total = total + 1.0
+    return total
+}
 ```
 
-The following program is rejected:
+The following program is rejected, and CI checks that rejection:
 
 ```flow expect-error
-let total: f64 = 87.5
-total = 88.5  # error: assignment to an immutable binding
+function immutable_assignment() -> f64 {
+    let total: f64 = 87.5
+    total = 88.5
+    return total
+}
 ```
 
-Mutability is local information. A reader can distinguish a fixed input from
-evolving state at its declaration.
+Mutability is local information. A reader can distinguish a fixed input from evolving state at its declaration.
 
 ## 2.4 Arithmetic and comparison
 
-Arithmetic uses the conventional precedence rules:
+Arithmetic uses conventional precedence:
 
 ```flow
-let a: i32 = 2 + 3 * 4        # 14
-let b: i32 = (2 + 3) * 4      # 20
-let q: i32 = 17 / 5           # 3: integer division
-let r: i32 = 17 % 5           # 2: remainder
-let x: f64 = 17.0 / 5.0       # 3.4
+function arithmetic_example() -> i32 {
+    let a: i32 = 2 + 3 * 4
+    let b: i32 = (2 + 3) * 4
+    let q: i32 = 17 / 5
+    let r: i32 = 17 % 5
+    return a + b + q + r
+}
 ```
 
-Comparisons produce `bool`:
+Floating-point division and comparisons are equally direct:
 
-```text
-let within: bool = x >= 0.0 and x <= 10.0
-let outside: bool = x < 0.0 or x > 10.0
-let different: bool = x != 4.0
-let inverted: bool = !within
+```flow
+function comparison_example(x: f64) -> bool {
+    let quotient: f64 = 17.0 / 5.0
+    let within: bool = x >= 0.0 and x <= 10.0
+    let outside: bool = x < 0.0 or x > 10.0
+    let different: bool = x != quotient
+    return within and not outside and different
+}
 ```
 
-`and` and `or` short-circuit. In `a and b`, `b` is evaluated only when `a` is
-true. In `a or b`, `b` is evaluated only when `a` is false.
+`and` and `or` short-circuit. In `a and b`, `b` is evaluated only when `a` is true. In `a or b`, `b` is evaluated only when `a` is false.
 
 ## 2.5 A complete measurement
 
@@ -110,47 +126,27 @@ function main() -> i32 {
 }
 ```
 
-Source:
-[`examples/book/02_values.flow`](../../examples/book/02_values.flow)
+Source: [`examples/book/02_values.flow`](../../examples/book/02_values.flow)
 
 ```bash
-./flow run examples/book/02_values.flow
+FLOW_HOST=python ./flow run examples/book/02_values.flow
 ```
-
-Output:
-
-```text
-samples: 4
-mean: 22.125 C
-converted: 70.7 F
-comfortable: 1
-```
-
-The `extern` block declares a C function supplied by the platform. The final
-parameter `...` permits further format arguments. `%d` formats an integer;
-`%.3f` formats a floating-point value with three digits after the decimal
-point.
 
 ## 2.6 Casts
 
 Use `as` when a conversion must be explicit:
 
-```text
-let count: i32 = 7
-let count_f: f64 = count as f64
-let average: f64 = total / count_f
+```flow
+function average(total: f64, count: i32) -> f64 {
+    let count_f: f64 = count as f64
+    return total / count_f
+}
 ```
 
-A cast records the point at which representation changes. It does not repair an
-invalid value. Before narrowing a large integer or a floating-point value,
-establish that the destination range is adequate.
+A cast records the point at which representation changes. It does not repair an invalid value. Before narrowing a large integer or a floating-point value, establish that the destination range is adequate.
 
 ## Exercises
 
-1. Convert `68.0` degrees Fahrenheit to Celsius.
-2. Compute the mean of five fixed readings using one mutable accumulator.
-3. Write a Boolean expression that accepts values in `[10.0, 20.0)`.
-4. Predict the values of `7 / 2`, `7.0 / 2.0`, and `7 % 2`; verify them.
+Convert `68.0` degrees Fahrenheit to Celsius; compute the mean of five fixed readings with one mutable accumulator; write a Boolean expression for values in `[10.0, 20.0)`; and verify the values of `7 / 2`, `7.0 / 2.0`, and `7 % 2`.
 
 Next: [Decisions and repetition](03-decisions-and-repetition.md).
-
