@@ -47,6 +47,30 @@ def copy_docs() -> None:
             copy_tree(item, target)
         else:
             shutil.copy2(item, target)
+    copy_example_pages()
+
+
+def copy_example_pages() -> int:
+    """Publish the markdown under examples/ as wiki pages.
+
+    48 pages under docs/ link to ../../examples/, and none of those resolved:
+    the deploy copied docs/ alone, so every one 404'd on the live site. The
+    markdown is what a reader follows a link to, so it is copied; the .flow
+    sources next to it are rewritten to GitHub instead of shipped, since a
+    reader wants them highlighted and in context rather than downloaded.
+    """
+    source_root = ROOT / "examples"
+    if not source_root.is_dir():
+        return 0
+    copied = 0
+    for page in sorted(source_root.rglob("*.md")):
+        if any(part.startswith(".") for part in page.relative_to(ROOT).parts):
+            continue
+        target = OUT / page.relative_to(ROOT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(page, target)
+        copied += 1
+    return copied
 
 
 def rewrite_repo_href_for_wiki(href: str) -> str:
