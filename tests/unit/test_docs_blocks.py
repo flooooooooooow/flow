@@ -538,3 +538,46 @@ def test_no_uses_means_no_context():
 
     plain = Block(path="d.md", line=1, info="flow", lang="flow", code="x", opts={})
     assert C._page_context(plain, {"a": "AAA"}) == ("", "")
+
+
+def test_context_is_wrapped_with_the_block_not_placed_above_it():
+    """Earlier-page code is often statements, so it must sit inside the harness.
+
+    Placed above it as a preamble, `let sys = build()` lands at module scope,
+    where the parser requires `let mut` and the block fails for a reason that
+    has nothing to do with the example.
+    """
+    import check_doc_examples as C
+
+    setup = Block(path="d.md", line=1, info="flow id=s", lang="flow",
+                  code="let total: i32 = 7", opts={"id": "s"})
+    later = Block(path="d.md", line=9, info="flow uses=s", lang="flow",
+                  code="let doubled: i32 = total * 2", opts={"uses": "s"})
+    result = C.verify(later, {setup.block_id: setup.code})
+    assert result.status == "verified", f"{result.stage}: {result.detail}"
+
+
+def test_imports_hoist_when_context_is_joined():
+    """A block naming context also imports its own module.
+
+    Joined naively that leaves an `import` after the context's statements, and
+    every harness rung reads it as an expression.
+    """
+    import check_doc_examples as C
+
+    joined = C._join_with_context(
+        'import "a.flow"\n\nlet x: i32 = 1\n',
+        'import "b.flow"\n\nlet y: i32 = x\n',
+    )
+    lines = [ln for ln in joined.splitlines() if ln.strip()]
+    assert lines[0] == 'import "a.flow"'
+    assert lines[1] == 'import "b.flow"'
+    assert not any(ln.startswith("import ") for ln in lines[2:])
+
+
+def test_a_repeated_import_is_joined_once():
+    import check_doc_examples as C
+
+    joined = C._join_with_context('import "a.flow"\nlet x: i32 = 1\n',
+                                  'import "a.flow"\nlet y: i32 = x\n')
+    assert joined.count('import "a.flow"') == 1

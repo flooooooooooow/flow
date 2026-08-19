@@ -1,8 +1,8 @@
 {
   "generated": "2026-08-20",
   "totals": {
-    "verified": 506,
-    "unverified": 190,
+    "verified": 513,
+    "unverified": 183,
     "expected-error": 6,
     "ignored": 89
   },
@@ -3127,90 +3127,90 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#b1918f2dbbe4",
+      "key": "docs/library/dynamics.md#d8dedc66d89c",
       "path": "docs/library/dynamics.md",
       "line": 61,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Variable 'A' is annotated with unknown type 'Matrix', which is not declared in this scope"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#71dff86b4a3c",
       "path": "docs/library/dynamics.md",
-      "line": 75,
+      "line": 77,
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
       "detail": "unknown type name 'Matrix'"
     },
     {
-      "key": "docs/library/dynamics.md#7b6bfc6ac46b",
+      "key": "docs/library/dynamics.md#f5dd199bb476",
       "path": "docs/library/dynamics.md",
-      "line": 101,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Variable 'A' is annotated with unknown type 'Matrix', which is not declared in this scope"
+      "line": 103,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#3c9fb867f487",
+      "key": "docs/library/dynamics.md#3cd7743cfadb",
       "path": "docs/library/dynamics.md",
-      "line": 128,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'is_controllable'"
+      "line": 136,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#f9efbba35951",
+      "key": "docs/library/dynamics.md#f0a74af039fc",
       "path": "docs/library/dynamics.md",
-      "line": 156,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'gramian_finite_horizon'"
+      "line": 166,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#5c4c7194a590",
+      "key": "docs/library/dynamics.md#0214f7cce48b",
       "path": "docs/library/dynamics.md",
-      "line": 183,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'lyapunov_proxy'"
+      "line": 201,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#9c348ca34391",
       "path": "docs/library/dynamics.md",
-      "line": 202,
+      "line": 222,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#df2dc84eb0f2",
+      "key": "docs/library/dynamics.md#1c0512df5f8d",
       "path": "docs/library/dynamics.md",
-      "line": 218,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Variable 'cfg' is annotated with unknown type 'GAConfig', which is not declared in this scope"
+      "line": 238,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#23ef16959ab5",
       "path": "docs/library/dynamics.md",
-      "line": 235,
+      "line": 265,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#8e71945ba3fa",
+      "key": "docs/library/dynamics.md#1173318e7b42",
       "path": "docs/library/dynamics.md",
-      "line": 260,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'ga_closed_loop_matrix'"
+      "line": 290,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#0a8c61f002e8",
       "path": "docs/library/dynamics.md",
-      "line": 276,
+      "line": 312,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3218,7 +3218,7 @@
     {
       "key": "docs/library/dynamics.md#e383400d3e8e",
       "path": "docs/library/dynamics.md",
-      "line": 305,
+      "line": 341,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"

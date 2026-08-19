@@ -359,6 +359,28 @@ def _page_context(block: Block, context: Optional[dict]) -> tuple[str, str]:
     return "\n\n".join(parts) + "\n\n", ""
 
 
+def _join_with_context(page: str, code: str) -> str:
+    """Put earlier-page code in front, with every import hoisted to the top.
+
+    A block that names context also imports its own module, so joining them
+    naively leaves an `import` in the middle, after the context's statements.
+    Every harness rung then reads it as an expression. Imports are declarations
+    wherever they were written, so they move to the front and duplicates drop.
+    """
+    if not page:
+        return code
+    imports: list[str] = []
+    body: list[str] = []
+    for line in (page + code).splitlines():
+        if line.startswith("import ") and line not in imports:
+            imports.append(line)
+        elif not line.startswith("import "):
+            body.append(line)
+    if not imports:
+        return page + code
+    return "\n".join(imports) + "\n\n" + "\n".join(body).strip("\n")
+
+
 def verify(block: Block, context: Optional[dict] = None) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
@@ -374,7 +396,11 @@ def verify(block: Block, context: Optional[dict] = None) -> Result:
     preamble, problem = _preamble_text(block)
     if problem:
         return Result(block, "unverified", detail=problem, stage="preamble")
-    preamble = preamble + page
+    # Page context joins the block's own code rather than the preamble, so the
+    # harness wraps both together. A chapter's earlier block is often
+    # statements (`let sys = dsys_discrete(...)`), and outside the harness
+    # those land at module scope, where `let` has to be `let mut`.
+    code = _join_with_context(page, block.code)
 
     modes = ("standalone",) if "no-harness" in block.flags else MODES
     first: tuple[str, str] = ("", "")
@@ -384,7 +410,7 @@ def verify(block: Block, context: Optional[dict] = None) -> Result:
 
     for mode in modes:
         try:
-            source = preamble + _harness(block.code, mode)
+            source = preamble + _harness(code, mode)
         except _NotApplicable:
             continue
         csource, stage, detail = _compile(
