@@ -34,7 +34,7 @@ function greet() -> void with Console {
 
 ### 1.3 Capability-Based Effects
 
-```flow
+```flow ignore="illustrative code skeleton"
 capability StdioConsole for Console {
     function print(message: string) -> void {
         printf("%s", message)

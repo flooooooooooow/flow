@@ -20,7 +20,7 @@ Wherever the model is continuous, the dynamics are stated as a `flow` block
 with `evolves as` and lowered by the compiler to a `_step` function, exactly
 as in [`examples/evolution`](../evolution/):
 
-```flow
+```flow ignore="illustrative code skeleton"
 flow GrayScottCell {
     state u : f64 = 1.0
     state v : f64 = 0.0
