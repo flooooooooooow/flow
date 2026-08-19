@@ -5,6 +5,8 @@ starts failing loudly the moment the bug is fixed and the mark should be
 removed.
 """
 
+import pytest
+
 from flow.parser import parse_flow_code
 from flow.c_generator import flow_to_c
 from flow.type_checker import TypeChecker
@@ -381,3 +383,32 @@ def test_bare_null_arg_mangles_to_callee_ptr_param():
     )
     assert "flowc_tc_init_ptr_u8(NULL)" in c
     assert "flowc_tc_init(NULL)" not in c
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="issue #573: -> array<T, N> returns a pointer into the callee's dead frame",
+)
+def test_returning_a_fixed_size_array_does_not_return_stack_memory():
+    """A returned `array<T, N>` must outlive the call that produced it.
+
+    `-> array<T, N>` lowers to `T*` over automatic storage, so the caller's
+    memcpy reads a frame that is already gone and the values come back as
+    garbage. clang says so directly: "address of stack memory associated with
+    compound literal ... returned".
+
+    Asserted on the generated C rather than by running, so the test states the
+    defect without depending on what the garbage happens to be.
+    """
+    c_source = flow_to_c(
+        parse_flow_code(
+            """
+function triad(root: i32) -> array<i32, 3> {
+    return [root, root + 4, root + 7]
+}
+"""
+        )
+    )
+    assert "return (int32_t[]){" not in c_source, (
+        "returning a compound literal hands the caller automatic storage"
+    )
