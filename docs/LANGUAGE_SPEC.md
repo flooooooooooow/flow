@@ -590,6 +590,12 @@ Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are 
 | `abs` | `(x: i32) -> i32` | ✅ |
 | `min` | `(a: T, b: T) -> T` | ✅ |
 | `max` | `(a: T, b: T) -> T` | ✅ |
+| `sum` | `(range) -> i32` | ✅ |
+
+`sum` takes a range rather than a value: `sum(0..1000 step 3)`. It applies the
+closed form for an arithmetic progression, so it does not iterate. Inside
+`sum(...)`, `|` and `&` between two ranges mean union and intersection instead
+of the bitwise operators. See [Ranges and range algebra](language/ranges.md).
 
 ### 4.4 Lambdas / Closures
 
