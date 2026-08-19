@@ -28,28 +28,6 @@ jobs:
         env:
           PYTHONPATH: src
         run: python3 scripts/retag_noncompiling_doc_examples.py
-      - name: Make the main CI gate strict
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('.github/workflows/ci.yml')
-          text = path.read_text()
-          old = 'run: python3 scripts/check_doc_examples.py --check-ledger'
-          new = 'run: python3 scripts/check_doc_examples_strict.py'
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one legacy doc checker command, found {text.count(old)}')
-          text = text.replace(old, new)
-          text = text.replace(
-              '  # Documented examples are compiled. A ratchet, not a wall: the examples that\n'
-              '  # do not build today are recorded in docs/generated/example-status.json and\n'
-              '  # grandfathered. Rows are keyed by a hash of the block, so editing one\n'
-              '  # revokes its exemption and the new text has to compile.\n',
-              '  # Every fenced block labelled `flow` must compile through the strict type\n'
-              '  # checker, C generation, and clang. There is no grandfathered failure list.\n',
-          )
-          path.write_text(text)
-          PY
       - name: Refresh documentation example status
         env:
           PYTHONPATH: src:scripts
