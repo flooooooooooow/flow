@@ -407,6 +407,11 @@ def verify(block: Block) -> Result:
     best_noop = ""
     reached_meaning = False
     meaning_detail = ""
+    deepest: tuple[int, str, str] = (-1, "", "")
+    stage_rank = {
+        "parse": 0, "imports": 1, "degenerate": 2, "types": 3,
+        "vacuous": 3, "codegen": 4, "clang": 5, "shader": 5,
+    }
 
     for mode in modes:
         try:
@@ -418,6 +423,9 @@ def verify(block: Block) -> Result:
             guard_noop=(mode != "standalone"),
             mode=mode,
         )
+        rank = stage_rank.get(stage, -1)
+        if rank > deepest[0] or (rank == deepest[0] and detail and not deepest[2]):
+            deepest = (rank, stage, detail)
         if stage in ("types", "vacuous", "codegen", "degenerate"):
             reached_meaning = True
         if stage in ("types", "codegen") and not meaning_detail:
@@ -449,7 +457,11 @@ def verify(block: Block) -> Result:
             detail=meaning_detail or best_noop or first[1],
             stage="types" if reached_meaning else "parse",
         )
-    return Result(block, "unverified", detail=best_noop or first[1], stage=first[0])
+    if best_noop and deepest[0] < stage_rank["types"]:
+        return Result(block, "unverified", detail=best_noop, stage="degenerate")
+    if deepest[0] >= 0:
+        return Result(block, "unverified", detail=deepest[2], stage=deepest[1])
+    return Result(block, "unverified", detail=first[1], stage=first[0])
 
 
 def _batch_clang(results: list[Result], batch: int = 150) -> None:
