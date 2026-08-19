@@ -94,7 +94,7 @@ than `b` when both operands are positive, so the process reaches zero.
 The complete demonstration combines selection, a `for` loop, a `while` loop,
 and a self-check:
 
-```flow
+```flow from=examples/book/03_control.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

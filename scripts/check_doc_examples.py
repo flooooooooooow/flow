@@ -322,9 +322,30 @@ def _preamble_text(block: Block) -> tuple[str, str]:
     return path.read_text().rstrip() + "\n\n", ""
 
 
+def _from_mismatch(block: Block) -> str:
+    """Empty unless the block claims a source file it no longer matches."""
+    rel = block.source_file
+    if not rel:
+        return ""
+    path = ROOT / rel
+    if not path.exists():
+        return f"from={rel!r} does not exist"
+    body = block.code.strip()
+    if body and body not in path.read_text(errors="replace"):
+        return (
+            f"block no longer appears in {rel}; the page and the file have "
+            f"drifted, so update whichever is wrong"
+        )
+    return ""
+
+
 def verify(block: Block) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
+
+    drifted = _from_mismatch(block)
+    if drifted:
+        return Result(block, "unverified", detail=drifted, stage="from")
 
     preamble, problem = _preamble_text(block)
     if problem:

@@ -61,11 +61,11 @@ KNOWN_FLAGS = frozenset(
     }
 )
 
-# Only keys the checker actually honours. `host=` and `from=` are designed but
-# not implemented; shipping them as no-ops would be worse than leaving them
-# out, because an author would write one, the block would be checked without
-# it, and a passing result would mean nothing.
-KNOWN_KEYS = frozenset({"ignore", "preamble"})
+# Only keys the checker actually honours. `host=` is designed but not
+# implemented; shipping it as a no-op would be worse than leaving it out,
+# because an author would write one, the block would be checked without it,
+# and a passing result would mean nothing.
+KNOWN_KEYS = frozenset({"ignore", "preamble", "from"})
 
 
 @dataclass
@@ -111,6 +111,18 @@ class Block:
     @property
     def ignored(self) -> Optional[str]:
         return self.opts.get("ignore")
+
+    @property
+    def source_file(self) -> Optional[str]:
+        """Repo-relative .flow file this block is a copy of.
+
+        A page that inlines a program and links the real file has two copies
+        of it, and only the file is covered by the test suite. The inlined one
+        drifts: `examples/flow_way/README.md` renamed a variable to `test`,
+        which is a keyword, while the linked file kept the name that parses.
+        `from=` makes the checker assert the block still appears in the file.
+        """
+        return self.opts.get("from")
 
     @property
     def preamble(self) -> Optional[str]:
