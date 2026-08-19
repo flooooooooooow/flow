@@ -40,7 +40,7 @@ come from the standard library or an `extern` declaration.
 
 ## 9.3 Value-producing `if`
 
-```flow
+```text
 let magnitude: i32 = if n >= 0 { n } else { -n }
 ```
 
@@ -120,7 +120,7 @@ later assignment `base = 100` did not alter the captured value.
 
 ## 9.6 Match arms
 
-```flow
+```text
 match n {
     0 => { return "zero" }
     1 | 2 | 3 => { return "small" }
@@ -134,7 +134,7 @@ next arm. `_` is a wildcard; a bare identifier binds the matched value.
 
 Struct and fixed-list patterns destructure values:
 
-```flow
+```text
 match point {
     Point(0, 0) => { println("origin") }
     Point(0, y) => { print(y) }
@@ -160,7 +160,7 @@ is required.
 
 ## 9.7 Loop exits and deferred cleanup
 
-```flow
+```text
 while active {
     if should_skip() {
         continue
@@ -176,7 +176,7 @@ while active {
 
 `defer` schedules cleanup for the current scope:
 
-```flow
+```text
 let buffer: ptr<u8> = malloc(1024)
 if buffer == null { return 1 }
 defer free(buffer)
@@ -190,7 +190,7 @@ scope, including an early return.
 
 ## 9.8 Data-parallel loops
 
-```flow
+```text
 parallel for i in 0 to n {
     output[i] = input[i] * 2.0
 }
@@ -207,7 +207,7 @@ pipeline executes serially.
 
 ## 9.9 Declarative ordering and search
 
-```flow
+```text
 values |> sort
 values |> sort descending
 players |> sortBy [desc .score, asc .name]
@@ -232,7 +232,7 @@ Inspect a decision:
 
 A fork evaluates one source once and sends it into several branches:
 
-```flow
+```text
 let stats: Stats = n |> Stats {
     doubled = twice,
     squared = square,
@@ -243,7 +243,7 @@ let stats: Stats = n |> Stats {
 An anonymous fork infers its record shape. `choose` selects a branch from
 state and permits the selected result to continue through the pipeline:
 
-```flow
+```text
 let result = input
     |> choose mode.tag {
         Mode_Double => double,

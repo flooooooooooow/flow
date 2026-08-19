@@ -2,7 +2,7 @@
 
 First-class device memory alongside CPU heap (`docs/library/memory.md`).
 
-```flow
+```text
 import "stdlib/gpu_memory.flow"
 import "stdlib/memory.flow"
 

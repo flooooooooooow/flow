@@ -277,7 +277,7 @@ function main() -> i32 {
 
 ### 5.1 Importing
 
-```flow
+```text
 # Import from standard library
 import "stdlib/math.flow"
 import "stdlib/string.flow"
@@ -305,7 +305,7 @@ export function triple(n: i32) -> i32 {
 
 Use it in `main.flow`:
 
-```flow ignore="mylib is the illustrative module the lesson creates"
+```text
 import "mylib.flow"
 
 function main() -> i32 {

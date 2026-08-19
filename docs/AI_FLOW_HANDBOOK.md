@@ -577,7 +577,7 @@ array syntax for the chosen host and context.
 Use `let mut` for values that change. Do not ask the AI to invent a second
 mutation convention.
 
-```flow
+```text
 let mut position: f64 = 0.0
 position = position + velocity * dt
 ```
@@ -632,7 +632,7 @@ flow Pendulum {
 The compiler lowers the declaration to an ordinary representation and step
 functions. The caller owns the instance and advances it.
 
-```flow
+```text
 let mut p: Pendulum = Pendulum_new()
 Pendulum_step(&p, 0.001)
 ```
@@ -651,7 +651,7 @@ changes these rules.
 
 ### 9.2 Use events for hybrid systems
 
-```flow
+```text
 when height reaches 0.0 {
     velocity becomes -restitution * velocity
     height becomes 0.0
@@ -718,7 +718,7 @@ capability QuietLog {
 
 Install a handler for a dynamic scope:
 
-```flow
+```text
 handle Log with QuietLog {
     do_work()
 }
@@ -746,7 +746,7 @@ The module rule is simple: imports name modules, not file-system traversal.
 
 Preferred forms include:
 
-```flow ignore="catalogue of import forms over illustrative module names"
+```text
 import std.math.sin
 import verify.nat { nat_zero_add, nat_add_succ }
 import .sibling { helper }
@@ -961,7 +961,7 @@ Flow can tighten generated C and static restrictions:
 Safety and flight profiles currently reject recursion and require a maximum
 iteration annotation on `while` loops.
 
-```flow
+```text
 @max_iterations(1000)
 while condition {
     step()

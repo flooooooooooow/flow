@@ -22,7 +22,7 @@ effect FileSystem {
 
 ### 1.2 Using Effects
 
-```flow
+```text
 function greet() -> void with Console {
     Console.print("What's your name? ")
     let name = Console.read_line()
@@ -34,7 +34,7 @@ function greet() -> void with Console {
 
 ### 1.3 Capability-Based Effects
 
-```flow
+```text
 capability StdioConsole for Console {
     function print(message: string) -> void {
         printf("%s", message)
@@ -68,7 +68,7 @@ FLOW has built-in support for computing gradients.
 
 ### 2.1 Forward Mode (Dual Numbers)
 
-```flow
+```text
 import "stdlib/autodiff.flow"
 
 function main() -> i32 {
@@ -87,7 +87,7 @@ function main() -> i32 {
 
 ### 2.2 Common Operations
 
-```flow
+```text
 import "stdlib/autodiff.flow"
 
 function main() -> i32 {
@@ -108,7 +108,7 @@ function main() -> i32 {
 
 ### 2.3 Neural Network Example
 
-```flow
+```text
 import "stdlib/nn.flow"
 
 function main() -> i32 {
@@ -200,7 +200,7 @@ function matmul(A: array<f32>, B: array<f32>, C: array<f32>, M: i32, N: i32, K: 
 
 ### 3.5 Parallel Reduction
 
-```flow
+```text
 @gpu
 function parallel_sum(input: array<f32>, output: array<f32>, n: i32) {
     let i = gpu_thread_id()
@@ -259,7 +259,7 @@ Generates browser-runnable code.
 
 ### 5.1 File I/O
 
-```flow
+```text
 import "stdlib/posix.flow"
 
 function main() -> i32 {
@@ -282,7 +282,7 @@ function main() -> i32 {
 
 ### 5.2 Process Management
 
-```flow
+```text
 import "stdlib/posix.flow"
 
 function main() -> i32 {
@@ -296,7 +296,7 @@ function main() -> i32 {
 
 ### 5.3 Environment Variables
 
-```flow
+```text
 import "stdlib/posix.flow"
 
 function main() -> i32 {

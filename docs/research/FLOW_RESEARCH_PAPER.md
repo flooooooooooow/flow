@@ -149,7 +149,7 @@ FLOW's effect system provides capability-based safety and modularity. By decoupl
 
 For example, a `GPU` effect can define abstract operations like `allocate` and `launch_kernel`, which are then implemented by specific capabilities like `CUDAGPU` or `OpenCLGPU`. This allows high-level algorithms (e.g., FFT) to be written once and executed on different hardware targets simply by switching the effect handler.
 
-```flow
+```text
 effect GPU {
     allocate(size: i32) -> GPUBuffer,
     launch_kernel(kernel: GPUKernel, grid: i32, block: i32) -> void
@@ -334,7 +334,7 @@ module {
 
 FLOW's effect system and MLIR backend enable high-performance computing tasks like Fast Fourier Transforms (FFT). The following snippet demonstrates the decoupling of the FFT algorithm from its hardware implementation:
 
-```flow
+```text
 # Generic FFT usage
 function analyze_audio_signal(audio_data: array_f32, sample_rate: i32) -> array_f32 {
     handle GPU, FFT with CUDAGPU {

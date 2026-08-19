@@ -177,7 +177,7 @@ struct Queue_i32 {
 
 Key-value store.
 
-```flow
+```text
 struct HashMap_string_i32 {
     buckets: ptr<HashEntry_string_i32>,
     size: i32,
@@ -304,7 +304,7 @@ POSIX system calls.
 
 ### Constants
 
-```flow
+```text
 const O_RDONLY: i32 = 0
 const O_WRONLY: i32 = 1
 const O_RDWR: i32 = 2
@@ -351,7 +351,7 @@ Networking.
 
 ### TCP
 
-```flow
+```text
 struct TcpListener { socket: Socket, port: i32 }
 struct TcpStream { socket: Socket, connected: bool }
 ```
@@ -364,7 +364,7 @@ struct TcpStream { socket: Socket, connected: bool }
 
 ### UDP
 
-```flow
+```text
 struct UdpSocket { socket: Socket, bound: bool }
 ```
 

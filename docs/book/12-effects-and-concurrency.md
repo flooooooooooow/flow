@@ -40,7 +40,7 @@ program values or a lower-level runtime object.
 
 ## 12.3 Installing handlers
 
-```flow
+```text
 handle Log with Console {
     Log.info("started")
     let count: i32 = Log.metric("items", 12)
@@ -53,7 +53,7 @@ called from inside the block observes the installed handler too.
 
 Multiple effects and handlers can be installed together:
 
-```flow
+```text
 handle Log, Notify with Console, DesktopNotifications {
     place_order()
 }
@@ -64,7 +64,7 @@ is statically known, the compiler may replace dispatch with a direct call.
 
 ## 12.4 Effect rows
 
-```flow
+```text
 function process(name: string) -> void with Log {
     Log.info(name)
 }
@@ -151,7 +151,7 @@ the order clear.
 
 ## 12.8 Channels and synchronisation
 
-```flow
+```text
 import "stdlib/concurrent.flow"
 
 let mut channel: Channel_i32 = channel_i32_new(16)

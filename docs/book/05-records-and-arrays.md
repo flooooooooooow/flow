@@ -21,7 +21,7 @@ let first: Sample = Sample { time_ms: 0, value: 1.0 }
 
 Fields are selected with `.`:
 
-```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
+```text
 let t: i32 = first.time_ms
 let measurement: f64 = first.value
 ```
@@ -45,7 +45,7 @@ let values: array<i32, 4> = [10, 20, 30, 40]
 Indices begin at zero. The valid indices above are `0`, `1`, `2`, and `3`.
 The natural traversal is therefore:
 
-```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
+```text
 for i in 0 to 4 {
     print(values[i])
 }
@@ -71,7 +71,7 @@ let samples: array<Sample, 4> = [
 
 Indexing and field selection compose:
 
-```flow preamble=tests/fixtures/doc_preambles/book-05-records.flow
+```text
 let third_value: f64 = samples[2].value
 ```
 

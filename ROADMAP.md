@@ -438,7 +438,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 Turn type checker warnings into errors. A program with type errors should not compile.
 
-```flow expect-error
+```text
 # This should ERROR, not warn
 let x: i32 = "hello"  # Type mismatch: expected i32, got string
 ```
@@ -488,7 +488,7 @@ function map<T, U>(arr: array<T>, f: (T) -> U) -> array<U> {
 
 Allow omitting obvious type annotations.
 
-```flow
+```text
 # Current (verbose)
 let x: i32 = 42
 let y: f32 = 3.14
@@ -514,7 +514,7 @@ let y = 3.14    # Inferred as f32
 
 Expand `match` to support destructuring, guards, and nested patterns.
 
-```flow
+```text
 # Current (limited)
 match value {
     0 => handle_zero()
@@ -544,7 +544,7 @@ match point {
 
 Add sum types.
 
-```flow
+```text
 enum Option<T> {
     Some(T)
     None
@@ -576,7 +576,7 @@ function divide(a: f32, b: f32) -> Result<f32, string> {
 
 Add interface abstraction (separate from effects).
 
-```flow
+```text
 trait Printable {
     function to_string(self) -> string
 }
@@ -605,7 +605,7 @@ function print<T: Printable>(x: T) -> void {
 
 Make closures capture variables properly.
 
-```flow
+```text
 function make_adder(n: i32) -> (i32) -> i32 {
     return fn(x: i32) -> i32 {
         return x + n  # Captures n
@@ -728,7 +728,7 @@ Dual GPU targets (do not collapse to one):
 
 Expose vector operations.
 
-```flow
+```text
 import "stdlib/simd.flow"
 
 let a: f32x4 = f32x4(1.0, 2.0, 3.0, 4.0)

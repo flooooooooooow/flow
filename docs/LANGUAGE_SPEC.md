@@ -147,7 +147,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 
 ### 1.4 Comments
 
-```flow
+```text
 # Single-line comment (hash style)
 // Single-line comment (C style) - NOT SUPPORTED
 /* Block comment */ - NOT SUPPORTED
@@ -220,7 +220,7 @@ Rationale, alternatives considered, and the implementation are in
 
 ### 2.3 Type Syntax
 
-```flow
+```text
 # Basic type annotation
 let x: i32 = 42
 
@@ -265,7 +265,7 @@ distinct type UserId = i64
 
 Use `as` to convert between compatible types (including to/from distinct types):
 
-```flow
+```text
 let raw: i64 = 42
 let id: UserId = raw as UserId
 let back: i64 = id as i64
@@ -324,7 +324,7 @@ function greet(name: string) -> void {
 
 Flow supports lightweight build guards to include/exclude functions per mode:
 
-```flow
+```text
 @only(hot)
 function dev_overlay() -> void { ... }
 
@@ -394,7 +394,7 @@ arrays of primitives (`array<T, N>` with a full literal initializer), and
 supported in MLIR backend" instead of compiling them.
 
 **Example:**
-```flow
+```text
 let mut counter: i32 = 0
 let mut table: array<i32, 4> = [0, 0, 0, 0]
 let mut head: ptr<Node> = null
@@ -459,7 +459,7 @@ An attribute is written `@name` or `@name(arg, …)` immediately before a
 `src/flow/attributes.py`. A name outside it is a type error, so a misspelled
 attribute gets reported.
 
-```flow
+```text
 @always_inline
 @target("avx2")
 function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
@@ -621,7 +621,7 @@ let result: i32 = add_n(10)  # 15
 
 **Status:** ✅
 
-```flow
+```text
 let ys = xs |> sort
 let zs = xs |> sortBy [asc .key, desc .tie]
 let i  = xs |> find(target)     # index of the first match, or -1
@@ -645,7 +645,7 @@ of lowerings with cost models and applicability predicates.
 
 Value-producing conditionals (issue #252):
 
-```flow
+```text
 let x: i32 = if n > 0 { n } else { -n }
 ```
 
@@ -690,7 +690,7 @@ block := '{' statement* '}'
 **Status:** ✅ Fully implemented
 
 **Example:**
-```flow
+```text
 if x > 0 {
     printf("Positive\n")
 } elif x < 0 {
@@ -710,7 +710,7 @@ while_stmt := 'while' expression block
 **Status:** ✅ Fully implemented
 
 **Example:**
-```flow
+```text
 let i: i32 = 0
 while i < 10 {
     printf("%d\n", i)
@@ -732,7 +732,7 @@ for_stmt := 'parallel'? 'for' IDENTIFIER 'in' expression ('..' | 'to') expressio
 loop is correct and serial. See [concurrency-vs-go.md](language/concurrency-vs-go.md).
 
 **Example:**
-```flow
+```text
 # Basic for loop (both `to` and `..` are accepted)
 for i in 0 to 10 {
     printf("%d\n", i)
@@ -837,7 +837,7 @@ handle_stmt := 'handle' IDENTIFIER (',' IDENTIFIER)* 'with' IDENTIFIER (',' IDEN
 multi-handler forms supported)
 
 **Example:**
-```flow
+```text
 function main() -> i32 {
     handle Log with ConsoleLogger {
         Log.emit("Hello from effects!")
@@ -870,7 +870,7 @@ enclosing `handle` or their own `with` clause. Soft zero defaults remain when
 [effects-showcase.md](effects-showcase.md).
 
 **Example:**
-```flow
+```text
 function greet(name: string) -> void with Log {
     Log.emit(name)
 }
@@ -905,7 +905,7 @@ import_decl := 'import' STRING
 Prefer named modules; see [language/modules.md](language/modules.md).
 
 **Example:**
-```flow ignore="catalogue of import forms over illustrative module names"
+```text
 import "lib/stdlib/math.flow"          # legacy string path
 import std.math { sin, cos }           # named module + symbols
 import verify.nat as nat               # aliased module
@@ -953,14 +953,14 @@ as well. `export import M { a, b }` forwards only the named symbols, which must
 be exported by `M`. A package's `lib.flow` can therefore aggregate its
 submodules under one name.
 
-```flow ignore="relative-import form; the sibling module is illustrative"
+```text
 # registry/packages/flowlm/src/lib.flow
 export import .util
 export import .model
 export import .train { flm_train_step, flm_sample }
 ```
 
-```flow ignore="flowlm is a registry package, not vendored here"
+```text
 # consumer
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
@@ -1044,7 +1044,7 @@ in, and on a module static, where it declares the domain of that storage
 takes its domain from its allocation site: a local belongs to the enclosing
 function's domain, a static to its own.
 
-```flow
+```text
 @lifetime(application)
 let mut tail: span<f32> = null
 
@@ -1216,7 +1216,7 @@ GIF-variant LZW (9 to 12 bit codes, clear/EOI, 4096-entry dictionary,
 `fopen`/`fwrite`/`fputc`/`fclose` and `malloc`/`free` cross the FFI line.
 Open-file state is held in module statics (section 3.3.1).
 
-```flow
+```text
 import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end }
 
 function main() -> i32 {

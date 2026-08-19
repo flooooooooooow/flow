@@ -45,7 +45,7 @@ See [`tests/lang/test_sort_nan.flow`](../../tests/lang/test_sort_nan.flow).
 
 ## 8.3 Composite type forms
 
-```flow
+```text
 array<T>             # dynamic array
 array<T, N>          # fixed array
 ptr<T>               # pointer
@@ -105,7 +105,7 @@ FLOW_HOST=python ./flow run examples/evolution/units_kinematics.flow
 
 ## 8.6 Constants and module statics
 
-```flow
+```text
 const BLOCK_SIZE: i32 = 256
 
 let mut calls: i32 = 0
@@ -226,7 +226,7 @@ by the platform C compiler and is necessarily platform-dependent.
 
 ## 8.12 Debug and test declarations
 
-```flow
+```text
 let measured: i32 = dbg compute()
 expect measured >= 0
 

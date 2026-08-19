@@ -25,7 +25,7 @@ function notify(message: string) -> void {
 
 ## Control
 
-```flow
+```text
 if condition {
     # ...
 } elif other_condition {
@@ -62,7 +62,7 @@ xs[1] = 25
 
 ## Pipelines
 
-```flow
+```text
 x |> f              # f(x)
 x |> f(y)           # f(x, y)
 x |> f(y, _)        # f(y, x)

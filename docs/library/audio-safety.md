@@ -20,7 +20,7 @@ NaN / infinity guard  ->  DC blocker  ->  denormal flush
   ->  hard clamp (last resort, counted)
 ```
 
-```flow
+```text
 import "stdlib/audio/safety.flow"
 
 let rate: SampleRate = sample_rate_48000()
@@ -103,7 +103,7 @@ stuck oscillator stops being a problem at a known time.
 
 ### Feedback guard
 
-```flow
+```text
 feedback_guard(1.05)              # refused, returns 0.0, prints why
 feedback_guard(0.995)             # clamped to 0.98, prints that it clamped
 rt60_to_feedback(3.0, 0.375)      # 0.4217: a 3 second tail on a 375 ms delay
@@ -161,7 +161,7 @@ sample one ULP over and trip the clamp. That is -0.00087 dB.
 who have no idea how loud their system is set. Real work usually wants
 something else.
 
-```flow
+```text
 # -1 dBFS, which is where you would master to, keeping every other default.
 let cfg: SafetyConfig = safety_config_ceiling(safety_config_default(), -1.0)
 let mut chain: SafetyChain = safety_new_with(rate, 8.0, cfg)
@@ -198,7 +198,7 @@ disk, `stdlib/audio/verify.flow` goes further and checks the file itself.
 `verify_run` reads a WAV back and asserts on the samples. This is how the
 audio examples are covered on a machine with no sound card.
 
-```flow
+```text
 if sink_is_render() {
     let spec: VerifySpec = verify_spec(6.0, safety_ceiling_db(cp), 110.0)
     if !verify_run(sink_render_path(), spec) {

@@ -50,7 +50,7 @@ Programming should describe behavior, not implementation.
 
 A programmer should write:
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity
@@ -88,7 +88,7 @@ Evolution replaces control flow as the central abstraction. Programs describe ho
 
 Time never exists implicitly.
 
-```flow ignore="proposed temporal syntax, not implemented"
+```text
 continuous
 every 1 ms
 after 50 us
@@ -99,7 +99,7 @@ within 2 s
 
 Everything evolves from state.
 
-```flow ignore="fragment of a flow body shown on its own, not a compilation unit"
+```text
 state angle
 state velocity
 state current
@@ -109,19 +109,19 @@ state current
 
 Continuous evolution:
 
-```flow ignore="fragment of a flow body shown on its own, not a compilation unit"
+```text
 angle evolves as velocity
 ```
 
 Discrete evolution:
 
-```flow ignore="fragment of a flow body shown on its own, not a compilation unit"
+```text
 counter becomes counter + 1
 ```
 
 ### Systems compose
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow Robot {
     motor : Motor
     controller : PID
@@ -136,7 +136,7 @@ Composition replaces procedural orchestration.
 
 ### Correctness belongs in the language
 
-```flow ignore="fragment of a flow body shown on its own, not a compilation unit"
+```text
 always {
     pressure <= 10 bar
 }
@@ -173,33 +173,33 @@ Flow
 
 ### State
 
-```flow ignore="proposed dimensioned flow members; flow state is f32/f64 today"
+```text
 state angle : Angle
 state velocity : AngularVelocity
 ```
 
 ### Inputs
 
-```flow ignore="proposed dimensioned flow members; flow state is f32/f64 today"
+```text
 input voltage : Voltage
 ```
 
 ### Outputs
 
-```flow ignore="proposed dimensioned flow members; flow state is f32/f64 today"
+```text
 output torque : Torque
 ```
 
 ### Parameters
 
-```flow ignore="proposed dimensioned flow members; flow state is f32/f64 today"
+```text
 param mass : Kilogram
 param damping > 0
 ```
 
 ### Continuous dynamics
 
-```flow ignore="fragment of a flow body shown on its own, not a compilation unit"
+```text
 angle evolves as velocity
 velocity evolves as
     force / mass
@@ -207,7 +207,7 @@ velocity evolves as
 
 ### Discrete dynamics
 
-```flow ignore="proposed syntax, not implemented"
+```text
 every tick {
     counter becomes counter + 1
 }
@@ -215,7 +215,7 @@ every tick {
 
 ### Events
 
-```flow ignore="proposed syntax, not implemented"
+```text
 when temperature > 100 C {
     emit Overheated
 }
@@ -223,7 +223,7 @@ when temperature > 100 C {
 
 ### Constraints
 
-```flow ignore="fragment of a flow body shown on its own, not a compilation unit"
+```text
 always {
     current <= 10 A
 }
@@ -231,7 +231,7 @@ always {
 
 ### Temporal guarantees
 
-```flow ignore="proposed temporal syntax, not implemented"
+```text
 after disturbance
 angle < 2 deg
 within 200 ms
@@ -241,7 +241,7 @@ within 200 ms
 
 Realtime behavior is native.
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow MotorController {
     realtime
 
@@ -272,7 +272,7 @@ Realtime flows prohibit:
 
 Static structures are preferred.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 history samples : RingBuffer<1024>
 ```
 
@@ -280,7 +280,7 @@ history samples : RingBuffer<1024>
 
 Scheduling belongs inside the language.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 task sensors
 every 1 ms
 
@@ -296,7 +296,7 @@ every 50 ms
 
 Numeric behavior is explicit.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 numeric {
     fixed<32,16>
     saturating
@@ -315,13 +315,13 @@ Meter  Second  Newton  Volt  Ampere  Radian
 
 This fails to compile:
 
-```flow ignore="illustrates a units mismatch; too small to compile as written"
+```text
 length + voltage
 ```
 
 ## Continuous Flows
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity
@@ -334,7 +334,7 @@ flow Pendulum {
 
 ## Hybrid Systems
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow Ball {
     height : Meter
     velocity : Meter / Second
@@ -351,7 +351,7 @@ flow Ball {
 
 ## Composition
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow Robot {
     plant : Motor
     controller : PID
@@ -367,7 +367,7 @@ flow Robot {
 
 Every flow has one canonical description. Different mathematical representations are compiler transformations.
 
-```flow ignore="proposed flow syntax; dimensioned members and elision are not implemented"
+```text
 flow Pendulum {
     ...
     represent nonlinear
@@ -380,7 +380,7 @@ flow Pendulum {
 
 ### Koopman representation
 
-```flow ignore="proposed syntax, not implemented"
+```text
 represent koopman {
     basis {
         angle
@@ -397,7 +397,7 @@ The programmer specifies intent. The compiler constructs the representation.
 
 Analysis is part of the language.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 analyze Pendulum {
     poles
     zeros
@@ -411,7 +411,7 @@ analyze Pendulum {
 
 Controllers become compiler transformations.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 control Pendulum {
     objective {
         minimize error
@@ -425,7 +425,7 @@ Possible implementations include PID, LQR, MPC, and observers.
 
 Properties become executable.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 guarantee {
     stable
     passive
@@ -440,7 +440,7 @@ Compilation fails if guarantees cannot be proven.
 
 Deployment belongs inside the source.
 
-```flow ignore="proposed syntax, not implemented"
+```text
 deploy {
     cpu Cortex-M7
     period 100 us

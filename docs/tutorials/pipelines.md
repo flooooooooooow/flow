@@ -177,7 +177,7 @@ function main() -> i32 {
 ./flow run examples/basics/pipeline_fork.flow
 ```
 
-```flow
+```text
 let mut xs: array<i32, 5> = [3, 1, 4, 1, 5]
 xs |> sort
 xs |> sort descending

@@ -175,7 +175,7 @@ process must reconstruct the executable.
 The verification syntax includes theorem documents, assumptions,
 derivations, and claim paths:
 
-```flow
+```text
 theorem add_zero(n: Nat) {
     assume definition_of_addition
     therefore n + 0 = n

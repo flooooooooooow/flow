@@ -35,7 +35,7 @@ Bare keywords (`dsys`, `horizon`, `sense`, `ga evolve`, `closed`, `analyze`,
 `wfc`) still work. Prefer a namespace when you want the dynamics vocabulary
 out of the global soup (and clearer IntelliSense):
 
-```flow
+```text
 # Block namespace — body uses bare DSL lines
 dynamics {
     dsys plant { discrete  dt 0.1  n 2 m 1 p 1
@@ -73,7 +73,7 @@ Defaults if a line is omitted: `discrete`, `dt 0.1`, `n 2 m 1 p 1`.
 
 ## `horizon` — name an analysis horizon
 
-```flow ignore="horizon declarations expand to no code on their own"
+```text
 horizon rollout finite 50              # 50 steps
 horizon asymptotic infinite gamma 0.99 # discounted infinite horizon
 ```
@@ -83,7 +83,7 @@ Horizons are referenced by name from `sense`, `ga evolve`, `closed`, and
 
 ## `sense` — analyze the open loop
 
-```flow
+```text
 sense on plant {
     controllable -> plant_ok                    # i32: 1 if rank(ctrb) == n
     spectral -> rho_open                        # f64: spectral radius of A (2x2)
@@ -98,7 +98,7 @@ trace of the controllability Gramian is bound.
 
 ## `ga evolve` — search feedback gains
 
-```flow
+```text
 ga evolve on plant over rollout -> k1 k2 {
     population 12    # default 8
     generations 30   # default 20 (max 32)
@@ -113,7 +113,7 @@ best gains are bound to the two variables after the `->`.
 
 ## `closed` — certify the closed loop
 
-```flow
+```text
 closed plant with k1 k2 {
     spectral -> rho_cl          # f64: spectral radius of A - B*K
     energy over rollout -> E_cl # f64: sum of x'x over the horizon
@@ -126,7 +126,7 @@ gains and re-analyzes it.
 
 ## `analyze` — one-shot unified report
 
-```flow
+```text
 analyze plant ga k1 k2 over rollout -> report {
     full
 }

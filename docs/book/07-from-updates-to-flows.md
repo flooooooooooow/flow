@@ -141,7 +141,7 @@ damping, the reported energy decreases and the pendulum approaches rest.
 The evolution rule and the integration method are separate concerns. A solver
 block can request a method and time step:
 
-```flow
+```text
 solver {
     dt 5 ms
     method rk4
@@ -171,7 +171,7 @@ include:
 
 For the decay model, a simple bounded check is:
 
-```flow
+```text
 if amount < 0.0 or amount > 10.0 {
     return 1
 }

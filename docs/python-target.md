@@ -32,7 +32,7 @@ Flow Source → Parse → Type Check → C Generator → Python Bindings → Whe
 
 Public symbols with ABI-compatible types are exported automatically:
 
-```flow
+```text
 # EXPORTED: Public function with compatible types
 function add(a: i32, b: i32) -> i32 {
     return a + b
@@ -155,7 +155,7 @@ Python Export Analysis: mathlib
 
 For advanced cases, explicit control is available (future):
 
-```flow
+```text
 # Rename for Python
 @python(name="py_func_name")
 function flow_func_name() -> void { ... }

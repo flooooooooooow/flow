@@ -25,7 +25,7 @@ inputs are assigned by an embedding system; outputs derive an exposed value.
 
 ## 13.2 Solver declaration
 
-```flow
+```text
 solver {
     dt 1 ms
     method rk4
@@ -60,7 +60,7 @@ function rk4_step(value: f64, rate: f64, dt: f64) -> f64 {
 
 Ten steps of size `0.1` advance the model from `t = 0` to `t = 1`:
 
-```flow
+```text
 let rate: f64 = 0.8
 let dt: f64 = 0.1
 let mut value: f64 = 10.0
@@ -88,7 +88,7 @@ interval around that value and returns failure if the result leaves it.
 
 Discrete updates can coexist with continuous equations:
 
-```flow
+```text
 every 1 ms {
     command becomes kp * (setpoint - feedback)
 }
@@ -129,7 +129,7 @@ FLOW_HOST=python ./flow run examples/evolution/bouncing_ball_energy.flow
 
 ## 13.6 Invariants
 
-```flow
+```text
 always {
     angle < 3.15
     angle > -3.15
@@ -145,7 +145,7 @@ FLOW_HOST=python ./flow run examples/evolution/pendulum_always.flow
 
 ## 13.7 Flow composition
 
-```flow
+```text
 flow Robot {
     plant: Motor
     controller: Controller
@@ -172,7 +172,7 @@ FLOW_HOST=python ./flow run examples/evolution/robot_connect.flow
 graphics demonstrations. `represent linear` attaches an explicit local linear
 model to a nonlinear flow:
 
-```flow
+```text
 represent linear {
     at (angle: 0.0, velocity: 0.0)
     inputs (torque)
@@ -214,7 +214,7 @@ simulation.
 
 ## 13.10 Analysis and control
 
-```flow
+```text
 sense on plant {
     controllable -> can_control
     observable -> can_observe
@@ -229,7 +229,7 @@ system shape permits them.
 Discrete LQR computes state feedback from `A`, `B`, `Q`, and `R`. A genetic
 algorithm can search controller parameters and score them over a rollout:
 
-```flow
+```text
 analyze plant ga k1 k2 over rollout -> report { full }
 ```
 

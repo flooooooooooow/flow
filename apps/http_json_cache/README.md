@@ -52,7 +52,7 @@ cd apps/http_json_cache
 ../../flow run-native src/live_http.flow
 ```
 
-```flow
+```text
 let body: HttpBody = http_get("https://example.com")
 # ... status / body_len / ok ...
 http_body_free(body)

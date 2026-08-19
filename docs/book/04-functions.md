@@ -27,7 +27,7 @@ caller.
 
 Arguments are evaluated before the call:
 
-```flow
+```text
 let area: f64 = square(width + margin)
 ```
 

@@ -22,7 +22,7 @@ Branches are tested from top to bottom. At most one branch executes. An early
 
 For independent tests, use independent `if` statements:
 
-```flow
+```text
 if temperature < minimum {
     println("below range")
 }

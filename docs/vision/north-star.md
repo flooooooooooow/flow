@@ -601,7 +601,7 @@ child at the start of the child-stepping phase, just like a sibling source.
 
 Flow-body only, in a flow whose fields include flow-typed members:
 
-```flow
+```text
 flow Robot {
     plant : Motor
     controller : PID
@@ -620,7 +620,7 @@ this a *composite* flow.
 **Flows as pipeline stages.** An `output` whose value pipes through flow-typed
 stages is sugar for the children + wiring above:
 
-```flow
+```text
 flow Chain {
     input signal : f64
     output result : f64 = signal |> Gain |> Limiter
@@ -636,7 +636,7 @@ sampled, state-broken pipeline (§8.3).
 A stage may override the stage flow's params with a `{ param: value }` block
 (the `:` value form, distinct from a fork block's `=` pipeline form):
 
-```flow
+```text
 output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
 ```
 
@@ -710,7 +710,7 @@ is the bridge.
 
 Inside a flow body:
 
-```flow
+```text
 flow Pendulum {
     state angle : f64 = 0.0
     state velocity : f64 = 0.0
@@ -856,7 +856,7 @@ self-contained. Grammar exactly as specified above.
 
 ### A.1 Pendulum — continuous + units + analysis
 
-```flow
+```text
 # docs/vision/examples/pendulum.flow
 unit Radian
 unit Second
@@ -919,7 +919,7 @@ flow Ball {
 
 ### A.3 Robot — PID + motor + connect
 
-```flow
+```text
 # docs/vision/examples/robot.flow
 flow Motor {
     state speed   : f64 = 0.0

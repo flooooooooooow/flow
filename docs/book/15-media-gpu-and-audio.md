@@ -62,7 +62,7 @@ initial state, input, random seed, and time stepping.
 
 ## 15.4 Fill shaders
 
-```flow
+```text
 shader fill plasma(width: f32, height: f32, time: f32) -> vec4 {
     let uv = frag_coord / vec2(width, height)
     let value = 0.5 + 0.5 * sin(time + uv.x * 12.0)

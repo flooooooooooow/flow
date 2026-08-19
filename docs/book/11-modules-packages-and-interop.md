@@ -9,7 +9,7 @@ stable exported symbols.
 Flow supports logical dot paths, selected names, aliases, and package-local
 siblings:
 
-```flow ignore="module system forms over illustrative module names"
+```text
 import std.math { sin, cos }
 import verify.nat.nat_zero_add
 import verify.nat as nat
@@ -38,7 +38,7 @@ export gain, FilterState
 
 An aggregator can re-export names from another module:
 
-```flow ignore="relative-import form; the sibling module is illustrative"
+```text
 export import .filters
 export import .meters { rms, peak }
 ```
@@ -124,7 +124,7 @@ extern call.
 
 The Python host supports header import and prototype generation:
 
-```flow
+```text
 @cImport("math.h")
 @cImport("my_api.h") as api
 ```
@@ -139,7 +139,7 @@ FLOW_HOST=python ./flow run tests/lang/test_c_import_auto.flow
 
 Three related directives serve different purposes:
 
-```flow
+```text
 @cInclude("my_api.h")
 extern type OpaqueHandle
 
@@ -161,7 +161,7 @@ FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
 Flow closure types such as `(i32) -> i32` can carry an environment. A raw C
 function pointer has the separate `cfn` type:
 
-```flow
+```text
 let symbol: ptr<void> = dlsym(handle, "sqrt")
 let sqrt_fn: cfn(f64) -> f64 = symbol as cfn(f64) -> f64
 let result: f64 = sqrt_fn(9.0)

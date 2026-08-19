@@ -356,14 +356,14 @@ Add extensible generic functions with multiple dispatch to FLOW, inspired by Com
 ### Core Features
 
 #### 1. Generic Function Declaration
-```flow
+```text
 # Define a generic function (abstract interface)
 generic fn draw(shape: Shape, context: Context) -> void
     documentation: "Render a shape to the given context"
 ```
 
 #### 2. Method Implementations
-```flow
+```text
 # Single dispatch
 method draw(shape: Circle, context: Context) -> void {
     circle_renderer.draw(shape, context)
@@ -376,7 +376,7 @@ method beat(drum: SnareDrum, stick: WoodenDrumstick) -> Sound {
 ```
 
 #### 3. Method Combination
-```flow
+```text
 # Before/after methods
 method before withdraw(account: BankAccount, amount: f64) -> void {
     log_transaction("withdrawal_started", account.id, amount)
@@ -396,7 +396,7 @@ method withdraw(account: BankAccount, amount: f64) -> void {
 ```
 
 #### 4. Type Specialization Patterns
-```flow
+```text
 # EQL specialization (specific values)
 method process(value: 42) -> i32 {
     return "the answer"
@@ -454,7 +454,7 @@ method process(shape: Rectangle { width: w, height: h }) -> i32 {
 ### Example Use Cases
 
 #### Graphics Rendering System
-```flow
+```text
 generic fn render(obj: Renderable, target: RenderTarget) -> void
 
 method render(obj: 3DModel, target: OpenGLContext) -> void {
@@ -474,7 +474,7 @@ fn render_scene(scene: Scene, target: RenderTarget) {
 ```
 
 #### Mathematical Operations
-```flow
+```text
 generic fn add(a: Numeric, b: Numeric) -> Numeric
 
 method add(a: Vector2D, b: Vector2D) -> Vector2D {

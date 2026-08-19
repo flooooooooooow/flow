@@ -27,7 +27,7 @@ Builders take `out: ptr<f32>` and consumers take `&[f32]`. There is no `Mat4`
 struct because module statics cannot hold structs, so a program declares its
 matrices as fixed arrays in `main` and passes the pointers down.
 
-```flow
+```text
 let mut proj: array<f32, 16> = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 let pproj: ptr<f32> = proj

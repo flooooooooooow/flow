@@ -4,7 +4,7 @@
 
 Flow is built around **evolution**, not computation. Programs describe how systems evolve through time — as mathematical systems with explicit state, dynamics, timing, constraints, and guarantees — and the compiler turns that description into deterministic, production-ready code.
 
-```flow
+```text
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity

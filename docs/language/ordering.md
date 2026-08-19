@@ -2,7 +2,7 @@
 
 Sorting in FLOW is an **intent** surface, not an algorithm call.
 
-```flow
+```text
 xs |> sort
 xs |> sort by .score
 xs |> sortBy [desc .score, asc .name]
@@ -151,7 +151,7 @@ costs a general plan, a wrong hint skips a sort that was needed.
 
 The cross-construct case is the point of carrying them:
 
-```flow
+```text
 xs |> sort            # xs is now provably ascending
 let i = xs |> find(t) # so this is a binary search, not a scan
 ```

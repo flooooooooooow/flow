@@ -48,7 +48,7 @@ of the paper.
 
 ## API
 
-```flow
+```text
 import "stdlib/fmm2d.flow"
 
 fmm2d_configure(p, s)

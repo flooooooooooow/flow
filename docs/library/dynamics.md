@@ -58,7 +58,7 @@ struct Matrix {
 | `vec_dot` | `(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64` | Dot product |
 | `vec_norm` | `(x: ptr<f64>, n: i32) -> f64` | Euclidean norm |
 
-```flow
+```text
 let buf: array<f64, 4> = [1.0, 2.0, 3.0, 4.0]
 let A: Matrix = Matrix { data: buf, rows: 2, cols: 2 }
 let tr: f64 = matrix_trace(A)   # 5.0
@@ -72,7 +72,7 @@ let tr: f64 = matrix_trace(A)   # 5.0
 
 Core types for linear time-invariant systems.
 
-```flow
+```text
 # kind: 0 = discrete x[k+1] = A x + B u,  1 = continuous x' = A x + B u
 struct DynamicalSystem {
     n: i32, m: i32, p: i32,   # states, inputs, outputs
@@ -98,7 +98,7 @@ struct TransformSpec { kind: i32, T: Matrix, T_inv: Matrix }
 | `transform_identity` | `(T_buf: ptr<f64>, n: i32) -> TransformSpec` | Identity transform |
 | `transform_similarity` | `(T: Matrix, T_inv: Matrix) -> TransformSpec` | Similarity transform spec |
 
-```flow
+```text
 let A: Matrix = Matrix { data: a_buf, rows: 2, cols: 2 }
 let B: Matrix = Matrix { data: b_buf, rows: 2, cols: 1 }
 let C: Matrix = Matrix { data: c_buf, rows: 1, cols: 2 }
@@ -125,7 +125,7 @@ dimension at 8 and inputs at 4.
 | `is_controllable` | `(sys: DynamicalSystem, ctrl_buf, a_pow_buf, block_buf, next_a_buf, rank_scratch: ptr<f64>) -> i32` | 1 if `rank(ctrb) >= n` |
 | `apply_similarity` | `(sys: DynamicalSystem, spec: TransformSpec, out_a, out_b, work: ptr<f64>) -> DynamicalSystem` | `A' = T^-1 A T`, `B' = T^-1 B` |
 
-```flow
+```text
 let c1: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
 let c2: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
 let c3: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
@@ -153,7 +153,7 @@ Lyapunov solve `Wc = gamma * A Wc A^T + B B^T` (64 fixed-point iterations).
 | `observability_gramian_finite` | `(sys: DynamicalSystem, h: Horizon, W_buf, a_pow_buf, block_buf, scratch: ptr<f64>) -> Matrix` | N-step observability Gramian |
 | `gramian_add_outer` | `(block: Matrix, W: Matrix) -> void` | `W += block * block^T` (helper) |
 
-```flow
+```text
 let W: Matrix = gramian_finite_horizon(sys, horizon_finite(50), wb, s1, s2, s3)
 let reach_energy: f64 = matrix_trace(W)
 ```
@@ -180,7 +180,7 @@ to 8):
 | `integrate_attractor` | `(x0: ptr<f64>, n: i32, steps: i32, dt: f64, sys_id: i32, traj: ptr<f64>) -> void` | Integrate, log trajectory (steps x n) |
 | `lyapunov_proxy` | `(x0: ptr<f64>, n: i32, steps: i32, dt: f64, sys_id: i32, eps: f64, traj_a, traj_b: ptr<f64>) -> f64` | Finite-time Lyapunov exponent proxy: log separation growth of two nearby trajectories |
 
-```flow
+```text
 let x0: array<f64, 3> = [1.0, 1.0, 1.0]
 let ta: array<f64, 300> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 let tb: array<f64, 300> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -215,7 +215,7 @@ struct GAConfig {
 | `ga_mutate` | `(val: f64, scale: f64, seed: i32) -> f64` | Deterministic hash-noise mutation |
 | `ga_hash` | `(seed: i32) -> f64` | LCG-style hash in [0, 1) |
 
-```flow
+```text
 let cfg: GAConfig = GAConfig { population: 12, generations: 30, horizon: 50, mutation: 0.3 }
 let fit: f64 = ga_evolve_control(sys, 50, cfg, k1p, k2p, fp, bk1, bk2)
 ```
@@ -257,7 +257,7 @@ struct GAAnalysisReport {
 | `ga_fitness_convergence_gen` | `(cost_history: ptr<f64>, generations: i32, tol: f64) -> i32` | Generations-from-end where cost settled within tol |
 | `ga_analyze_control_search` | `(plant, steps, cfg, …12 scratch buffers) -> GAAnalysisReport` | Full pipeline: baseline, GA, controllability, spectra, Gramians, energy, convergence |
 
-```flow
+```text
 let closed: DynamicalSystem = ga_closed_loop_matrix(sys, 2.5, 3.5, acl, bk)
 let rho: f64 = matrix_spectral_radius_2x2(closed.A)   # < 1.0 → stable
 ```

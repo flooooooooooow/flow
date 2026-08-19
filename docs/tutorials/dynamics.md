@@ -98,7 +98,7 @@ let cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.05,
 
 Discretize it and ask a structural question — *can inputs steer every state?*
 
-```flow
+```text
 let sys: DynamicalSystem = dsys_euler_discretize(cont, Ad, Bd, Id, sc)
 
 let ok: i32 = is_controllable(sys, c1, c2, c3, c4, c5)   # rank of [B, AB]
@@ -169,7 +169,7 @@ every analysis block below. No matrices, no scratch arrays.
 
 Ask the plant questions; each answer lands in a fresh variable in `main()`:
 
-```flow
+```text
 sense on plant {
     controllable -> plant_ok               # 1 if rank(ctrb) == n
     spectral -> rho_open                   # spectral radius of A
@@ -188,7 +188,7 @@ Now close the loop. A genetic algorithm searches feedback gains
 `u = -k1 x1 - k2 x2` minimizing a quadratic rollout cost, and a `closed` block
 re-certifies the result:
 
-```flow
+```text
 ga evolve on plant over rollout -> k1 k2 {
     population 16
     generations 40
@@ -220,7 +220,7 @@ The whole model → analyze → control → certify pipeline, in one file, is
 For everything at once — including a `GAAnalysisReport` struct with baseline
 vs evolved cost and convergence generation — use the one-shot form:
 
-```flow
+```text
 analyze plant ga k1 k2 over rollout -> report { full }
 ```
 

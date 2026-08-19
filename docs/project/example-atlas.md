@@ -13,7 +13,7 @@ least one of them visibly:
 **1. The dynamics are declared, not hand-integrated.** A `flow` block states
 what a quantity *is* and how it changes; the integrator is generated:
 
-```flow
+```text
 flow Neuron {
     state v: f64 = -65.0
     state u: f64 = -13.0

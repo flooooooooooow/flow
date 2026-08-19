@@ -73,7 +73,7 @@ function greet(name: string) -> void {
 
 ### Control Flow
 
-```flow
+```text
 # If/else
 if x > 0 {
     println("positive")

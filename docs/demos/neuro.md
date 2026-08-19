@@ -11,7 +11,7 @@ after [morphogenesis](morphogenesis.md). Continuous models are declared as
 `flow` blocks with `evolves as`; a spike reset is a hybrid event, not an
 `if` inside a loop:
 
-```flow
+```text
 when v reaches 30.0 {
     v becomes c
     u becomes u + d

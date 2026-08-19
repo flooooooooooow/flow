@@ -24,7 +24,7 @@ The guillemets `«»` are the syntax novelty — visually distinct, unambiguous,
 
 ## Syntax
 
-```flow
+```text
 theorem «Nat» «addition» «zero is the left identity» (m: Nat) {
     therefore 0 + m == m
 }

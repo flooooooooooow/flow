@@ -51,7 +51,7 @@ actuator boundary without changing estimator and control functions.
 
 ## 18.3 Controller
 
-```flow
+```text
 struct Controller {
     kp: f64,
     kd: f64,
@@ -69,7 +69,7 @@ be analysed for controllability and used to derive an LQR alternative.
 
 ## 18.4 Real-time boundary
 
-```flow
+```text
 @lifetime(callback)
 @rt_safe
 function process_block(

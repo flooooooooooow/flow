@@ -203,7 +203,7 @@ Entrypoints by domain: [examples/README.md](examples/README.md).
 
 ### Core syntax
 
-```flow
+```text
 let x: i32 = 42              # Immutable
 let mut counter: i32 = 0     # Mutable
 

@@ -7,7 +7,7 @@ Below is a **Flow-inspired** way to structure a Vulkan renderer so the *intent* 
 - **Structured cleanup** in one place.
 - **High-level API** that hides Vulkan noise.
 
-```flow
+```text
 # Flow-style Vulkan renderer (design sketch)
 
 struct Renderer {
@@ -89,7 +89,7 @@ This mirrors the real C++ demo but expresses the *intent* at a higher level, whi
 
 Use the higher-level wrapper in `lib/stdlib/vulkan_renderer.flow`:
 
-```flow
+```text
 let mut r: Renderer = renderer_advanced()
 r = renderer_set_window(r, 1024, 720, "Flow Vulkan Advanced")
 r = renderer_set_clear(r, 0.03, 0.03, 0.07)

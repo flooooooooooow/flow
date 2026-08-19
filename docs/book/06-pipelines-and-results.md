@@ -10,7 +10,7 @@ FLOW_HOST=python ./flow run file.flow
 
 The pipeline operator sends a value into a function call:
 
-```flow
+```text
 x |> f
 x |> f()
 x |> f(y)
@@ -18,7 +18,7 @@ x |> f(y)
 
 They compile as:
 
-```flow
+```text
 f(x)
 f(x)
 f(x, y)
@@ -26,13 +26,13 @@ f(x, y)
 
 A chain is evaluated from left to right:
 
-```flow
+```text
 let result: i32 = 5 |> increment() |> double()
 ```
 
 is equivalent to:
 
-```flow
+```text
 let result: i32 = double(increment(5))
 ```
 
@@ -44,7 +44,7 @@ when a value passes through several functions in sequence.
 By default, the piped value becomes the first argument. A single `_`
 placeholder selects a different position:
 
-```flow
+```text
 function clamp(lo: i32, value: i32, hi: i32) -> i32 {
     if value < lo { return lo }
     if value > hi { return hi }
@@ -56,7 +56,7 @@ let bounded: i32 = raw |> clamp(0, _, 100)
 
 It compiles as:
 
-```flow
+```text
 let bounded: i32 = clamp(0, raw, 100)
 ```
 
@@ -77,7 +77,7 @@ struct ResultI32 {
 
 A validator constructs either state explicitly:
 
-```flow
+```text
 function parse_port(raw: i32) -> ResultI32 {
     if raw < 1 or raw > 65535 {
         return ResultI32 { ok: false, value: 0 }
@@ -149,7 +149,7 @@ valid: 1 invalid: 0
 
 When each stage can fail, test the result before continuing:
 
-```flow
+```text
 function configure(raw: i32) -> ResultI32 {
     let port: ResultI32 = parse_port(raw)
     if !port.ok {

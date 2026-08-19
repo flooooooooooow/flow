@@ -17,7 +17,7 @@ FLOW provides:
 - **Pointer access**: `[*i32]` pointers with `arr[index]` syntax
 - **Arbitrary addressing**: Any integer can be used as index
 
-```flow
+```text
 let memory: [*i32] = allocate_heap(i32, 10000)
 memory[1234] = 42  # Random access
 ```
@@ -26,7 +26,7 @@ memory[1234] = 42  # Random access
 
 FLOW has full conditional logic:
 
-```flow
+```text
 if condition {
     # Branch 1
 } else {
@@ -38,7 +38,7 @@ if condition {
 
 FLOW provides while loops with no fixed bounds:
 
-```flow
+```text
 while condition {
     # Loop body - can run indefinitely
 }
@@ -48,7 +48,7 @@ while condition {
 
 FLOW can implement state machines:
 
-```flow
+```text
 function turing_step(state: i32, tape: [*i32], head: i32) -> i32 {
     if state == 0 {
         if tape[head] == 0 {
@@ -68,7 +68,7 @@ function turing_step(state: i32, tape: [*i32], head: i32) -> i32 {
 The `turing_complete.flow` file contains:
 
 ### 1. Direct Turing Machine Simulation
-```flow
+```text
 function turing_machine(tape: [*i32], head: i32, state: i32, steps: i32) -> i32
 ```
 - **Tape**: Infinite array simulated with heap allocation
@@ -77,7 +77,7 @@ function turing_machine(tape: [*i32], head: i32, state: i32, steps: i32) -> i32
 - **Transitions**: Conditional logic for state changes
 
 ### 2. Brainfuck Interpreter
-```flow
+```text
 function brainfuck_interpreter(program: [*i32], input: [*i32], output: [*i32])
 ```
 Brainfuck is proven Turing complete with only 8 commands:
@@ -86,7 +86,7 @@ Brainfuck is proven Turing complete with only 8 commands:
 - Unbounded loops via `[` and `]`
 
 ### 3. Universal Computer
-```flow
+```text
 function simulate_program(program: [*i32], input: [*i32], output: [*i32], memory_size: i32)
 ```
 Implements a von Neumann architecture:
@@ -128,14 +128,14 @@ FLOW satisfies the Church-Turing thesis because it can:
    - Head at position j → index = j
 
 4. **Transition Function**: δ(state, symbol) → FLOW function
-   ```flow
+   ```text
    function transition(state: i32, symbol: i32) -> (i32, i32, i32) {
        # Returns (new_state, new_symbol, head_direction)
    }
    ```
 
 5. **Universal Simulation**: Single FLOW function can simulate any TM
-   ```flow
+   ```text
    function universal_turing_machine(tape: [*i32], transitions: [*i32]) -> i32
    ```
 

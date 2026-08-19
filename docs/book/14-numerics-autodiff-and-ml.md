@@ -25,7 +25,7 @@ catalog; the book describes the families and their contracts.
 
 ## 14.2 Tolerances
 
-```flow
+```text
 function near(a: f64, b: f64, tolerance: f64) -> bool {
     return abs(a - b) <= tolerance
 }
@@ -67,7 +67,7 @@ function centred_gradient(x: f64, h: f64) -> f64 {
 
 At `x = 3`, the analytic derivative is `29`.
 
-```flow
+```text
 let estimate: f64 = centred_gradient(3.0, 0.0001)
 let reference: f64 = analytic_gradient(3.0)
 let error: f64 = estimate - reference
@@ -94,7 +94,7 @@ check should therefore try several step sizes.
 
 ## 14.4 SIMD vectors
 
-```flow
+```text
 let a: vec<f32, 4> = <1.0, 2.0, 3.0, 4.0>
 let b: vec<f32, 4> = <4.0, 3.0, 2.0, 1.0>
 let c: vec<f32, 4> = a + b
@@ -125,7 +125,7 @@ word “matrix”.
 
 A dual value carries a primal value and one directional derivative:
 
-```flow
+```text
 import "stdlib/autodiff.flow"
 
 let x: Dual = dual(3.0, 1.0)

@@ -10,7 +10,7 @@ allocation, and lifetime domains check selected escape and call rules.
 Primitive values and structs are passed and assigned by value unless a pointer
 or span is used:
 
-```flow
+```text
 let p: Point = Point { x: 3, y: 4 }
 let q: Point = p
 ```
@@ -94,7 +94,7 @@ function clear(samples: span<mut f32>) -> void {
 
 Arrays and slices borrow into spans at a call site:
 
-```flow
+```text
 let mut signal: array<f32, 256> = [0.0; 256]
 let window: span<f32> = signal[64..128]
 let value: f32 = total(window)
@@ -112,7 +112,7 @@ FLOW_HOST=python ./flow run examples/basics/spans.flow
 
 An arena allocates one large region and advances an offset for each request:
 
-```flow
+```text
 let mut arena: Arena = arena_create(1024 * 1024)
 defer arena_destroy(&arena)
 

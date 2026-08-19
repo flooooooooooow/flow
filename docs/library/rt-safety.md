@@ -11,7 +11,7 @@ Mark a function with the `@rt_safe` attribute to have the type checker reject
 any call — direct or transitive — from that function into a heap-touching
 API:
 
-```flow
+```text
 @rt_safe
 function process_block(state: ptr<FilterState>, block_size: i32) -> void {
     let mut i: i32 = 0
@@ -74,7 +74,7 @@ supports attributes on `function` declarations.
 [Lifetime domains](../language/lifetime-domains.md) answer the other one: how
 long does this memory live, and who is allowed to keep a reference to it.
 
-```flow
+```text
 @lifetime(callback)
 function process_block(state: ptr<FilterState>, n: i32) -> void { }
 ```

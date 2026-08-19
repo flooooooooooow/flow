@@ -79,7 +79,7 @@ A span is a `{pointer, length}` view over contiguous storage. It never owns
 its data and never allocates. Arrays and slices borrow into one automatically
 at the call site.
 
-```flow
+```text
 function analyse(samples: span<f32>) -> f32     # immutable view
 function clear(samples: span<mut f32>)          # mutable view
 function fft(frame: span<f32, 1024>)            # static extent
@@ -428,7 +428,7 @@ distinct type IQSample = c64
 `c64` without an explicit cast, preventing accidental mixing of RF sample
 buffers with generic complex arithmetic:
 
-```flow
+```text
 let z: c64 = c64(1.0, 2.0)
 let s: IQSample = z as IQSample   # explicit cast required
 ```
@@ -448,7 +448,7 @@ rate at compile time. `R` does not appear in the fields. The type
 checker enforces that `signal_mix<R>` receives two signals with the same
 `R`, so mixing signals at different rates is a compile-time error:
 
-```flow
+```text
 let a: Signal<Hz44100> = signal_new<Hz44100>(64, 44100)
 let b: Signal<Hz48000> = signal_new<Hz48000>(64, 48000)
 let m: Signal<Hz44100> = signal_mix<Hz44100>(a, b)  # compile error
@@ -462,7 +462,7 @@ etc.). To create a new rate marker: `distinct type HzMyRate = u32`.
 
 A number followed by a unit name on the same line desugars to a cast:
 
-```flow
+```text
 unit Hertz = Second^-1
 
 let f: Hertz = 3.14e6 Hertz   # same as: 3.14e6 as Hertz

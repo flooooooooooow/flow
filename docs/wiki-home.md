@@ -146,7 +146,7 @@ Three signatures of the language. Full write-ups live under Language and Library
 <p class="wiki-showcase-label">Algebraic effects</p>
 <p class="wiki-showcase-desc">Call sites name typed effect interfaces. Enclosing handlers swap I/O, inventory, logging, time, configuration, and test policy for a dynamic scope.</p>
 
-```flow
+```text
 effect Inventory {
     stock_of(sku: i32) -> i32,
     reserve(sku: i32, qty: i32) -> i32,
@@ -182,7 +182,7 @@ flow Pendulum {
 <p class="wiki-showcase-label">Built-in autodiff</p>
 <p class="wiki-showcase-desc">Forward mode with dual numbers in the language, not a bolted-on library.</p>
 
-```flow
+```text
 function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
     return a * x * x + b * x + c
 }

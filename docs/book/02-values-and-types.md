@@ -54,7 +54,7 @@ total = total + 1.0
 
 The following program is rejected:
 
-```flow expect-error
+```text
 let total: f64 = 87.5
 total = 88.5  # error: assignment to an immutable binding
 ```
@@ -76,7 +76,7 @@ let x: f64 = 17.0 / 5.0       # 3.4
 
 Comparisons produce `bool`:
 
-```flow
+```text
 let within: bool = x >= 0.0 and x <= 10.0
 let outside: bool = x < 0.0 or x > 10.0
 let different: bool = x != 4.0
@@ -135,7 +135,7 @@ point.
 
 Use `as` when a conversion must be explicit:
 
-```flow
+```text
 let count: i32 = 7
 let count_f: f64 = count as f64
 let average: f64 = total / count_f

@@ -77,7 +77,7 @@ statistics look like at this size.
 `src/lib.flow` re-exports every submodule, so the package's 82 public symbols
 are all addressable under one name:
 
-```flow ignore="flowlm's own README; the package is not vendored into this repo"
+```text
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
 
@@ -85,7 +85,7 @@ A bare `import flowlm.lib` brings the same surface into scope without naming
 symbols. Importing a submodule directly still works and is the narrower
 dependency to declare:
 
-```flow ignore="flowlm's own README; the package is not vendored into this repo"
+```text
 import flowlm.model { flm_forward, flm_backward }
 ```
 
@@ -194,7 +194,7 @@ derivation.
 
 Run it alone:
 
-```flow
+```text
 import flowlm.gradcheck { flm_gradcheck }
 let ok: bool = flm_gradcheck(true)   # true = print the per-tensor table
 ```

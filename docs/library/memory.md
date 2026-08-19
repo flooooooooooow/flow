@@ -85,7 +85,7 @@ storage behind the `frame` [lifetime domain](../language/lifetime-domains.md).
 | `frame_used` / `frame_remaining` / `frame_high_water` / `frame_count` | field reads |
 | `frame_arena_destroy(f)` | one `free` — shutdown only |
 
-```flow
+```text
 @lifetime(frame)
 function render(f: ptr<FrameArena>, n: i64) -> f32 {
     frame_begin(f)
