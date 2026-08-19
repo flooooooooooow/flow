@@ -14,6 +14,8 @@ represents each one. A correct low-level translation is deliberately not the goa
 | [Games](games.md) | Complete, playable games: Snake, Tetris, Asteroids, Flappy, and more | 25 |
 | [Morphogenesis](morphogenesis.md) | Reaction-diffusion, Turing patterns, DLA, L-systems, Physarum, wave-2 | 40 |
 | [Neurons](neuro.md) | Hodgkin-Huxley, Izhikevich zoo, balanced E/I, Hopfield, CPG gaits | 15 |
+| [Opinion Dynamics](social.md) | Voter model, Sznajd, majority rule, and two bounded-confidence models | 5 |
+| [3D](threed.md) | A software rasterizer in Flow: solids, voxels, terrain, cameras, physics | 8 |
 | [Evolutionary Biology](evoleco.md) | Wright-Fisher through SIR, Muller ratchet, Red Queen, runaway selection | 25 |
 | [Planets](planet.md) | A staged cubesphere pipeline: tectonics through biomes | 7 |
 | [Procedural Generation](procgen.md) | Noise, heightmaps, caves, WFC, Voronoi, islands, biome tiles | 8 |

@@ -150,6 +150,14 @@
           "path": "demos/neuro.md"
         },
         {
+          "label": "Opinion Dynamics",
+          "path": "demos/social.md"
+        },
+        {
+          "label": "3D",
+          "path": "demos/threed.md"
+        },
+        {
           "label": "Evolutionary Biology",
           "path": "demos/evoleco.md"
         },
