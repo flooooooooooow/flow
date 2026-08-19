@@ -9,6 +9,7 @@ on:
       - 'src/**'
       - 'lib/**'
       - 'scripts/check_doc_examples.py'
+      - 'scripts/check_doc_examples_strict.py'
       - 'scripts/docs_blocks.py'
       - '.github/workflows/doc-examples-strict.yml'
   push:
@@ -27,4 +28,4 @@ jobs:
       - name: Compile all documented Flow code
         env:
           PYTHONPATH: src
-        run: python3 scripts/check_doc_examples.py --report --verbose --fail-on-unverified
+        run: python3 scripts/check_doc_examples_strict.py
