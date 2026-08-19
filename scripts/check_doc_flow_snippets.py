@@ -17,9 +17,8 @@ import check_doc_examples as checker
 from docs_blocks import collect
 
 # Strong signals are syntax-shaped rather than keyword-shaped. In particular,
-# output such as `flow  ~21,000 us` or `closed loop stable: yes` must not be
-# mistaken for a Flow declaration just because the first word is also a Flow
-# keyword.
+# compiler output such as `array<u8, 1024>` or `flow ~21,000 us` must not be
+# mistaken for source merely because it contains a Flow type or keyword.
 _STRONG = re.compile(
     r"(?:"
     r"^\s*(?:export\s+)?function\s+[A-Za-z_]\w*(?:<[^\n>]+>)?\s*\([^\n]*\)\s*->|"
@@ -49,7 +48,6 @@ _STRONG = re.compile(
     r"^\s*@[A-Za-z_]\w*|"
     r"\bevolves\s+as\b|"
     r"\bbecomes\b|"
-    r"\b(?:ptr|span|array)<[^\n>]+>|"
     r"\|>"
     r")",
     re.MULTILINE,
@@ -67,8 +65,6 @@ _RETURN = re.compile(r"^\s*return(?:\s+[^#\n]+)?\s*(?:#.*)?$", re.MULTILINE)
 def looks_like_flow(code: str) -> bool:
     if _STRONG.search(code) or _CONTROL.search(code):
         return True
-    # A bare return by itself is too generic, but in a multi-line snippet with
-    # a Flow comment or typed token it is useful supporting evidence.
     if _RETURN.search(code) and re.search(r"\b(?:i32|i64|f32|f64|bool|string|void)\b", code):
         return True
     return False
