@@ -340,9 +340,32 @@ def _from_mismatch(block: Block) -> str:
     return ""
 
 
-def verify(block: Block) -> Result:
+def _page_context(block: Block, context: Optional[dict]) -> tuple[str, str]:
+    """Return (text, error) for the earlier blocks this one names."""
+    if not block.uses:
+        return "", ""
+    if context is None:
+        return "", "uses= needs page context; call verify() through run()"
+    parts = []
+    for name in block.uses:
+        name = name.strip()
+        body = context.get(name)
+        if body is None:
+            return "", (
+                f"uses={name!r} names no earlier block on this page; add "
+                f"id={name} to the block it depends on"
+            )
+        parts.append(body.rstrip())
+    return "\n\n".join(parts) + "\n\n", ""
+
+
+def verify(block: Block, context: Optional[dict] = None) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
+
+    page, problem = _page_context(block, context)
+    if problem:
+        return Result(block, "unverified", detail=problem, stage="uses")
 
     drifted = _from_mismatch(block)
     if drifted:
@@ -351,6 +374,7 @@ def verify(block: Block) -> Result:
     preamble, problem = _preamble_text(block)
     if problem:
         return Result(block, "unverified", detail=problem, stage="preamble")
+    preamble = preamble + page
 
     modes = ("standalone",) if "no-harness" in block.flags else MODES
     first: tuple[str, str] = ("", "")
@@ -523,7 +547,15 @@ def run(use_clang: bool = True, execute: bool = False) -> list[Result]:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2)
 
-    results = [verify(b) for b in blocks]
+    # Ids are page-scoped and resolve backwards only, so a block can never
+    # depend on one further down the page.
+    results = []
+    contexts: dict = {}
+    for block in blocks:
+        page_ctx = contexts.setdefault(block.path, {})
+        results.append(verify(block, page_ctx))
+        if block.block_id:
+            page_ctx[block.block_id] = block.code
     if use_clang:
         _batch_clang(results)
         if execute:

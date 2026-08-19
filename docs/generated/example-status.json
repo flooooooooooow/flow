@@ -1,10 +1,10 @@
 {
   "generated": "2026-08-19",
   "totals": {
-    "verified": 500,
-    "unverified": 221,
+    "verified": 503,
+    "unverified": 220,
     "expected-error": 4,
-    "ignored": 68
+    "ignored": 66
   },
   "blocks": [
     {
@@ -116,9 +116,9 @@
       "key": "VISION.md#8707a3f22d05",
       "path": "VISION.md",
       "line": 53,
-      "status": "ignored",
-      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
-      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "VISION.md#bb179312e0f9",
@@ -284,9 +284,9 @@
       "key": "VISION.md#8707a3f22d05#2",
       "path": "VISION.md",
       "line": 324,
-      "status": "ignored",
-      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
-      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "VISION.md#3c099e822924",
@@ -1110,9 +1110,9 @@
       "key": "docs/book/06-pipelines-and-results.md#612092e1472d",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Function 'parse_port' is declared to return unknown type 'ResultI32', which is not declared in this scope"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#92702c928e65",
@@ -1128,7 +1128,7 @@
       "line": 152,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'parse_port'"
+      "detail": "Undefined function 'add'"
     },
     {
       "key": "docs/book/07-from-updates-to-flows.md#55bd2b1ccae1",

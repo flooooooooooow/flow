@@ -131,9 +131,17 @@ Four words go after `flow` on the opening fence:
 | `preamble=path` | The block needs declarations from a file to make sense on its own. |
 | `no-harness` | The block must compile exactly as written, with no wrapping. |
 | `from=path` | The block is a copy of that `.flow` file. CI fails if the two drift apart. |
+| `id=name` | Names this block so a later one on the same page can build on it. |
+| `uses=a,b` | Compile this block with the named earlier blocks in front of it. |
 
 An unknown word is an error rather than a silent pass, so `expect_error` fails
 loudly instead of being verified as ordinary code.
+
+Use `id=` and `uses=` for a chapter that builds a program up in pieces. The
+struct is shown once and the functions over it come later, so repeating the
+struct in every fence would be worse prose. Ids are page-scoped and resolve
+backwards only, and a `uses=` naming a block that has been renamed or moved
+fails the build rather than quietly verifying something else.
 
 Use `from=` whenever a page inlines a program and also links the real file.
 Without it there are two copies and only the file is covered by the test
