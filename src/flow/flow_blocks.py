@@ -73,6 +73,7 @@ from .parser import (
     FlowConnection,
     FlowDecl,
     FlowStage,
+    FlowStateDecl,
     FlowSyntaxError,
     FunctionCall,
     FunctionDecl,
@@ -263,6 +264,9 @@ def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
             )
         flow_by_name[d.name] = d
 
+    dimension_names = _dimension_type_names(declarations)
+    _reclassify_elided_states(flow_decls, flow_by_name, dimension_names)
+
     local_pure_functions = {
         d.name
         for d in declarations
@@ -279,7 +283,8 @@ def expand_flow_decls(declarations: List[Any], source: str = "") -> List[Any]:
         if isinstance(decl, FlowDecl):
             _expand_flow_pipelines(decl, flow_by_name, source)
             _validate_flow(
-                decl, local_pure_functions, taken_names, source, flow_by_name
+                decl, local_pure_functions, taken_names, source, flow_by_name,
+                dimension_names,
             )
             result.extend(_lower_flow(decl, flow_by_name))
         else:
@@ -297,12 +302,74 @@ def _error(message: str, line: Optional[int], source: str, suggestion: str = Non
                            suggestion=suggestion)
 
 
+# Types a bare `name : T` member may carry and still be state rather than a
+# nested flow. Anything else has to name a flow, which is what makes
+# `plant : Motor` composition and `angle : Angle` a dimensioned state.
+_SCALAR_STATE_TYPES = frozenset({
+    "f32", "f64", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+})
+
+
+def _dimension_type_names(declarations: List[Any]) -> Set[str]:
+    """Names a flow member may carry as a dimension.
+
+    A unit is already an ordinary field type: `struct Pose { theta: Angle }`
+    compiles and stores an f64. Flow members were restricted to f64 and f32
+    only because nothing had needed more.
+    """
+    return {
+        getattr(d, "name", "")
+        for d in declarations
+        if type(d).__name__ in ("UnitDecl", "DistinctTypeDecl", "TypeAliasDecl")
+        and getattr(d, "name", "")
+    }
+
+
+def _reclassify_elided_states(
+    flow_decls: List[FlowDecl],
+    flow_by_name: Dict[str, FlowDecl],
+    dimension_names: Set[str],
+) -> None:
+    """Turn `angle : Angle` into a state declaration.
+
+    A flow body reads `plant : Motor` as composition, so a member naming
+    anything that is not a flow was an error. A unit or a scalar is the other
+    thing a bare member can sensibly mean: state carrying a dimension. The
+    parser already accepts the form; this decides which of the two it is.
+
+    Elided state has no initializer, so it starts at zero. Writing
+    `state x : f64 = 0.0` stays available and stays equivalent.
+    """
+    for flow in flow_decls:
+        children = list(getattr(flow, "children", None) or [])
+        if not children:
+            continue
+        remaining = []
+        for child in children:
+            type_name = getattr(child.type, "name", "")
+            if type_name in flow_by_name or type_name not in (
+                _SCALAR_STATE_TYPES | dimension_names
+            ):
+                remaining.append(child)
+                continue
+            flow.states.append(
+                FlowStateDecl(
+                    name=child.name,
+                    type=child.type,
+                    initializer=None,
+                    line=getattr(child, "line", 0),
+                )
+            )
+        flow.children = remaining
+
+
 def _validate_flow(
     flow: FlowDecl,
     local_pure_functions: Set[str],
     taken_names: Set[str],
     source: str,
     flow_by_name: Optional[Dict[str, FlowDecl]] = None,
+    dimension_names: Optional[Set[str]] = None,
 ) -> None:
     flow_line = (flow.location.line + 1) if flow.location else None
     children = list(getattr(flow, "children", None) or [])
@@ -348,12 +415,15 @@ def _validate_flow(
                 f"(reserved for compiler-generated fields)",
                 member.line, source,
             )
-        if member.type.name not in _MEMBER_TYPES:
+        if member.type.name not in _MEMBER_TYPES and member.type.name not in (
+            dimension_names or set()
+        ):
             raise _error(
                 f"{kind} '{member.name}' in flow '{flow.name}' has type "
-                f"'{member.type.name}'; flow members must be f64 or f32 in "
-                f"this version",
+                f"'{member.type.name}'; a flow member is f64, f32, or a "
+                f"declared unit",
                 member.line, source,
+                suggestion="declare the dimension with 'unit Angle' first",
             )
         members[member.name] = kind
 
@@ -387,12 +457,10 @@ def _validate_flow(
 
     for state in flow.states:
         if state.initializer is None:
-            raise _error(
-                f"state '{state.name}' in flow '{flow.name}' needs an "
-                f"initial value",
-                state.line, source,
-                suggestion=f"write 'state {state.name} : {state.type.name} = 0.0'",
-            )
+            # State starts at rest. Requiring `= 0.0` on every member made the
+            # common case noisier than the model it describes, and a flow
+            # written as `angle : Angle` has nowhere to put one.
+            state.initializer = Literal("0.0", Type("f64"))
     for param in flow.params:
         if param.initializer is None:
             raise _error(
@@ -986,7 +1054,7 @@ def _lower_flow(
     clauses = _invariant_clauses(flow)
 
     functions = [
-        _make_new(flow, ordered),
+        _make_new(flow, ordered, set(flow_by_name)),
         _make_init(flow, member_names, member_types, has_outputs),
         _make_derivs(flow, member_names, member_types, evolved),
         _make_step(
@@ -1033,14 +1101,52 @@ def _zero() -> Literal:
     return Literal("0.0", Type("f32"))
 
 
-def _zero_of(t: Type):
+def _as_state_delta(expr, state_type: Type):
+    """`rate * dt` carries the state's dimension once integrated.
+
+    The rate is a plain number (see _derivative_type), so adding it to a
+    dimensioned state is a dimensional error until it is named as a delta in
+    that dimension.
+    """
+    if state_type.name in _MEMBER_TYPES:
+        return expr
+    return CastExpression(expr, state_type)
+
+
+def _derivative_type(state_type: Type) -> Type:
+    """Type of d(state)/dt.
+
+    A dimensioned state has a dimensioned rate: d(Angle)/dt is an angular
+    velocity, not an angle. Flow has no way to spell that division yet, so
+    the derivative is carried as a plain number and only the state itself is
+    dimension checked. Writing the rate's own unit is what the north-star
+    document describes and is not implemented here.
+    """
+    if state_type.name in _MEMBER_TYPES:
+        return state_type
+    return Type("f64")
+
+
+def _zero_of(t: Type, flow_names: Optional[Set[str]] = None):
     """Default value for a struct field: numeric zero, or Child_new() for
-    nested flow members (spec §8)."""
+    nested flow members (spec §8).
+
+    A dimensioned member is stored as a number, so its zero is a number too.
+    Sending it through Name_new asked for a constructor a `unit` never
+    generates.
+    """
     if t.name == "i64":
         return _i64(0)
+    # Only a nested flow has a generated Name_new. A dimensioned member is
+    # stored as a number, so its zero is a number; sending it through Name_new
+    # asked for a constructor a `unit` never generates.
     if t.name in _MEMBER_TYPES:
         return _zero()
-    # Nested flow / struct field: construct via the generated Name_new API.
+    if flow_names is not None and t.name not in flow_names:
+        # A dimensioned member is stored as a number, but a bare 0.0 is
+        # dimensionless and the unit checker rejects it, so the zero carries
+        # the dimension explicitly.
+        return CastExpression(_zero(), t)
     return FunctionCall(f"{t.name}_new", [])
 
 
@@ -1098,13 +1204,15 @@ def _flow_fn(flow: FlowDecl, suffix: str, parameters, return_type, statements):
     )
 
 
-def _make_new(flow: FlowDecl, ordered) -> FunctionDecl:
+def _make_new(flow: FlowDecl, ordered, flow_names: Optional[Set[str]] = None) -> FunctionDecl:
     """Name_new() -> Name: zero the struct, then apply declared defaults."""
     statements = [
         VarDecl(
             "self",
             Type(flow.name),
-            StructLiteral(flow.name, [(name, _zero_of(t)) for name, t in ordered]),
+            StructLiteral(
+                flow.name, [(name, _zero_of(t, flow_names)) for name, t in ordered]
+            ),
             is_mutable=True,
         ),
         FunctionCall(f"{flow.name}_init", [UnaryOperation("&", Variable("self"))]),
@@ -1183,7 +1291,7 @@ def _make_derivs(flow: FlowDecl, member_names, member_types, evolved) -> Functio
     parameters = [Parameter("self", _self_ptr_type(flow.name))]
     statements = []
     for ev in _in_state_order(flow, evolved):
-        state_type = member_types[ev.target]
+        state_type = _derivative_type(member_types[ev.target])
         parameters.append(
             Parameter(
                 f"d_{ev.target}",
@@ -1249,7 +1357,7 @@ def _euler_integration(flow: FlowDecl, ordered_evolved, member_types):
     """Explicit Euler with simultaneous update (spec 2.4)."""
     statements = []
     for ev in ordered_evolved:
-        state_type = member_types[ev.target]
+        state_type = _derivative_type(member_types[ev.target])
         statements.append(
             VarDecl(f"d_{ev.target}", Type(state_type.name), _zero(),
                     is_mutable=True)
@@ -1264,9 +1372,12 @@ def _euler_integration(flow: FlowDecl, ordered_evolved, member_types):
                 BinaryOperation(
                     FieldAccess(Variable("self"), ev.target),
                     "+",
-                    BinaryOperation(
-                        Variable(f"d_{ev.target}"), "*",
-                        _dt_for_state(state_type),
+                    _as_state_delta(
+                        BinaryOperation(
+                            Variable(f"d_{ev.target}"), "*",
+                            _dt_for_state(state_type),
+                        ),
+                        state_type,
                     ),
                 ),
             )

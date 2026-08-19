@@ -692,6 +692,21 @@ class TypeChecker:
             return t.dims
         return None
 
+    def _is_radian(self, t) -> bool:
+        """Radian, or an alias for it.
+
+        A type alias is transparent everywhere else, so `type Angle = Radian`
+        has to satisfy the same check: without this, sin(angle) was refused
+        for an angle measured in radians.
+        """
+        while t is not None:
+            if getattr(t, "name", None) == "Radian":
+                return True
+            if getattr(t, "kind", None) != TypeKind.TYPE_ALIAS:
+                return False
+            t = getattr(t, "base_type", None)
+        return False
+
     def _format_dims(self, dims: Tuple[int, ...]) -> str:
         """Printable name for an anonymous dimensioned type, in the spec's
         style: Meter*Kilogram/Second^2. An empty numerator prints as 1."""
@@ -3332,7 +3347,7 @@ class TypeChecker:
             if any(self._dims_of(t) is not None for t in arg_types):
                 for arg_type in arg_types:
                     arg_dims = self._dims_of(arg_type)
-                    if arg_dims is None or arg_type.name == "Radian":
+                    if arg_dims is None or self._is_radian(arg_type):
                         continue
                     self.errors.append(
                         f"dimensional error: {call.name}() requires a "
