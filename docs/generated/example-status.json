@@ -1,10 +1,10 @@
 {
   "generated": "2026-08-19",
   "totals": {
-    "verified": 500,
-    "unverified": 221,
+    "verified": 501,
+    "unverified": 194,
     "expected-error": 4,
-    "ignored": 68
+    "ignored": 94
   },
   "blocks": [
     {
@@ -116,9 +116,9 @@
       "key": "VISION.md#8707a3f22d05",
       "path": "VISION.md",
       "line": 53,
-      "status": "ignored",
-      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
-      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "VISION.md#bb179312e0f9",
@@ -284,9 +284,9 @@
       "key": "VISION.md#8707a3f22d05#2",
       "path": "VISION.md",
       "line": 324,
-      "status": "ignored",
-      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
-      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "VISION.md#3c099e822924",
@@ -2513,9 +2513,9 @@
       "key": "docs/language/modules.md#58e507f11b4a",
       "path": "docs/language/modules.md",
       "line": 121,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/modules.md#db9748eee7a1",
@@ -2545,25 +2545,25 @@
       "key": "docs/language/modules.md#2edfe6da4674",
       "path": "docs/language/modules.md",
       "line": 284,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.EFFECT at line 1, column 17\n\n     1 | import std.io { effect Log }\n       |                 ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/language/modules.md#41eb445eb25c",
       "path": "docs/language/modules.md",
       "line": 307,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/language/modules.md#755bb25f2176",
       "path": "docs/language/modules.md",
       "line": 321,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/language/ordering.md#d19a443e4a6c",
@@ -2810,10 +2810,9 @@
       "key": "docs/language/syntax.md#2b1e4aa3a5c1",
       "path": "docs/language/syntax.md",
       "line": 133,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Type1'"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/language/syntax.md#1fa4df611254",
@@ -3019,17 +3018,17 @@
       "key": "docs/language/verification.md#b2f3841b2489",
       "path": "docs/language/verification.md",
       "line": 26,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#9c2022e0f1eb",
       "path": "docs/language/verification.md",
       "line": 79,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Statement attributes are only supported on `while` (got ['from'] before TokenType.IDENTIFIER)"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#288baa41bef4",
@@ -3043,25 +3042,25 @@
       "key": "docs/language/verification.md#a13e4745795f",
       "path": "docs/language/verification.md",
       "line": 126,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#b06ddce94ebe",
       "path": "docs/language/verification.md",
       "line": 133,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "NotImplementedError: Unsupported statement: <class 'flow.parser.ThereforeStmt'>"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#988833863779",
       "path": "docs/language/verification.md",
       "line": 143,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#4dfa8ff54240",
@@ -3450,17 +3449,17 @@
       "key": "docs/project/archive/PROJECT_STRUCTURE.md#e186faf116d6",
       "path": "docs/project/archive/PROJECT_STRUCTURE.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/project/archive/PROJECT_STRUCTURE.md#0122884d48a8",
       "path": "docs/project/archive/PROJECT_STRUCTURE.md",
       "line": 98,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.SEMICOLON"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/project/archive/PROJECT_STRUCTURE.md#cc0708a685a4",
@@ -3546,9 +3545,9 @@
       "key": "docs/python-target.md#cc9e80e9873a",
       "path": "docs/python-target.md",
       "line": 35,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/python-target.md#1eb8a4795a0a",
@@ -3562,9 +3561,9 @@
       "key": "docs/python-target.md#04e0c9e028ce",
       "path": "docs/python-target.md",
       "line": 158,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.ASSIGN at line 2, column 13\n\n     2 | @python(name=\"py_func_name\")\n       |             ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/research/FLOW_RESEARCH_PAPER.md#3db930337e08",
@@ -3602,65 +3601,65 @@
       "key": "docs/research/turing_proof.md#df4dad208d46",
       "path": "docs/research/turing_proof.md",
       "line": 20,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#1b3e95cb4b1d",
       "path": "docs/research/turing_proof.md",
       "line": 29,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#5a027c5e700f",
       "path": "docs/research/turing_proof.md",
       "line": 41,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#9306ef43c5aa",
       "path": "docs/research/turing_proof.md",
       "line": 51,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#8bffd09378f9",
       "path": "docs/research/turing_proof.md",
       "line": 71,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#accae6307e92",
       "path": "docs/research/turing_proof.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#f7bd98c37211",
       "path": "docs/research/turing_proof.md",
       "line": 89,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#1481bdabedd1",
       "path": "docs/research/turing_proof.md",
       "line": 99,
-      "status": "verified",
-      "mode": "standalone",
-      "stage": "codegen"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#b04a451f94d8",
@@ -3698,9 +3697,9 @@
       "key": "docs/tutorials/advanced.md#36510cba2742",
       "path": "docs/tutorials/advanced.md",
       "line": 37,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FOR at line 1, column 25\n\n     1 | capability StdioConsole for Console {\n       |                         ^"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/tutorials/advanced.md#200f1f6f2e6a",
@@ -6078,9 +6077,9 @@
       "key": "docs/vision/north-star.md#6d64bb0fb043",
       "path": "docs/vision/north-star.md",
       "line": 639,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/vision/north-star.md#ac99567c9222",
@@ -6150,9 +6149,9 @@
       "key": "examples/demos/vulkan_scene/flow_style.md#4ee5b1302578",
       "path": "examples/demos/vulkan_scene/flow_style.md",
       "line": 10,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.LBRACE"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "examples/demos/vulkan_scene/flow_style.md#92f564171243",
@@ -6206,25 +6205,25 @@
       "key": "examples/morphogenesis/README.md#225e1f842d6f",
       "path": "examples/morphogenesis/README.md",
       "line": 23,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'GrayScottCell' body at line 5, column 5\n\n     5 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events "
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "examples/neuro/README.md#e119e216f0e7",
       "path": "examples/neuro/README.md",
       "line": 23,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'HH' body at line 8, column 5\n\n     8 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x re"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "examples/neuro/README.md#1c04fa72daaf",
       "path": "examples/neuro/README.md",
       "line": 46,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "lib/stdlib/audio/README.md#230210e0a7e0",

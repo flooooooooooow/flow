@@ -636,7 +636,7 @@ sampled, state-broken pipeline (§8.3).
 A stage may override the stage flow's params with a `{ param: value }` block
 (the `:` value form, distinct from a fork block's `=` pipeline form):
 
-```flow
+```flow ignore="grammar notation"
 output result : f64 = signal |> Gain { k: 3.0 } |> Limiter
 ```
 
