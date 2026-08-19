@@ -627,10 +627,12 @@ The real limit is the type: module statics must be a primitive, a fixed array of
 `ptr<T>`. A handler accumulating strings or structs has nowhere to put them, and should use the
 explicit-state policy pattern shown above. See issue #562.
 
-**Dynamic capability objects are not supported.** The `capability EffectName` parameter style is
-rejected by the type checker, and under `--lenient` it reaches the backend and emits C that does
-not compile. Install named capability blocks with `handle ... with ...` instead. The older
-examples were rewritten to this supported form in issue #119; see issue #561.
+**Dynamic capability objects are not supported.** A function may declare a `capability EffectName`
+parameter and call operations on it, but there is no way to produce the value to pass. A capability
+is a handler rather than a value, so naming one at a call site is a type error in both strict and
+lenient mode, with a message pointing at `handle`. Install named capability blocks with
+`handle ... with ...` instead. The older examples were rewritten to this supported form in
+issue #119; see issue #561.
 
 **Handlers do not expose general resumable continuations.** An operation returns to its call site.
 A handler cannot currently abort the whole computation, replay it, or resume it multiple times.
