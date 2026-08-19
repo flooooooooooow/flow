@@ -1,38 +1,19 @@
 # 18. A complete instrument
 
-The final example joins several parts of Flow in a small instrument. Separate
-modules sample a signal, estimate its state, apply control, record diagnostics,
-and draw a native display.
+The final example joins several parts of Flow in a small instrument. Separate modules sample a signal, estimate its state, apply control, record diagnostics, and draw a native display. Every `flow` block in this chapter is compiler-checked in CI.
 
 ## 18.1 Architecture
 
-```text
-device input
-    -> callback-domain sample buffer
-    -> DSP and estimator
-    -> controller
-    -> bounded actuator command
-    -> telemetry channel
-    -> frame-domain display and recorder
-```
-
-The real-time path owns no heap allocation, file I/O, GPU submission, or
-blocking lock. Telemetry crosses into a non-real-time consumer through a
-preallocated channel or lock-free ring.
+The data path is: device input → callback-domain sample buffer → DSP/estimator → controller → bounded actuator command → telemetry → frame-domain display/recorder. The real-time path owns no heap allocation, file I/O, GPU submission, or blocking lock.
 
 ## 18.2 Model
 
 ```flow
-unit Second
-unit Position
-unit Velocity = Position / Second
-
-flow Plant {
+flow InstrumentPlant {
     state position: f64 = 0.0
     state velocity: f64 = 0.0
     input command: f64
     output measured: f64 = position
-
     param damping: f64 = 0.2
     param stiffness: f64 = 4.0
 
@@ -46,30 +27,43 @@ flow Plant {
 }
 ```
 
-The flow supplies a simulation plant. A hardware build replaces the input and
-actuator boundary without changing estimator and control functions.
+A hardware build can replace the plant boundary without changing pure estimator/control functions.
 
 ## 18.3 Controller
 
-```text
+```flow
 struct Controller {
     kp: f64,
     kd: f64,
     limit: f64
 }
 
+function clamp_command(value: f64, limit: f64) -> f64 {
+    if value < -limit { return -limit }
+    if value > limit { return limit }
+    return value
+}
+
 function control(c: Controller, target: f64, position: f64, velocity: f64) -> f64 {
     let raw: f64 = c.kp * (target - position) - c.kd * velocity
-    return raw |> clamp(-c.limit, _, c.limit)
+    return clamp_command(raw, c.limit)
 }
 ```
 
-The pure controller is independently testable. A `represent linear` model can
-be analysed for controllability and used to derive an LQR alternative.
+The controller is pure and independently testable.
 
 ## 18.4 Real-time boundary
 
-```text
+```flow
+struct InstrumentState {
+    gain: f32
+}
+
+@rt_safe
+function process_sample(sample: f32, state: ptr<InstrumentState>) -> f32 {
+    return sample * state.gain
+}
+
 @lifetime(callback)
 @rt_safe
 function process_block(
@@ -83,8 +77,7 @@ function process_block(
 }
 ```
 
-All state and buffers are allocated during setup. The callback performs
-bounded indexed work only.
+All state and buffers are allocated during setup. The callback performs bounded indexed work only.
 
 ## 18.5 Effects at the outer boundary
 
@@ -95,71 +88,26 @@ effect InstrumentLog {
 }
 ```
 
-Simulation installs a deterministic recorder. A desktop build installs a file
-or console capability outside the callback. A test installs an in-memory
-capability and checks the resulting sequence.
+Simulation can install a deterministic recorder, a desktop build can install a file/console capability outside the callback, and tests can install an in-memory capability.
 
 ## 18.6 Display and recording
 
-The display consumes telemetry at frame rate, draws the latest state and a
-bounded history, and can be captured with `flow record`. It never reads
-callback-owned scratch storage after the callback ends; transferred values are
-copied into frame or session storage.
+The display consumes copied telemetry at frame rate, draws current state plus a bounded history, and can be captured with `flow record`. It never retains callback-owned scratch storage past the callback lifetime.
 
 ## 18.7 Project layout
 
-```text
-instrument/
-├── flow.toml
-├── src/
-│   ├── main.flow
-│   ├── model.flow
-│   ├── controller.flow
-│   ├── callback.flow
-│   ├── telemetry.flow
-│   └── display.flow
-├── tests/
-│   ├── controller.flow
-│   ├── convergence.flow
-│   └── callback_safety.flow
-└── native/
-    └── device_bridge.c
-```
-
-Modules export only the required names. The manifest records native sources
-and dependencies; the lock file fixes dependency revisions.
+A realistic project splits `main`, model, controller, callback, telemetry, and display modules, with separate tests and any native device bridge. Modules export only required names and the manifest/lock file capture native sources and dependencies.
 
 ## 18.8 Verification sequence
 
-1. Unit-test pure controller and estimator functions.
-2. Compare simulation against an analytic or independent reference.
-3. Repeat with smaller integration steps and report convergence.
-4. Compile the callback under `@rt_safe` and lifetime-domain checks.
-5. Run UBSan, ASan, and TSan on their applicable configurations.
-6. Inspect the declarative compilation plan.
-7. Compile with the safety profile and scan generated C.
-8. Record a deterministic display run.
-9. Measure callback duration and missed deadlines on the target machine.
-10. Preserve version, flags, manifest, lock file, generated C, and results.
+Unit-test pure controller/estimator functions; compare simulation with a reference; run time-step refinement; compile callback paths under RT/lifetime checks; use applicable sanitizers; inspect declarative plans; compile with safety profile; record deterministic output; measure target callback duration; preserve versions, flags, lock data, generated C, and results.
 
 ## 18.9 Target variants
 
-| Variant | Components |
-|---|---|
-| command-line simulation | model, controller, table output |
-| native instrument | device bridge, callback, display |
-| browser demonstration | WASM model, WebGPU display, browser-safe I/O |
-| Python analysis package | exported model/controller functions in a wheel |
-| certified deployment candidate | C backend, safety profile, target evidence |
-
-Each variant uses a documented subset of the language. Backend selection is an
-architectural decision, not a final build flag applied after implementation.
+The same architecture can support command-line simulation, a native instrument, browser/Wasm demonstration, Python analysis package, or a safety-profile C deployment candidate. Each target should name the language/runtime subset it relies on.
 
 ## 18.10 Completion criterion
 
-The instrument is complete when its interfaces, numeric assumptions, memory
-ownership, lifetime domains, effect requirements, target support, failure
-modes, and validation evidence are all explicit. A successful demonstration is
-necessary but not sufficient.
+The instrument is complete when interfaces, numeric assumptions, ownership, lifetime domains, effect requirements, target support, failure modes, and validation evidence are explicit. A successful demo alone is insufficient.
 
 Continue with the [feature coverage index](appendix-b-feature-coverage.md).
