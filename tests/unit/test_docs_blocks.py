@@ -411,3 +411,27 @@ def test_a_block_that_is_only_declarations_does_not_use_split_wrap():
 
     decls, stmts = _split_declarations("struct A {\n    x: i32\n}")
     assert stmts.strip() == ""
+
+
+def test_identical_blocks_in_one_file_get_distinct_keys():
+    """Two byte-identical blocks would otherwise share one ledger row.
+
+    VISION.md and lib/stdlib/audio/README.md each repeat a block verbatim, so
+    the ledger held one fewer entry than there were blocks and the ratchet
+    could not distinguish them.
+    """
+    text = "```flow\nlet mut a: i32 = 1\n```\n\ntext\n\n```flow\nlet mut a: i32 = 1\n```\n"
+    first, second = list(iter_blocks(text, "x.md"))
+    assert first.occurrence == 1
+    assert second.occurrence == 2
+    assert first.key != second.key
+    assert second.key == first.key + "#2"
+
+
+def test_a_moved_block_keeps_its_key():
+    """The suffix counts occurrences, so it must not depend on line numbers."""
+    body = "```flow\nlet mut a: i32 = 1\n```\n"
+    early = list(iter_blocks(body, "x.md"))[0]
+    late = list(iter_blocks("intro\n\nmore\n\n" + body, "x.md"))[0]
+    assert early.line != late.line
+    assert early.key == late.key

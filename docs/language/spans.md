@@ -162,7 +162,7 @@ error: static extent mismatch: parameter 'values' of 'matrix4' expects
 
 A span may not outlive its storage:
 
-```flow
+```flow expect-error
 function invalid() -> span<i32> {
     let local: array<i32, 3> = [1, 2, 3]
     return local[0..3]

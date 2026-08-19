@@ -54,7 +54,7 @@ total = total + 1.0
 
 The following program is rejected:
 
-```flow
+```flow expect-error
 let total: f64 = 87.5
 total = 88.5  # error: assignment to an immutable binding
 ```
