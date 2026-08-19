@@ -146,7 +146,7 @@ device or file, or submit GPU work. The check is the existing `@rt_safe`
 whole-program call graph, so nothing new can slip past it that `@rt_safe`
 would have caught.
 
-```flow
+```flow expect-error
 @lifetime(callback)
 function process(n: i32) -> i32 {
     let p: ptr<void> = malloc(64)
@@ -199,7 +199,7 @@ The two domains differ in exactly one place: a lock. `frame` permits
 Both functions must be annotated for this to fire. It checks declared intent
 against declared intent, so it has no false positives on unannotated code.
 
-```flow
+```flow expect-error
 @lifetime(session)
 function reload_preset(id: i32) -> i32 { return id }
 
