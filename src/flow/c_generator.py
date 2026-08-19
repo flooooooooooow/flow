@@ -151,6 +151,10 @@ class CGenerator:
     ) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
+        # Wrappers for `array<T, N>` returns; see _array_return_struct (#573).
+        self._array_return_structs = {}  # struct name -> (elem C type, size)
+        self._array_return_fns = {}  # flow function name -> its array return Type
+        self._array_ret_unwrapping = set()  # guards the `.v` rewrite from recursing
         self._enums = {}  # name -> EnumDecl
         self._enum_variant_owner = {}  # "Enum_Variant" -> "Enum" (for path/const match patterns)
         self._var_types = {}  # name -> Type
@@ -1060,6 +1064,26 @@ class CGenerator:
                            # stdlib.h
                            'exit', 'abort'}
         primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
+
+        # An `array<T, N>` return needs its wrapper struct typedef'd before any
+        # prototype mentions it, so register them all up front (#573).
+        for fn in functions:
+            sized = self._sized_array_type(getattr(fn, "return_type", None))
+            if sized:
+                self._array_return_struct(fn.return_type)
+            # Overloads that disagree cannot be told apart from the call name
+            # alone, so leave those on the old path rather than guess.
+            if fn.name in self._array_return_fns and not sized:
+                self._array_return_fns[fn.name] = None
+            elif sized and self._array_return_fns.get(fn.name, "unset") == "unset":
+                self._array_return_fns[fn.name] = fn.return_type
+            elif not sized:
+                self._array_return_fns.setdefault(fn.name, None)
+        for name, (elem_c, size) in sorted(self._array_return_structs.items()):
+            lines.append(f"typedef struct {{ {elem_c} v[{size}]; }} {name};")
+        if self._array_return_structs:
+            lines.append("")
+
         for fn in functions:
             # Skip standard library functions - they're declared in system headers
             if fn.name in stdlib_functions:
@@ -2191,8 +2215,41 @@ class CGenerator:
 
         return (" ".join(parts) + " ") if parts else ""
 
+    def _sized_array_type(self, t) -> bool:
+        """True for `array<T, N>` of a non-array element.
+
+        A nested `array<array<T, N>, M>` is represented as an array of
+        pointers everywhere in this generator, not as `T[M][N]`, so wrapping
+        only its return value would still hand back pointers into the dead
+        frame. Left on the old path until the representation changes; see
+        the follow-up issue referenced from #573.
+        """
+        if t is None or not getattr(t, "name", "").startswith("array_"):
+            return False
+        element = getattr(t, "element_type", None)
+        if not getattr(t, "size", None) or element is None:
+            return False
+        return not getattr(element, "name", "").startswith("array_")
+
+    def _array_return_struct(self, t) -> str:
+        """Name the struct that carries an `array<T, N>` return value.
+
+        Returning `T*` hands the caller a pointer into the callee's frame,
+        which stops existing the moment the call returns (#573). A struct
+        holding the array is returned by value, so the data comes back with
+        it. Every consumer reads `.v`, which decays to the same `T*` the old
+        signature produced, so nothing downstream changes.
+        """
+        elem_c = self._c_type(t.element_type)
+        name = f"_flow_arr_{_c_ident(elem_c.replace(' ', '_').replace('*', 'p'))}_{t.size}"
+        self._array_return_structs[name] = (elem_c, t.size)
+        return name
+
     def _c_function_decl(self, fn: FunctionDecl, use_mangled: bool = True) -> str:
-        ret = self._c_type(fn.return_type)
+        if self._sized_array_type(fn.return_type):
+            ret = self._array_return_struct(fn.return_type)
+        else:
+            ret = self._c_type(fn.return_type)
         if getattr(fn, "is_variadic", False):
             if fn.parameters:
                 params = ", ".join([f"{self._c_type(p.type)} {_c_ident(p.name)}" for p in fn.parameters])
@@ -2700,6 +2757,17 @@ class CGenerator:
                 return [
                     f"{self._i()}return "
                     f"{self._gen_span_borrow(st.value, self._current_return_type)};"
+                ]
+            # `array<T, N>` travels home inside its wrapper struct, so the data
+            # is copied out of the frame instead of pointed at (#573).
+            if self._sized_array_type(self._current_return_type):
+                wrapper = self._array_return_struct(self._current_return_type)
+                tmp = f"_flow_arr_ret_{id(st) & 0xFFFFFF}"
+                value = self._gen_expr(st.value)
+                return [
+                    f"{self._i()}{wrapper} {tmp};",
+                    f"{self._i()}memcpy({tmp}.v, {value}, sizeof({tmp}.v));",
+                    f"{self._i()}return {tmp};",
                 ]
             return [f"{self._i()}return {self._gen_expr(st.value)};"]
 
@@ -3784,6 +3852,16 @@ class CGenerator:
             return self._gen_find_expr(e)
 
         if isinstance(e, FunctionCall):
+            # A function returning `array<T, N>` hands back a wrapper struct
+            # (#573). Reading `.v` gives the same `T*` the old signature
+            # produced, so every consumer below stays as it was.
+            arr_ret = self._array_return_fns.get(e.name)
+            if arr_ret is not None and id(e) not in self._array_ret_unwrapping:
+                self._array_ret_unwrapping.add(id(e))
+                try:
+                    return f"{self._gen_expr(e)}.v"
+                finally:
+                    self._array_ret_unwrapping.discard(id(e))
             # array<T>(N) constructor → calloc(N, sizeof(elem)).
             # The parser lowers `array<f32>(10)` to FunctionCall("array_f32", [10]);
             # emit a calloc so the call resolves without a missing symbol (#270).
