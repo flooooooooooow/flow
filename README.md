@@ -44,6 +44,10 @@ Flow is a statically typed, compiled language with algebraic effects, autodiff i
 | License | [MIT](LICENSE) |
 | Cite | [CITATION.cff](CITATION.cff) |
 
+## Quickstart
+
+The full-language quickstart uses the Python host explicitly so the first copy-paste example works exactly as shown.
+
 ```flow
 function main() -> i32 {
     println("Hello, Flow!")
@@ -52,8 +56,10 @@ function main() -> i32 {
 ```
 
 ```bash
-flow run hello.flow
+FLOW_HOST=python flow run hello.flow
 ```
+
+[Full quickstart](docs/getting-started.md) covers variables, functions, structs, loops, and a complete `flow` evolution model.
 
 ---
 
