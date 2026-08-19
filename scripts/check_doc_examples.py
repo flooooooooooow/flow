@@ -399,6 +399,12 @@ def verify(block: Block) -> Result:
             detail=meaning_detail or best_noop or first[1],
             stage="types" if reached_meaning else "parse",
         )
+    # The furthest failure, not the first. `standalone` runs before the
+    # wrappers, so a statement fragment recorded "Top-level 'let' must be
+    # 'let mut'" even when stmt-wrap got to the type checker and failed for a
+    # reason worth reading (#588).
+    if meaning_detail:
+        return Result(block, "unverified", detail=meaning_detail, stage="types")
     return Result(block, "unverified", detail=best_noop or first[1], stage=first[0])
 
 
