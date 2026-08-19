@@ -4,6 +4,86 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+## [0.12.0] - 2026-08-19
+
+Range algebra is the new language feature. The rest of this release is seven
+defects, five of them silent: the compiler accepted the program, emitted C
+that built without error, and produced the wrong answer.
+
+Six of the seven were found by compiling and running the code in the
+documentation. `./flow test --tier2` covers `tests/` and `examples/`, and
+nothing in either returns a fixed-size array, concatenates a string with an
+i64, or reads a value past a `defer`.
+
+### Added — range algebra
+
+Two ranges compose with `|` for union and `&` for intersection inside `sum`:
+
+```flow
+println(sum(0..1000 step 3 | 0..1000 step 5))   # 233168
+println(sum(0..1000 step 3 & 0..1000 step 5))   # 33165
+```
+
+The intersection of two arithmetic progressions is itself an arithmetic
+progression, found by CRT, so union reduces to `sum(A) + sum(B) - sum(A & B)`
+and both land on the closed form. Literal bounds fold to one constant at
+parse time at any depth; runtime bounds become a single helper call with each
+bound evaluated exactly once. `&` binds tighter than `|`.
+
+Limits are compile errors with a message rather than silent truncation: eight
+ranges folded, one operator between two ranges at runtime. Ranges are still
+not values. See [Ranges and range algebra](../language/ranges.md). (#476)
+
+### Fixed — wrong answers
+
+- **Returning `array<T, N>` returned garbage.** The C backend lowered it to
+  `T*` over automatic storage, so the caller read a frame that no longer
+  existed. All 25 stdlib functions returning a fixed-size array were
+  affected, and `lib/stdlib/audio/scales.flow` was entirely non-functional.
+  The value now travels in a wrapper struct. clang had been printing
+  `-Wreturn-stack-address` on every build. (#573)
+- **Nested `array<array<T, N>, M>` was an array of pointers**, each into the
+  frame that built them. It is now a real 2D array behind a row typedef,
+  which also makes `rows[0][0]` one load instead of two. (#575)
+- **`defer` ran before the return value was read**, so `return data[3] - 40`
+  after `defer free(data)` read freed memory: deterministically wrong, not
+  intermittently. A return inside a nested block skipped defers altogether.
+  Both defects were in the C and the MLIR backend. (#594)
+- **String concatenation inferred a numeric type.** `"i64=" + v` printed the
+  concatenated pointer and `"f64=" + f` printed `0.000000`. There was no
+  string case in the `+` inference at all; it worked only for operand types
+  the numeric rules failed to recognise. (#577)
+- **A cast had no type.** `x as T` fell through to the `i32` default, so
+  `"sql" + (buf as string)` formatted the buffer pointer with `%d` into a
+  64-byte stack buffer. (#577)
+
+### Fixed — misleading diagnostics
+
+- An undeclared type reported as a type failing to match itself: `Variable
+  'p' initialized with Point but annotated as Point`. It now says the
+  annotation names nothing in scope. What the checker accepts is unchanged.
+  (#571)
+- A capability used as a value reported `Undefined variable 'UnitCounter'`
+  under strict checking, and under `--lenient` reached the backend and
+  emitted C referencing a symbol nothing defines. Both now name the
+  construct and point at `handle`. `--lenient` gained a class of error it
+  does not downgrade, since compiling anyway would emit C that cannot build.
+  (#561)
+
+### Documentation
+
+Every code block in `lib/stdlib/audio/README.md` failed to compile. Three
+sections named functions that were never written, and the sequencers were
+called with a voice argument that `livecode.flow`'s own comment shows was
+planned and never added. (#574)
+
+`from=` on a fenced block asserts it still appears in the `.flow` file it is
+copied from. 42 blocks sit next to a link to a file and 34 no longer appear
+in it; the eight that are still verbatim are now locked. (#582)
+
+Unverified documentation examples: 235 to 221.
+
+
 ## [0.11.1] - 2026-08-14
 
 Patch release. 0.11.0 shipped its headline feature broken on Linux: every

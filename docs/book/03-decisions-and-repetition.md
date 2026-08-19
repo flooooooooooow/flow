@@ -94,7 +94,7 @@ At each iteration, `gcd(a, b) == gcd(b, a % b)`. The remainder is smaller than `
 
 A complete demonstration:
 
-```flow
+```flow from=examples/book/03_control.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

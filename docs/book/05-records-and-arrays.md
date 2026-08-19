@@ -121,7 +121,7 @@ After `i` iterations, the accumulator contains the sum of elements `0` through `
 
 ## 5.5 Complete demonstration
 
-```flow
+```flow from=examples/book/05_records_arrays.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

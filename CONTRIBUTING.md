@@ -130,9 +130,15 @@ Four words go after `flow` on the opening fence:
 | `ignore="reason"` | The block cannot be checked. The reason is required and is read by a human. |
 | `preamble=path` | The block needs declarations from a file to make sense on its own. |
 | `no-harness` | The block must compile exactly as written, with no wrapping. |
+| `from=path` | The block is a copy of that `.flow` file. CI fails if the two drift apart. |
 
 An unknown word is an error rather than a silent pass, so `expect_error` fails
 loudly instead of being verified as ordinary code.
+
+Use `from=` whenever a page inlines a program and also links the real file.
+Without it there are two copies and only the file is covered by the test
+suite, so the page drifts: one such copy renamed a variable to `test`, which
+is a keyword, while the linked file kept the name that parses.
 
 ---
 

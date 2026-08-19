@@ -23,7 +23,7 @@ The fixed parameters are `rate` and `dt`; `amount` is state; the assignment is t
 
 ## 7.2 Complete Euler demonstration
 
-```flow
+```flow from=examples/book/07_decay.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

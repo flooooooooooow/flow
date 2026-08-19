@@ -63,7 +63,7 @@ The caller checks `ok` before using `value`, so failure is represented in data r
 
 ## 6.4 Complete demonstration
 
-```flow
+```flow from=examples/book/06_pipeline_result.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

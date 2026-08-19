@@ -39,6 +39,7 @@ import argparse
 import io
 import json
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -394,9 +395,30 @@ def _preamble_text(block: Block) -> tuple[str, str]:
     return path.read_text().rstrip() + "\n\n", ""
 
 
+def _from_mismatch(block: Block) -> str:
+    """Empty unless the block claims a source file it no longer matches."""
+    rel = block.source_file
+    if not rel:
+        return ""
+    path = ROOT / rel
+    if not path.exists():
+        return f"from={rel!r} does not exist"
+    body = block.code.strip()
+    if body and body not in path.read_text(errors="replace"):
+        return (
+            f"block no longer appears in {rel}; the page and the file have "
+            f"drifted, so update whichever is wrong"
+        )
+    return ""
+
+
 def verify(block: Block) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
+
+    drifted = _from_mismatch(block)
+    if drifted:
+        return Result(block, "unverified", detail=drifted, stage="from")
 
     preamble, problem = _preamble_text(block)
     if problem:
@@ -507,7 +529,72 @@ def _batch_clang(results: list[Result], batch: int = 150) -> None:
                     res.detail = line.split(": error:", 1)[1].strip()[:200]
 
 
-def run(use_clang: bool = True) -> list[Result]:
+# Death by signal, not an ordinary exit status. A doc example may return a
+# non-zero status on purpose (the book has one that returns 2 to show a failure
+# path), so only a crash or a hang is a failure here.
+_CRASH_SIGNALS = {
+    signal.SIGSEGV: "SIGSEGV",
+    signal.SIGABRT: "SIGABRT",
+    signal.SIGBUS: "SIGBUS",
+    signal.SIGFPE: "SIGFPE",
+    signal.SIGILL: "SIGILL",
+}
+RUN_TIMEOUT = 10
+
+
+def _batch_execute(results: list[Result], timeout: int = RUN_TIMEOUT) -> int:
+    """Build and run every complete program, failing on a crash or a hang.
+
+    Compiling proves an example is well-formed, which is what the rest of this
+    script asserts. It does not prove the example works: a `defer` that freed
+    memory before the return value was read compiled cleanly and returned
+    garbage (#594), and returning a fixed-size array handed back a pointer
+    into a dead frame (#573). Both were found by running these, not by
+    compiling them.
+
+    Returns the number of programs actually run.
+    """
+    if not shutil.which("clang"):
+        return 0
+    pending = [
+        r for r in results
+        if r.status == "verified" and r.csource and "int32_t main(" in r.csource
+    ]
+    if not pending:
+        return 0
+
+    ran = 0
+    with tempfile.TemporaryDirectory(prefix="flow_doc_run_") as td:
+        work = Path(td)
+        for i, res in enumerate(pending):
+            csrc = work / f"r{i:04d}.c"
+            exe = work / f"r{i:04d}"
+            csrc.write_text(res.csource or "")
+            build = subprocess.run(
+                ["clang", "-w", "-O0", "-o", str(exe), str(csrc), "-lm"],
+                capture_output=True, text=True,
+            )
+            if build.returncode != 0:
+                # Linking needs symbols the syntax-only stage never looked for.
+                # Not a regression in the example, so it is not reported here.
+                continue
+            try:
+                proc = subprocess.run([str(exe)], capture_output=True, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                res.status = "unverified"
+                res.stage = "run"
+                res.detail = f"did not finish within {timeout}s"
+                continue
+            ran += 1
+            if proc.returncode < 0:
+                name = _CRASH_SIGNALS.get(-proc.returncode, f"signal {-proc.returncode}")
+                res.status = "unverified"
+                res.stage = "run"
+                res.detail = f"crashed with {name}"
+    return ran
+
+
+def run(use_clang: bool = True, execute: bool = False) -> list[Result]:
     try:
         blocks = collect(lang="flow")
     except InfoStringError as exc:
@@ -517,6 +604,8 @@ def run(use_clang: bool = True) -> list[Result]:
     results = [verify(b) for b in blocks]
     if use_clang:
         _batch_clang(results)
+        if execute:
+            globals()["_EXECUTED"] = _batch_execute(results)
     for res in results:
         res.csource = None  # do not keep every translation unit alive
     return results
@@ -643,6 +732,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--verbose", action="store_true", help="list every failure")
+    ap.add_argument("--run", action="store_true",
+                    help="build and run every complete program; a crash or a "
+                         "hang is a failure, an ordinary non-zero exit is not")
     ap.add_argument("--no-clang", action="store_true",
                     help="stop after codegen; skip the clang stage")
     ap.add_argument("--write-ledger", action="store_true")
@@ -651,7 +743,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="fail only on examples that regressed against the ledger")
     args = ap.parse_args(argv)
 
-    results = run(use_clang=not args.no_clang)
+    results = run(use_clang=not args.no_clang, execute=args.run)
     if args.check_ledger:
         return check_ledger(results)
     if args.report or not args.write_ledger:
