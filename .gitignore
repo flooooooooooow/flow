@@ -136,3 +136,9 @@ flow_packages/
 # Local tool databases / dev artifacts
 .freebuff/
 btree_test.db
+
+# Written by documentation examples run from the repository root.
+# docs/tutorials/advanced.md opens "test.txt", and an empty one reached main
+# in #598 because `git add -A` swept it up.
+/test.txt
+/out.gif
