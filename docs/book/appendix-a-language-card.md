@@ -62,7 +62,9 @@ xs[1] = 25
 
 ## Pipelines
 
-```text
+The following is a notation card, not a standalone program:
+
+```flow-pseudocode
 x |> f              # f(x)
 x |> f(y)           # f(x, y)
 x |> f(y, _)        # f(y, x)
