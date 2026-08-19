@@ -7,7 +7,7 @@ Below is a **Flow-inspired** way to structure a Vulkan renderer so the *intent* 
 - **Structured cleanup** in one place.
 - **High-level API** that hides Vulkan noise.
 
-```flow
+```flow ignore="illustrative code skeleton"
 # Flow-style Vulkan renderer (design sketch)
 
 struct Renderer {

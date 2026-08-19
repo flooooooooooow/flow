@@ -130,7 +130,7 @@ match point {
 - `default { ... }` provides a fallback when no arm (and no guard) matches.
 
 ### Struct Definition
-```flow
+```flow ignore="grammar notation"
 struct Name {
     field1: Type1,
     field2: Type2

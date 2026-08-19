@@ -118,7 +118,7 @@ import verify.derived.nat_add_commutes as nat_add_commutes
 
 Private by default. One export line per file — not `export` on every declaration.
 
-```flow
+```flow ignore="illustrative code skeleton"
 # lib/verify/nat.flow
 
 # @module verify.nat
@@ -281,7 +281,7 @@ Dots mirror directories. Predictable forever.
 
 Effects are symbols. Capabilities are symbols. Same import rules.
 
-```flow
+```flow ignore="catalogue of import forms over illustrative module names"
 import std.io { effect Log }
 import my_app.handlers { capability ConsoleLogger }
 
@@ -304,7 +304,7 @@ Theorem tiers and module exports work together:
 | `derived` | Theorems that list `needs` from imported modules |
 | `axioms` | Logical foundations |
 
-```flow
+```flow ignore="catalogue of import forms over illustrative module names"
 # examples/verify/math/derived/nat_add_zero.flow
 
 # @module examples.verify.math.derived.nat_add_zero
@@ -318,7 +318,7 @@ theorem nat_add_zero(n: Nat) { ... }
 export nat_add_zero
 ```
 
-```flow
+```flow ignore="catalogue of import forms over illustrative module names"
 # examples/verify/math/derived/nat_add_commutes.flow
 
 import verify.nat { nat_zero_add, nat_add_succ }

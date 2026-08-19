@@ -20,7 +20,7 @@ enough to fit in the header of a file.
 Wherever the model is a differential equation, it is one. Hodgkin and
 Huxley's four equations are four `evolves as` lines and nothing else:
 
-```flow
+```flow ignore="illustrative code skeleton"
 flow HH {
     state v : f64 = -65.0
     state m : f64 = 0.05293
@@ -43,7 +43,7 @@ flow HH {
 
 A spike reset is a hybrid event, not an `if` inside a loop:
 
-```flow
+```flow ignore="illustrative code skeleton"
 when v reaches 30.0 {
     v becomes c
     u becomes u + d

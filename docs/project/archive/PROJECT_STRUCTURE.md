@@ -77,7 +77,7 @@ transpile/
 ## 🎨 Graphics Module Design
 
 ### **Module Structure**
-```flow
+```flow ignore="illustrative code skeleton"
 # graphics.flow - Complete graphics module
 struct Color { r: u8, g: u8, b: u8, a: u8 }
 struct Point { x: f32, y: f32 }
@@ -95,7 +95,7 @@ function rect2d(x: i32, y: i32, w: i32, h: i32) -> Rect2D { ... }
 - **Extensible**: Easy to add new graphics primitives
 
 ### **Usage Example**
-```flow
+```flow ignore="illustrative code skeleton"
 # When import system is implemented:
 import graphics;
 
