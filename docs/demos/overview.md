@@ -4,8 +4,13 @@ Every clip in these galleries is a recording of a genuinely compiled Flow
 program: the frames come from the same drawing calls the native window receives.
 Nothing is a mock-up.
 
+The galleries also include a problem-first track: [Solve It the Flow Way](../../examples/flow_way/README.md)
+starts from engineering problems and requires the highest-level Flow abstraction that naturally
+represents each one. A correct low-level translation is deliberately not the goal.
+
 | Gallery | What it is | GIFs |
 |---|---|---|
+| [Solve It the Flow Way](../../examples/flow_way/README.md) | Problem-first idioms: pipelines, effects, RT contracts, hybrid dynamics, concurrency, control | runnable |
 | [Games](games.md) | Complete, playable games: Snake, Tetris, Asteroids, Flappy, and more | 25 |
 | [Morphogenesis](morphogenesis.md) | Reaction-diffusion, Turing patterns, DLA, L-systems, Physarum, wave-2 | 40 |
 | [Neurons](neuro.md) | Hodgkin-Huxley, Izhikevich zoo, balanced E/I, Hopfield, CPG gaits | 15 |

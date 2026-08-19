@@ -1,0 +1,88 @@
+# Runtime test for the first Solve It the Flow Way examples.
+#
+# This pins the two ideas introduced by examples/flow_way/:
+#   1. a pipeline with `_` carries the sensor value through calibration
+#   2. an effect row behaves identically under two capability implementations
+
+function subtract_offset(x: i32, offset: i32) -> i32 {
+    return x - offset
+}
+
+function multiply(x: i32, factor: i32) -> i32 {
+    return x * factor
+}
+
+function clamp(lo: i32, x: i32, hi: i32) -> i32 {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+function calibrate(raw: i32) -> i32 {
+    return raw
+        |> subtract_offset(10)
+        |> multiply(2)
+        |> clamp(0, _, 100)
+}
+
+effect Telemetry {
+    emit(msg: string) -> void,
+}
+
+capability ConsoleTelemetry {
+    effect Telemetry,
+
+    function emit(msg: string) -> void {
+        println(msg)
+    },
+}
+
+capability QuietTelemetry {
+    effect Telemetry,
+
+    function emit(msg: string) -> void {
+        return
+    },
+}
+
+function control_step(sample: i32) -> i32 with Telemetry {
+    Telemetry.emit("control step")
+    return sample * 2
+}
+
+function main() -> i32 {
+    if calibrate(0) != 0 {
+        return 1
+    }
+    if calibrate(20) != 20 {
+        return 2
+    }
+    if calibrate(80) != 100 {
+        return 3
+    }
+
+    let mut production: i32 = 0
+    let mut quiet_result: i32 = 0
+
+    handle Telemetry with ConsoleTelemetry {
+        production = control_step(21)
+    }
+
+    handle Telemetry with QuietTelemetry {
+        quiet_result = control_step(21)
+    }
+
+    if production != 42 {
+        return 4
+    }
+    if quiet_result != 42 {
+        return 5
+    }
+
+    println("Solve It the Flow Way tests passed")
+    return 0
+}

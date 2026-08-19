@@ -134,6 +134,10 @@
           "path": "demos/overview.md"
         },
         {
+          "label": "Solve It the Flow Way",
+          "path": "examples/flow_way/README.md"
+        },
+        {
           "label": "Games",
           "path": "demos/games.md"
         },

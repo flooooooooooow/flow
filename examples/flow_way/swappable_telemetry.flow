@@ -1,0 +1,55 @@
+# Solve It the Flow Way: swappable telemetry
+#
+# Problem:
+# A control algorithm wants to emit telemetry, but the algorithm should not
+# receive a logger object, quiet flag, callback, or environment parameter.
+# Production can print telemetry; tests can silence it. The algorithm itself
+# is identical in both worlds.
+
+effect Telemetry {
+    emit(msg: string) -> void,
+}
+
+capability ConsoleTelemetry {
+    effect Telemetry,
+
+    function emit(msg: string) -> void {
+        println(msg)
+    },
+}
+
+capability QuietTelemetry {
+    effect Telemetry,
+
+    function emit(msg: string) -> void {
+        return
+    },
+}
+
+function control_step(sample: i32) -> i32 with Telemetry {
+    Telemetry.emit("control step")
+    return sample * 2
+}
+
+function main() -> i32 {
+    let mut production: i32 = 0
+    let mut quiet_result: i32 = 0
+
+    handle Telemetry with ConsoleTelemetry {
+        production = control_step(21)
+    }
+
+    handle Telemetry with QuietTelemetry {
+        quiet_result = control_step(21)
+    }
+
+    if production != 42 {
+        return 1
+    }
+    if quiet_result != 42 {
+        return 2
+    }
+
+    println("swappable telemetry: OK")
+    return 0
+}
