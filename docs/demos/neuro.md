@@ -9,16 +9,17 @@ fails — so these are regression tests that happen to draw pictures.
 This is the second domain of [the Example Atlas](../project/example-atlas.md),
 after [morphogenesis](morphogenesis.md). Continuous models are declared as
 `flow` blocks with `evolves as`; a spike reset is a hybrid event, not an
-`if` inside a loop:
+`if` inside a loop. The following is an illustrative fragment from inside a
+flow body, not a standalone compilation unit:
 
-```text
+```flow-pseudocode
 when v reaches 30.0 {
     v becomes c
     u becomes u + d
 }
 ```
 
-Run any example natively:
+Run any complete example natively:
 
 ```bash
 ./flow gfx examples/neuro/<name>.flow
