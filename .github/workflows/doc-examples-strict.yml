@@ -1,0 +1,30 @@
+name: Documentation examples (strict)
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - '**.md'
+      - 'src/**'
+      - 'lib/**'
+      - 'scripts/check_doc_examples.py'
+      - 'scripts/docs_blocks.py'
+      - '.github/workflows/doc-examples-strict.yml'
+  push:
+    branches: ['agent/compile-all-doc-examples']
+
+permissions:
+  contents: read
+
+jobs:
+  compile-doc-examples:
+    name: Compile every Flow documentation example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+      - name: Compile all documented Flow code
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/check_doc_examples.py --report --verbose --fail-on-unverified
