@@ -1,0 +1,209 @@
+name: Repair language spec examples
+
+on:
+  push:
+    branches: ['agent/compile-all-doc-examples']
+    paths:
+      - '.github/workflows/repair-language-spec-examples.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/compile-all-doc-examples
+      - name: Repair disconnected examples
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('docs/LANGUAGE_SPEC.md')
+          text = path.read_text()
+
+          def section(start, end, replacement):
+              global text
+              pattern = re.escape(start) + r'.*?(?=' + re.escape(end) + r')'
+              text2, n = re.subn(pattern, replacement.rstrip() + '\n\n', text, count=1, flags=re.S)
+              if n != 1:
+                  raise SystemExit(f'failed to replace {start!r}: {n}')
+              text = text2
+
+          section('### 2.5 Explicit Casts', '### 2.6 Units of Measure', '''### 2.5 Explicit Casts
+
+Use `as` to convert between compatible types. Distinct-type examples must include the nominal declaration they rely on:
+
+```flow
+distinct type SpecUserId = i64
+
+function distinct_roundtrip(raw: i64) -> i64 {
+    let id: SpecUserId = raw as SpecUserId
+    return id as i64
+}
+```
+''')
+
+          section('### 4.5 Pipe / Declarative Ordering and Search', '### 4.6 If-expressions', '''### 4.5 Pipe / Declarative Ordering and Search
+
+**Status:** ✅
+
+Ordering operates on fixed-size arrays and mutates the array in place:
+
+```flow
+function ordering_example() -> i32 {
+    let mut xs: array<i32, 5> = [3, 1, 4, 1, 5]
+    xs |> sort
+    let i: i32 = xs |> find(4)
+    return i
+}
+```
+
+`sortBy` supports key lists such as `[asc .key, desc .tie]`. The compiler selects from registered lowering plans using applicability predicates and cost models. `flow explain` prints the selected plan and failed alternatives.
+''')
+
+          section('### 4.6 If-expressions', '---\n\n## 5. Statements', '''### 4.6 If-expressions
+
+Value-producing conditionals require an `else` arm:
+
+```flow
+function absolute_value(n: i32) -> i32 {
+    let x: i32 = if n > 0 { n } else { -n }
+    return x
+}
+```
+
+Arms are expressions and must produce compatible types.
+''')
+
+          section('### 5.2 If Statement', '### 5.3 While Loop', '''### 5.2 If Statement
+
+**Grammar:** `if expression block ('elif' expression block)* ('else' block)?`
+
+```flow
+function sign(x: i32) -> i32 {
+    if x > 0 { return 1 }
+    elif x < 0 { return -1 }
+    else { return 0 }
+}
+```
+''')
+
+          section('### 5.3 While Loop', '### 5.4 For Loop', '''### 5.3 While Loop
+
+**Grammar:** `while expression block`
+
+```flow
+function count_to_ten() -> i32 {
+    let mut i: i32 = 0
+    while i < 10 {
+        i = i + 1
+    }
+    return i
+}
+```
+''')
+
+          section('### 5.4 For Loop', '### 5.5 Return Statement', '''### 5.4 For Loop
+
+The preferred range spelling is `for i in start to end`, with optional `step`; `parallel for` emits OpenMP when available.
+
+```flow
+function loop_examples() -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to 10 {
+        total = total + i
+    }
+    for i in 0 to 100 step 5 {
+        total = total + i
+    }
+    return total
+}
+```
+''')
+
+          section('### 6.3 Handle Statement', '### 6.3.1 Signature Effect Rows', '''### 6.3 Handle Statement
+
+A handler example must include the effect and capability it installs:
+
+```flow
+effect SpecLog {
+    emit(message: string) -> void,
+}
+
+capability SpecConsoleLogger {
+    effect SpecLog,
+    function emit(message: string) -> void { println(message) },
+}
+
+function handled_log() -> i32 {
+    handle SpecLog with SpecConsoleLogger {
+        SpecLog.emit("Hello from effects!")
+    }
+    return 0
+}
+```
+''')
+
+          section('### 6.3.1 Signature Effect Rows', '### 6.4 Effect Implementation Details', '''### 6.3.1 Signature Effect Rows
+
+A `with E1, E2` clause declares effects a function may perform. Under strict effects, callers cover that row with a handler or their own row.
+
+```flow
+effect RowLog {
+    emit(message: string) -> void,
+}
+
+function greet(name: string) -> void with RowLog {
+    RowLog.emit(name)
+}
+```
+
+First-class function types carry the same effect row. See `examples/effects/effect_rows.flow` for a complete handled program.
+''')
+
+          section('### 8.4 Lifetime Domains', '---\n\n## 9. Compilation Targets', '''### 8.4 Lifetime Domains
+
+The implemented order is `callback < frame < session < application`. `@lifetime(D)` annotates a function frame or module static.
+
+```flow
+@lifetime(application)
+let mut spec_cache: ptr<i32> = null
+
+@lifetime(callback)
+function callback_value(input: span<f32>) -> f32 {
+    return input[0]
+}
+```
+
+The checker enforces direct shorter-lived escapes, returns of references into a function's own frame, allocation discipline for short-lived domains, and annotated call ordering. Frame-arena APIs and negative examples are documented as complete compiler-checked programs in [lifetime-domains.md](language/lifetime-domains.md).
+''')
+
+          old = '''```text
+import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end }
+
+function main() -> i32 {
+    gif_begin("out.gif", 128, 128, 5)   # 5 cs/frame, loops forever
+    gif_add_frame_rgb(pixels, 128, 128) # RGB24, row-major
+    gif_end()
+    return 0
+}
+```'''
+          new = '''The complete compiler-checked GIF API example is `examples/graphics/gif_writer.flow`; the pixel buffer and imported declarations are intentionally kept in that full program rather than omitted from a fragment.'''
+          if old not in text:
+              raise SystemExit('GIF fragment not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+      - name: Commit repairs
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/LANGUAGE_SPEC.md
+          git commit -m 'docs: make language spec examples self-contained'
+          git pull --rebase origin agent/compile-all-doc-examples
+          git push origin HEAD:agent/compile-all-doc-examples
