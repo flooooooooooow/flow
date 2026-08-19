@@ -15,6 +15,8 @@ generated setup code is injected at the top of `main()`'s body (importing
 are present — automatically). The bound names (`plant_ok`, `k1`, …) become
 ordinary local variables of `main`.
 
+The command-line entry point for this analysis surface is `flow analyze`.
+
 Working examples:
 
 - [`examples/dynamics/ga_dsys_syntax.flow`](../../examples/dynamics/ga_dsys_syntax.flow) — every analysis block in one file
