@@ -494,9 +494,11 @@ class CGenerator:
             "gethostname": "unistd.h", "mkdir": "sys/stat.h",
             "gettimeofday": "sys/time.h", "time": "time.h", "kill": "signal.h",
         }
+        seen_headers = set()
         for fn in functions or []:
             hdr = posix_headers.get(fn.name)
-            if hdr and getattr(fn, "is_extern", False):
+            if hdr and getattr(fn, "is_extern", False) and hdr not in seen_headers:
+                seen_headers.add(hdr)
                 lines.append(f"#include <{hdr}>")
         lines.append("")
         lines.append("/* Flow runtime helpers */")
@@ -4183,6 +4185,17 @@ class CGenerator:
                 if implicit_match is not None:
                     target_overload, implicit_effect_args = implicit_match
                     func_name = _c_ident(target_overload.mangled_name)
+
+            # The definition site names a function through _mangled_names, which
+            # keeps `sin` plain so it links against libm and is never emitted.
+            # The fallback above takes the sole overload's mangled name instead,
+            # so `import "stdlib/math.flow"` produced a call to sin_f32 that
+            # nothing declared or defined (#590). Settle on the registered name
+            # once, after the overload is chosen, so both sites agree.
+            if target_overload is not None:
+                registered = self._mangled_names.get(id(target_overload.function))
+                if registered:
+                    func_name = _c_ident(registered)
             
             # A single non-overloaded candidate still tells us the declared
             # parameter types: spans borrow, so an argument's own type never
