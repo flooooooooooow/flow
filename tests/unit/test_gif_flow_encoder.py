@@ -94,8 +94,10 @@ class TestGifFlowEncoder:
             first = im.convert("RGB")
             im.seek(im.n_frames - 1)
             last = im.convert("RGB")
+        # Raw RGB bytes rather than getdata(), which Pillow 14 removes.
+        head, tail = first.tobytes(), last.tobytes()
         differing = sum(
-            1 for a, b in zip(first.getdata(), last.getdata()) if a != b
+            1 for i in range(0, len(head), 3) if head[i : i + 3] != tail[i : i + 3]
         )
         assert differing > 0
         # The moving square is 24x24; two disjoint positions differ in

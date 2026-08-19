@@ -500,8 +500,13 @@ capability SyncAsync {
 }
 ```
 
-For the stdlib `Async` / `AsyncIO` path, use `examples/effects/async_primitives.flow`. For timeout
-and retry policy examples, use `examples/effects/async_effects.flow`.
+This is the pattern, declared locally so the recipe stands alone. The stdlib ships the same
+`Async` effect and the same stand-in under the name `SimulatedAsync`, along with the real backends
+(`ThreadedAsync`, `FiberAsync`) and an `AsyncIO` effect for polling and sleeping. For which of
+those are implemented and how they behave today, read
+[Async via Effects](language/async-effects.md). For the stdlib path in runnable form, use
+`examples/effects/async_primitives.flow`; for timeout and retry policy,
+`examples/effects/async_effects.flow`.
 
 ### 23. Know when *not* to use an effect
 
