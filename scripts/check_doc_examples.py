@@ -231,6 +231,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     c_source is None when the block did not get that far.
     """
     from flow.c_generator import flow_to_c
+    from flow.c_header_parser import resolve_c_imports
     from flow.module_resolver import resolve_modules
     from flow.monomorphize import monomorphize
     from flow.parser import parse_flow_code
@@ -272,6 +273,12 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
             try:
                 with redirect_stdout(sink), redirect_stderr(sink):
                     decls = resolve_modules(str(unit))
+                    # transpiler.py resolves @cImport right after resolving
+                    # modules. Without the same step here, a module that binds
+                    # C through a header looks like it declares nothing, and
+                    # every example importing it fails with "Undefined
+                    # function 'open'" while `./flow run` compiles it happily.
+                    decls = resolve_c_imports(decls, str(unit.parent))
             except Exception as exc:
                 return None, "imports", f"{type(exc).__name__}: {exc}"
 
