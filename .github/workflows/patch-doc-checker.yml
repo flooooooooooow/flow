@@ -1,0 +1,59 @@
+name: Patch canonical doc checker
+
+on:
+  push:
+    branches: ['agent/compile-all-doc-examples']
+    paths:
+      - '.github/workflows/patch-doc-checker.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/compile-all-doc-examples
+      - name: Add mixed declaration/statement harness to canonical checker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/check_doc_examples.py')
+          text = path.read_text()
+
+          text = text.replace(
+              'MODES = ("standalone", "stmt-wrap", "split-wrap")',
+              'MODES = ("standalone", "stmt-wrap", "split-wrap", "partition-wrap")',
+              1,
+          )
+
+          anchor = '''def _indent(code: str) -> str:\n'''
+          insert = '''def _partition_declarations(code: str) -> tuple[str, str]:\n    """Separate declarations from executable top-level fragments anywhere in a block."""\n    block_decls = (\n        "function ", "export function ", "struct ", "enum ", "trait ",\n        "impl ", "effect ", "capability ", "flow ", "test ", "theorem ",\n    )\n    one_line_decls = (\n        "const ", "type ", "distinct ", "unit ", "import ", "extern ", "module ",\n    )\n    decls: list[str] = []\n    stmts: list[str] = []\n    pending_attrs: list[str] = []\n    current: list[str] = []\n    current_is_decl = False\n    depth = 0\n    waiting_for_brace = False\n\n    def flush() -> None:\n        nonlocal current, current_is_decl, waiting_for_brace\n        if not current:\n            return\n        (decls if current_is_decl else stmts).extend(current)\n        current = []\n        current_is_decl = False\n        waiting_for_brace = False\n\n    for line in code.splitlines():\n        stripped = line.strip()\n        if current:\n            current.append(line)\n            depth += line.count("{") - line.count("}")\n            if waiting_for_brace and "{" in line:\n                waiting_for_brace = False\n            if not waiting_for_brace and depth <= 0:\n                flush()\n                depth = 0\n            continue\n        if stripped.startswith("@"):\n            pending_attrs.append(line)\n            continue\n        if stripped.startswith(block_decls):\n            current_is_decl = True\n            current = pending_attrs + [line]\n            pending_attrs = []\n            depth = line.count("{") - line.count("}")\n            waiting_for_brace = "{" not in line\n            if not waiting_for_brace and depth <= 0:\n                flush()\n                depth = 0\n            continue\n        if stripped.startswith(one_line_decls):\n            decls.extend(pending_attrs)\n            pending_attrs = []\n            decls.append(line)\n            continue\n        if pending_attrs:\n            stmts.extend(pending_attrs)\n            pending_attrs = []\n        stmts.append(line)\n\n    flush()\n    if pending_attrs:\n        stmts.extend(pending_attrs)\n    return "\\n".join(decls), "\\n".join(stmts)\n\n\n'''
+          if anchor not in text:
+              raise SystemExit('indent anchor not found')
+          text = text.replace(anchor, insert + anchor, 1)
+
+          old = '''    if mode == "split-wrap":\n        decls, stmts = _split_declarations(code)\n        if not stmts.strip():\n            raise _NotApplicable\n        body = f"function main() -> i32 {{\\n{_indent(stmts)}\\n    return 0\\n}}\\n"\n        return (decls + "\\n\\n" if decls.strip() else "") + body\n    raise ValueError(mode)\n'''
+          new = '''    if mode == "split-wrap":\n        decls, stmts = _split_declarations(code)\n        if not stmts.strip():\n            raise _NotApplicable\n        body = f"function main() -> i32 {{\\n{_indent(stmts)}\\n    return 0\\n}}\\n"\n        return (decls + "\\n\\n" if decls.strip() else "") + body\n    if mode == "partition-wrap":\n        decls, stmts = _partition_declarations(code)\n        if not stmts.strip():\n            raise _NotApplicable\n        body = f"function main() -> i32 {{\\n{_indent(stmts)}\\n    return 0\\n}}\\n"\n        return (decls + "\\n\\n" if decls.strip() else "") + body\n    raise ValueError(mode)\n'''
+          if old not in text:
+              raise SystemExit('harness anchor not found')
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+              'if mode in ("stmt-wrap", "split-wrap"):',
+              'if mode in ("stmt-wrap", "split-wrap", "partition-wrap"):',
+              1,
+          )
+
+          path.write_text(text)
+          PY
+      - name: Commit canonical checker
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/check_doc_examples.py
+          git commit -m 'test: make mixed doc fragments canonical'
+          git push origin HEAD:agent/compile-all-doc-examples
