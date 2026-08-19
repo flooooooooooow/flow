@@ -13,7 +13,6 @@ import json
 import re
 import subprocess
 from collections import defaultdict
-from pathlib import Path
 
 import check_doc_examples as checker
 from docs_blocks import ROOT, collect
@@ -43,7 +42,35 @@ def classify_ignored(reason: str) -> str:
     return "flow-pseudocode"
 
 
+def fix_readme_quickstart() -> None:
+    path = ROOT / "README.md"
+    text = path.read_text(encoding="utf-8")
+    marker = "| Cite | [CITATION.cff](CITATION.cff) |\n\n```flow\n"
+    if marker in text and "## Quickstart\n" not in text:
+        text = text.replace(
+            marker,
+            "| Cite | [CITATION.cff](CITATION.cff) |\n\n## Quickstart\n\n"
+            "The full-language quickstart uses the Python host explicitly so the "
+            "first copy-paste example works exactly as shown.\n\n```flow\n",
+            1,
+        )
+    text = text.replace(
+        "```bash\nflow run hello.flow\n```",
+        "```bash\nFLOW_HOST=python flow run hello.flow\n```",
+        1,
+    )
+    if "[Full quickstart](docs/getting-started.md)" not in text:
+        needle = "FLOW_HOST=python flow run hello.flow\n```\n"
+        text = text.replace(
+            needle,
+            needle + "\n[Full quickstart](docs/getting-started.md) covers variables, functions, structs, loops, and a complete `flow` evolution model.\n",
+            1,
+        )
+    path.write_text(text, encoding="utf-8")
+
+
 def main() -> int:
+    fix_readme_quickstart()
     ledger = base_ledger()
     hidden = [
         block for block in collect()
