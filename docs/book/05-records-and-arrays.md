@@ -105,7 +105,7 @@ At termination `i == 4`, so `total` contains all four values.
 
 ## 5.5 Complete demonstration
 
-```flow
+```flow from=examples/book/05_records_arrays.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

@@ -88,7 +88,7 @@ true. In `a or b`, `b` is evaluated only when `a` is false.
 
 ## 2.5 A complete measurement
 
-```flow
+```flow from=examples/book/02_values.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }

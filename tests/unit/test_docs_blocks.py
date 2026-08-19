@@ -100,7 +100,6 @@ def test_legacy_run_and_interactive_still_parse():
         "flow ignore=",
         # Designed but not implemented: must not parse while it does nothing.
         "flow host=python",
-        "flow from=examples/book/01_hello.flow",
     ],
 )
 def test_unknown_info_words_are_rejected(info):
@@ -435,3 +434,52 @@ def test_a_moved_block_keeps_its_key():
     late = list(iter_blocks("intro\n\nmore\n\n" + body, "x.md"))[0]
     assert early.line != late.line
     assert early.key == late.key
+
+
+def test_from_names_the_file_a_block_is_copied_from():
+    lang, flags, opts = parse_info("flow from=examples/book/01_hello.flow")
+    assert lang == "flow"
+    assert opts["from"] == "examples/book/01_hello.flow"
+    assert flags == frozenset()
+
+
+def test_from_needs_a_value():
+    with pytest.raises(InfoStringError):
+        parse_info("flow from=")
+
+
+def test_from_reports_drift(tmp_path, monkeypatch):
+    """A block tagged from= must still appear in the file it names."""
+    import check_doc_examples as C
+
+    source = tmp_path / "prog.flow"
+    source.write_text("function main() -> i32 {\n    return 0\n}\n")
+    monkeypatch.setattr(C, "ROOT", tmp_path)
+
+    same = Block(
+        path="d.md", line=1, info="flow from=prog.flow", lang="flow",
+        code="function main() -> i32 {\n    return 0\n}",
+        opts={"from": "prog.flow"},
+    )
+    assert C._from_mismatch(same) == ""
+
+    drifted = Block(
+        path="d.md", line=1, info="flow from=prog.flow", lang="flow",
+        code="function renamed() -> i32 {\n    return 0\n}",
+        opts={"from": "prog.flow"},
+    )
+    assert "drifted" in C._from_mismatch(drifted)
+
+    missing = Block(
+        path="d.md", line=1, info="flow from=nope.flow", lang="flow",
+        code="function main() -> i32 { return 0 }",
+        opts={"from": "nope.flow"},
+    )
+    assert "does not exist" in C._from_mismatch(missing)
+
+
+def test_a_block_without_from_is_not_checked_against_any_file():
+    import check_doc_examples as C
+
+    plain = Block(path="d.md", line=1, info="flow", lang="flow", code="x", opts={})
+    assert C._from_mismatch(plain) == ""
