@@ -1,44 +1,39 @@
 # 10. Memory, spans, and lifetime domains
 
-Flow has no garbage collector. Local values normally use stack storage;
-long-lived or variable-sized storage is allocated explicitly. Pointers expose
-native memory directly, spans describe borrowed regions, arenas amortise
-allocation, and lifetime domains check selected escape and call rules.
+Flow has no garbage collector. Local values normally use stack storage; long-lived or variable-sized storage is explicit. Every `flow` block in this chapter is compiler-checked in CI.
 
 ## 10.1 Value semantics
 
-Primitive values and structs are passed and assigned by value unless a pointer
-or span is used:
-
-```text
-let p: Point = Point { x: 3, y: 4 }
-let q: Point = p
-```
-
-Changing a mutable field of `q` does not identify `p` as the same object. A
-pointer makes shared identity explicit.
-
-## 10.2 Addresses, pointers, and null
+Struct assignment copies the value unless a pointer or span is used:
 
 ```flow
-let mut count: i32 = 0
-let address: ptr<i32> = &count
+struct MemoryPoint {
+    x: i32,
+    y: i32
+}
 
-address[0] = 42
-let observed: i32 = *address
-
-let absent: ptr<i32> = null
-if absent == null {
-    println("no value")
+function copied_point() -> i32 {
+    let p: MemoryPoint = MemoryPoint { x: 3, y: 4 }
+    let mut q: MemoryPoint = p
+    q.x = 10
+    return p.x
 }
 ```
 
-`&x` obtains an address and `*p` dereferences a pointer. Index notation is
-convenient for contiguous storage. Postfix chains such as `bodies[i].position.x`
-and `ptr[0].field` are supported by the C backend.
+`p` and `q` are independent values. A pointer makes shared identity explicit.
 
-Pointer arithmetic is native and unsafe. The compiler cannot prove that an
-address is in bounds, aligned, initialised, or still alive.
+## 10.2 Addresses and pointers
+
+```flow
+function pointer_write() -> i32 {
+    let mut count: i32 = 0
+    let address: ptr<i32> = &count
+    address[0] = 42
+    return *address
+}
+```
+
+`&x` obtains an address, `*p` dereferences it, and indexing is available for contiguous storage. Pointer arithmetic is native and unsafe: the compiler cannot generally prove bounds, alignment, initialization, or liveness.
 
 ## 10.3 Heap allocation
 
@@ -60,21 +55,15 @@ function main() -> i32 {
 }
 ```
 
-The allocation owner must arrange exactly one `free` after the last use.
-`realloc` may move storage; retain the old pointer until the call succeeds.
-Clear a mutable pointer to `null` after freeing when later code might inspect
-it.
-
-Run the complete memory example:
+The allocation owner arranges exactly one release after the final use. A `defer` is useful for structured cleanup.
 
 ```bash
-./flow run examples/systems/manual_memory.flow
-FLOW_HOST=python ./flow run examples/book/09_memory_cleanup.flow
+FLOW_HOST=python ./flow run examples/systems/manual_memory.flow
 ```
 
 ## 10.4 Spans
 
-A span packages a pointer and a length without taking ownership:
+A span packages a pointer and length without taking ownership:
 
 ```flow
 function total(samples: span<f32>) -> f32 {
@@ -92,104 +81,63 @@ function clear(samples: span<mut f32>) -> void {
 }
 ```
 
-Arrays and slices borrow into spans at a call site:
+Arrays and slices borrow into spans:
 
-```text
-let mut signal: array<f32, 256> = [0.0; 256]
-let window: span<f32> = signal[64..128]
-let value: f32 = total(window)
-clear(signal)
+```flow
+function span_window_total() -> f32 {
+    let mut signal: array<f32, 8> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    let window: span<f32> = signal[2..6]
+    let value: f32 = total(window)
+    clear(signal)
+    return value
+}
 ```
 
-`span<T, N>` carries a static extent checked at the call site. A span must not
-outlive its source storage. It never frees the source.
-
-```bash
-FLOW_HOST=python ./flow run examples/basics/spans.flow
-```
+`span<T, N>` adds a compile-time extent. A span never frees its source and may not outlive it.
 
 ## 10.5 Arenas
 
-An arena allocates one large region and advances an offset for each request:
+Flow's memory standard library includes `Arena` and frame-arena helpers. Because the API depends on imported declarations, the canonical runnable sources are [`lib/stdlib/memory.flow`](../../lib/stdlib/memory.flow) and [`examples/audio/lifetime_domains.flow`](../../examples/audio/lifetime_domains.flow), rather than isolated pseudo-calls copied without their import context.
 
-```text
-let mut arena: Arena = arena_create(1024 * 1024)
-defer arena_destroy(&arena)
-
-let points: ptr<Point> = arena_alloc(&arena, 100 * 16)
-# construct points
-arena_reset(&arena)
-```
-
-Individual arena objects are not freed. Resetting invalidates them together.
-An arena works well for per-frame scratch data and request-local graphs. The
-programmer must still choose its capacity and alignment, decide when to reset
-it, and track the lifetime of every returned pointer.
+An arena owns one region and advances an offset for each allocation; resetting invalidates its contained transient objects together.
 
 ## 10.6 Lifetime domains
 
-Flow defines an ordered set of implemented domains:
-
-```text
-callback < frame < session < application
-```
-
-`A < B` means that `A` lives no longer than `B`.
+The implemented order is `callback < frame < session < application`.
 
 ```flow
 @lifetime(callback)
-@rt_safe
-function process_block(input: span<f32>) -> void {
-    # bounded, nonblocking work
+function process_value(value: i32) -> i32 {
+    return value + 1
 }
 
 @lifetime(application)
-let mut cache: ptr<f32> = null
+let mut cache: ptr<i32> = null
 ```
 
-The opt-in checker enforces four rules:
+The checker rejects direct shorter-lived escapes into longer-lived statics, returns of references into a function's own frame, forbidden allocation in short domains, and calls from a shorter-lived annotated domain into a longer-lived one.
 
-1. shorter-lived local storage cannot be assigned into a longer-lived static;
-2. a function cannot return a pointer or span into its own domain frame;
-3. callback and frame domains impose allocation discipline;
-4. a shorter-lived annotated function cannot call a longer-lived annotated
-   function.
+Intentional violations are compiler-tested on the focused [lifetime domains](../language/lifetime-domains.md) page.
 
-`callback` also activates the transitive real-time safety restrictions. A
-`frame` function may use a frame arena and blocking locks but may not create,
-destroy, or grow heap storage.
+## 10.7 Real-time safety
 
-## 10.7 Boundaries of the lifetime checker
+`@rt_safe` constrains the reachable static call graph. It rejects known heap allocation, blocking locks, file/device I/O, and GPU submission on the RT path.
 
-The first implementation does not follow references through arbitrary calls,
-struct fields, closure environments, heap cells, pointer/integer casts, or
-external functions. It also does not infer the domain of arena allocations or
-consult imported annotations across modules. Code that uses these operations
-needs manual review.
-
-The precise rules and known gaps are part of the language contract:
-[lifetime domains](../language/lifetime-domains.md).
-
-## 10.8 Real-time safety
-
-`@rt_safe` rejects a reachable call that may allocate, perform file or device
-I/O, submit GPU work, or take a blocking lock. The intended structure is:
-
-```text
-setup: allocate and initialise
-  -> callback: bounded work over preallocated memory
-  -> teardown: release resources
+```flow
+@rt_safe
+function process_sample(sample: f32, gain: f32) -> f32 {
+    return sample * gain
+}
 ```
 
-The check only examines the static call graph. It does not prove a worst-case
-execution time. Function pointers, some extern calls, and data-dependent work
-still require analysis.
+The analysis does not prove a worst-case execution time and cannot fully reason about arbitrary function pointers or external implementations.
+
+## 10.8 Known limits
+
+The current lifetime analysis does not soundly follow references through arbitrary calls, struct fields, closure environments, heap cells, pointer/integer laundering, or imported domain metadata. Those limits are explicit parts of the contract rather than implied guarantees.
 
 ## Exercises
 
-1. Allocate and free a typed buffer while making every failure path leak-free.
-2. Replace a pointer-plus-length function with `span<T>`.
-3. Design an arena reset point for a frame renderer.
-4. Give one example for each lifetime-domain error.
+Allocate and release a typed buffer without leaks; replace pointer-plus-length APIs with spans; choose an arena reset point for a renderer; and construct one checked negative example for each lifetime-domain rule.
 
 Next: [Modules, projects, packages, and interoperation](11-modules-packages-and-interop.md).
