@@ -1,9 +1,9 @@
 {
-  "generated": "2026-08-19",
+  "generated": "2026-08-20",
   "totals": {
     "verified": 504,
-    "unverified": 219,
-    "expected-error": 4,
+    "unverified": 217,
+    "expected-error": 6,
     "ignored": 66
   },
   "blocks": [
@@ -2416,7 +2416,7 @@
       "key": "docs/language/lifetime-domains.md#5fceaa119014",
       "path": "docs/language/lifetime-domains.md",
       "line": 149,
-      "status": "unverified",
+      "status": "expected-error",
       "stage": "types",
       "detail": "RT-safety violation: 'process' is in the `callback` lifetime domain, which forbids allocation, but calls 'malloc', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see docs/language/lifetime-domains.md)"
     },
@@ -2424,7 +2424,7 @@
       "key": "docs/language/lifetime-domains.md#c089d3b9670f",
       "path": "docs/language/lifetime-domains.md",
       "line": 202,
-      "status": "unverified",
+      "status": "expected-error",
       "stage": "types",
       "detail": "lifetime domain violation: 'process' is in the `callback` domain but calls 'reload_preset', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"
     },
