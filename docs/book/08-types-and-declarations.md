@@ -105,7 +105,7 @@ FLOW_HOST=python ./flow run examples/evolution/units_kinematics.flow
 
 ## 8.6 Constants and module statics
 
-```text
+```flow
 const BLOCK_SIZE: i32 = 256
 
 let mut calls: i32 = 0

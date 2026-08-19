@@ -86,7 +86,7 @@ if w0 * x0 + w1 * x1 + w2 * x2 + w3 > 0.0 { flap = true }
 No gradients exist for "frames survived", so evolve the weights instead. The
 GA keeps a population of genomes in module statics; you supply the fitness:
 
-```text
+```flow-pseudocode
 ga_init(32, 4, 4321 as u32)          # pop 32, 4 genes each
 for each generation {
     for each genome i {
@@ -135,7 +135,7 @@ let a: i32 = mlp_argmax()        # greedy at evaluation time
 After each episode, compute reward-to-go returns, whiten them, and take one
 gradient-ascent step on `advantage * log pi(action | x)` per decision:
 
-```text
+```flow-pseudocode
 let mut g: f32 = 0.0
 let mut t: i32 = ep_len - 1
 while t >= 0 {

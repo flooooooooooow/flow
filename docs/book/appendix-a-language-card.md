@@ -25,7 +25,7 @@ function notify(message: string) -> void {
 
 ## Control
 
-```text
+```flow-pseudocode
 if condition {
     # ...
 } elif other_condition {

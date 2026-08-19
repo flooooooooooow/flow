@@ -58,7 +58,7 @@ let p: Point = Point { x: 1.0, y: 2.0 }
 ```
 
 ### Control Flow
-```text
+```flow-pseudocode
 if x > 0 { ... } elif x < 0 { ... } else { ... }
 while condition { ... }
 for i in 0 to n { ... }

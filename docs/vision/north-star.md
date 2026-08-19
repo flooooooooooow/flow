@@ -740,7 +740,7 @@ else expansion error.
 
 Lowering: the expander emits a synthesized
 
-```
+```flow
 dsys Pendulum_lin { continuous  dt <solver dt or 0.001>  n 2 m 0 p 1  A <computed...>  C 1.0 0.0 }
 ```
 
@@ -792,7 +792,7 @@ in LL(2), documented in `dynamics_dsl.py`'s docstring when implemented.
 
 Dependency DAG over the epic's cards:
 
-```
+```flow-pseudocode
 north-star (this document)
     ├── evolves-syntax          # flow decl, state/input/output/param,
     │       │                   #   evolves as, Euler _step/_derivs, solver block

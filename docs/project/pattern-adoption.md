@@ -52,7 +52,7 @@ RK4 is clearly marked pedagogical.
 
 **Today** (every gfx demo):
 
-```text
+```flow-pseudocode
 while frame < MAX {
     if gfx_should_close(g) { break }
     gfx_poll(g)

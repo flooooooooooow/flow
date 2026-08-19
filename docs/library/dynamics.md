@@ -72,7 +72,7 @@ let tr: f64 = matrix_trace(A)   # 5.0
 
 Core types for linear time-invariant systems.
 
-```text
+```flow
 # kind: 0 = discrete x[k+1] = A x + B u,  1 = continuous x' = A x + B u
 struct DynamicalSystem {
     n: i32, m: i32, p: i32,   # states, inputs, outputs

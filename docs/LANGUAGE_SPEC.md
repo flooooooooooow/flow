@@ -220,7 +220,7 @@ Rationale, alternatives considered, and the implementation are in
 
 ### 2.3 Type Syntax
 
-```text
+```flow-pseudocode
 # Basic type annotation
 let x: i32 = 42
 
@@ -324,7 +324,7 @@ function greet(name: string) -> void {
 
 Flow supports lightweight build guards to include/exclude functions per mode:
 
-```text
+```flow-pseudocode
 @only(hot)
 function dev_overlay() -> void { ... }
 
@@ -394,7 +394,7 @@ arrays of primitives (`array<T, N>` with a full literal initializer), and
 supported in MLIR backend" instead of compiling them.
 
 **Example:**
-```text
+```flow
 let mut counter: i32 = 0
 let mut table: array<i32, 4> = [0, 0, 0, 0]
 let mut head: ptr<Node> = null
@@ -459,7 +459,7 @@ An attribute is written `@name` or `@name(arg, …)` immediately before a
 `src/flow/attributes.py`. A name outside it is a type error, so a misspelled
 attribute gets reported.
 
-```text
+```flow-pseudocode
 @always_inline
 @target("avx2")
 function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
@@ -732,7 +732,7 @@ for_stmt := 'parallel'? 'for' IDENTIFIER 'in' expression ('..' | 'to') expressio
 loop is correct and serial. See [concurrency-vs-go.md](language/concurrency-vs-go.md).
 
 **Example:**
-```text
+```flow
 # Basic for loop (both `to` and `..` are accepted)
 for i in 0 to 10 {
     printf("%d\n", i)
@@ -905,7 +905,7 @@ import_decl := 'import' STRING
 Prefer named modules; see [language/modules.md](language/modules.md).
 
 **Example:**
-```text
+```flow-pseudocode
 import "lib/stdlib/math.flow"          # legacy string path
 import std.math { sin, cos }           # named module + symbols
 import verify.nat as nat               # aliased module
@@ -960,7 +960,7 @@ export import .model
 export import .train { flm_train_step, flm_sample }
 ```
 
-```text
+```flow-pseudocode
 # consumer
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```

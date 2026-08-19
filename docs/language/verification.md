@@ -23,7 +23,7 @@ Everything else is ordinary Flow.
 Every `theorem` carries a header comment in plain English. No exceptions.
 If you cannot write the header, the theorem should not exist.
 
-```text
+```flow-pseudocode
 # ── nat_add_zero ────────────────────────────────────────────────
 # means:  Adding zero on the right gives you the same number.
 #         Example: 12 + 0 = 12
@@ -140,7 +140,7 @@ therefore x == y by symbolic
 
 ## `has property` = Spec on Real Code
 
-```text
+```flow-pseudocode
 function ring_push(rb: ptr<RingBuffer>, value: i32) -> i32
     has property not ring_is_full(rb) before
     has property ring_size(rb) == old(ring_size(rb)) + 1 after

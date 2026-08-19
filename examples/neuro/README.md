@@ -20,7 +20,7 @@ enough to fit in the header of a file.
 Wherever the model is a differential equation, it is one. Hodgkin and
 Huxley's four equations are four `evolves as` lines and nothing else:
 
-```text
+```flow-pseudocode
 flow HH {
     state v : f64 = -65.0
     state m : f64 = 0.05293

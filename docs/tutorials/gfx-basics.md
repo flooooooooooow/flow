@@ -14,7 +14,7 @@ Prerequisites: [structs.md](structs.md), [control.md](control.md).
 
 Illustrative native program (not browser-runnable — needs `./flow gfx`):
 
-```
+```flow
 import "stdlib/gfx.flow"
 
 function main() -> i32 {

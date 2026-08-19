@@ -71,14 +71,14 @@ arr[0] = 42
 ```
 
 ### Function Definition
-```text
+```flow-pseudocode
 function name(param: Type) -> ReturnType {
     return value
 }
 ```
 
 ### Control Flow
-```text
+```flow-pseudocode
 if condition {
     # ...
 } elif other {
@@ -98,7 +98,7 @@ for i in 0 to n {
 
 ### Match
 
-```text
+```flow-pseudocode
 match n {
     0 => { return "zero" }
     1 | 2 | 3 => { return "small" }        # `|` alternation (literal patterns only)
@@ -130,7 +130,7 @@ match point {
 - `default { ... }` provides a fallback when no arm (and no guard) matches.
 
 ### Struct Definition
-```text
+```flow
 struct Name {
     field1: Type1,
     field2: Type2
@@ -180,7 +180,7 @@ matrix[i * width + j]
 call on the right. It is left-associative, so a chain reads top-to-bottom in
 the order the data flows.
 
-```text
+```flow-pseudocode
 x |> f            # f(x)
 x |> f(y)         # f(x, y)      — piped value is prepended
 x |> obj.m(y)     # obj.m(x, y)  — works for method calls too
@@ -191,7 +191,7 @@ By default the piped value is inserted as the **first** argument. A single `_`
 placeholder overrides that, routing the piped value to whichever slot you mark
 instead:
 
-```text
+```flow-pseudocode
 signal |> lowpass(cutoff)      # lowpass(signal, cutoff)
 value  |> clamp(0.0, _, 1.0)   # clamp(0.0, value, 1.0)
 x      |> mix(_, sidechain, k) # mix(x, sidechain, k)  — explicit leading slot
@@ -205,7 +205,7 @@ so two placeholders would duplicate it and are rejected at parse time.
 A **fork block** applies several pipelines to the *same* value and collects the
 results into a record:
 
-```text
+```flow-pseudocode
 let s: Stats = n |> Stats {
     doubled  = twice,
     squared  = square,
@@ -224,7 +224,7 @@ result is itself a value, so a fork can sit mid-pipeline: `x |> R { … } |> f`.
 Dropping the record name makes it **anonymous** — the record type is inferred
 rather than declared:
 
-```text
+```flow-pseudocode
 let s = n |> {
     doubled  = twice,
     squared  = square,
@@ -251,7 +251,7 @@ it.
 A `choose` stage selects which pipeline runs based on a value, so the shape of
 the computation can depend on state:
 
-```text
+```flow-pseudocode
 return x
     |> choose mode.tag {
         Mode_Double => double,

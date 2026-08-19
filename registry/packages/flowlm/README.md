@@ -77,7 +77,7 @@ statistics look like at this size.
 `src/lib.flow` re-exports every submodule, so the package's 82 public symbols
 are all addressable under one name:
 
-```text
+```flow-pseudocode
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
 
@@ -85,7 +85,7 @@ A bare `import flowlm.lib` brings the same surface into scope without naming
 symbols. Importing a submodule directly still works and is the narrower
 dependency to declare:
 
-```text
+```flow-pseudocode
 import flowlm.model { flm_forward, flm_backward }
 ```
 

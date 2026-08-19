@@ -48,7 +48,7 @@ while condition {
 
 FLOW can implement state machines:
 
-```text
+```flow-pseudocode
 function turing_step(state: i32, tape: [*i32], head: i32) -> i32 {
     if state == 0 {
         if tape[head] == 0 {

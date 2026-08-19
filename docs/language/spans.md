@@ -106,7 +106,7 @@ function fft(frame: &[f32; 1024])
 
 Contiguous sources borrow implicitly. No wrapper, no cast:
 
-```text
+```flow-pseudocode
 let signal: array<f32, 512> = ...
 
 analyse(signal)            # {signal, 512}
@@ -162,7 +162,7 @@ error: static extent mismatch: parameter 'values' of 'matrix4' expects
 
 A span may not outlive its storage:
 
-```text
+```flow expect-error
 function invalid() -> span<i32> {
     let local: array<i32, 3> = [1, 2, 3]
     return local[0..3]

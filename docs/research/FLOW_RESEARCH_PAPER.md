@@ -334,7 +334,7 @@ module {
 
 FLOW's effect system and MLIR backend enable high-performance computing tasks like Fast Fourier Transforms (FFT). The following snippet demonstrates the decoupling of the FFT algorithm from its hardware implementation:
 
-```text
+```flow-pseudocode
 # Generic FFT usage
 function analyze_audio_signal(audio_data: array_f32, sample_rate: i32) -> array_f32 {
     handle GPU, FFT with CUDAGPU {

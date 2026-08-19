@@ -259,7 +259,7 @@ Generates browser-runnable code.
 
 ### 5.1 File I/O
 
-```text
+```flow
 import "stdlib/posix.flow"
 
 function main() -> i32 {
@@ -282,7 +282,7 @@ function main() -> i32 {
 
 ### 5.2 Process Management
 
-```text
+```flow
 import "stdlib/posix.flow"
 
 function main() -> i32 {
@@ -296,7 +296,7 @@ function main() -> i32 {
 
 ### 5.3 Environment Variables
 
-```text
+```flow
 import "stdlib/posix.flow"
 
 function main() -> i32 {

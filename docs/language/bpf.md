@@ -34,7 +34,7 @@ inspecting what the pipeline produced before the BPF stage.
 
 A minimal program is an exported function taking the program context:
 
-```text
+```flow
 export function socket_filter(context: ptr<void>) -> i32 {
     return 0
 }

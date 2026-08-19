@@ -13,7 +13,7 @@ The module system should extend those ideas — not bolt on a second import dial
 
 **Imports name modules, not files.**
 
-```text
+```flow-pseudocode
 import verify.Nat/+ { zero-left, succ-right }
 import verify.Nat/+.commutes
 import std.math.sin
@@ -21,7 +21,7 @@ import std.math.sin
 
 Never:
 
-```text
+```flow expect-error
 import "../../../../lib/verify/nat.flow"   # forbidden
 import "../../vulkan_abi/renderer.flow"     # forbidden
 ```
@@ -86,7 +86,7 @@ They stay in sync by convention, not by counting `../`.
 
 Five forms. Same keywords as the rest of Flow — explicit, no sigils.
 
-```text
+```flow-pseudocode
 # 1. Single symbol
 import verify.nat.nat_zero_add
 
@@ -108,7 +108,7 @@ No `import *`. If you need more than a handful of symbols, your module is too bi
 
 ### Aliasing (when domain prefix is noisy locally)
 
-```text
+```flow-pseudocode
 import verify.derived.nat_add_commutes as nat_add_commutes
 ```
 
@@ -118,7 +118,7 @@ import verify.derived.nat_add_commutes as nat_add_commutes
 
 Private by default. One export line per file — not `export` on every declaration.
 
-```text
+```flow-pseudocode
 # lib/verify/nat.flow
 
 # @module verify.nat
@@ -147,7 +147,7 @@ For theorems: **if it's not exported, no other package can `assume` it** — for
 A package usually wants one name that stands for the whole thing. `export
 import` forwards another module's exports as exports of this file.
 
-```text
+```flow-pseudocode
 # registry/packages/flowlm/src/lib.flow
 
 export import .util
@@ -164,7 +164,7 @@ export function flm_version() -> i32 {
 
 Consumers name the aggregator and get the whole surface:
 
-```text
+```flow-pseudocode
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
 
@@ -304,7 +304,7 @@ Theorem tiers and module exports work together:
 | `derived` | Theorems that list `needs` from imported modules |
 | `axioms` | Logical foundations |
 
-```text
+```flow-pseudocode
 # examples/verify/math/derived/nat_add_zero.flow
 
 # @module examples.verify.math.derived.nat_add_zero
@@ -318,7 +318,7 @@ theorem nat_add_zero(n: Nat) { ... }
 export nat_add_zero
 ```
 
-```text
+```flow-pseudocode
 # examples/verify/math/derived/nat_add_commutes.flow
 
 import verify.nat { nat_zero_add, nat_add_succ }

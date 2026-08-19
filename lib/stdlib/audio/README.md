@@ -339,7 +339,7 @@ A backend value selects the CPU or GPU path; the block operations take it as
 their first argument. The GPU path falls back to CPU logic where Metal is
 unavailable.
 
-```text
+```flow
 import "stdlib/audio/gpu.flow"
 
 function main() -> i32 {

@@ -151,7 +151,7 @@ the order clear.
 
 ## 12.8 Channels and synchronisation
 
-```text
+```flow
 import "stdlib/concurrent.flow"
 
 let mut channel: Channel_i32 = channel_i32_new(16)

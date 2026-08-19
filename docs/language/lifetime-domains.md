@@ -50,7 +50,7 @@ Axiom §7 also names `request` and `persistent`. They are not implemented; see
 
 `@lifetime(D)` on a function declares the domain its frame runs in:
 
-```text
+```flow
 @lifetime(callback)
 function process_block(state: ptr<FilterState>, n: i32) -> void {
     # ...
@@ -296,7 +296,7 @@ frame_end(f)              # record high water, count the frame
 `frame_begin` is a single store of zero. Freeing a frame's worth of
 allocations costs the same as freeing one, which is the point of the domain:
 
-```text
+```flow-pseudocode
 @lifetime(frame)
 function render_frame(f: ptr<FrameArena>, n: i64) -> f32 {
     frame_begin(f)

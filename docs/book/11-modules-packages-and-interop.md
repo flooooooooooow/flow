@@ -9,7 +9,7 @@ stable exported symbols.
 Flow supports logical dot paths, selected names, aliases, and package-local
 siblings:
 
-```text
+```flow-pseudocode
 import std.math { sin, cos }
 import verify.nat.nat_zero_add
 import verify.nat as nat

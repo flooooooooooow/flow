@@ -25,7 +25,7 @@ Companion: [concurrency-vs-go.md](concurrency-vs-go.md) ·
 
 ## How to write “Go-shaped” Flow
 
-```text
+```flow
 import "stdlib/async.flow"
 import "stdlib/concurrent.flow"
 

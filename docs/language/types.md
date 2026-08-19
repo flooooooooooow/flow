@@ -66,7 +66,7 @@ void    # No return value
 
 ### Array Operations
 
-```
+```flow
 let arr = [1, 2, 3, 4, 5]
 let length = length(arr)        # Get array length
 let element = arr[0]            # Access element
@@ -94,7 +94,7 @@ Full reference: [spans.md](spans.md).
 
 ### Struct Definition
 
-```
+```flow
 struct Point {
     x: f32,
     y: f32
@@ -124,7 +124,7 @@ rect.width = 150.0
 
 ### Nested Structs
 
-```
+```flow
 struct Address {
     street: string,
     city: string,
@@ -165,7 +165,7 @@ let city = person.address.city
 
 ### Function Pointers (Future)
 
-```
+```flow-future
 let func: (i32, i32) -> i32 = add
 let result = func(5, 3)      # Calls through function pointer
 ```
@@ -191,7 +191,7 @@ let arr = [1, 2, 3]      # arr is [i32]
 
 You can always specify types explicitly:
 
-```
+```flow
 let x: i32 = 42
 let y: f64 = 3.14159
 let name: string = "Bob"
@@ -233,7 +233,7 @@ A `unit` declaration creates a numeric type that carries a physical
 dimension. The checker performs dimensional analysis at compile time.
 At runtime a unit value is a plain `f64`.
 
-```
+```flow
 unit Meter
 unit Second
 unit Velocity = Meter / Second
@@ -279,7 +279,7 @@ so the runtime cost is zero.
 
 ## 🎭 Generic Types (Future)
 
-```
+```flow-future
 # Future generic type support
 function array_length<T>(arr: [T]) -> i32 {
     return length(arr)
@@ -294,7 +294,7 @@ function swap<T>(a: T, b: T) -> (T, T) {
 
 ### Type Aliases (Future)
 
-```
+```flow-future
 type Vector3D = [f32; 3]
 type Matrix4x4 = [[f32; 4]; 4]
 
@@ -304,7 +304,7 @@ let transform: Matrix4x4 = identity_matrix()
 
 ### Union Types (Future)
 
-```
+```flow-future
 type Number = i32 | f32
 
 function process_number(n: Number) -> void {
@@ -317,7 +317,7 @@ function process_number(n: Number) -> void {
 
 ### Optional Types (Future)
 
-```
+```flow-future
 type Optional<T> = T | null
 
 function safe_divide(a: f32, b: f32) -> Optional<f32> {
@@ -334,7 +334,7 @@ function safe_divide(a: f32, b: f32) -> Optional<f32> {
 
 Structs have predictable memory layout:
 
-```
+```flow
 struct Example {
     a: i8,    # Offset 0, size 1
     b: i32,   # Offset 4 (aligned), size 4

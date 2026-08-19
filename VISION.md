@@ -50,7 +50,7 @@ Programming should describe behavior, not implementation.
 
 A programmer should write:
 
-```text
+```flow-future
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity
@@ -88,7 +88,7 @@ Evolution replaces control flow as the central abstraction. Programs describe ho
 
 Time never exists implicitly.
 
-```text
+```flow-future
 continuous
 every 1 ms
 after 50 us
@@ -99,7 +99,7 @@ within 2 s
 
 Everything evolves from state.
 
-```text
+```flow-pseudocode
 state angle
 state velocity
 state current
@@ -109,19 +109,19 @@ state current
 
 Continuous evolution:
 
-```text
+```flow-pseudocode
 angle evolves as velocity
 ```
 
 Discrete evolution:
 
-```text
+```flow-pseudocode
 counter becomes counter + 1
 ```
 
 ### Systems compose
 
-```text
+```flow-future
 flow Robot {
     motor : Motor
     controller : PID
@@ -136,7 +136,7 @@ Composition replaces procedural orchestration.
 
 ### Correctness belongs in the language
 
-```text
+```flow-pseudocode
 always {
     pressure <= 10 bar
 }
@@ -173,33 +173,33 @@ Flow
 
 ### State
 
-```text
+```flow-future
 state angle : Angle
 state velocity : AngularVelocity
 ```
 
 ### Inputs
 
-```text
+```flow-future
 input voltage : Voltage
 ```
 
 ### Outputs
 
-```text
+```flow-future
 output torque : Torque
 ```
 
 ### Parameters
 
-```text
+```flow-future
 param mass : Kilogram
 param damping > 0
 ```
 
 ### Continuous dynamics
 
-```text
+```flow-pseudocode
 angle evolves as velocity
 velocity evolves as
     force / mass
@@ -207,7 +207,7 @@ velocity evolves as
 
 ### Discrete dynamics
 
-```text
+```flow-future
 every tick {
     counter becomes counter + 1
 }
@@ -215,7 +215,7 @@ every tick {
 
 ### Events
 
-```text
+```flow-future
 when temperature > 100 C {
     emit Overheated
 }
@@ -223,7 +223,7 @@ when temperature > 100 C {
 
 ### Constraints
 
-```text
+```flow-pseudocode
 always {
     current <= 10 A
 }
@@ -241,7 +241,7 @@ within 200 ms
 
 Realtime behavior is native.
 
-```text
+```flow-future
 flow MotorController {
     realtime
 
@@ -280,7 +280,7 @@ history samples : RingBuffer<1024>
 
 Scheduling belongs inside the language.
 
-```text
+```flow-future
 task sensors
 every 1 ms
 
@@ -321,7 +321,7 @@ length + voltage
 
 ## Continuous Flows
 
-```text
+```flow-future
 flow Pendulum {
     angle : Angle
     velocity : AngularVelocity
@@ -334,7 +334,7 @@ flow Pendulum {
 
 ## Hybrid Systems
 
-```text
+```flow-future
 flow Ball {
     height : Meter
     velocity : Meter / Second
@@ -351,7 +351,7 @@ flow Ball {
 
 ## Composition
 
-```text
+```flow-future
 flow Robot {
     plant : Motor
     controller : PID
@@ -367,7 +367,7 @@ flow Robot {
 
 Every flow has one canonical description. Different mathematical representations are compiler transformations.
 
-```text
+```flow-future
 flow Pendulum {
     ...
     represent nonlinear
@@ -380,7 +380,7 @@ flow Pendulum {
 
 ### Koopman representation
 
-```text
+```flow-future
 represent koopman {
     basis {
         angle
@@ -397,7 +397,7 @@ The programmer specifies intent. The compiler constructs the representation.
 
 Analysis is part of the language.
 
-```text
+```flow-future
 analyze Pendulum {
     poles
     zeros
@@ -411,7 +411,7 @@ analyze Pendulum {
 
 Controllers become compiler transformations.
 
-```text
+```flow-future
 control Pendulum {
     objective {
         minimize error
@@ -425,7 +425,7 @@ Possible implementations include PID, LQR, MPC, and observers.
 
 Properties become executable.
 
-```text
+```flow-future
 guarantee {
     stable
     passive
@@ -440,7 +440,7 @@ Compilation fails if guarantees cannot be proven.
 
 Deployment belongs inside the source.
 
-```text
+```flow-future
 deploy {
     cpu Cortex-M7
     period 100 us

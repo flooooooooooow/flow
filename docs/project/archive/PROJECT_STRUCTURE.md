@@ -77,7 +77,7 @@ transpile/
 ## 🎨 Graphics Module Design
 
 ### **Module Structure**
-```text
+```flow-pseudocode
 # graphics.flow - Complete graphics module
 struct Color { r: u8, g: u8, b: u8, a: u8 }
 struct Point { x: f32, y: f32 }

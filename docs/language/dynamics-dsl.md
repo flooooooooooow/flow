@@ -75,7 +75,7 @@ Defaults if a line is omitted: `discrete`, `dt 0.1`, `n 2 m 1 p 1`.
 
 ## `horizon` — name an analysis horizon
 
-```text
+```flow-pseudocode
 horizon rollout finite 50              # 50 steps
 horizon asymptotic infinite gamma 0.99 # discounted infinite horizon
 ```

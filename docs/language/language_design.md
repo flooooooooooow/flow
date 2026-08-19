@@ -31,7 +31,7 @@ FLOW is a systems programming language designed specifically for:
 
 ### Basic Syntax
 
-```
+```flow
 # Comments are line-based with #
 # No block comments - keeps parsing simple
 
