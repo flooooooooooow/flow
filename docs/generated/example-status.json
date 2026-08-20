@@ -1,10 +1,10 @@
 {
   "generated": "2026-08-20",
   "totals": {
-    "verified": 518,
-    "unverified": 167,
+    "verified": 525,
+    "unverified": 159,
     "expected-error": 8,
-    "ignored": 98
+    "ignored": 99
   },
   "blocks": [
     {
@@ -1288,9 +1288,9 @@
       "key": "docs/book/09-expressions-and-matching.md#462c8b157fec",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 43,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'n'"
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#991960facd00",
@@ -1309,68 +1309,69 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/09-expressions-and-matching.md#959ff8d29d59",
+      "key": "docs/book/09-expressions-and-matching.md#84780dde1ae4",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 123,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'n'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
-      "key": "docs/book/09-expressions-and-matching.md#cb59d22334d2",
+      "key": "docs/book/09-expressions-and-matching.md#2eb10092c4f4",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 137,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'point'"
+      "line": 139,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#2e67d3876bc0",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 163,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'active'"
+      "line": 169,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#ef71706fa77f",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 179,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'use_buffer'"
+      "line": 185,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#b84126f91e98",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 193,
+      "line": 199,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'n'"
+      "mode": "stmt-wrap",
+      "stage": "clang",
+      "detail": "use of undeclared identifier 'output'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#3a3014859515",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 210,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'values'"
+      "line": 216,
+      "status": "ignored",
+      "detail": "catalogue of ordering forms over illustrative collections",
+      "reason": "catalogue of ordering forms over illustrative collections"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#6b49c0dd6ec2",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 235,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Variable 'stats' is annotated with unknown type 'Stats', which is not declared in this scope"
+      "line": 241,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/book/09-expressions-and-matching.md#42cc652a2ee3",
+      "key": "docs/book/09-expressions-and-matching.md#5f51b5b0f742",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 246,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 252,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#dd3bf0b4bd6c",
