@@ -25,7 +25,7 @@ inputs are assigned by an embedding system; outputs derive an exposed value.
 
 ## 13.2 Solver declaration
 
-```flow
+```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
 solver {
     dt 1 ms
     method rk4
@@ -42,7 +42,7 @@ method may still be unsuitable for a stiff equation or excessive time step.
 RK4 evaluates the derivative four times. The intermediate values estimate the
 slope at the start, twice near the middle, and at the end of the step.
 
-```flow
+```flow id=rk4
 function derivative(value: f64, rate: f64) -> f64 {
     return 0.0 - rate * value
 }
@@ -60,7 +60,7 @@ function rk4_step(value: f64, rate: f64, dt: f64) -> f64 {
 
 Ten steps of size `0.1` advance the model from `t = 0` to `t = 1`:
 
-```flow
+```flow uses=rk4
 let rate: f64 = 0.8
 let dt: f64 = 0.1
 let mut value: f64 = 10.0
@@ -88,7 +88,7 @@ interval around that value and returns failure if the result leaves it.
 
 Discrete updates can coexist with continuous equations:
 
-```flow
+```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
 every 1 ms {
     command becomes kp * (setpoint - feedback)
 }
@@ -129,7 +129,7 @@ FLOW_HOST=python ./flow run examples/evolution/bouncing_ball_energy.flow
 
 ## 13.6 Invariants
 
-```flow
+```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
 always {
     angle < 3.15
     angle > -3.15
@@ -145,14 +145,14 @@ FLOW_HOST=python ./flow run examples/evolution/pendulum_always.flow
 
 ## 13.7 Flow composition
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-13-robot.flow from=examples/evolution/robot_connect.flow
 flow Robot {
-    plant: Motor
-    controller: Controller
+    plant : Motor
+    controller : Controller
 
     connect {
         controller.command -> plant.voltage
-        plant.measured -> controller.feedback
+        plant.speed_out -> controller.feedback
     }
 }
 ```
@@ -172,7 +172,7 @@ FLOW_HOST=python ./flow run examples/evolution/robot_connect.flow
 graphics demonstrations. `represent linear` attaches an explicit local linear
 model to a nonlinear flow:
 
-```flow
+```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
 represent linear {
     at (angle: 0.0, velocity: 0.0)
     inputs (torque)
@@ -197,7 +197,7 @@ FLOW_HOST=python ./flow run examples/evolution/pendulum_represent_linear.flow
 
 The dynamics DSL describes a plant with matrices and timing:
 
-```flow
+```flow id=dsys-plant
 dsys plant {
     continuous
     dt 0.01
@@ -214,7 +214,7 @@ simulation.
 
 ## 13.10 Analysis and control
 
-```flow
+```flow uses=dsys-plant
 sense on plant {
     controllable -> can_control
     observable -> can_observe
@@ -229,7 +229,7 @@ system shape permits them.
 Discrete LQR computes state feedback from `A`, `B`, `Q`, and `R`. A genetic
 algorithm can search controller parameters and score them over a rollout:
 
-```flow
+```flow uses=dsys-plant
 analyze plant ga k1 k2 over rollout -> report { full }
 ```
 

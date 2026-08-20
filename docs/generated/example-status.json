@@ -1,10 +1,10 @@
 {
   "generated": "2026-08-20",
   "totals": {
-    "verified": 525,
-    "unverified": 159,
+    "verified": 529,
+    "unverified": 151,
     "expected-error": 8,
-    "ignored": 99
+    "ignored": 103
   },
   "blocks": [
     {
@@ -1569,9 +1569,9 @@
       "key": "docs/book/13-evolution-and-dynamics.md#63c7a09ec1ec",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 28,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
+      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#15b8235a70ac",
@@ -1585,17 +1585,17 @@
       "key": "docs/book/13-evolution-and-dynamics.md#a7cd7aa80339",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 63,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'rk4_step'"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#91cedbdfae28",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 91,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
+      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#8431efb438e4",
@@ -1609,25 +1609,25 @@
       "key": "docs/book/13-evolution-and-dynamics.md#13b965a6ca5e",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 132,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
+      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
     },
     {
-      "key": "docs/book/13-evolution-and-dynamics.md#28b9a192b861",
+      "key": "docs/book/13-evolution-and-dynamics.md#2e20ab0db1cf",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 148,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: nested flow member 'plant' in flow 'Robot' has type 'Motor', which is not a flow in this file at line 2\n\n     2 |     plant: Motor\n\n  Hint: declare the child with 'flow ChildName { ... }' first"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#e9805244cf6e",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 175,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: represent linear { ... } at top level needs a flow name: `represent linear Name { ... }` or place the block inside `flow Name { ... }`"
+      "status": "ignored",
+      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
+      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#b3732ed23f93",
@@ -1641,17 +1641,17 @@
       "key": "docs/book/13-evolution-and-dynamics.md#ffc17c04f548",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 217,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "KeyError: 'plant'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#9e2189c97978",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 232,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "KeyError: 'plant'"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#3ad10e4c58c5",

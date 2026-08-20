@@ -1,0 +1,26 @@
+# The two child flows that examples/evolution/robot_connect.flow composes.
+#
+# Chapter 13.7 shows the parent alone, because the parent is what composition
+# looks like. Its children are here so the block compiles as written, and the
+# text below is the file's own, so the two cannot drift.
+
+flow Motor {
+    state speed : f64 = 0.0
+    input voltage : f64
+    output speed_out : f64 = speed
+    param damping : f64 = 0.5
+
+    speed evolves as voltage - damping * speed
+}
+
+flow Controller {
+    state cmd : f64 = 0.0
+    input setpoint : f64
+    input feedback : f64
+    output command : f64 = cmd
+    param kp : f64 = 2.0
+
+    every 1 ms {
+        cmd becomes kp * (setpoint - feedback)
+    }
+}
