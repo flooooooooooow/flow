@@ -1,10 +1,10 @@
 {
   "generated": "2026-08-20",
   "totals": {
-    "verified": 513,
-    "unverified": 179,
+    "verified": 516,
+    "unverified": 173,
     "expected-error": 8,
-    "ignored": 91
+    "ignored": 94
   },
   "blocks": [
     {
@@ -468,9 +468,9 @@
       "key": "docs/LANGUAGE_SPEC.md#0b42dfaf3a07",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 150,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.SLASH"
+      "status": "ignored",
+      "detail": "comment syntax including the two forms Flow does not support",
+      "reason": "comment syntax including the two forms Flow does not support"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#1dece0dbbc55",
@@ -492,9 +492,9 @@
       "key": "docs/LANGUAGE_SPEC.md#580aa6123514",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 268,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Cannot cast i64 to UserId"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#7434f98369cb",
@@ -516,9 +516,9 @@
       "key": "docs/LANGUAGE_SPEC.md#552b841ebaff",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 327,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "attribute forms over elided function bodies",
+      "reason": "attribute forms over elided function bodies"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#0ab0dffe953c",
@@ -565,9 +565,9 @@
       "key": "docs/LANGUAGE_SPEC.md#105a129a674b",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 462,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "attribute forms over elided function bodies",
+      "reason": "attribute forms over elided function bodies"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#8b941731e66d",
@@ -602,12 +602,12 @@
       "detail": "Undefined variable 'x'"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#baf117bec488",
+      "key": "docs/LANGUAGE_SPEC.md#e3d945b4e92e",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 713,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Cannot assign to immutable variable 'i' (use 'let mut')"
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#89e14ab3148a",
@@ -619,7 +619,7 @@
       "detail": "use of undeclared identifier 'data'"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#dedd395a1169",
+      "key": "docs/LANGUAGE_SPEC.md#4bd6f3746d63",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 792,
       "status": "verified",
@@ -627,33 +627,34 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#b85acee55272",
+      "key": "docs/LANGUAGE_SPEC.md#f5fec4e3617b",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 815,
+      "line": 819,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#febeebcdb59c",
+      "key": "docs/LANGUAGE_SPEC.md#0a1aaa9252df",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 840,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Unknown effect 'Log' in handle statement"
+      "line": 852,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#c3c98e4f2f78",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 873,
+      "line": 890,
       "status": "unverified",
-      "stage": "types",
-      "detail": "Function 'greet' declares unknown effect 'Log' in its `with` row"
+      "mode": "split-wrap",
+      "stage": "clang",
+      "detail": "use of undeclared identifier 'greet'; did you mean 'free'?"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#ed5299a703a2",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 908,
+      "line": 925,
       "status": "ignored",
       "detail": "catalogue of import forms over illustrative module names",
       "reason": "catalogue of import forms over illustrative module names"
@@ -661,7 +662,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 927,
+      "line": 944,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -669,7 +670,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#da749fa6cb42",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 956,
+      "line": 973,
       "status": "ignored",
       "detail": "relative-import form; the sibling module is illustrative",
       "reason": "relative-import form; the sibling module is illustrative"
@@ -677,7 +678,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#5eaee9ca5dec",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 963,
+      "line": 980,
       "status": "ignored",
       "detail": "flowlm is a registry package, not vendored here",
       "reason": "flowlm is a registry package, not vendored here"
@@ -685,7 +686,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1020,
+      "line": 1037,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -693,7 +694,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#151b03520808",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1047,
+      "line": 1064,
       "status": "unverified",
       "stage": "types",
       "detail": "Undefined function 'frame_arena_create'"
@@ -701,7 +702,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#eb8d99f2c3b0",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1219,
+      "line": 1236,
       "status": "unverified",
       "stage": "types",
       "detail": "Undefined variable 'pixels'"
