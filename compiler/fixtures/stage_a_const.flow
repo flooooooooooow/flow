@@ -1,7 +1,11 @@
-# Stage-A cgen round-trip fixture: N + M == 12.
+# Stage-A cgen round-trip fixture: integer consts plus a typed f64 const.
 export const N: i32 = 7
 const M: i32 = 5
+const PI: f64 = 3.14159265358979
 
 function main() -> i32 {
-    return N + M
+    if PI > 3.14 and PI < 3.15 {
+        return N + M
+    }
+    return 1
 }
