@@ -168,3 +168,20 @@ function main() -> i32 {
 }
 """)
     assert "kw 1 4 5" in stdout
+
+
+def test_an_array_repeat_produces_the_values_at_runtime():
+    """`[value; N]` must actually hold N copies once compiled (#585)."""
+    out, warnings = _build_and_run("""
+function main() -> i32 {
+    let mut signal: array<f32, 8> = [0.0; 8]
+    let ones: array<i32, 5> = [1; 5]
+    let negs: array<i32, 3> = [-2; 3]
+    signal[3] = 1.5
+    printf("%.1f %.1f %d %d %d\\n",
+           signal[0], signal[3], ones[4], negs[1], ones[0] + negs[2])
+    return 0
+}
+""")
+    assert out.strip() == "0.0 1.5 1 -2 -1", out
+    assert "warning" not in warnings.lower(), warnings

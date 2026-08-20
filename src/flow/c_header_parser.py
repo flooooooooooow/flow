@@ -184,6 +184,80 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
     return ""
 
 
+# `#define NAME <integer>`, the only macro shape that can become a Flow const.
+# Anything with a parameter list, a string, a float, or an expression naming
+# another macro is skipped rather than guessed at.
+_MACRO_RE = re.compile(
+    r"^#define\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s+"
+    r"[(\s]*"
+    # Headers commonly write the value as a cast: INADDR_ANY is
+    # ((u_int32_t)0x00000000). The cast carries no information Flow needs,
+    # but skipping the whole line would leave the macro defined in C with no
+    # Flow constant to match, which is worse than not reading it at all.
+    r"(?:\(\s*(?:unsigned\s+|signed\s+|const\s+)*[A-Za-z_][A-Za-z0-9_]*\s*\)\s*)?"
+    r"(?P<value>[+-]?(?:0[xX][0-9a-fA-F]+|0[0-7]+|\d+))"
+    r"\s*[uUlL]*[\s)]*$"
+)
+
+
+def _preprocess_macros(header: str, include_dirs: List[str]) -> str:
+    """Return the `#define` lines a header leaves behind.
+
+    Ordinary preprocessing expands macros and drops the definitions, so a
+    constant like `O_RDONLY` disappears before the parser ever sees it. `-dM`
+    keeps the definitions instead, which is the only way to read a value that
+    differs per platform: O_CREAT is 0x200 on macOS and 0x40 on Linux, so any
+    number written into a .flow file is wrong on one of them.
+    """
+    if header.startswith("/") or header.startswith('"'):
+        include_line = f"#include {header}\n"
+    else:
+        include_line = f"#include <{header}>\n"
+
+    for argv in (["cpp", "-dM"], ["clang", "-E", "-dM"], ["gcc", "-E", "-dM"]):
+        argv = list(argv)
+        for d in include_dirs:
+            argv.extend(["-I", d])
+        argv.append("-")
+        try:
+            result = subprocess.run(
+                argv, input=include_line, capture_output=True, text=True, timeout=30
+            )
+        except FileNotFoundError:
+            continue
+        except Exception:
+            continue
+        # A missing header still leaves the preprocessor's own built-in macros
+        # on stdout, so a non-empty result is not evidence the include worked.
+        # Without the returncode check, @cImport of a header that is not
+        # installed imported 22 platform macros and nothing it asked for.
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+    return ""
+
+
+def parse_header_macros(header: str, include_dirs: Optional[List[str]] = None) -> List:
+    """Integer `#define`s from a header, as Flow constants."""
+    text = _preprocess_macros(header, include_dirs or [])
+    consts = []
+    seen = set()
+    for line in text.splitlines():
+        match = _MACRO_RE.match(line.strip())
+        if not match:
+            continue
+        name = match.group("name")
+        # Compiler-internal defines (__STDC__, __APPLE__, ...) are not API.
+        if name.startswith("_") or name in seen:
+            continue
+        try:
+            value = _parse_int(match.group("value"))
+        except ValueError:
+            continue
+        seen.add(name)
+        consts.append(ConstDecl(name=name, type=ParsedType("i32"), value=Literal(str(value), ParsedType("i32"))))
+    return consts
+
+
 def _strip_attributes(text: str) -> str:
     """Remove __attribute__((...)), __builtin, and nullability annotations.
 
@@ -507,6 +581,10 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
     # Parse parameters
     params = _parse_params(params_str)
 
+    # `...` was dropped, so `int open(const char *, int, ...)` imported as a
+    # two-parameter function and `open(path, flags, mode)` failed to resolve.
+    variadic = any(part.strip() == "..." for part in _split_params(params_str))
+
     # Convert return type
     ret_flow = _c_type_to_flow(ret_type_str)
 
@@ -519,6 +597,7 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
         attributes=[],
     )
     func.is_extern = True
+    func.is_variadic = variadic
     return func
 
 
@@ -636,6 +715,18 @@ def resolve_c_imports(declarations: List, source_dir: str) -> List:
             # Parse the header
             include_dirs = [source_dir, "/usr/include", "/usr/local/include"]
             parsed = parse_c_header(decl.header, include_dirs)
+            # Integer #defines too. Preprocessing expands and discards them,
+            # so without this a header's constants are simply unavailable and
+            # the only alternative is writing the numbers into a .flow file,
+            # where they are wrong on some platform: O_CREAT is 0x200 on
+            # macOS and 0x40 on Linux (#550). Marked c_import like everything
+            # else here, so Flow knows the value and the C output keeps using
+            # the macro.
+            declared = {getattr(d, "name", None) for d in parsed}
+            parsed = parsed + [
+                c for c in parse_header_macros(decl.header, include_dirs)
+                if c.name not in declared
+            ]
             # Mark every parsed declaration as c_import so the C generator
             # emits none of them: the #include above already provides the
             # real ones, and re-emitting collides with it. Marking only
