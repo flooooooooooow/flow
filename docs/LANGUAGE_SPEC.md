@@ -147,7 +147,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 
 ### 1.4 Comments
 
-```flow
+```flow ignore="comment syntax including the two forms Flow does not support"
 # Single-line comment (hash style)
 // Single-line comment (C style) - NOT SUPPORTED
 /* Block comment */ - NOT SUPPORTED
@@ -250,7 +250,7 @@ analyse(signal[0..64])
 
 Flow supports two modern type declaration forms:
 
-```flow
+```flow id=userid
 # Transparent alias (structural)
 type Bytes = array<u8>
 
@@ -265,7 +265,7 @@ distinct type UserId = i64
 
 Use `as` to convert between compatible types (including to/from distinct types):
 
-```flow
+```flow uses=userid
 let raw: i64 = 42
 let id: UserId = raw as UserId
 let back: i64 = id as i64
@@ -324,7 +324,7 @@ function greet(name: string) -> void {
 
 Flow supports lightweight build guards to include/exclude functions per mode:
 
-```flow
+```flow ignore="attribute forms over elided function bodies"
 @only(hot)
 function dev_overlay() -> void { ... }
 
@@ -459,7 +459,7 @@ An attribute is written `@name` or `@name(arg, …)` immediately before a
 `src/flow/attributes.py`. A name outside it is a type error, so a misspelled
 attribute gets reported.
 
-```flow
+```flow ignore="attribute forms over elided function bodies"
 @always_inline
 @target("avx2")
 function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
@@ -711,7 +711,7 @@ while_stmt := 'while' expression block
 
 **Example:**
 ```flow
-let i: i32 = 0
+let mut i: i32 = 0
 while i < 10 {
     printf("%d\n", i)
     i = i + 1
@@ -789,7 +789,7 @@ effect_operation := IDENTIFIER '(' parameters? ')' '->' type ','
 **Status:** ✅ Fully implemented
 
 **Example:**
-```flow
+```flow id=effects
 effect Log {
     emit(message: string) -> void,
     level(lvl: i32) -> void,
@@ -798,6 +798,10 @@ effect Log {
 effect FileSystem {
     read(path: string) -> string,
     write(path: string, content: string) -> void,
+}
+
+effect Notify {
+    send(message: string) -> void,
 }
 ```
 
@@ -812,7 +816,7 @@ method := 'function' IDENTIFIER '(' parameters? ')' '->' type block
 **Status:** ✅ Fully implemented
 
 **Example:**
-```flow
+```flow uses=effects id=logger
 capability ConsoleLogger {
     effect Log,
     
@@ -822,6 +826,14 @@ capability ConsoleLogger {
     
     function level(lvl: i32) -> void {
         printf("Log level: %d\n", lvl)
+    },
+}
+
+capability ConsoleNotifier {
+    effect Notify,
+
+    function send(message: string) -> void {
+        printf("notify: %s\n", message)
     },
 }
 ```
@@ -837,7 +849,12 @@ handle_stmt := 'handle' IDENTIFIER (',' IDENTIFIER)* 'with' IDENTIFIER (',' IDEN
 multi-handler forms supported)
 
 **Example:**
-```flow
+```flow uses=effects,logger
+function place_order() -> void with Log, Notify {
+    Log.emit("order placed")
+    Notify.send("your order is on its way")
+}
+
 function main() -> i32 {
     handle Log with ConsoleLogger {
         Log.emit("Hello from effects!")
@@ -870,7 +887,7 @@ enclosing `handle` or their own `with` clause. Soft zero defaults remain when
 [effects-showcase.md](effects-showcase.md).
 
 **Example:**
-```flow
+```flow uses=effects,logger
 function greet(name: string) -> void with Log {
     Log.emit(name)
 }
