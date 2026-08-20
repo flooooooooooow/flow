@@ -99,7 +99,7 @@ extern {
     function printf(fmt: string, ...) -> i32
 }
 
-function gcd_demo(a0: i32, b0: i32) -> i32 {
+function gcd(a0: i32, b0: i32) -> i32 {
     let mut a: i32 = a0
     let mut b: i32 = b0
     while b != 0 {
@@ -119,9 +119,9 @@ function main() -> i32 {
     }
 
     printf("even sum below 10: %d\n", sum)
-    printf("gcd(84, 30): %d\n", gcd_demo(84, 30))
+    printf("gcd(84, 30): %d\n", gcd(84, 30))
 
-    if sum != 20 or gcd_demo(84, 30) != 6 {
+    if sum != 20 or gcd(84, 30) != 6 {
         return 1
     }
     return 0
