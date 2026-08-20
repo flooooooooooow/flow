@@ -126,12 +126,12 @@ extern {
     function printf(fmt: string, ...) -> i32
 }
 
-struct SampleDemo {
+struct Sample {
     time_ms: i32,
     value: f64
 }
 
-function mean_demo(samples: array<SampleDemo, 4>) -> f64 {
+function mean4(samples: array<Sample, 4>) -> f64 {
     let mut total: f64 = 0.0
     for i in 0 to 4 {
         total = total + samples[i].value
@@ -140,16 +140,16 @@ function mean_demo(samples: array<SampleDemo, 4>) -> f64 {
 }
 
 function main() -> i32 {
-    let mut samples: array<SampleDemo, 4> = [
-        SampleDemo { time_ms: 0, value: 1.0 },
-        SampleDemo { time_ms: 10, value: 1.5 },
-        SampleDemo { time_ms: 20, value: 2.0 },
-        SampleDemo { time_ms: 30, value: 2.5 }
+    let mut samples: array<Sample, 4> = [
+        Sample { time_ms: 0, value: 1.0 },
+        Sample { time_ms: 10, value: 1.5 },
+        Sample { time_ms: 20, value: 2.0 },
+        Sample { time_ms: 30, value: 2.5 }
     ]
 
     samples[3].value = 3.5
     printf("last sample: t=%d value=%.1f\n", samples[3].time_ms, samples[3].value)
-    printf("mean: %.3f\n", mean_demo(samples))
+    printf("mean: %.3f\n", mean4(samples))
     return 0
 }
 ```
@@ -162,7 +162,7 @@ FLOW_HOST=python ./flow run examples/book/05_records_arrays.flow
 
 ## 5.6 Shape belongs in the type
 
-The length in `array<SampleDemo, 4>` is part of the type. A function accepting that type has a compile-time guarantee that four elements exist. When a function must operate on several lengths without copying, use a `span<T>` borrowed view.
+The length in `array<Sample, 4>` is part of the type. A function accepting that type has a compile-time guarantee that four elements exist. When a function must operate on several lengths without copying, use a `span<T>` borrowed view.
 
 ## Exercises
 
