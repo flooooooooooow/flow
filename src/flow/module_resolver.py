@@ -209,7 +209,10 @@ class ModuleResolver:
                 continue
 
             if name:
-                is_exported = getattr(decl, "is_exported", False) or name in export_names
+                imported_entry_point = name == "main" and not is_root
+                is_exported = (
+                    getattr(decl, "is_exported", False) or name in export_names
+                ) and not imported_entry_point
                 if name in module_info.reexports:
                     raise SymbolCollisionError(
                         f"Re-export collision on symbol '{name}' in {file_path}: "
@@ -218,6 +221,15 @@ class ModuleResolver:
                     )
                 symbol = ModuleSymbol(name, decl, file_path, is_exported)
                 module_info.symbols[name] = symbol
+
+                # `main` belongs to the root compilation unit. An imported
+                # module may still define one so it can run on its own, but
+                # surfacing that entry point would make it precede the root
+                # `main` in emitted declarations and silently win C dedup.
+                # Keep it in its module for introspection, but never import,
+                # re-export, or emit it (#621).
+                if imported_entry_point:
+                    continue
 
                 if is_root or is_exported:
                     if name in self.symbol_table:
