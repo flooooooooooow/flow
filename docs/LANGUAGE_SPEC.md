@@ -147,7 +147,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 
 ### 1.4 Comments
 
-```text
+```flow ignore="comment syntax including the two forms Flow does not support"
 # Single-line comment (hash style)
 // Single-line comment (C style) - NOT SUPPORTED
 /* Block comment */ - NOT SUPPORTED
@@ -220,7 +220,7 @@ Rationale, alternatives considered, and the implementation are in
 
 ### 2.3 Type Syntax
 
-```flow-pseudocode
+```flow
 # Basic type annotation
 let x: i32 = 42
 
@@ -250,7 +250,7 @@ analyse(signal[0..64])
 
 Flow supports two modern type declaration forms:
 
-```flow
+```flow id=userid
 # Transparent alias (structural)
 type Bytes = array<u8>
 
@@ -265,12 +265,10 @@ distinct type UserId = i64
 
 Use `as` to convert between compatible types (including to/from distinct types):
 
-```flow
-distinct type SpecUserId = i64
-function distinct_roundtrip(raw: i64) -> i64 {
-    let id: SpecUserId = raw as SpecUserId
-    return id as i64
-}
+```flow uses=userid
+let raw: i64 = 42
+let id: UserId = raw as UserId
+let back: i64 = id as i64
 ```
 
 ### 2.6 Units of Measure
@@ -326,7 +324,7 @@ function greet(name: string) -> void {
 
 Flow supports lightweight build guards to include/exclude functions per mode:
 
-```flow-pseudocode
+```flow ignore="attribute forms over elided function bodies"
 @only(hot)
 function dev_overlay() -> void { ... }
 
@@ -461,7 +459,7 @@ An attribute is written `@name` or `@name(arg, …)` immediately before a
 `src/flow/attributes.py`. A name outside it is a type error, so a misspelled
 attribute gets reported.
 
-```flow-pseudocode
+```flow ignore="attribute forms over elided function bodies"
 @always_inline
 @target("avx2")
 function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
@@ -623,7 +621,7 @@ let result: i32 = add_n(10)  # 15
 
 **Status:** ✅
 
-```text
+```flow
 let ys = xs |> sort
 let zs = xs |> sortBy [asc .key, desc .tie]
 let i  = xs |> find(target)     # index of the first match, or -1
@@ -648,10 +646,7 @@ of lowerings with cost models and applicability predicates.
 Value-producing conditionals (issue #252):
 
 ```flow
-function spec_abs(n: i32) -> i32 {
-    let x: i32 = if n > 0 { n } else { -n }
-    return x
-}
+let x: i32 = if n > 0 { n } else { -n }
 ```
 
 - Arms are **expressions** (not statement blocks).
@@ -695,7 +690,7 @@ block := '{' statement* '}'
 **Status:** ✅ Fully implemented
 
 **Example:**
-```text
+```flow
 if x > 0 {
     printf("Positive\n")
 } elif x < 0 {
@@ -715,8 +710,8 @@ while_stmt := 'while' expression block
 **Status:** ✅ Fully implemented
 
 **Example:**
-```text
-let i: i32 = 0
+```flow
+let mut i: i32 = 0
 while i < 10 {
     printf("%d\n", i)
     i = i + 1
@@ -794,7 +789,7 @@ effect_operation := IDENTIFIER '(' parameters? ')' '->' type ','
 **Status:** ✅ Fully implemented
 
 **Example:**
-```flow
+```flow id=effects
 effect Log {
     emit(message: string) -> void,
     level(lvl: i32) -> void,
@@ -803,6 +798,10 @@ effect Log {
 effect FileSystem {
     read(path: string) -> string,
     write(path: string, content: string) -> void,
+}
+
+effect Notify {
+    send(message: string) -> void,
 }
 ```
 
@@ -817,7 +816,7 @@ method := 'function' IDENTIFIER '(' parameters? ')' '->' type block
 **Status:** ✅ Fully implemented
 
 **Example:**
-```flow
+```flow uses=effects id=logger
 capability ConsoleLogger {
     effect Log,
     
@@ -827,6 +826,14 @@ capability ConsoleLogger {
     
     function level(lvl: i32) -> void {
         printf("Log level: %d\n", lvl)
+    },
+}
+
+capability ConsoleNotifier {
+    effect Notify,
+
+    function send(message: string) -> void {
+        printf("notify: %s\n", message)
     },
 }
 ```
@@ -842,7 +849,12 @@ handle_stmt := 'handle' IDENTIFIER (',' IDENTIFIER)* 'with' IDENTIFIER (',' IDEN
 multi-handler forms supported)
 
 **Example:**
-```text
+```flow uses=effects,logger
+function place_order() -> void with Log, Notify {
+    Log.emit("order placed")
+    Notify.send("your order is on its way")
+}
+
 function main() -> i32 {
     handle Log with ConsoleLogger {
         Log.emit("Hello from effects!")
@@ -875,7 +887,7 @@ enclosing `handle` or their own `with` clause. Soft zero defaults remain when
 [effects-showcase.md](effects-showcase.md).
 
 **Example:**
-```text
+```flow uses=effects,logger
 function greet(name: string) -> void with Log {
     Log.emit(name)
 }
@@ -910,7 +922,7 @@ import_decl := 'import' STRING
 Prefer named modules; see [language/modules.md](language/modules.md).
 
 **Example:**
-```flow-pseudocode
+```flow ignore="catalogue of import forms over illustrative module names"
 import "lib/stdlib/math.flow"          # legacy string path
 import std.math { sin, cos }           # named module + symbols
 import verify.nat as nat               # aliased module
@@ -958,14 +970,14 @@ as well. `export import M { a, b }` forwards only the named symbols, which must
 be exported by `M`. A package's `lib.flow` can therefore aggregate its
 submodules under one name.
 
-```text
+```flow ignore="relative-import form; the sibling module is illustrative"
 # registry/packages/flowlm/src/lib.flow
 export import .util
 export import .model
 export import .train { flm_train_step, flm_sample }
 ```
 
-```flow-pseudocode
+```flow ignore="flowlm is a registry package, not vendored here"
 # consumer
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
@@ -1049,7 +1061,7 @@ in, and on a module static, where it declares the domain of that storage
 takes its domain from its allocation site: a local belongs to the enclosing
 function's domain, a static to its own.
 
-```text
+```flow
 @lifetime(application)
 let mut tail: span<f32> = null
 
@@ -1221,7 +1233,7 @@ GIF-variant LZW (9 to 12 bit codes, clear/EOI, 4096-entry dictionary,
 `fopen`/`fwrite`/`fputc`/`fclose` and `malloc`/`free` cross the FFI line.
 Open-file state is held in module statics (section 3.3.1).
 
-```text
+```flow
 import stdlib.gif { gif_begin, gif_add_frame_rgb, gif_end }
 
 function main() -> i32 {
