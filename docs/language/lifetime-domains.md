@@ -96,7 +96,7 @@ Four rules. Each one is a hard error in `--strict` and a printed warning in
 Inside a `@lifetime(D)` function, assigning a reference rooted in
 function-local storage to a module static whose domain outlives `D`:
 
-```flow
+```flow expect-error
 @lifetime(application)
 let mut tail: span<f32> = null
 
@@ -120,7 +120,7 @@ borrowed storage \`local\``.
 
 ### LD2 — a domain function may not return a reference into its own frame
 
-```flow
+```flow expect-error
 @lifetime(frame)
 function build() -> ptr<i32> {
     let scratch: array<i32, 8> = [0; 8]
