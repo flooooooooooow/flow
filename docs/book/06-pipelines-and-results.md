@@ -10,7 +10,7 @@ FLOW_HOST=python ./flow run file.flow
 
 The pipeline operator sends a value into a function call:
 
-```flow ignore="pipe notation over names standing for any function and value"
+```flow-pseudocode
 x |> f
 x |> f()
 x |> f(y)
@@ -18,7 +18,7 @@ x |> f(y)
 
 They compile as:
 
-```flow ignore="the same three, desugared"
+```flow-pseudocode
 f(x)
 f(x)
 f(x, y)
@@ -66,7 +66,7 @@ let bounded: i32 = raw |> clamp(0, _, 100)
 It compiles as:
 
 ```flow uses=clamp
-let bounded: i32 = clamp(0, raw, 100)
+let bounded_direct: i32 = clamp(0, raw, 100)
 ```
 
 Exactly one pipeline value enters each stage. More than one `_` in a stage is

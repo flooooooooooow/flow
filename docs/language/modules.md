@@ -13,7 +13,7 @@ The module system should extend those ideas — not bolt on a second import dial
 
 **Imports name modules, not files.**
 
-```flow ignore="import forms over illustrative module names"
+```flow-pseudocode
 import verify.Nat/+ { zero-left, succ-right }
 import verify.Nat/+.commutes
 import std.math.sin
@@ -86,7 +86,7 @@ They stay in sync by convention, not by counting `../`.
 
 Five forms. Same keywords as the rest of Flow — explicit, no sigils.
 
-```flow ignore="import forms over illustrative module names"
+```flow-pseudocode
 # 1. Single symbol
 import verify.nat.nat_zero_add
 
@@ -108,7 +108,7 @@ No `import *`. If you need more than a handful of symbols, your module is too bi
 
 ### Aliasing (when domain prefix is noisy locally)
 
-```flow ignore="illustrative aliased import"
+```flow-pseudocode
 import verify.derived.nat_add_commutes as nat_add_commutes
 ```
 
@@ -118,7 +118,7 @@ import verify.derived.nat_add_commutes as nat_add_commutes
 
 Private by default. One export line per file — not `export` on every declaration.
 
-```flow ignore="illustrative code skeleton"
+```flow-pseudocode
 # lib/verify/nat.flow
 
 # @module verify.nat
@@ -147,7 +147,7 @@ For theorems: **if it's not exported, no other package can `assume` it** — for
 A package usually wants one name that stands for the whole thing. `export
 import` forwards another module's exports as exports of this file.
 
-```flow ignore="relative-import form; the sibling module is illustrative"
+```flow-pseudocode
 # registry/packages/flowlm/src/lib.flow
 
 export import .util
@@ -164,7 +164,7 @@ export function flm_version() -> i32 {
 
 Consumers name the aggregator and get the whole surface:
 
-```flow ignore="flowlm is a registry package, not vendored here"
+```flow-pseudocode
 import flowlm.lib { flm_model_init, flm_forward, flm_train_step }
 ```
 
@@ -239,7 +239,7 @@ reproductions of what breaks, and the cost of making blocks real namespaces.
 
 Every module file starts with a header — same spirit as theorem headers in [verification.md](verification.md):
 
-```flow ignore="proof metadata header, not code"
+```text
 # @module verify.nat
 # @means  The two Peano recursion clauses that define addition on naturals.
 # @from   https://en.wikipedia.org/wiki/Peano_axioms
@@ -281,7 +281,7 @@ Dots mirror directories. Predictable forever.
 
 Effects are symbols. Capabilities are symbols. Same import rules.
 
-```flow ignore="catalogue of import forms over illustrative module names"
+```flow-future
 import std.io { effect Log }
 import my_app.handlers { capability ConsoleLogger }
 
@@ -304,7 +304,7 @@ Theorem tiers and module exports work together:
 | `derived` | Theorems that list `needs` from imported modules |
 | `axioms` | Logical foundations |
 
-```flow ignore="catalogue of import forms over illustrative module names"
+```flow-pseudocode
 # examples/verify/math/derived/nat_add_zero.flow
 
 # @module examples.verify.math.derived.nat_add_zero
@@ -318,7 +318,7 @@ theorem nat_add_zero(n: Nat) { ... }
 export nat_add_zero
 ```
 
-```flow ignore="catalogue of import forms over illustrative module names"
+```flow-pseudocode
 # examples/verify/math/derived/nat_add_commutes.flow
 
 import verify.nat { nat_zero_add, nat_add_succ }
