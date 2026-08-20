@@ -32,16 +32,22 @@ Deterministic recording requires deterministic initial state, input, random seed
 
 Fill-shader source is a constrained Flow DSL and is validated by the documentation checker through the shader parser:
 
-```flow
-shader fill plasma(width: f32, height: f32, time: f32) -> vec4 {
-    let uv = frag_coord / vec2(width, height)
-    let value = 0.5 + 0.5 * sin(time + uv.x * 12.0)
-    return vec4(value, uv.y, 1.0 - value, 1.0)
+```flow from=examples/gpu/shader_plasma.flow
+shader fill plasma {
+    let u: f32 = uv.x
+    let v: f32 = uv.y
+    let t: f32 = time
+    color = vec4(
+        0.5 + 0.5 * sin(u * 10.0 + t),
+        0.5 + 0.5 * cos(v * 8.0 - t),
+        0.5 + 0.5 * sin((u + v) * 4.0 + t * 1.3),
+        1.0
+    )
 }
 ```
 
 ```bash
-./flow shader examples/graphics/shader_demo.flow
+./flow shader examples/gpu/shader_plasma.flow
 ```
 
 FSL is not arbitrary host Flow: allocation, general I/O, effects, and unrestricted pointer operations are intentionally excluded.
