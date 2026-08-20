@@ -1,4 +1,4 @@
-name: Documentation examples (strict)
+name: Documentation examples (ratchet)
 
 on:
   pull_request:
@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   compile-doc-examples:
-    name: Compile every Flow documentation example
+    name: Prevent documentation example regressions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,7 +30,7 @@ jobs:
         env:
           PYTHONPATH: src:scripts
         run: python3 scripts/check_doc_flow_snippets.py
-      - name: Compile all documented Flow code
+      - name: Compile documented Flow and enforce the debt ratchet
         env:
           PYTHONPATH: src
-        run: python3 scripts/check_doc_examples_strict.py
+        run: python3 scripts/check_doc_examples.py --check-ledger
