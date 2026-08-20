@@ -494,9 +494,11 @@ class CGenerator:
             "gethostname": "unistd.h", "mkdir": "sys/stat.h",
             "gettimeofday": "sys/time.h", "time": "time.h", "kill": "signal.h",
         }
+        seen_headers = set()
         for fn in functions or []:
             hdr = posix_headers.get(fn.name)
-            if hdr and getattr(fn, "is_extern", False):
+            if hdr and getattr(fn, "is_extern", False) and hdr not in seen_headers:
+                seen_headers.add(hdr)
                 lines.append(f"#include <{hdr}>")
         lines.append("")
         lines.append("/* Flow runtime helpers */")
@@ -865,15 +867,6 @@ class CGenerator:
             lines.extend(self._gen_enum(enum_decl))
             lines.append("")
 
-        # Emit type aliases (transparent typedefs in C)
-        if type_aliases:
-            lines.append("/* Type aliases (transparent) */")
-            for alias in type_aliases:
-                base_c_type = self._c_type(alias.base_type)
-                alias_name = _c_ident(alias.name)
-                lines.append(f"typedef {base_c_type} {alias_name};")
-            lines.append("")
-
         # Emit distinct types (typedefs in C - same representation but different type name)
         # Note: C doesn't enforce type safety for typedefs, but the type checker does
         if distinct_types:
@@ -882,6 +875,17 @@ class CGenerator:
                 base_c_type = self._c_type(distinct.base_type)
                 distinct_name = _c_ident(distinct.name)
                 lines.append(f"typedef {base_c_type} {distinct_name};")
+            lines.append("")
+
+        # Emit type aliases last of the typedefs: an alias may name a unit or
+        # a distinct type, so those have to exist first. `type Angle = Radian`
+        # emitted `typedef Radian Angle;` above `typedef double Radian;`.
+        if type_aliases:
+            lines.append("/* Type aliases (transparent) */")
+            for alias in type_aliases:
+                base_c_type = self._c_type(alias.base_type)
+                alias_name = _c_ident(alias.name)
+                lines.append(f"typedef {base_c_type} {alias_name};")
             lines.append("")
 
         # Emit struct definitions in dependency order
@@ -1129,6 +1133,13 @@ class CGenerator:
 
         # Emit constant declarations (after forward declarations)
         for const in constants:
+            # A constant read out of a C header is a macro there. The #include
+            # is already in this file, so defining it again is a redefinition
+            # of a macro expansion: `static const int32_t 0x0000 = 0;`. Flow
+            # knows the value for type checking; C keeps using the macro, which
+            # is also what makes the value right on each platform (#550).
+            if getattr(const, "is_c_import", False):
+                continue
             lines.append(f"static const {self._c_type(const.type)} {_c_ident(const.name)} = {self._gen_expr(const.value)};")
             # Track constant types for print formatting
             self._var_types[const.name] = const.type
@@ -4181,6 +4192,17 @@ class CGenerator:
                 if implicit_match is not None:
                     target_overload, implicit_effect_args = implicit_match
                     func_name = _c_ident(target_overload.mangled_name)
+
+            # The definition site names a function through _mangled_names, which
+            # keeps `sin` plain so it links against libm and is never emitted.
+            # The fallback above takes the sole overload's mangled name instead,
+            # so `import "stdlib/math.flow"` produced a call to sin_f32 that
+            # nothing declared or defined (#590). Settle on the registered name
+            # once, after the overload is chosen, so both sites agree.
+            if target_overload is not None:
+                registered = self._mangled_names.get(id(target_overload.function))
+                if registered:
+                    func_name = _c_ident(registered)
             
             # A single non-overloaded candidate still tells us the declared
             # parameter types: spans borrow, so an argument's own type never

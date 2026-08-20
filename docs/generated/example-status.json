@@ -1,10 +1,10 @@
 {
-  "generated": "2026-08-19",
+  "generated": "2026-08-20",
   "totals": {
-    "verified": 494,
-    "unverified": 221,
-    "expected-error": 4,
-    "ignored": 68
+    "verified": 513,
+    "unverified": 179,
+    "expected-error": 8,
+    "ignored": 91
   },
   "blocks": [
     {
@@ -116,9 +116,9 @@
       "key": "VISION.md#8707a3f22d05",
       "path": "VISION.md",
       "line": 53,
-      "status": "ignored",
-      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
-      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "VISION.md#bb179312e0f9",
@@ -284,9 +284,9 @@
       "key": "VISION.md#8707a3f22d05#2",
       "path": "VISION.md",
       "line": 324,
-      "status": "ignored",
-      "detail": "proposed flow syntax; dimensioned members and elision are not implemented",
-      "reason": "proposed flow syntax; dimensioned members and elision are not implemented"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "VISION.md#3c099e822924",
@@ -357,8 +357,8 @@
       "path": "apps/http_json_cache/README.md",
       "line": 55,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'http_get'"
     },
     {
       "key": "demos/vulkan_scene/flow_style.md#4ee5b1302578",
@@ -373,8 +373,8 @@
       "path": "demos/vulkan_scene/flow_style.md",
       "line": 92,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'renderer_advanced'"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#8d364bae4b7e",
@@ -397,8 +397,8 @@
       "path": "docs/AI_FLOW_HANDBOOK.md",
       "line": 580,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined variable 'velocity'"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#e8163ee23708",
@@ -421,8 +421,8 @@
       "path": "docs/AI_FLOW_HANDBOOK.md",
       "line": 635,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'Pendulum_new'"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#162b3bf8760d",
@@ -445,8 +445,8 @@
       "path": "docs/AI_FLOW_HANDBOOK.md",
       "line": 721,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "stage": "types",
+      "detail": "Unknown effect 'Log' in handle statement"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#7c3d1d32c4ed",
@@ -461,8 +461,8 @@
       "path": "docs/AI_FLOW_HANDBOOK.md",
       "line": 964,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Expected decorator argument, got TokenType.NUMBER"
+      "stage": "types",
+      "detail": "Undefined variable 'condition'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#0b42dfaf3a07",
@@ -493,8 +493,8 @@
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 268,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Cannot cast i64 to UserId"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#7434f98369cb",
@@ -582,32 +582,32 @@
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 624,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'xs'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#34fd20767900",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 648,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'n'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#b136addd97ea",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 693,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined variable 'x'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#baf117bec488",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 713,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Cannot assign to immutable variable 'i' (use 'let mut')"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#89e14ab3148a",
@@ -647,8 +647,8 @@
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 873,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Function 'greet' declares unknown effect 'Log' in its `with` row"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#ed5299a703a2",
@@ -823,8 +823,8 @@
       "path": "docs/book/02-values-and-types.md",
       "line": 79,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'x'"
     },
     {
       "key": "docs/book/02-values-and-types.md#7d566178b1cc",
@@ -839,8 +839,8 @@
       "path": "docs/book/02-values-and-types.md",
       "line": 138,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'total'"
     },
     {
       "key": "docs/book/03-decisions-and-repetition.md#f4816087e712",
@@ -855,8 +855,8 @@
       "path": "docs/book/03-decisions-and-repetition.md",
       "line": 25,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined variable 'temperature'"
     },
     {
       "key": "docs/book/03-decisions-and-repetition.md#05aa878f0d1b",
@@ -919,8 +919,8 @@
       "path": "docs/book/04-functions.md",
       "line": 30,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'square'"
     },
     {
       "key": "docs/book/04-functions.md#fd0265c3aae1",
@@ -983,8 +983,8 @@
       "path": "docs/book/05-records-and-arrays.md",
       "line": 24,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 11 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'first'"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#336bf1ae7eb4",
@@ -1007,8 +1007,8 @@
       "path": "docs/book/05-records-and-arrays.md",
       "line": 48,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.FOR"
+      "stage": "types",
+      "detail": "Undefined variable 'values'"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#55e6ff18738c",
@@ -1031,8 +1031,8 @@
       "path": "docs/book/05-records-and-arrays.md",
       "line": 74,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 11 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'samples'"
     },
     {
       "key": "docs/book/05-records-and-arrays.md#ebd3fe28fd80",
@@ -1055,48 +1055,48 @@
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 13,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'f'"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#872a3c56866a",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 21,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'f'"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#1fd170813360",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 29,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'double'"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#53de48332d24",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 35,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'double'"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#9b01cecf31d4",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 47,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 7 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'raw'"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#74e7041d301f",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 59,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'clamp'"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#7aaad9dca12b",
@@ -1110,9 +1110,9 @@
       "key": "docs/book/06-pipelines-and-results.md#612092e1472d",
       "path": "docs/book/06-pipelines-and-results.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Function 'parse_port' is declared to return unknown type 'ResultI32', which is not declared in this scope"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/06-pipelines-and-results.md#92702c928e65",
@@ -1128,7 +1128,7 @@
       "line": 152,
       "status": "unverified",
       "stage": "types",
-      "detail": "Undefined function 'parse_port'"
+      "detail": "Undefined function 'add'"
     },
     {
       "key": "docs/book/07-from-updates-to-flows.md#55bd2b1ccae1",
@@ -1175,8 +1175,8 @@
       "path": "docs/book/07-from-updates-to-flows.md",
       "line": 174,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined variable 'amount'"
     },
     {
       "key": "docs/book/08-types-and-declarations.md#2591c67543b2",
@@ -1288,8 +1288,8 @@
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 43,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'n'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#991960facd00",
@@ -1312,56 +1312,56 @@
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 123,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+      "stage": "types",
+      "detail": "Undefined variable 'n'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#cb59d22334d2",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 137,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.MATCH"
+      "stage": "types",
+      "detail": "Undefined variable 'point'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#2e67d3876bc0",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 163,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+      "stage": "types",
+      "detail": "Undefined variable 'active'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#ef71706fa77f",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 179,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'use_buffer'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#b84126f91e98",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 193,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.PARALLEL"
+      "stage": "types",
+      "detail": "Undefined variable 'n'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#3a3014859515",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 210,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined variable 'values'"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#6b49c0dd6ec2",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 235,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Variable 'stats' is annotated with unknown type 'Stats', which is not declared in this scope"
     },
     {
       "key": "docs/book/09-expressions-and-matching.md#42cc652a2ee3",
@@ -1376,8 +1376,8 @@
       "path": "docs/book/10-memory-and-lifetimes.md",
       "line": 13,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Variable 'p' is annotated with unknown type 'Point', which is not declared in this scope"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#d454c3d6a871",
@@ -1408,16 +1408,16 @@
       "path": "docs/book/10-memory-and-lifetimes.md",
       "line": 97,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 1, column 39\n\n     1 | let mut signal: array<f32, 256> = [0.0; 256]\n       |                                       ^"
+      "stage": "types",
+      "detail": "Undefined function 'total'"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#c72d6c08ea0c",
       "path": "docs/book/10-memory-and-lifetimes.md",
       "line": 115,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.DEFER"
+      "stage": "types",
+      "detail": "Undefined function 'arena_create'"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#c5cc5019d9bf",
@@ -1512,24 +1512,24 @@
       "path": "docs/book/12-effects-and-concurrency.md",
       "line": 43,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "stage": "types",
+      "detail": "Unknown effect 'Log' in handle statement"
     },
     {
       "key": "docs/book/12-effects-and-concurrency.md#89abe343e481",
       "path": "docs/book/12-effects-and-concurrency.md",
       "line": 56,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "stage": "types",
+      "detail": "Unknown effect 'Log' in handle statement"
     },
     {
       "key": "docs/book/12-effects-and-concurrency.md#21a515ac4053",
       "path": "docs/book/12-effects-and-concurrency.md",
       "line": 67,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Function 'process' declares unknown effect 'Log' in its `with` row"
     },
     {
       "key": "docs/book/12-effects-and-concurrency.md#2a2146dd508c",
@@ -1544,8 +1544,8 @@
       "path": "docs/book/12-effects-and-concurrency.md",
       "line": 154,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Module static 'channel' has unsupported type 'Channel_i32': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool), a fixed array of primitives, or ptr<T>"
     },
     {
       "key": "docs/book/12-effects-and-concurrency.md#802ae518b277",
@@ -1584,8 +1584,8 @@
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 63,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'rk4_step'"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#91cedbdfae28",
@@ -1680,8 +1680,8 @@
       "path": "docs/book/14-numerics-autodiff-and-ml.md",
       "line": 70,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'centred_gradient'"
     },
     {
       "key": "docs/book/14-numerics-autodiff-and-ml.md#3edc7e51169c",
@@ -1696,8 +1696,8 @@
       "path": "docs/book/14-numerics-autodiff-and-ml.md",
       "line": 128,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'dual'"
     },
     {
       "key": "docs/book/15-media-gpu-and-audio.md#172b1e7840e6",
@@ -1800,8 +1800,8 @@
       "path": "docs/book/appendix-a-language-card.md",
       "line": 65,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'f'"
     },
     {
       "key": "docs/book/appendix-a-language-card.md#dd0d32f2a853",
@@ -2055,9 +2055,9 @@
       "key": "docs/effects-showcase.md#ea7da790f152",
       "path": "docs/effects-showcase.md",
       "line": 620,
-      "status": "ignored",
-      "detail": "shown as a pattern; the counter is module-level state",
-      "reason": "shown as a pattern; the counter is module-level state"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/getting-started.md#961dc32e5a1e",
@@ -2088,8 +2088,8 @@
       "path": "docs/getting-started.md",
       "line": 76,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined variable 'x'"
     },
     {
       "key": "docs/getting-started.md#d2df93bf89d8",
@@ -2143,9 +2143,9 @@
       "key": "docs/language/bpf.md#9866c7855825",
       "path": "docs/language/bpf.md",
       "line": 37,
-      "status": "ignored",
-      "detail": "compiled by the bpfel target rather than the host toolchain",
-      "reason": "compiled by the bpfel target rather than the host toolchain"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/c-fnptr-call.md#a63012f87494",
@@ -2248,8 +2248,8 @@
       "path": "docs/language/epistemology.md",
       "line": 97,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.ASSUME"
+      "stage": "types",
+      "detail": "NotImplementedError: Unsupported statement: <class 'flow.parser.AssumeStmt'>"
     },
     {
       "key": "docs/language/epistemology.md#159c72afb166",
@@ -2320,16 +2320,16 @@
       "path": "docs/language/graphics-3d.md",
       "line": 30,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'm4_perspective'"
     },
     {
       "key": "docs/language/graphics.md#604cf2f7ecb1",
       "path": "docs/language/graphics.md",
       "line": 32,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'gfx_open'"
     },
     {
       "key": "docs/language/language_design.md#2c0bc747a39e",
@@ -2400,23 +2400,23 @@
       "key": "docs/language/lifetime-domains.md#c84c5f8180fe",
       "path": "docs/language/lifetime-domains.md",
       "line": 99,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 6, column 39\n\n     6 |     let scratch: array<f32, 64> = [0.0; 64]\n       |                                       ^"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "lifetime domain escape: `scratch` lives in the `callback` domain but is stored in `tail`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 7, column 5"
     },
     {
       "key": "docs/language/lifetime-domains.md#c90549d95a51",
       "path": "docs/language/lifetime-domains.md",
       "line": 123,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 3, column 36\n\n     3 |     let scratch: array<i32, 8> = [0; 8]\n       |                                    ^"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "lifetime domain escape: `scratch` lives in the `frame` domain but is returned from 'build', which outlives it (a returned reference may not point into the frame that produced it) at line 4, column 5"
     },
     {
       "key": "docs/language/lifetime-domains.md#5fceaa119014",
       "path": "docs/language/lifetime-domains.md",
       "line": 149,
-      "status": "unverified",
+      "status": "expected-error",
       "stage": "types",
       "detail": "RT-safety violation: 'process' is in the `callback` lifetime domain, which forbids allocation, but calls 'malloc', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see docs/language/lifetime-domains.md)"
     },
@@ -2424,7 +2424,7 @@
       "key": "docs/language/lifetime-domains.md#c089d3b9670f",
       "path": "docs/language/lifetime-domains.md",
       "line": 202,
-      "status": "unverified",
+      "status": "expected-error",
       "stage": "types",
       "detail": "lifetime domain violation: 'process' is in the `callback` domain but calls 'reload_preset', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"
     },
@@ -2442,8 +2442,8 @@
       "path": "docs/language/lifetime-domains.md",
       "line": 287,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'frame_begin'"
     },
     {
       "key": "docs/language/lifetime-domains.md#7394d235aca3",
@@ -2513,9 +2513,9 @@
       "key": "docs/language/modules.md#58e507f11b4a",
       "path": "docs/language/modules.md",
       "line": 121,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/modules.md#db9748eee7a1",
@@ -2545,41 +2545,41 @@
       "key": "docs/language/modules.md#2edfe6da4674",
       "path": "docs/language/modules.md",
       "line": 284,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.EFFECT at line 1, column 17\n\n     1 | import std.io { effect Log }\n       |                 ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/language/modules.md#41eb445eb25c",
       "path": "docs/language/modules.md",
       "line": 307,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/language/modules.md#755bb25f2176",
       "path": "docs/language/modules.md",
       "line": 321,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "catalogue of import forms over illustrative module names",
+      "reason": "catalogue of import forms over illustrative module names"
     },
     {
       "key": "docs/language/ordering.md#d19a443e4a6c",
       "path": "docs/language/ordering.md",
       "line": 5,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "NotImplementedError: Declarative sort requires fixed-size array<T, N>"
     },
     {
       "key": "docs/language/ordering.md#1b392c5b2b16",
       "path": "docs/language/ordering.md",
       "line": 154,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined variable 'xs'"
     },
     {
       "key": "docs/language/overview.md#1fe0f720949d",
@@ -2731,8 +2731,8 @@
       "path": "docs/language/spans.md",
       "line": 119,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'samples'"
     },
     {
       "key": "docs/language/spans.md#f20af5f97f03",
@@ -2810,10 +2810,9 @@
       "key": "docs/language/syntax.md#2b1e4aa3a5c1",
       "path": "docs/language/syntax.md",
       "line": 133,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Type1'"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/language/syntax.md#1fa4df611254",
@@ -2908,8 +2907,8 @@
       "path": "docs/language/types.md",
       "line": 82,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 6 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'signal'"
     },
     {
       "key": "docs/language/types.md#a45f04b32e01",
@@ -2932,8 +2931,8 @@
       "path": "docs/language/types.md",
       "line": 431,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Cannot cast c64 to IQSample"
     },
     {
       "key": "docs/language/types.md#cc85227bd6b1",
@@ -2948,16 +2947,16 @@
       "path": "docs/language/types.md",
       "line": 451,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'signal_new_Hz44100'"
     },
     {
       "key": "docs/language/types.md#d9d4d930d0e2",
       "path": "docs/language/types.md",
       "line": 465,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
+      "stage": "types",
+      "detail": "line 1: unknown unit 'Second' in declaration of 'Hertz' (units must be declared before use)"
     },
     {
       "key": "docs/language/variables.md#c831c8907d4c",
@@ -3019,17 +3018,17 @@
       "key": "docs/language/verification.md#b2f3841b2489",
       "path": "docs/language/verification.md",
       "line": 26,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#9c2022e0f1eb",
       "path": "docs/language/verification.md",
       "line": 79,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Statement attributes are only supported on `while` (got ['from'] before TokenType.IDENTIFIER)"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#288baa41bef4",
@@ -3043,25 +3042,9 @@
       "key": "docs/language/verification.md#a13e4745795f",
       "path": "docs/language/verification.md",
       "line": 126,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "no-op Variable statement; the text is not statements"
-    },
-    {
-      "key": "docs/language/verification.md#b06ddce94ebe",
-      "path": "docs/language/verification.md",
-      "line": 133,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.THEREFORE"
-    },
-    {
-      "key": "docs/language/verification.md#988833863779",
-      "path": "docs/language/verification.md",
-      "line": 143,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/language/verification.md#4dfa8ff54240",
@@ -3100,32 +3083,32 @@
       "path": "docs/library/audio-safety.md",
       "line": 23,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 3 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'left'"
     },
     {
       "key": "docs/library/audio-safety.md#ca4135ce8c49",
       "path": "docs/library/audio-safety.md",
       "line": 106,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'feedback_guard'"
     },
     {
       "key": "docs/library/audio-safety.md#73842d234763",
       "path": "docs/library/audio-safety.md",
       "line": 164,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'safety_config_ceiling'"
     },
     {
       "key": "docs/library/audio-safety.md#967988c5edd1",
       "path": "docs/library/audio-safety.md",
       "line": 201,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined function 'sink_is_render'"
     },
     {
       "key": "docs/library/autodiff-guide.md#f8c91799da43",
@@ -3144,90 +3127,90 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#b1918f2dbbe4",
+      "key": "docs/library/dynamics.md#d8dedc66d89c",
       "path": "docs/library/dynamics.md",
       "line": 61,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#71dff86b4a3c",
       "path": "docs/library/dynamics.md",
-      "line": 75,
+      "line": 77,
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
       "detail": "unknown type name 'Matrix'"
     },
     {
-      "key": "docs/library/dynamics.md#7b6bfc6ac46b",
+      "key": "docs/library/dynamics.md#f5dd199bb476",
       "path": "docs/library/dynamics.md",
-      "line": 101,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 103,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#3c9fb867f487",
+      "key": "docs/library/dynamics.md#3cd7743cfadb",
       "path": "docs/library/dynamics.md",
-      "line": 128,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 136,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#f9efbba35951",
+      "key": "docs/library/dynamics.md#f0a74af039fc",
       "path": "docs/library/dynamics.md",
-      "line": 156,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 166,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#5c4c7194a590",
+      "key": "docs/library/dynamics.md#0214f7cce48b",
       "path": "docs/library/dynamics.md",
-      "line": 183,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 201,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#9c348ca34391",
       "path": "docs/library/dynamics.md",
-      "line": 202,
+      "line": 222,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#df2dc84eb0f2",
+      "key": "docs/library/dynamics.md#1c0512df5f8d",
       "path": "docs/library/dynamics.md",
-      "line": 218,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 238,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#23ef16959ab5",
       "path": "docs/library/dynamics.md",
-      "line": 235,
+      "line": 265,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
     },
     {
-      "key": "docs/library/dynamics.md#8e71945ba3fa",
+      "key": "docs/library/dynamics.md#1173318e7b42",
       "path": "docs/library/dynamics.md",
-      "line": 260,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "line": 290,
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/library/dynamics.md#0a8c61f002e8",
       "path": "docs/library/dynamics.md",
-      "line": 276,
+      "line": 312,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3235,7 +3218,7 @@
     {
       "key": "docs/library/dynamics.md#e383400d3e8e",
       "path": "docs/library/dynamics.md",
-      "line": 305,
+      "line": 341,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3253,8 +3236,8 @@
       "path": "docs/library/gpu-memory.md",
       "line": 5,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 4 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'host'"
     },
     {
       "key": "docs/library/memory.md#0b8a54360d12",
@@ -3439,20 +3422,28 @@
       "stage": "codegen"
     },
     {
+      "key": "docs/project/CHANGELOG.md#d40e0f3ed5e8",
+      "path": "docs/project/CHANGELOG.md",
+      "line": 22,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
+    },
+    {
       "key": "docs/project/archive/PROJECT_STRUCTURE.md#e186faf116d6",
       "path": "docs/project/archive/PROJECT_STRUCTURE.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/project/archive/PROJECT_STRUCTURE.md#0122884d48a8",
       "path": "docs/project/archive/PROJECT_STRUCTURE.md",
       "line": 98,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.SEMICOLON"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/project/archive/PROJECT_STRUCTURE.md#cc0708a685a4",
@@ -3531,16 +3522,16 @@
       "path": "docs/project/pattern-adoption.md",
       "line": 241,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined variable 'a'"
     },
     {
       "key": "docs/python-target.md#cc9e80e9873a",
       "path": "docs/python-target.md",
       "line": 35,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ELLIPSIS"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/python-target.md#1eb8a4795a0a",
@@ -3554,9 +3545,9 @@
       "key": "docs/python-target.md#04e0c9e028ce",
       "path": "docs/python-target.md",
       "line": 158,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RPAREN, got TokenType.ASSIGN at line 2, column 13\n\n     2 | @python(name=\"py_func_name\")\n       |             ^\n\n  Hint: Missing closing parenthesis ')'. Check function calls and expressions."
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/research/FLOW_RESEARCH_PAPER.md#3db930337e08",
@@ -3571,8 +3562,8 @@
       "path": "docs/research/FLOW_RESEARCH_PAPER.md",
       "line": 152,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "stage": "types",
+      "detail": "Unknown effect 'GPU' in handle statement"
     },
     {
       "key": "docs/research/FLOW_RESEARCH_PAPER.md#28fd1ddd38b5",
@@ -3594,57 +3585,57 @@
       "key": "docs/research/turing_proof.md#df4dad208d46",
       "path": "docs/research/turing_proof.md",
       "line": 20,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#1b3e95cb4b1d",
       "path": "docs/research/turing_proof.md",
       "line": 29,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#5a027c5e700f",
       "path": "docs/research/turing_proof.md",
       "line": 41,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#9306ef43c5aa",
       "path": "docs/research/turing_proof.md",
       "line": 51,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#8bffd09378f9",
       "path": "docs/research/turing_proof.md",
       "line": 71,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#accae6307e92",
       "path": "docs/research/turing_proof.md",
       "line": 80,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#f7bd98c37211",
       "path": "docs/research/turing_proof.md",
       "line": 89,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected type token: TokenType.STAR"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/research/turing_proof.md#1481bdabedd1",
@@ -3690,9 +3681,9 @@
       "key": "docs/tutorials/advanced.md#36510cba2742",
       "path": "docs/tutorials/advanced.md",
       "line": 37,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.LBRACE, got TokenType.FOR at line 1, column 25\n\n     1 | capability StdioConsole for Console {\n       |                         ^"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "docs/tutorials/advanced.md#200f1f6f2e6a",
@@ -3746,19 +3737,17 @@
       "key": "docs/tutorials/advanced.md#606c906086d9",
       "path": "docs/tutorials/advanced.md",
       "line": 262,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "conflicting types for 'read'"
+      "status": "ignored",
+      "detail": "verified on macOS; @cImport does not surface open from fcntl.h on glibc, so this cannot be checked portably yet",
+      "reason": "verified on macOS; @cImport does not surface open from fcntl.h on glibc, so this cannot be checked portably yet"
     },
     {
       "key": "docs/tutorials/advanced.md#dce70cddf25c",
       "path": "docs/tutorials/advanced.md",
       "line": 285,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "conflicting types for 'read'"
+      "status": "ignored",
+      "detail": "verified on macOS; @cImport does not surface open from fcntl.h on glibc, so this cannot be checked portably yet",
+      "reason": "verified on macOS; @cImport does not surface open from fcntl.h on glibc, so this cannot be checked portably yet"
     },
     {
       "key": "docs/tutorials/advanced.md#786fa85b8ca0",
@@ -3767,7 +3756,7 @@
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
-      "detail": "conflicting types for 'read'"
+      "detail": "initializing 'ptr_u8_' (aka 'struct ptr_u8_') with an expression of incompatible type 'char *'"
     },
     {
       "key": "docs/tutorials/advanced.md#2cc5efdf7df2",
@@ -4101,10 +4090,9 @@
       "key": "docs/tutorials/beginner.md#8ee653735945",
       "path": "docs/tutorials/beginner.md",
       "line": 280,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "call to undeclared function 'sin_f32'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/beginner.md#a95194868d9f",
@@ -4383,8 +4371,8 @@
       "path": "docs/tutorials/dynamics.md",
       "line": 101,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Undefined function 'dsys_euler_discretize'"
     },
     {
       "key": "docs/tutorials/dynamics.md#6dadf2945e5e",
@@ -4823,24 +4811,24 @@
       "path": "docs/tutorials/game-ai.md",
       "line": 31,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined function 'cell_deadly'"
     },
     {
       "key": "docs/tutorials/game-ai.md#e8e61074cc26",
       "path": "docs/tutorials/game-ai.md",
       "line": 46,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'q_init'"
     },
     {
       "key": "docs/tutorials/game-ai.md#c73b8c9f0cee",
       "path": "docs/tutorials/game-ai.md",
       "line": 81,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IF"
+      "stage": "types",
+      "detail": "Undefined variable 'w0'"
     },
     {
       "key": "docs/tutorials/game-ai.md#cefa15c98d70",
@@ -4855,16 +4843,16 @@
       "path": "docs/tutorials/game-ai.md",
       "line": 128,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'mlp_init'"
     },
     {
       "key": "docs/tutorials/game-ai.md#97a68e99adfc",
       "path": "docs/tutorials/game-ai.md",
       "line": 138,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.WHILE"
+      "stage": "types",
+      "detail": "Undefined variable 'ep_len'"
     },
     {
       "key": "docs/tutorials/game-ai.md#81912d74d96c",
@@ -5447,8 +5435,8 @@
       "path": "docs/tutorials/pipelines.md",
       "line": 180,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "NotImplementedError: Declarative sort requires fixed-size array<T, N>"
     },
     {
       "key": "docs/tutorials/pipelines.md#cc9d2c5eaf84",
@@ -6070,9 +6058,9 @@
       "key": "docs/vision/north-star.md#6d64bb0fb043",
       "path": "docs/vision/north-star.md",
       "line": 639,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "grammar notation",
+      "reason": "grammar notation"
     },
     {
       "key": "docs/vision/north-star.md#ac99567c9222",
@@ -6111,8 +6099,8 @@
       "path": "docs/wiki-home.md",
       "line": 149,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.HANDLE"
+      "stage": "types",
+      "detail": "Unknown effect 'Inventory' in handle statement"
     },
     {
       "key": "docs/wiki-home.md#7dbb128f9b73",
@@ -6127,8 +6115,8 @@
       "path": "docs/wiki-home.md",
       "line": 185,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 5 must be 'let mut' (module static); use 'const' for immutable module-level values"
+      "stage": "types",
+      "detail": "Function 'quadratic' is declared to return unknown type 'Dual', which is not declared in this scope"
     },
     {
       "key": "examples/circuits/README.md#4d3276bd1eee",
@@ -6142,41 +6130,81 @@
       "key": "examples/demos/vulkan_scene/flow_style.md#4ee5b1302578",
       "path": "examples/demos/vulkan_scene/flow_style.md",
       "line": 10,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.LBRACE"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "examples/demos/vulkan_scene/flow_style.md#92f564171243",
       "path": "examples/demos/vulkan_scene/flow_style.md",
       "line": 92,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "stage": "types",
+      "detail": "Undefined function 'renderer_advanced'"
+    },
+    {
+      "key": "examples/flow_way/README.md#3b6f62ee7396",
+      "path": "examples/flow_way/README.md",
+      "line": 30,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "examples/flow_way/README.md#4d01f779d5d7",
+      "path": "examples/flow_way/README.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "examples/flow_way/README.md#d3c46dbc5b98",
+      "path": "examples/flow_way/README.md",
+      "line": 121,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "examples/flow_way/README.md#dc0e9775bcbf",
+      "path": "examples/flow_way/README.md",
+      "line": 153,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "examples/flow_way/README.md#2cde7c69b2ab",
+      "path": "examples/flow_way/README.md",
+      "line": 184,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "examples/morphogenesis/README.md#225e1f842d6f",
       "path": "examples/morphogenesis/README.md",
       "line": 23,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'GrayScottCell' body at line 5, column 5\n\n     5 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events "
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "examples/neuro/README.md#e119e216f0e7",
       "path": "examples/neuro/README.md",
       "line": 23,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Unexpected item in flow 'HH' body at line 8, column 5\n\n     8 |     ...\n       |     ^\n\n  Hint: flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x re"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "examples/neuro/README.md#1c04fa72daaf",
       "path": "examples/neuro/README.md",
       "line": 46,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected declaration: TokenType.IDENTIFIER"
+      "status": "ignored",
+      "detail": "illustrative code skeleton",
+      "reason": "illustrative code skeleton"
     },
     {
       "key": "lib/stdlib/audio/README.md#230210e0a7e0",

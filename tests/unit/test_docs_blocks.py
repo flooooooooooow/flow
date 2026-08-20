@@ -483,3 +483,101 @@ def test_a_block_without_from_is_not_checked_against_any_file():
 
     plain = Block(path="d.md", line=1, info="flow", lang="flow", code="x", opts={})
     assert C._from_mismatch(plain) == ""
+
+
+def test_uses_names_an_earlier_block_on_the_page():
+    import check_doc_examples as C
+
+    setup = Block(path="d.md", line=1, info="flow id=types", lang="flow",
+                  code="struct P { x: i32 }", opts={"id": "types"})
+    later = Block(path="d.md", line=9, info="flow uses=types", lang="flow",
+                  code="function f(p: P) -> i32 { return p.x }", opts={"uses": "types"})
+    context = {setup.block_id: setup.code}
+    text, problem = C._page_context(later, context)
+    assert problem == ""
+    assert "struct P" in text
+
+
+def test_uses_accepts_several_ids_in_order():
+    import check_doc_examples as C
+
+    block = Block(path="d.md", line=9, info="flow uses=a,b", lang="flow",
+                  code="x", opts={"uses": "a,b"})
+    text, problem = C._page_context(block, {"a": "AAA", "b": "BBB"})
+    assert problem == ""
+    assert text.index("AAA") < text.index("BBB")
+
+
+def test_uses_fails_loudly_when_the_id_is_missing():
+    """A renamed or moved block must break the build, not silently verify."""
+    import check_doc_examples as C
+
+    block = Block(path="d.md", line=9, info="flow uses=gone", lang="flow",
+                  code="x", opts={"uses": "gone"})
+    _, problem = C._page_context(block, {})
+    assert "names no earlier block" in problem
+
+
+def test_a_block_cannot_use_one_defined_later():
+    """Ids resolve backwards only, so context is deterministic."""
+    import check_doc_examples as C
+
+    text = (
+        "```flow uses=later\nfunction f() -> i32 { return 0 }\n```\n\n"
+        "```flow id=later\nstruct S { x: i32 }\n```\n"
+    )
+    blocks = list(iter_blocks(text, "d.md"))
+    context = {}
+    first = C.verify(blocks[0], context)
+    assert first.status == "unverified"
+    assert first.stage == "uses"
+
+
+def test_no_uses_means_no_context():
+    import check_doc_examples as C
+
+    plain = Block(path="d.md", line=1, info="flow", lang="flow", code="x", opts={})
+    assert C._page_context(plain, {"a": "AAA"}) == ("", "")
+
+
+def test_context_is_wrapped_with_the_block_not_placed_above_it():
+    """Earlier-page code is often statements, so it must sit inside the harness.
+
+    Placed above it as a preamble, `let sys = build()` lands at module scope,
+    where the parser requires `let mut` and the block fails for a reason that
+    has nothing to do with the example.
+    """
+    import check_doc_examples as C
+
+    setup = Block(path="d.md", line=1, info="flow id=s", lang="flow",
+                  code="let total: i32 = 7", opts={"id": "s"})
+    later = Block(path="d.md", line=9, info="flow uses=s", lang="flow",
+                  code="let doubled: i32 = total * 2", opts={"uses": "s"})
+    result = C.verify(later, {setup.block_id: setup.code})
+    assert result.status == "verified", f"{result.stage}: {result.detail}"
+
+
+def test_imports_hoist_when_context_is_joined():
+    """A block naming context also imports its own module.
+
+    Joined naively that leaves an `import` after the context's statements, and
+    every harness rung reads it as an expression.
+    """
+    import check_doc_examples as C
+
+    joined = C._join_with_context(
+        'import "a.flow"\n\nlet x: i32 = 1\n',
+        'import "b.flow"\n\nlet y: i32 = x\n',
+    )
+    lines = [ln for ln in joined.splitlines() if ln.strip()]
+    assert lines[0] == 'import "a.flow"'
+    assert lines[1] == 'import "b.flow"'
+    assert not any(ln.startswith("import ") for ln in lines[2:])
+
+
+def test_a_repeated_import_is_joined_once():
+    import check_doc_examples as C
+
+    joined = C._join_with_context('import "a.flow"\nlet x: i32 = 1\n',
+                                  'import "a.flow"\nlet y: i32 = x\n')
+    assert joined.count('import "a.flow"') == 1
