@@ -188,4 +188,6 @@ Bare inferred `span`, `span<mut>` without an element type, `span<number>`, depen
 
 Example: [`examples/basics/spans.flow`](../../examples/basics/spans.flow). Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`.
 
+A `trait` can abstract APIs that accept or return span-based views; traits do not change span ownership or lifetime rules.
+
 Related: [Types](types.md), [Lifetime domains](lifetime-domains.md), [Language specification](../LANGUAGE_SPEC.md).
