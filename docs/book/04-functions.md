@@ -12,7 +12,7 @@ function clamp_signature_example(x: f64, lo: f64, hi: f64) -> f64 {
 
 ## 4.1 Parameters and results
 
-```flow
+```flow id=square-defs
 function square(x: f64) -> f64 {
     return x * x
 }
@@ -26,7 +26,7 @@ Every non-`void` path must return a value compatible with the declared result ty
 
 Arguments are evaluated before the call:
 
-```flow
+```flow uses=square-defs
 function square_area(width: f64, margin: f64) -> f64 {
     return square(width + margin)
 }
