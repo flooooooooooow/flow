@@ -178,7 +178,7 @@ derivations, and claim paths:
 ```flow
 theorem add_zero(n: Nat) {
     assume definition_of_addition
-    therefore n + 0 = n
+    therefore n + 0 == n
 }
 ```
 

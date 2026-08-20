@@ -2982,10 +2982,34 @@ class Parser:
         self.expect(TokenType.LPAREN)
         parameters: List[Parameter] = []
         if self.current_token.type != TokenType.RPAREN:
-            parameters = self.parse_parameters()
+            parameters = self.parse_theorem_parameters()
         self.expect(TokenType.RPAREN)
         body = self.parse_block()
         return TheoremDecl(claim_path=claim_path, parameters=parameters, body=body)
+
+    def parse_theorem_parameters(self) -> List[Parameter]:
+        """Theorem parameters may be written without a type.
+
+        `theorem Nat/+.commutes(a, b)` names the things the claim quantifies
+        over. Their types come from the claim it refers to, so requiring an
+        annotation would make the statement of the theorem carry information
+        the theorem does not need. `docs/language/epistemology.md` has been
+        written this way since the page existed.
+        """
+        parameters = [self.parse_theorem_parameter()]
+        while self.current_token.type == TokenType.COMMA:
+            self.advance()
+            parameters.append(self.parse_theorem_parameter())
+        return parameters
+
+    def parse_theorem_parameter(self) -> Parameter:
+        name = self._expect_name()
+        if self.current_token.type != TokenType.COLON:
+            # Not `auto`: nothing infers it, and calling it inferred would
+            # suggest something downstream resolves it.
+            return Parameter(name, Type("unconstrained"))
+        self.advance()
+        return Parameter(name, self.parse_type())
 
     def _expect_name(self) -> str:
         """Expect an identifier, including soft keywords usable as names (`and`/`or`)."""

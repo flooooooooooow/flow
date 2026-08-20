@@ -1,10 +1,10 @@
 {
   "generated": "2026-08-20",
   "totals": {
-    "verified": 516,
-    "unverified": 173,
+    "verified": 518,
+    "unverified": 167,
     "expected-error": 8,
-    "ignored": 94
+    "ignored": 98
   },
   "blocks": [
     {
@@ -1725,12 +1725,12 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/17-engineering-and-verification.md#321bfed2f221",
+      "key": "docs/book/17-engineering-and-verification.md#c1641da9bd25",
       "path": "docs/book/17-engineering-and-verification.md",
       "line": 178,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Unexpected token in expression: TokenType.ASSIGN"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/18-a-complete-instrument.md#0b0a640f3b06",
@@ -2248,9 +2248,9 @@
       "key": "docs/language/epistemology.md#0bbbb39b51f4",
       "path": "docs/language/epistemology.md",
       "line": 97,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "NotImplementedError: Unsupported statement: <class 'flow.parser.AssumeStmt'>"
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/epistemology.md#159c72afb166",
@@ -2280,33 +2280,33 @@
       "key": "docs/language/epistemology.md#f41e5f48637c",
       "path": "docs/language/epistemology.md",
       "line": 168,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 2, column 27\n\n     2 | theorem Nat/+.succ-right(n, m)   { therefore n + succ(m) == succ(n + m) }\n       |                           ^"
+      "status": "ignored",
+      "detail": "theorem statements with elided bodies, shown as a catalogue",
+      "reason": "theorem statements with elided bodies, shown as a catalogue"
     },
     {
       "key": "docs/language/epistemology.md#66520f588a77",
       "path": "docs/language/epistemology.md",
       "line": 177,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.IDENTIFIER, got TokenType.ELLIPSIS at line 1, column 20\n\n     1 | function FullAdder(...) -> ... { ... }\n       |                    ^\n\n  Hint: Expected a name (identifier) here. Names must start with a letter or underscore."
+      "status": "ignored",
+      "detail": "theorem statements with elided bodies, shown as a catalogue",
+      "reason": "theorem statements with elided bodies, shown as a catalogue"
     },
     {
       "key": "docs/language/epistemology.md#9c3e0a98b3cb",
       "path": "docs/language/epistemology.md",
       "line": 193,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 1, column 43\n\n     1 | theorem Matmul/vectorize.semantics-equal(m, n, k) {\n       |                                           ^"
+      "status": "ignored",
+      "detail": "theorem statements with elided bodies, shown as a catalogue",
+      "reason": "theorem statements with elided bodies, shown as a catalogue"
     },
     {
       "key": "docs/language/epistemology.md#9ddca4d08238",
       "path": "docs/language/epistemology.md",
       "line": 207,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.COLON, got TokenType.COMMA at line 1, column 38\n\n     1 | theorem RingBuffer/fifo.order-kept(rb, q, x) {\n       |                                      ^"
+      "status": "ignored",
+      "detail": "theorem statements with elided bodies, shown as a catalogue",
+      "reason": "theorem statements with elided bodies, shown as a catalogue"
     },
     {
       "key": "docs/language/epistemology.md#157f67e45f6a",

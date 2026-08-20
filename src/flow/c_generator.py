@@ -32,6 +32,7 @@ from .parser import (
     BreakStatement,
     CapabilityDecl,
     CapabilityMethod,
+    AssumeStmt,
     ConstDecl,
     ContinueStatement,
     DeferStatement,
@@ -55,6 +56,7 @@ from .parser import (
     MatchStatement,
     MethodCall,
     ReturnStatement,
+    ThereforeStmt,
     FindExpr,
     SortExpr,
     SortKey,
@@ -2984,6 +2986,16 @@ class CGenerator:
             return [f"{self._i()}break;"]
         if isinstance(st, ContinueStatement):
             return [f"{self._i()}continue;"]
+
+        # Proof statements carry no runtime behaviour. `assume` names a claim
+        # taken as given and `therefore` states what follows; both are for the
+        # proof layer, so codegen records them as a comment rather than
+        # refusing to compile the function around them.
+        if isinstance(st, AssumeStmt):
+            return [f"{self._i()}/* assume {st.claim_path} */"]
+        if isinstance(st, ThereforeStmt):
+            by = f" by {st.method}" if st.method else ""
+            return [f"{self._i()}/* therefore{by} */"]
 
         # Expression statement
         if self._is_bare_expr_stmt(st):
