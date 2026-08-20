@@ -86,7 +86,7 @@ parsed for forward compatibility.
 
 The attribute form is the target syntax:
 
-```
+```flow-future
 @require(memory < 4096)
 @prefer(parallel)
 let result = xs |> reduce(sum)

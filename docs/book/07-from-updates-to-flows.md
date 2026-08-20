@@ -1,42 +1,25 @@
 # 7. From update loops to flows
 
-A changing system keeps state and updates it over time. An ordinary loop can
-do this. A `flow` declaration states the equations and generates the
-integration code.
+A changing system keeps state and updates it over time. An ordinary loop can do this; a `flow` declaration states the evolution equations and lets the compiler generate stepping code. Every `flow` block in this chapter is compiler-checked in CI.
 
-## 7.1 Discrete state
+## 7.1 Explicit Euler in ordinary Flow
 
-Consider exponential decay:
-
-```text
-dy/dt = -k y
-```
-
-For a time step `dt`, explicit Euler gives:
-
-```text
-y_next = y + (-k y) dt
-```
-
-The direct Flow program is:
+For `dy/dt = -k y`, an explicit Euler step is `y_next = y + (-k y) dt`.
 
 ```flow
-let rate: f64 = 0.8
-let dt: f64 = 0.1
-let mut amount: f64 = 10.0
+function decay_steps() -> f64 {
+    let rate: f64 = 0.8
+    let dt: f64 = 0.1
+    let mut amount: f64 = 10.0
 
-for step in 0 to 10 {
-    amount = amount + (0.0 - rate * amount) * dt
+    for step in 0 to 10 {
+        amount = amount + (0.0 - rate * amount) * dt
+    }
+    return amount
 }
 ```
 
-Three categories are visible:
-
-| Category | Values |
-|---|---|
-| Fixed parameters | `rate`, `dt` |
-| State | `amount` |
-| Evolution rule | `amount + (-rate * amount) * dt` |
+The fixed parameters are `rate` and `dt`; `amount` is state; the assignment is the evolution rule.
 
 ## 7.2 Complete Euler demonstration
 
@@ -65,23 +48,12 @@ function main() -> i32 {
 Source: [`examples/book/07_decay.flow`](../../examples/book/07_decay.flow)
 
 ```bash
-./flow run examples/book/07_decay.flow
+FLOW_HOST=python ./flow run examples/book/07_decay.flow
 ```
-
-```text
-t=0.0 amount=10.000000
-t=0.5 amount=6.590815
-t=1.0 amount=4.343885
-```
-
-The exact continuous solution at `t = 1` is `10e^-0.8`, approximately
-`4.493290`. The Euler result differs because the continuous trajectory was
-replaced by ten finite steps. Reducing `dt` normally reduces this discretisation
-error at the cost of more updates.
 
 ## 7.3 Declaring evolution
 
-The same relation can be stated as a flow:
+The same relation can be stated directly:
 
 ```flow
 flow Decay {
@@ -92,113 +64,70 @@ flow Decay {
 }
 ```
 
-The right-hand side is the derivative, not the next value. Conceptually, the
-compiler generates state storage and a step operation. The integrator evaluates
-the derivative and advances the stored state.
-
-Use the Python compiler host for full evolution syntax:
-
-```bash
-FLOW_HOST=python ./flow run model.flow
-```
+The right-hand side is a derivative, not the next value. The compiler generates state storage, a derivative function, and `Decay_step`.
 
 ## 7.4 Coupled state: a pendulum
 
-A damped pendulum has two state variables:
-
 ```flow
-flow Pendulum {
+extern {
+    function sin(x: f64) -> f64
+}
+
+flow PendulumBook {
     state angle: f64 = 2.0
     state velocity: f64 = 0.0
-
     param gravity: f64 = 9.81
     param length: f64 = 1.0
     param damping: f64 = 0.5
 
     angle evolves as velocity
-    velocity evolves as -(gravity / length) * sin(angle)
-                        - damping * velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity
 }
 ```
 
-The equations are simultaneous. The derivative of `angle` depends on
-`velocity`; the derivative of `velocity` depends on both current state values.
-An integrator must evaluate a consistent state snapshot for a step. Sequentially
-assigning `angle` and then using the updated angle for `velocity` would describe
-a different numerical scheme.
-
-Run the repository's complete pendulum demonstration:
+All derivatives are evaluated from a consistent pre-step state. Run the complete repository example with:
 
 ```bash
 FLOW_HOST=python ./flow run examples/evolution/pendulum_evolves.flow
 ```
 
-Its table reports time, angle, velocity, and mechanical energy. With positive
-damping, the reported energy decreases and the pendulum approaches rest.
+## 7.5 Solver choice
 
-## 7.5 Integrator choice
-
-The evolution rule and the integration method are separate concerns. A solver
-block can request a method and time step:
+The model and numerical integration method are separate concerns. Solver selection belongs inside the `flow` declaration:
 
 ```flow
-solver {
-    dt 5 ms
-    method rk4
+flow Rk4Decay {
+    state amount: f64 = 10.0
+    param rate: f64 = 0.8
+
+    solver { dt 5 ms method rk4 }
+    amount evolves as 0.0 - rate * amount
 }
 ```
 
-Euler uses one derivative estimate per step. Classical fourth-order
-Runge–Kutta uses four estimates and combines them. RK4 usually provides much
-smaller error for smooth systems at the same `dt`, but each step costs more.
-
-Run the RK4 pendulum:
-
-```bash
-FLOW_HOST=python ./flow run examples/evolution/pendulum_rk4.flow
-```
+The checked-in RK4 pendulum is [`examples/evolution/pendulum_rk4.flow`](../../examples/evolution/pendulum_rk4.flow).
 
 ## 7.6 Model checks
 
-A simulation should test properties as well as produce values. Useful checks
-include:
-
-- a conserved quantity remains within a numeric tolerance;
-- a damped energy does not increase beyond a tolerance;
-- a population or concentration remains nonnegative;
-- a controller settles inside a specified band by a specified time;
-- reducing `dt` changes the reported result by less than an accepted amount.
-
-For the decay model, a simple bounded check is:
+A simulation should test properties as well as produce values. A bounded-state check can be an ordinary function:
 
 ```flow
-if amount < 0.0 or amount > 10.0 {
-    return 1
+function valid_amount(amount: f64) -> bool {
+    if amount < 0.0 or amount > 10.0 {
+        return false
+    }
+    return true
 }
 ```
 
-Such a check does not prove the differential equation correct. It detects a violation
-of one required property in the executed numerical scheme.
+Useful checks include conserved quantities, monotonic dissipated energy, nonnegative concentrations, settling bands, and convergence as `dt` is reduced.
 
-## 7.7 State, parameters, and inputs
+## 7.7 State, parameters, inputs, and derived values
 
-Keep the categories distinct:
-
-- **state** persists and is advanced by the solver;
-- **parameters** configure the model and remain fixed during an ordinary run;
-- **inputs** are supplied by another system or function over time;
-- **derived values** are computed from the current state and need not be stored.
-
-Storing every derived value as state enlarges the system and creates additional
-consistency obligations. Store only quantities with independent evolution.
+State persists and is advanced by the solver. Parameters configure the model. Inputs are supplied from outside the model. Derived values are computed from current state and usually should not be stored as independent state.
 
 ## Exercises
 
-1. Run the Euler decay model with `dt = 0.05` for twenty steps. Compare the
-   result at `t = 1` with the ten-step result.
-2. Add a nonnegative-state check after every Euler update.
-3. Express the two-state system `dx/dt = v`, `dv/dt = -4x - 0.2v` as a flow.
-4. Identify the state, parameters, and derived energy of that system.
-5. Compare the output of the Euler and RK4 pendulum demonstrations.
+Run the Euler decay with half the step size; add a nonnegative-state check; express `dx/dt = v`, `dv/dt = -4x - 0.2v` as a `flow`; identify its state and derived energy; then compare Euler and RK4 results.
 
 Return to the [book contents](README.md).

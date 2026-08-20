@@ -1,28 +1,16 @@
 # 11. Modules, projects, packages, and interoperation
 
-File modules define public interfaces. Projects add build metadata and
-dependencies. Interoperation connects Flow declarations to C, Python, and
-stable exported symbols.
+File modules define public interfaces. Projects add build metadata and dependencies. Interoperation connects Flow declarations to C, Python, and stable exported symbols. Every `flow` block in this chapter is compiler-checked in CI.
 
 ## 11.1 Imports
 
-Flow supports logical dot paths, selected names, aliases, and package-local
-siblings:
+Flow supports logical dot paths, selected names, aliases, and package-local siblings. Because an import only compiles when its target module exists in the same project/search path, the book points to complete repository examples instead of presenting orphan import statements as runnable programs.
 
-```flow ignore="module system forms over illustrative module names"
-import std.math { sin, cos }
-import verify.nat.nat_zero_add
-import verify.nat as nat
-import .filters.lowpass
-```
+See [Modules](../language/modules.md) and the module tests under `tests/lang/` for checked import/re-export examples. Older string-path imports remain supported in existing code but logical module paths are the preferred direction.
 
-Resolution proceeds through the built-in standard library, project `[paths]`,
-declared dependencies, and then a leading-dot sibling inside the same package.
-Older string-path imports remain common in the repository but are deprecated.
+## 11.2 Exports
 
-## 11.2 Exports and re-exports
-
-Declarations are private to their module unless exported:
+Declarations are private unless exported:
 
 ```flow
 export function gain(x: f32, amount: f32) -> f32 {
@@ -32,32 +20,21 @@ export function gain(x: f32, amount: f32) -> f32 {
 export struct FilterState {
     z1: f32
 }
-
-export gain, FilterState
 ```
 
-An aggregator can re-export names from another module:
-
-```flow ignore="relative-import form; the sibling module is illustrative"
-export import .filters
-export import .meters { rms, peak }
-```
-
-Re-export collisions are errors. The self-hosted compiler does not yet accept
-`export import`; use the Python host for that form.
+Re-export syntax is documented on [Modules](../language/modules.md), where its multi-file context can be shown correctly.
 
 ## 11.3 `module` blocks
 
 ```flow
 module helpers {
-    function twice(x: i32) -> i32 { return x * 2 }
+    function twice(x: i32) -> i32 {
+        return x * 2
+    }
 }
 ```
 
-At present, a `module` block groups declarations but does not create a
-namespace. The compiler discards the block name and treats its declarations as
-globals. Imports and several declaration forms do not work inside the block.
-Use file modules for namespaces.
+A `module` block currently groups declarations but does not create a namespace; file modules are the namespace boundary.
 
 ## 11.4 Project manifest
 
@@ -73,39 +50,20 @@ signal = "src/signal"
 [dependencies]
 mathkit = "^0.1"
 local_dsp = { path = "../local_dsp" }
-remote = { git = "https://example.org/remote.git", tag = "v1.0" }
 ```
 
-Create and build a project:
+Typical project operations are:
 
 ```bash
 ./flow init meter
 cd meter
-../flow add mathkit@^0.1
 ../flow pkg install
 ../flow build
 ```
 
-Dependencies install into `flow_packages/` and resolved Git revisions are
-recorded in `flow.lock`.
+Resolved dependencies are recorded in `flow.lock`.
 
-## 11.5 Registry operations
-
-```bash
-./flow search matrix
-./flow info mathkit
-./flow add --path ../mathkit --name mathkit
-./flow add --git https://example.org/dsp.git --tag v0.3 --name dsp
-./flow publish --dry-run
-```
-
-The shipped registry is a versioned local JSON index with optional remote JSON
-override. Publishing updates that index; there is no hosted account or package
-upload service. Supported requirements include exact versions, `*`, caret
-ranges, and lower bounds. Locking currently pins direct dependencies rather
-than solving a complete transitive semver graph.
-
-## 11.6 Extern functions
+## 11.5 Extern functions
 
 ```flow
 extern {
@@ -115,111 +73,60 @@ extern {
 }
 ```
 
-An extern declaration supplies a Flow signature for a symbol linked from C or
-the platform. Variadic declarations use `...`. Flow does not automatically
-establish ownership, thread safety, lifetime, or real-time properties for an
-extern call.
+An extern declaration gives Flow a signature for a symbol supplied by C or the platform. It does not automatically establish ownership, thread-safety, lifetime, or RT-safety properties.
 
-## 11.7 Importing C headers
+## 11.6 C headers and embedded C
 
-The Python host supports header import and prototype generation:
-
-```flow
-@cImport("math.h")
-@cImport("my_api.h") as api
-```
-
-Include directories can be supplied to the transpiler. Opaque C types map to
-pointer types, and supported structs/functions become available to checking and
-code generation.
+The Python compiler host supports `@cImport(...)`, `@cInclude(...)`, `extern type`, and `@cEmbed(...)`. These features require real header/native context, so their authoritative executable examples are the tests rather than isolated fragments:
 
 ```bash
 FLOW_HOST=python ./flow run tests/lang/test_c_import_auto.flow
-```
-
-Three related directives serve different purposes:
-
-```flow
-@cInclude("my_api.h")
-extern type OpaqueHandle
-
-@cEmbed("static inline int helper(int x) { return x + 1; }")
-```
-
-`@cInclude` emits an include without generating Flow declarations.
-`extern type` introduces an opaque name used through pointers. `@cEmbed`
-places literal C in the generated translation unit; it is an explicit unsafe
-escape and should be kept small and separately reviewed.
-
-```bash
 FLOW_HOST=python ./flow run tests/lang/test_extern_type.flow
 FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
 ```
 
-## 11.8 C function pointers
+`@cEmbed` is an explicit unsafe escape hatch and should remain small and separately reviewed.
 
-Flow closure types such as `(i32) -> i32` can carry an environment. A raw C
-function pointer has the separate `cfn` type:
+## 11.7 C function pointers
 
-```flow
-let symbol: ptr<void> = dlsym(handle, "sqrt")
-let sqrt_fn: cfn(f64) -> f64 = symbol as cfn(f64) -> f64
-let result: f64 = sqrt_fn(9.0)
-```
-
-Use `cfn` for callbacks obtained from C, `dlsym`, and APIs such as `qsort`.
-Use the ordinary function type for Flow closures.
+Flow closures use ordinary function types such as `(i32) -> i32`. Raw C callbacks use `cfn(...) -> ...`. The dynamic-loading and `qsort` examples exercise the complete ABI context:
 
 ```bash
 FLOW_HOST=python ./flow run tests/lang/test_dlopen.flow
 FLOW_HOST=python ./flow run tests/lang/test_qsort.flow
 ```
 
-## 11.9 Stable C and WebAssembly exports
+## 11.8 Stable exports
 
-Flow normally mangles overloaded symbols. An exported ABI alias avoids exposing
-that scheme:
+`@flow_api` preserves a stable plain C-facing name:
 
-```bash
-./flow transpile library.flow --c \
-    --export add scale \
-    --module-name signal \
-    -o build/library.c
+```flow
+@flow_api
+function add_api(a: i32, b: i32) -> i32 {
+    return a + b
+}
 ```
 
-The public alias is named `flow_export_add`, forwarding to the mangled
-implementation. The `flow_export_` prefix is ABI version 1. `@flow_api` is the
-source-level alternative for a deliberately stable plain C name.
-
-## 11.10 Native project sources
-
-A project manifest can name C, C++, Objective-C, libraries, include paths, and
-frameworks under its native configuration. Use:
+The CLI can also emit ABI aliases when transpiling a library:
 
 ```bash
-./flow build-native
-./flow run-native
+./flow transpile library.flow --c --export add scale --module-name signal -o build/library.c
 ```
 
-Use native project sources when a package wraps HTTP, SQLite, compression,
-DNS, images, or another system library.
+## 11.9 Native project sources
 
-## 11.11 Python wheel target
+A project manifest may name C, C++, Objective-C, libraries, include paths, and frameworks. Use `./flow build-native` and `./flow run-native` when a package wraps a native system library.
+
+## 11.10 Python wheel target
 
 ```bash
 ./flow python mathlib.flow --name mathlib --version 0.1.0
 ```
 
-The target compiles Flow through C into a CPython extension and wheel. Numeric,
-Boolean, string, void, selected pointer, and struct signatures can cross the
-boundary. Function pointers, complex nested generics, Python async mapping,
-struct methods, and NumPy integration remain unsupported.
+The target compiles Flow through C into a CPython extension and wheel. Supported boundary types are intentionally narrower than the full language surface.
 
 ## Exercises
 
-1. Split a two-function program into a library module and consumer.
-2. Construct an aggregator that re-exports two noncolliding modules.
-3. Declare and call one libc function not already used in this book.
-4. Create a path dependency and confirm that `flow.lock` records it.
+Split a program into library and consumer modules; build a re-exporting aggregator; declare one libc function; and create a path dependency whose resolution appears in `flow.lock`.
 
 Next: [Effects and concurrency](12-effects-and-concurrency.md).

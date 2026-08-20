@@ -25,7 +25,7 @@ servers should prefer arenas or avoid heap concat.
 
 Under `safety` / `flight`, every `while` must carry `@max_iterations(N)`:
 
-```flow
+```flow-pseudocode
 @max_iterations(1000)
 while cond {
     # ...

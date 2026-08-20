@@ -20,7 +20,7 @@ enough to fit in the header of a file.
 Wherever the model is a differential equation, it is one. Hodgkin and
 Huxley's four equations are four `evolves as` lines and nothing else:
 
-```flow ignore="illustrative code skeleton"
+```flow-pseudocode
 flow HH {
     state v : f64 = -65.0
     state m : f64 = 0.05293
@@ -43,7 +43,7 @@ flow HH {
 
 A spike reset is a hybrid event, not an `if` inside a loop:
 
-```flow ignore="illustrative code skeleton"
+```flow-pseudocode
 when v reaches 30.0 {
     v becomes c
     u becomes u + d
@@ -88,7 +88,7 @@ The headless recorder is the one that gates: it runs the same compiled
 program with no display, prints the evidence, and returns the program's exit
 code.
 
-```
+```flow-pseudocode
 # the regression run: prints the numbers, exits nonzero if any check fails
 ./flow record examples/neuro/hodgkin_huxley.flow --frames 90 \
     --out build/frames_hh --gif build/hodgkin_huxley.gif
@@ -122,7 +122,7 @@ recorded, so `--frames 4` prints exactly the same numbers as `--frames 900`.
 
 Or regenerate the whole gallery at once:
 
-```
+```flow-pseudocode
 python3 scripts/record_demos.py --group neuro
 ```
 

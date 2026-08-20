@@ -44,7 +44,7 @@ keyword: `tests/core/test_production_features.flow`, which declares
 
 ### 1. Two modules cannot declare the same name
 
-```flow
+```flow expect-error
 # collide.flow
 module audio {
     function gain() -> i32 { return 1 }

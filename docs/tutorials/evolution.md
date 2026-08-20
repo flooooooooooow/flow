@@ -91,7 +91,7 @@ flow Pendulum {
 The compiler emits `Pendulum_new`, `Pendulum_step(self, dt)`, and friends.
 Default integrator is explicit Euler; request RK4 with:
 
-```flow
+```flow-pseudocode
 solver { dt 5 ms  method rk4 }
 ```
 

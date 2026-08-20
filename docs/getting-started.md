@@ -1,13 +1,8 @@
-# Getting Started with Flow
+# Flow Quickstart
 
-Get from zero to productive in 5 minutes.
+Get from installation to a real Flow program in a few minutes. Every fenced block labelled `flow` on this page is compiled in CI; none of the examples depend on hidden code or omitted declarations.
 
-## Installation
-
-### Requirements
-
-- Clang or GCC (Xcode Command Line Tools on macOS)
-- Python 3.9+ (only for `FLOW_HOST=python`, tests, MLIR/gfx, and first-time Gen0 bootstrap)
+## 1. Install Flow
 
 ### Homebrew
 
@@ -25,14 +20,17 @@ cd flow
 ./flow version
 ```
 
-`./flow run` / `./flow compile` default to Stage-A **flowc** (`FLOW_HOST=flowc`). Use `FLOW_HOST=python` for the full language surface (I/O helpers, DSLs, tests). See [self-hosting](project/self-hosting.md).
+Requirements are Clang or GCC and Python 3.9+ for the full compiler host. `flow run` and `flow compile` default to the self-hosted Stage-A `flowc`; the examples below use `FLOW_HOST=python` because they intentionally exercise the full language surface, including `println` and `flow` evolution blocks.
 
-## Hello World
+If you installed from source, replace `flow` with `./flow` in the commands below.
 
-Create `hello.flow` (Stage-A subset — works with the default flowc host):
+## 2. Hello, Flow
+
+Create `hello.flow`:
 
 ```flow
 function main() -> i32 {
+    println("Hello, Flow!")
     return 0
 }
 ```
@@ -40,63 +38,47 @@ function main() -> i32 {
 Run it:
 
 ```bash
-./flow run hello.flow
+FLOW_HOST=python flow run hello.flow
 ```
 
-For `println` and other full-language features:
+You now have a Flow source file compiled through the Flow frontend, emitted as C, compiled to a native executable, and run.
+
+## 3. Variables, control flow, and loops
+
+Create `basics.flow`:
+
+```flow
+function main() -> i32 {
+    let x: i32 = 42
+    let mut total: i32 = 0
+
+    if x > 0 {
+        println("positive")
+    } else {
+        println("not positive")
+    }
+
+    for i in 0 to 10 {
+        total = total + i
+    }
+
+    let mut countdown: i32 = 3
+    while countdown > 0 {
+        countdown = countdown - 1
+    }
+
+    println(total)
+    return 0
+}
+```
 
 ```bash
-FLOW_HOST=python ./flow run hello.flow
+FLOW_HOST=python flow run basics.flow
 ```
 
-## Language Basics
+## 4. Functions and structs
 
-### Variables
-
-```flow
-let x: i32 = 42              # Immutable
-let mut count: i32 = 0       # Mutable
-count = count + 1
-```
-
-### Functions
-
-```flow
-function add(a: i32, b: i32) -> i32 {
-    return a + b
-}
-
-function greet(name: string) -> void {
-    println(name)
-}
-```
-
-### Control Flow
-
-```flow
-# If/else
-if x > 0 {
-    println("positive")
-} elif x < 0 {
-    println("negative")
-} else {
-    println("zero")
-}
-
-# While loop
-let mut i: i32 = 0
-while i < 10 {
-    println(i)
-    i = i + 1
-}
-
-# For loop
-for i in 0 to 10 {
-    println(i)
-}
-```
-
-### Structs
+Create `point.flow`:
 
 ```flow
 struct Point {
@@ -104,51 +86,84 @@ struct Point {
     y: f32
 }
 
+function squared_length(p: Point) -> f32 {
+    return p.x * p.x + p.y * p.y
+}
+
 function main() -> i32 {
     let p: Point = Point { x: 3.0, y: 4.0 }
-    println(p.x)
+    println(squared_length(p))
     return 0
 }
 ```
 
-## CLI Commands
-
 ```bash
-./flow run <file>       # Compile and run
-./flow compile <file>   # Compile only
-./flow test             # Run tests
-./flow fmt <file>       # Format code
-./flow repl             # Interactive mode
+FLOW_HOST=python flow run point.flow
 ```
 
-## Native Graphics (macOS)
+## 5. The Flow part: describe evolution directly
 
-For graphical applications:
+Create `decay.flow`:
 
-```bash
-# Compile
-./flow compile examples/games/tetris_gfx.flow
+```flow
+flow Decay {
+    state value : f64 = 1.0
+    param rate  : f64 = 0.5
 
-# Link with graphics runtime
-clang -O2 build/tetris_gfx.c runtime/gfx_macos.m \
-    -framework Cocoa -framework CoreGraphics -framework QuartzCore \
-    -o build/tetris_gfx
+    value evolves as -rate * value
+}
 
-# Run
-./build/tetris_gfx
+function main() -> i32 {
+    let mut system: Decay = Decay_new()
+
+    for i in 0 to 100 {
+        Decay_step(&system, 0.01)
+    }
+
+    println(system.value)
+    return 0
+}
 ```
 
-## Next Steps
+```bash
+FLOW_HOST=python flow run decay.flow
+```
+
+The `flow` declaration is the model. The compiler generates the state representation and `Decay_step`; your program only decides when to advance it.
+
+For a larger shipped example:
+
+```bash
+FLOW_HOST=python flow run examples/evolution/pendulum_evolves.flow
+```
+
+## 6. Useful commands
+
+```bash
+flow version
+FLOW_HOST=python flow run file.flow
+FLOW_HOST=python flow compile file.flow
+FLOW_HOST=python flow test
+flow fmt file.flow
+```
+
+The self-hosted Stage-A subset can be exercised directly with plain `flow run` / `flow compile`. See [self-hosting](project/self-hosting.md) for the current boundary between Stage-A and the full Python-host compiler.
+
+## 7. Next steps
 
 | Goal | Resource |
 |------|----------|
-| Language reference | [docs/LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) |
-| Examples | [examples/](../examples/) |
-| Effects system | [examples/effects/](../examples/effects/) |
-| Machine learning | [examples/ml/](../examples/ml/) |
+| Learn the language progressively | [Beginner tutorial](tutorials/beginner.md) |
+| See the language surface | [Language reference](LANGUAGE_SPEC.md) |
+| Algebraic effects and capabilities | [Effects showcase](effects-showcase.md) |
+| Evolution and dynamical systems | [Evolution tutorial](tutorials/evolution.md) |
+| Examples by domain | [Examples index](../examples/README.md) |
+| Full project vision | [Vision](../VISION.md) |
+
+New to programming entirely? [Start here](start-here.md) gives a slower terminal-first walkthrough.
 
 ## Troubleshooting
 
-**"command not found: flow"** - Use `./flow` (with dot-slash)
+If `flow` is not found after a source checkout, use `./flow`. If Clang/GCC is missing, install Xcode Command Line Tools on macOS with `xcode-select --install`, or `build-essential` on Debian/Ubuntu.
 
-**"gcc/clang not found"** - Install: `xcode-select --install` (macOS) or `apt install build-essential` (Ubuntu)
+If a full-language example reports a Stage-A subset error, make sure the command begins with `FLOW_HOST=python`.

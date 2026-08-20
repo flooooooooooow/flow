@@ -339,7 +339,7 @@ A backend value selects the CPU or GPU path; the block operations take it as
 their first argument. The GPU path falls back to CPU logic where Metal is
 unavailable.
 
-```flow ignore="links runtime/audio_gpu_metal.m, which the doc example build does not compile"
+```flow
 import "stdlib/audio/gpu.flow"
 
 function main() -> i32 {

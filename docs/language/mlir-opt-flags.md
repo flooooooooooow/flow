@@ -41,7 +41,7 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 Independently of `--optimize`, the generator rewrites simple elementwise
 counted loops itself:
 
-```
+```flow-pseudocode
 for i in 0 to n { out[i] = a * x[i] + y[i] }
 ```
 

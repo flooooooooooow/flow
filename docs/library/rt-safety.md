@@ -12,6 +12,10 @@ any call — direct or transitive — from that function into a heap-touching
 API:
 
 ```flow
+struct FilterState {
+    z: f32
+}
+
 @rt_safe
 function process_block(state: ptr<FilterState>, block_size: i32) -> void {
     let mut i: i32 = 0
@@ -75,8 +79,12 @@ supports attributes on `function` declarations.
 long does this memory live, and who is allowed to keep a reference to it.
 
 ```flow
+struct LifetimeFilterState {
+    z: f32
+}
+
 @lifetime(callback)
-function process_block(state: ptr<FilterState>, n: i32) -> void { }
+function process_lifetime_block(state: ptr<LifetimeFilterState>, n: i32) -> void { }
 ```
 
 `@lifetime(callback)` **is** `@rt_safe`: it runs the same whole-program call

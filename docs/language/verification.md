@@ -1,13 +1,13 @@
 # Flow Verification: Same Language, Same Syntax
 
-> **Third-party library — not core Flow.** Formal math verification lives in the **`flow-verify`** package ([overview](../third-party/flow-verify.md)). Core Flow is a general-purpose compiled language; `theorem` / `therefore` keywords are planned for the library, not required to write everyday programs.
+> **Third-party library — not core Flow.** Formal math verification lives in the **`flow-verify`** package ([overview](../third-party/flow-verify.md)). Core Flow recognizes the minimal `theorem` / `assume` / `therefore` surface; the richer proof metadata, claim paths, automation, and `has property` forms below belong to the verification design and are not required for everyday programs.
 
-> **Status:** Design spec (not yet implemented)  
+> **Status:** Minimal theorem syntax is implemented; end-to-end proof checking remains a design/tooling layer.  
 > **Core idea:** A proof is a program. A theorem is a function. No second language.
 
-Flow already has `let`, `if`, `for`, `while`, `struct`, `function`. Verification adds exactly four keywords:
+Flow already has `let`, `if`, `for`, `while`, `struct`, `function`. Verification adds a small proof vocabulary:
 
-```
+```flow-pseudocode
 theorem       — declare something that must be true
 assume        — bring a fact into scope
 therefore     — state what follows (the checker verifies it)
@@ -23,7 +23,7 @@ Everything else is ordinary Flow.
 Every `theorem` carries a header comment in plain English. No exceptions.
 If you cannot write the header, the theorem should not exist.
 
-```flow ignore="illustrative code skeleton"
+```flow-pseudocode
 # ── nat_add_zero ────────────────────────────────────────────────
 # means:  Adding zero on the right gives you the same number.
 #         Example: 12 + 0 = 12
@@ -62,7 +62,7 @@ The checker warns on missing headers. CI fails on orphan derived theorems (prove
 Facts are addressed by **what they claim**, not invented names.
 See [epistemology.md](epistemology.md) for the full system.
 
-```
+```flow-pseudocode
 Domain / Morphism . Facet
 
 Nat/+.zero-right      not  nat_add_zero
@@ -76,7 +76,7 @@ Matmul/vectorize.semantics-equal
 - **`@tier`** = definition | axiom | derived
 - **Same claim → same path** — compiler rejects synonym creep
 
-```flow ignore="illustrative code skeleton"
+```flow-future
 theorem Nat/+.zero-right(n: Nat) {
     @from peano/induction
     therefore n + 0 == n
@@ -92,9 +92,9 @@ No function creep: two theorems with the same `therefore` cannot get different p
 
 ## Theorem = Function
 
-A theorem has parameters and a body, just like `function`.
+A theorem has parameters and a body, just like `function`. The example below is schematic because the `Nat` library and proof dependencies are omitted from the page.
 
-```flow
+```flow-pseudocode
 # ── nat_add_commutes ────────────────────────────────────────────
 # means:  You can swap the order of addition.
 #         Example: 3 + 5 = 5 + 3
@@ -123,14 +123,14 @@ theorem nat_add_commutes(a: Nat, b: Nat) {
 
 ### `therefore` with steps
 
-```flow ignore="illustrative code skeleton"
+```flow-future
 let step = succ(n + b)    by nat_add_succ(n, b)
 therefore lhs == rhs
 ```
 
 ### Automation suffixes
 
-```flow ignore="the `therefore ... by` proof form parses but has no lowering yet"
+```flow-future
 therefore x == y by exhaustive
 therefore x == y by smt
 therefore x == y by symbolic
@@ -140,7 +140,7 @@ therefore x == y by symbolic
 
 ## `has property` = Spec on Real Code
 
-```flow ignore="illustrative code skeleton"
+```flow-future
 function ring_push(rb: ptr<RingBuffer>, value: i32) -> i32
     has property not ring_is_full(rb) before
     has property ring_size(rb) == old(ring_size(rb)) + 1 after
@@ -157,9 +157,9 @@ Properties get the same header comments as theorems.
 
 ### Math — minimal foundations, derive the rest
 
-`lib/verify/nat.flow` holds **definitions only**:
+`lib/verify/nat.flow` holds **definitions only**. The fragment below is schematic because the `Nat` definitions are not repeated here:
 
-```flow
+```flow-pseudocode
 # means:  Adding zero on the left gives the other number.  (0 + 5 = 5)
 # from:   Peano recursive definition of +
 # tier:   definition
@@ -181,7 +181,7 @@ Everything else (`nat_add_zero`, `nat_add_commutes`, …) lives in `derived/` an
 
 ### Circuits — function + theorem, literature link to the architecture
 
-```flow ignore="proof metadata header, not code"
+```text
 # means:  The full adder output matches binary addition with carry.
 # from:   Patterson & Hennessy, *Computer Organization and Design*, §A.5
 #         https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder
@@ -191,7 +191,7 @@ Everything else (`nat_add_zero`, `nat_add_commutes`, …) lives in `derived/` an
 
 ### Compiler opts — run both, therefore equal
 
-```flow ignore="proof metadata header, not code"
+```text
 # means:  Vectorized matmul writes the same matrix as the naive version.
 # from:   BLIS design paper (Van Zee & van de Geijn, 2015) for why we vectorize;
 #         this theorem states the optimisation is sound, not why we want it.
