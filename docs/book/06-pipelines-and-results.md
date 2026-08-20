@@ -1,56 +1,92 @@
 # 6. Pipelines and explicit results
 
-Run full-language examples with the Python compiler host:
+Run the examples with the Python compiler host:
 
 ```bash
 FLOW_HOST=python ./flow run file.flow
 ```
 
-Every `flow` block below is compiler-checked in CI.
-
 ## 6.1 Forward composition
 
-The pipeline operator sends the value on its left into the call on its right:
+The pipeline operator sends a value into a function call:
 
-```flow
-function increment(x: i32) -> i32 { return x + 1 }
-function double(x: i32) -> i32 { return x * 2 }
-
-function pipeline_value() -> i32 {
-    return 5 |> increment() |> double()
-}
+```flow ignore="pipe notation over names standing for any function and value"
+x |> f
+x |> f()
+x |> f(y)
 ```
 
-That is equivalent to `double(increment(5))`. A pipeline changes notation, not evaluation order.
+They compile as:
+
+```flow ignore="the same three, desugared"
+f(x)
+f(x)
+f(x, y)
+```
+
+A chain is evaluated from left to right. The rest of this chapter pipes
+values through these three:
+
+```flow id=helpers
+function increment(x: i32) -> i32 { return x + 1 }
+function double(x: i32) -> i32 { return x * 2 }
+function add(x: i32, k: i32) -> i32 { return x + k }
+```
+
+```flow uses=helpers
+let result: i32 = 5 |> increment() |> double()
+```
+
+is equivalent to:
+
+```flow uses=helpers
+let result: i32 = double(increment(5))
+```
+
+A pipeline changes the notation, not the order of evaluation. It reads well
+when a value passes through several functions in sequence.
 
 ## 6.2 Argument placement
 
-By default the piped value becomes the first argument. A single `_` placeholder selects another position:
+By default, the piped value becomes the first argument. A single `_`
+placeholder selects a different position:
 
-```flow
+```flow id=clamp
+const raw: i32 = 137
+
 function clamp(lo: i32, value: i32, hi: i32) -> i32 {
     if value < lo { return lo }
     if value > hi { return hi }
     return value
 }
 
-function bounded(raw: i32) -> i32 {
-    return raw |> clamp(0, _, 100)
-}
+let bounded: i32 = raw |> clamp(0, _, 100)
 ```
 
-`raw |> clamp(0, _, 100)` is equivalent to `clamp(0, raw, 100)`. More than one `_` in a stage is rejected because it would duplicate the piped value implicitly.
+It compiles as:
+
+```flow uses=clamp
+let bounded: i32 = clamp(0, raw, 100)
+```
+
+Exactly one pipeline value enters each stage. More than one `_` in a stage is
+rejected because it would duplicate that value implicitly.
 
 ## 6.3 Failure as data
 
-A reusable function can return an explicit result struct:
+A return code can report failure for an entire process. A reusable function
+needs a value-level representation:
 
-```flow
+```flow id=result-type
 struct ResultI32 {
     ok: bool,
     value: i32
 }
+```
 
+A validator constructs either state explicitly:
+
+```flow uses=result-type id=parse-port
 function parse_port(raw: i32) -> ResultI32 {
     if raw < 1 or raw > 65535 {
         return ResultI32 { ok: false, value: 0 }
@@ -59,7 +95,8 @@ function parse_port(raw: i32) -> ResultI32 {
 }
 ```
 
-The caller checks `ok` before using `value`, so failure is represented in data rather than an unstated convention.
+The caller must inspect `ok` before using `value`. Failure is therefore part
+of the result type instead of an unstated convention.
 
 ## 6.4 Complete demonstration
 
@@ -105,48 +142,43 @@ function main() -> i32 {
 }
 ```
 
-Source: [`examples/book/06_pipeline_result.flow`](../../examples/book/06_pipeline_result.flow)
+Source:
+[`examples/book/06_pipeline_result.flow`](../../examples/book/06_pipeline_result.flow)
 
 ```bash
 FLOW_HOST=python ./flow run examples/book/06_pipeline_result.flow
 ```
 
+```text
+adjusted: 8090
+valid: 1 invalid: 0
+```
+
 ## 6.5 Chaining fallible operations
 
-When each stage can fail, inspect the result before continuing:
+When each stage can fail, test the result before continuing:
 
-```flow
-struct ConfigureResult {
-    ok: bool,
-    value: i32
-}
-
-function parse_config_port(raw: i32) -> ConfigureResult {
-    if raw < 1 or raw > 65535 {
-        return ConfigureResult { ok: false, value: 0 }
-    }
-    return ConfigureResult { ok: true, value: raw }
-}
-
-function add_ten(value: i32) -> i32 {
-    return value + 10
-}
-
-function configure(raw: i32) -> ConfigureResult {
-    let port: ConfigureResult = parse_config_port(raw)
-    if not port.ok {
+```flow uses=helpers,result-type,parse-port
+function configure(raw: i32) -> ResultI32 {
+    let port: ResultI32 = parse_port(raw)
+    if !port.ok {
         return port
     }
 
-    let adjusted: i32 = port.value |> add_ten()
-    return parse_config_port(adjusted)
+    let adjusted: i32 = port.value |> add(10)
+    return parse_port(adjusted)
 }
 ```
 
-The failed value never reaches the next operation.
+The checks are explicit. A failed value cannot reach the next operation.
 
 ## Exercises
 
-Add `error_code: i32` to the result struct; write `unwrap_or`; construct a three-stage numeric pipeline and its equivalent nested expression; then write a checked port-doubling function.
+1. Add `error_code: i32` to `ResultI32`.
+2. Write `unwrap_or(result, fallback)`.
+3. Construct a three-stage numeric pipeline and then write the equivalent
+   nested expression.
+4. Write a function that doubles a valid port and returns failure if the
+   result exceeds `65535`.
 
 Next: [From update loops to flows](07-from-updates-to-flows.md).
