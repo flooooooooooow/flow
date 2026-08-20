@@ -7,7 +7,7 @@
 
 Flow already has `let`, `if`, `for`, `while`, `struct`, `function`. Verification adds exactly four keywords:
 
-```
+```flow-pseudocode
 theorem       — declare something that must be true
 assume        — bring a fact into scope
 therefore     — state what follows (the checker verifies it)
@@ -62,7 +62,7 @@ The checker warns on missing headers. CI fails on orphan derived theorems (prove
 Facts are addressed by **what they claim**, not invented names.
 See [epistemology.md](epistemology.md) for the full system.
 
-```
+```flow-pseudocode
 Domain / Morphism . Facet
 
 Nat/+.zero-right      not  nat_add_zero
