@@ -124,7 +124,7 @@ verifies they reach the same accuracy.
 The worker is an ordinary Flow function handed to the runtime as a C
 function pointer. `@flow_api` keeps its symbol unmangled:
 
-```text
+```flow-pseudocode
 @flow_api
 function shard_body(s: i32, ctx: ptr<void>) -> void {
     shard_grad(s)
