@@ -183,7 +183,7 @@ struct Pair<T> {
 
 ## Units of measure
 
-A `unit` declaration creates a dimension-carrying numeric type. Units erase to numeric storage in generated C, while dimensional compatibility is checked at compile time.
+A `unit` declaration creates a dimension-carrying numeric type. Units erase to numeric storage in generated C, while dimensional compatibility is checked at compile time. The standard SI unit definitions live in `lib/stdlib/units_si.flow` and are imported as `stdlib/units_si`.
 
 ```flow
 unit Meter
