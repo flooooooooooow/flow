@@ -10,7 +10,7 @@ FLOW_HOST=python ./flow run file.flow
 
 The pipeline operator sends a value into a function call:
 
-```flow
+```flow ignore="pipe notation over names standing for any function and value"
 x |> f
 x |> f()
 x |> f(y)
@@ -18,21 +18,28 @@ x |> f(y)
 
 They compile as:
 
-```flow
+```flow ignore="the same three, desugared"
 f(x)
 f(x)
 f(x, y)
 ```
 
-A chain is evaluated from left to right:
+A chain is evaluated from left to right. The rest of this chapter pipes
+values through these three:
 
-```flow
+```flow id=helpers
+function increment(x: i32) -> i32 { return x + 1 }
+function double(x: i32) -> i32 { return x * 2 }
+function add(x: i32, k: i32) -> i32 { return x + k }
+```
+
+```flow uses=helpers
 let result: i32 = 5 |> increment() |> double()
 ```
 
 is equivalent to:
 
-```flow
+```flow uses=helpers
 let result: i32 = double(increment(5))
 ```
 
@@ -44,7 +51,9 @@ when a value passes through several functions in sequence.
 By default, the piped value becomes the first argument. A single `_`
 placeholder selects a different position:
 
-```flow
+```flow id=clamp
+const raw: i32 = 137
+
 function clamp(lo: i32, value: i32, hi: i32) -> i32 {
     if value < lo { return lo }
     if value > hi { return hi }
@@ -56,7 +65,7 @@ let bounded: i32 = raw |> clamp(0, _, 100)
 
 It compiles as:
 
-```flow
+```flow uses=clamp
 let bounded: i32 = clamp(0, raw, 100)
 ```
 
@@ -149,7 +158,7 @@ valid: 1 invalid: 0
 
 When each stage can fail, test the result before continuing:
 
-```flow uses=result-type,parse-port
+```flow uses=helpers,result-type,parse-port
 function configure(raw: i32) -> ResultI32 {
     let port: ResultI32 = parse_port(raw)
     if !port.ok {
