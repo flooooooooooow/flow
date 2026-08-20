@@ -82,7 +82,7 @@ def _rel(path: Path) -> str:
 # no entry point to parse, type-check or generate C, so a block with real
 # declarations already passes standalone. All it ever did was supply substance
 # to blocks that were otherwise empty, defeating the vacuity check.
-MODES = ("standalone", "stmt-wrap", "split-wrap", "partition-wrap")
+MODES = ("standalone", "stmt-wrap", "split-wrap")
 
 # Keywords that open a top-level declaration. Anything at brace depth zero that
 # does not start with one of these is a statement.
@@ -114,72 +114,6 @@ def _split_declarations(code: str) -> tuple[str, str]:
 
 
 
-def _partition_declarations(code: str) -> tuple[str, str]:
-    """Separate declarations from executable top-level fragments anywhere in a block."""
-    block_decls = (
-        "function ", "export function ", "struct ", "enum ", "trait ",
-        "impl ", "effect ", "capability ", "flow ", "test ", "theorem ",
-    )
-    one_line_decls = (
-        "const ", "type ", "distinct ", "unit ", "import ", "extern ", "module ",
-    )
-    decls: list[str] = []
-    stmts: list[str] = []
-    pending_attrs: list[str] = []
-    current: list[str] = []
-    current_is_decl = False
-    depth = 0
-    waiting_for_brace = False
-
-    def flush() -> None:
-        nonlocal current, current_is_decl, waiting_for_brace
-        if not current:
-            return
-        (decls if current_is_decl else stmts).extend(current)
-        current = []
-        current_is_decl = False
-        waiting_for_brace = False
-
-    for line in code.splitlines():
-        stripped = line.strip()
-        if current:
-            current.append(line)
-            depth += line.count("{") - line.count("}")
-            if waiting_for_brace and "{" in line:
-                waiting_for_brace = False
-            if not waiting_for_brace and depth <= 0:
-                flush()
-                depth = 0
-            continue
-        if stripped.startswith("@"):
-            pending_attrs.append(line)
-            continue
-        if stripped.startswith(block_decls):
-            current_is_decl = True
-            current = pending_attrs + [line]
-            pending_attrs = []
-            depth = line.count("{") - line.count("}")
-            waiting_for_brace = "{" not in line
-            if not waiting_for_brace and depth <= 0:
-                flush()
-                depth = 0
-            continue
-        if stripped.startswith(one_line_decls):
-            decls.extend(pending_attrs)
-            pending_attrs = []
-            decls.append(line)
-            continue
-        if pending_attrs:
-            stmts.extend(pending_attrs)
-            pending_attrs = []
-        stmts.append(line)
-
-    flush()
-    if pending_attrs:
-        stmts.extend(pending_attrs)
-    return "\n".join(decls), "\n".join(stmts)
-
-
 def _indent(code: str) -> str:
     return "\n".join(
         "    " + line if line.strip() else line for line in code.splitlines()
@@ -193,12 +127,6 @@ def _harness(code: str, mode: str) -> str:
         return f"function main() -> i32 {{\n{_indent(code)}\n    return 0\n}}\n"
     if mode == "split-wrap":
         decls, stmts = _split_declarations(code)
-        if not stmts.strip():
-            raise _NotApplicable
-        body = f"function main() -> i32 {{\n{_indent(stmts)}\n    return 0\n}}\n"
-        return (decls + "\n\n" if decls.strip() else "") + body
-    if mode == "partition-wrap":
-        decls, stmts = _partition_declarations(code)
         if not stmts.strip():
             raise _NotApplicable
         body = f"function main() -> i32 {{\n{_indent(stmts)}\n    return 0\n}}\n"
@@ -303,6 +231,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     c_source is None when the block did not get that far.
     """
     from flow.c_generator import flow_to_c
+    from flow.c_header_parser import resolve_c_imports
     from flow.module_resolver import resolve_modules
     from flow.monomorphize import monomorphize
     from flow.parser import parse_flow_code
@@ -344,6 +273,12 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
             try:
                 with redirect_stdout(sink), redirect_stderr(sink):
                     decls = resolve_modules(str(unit))
+                    # transpiler.py resolves @cImport right after resolving
+                    # modules. Without the same step here, a module that binds
+                    # C through a header looks like it declares nothing, and
+                    # every example importing it fails with "Undefined
+                    # function 'open'" while `./flow run` compiles it happily.
+                    decls = resolve_c_imports(decls, str(unit.parent))
             except Exception as exc:
                 return None, "imports", f"{type(exc).__name__}: {exc}"
 
@@ -368,7 +303,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     # earlier whitelist of "substantive" declaration kinds got this wrong and
     # reported 26 correct examples as empty.
     substantive = own
-    if mode in ("stmt-wrap", "split-wrap", "partition-wrap"):
+    if mode in ("stmt-wrap", "split-wrap"):
         # Everything except the bare `return 0` the harness appended.
         substantive = [
             d for d in own
@@ -412,9 +347,54 @@ def _from_mismatch(block: Block) -> str:
     return ""
 
 
-def verify(block: Block) -> Result:
+def _page_context(block: Block, context: Optional[dict]) -> tuple[str, str]:
+    """Return (text, error) for the earlier blocks this one names."""
+    if not block.uses:
+        return "", ""
+    if context is None:
+        return "", "uses= needs page context; call verify() through run()"
+    parts = []
+    for name in block.uses:
+        name = name.strip()
+        body = context.get(name)
+        if body is None:
+            return "", (
+                f"uses={name!r} names no earlier block on this page; add "
+                f"id={name} to the block it depends on"
+            )
+        parts.append(body.rstrip())
+    return "\n\n".join(parts) + "\n\n", ""
+
+
+def _join_with_context(page: str, code: str) -> str:
+    """Put earlier-page code in front, with every import hoisted to the top.
+
+    A block that names context also imports its own module, so joining them
+    naively leaves an `import` in the middle, after the context's statements.
+    Every harness rung then reads it as an expression. Imports are declarations
+    wherever they were written, so they move to the front and duplicates drop.
+    """
+    if not page:
+        return code
+    imports: list[str] = []
+    body: list[str] = []
+    for line in (page + code).splitlines():
+        if line.startswith("import ") and line not in imports:
+            imports.append(line)
+        elif not line.startswith("import "):
+            body.append(line)
+    if not imports:
+        return page + code
+    return "\n".join(imports) + "\n\n" + "\n".join(body).strip("\n")
+
+
+def verify(block: Block, context: Optional[dict] = None) -> Result:
     if block.ignored:
         return Result(block, "ignored", detail=block.ignored)
+
+    page, problem = _page_context(block, context)
+    if problem:
+        return Result(block, "unverified", detail=problem, stage="uses")
 
     drifted = _from_mismatch(block)
     if drifted:
@@ -423,21 +403,21 @@ def verify(block: Block) -> Result:
     preamble, problem = _preamble_text(block)
     if problem:
         return Result(block, "unverified", detail=problem, stage="preamble")
+    # Page context joins the block's own code rather than the preamble, so the
+    # harness wraps both together. A chapter's earlier block is often
+    # statements (`let sys = dsys_discrete(...)`), and outside the harness
+    # those land at module scope, where `let` has to be `let mut`.
+    code = _join_with_context(page, block.code)
 
     modes = ("standalone",) if "no-harness" in block.flags else MODES
     first: tuple[str, str] = ("", "")
     best_noop = ""
     reached_meaning = False
     meaning_detail = ""
-    deepest: tuple[int, str, str] = (-1, "", "")
-    stage_rank = {
-        "parse": 0, "imports": 1, "degenerate": 2, "types": 3,
-        "vacuous": 3, "codegen": 4, "clang": 5, "shader": 5,
-    }
 
     for mode in modes:
         try:
-            source = preamble + _harness(block.code, mode)
+            source = preamble + _harness(code, mode)
         except _NotApplicable:
             continue
         csource, stage, detail = _compile(
@@ -445,9 +425,6 @@ def verify(block: Block) -> Result:
             guard_noop=(mode != "standalone"),
             mode=mode,
         )
-        rank = stage_rank.get(stage, -1)
-        if rank > deepest[0] or (rank == deepest[0] and detail and not deepest[2]):
-            deepest = (rank, stage, detail)
         if stage in ("types", "vacuous", "codegen", "degenerate"):
             reached_meaning = True
         if stage in ("types", "codegen") and not meaning_detail:
@@ -479,11 +456,13 @@ def verify(block: Block) -> Result:
             detail=meaning_detail or best_noop or first[1],
             stage="types" if reached_meaning else "parse",
         )
-    if best_noop and deepest[0] < stage_rank["types"]:
-        return Result(block, "unverified", detail=best_noop, stage="degenerate")
-    if deepest[0] >= 0:
-        return Result(block, "unverified", detail=deepest[2], stage=deepest[1])
-    return Result(block, "unverified", detail=first[1], stage=first[0])
+    # The furthest failure, not the first. `standalone` runs before the
+    # wrappers, so a statement fragment recorded "Top-level 'let' must be
+    # 'let mut'" even when stmt-wrap got to the type checker and failed for a
+    # reason worth reading (#588).
+    if meaning_detail:
+        return Result(block, "unverified", detail=meaning_detail, stage="types")
+    return Result(block, "unverified", detail=best_noop or first[1], stage=first[0])
 
 
 def _batch_clang(results: list[Result], batch: int = 150) -> None:
@@ -601,7 +580,15 @@ def run(use_clang: bool = True, execute: bool = False) -> list[Result]:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2)
 
-    results = [verify(b) for b in blocks]
+    # Ids are page-scoped and resolve backwards only, so a block can never
+    # depend on one further down the page.
+    results = []
+    contexts: dict = {}
+    for block in blocks:
+        page_ctx = contexts.setdefault(block.path, {})
+        results.append(verify(block, page_ctx))
+        if block.block_id:
+            page_ctx[block.block_id] = block.code
     if use_clang:
         _batch_clang(results)
         if execute:
