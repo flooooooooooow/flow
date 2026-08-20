@@ -526,6 +526,14 @@ function repoSourceUrl(path) {
     return `${REPO_BLOB_BASE}${clean}${frag}`;
 }
 
+// Pages whose Flow blocks become Run buttons. A block only becomes one if it
+// has a `main`, so a fragment stays a plain listing either way.
+const RUNNABLE_PAGE_PREFIXES = ['tutorials/', 'examples/'];
+
+function isRunnablePage(path) {
+    return RUNNABLE_PAGE_PREFIXES.some((p) => String(path || '').startsWith(p));
+}
+
 function wireInternalLinks(container, basePath) {
     container.querySelectorAll('a[href]').forEach((a) => {
         const href = a.getAttribute('href');
@@ -620,7 +628,7 @@ async function loadDoc(path) {
             wireInternalLinks(content, path);
             renderMath(content);
             highlightCode(content);
-            if (path.startsWith('tutorials/')) {
+            if (isRunnablePage(path)) {
                 initTutorialRunners(content, { autoMain: true });
             }
             // After the runners claim their blocks, so interactive embeds keep
