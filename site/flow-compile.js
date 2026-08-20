@@ -297,7 +297,9 @@
       functions: Object.create(null),
       functionOrder: [],
       consts: [],
-      externs: Object.create(null)
+      externs: Object.create(null),
+      effects: Object.create(null),
+      capabilities: Object.create(null)
     };
     while (!this.at('EOF')) {
       var t = this.peek();
@@ -324,15 +326,18 @@
           this.parseConst(prog);
           continue;
         case 'EFFECT':
-          throw new Unsupported('effect declarations', t.line);
+          this.parseEffect(prog);
+          continue;
         case 'CAPABILITY':
-          throw new Unsupported('capability declarations', t.line);
+          this.parseCapability(prog);
+          continue;
         case 'TRAIT':
           throw new Unsupported('trait declarations', t.line);
         case 'IMPL':
           throw new Unsupported('impl blocks', t.line);
         case 'ENUM':
-          throw new Unsupported('enum declarations', t.line);
+          this.parseEnum(prog);
+          continue;
         case 'TEST':
           throw new Unsupported('test blocks', t.line);
         case 'MODULE':
@@ -349,6 +354,18 @@
             t.line
           );
         case 'IDENT':
+          if (t.value === 'flow' && this.peek(1) && this.peek(1).type === 'IDENT' &&
+              this.peek(2) && this.peek(2).type === 'LBRACE') {
+            this.parseFlowBlock(prog);
+            continue;
+          }
+          // `unit`, `dsys` and friends are contextual keywords, so they arrive
+          // here as identifiers. Naming the construct is more use to a reader
+          // than "unexpected 'flow'".
+          if (CONTEXTUAL_DECLS[t.value] && this.peek(1) &&
+              this.peek(1).type === 'IDENT') {
+            throw new Unsupported(CONTEXTUAL_DECLS[t.value], t.line);
+          }
           throw new FlowError("unexpected '" + t.value + "' at top level", t.line);
         default:
           throw new FlowError("unexpected '" + t.value + "' at top level", t.line);
@@ -447,8 +464,13 @@
     this.expect('RPAREN');
     var ret = TY['void'];
     if (this.accept('ARROW')) ret = this.parseType();
-    if (this.at('WITH')) {
-      throw new Unsupported('effect annotations (with ...)', this.line());
+    if (this.accept('WITH')) {
+      // `-> T with Log, Clock` names what the body may perform. Execution
+      // takes the handler from the enclosing `handle`, so the row is read
+      // and discarded here.
+      do {
+        this.expect('IDENT', 'effect name');
+      } while (this.accept('COMMA'));
     }
     var body = this.parseBlock();
     if (prog.functions[name]) {
@@ -458,6 +480,374 @@
       name: name, params: params, ret: ret, body: body, line: t.line
     };
     prog.functionOrder.push(name);
+  };
+
+  // Duration suffixes a solver or an `every` block may use, in seconds.
+  var TIME_UNITS = { s: 1, ms: 1e-3, us: 1e-6, ns: 1e-9 };
+
+  // `flow Name { ... }` is a struct plus generated functions, which is what
+  // the native compiler lowers it to. Building the same shape here means the
+  // ordinary struct, pointer and call machinery runs it, rather than a second
+  // evaluator living beside the first.
+  Parser.prototype.parseFlowBlock = function (prog) {
+    var t = this.next();                       // `flow`
+    var name = this.expect('IDENT', 'flow name').value;
+    this.expect('LBRACE');
+
+    var members = [];        // {kind: 'state'|'param', name, init}
+    var evolves = [];        // {target, expr}
+    var everies = [];        // {seconds, body}
+    var method = 'euler';
+    var defaultDt = 0.001;
+
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError("unterminated flow '" + name + "'", t.line);
+      var head = this.peek();
+
+      if (head.type === 'IDENT' && (head.value === 'state' || head.value === 'param')) {
+        var kind = this.next().value;
+        var member = this.expect('IDENT', 'member name').value;
+        this.expect('COLON', "':' after the member name");
+        var mtype = this.parseType();
+        if (mtype.k !== 'float') {
+          throw new Unsupported(
+            'flow members that are not f64 or f32', head.line);
+        }
+        var init = null;
+        if (this.accept('ASSIGN')) init = this.parseExpression();
+        members.push({ kind: kind, name: member, init: init, line: head.line });
+        continue;
+      }
+
+      if (head.type === 'IDENT' && head.value === 'solver') {
+        this.next();
+        this.expect('LBRACE');
+        while (!this.at('RBRACE')) {
+          var key = this.expect('IDENT', 'solver setting').value;
+          if (key === 'dt') {
+            var amount = this.parseExpression();
+            var unitTok = this.expect('IDENT', 'a duration unit such as ms');
+            if (!(unitTok.value in TIME_UNITS)) {
+              throw new FlowError("unknown duration unit '" + unitTok.value + "'", unitTok.line);
+            }
+            defaultDt = Number(amount.value) * TIME_UNITS[unitTok.value];
+          } else if (key === 'method') {
+            method = this.expect('IDENT', 'a solver method').value;
+          } else {
+            throw new Unsupported("the solver setting '" + key + "'", head.line);
+          }
+        }
+        this.expect('RBRACE');
+        continue;
+      }
+
+      if (head.type === 'IDENT' && head.value === 'every') {
+        this.next();
+        var period = this.parseExpression();
+        var periodUnit = this.expect('IDENT', 'a duration unit such as ms');
+        if (!(periodUnit.value in TIME_UNITS)) {
+          throw new FlowError("unknown duration unit '" + periodUnit.value + "'", periodUnit.line);
+        }
+        everies.push({
+          seconds: Number(period.value) * TIME_UNITS[periodUnit.value],
+          body: this.parseBecomesBlock(),
+          line: head.line
+        });
+        continue;
+      }
+
+      // `target evolves as <expr>`
+      if (head.type === 'IDENT' && this.peek(1) && this.peek(1).type === 'IDENT' &&
+          this.peek(1).value === 'evolves') {
+        var target = this.next().value;
+        this.next();                              // evolves
+        // `as` is the cast keyword, so it arrives as its own token here.
+        if (!this.accept('AS')) {
+          var asTok = this.expect('IDENT', "'as' after evolves");
+          if (asTok.value !== 'as') {
+            throw new FlowError("expected 'as' after evolves", asTok.line);
+          }
+        }
+        evolves.push({ target: target, expr: this.parseExpression(), line: head.line });
+        continue;
+      }
+
+      throw new Unsupported(
+        "this item in a flow body (" + head.value + ")", head.line);
+    }
+    this.expect('RBRACE');
+
+    if (method !== 'euler') {
+      throw new Unsupported(
+        "the '" + method + "' solver method (euler is implemented here)", t.line);
+    }
+    this.emitFlowLowering(prog, name, members, evolves, everies, defaultDt, t.line);
+  };
+
+  // Every member reference inside an evolves or becomes expression means a
+  // field of the instance being stepped, so it is rewritten to self[0].name.
+  function rewriteMembers(node, memberNames) {
+    if (!node || typeof node !== 'object') return node;
+    if (Array.isArray(node)) return node.map(function (n) { return rewriteMembers(n, memberNames); });
+    if (node.kind === 'Var' && memberNames[node.name]) {
+      return {
+        kind: 'Field',
+        base: { kind: 'Index',
+                base: { kind: 'Var', name: 'self', line: node.line },
+                index: { kind: 'IntLit', value: 0n, line: node.line },
+                line: node.line },
+        field: node.name, line: node.line
+      };
+    }
+    var out = {};
+    for (var k in node) {
+      if (Object.prototype.hasOwnProperty.call(node, k)) {
+        out[k] = rewriteMembers(node[k], memberNames);
+      }
+    }
+    return out;
+  }
+
+  Parser.prototype.emitFlowLowering =
+      function (prog, name, members, evolves, everies, defaultDt, line) {
+    var f64 = TY['f64'];
+    var memberNames = Object.create(null);
+    members.forEach(function (m) { memberNames[m.name] = true; });
+
+    var fields = members.map(function (m) { return { name: m.name, type: f64 }; });
+    everies.forEach(function (_, i) {
+      fields.push({ name: '__every_' + i, type: f64 });
+    });
+
+    if (prog.structs[name]) {
+      throw new FlowError("flow '" + name + "' collides with a struct", line);
+    }
+    prog.structs[name] = { name: name, fields: fields, line: line };
+    prog.structOrder.push(name);
+
+    function selfField(field) {
+      return {
+        kind: 'Field',
+        base: { kind: 'Index', base: { kind: 'Var', name: 'self', line: line },
+                index: { kind: 'IntLit', value: 0n, line: line }, line: line },
+        field: field, line: line
+      };
+    }
+    function num(v) { return { kind: 'FloatLit', value: v, line: line }; }
+    function binary(l, op, r) { return { kind: 'Binary', op: op, left: l, right: r, line: line }; }
+    function assign(target, value) {
+      // A plain assignment is op '=', which is what the evaluator checks for.
+      return { kind: 'Assign', target: target, op: '=', value: value, line: line };
+    }
+
+    // Name_new(): the declared initial values, zero where none was written.
+    var initFields = members.map(function (m) {
+      return { name: m.name, value: m.init || num(0) };
+    });
+    everies.forEach(function (_, i) {
+      initFields.push({ name: '__every_' + i, value: num(0) });
+    });
+    this.addGenerated(prog, {
+      name: name + '_new', params: [], ret: structType(name),
+      body: { kind: 'Block', body: [{
+        kind: 'Return',
+        value: { kind: 'StructLit', name: name, fields: initFields, line: line },
+        line: line
+      }], line: line },
+      line: line
+    });
+
+    this.addGenerated(prog, {
+      name: name + '_default_dt', params: [], ret: f64,
+      body: { kind: 'Block', body: [{ kind: 'Return', value: num(defaultDt), line: line }], line: line },
+      line: line
+    });
+
+    // Name_step(self, dt): one explicit Euler update, then any every-block
+    // whose period has elapsed. Derivatives are read before any state is
+    // written, so the members update together rather than in sequence.
+    var stmts = [];
+    evolves.forEach(function (ev, i) {
+      stmts.push({
+        kind: 'Let', name: '__d' + i, type: f64, mutable: false,
+        value: rewriteMembers(ev.expr, memberNames), line: line
+      });
+    });
+    evolves.forEach(function (ev, i) {
+      stmts.push(assign(selfField(ev.target), binary(
+        selfField(ev.target), '+',
+        binary({ kind: 'Var', name: '__d' + i, line: line }, '*',
+               { kind: 'Var', name: 'dt', line: line })
+      )));
+    });
+    everies.forEach(function (ev, i) {
+      var acc = selfField('__every_' + i);
+      stmts.push(assign(acc, binary(acc, '+', { kind: 'Var', name: 'dt', line: line })));
+      var body = [assign(acc, binary(acc, '-', num(ev.seconds)))];
+      ev.body.forEach(function (u) {
+        body.push(assign(selfField(u.target), rewriteMembers(u.expr, memberNames)));
+      });
+      stmts.push({
+        kind: 'If', cond: binary(acc, '>=', num(ev.seconds)),
+        then: { kind: 'Block', body: body, line: line },
+        otherwise: null, line: line
+      });
+    });
+    this.addGenerated(prog, {
+      name: name + '_step',
+      params: [{ name: 'self', type: ptrType(structType(name)) },
+               { name: 'dt', type: f64 }],
+      ret: TY['void'],
+      body: { kind: 'Block', body: stmts, line: line },
+      line: line
+    });
+  };
+
+  Parser.prototype.addGenerated = function (prog, fn) {
+    if (prog.functions[fn.name]) {
+      throw new FlowError("'" + fn.name + "' is already defined", fn.line);
+    }
+    prog.functions[fn.name] = fn;
+    prog.functionOrder.push(fn.name);
+  };
+
+  // `heater becomes bang(...)` inside an `every` block.
+  Parser.prototype.parseBecomesBlock = function () {
+    var open = this.expect('LBRACE');
+    var updates = [];
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError('unterminated every block', open.line);
+      var target = this.expect('IDENT', 'member name').value;
+      var becomes = this.expect('IDENT', "'becomes'");
+      if (becomes.value !== 'becomes') {
+        throw new FlowError("expected 'becomes' in an every block", becomes.line);
+      }
+      updates.push({ target: target, expr: this.parseExpression() });
+    }
+    this.expect('RBRACE');
+    return updates;
+  };
+
+  // `enum Mode { Double, Triple }` is a struct holding a tag, plus one
+  // constant per variant. That is what the native compiler lowers it to, so
+  // `Mode { tag: Mode_Double }` and `m.tag` mean the same thing here.
+  Parser.prototype.parseEnum = function (prog) {
+    var t = this.expect('ENUM');
+    var name = this.expect('IDENT', 'enum name').value;
+    this.expect('LBRACE');
+    var index = 0;
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError('unterminated enum block', t.line);
+      var variant = this.expect('IDENT', 'variant name').value;
+      if (this.at('LPAREN')) {
+        throw new Unsupported(
+          'enum variants carrying a payload', t.line,
+          'Only plain variants are lowered to a tag here.');
+      }
+      prog.consts.push({
+        name: name + '_' + variant,
+        type: TY['i32'],
+        value: { kind: 'IntLit', value: BigInt(index), line: t.line },
+        line: t.line
+      });
+      index += 1;
+      if (!this.accept('COMMA')) break;
+    }
+    this.expect('RBRACE');
+    if (prog.structs[name]) {
+      throw new FlowError("enum '" + name + "' collides with a struct", t.line);
+    }
+    prog.structs[name] = {
+      name: name, fields: [{ name: 'tag', type: TY['i32'] }], line: t.line
+    };
+    prog.structOrder.push(name);
+  };
+
+  // An effect is an interface: named operations with signatures and no
+  // bodies. A capability supplies the bodies. `handle E with C` binds one to
+  // the other for a scope, which is the whole feature.
+  Parser.prototype.parseEffect = function (prog) {
+    var t = this.expect('EFFECT');
+    var name = this.expect('IDENT', 'effect name').value;
+    this.expect('LBRACE');
+    var ops = {};
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError('unterminated effect block', t.line);
+      this.accept('FUNCTION');
+      var opName = this.expect('IDENT', 'operation name').value;
+      this.expect('LPAREN');
+      var params = [];
+      while (!this.at('RPAREN')) {
+        this.accept('MUT');
+        var pname = this.expect('IDENT', 'parameter name').value;
+        this.expect('COLON', "':' after parameter name");
+        params.push({ name: pname, type: this.parseType() });
+        if (!this.accept('COMMA')) break;
+      }
+      this.expect('RPAREN');
+      var ret = TY['void'];
+      if (this.accept('ARROW')) ret = this.parseType();
+      ops[opName] = { name: opName, params: params, ret: ret };
+      this.accept('COMMA');
+      this.accept('SEMI');
+    }
+    this.expect('RBRACE');
+    prog.effects[name] = { name: name, ops: ops, line: t.line };
+  };
+
+  Parser.prototype.parseCapability = function (prog) {
+    var t = this.expect('CAPABILITY');
+    var name = this.expect('IDENT', 'capability name').value;
+    // `capability Name for Effect { ... }` and `capability Name { effect E, ... }`
+    // are both written in the documentation.
+    var effectName = null;
+    if (this.accept('FOR')) {
+      effectName = this.expect('IDENT', 'effect name').value;
+    }
+    this.expect('LBRACE');
+    var ops = {};
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError('unterminated capability block', t.line);
+      if (this.at('EFFECT')) {
+        this.next();
+        effectName = this.expect('IDENT', 'effect name').value;
+        this.accept('COMMA');
+        continue;
+      }
+      var fnStart = this.peek();
+      if (!this.at('FUNCTION')) {
+        throw new FlowError("expected 'function' in capability body", fnStart.line);
+      }
+      var before = prog.functionOrder.length;
+      this.parseFunction(prog);
+      var opName = prog.functionOrder[before];
+      var impl = prog.functions[opName];
+      delete prog.functions[opName];
+      prog.functionOrder.splice(before, 1);
+      var qualified = '__cap_' + name + '_' + opName;
+      impl.name = qualified;
+      prog.functions[qualified] = impl;
+      ops[opName] = qualified;
+      this.accept('COMMA');
+    }
+    this.expect('RBRACE');
+    if (!effectName) {
+      throw new FlowError(
+        "capability '" + name + "' does not say which effect it implements", t.line);
+    }
+    prog.capabilities[name] = { name: name, effect: effectName, ops: ops, line: t.line };
+  };
+
+  Parser.prototype.parseHandle = function () {
+    var t = this.expect('HANDLE');
+    var effect = this.expect('IDENT', 'effect name').value;
+    this.expect('WITH', "'with' after the effect name");
+    var capability = this.expect('IDENT', 'capability name').value;
+    var body = this.parseBlock();
+    return {
+      kind: 'Handle', effect: effect, capability: capability,
+      body: body, line: t.line
+    };
   };
 
   /* ---- statements ---- */
@@ -487,7 +877,7 @@
       case 'LBRACE': return this.parseBlock();
       case 'SEMI': this.next(); return { kind: 'Empty', line: t.line };
       case 'DEFER': throw new Unsupported('defer statements', t.line);
-      case 'HANDLE': throw new Unsupported('handle/with effect blocks', t.line);
+      case 'HANDLE': return this.parseHandle();
       case 'EXPECT': throw new Unsupported('expect assertions', t.line);
       case 'DBG': throw new Unsupported('the dbg operator', t.line);
       case 'PARALLEL': throw new Unsupported('parallel for loops', t.line);
@@ -788,10 +1178,19 @@
           if (!this.accept('COMMA')) break;
         }
         this.expect('RPAREN', "')'");
-        if (expr.kind !== 'Var') {
+        // `Log.info(msg)` reaches here as a Field over a Var. It is a call on
+        // a name, not on a value, so it keeps the dotted name and evalCall
+        // decides whether the left half is an effect.
+        if (expr.kind === 'Field' && expr.base && expr.base.kind === 'Var') {
+          expr = {
+            kind: 'Call', name: expr.base.name + '.' + expr.field,
+            args: args, line: t.line
+          };
+        } else if (expr.kind !== 'Var') {
           throw new Unsupported('calling a computed function value', t.line);
+        } else {
+          expr = { kind: 'Call', name: expr.name, args: args, line: t.line };
         }
-        expr = { kind: 'Call', name: expr.name, args: args, line: t.line };
       } else if (t.type === 'LBRACKET') {
         this.next();
         var idx = this.parseExpression();
@@ -812,6 +1211,106 @@
 
   // `left |> f(a, _)` → Call f(a, left); `left |> f` / `left |> f()` → Call f(left).
   // Declarative `|> sort` / `sortBy` / `choose` need the native compiler.
+  // Contextual keywords that open a declaration the interpreter does not run.
+  var CONTEXTUAL_DECLS = {
+    unit: 'unit declarations',
+    dsys: 'the dynamics DSL',
+    field: 'the field PDE DSL',
+    pipeline: 'pipeline declarations'
+  };
+
+  // `x |> choose m.tag { Mode_Double => double, Mode_Triple => triple }`
+  // selects which function the value flows through. The arms are compared in
+  // order, so the topology is decided by a value rather than by an if-chain
+  // around the call.
+  Parser.prototype.parsePipelineChoose = function (left, line) {
+    var subject = this.parseExpression();
+    this.expect('LBRACE', "'{' after the choose subject");
+    var arms = [];
+    var fallback = null;
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError('unterminated choose block', line);
+      var isDefault = false;
+      var label = null;
+      if (this.at('IDENT') && this.peek().value === '_') {
+        this.next();
+        isDefault = true;
+      } else {
+        label = this.parseExpression();
+      }
+      this.expect('FAT_ARROW', "'=>' after the choose label");
+      var fnTok = this.expect('IDENT', 'function name in a choose arm');
+      var call = this.pipelineCall(fnTok.value, [], left, fnTok.line);
+      if (isDefault) fallback = call;
+      else arms.push({ label: label, call: call });
+      if (!this.accept('COMMA')) break;
+    }
+    this.expect('RBRACE', "'}' closing the choose block");
+    if (!arms.length && !fallback) {
+      throw new FlowError('choose needs at least one arm', line);
+    }
+    return {
+      kind: 'Choose', subject: subject, arms: arms,
+      fallback: fallback, line: line
+    };
+  };
+
+  // One `|>` stage applies one function. A fork applies several and names the
+  // results, so the value flows into each field independently and the struct
+  // is the collection of them.
+  Parser.prototype.parsePipelineFork = function (left, structName, line) {
+    this.expect('LBRACE');
+    var fields = [];
+    while (!this.at('RBRACE')) {
+      if (this.at('EOF')) throw new FlowError('unterminated pipeline fork', line);
+      var field = this.expect('IDENT', 'field name in a pipeline fork').value;
+      this.expect('ASSIGN', "'=' after the field name");
+      var fnTok = this.expect('IDENT', 'function name in a pipeline fork');
+      var args = [];
+      if (this.accept('LPAREN')) {
+        while (!this.at('RPAREN')) {
+          args.push(this.parseExpression());
+          if (!this.accept('COMMA')) break;
+        }
+        this.expect('RPAREN', "')' after the fork call");
+      }
+      fields.push({
+        name: field,
+        call: this.pipelineCall(fnTok.value, args, left, fnTok.line)
+      });
+      if (!this.accept('COMMA')) break;
+    }
+    this.expect('RBRACE', "'}' closing the pipeline fork");
+    return {
+      kind: 'StructLit', name: structName,
+      fields: fields.map(function (f) { return { name: f.name, value: f.call }; }),
+      line: line
+    };
+  };
+
+  // Shared by a plain stage and a fork field: `_` marks where the piped value
+  // goes, and it leads if there is no placeholder.
+  Parser.prototype.pipelineCall = function (name, args, left, line) {
+    var placeholder = -1;
+    for (var i = 0; i < args.length; i++) {
+      if (args[i].kind === 'Var' && args[i].name === '_') {
+        if (placeholder >= 0) {
+          throw new FlowError(
+            "pipeline placeholder '_' may appear at most once per '|>' stage", line);
+        }
+        placeholder = i;
+      }
+    }
+    var injected;
+    if (placeholder >= 0) {
+      injected = args.slice();
+      injected[placeholder] = left;
+    } else {
+      injected = [left].concat(args);
+    }
+    return { kind: 'Call', name: name, args: injected, line: line };
+  };
+
   Parser.prototype.parsePipelineStage = function (left, line) {
     var nameTok = this.peek();
     if (nameTok.type !== 'IDENT') {
@@ -819,11 +1318,21 @@
     }
     var name = nameTok.value;
     if (name === 'sort' || name === 'sortBy' || name === 'order' ||
-        name === 'choose' || name === 'find') {
+        name === 'find') {
       throw new Unsupported(
         "'|> " + name + "' (use ./flow run — see tutorials/pipelines.md)", line);
     }
+    if (name === 'choose') {
+      this.next();
+      return this.parsePipelineChoose(left, line);
+    }
     this.next();
+    // `x |> Stats { doubled = twice, plus_ten = add(_, 10) }` forks one value
+    // into several named computations and collects them into a struct. Each
+    // field names a function, applied to the piped value.
+    if (this.at('LBRACE')) {
+      return this.parsePipelineFork(left, name, line);
+    }
     var args = [];
     if (this.accept('LPAREN')) {
       while (!this.at('RPAREN')) {
@@ -902,7 +1411,17 @@
   function collectStructNames(tokens) {
     var names = Object.create(null);
     for (var i = 0; i + 1 < tokens.length; i++) {
-      if (tokens[i].type === 'STRUCT' && tokens[i + 1].type === 'IDENT') {
+      // An enum lowers to a struct holding a tag, so its name is a type name
+      // here too. Collected before parsing, which is why it reads tokens.
+      if ((tokens[i].type === 'STRUCT' || tokens[i].type === 'ENUM') &&
+          tokens[i + 1].type === 'IDENT') {
+        names[tokens[i + 1].value] = true;
+      }
+      // `flow Name { ... }` lowers to a struct as well. `flow` is contextual,
+      // so it arrives as an identifier followed by a name and a brace.
+      if (tokens[i].type === 'IDENT' && tokens[i].value === 'flow' &&
+          tokens[i + 1].type === 'IDENT' && tokens[i + 2] &&
+          tokens[i + 2].type === 'LBRACE') {
         names[tokens[i + 1].value] = true;
       }
     }
@@ -1239,6 +1758,9 @@
     this.steps = 0;
     this.depth = 0;
     this.globals = new Scope(null);
+    // Effect name -> the capability currently handling it. A `handle` block
+    // installs one for its scope; a nested one shadows it.
+    this.handlers = Object.create(null);
     this.printf = new Printf(this);
     this.structSizes = Object.create(null);
     this.truncated = false;
@@ -1714,6 +2236,32 @@
       case 'ExprStmt':
         this.evaluate(stmt.expr, scope);
         return null;
+      case 'Handle': {
+        var effect = this.prog.effects[stmt.effect];
+        if (!effect) {
+          throw new FlowError("unknown effect '" + stmt.effect + "'", stmt.line);
+        }
+        var cap = this.prog.capabilities[stmt.capability];
+        if (!cap) {
+          throw new FlowError(
+            "unknown capability '" + stmt.capability + "'", stmt.line);
+        }
+        if (cap.effect !== stmt.effect) {
+          throw new FlowError(
+            "capability '" + cap.name + "' implements " + cap.effect +
+            ", not " + stmt.effect, stmt.line);
+        }
+        // A nested handle shadows the outer one for its scope, which is what
+        // makes swapping an implementation for one region work.
+        var previous = this.handlers[stmt.effect];
+        this.handlers[stmt.effect] = cap;
+        try {
+          return this.execBlock(stmt.body, scope);
+        } finally {
+          if (previous === undefined) delete this.handlers[stmt.effect];
+          else this.handlers[stmt.effect] = previous;
+        }
+      }
       case 'If': {
         if (this.truthy(this.evaluate(stmt.cond, scope), stmt.line)) {
           return this.execBlock(stmt.then, scope);
@@ -1990,6 +2538,19 @@
         return this.evalUnary(node, scope);
       case 'Cast':
         return this.evalCast(node, scope);
+      case 'Choose': {
+        var subject = this.evaluate(node.subject, scope);
+        for (var ci = 0; ci < node.arms.length; ci++) {
+          var arm = node.arms[ci];
+          var label = this.evaluate(arm.label, scope);
+          if (this.sameScalar(subject, label)) {
+            return this.evaluate(arm.call, scope);
+          }
+        }
+        if (node.fallback) return this.evaluate(node.fallback, scope);
+        throw new FlowError(
+          'no choose arm matched, and there is no `_` arm', node.line);
+      }
       case 'Call':
         return this.evalCall(node, scope);
       case 'Index': {
@@ -2267,7 +2828,49 @@
     return this.defaultRender(val, line);
   };
 
+  Interp.prototype.sameScalar = function (a, b) {
+    if (a.t.k === 'int' && b.t.k === 'int') return a.v === b.v;
+    if (a.t.k === 'bool' && b.t.k === 'bool') return a.v === b.v;
+    if (a.t.k === 'string' && b.t.k === 'string') return a.v === b.v;
+    if (a.t.k === 'float' && b.t.k === 'float') return a.v === b.v;
+    // Mixed int widths still compare by value, which is what a tag needs.
+    if ((a.t.k === 'int' || a.t.k === 'float') &&
+        (b.t.k === 'int' || b.t.k === 'float')) {
+      return Number(a.v) === Number(b.v);
+    }
+    return false;
+  };
+
+  Interp.prototype.evalEffectCall = function (effectName, opName, node, scope) {
+    var effect = this.prog.effects[effectName];
+    if (!effect.ops[opName]) {
+      throw new FlowError(
+        "effect '" + effectName + "' has no operation '" + opName + "'", node.line);
+    }
+    var cap = this.handlers[effectName];
+    if (!cap) {
+      throw new FlowError(
+        "no handler for effect '" + effectName + "' here; install one with " +
+        "'handle " + effectName + " with <capability> { ... }'", node.line);
+    }
+    var implName = cap.ops[opName];
+    if (!implName) {
+      throw new FlowError(
+        "capability '" + cap.name + "' does not implement '" + opName + "'", node.line);
+    }
+    var args = [];
+    for (var i = 0; i < node.args.length; i++) {
+      args.push(this.evaluate(node.args[i], scope));
+    }
+    return this.callFunction(this.prog.functions[implName], args, node.line);
+  };
+
   Interp.prototype.evalCall = function (node, scope) {
+    var dot = node.name.indexOf('.');
+    if (dot > 0 && this.prog.effects[node.name.slice(0, dot)]) {
+      return this.evalEffectCall(
+        node.name.slice(0, dot), node.name.slice(dot + 1), node, scope);
+    }
     var fn = this.prog.functions[node.name];
     var args = [];
     for (var i = 0; i < node.args.length; i++) {
@@ -2354,6 +2957,19 @@
         if (n.kind !== 'Call') return;
         if (prog.functions[n.name]) return;
         if (BUILTIN_NAMES[n.name]) return;
+        // `Log.info(...)` names an effect operation. Whether a handler is
+        // installed is a runtime question, so only the operation's existence
+        // is checked here.
+        var dot = n.name.indexOf('.');
+        if (dot > 0) {
+          var eff = prog.effects[n.name.slice(0, dot)];
+          if (eff) {
+            if (eff.ops[n.name.slice(dot + 1)]) return;
+            throw new FlowError(
+              "effect '" + n.name.slice(0, dot) + "' has no operation '" +
+              n.name.slice(dot + 1) + "'", n.line);
+          }
+        }
         throw new Unsupported(
           "the function '" + n.name + "'",
           n.line,
@@ -2524,6 +3140,15 @@
     var exit = 0;
     var runError = null;
     try {
+      // Top-level constants were parsed and then never installed, so every
+      // reference to one was an undefined variable. Enum variants are
+      // constants too, which is what surfaced it.
+      for (var ci = 0; ci < prog.consts.length; ci++) {
+        var c = prog.consts[ci];
+        var cv = interp.evaluate(c.value, interp.globals);
+        if (c.type) cv = interp.coerce(cv, c.type, c.line, "const '" + c.name + "'");
+        interp.declare(interp.globals, c.name, c.type || cv.t, false, cv, c.line);
+      }
       var rv = interp.callFunction(mainFn, [], mainFn.line);
       if (rv && rv.t.k === 'int') exit = Number(BigInt.asIntN(32, rv.v));
     } catch (err) {
