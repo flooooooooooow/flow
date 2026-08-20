@@ -1,0 +1,94 @@
+# Self-checks for the LAPACK wrappers added to stdlib/blas.flow.
+#
+# Run: FLOW_HOST=python FLOW_LDFLAGS="-framework Accelerate" flow run examples/linalg/blas_lapack_checks.flow
+
+import std.blas
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function fabs(x: f64) -> f64
+    function printf(fmt: string, a: f64) -> i32
+}
+
+function close(a: f64, b: f64, tolerance: f64) -> bool {
+    return fabs(a - b) < tolerance
+}
+
+function main() -> i32 {
+    let tol: f64 = 1.0e-10
+
+    # [[2, 1], [1, 2]] is symmetric positive definite: eigenvalues 1 and 3.
+    let A: Mat = mat_new(2, 2)
+    mat_set(A, 0, 0, 2.0)
+    mat_set(A, 0, 1, 1.0)
+    mat_set(A, 1, 0, 1.0)
+    mat_set(A, 1, 1, 2.0)
+
+    let wr: ptr<f64> = malloc(16)
+    let wi: ptr<f64> = malloc(16)
+    if eigvals(A, wr, wi) != 0 {
+        println("FAIL: dgeev info")
+        return 1
+    }
+    let mut smallest: f64 = wr[0]
+    let mut largest: f64 = wr[1]
+    if smallest > largest {
+        smallest = wr[1]
+        largest = wr[0]
+    }
+    if !close(smallest, 1.0, 1.0e-9) or !close(largest, 3.0, 1.0e-9) {
+        println("FAIL: eigenvalues of [[2,1],[1,2]]")
+        return 2
+    }
+    if !close(wi[0], 0.0, tol) or !close(wi[1], 0.0, tol) {
+        println("FAIL: symmetric matrix gave complex eigenvalues")
+        return 3
+    }
+
+    # Cholesky: L L^T must reproduce A, and L must be lower triangular.
+    let L: Mat = mat_new(2, 2)
+    if cholesky(A, L) != 0 {
+        println("FAIL: dpotrf info")
+        return 4
+    }
+    if !close(mat_get(L, 0, 1), 0.0, tol) {
+        println("FAIL: Cholesky factor is not lower triangular")
+        return 5
+    }
+    let Lt: Mat = transpose(L)
+    let reconstructed: Mat = matmul(L, Lt)
+    for i in 0 to 2 {
+        for j in 0 to 2 {
+            if !close(mat_get(reconstructed, i, j), mat_get(A, i, j), 1.0e-9) {
+                println("FAIL: L L^T does not reconstruct A")
+                return 6
+            }
+        }
+    }
+
+    # Inverse: A A^-1 must be the identity. A non-symmetric matrix catches a
+    # transposition mistake that a symmetric one would hide.
+    let B: Mat = mat_new(2, 2)
+    mat_set(B, 0, 0, 4.0)
+    mat_set(B, 0, 1, 7.0)
+    mat_set(B, 1, 0, 2.0)
+    mat_set(B, 1, 1, 6.0)
+    let Binv: Mat = mat_new(2, 2)
+    if inverse(B, Binv) != 0 {
+        println("FAIL: dgetri info")
+        return 7
+    }
+    # The closed form is (1/10) [[6, -7], [-2, 4]].
+    if !close(mat_get(Binv, 0, 0), 0.6, 1.0e-9) or !close(mat_get(Binv, 0, 1), -0.7, 1.0e-9) {
+        println("FAIL: inverse first row")
+        return 8
+    }
+    let product: Mat = matmul(B, Binv)
+    if !close(mat_get(product, 0, 0), 1.0, 1.0e-9) or !close(mat_get(product, 0, 1), 0.0, 1.0e-9) {
+        println("FAIL: B B^-1 is not the identity")
+        return 9
+    }
+
+    println("OK")
+    return 0
+}

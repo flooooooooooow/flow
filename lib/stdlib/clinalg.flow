@@ -1,0 +1,448 @@
+# Complex linear algebra and matrix functions.
+# Import: import std.clinalg
+#
+# Compile with: -framework Accelerate (macOS) or -lopenblas -llapack (Linux)
+#
+# blas.flow covers real f64 through BLAS and LAPACK. This module covers the complex
+# side, plus the matrix functions that sit on top of it:
+#
+#   cmat_mul      C = A B                      via zgemm
+#   cmat_solve    A X = B                      via zgesv
+#   cmat_eigh     A = Q diag(w) Q^H            via zheev, Hermitian
+#   expm          exp(A)                       scaling and squaring
+#   expm_adjoint  the pullback of exp at A     for reverse-mode gradients
+#
+# Matrices are square, row-major, c128. LAPACK is column-major, so the wrappers
+# transpose in and out; that is an O(n^2) copy around an O(n^3) call.
+#
+# ptr<c128> rather than span<c128> to match blas.flow and stay inside the Stage-A
+# subset: the flowc host does not lower spans (it emits C that does not compile).
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memset(s: ptr<void>, c: i32, n: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function exp(x: f64) -> f64
+    function log2(x: f64) -> f64
+    function ceil(x: f64) -> f64
+
+    # C = alpha A B + beta C. CblasRowMajor=101, CblasNoTrans=111.
+    function cblas_zgemm(order: i32, transA: i32, transB: i32, m: i32, n: i32, k: i32,
+                         alpha: ptr<c128>, A: ptr<c128>, lda: i32,
+                         B: ptr<c128>, ldb: i32,
+                         beta: ptr<c128>, C: ptr<c128>, ldc: i32) -> void
+
+    # Solve A X = B for a general complex matrix (LU with partial pivoting).
+    function zgesv_(n: ptr<i32>, nrhs: ptr<i32>, A: ptr<c128>, lda: ptr<i32>,
+                    ipiv: ptr<i32>, B: ptr<c128>, ldb: ptr<i32>, info: ptr<i32>) -> void
+
+    # Eigenvalues and optionally eigenvectors of a Hermitian matrix.
+    # jobz 'N' or 'V'; uplo 'U' or 'L'; w receives the ascending real eigenvalues.
+    function zheev_(jobz: ptr<i8>, uplo: ptr<i8>, n: ptr<i32>, A: ptr<c128>, lda: ptr<i32>,
+                    w: ptr<f64>, work: ptr<c128>, lwork: ptr<i32>, rwork: ptr<f64>,
+                    info: ptr<i32>) -> void
+}
+
+const ROW_MAJOR: i32 = 101
+const NO_TRANS: i32 = 111
+
+# Degree-18 Taylor is accurate to f64 rounding while ||A||_1 stays under this bound;
+# scaling and squaring brings anything larger down to it. The truncation error at norm t
+# is about t^19/19!, which reaches f64 epsilon just past 1.09. Bader, Blanes and Casas
+# give the same value for their degree-18 double-precision form.
+function theta18() -> f64 { return 1.090863719290036 }
+function ln2() -> f64 { return 0.6931471805599453 }
+
+# A square complex matrix in row-major order. `owns` is 0 for a borrowed view.
+export struct CMat {
+    data: ptr<c128>,
+    n: i32,
+    owns: i32
+}
+
+# ============================================================================
+# CREATION AND ACCESS
+# ============================================================================
+
+# Allocate a zero-filled n x n complex matrix. Caller must cmat_free.
+export function cmat_new(n: i32) -> CMat {
+    let bytes: i64 = n as i64 * n as i64 * 16
+    let data: ptr<c128> = malloc(bytes)
+    memset(data, 0, bytes)
+    return CMat { data: data, n: n, owns: 1 }
+}
+
+# Free the storage if owned; a no-op for a wrapped view.
+export function cmat_free(m: CMat) -> void {
+    if m.owns == 1 {
+        free(m.data)
+    }
+}
+
+# Wrap an existing row-major buffer without taking ownership.
+export function cmat_wrap(data: ptr<c128>, n: i32) -> CMat {
+    return CMat { data: data, n: n, owns: 0 }
+}
+
+# Deep copy into a new owned matrix.
+export function cmat_clone(m: CMat) -> CMat {
+    let out: CMat = cmat_new(m.n)
+    memcpy(out.data, m.data, m.n as i64 * m.n as i64 * 16)
+    return out
+}
+
+# Copy src over dst. Both must be the same order.
+export function cmat_copy_into(dst: CMat, src: CMat) -> void {
+    memcpy(dst.data, src.data, dst.n as i64 * dst.n as i64 * 16)
+}
+
+export function cmat_get(m: CMat, i: i32, j: i32) -> c128 {
+    return m.data[i * m.n + j]
+}
+
+export function cmat_set(m: CMat, i: i32, j: i32, value: c128) -> void {
+    m.data[i * m.n + j] = value
+}
+
+# n x n identity.
+export function cmat_eye(n: i32) -> CMat {
+    let m: CMat = cmat_new(n)
+    for i in 0 to n {
+        m.data[i * n + i] = c128(1.0, 0.0)
+    }
+    return m
+}
+
+# Conjugate transpose of m into out. out must be a distinct matrix of the same order.
+export function cmat_conj_transpose(m: CMat, out: CMat) -> void {
+    for i in 0 to m.n {
+        for j in 0 to m.n {
+            let z: c128 = m.data[j * m.n + i]
+            out.data[i * m.n + j] = c128(creal(z), -cimag(z))
+        }
+    }
+}
+
+# Maximum absolute column sum, the induced 1-norm.
+export function cmat_norm1(m: CMat) -> f64 {
+    let mut worst: f64 = 0.0
+    for j in 0 to m.n {
+        let mut column: f64 = 0.0
+        for i in 0 to m.n {
+            column = column + cabs(m.data[i * m.n + j])
+        }
+        if column > worst { worst = column }
+    }
+    return worst
+}
+
+# ============================================================================
+# PRODUCTS
+# ============================================================================
+
+# out = A B. out must be distinct from A and B.
+export function cmat_mul(A: CMat, B: CMat, out: CMat) -> void {
+    let one: ptr<c128> = malloc(16)
+    let zero: ptr<c128> = malloc(16)
+    one[0] = c128(1.0, 0.0)
+    zero[0] = c128(0.0, 0.0)
+    cblas_zgemm(ROW_MAJOR, NO_TRANS, NO_TRANS, A.n, A.n, A.n,
+                one, A.data, A.n, B.data, B.n, zero, out.data, out.n)
+    free(one)
+    free(zero)
+}
+
+# Allocate and return A B. Caller must cmat_free the result.
+export function cmat_matmul(A: CMat, B: CMat) -> CMat {
+    let out: CMat = cmat_new(A.n)
+    cmat_mul(A, B, out)
+    return out
+}
+
+# m = m * scalar, in place.
+export function cmat_scale(m: CMat, scalar: c128) -> void {
+    for i in 0 to m.n * m.n {
+        m.data[i] = m.data[i] * scalar
+    }
+}
+
+# a = a + b * scalar, in place.
+export function cmat_axpy(a: CMat, b: CMat, scalar: c128) -> void {
+    for i in 0 to a.n * a.n {
+        a.data[i] = a.data[i] + b.data[i] * scalar
+    }
+}
+
+# ============================================================================
+# LAPACK
+# ============================================================================
+#
+# LAPACK reads column-major, so these transpose in and back out. For a square
+# matrix that is a plain index swap.
+
+function to_column_major(m: CMat) -> ptr<c128> {
+    let buffer: ptr<c128> = malloc(m.n as i64 * m.n as i64 * 16)
+    for i in 0 to m.n {
+        for j in 0 to m.n {
+            buffer[j * m.n + i] = m.data[i * m.n + j]
+        }
+    }
+    return buffer
+}
+
+function from_column_major(buffer: ptr<c128>, out: CMat) -> void {
+    for i in 0 to out.n {
+        for j in 0 to out.n {
+            out.data[i * out.n + j] = buffer[j * out.n + i]
+        }
+    }
+}
+
+function ascii(code: i32) -> ptr<i8> {
+    let c: ptr<i8> = malloc(1)
+    c[0] = code as i8
+    return c
+}
+
+# Solve A X = B, writing X over B. Returns LAPACK info; 0 is success.
+# A is left unmodified.
+export function cmat_solve(A: CMat, B: CMat) -> i32 {
+    let n: i32 = A.n
+    let a_col: ptr<c128> = to_column_major(A)
+    let b_col: ptr<c128> = to_column_major(B)
+    let ipiv: ptr<i32> = malloc(n as i64 * 4)
+    let mut n_val: i32 = n
+    let mut nrhs: i32 = n
+    let mut lda: i32 = n
+    let mut ldb: i32 = n
+    let mut info: i32 = 0
+    zgesv_(&n_val, &nrhs, a_col, &lda, ipiv, b_col, &ldb, &info)
+    if info == 0 {
+        from_column_major(b_col, B)
+    }
+    free(a_col)
+    free(b_col)
+    free(ipiv)
+    return info
+}
+
+# Hermitian eigendecomposition A = Q diag(w) Q^H.
+# `w` receives n ascending real eigenvalues; `vectors` receives Q, whose columns are
+# the eigenvectors. Only the lower triangle of A is read. A is left unmodified.
+# Returns LAPACK info; 0 is success.
+export function cmat_eigh(A: CMat, w: ptr<f64>, vectors: CMat) -> i32 {
+    let n: i32 = A.n
+    let a_col: ptr<c128> = to_column_major(A)
+    let jobz: ptr<i8> = ascii(86)   # 'V', compute eigenvectors
+    let uplo: ptr<i8> = ascii(76)   # 'L', read the lower triangle
+    let mut n_val: i32 = n
+    let mut lda: i32 = n
+    let mut info: i32 = 0
+
+    # Workspace query: lwork = -1 makes LAPACK report the optimal size in work[0].
+    let probe: ptr<c128> = malloc(16)
+    let rwork: ptr<f64> = malloc((3 * n - 2) as i64 * 8)
+    let mut lwork: i32 = -1
+    zheev_(jobz, uplo, &n_val, a_col, &lda, w, probe, &lwork, rwork, &info)
+    let mut optimal: i32 = creal(probe[0]) as i32
+    if optimal < 2 * n { optimal = 2 * n }
+    free(probe)
+
+    let work: ptr<c128> = malloc(optimal as i64 * 16)
+    lwork = optimal
+    zheev_(jobz, uplo, &n_val, a_col, &lda, w, work, &lwork, rwork, &info)
+    if info == 0 {
+        from_column_major(a_col, vectors)
+    }
+    free(a_col)
+    free(work)
+    free(rwork)
+    free(jobz)
+    free(uplo)
+    return info
+}
+
+# ============================================================================
+# MATRIX FUNCTIONS
+# ============================================================================
+
+# Reciprocal factorials 1/k! for k = 0..18.
+function taylor_coefficients() -> ptr<f64> {
+    let c: ptr<f64> = malloc(19 * 8)
+    c[0] = 1.0
+    for k in 1 to 19 {
+        c[k] = c[k - 1] / (k as f64)
+    }
+    return c
+}
+
+function squarings_for(norm: f64) -> i32 {
+    let threshold: f64 = theta18()
+    if norm <= threshold { return 0 }
+    return ceil(log2(norm / threshold)) as i32
+}
+
+# out = exp(A), by scaling and squaring around a degree-18 Taylor polynomial evaluated
+# Paterson-Stockmeyer in A^3, which costs seven matrix products rather than eighteen.
+# A is left unmodified. out must be distinct from A.
+export function expm(A: CMat, out: CMat) -> void {
+    let n: i32 = A.n
+    let count: i32 = n * n
+
+    let m: CMat = cmat_clone(A)
+    let squarings: i32 = squarings_for(cmat_norm1(m))
+    if squarings > 0 {
+        cmat_scale(m, c128(exp(-(squarings as f64) * ln2()), 0.0))
+    }
+
+    let coefficients: ptr<f64> = taylor_coefficients()
+    let m2: CMat = cmat_new(n)
+    let m3: CMat = cmat_new(n)
+    cmat_mul(m, m, m2)
+    cmat_mul(m2, m, m3)
+
+    # T18 = sum over j of B_j (A^3)^j, with B_j = c_3j I + c_3j+1 A + c_3j+2 A^2.
+    # Horner in A^3: five further products.
+    let acc: CMat = cmat_new(n)
+    let tmp: CMat = cmat_new(n)
+    let mut j: i32 = 5
+    while j >= 0 {
+        if j == 5 {
+            memset(acc.data, 0, count as i64 * 16)
+        } else {
+            cmat_mul(acc, m3, tmp)
+            cmat_copy_into(acc, tmp)
+        }
+        cmat_axpy(acc, m, c128(coefficients[j * 3 + 1], 0.0))
+        cmat_axpy(acc, m2, c128(coefficients[j * 3 + 2], 0.0))
+        for i in 0 to n {
+            acc.data[i * n + i] = acc.data[i * n + i] + c128(coefficients[j * 3], 0.0)
+        }
+        j = j - 1
+    }
+
+    let mut src: CMat = acc
+    let mut dst: CMat = tmp
+    for k in 0 to squarings {
+        cmat_mul(src, src, dst)
+        let swap: CMat = src
+        src = dst
+        dst = swap
+    }
+    cmat_copy_into(out, src)
+
+    cmat_free(m)
+    cmat_free(m2)
+    cmat_free(m3)
+    cmat_free(acc)
+    cmat_free(tmp)
+    free(coefficients)
+}
+
+# (yo, lo) = (y1, l1) (y2, l2) in the algebra of [[Y, L], [0, Y]] blocks.
+function pair_mul(y1: CMat, l1: CMat, y2: CMat, l2: CMat,
+                  yo: CMat, lo: CMat, scratch: CMat) -> void {
+    cmat_mul(y1, y2, yo)
+    cmat_mul(y1, l2, lo)
+    cmat_mul(l1, y2, scratch)
+    cmat_axpy(lo, scratch, c128(1.0, 0.0))
+}
+
+# The 1-norm of the implied 2n x 2n block: its left columns hold Y alone, its right
+# columns hold L stacked above Y.
+function pair_norm1(y: CMat, l: CMat) -> f64 {
+    let mut worst: f64 = 0.0
+    for j in 0 to y.n {
+        let mut column_y: f64 = 0.0
+        let mut column_l: f64 = 0.0
+        for i in 0 to y.n {
+            column_y = column_y + cabs(y.data[i * y.n + j])
+            column_l = column_l + cabs(l.data[i * y.n + j])
+        }
+        if column_y > worst { worst = column_y }
+        if column_y + column_l > worst { worst = column_y + column_l }
+    }
+    return worst
+}
+
+# The pullback of exp at A. Given the cotangent `seed` on exp(A), writes the cotangent
+# on A into `out`. This is what a reverse-mode pass needs to differentiate through a
+# matrix exponential.
+#
+# The pullback is the upper-right block of exp([[A^H, seed], [0, A^H]]). That block
+# matrix is never formed: matrices of that shape are closed under multiplication,
+#
+#     [ Y1  L1 ] [ Y2  L2 ]   [ Y1 Y2   Y1 L2 + L1 Y2 ]
+#     [  0  Y1 ] [  0  Y2 ] = [   0          Y1 Y2    ]
+#
+# so the same evaluation runs on the pair (Y, L) at three n x n products apiece rather
+# than the eight a dense 2n x 2n product costs. The answer is the L component.
+export function expm_adjoint(A: CMat, seed: CMat, out: CMat) -> void {
+    let n: i32 = A.n
+    let count: i32 = n * n
+
+    let y: CMat = cmat_new(n)
+    let l: CMat = cmat_clone(seed)
+    cmat_conj_transpose(A, y)
+
+    let squarings: i32 = squarings_for(pair_norm1(y, l))
+    if squarings > 0 {
+        let factor: c128 = c128(exp(-(squarings as f64) * ln2()), 0.0)
+        cmat_scale(y, factor)
+        cmat_scale(l, factor)
+    }
+
+    let coefficients: ptr<f64> = taylor_coefficients()
+    let y2: CMat = cmat_new(n)
+    let l2: CMat = cmat_new(n)
+    let y3: CMat = cmat_new(n)
+    let l3: CMat = cmat_new(n)
+    let scratch: CMat = cmat_new(n)
+    pair_mul(y, l, y, l, y2, l2, scratch)
+    pair_mul(y2, l2, y, l, y3, l3, scratch)
+
+    let acc_y: CMat = cmat_new(n)
+    let acc_l: CMat = cmat_new(n)
+    let tmp_y: CMat = cmat_new(n)
+    let tmp_l: CMat = cmat_new(n)
+    let mut j: i32 = 5
+    while j >= 0 {
+        if j == 5 {
+            memset(acc_y.data, 0, count as i64 * 16)
+            memset(acc_l.data, 0, count as i64 * 16)
+        } else {
+            pair_mul(acc_y, acc_l, y3, l3, tmp_y, tmp_l, scratch)
+            cmat_copy_into(acc_y, tmp_y)
+            cmat_copy_into(acc_l, tmp_l)
+        }
+        cmat_axpy(acc_y, y, c128(coefficients[j * 3 + 1], 0.0))
+        cmat_axpy(acc_y, y2, c128(coefficients[j * 3 + 2], 0.0))
+        cmat_axpy(acc_l, l, c128(coefficients[j * 3 + 1], 0.0))
+        cmat_axpy(acc_l, l2, c128(coefficients[j * 3 + 2], 0.0))
+        for i in 0 to n {
+            acc_y.data[i * n + i] = acc_y.data[i * n + i] + c128(coefficients[j * 3], 0.0)
+        }
+        j = j - 1
+    }
+
+    for k in 0 to squarings {
+        pair_mul(acc_y, acc_l, acc_y, acc_l, tmp_y, tmp_l, scratch)
+        cmat_copy_into(acc_y, tmp_y)
+        cmat_copy_into(acc_l, tmp_l)
+    }
+    cmat_copy_into(out, acc_l)
+
+    cmat_free(y)
+    cmat_free(l)
+    cmat_free(y2)
+    cmat_free(l2)
+    cmat_free(y3)
+    cmat_free(l3)
+    cmat_free(scratch)
+    cmat_free(acc_y)
+    cmat_free(acc_l)
+    cmat_free(tmp_y)
+    cmat_free(tmp_l)
+    free(coefficients)
+}

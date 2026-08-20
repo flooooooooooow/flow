@@ -350,3 +350,119 @@ export function ones(rows: i32, cols: i32) -> Mat {
     }
     return m
 }
+
+# ============================================================================
+# LAPACK WRAPPERS, PART 2
+# ============================================================================
+#
+# The externs above have been declared since this module was written; these are the
+# wrappers. LAPACK reads column-major and Mat is row-major, so each of these
+# transposes in and back out, an O(n^2) copy around an O(n^3) call.
+
+# Transpose src into a fresh column-major buffer. Caller frees.
+function to_column_major(m: Mat) -> ptr<f64> {
+    let buffer: ptr<f64> = malloc(m.rows as i64 * m.cols as i64 * 8)
+    for i in 0 to m.rows {
+        for j in 0 to m.cols {
+            buffer[j * m.rows + i] = m.data[i * m.cols + j]
+        }
+    }
+    return buffer
+}
+
+# Read a column-major buffer back into a row-major Mat.
+function from_column_major(buffer: ptr<f64>, out: Mat) -> void {
+    for i in 0 to out.rows {
+        for j in 0 to out.cols {
+            out.data[i * out.cols + j] = buffer[j * out.rows + i]
+        }
+    }
+}
+
+function lapack_char(code: i32) -> ptr<i8> {
+    let c: ptr<i8> = malloc(1)
+    c[0] = code as i8
+    return c
+}
+
+# Eigenvalues of a general square matrix via LAPACK dgeev.
+# Real and imaginary parts land in wr and wi, each n slots. A is left unmodified.
+# Returns LAPACK info; 0 is success.
+export function eigvals(A: Mat, wr: ptr<f64>, wi: ptr<f64>) -> i32 {
+    let n: i32 = A.rows
+    let a_col: ptr<f64> = to_column_major(A)
+    let jobvl: ptr<i8> = lapack_char(78)   # 'N'
+    let jobvr: ptr<i8> = lapack_char(78)   # 'N'
+    let mut n_val: i32 = n
+    let mut lda: i32 = n
+    let mut ldvl: i32 = 1
+    let mut ldvr: i32 = 1
+    let mut lwork: i32 = 8 * n
+    let mut info: i32 = 0
+    let work: ptr<f64> = malloc(lwork as i64 * 8)
+    let dummy: ptr<f64> = malloc(8)
+    dgeev_(jobvl, jobvr, &n_val, a_col, &lda, wr, wi,
+           dummy, &ldvl, dummy, &ldvr, work, &lwork, &info)
+    free(a_col)
+    free(work)
+    free(dummy)
+    free(jobvl)
+    free(jobvr)
+    return info
+}
+
+# Cholesky factorization of a symmetric positive-definite matrix via dpotrf.
+# Writes the lower triangular factor L into `out`, with L L^T = A and the strict upper
+# triangle zeroed. A is left unmodified. Returns LAPACK info; 0 is success.
+export function cholesky(A: Mat, out: Mat) -> i32 {
+    let n: i32 = A.rows
+    # A is symmetric, so its row-major and column-major layouts are the same buffer and
+    # no transpose is needed going in. Asking dpotrf for the column-major upper triangle
+    # gives U with A = U^T U; the same bytes read back as row-major are U^T, which is the
+    # lower factor L with A = L L^T. So neither direction transposes.
+    let work: Mat = mat_clone(A)
+    let uplo: ptr<i8> = lapack_char(85)    # 'U'
+    let mut n_val: i32 = n
+    let mut lda: i32 = n
+    let mut info: i32 = 0
+    dpotrf_(uplo, &n_val, work.data, &lda, &info)
+    if info == 0 {
+        for i in 0 to n {
+            for j in 0 to n {
+                if j > i {
+                    mat_set(out, i, j, 0.0)
+                } else {
+                    mat_set(out, i, j, mat_get(work, i, j))
+                }
+            }
+        }
+    }
+    mat_free(work)
+    free(uplo)
+    return info
+}
+
+# Matrix inverse via LU (dgetrf then dgetri). Writes A^-1 into `out`.
+# A is left unmodified. Returns LAPACK info; 0 is success, positive means singular.
+export function inverse(A: Mat, out: Mat) -> i32 {
+    let n: i32 = A.rows
+    let a_col: ptr<f64> = to_column_major(A)
+    let ipiv: ptr<i32> = malloc(n as i64 * 4)
+    let mut m_val: i32 = n
+    let mut n_val: i32 = n
+    let mut lda: i32 = n
+    let mut info: i32 = 0
+    dgetrf_(&m_val, &n_val, a_col, &lda, ipiv, &info)
+    if info == 0 {
+        let mut lwork: i32 = 8 * n
+        let work: ptr<f64> = malloc(lwork as i64 * 8)
+        dgetri_(&n_val, a_col, &lda, ipiv, work, &lwork, &info)
+        if info == 0 {
+            from_column_major(a_col, out)
+        }
+        free(work)
+    }
+    free(a_col)
+    free(ipiv)
+    return info
+}

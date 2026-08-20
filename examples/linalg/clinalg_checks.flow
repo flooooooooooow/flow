@@ -1,0 +1,200 @@
+# Self-checks for stdlib/clinalg.flow.
+#
+# Run: FLOW_HOST=python FLOW_LDFLAGS="-framework Accelerate" flow run examples/linalg/clinalg_checks.flow
+#
+# Every check returns a distinct code so a failure names itself. The matrix exponential
+# and its adjoint are checked against closed forms and against a central difference,
+# because a matrix function that merely runs proves nothing.
+
+import std.clinalg
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function fabs(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function printf(fmt: string, a: f64) -> i32
+}
+
+function close(a: f64, b: f64, tolerance: f64) -> bool {
+    return fabs(a - b) < tolerance
+}
+
+function cclose(z: c128, re: f64, im: f64, tolerance: f64) -> bool {
+    return close(creal(z), re, tolerance) and close(cimag(z), im, tolerance)
+}
+
+# Largest elementwise difference between two matrices.
+function max_difference(a: CMat, b: CMat) -> f64 {
+    let mut worst: f64 = 0.0
+    for i in 0 to a.n * a.n {
+        let d: f64 = cabs(a.data[i] - b.data[i])
+        if d > worst { worst = d }
+    }
+    return worst
+}
+
+function main() -> i32 {
+    let tol: f64 = 1.0e-10
+
+    # ---- products ----------------------------------------------------------
+    let a: CMat = cmat_new(2)
+    cmat_set(a, 0, 0, c128(1.0, 0.0))
+    cmat_set(a, 0, 1, c128(0.0, 1.0))
+    cmat_set(a, 1, 0, c128(2.0, 0.0))
+    cmat_set(a, 1, 1, c128(0.0, -1.0))
+    let identity: CMat = cmat_eye(2)
+    let product: CMat = cmat_matmul(a, identity)
+    if max_difference(product, a) > tol {
+        println("FAIL: A I != A")
+        return 1
+    }
+
+    # ---- exp(0) = I --------------------------------------------------------
+    let zero: CMat = cmat_new(3)
+    let exp_zero: CMat = cmat_new(3)
+    expm(zero, exp_zero)
+    let eye3: CMat = cmat_eye(3)
+    if max_difference(exp_zero, eye3) > tol {
+        println("FAIL: exp(0) != I")
+        return 2
+    }
+
+    # ---- exp of a diagonal is the diagonal of exp ---------------------------
+    let diagonal: CMat = cmat_new(3)
+    cmat_set(diagonal, 0, 0, c128(0.5, 0.0))
+    cmat_set(diagonal, 1, 1, c128(-2.0, 0.0))
+    cmat_set(diagonal, 2, 2, c128(0.0, 1.0))
+    let exp_diagonal: CMat = cmat_new(3)
+    expm(diagonal, exp_diagonal)
+    if !cclose(cmat_get(exp_diagonal, 0, 0), exp(0.5), 0.0, tol) {
+        println("FAIL: exp(diag) entry 0")
+        return 3
+    }
+    if !cclose(cmat_get(exp_diagonal, 1, 1), exp(-2.0), 0.0, tol) {
+        println("FAIL: exp(diag) entry 1")
+        return 4
+    }
+    # exp(i) = cos 1 + i sin 1
+    if !cclose(cmat_get(exp_diagonal, 2, 2), cos(1.0), sin(1.0), tol) {
+        println("FAIL: exp(diag) complex entry")
+        return 5
+    }
+
+    # ---- a large norm exercises scaling and squaring ------------------------
+    let big: CMat = cmat_new(2)
+    cmat_set(big, 0, 0, c128(9.0, 0.0))
+    cmat_set(big, 1, 1, c128(-7.0, 0.0))
+    let exp_big: CMat = cmat_new(2)
+    expm(big, exp_big)
+    if !cclose(cmat_get(exp_big, 0, 0), exp(9.0), 0.0, 1.0e-6) {
+        println("FAIL: scaling and squaring, exp(9)")
+        return 6
+    }
+
+    # ---- exp of i times Hermitian is unitary --------------------------------
+    let hermitian: CMat = cmat_new(2)
+    cmat_set(hermitian, 0, 0, c128(2.0, 0.0))
+    cmat_set(hermitian, 0, 1, c128(1.0, 3.0))
+    cmat_set(hermitian, 1, 0, c128(1.0, -3.0))
+    cmat_set(hermitian, 1, 1, c128(-1.0, 0.0))
+    let scaled: CMat = cmat_clone(hermitian)
+    cmat_scale(scaled, c128(0.0, 1.0))
+    let unitary: CMat = cmat_new(2)
+    expm(scaled, unitary)
+    let adjointed: CMat = cmat_new(2)
+    cmat_conj_transpose(unitary, adjointed)
+    let should_be_eye: CMat = cmat_matmul(unitary, adjointed)
+    let eye2: CMat = cmat_eye(2)
+    if max_difference(should_be_eye, eye2) > 1.0e-10 {
+        println("FAIL: exp(i H) is not unitary")
+        return 7
+    }
+
+    # ---- Hermitian eigendecomposition --------------------------------------
+    # [[2, 1+3i], [1-3i, -1]] has trace 1 and determinant -2 - |1+3i|^2 = -12,
+    # so its eigenvalues solve L^2 - L - 12 = 0, giving -3 and 4.
+    let w: ptr<f64> = malloc(16)
+    let vectors: CMat = cmat_new(2)
+    let info: i32 = cmat_eigh(hermitian, w, vectors)
+    if info != 0 {
+        println("FAIL: zheev reported non-zero info")
+        return 8
+    }
+    if !close(w[0], -3.0, 1.0e-9) {
+        println("FAIL: smallest eigenvalue")
+        return 9
+    }
+    if !close(w[1], 4.0, 1.0e-9) {
+        println("FAIL: largest eigenvalue")
+        return 10
+    }
+    # Q diag(w) Q^H must reconstruct the original.
+    let lambda: CMat = cmat_new(2)
+    cmat_set(lambda, 0, 0, c128(w[0], 0.0))
+    cmat_set(lambda, 1, 1, c128(w[1], 0.0))
+    let q_lambda: CMat = cmat_matmul(vectors, lambda)
+    let q_adjoint: CMat = cmat_new(2)
+    cmat_conj_transpose(vectors, q_adjoint)
+    let reconstructed: CMat = cmat_matmul(q_lambda, q_adjoint)
+    if max_difference(reconstructed, hermitian) > 1.0e-10 {
+        println("FAIL: Q diag(w) Q^H does not reconstruct A")
+        return 11
+    }
+
+    # ---- solve -------------------------------------------------------------
+    let rhs: CMat = cmat_matmul(a, identity)   # B = A, so X must be I
+    let solve_info: i32 = cmat_solve(a, rhs)
+    if solve_info != 0 {
+        println("FAIL: zgesv reported non-zero info")
+        return 12
+    }
+    if max_difference(rhs, eye2) > 1.0e-10 {
+        println("FAIL: solving A X = A did not give I")
+        return 13
+    }
+
+    # ---- the adjoint of exp, against a central difference -------------------
+    # For a real-valued scalar objective sum(Re(exp(A))) the pullback with an all-ones
+    # seed must match d/dt sum(Re(exp(A + t E))) at t = 0 for any direction E.
+    let base: CMat = cmat_new(2)
+    cmat_set(base, 0, 0, c128(0.3, 0.1))
+    cmat_set(base, 0, 1, c128(-0.7, 0.2))
+    cmat_set(base, 1, 0, c128(0.4, -0.5))
+    cmat_set(base, 1, 1, c128(0.9, 0.0))
+    let seed: CMat = cmat_new(2)
+    for i in 0 to 4 {
+        seed.data[i] = c128(1.0, 0.0)
+    }
+    let pullback: CMat = cmat_new(2)
+    expm_adjoint(base, seed, pullback)
+
+    # Perturb entry (0, 1) in the real direction.
+    let step: f64 = 1.0e-6
+    let plus: CMat = cmat_clone(base)
+    let minus: CMat = cmat_clone(base)
+    cmat_set(plus, 0, 1, cmat_get(base, 0, 1) + c128(step, 0.0))
+    cmat_set(minus, 0, 1, cmat_get(base, 0, 1) - c128(step, 0.0))
+    let exp_plus: CMat = cmat_new(2)
+    let exp_minus: CMat = cmat_new(2)
+    expm(plus, exp_plus)
+    expm(minus, exp_minus)
+    let mut sum_plus: f64 = 0.0
+    let mut sum_minus: f64 = 0.0
+    for i in 0 to 4 {
+        sum_plus = sum_plus + creal(exp_plus.data[i])
+        sum_minus = sum_minus + creal(exp_minus.data[i])
+    }
+    let numeric: f64 = (sum_plus - sum_minus) / (2.0 * step)
+    let analytic: f64 = creal(cmat_get(pullback, 0, 1))
+    if !close(numeric, analytic, 1.0e-6) {
+        printf("FAIL: adjoint numeric %.9f\n", numeric)
+        printf("      adjoint analytic %.9f\n", analytic)
+        return 14
+    }
+
+    println("OK")
+    return 0
+}
