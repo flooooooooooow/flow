@@ -617,7 +617,7 @@ operations.
 per-instance fields. It can still keep state: a module-level `let mut` is mutable from inside a
 handler, which covers a metrics counter or a test spy collecting numbers.
 
-```flow ignore="shown as a pattern; the counter is module-level state"
+```flow
 let mut call_count: i32 = 0
 
 capability CountingLogger {

@@ -4,6 +4,7 @@ FLOW Language Parser
 A simple recursive descent parser for the FLOW language
 """
 
+import copy
 import re
 from fractions import Fraction
 from typing import List, Optional, Union, Any, Tuple, Dict
@@ -4753,14 +4754,19 @@ class Parser:
             return VectorLiteral(elements)
 
         elif self.current_token.type == TokenType.LBRACKET:
+            bracket_line = self.current_token.line
             self.advance()
             elements = []
 
             if self.current_token.type != TokenType.RBRACKET:
                 elements.append(self.parse_expression_without_assign())
-                while self.current_token.type == TokenType.COMMA:
+                if self.current_token.type == TokenType.SEMICOLON:
                     self.advance()
-                    elements.append(self.parse_expression_without_assign())
+                    elements = self._parse_array_repeat(elements[0], bracket_line)
+                else:
+                    while self.current_token.type == TokenType.COMMA:
+                        self.advance()
+                        elements.append(self.parse_expression_without_assign())
 
             self.expect(TokenType.RBRACKET)
             return ArrayLiteral(elements)
@@ -4915,6 +4921,59 @@ class Parser:
         self.expect(TokenType.RBRACE)
         loc = SourceLocation(line=start.line, column=start.column)
         return IfExpression(condition, then_expr, else_expr, location=loc)
+
+    # `[0.0; 256]` is 256 copies of the value. The count has to be known here
+    # because the elements are materialized now, and the value has to be a
+    # literal because materializing anything else would evaluate it once per
+    # element rather than once.
+    MAX_ARRAY_REPEAT = 65536
+
+    def _parse_array_repeat(self, value: Expression, line: int) -> List[Expression]:
+        count = self._const_int_value(self.parse_expression_without_assign())
+        if count is None:
+            raise FlowSyntaxError(
+                "the length in [value; N] must be an integer literal or a const",
+                line,
+            )
+        if count < 0:
+            raise FlowSyntaxError("the length in [value; N] cannot be negative", line)
+        if count > self.MAX_ARRAY_REPEAT:
+            raise FlowSyntaxError(
+                f"[value; N] is limited to {self.MAX_ARRAY_REPEAT} elements; "
+                f"this asks for {count}",
+                line,
+            )
+        if not self._is_repeatable_literal(value):
+            raise FlowSyntaxError(
+                "the value in [value; N] must be a literal, because it is "
+                "written out once per element rather than evaluated once",
+                line,
+            )
+        return [copy.deepcopy(value) for _ in range(count)]
+
+    def _const_int_value(self, expr: Expression) -> Optional[int]:
+        """Integer value of a literal, or of unary minus over one."""
+        if isinstance(expr, Literal):
+            try:
+                return int(str(expr.value), 0)
+            except (TypeError, ValueError):
+                return None
+        # `-1` is unary minus over a literal, so without this the length check
+        # reports it as not being a literal rather than as being negative.
+        if isinstance(expr, UnaryOperation) and expr.operator in ("-", "+"):
+            inner = self._const_int_value(expr.operand)
+            if inner is None:
+                return None
+            return -inner if expr.operator == "-" else inner
+        return None
+
+    @staticmethod
+    def _is_repeatable_literal(expr: Expression) -> bool:
+        if isinstance(expr, Literal):
+            return True
+        if isinstance(expr, UnaryOperation) and expr.operator in ("-", "+"):
+            return isinstance(expr.operand, Literal)
+        return False
 
     def parse_function_call(self, name: str) -> Expression:
         self.expect(TokenType.LPAREN)

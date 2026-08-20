@@ -23,7 +23,7 @@ Everything else is ordinary Flow.
 Every `theorem` carries a header comment in plain English. No exceptions.
 If you cannot write the header, the theorem should not exist.
 
-```flow
+```flow ignore="illustrative code skeleton"
 # ── nat_add_zero ────────────────────────────────────────────────
 # means:  Adding zero on the right gives you the same number.
 #         Example: 12 + 0 = 12
@@ -76,7 +76,7 @@ Matmul/vectorize.semantics-equal
 - **`@tier`** = definition | axiom | derived
 - **Same claim → same path** — compiler rejects synonym creep
 
-```flow
+```flow ignore="illustrative code skeleton"
 theorem Nat/+.zero-right(n: Nat) {
     @from peano/induction
     therefore n + 0 == n
@@ -123,14 +123,14 @@ theorem nat_add_commutes(a: Nat, b: Nat) {
 
 ### `therefore` with steps
 
-```flow
+```flow ignore="illustrative code skeleton"
 let step = succ(n + b)    by nat_add_succ(n, b)
 therefore lhs == rhs
 ```
 
 ### Automation suffixes
 
-```flow
+```flow ignore="the `therefore ... by` proof form parses but has no lowering yet"
 therefore x == y by exhaustive
 therefore x == y by smt
 therefore x == y by symbolic
@@ -140,7 +140,7 @@ therefore x == y by symbolic
 
 ## `has property` = Spec on Real Code
 
-```flow
+```flow ignore="illustrative code skeleton"
 function ring_push(rb: ptr<RingBuffer>, value: i32) -> i32
     has property not ring_is_full(rb) before
     has property ring_size(rb) == old(ring_size(rb)) + 1 after

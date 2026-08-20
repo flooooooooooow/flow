@@ -96,7 +96,7 @@ Four rules. Each one is a hard error in `--strict` and a printed warning in
 Inside a `@lifetime(D)` function, assigning a reference rooted in
 function-local storage to a module static whose domain outlives `D`:
 
-```flow
+```flow expect-error
 @lifetime(application)
 let mut tail: span<f32> = null
 
@@ -120,7 +120,7 @@ borrowed storage \`local\``.
 
 ### LD2 — a domain function may not return a reference into its own frame
 
-```flow
+```flow expect-error
 @lifetime(frame)
 function build() -> ptr<i32> {
     let scratch: array<i32, 8> = [0; 8]
@@ -146,7 +146,7 @@ device or file, or submit GPU work. The check is the existing `@rt_safe`
 whole-program call graph, so nothing new can slip past it that `@rt_safe`
 would have caught.
 
-```flow
+```flow expect-error
 @lifetime(callback)
 function process(n: i32) -> i32 {
     let p: ptr<void> = malloc(64)
@@ -199,7 +199,7 @@ The two domains differ in exactly one place: a lock. `frame` permits
 Both functions must be annotated for this to fire. It checks declared intent
 against declared intent, so it has no false positives on unannotated code.
 
-```flow
+```flow expect-error
 @lifetime(session)
 function reload_preset(id: i32) -> i32 { return id }
 
