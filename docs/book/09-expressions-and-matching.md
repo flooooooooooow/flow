@@ -20,7 +20,7 @@ From highest to lowest precedence:
 
 Bit operations are available on integer values:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 let read: i32 = 1
 let write: i32 = 2
 let execute: i32 = 4
@@ -40,7 +40,7 @@ come from the standard library or an `extern` declaration.
 
 ## 9.3 Value-producing `if`
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 let magnitude: i32 = if n >= 0 { n } else { -n }
 ```
 
@@ -50,7 +50,7 @@ uses a value-producing `scf.if`.
 
 ## 9.4 Closures
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 function apply(f: (i32) -> i32, x: i32) -> i32 {
     return f(x)
 }
@@ -79,7 +79,7 @@ The MLIR backend does not implement capturing closures.
 The next program captures `base` while its value is `10`. Changing the local
 variable afterwards does not change the closure's private copy.
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 extern {
     function printf(fmt: string, ...) -> i32
 }
@@ -120,12 +120,14 @@ later assignment `base = 100` did not alter the captured value.
 
 ## 9.6 Match arms
 
-```flow
-match n {
-    0 => { return "zero" }
-    1 | 2 | 3 => { return "small" }
-    x if x < 0 => { return "negative" }
-    _ => { return "other" }
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+function describe(n: i32) -> string {
+    match n {
+        0 => { return "zero" }
+        1 | 2 | 3 => { return "small" }
+        x if x < 0 => { return "negative" }
+        _ => { return "other" }
+    }
 }
 ```
 
@@ -134,13 +136,17 @@ next arm. `_` is a wildcard; a bare identifier binds the matched value.
 
 Struct and fixed-list patterns destructure values:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+let point: Point = Point { x: 0, y: 0 }
+
 match point {
     Point(0, 0) => { println("origin") }
     Point(0, y) => { print(y) }
     Point(x, y) if x == y => { println("diagonal") }
     default { println("general") }
 }
+
+let samples: array<i32, 3> = [0, 2, 3]
 
 match samples {
     [0, second, third] => { print(second + third) }
@@ -160,7 +166,7 @@ is required.
 
 ## 9.7 Loop exits and deferred cleanup
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 while active {
     if should_skip() {
         continue
@@ -176,7 +182,7 @@ while active {
 
 `defer` schedules cleanup for the current scope:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 let buffer: ptr<u8> = malloc(1024)
 if buffer == null { return 1 }
 defer free(buffer)
@@ -190,7 +196,7 @@ scope, including an early return.
 
 ## 9.8 Data-parallel loops
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 parallel for i in 0 to n {
     output[i] = input[i] * 2.0
 }
@@ -207,7 +213,7 @@ pipeline executes serially.
 
 ## 9.9 Declarative ordering and search
 
-```flow
+```flow ignore="catalogue of ordering forms over illustrative collections"
 values |> sort
 values |> sort descending
 players |> sortBy [desc .score, asc .name]
@@ -232,7 +238,7 @@ Inspect a decision:
 
 A fork evaluates one source once and sends it into several branches:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
 let stats: Stats = n |> Stats {
     doubled = twice,
     squared = square,
@@ -243,7 +249,9 @@ let stats: Stats = n |> Stats {
 An anonymous fork infers its record shape. `choose` selects a branch from
 state and permits the selected result to continue through the pipeline:
 
-```flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+let mode: Mode = Mode { tag: Mode_Double }
+
 let result = input
     |> choose mode.tag {
         Mode_Double => double,
