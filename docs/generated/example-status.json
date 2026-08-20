@@ -2,8 +2,8 @@
   "generated": "2026-08-20",
   "totals": {
     "verified": 513,
-    "unverified": 181,
-    "expected-error": 6,
+    "unverified": 179,
+    "expected-error": 8,
     "ignored": 91
   },
   "blocks": [
@@ -1408,8 +1408,8 @@
       "path": "docs/book/10-memory-and-lifetimes.md",
       "line": 97,
       "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 1, column 39\n\n     1 | let mut signal: array<f32, 256> = [0.0; 256]\n       |                                       ^"
+      "stage": "types",
+      "detail": "Undefined function 'total'"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#c72d6c08ea0c",
@@ -2400,17 +2400,17 @@
       "key": "docs/language/lifetime-domains.md#c84c5f8180fe",
       "path": "docs/language/lifetime-domains.md",
       "line": 99,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 6, column 39\n\n     6 |     let scratch: array<f32, 64> = [0.0; 64]\n       |                                       ^"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "lifetime domain escape: `scratch` lives in the `callback` domain but is stored in `tail`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 7, column 5"
     },
     {
       "key": "docs/language/lifetime-domains.md#c90549d95a51",
       "path": "docs/language/lifetime-domains.md",
       "line": 123,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "FlowSyntaxError: Error: Expected TokenType.RBRACKET, got TokenType.SEMICOLON at line 3, column 36\n\n     3 |     let scratch: array<i32, 8> = [0; 8]\n       |                                    ^"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "lifetime domain escape: `scratch` lives in the `frame` domain but is returned from 'build', which outlives it (a returned reference may not point into the frame that produced it) at line 4, column 5"
     },
     {
       "key": "docs/language/lifetime-domains.md#5fceaa119014",
