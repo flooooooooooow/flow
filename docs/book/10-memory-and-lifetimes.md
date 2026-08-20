@@ -65,7 +65,7 @@ FLOW_HOST=python ./flow run examples/systems/manual_memory.flow
 
 A span packages a pointer and length without taking ownership:
 
-```flow
+```flow id=span-ops
 function total(samples: span<f32>) -> f32 {
     let mut sum: f32 = 0.0
     for i in 0 to samples.len {
@@ -83,7 +83,7 @@ function clear(samples: span<mut f32>) -> void {
 
 Arrays and slices borrow into spans:
 
-```flow
+```flow uses=span-ops
 function span_window_total() -> f32 {
     let mut signal: array<f32, 8> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
     let window: span<f32> = signal[2..6]
