@@ -105,6 +105,9 @@ def test_a_field_of_an_opaque_c_type_may_be_left_out_of_a_literal(tmp_path):
 def test_the_stdlib_locks_are_at_least_as_large_as_the_objects_they_hold(tmp_path):
     """The regression itself: RwLock reserved 128 bytes for a 200-byte object.
 
+    Also covers mutex init/lock/unlock through the normal import -> C -> clang
+    path, which is what issue #590 asks for.
+
     Driven through the `flow` driver so the runtime link set stays in one
     place rather than being restated here.
     """
@@ -116,6 +119,11 @@ def test_the_stdlib_locks_are_at_least_as_large_as_the_objects_they_hold(tmp_pat
             if sizeof<Mutex>() < sizeof<pthread_mutex_t>() { return 1 }
             if sizeof<CondVar>() < sizeof<pthread_cond_t>() { return 2 }
             if sizeof<RwLock>() < sizeof<pthread_rwlock_t>() { return 3 }
+            let mut m: Mutex = mutex_new()
+            mutex_lock(&m)
+            if !mutex_is_locked(m) { return 4 }
+            mutex_unlock(&m)
+            mutex_destroy(&m)
             let mut rw: RwLock = rwlock_new()
             rwlock_wrlock(&rw)
             rwlock_unlock(&rw)
