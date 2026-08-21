@@ -488,7 +488,7 @@ function map<T, U>(arr: array<T>, f: (T) -> U) -> array<U> {
 
 Allow omitting obvious type annotations.
 
-```flow
+```flow-pseudocode
 # Current (verbose)
 let x: i32 = 42
 let y: f32 = 3.14

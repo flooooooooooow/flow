@@ -109,7 +109,7 @@ export Nat/+.zero-left, Nat/+.succ-right
 
 ### Import by morphism
 
-```flow ignore="claim-path import forms over illustrative modules"
+```flow-pseudocode
 import verify.Nat/+ { zero-left, succ-right }
 import verify.Nat/+.zero-right
 import .Nat/+.zero-right
@@ -165,7 +165,7 @@ theorem Eq/=.reflexive(x: Nat) {
 
 ### Math
 
-```flow ignore="theorem statements with elided bodies, shown as a catalogue"
+```flow-pseudocode
 theorem Nat/+.zero-left(m: Nat)   { therefore 0 + m == m }
 theorem Nat/+.succ-right(n, m)   { therefore n + succ(m) == succ(n + m) }
 theorem Nat/+.zero-right(n)      { ... }
@@ -174,7 +174,7 @@ theorem Nat/+.commutes(a, b)     { ... }
 
 ### Circuits
 
-```flow ignore="theorem statements with elided bodies, shown as a catalogue"
+```flow-pseudocode
 function FullAdder(...) -> ... { ... }
 
 theorem FullAdder/out.correct(A, B, Cin) {
@@ -190,7 +190,7 @@ theorem Ripple4/out.correct(A, B, Cin) {
 
 ### Compiler transforms
 
-```flow ignore="theorem statements with elided bodies, shown as a catalogue"
+```flow-pseudocode
 theorem Matmul/vectorize.semantics-equal(m, n, k) {
     ...
     therefore matrices_equal(C_naive, C_fast, m, n)
@@ -204,7 +204,7 @@ theorem Loop/fuse.semantics-equal(n) {
 
 ### Systems
 
-```flow ignore="theorem statements with elided bodies, shown as a catalogue"
+```flow-pseudocode
 theorem RingBuffer/fifo.order-kept(rb, q, x) {
     assume RingBuffer/fifo.matches-queue(rb, q)
     ...

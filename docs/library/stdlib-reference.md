@@ -177,7 +177,7 @@ struct Queue_i32 {
 
 Key-value store.
 
-```flow
+```flow-pseudocode
 struct HashMap_string_i32 {
     buckets: ptr<HashEntry_string_i32>,
     size: i32,
@@ -357,7 +357,7 @@ Networking.
 
 ### TCP
 
-```flow
+```flow-pseudocode
 struct TcpListener { socket: Socket, port: i32 }
 struct TcpStream { socket: Socket, connected: bool }
 ```
@@ -370,7 +370,7 @@ struct TcpStream { socket: Socket, connected: bool }
 
 ### UDP
 
-```flow
+```flow-pseudocode
 struct UdpSocket { socket: Socket, bound: bool }
 ```
 

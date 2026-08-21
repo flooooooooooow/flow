@@ -50,7 +50,7 @@ Axiom §7 also names `request` and `persistent`. They are not implemented; see
 
 `@lifetime(D)` on a function declares the domain its frame runs in:
 
-```flow
+```flow-pseudocode
 @lifetime(callback)
 function process_block(state: ptr<FilterState>, n: i32) -> void {
     # ...
@@ -273,7 +273,7 @@ struct field, a call, or a closure. See
 The `frame` domain is wired to the existing bump allocator in
 `lib/stdlib/memory.flow`. A `FrameArena` is an `Arena` plus frame bookkeeping:
 
-```flow
+```flow-pseudocode
 export struct FrameArena {
     arena: Arena,
     high_water: i64,
@@ -284,7 +284,7 @@ export struct FrameArena {
 The API is three calls in the hot path, all bump-pointer arithmetic and all
 legal in `callback` and `frame`:
 
-```flow
+```flow-pseudocode
 frame_begin(f)            # offset = 0. This is the whole reset.
 frame_alloc_f32(f, n)     # offset += n * 4, return the old offset
 frame_end(f)              # record high water, count the frame
@@ -296,7 +296,7 @@ frame_end(f)              # record high water, count the frame
 `frame_begin` is a single store of zero. Freeing a frame's worth of
 allocations costs the same as freeing one, which is the point of the domain:
 
-```flow
+```flow-pseudocode
 @lifetime(frame)
 function render_frame(f: ptr<FrameArena>, n: i64) -> f32 {
     frame_begin(f)

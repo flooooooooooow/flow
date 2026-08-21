@@ -106,7 +106,7 @@ function fft(frame: &[f32; 1024])
 
 Contiguous sources borrow implicitly. No wrapper, no cast:
 
-```flow
+```flow-pseudocode
 let signal: array<f32, 512> = ...
 
 analyse(signal)            # {signal, 512}
@@ -116,7 +116,7 @@ analyse(window)            # another span, passed through
 
 A slice expression produces a span directly:
 
-```flow
+```flow-pseudocode
 let middle: span<f32> = samples[128..256]
 ```
 
