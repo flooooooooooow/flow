@@ -75,17 +75,41 @@ jobs:
       - name: Build distributable flowc archive
         run: ./compiler/scripts/package_flowc.sh
 
-      - name: Unpack and exercise archive as a user
+      - name: Unpack distributable archive
         shell: bash
         run: |
-          rm -rf /tmp/flow-tier1-package
-          mkdir -p /tmp/flow-tier1-package
+          rm -rf "$RUNNER_TEMP/flow-tier1-package"
+          mkdir -p "$RUNNER_TEMP/flow-tier1-package"
           archive="$(cat dist/flowc-latest.txt)"
-          tar -xzf "$archive" -C /tmp/flow-tier1-package
-          cd /tmp/flow-tier1-package/*/
+          tar -xzf "$archive" -C "$RUNNER_TEMP/flow-tier1-package"
+          package_root="$(find "$RUNNER_TEMP/flow-tier1-package" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$package_root"
+          echo "FLOWC_PACKAGE_ROOT=$package_root" >> "$GITHUB_ENV"
+
+      - name: Rebuild compiler from packaged bootstrap C
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
           ./build.sh
+          test -x bin/flowc
+
+      - name: Compile packaged Flow sample
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
           ./bin/flowc examples/stage_a_sum.flow sum.c
+          test -s sum.c
+
+      - name: Compile C emitted by packaged flowc
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
           cc -O0 -o sum sum.c
+
+      - name: Execute packaged sample
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
           set +e
           ./sum
           ec=$?
