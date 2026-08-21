@@ -101,6 +101,7 @@ from .attributes import (
     validate_target_spec,
 )
 
+import os as _os
 import re
 
 _C_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -2499,6 +2500,8 @@ class CGenerator:
         # @cEmbed shims whose declared name happens to start with the wrapper's
         # name (e.g. `foo_get_c` inside `foo_get`), rewriting a real call into
         # an infinite loop (#517).
+        # Discharge what bounds checks this body can prove away before emitting it.
+        self._prove_bounds(fn)
         self_names = frozenset((fn.name, self._mangled_names.get(id(fn), fn.name)))
         tco_tail = self._tail_self_calls(fn, self_names)
         self._current_tco_fn = self_names if tco_tail else None
@@ -3172,6 +3175,31 @@ class CGenerator:
         return True
 
     def _gen_for(self, st: ForStatement) -> List[str]:
+        """Generate C for loop, versioned when the prover left a guard on it."""
+        guards = getattr(self, "_bounds_guards", {}).get(id(st))
+        condition = self._gen_bounds_guard(guards) if guards is not None else None
+        if condition is None:
+            return self._gen_for_body(st)
+
+        # Two copies. The guard establishes, once, what the checks inside the first copy
+        # would have re-established on every iteration; the second copy is untouched, so
+        # a guard that fails costs the slow path and nothing else.
+        lines = [f"{self._i()}if ({condition}) {{"]
+        self._indent += 1
+        self._fast_loops.add(id(st))
+        try:
+            lines.extend(self._gen_for_body(st))
+        finally:
+            self._fast_loops.discard(id(st))
+        self._indent -= 1
+        lines.append(f"{self._i()}}} else {{")
+        self._indent += 1
+        lines.extend(self._gen_for_body(st))
+        self._indent -= 1
+        lines.append(f"{self._i()}}}")
+        return lines
+
+    def _gen_for_body(self, st: ForStatement) -> List[str]:
         """Generate C for loop from FLOW for statement.
 
         `parallel for` emits an OpenMP pragma (canonical ascending form) when
@@ -4588,6 +4616,111 @@ class CGenerator:
         macro = {"+": "FLOW_CHECKED_ADD", "-": "FLOW_CHECKED_SUB", "*": "FLOW_CHECKED_MUL"}[op]
         return f"{macro}(({left_expr}), ({right_expr}))"
 
+    # --- proved bounds ---------------------------------------------------------------
+    #
+    # A span access carries a runtime check unless the prover in bounds_proof discharged
+    # it. Two outcomes reach codegen. `proven` needs nothing at all. `hoist` needs one
+    # guard at the head of a loop, and that loop is emitted twice: a copy with those
+    # checks removed, and the original. The guard picks between them, so a guard that
+    # asks for more than the program needs costs a slow path and never a wrong abort.
+
+    def _prove_bounds(self, fn) -> None:
+        """Run the prover over one function and keep its verdicts for this body."""
+        self._bounds_verdicts = {}
+        self._bounds_guards = {}
+        self._bounds_syms = {}
+        self._fast_loops = set()
+        if not getattr(self, "_bounds_check", True):
+            return
+        import os as _os
+        if _os.environ.get("FLOW_NO_BOUNDS_PROOF"):
+            return
+        try:
+            from .bounds_proof import BoundsProver
+            prover = BoundsProver()
+            prover.run(fn)
+        except Exception:
+            return  # the prover never blocks a build; it only ever removes work
+        self._bounds_verdicts = prover.verdicts
+        self._bounds_guards = prover.loop_guards
+        self._bounds_syms = prover.sym_expr
+
+    def _bounds_verdict(self, e):
+        return getattr(self, "_bounds_verdicts", {}).get(id(e))
+
+    def _check_is_discharged(self, e) -> bool:
+        v = self._bounds_verdict(e)
+        if v is None:
+            return False
+        if v.kind == "proven":
+            return True
+        # A hoisted obligation only holds inside the copy its guard selected.
+        return v.kind == "hoist" and id(v.loop) in getattr(self, "_fast_loops", set())
+
+    def _gen_bounds_term(self, sym) -> str:
+        """C for one symbol of a guard: either a span's length or the expression itself."""
+        from .bounds_proof import _LenOf
+        expr = getattr(self, "_bounds_syms", {}).get(sym)
+        if isinstance(expr, _LenOf):
+            return "(" + self._gen_expr(expr.span) + ").len"
+        if expr is None:
+            return "0"
+        return "(" + self._gen_expr(expr) + ")"
+
+    def _gen_bounds_obligation(self, form) -> str:
+        """C for `form >= 0`, in 64-bit arithmetic so the sum cannot wrap."""
+        if not form.terms:
+            return "1" if form.const >= 0 else "0"
+        parts = []
+        for sym, coeff in sorted(form.terms.items(), key=lambda kv: kv[0].key):
+            term = "(int64_t)(" + self._gen_bounds_term(sym) + ")"
+            parts.append(term if coeff == 1 else "(" + str(coeff) + " * " + term + ")")
+        total = " + ".join(parts)
+        if form.const:
+            total += " + " + str(form.const)
+        return "((" + total + ") >= 0)"
+
+    def _guard_is_typeable(self, guards) -> bool:
+        """Whether every length in this guard really belongs to a span.
+
+        The prover works on syntax and cannot tell a `span<f64>` from a `ptr<f64>`, so it
+        will happily derive `raw.len` for a raw pointer. Types live here, so the veto
+        lives here too: a guard that mentions a length the type checker does not have is
+        dropped whole, which leaves the loop exactly as it was.
+        """
+        from .bounds_proof import _LenOf
+        syms = set()
+        for form in list(guards.ascending) + list(guards.descending):
+            syms.update(form.terms)
+        for sym in syms:
+            expr = getattr(self, "_bounds_syms", {}).get(sym)
+            if isinstance(expr, _LenOf):
+                if not self._is_span_type(self._infer_expr_type(expr.span)):
+                    return False
+        return True
+
+    def _gen_bounds_guard(self, guards):
+        """C for a loop's guard, or None when the loop needs no versioning."""
+        if guards is None or guards.is_empty():
+            return None
+        if not self._guard_is_typeable(guards):
+            return None
+
+        def conj(forms):
+            if not forms:
+                return "1"
+            return " && ".join(self._gen_bounds_obligation(f) for f in forms)
+
+        if guards.direction_known is True:
+            return conj(guards.ascending)
+        if guards.direction_known is False:
+            return conj(guards.descending)
+        # Direction is settled at run time by the same comparison the loop header makes.
+        start = self._gen_expr(guards.loop.range_start)
+        end = self._gen_expr(guards.loop.range_end)
+        return ("(((" + start + ") <= (" + end + ")) ? (" + conj(guards.ascending)
+                + ") : (" + conj(guards.descending) + "))")
+
     def _gen_array_access(self, e: ArrayAccess) -> str:
         """Generate C array index access with optional bounds checking.
 
@@ -4600,9 +4733,11 @@ class CGenerator:
         if self._is_span_type(base_type):
             span_expr = self._gen_expr(e.array)
             index_expr = self._gen_expr(e.index)
-            if self._bounds_check:
+            if self._bounds_check and not self._check_is_discharged(e):
                 return (
-                    f'((int64_t)({index_expr}) < ({span_expr}).len '
+                    # Both ends. Testing only the upper one let a negative index
+                    # read behind the span; the unsigned compare rejects it.
+                    f'((uint64_t)(int64_t)({index_expr}) < (uint64_t)({span_expr}).len '
                     f'? ({span_expr}).data[{index_expr}] '
                     f': (fprintf(stderr, "span index %lld out of bounds (len %lld)\\n", '
                     f'(long long)({index_expr}), (long long)({span_expr}).len), '
@@ -5481,7 +5616,14 @@ def flow_to_c(
             debug_info=debug_info,
             strict_effects=strict_effects,
             library=library,
-            bounds_check=not library and not no_bounds_check,
+            # Whether a span access is checked has been deciding itself on whether the
+            # file was imported: `--library` turned every check off, so in a program of
+            # several modules only the one holding `main` was ever checked. Setting
+            # FLOW_BOUNDS_CHECK=1 checks library modules too.
+            bounds_check=(
+                (not library or bool(_os.environ.get("FLOW_BOUNDS_CHECK")))
+                and not no_bounds_check
+            ),
             no_heap=no_heap,
         )
 
