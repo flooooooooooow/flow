@@ -156,6 +156,25 @@ def _c_type_to_flow(c_type: str) -> str:
     return base
 
 
+def _parsed_type(flow_type: str) -> ParsedType:
+    """Build a structured Type from a Flow type string such as "ptr<int>".
+
+    ParsedType("ptr<X>") is a flat name. The Flow parser builds a pointer as
+    Type(name="ptr_X", is_pointer=True, element_type=X), so the flat form never
+    unified with a real pointer argument and every imported pointer parameter
+    failed overload resolution: passing `&m.inner` to the imported
+    `pthread_mutex_lock` reported "no matching overload" against its own
+    signature.
+    """
+    flow_type = flow_type.strip()
+    if flow_type.startswith("ptr<") and flow_type.endswith(">"):
+        inner = _parsed_type(flow_type[4:-1])
+        return ParsedType(
+            name=f"ptr_{inner.name}", is_pointer=True, element_type=inner
+        )
+    return ParsedType(flow_type)
+
+
 def _preprocess_header(header: str, include_dirs: List[str]) -> str:
     """Preprocess a header and return the expanded text.
 
@@ -515,14 +534,21 @@ def _parse_typedef(chunk: str) -> List:
     # typedef <type> (*Name)(params);  -> function pointer typedef
     m = re.match(r"typedef\s+(.+?)\s*\(\s*\*\s*(\w+)\s*\)\s*\((.*)\)\s*$", chunk)
     if m:
-        # We don't generate anything for function pointer typedefs.
-        # The C header provides the typedef. Flow code uses ptr<fn(...)>.
-        return []
+        # The header provides the typedef, so nothing is emitted for it. It is
+        # still recorded, so the generator knows the name is a header type
+        # rather than a struct it has not seen.
+        return [ExternTypeDecl(name=m.group(2))]
 
-    # typedef <type> Name;  -> simple typedef, C header handles it
+    # typedef <type> Name;
     m = re.match(r"typedef\s+(.+?)\s+(\w+)\s*$", chunk)
     if m:
-        return []
+        # Recorded for the same reason. Returning nothing here meant Flow
+        # forgot the name existed: `pthread_t` is `typedef __darwin_pthread_t
+        # pthread_t` on macOS and `typedef unsigned long pthread_t` on glibc,
+        # and using it as a struct field made the generator forward-declare
+        # `struct pthread_t`, which clang rejected as a redefinition with a
+        # different type.
+        return [ExternTypeDecl(name=m.group(2))]
 
     return []
 
@@ -670,7 +696,7 @@ def _parse_function(chunk: str) -> Optional[FunctionDecl]:
     func = FunctionDecl(
         name=fn_name,
         parameters=params,
-        return_type=ParsedType(ret_flow),
+        return_type=_parsed_type(ret_flow),
         body=Block([]),
         attributes=[],
     )
@@ -726,7 +752,7 @@ def _parse_params(params_str: str) -> List[Parameter]:
         m = re.match(r"^(.+?)\s*\(\s*\*\s*(\w*)\s*\)\s*\((.*)\)$", part)
         if m:
             name = m.group(2) or f"_arg{len(params)}"
-            params.append(Parameter(name, ParsedType("ptr<void>")))
+            params.append(Parameter(name, _parsed_type("ptr<void>")))
             continue
 
         # Parse: type name
@@ -734,7 +760,7 @@ def _parse_params(params_str: str) -> List[Parameter]:
         if len(tokens) < 2:
             # Just a type, no name
             flow_type = _c_type_to_flow(part)
-            params.append(Parameter(f"_arg{len(params)}", ParsedType(flow_type)))
+            params.append(Parameter(f"_arg{len(params)}", _parsed_type(flow_type)))
             continue
 
         name = tokens[-1]
@@ -758,7 +784,7 @@ def _parse_params(params_str: str) -> List[Parameter]:
             name = f"_arg{len(params)}"
 
         flow_type = _c_type_to_flow(type_str)
-        params.append(Parameter(name, ParsedType(flow_type)))
+        params.append(Parameter(name, _parsed_type(flow_type)))
 
     return params
 
