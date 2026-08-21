@@ -155,10 +155,7 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
     zero declarations there and every @cImport test passed without exercising
     the feature. Empty output now falls through to `clang -E` as well.
     """
-    if header.startswith("/") or header.startswith('"'):
-        include_line = f"#include {header}\n"
-    else:
-        include_line = f"#include <{header}>\n"
+    include_line = _include_line(header)
 
     def run(argv: List[str]) -> str:
         argv = list(argv)
@@ -197,6 +194,21 @@ def _preprocess_header(header: str, include_dirs: List[str]) -> str:
     return ""
 
 
+def _include_line(header: str) -> str:
+    """The `#include` a preprocessor needs to reach this header.
+
+    An absolute path was emitted bare, as `#include /usr/local/include/x.h`,
+    which is not valid C: a path has to be quoted or angle-bracketed. The
+    preprocessor then produced nothing and @cImport reported that it could
+    not preprocess the header, without saying why.
+    """
+    if header.startswith('"') or header.startswith("<"):
+        return f"#include {header}\n"
+    if header.startswith("/") or header.startswith("./") or header.startswith("../"):
+        return f'#include "{header}"\n'
+    return f"#include <{header}>\n"
+
+
 # `#define NAME <integer>`, the only macro shape that can become a Flow const.
 # Anything with a parameter list, a string, a float, or an expression naming
 # another macro is skipped rather than guessed at.
@@ -222,10 +234,7 @@ def _preprocess_macros(header: str, include_dirs: List[str]) -> str:
     differs per platform: O_CREAT is 0x200 on macOS and 0x40 on Linux, so any
     number written into a .flow file is wrong on one of them.
     """
-    if header.startswith("/") or header.startswith('"'):
-        include_line = f"#include {header}\n"
-    else:
-        include_line = f"#include <{header}>\n"
+    include_line = _include_line(header)
 
     for argv in (["cpp", "-dM"], ["clang", "-E", "-dM"], ["gcc", "-E", "-dM"]):
         argv = list(argv)
@@ -271,6 +280,42 @@ def parse_header_macros(header: str, include_dirs: Optional[List[str]] = None) -
     return consts
 
 
+def _strip_balanced_calls(text: str, keyword: str) -> str:
+    """Remove `keyword(...)`, counting parentheses rather than matching them.
+
+    glibc writes `__attribute__ ((__nonnull__ (1)))`. A regex stopping at the
+    first `)` leaves a stray one behind, and the declaration around it stops
+    parsing, so open, creat and openat were simply absent on Linux while the
+    macOS spelling imported cleanly.
+    """
+    out = []
+    i = 0
+    while True:
+        at = text.find(keyword, i)
+        if at == -1:
+            out.append(text[i:])
+            return "".join(out)
+        out.append(text[i:at])
+        j = at + len(keyword)
+        while j < len(text) and text[j].isspace():
+            j += 1
+        if j >= len(text) or text[j] != "(":
+            out.append(text[at:j])
+            i = j
+            continue
+        depth = 0
+        while j < len(text):
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+        i = j
+
+
 def _strip_attributes(text: str) -> str:
     """Remove __attribute__((...)), __builtin, and nullability annotations.
 
@@ -280,7 +325,7 @@ def _strip_attributes(text: str) -> str:
     `ptr_int_____Nonnull___compar___void_____void_` and the second typedef was
     rejected as a redefinition.
     """
-    text = re.sub(r"__attribute__\s*\(\([^)]*\)\)", "", text)
+    text = _strip_balanced_calls(text, "__attribute__")
     text = re.sub(r"__builtin_\w+", "", text)
     text = re.sub(r"\b_(?:Nonnull|Nullable|Null_unspecified)\b", "", text)
     return text
@@ -373,13 +418,19 @@ def parse_c_header(header: str, include_dirs: Optional[List[str]] = None) -> Lis
         if not chunk:
             continue
 
-        # Skip extern "C" blocks
+        # `extern` in front of a declaration says where the definition lives,
+        # not what kind of declaration it is. Skipping the whole chunk was
+        # harmless on macOS, whose headers mostly omit the keyword, and
+        # skipped nearly everything on glibc, which writes
+        # `extern int open (const char *, int, ...)` for every function. That
+        # is why @cImport imported almost nothing on Linux.
         if chunk.startswith("extern"):
-            rest = chunk[6:].strip()
+            rest = chunk[len("extern"):].strip()
             if rest.startswith('"C"'):
                 continue
-            # Skip extern variable declarations (rare in headers)
-            continue
+            chunk = rest
+            if not chunk:
+                continue
 
         # Skip static inline functions (they have bodies)
         if re.match(r"^static\s+(__inline__|__inline|inline)", chunk):
