@@ -9,28 +9,76 @@
   ],
   "surfaces": [
     {
-      "id": "language",
+      "id": "language-core",
       "kind": "language",
-      "classification": "pending",
+      "classification": "stable",
       "source": "docs/LANGUAGE_SPEC.md",
       "owner_issue": 640,
-      "note": "Every user-facing language feature must be classified individually before rc.1."
+      "note": "The Stable 1.x language core is the ordinary fully implemented source subset covered by the permanent 1.0 conformance corpus: lexical structure; primitive scalar types and literals; functions; const/local bindings; structs/enums where covered; fixed arrays; ordinary expressions/casts; if/else, while and for; return/break/continue; imports/exports required by Stable compilation; and the C FFI subset covered by conformance/integration tests. Implementation status alone does not promote an advanced/domain surface into this compatibility class."
     },
     {
-      "id": "stdlib",
+      "id": "language-advanced",
+      "kind": "language",
+      "classification": "experimental",
+      "source": "docs/LANGUAGE_SPEC.md",
+      "owner_issue": 640,
+      "note": "Advanced or incompletely qualified surfaces remain outside the initial 1.x source-compatibility promise until individually promoted. This includes partial match forms, module-block namespacing, backend-specific test/dbg/expect semantics, UI layout sugar, specialised safety/profile attributes not in the Stable corpus, and other spec entries marked partial."
+    },
+    {
+      "id": "effects",
+      "kind": "language-domain",
+      "classification": "experimental",
+      "source": "docs/effects-showcase.md",
+      "owner_issue": 643,
+      "note": "Effects ship and are exercised, but the default unhandled-effect coverage/failure policy tracked by #563/#643 is not frozen for 1.0. The subsystem may be promoted to Stable in a compatible 1.x release once normal compilation fails loudly and its continuation boundary is fully qualified."
+    },
+    {
+      "id": "dynamics-dsl",
+      "kind": "language-domain",
+      "classification": "experimental",
+      "source": "docs/language/dynamics-dsl.md",
+      "owner_issue": 644,
+      "note": "flow/evolution, dsys and related domain DSLs remain usable but outside the initial 1.x compatibility promise. In particular, #631 must be resolved before dsys promotion to Stable."
+    },
+    {
+      "id": "verification",
+      "kind": "language-domain",
+      "classification": "experimental",
+      "source": "docs/language/verification.md",
+      "owner_issue": 640,
+      "note": "Verification and proof syntax may change during 1.x until explicitly promoted."
+    },
+    {
+      "id": "effects-multishot",
+      "kind": "language-feature",
+      "classification": "reserved-future",
+      "source": "docs/effects-showcase.md",
+      "owner_issue": 564,
+      "note": "Abort, retry and multi-shot continuation capture are outside the shipped tail-resumptive model unless implemented and promoted later."
+    },
+    {
+      "id": "stdlib-core",
       "kind": "standard-library",
-      "classification": "pending",
+      "classification": "stable",
+      "source": "docs/library/stdlib-api.md",
+      "owner_issue": 646,
+      "note": "Only foundational public APIs explicitly exercised by the Stable conformance/integration corpus are covered by the 1.x stdlib promise. Stable status attaches to documented covered symbols, not automatically to every symbol in a file under lib/stdlib."
+    },
+    {
+      "id": "stdlib-extended",
+      "kind": "standard-library",
+      "classification": "experimental",
       "source": "lib/stdlib",
       "owner_issue": 646,
-      "note": "Public modules and APIs must be classified before rc.1."
+      "note": "Domain, numerical, autodiff, AI, audio, graphics, GPU, concurrency, crypto, networking, dynamics/control and other specialised stdlib modules ship as Experimental unless an individual API is explicitly promoted into stdlib-core."
     },
     {
       "id": "runtime-abi",
       "kind": "runtime",
-      "classification": "pending",
-      "source": "runtime",
+      "classification": "experimental",
+      "source": "STABILITY.md",
       "owner_issue": 646,
-      "note": "ABI version and promised layouts/calling conventions must be defined before rc.1."
+      "note": "Flow 1.0 makes a source-compatibility and documented C-interop promise, not a general cross-version binary ABI promise for compiler-generated/internal runtime layouts. Explicit exported C symbols and representations documented as Stable remain governed by their focused FFI contract."
     },
     {
       "id": "cli-core",
@@ -67,10 +115,10 @@
     {
       "id": "c-backend",
       "kind": "target",
-      "classification": "pending",
-      "source": "src/flow/c_generator.py",
+      "classification": "stable",
+      "source": "PLATFORMS.md",
       "owner_issue": 647,
-      "note": "Target stability follows the Tier-1/Tier-2 platform decision."
+      "note": "The portable C backend is the production backend for the Stable language core. Final v1.0.0 publication remains blocked until Tier-1 platform/toolchain and release-artifact qualification pass; classification states the compatibility contract, not that qualification has already completed."
     },
     {
       "id": "mlir-jit",
@@ -78,7 +126,7 @@
       "classification": "experimental",
       "source": "docs/LANGUAGE_SPEC.md",
       "owner_issue": 647,
-      "note": "Not part of the default 1.0 production target unless separately qualified."
+      "note": "Optional backend/toolchain; does not define 1.0 Stable semantics."
     },
     {
       "id": "cuda",
@@ -86,23 +134,7 @@
       "classification": "experimental",
       "source": "docs/LANGUAGE_SPEC.md",
       "owner_issue": 647,
-      "note": "Not a Tier-1 1.0 target unless separately qualified."
-    },
-    {
-      "id": "verification",
-      "kind": "language-domain",
-      "classification": "experimental",
-      "source": "docs/language/verification.md",
-      "owner_issue": 640,
-      "note": "The ahead-of-implementation proof corpus does not define Stable Flow 1.0 syntax."
-    },
-    {
-      "id": "effects-multishot",
-      "kind": "language-feature",
-      "classification": "reserved-future",
-      "source": "docs/effects-showcase.md",
-      "owner_issue": 564,
-      "note": "Abort, retry and multi-shot continuation capture are outside the shipped tail-resumptive 1.0 model unless implemented before freeze."
+      "note": "Not a Tier-1 1.0 target."
     }
   ]
 }
