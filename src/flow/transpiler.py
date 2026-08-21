@@ -606,6 +606,13 @@ def main():
 
         except Exception as e:
             print(f"MLIR generation error: {e}", file=sys.stderr)
+            # The message alone rarely says which expression the generator choked on.
+            # FLOW_MLIR_TRACE=1 prints the frame, which is the difference between a
+            # guess and a fix.
+            import os as _trace_os
+            if _trace_os.environ.get("FLOW_MLIR_TRACE"):
+                import traceback as _trace_tb
+                _trace_tb.print_exc()
             sys.exit(1)
 
         # Optional: Lower MLIR to LLVM IR

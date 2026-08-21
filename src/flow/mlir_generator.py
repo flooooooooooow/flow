@@ -7,6 +7,8 @@ Converts parsed FLOW AST to MLIR dialects
 from __future__ import annotations
 
 from typing import List, Dict, Optional, Any, Set
+import re
+
 from .parser import (
     FunctionDecl, EffectDecl, CapabilityDecl, StructDecl, Block, Statement,
     VarDecl, Assignment, IfStatement, IfExpression, WhileStatement, ForStatement,
@@ -14,7 +16,7 @@ from .parser import (
     UnaryOperation, FunctionCall, StructLiteral, FieldAccess, ArrayLiteral, VectorLiteral, ArrayAccess, Type,
     HandleStatement, EffectCall, MethodCall,
     MatchStatement, StructPattern, ListPattern, ConstDecl, StaticDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
-    ExpectStatement, RecordUpdate,
+    ExpectStatement, RecordUpdate, SliceExpr,
     BreakStatement, ContinueStatement, DeferStatement,
     EnumDecl, Parameter, Lambda, SliceExpr,
     is_span_type_name, span_is_mutable, span_element_name, make_span_type,
@@ -90,7 +92,7 @@ class MLIRGenerator:
         """
         if self.size_t_bits == 32:
             return False
-        return self._is_aggregate_mlir_type(mlir_type)
+        return self._is_aggregate_mlir_type(mlir_type) or self._is_complex_mlir(mlir_type)
 
     def _emit_alloca_store(self, value_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
         ops: List[str] = []
@@ -100,19 +102,14 @@ class MLIRGenerator:
         ptr = f"%{self.function_counter}"
         self.function_counter += 1
         ops.append(
-            f"{self.indent()}{ptr} = llvm.alloca {one} x {mlir_type} : (i64) -> !llvm.ptr"
+            f"{self.indent()}{ptr} = llvm.alloca {one} x {self._gep_elem_mlir(mlir_type)} "
+            f": (i64) -> !llvm.ptr"
         )
-        ops.append(
-            f"{self.indent()}llvm.store {value_ssa}, {ptr} : {mlir_type}, !llvm.ptr"
-        )
+        ops.extend(self._emit_typed_store(value_ssa, ptr, mlir_type))
         return ptr, ops
 
     def _emit_alloca_load(self, ptr_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
-        val = f"%{self.function_counter}"
-        self.function_counter += 1
-        ops = [f"{self.indent()}{val} = llvm.load {ptr_ssa} : !llvm.ptr -> {mlir_type}"]
-        self._ssa_types[val] = mlir_type
-        return val, ops
+        return self._emit_typed_load(ptr_ssa, mlir_type)
 
     def _store_aggregate_var(self, var_info: Dict[str, Any], value_ssa: str) -> List[str]:
         mlir_type = var_info.get("mlir_type")
@@ -124,9 +121,7 @@ class MLIRGenerator:
             var_info["alloca_ptr"] = ptr
             var_info["ssa_name"] = value_ssa
             return ops
-        return [
-            f"{self.indent()}llvm.store {value_ssa}, {ptr} : {mlir_type}, !llvm.ptr"
-        ]
+        return self._emit_typed_store(value_ssa, ptr, mlir_type)
 
     _TENSOR_PTR_ARG_CALLEES = frozenset({"tensor_matmul"})
     _COMPOSITE_FIELD_MATERIALIZE_TYPES = frozenset({
@@ -318,8 +313,25 @@ class MLIRGenerator:
         return copied, mat_ops
 
     @staticmethod
-    def _format_mlir_numeric(value: str, mlir_type: str) -> str:
+    def _as_mlir_float(text: str) -> str:
+        """MLIR rejects `arith.constant 0 : f32`; a float literal needs a point.
+
+        The trailing-zero strip below can leave `1.0` as `1`, and an integer literal
+        used where a float is wanted arrives here as `0`. Both are invalid MLIR text.
+        """
+        lowered = text.lower()
+        if "." in lowered or "e" in lowered or "inf" in lowered or "nan" in lowered:
+            return text
+        return text + ".0"
+
+    def _format_mlir_numeric(self, value: str, mlir_type: str) -> str:
         """Format numeric literals for MLIR text (no scientific notation)."""
+        if mlir_type in ("f32", "f64"):
+            return self._as_mlir_float(self._format_mlir_numeric_inner(value, mlir_type))
+        return self._format_mlir_numeric_inner(value, mlir_type)
+
+    @staticmethod
+    def _format_mlir_numeric_inner(value: str, mlir_type: str) -> str:
         if mlir_type not in ("f32", "f64", "i32", "i64", "index"):
             return value
         lowered = value.lower()
@@ -1101,6 +1113,7 @@ class MLIRGenerator:
         return "\n".join(mlir_code)
     
     def generate_function(self, func: FunctionDecl) -> str:
+        self._prove_bounds_mlir(func)
         # Don't add to symbol table here - it's already added in first pass
         
         # Store current function return type for use in return statements
@@ -1649,6 +1662,11 @@ class MLIRGenerator:
             # Array element assignment: arr[i] = value -> memref.store
             access = assignment.target_expr
             if isinstance(access, ArrayAccess):
+                # A span target carries its own pointer; it never goes through memref.
+                span_store = self.generate_span_store(access, value_ssa)
+                if span_store is not None:
+                    ops.extend(span_store)
+                    return "\n".join(ops)
                 # Generate array expression
                 array_result = self.generate_expression(access.array)
                 if not array_result:
@@ -1708,9 +1726,7 @@ class MLIRGenerator:
                         array_ssa, index_ssa, index_type, llvm_array_ty
                     )
                     ops.extend(gep_ops)
-                    ops.append(
-                        f"{self.indent()}llvm.store {value_ssa}, {gep} : {elem_type}, !llvm.ptr"
-                    )
+                    ops.extend(self._emit_typed_store(value_ssa, gep, elem_type))
                     return "\n".join(ops)
 
                 if self._is_pointer_array_ssa(array_ssa, access):
@@ -1726,7 +1742,7 @@ class MLIRGenerator:
                         ops.extend(cast_ops)
                     gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type, elem_type)
                     ops.extend(gep_ops)
-                    ops.append(f"{self.indent()}llvm.store {value_ssa}, {gep} : {elem_type}, !llvm.ptr")
+                    ops.extend(self._emit_typed_store(value_ssa, gep, elem_type))
                     return "\n".join(ops)
 
                 if index_type == 'index':
@@ -1734,7 +1750,7 @@ class MLIRGenerator:
                 else:
                     index_cast = f"%{self.function_counter}"
                     self.function_counter += 1
-                    ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
+                    ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : {self._int_type_of(index_ssa)} to index")
                     final_index = index_cast
 
                 # Use the array's declared memref type so fixed-shape locals
@@ -2655,8 +2671,8 @@ class MLIRGenerator:
         self.function_counter += 1
         c4 = f"%{self.function_counter}"
         self.function_counter += 1
-        ops.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
-        ops.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
+        ops.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : {self._int_type_of(lower_bound)} to index")
+        ops.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : {self._int_type_of(upper_bound)} to index")
         ops.append(f"{self.indent()}{c1} = arith.constant 1 : index")
         ops.append(f"{self.indent()}{c4} = arith.constant 4 : index")
 
@@ -2765,8 +2781,8 @@ class MLIRGenerator:
         self.function_counter += 1
         ub = f"%{self.function_counter}"
         self.function_counter += 1
-        mlir_code.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : i32 to index")
-        mlir_code.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : i32 to index")
+        mlir_code.append(f"{self.indent()}{lb} = arith.index_cast {lower_bound} : {self._int_type_of(lower_bound)} to index")
+        mlir_code.append(f"{self.indent()}{ub} = arith.index_cast {upper_bound} : {self._int_type_of(upper_bound)} to index")
 
         # Descending loops run while iv > ub, exactly as the C backend does.
         # With a constant step the direction is known here; with a dynamic one
@@ -2783,7 +2799,7 @@ class MLIRGenerator:
             step_expr_ssa, step_ops = self.generate_expression(for_stmt.step)
             mlir_code.extend(step_ops)
             mlir_code.append(
-                f"{self.indent()}{step} = arith.index_cast {step_expr_ssa} : i32 to index"
+                f"{self.indent()}{step} = arith.index_cast {step_expr_ssa} : {self._int_type_of(step_expr_ssa)} to index"
             )
             zero = f"%{self.function_counter}"
             self.function_counter += 1
@@ -3037,8 +3053,8 @@ class MLIRGenerator:
             step_idx = f"%{self.function_counter}"
             self.function_counter += 1
 
-            mlir_code.append(f"{self.indent()}{lb_idx} = arith.index_cast {lower_bound} : i32 to index")
-            mlir_code.append(f"{self.indent()}{ub_idx} = arith.index_cast {upper_bound} : i32 to index")
+            mlir_code.append(f"{self.indent()}{lb_idx} = arith.index_cast {lower_bound} : {self._int_type_of(lower_bound)} to index")
+            mlir_code.append(f"{self.indent()}{ub_idx} = arith.index_cast {upper_bound} : {self._int_type_of(upper_bound)} to index")
             mlir_code.append(f"{self.indent()}{step_idx} = arith.constant {step_value if step_value is not None else 1} : index")
 
             # Induction variable
@@ -3612,8 +3628,15 @@ class MLIRGenerator:
         elif isinstance(expr, SliceExpr):
             return self.generate_slice_expr(expr)
         elif isinstance(expr, ArrayAccess):
+            span_type = self._span_flow_type_of(expr.array)
+            if span_type is not None:
+                return self.generate_span_access(expr, span_type)
             return self.generate_array_access(expr)
         elif isinstance(expr, FieldAccess):
+            if expr.field in ("len", "data"):
+                span_type = self._span_flow_type_of(expr.object)
+                if span_type is not None:
+                    return self.generate_span_field(expr, span_type)
             return self.generate_field_access(expr)
         elif isinstance(expr, StructLiteral):
             return self.generate_struct_literal(expr)
@@ -3916,7 +3939,7 @@ class MLIRGenerator:
         self.function_counter += 1
         ops.append(f"{self.indent()}{ptr} = llvm.mlir.addressof @{name} : !llvm.ptr")
         self._ssa_types[ptr] = "!llvm.ptr"
-        ops.append(f"{self.indent()}llvm.store {value_ssa}, {ptr} : {mlir_type}, !llvm.ptr")
+        ops.extend(self._emit_typed_store(value_ssa, ptr, mlir_type))
         return ops
 
     def _resolve_binary_operand_type(self, left_ty: str, right_ty: str) -> str:
@@ -3968,6 +3991,13 @@ class MLIRGenerator:
         # and crashed doom-flow under --backend=mlir (#230).
         if bin_op.operator in ('&&', 'and', '||', 'or'):
             return self._generate_short_circuit_logic(bin_op)
+
+        complex_type = (self._complex_type_of_expr(bin_op.left)
+                        or self._complex_type_of_expr(bin_op.right))
+        if complex_type is not None:
+            handled = self._generate_complex_binary(bin_op, complex_type)
+            if handled is not None:
+                return handled
 
         left_ssa, left_ops = self.generate_expression(bin_op.left)
         right_ssa, right_ops = self.generate_expression(bin_op.right)
@@ -5637,6 +5667,10 @@ class MLIRGenerator:
         return self.generate_expression(target)
 
     def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
+        handled = self._generate_complex_intrinsic(func_call)
+        if handled is not None:
+            return handled
+
         # Indirect call through a non-capturing lambda / fn-typed local.
         if func_call.name in self.symbol_table:
             info = self.symbol_table[func_call.name]
@@ -6430,6 +6464,8 @@ class MLIRGenerator:
         gep = f"%{self.function_counter}"
         self.function_counter += 1
         gep_elem = elem_type or '!llvm.ptr'
+        if self._is_complex_mlir(gep_elem):
+            gep_elem = self._complex_storage_mlir(gep_elem)
         ops.append(
             f"{self.indent()}{gep} = llvm.getelementptr {ptr_ssa}[{index_ssa}] "
             f": (!llvm.ptr, i64) -> !llvm.ptr, {gep_elem}"
@@ -6520,6 +6556,11 @@ class MLIRGenerator:
                 array_ssa, index_ssa, index_type, llvm_array_ty
             )
             ops.extend(gep_ops)
+            if self._is_complex_mlir(elem_type):
+                loaded, load_ops = self._emit_typed_load(gep, elem_type)
+                ops.extend(load_ops)
+                self._ssa_types[ssa_name] = elem_type
+                return loaded, ops
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
             if getattr(elem_flow, "name", "").startswith("u"):
@@ -6535,6 +6576,11 @@ class MLIRGenerator:
             )
             gep, gep_ops = self._emit_ptr_index_gep(array_ssa, index_ssa, index_type, elem_type)
             ops.extend(gep_ops)
+            if self._is_complex_mlir(elem_type):
+                loaded, load_ops = self._emit_typed_load(gep, elem_type)
+                ops.extend(load_ops)
+                self._ssa_types[ssa_name] = elem_type
+                return loaded, ops
             ops.append(f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}")
             self._ssa_types[ssa_name] = elem_type
             # ptr<u8>[i] etc.: track unsigned so `as i32` uses extui (#230).
@@ -6557,7 +6603,7 @@ class MLIRGenerator:
         else:
             index_cast = f"%{self.function_counter}"
             self.function_counter += 1
-            ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : i32 to index")
+            ops.append(f"{self.indent()}{index_cast} = arith.index_cast {index_ssa} : {self._int_type_of(index_ssa)} to index")
             final_index = index_cast
 
         arr_mlir = self._ssa_types.get(array_ssa)
@@ -6596,6 +6642,18 @@ class MLIRGenerator:
         return ssa_name, ops
     
     def get_expression_type(self, expr: Expression) -> str:
+        # The complex intrinsics are lowered here rather than called, so their result
+        # types are known here too. Without this `-cimag(z)` read as an integer negate.
+        complex_type = self._complex_type_of_expr(expr)
+        if complex_type is not None:
+            return complex_type
+        if isinstance(expr, FunctionCall):
+            intrinsic = self._COMPLEX_INTRINSICS.get(getattr(expr, "name", None))
+            args = getattr(expr, "arguments", None) or []
+            if intrinsic in ("complex.re", "complex.im", "complex.abs") and args:
+                argument = self._complex_type_of_expr(args[0])
+                if argument is not None:
+                    return self._complex_real_mlir(argument)
         if isinstance(expr, Literal):
             return self.flow_type_to_mlir(expr.type)
         elif isinstance(expr, Variable):
@@ -6690,6 +6748,498 @@ class MLIRGenerator:
         else:
             return 'i32'  # Default
     
+    # --- spans and complex ---------------------------------------------------------
+    #
+    # A span is the same pair the C backend emits, `{ T *data; int64_t len; }`, so the
+    # two backends agree on layout and a span may cross between them unchanged. In the
+    # llvm dialect that pair is !llvm.struct<(ptr, i64)>.
+    #
+    # c64 and c128 are the C complex types, laid out as two reals. They arrive here
+    # because cblas takes them by pointer; the arithmetic on them stays in the callee.
+
+    SPAN_MLIR_TYPE = "!llvm.struct<(ptr, i64)>"
+
+    def _int_type_of(self, ssa: str) -> str:
+        """The integer type an SSA value actually carries.
+
+        Loop bounds were assumed to be i32, which held while every bound was an i32
+        expression. `xs.len` is i64, so the assumption has to be read off the value.
+        """
+        recorded = self._ssa_types.get(ssa)
+        if isinstance(recorded, str) and re.fullmatch(r"i\d+", recorded):
+            return recorded
+        return "i32"
+
+
+    @staticmethod
+    def _is_span_type_name(name) -> bool:
+        return isinstance(name, str) and (
+            name.startswith("span_const_") or name.startswith("span_mut_")
+        )
+
+    def _is_span_flow_type(self, flow_type) -> bool:
+        return self._is_span_type_name(getattr(flow_type, "name", None))
+
+    def _span_element_mlir(self, flow_type) -> str:
+        """MLIR type of what a span points at, defaulting to bytes when unstated."""
+        element = getattr(flow_type, "element_type", None)
+        if element is not None:
+            return self.flow_type_to_mlir(element)
+        name = getattr(flow_type, "name", "") or ""
+        for prefix in ("span_const_", "span_mut_"):
+            if name.startswith(prefix):
+                return self.flow_type_to_mlir(Type(name=name[len(prefix):]))
+        return "i8"
+
+    def _span_flow_type_of(self, expr):
+        """The span type of an expression, or None if it is not a span."""
+        flow_type = self._flow_type_of_expr(expr)
+        if self._is_span_flow_type(flow_type):
+            return flow_type
+        if isinstance(expr, Variable):
+            info = self.symbol_table.get(expr.name) or {}
+            candidate = info.get("flow_type")
+            if self._is_span_flow_type(candidate):
+                return candidate
+        if isinstance(expr, FieldAccess):
+            candidate = self._determine_field_type(expr)
+            if self._is_span_flow_type(candidate):
+                return candidate
+        return None
+
+    def _next_ssa(self) -> str:
+        name = f"%{self.function_counter}"
+        self.function_counter += 1
+        return name
+
+    def _extract_span_part(self, span_ssa: str, index: int, mlir_type: str, ops: List[str]) -> str:
+        out = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{out} = llvm.extractvalue {span_ssa}[{index}] "
+            f": {self.SPAN_MLIR_TYPE}"
+        )
+        self._ssa_types[out] = mlir_type
+        return out
+
+    def _to_i64(self, ssa: str, ops: List[str]) -> str:
+        """Widen an index to i64, which is what a span length and a gep want."""
+        current = self._ssa_types.get(ssa, "i32")
+        if current == "i64":
+            return ssa
+        out = self._next_ssa()
+        if current == "index":
+            ops.append(f"{self.indent()}{out} = arith.index_cast {ssa} : index to i64")
+        elif current.startswith("i"):
+            ops.append(f"{self.indent()}{out} = arith.extsi {ssa} : {current} to i64")
+        else:
+            return ssa
+        self._ssa_types[out] = "i64"
+        return out
+
+    def generate_slice_expr(self, expr: SliceExpr) -> tuple[str, List[str]]:
+        """`base[start..end]` builds the {data, len} pair.
+
+        `base` is either a raw pointer, where the data pointer is the base advanced by
+        `start`, or another span, where it is that span's data advanced the same way.
+        The length is `end - start` and is not clamped against the source: narrowing a
+        span is the same operation the C backend performs, with the same trust.
+        """
+        ops: List[str] = []
+        base_ssa, base_ops = self.generate_expression(expr.base)
+        ops.extend(base_ops)
+
+        base_span = self._span_flow_type_of(expr.base)
+        if base_span is not None:
+            element_mlir = self._span_element_mlir(base_span)
+            data_ssa = self._extract_span_part(base_ssa, 0, "!llvm.ptr", ops)
+        else:
+            element_mlir = self._pointee_mlir_for(expr.base)
+            data_ssa = base_ssa
+
+        if expr.start is not None:
+            start_ssa, start_ops = self.generate_expression(expr.start)
+            ops.extend(start_ops)
+            start_ssa = self._to_i64(start_ssa, ops)
+        else:
+            start_ssa = self._next_ssa()
+            ops.append(f"{self.indent()}{start_ssa} = arith.constant 0 : i64")
+            self._ssa_types[start_ssa] = "i64"
+
+        offset_ptr = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{offset_ptr} = llvm.getelementptr {data_ssa}[{start_ssa}] "
+            f": (!llvm.ptr, i64) -> !llvm.ptr, {self._gep_elem_mlir(element_mlir)}"
+        )
+        self._ssa_types[offset_ptr] = "!llvm.ptr"
+
+        if expr.end is not None:
+            end_ssa, end_ops = self.generate_expression(expr.end)
+            ops.extend(end_ops)
+            end_ssa = self._to_i64(end_ssa, ops)
+            length = self._next_ssa()
+            ops.append(f"{self.indent()}{length} = arith.subi {end_ssa}, {start_ssa} : i64")
+        else:
+            length = self._next_ssa()
+            ops.append(f"{self.indent()}{length} = arith.constant 0 : i64")
+        self._ssa_types[length] = "i64"
+
+        undef = self._next_ssa()
+        ops.append(f"{self.indent()}{undef} = llvm.mlir.undef : {self.SPAN_MLIR_TYPE}")
+        with_data = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{with_data} = llvm.insertvalue {offset_ptr}, {undef}[0] "
+            f": {self.SPAN_MLIR_TYPE}"
+        )
+        span = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{span} = llvm.insertvalue {length}, {with_data}[1] "
+            f": {self.SPAN_MLIR_TYPE}"
+        )
+        self._ssa_types[span] = self.SPAN_MLIR_TYPE
+        return span, ops
+
+    def _pointee_mlir_for(self, expr) -> str:
+        """MLIR type of what a pointer expression points at."""
+        flow_type = self._flow_type_of_expr(expr)
+        if flow_type is None and isinstance(expr, Variable):
+            info = self.symbol_table.get(expr.name) or {}
+            flow_type = info.get("flow_type")
+        if flow_type is not None:
+            pointee = self._pointee_struct_type(flow_type)
+            if pointee is not None:
+                return self.flow_type_to_mlir(pointee)
+        return "i8"
+
+    def generate_span_field(self, field_access: FieldAccess, span_type) -> tuple[str, List[str]]:
+        """`xs.len` and `xs.data`, read straight off the pair."""
+        ops: List[str] = []
+        span_ssa, span_ops = self.generate_expression(field_access.object)
+        ops.extend(span_ops)
+        if field_access.field == "len":
+            return self._extract_span_part(span_ssa, 1, "i64", ops), ops
+        return self._extract_span_part(span_ssa, 0, "!llvm.ptr", ops), ops
+
+    def generate_span_access(self, access: ArrayAccess, span_type) -> tuple[str, List[str]]:
+        """`xs[i]`: the data pointer, advanced, then loaded."""
+        ops: List[str] = []
+        span_ssa, span_ops = self.generate_expression(access.array)
+        ops.extend(span_ops)
+        index_ssa, index_ops = self.generate_expression(access.index)
+        ops.extend(index_ops)
+        index_ssa = self._to_i64(index_ssa, ops)
+
+        element_mlir = self._span_element_mlir(span_type)
+        self._emit_span_bounds_check(access, span_ssa, index_ssa, ops)
+        data_ssa = self._extract_span_part(span_ssa, 0, "!llvm.ptr", ops)
+        element_ptr = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{element_ptr} = llvm.getelementptr {data_ssa}[{index_ssa}] "
+            f": (!llvm.ptr, i64) -> !llvm.ptr, {self._gep_elem_mlir(element_mlir)}"
+        )
+        self._ssa_types[element_ptr] = "!llvm.ptr"
+        value, load_ops = self._emit_typed_load(element_ptr, element_mlir)
+        ops.extend(load_ops)
+        return value, ops
+
+    def generate_span_store(self, access: ArrayAccess, value_ssa: str) -> Optional[List[str]]:
+        """`xs[i] = v`. Returns None when the target is not a span."""
+        span_type = self._span_flow_type_of(access.array)
+        if span_type is None:
+            return None
+        ops: List[str] = []
+        span_ssa, span_ops = self.generate_expression(access.array)
+        ops.extend(span_ops)
+        index_ssa, index_ops = self.generate_expression(access.index)
+        ops.extend(index_ops)
+        index_ssa = self._to_i64(index_ssa, ops)
+        element_mlir = self._span_element_mlir(span_type)
+        # The other store paths reconcile the value with the slot; so must this one.
+        # `xs[i] = 0.0` types the literal f32 while the span holds f64.
+        self._emit_span_bounds_check(access, span_ssa, index_ssa, ops)
+        value_type = self._ssa_types.get(value_ssa)
+        if value_type and value_type != element_mlir and not self._is_complex_mlir(element_mlir):
+            value_ssa, cast_ops = self._emit_cast(value_ssa, value_type, element_mlir)
+            ops.extend(cast_ops)
+        data_ssa = self._extract_span_part(span_ssa, 0, "!llvm.ptr", ops)
+        element_ptr = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{element_ptr} = llvm.getelementptr {data_ssa}[{index_ssa}] "
+            f": (!llvm.ptr, i64) -> !llvm.ptr, {self._gep_elem_mlir(element_mlir)}"
+        )
+        ops.extend(self._emit_typed_store(value_ssa, element_ptr, element_mlir))
+        return ops
+
+
+    _COMPLEX_BINARY_OPS = {"+": "complex.add", "-": "complex.sub",
+                           "*": "complex.mul", "/": "complex.div"}
+
+    @staticmethod
+    def _is_complex_mlir(mlir_type) -> bool:
+        return isinstance(mlir_type, str) and mlir_type.startswith("complex<")
+
+    @staticmethod
+    def _complex_real_mlir(mlir_type: str) -> str:
+        return mlir_type[len("complex<"):-1]
+
+    def _complex_type_of_expr(self, expr):
+        """The complex MLIR type of an expression, or None.
+
+        This answers from structure and the symbol table and never calls
+        get_expression_type, because get_expression_type calls this.
+        """
+        if expr is None:
+            return None
+        if isinstance(expr, Variable):
+            info = self.symbol_table.get(expr.name) or {}
+            recorded = info.get("mlir_type")
+            if self._is_complex_mlir(recorded):
+                return recorded
+            declared = getattr(info.get("flow_type"), "name", None)
+            if declared == "c64":
+                return "complex<f32>"
+            if declared == "c128":
+                return "complex<f64>"
+        # A chain of complex arithmetic stays complex, and an element read from a span
+        # or pointer of complex is complex. Without these the second operation in
+        # `a * b + c` fell back to integer arithmetic.
+        if isinstance(expr, BinaryOperation) and expr.operator in self._COMPLEX_BINARY_OPS:
+            return (self._complex_type_of_expr(expr.left)
+                    or self._complex_type_of_expr(expr.right))
+        if isinstance(expr, UnaryOperation):
+            return self._complex_type_of_expr(getattr(expr, "operand", None)
+                                              or getattr(expr, "expr", None))
+        if isinstance(expr, ArrayAccess):
+            span_type = self._span_flow_type_of(expr.array)
+            if span_type is not None:
+                element = self._span_element_mlir(span_type)
+                return element if self._is_complex_mlir(element) else None
+            pointee = self._pointee_struct_type(self._flow_type_of_expr(expr.array))
+            name = getattr(pointee, "name", None)
+            if name == "c64":
+                return "complex<f32>"
+            if name == "c128":
+                return "complex<f64>"
+        if isinstance(expr, FunctionCall):
+            called = getattr(expr, "name", None)
+            if called == "c64":
+                return "complex<f32>"
+            if called == "c128":
+                return "complex<f64>"
+            if called in ("conj", "conjf"):
+                args = getattr(expr, "arguments", None) or []
+                if args:
+                    return self._complex_type_of_expr(args[0])
+        flow_type = self._flow_type_of_expr(expr)
+        name = getattr(flow_type, "name", None)
+        if name == "c64":
+            return "complex<f32>"
+        if name == "c128":
+            return "complex<f64>"
+        return None
+
+    def _generate_complex_binary(self, bin_op, complex_type: str):
+        """`z * w` on complex values, straight to the complex dialect."""
+        op_name = self._COMPLEX_BINARY_OPS.get(bin_op.operator)
+        if op_name is None:
+            return None
+        ops: List[str] = []
+        left_ssa, left_ops = self.generate_expression(bin_op.left)
+        ops.extend(left_ops)
+        right_ssa, right_ops = self.generate_expression(bin_op.right)
+        ops.extend(right_ops)
+        # A real operand promotes: `z * 2.0` is `z * (2.0 + 0i)`.
+        left_ssa = self._promote_to_complex(left_ssa, bin_op.left, complex_type, ops)
+        right_ssa = self._promote_to_complex(right_ssa, bin_op.right, complex_type, ops)
+        out = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{out} = {op_name} {left_ssa}, {right_ssa} : {complex_type}"
+        )
+        self._ssa_types[out] = complex_type
+        return out, ops
+
+    def _promote_to_complex(self, ssa: str, expr, complex_type: str, ops: List[str]) -> str:
+        # The generated value is the authority: `c64(re, im)` is a call, and asking the
+        # expression whether it is complex says no, which promoted an already-complex
+        # operand a second time.
+        if self._is_complex_mlir(self._ssa_types.get(ssa)):
+            return ssa
+        if self._complex_type_of_expr(expr) is not None:
+            return ssa
+        real = self._complex_real_mlir(complex_type)
+        current = self._ssa_types.get(ssa, real)
+        if current != real and current in ("f32", "f64"):
+            converted = self._next_ssa()
+            op = "arith.extf" if real == "f64" else "arith.truncf"
+            ops.append(f"{self.indent()}{converted} = {op} {ssa} : {current} to {real}")
+            self._ssa_types[converted] = real
+            ssa = converted
+        zero = self._next_ssa()
+        ops.append(f"{self.indent()}{zero} = arith.constant 0.0 : {real}")
+        out = self._next_ssa()
+        ops.append(
+            f"{self.indent()}{out} = complex.create {ssa}, {zero} : {complex_type}"
+        )
+        self._ssa_types[out] = complex_type
+        return out
+
+    # `creal(z)` and friends are declared extern in Flow and would otherwise become C
+    # calls, which means passing a complex by value across an ABI boundary. The complex
+    # dialect has all four, so they lower to no call at all.
+    _COMPLEX_INTRINSICS = {
+        "creal": "complex.re", "crealf": "complex.re",
+        "cimag": "complex.im", "cimagf": "complex.im",
+        "conj": "complex.conj", "conjf": "complex.conj",
+        "cabs": "complex.abs", "cabsf": "complex.abs",
+    }
+
+    def _generate_complex_intrinsic(self, func_call):
+        name = getattr(func_call, "name", None)
+        args = getattr(func_call, "arguments", None) or []
+        if name in ("c64", "c128") and len(args) == 2:
+            complex_type = "complex<f32>" if name == "c64" else "complex<f64>"
+            real = self._complex_real_mlir(complex_type)
+            ops: List[str] = []
+            parts = []
+            for arg in args:
+                ssa, arg_ops = self.generate_expression(arg)
+                ops.extend(arg_ops)
+                current = self._ssa_types.get(ssa, real)
+                if current != real and current in ("f32", "f64"):
+                    converted = self._next_ssa()
+                    op = "arith.extf" if real == "f64" else "arith.truncf"
+                    ops.append(f"{self.indent()}{converted} = {op} {ssa} : {current} to {real}")
+                    self._ssa_types[converted] = real
+                    ssa = converted
+                parts.append(ssa)
+            out = self._next_ssa()
+            ops.append(
+                f"{self.indent()}{out} = complex.create {parts[0]}, {parts[1]} : {complex_type}"
+            )
+            self._ssa_types[out] = complex_type
+            return out, ops
+
+        op_name = self._COMPLEX_INTRINSICS.get(name)
+        if op_name is None or len(args) != 1:
+            return None
+        complex_type = self._complex_type_of_expr(args[0])
+        if complex_type is None:
+            return None
+        ops: List[str] = []
+        arg_ssa, arg_ops = self.generate_expression(args[0])
+        ops.extend(arg_ops)
+        out = self._next_ssa()
+        ops.append(f"{self.indent()}{out} = {op_name} {arg_ssa} : {complex_type}")
+        self._ssa_types[out] = (complex_type if op_name == "complex.conj"
+                                else self._complex_real_mlir(complex_type))
+        return out, ops
+
+
+    # A complex value in a register is `complex<f32>`; in memory it is the two reals
+    # C lays down, so cblas and the C backend read the same bytes. The conversion
+    # happens at the load and store, and nowhere else.
+
+    def _gep_elem_mlir(self, mlir_type: str) -> str:
+        """What a gep may stride by: complex has no LLVM type, its storage struct does."""
+        if self._is_complex_mlir(mlir_type):
+            return self._complex_storage_mlir(mlir_type)
+        return mlir_type
+
+    @staticmethod
+    def _complex_storage_mlir(complex_type: str) -> str:
+        real = complex_type[len("complex<"):-1]
+        return f"!llvm.struct<({real}, {real})>"
+
+    def _emit_typed_store(self, value_ssa: str, ptr_ssa: str, mlir_type: str) -> List[str]:
+        """`llvm.store`, unpacking a complex into its two reals first."""
+        if not self._is_complex_mlir(mlir_type):
+            return [f"{self.indent()}llvm.store {value_ssa}, {ptr_ssa} "
+                    f": {mlir_type}, !llvm.ptr"]
+        storage = self._complex_storage_mlir(mlir_type)
+        real = self._complex_real_mlir(mlir_type)
+        ops: List[str] = []
+        re_ssa = self._next_ssa()
+        ops.append(f"{self.indent()}{re_ssa} = complex.re {value_ssa} : {mlir_type}")
+        im_ssa = self._next_ssa()
+        ops.append(f"{self.indent()}{im_ssa} = complex.im {value_ssa} : {mlir_type}")
+        undef = self._next_ssa()
+        ops.append(f"{self.indent()}{undef} = llvm.mlir.undef : {storage}")
+        with_re = self._next_ssa()
+        ops.append(f"{self.indent()}{with_re} = llvm.insertvalue {re_ssa}, {undef}[0] : {storage}")
+        packed = self._next_ssa()
+        ops.append(f"{self.indent()}{packed} = llvm.insertvalue {im_ssa}, {with_re}[1] : {storage}")
+        ops.append(f"{self.indent()}llvm.store {packed}, {ptr_ssa} : {storage}, !llvm.ptr")
+        self._ssa_types[re_ssa] = real
+        self._ssa_types[im_ssa] = real
+        return ops
+
+    def _emit_typed_load(self, ptr_ssa: str, mlir_type: str) -> tuple[str, List[str]]:
+        """`llvm.load`, rebuilding a complex from the two reals it finds."""
+        if not self._is_complex_mlir(mlir_type):
+            out = self._next_ssa()
+            self._ssa_types[out] = mlir_type
+            return out, [f"{self.indent()}{out} = llvm.load {ptr_ssa} "
+                         f": !llvm.ptr -> {mlir_type}"]
+        storage = self._complex_storage_mlir(mlir_type)
+        real = self._complex_real_mlir(mlir_type)
+        ops: List[str] = []
+        packed = self._next_ssa()
+        ops.append(f"{self.indent()}{packed} = llvm.load {ptr_ssa} : !llvm.ptr -> {storage}")
+        re_ssa = self._next_ssa()
+        ops.append(f"{self.indent()}{re_ssa} = llvm.extractvalue {packed}[0] : {storage}")
+        im_ssa = self._next_ssa()
+        ops.append(f"{self.indent()}{im_ssa} = llvm.extractvalue {packed}[1] : {storage}")
+        out = self._next_ssa()
+        ops.append(f"{self.indent()}{out} = complex.create {re_ssa}, {im_ssa} : {mlir_type}")
+        self._ssa_types[re_ssa] = real
+        self._ssa_types[im_ssa] = real
+        self._ssa_types[out] = mlir_type
+        return out, ops
+
+
+    # --- checked span access --------------------------------------------------------
+    #
+    # The same prover the C backend uses decides which of these need a check. What it
+    # cannot discharge gets `cf.assert` on an unsigned compare, which rejects a negative
+    # index and one past the end in a single test.
+    #
+    # The C backend can additionally version a loop and hoist the guard out of it. That
+    # is not done here yet, so a `hoist` verdict still pays its check on this backend.
+
+    def _prove_bounds_mlir(self, func) -> None:
+        self._mlir_bounds_verdicts = {}
+        import os as _os
+        if _os.environ.get("FLOW_NO_BOUNDS_PROOF"):
+            return
+        try:
+            from .bounds_proof import BoundsProver
+            prover = BoundsProver()
+            prover.run(func)
+        except Exception:
+            return
+        self._mlir_bounds_verdicts = prover.verdicts
+
+    def _span_check_needed(self, access) -> bool:
+        verdict = getattr(self, "_mlir_bounds_verdicts", {}).get(id(access))
+        return verdict is None or verdict.kind != "proven"
+
+    def _emit_span_bounds_check(self, access, span_ssa: str, index_ssa: str,
+                                ops: List[str]) -> None:
+        if not self._span_checks_enabled() or not self._span_check_needed(access):
+            return
+        length = self._extract_span_part(span_ssa, 1, "i64", ops)
+        ok = self._next_ssa()
+        # Unsigned, so a negative index reads as enormous and fails the same test.
+        ops.append(
+            f"{self.indent()}{ok} = arith.cmpi ult, {index_ssa}, {length} : i64"
+        )
+        self._ssa_types[ok] = "i1"
+        ops.append(f'{self.indent()}cf.assert {ok}, "span index out of bounds"')
+
+    @staticmethod
+    def _span_checks_enabled() -> bool:
+        import os as _os
+        return not _os.environ.get("FLOW_NO_BOUNDS_CHECK")
+
     def flow_type_to_mlir(self, flow_type: Type) -> str:
         flow_type = self._resolve_type_alias(flow_type)
         elem_type = self._resolve_type_alias(flow_type.element_type) if getattr(flow_type, 'element_type', None) else None
@@ -6704,6 +7254,14 @@ class MLIRGenerator:
             return _unsigned_to_signed[flow_type.name]
         if flow_type.name in ['i8', 'i16', 'i32', 'i64', 'i128', 'f32', 'f64']:
             return flow_type.name
+        elif flow_type.name in ('c64', 'c128'):
+            # C's `float _Complex` / `double _Complex`. The complex dialect carries the
+            # same two-reals layout, so a pointer to one is still what cblas expects,
+            # and it supplies the arithmetic instead of it being open-coded here.
+            return 'complex<f32>' if flow_type.name == 'c64' else 'complex<f64>'
+        elif self._is_span_type_name(flow_type.name):
+            # Same pair the C backend emits, so the two backends agree on layout.
+            return self.SPAN_MLIR_TYPE
         elif flow_type.name == 'bool':
             return 'i1'
         elif flow_type.name == 'void':
