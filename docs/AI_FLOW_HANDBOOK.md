@@ -554,7 +554,7 @@ model.
 
 ### 8.1 Core forms
 
-```flow
+```flow-pseudocode
 let x: i32 = 42
 let mut count: i32 = 0
 

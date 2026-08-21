@@ -25,7 +25,7 @@ inputs are assigned by an embedding system; outputs derive an exposed value.
 
 ## 13.2 Solver declaration
 
-```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
+```flow-pseudocode
 solver {
     dt 1 ms
     method rk4
@@ -88,7 +88,7 @@ interval around that value and returns failure if the result leaves it.
 
 Discrete updates can coexist with continuous equations:
 
-```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
+```flow-pseudocode
 every 1 ms {
     command becomes kp * (setpoint - feedback)
 }
@@ -129,7 +129,7 @@ FLOW_HOST=python ./flow run examples/evolution/bouncing_ball_energy.flow
 
 ## 13.6 Invariants
 
-```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
+```flow-pseudocode
 always {
     angle < 3.15
     angle > -3.15
@@ -172,7 +172,7 @@ FLOW_HOST=python ./flow run examples/evolution/robot_connect.flow
 graphics demonstrations. `represent linear` attaches an explicit local linear
 model to a nonlinear flow:
 
-```flow ignore="one clause of a flow body, shown on its own rather than as a compilation unit"
+```flow-pseudocode
 represent linear {
     at (angle: 0.0, velocity: 0.0)
     inputs (torque)

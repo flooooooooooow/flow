@@ -201,7 +201,7 @@ scope, including an early return.
 
 ## 9.8 Data-parallel loops
 
-```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+```flow-pseudocode
 parallel for i in 0 to n {
     output[i] = input[i] * 2.0
 }
@@ -218,7 +218,7 @@ pipeline executes serially.
 
 ## 9.9 Declarative ordering and search
 
-```flow ignore="catalogue of ordering forms over illustrative collections"
+```flow-pseudocode
 values |> sort
 values |> sort descending
 players |> sortBy [desc .score, asc .name]
