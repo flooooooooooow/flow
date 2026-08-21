@@ -2755,13 +2755,20 @@ class TypeChecker:
             return then_type
         elif isinstance(expr, FieldAccess):
             obj_type = self._check_expression(expr.object)
-            # A span exposes exactly one field: its length.
+            # A span exposes its length and its data pointer. `.data` is what
+            # the generator emits for element access, and every FFI call needs
+            # it, so rejecting it here made strict checking and `flow explain`
+            # unusable on any module that talks to C.
             if obj_type.kind == TypeKind.SPAN:
                 if expr.field == "len":
                     return SemanticType(TypeKind.I64)
+                if expr.field == "data":
+                    return SemanticType(
+                        TypeKind.POINTER, element_type=obj_type.element_type
+                    )
                 self.errors.append(
-                    f"span has no field '{expr.field}'; a span exposes `.len` "
-                    f"and element access `[i]`"
+                    f"span has no field '{expr.field}'; a span exposes `.len`, "
+                    f"`.data` and element access `[i]`"
                 )
                 return SemanticType(TypeKind.UNKNOWN)
             struct_name = None

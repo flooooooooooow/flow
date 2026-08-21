@@ -1329,6 +1329,49 @@ function flowc_cgen_is_span_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     return 0
 }
 
+# Element type of a pointer, span or array variable, as an AST type node.
+# Returns AST_NONE when the name is not a declared variable of one of those
+# shapes. Slice lowering needs this: without it the element type of xs[a..b]
+# was unknown and every slice was built as flowc_span_int32_t, so slicing a
+# ptr<f64> produced a span struct that was never declared.
+function flowc_cgen_var_elem_type(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                let mut ty: i32 = arena.nodes[i].a
+                if arena.nodes[i].kind == AST_PARAM and arena.nodes[i].a == AST_NONE {
+                    ty = arena.nodes[i].b
+                }
+                if ty != AST_NONE {
+                    let tns: i32 = arena.nodes[ty].name_start
+                    let tne: i32 = arena.nodes[ty].name_end
+                    let inner: i32 = arena.nodes[ty].a
+                    if inner != AST_NONE {
+                        if flowc_cgen_span_is(src, tns, tne, "ptr") == 1 {
+                            return inner
+                        }
+                        if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
+                            return inner
+                        }
+                        if flowc_cgen_span_is(src, tns, tne, "array") == 1 {
+                            return inner
+                        }
+                        # &[T] and &mut [T] sugar: no name, inner type only.
+                        if tns == 0 and tne == 0 {
+                            return inner
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
 # Check if the nth parameter of a function is span-typed.
 # fn_id is the AST_FN node. Returns 1 if the nth param is span, 0 otherwise.
 function flowc_cgen_fn_param_is_span(arena: AstArena, src: ptr<u8>, fn_id: i32, param_idx: i32) -> i32 {
@@ -1647,9 +1690,26 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if arena.nodes[id].ival == 1 {
             # Slice: xs[a..b] → (flowc_span_T){ xs + a, b - a }
             # or xs[a..] → (flowc_span_T){ xs + a, n - a }
-            # For Stage-A, emit a span construction. The element type is
-            # unknown here, so use int32_t as the default.
-            flowc_cgen_puts(w, "((flowc_span_int32_t){ (int32_t*)")
+            # T comes from the sliced variable's own declared element type.
+            # It used to be int32_t unconditionally, so slicing a ptr<f64>
+            # named a flowc_span_int32_t that no typedef ever declared.
+            let mut elem: i32 = AST_NONE
+            if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
+                elem = flowc_cgen_var_elem_type(arena, src, arena.nodes[id].a)
+            }
+            flowc_cgen_puts(w, "((flowc_span_")
+            if elem != AST_NONE {
+                flowc_cgen_emit_type(w, arena, src, elem)
+            } else {
+                flowc_cgen_puts(w, "int32_t")
+            }
+            flowc_cgen_puts(w, "){ (")
+            if elem != AST_NONE {
+                flowc_cgen_emit_type(w, arena, src, elem)
+            } else {
+                flowc_cgen_puts(w, "int32_t")
+            }
+            flowc_cgen_puts(w, "*)")
             # If base is a span variable, use .data as the pointer base.
             if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
                 if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
