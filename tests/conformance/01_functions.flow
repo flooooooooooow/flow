@@ -1,0 +1,11 @@
+# spec: 3 declarations; 4 expressions
+
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+function main() -> i32 {
+    let x: i32 = 20
+    let y: i32 = 22
+    return add(x, y)
+}
