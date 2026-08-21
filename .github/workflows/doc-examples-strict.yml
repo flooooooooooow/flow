@@ -8,12 +8,10 @@ on:
       - '**.md'
       - 'src/**'
       - 'lib/**'
-      - 'PLATFORMS.md'
       - 'scripts/check_doc_examples.py'
       - 'scripts/check_doc_examples_strict.py'
       - 'scripts/check_doc_flow_snippets.py'
       - 'scripts/docs_blocks.py'
-      - 'scripts/materialize_1_0_release.py'
       - '.github/workflows/doc-examples-strict.yml'
   push:
     branches: ['agent/compile-all-doc-examples']
@@ -22,7 +20,7 @@ on:
       - 'v1.0.0'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   compile-doc-examples:
@@ -30,8 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: ./.github/actions/setup-python
       - name: Reject Flow hidden in text fences
         env:
@@ -41,19 +37,6 @@ jobs:
         env:
           PYTHONPATH: src
         run: python3 scripts/check_doc_examples.py --check-ledger
-      - name: Materialize the exact Flow 1.0 release tree
-        if: github.event_name == 'pull_request' && github.head_ref == 'release/1.0.0-final'
-        shell: bash
-        run: |
-          python3 scripts/materialize_1_0_release.py
-          rm -f scripts/materialize_1_0_release.py
-          git checkout origin/main -- .github/workflows/doc-examples-strict.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git diff --name-only -z HEAD | xargs -0 -r git add --
-          git diff --cached --exit-code && exit 0
-          git commit -m "release: prepare Flow 1.0.0"
-          git push origin HEAD:${{ github.head_ref }}
       - name: Require zero documentation debt for Flow 1.0 qualification
         if: >-
           startsWith(github.ref, 'refs/tags/v1.0.0-rc.') ||

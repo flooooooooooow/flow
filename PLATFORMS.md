@@ -3,9 +3,7 @@
 This document defines the operating-system and architecture support contract for the
 Flow 1.0 stabilisation programme.
 
-The classifications below are **qualification targets** until `1.0.0-rc.1`. A platform
-becomes a 1.0 Tier 1 platform only after the required qualification workflow is green
-and release-tag artifacts have been installed and exercised from a clean environment.
+The classifications below define the Flow 1.0 support contract. A published release exists only after its exact tag has passed the required qualification workflow and its release artifacts have been rebuilt and exercised from a clean environment.
 
 ## Support tiers
 
@@ -33,8 +31,8 @@ Flow 1.x platform compatibility promise unless promoted through qualification.
 
 | Platform | 1.0 target | Current qualification |
 |---|---|---|
-| Linux x86-64 | Tier 1 | per-PR Tier-1 qualification is landed and green; C11 toolchain contract is exercised; release-tag artifact qualification remains |
-| macOS arm64 | Tier 1 | per-PR Tier-1 qualification is landed and green; C11 toolchain contract is exercised; release-tag artifact qualification remains |
+| Linux x86-64 | Tier 1 | continuously qualified; C11 toolchain contract is exercised; exact-tag release qualification blocks publication on failure |
+| macOS arm64 | Tier 1 | continuously qualified; C11 toolchain contract is exercised; exact-tag release qualification blocks publication on failure |
 | Linux arm64 | Tier 2 candidate | release qualification still to be added |
 | Windows x86-64 | Tier 2 candidate | runtime/gfx smoke exists; full compiler qualification still required |
 | WASM / Emscripten | target-specific Beta/Stable decision pending | dedicated wasm workflow exists |
