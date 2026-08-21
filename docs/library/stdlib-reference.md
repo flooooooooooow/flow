@@ -304,17 +304,23 @@ POSIX system calls.
 
 ### Constants
 
-```flow
-const O_RDONLY: i32 = 0
-const O_WRONLY: i32 = 1
-const O_RDWR: i32 = 2
-const O_CREAT: i32 = 64
-const O_TRUNC: i32 = 512
-const O_APPEND: i32 = 1024
+`O_RDONLY`, `O_WRONLY`, `O_RDWR`, `O_CREAT`, `O_TRUNC`, `O_APPEND`,
+`SEEK_SET`, `SEEK_CUR` and `SEEK_END` arrive with the import. They are read
+from the system headers rather than written out here, because the values
+differ: `O_CREAT` is `0x200` on macOS and `0x40` on Linux, so any number in
+this table would be wrong on one of them.
 
-const SEEK_SET: i32 = 0
-const SEEK_CUR: i32 = 1
-const SEEK_END: i32 = 2
+```flow
+import "stdlib/posix.flow"
+
+function main() -> i32 {
+    let fd: i32 = open("/dev/null", O_RDONLY, 0)
+    if fd >= 0 {
+        lseek(fd, 0 as i64, SEEK_END)
+        close(fd)
+    }
+    return 0
+}
 ```
 
 ### Process Management

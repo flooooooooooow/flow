@@ -136,7 +136,12 @@ next arm. `_` is a wildcard; a bare identifier binds the matched value.
 
 Struct and fixed-list patterns destructure values:
 
-```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow id=point-type
+struct Point {
+    x: i32,
+    y: i32
+}
+
 let point: Point = Point { x: 0, y: 0 }
 
 match point {
@@ -236,9 +241,29 @@ Inspect a decision:
 
 ## 9.10 Fork and choose pipelines
 
+Both forms below collect results into a record or select among branches, so
+they need a record to fill and something to choose between:
+
+```flow id=fork-types
+struct Stats {
+    doubled: i32,
+    squared: i32,
+    plus_ten: i32
+}
+
+enum Mode { Double, Triple }
+
+function twice(x: i32) -> i32 { return x * 2 }
+function square(x: i32) -> i32 { return x * x }
+function add(x: i32, k: i32) -> i32 { return x + k }
+function double(x: i32) -> i32 { return x * 2 }
+function triple(x: i32) -> i32 { return x * 3 }
+function normalize(x: i32) -> i32 { return x }
+```
+
 A fork evaluates one source once and sends it into several branches:
 
-```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow uses=fork-types
 let stats: Stats = n |> Stats {
     doubled = twice,
     squared = square,
@@ -249,7 +274,7 @@ let stats: Stats = n |> Stats {
 An anonymous fork infers its record shape. `choose` selects a branch from
 state and permits the selected result to continue through the pipeline:
 
-```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow
+```flow preamble=tests/fixtures/doc_preambles/book-09-values.flow uses=fork-types
 let mode: Mode = Mode { tag: Mode_Double }
 
 let result = input

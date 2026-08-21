@@ -69,6 +69,19 @@ _C_TO_FLOW = {
     "unsigned long long int": "u64",
     "float": "f32",
     "double": "f64",
+    # POSIX typedefs. Without these a signature keeps the C name, so nothing
+    # matches a call: `lseek(fd, 0, SEEK_END)` failed with "no matching
+    # overload ... (i32, i64, i32)" against a parameter typed `off_t`.
+    # Widths are the LP64 ones, which macOS and Linux agree on.
+    "off_t": "i64",
+    "off64_t": "i64",
+    "pid_t": "i32",
+    "uid_t": "u32",
+    "gid_t": "u32",
+    "mode_t": "u32",
+    "socklen_t": "u32",
+    "time_t": "i64",
+    "clock_t": "i64",
     "long double": "f64",
     "size_t": "u64",
     "ssize_t": "i64",
