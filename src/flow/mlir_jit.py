@@ -114,6 +114,11 @@ class MLIRJIT:
                     # scf-to-cf, and convert-vector-to-llvm before func-to-llvm.
                     "--convert-vector-to-scf",
                     "--convert-scf-to-cf",
+                    # complex.mul and friends become real arithmetic first; whatever
+                    # the standard expansion leaves goes straight to llvm.
+                    "--convert-complex-to-standard",
+                    "--convert-complex-to-llvm",
+                    "--convert-math-to-llvm",
                     "--memref-expand",
                     "--convert-vector-to-llvm",
                     "--convert-arith-to-llvm",
