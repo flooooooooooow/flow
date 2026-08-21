@@ -31,20 +31,11 @@ jobs:
           print(__version__)
           PY
           )" = "1.0.0"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           if git ls-remote --exit-code --tags origin refs/tags/v1.0.0 >/dev/null 2>&1; then
             echo "v1.0.0 already exists; refusing to move it"
             exit 1
           fi
-
-      - name: Remove this one-shot workflow from the release tree
-        shell: bash
-        run: |
-          git pull --ff-only origin main
-          git rm .github/workflows/finalize-flow-1.0.0.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: remove Flow 1.0 finalizer"
-          git push origin HEAD:main
           echo "FLOW_1_0_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Create immutable Flow 1.0.0 tag
