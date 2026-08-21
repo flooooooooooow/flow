@@ -1,0 +1,7 @@
+# spec: 1.2 operators; 4 expressions
+
+function main() -> i32 {
+    let hi: i32 = 40
+    let lo: i32 = 2
+    return hi | lo
+}
