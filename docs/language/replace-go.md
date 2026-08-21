@@ -25,7 +25,7 @@ Companion: [concurrency-vs-go.md](concurrency-vs-go.md) ·
 
 ## How to write “Go-shaped” Flow
 
-```flow
+```flow-pseudocode
 import "stdlib/async.flow"
 import "stdlib/concurrent.flow"
 

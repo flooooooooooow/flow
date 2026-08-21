@@ -2,9 +2,7 @@
   "generated": "2026-08-21",
   "totals": {
     "verified": 594,
-    "expected-error": 9,
-    "unverified": 23,
-    "ignored": 18
+    "expected-error": 9
   },
   "blocks": [
     {
@@ -56,15 +54,6 @@
       "stage": "codegen"
     },
     {
-      "key": "ROADMAP.md#a8574cf4e93a",
-      "path": "ROADMAP.md",
-      "line": 491,
-      "status": "unverified",
-      "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "redefinition of 'x'"
-    },
-    {
       "key": "demos/vulkan_scene/flow_style.md#a7af92438b2b",
       "path": "demos/vulkan_scene/flow_style.md",
       "line": 33,
@@ -79,14 +68,6 @@
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/AI_FLOW_HANDBOOK.md#ef2e33ff539e",
-      "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 557,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
     },
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#3645e09701ab",
@@ -145,22 +126,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#0b42dfaf3a07",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 150,
-      "status": "ignored",
-      "detail": "comment syntax including the two forms Flow does not support",
-      "reason": "comment syntax including the two forms Flow does not support"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#1dece0dbbc55",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 223,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
-    },
-    {
       "key": "docs/LANGUAGE_SPEC.md#94d3388749e9",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 253,
@@ -193,14 +158,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#552b841ebaff",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 327,
-      "status": "ignored",
-      "detail": "attribute forms over elided function bodies",
-      "reason": "attribute forms over elided function bodies"
-    },
-    {
       "key": "docs/LANGUAGE_SPEC.md#0ab0dffe953c",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 356,
@@ -215,15 +172,6 @@
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#a5d8600a87b2",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 397,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Node'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#0b59ab2e6047",
@@ -242,14 +190,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#105a129a674b",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 462,
-      "status": "ignored",
-      "detail": "attribute forms over elided function bodies",
-      "reason": "attribute forms over elided function bodies"
-    },
-    {
       "key": "docs/LANGUAGE_SPEC.md#8b941731e66d",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 607,
@@ -258,45 +198,12 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#bbd9e8574657",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 624,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'xs'"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#34fd20767900",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 648,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'n'"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#b136addd97ea",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 693,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'x'"
-    },
-    {
       "key": "docs/LANGUAGE_SPEC.md#e3d945b4e92e",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 713,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#89e14ab3148a",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 735,
-      "status": "unverified",
-      "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "use of undeclared identifier 'data'"
     },
     {
       "key": "docs/LANGUAGE_SPEC.md#4bd6f3746d63",
@@ -323,23 +230,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#c3c98e4f2f78",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 890,
-      "status": "unverified",
-      "mode": "split-wrap",
-      "stage": "clang",
-      "detail": "use of undeclared identifier 'greet'; did you mean 'free'?"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#ed5299a703a2",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 925,
-      "status": "ignored",
-      "detail": "catalogue of import forms over illustrative module names",
-      "reason": "catalogue of import forms over illustrative module names"
-    },
-    {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 944,
@@ -348,44 +238,12 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/LANGUAGE_SPEC.md#da749fa6cb42",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 973,
-      "status": "ignored",
-      "detail": "relative-import form; the sibling module is illustrative",
-      "reason": "relative-import form; the sibling module is illustrative"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#5eaee9ca5dec",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 980,
-      "status": "ignored",
-      "detail": "flowlm is a registry package, not vendored here",
-      "reason": "flowlm is a registry package, not vendored here"
-    },
-    {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 1037,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#151b03520808",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1064,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'frame_arena_create'"
-    },
-    {
-      "key": "docs/LANGUAGE_SPEC.md#eb8d99f2c3b0",
-      "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1236,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'pixels'"
     },
     {
       "key": "docs/blas-bindings.md#4bd5e7f4fa12",
@@ -980,23 +838,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/09-expressions-and-matching.md#b84126f91e98",
-      "path": "docs/book/09-expressions-and-matching.md",
-      "line": 204,
-      "status": "unverified",
-      "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "use of undeclared identifier 'output'"
-    },
-    {
-      "key": "docs/book/09-expressions-and-matching.md#3a3014859515",
-      "path": "docs/book/09-expressions-and-matching.md",
-      "line": 221,
-      "status": "ignored",
-      "detail": "catalogue of ordering forms over illustrative collections",
-      "reason": "catalogue of ordering forms over illustrative collections"
-    },
-    {
       "key": "docs/book/09-expressions-and-matching.md#745e13ba5903",
       "path": "docs/book/09-expressions-and-matching.md",
       "line": 247,
@@ -1141,14 +982,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/13-evolution-and-dynamics.md#63c7a09ec1ec",
-      "path": "docs/book/13-evolution-and-dynamics.md",
-      "line": 28,
-      "status": "ignored",
-      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
-      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
-    },
-    {
       "key": "docs/book/13-evolution-and-dynamics.md#15b8235a70ac",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 45,
@@ -1165,14 +998,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/13-evolution-and-dynamics.md#91cedbdfae28",
-      "path": "docs/book/13-evolution-and-dynamics.md",
-      "line": 91,
-      "status": "ignored",
-      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
-      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
-    },
-    {
       "key": "docs/book/13-evolution-and-dynamics.md#8431efb438e4",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 102,
@@ -1181,28 +1006,12 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/book/13-evolution-and-dynamics.md#13b965a6ca5e",
-      "path": "docs/book/13-evolution-and-dynamics.md",
-      "line": 132,
-      "status": "ignored",
-      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
-      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
-    },
-    {
       "key": "docs/book/13-evolution-and-dynamics.md#2e20ab0db1cf",
       "path": "docs/book/13-evolution-and-dynamics.md",
       "line": 148,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/book/13-evolution-and-dynamics.md#e9805244cf6e",
-      "path": "docs/book/13-evolution-and-dynamics.md",
-      "line": 175,
-      "status": "ignored",
-      "detail": "one clause of a flow body, shown on its own rather than as a compilation unit",
-      "reason": "one clause of a flow body, shown on its own rather than as a compilation unit"
     },
     {
       "key": "docs/book/13-evolution-and-dynamics.md#b3732ed23f93",
@@ -1741,52 +1550,12 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/language/epistemology.md#2855dab7bef8",
-      "path": "docs/language/epistemology.md",
-      "line": 112,
-      "status": "ignored",
-      "detail": "claim-path import forms over illustrative modules",
-      "reason": "claim-path import forms over illustrative modules"
-    },
-    {
       "key": "docs/language/epistemology.md#440ad79fe6e9",
       "path": "docs/language/epistemology.md",
       "line": 153,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/language/epistemology.md#f41e5f48637c",
-      "path": "docs/language/epistemology.md",
-      "line": 168,
-      "status": "ignored",
-      "detail": "theorem statements with elided bodies, shown as a catalogue",
-      "reason": "theorem statements with elided bodies, shown as a catalogue"
-    },
-    {
-      "key": "docs/language/epistemology.md#66520f588a77",
-      "path": "docs/language/epistemology.md",
-      "line": 177,
-      "status": "ignored",
-      "detail": "theorem statements with elided bodies, shown as a catalogue",
-      "reason": "theorem statements with elided bodies, shown as a catalogue"
-    },
-    {
-      "key": "docs/language/epistemology.md#9c3e0a98b3cb",
-      "path": "docs/language/epistemology.md",
-      "line": 193,
-      "status": "ignored",
-      "detail": "theorem statements with elided bodies, shown as a catalogue",
-      "reason": "theorem statements with elided bodies, shown as a catalogue"
-    },
-    {
-      "key": "docs/language/epistemology.md#9ddca4d08238",
-      "path": "docs/language/epistemology.md",
-      "line": 207,
-      "status": "ignored",
-      "detail": "theorem statements with elided bodies, shown as a catalogue",
-      "reason": "theorem statements with elided bodies, shown as a catalogue"
     },
     {
       "key": "docs/language/epistemology.md#157f67e45f6a",
@@ -1909,15 +1678,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/language/lifetime-domains.md#0e4a26aaa95d",
-      "path": "docs/language/lifetime-domains.md",
-      "line": 53,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'FilterState'"
-    },
-    {
       "key": "docs/language/lifetime-domains.md#71e63214c2ab",
       "path": "docs/language/lifetime-domains.md",
       "line": 62,
@@ -1956,31 +1716,6 @@
       "status": "expected-error",
       "stage": "types",
       "detail": "lifetime domain violation: 'process' is in the `callback` domain but calls 'reload_preset', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"
-    },
-    {
-      "key": "docs/language/lifetime-domains.md#f1c79a04414f",
-      "path": "docs/language/lifetime-domains.md",
-      "line": 276,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Arena'"
-    },
-    {
-      "key": "docs/language/lifetime-domains.md#7b6abff51fb7",
-      "path": "docs/language/lifetime-domains.md",
-      "line": 287,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'frame_begin'"
-    },
-    {
-      "key": "docs/language/lifetime-domains.md#7394d235aca3",
-      "path": "docs/language/lifetime-domains.md",
-      "line": 299,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined function 'frame_begin'"
     },
     {
       "key": "docs/language/modules-namespacing.md#d5de1b3b69bc",
@@ -2087,15 +1822,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/language/replace-go.md#d2e3586ec31f",
-      "path": "docs/language/replace-go.md",
-      "line": 28,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "call to undeclared function 'pthread_mutex_init'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]"
-    },
-    {
       "key": "docs/language/shaders.md#226fbe4da600",
       "path": "docs/language/shaders.md",
       "line": 13,
@@ -2142,22 +1868,6 @@
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/language/spans.md#ba63a89ddbb4",
-      "path": "docs/language/spans.md",
-      "line": 109,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values"
-    },
-    {
-      "key": "docs/language/spans.md#9a2daf755967",
-      "path": "docs/language/spans.md",
-      "line": 119,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "Undefined variable 'samples'"
     },
     {
       "key": "docs/language/spans.md#f20af5f97f03",
@@ -2616,15 +2326,6 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/library/stdlib-reference.md#b7284ce63b44",
-      "path": "docs/library/stdlib-reference.md",
-      "line": 180,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'HashEntry_string_i32'; did you mean 'HashMap_string_i32'?"
-    },
-    {
       "key": "docs/library/stdlib-reference.md#74cb71a9b8d3",
       "path": "docs/library/stdlib-reference.md",
       "line": 226,
@@ -2655,24 +2356,6 @@
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "docs/library/stdlib-reference.md#d5f1313f8e87",
-      "path": "docs/library/stdlib-reference.md",
-      "line": 360,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Socket'"
-    },
-    {
-      "key": "docs/library/stdlib-reference.md#a56dd5d61a9b",
-      "path": "docs/library/stdlib-reference.md",
-      "line": 373,
-      "status": "unverified",
-      "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Socket'"
     },
     {
       "key": "docs/library/stdlib-reference.md#892c1e43d14b",
@@ -5139,36 +4822,12 @@
       "stage": "codegen"
     },
     {
-      "key": "registry/packages/flowlm/README.md#420b05da2a58",
-      "path": "registry/packages/flowlm/README.md",
-      "line": 80,
-      "status": "ignored",
-      "detail": "flowlm's own README; the package is not vendored into this repo",
-      "reason": "flowlm's own README; the package is not vendored into this repo"
-    },
-    {
-      "key": "registry/packages/flowlm/README.md#a6cca3601607",
-      "path": "registry/packages/flowlm/README.md",
-      "line": 88,
-      "status": "ignored",
-      "detail": "flowlm's own README; the package is not vendored into this repo",
-      "reason": "flowlm's own README; the package is not vendored into this repo"
-    },
-    {
       "key": "registry/packages/flowlm/README.md#f36a8765c44d",
       "path": "registry/packages/flowlm/README.md",
       "line": 99,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
-    },
-    {
-      "key": "registry/packages/flowlm/README.md#f659347c9e86",
-      "path": "registry/packages/flowlm/README.md",
-      "line": 197,
-      "status": "unverified",
-      "stage": "parse",
-      "detail": "SyntaxError: Top-level 'let' at line 2 must be 'let mut' (module static); use 'const' for immutable module-level values"
     }
   ]
 }
