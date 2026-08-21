@@ -4640,10 +4640,44 @@ class CGenerator:
             prover = BoundsProver()
             prover.run(fn)
         except Exception:
-            return  # the prover never blocks a build; it only ever removes work
+            # A fault inside the prover must never block a build: the checks simply
+            # stay. A refuted index is different, and is raised below.
+            return
         self._bounds_verdicts = prover.verdicts
         self._bounds_guards = prover.loop_guards
         self._bounds_syms = prover.sym_expr
+
+        # An index that is out of range on every run the loop can take is not something
+        # to discover when the program faults. Mojo rejects the equivalent at compile
+        # time; so does this.
+        if prover.errors:
+            detail, access = prover.errors[0]
+            where = self._describe_access(access)
+            raise ValueError(
+                f"{where}: {detail}. This index is out of range on every path that "
+                f"reaches it (in function '{fn.name}')."
+            )
+
+    @staticmethod
+    def _describe_access(access) -> str:
+        """`xs[i + 1]` as written, for the error message."""
+        def render(e):
+            name = type(e).__name__
+            if name == "Variable":
+                return e.name
+            if name == "FieldAccess":
+                return f"{render(e.object)}.{e.field}"
+            if name == "Literal":
+                return str(e.value)
+            if name == "BinaryOperation":
+                return f"{render(e.left)} {e.operator} {render(e.right)}"
+            if name == "ArrayAccess":
+                return f"{render(e.array)}[{render(e.index)}]"
+            return "..."
+        try:
+            return render(access)
+        except Exception:
+            return "span index"
 
     def _bounds_verdict(self, e):
         return getattr(self, "_bounds_verdicts", {}).get(id(e))
