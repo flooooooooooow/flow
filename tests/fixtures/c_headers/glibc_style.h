@@ -7,4 +7,8 @@ extern int open (const char *__file, int __oflag, ...) __nonnull ((1));
 extern int openat (int __fd, const char *__file, int __oflag, ...) __nonnull ((2));
 extern int creat (const char *__file, unsigned int __mode) __nonnull ((1));
 extern int fcntl (int __fd, int __cmd, ...);
-extern long lseek (int __fd, long __offset, int __whence) __THROW;
+typedef long __off_t;
+typedef long __ssize_t;
+
+extern __off_t lseek (int __fd, __off_t __offset, int __whence) __THROW;
+extern __ssize_t read (int __fd, void *__buf, unsigned long __nbytes) __wur;

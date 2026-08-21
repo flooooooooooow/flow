@@ -73,3 +73,16 @@ def test_posix_typedefs_map_to_flow_integers():
     """`off_t` left as a C name matches no call."""
     lseek = imported()["lseek"]
     assert [p.type.name for p in lseek.parameters] == ["i32", "i64", "i32"]
+
+
+def test_the_reserved_typedef_spellings_map_too():
+    """glibc declares prototypes against `__off_t`, not `off_t`.
+
+    Mapping only the portable spelling left `lseek` taking a parameter typed
+    `__off_t`, which matched no call, so the fix for `off_t` looked complete
+    while Linux still failed.
+    """
+    names = imported()
+    assert [p.type.name for p in names["lseek"].parameters] == ["i32", "i64", "i32"]
+    assert names["lseek"].return_type.name == "i64"
+    assert names["read"].return_type.name == "i64"

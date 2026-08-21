@@ -82,6 +82,20 @@ _C_TO_FLOW = {
     "socklen_t": "u32",
     "time_t": "i64",
     "clock_t": "i64",
+    # glibc declares its prototypes against the reserved spellings, so
+    # `lseek` takes an `__off_t` rather than an `off_t` and nothing matched
+    # the call.
+    "__off_t": "i64",
+    "__off64_t": "i64",
+    "__pid_t": "i32",
+    "__uid_t": "u32",
+    "__gid_t": "u32",
+    "__mode_t": "u32",
+    "__socklen_t": "u32",
+    "__time_t": "i64",
+    "__clock_t": "i64",
+    "__ssize_t": "i64",
+    "__size_t": "u64",
     "long double": "f64",
     "size_t": "u64",
     "ssize_t": "i64",
