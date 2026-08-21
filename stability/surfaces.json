@@ -36,7 +36,7 @@
       "id": "cli-core",
       "kind": "cli",
       "classification": "stable",
-      "source": "docs/project/cli-stability-1.0.md",
+      "source": "STABILITY.md",
       "owner_issue": 651,
       "note": "Stable 1.x core: help, version, C compile/run, test and fmt; flow run propagates the executed program's exit status."
     },
@@ -52,7 +52,7 @@
       "id": "manifest-core",
       "kind": "manifest",
       "classification": "stable",
-      "source": "docs/project/manifest-stability-1.0.md",
+      "source": "STABILITY.md",
       "owner_issue": 651,
       "note": "Stable project core: package name/version/entry, string path aliases, upward manifest discovery and forward-compatible unknown extensions."
     },
