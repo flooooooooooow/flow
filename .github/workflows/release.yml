@@ -42,8 +42,6 @@ jobs:
       - name: Verify tag version matches the source tree
         shell: bash
         run: |
-          TAG='${{ steps.tag.outputs.name }}'
-          VERSION="${TAG#v}"
           python3 scripts/sync_version.py --check
           python3 - <<'PY'
           import os
@@ -70,6 +68,12 @@ jobs:
 
       - name: Run permanent Stable conformance corpus
         run: python3 -m pytest tests/conformance -q
+
+      - name: Fuzz release compiler front end
+        if: startsWith(steps.tag.outputs.name, 'v1.')
+        env:
+          FLOW_FUZZ_SECONDS: '60'
+        run: python3 tests/fuzz/run_fuzz.py --target all --seed 1000
 
       - name: Strict Flow corpus
         env:
