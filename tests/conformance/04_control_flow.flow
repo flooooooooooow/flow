@@ -2,7 +2,7 @@
 
 function main() -> i32 {
     let mut total: i32 = 0
-    for i in 0 to 6 {
+    for i in 0 to 5 {
         if i % 2 == 0 {
             total = total + i
         }
