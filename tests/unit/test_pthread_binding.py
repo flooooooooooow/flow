@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 import textwrap
 from pathlib import Path
 
@@ -33,21 +32,42 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_a_simple_typedef_alias_is_recorded_as_an_imported_type():
-    """`typedef __darwin_pthread_t pthread_t;` used to be dropped.
+FIXTURE = ROOT / "tests" / "fixtures" / "c_headers" / "glibc_style.h"
 
-    The header defines the name, so nothing needs emitting for it. Returning
-    no declaration at all went further than that and made Flow forget the name
-    existed, so using it as a field type made the generator invent
+
+def imported_type_names(header: str, dirs: list) -> set:
+    return {
+        d.name
+        for d in parse_c_header(header, dirs)
+        if type(d).__name__ == "ExternTypeDecl"
+    }
+
+
+def test_the_pthread_types_are_recorded_on_the_host():
+    """A dropped declaration made Flow forget the name existed.
+
+    The header defines these names, so nothing needs emitting for them.
+    Returning no declaration at all went further than that: using pthread_t as
+    a field type then made the generator invent
     `typedef struct pthread_t pthread_t;` on top of the real one, which clang
     rejects as a redefinition with a different type.
     """
-    decls = parse_c_header("pthread.h", [])
-    names = {
-        d.name for d in decls if type(d).__name__ == "ExternTypeDecl"
-    }
-    assert "pthread_t" in names
-    assert "pthread_mutex_t" in names
+    names = imported_type_names("pthread.h", [])
+    for want in ("pthread_t", "pthread_mutex_t", "pthread_cond_t"):
+        assert want in names, f"{want} missing; got {len(names)} types"
+
+
+def test_the_pthread_types_are_recorded_in_the_glibc_spelling():
+    """glibc writes each pthread object as a union naming its type after the brace.
+
+    macOS uses simple aliases, so a host-only test passes there and says
+    nothing about Linux. The chunk splitter ended a declaration at the closing
+    brace unless a semicolon followed immediately, which dropped
+    `} pthread_mutex_t` into the next chunk and lost every one of these.
+    """
+    names = imported_type_names(str(FIXTURE), [str(FIXTURE.parent)])
+    for want in ("pthread_t", "pthread_mutex_t", "pthread_cond_t", "pthread_rwlock_t"):
+        assert want in names, f"{want} missing; got {sorted(names)}"
 
 
 def test_an_imported_pointer_parameter_is_a_structured_pointer_type():

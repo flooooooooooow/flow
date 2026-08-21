@@ -410,6 +410,17 @@ def _split_top_level(text: str) -> List[str]:
                         j += 1
                     if j < len(text) and text[j] == ";":
                         i = j + 1
+                    elif text[start:].lstrip().startswith("typedef"):
+                        # A typedef names its type AFTER the closing brace, as
+                        # in `typedef union { ... } pthread_mutex_t;`. Ending
+                        # the chunk at the brace dropped the name into the next
+                        # chunk, so the type was never recorded. glibc spells
+                        # every pthread object this way, which is why they all
+                        # went missing on Linux while macOS, which uses simple
+                        # aliases, was unaffected. Keep scanning to the
+                        # semicolon that really ends the declaration.
+                        i += 1
+                        continue
                     else:
                         i += 1
                     chunk = text[start:i].strip()
