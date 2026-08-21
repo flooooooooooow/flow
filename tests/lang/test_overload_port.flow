@@ -1,0 +1,94 @@
+# Tests for compiler/src/overload.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_overload_port.flow
+
+import "compiler/src/overload.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    if flowc_overload_types_compatible("i32" as string, "i32" as string) != 1 {
+        puts("FAIL: exact type match")
+        return 1
+    }
+    if flowc_overload_types_compatible("f32" as string, "f64" as string) != 1 {
+        puts("FAIL: float interchange")
+        return 2
+    }
+    if flowc_overload_types_compatible("i64" as string, "i32" as string) != 1 {
+        puts("FAIL: i32/i64 interchange")
+        return 3
+    }
+    if flowc_overload_types_compatible("u32" as string, "i32" as string) != 0 {
+        puts("FAIL: unrelated integer widths should not exact-match")
+        return 4
+    }
+
+    if flowc_overload_types_compatible("ptr_f32" as string, "array_4_f32" as string) != 1 {
+        puts("FAIL: array should decay to matching pointer")
+        return 5
+    }
+    if flowc_overload_types_compatible("ptr_f32" as string, "f32" as string) != 1 {
+        puts("FAIL: pointee value compatibility")
+        return 6
+    }
+    if flowc_overload_types_compatible("span_f32" as string, "array_8_f32" as string) != 1 {
+        puts("FAIL: array should borrow as matching span")
+        return 7
+    }
+    if flowc_overload_types_compatible("span_const_f32" as string, "span_f32" as string) != 1 {
+        puts("FAIL: const/mutable span element match")
+        return 8
+    }
+    if flowc_overload_types_compatible("span_f32" as string, "array_8_i32" as string) != 0 {
+        puts("FAIL: span element mismatch")
+        return 9
+    }
+
+    if flowc_overload_types_compatible("ptr_i8" as string, "string" as string) != 1 {
+        puts("FAIL: string should match ptr_i8")
+        return 10
+    }
+    if flowc_overload_types_compatible("ptr_u8" as string, "ptr_void" as string) != 1 {
+        puts("FAIL: null ptr_void should adopt pointer type")
+        return 11
+    }
+
+    if flowc_overload_types_compatible("capability_IO" as string, "MyHandler" as string) != 1 {
+        puts("FAIL: concrete handler should satisfy capability")
+        return 12
+    }
+    if flowc_overload_types_compatible("capability_IO" as string, "ptr_u8" as string) != 0 {
+        puts("FAIL: pointer should not satisfy capability")
+        return 13
+    }
+    if flowc_overload_types_compatible("capability_IO" as string, "bool" as string) != 0 {
+        puts("FAIL: primitive should not satisfy capability")
+        return 14
+    }
+
+    if flowc_overload_is_span_type("span_const_i32" as string) != 1 {
+        puts("FAIL: span type detection")
+        return 15
+    }
+    if flowc_overload_is_span_type("ptr_i32" as string) != 0 {
+        puts("FAIL: pointer is not a span")
+        return 16
+    }
+    if flowc_overload_is_int_type("u64" as string) != 1 {
+        puts("FAIL: integer vocabulary")
+        return 17
+    }
+    if flowc_overload_literal_can_widen("u64" as string) != 1 {
+        puts("FAIL: integer literal widening")
+        return 18
+    }
+    if flowc_overload_literal_can_widen("f32" as string) != 0 {
+        puts("FAIL: float literal should not use integer widening")
+        return 19
+    }
+
+    puts("All overload Flow port tests passed")
+    return 0
+}

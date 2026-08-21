@@ -1,0 +1,232 @@
+# @module flowc.overload
+# @means  Type-compatibility core for overload resolution.
+#         Port of the deterministic compatibility rules from
+#         src/flow/overload.py. Function registration and AST expression type
+#         inference remain in the Python host until the Stage-A AST exposes
+#         the complete production object graph.
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+}
+
+function ov_streq(a: string, b: ptr<u8>) -> i32 {
+    if strcmp(a as ptr<u8>, b) == 0 {
+        return 1
+    }
+    return 0
+}
+
+function ov_starts_with(value: string, prefix: ptr<u8>) -> i32 {
+    let vp: ptr<u8> = value as ptr<u8>
+    let value_len: i32 = strlen(vp) as i32
+    let prefix_len: i32 = strlen(prefix) as i32
+    if value_len < prefix_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < prefix_len {
+        if vp[i] != prefix[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function ov_is_digit(ch: u8) -> i32 {
+    if ch < 48 {
+        return 0
+    }
+    if ch > 57 {
+        return 0
+    }
+    return 1
+}
+
+function ov_tail_equal(a: string, a_start: i32, b: string, b_start: i32) -> i32 {
+    let ap: ptr<u8> = a as ptr<u8>
+    let bp: ptr<u8> = b as ptr<u8>
+    let a_len: i32 = strlen(ap) as i32
+    let b_len: i32 = strlen(bp) as i32
+    if a_start < 0 {
+        return 0
+    }
+    if b_start < 0 {
+        return 0
+    }
+    if a_len - a_start != b_len - b_start {
+        return 0
+    }
+
+    let mut i: i32 = 0
+    while a_start + i < a_len {
+        if ap[a_start + i] != bp[b_start + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function ov_span_element_start(type_name: string) -> i32 {
+    if ov_starts_with(type_name, "span_const_" as ptr<u8>) == 1 {
+        return 11
+    }
+    if ov_starts_with(type_name, "span_" as ptr<u8>) == 1 {
+        return 5
+    }
+    return 0 - 1
+}
+
+function ov_array_element_start(type_name: string) -> i32 {
+    if ov_starts_with(type_name, "array_" as ptr<u8>) == 0 {
+        return 0 - 1
+    }
+
+    let p: ptr<u8> = type_name as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    let mut i: i32 = 6
+    let mut saw_digit: i32 = 0
+    while i < n && ov_is_digit(p[i]) == 1 {
+        saw_digit = 1
+        i = i + 1
+    }
+    if saw_digit == 1 {
+        if i < n {
+            if p[i] == 95 {
+                return i + 1
+            }
+        }
+    }
+    return 6
+}
+
+export function flowc_overload_is_span_type(type_name: string) -> i32 {
+    if ov_span_element_start(type_name) >= 0 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_overload_is_primitive(type_name: string) -> i32 {
+    if ov_streq(type_name, "f32" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "f64" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "i32" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "i64" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "float" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "double" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "int" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "bool" as ptr<u8>) == 1 { return 1 }
+    return 0
+}
+
+export function flowc_overload_is_int_type(type_name: string) -> i32 {
+    if ov_streq(type_name, "i8" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "i16" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "i32" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "i64" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "i128" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "u8" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "u16" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "u32" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "u64" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "u128" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "int" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "char" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "short" as ptr<u8>) == 1 { return 1 }
+    if ov_streq(type_name, "long" as ptr<u8>) == 1 { return 1 }
+    return 0
+}
+
+# Return whether an actual type can satisfy an overload parameter type.
+# This mirrors OverloadResolver._types_compatible in src/flow/overload.py.
+export function flowc_overload_types_compatible(expected: string, actual: string) -> i32 {
+    if ov_streq(expected, actual as ptr<u8>) == 1 {
+        return 1
+    }
+
+    let expected_span_start: i32 = ov_span_element_start(expected)
+    if expected_span_start >= 0 {
+        let actual_span_start: i32 = ov_span_element_start(actual)
+        if actual_span_start >= 0 {
+            return ov_tail_equal(expected, expected_span_start, actual, actual_span_start)
+        }
+        let actual_array_start: i32 = ov_array_element_start(actual)
+        if actual_array_start >= 0 {
+            return ov_tail_equal(expected, expected_span_start, actual, actual_array_start)
+        }
+        return 0
+    }
+
+    let actual_array_start: i32 = ov_array_element_start(actual)
+    if actual_array_start >= 0 {
+        if ov_starts_with(expected, "ptr_" as ptr<u8>) == 1 {
+            if ov_tail_equal(expected, 4, actual, actual_array_start) == 1 {
+                return 1
+            }
+        }
+    }
+
+    if ov_starts_with(expected, "ptr_" as ptr<u8>) == 1 {
+        if ov_tail_equal(expected, 4, actual, 0) == 1 {
+            return 1
+        }
+    }
+
+    if ov_streq(expected, "ptr_i8" as ptr<u8>) == 1 {
+        if ov_streq(actual, "string" as ptr<u8>) == 1 {
+            return 1
+        }
+    }
+
+    if ov_streq(actual, "ptr_void" as ptr<u8>) == 1 {
+        if ov_starts_with(expected, "ptr_" as ptr<u8>) == 1 {
+            return 1
+        }
+        if ov_streq(expected, "ptr_void" as ptr<u8>) == 1 {
+            return 1
+        }
+    }
+
+    if ov_starts_with(expected, "capability_" as ptr<u8>) == 1 {
+        if flowc_overload_is_primitive(actual) == 1 {
+            return 0
+        }
+        if ov_starts_with(actual, "ptr_" as ptr<u8>) == 1 {
+            return 0
+        }
+        return 1
+    }
+
+    let expected_float: i32 = 0
+    let actual_float: i32 = 0
+    let mut ef: i32 = expected_float
+    let mut af: i32 = actual_float
+    if ov_streq(expected, "f32" as ptr<u8>) == 1 { ef = 1 }
+    if ov_streq(expected, "f64" as ptr<u8>) == 1 { ef = 1 }
+    if ov_streq(actual, "f32" as ptr<u8>) == 1 { af = 1 }
+    if ov_streq(actual, "f64" as ptr<u8>) == 1 { af = 1 }
+    if ef == 1 && af == 1 {
+        return 1
+    }
+
+    let mut ei: i32 = 0
+    let mut ai: i32 = 0
+    if ov_streq(expected, "i32" as ptr<u8>) == 1 { ei = 1 }
+    if ov_streq(expected, "i64" as ptr<u8>) == 1 { ei = 1 }
+    if ov_streq(actual, "i32" as ptr<u8>) == 1 { ai = 1 }
+    if ov_streq(actual, "i64" as ptr<u8>) == 1 { ai = 1 }
+    if ei == 1 && ai == 1 {
+        return 1
+    }
+
+    return 0
+}
+
+# The Python resolver widens only unsuffixed integer literals and only after
+# exact matching. This helper supplies the deterministic type-side predicate;
+# the AST layer remains responsible for proving that the argument is a literal.
+export function flowc_overload_literal_can_widen(expected: string) -> i32 {
+    return flowc_overload_is_int_type(expected)
+}
