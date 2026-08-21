@@ -1,0 +1,207 @@
+# @module flowc.range_sums
+# @means  Closed-form arithmetic core for sum(range) lowering.
+#         Port of the deterministic progression/CRT logic from
+#         src/flow/range_sums.py. AST construction and syntax errors remain
+#         in the Python host until the Stage-A AST exposes the full range
+#         algebra surface.
+
+export struct FlowcProgression {
+    first: i64,
+    count: i64,
+    step: i64,
+    valid: i32
+}
+
+function rs_empty() -> FlowcProgression {
+    return FlowcProgression { first: 0, count: 0, step: 1, valid: 1 }
+}
+
+function rs_invalid() -> FlowcProgression {
+    return FlowcProgression { first: 0, count: 0, step: 1, valid: 0 }
+}
+
+export function flowc_range_gcd(a: i64, b: i64) -> i64 {
+    let mut x: i64 = a
+    let mut y: i64 = b
+    if x < 0 {
+        x = 0 - x
+    }
+    if y < 0 {
+        y = 0 - y
+    }
+    while y != 0 {
+        let t: i64 = x % y
+        x = y
+        y = t
+    }
+    return x
+}
+
+export function flowc_range_modinv(a: i64, modulus: i64) -> i64 {
+    if modulus <= 1 {
+        return 0
+    }
+
+    let mut old_r: i64 = a % modulus
+    if old_r < 0 {
+        old_r = old_r + modulus
+    }
+    let mut r: i64 = modulus
+    let mut old_s: i64 = 1
+    let mut s: i64 = 0
+
+    while r != 0 {
+        let q: i64 = old_r / r
+        let next_r: i64 = old_r - q * r
+        old_r = r
+        r = next_r
+
+        let next_s: i64 = old_s - q * s
+        old_s = s
+        s = next_s
+    }
+
+    let mut inverse: i64 = old_s % modulus
+    if inverse < 0 {
+        inverse = inverse + modulus
+    }
+    return inverse
+}
+
+# Normalize a half-open arithmetic range to an ascending progression.
+# A zero stride is represented as valid=0 so the AST layer can turn it into
+# the same FlowSyntaxError raised by the Python implementation.
+export function flowc_range_normalize(start: i64, limit: i64, stride: i64) -> FlowcProgression {
+    if stride == 0 {
+        return rs_invalid()
+    }
+
+    if stride > 0 {
+        if start >= limit {
+            return rs_empty()
+        }
+        let count: i64 = (limit - start + stride - 1) / stride
+        return FlowcProgression { first: start, count: count, step: stride, valid: 1 }
+    }
+
+    let magnitude: i64 = 0 - stride
+    if start <= limit {
+        return rs_empty()
+    }
+    let count: i64 = (start - limit + magnitude - 1) / magnitude
+    let first: i64 = start + (count - 1) * stride
+    return FlowcProgression { first: first, count: count, step: magnitude, valid: 1 }
+}
+
+export function flowc_progression_sum(progression: FlowcProgression) -> i64 {
+    if progression.valid == 0 {
+        return 0
+    }
+    if progression.count <= 0 {
+        return 0
+    }
+
+    let endpoints: i64 = 2 * progression.first + (progression.count - 1) * progression.step
+    if progression.count % 2 == 0 {
+        return (progression.count / 2) * endpoints
+    }
+    return progression.count * (endpoints / 2)
+}
+
+# Intersection of two normalized arithmetic progressions using CRT.
+export function flowc_progression_intersect(
+    a: FlowcProgression,
+    b: FlowcProgression
+) -> FlowcProgression {
+    if a.valid == 0 {
+        return rs_invalid()
+    }
+    if b.valid == 0 {
+        return rs_invalid()
+    }
+    if a.count <= 0 {
+        return rs_empty()
+    }
+    if b.count <= 0 {
+        return rs_empty()
+    }
+
+    let common: i64 = flowc_range_gcd(a.step, b.step)
+    let offset: i64 = b.first - a.first
+    if offset % common != 0 {
+        return rs_empty()
+    }
+
+    let modulus: i64 = b.step / common
+    let step: i64 = a.step * modulus
+    let mut index: i64 = 0
+    if modulus > 1 {
+        let reduced: i64 = (a.step / common) % modulus
+        let inverse: i64 = flowc_range_modinv(reduced, modulus)
+        let mut scaled: i64 = (offset / common) % modulus
+        if scaled < 0 {
+            scaled = scaled + modulus
+        }
+        index = (scaled * inverse) % modulus
+    }
+
+    let mut value: i64 = a.first + index * a.step
+    let mut low: i64 = a.first
+    if b.first > low {
+        low = b.first
+    }
+
+    let mut high: i64 = a.first + (a.count - 1) * a.step
+    let b_high: i64 = b.first + (b.count - 1) * b.step
+    if b_high < high {
+        high = b_high
+    }
+
+    if value < low {
+        let gap: i64 = low - value
+        value = value + ((gap + step - 1) / step) * step
+    }
+    if value > high {
+        return rs_empty()
+    }
+
+    let count: i64 = (high - value) / step + 1
+    return FlowcProgression { first: value, count: count, step: step, valid: 1 }
+}
+
+export function flowc_sum_range(start: i64, limit: i64, stride: i64) -> i64 {
+    return flowc_progression_sum(flowc_range_normalize(start, limit, stride))
+}
+
+export function flowc_sum_range_intersection(
+    start_a: i64,
+    limit_a: i64,
+    stride_a: i64,
+    start_b: i64,
+    limit_b: i64,
+    stride_b: i64
+) -> i64 {
+    let a: FlowcProgression = flowc_range_normalize(start_a, limit_a, stride_a)
+    let b: FlowcProgression = flowc_range_normalize(start_b, limit_b, stride_b)
+    return flowc_progression_sum(flowc_progression_intersect(a, b))
+}
+
+export function flowc_sum_range_union(
+    start_a: i64,
+    limit_a: i64,
+    stride_a: i64,
+    start_b: i64,
+    limit_b: i64,
+    stride_b: i64
+) -> i64 {
+    let a: FlowcProgression = flowc_range_normalize(start_a, limit_a, stride_a)
+    let b: FlowcProgression = flowc_range_normalize(start_b, limit_b, stride_b)
+    if a.valid == 0 {
+        return 0
+    }
+    if b.valid == 0 {
+        return 0
+    }
+    let both: FlowcProgression = flowc_progression_intersect(a, b)
+    return flowc_progression_sum(a) + flowc_progression_sum(b) - flowc_progression_sum(both)
+}
