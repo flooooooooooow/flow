@@ -1113,7 +1113,6 @@ class MLIRGenerator:
         return "\n".join(mlir_code)
     
     def generate_function(self, func: FunctionDecl) -> str:
-        self._prove_bounds_mlir(func)
         # Don't add to symbol table here - it's already added in first pass
         
         # Store current function return type for use in return statements
@@ -1230,7 +1229,15 @@ class MLIRGenerator:
         # #473: rotate counted `while true { ... if c == 0 { break } ... }`
         # loops so the exit test lands on the latch, where LLVM can read a
         # trip count off it.
-        body_mlir = self.generate_block(canonicalize_counted_loops(func.body))
+        # Loop canonicalisation rewrites the for statements into new objects, and the
+        # prover keys its guards by identity. Prove the body that is actually generated.
+        canonical_body = canonicalize_counted_loops(func.body)
+        self._prove_bounds_mlir(canonical_body)
+        self._current_function_params = {p.name for p in func.parameters}
+        body_mlir = self.generate_block(canonical_body)
+        if self._guard_prologue:
+            # Guards that hold for the whole call are computed once, in the entry block.
+            body_mlir = "\n".join(self._guard_prologue) + "\n" + body_mlir
         if body_mlir.strip():
             mlir_code.append(body_mlir)
         
@@ -2943,6 +2950,21 @@ class MLIRGenerator:
         return "\n".join(mlir_code)
 
     def generate_for(self, for_stmt: ForStatement) -> str:
+        guards = getattr(self, "_mlir_bounds_guards", {}).get(id(for_stmt))
+        if guards is not None and not for_stmt.is_parallel and not self.inside_scf_for:
+            step_value = self._constant_step(for_stmt)
+            takes_cf = (step_value is None or step_value <= 0
+                        or self._needs_cf_loop_lowering(for_stmt.body))
+            # Both lowerings can be versioned, each in its own dialect: scf.if around
+            # the scf form, and a guarded branch to two block copies around the cf form.
+            versioned = (self._generate_versioned_for_cf(for_stmt, guards, step_value)
+                         if takes_cf
+                         else self._generate_versioned_for(for_stmt, guards))
+            if versioned is not None:
+                return versioned
+        return self._generate_for_inner(for_stmt)
+
+    def _generate_for_inner(self, for_stmt: ForStatement) -> str:
         mlir_code = []
 
         vectorized = self._try_vectorize_elementwise_for(for_stmt)
@@ -7205,22 +7227,37 @@ class MLIRGenerator:
     # The C backend can additionally version a loop and hoist the guard out of it. That
     # is not done here yet, so a `hoist` verdict still pays its check on this backend.
 
-    def _prove_bounds_mlir(self, func) -> None:
+    def _prove_bounds_mlir(self, body) -> None:
         self._mlir_bounds_verdicts = {}
+        self._mlir_bounds_guards = {}
+        self._mlir_bounds_syms = {}
+        self._fast_loops = set()
+        self._guard_symbol_cache = {}
+        self._guard_prologue = []
         import os as _os
         if _os.environ.get("FLOW_NO_BOUNDS_PROOF"):
             return
         try:
+            from types import SimpleNamespace
             from .bounds_proof import BoundsProver
             prover = BoundsProver()
-            prover.run(func)
+            prover.run(SimpleNamespace(body=body))
         except Exception:
             return
         self._mlir_bounds_verdicts = prover.verdicts
+        self._mlir_bounds_guards = prover.loop_guards
+        self._mlir_bounds_syms = prover.sym_expr
+        self._mlir_reassigned = getattr(prover, "_reassigned", set())
 
     def _span_check_needed(self, access) -> bool:
         verdict = getattr(self, "_mlir_bounds_verdicts", {}).get(id(access))
-        return verdict is None or verdict.kind != "proven"
+        if verdict is None:
+            return True
+        if verdict.kind == "proven":
+            return False
+        # A hoisted obligation only holds inside the copy its guard selected.
+        return not (verdict.kind == "hoist"
+                    and id(verdict.loop) in getattr(self, "_fast_loops", set()))
 
     def _emit_span_bounds_check(self, access, span_ssa: str, index_ssa: str,
                                 ops: List[str]) -> None:
@@ -7239,6 +7276,268 @@ class MLIRGenerator:
     def _span_checks_enabled() -> bool:
         import os as _os
         return not _os.environ.get("FLOW_NO_BOUNDS_CHECK")
+
+
+    # --- loop versioning ------------------------------------------------------------
+    #
+    # What the prover cannot prove outright it can usually reduce to one obligation that
+    # the loop does not vary. The C backend emits the loop twice and lets a guard pick
+    # between a check-free copy and the original; this does the same with scf.if.
+    #
+    # It matters more here than there. A surviving check on this backend is cf.assert,
+    # which lowers to calls to puts and abort, and a call in a loop body stops the
+    # vectoriser cold even on the path that never runs.
+
+
+    def _guard_is_function_invariant(self, guards) -> bool:
+        """Whether every quantity a guard names is fixed for the whole call.
+
+        A guard over parameters that nothing assigns has the same value on every
+        iteration of every loop it sits in, so it belongs in the entry block rather than
+        being rebuilt each time round.
+        """
+        from .bounds_proof import _LenOf
+        params = getattr(self, "_current_function_params", set())
+        assigned = getattr(self, "_mlir_reassigned", set())
+
+        def rooted_in_a_stable_parameter(expr) -> bool:
+            while isinstance(expr, FieldAccess):
+                expr = expr.object
+            if not isinstance(expr, Variable):
+                return False
+            return expr.name in params and expr.name not in assigned
+
+        for form in list(guards.ascending) + list(guards.descending):
+            for monomial in form.terms:
+                for sym in monomial:
+                    expr = getattr(self, "_mlir_bounds_syms", {}).get(sym)
+                    if isinstance(expr, _LenOf):
+                        expr = expr.span
+                    if not rooted_in_a_stable_parameter(expr):
+                        return False
+        if guards.direction_known is None:
+            for bound in (guards.loop.range_start, guards.loop.range_end):
+                if isinstance(bound, Literal):
+                    continue
+                if not rooted_in_a_stable_parameter(bound):
+                    return False
+        return True
+
+    def _mlir_guard_symbol(self, sym, ops: List[str]) -> str:
+        """One symbol of a guard as an i64 value, materialised once per guard.
+
+        A guard names the same few quantities across all its obligations, and each
+        mention was re-generating the whole expression, which for a span behind a struct
+        field is a load and two extracts. That put over a hundred operations in front of
+        a loop that only needed a handful.
+        """
+        cached = self._guard_symbol_cache.get(sym.key)
+        if cached is not None:
+            return cached
+        from .bounds_proof import _LenOf
+        expr = getattr(self, "_mlir_bounds_syms", {}).get(sym)
+        if isinstance(expr, _LenOf):
+            span_ssa, span_ops = self.generate_expression(expr.span)
+            ops.extend(span_ops)
+            out = self._extract_span_part(span_ssa, 1, "i64", ops)
+        else:
+            value_ssa, value_ops = self.generate_expression(expr)
+            ops.extend(value_ops)
+            out = self._to_i64(value_ssa, ops)
+        self._guard_symbol_cache[sym.key] = out
+        return out
+
+    def _mlir_const_i64(self, value: int, ops: List[str]) -> str:
+        out = self._next_ssa()
+        ops.append(f"{self.indent()}{out} = arith.constant {value} : i64")
+        self._ssa_types[out] = "i64"
+        return out
+
+    def _mlir_obligation(self, form, ops: List[str]) -> str:
+        """`form >= 0` as an i1, evaluated in i64 so the sum cannot wrap."""
+        total = self._mlir_const_i64(form.const, ops)
+        for monomial, coeff in sorted(form.terms.items(),
+                                      key=lambda kv: tuple(s.key for s in kv[0])):
+            product = None
+            for sym in monomial:
+                value = self._mlir_guard_symbol(sym, ops)
+                if product is None:
+                    product = value
+                else:
+                    nxt = self._next_ssa()
+                    ops.append(f"{self.indent()}{nxt} = arith.muli {product}, {value} : i64")
+                    self._ssa_types[nxt] = "i64"
+                    product = nxt
+            if coeff != 1:
+                scaled = self._next_ssa()
+                k = self._mlir_const_i64(coeff, ops)
+                ops.append(f"{self.indent()}{scaled} = arith.muli {product}, {k} : i64")
+                self._ssa_types[scaled] = "i64"
+                product = scaled
+            nxt = self._next_ssa()
+            ops.append(f"{self.indent()}{nxt} = arith.addi {total}, {product} : i64")
+            self._ssa_types[nxt] = "i64"
+            total = nxt
+        zero = self._mlir_const_i64(0, ops)
+        out = self._next_ssa()
+        ops.append(f"{self.indent()}{out} = arith.cmpi sge, {total}, {zero} : i64")
+        self._ssa_types[out] = "i1"
+        return out
+
+    def _mlir_conjunction(self, forms, ops: List[str]) -> str:
+        if not forms:
+            out = self._next_ssa()
+            ops.append(f"{self.indent()}{out} = arith.constant true")
+            self._ssa_types[out] = "i1"
+            return out
+        result = None
+        for form in forms:
+            term = self._mlir_obligation(form, ops)
+            if result is None:
+                result = term
+            else:
+                nxt = self._next_ssa()
+                ops.append(f"{self.indent()}{nxt} = arith.andi {result}, {term} : i1")
+                self._ssa_types[nxt] = "i1"
+                result = nxt
+        return result
+
+    def _gen_mlir_bounds_guard(self, guards, ops: List[str]):
+        """The guard as an i1, or None when this loop needs no versioning."""
+        if guards is None or guards.is_empty():
+            return None
+        self._guard_symbol_cache = {}
+        if self._guard_is_function_invariant(guards):
+            prologue: List[str] = []
+            condition = self._build_mlir_guard(guards, prologue)
+            if condition is not None:
+                self._guard_prologue.extend(prologue)
+                return condition
+            return None
+        return self._build_mlir_guard(guards, ops)
+
+    def _build_mlir_guard(self, guards, ops: List[str]):
+        from .bounds_proof import _LenOf
+        # The prover works on syntax and cannot tell span<f64> from ptr<f64>. Types live
+        # here, so a guard naming a length the type checker does not have is dropped
+        # whole, leaving the loop exactly as it was.
+        for form in list(guards.ascending) + list(guards.descending):
+            for monomial in form.terms:
+                for sym in monomial:
+                    expr = getattr(self, "_mlir_bounds_syms", {}).get(sym)
+                    if expr is None:
+                        return None
+                    if isinstance(expr, _LenOf):
+                        if not self._is_span_flow_type(self._span_flow_type_of(expr.span)):
+                            return None
+        if guards.direction_known is True:
+            return self._mlir_conjunction(guards.ascending, ops)
+        if guards.direction_known is False:
+            return self._mlir_conjunction(guards.descending, ops)
+        # Direction is settled at run time by the comparison the loop header makes.
+        start_ssa, start_ops = self.generate_expression(guards.loop.range_start)
+        ops.extend(start_ops)
+        end_ssa, end_ops = self.generate_expression(guards.loop.range_end)
+        ops.extend(end_ops)
+        start_i64 = self._to_i64(start_ssa, ops)
+        end_i64 = self._to_i64(end_ssa, ops)
+        ascending = self._next_ssa()
+        ops.append(f"{self.indent()}{ascending} = arith.cmpi sle, {start_i64}, {end_i64} : i64")
+        self._ssa_types[ascending] = "i1"
+        up = self._mlir_conjunction(guards.ascending, ops)
+        down = self._mlir_conjunction(guards.descending, ops)
+        out = self._next_ssa()
+        ops.append(f"{self.indent()}{out} = arith.select {ascending}, {up}, {down} : i1")
+        self._ssa_types[out] = "i1"
+        return out
+
+
+    def _generate_versioned_for_cf(self, for_stmt, guards, step_value):
+        """Version a cf-lowered loop: guard, two copies, and a join.
+
+        The cf lowering carries a loop's accumulators out as block arguments, so two
+        copies define two sets of them. The join block takes them as arguments and both
+        copies branch to it with their own, which is the block-argument form of the merge
+        a mutable variable would give for free.
+        """
+        ops: List[str] = []
+        condition = self._gen_mlir_bounds_guard(guards, ops)
+        if condition is None:
+            return None
+
+        carried = [v for v in self._detect_loop_carried_vars(for_stmt.body)
+                   if v in self.symbol_table]
+        types = [self.symbol_table[v]["mlir_type"] for v in carried]
+        if any(ty is None for ty in types):
+            return None
+
+        fast_label = self._new_block_label()
+        slow_label = self._new_block_label()
+        join_label = self._new_block_label()
+
+        lines = list(ops)
+        lines.append(f"{self.indent()}cf.cond_br {condition}, ^{fast_label}, ^{slow_label}")
+
+        # Both copies start from the same values, so the slow one is generated against a
+        # restored snapshot rather than whatever the fast one left behind.
+        snapshot = {v: dict(self.symbol_table[v]) for v in carried}
+
+        lines.append(f"{self.indent()}^{fast_label}:")
+        self._fast_loops.add(id(for_stmt))
+        try:
+            lines.append(self._generate_cf_for(for_stmt, step_value))
+        finally:
+            self._fast_loops.discard(id(for_stmt))
+        fast_ssas = [self.symbol_table[v]["ssa_name"] for v in carried]
+        lines.append(
+            f"{self.indent()}cf.br ^{join_label}"
+            f"{self._cf_successor_operands(fast_ssas, types)}"
+        )
+
+        for name in carried:
+            self.symbol_table[name] = dict(snapshot[name])
+
+        lines.append(f"{self.indent()}^{slow_label}:")
+        lines.append(self._generate_cf_for(for_stmt, step_value))
+        slow_ssas = [self.symbol_table[v]["ssa_name"] for v in carried]
+        lines.append(
+            f"{self.indent()}cf.br ^{join_label}"
+            f"{self._cf_successor_operands(slow_ssas, types)}"
+        )
+
+        join_args = []
+        for name, ty in zip(carried, types):
+            arg = f"%{self.function_counter}"
+            self.function_counter += 1
+            self._ssa_types[arg] = ty
+            join_args.append(f"{arg}: {ty}")
+            self.symbol_table[name] = {**snapshot[name], "ssa_name": arg}
+        suffix = f"({', '.join(join_args)})" if join_args else ""
+        lines.append(f"{self.indent()}^{join_label}{suffix}:")
+        return "\n".join(lines)
+
+    def _generate_versioned_for(self, for_stmt, guards) -> str:
+        ops: List[str] = []
+        condition = self._gen_mlir_bounds_guard(guards, ops)
+        if condition is None:
+            return None
+        lines = list(ops)
+        lines.append(f"{self.indent()}scf.if {condition} {{")
+        self.indent_level += 1
+        self._fast_loops.add(id(for_stmt))
+        try:
+            lines.append(self._generate_for_inner(for_stmt))
+        finally:
+            self._fast_loops.discard(id(for_stmt))
+        lines.append(f"{self.indent()}scf.yield")
+        self.indent_level -= 1
+        lines.append(f"{self.indent()}}} else {{")
+        self.indent_level += 1
+        lines.append(self._generate_for_inner(for_stmt))
+        lines.append(f"{self.indent()}scf.yield")
+        self.indent_level -= 1
+        lines.append(f"{self.indent()}}}")
+        return "\n".join(lines)
 
     def flow_type_to_mlir(self, flow_type: Type) -> str:
         flow_type = self._resolve_type_alias(flow_type)
