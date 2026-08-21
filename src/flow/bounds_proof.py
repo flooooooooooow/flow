@@ -96,10 +96,18 @@ class Sym:
 
 @dataclass
 class Affine:
-    """const + sum(coeff * sym). The one numeric shape this pass reasons in."""
+    """const + sum(coeff * monomial), where a monomial is a sorted tuple of symbols.
+
+    Degree one is the common case and behaves exactly like an affine form. Degree two
+    appears the moment a kernel indexes a matrix: `values[row * width + column]` has the
+    monomial `row*width`, and substituting the row's range for `row` leaves `width*rows`,
+    a product of two loop-invariant quantities. Keeping such a product as an atomic term
+    is what lets the obligation `len >= width * rows` be stated at all.
+    """
 
     const: int = 0
-    terms: Dict[Sym, int] = field(default_factory=dict)
+    # monomial (a sorted tuple of symbols, never empty) -> integer coefficient
+    terms: Dict[Tuple[Sym, ...], int] = field(default_factory=dict)
 
     @staticmethod
     def of_const(c: int) -> "Affine":
@@ -107,23 +115,26 @@ class Affine:
 
     @staticmethod
     def of_sym(s: Sym) -> "Affine":
-        return Affine(const=0, terms={s: 1})
+        return Affine(const=0, terms={(s,): 1})
 
     def is_const(self) -> bool:
         return not self.terms
 
+    def degree(self) -> int:
+        return max((len(m) for m in self.terms), default=0)
+
     def __add__(self, other: "Affine") -> "Affine":
         terms = dict(self.terms)
-        for s, c in other.terms.items():
-            merged = terms.get(s, 0) + c
+        for m, c in other.terms.items():
+            merged = terms.get(m, 0) + c
             if merged:
-                terms[s] = merged
+                terms[m] = merged
             else:
-                terms.pop(s, None)
+                terms.pop(m, None)
         return Affine(self.const + other.const, terms)
 
     def __neg__(self) -> "Affine":
-        return Affine(-self.const, {s: -c for s, c in self.terms.items()})
+        return Affine(-self.const, {m: -c for m, c in self.terms.items()})
 
     def __sub__(self, other: "Affine") -> "Affine":
         return self + (-other)
@@ -131,10 +142,28 @@ class Affine:
     def scale(self, k: int) -> "Affine":
         if k == 0:
             return Affine.of_const(0)
-        return Affine(self.const * k, {s: c * k for s, c in self.terms.items()})
+        return Affine(self.const * k, {m: c * k for m, c in self.terms.items()})
+
+    def mul(self, other: "Affine") -> "Affine":
+        """Polynomial product. Monomials concatenate and stay sorted."""
+        out = Affine.of_const(self.const * other.const)
+        for m, c in self.terms.items():
+            if other.const:
+                out = out + Affine(0, {m: c * other.const})
+        for m, c in other.terms.items():
+            if self.const:
+                out = out + Affine(0, {m: c * self.const})
+        for m1, c1 in self.terms.items():
+            for m2, c2 in other.terms.items():
+                merged = tuple(sorted(m1 + m2, key=lambda s: s.key))
+                out = out + Affine(0, {merged: c1 * c2})
+        return out
 
     def mentions(self, s: Sym) -> bool:
-        return s in self.terms
+        return any(s in m for m in self.terms)
+
+    def degree_of(self, s: Sym) -> int:
+        return max((m.count(s) for m in self.terms), default=0)
 
 
 # An interval whose endpoints are themselves affine forms. `None` is unbounded.
@@ -177,7 +206,12 @@ class Facts:
     @classmethod
     def _satisfiable(cls, system: List[Affine]) -> bool:
         rows = [Affine(c.const, dict(c.terms)) for c in system]
-        symbols = sorted({s for r in rows for s in r.terms}, key=lambda s: s.key)
+        # Each distinct monomial is linearised into its own variable. That is sound:
+        # any solution of the nonlinear system is a solution of the linear one, so a
+        # contradiction here is a contradiction there. It is not complete, which only
+        # ever means an obligation stays open and its check stays.
+        symbols = sorted({m for r in rows for m in r.terms},
+                         key=lambda m: tuple(s.key for s in m))
         for sym in symbols:
             positive, negative, rest = [], [], []
             for r in rows:
@@ -334,11 +368,14 @@ class BoundsProver:
             if expr.operator == "-":
                 return left - right
             if expr.operator == "*":
-                # Affine only when one side is constant; `i * n` is out of the domain.
                 if left.is_const():
                     return right.scale(left.const)
                 if right.is_const():
                     return left.scale(right.const)
+                product = left.mul(right)
+                # Degree is capped: past two the linearisation stops paying for itself
+                # and the obligations stop being things a guard can cheaply evaluate.
+                return product if product.degree() <= 2 else None
         return None
 
     # -- structural helpers ----------------------------------------------------------
@@ -594,7 +631,7 @@ class BoundsProver:
         reachable = 0
         refuted: List[str] = []
         for directions in combos:
-            facts, interval = self._evaluate(directions, index, depth)
+            facts, interval, sign_needs = self._evaluate(directions, index, depth)
             if facts is None:
                 self._verdict(access, UNKNOWN, "loop bound is not affine")
                 return
@@ -602,7 +639,9 @@ class BoundsProver:
                 continue  # this run of the loop cannot happen
             reachable += 1
             low, high = interval
-            residual: List[Affine] = []
+            # A sign assumption made while extremising is an obligation like any other:
+            # the guard has to establish it before the check-free copy may run.
+            residual: List[Affine] = [f for f in sign_needs if not facts.implies(f)]
             broken = None
             for goal, why in ((low, "below zero"),
                               (length - high - Affine.of_const(1), "past the end")):
@@ -688,15 +727,16 @@ class BoundsProver:
         return combos
 
     def _evaluate(self, directions: Tuple[bool, ...], index: Affine, depth: int):
-        """Path facts and the index interval for one choice of loop directions."""
+        """Path facts, the index interval, and any sign assumptions the substitution made."""
         facts = self._base_facts()
+        extra: List[Affine] = []
         low = high = index
         for i in range(depth - 1, -1, -1):
             frame = self._frames[i]
             ascending = directions[i]
             start, end = frame.start, frame.end
             if start is None or end is None:
-                return None, None
+                return None, None, []
             one = Affine.of_const(1)
             if ascending:
                 facts = facts.plus(end - start)                 # end >= start
@@ -705,9 +745,13 @@ class BoundsProver:
                 facts = facts.plus(start - end - one)           # start > end
                 lo_bound, hi_bound = end + one, start
             sym = Sym(f"v:{frame.var}")
-            low = _substitute(low, sym, lo_bound, hi_bound, minimising=True)
-            high = _substitute(high, sym, lo_bound, hi_bound, minimising=False)
-        return facts, (low, high)
+            low, low_needs = _substitute(low, sym, lo_bound, hi_bound, minimising=True)
+            high, high_needs = _substitute(high, sym, lo_bound, hi_bound, minimising=False)
+            if low is None or high is None:
+                return None, None, []
+            extra.extend(low_needs)
+            extra.extend(high_needs)
+        return facts, (low, high), extra
 
     def _hoist_target(self, per_direction, depth: int, conditional: bool):
         """Outermost loop the obligation can be lifted to, or None.
@@ -758,13 +802,44 @@ def _is_integer_decl(decl) -> bool:
     return name in _INTEGER_TYPES
 
 
-def _substitute(form: Affine, sym: Sym, lo: Affine, hi: Affine, minimising: bool) -> Affine:
-    coeff = form.terms.get(sym)
-    if coeff is None:
-        return form
-    pick = (lo if coeff > 0 else hi) if minimising else (hi if coeff > 0 else lo)
-    stripped = Affine(form.const, {k: v for k, v in form.terms.items() if k != sym})
-    return stripped + pick.scale(coeff)
+def _substitute(form: Affine, sym: Sym, lo: Affine, hi: Affine, minimising: bool):
+    """Replace `sym` by the end of its range that extremises `form`.
+
+    A monomial carrying `sym` contributes `coeff * rest * sym`, and which end extremises
+    it depends on the sign of `coeff * rest`. When `rest` is empty the sign is known and
+    the choice is made here. When it is not, the choice is made by assuming the product is
+    non-negative and handing back that assumption as an obligation, which the guard then
+    has to establish before the check-free copy of the loop runs.
+
+    Returns (form, obligations), or (None, []) when `sym` appears squared and the domain
+    has nothing useful to say.
+    """
+    obligations: List[Affine] = []
+    if not form.mentions(sym):
+        return form, obligations
+    if form.degree_of(sym) > 1:
+        return None, obligations
+
+    result = Affine(form.const, {m: c for m, c in form.terms.items() if sym not in m})
+    for monomial, coeff in form.terms.items():
+        if sym not in monomial:
+            continue
+        rest = list(monomial)
+        rest.remove(sym)
+        rest_tuple = tuple(rest)
+        factor = (Affine.of_const(coeff) if not rest_tuple
+                  else Affine(0, {rest_tuple: coeff}))
+        if factor.is_const():
+            positive = factor.const > 0
+        else:
+            positive = True
+            obligations.append(factor)   # the guard must show this product is >= 0
+        if minimising:
+            pick = lo if positive else hi
+        else:
+            pick = hi if positive else lo
+        result = result + factor.mul(pick)
+    return result, obligations
 
 
 def _same_affine(a: Affine, b: Affine) -> bool:
@@ -772,8 +847,9 @@ def _same_affine(a: Affine, b: Affine) -> bool:
 
 
 def _mentions_any_name(form: Affine, names: set) -> bool:
-    for sym in form.terms:
-        head = sym.key.split(".")[0]
-        if head.startswith("v:") and head[2:] in names:
-            return True
+    for monomial in form.terms:
+        for sym in monomial:
+            head = sym.key.split(".")[0]
+            if head.startswith("v:") and head[2:] in names:
+                return True
     return False
