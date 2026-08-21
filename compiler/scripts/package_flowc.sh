@@ -5,9 +5,9 @@
 #   ./compiler/scripts/package_flowc.sh              # dist/flowc-<ver>-<os>-<arch>.tar.gz
 #   FLOWC_VERSION=v0.9.0 ./compiler/scripts/package_flowc.sh
 #
-# The tarball is self-contained: `cc bootstrap/flowc_stage_a.c -o flowc`
-# rebuilds the compiler on any platform with a C compiler, so the shipped
-# binary is a convenience rather than the only way in.
+# The tarball is self-contained: `./build.sh` rebuilds the compiler from the
+# checked-in bootstrap C on any platform with a C compiler. The shipped binary
+# is a convenience rather than the only way in.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -61,10 +61,31 @@ cp examples/basics/fibonacci.flow "$STAGE/examples/" 2>/dev/null || true
 
 cat >"$STAGE/build.sh" <<'BUILD'
 #!/usr/bin/env sh
-# Rebuild flowc from source with nothing but a C compiler.
+# Rebuild flowc from source with nothing but a C compiler while preserving the
+# package's public `flowc <in.flow> <out.c>` CLI contract. The checked-in
+# bootstrap translation unit uses FLOWC_IN/FLOWC_OUT internally, so keep it as
+# a private core executable and put a tiny POSIX wrapper in front of it.
 set -e
-cd "$(dirname "$0")"
-"${CC:-cc}" ${CFLAGS:--O2} -o bin/flowc bootstrap/flowc_stage_a.c
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CC_BIN="${CC:-cc}"
+"$CC_BIN" ${CFLAGS:--O2} -o "$ROOT/bin/flowc-core" "$ROOT/bootstrap/flowc_stage_a.c"
+cat >"$ROOT/bin/flowc" <<'WRAPPER'
+#!/usr/bin/env sh
+set -e
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+if [ "$#" -eq 2 ]; then
+    FLOWC_IN="$1"
+    FLOWC_OUT="$2"
+    export FLOWC_IN FLOWC_OUT
+    exec "$ROOT/bin/flowc-core"
+fi
+if [ "$#" -eq 0 ] && [ -n "${FLOWC_IN:-}" ] && [ -n "${FLOWC_OUT:-}" ]; then
+    exec "$ROOT/bin/flowc-core"
+fi
+echo "usage: flowc <in.flow> <out.c>" >&2
+exit 2
+WRAPPER
+chmod +x "$ROOT/bin/flowc"
 echo "built bin/flowc"
 BUILD
 chmod +x "$STAGE/build.sh"
@@ -90,9 +111,14 @@ single C translation unit. No Python, no package manager, no network:
 
     ./build.sh
 
-That file is checked into the Flow repository and CI fails if it is not
-byte-for-byte what flowc emits from \`compiler/src\` today, so the binary here
-and the source in the repository cannot drift apart.
+The rebuild keeps the same \`bin/flowc <in.flow> <out.c>\` interface as the
+prebuilt driver. Internally, the rebuilt bootstrap executable uses
+\`FLOWC_IN\`/\`FLOWC_OUT\`; \`bin/flowc\` is a small POSIX wrapper that adapts
+the public CLI to that bootstrap interface.
+
+That bootstrap C file is checked into the Flow repository and CI fails if it
+is not byte-for-byte what flowc emits from \`compiler/src\` today, so the
+binary here and the source in the repository cannot drift apart.
 
 ## Scope
 
