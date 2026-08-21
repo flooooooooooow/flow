@@ -4672,8 +4672,10 @@ class CGenerator:
         if not form.terms:
             return "1" if form.const >= 0 else "0"
         parts = []
-        for sym, coeff in sorted(form.terms.items(), key=lambda kv: kv[0].key):
-            term = "(int64_t)(" + self._gen_bounds_term(sym) + ")"
+        for monomial, coeff in sorted(form.terms.items(),
+                                      key=lambda kv: tuple(s.key for s in kv[0])):
+            term = " * ".join("(int64_t)(" + self._gen_bounds_term(s) + ")"
+                              for s in monomial)
             parts.append(term if coeff == 1 else "(" + str(coeff) + " * " + term + ")")
         total = " + ".join(parts)
         if form.const:
@@ -4691,7 +4693,8 @@ class CGenerator:
         from .bounds_proof import _LenOf
         syms = set()
         for form in list(guards.ascending) + list(guards.descending):
-            syms.update(form.terms)
+            for monomial in form.terms:
+                syms.update(monomial)
         for sym in syms:
             expr = getattr(self, "_bounds_syms", {}).get(sym)
             if isinstance(expr, _LenOf):
