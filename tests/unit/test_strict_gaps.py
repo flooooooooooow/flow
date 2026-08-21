@@ -19,6 +19,7 @@ if os.path.join(REPO_ROOT, "src") not in sys.path:
 
 from flow.parser import parse_flow_code  # noqa: E402
 from flow.transpiler import resolve_modules  # noqa: E402
+from flow.c_header_parser import resolve_c_imports  # noqa: E402
 from flow.type_checker import TypeChecker  # noqa: E402
 
 
@@ -40,6 +41,10 @@ def strict_errors_for_file(rel_path: str) -> list:
             # migration and not what these tests are pinning.
             warnings.simplefilter("ignore", DeprecationWarning)
             declarations = resolve_modules(path)
+            # The compiler expands @cImport after resolving modules, so a file
+            # importing a module that binds a C header is only strict-clean
+            # once the header's own types and prototypes are in scope.
+            declarations = resolve_c_imports(declarations, os.path.dirname(path))
     finally:
         os.chdir(cwd)
     checker = TypeChecker()

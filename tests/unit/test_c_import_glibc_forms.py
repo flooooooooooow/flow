@@ -65,7 +65,11 @@ def test_an_absolute_header_path_is_quoted():
 
 def test_a_variadic_declaration_keeps_its_fixed_prefix():
     open_decl = imported()["open"]
-    assert [p.type.name for p in open_decl.parameters][:2] == ["ptr<u8>", "i32"]
+    # A pointer parameter is a structured type, matching what the Flow
+    # parser builds for ptr<u8>, so it unifies with a pointer argument.
+    assert [p.type.name for p in open_decl.parameters][:2] == ["ptr_u8", "i32"]
+    assert open_decl.parameters[0].type.is_pointer
+    assert open_decl.parameters[0].type.element_type.name == "u8"
     assert open_decl.is_variadic
 
 

@@ -957,6 +957,14 @@ class CGenerator:
         def emit_struct(name):
             if name in emitted:
                 return
+            # Defined by the @cImport header's own #include. The caller loop
+            # checks this too, but a header type reached as another struct's
+            # field type arrives here recursively and skips that check, which
+            # is how `pthread_t owner` produced an empty `typedef struct {}
+            # pthread_t;` on top of the real one from <pthread.h>.
+            if name in getattr(self, '_c_import_types', ()):
+                emitted.add(name)
+                return
             # Skip types already defined as enums
             if name in self._enums:
                 emitted.add(name)
