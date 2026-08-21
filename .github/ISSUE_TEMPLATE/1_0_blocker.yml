@@ -1,0 +1,88 @@
+---
+name: Flow 1.0 blocker
+description: Report a correctness, compatibility, release, or qualification issue that may block Flow 1.0
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form only for issues that may block `1.0.0-rc.1` or the final `1.0.0` tag. Link the resulting issue from #653. Security vulnerabilities must be reported privately via SECURITY.md instead.
+  - type: dropdown
+    id: gate
+    attributes:
+      label: Release gate
+      description: Which release gate does this block?
+      options:
+        - 1.0.0-rc.1
+        - Final 1.0.0 tag
+        - Needs triage
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 — release cannot proceed
+        - P1 — stable correctness / compatibility blocker
+        - P2 — important but may be deferred or experimentalised
+        - Needs triage
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Workstream
+      options:
+        - Stable language / compatibility
+        - Conformance
+        - flowc / self-hosting / host parity
+        - Effects
+        - Diagnostics / DSL validation
+        - Documentation / examples
+        - Stdlib / runtime / ABI / memory
+        - Platform support / CI
+        - Performance
+        - Fuzzing
+        - Security / support lifecycle
+        - CLI / formatter / manifest / packaging
+        - Release engineering / artifacts
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: stable_surface
+    attributes:
+      label: Stable surface affected
+      description: Identify the language feature, API, ABI, platform, CLI contract, or release guarantee affected. If the surface is Experimental/Future, explain why it still blocks 1.0.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction or failing gate
+      description: Provide the smallest reproduction, failing command/check, CI run, or artifact qualification step.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Required 1.0 behaviour
+      description: State what must be true for the blocker to be considered resolved.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / measurements
+      description: Include logs, benchmark methodology, compiler output, parity results, or links where relevant.
+  - type: checkboxes
+    id: triage
+    attributes:
+      label: Triage checks
+      options:
+        - label: I checked #653 and the dedicated 1.0 workstream issues for an existing tracker.
+          required: true
+        - label: This affects a Stable 1.0 promise, or I explained why an Experimental/Future surface still blocks the release.
+          required: true
+        - label: This is not a privately reportable security vulnerability.
+          required: true
