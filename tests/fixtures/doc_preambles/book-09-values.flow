@@ -1,37 +1,20 @@
-# Stand-in declarations for the fragments in chapter 9.
+# Stand-ins for chapter 9, and only stand-ins.
 #
-# The chapter shows one form per block over bare names: `if n >= 0`, `match
-# point`, `while active`. Repeating a declaration above each would bury the
-# form the block exists to show, so the names live here instead and the
-# fragments stay one line each.
+# The chapter shows one form per block over bare names: `if n >= 0`, `while
+# active`, `if should_skip()`. Those names stand for any value and any
+# predicate, so writing them out above each block would bury the form the
+# block exists to show. Anything a reader actually needs to see, such as the
+# record a fork fills or the functions a pipeline runs through, is declared
+# on the page instead.
 
 import "stdlib/memory.flow"
-
-struct Point {
-    x: i32,
-    y: i32
-}
-
-struct Stats {
-    doubled: i32,
-    squared: i32,
-    plus_ten: i32
-}
-
-enum Mode { Double, Triple }
 
 let mut n: i32 = 3
 let mut active: bool = true
 let mut target: i32 = 2
 let mut input: i32 = 6
 
-function twice(x: i32) -> i32 { return x * 2 }
-function square(x: i32) -> i32 { return x * x }
-function add(x: i32, k: i32) -> i32 { return x + k }
-function double(x: i32) -> i32 { return x * 2 }
-function triple(x: i32) -> i32 { return x * 3 }
 function should_skip() -> bool { return false }
 function process() -> void { return }
 function should_stop() -> bool { return true }
 function use_buffer(p: ptr<u8>) -> void { return }
-function normalize(x: i32) -> i32 { return x }

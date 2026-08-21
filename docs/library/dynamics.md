@@ -30,7 +30,7 @@ boilerplate for you; this page documents the functions it expands into.
 
 Row-major dense matrices over `f64`.
 
-```flow
+```flow id=matrix
 struct Matrix {
     data: ptr<f64>,
     rows: i32,
@@ -74,7 +74,7 @@ let tr: f64 = matrix_trace(A)   # 5.0
 
 Core types for linear time-invariant systems.
 
-```flow
+```flow uses=matrix
 # kind: 0 = discrete x[k+1] = A x + B u,  1 = continuous x' = A x + B u
 struct DynamicalSystem {
     n: i32, m: i32, p: i32,   # states, inputs, outputs
