@@ -1,0 +1,44 @@
+name: Stability contract
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'STABILITY.md'
+      - 'stability/**'
+      - 'scripts/check_stability_manifest.py'
+      - '.github/workflows/stability.yml'
+  push:
+    branches: [main, master]
+    tags:
+      - 'v1.0.0-rc.*'
+      - 'v1.0.0'
+    paths:
+      - 'STABILITY.md'
+      - 'stability/**'
+      - 'scripts/check_stability_manifest.py'
+      - '.github/workflows/stability.yml'
+  workflow_dispatch:
+    inputs:
+      require_complete:
+        description: 'Require every 1.0 surface to be classified'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate stability manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate manifest schema and repository paths
+        run: python3 scripts/check_stability_manifest.py
+      - name: Require complete classification for RC/final qualification
+        if: >-
+          startsWith(github.ref, 'refs/tags/v1.0.0-rc.') ||
+          github.ref == 'refs/tags/v1.0.0' ||
+          inputs.require_complete == true
+        run: python3 scripts/check_stability_manifest.py --require-complete
