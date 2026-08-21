@@ -1167,6 +1167,7 @@ class MLIRGenerator:
             func_signature = (
                 f"func.func private @{func.name}"
                 f"({', '.join(param_types)}) -> {return_type}"
+                f"{self._libm_attributes(func.name)}"
             )
             return f"{self.indent()}{func_signature}"
         
@@ -1235,9 +1236,11 @@ class MLIRGenerator:
         self._prove_bounds_mlir(canonical_body)
         self._current_function_params = {p.name for p in func.parameters}
         body_mlir = self.generate_block(canonical_body)
-        if self._guard_prologue:
-            # Guards that hold for the whole call are computed once, in the entry block.
-            body_mlir = "\n".join(self._guard_prologue) + "\n" + body_mlir
+        # Both prologues belong to the entry block, and argument materialisation goes
+        # first because a guard may read a field off a materialised argument.
+        prologue = list(self._arg_prologue) + list(self._guard_prologue)
+        if prologue:
+            body_mlir = "\n".join(prologue) + "\n" + body_mlir
         if body_mlir.strip():
             mlir_code.append(body_mlir)
         
@@ -4063,16 +4066,16 @@ class MLIRGenerator:
         op_text: str
         if bin_op.operator == '+':
             if is_vector:
-                op_text = f"arith.addf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
+                op_text = f"arith.addf {left_ssa}, {right_ssa} {self.FLOAT_CONTRACT} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
             else:
-                op_text = f"arith.addf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
+                op_text = f"arith.addf {left_ssa}, {right_ssa} {self.FLOAT_CONTRACT} : {operand_type}" if is_float else f"arith.addi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '-':
-            op_text = f"arith.subf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.subi {left_ssa}, {right_ssa} : {operand_type}"
+            op_text = f"arith.subf {left_ssa}, {right_ssa} {self.FLOAT_CONTRACT} : {operand_type}" if is_float else f"arith.subi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '*':
-            op_text = f"arith.mulf {left_ssa}, {right_ssa} : {operand_type}" if is_float else f"arith.muli {left_ssa}, {right_ssa} : {operand_type}"
+            op_text = f"arith.mulf {left_ssa}, {right_ssa} {self.FLOAT_CONTRACT} : {operand_type}" if is_float else f"arith.muli {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '/':
             if is_float:
-                op_text = f"arith.divf {left_ssa}, {right_ssa} : {operand_type}"
+                op_text = f"arith.divf {left_ssa}, {right_ssa} {self.FLOAT_CONTRACT} : {operand_type}"
             elif is_unsigned:
                 op_text = f"arith.divui {left_ssa}, {right_ssa} : {operand_type}"
             else:
@@ -4508,11 +4511,21 @@ class MLIRGenerator:
                 )
             ):
                 orig_ssa = obj_ssa
-                obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
-                ops.extend(mat_ops)
-                self._composite_call_results.discard(orig_ssa)
-                if not orig_ssa.startswith("%arg"):
+                if orig_ssa.startswith("%arg"):
+                    # A by-value argument does not change for the length of the call, so
+                    # rebuilding it at every field read was paying for the whole struct
+                    # each time. Once, in the entry block, dominates every use.
+                    cached = self._arg_materialized.get(orig_ssa)
+                    if cached is None:
+                        cached, mat_ops = self._materialize_struct_value(orig_ssa, obj_mlir)
+                        self._arg_prologue.extend(mat_ops)
+                        self._arg_materialized[orig_ssa] = cached
+                    obj_ssa = cached
+                else:
+                    obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
+                    ops.extend(mat_ops)
                     var_info["ssa_name"] = obj_ssa
+                self._composite_call_results.discard(orig_ssa)
                 self._ssa_types[obj_ssa] = obj_mlir
 
         object_flow = self._flow_type_of_expr(field_access.object)
@@ -7234,6 +7247,8 @@ class MLIRGenerator:
         self._fast_loops = set()
         self._guard_symbol_cache = {}
         self._guard_prologue = []
+        self._arg_prologue = []
+        self._arg_materialized = {}
         import os as _os
         if _os.environ.get("FLOW_NO_BOUNDS_PROOF"):
             return
@@ -7538,6 +7553,40 @@ class MLIRGenerator:
         self.indent_level -= 1
         lines.append(f"{self.indent()}}}")
         return "\n".join(lines)
+
+
+    # Clang contracts `a * b + c` into one fused multiply-add by default and the C
+    # backend has been getting that for free. Nothing marked the float arithmetic here
+    # as contractible, so LLVM had to keep the multiply and the add apart: on the
+    # diffBloch structure-factor loop that was 44 fmadd against none, and 72 multiplies
+    # where C needed 38.
+    #
+    # `contract` is the only flag set. It permits fusing a multiply with a following add,
+    # which is what clang's own default allows, so the two backends round the same way.
+    # No reassociation and no other liberties are taken with the arithmetic.
+    FLOAT_CONTRACT = "fastmath<contract>"
+
+    # An extern declaration carried no attributes, so LLVM could not tell `sin` from any
+    # other opaque call and had to assume it might read memory or never return. That
+    # costs more than it looks. On Darwin clang turns adjacent sin(x) and cos(x) on the
+    # same argument into a single __sincos_stret call, and it will only do that for a
+    # function it knows is pure, so the C backend made one call per iteration of the
+    # phase loop where this backend made two.
+    PURE_LIBM = frozenset({
+        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinf", "cosf", "tanf", "atan2f",
+        "exp", "exp2", "log", "log2", "log10", "pow", "sqrt", "cbrt",
+        "expf", "logf", "log2f", "powf", "sqrtf",
+        "sinh", "cosh", "tanh", "tanhf",
+        "fabs", "fabsf", "floor", "ceil", "round", "trunc", "fmod",
+        "hypot", "copysign", "fmin", "fmax",
+    })
+    # nounwind: never throws. willreturn: always comes back. memory(none): reads and
+    # writes nothing. Together they are what lets SimplifyLibCalls act on the call.
+    PURE_LIBM_ATTRS = 'attributes {passthrough = ["nounwind", "willreturn", ["memory", "0"]]}'
+
+    def _libm_attributes(self, name: str) -> str:
+        return f" {self.PURE_LIBM_ATTRS}" if name in self.PURE_LIBM else ""
 
     def flow_type_to_mlir(self, flow_type: Type) -> str:
         flow_type = self._resolve_type_alias(flow_type)
