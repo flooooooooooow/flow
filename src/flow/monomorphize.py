@@ -720,7 +720,12 @@ class Monomorphizer:
         elif isinstance(stmt, WhileStatement):
             new_cond = self._substitute_expression(stmt.condition, type_map)
             new_body = self._substitute_block(stmt.body, type_map)
-            return WhileStatement(new_cond, new_body)
+            rebuilt = WhileStatement(new_cond, new_body)
+            # @max_iterations(N) lives on the statement, and rebuilding the
+            # loop dropped it, so the bounded-loop counter the safety profiles
+            # promise was never emitted.
+            rebuilt.max_iterations = getattr(stmt, "max_iterations", None)
+            return rebuilt
         elif isinstance(stmt, ForStatement):
             new_start = self._substitute_expression(stmt.range_start, type_map)
             new_end = self._substitute_expression(stmt.range_end, type_map)
@@ -966,7 +971,12 @@ class Monomorphizer:
         elif isinstance(stmt, WhileStatement):
             new_cond = self._rewrite_expression(stmt.condition)
             new_body = self._rewrite_block(stmt.body)
-            return WhileStatement(new_cond, new_body)
+            rebuilt = WhileStatement(new_cond, new_body)
+            # @max_iterations(N) lives on the statement, and rebuilding the
+            # loop dropped it, so the bounded-loop counter the safety profiles
+            # promise was never emitted.
+            rebuilt.max_iterations = getattr(stmt, "max_iterations", None)
+            return rebuilt
         elif isinstance(stmt, ForStatement):
             new_start = self._rewrite_expression(stmt.range_start)
             new_end = self._rewrite_expression(stmt.range_end)

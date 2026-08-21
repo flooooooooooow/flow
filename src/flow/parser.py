@@ -1738,24 +1738,7 @@ class Parser:
                 attr_name = self.expect(TokenType.IDENTIFIER).value
                 if self.current_token.type == TokenType.LPAREN:
                     self.advance()
-                    args = []
-                    if self.current_token.type != TokenType.RPAREN:
-                        # Parse identifiers or string literals as args
-                        while True:
-                            if self.current_token.type == TokenType.IDENTIFIER:
-                                args.append(self.current_token.value)
-                                self.advance()
-                            elif self.current_token.type == TokenType.STRING_LITERAL:
-                                args.append(self.current_token.value.strip('"').strip("'"))
-                                self.advance()
-                            else:
-                                raise SyntaxError(
-                                    f"Expected decorator argument, got {self.current_token.type}"
-                                )
-                            if self.current_token.type == TokenType.COMMA:
-                                self.advance()
-                                continue
-                            break
+                    args = self._parse_attribute_args()
                     self.expect(TokenType.RPAREN)
                     # @cInclude("header.h") -> CIncludeDecl
                     if attr_name == "cInclude" and len(args) == 1:
@@ -3506,6 +3489,40 @@ class Parser:
         else:
             return self.parse_expression_statement()
 
+    def _parse_attribute_args(self) -> List[str]:
+        """Parse the comma-separated arguments inside `@name(...)`."""
+        args: List[str] = []
+        if self.current_token.type != TokenType.RPAREN:
+            while True:
+                arg_str = ""
+                # Parse kwarg name if present
+                if self.current_token.type == TokenType.IDENTIFIER and self.lookahead.type == TokenType.ASSIGN:
+                    arg_str += self.current_token.value + "="
+                    self.advance()
+                    self.advance()
+
+                if self.current_token.type == TokenType.IDENTIFIER:
+                    arg_str += self.current_token.value
+                    self.advance()
+                elif self.current_token.type == TokenType.STRING_LITERAL:
+                    arg_str += self.current_token.value.strip('"').strip("'")
+                    self.advance()
+                elif self.current_token.type == TokenType.NUMBER:
+                    arg_str += self.current_token.value
+                    self.advance()
+                else:
+                    raise SyntaxError(
+                        f"Expected decorator argument, got {self.current_token.type}"
+                    )
+
+                args.append(arg_str)
+
+                if self.current_token.type == TokenType.COMMA:
+                    self.advance()
+                    continue
+                break
+        return args
+
     def _parse_leading_attributes(self) -> List[str]:
         """Parse one or more `@name` / `@name(args)` prefixes."""
         attributes: List[str] = []
@@ -3514,26 +3531,7 @@ class Parser:
             attr_name = self.expect(TokenType.IDENTIFIER).value
             if self.current_token.type == TokenType.LPAREN:
                 self.advance()
-                args: List[str] = []
-                if self.current_token.type != TokenType.RPAREN:
-                    while True:
-                        if self.current_token.type == TokenType.IDENTIFIER:
-                            args.append(self.current_token.value)
-                            self.advance()
-                        elif self.current_token.type == TokenType.STRING_LITERAL:
-                            args.append(self.current_token.value.strip('"').strip("'"))
-                            self.advance()
-                        elif self.current_token.type == TokenType.NUMBER:
-                            args.append(self.current_token.value)
-                            self.advance()
-                        else:
-                            raise SyntaxError(
-                                f"Expected decorator argument, got {self.current_token.type}"
-                            )
-                        if self.current_token.type == TokenType.COMMA:
-                            self.advance()
-                            continue
-                        break
+                args = self._parse_attribute_args()
                 self.expect(TokenType.RPAREN)
                 attributes.append(f"{attr_name}({','.join(args)})")
             else:
