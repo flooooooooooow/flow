@@ -12,7 +12,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-VERSION="${FLOWC_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+if [[ -n "${FLOWC_VERSION:-}" ]]; then
+    VERSION="$FLOWC_VERSION"
+else
+    VERSION="$(sed -n 's/^__version__ = "\([^"]*\)"$/\1/p' src/flow/version.py)"
+    if [[ -z "$VERSION" ]]; then
+        echo "package_flowc: could not read canonical version from src/flow/version.py" >&2
+        exit 1
+    fi
+fi
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 NAME="flowc-${VERSION}-${OS}-${ARCH}"
@@ -78,7 +86,7 @@ relative imports are resolved and emitted into one translation unit.
 ## Rebuilding
 
 \`bootstrap/flowc_stage_a.c\` is the compiler itself, emitted by flowc as a
-single translation unit. No Python, no package manager, no network:
+single C translation unit. No Python, no package manager, no network:
 
     ./build.sh
 
