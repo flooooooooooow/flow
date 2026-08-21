@@ -1,0 +1,117 @@
+name: Tier 1 platform qualification
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'compiler/**'
+      - 'lib/**'
+      - 'runtime/**'
+      - 'tests/**'
+      - 'flow'
+      - 'requirements.lock'
+      - '.github/actions/**'
+      - '.github/workflows/platform-qualification.yml'
+      - 'PLATFORMS.md'
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'compiler/**'
+      - 'lib/**'
+      - 'runtime/**'
+      - 'tests/**'
+      - 'flow'
+      - 'requirements.lock'
+      - '.github/actions/**'
+      - '.github/workflows/platform-qualification.yml'
+      - 'PLATFORMS.md'
+  workflow_dispatch:
+
+concurrency:
+  group: platform-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tier1:
+    name: Tier 1 · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
+
+      - name: Strict Flow corpus
+        env:
+          PYTHONPATH: src
+        run: |
+          chmod +x ./flow compiler/scripts/*.sh
+          ./flow test --tier2 --strict
+
+      - name: Build self-hosted flowc from bootstrap C
+        run: ./compiler/scripts/bootstrap_from_c.sh
+
+      - name: Self-host compiler source audit
+        run: ./compiler/scripts/selfcompile_audit.sh
+
+      - name: Compile and execute Stable program with flowc
+        env:
+          FLOW_HOST: flowc
+        run: |
+          ./flow compile examples/basics/fibonacci.flow
+          set +e
+          ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
+
+      - name: Build distributable flowc archive
+        run: ./compiler/scripts/package_flowc.sh
+
+      - name: Unpack distributable archive
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/flow-tier1-package"
+          mkdir -p "$RUNNER_TEMP/flow-tier1-package"
+          archive="$(cat dist/flowc-latest.txt)"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/flow-tier1-package"
+          package_root="$(find "$RUNNER_TEMP/flow-tier1-package" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$package_root"
+          echo "FLOWC_PACKAGE_ROOT=$package_root" >> "$GITHUB_ENV"
+
+      - name: Rebuild compiler from packaged bootstrap C
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
+          ./build.sh
+          test -x bin/flowc
+
+      - name: Compile packaged Flow sample
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
+          ./bin/flowc examples/stage_a_sum.flow sum.c
+          test -s sum.c
+
+      - name: Compile C emitted by packaged flowc
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
+          cc -O0 -o sum sum.c
+
+      - name: Execute packaged sample
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
+          set +e
+          ./sum
+          ec=$?
+          set -e
+          test "$ec" -eq 45
