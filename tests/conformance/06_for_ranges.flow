@@ -1,0 +1,9 @@
+# spec: 5 statements; 1.2 range operators
+
+function main() -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to 7 {
+        total = total + i
+    }
+    return total * 2
+}

@@ -1,0 +1,6 @@
+# spec: 2 types; 4 expressions; explicit cast `as`
+
+function main() -> i32 {
+    let wide: i64 = 42
+    return wide as i32
+}

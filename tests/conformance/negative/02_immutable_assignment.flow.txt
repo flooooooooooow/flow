@@ -1,0 +1,7 @@
+# spec: 3 declarations; 5 statements; mutability
+
+function main() -> i32 {
+    let answer: i32 = 41
+    answer = 42
+    return answer
+}

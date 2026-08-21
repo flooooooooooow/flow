@@ -1,0 +1,9 @@
+# spec: 3 declarations; 5 statements
+
+const BASE: i32 = 40
+
+function main() -> i32 {
+    let mut answer: i32 = BASE
+    answer = answer + 2
+    return answer
+}

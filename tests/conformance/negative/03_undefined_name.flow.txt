@@ -1,0 +1,5 @@
+# spec: 3 declarations; 4 expressions
+
+function main() -> i32 {
+    return missing_name + 42
+}
