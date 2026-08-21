@@ -4,8 +4,9 @@ This document defines the operating-system and architecture support contract for
 Flow 1.0 stabilisation programme.
 
 The classifications below are **qualification targets** until `1.0.0-rc.1`. A platform
-becomes a 1.0 Tier 1 platform only after the required qualification workflow is green
-and the release artifacts have been installed and exercised from a clean environment.
+becomes a 1.0 Tier 1 platform only after the required qualification workflow is green,
+minimum supported toolchain versions are frozen, and release-tag artifacts have been
+installed and exercised from a clean environment.
 
 ## Support tiers
 
@@ -33,8 +34,8 @@ Flow 1.x platform compatibility promise unless promoted through qualification.
 
 | Platform | 1.0 target | Current qualification |
 |---|---|---|
-| Linux x86-64 | Tier 1 | full qualification workflow required |
-| macOS arm64 | Tier 1 | full qualification workflow required |
+| Linux x86-64 | Tier 1 | per-PR Tier-1 qualification is landed and green; minimum toolchain and release-tag artifact qualification remain |
+| macOS arm64 | Tier 1 | per-PR Tier-1 qualification is landed and green; minimum toolchain and release-tag artifact qualification remain |
 | Linux arm64 | Tier 2 candidate | release qualification still to be added |
 | Windows x86-64 | Tier 2 candidate | runtime/gfx smoke exists; full compiler qualification still required |
 | WASM / Emscripten | target-specific Beta/Stable decision pending | dedicated wasm workflow exists |
@@ -52,14 +53,29 @@ For each Tier 1 platform, CI must prove at least the following from a clean chec
 4. Every `compiler/src` module compiles under that `flowc`.
 5. A Stable Flow program compiles with `FLOW_HOST=flowc` and executes with the expected result.
 6. The distributable `flowc` archive can be built, unpacked into a clean directory, rebuilt as the user would, and used to compile and run a supplied program.
-7. Once #641 lands, the Stable 1.0 conformance corpus runs on the platform.
+7. The complete Stable 1.0 conformance corpus runs on the platform once #641 reaches full Stable-spec coverage.
+
+The workflow introduced by #658 currently proves items 1–6 on both Linux x86-64 and
+macOS arm64 on every relevant pull request. It also caught and fixed a release-package
+contract bug: rebuilding the shipped compiler archive must preserve the documented
+`flowc <in.flow> <out.c>` positional interface rather than changing invocation mode.
+
+This is sufficient to treat the two operating systems as actively qualified Tier-1
+**candidates**, but not yet to promote the C backend/platform pair to the final Stable
+1.0 promise. Full conformance coverage, explicit toolchain minima, and release-tag
+artifact qualification are still gates.
 
 ## Toolchains
 
 The C compiler is part of the qualified environment. Flow 1.0 will record the minimum
-supported compiler/toolchain versions before RC1. The initial Tier 1 qualification uses
-the compiler provided by the current GitHub-hosted Ubuntu and macOS runners; explicit
-minimum versions must be frozen before the 1.0 release.
+supported compiler/toolchain versions before RC1. The current Tier 1 workflow uses the
+compiler provided by the GitHub-hosted Ubuntu and macOS runner images. That demonstrates
+continuous compatibility with those environments; it does not by itself establish the
+oldest supported compiler version.
+
+A minimum version will only be recorded after it is exercised by CI or another
+reproducible qualification job. Flow will not infer a minimum merely from the oldest C
+standard feature currently used by generated code.
 
 ## Backend scope
 
@@ -70,6 +86,8 @@ feature support and do not inherit Tier 1 status merely because the host OS is T
 ## Release rule
 
 `1.0.0` is blocked by any unresolved Tier 1 qualification failure. Official release
-artifacts must be exercised on every Tier 1 platform before publication.
+artifacts must be exercised on every Tier 1 platform before publication. The C backend
+remains `pending` in `stability/surfaces.json` until the remaining Tier-1 promotion gates
+above are satisfied.
 
 Tracking: #647 and the Flow 1.0 stabilisation programme #653.
