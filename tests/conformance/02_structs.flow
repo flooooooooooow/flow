@@ -1,0 +1,11 @@
+# spec: 2.2 composite types; 3 declarations
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 19, y: 23 }
+    return p.x + p.y
+}

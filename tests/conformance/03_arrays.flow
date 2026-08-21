@@ -1,0 +1,6 @@
+# spec: 2.2 composite types; 4 expressions
+
+function main() -> i32 {
+    let xs: array<i32, 3> = [10, 20, 12]
+    return xs[0] + xs[1] + xs[2]
+}
