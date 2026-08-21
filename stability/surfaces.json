@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "release": "1.0.0",
+  "classes": [
+    "stable",
+    "experimental",
+    "reserved-future",
+    "internal"
+  ],
+  "surfaces": [
+    {
+      "id": "language",
+      "kind": "language",
+      "classification": "pending",
+      "source": "docs/LANGUAGE_SPEC.md",
+      "owner_issue": 640,
+      "note": "Every user-facing language feature must be classified individually before rc.1."
+    },
+    {
+      "id": "stdlib",
+      "kind": "standard-library",
+      "classification": "pending",
+      "source": "lib/stdlib",
+      "owner_issue": 646,
+      "note": "Public modules and APIs must be classified before rc.1."
+    },
+    {
+      "id": "runtime-abi",
+      "kind": "runtime",
+      "classification": "pending",
+      "source": "runtime",
+      "owner_issue": 646,
+      "note": "ABI version and promised layouts/calling conventions must be defined before rc.1."
+    },
+    {
+      "id": "cli",
+      "kind": "cli",
+      "classification": "pending",
+      "source": "flow",
+      "owner_issue": 651,
+      "note": "Stable commands, flags and exit-status categories must be selected before rc.1."
+    },
+    {
+      "id": "manifest",
+      "kind": "manifest",
+      "classification": "pending",
+      "source": "flow.toml",
+      "owner_issue": 651,
+      "note": "Stable project-manifest schema must be versioned before rc.1."
+    },
+    {
+      "id": "c-backend",
+      "kind": "target",
+      "classification": "pending",
+      "source": "src/flow/c_generator.py",
+      "owner_issue": 647,
+      "note": "Target stability follows the Tier-1/Tier-2 platform decision."
+    },
+    {
+      "id": "mlir-jit",
+      "kind": "target",
+      "classification": "experimental",
+      "source": "docs/LANGUAGE_SPEC.md",
+      "owner_issue": 647,
+      "note": "Not part of the default 1.0 production target unless separately qualified."
+    },
+    {
+      "id": "cuda",
+      "kind": "target",
+      "classification": "experimental",
+      "source": "docs/LANGUAGE_SPEC.md",
+      "owner_issue": 647,
+      "note": "Not a Tier-1 1.0 target unless separately qualified."
+    },
+    {
+      "id": "verification",
+      "kind": "language-domain",
+      "classification": "experimental",
+      "source": "docs/language/verification.md",
+      "owner_issue": 640,
+      "note": "The ahead-of-implementation proof corpus does not define Stable Flow 1.0 syntax."
+    },
+    {
+      "id": "effects-multishot",
+      "kind": "language-feature",
+      "classification": "reserved-future",
+      "source": "docs/effects-showcase.md",
+      "owner_issue": 564,
+      "note": "Abort, retry and multi-shot continuation capture are outside the shipped tail-resumptive 1.0 model unless implemented before freeze."
+    }
+  ]
+}
