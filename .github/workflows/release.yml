@@ -7,28 +7,152 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build a release for (e.g. v0.8.0)'
+        description: 'Tag to build a release for (e.g. v1.0.0)'
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  qualify:
+    name: Qualify ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
       - name: Resolve tag
         id: tag
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
             echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-python
+
+      - name: Verify tag version matches the source tree
+        shell: bash
+        run: |
+          python3 scripts/sync_version.py --check
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          tag = os.environ['FLOW_RELEASE_TAG']
+          expected = tag.removeprefix('v')
+          ns = {}
+          exec(Path('src/flow/version.py').read_text(), ns)
+          actual = ns['__version__']
+          if actual != expected:
+              raise SystemExit(f'tag {tag} does not match src/flow/version.py ({actual})')
+          print(f'version contract: {actual}')
+          PY
+        env:
+          FLOW_RELEASE_TAG: ${{ steps.tag.outputs.name }}
+
+      - name: Require complete 1.x stability classification
+        if: startsWith(steps.tag.outputs.name, 'v1.')
+        run: python3 scripts/check_stability_manifest.py --require-complete
+
+      - name: Require zero ordinary documentation debt for 1.x
+        if: startsWith(steps.tag.outputs.name, 'v1.')
+        run: python3 scripts/check_doc_examples_strict.py
+
+      - name: Run permanent Stable conformance corpus
+        run: python3 -m pytest tests/conformance -q
+
+      - name: Fuzz release compiler front end
+        if: startsWith(steps.tag.outputs.name, 'v1.')
+        env:
+          FLOW_FUZZ_SECONDS: '60'
+        run: python3 tests/fuzz/run_fuzz.py --target all --seed 1000
+
+      - name: Strict Flow corpus
+        env:
+          PYTHONPATH: src
+        run: |
+          chmod +x ./flow compiler/scripts/*.sh
+          ./flow test --tier2 --strict
+
+      - name: Build self-hosted flowc from checked-in bootstrap C
+        run: ./compiler/scripts/bootstrap_from_c.sh
+
+      - name: Audit self-host compiler sources
+        run: ./compiler/scripts/selfcompile_audit.sh
+
+      - name: Compile and execute Stable program with flowc
+        env:
+          FLOW_HOST: flowc
+        run: |
+          ./flow compile examples/basics/fibonacci.flow
+          set +e
+          ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
+
+      - name: Build distributable flowc archive
+        env:
+          FLOWC_VERSION: ${{ steps.tag.outputs.name }}
+        run: ./compiler/scripts/package_flowc.sh
+
+      - name: Unpack release compiler archive
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/flow-release-package"
+          mkdir -p "$RUNNER_TEMP/flow-release-package"
+          archive="$(cat dist/flowc-latest.txt)"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/flow-release-package"
+          package_root="$(find "$RUNNER_TEMP/flow-release-package" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$package_root"
+          echo "FLOWC_PACKAGE_ROOT=$package_root" >> "$GITHUB_ENV"
+
+      - name: Rebuild packaged compiler
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
+          ./build.sh
+          test -x bin/flowc
+
+      - name: Compile, build and execute packaged sample
+        shell: bash
+        run: |
+          cd "$FLOWC_PACKAGE_ROOT"
+          ./bin/flowc examples/stage_a_sum.flow sum.c
+          test -s sum.c
+          cc -O0 -o sum sum.c
+          set +e
+          ./sum
+          ec=$?
+          set -e
+          test "$ec" -eq 45
+
+  release:
+    name: Publish qualified release
+    needs: qualify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+          fetch-depth: 0
 
       - name: Create source archives
         run: |
@@ -95,34 +219,33 @@ jobs:
           TAG: ${{ steps.tag.outputs.name }}
           REPO: ${{ github.repository }}
         run: |
-          TAG="${{ steps.tag.outputs.name }}"
           gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.body' > /tmp/flow_changelog.md || true
           python3 - <<'PY'
           import json, os, sys, urllib.request
           from datetime import datetime, timezone
-          body = open("/tmp/flow_changelog.md").read().strip() or "Auto-generated changelog."
-          body = body.lstrip("#").strip()
+          body = open('/tmp/flow_changelog.md').read().strip() or 'Auto-generated changelog.'
+          body = body.lstrip('#').strip()
           if len(body) > 4000:
-              body = body[:4000].rsplit("\n", 1)[0] + "\n…"
+              body = body[:4000].rsplit('\n', 1)[0] + '\n…'
           owner_avatar = f"https://github.com/{os.environ['REPO'].split('/')[0]}.png"
           embed = {
-              "title": f"Changelog {os.environ['TAG']}",
-              "color": 5763719,
-              "description": body,
-              "author": {"name": "Flow", "icon_url": owner_avatar},
-              "footer": {"text": f"Flow {os.environ['TAG']} · generated from release notes"},
-              "timestamp": datetime.now(timezone.utc).isoformat(),
+              'title': f"Changelog {os.environ['TAG']}",
+              'color': 5763719,
+              'description': body,
+              'author': {'name': 'Flow', 'icon_url': owner_avatar},
+              'footer': {'text': f"Flow {os.environ['TAG']} · generated from release notes"},
+              'timestamp': datetime.now(timezone.utc).isoformat(),
           }
           payload = {
-              "username": "Flow Changelog",
-              "avatar_url": owner_avatar,
-              "embeds": [embed],
+              'username': 'Flow Changelog',
+              'avatar_url': owner_avatar,
+              'embeds': [embed],
           }
-          webhook = os.environ["DISCORD_CHANGELOG_WEBHOOK"]
+          webhook = os.environ['DISCORD_CHANGELOG_WEBHOOK']
           try:
               req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
-                                           headers={"Content-Type": "application/json"})
+                                           headers={'Content-Type': 'application/json'})
               urllib.request.urlopen(req)
           except Exception as e:
-              print(f"changelog webhook failed (non-fatal): {e}", file=sys.stderr)
+              print(f'changelog webhook failed (non-fatal): {e}', file=sys.stderr)
           PY
