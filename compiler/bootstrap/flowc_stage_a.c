@@ -3925,6 +3925,7 @@ void flowc_cgen_scan_captures(CgenBuf* w, AstArena arena, uint8_t* src, int32_t 
 int32_t flowc_cgen_scan_lambda_caps(AstArena arena, uint8_t* src, int32_t id, int32_t* buf, int32_t count, int32_t* param_spans, int32_t nparams);
 int32_t flowc_cgen_is_captured(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne);
 int32_t flowc_cgen_is_span_var(AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_var_elem_type(AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_fn_param_is_span(AstArena arena, uint8_t* src, int32_t fn_id, int32_t param_idx);
 int32_t flowc_cgen_is_array_var(AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_array_var_size(AstArena arena, uint8_t* src, int32_t id);
@@ -5087,6 +5088,43 @@ int32_t flowc_cgen_is_span_var(AstArena arena, uint8_t* src, int32_t id) {
   return 0;
 }
 
+int32_t flowc_cgen_var_elem_type(AstArena arena, uint8_t* src, int32_t id) {
+  int32_t ns = ((arena).nodes[id]).name_start;
+  int32_t ne = ((arena).nodes[id]).name_end;
+  int32_t i = 0;
+  while (i < (arena).len) {
+  if (((arena).nodes[i]).kind == AST_PARAM || ((arena).nodes[i]).kind == AST_LET) {
+  if (flowc_cgen_span_eq(src, ns, ne, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
+  int32_t ty = ((arena).nodes[i]).a;
+  if (((arena).nodes[i]).kind == AST_PARAM && ((arena).nodes[i]).a == AST_NONE) {
+  ty = ((arena).nodes[i]).b;
+}
+  if (ty != AST_NONE) {
+  int32_t tns = ((arena).nodes[ty]).name_start;
+  int32_t tne = ((arena).nodes[ty]).name_end;
+  int32_t inner = ((arena).nodes[ty]).a;
+  if (inner != AST_NONE) {
+  if (flowc_cgen_span_is(src, tns, tne, "ptr") == 1) {
+  return inner;
+}
+  if (flowc_cgen_span_is(src, tns, tne, "span") == 1) {
+  return inner;
+}
+  if (flowc_cgen_span_is(src, tns, tne, "array") == 1) {
+  return inner;
+}
+  if (tns == 0 && tne == 0) {
+  return inner;
+}
+}
+}
+}
+}
+  i = (i + 1);
+}
+  return AST_NONE;
+}
+
 int32_t flowc_cgen_fn_param_is_span(AstArena arena, uint8_t* src, int32_t fn_id, int32_t param_idx) {
   if (fn_id == AST_NONE) {
   return 0;
@@ -5369,7 +5407,23 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
   if (kind == AST_INDEX) {
   if (((arena).nodes[id]).ival == 1) {
-  flowc_cgen_puts(w, "((flowc_span_int32_t){ (int32_t*)");
+  int32_t elem = AST_NONE;
+  if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_IDENT) {
+  elem = flowc_cgen_var_elem_type(arena, src, ((arena).nodes[id]).a);
+}
+  flowc_cgen_puts(w, "((flowc_span_");
+  if (elem != AST_NONE) {
+  flowc_cgen_emit_type(w, arena, src, elem);
+} else {
+  flowc_cgen_puts(w, "int32_t");
+}
+  flowc_cgen_puts(w, "){ (");
+  if (elem != AST_NONE) {
+  flowc_cgen_emit_type(w, arena, src, elem);
+} else {
+  flowc_cgen_puts(w, "int32_t");
+}
+  flowc_cgen_puts(w, "*)");
   if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_IDENT) {
   if (flowc_cgen_is_span_var(arena, src, ((arena).nodes[id]).a) == 1) {
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
