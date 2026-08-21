@@ -469,6 +469,9 @@ class TypeChecker:
         self._relax_c_strings = False
         self.warnings: List[str] = []
         self.struct_types: Dict[str, StructDecl] = {}
+        # Names declared by a C header rather than by Flow. Flow has no way to
+        # write a value of one, so a struct literal may leave such a field out.
+        self.opaque_c_types: Set[str] = set()
         self.generic_struct_types: Dict[str, StructDecl] = {}
         # Generic function templates, keyed by their unmangled name. Call
         # sites use the parser-mangled form (`channel_new<i32>` parses to
@@ -1220,6 +1223,7 @@ class TypeChecker:
                 # type with no fields so ptr<Name> resolves correctly.
                 stub = StructDecl(decl.name, [])
                 self.struct_types[decl.name] = stub
+                self.opaque_c_types.add(decl.name)
 
             elif isinstance(decl, CIncludeDecl):
                 pass  # No type checking needed for #include directives
@@ -3565,8 +3569,18 @@ class TypeChecker:
             elif hasattr(field_item, 'name') and hasattr(field_item, 'value'):
                 provided_fields[field_item.name] = self._check_expression(field_item.value)
 
+        declared_field_types = {f.name: f.type for f in struct_def.fields}
+
         for field_name, expected_type in expected_fields.items():
             if field_name not in provided_fields:
+                # A field whose type comes from a C header, such as a
+                # pthread_mutex_t, has no value that Flow can write, so
+                # requiring it in the literal is unsatisfiable. It is left out
+                # and zero-initialized, which is what C's `= {0}` does, and the
+                # header's own init function overwrites it.
+                declared = declared_field_types.get(field_name)
+                if getattr(declared, 'name', None) in self.opaque_c_types:
+                    continue
                 self.errors.append(f"Struct '{struct_name}' missing field '{field_name}'")
             elif not self._can_coerce(provided_fields[field_name], expected_type):
                 self.errors.append(

@@ -1,6 +1,26 @@
 # FLOW Concurrency Standard Library
-# Threads, mutexes, channels, atomics — real pthread/atomic backends.
+# Threads, mutexes, channels, atomics. Real pthread/atomic backends.
 # See docs/language/concurrency-vs-go.md
+#
+# The pthread types come from <pthread.h> rather than being modelled by hand.
+# The hand-written model guessed at all four, and two of the guesses were
+# wrong on this machine:
+#
+#   pthread_t         guessed i64      real 8 bytes   ok by luck
+#   pthread_mutex_t   guessed 64 bytes real 64        ok by luck
+#   pthread_cond_t    guessed 64 bytes real 48        16 bytes wasted
+#   pthread_rwlock_t  guessed 128      real 200       72-byte overflow
+#
+# pthread_rwlock_init writes 200 bytes into a 128-byte field, past the end of
+# the struct. The sizes also differ per platform (glibc x86_64 has a 40-byte
+# mutex and a 56-byte rwlock), so no single set of numbers is right. Naming
+# the real types lets the C compiler size and align them for the target.
+#
+# pthread_t is opaque. POSIX only guarantees it can be compared with
+# pthread_equal, and it has no reserved "no thread" value, so the owner field
+# is paired with has_owner instead of being cleared to zero.
+
+@cImport("pthread.h")
 
 extern {
     function flow_thread_spawn(start: ptr<i8>, arg: ptr<i8>) -> i64
@@ -9,26 +29,6 @@ extern {
     function flow_async_spawn(task_id: i32, arg: i32) -> void
     function flow_async_join(task_id: i32) -> i32
     function flow_async_delay(ms: i32) -> void
-    function pthread_create(thread: ptr<i64>, attr: ptr<i8>, start_routine: ptr<i8>, arg: ptr<i8>) -> i32
-    function pthread_join(thread: i64, retval: ptr<ptr<i8> >) -> i32
-    function pthread_detach(thread: i64) -> i32
-    function pthread_self() -> i64
-    function pthread_exit(retval: ptr<i8>) -> void
-    function pthread_mutex_init(mutex: ptr<void>, attr: ptr<void>) -> i32
-    function pthread_mutex_lock(mutex: ptr<void>) -> i32
-    function pthread_mutex_unlock(mutex: ptr<void>) -> i32
-    function pthread_mutex_trylock(mutex: ptr<void>) -> i32
-    function pthread_mutex_destroy(mutex: ptr<void>) -> i32
-    function pthread_cond_init(cond: ptr<void>, attr: ptr<void>) -> i32
-    function pthread_cond_wait(cond: ptr<void>, mutex: ptr<void>) -> i32
-    function pthread_cond_signal(cond: ptr<void>) -> i32
-    function pthread_cond_broadcast(cond: ptr<void>) -> i32
-    function pthread_cond_destroy(cond: ptr<void>) -> i32
-    function pthread_rwlock_init(rwlock: ptr<void>, attr: ptr<void>) -> i32
-    function pthread_rwlock_rdlock(rwlock: ptr<void>) -> i32
-    function pthread_rwlock_wrlock(rwlock: ptr<void>) -> i32
-    function pthread_rwlock_unlock(rwlock: ptr<void>) -> i32
-    function pthread_rwlock_destroy(rwlock: ptr<void>) -> i32
     function malloc(size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
     function flow_atomic_load_i32(ptr: ptr<i32>, memorder: i32) -> i32
@@ -92,46 +92,51 @@ function thread_join(t: ptr<Thread>) -> i32 {
 # =============================================================================
 
 struct Mutex {
-    # Leading i64 forces struct align ≥8 so _opaque is safe for pthread_mutex_t.
-    owner: i64,
-    _opaque: array<u8, 64>,
+    inner: pthread_mutex_t,
+    # Valid only while has_owner is true. pthread_t has no "no thread" value.
+    owner: pthread_t,
+    has_owner: bool,
     locked: bool,
     _bound: bool
 }
 
 function mutex_new() -> Mutex {
-    return Mutex { owner: 0, _opaque: [], locked: false, _bound: false }
+    # inner and owner are elided, so they start zeroed. pthread_mutex_init
+    # overwrites inner; owner is not read until has_owner is set.
+    return Mutex { has_owner: false, locked: false, _bound: false }
 }
 
 function mutex_bind(m: ptr<Mutex>) -> void {
     if m._bound {
         return
     }
-    pthread_mutex_init(&m._opaque as ptr<void>, null)
+    pthread_mutex_init(&m.inner, null)
     m._bound = true
 }
 
 function mutex_lock(m: ptr<Mutex>) -> void {
     mutex_bind(m)
-    flow_race_mutex_lock(&m._opaque as ptr<void>)
-    pthread_mutex_lock(&m._opaque as ptr<void>)
+    flow_race_mutex_lock(&m.inner as ptr<void>)
+    pthread_mutex_lock(&m.inner)
     m.locked = true
     m.owner = pthread_self()
+    m.has_owner = true
 }
 
 function mutex_unlock(m: ptr<Mutex>) -> void {
     m.locked = false
-    m.owner = 0
-    pthread_mutex_unlock(&m._opaque as ptr<void>)
-    flow_race_mutex_unlock(&m._opaque as ptr<void>)
+    m.has_owner = false
+    pthread_mutex_unlock(&m.inner)
+    flow_race_mutex_unlock(&m.inner as ptr<void>)
 }
 
 function mutex_trylock(m: ptr<Mutex>) -> bool {
     mutex_bind(m)
-    let result: i32 = pthread_mutex_trylock(&m._opaque as ptr<void>)
+    let result: i32 = pthread_mutex_trylock(&m.inner)
     if result == 0 {
         m.locked = true
         m.owner = pthread_self()
+        m.has_owner = true
         return true
     }
     return false
@@ -139,7 +144,7 @@ function mutex_trylock(m: ptr<Mutex>) -> bool {
 
 function mutex_destroy(m: ptr<Mutex>) -> void {
     if m._bound {
-        pthread_mutex_destroy(&m._opaque as ptr<void>)
+        pthread_mutex_destroy(&m.inner)
         m._bound = false
     }
 }
@@ -153,21 +158,20 @@ function mutex_is_locked(m: Mutex) -> bool {
 # =============================================================================
 
 struct CondVar {
-    _align: i64,
-    _opaque: array<u8, 64>,
+    inner: pthread_cond_t,
     initialized: bool,
     _bound: bool
 }
 
 function condvar_new() -> CondVar {
-    return CondVar { _align: 0, _opaque: [], initialized: false, _bound: false }
+    return CondVar { initialized: false, _bound: false }
 }
 
 function condvar_bind(c: ptr<CondVar>) -> void {
     if c._bound {
         return
     }
-    pthread_cond_init(&c._opaque as ptr<void>, null)
+    pthread_cond_init(&c.inner, null)
     c.initialized = true
     c._bound = true
 }
@@ -175,22 +179,22 @@ function condvar_bind(c: ptr<CondVar>) -> void {
 function condvar_wait(c: ptr<CondVar>, m: ptr<Mutex>) -> void {
     condvar_bind(c)
     mutex_bind(m)
-    pthread_cond_wait(&c._opaque as ptr<void>, &m._opaque as ptr<void>)
+    pthread_cond_wait(&c.inner, &m.inner)
 }
 
 function condvar_signal(c: ptr<CondVar>) -> void {
     condvar_bind(c)
-    pthread_cond_signal(&c._opaque as ptr<void>)
+    pthread_cond_signal(&c.inner)
 }
 
 function condvar_broadcast(c: ptr<CondVar>) -> void {
     condvar_bind(c)
-    pthread_cond_broadcast(&c._opaque as ptr<void>)
+    pthread_cond_broadcast(&c.inner)
 }
 
 function condvar_destroy(c: ptr<CondVar>) -> void {
     if c._bound {
-        pthread_cond_destroy(&c._opaque as ptr<void>)
+        pthread_cond_destroy(&c.inner)
         c._bound = false
     }
 }
@@ -200,34 +204,33 @@ function condvar_destroy(c: ptr<CondVar>) -> void {
 # =============================================================================
 
 struct RwLock {
-    _align: i64,
-    _opaque: array<u8, 128>,
+    inner: pthread_rwlock_t,
     readers: i32,
     writer: bool,
     _bound: bool
 }
 
 function rwlock_new() -> RwLock {
-    return RwLock { _align: 0, _opaque: [], readers: 0, writer: false, _bound: false }
+    return RwLock { readers: 0, writer: false, _bound: false }
 }
 
 function rwlock_bind(rw: ptr<RwLock>) -> void {
     if rw._bound {
         return
     }
-    pthread_rwlock_init(&rw._opaque as ptr<void>, null)
+    pthread_rwlock_init(&rw.inner, null)
     rw._bound = true
 }
 
 function rwlock_rdlock(rw: ptr<RwLock>) -> void {
     rwlock_bind(rw)
-    pthread_rwlock_rdlock(&rw._opaque as ptr<void>)
+    pthread_rwlock_rdlock(&rw.inner)
     rw.readers = rw.readers + 1
 }
 
 function rwlock_wrlock(rw: ptr<RwLock>) -> void {
     rwlock_bind(rw)
-    pthread_rwlock_wrlock(&rw._opaque as ptr<void>)
+    pthread_rwlock_wrlock(&rw.inner)
     rw.writer = true
 }
 
@@ -237,12 +240,12 @@ function rwlock_unlock(rw: ptr<RwLock>) -> void {
     } else {
         rw.readers = rw.readers - 1
     }
-    pthread_rwlock_unlock(&rw._opaque as ptr<void>)
+    pthread_rwlock_unlock(&rw.inner)
 }
 
 function rwlock_destroy(rw: ptr<RwLock>) -> void {
     if rw._bound {
-        pthread_rwlock_destroy(&rw._opaque as ptr<void>)
+        pthread_rwlock_destroy(&rw.inner)
         rw._bound = false
     }
 }
