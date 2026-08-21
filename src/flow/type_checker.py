@@ -3385,7 +3385,27 @@ class TypeChecker:
                     return SemanticType(TypeKind.ARRAY, element_type=SemanticType(TypeKind.I32))
                 return SemanticType(kind)
             else:
-                if self.strict:
+                active_effects = set(self._active_effect_handlers())
+                if self._current_function_name:
+                    active_effects |= set(self.function_effects.get(self._current_function_name, []))
+
+                found_effect = None
+                for eff_name in active_effects:
+                    effect_decl = self.effect_types.get(eff_name)
+                    if effect_decl:
+                        for op in effect_decl.operations:
+                            if op.name == call.name:
+                                found_effect = eff_name
+                                break
+                    if found_effect:
+                        break
+
+                if found_effect:
+                    self.errors.append(
+                        f"effect operation '{call.name}' must be called as "
+                        f"'{found_effect}.{call.name}'"
+                    )
+                elif self.strict:
                     self.errors.append(f"Undefined function '{call.name}'")
                 return SemanticType(TypeKind.VOID)
 
