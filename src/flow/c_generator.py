@@ -167,6 +167,8 @@ class CGenerator:
         self._enums = {}  # name -> EnumDecl
         self._enum_variant_owner = {}  # "Enum_Variant" -> "Enum" (for path/const match patterns)
         self._var_types = {}  # name -> Type
+        # Names the span-borrow temporaries apart; see _gen_span_borrow_once.
+        self._span_temp_counter = 0
         self._source_file = source_file
         self._debug_info = debug_info
         self._strict_effects = strict_effects
@@ -954,6 +956,14 @@ class CGenerator:
 
         def emit_struct(name):
             if name in emitted:
+                return
+            # Defined by the @cImport header's own #include. The caller loop
+            # checks this too, but a header type reached as another struct's
+            # field type arrives here recursively and skips that check, which
+            # is how `pthread_t owner` produced an empty `typedef struct {}
+            # pthread_t;` on top of the real one from <pthread.h>.
+            if name in getattr(self, '_c_import_types', ()):
+                emitted.add(name)
                 return
             # Skip types already defined as enums
             if name in self._enums:
@@ -1984,6 +1994,25 @@ class CGenerator:
             return t if self._is_span_type(t) else None
         return None
 
+    def _gen_span_borrow_once(self, expr, target_type, assign_to: str) -> List[str]:
+        """Emit a span borrow that evaluates `expr` exactly once.
+
+        A narrowing borrow reads the source span's pointer and length, so
+        inlining the initializer expression evaluated it twice and ran any
+        side effect in it twice. The value goes into a temporary first.
+        """
+        source_type = self._infer_expr_type(expr)
+        if source_type is None:
+            # Nothing to bind the temporary to; fall back to the inline form.
+            return [f"{self._i()}{assign_to} = {self._gen_span_borrow(expr, target_type)};"]
+        self._span_temp_counter += 1
+        temp = f"__flow_span_init_{self._span_temp_counter}"
+        self._var_types[temp] = source_type
+        return [
+            f"{self._i()}{self._c_type(source_type)} {temp} = {self._gen_expr(expr)};",
+            f"{self._i()}{assign_to} = {self._gen_span_borrow(Variable(temp), target_type)};",
+        ]
+
     def _gen_span_borrow(self, arg: Expression, target: Optional[Type]) -> str:
         """Auto-borrow `arg` into the span type `target` (no wrapper in source)."""
         if target is None or not self._is_span_type(target):
@@ -2803,8 +2832,9 @@ class CGenerator:
                 safe_name = _sanitize_identifier(st.name)
                 if st.initializer is None:
                     return [f"{self._i()}{c_t} {safe_name} = {{0}};"]
-                borrowed = self._gen_span_borrow(st.initializer, decl_type)
-                return [f"{self._i()}{c_t} {safe_name} = {borrowed};"]
+                return self._gen_span_borrow_once(
+                    st.initializer, decl_type, f"{c_t} {safe_name}"
+                )
 
             # Track variable type for overload resolution and expression inference
             self._overload_resolver.set_var_type(st.name, self._type_to_string(decl_type))
@@ -2883,8 +2913,9 @@ class CGenerator:
             # (which decays to a pointer in C). Use memcpy for those instead.
             target_type = self._var_types.get(st.target)
             if self._is_span_type(target_type):
-                borrowed = self._gen_span_borrow(st.value, target_type)
-                return [f"{self._i()}{target_name} = {borrowed};"]
+                return self._gen_span_borrow_once(
+                    st.value, target_type, target_name
+                )
             if (target_type and getattr(target_type, "name", "").startswith("array_")
                     and getattr(target_type, "size", None)):
                 value_expr = self._gen_expr(st.value)
