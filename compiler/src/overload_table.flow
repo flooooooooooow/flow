@@ -51,10 +51,18 @@ export function flowc_overload_table_init(src: ptr<u8>, cap: i32) -> FlowcOverlo
     let raw_arity: ptr<u8> = malloc((cap as i64) * 4)
     let raw_decl: ptr<u8> = malloc((cap as i64) * 4)
     if raw_ns == null || raw_ne == null || raw_arity == null || raw_decl == null {
-        if raw_ns != null { free(raw_ns) }
-        if raw_ne != null { free(raw_ne) }
-        if raw_arity != null { free(raw_arity) }
-        if raw_decl != null { free(raw_decl) }
+        if raw_ns != null {
+            free(raw_ns)
+        }
+        if raw_ne != null {
+            free(raw_ne)
+        }
+        if raw_arity != null {
+            free(raw_arity)
+        }
+        if raw_decl != null {
+            free(raw_decl)
+        }
         return FlowcOverloadTable {
             src: src,
             ns: null,
@@ -80,10 +88,22 @@ export function flowc_overload_table_init(src: ptr<u8>, cap: i32) -> FlowcOverlo
 }
 
 export function flowc_overload_table_free(table: ptr<FlowcOverloadTable>) {
-    if table[0].ns != null { free(table[0].ns); table[0].ns = null }
-    if table[0].ne != null { free(table[0].ne); table[0].ne = null }
-    if table[0].arity != null { free(table[0].arity); table[0].arity = null }
-    if table[0].decl != null { free(table[0].decl); table[0].decl = null }
+    if table[0].ns != null {
+        free(table[0].ns)
+        table[0].ns = null
+    }
+    if table[0].ne != null {
+        free(table[0].ne)
+        table[0].ne = null
+    }
+    if table[0].arity != null {
+        free(table[0].arity)
+        table[0].arity = null
+    }
+    if table[0].decl != null {
+        free(table[0].decl)
+        table[0].decl = null
+    }
     table[0].len = 0
     table[0].cap = 0
 }
