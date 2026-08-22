@@ -35,7 +35,7 @@ function make_one_arg_fn(arena: ptr<AstArena>, ty_start: i32, ty_end: i32) -> i3
 
 function main() -> i32 {
     #             01234567890123456789012345678901234567890123456789
-    let src: string = "foo wide amb sole many i32 f32 u32 u64 string zero"
+    let src: string = "foo wide amb sole many i32 f32 u32 u64 string zero pick"
     let mut arena: AstArena = flowc_ast_new(64)
     let mut table: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 16)
     let rows: ptr<u8> = malloc(128)
@@ -111,6 +111,19 @@ function main() -> i32 {
     if flowc_overload_select_decl(table, arena, src as ptr<u8>, 46, 50, 0, null, null, null, 128) != zero_fn {
         puts("FAIL: zero-arity selection")
         return 7
+    }
+
+    # Mirrors tests/lang/test_unsigned_ints.flow: pick(i32) must win before the
+    # u32 candidate becomes eligible on the widening phase.
+    let pick_i32: i32 = make_one_arg_fn(&arena, 23, 26)
+    let pick_u32: i32 = make_one_arg_fn(&arena, 31, 34)
+    flowc_overload_table_add(&table, 51, 55, 1, pick_i32)
+    flowc_overload_table_add(&table, 51, 55, 1, pick_u32)
+    copy_row(rows, "i32")
+    literal[0] = 1
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 51, 55, 1, rows, &known[0], &literal[0], 128) != pick_i32 {
+        puts("FAIL: signed exact match must precede literal widening")
+        return 8
     }
 
     free(rows)
