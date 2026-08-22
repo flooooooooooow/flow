@@ -17,6 +17,34 @@ export struct FlowcKeyRange {
     hi: i64
 }
 
+function flowc_keep_ascending(a: f64, b: f64, current: i32) -> i32 {
+    if a > b {
+        return 0
+    }
+    return current
+}
+
+function flowc_keep_strict_ascending(a: f64, b: f64, current: i32) -> i32 {
+    if a >= b {
+        return 0
+    }
+    return current
+}
+
+function flowc_keep_descending(a: f64, b: f64, current: i32) -> i32 {
+    if a < b {
+        return 0
+    }
+    return current
+}
+
+function flowc_keep_strict_descending(a: f64, b: f64, current: i32) -> i32 {
+    if a <= b {
+        return 0
+    }
+    return current
+}
+
 function flowc_order_scan(
     values: ptr<f64>,
     len: i32,
@@ -44,46 +72,19 @@ function flowc_order_scan(
 
     let a: f64 = values[index - 1]
     let b: f64 = values[index]
-
-    if a > b {
-        if a >= b {
-            if a < b {
-                if a <= b {
-                    return flowc_order_scan(values, len, index + 1, 0, 0, 0, 0)
-                }
-                return flowc_order_scan(values, len, index + 1, 0, 0, 0, strict_desc)
-            }
-            if a <= b {
-                return flowc_order_scan(values, len, index + 1, 0, 0, descending, 0)
-            }
-            return flowc_order_scan(values, len, index + 1, 0, 0, descending, strict_desc)
-        }
-    }
-
-    if a >= b {
-        if a < b {
-            if a <= b {
-                return flowc_order_scan(values, len, index + 1, ascending, 0, 0, 0)
-            }
-            return flowc_order_scan(values, len, index + 1, ascending, 0, 0, strict_desc)
-        }
-        if a <= b {
-            return flowc_order_scan(values, len, index + 1, ascending, 0, descending, 0)
-        }
-        return flowc_order_scan(values, len, index + 1, ascending, 0, descending, strict_desc)
-    }
-
-    if a < b {
-        if a <= b {
-            return flowc_order_scan(values, len, index + 1, ascending, strict_asc, 0, 0)
-        }
-        return flowc_order_scan(values, len, index + 1, ascending, strict_asc, 0, strict_desc)
-    }
-
-    if a <= b {
-        return flowc_order_scan(values, len, index + 1, ascending, strict_asc, descending, 0)
-    }
-    return flowc_order_scan(values, len, index + 1, ascending, strict_asc, descending, strict_desc)
+    let next_ascending: i32 = flowc_keep_ascending(a, b, ascending)
+    let next_strict_asc: i32 = flowc_keep_strict_ascending(a, b, strict_asc)
+    let next_descending: i32 = flowc_keep_descending(a, b, descending)
+    let next_strict_desc: i32 = flowc_keep_strict_descending(a, b, strict_desc)
+    return flowc_order_scan(
+        values,
+        len,
+        index + 1,
+        next_ascending,
+        next_strict_asc,
+        next_descending,
+        next_strict_desc
+    )
 }
 
 # Equivalent to ordering_hints._order_of for numeric literals.
