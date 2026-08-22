@@ -1,0 +1,147 @@
+# @module flowc.field_dsl_core
+# @means  Deterministic lexical helpers from src/flow/field_dsl.py.
+#
+# Python still owns regex-based expansion, diagnostics, and source rewriting.
+# This module ports the Stage-1 declaration checks that do not need the
+# production Python AST.
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+}
+
+export const FLOWC_FIELD_LINE_NONE: i32 = 0
+export const FLOWC_FIELD_LINE_FIELD: i32 = 1
+export const FLOWC_FIELD_LINE_BOUNDARY: i32 = 2
+export const FLOWC_FIELD_LINE_EVOLVES: i32 = 3
+
+function fd_is_space(ch: u8) -> i32 {
+    if ch == 32 || ch == 9 || ch == 10 || ch == 13 {
+        return 1
+    }
+    return 0
+}
+
+function fd_skip_space(p: ptr<u8>, len: i32, start: i32) -> i32 {
+    let mut i: i32 = start
+    while i < len && fd_is_space(p[i]) == 1 {
+        i = i + 1
+    }
+    return i
+}
+
+function fd_starts_at(p: ptr<u8>, len: i32, start: i32, lit: ptr<u8>) -> i32 {
+    let n: i32 = strlen(lit) as i32
+    if start + n > len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if p[start + i] != lit[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function fd_find_byte(p: ptr<u8>, len: i32, start: i32, ch: u8) -> i32 {
+    let mut i: i32 = start
+    while i < len {
+        if p[i] == ch {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+export function flowc_field_line_kind(line: string) -> i32 {
+    let p: ptr<u8> = line as ptr<u8>
+    let len: i32 = strlen(p) as i32
+    let start: i32 = fd_skip_space(p, len, 0)
+    if fd_starts_at(p, len, start, "field " as ptr<u8>) == 1 {
+        return FLOWC_FIELD_LINE_FIELD
+    }
+    if fd_starts_at(p, len, start, "boundary " as ptr<u8>) == 1 {
+        return FLOWC_FIELD_LINE_BOUNDARY
+    }
+    let mut i: i32 = start
+    while i + 12 <= len {
+        if fd_starts_at(p, len, i, " evolves as " as ptr<u8>) == 1 {
+            return FLOWC_FIELD_LINE_EVOLVES
+        }
+        i = i + 1
+    }
+    return FLOWC_FIELD_LINE_NONE
+}
+
+# Extract the array extent from `field Name : f64[N] on Line`.
+# Returns -1 for a missing/malformed extent.
+export function flowc_field_decl_size(line: string) -> i32 {
+    let p: ptr<u8> = line as ptr<u8>
+    let len: i32 = strlen(p) as i32
+    let start: i32 = fd_skip_space(p, len, 0)
+    if fd_starts_at(p, len, start, "field " as ptr<u8>) == 0 {
+        return 0 - 1
+    }
+    let open: i32 = fd_find_byte(p, len, start, 91 as u8)
+    if open < 0 {
+        return 0 - 1
+    }
+    let close: i32 = fd_find_byte(p, len, open + 1, 93 as u8)
+    if close <= open + 1 {
+        return 0 - 1
+    }
+    let mut value: i32 = 0
+    let mut digits: i32 = 0
+    let mut i: i32 = open + 1
+    while i < close {
+        let ch: u8 = p[i]
+        if fd_is_space(ch) == 1 {
+            i = i + 1
+        } else {
+            if ch < 48 || ch > 57 {
+                return 0 - 1
+            }
+            value = value * 10 + ((ch - 48) as i32)
+            digits = digits + 1
+            i = i + 1
+        }
+    }
+    if digits == 0 {
+        return 0 - 1
+    }
+    return value
+}
+
+# Stage-1 accepts only the Line domain.
+export function flowc_field_decl_on_line(line: string) -> i32 {
+    let p: ptr<u8> = line as ptr<u8>
+    let len: i32 = strlen(p) as i32
+    let mut i: i32 = 0
+    while i + 7 <= len {
+        if fd_starts_at(p, len, i, "on Line" as ptr<u8>) == 1 {
+            let mut before_ok: i32 = 0
+            if i == 0 || fd_is_space(p[i - 1]) == 1 {
+                before_ok = 1
+            }
+            let after: i32 = i + 7
+            let mut after_ok: i32 = 0
+            if after >= len || fd_is_space(p[after]) == 1 {
+                after_ok = 1
+            }
+            if before_ok == 1 && after_ok == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+export function flowc_field_size_valid(size: i32) -> i32 {
+    if size > 1 {
+        return 1
+    }
+    return 0
+}
