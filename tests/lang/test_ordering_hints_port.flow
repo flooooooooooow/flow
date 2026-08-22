@@ -1,0 +1,80 @@
+# Test for compiler/src/ordering_hints.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_ordering_hints_port.flow
+
+import "compiler/src/ordering_hints.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let asc: array<f64, 4> = [1.0, 2.0, 3.0, 4.0]
+    if flowc_order_of_f64(&asc[0], 4) != FLOWC_ORDER_ASC_STRICT {
+        puts("FAIL: strict ascending")
+        return 1
+    }
+
+    let asc_eq: array<f64, 4> = [1.0, 2.0, 2.0, 4.0]
+    if flowc_order_of_f64(&asc_eq[0], 4) != FLOWC_ORDER_ASC {
+        puts("FAIL: ascending with equality")
+        return 2
+    }
+
+    let desc: array<f64, 4> = [4.0, 3.0, 2.0, 1.0]
+    if flowc_order_of_f64(&desc[0], 4) != FLOWC_ORDER_DESC_STRICT {
+        puts("FAIL: strict descending")
+        return 3
+    }
+
+    let desc_eq: array<f64, 4> = [4.0, 3.0, 3.0, 1.0]
+    if flowc_order_of_f64(&desc_eq[0], 4) != FLOWC_ORDER_DESC {
+        puts("FAIL: descending with equality")
+        return 4
+    }
+
+    let mixed: array<f64, 4> = [1.0, 3.0, 2.0, 4.0]
+    if flowc_order_of_f64(&mixed[0], 4) != FLOWC_ORDER_UNKNOWN {
+        puts("FAIL: mixed order")
+        return 5
+    }
+
+    let ints: array<i64, 5> = [9, -3, 17, 4, 2]
+    let range: FlowcKeyRange = flowc_key_range_i64(&ints[0], 5)
+    if range.valid != 1 || range.lo != -3 || range.hi != 17 {
+        puts("FAIL: key range")
+        return 6
+    }
+
+    if flowc_order_after_sort(0, 0, 0) != FLOWC_ORDER_ASC {
+        puts("FAIL: normal ascending sort")
+        return 7
+    }
+    if flowc_order_after_sort(0, 1, 0) != FLOWC_ORDER_ASC_STRICT {
+        puts("FAIL: unique ascending sort")
+        return 8
+    }
+    if flowc_order_after_sort(1, 0, 0) != FLOWC_ORDER_DESC {
+        puts("FAIL: descending sort")
+        return 9
+    }
+    if flowc_order_after_sort(1, 1, 0) != FLOWC_ORDER_DESC_STRICT {
+        puts("FAIL: unique descending sort")
+        return 10
+    }
+    if flowc_order_after_sort(0, 0, 1) != FLOWC_ORDER_UNKNOWN {
+        puts("FAIL: multi-key sort should be unknown")
+        return 11
+    }
+
+    if flowc_literal_covers_declared_size(4, 4) != 1 {
+        puts("FAIL: full literal coverage")
+        return 12
+    }
+    if flowc_literal_covers_declared_size(8, 4) != 0 {
+        puts("FAIL: short initializer coverage")
+        return 13
+    }
+
+    puts("All ordering_hints Flow-port tests passed")
+    return 0
+}
