@@ -35,7 +35,7 @@ function make_one_arg_fn(arena: ptr<AstArena>, ty_start: i32, ty_end: i32) -> i3
 
 function main() -> i32 {
     #             01234567890123456789012345678901234567890123456789
-    let src: string = "foo wide amb sole many i32 f32 u32 u64 string"
+    let src: string = "foo wide amb sole many i32 f32 u32 u64 string zero"
     let mut arena: AstArena = flowc_ast_new(64)
     let mut table: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 16)
     let rows: ptr<u8> = malloc(128)
@@ -102,6 +102,15 @@ function main() -> i32 {
     if flowc_overload_select_decl(table, arena, src as ptr<u8>, 18, 22, 1, rows, &known[0], &literal[0], 128) != FLOWC_OVERLOAD_SELECT_NO_MATCH {
         puts("FAIL: known no-match decision")
         return 6
+    }
+
+    # zero(): no argument storage is required for a zero-arity candidate.
+    let zero_fn: i32 = flowc_ast_alloc(&arena, AST_FN, 0, 0)
+    arena.nodes[zero_fn].a = AST_NONE
+    flowc_overload_table_add(&table, 46, 50, 0, zero_fn)
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 46, 50, 0, null, null, null, 128) != zero_fn {
+        puts("FAIL: zero-arity selection")
+        return 7
     }
 
     free(rows)
