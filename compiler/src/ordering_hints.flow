@@ -17,49 +17,81 @@ export struct FlowcKeyRange {
     hi: i64
 }
 
+function flowc_order_scan(
+    values: ptr<f64>,
+    len: i32,
+    index: i32,
+    ascending: i32,
+    strict_asc: i32,
+    descending: i32,
+    strict_desc: i32
+) -> i32 {
+    if index >= len {
+        if strict_asc == 1 {
+            return FLOWC_ORDER_ASC_STRICT
+        }
+        if strict_desc == 1 {
+            return FLOWC_ORDER_DESC_STRICT
+        }
+        if ascending == 1 {
+            return FLOWC_ORDER_ASC
+        }
+        if descending == 1 {
+            return FLOWC_ORDER_DESC
+        }
+        return FLOWC_ORDER_UNKNOWN
+    }
+
+    let a: f64 = values[index - 1]
+    let b: f64 = values[index]
+
+    if a > b {
+        if a >= b {
+            if a < b {
+                if a <= b {
+                    return flowc_order_scan(values, len, index + 1, 0, 0, 0, 0)
+                }
+                return flowc_order_scan(values, len, index + 1, 0, 0, 0, strict_desc)
+            }
+            if a <= b {
+                return flowc_order_scan(values, len, index + 1, 0, 0, descending, 0)
+            }
+            return flowc_order_scan(values, len, index + 1, 0, 0, descending, strict_desc)
+        }
+    }
+
+    if a >= b {
+        if a < b {
+            if a <= b {
+                return flowc_order_scan(values, len, index + 1, ascending, 0, 0, 0)
+            }
+            return flowc_order_scan(values, len, index + 1, ascending, 0, 0, strict_desc)
+        }
+        if a <= b {
+            return flowc_order_scan(values, len, index + 1, ascending, 0, descending, 0)
+        }
+        return flowc_order_scan(values, len, index + 1, ascending, 0, descending, strict_desc)
+    }
+
+    if a < b {
+        if a <= b {
+            return flowc_order_scan(values, len, index + 1, ascending, strict_asc, 0, 0)
+        }
+        return flowc_order_scan(values, len, index + 1, ascending, strict_asc, 0, strict_desc)
+    }
+
+    if a <= b {
+        return flowc_order_scan(values, len, index + 1, ascending, strict_asc, descending, 0)
+    }
+    return flowc_order_scan(values, len, index + 1, ascending, strict_asc, descending, strict_desc)
+}
+
 # Equivalent to ordering_hints._order_of for numeric literals.
 export function flowc_order_of_f64(values: ptr<f64>, len: i32) -> i32 {
     if len <= 1 {
         return FLOWC_ORDER_ASC_STRICT
     }
-
-    let mut ascending: i32 = 1
-    let mut strict_asc: i32 = 1
-    let mut descending: i32 = 1
-    let mut strict_desc: i32 = 1
-    let mut i: i32 = 1
-
-    while i < len {
-        let a: f64 = values[i - 1]
-        let b: f64 = values[i]
-        if a > b {
-            ascending = 0
-        }
-        if a >= b {
-            strict_asc = 0
-        }
-        if a < b {
-            descending = 0
-        }
-        if a <= b {
-            strict_desc = 0
-        }
-        i = i + 1
-    }
-
-    if strict_asc == 1 {
-        return FLOWC_ORDER_ASC_STRICT
-    }
-    if strict_desc == 1 {
-        return FLOWC_ORDER_DESC_STRICT
-    }
-    if ascending == 1 {
-        return FLOWC_ORDER_ASC
-    }
-    if descending == 1 {
-        return FLOWC_ORDER_DESC
-    }
-    return FLOWC_ORDER_UNKNOWN
+    return flowc_order_scan(values, len, 1, 1, 1, 1, 1)
 }
 
 function flowc_min_i64(values: ptr<i64>, len: i32, index: i32, current: i64) -> i64 {
