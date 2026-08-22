@@ -1,0 +1,76 @@
+# Tests for compiler/src/overload_table.flow.
+
+import "compiler/src/overload_table.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let src: string = "foo foo bar"
+    let mut table: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 8)
+    if table.err != 0 {
+        puts("FAIL: table init")
+        return 1
+    }
+
+    if flowc_overload_table_add(&table, 0, 3, 1, 101) < 0 {
+        puts("FAIL: first foo")
+        return 2
+    }
+    if flowc_overload_table_add(&table, 4, 7, 1, 202) < 0 {
+        puts("FAIL: second foo")
+        return 3
+    }
+    if flowc_overload_table_add(&table, 0, 3, 2, 303) < 0 {
+        puts("FAIL: two-arg foo")
+        return 4
+    }
+    if flowc_overload_table_add(&table, 8, 11, 1, 404) < 0 {
+        puts("FAIL: bar")
+        return 5
+    }
+
+    if flowc_overload_table_count(table, 0, 3, 1) != 2 {
+        puts("FAIL: preserve same-name signatures")
+        return 6
+    }
+    if flowc_overload_table_count(table, 0, 3, 2) != 1 {
+        puts("FAIL: arity partition")
+        return 7
+    }
+    if flowc_overload_table_count(table, 8, 11, 1) != 1 {
+        puts("FAIL: distinct name")
+        return 8
+    }
+
+    if flowc_overload_table_nth_decl(table, 0, 3, 1, 0) != 101 {
+        puts("FAIL: first candidate")
+        return 9
+    }
+    if flowc_overload_table_nth_decl(table, 0, 3, 1, 1) != 202 {
+        puts("FAIL: second candidate")
+        return 10
+    }
+    if flowc_overload_table_nth_decl(table, 0, 3, 1, 2) != -1 {
+        puts("FAIL: missing candidate")
+        return 11
+    }
+    if flowc_overload_table_has_decl(table, 4, 7, 202) != 1 {
+        puts("FAIL: declaration lookup")
+        return 12
+    }
+    if flowc_overload_table_has_decl(table, 0, 3, 404) != 0 {
+        puts("FAIL: declaration name isolation")
+        return 13
+    }
+
+    flowc_overload_table_free(&table)
+    if table.len != 0 || table.cap != 0 {
+        puts("FAIL: table free")
+        return 14
+    }
+
+    puts("All overload table Flow port tests passed")
+    return 0
+}
