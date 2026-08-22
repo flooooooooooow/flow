@@ -1,0 +1,72 @@
+# Tests for compiler/src/monomorphize.flow.
+
+import "compiler/src/monomorphize.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let buf: array<u8, 128>
+
+    if flowc_mono_mangle_one("identity" as string, "i32" as string, &buf[0], 128) < 0 {
+        puts("FAIL: one-arg mangle")
+        return 1
+    }
+    if strcmp(&buf[0], "identity_i32" as ptr<u8>) != 0 {
+        puts("FAIL: one-arg spelling")
+        return 2
+    }
+
+    if flowc_mono_mangle_two("Pair" as string, "i32" as string, "f32" as string, &buf[0], 128) < 0 {
+        puts("FAIL: two-arg mangle")
+        return 3
+    }
+    if strcmp(&buf[0], "Pair_i32_f32" as ptr<u8>) != 0 {
+        puts("FAIL: two-arg spelling")
+        return 4
+    }
+
+    if flowc_mono_mangle_one("identity" as string, "i32" as string, &buf[0], 8) != -1 {
+        puts("FAIL: mangle capacity guard")
+        return 5
+    }
+
+    if flowc_mono_depth_allowed(0) != 1 {
+        puts("FAIL: depth zero")
+        return 6
+    }
+    if flowc_mono_depth_allowed(63) != 1 {
+        puts("FAIL: depth 63")
+        return 7
+    }
+    if flowc_mono_depth_allowed(64) != 0 {
+        puts("FAIL: depth limit")
+        return 8
+    }
+    if flowc_mono_depth_allowed(-1) != 0 {
+        puts("FAIL: negative depth")
+        return 9
+    }
+
+    if flowc_mono_should_generate(0, 0, 0) != 1 {
+        puts("FAIL: fresh specialization")
+        return 10
+    }
+    if flowc_mono_should_generate(1, 0, 0) != 0 {
+        puts("FAIL: already generated")
+        return 11
+    }
+    if flowc_mono_should_generate(0, 1, 0) != 0 {
+        puts("FAIL: concrete collision")
+        return 12
+    }
+    if flowc_mono_should_generate(0, 0, 64) != 0 {
+        puts("FAIL: depth blocks generation")
+        return 13
+    }
+
+    puts("All monomorphization Flow port tests passed")
+    return 0
+}
