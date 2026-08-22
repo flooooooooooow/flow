@@ -1,0 +1,97 @@
+# Tests for compiler/src/overload_args.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/overload_args.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let src: string = "i32 f32 ptr value"
+    let mut arena: AstArena = flowc_ast_new(32)
+
+    let i32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[i32_ty].name_start = 0
+    arena.nodes[i32_ty].name_end = 3
+    let f32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[f32_ty].name_start = 4
+    arena.nodes[f32_ty].name_end = 7
+    let ptr_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[ptr_ty].name_start = 8
+    arena.nodes[ptr_ty].name_end = 11
+    arena.nodes[ptr_ty].a = i32_ty
+
+    let int_arg: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
+    let ident_arg: i32 = flowc_ast_alloc(&arena, AST_IDENT, 12, 17)
+    arena.nodes[ident_arg].name_start = 12
+    arena.nodes[ident_arg].name_end = 17
+    let cast_arg: i32 = flowc_ast_alloc(&arena, AST_CAST, 0, 0)
+    arena.nodes[cast_arg].a = int_arg
+    arena.nodes[cast_arg].b = ptr_ty
+    arena.nodes[int_arg].next = ident_arg
+    arena.nodes[ident_arg].next = cast_arg
+
+    let rows: ptr<u8> = malloc(384)
+    if rows == null {
+        return 90
+    }
+    let mut ident_types: array<i32, 3> = [AST_NONE, f32_ty, AST_NONE]
+    let mut known: array<i32, 3> = [0, 0, 0]
+    let mut literals: array<i32, 3> = [0, 0, 0]
+
+    if flowc_overload_classify_args(
+        arena,
+        src as ptr<u8>,
+        int_arg,
+        &ident_types[0],
+        3,
+        rows,
+        &known[0],
+        &literals[0],
+        128
+    ) != 3 {
+        puts("FAIL: classify count")
+        return 1
+    }
+    if known[0] != 1 or strcmp(rows, "i32" as ptr<u8>) != 0 or literals[0] != 1 {
+        puts("FAIL: integer classification")
+        return 2
+    }
+    if known[1] != 1 or strcmp(rows + 128, "f32" as ptr<u8>) != 0 or literals[1] != 0 {
+        puts("FAIL: identifier classification")
+        return 3
+    }
+    if known[2] != 1 or strcmp(rows + 256, "ptr_i32" as ptr<u8>) != 0 or literals[2] != 0 {
+        puts("FAIL: composite cast classification")
+        return 4
+    }
+
+    ident_types[1] = AST_NONE
+    if flowc_overload_classify_args(
+        arena,
+        src as ptr<u8>,
+        int_arg,
+        &ident_types[0],
+        3,
+        rows,
+        &known[0],
+        &literals[0],
+        128
+    ) != 3 {
+        puts("FAIL: classify unknown count")
+        return 5
+    }
+    if known[1] != 0 {
+        puts("FAIL: unknown identifier must remain unknown")
+        return 6
+    }
+
+    free(rows)
+    flowc_ast_free(arena)
+    puts("All overload argument classifier Flow port tests passed")
+    return 0
+}
