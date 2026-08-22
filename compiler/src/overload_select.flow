@@ -41,8 +41,13 @@ export function flowc_overload_candidate_matches(
     if arena.nodes[decl].kind != AST_FN {
         return 0 - 1
     }
-    if actual_rows == null or actual_known == null or literal_flags == null {
+    if arg_count < 0 {
         return 0 - 1
+    }
+    if arg_count > 0 {
+        if actual_rows == null or actual_known == null or literal_flags == null {
+            return 0 - 1
+        }
     }
     if row_cap <= 0 or row_cap > FLOWC_OVERLOAD_SELECT_TYPE_CAP {
         return 0 - 1
@@ -55,7 +60,7 @@ export function flowc_overload_candidate_matches(
             return 0 - 1
         }
         let pty: i32 = arena.nodes[param].a
-        let mut expected: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut expected: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         if flowc_type_name_into(arena, src, pty, &expected[0], FLOWC_OVERLOAD_SELECT_TYPE_CAP) < 0 {
             return 0 - 1
         }
