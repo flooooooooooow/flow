@@ -36,11 +36,24 @@ jobs:
             echo "v1.0.0 already exists; refusing to move it"
             exit 1
           fi
+
+      - name: Remove one-shot finalizer from the release tree
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/finalize-flow-1.0.0.yml
+          git commit -m "release: remove Flow 1.0 finalizer [skip ci]"
+          git push origin HEAD:main
           echo "FLOW_1_0_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Create immutable Flow 1.0.0 tag
         shell: bash
         run: |
+          if git ls-remote --exit-code --tags origin refs/tags/v1.0.0 >/dev/null 2>&1; then
+            echo "v1.0.0 already exists; refusing to move it"
+            exit 1
+          fi
           git tag -a v1.0.0 "$FLOW_1_0_SHA" -m "Flow 1.0.0"
           git push origin refs/tags/v1.0.0
 
