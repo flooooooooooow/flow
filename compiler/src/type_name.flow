@@ -25,7 +25,7 @@ function type_name_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i
     return 1
 }
 
-function type_name_append_byte(out: ptr<u8>, cap: i32, off: i32, value: u8) -> i32 {
+function type_name_append_byte(out: ptr<u8>, cap: i32, off: i32, value: i32) -> i32 {
     if off < 0 or off + 1 >= cap {
         return 0 - 1
     }
@@ -88,9 +88,11 @@ function type_name_append_i32(out: ptr<u8>, cap: i32, off: i32, value: i32) -> i
     let mut n: i32 = 0
     let mut v: i32 = value
     while v > 0 {
-        digits[n] = (48 + (v % 10)) as u8
+        let q: i32 = v / 10
+        let digit: i32 = v - q * 10
+        digits[n] = 48 + digit
         n = n + 1
-        v = v / 10
+        v = q
     }
     if off < 0 or off + n >= cap {
         return 0 - 1
