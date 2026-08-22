@@ -1,0 +1,113 @@
+# @module flowc.ordering_hints
+# @means  Pure ordering provenance calculations from src/flow/ordering_hints.py.
+#
+# The Python pass still owns AST traversal and invalidation. This module ports
+# the deterministic calculations used once a literal array or sort result is
+# known.
+
+export const FLOWC_ORDER_UNKNOWN: i32 = 0
+export const FLOWC_ORDER_ASC: i32 = 1
+export const FLOWC_ORDER_ASC_STRICT: i32 = 2
+export const FLOWC_ORDER_DESC: i32 = 3
+export const FLOWC_ORDER_DESC_STRICT: i32 = 4
+
+export struct FlowcKeyRange {
+    valid: i32,
+    lo: i64,
+    hi: i64
+}
+
+# Equivalent to ordering_hints._order_of for numeric literals.
+export function flowc_order_of_f64(values: ptr<f64>, len: i32) -> i32 {
+    if len <= 1 {
+        return FLOWC_ORDER_ASC_STRICT
+    }
+
+    let mut ascending: i32 = 1
+    let mut strict_asc: i32 = 1
+    let mut descending: i32 = 1
+    let mut strict_desc: i32 = 1
+    let mut i: i32 = 1
+
+    while i < len {
+        let a: f64 = values[i - 1]
+        let b: f64 = values[i]
+        if a > b {
+            ascending = 0
+        }
+        if a >= b {
+            strict_asc = 0
+        }
+        if a < b {
+            descending = 0
+        }
+        if a <= b {
+            strict_desc = 0
+        }
+        i = i + 1
+    }
+
+    if strict_asc == 1 {
+        return FLOWC_ORDER_ASC_STRICT
+    }
+    if strict_desc == 1 {
+        return FLOWC_ORDER_DESC_STRICT
+    }
+    if ascending == 1 {
+        return FLOWC_ORDER_ASC
+    }
+    if descending == 1 {
+        return FLOWC_ORDER_DESC
+    }
+    return FLOWC_ORDER_UNKNOWN
+}
+
+# Integer-literal key range used by _facts_from_literal.
+export function flowc_key_range_i64(values: ptr<i64>, len: i32) -> FlowcKeyRange {
+    if len <= 0 {
+        return FlowcKeyRange { valid: 0, lo: 0, hi: 0 }
+    }
+
+    let mut lo: i64 = values[0]
+    let mut hi: i64 = values[0]
+    let mut i: i32 = 1
+    while i < len {
+        let value: i64 = values[i]
+        if value < lo {
+            lo = value
+        }
+        if value > hi {
+            hi = value
+        }
+        i = i + 1
+    }
+    return FlowcKeyRange { valid: 1, lo: lo, hi: hi }
+}
+
+# Equivalent to _straight_line_sort_target's produced order.
+# Multi-key sorts intentionally yield unknown because whole-element order is
+# not established by the pass.
+export function flowc_order_after_sort(descending: i32, unique: i32, has_keys: i32) -> i32 {
+    if has_keys == 1 {
+        return FLOWC_ORDER_UNKNOWN
+    }
+    if descending == 1 {
+        if unique == 1 {
+            return FLOWC_ORDER_DESC_STRICT
+        }
+        return FLOWC_ORDER_DESC
+    }
+    if unique == 1 {
+        return FLOWC_ORDER_ASC_STRICT
+    }
+    return FLOWC_ORDER_ASC
+}
+
+# A short initializer zero-fills the rest in Flow, so Python deliberately drops
+# provenance unless the literal covers the declared array exactly.
+export function flowc_literal_covers_declared_size(declared_size: i32, literal_len: i32) -> i32 {
+    if declared_size == literal_len {
+        return 1
+    }
+    return 0
+}
