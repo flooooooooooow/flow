@@ -14,7 +14,7 @@ function main() -> i32 {
     let buf: array<u8, 64>
 
     let int_id: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
-    if flowc_expr_type_into(arena, src as ptr<u8>, int_id, null, &buf[0], 64) != 3 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, int_id, "", 0, &buf[0], 64) != 3 {
         puts("FAIL: int classification")
         return 1
     }
@@ -28,7 +28,7 @@ function main() -> i32 {
     }
 
     let float_id: i32 = flowc_ast_alloc(&arena, AST_FLOAT, 0, 0)
-    if flowc_expr_type_into(arena, src as ptr<u8>, float_id, null, &buf[0], 64) != 3 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, float_id, "", 0, &buf[0], 64) != 3 {
         puts("FAIL: float classification")
         return 4
     }
@@ -38,7 +38,7 @@ function main() -> i32 {
     }
 
     let bool_id: i32 = flowc_ast_alloc(&arena, AST_BOOL, 0, 0)
-    if flowc_expr_type_into(arena, src as ptr<u8>, bool_id, null, &buf[0], 64) != 4 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, bool_id, "", 0, &buf[0], 64) != 4 {
         puts("FAIL: bool classification")
         return 6
     }
@@ -48,7 +48,7 @@ function main() -> i32 {
     }
 
     let string_id: i32 = flowc_ast_alloc(&arena, AST_STRING, 0, 0)
-    if flowc_expr_type_into(arena, src as ptr<u8>, string_id, null, &buf[0], 64) != 6 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, string_id, "", 0, &buf[0], 64) != 6 {
         puts("FAIL: string classification")
         return 8
     }
@@ -58,7 +58,7 @@ function main() -> i32 {
     }
 
     let ident_id: i32 = flowc_ast_alloc(&arena, AST_IDENT, 0, 0)
-    if flowc_expr_type_into(arena, src as ptr<u8>, ident_id, "u64", &buf[0], 64) != 3 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, ident_id, "u64", 1, &buf[0], 64) != 3 {
         puts("FAIL: known ident classification")
         return 10
     }
@@ -66,7 +66,7 @@ function main() -> i32 {
         puts("FAIL: known ident spelling")
         return 11
     }
-    if flowc_expr_type_into(arena, src as ptr<u8>, ident_id, null, &buf[0], 64) != -1 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, ident_id, "", 0, &buf[0], 64) != -1 {
         puts("FAIL: unknown ident should stay unknown")
         return 12
     }
@@ -74,7 +74,7 @@ function main() -> i32 {
     let struct_id: i32 = flowc_ast_alloc(&arena, AST_STRUCT_LIT, 0, 0)
     arena.nodes[struct_id].name_start = 0
     arena.nodes[struct_id].name_end = 6
-    if flowc_expr_type_into(arena, src as ptr<u8>, struct_id, null, &buf[0], 64) != 6 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, struct_id, "", 0, &buf[0], 64) != 6 {
         puts("FAIL: struct literal classification")
         return 13
     }
@@ -88,7 +88,7 @@ function main() -> i32 {
     arena.nodes[ty_id].name_end = 10
     let cast_id: i32 = flowc_ast_alloc(&arena, AST_CAST, 0, 0)
     arena.nodes[cast_id].b = ty_id
-    if flowc_expr_type_into(arena, src as ptr<u8>, cast_id, null, &buf[0], 64) != 3 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, cast_id, "", 0, &buf[0], 64) != 3 {
         puts("FAIL: plain cast classification")
         return 15
     }
@@ -98,13 +98,13 @@ function main() -> i32 {
     }
 
     arena.nodes[ty_id].a = int_id
-    if flowc_expr_type_into(arena, src as ptr<u8>, cast_id, null, &buf[0], 64) != -1 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, cast_id, "", 0, &buf[0], 64) != -1 {
         puts("FAIL: composite cast should stay unknown")
         return 17
     }
     arena.nodes[ty_id].a = AST_NONE
 
-    if flowc_expr_type_into(arena, src as ptr<u8>, struct_id, null, &buf[0], 4) != -1 {
+    if flowc_expr_type_into(arena, src as ptr<u8>, struct_id, "", 0, &buf[0], 4) != -1 {
         puts("FAIL: output capacity guard")
         return 18
     }
