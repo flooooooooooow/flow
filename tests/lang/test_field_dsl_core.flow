@@ -1,0 +1,55 @@
+# Test for compiler/src/field_dsl_core.flow.
+
+import "compiler/src/field_dsl_core.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    if flowc_field_line_kind("field T : f64[32] on Line") != FLOWC_FIELD_LINE_FIELD {
+        puts("FAIL: field classification")
+        return 1
+    }
+    if flowc_field_line_kind("  boundary T {") != FLOWC_FIELD_LINE_BOUNDARY {
+        puts("FAIL: boundary classification")
+        return 2
+    }
+    if flowc_field_line_kind("T evolves as laplacian(T)") != FLOWC_FIELD_LINE_EVOLVES {
+        puts("FAIL: evolves classification")
+        return 3
+    }
+    if flowc_field_line_kind("let x: i32 = 3") != FLOWC_FIELD_LINE_NONE {
+        puts("FAIL: ordinary Flow classification")
+        return 4
+    }
+
+    if flowc_field_decl_size("field T : f64[32] on Line") != 32 {
+        puts("FAIL: field size 32")
+        return 5
+    }
+    if flowc_field_decl_size(" field T : f64[ 64 ] on Line") != 64 {
+        puts("FAIL: spaced field size")
+        return 6
+    }
+    if flowc_field_decl_size("field T : f64[] on Line") != 0 - 1 {
+        puts("FAIL: malformed field size")
+        return 7
+    }
+
+    if flowc_field_decl_on_line("field T : f64[32] on Line") != 1 {
+        puts("FAIL: Line domain")
+        return 8
+    }
+    if flowc_field_decl_on_line("field T : f64[32] on Grid") != 0 {
+        puts("FAIL: reject non-Line domain")
+        return 9
+    }
+    if flowc_field_size_valid(2) != 1 || flowc_field_size_valid(1) != 0 {
+        puts("FAIL: Stage-1 size rule")
+        return 10
+    }
+
+    puts("All field DSL core tests passed")
+    return 0
+}
