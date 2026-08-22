@@ -1,0 +1,112 @@
+# Tests for compiler/src/overload_select.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/overload_table.flow"
+import "compiler/src/overload_select.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function puts(s: string) -> i32
+}
+
+function copy_row(dst: ptr<u8>, value: string) {
+    let p: ptr<u8> = value
+    let n: i32 = strlen(value) as i32
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = p[i]
+        i = i + 1
+    }
+    dst[n] = 0
+}
+
+function make_one_arg_fn(arena: ptr<AstArena>, ty_start: i32, ty_end: i32) -> i32 {
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, 0, 0)
+    arena[0].nodes[ty].name_start = ty_start
+    arena[0].nodes[ty].name_end = ty_end
+    let param: i32 = flowc_ast_alloc(arena, AST_PARAM, 0, 0)
+    arena[0].nodes[param].a = ty
+    let fn: i32 = flowc_ast_alloc(arena, AST_FN, 0, 0)
+    arena[0].nodes[fn].a = param
+    return fn
+}
+
+function main() -> i32 {
+    #             01234567890123456789012345678901234567890123456789
+    let src: string = "foo wide amb sole many i32 f32 u32 u64 string"
+    let mut arena: AstArena = flowc_ast_new(64)
+    let mut table: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 16)
+    let rows: ptr<u8> = malloc(128)
+    if rows == null {
+        return 90
+    }
+    let mut known: array<i32, 1> = [1]
+    let mut literal: array<i32, 1> = [0]
+
+    # foo(i32), foo(f32): deterministic ordinary compatibility.
+    let foo_i32: i32 = make_one_arg_fn(&arena, 24, 27)
+    let foo_f32: i32 = make_one_arg_fn(&arena, 28, 31)
+    flowc_overload_table_add(&table, 0, 3, 1, foo_i32)
+    flowc_overload_table_add(&table, 0, 3, 1, foo_f32)
+    copy_row(rows, "i32")
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 0, 3, 1, rows, &known[0], &literal[0], 128) != foo_i32 {
+        puts("FAIL: exact ordinary selection")
+        return 1
+    }
+
+    # wide(u32): unsuffixed i32 literal resolves on the widening pass.
+    let wide_u32: i32 = make_one_arg_fn(&arena, 32, 35)
+    flowc_overload_table_add(&table, 4, 8, 1, wide_u32)
+    copy_row(rows, "i32")
+    literal[0] = 1
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 4, 8, 1, rows, &known[0], &literal[0], 128) != wide_u32 {
+        puts("FAIL: integer literal widening")
+        return 2
+    }
+
+    # amb(u32), amb(u64): both match only after literal widening -> ambiguous.
+    let amb_u32: i32 = make_one_arg_fn(&arena, 32, 35)
+    let amb_u64: i32 = make_one_arg_fn(&arena, 36, 39)
+    flowc_overload_table_add(&table, 9, 12, 1, amb_u32)
+    flowc_overload_table_add(&table, 9, 12, 1, amb_u64)
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 9, 12, 1, rows, &known[0], &literal[0], 128) != FLOWC_OVERLOAD_SELECT_AMBIGUOUS {
+        puts("FAIL: widening ambiguity")
+        return 3
+    }
+
+    # sole(u32): unknown actual type follows Python's sole-overload fallback.
+    let sole_u32: i32 = make_one_arg_fn(&arena, 32, 35)
+    flowc_overload_table_add(&table, 13, 17, 1, sole_u32)
+    known[0] = 0
+    literal[0] = 0
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 13, 17, 1, rows, &known[0], &literal[0], 128) != sole_u32 {
+        puts("FAIL: sole unknown fallback")
+        return 4
+    }
+
+    # many(u32), many(u64): unknown actual type must remain unresolved, not ambiguous.
+    let many_u32: i32 = make_one_arg_fn(&arena, 32, 35)
+    let many_u64: i32 = make_one_arg_fn(&arena, 36, 39)
+    flowc_overload_table_add(&table, 18, 22, 1, many_u32)
+    flowc_overload_table_add(&table, 18, 22, 1, many_u64)
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 18, 22, 1, rows, &known[0], &literal[0], 128) != FLOWC_OVERLOAD_SELECT_UNKNOWN {
+        puts("FAIL: unknown multi-candidate decision")
+        return 5
+    }
+
+    # Known incompatible type is a real no-match.
+    known[0] = 1
+    copy_row(rows, "string")
+    if flowc_overload_select_decl(table, arena, src as ptr<u8>, 18, 22, 1, rows, &known[0], &literal[0], 128) != FLOWC_OVERLOAD_SELECT_NO_MATCH {
+        puts("FAIL: known no-match decision")
+        return 6
+    }
+
+    free(rows)
+    flowc_overload_table_free(&table)
+    flowc_ast_free(arena)
+    puts("All native overload selector Flow port tests passed")
+    return 0
+}
