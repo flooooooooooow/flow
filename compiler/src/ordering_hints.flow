@@ -62,25 +62,37 @@ export function flowc_order_of_f64(values: ptr<f64>, len: i32) -> i32 {
     return FLOWC_ORDER_UNKNOWN
 }
 
+function flowc_min_i64(values: ptr<i64>, len: i32, index: i32, current: i64) -> i64 {
+    if index >= len {
+        return current
+    }
+    let value: i64 = values[index]
+    if value < current {
+        return flowc_min_i64(values, len, index + 1, value)
+    }
+    return flowc_min_i64(values, len, index + 1, current)
+}
+
+function flowc_max_i64(values: ptr<i64>, len: i32, index: i32, current: i64) -> i64 {
+    if index >= len {
+        return current
+    }
+    let value: i64 = values[index]
+    if value > current {
+        return flowc_max_i64(values, len, index + 1, value)
+    }
+    return flowc_max_i64(values, len, index + 1, current)
+}
+
 # Integer-literal key range used by _facts_from_literal.
 export function flowc_key_range_i64(values: ptr<i64>, len: i32) -> FlowcKeyRange {
     if len <= 0 {
         return FlowcKeyRange { valid: 0, lo: 0, hi: 0 }
     }
 
-    let mut lo: i64 = values[0]
-    let mut hi: i64 = values[0]
-    let mut i: i32 = 1
-    while i < len {
-        let value: i64 = values[i]
-        if value < lo {
-            lo = value
-        }
-        if value > hi {
-            hi = value
-        }
-        i = i + 1
-    }
+    let first: i64 = values[0]
+    let lo: i64 = flowc_min_i64(values, len, 1, first)
+    let hi: i64 = flowc_max_i64(values, len, 1, first)
     return FlowcKeyRange { valid: 1, lo: lo, hi: hi }
 }
 
