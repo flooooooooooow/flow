@@ -1,0 +1,159 @@
+# Tests for compiler/src/type_name.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/type_name.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function set_type_name(arena: ptr<AstArena>, id: i32, start: i32, end: i32) {
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+}
+
+function main() -> i32 {
+    let src: string = "i32 f32 string ptr array Option Result vec4 span"
+    let mut arena: AstArena = flowc_ast_new(32)
+    let buf: array<u8, 128>
+
+    let i32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, i32_ty, 0, 3)
+    if flowc_type_name_into(arena, src as ptr<u8>, i32_ty, &buf[0], 128) != 3 {
+        puts("FAIL: plain type length")
+        return 1
+    }
+    if strcmp(&buf[0], "i32" as ptr<u8>) != 0 {
+        puts("FAIL: plain type spelling")
+        return 2
+    }
+
+    let ptr_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, ptr_ty, 15, 18)
+    arena.nodes[ptr_ty].a = i32_ty
+    if flowc_type_name_into(arena, src as ptr<u8>, ptr_ty, &buf[0], 128) < 0 {
+        puts("FAIL: pointer normalize")
+        return 3
+    }
+    if strcmp(&buf[0], "ptr_i32" as ptr<u8>) != 0 {
+        puts("FAIL: pointer spelling")
+        return 4
+    }
+
+    let f32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, f32_ty, 4, 7)
+    let array_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, array_ty, 19, 24)
+    arena.nodes[array_ty].a = f32_ty
+    arena.nodes[array_ty].ival = 4
+    if flowc_type_name_into(arena, src as ptr<u8>, array_ty, &buf[0], 128) < 0 {
+        puts("FAIL: sized array normalize")
+        return 5
+    }
+    if strcmp(&buf[0], "array_4_f32" as ptr<u8>) != 0 {
+        puts("FAIL: sized array spelling")
+        return 6
+    }
+
+    arena.nodes[array_ty].ival = 0
+    if flowc_type_name_into(arena, src as ptr<u8>, array_ty, &buf[0], 128) < 0 {
+        puts("FAIL: unsized array normalize")
+        return 7
+    }
+    if strcmp(&buf[0], "array_f32" as ptr<u8>) != 0 {
+        puts("FAIL: unsized array spelling")
+        return 8
+    }
+    arena.nodes[array_ty].ival = 4
+
+    let option_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, option_arg, 0, 3)
+    let option_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, option_ty, 25, 31)
+    arena.nodes[option_ty].a = option_arg
+    if flowc_type_name_into(arena, src as ptr<u8>, option_ty, &buf[0], 128) < 0 {
+        puts("FAIL: generic normalize")
+        return 9
+    }
+    if strcmp(&buf[0], "Option_i32" as ptr<u8>) != 0 {
+        puts("FAIL: generic spelling")
+        return 10
+    }
+
+    let result_a: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, result_a, 0, 3)
+    let result_b: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, result_b, 8, 14)
+    arena.nodes[result_a].next = result_b
+    let result_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, result_ty, 32, 38)
+    arena.nodes[result_ty].a = result_a
+    if flowc_type_name_into(arena, src as ptr<u8>, result_ty, &buf[0], 128) < 0 {
+        puts("FAIL: multi-generic normalize")
+        return 11
+    }
+    if strcmp(&buf[0], "Result_i32_string" as ptr<u8>) != 0 {
+        puts("FAIL: multi-generic spelling")
+        return 12
+    }
+
+    let vec_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, vec_arg, 0, 3)
+    let vec_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, vec_ty, 39, 43)
+    arena.nodes[vec_ty].a = vec_arg
+    if flowc_type_name_into(arena, src as ptr<u8>, vec_ty, &buf[0], 128) < 0 {
+        puts("FAIL: vector normalize")
+        return 13
+    }
+    if strcmp(&buf[0], "vec4_i32" as ptr<u8>) != 0 {
+        puts("FAIL: vector spelling")
+        return 14
+    }
+
+    let nested_array: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, nested_array, 19, 24)
+    let nested_elem: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, nested_elem, 4, 7)
+    arena.nodes[nested_array].a = nested_elem
+    arena.nodes[nested_array].ival = 4
+    let nested_ptr: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, nested_ptr, 15, 18)
+    arena.nodes[nested_ptr].a = nested_array
+    if flowc_type_name_into(arena, src as ptr<u8>, nested_ptr, &buf[0], 128) < 0 {
+        puts("FAIL: nested normalize")
+        return 15
+    }
+    if strcmp(&buf[0], "ptr_array_4_f32" as ptr<u8>) != 0 {
+        puts("FAIL: nested spelling")
+        return 16
+    }
+
+    let span_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, span_arg, 0, 3)
+    let span_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, span_ty, 44, 48)
+    arena.nodes[span_ty].a = span_arg
+    if flowc_type_name_into(arena, src as ptr<u8>, span_ty, &buf[0], 128) != -1 {
+        puts("FAIL: span must stay unknown until mutability is preserved")
+        return 17
+    }
+
+    let fn_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_type_name(&arena, fn_ty, 0, 3)
+    arena.nodes[fn_ty].ival = -1
+    if flowc_type_name_into(arena, src as ptr<u8>, fn_ty, &buf[0], 128) != -1 {
+        puts("FAIL: function type should stay unknown")
+        return 18
+    }
+
+    if flowc_type_name_into(arena, src as ptr<u8>, result_ty, &buf[0], 8) != -1 {
+        puts("FAIL: capacity guard")
+        return 19
+    }
+
+    flowc_ast_free(arena)
+    puts("All canonical type-name Flow port tests passed")
+    return 0
+}
