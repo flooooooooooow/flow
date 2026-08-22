@@ -1,0 +1,138 @@
+# @module flowc.physics_dsl
+# @means  Deterministic lexical and layout primitives for the Physics DSL.
+#         The production AST expansion remains in src/flow/physics_dsl.py.
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+}
+
+const FLOWC_PHYSICS_LINE_OTHER: i32 = 0
+const FLOWC_PHYSICS_LINE_WORLD: i32 = 1
+const FLOWC_PHYSICS_LINE_ENTITY: i32 = 2
+const FLOWC_PHYSICS_LINE_CONST: i32 = 3
+const FLOWC_PHYSICS_LINE_RULE: i32 = 4
+const FLOWC_PHYSICS_LINE_CONSTRAINT: i32 = 5
+const FLOWC_PHYSICS_LINE_INTERACT: i32 = 6
+
+function physics_starts_with(value: string, prefix: ptr<u8>) -> i32 {
+    let vp: ptr<u8> = value as ptr<u8>
+    let value_len: i32 = strlen(vp) as i32
+    let prefix_len: i32 = strlen(prefix) as i32
+    if value_len < prefix_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < prefix_len {
+        if vp[i] != prefix[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function physics_skip_space(value: string) -> i32 {
+    let p: ptr<u8> = value as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] != 32 && p[i] != 9 {
+            return i
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function physics_starts_at(value: string, start: i32, prefix: ptr<u8>) -> i32 {
+    let p: ptr<u8> = value as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    let m: i32 = strlen(prefix) as i32
+    if start < 0 || start + m > n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < m {
+        if p[start + i] != prefix[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+export function flowc_physics_line_kind(line: string) -> i32 {
+    let start: i32 = physics_skip_space(line)
+    if physics_starts_at(line, start, "world " as ptr<u8>) == 1 {
+        return FLOWC_PHYSICS_LINE_WORLD
+    }
+    if physics_starts_at(line, start, "entity " as ptr<u8>) == 1 {
+        return FLOWC_PHYSICS_LINE_ENTITY
+    }
+    if physics_starts_at(line, start, "const " as ptr<u8>) == 1 {
+        return FLOWC_PHYSICS_LINE_CONST
+    }
+    if physics_starts_at(line, start, "rule " as ptr<u8>) == 1 {
+        return FLOWC_PHYSICS_LINE_RULE
+    }
+    if physics_starts_at(line, start, "constraint " as ptr<u8>) == 1 {
+        return FLOWC_PHYSICS_LINE_CONSTRAINT
+    }
+    if physics_starts_at(line, start, "interact " as ptr<u8>) == 1 {
+        return FLOWC_PHYSICS_LINE_INTERACT
+    }
+    return FLOWC_PHYSICS_LINE_OTHER
+}
+
+export function flowc_physics_is_vec2_type(type_name: string) -> i32 {
+    if strcmp(type_name as ptr<u8>, "Vec2" as ptr<u8>) == 0 {
+        return 1
+    }
+    return 0
+}
+
+# The current Python compiler reserves two f64 slots per declared entity field,
+# including scalar fields. Keep the exact shipped layout rule during the port.
+export function flowc_physics_entity_stride(field_count: i32) -> i32 {
+    if field_count < 0 {
+        return 0 - 1
+    }
+    return field_count * 2
+}
+
+export function flowc_physics_field_offset(field_index: i32) -> i32 {
+    if field_index < 0 {
+        return 0 - 1
+    }
+    return field_index * 2
+}
+
+# Validate the simplified field grammar used by parse_physics_dsl:
+# `name: type` or `name: type = default`.
+export function flowc_physics_field_syntax_valid(line: string) -> i32 {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    let mut colon: i32 = 0 - 1
+    let mut equal: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 58 && colon < 0 {
+            colon = i
+        }
+        if p[i] == 61 && equal < 0 {
+            equal = i
+        }
+        i = i + 1
+    }
+    if colon <= 0 {
+        return 0
+    }
+    if colon + 1 >= n {
+        return 0
+    }
+    if equal >= 0 && equal < colon {
+        return 0
+    }
+    return 1
+}
