@@ -46,8 +46,8 @@ function main() -> i32 {
     let mut literal: array<i32, 1> = [0]
 
     # foo(i32), foo(f32): deterministic ordinary compatibility.
-    let foo_i32: i32 = make_one_arg_fn(&arena, 24, 27)
-    let foo_f32: i32 = make_one_arg_fn(&arena, 28, 31)
+    let foo_i32: i32 = make_one_arg_fn(&arena, 23, 26)
+    let foo_f32: i32 = make_one_arg_fn(&arena, 27, 30)
     flowc_overload_table_add(&table, 0, 3, 1, foo_i32)
     flowc_overload_table_add(&table, 0, 3, 1, foo_f32)
     copy_row(rows, "i32")
@@ -57,7 +57,7 @@ function main() -> i32 {
     }
 
     # wide(u32): unsuffixed i32 literal resolves on the widening pass.
-    let wide_u32: i32 = make_one_arg_fn(&arena, 32, 35)
+    let wide_u32: i32 = make_one_arg_fn(&arena, 31, 34)
     flowc_overload_table_add(&table, 4, 8, 1, wide_u32)
     copy_row(rows, "i32")
     literal[0] = 1
@@ -67,8 +67,8 @@ function main() -> i32 {
     }
 
     # amb(u32), amb(u64): both match only after literal widening -> ambiguous.
-    let amb_u32: i32 = make_one_arg_fn(&arena, 32, 35)
-    let amb_u64: i32 = make_one_arg_fn(&arena, 36, 39)
+    let amb_u32: i32 = make_one_arg_fn(&arena, 31, 34)
+    let amb_u64: i32 = make_one_arg_fn(&arena, 35, 38)
     flowc_overload_table_add(&table, 9, 12, 1, amb_u32)
     flowc_overload_table_add(&table, 9, 12, 1, amb_u64)
     if flowc_overload_select_decl(table, arena, src as ptr<u8>, 9, 12, 1, rows, &known[0], &literal[0], 128) != FLOWC_OVERLOAD_SELECT_AMBIGUOUS {
@@ -77,7 +77,7 @@ function main() -> i32 {
     }
 
     # sole(u32): unknown actual type follows Python's sole-overload fallback.
-    let sole_u32: i32 = make_one_arg_fn(&arena, 32, 35)
+    let sole_u32: i32 = make_one_arg_fn(&arena, 31, 34)
     flowc_overload_table_add(&table, 13, 17, 1, sole_u32)
     known[0] = 0
     literal[0] = 0
@@ -87,8 +87,8 @@ function main() -> i32 {
     }
 
     # many(u32), many(u64): unknown actual type must remain unresolved, not ambiguous.
-    let many_u32: i32 = make_one_arg_fn(&arena, 32, 35)
-    let many_u64: i32 = make_one_arg_fn(&arena, 36, 39)
+    let many_u32: i32 = make_one_arg_fn(&arena, 31, 34)
+    let many_u64: i32 = make_one_arg_fn(&arena, 35, 38)
     flowc_overload_table_add(&table, 18, 22, 1, many_u32)
     flowc_overload_table_add(&table, 18, 22, 1, many_u64)
     if flowc_overload_select_decl(table, arena, src as ptr<u8>, 18, 22, 1, rows, &known[0], &literal[0], 128) != FLOWC_OVERLOAD_SELECT_UNKNOWN {
