@@ -1,0 +1,184 @@
+# @module flowc.overload_table
+# @means  Native multi-signature function table for Stage-A overload resolution.
+#         Names are source spans; each entry retains arity and the AST_FN node id.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+export struct FlowcOverloadTable {
+    src: ptr<u8>,
+    ns: ptr<i32>,
+    ne: ptr<i32>,
+    arity: ptr<i32>,
+    decl: ptr<i32>,
+    len: i32,
+    cap: i32,
+    err: i32
+}
+
+function overload_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while a0 + i < a1 {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+export function flowc_overload_table_init(src: ptr<u8>, cap: i32) -> FlowcOverloadTable {
+    if cap <= 0 {
+        return FlowcOverloadTable {
+            src: src,
+            ns: null,
+            ne: null,
+            arity: null,
+            decl: null,
+            len: 0,
+            cap: 0,
+            err: 1
+        }
+    }
+
+    let raw_ns: ptr<u8> = malloc((cap as i64) * 4)
+    let raw_ne: ptr<u8> = malloc((cap as i64) * 4)
+    let raw_arity: ptr<u8> = malloc((cap as i64) * 4)
+    let raw_decl: ptr<u8> = malloc((cap as i64) * 4)
+    if raw_ns == null || raw_ne == null || raw_arity == null || raw_decl == null {
+        if raw_ns != null { free(raw_ns) }
+        if raw_ne != null { free(raw_ne) }
+        if raw_arity != null { free(raw_arity) }
+        if raw_decl != null { free(raw_decl) }
+        return FlowcOverloadTable {
+            src: src,
+            ns: null,
+            ne: null,
+            arity: null,
+            decl: null,
+            len: 0,
+            cap: 0,
+            err: 1
+        }
+    }
+
+    return FlowcOverloadTable {
+        src: src,
+        ns: raw_ns as ptr<i32>,
+        ne: raw_ne as ptr<i32>,
+        arity: raw_arity as ptr<i32>,
+        decl: raw_decl as ptr<i32>,
+        len: 0,
+        cap: cap,
+        err: 0
+    }
+}
+
+export function flowc_overload_table_free(table: ptr<FlowcOverloadTable>) {
+    if table[0].ns != null { free(table[0].ns); table[0].ns = null }
+    if table[0].ne != null { free(table[0].ne); table[0].ne = null }
+    if table[0].arity != null { free(table[0].arity); table[0].arity = null }
+    if table[0].decl != null { free(table[0].decl); table[0].decl = null }
+    table[0].len = 0
+    table[0].cap = 0
+}
+
+# Append one local function signature. Same-name entries are intentionally kept:
+# the resolver must enumerate them rather than overwrite the previous binding.
+export function flowc_overload_table_add(
+    table: ptr<FlowcOverloadTable>,
+    name_start: i32,
+    name_end: i32,
+    arity: i32,
+    decl: i32
+) -> i32 {
+    if table[0].err != 0 {
+        return 0 - 1
+    }
+    if name_start < 0 || name_end <= name_start || arity < 0 || decl < 0 {
+        return 0 - 1
+    }
+    if table[0].len >= table[0].cap {
+        table[0].err = 1
+        return 0 - 1
+    }
+    let i: i32 = table[0].len
+    table[0].ns[i] = name_start
+    table[0].ne[i] = name_end
+    table[0].arity[i] = arity
+    table[0].decl[i] = decl
+    table[0].len = i + 1
+    return i
+}
+
+export function flowc_overload_table_count(
+    table: FlowcOverloadTable,
+    name_start: i32,
+    name_end: i32,
+    arity: i32
+) -> i32 {
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < table.len {
+        if table.arity[i] == arity {
+            if overload_span_eq(table.src, name_start, name_end, table.ns[i], table.ne[i]) == 1 {
+                count = count + 1
+            }
+        }
+        i = i + 1
+    }
+    return count
+}
+
+# Return the declaration id of the zero-based nth same-name/arity candidate,
+# or -1 when no such candidate exists.
+export function flowc_overload_table_nth_decl(
+    table: FlowcOverloadTable,
+    name_start: i32,
+    name_end: i32,
+    arity: i32,
+    nth: i32
+) -> i32 {
+    if nth < 0 {
+        return 0 - 1
+    }
+    let mut seen: i32 = 0
+    let mut i: i32 = 0
+    while i < table.len {
+        if table.arity[i] == arity {
+            if overload_span_eq(table.src, name_start, name_end, table.ns[i], table.ne[i]) == 1 {
+                if seen == nth {
+                    return table.decl[i]
+                }
+                seen = seen + 1
+            }
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Return 1 if the exact declaration id is already registered for this name,
+# otherwise 0. Signature identity itself remains the typechecker's params_eq job.
+export function flowc_overload_table_has_decl(
+    table: FlowcOverloadTable,
+    name_start: i32,
+    name_end: i32,
+    decl: i32
+) -> i32 {
+    let mut i: i32 = 0
+    while i < table.len {
+        if table.decl[i] == decl {
+            if overload_span_eq(table.src, name_start, name_end, table.ns[i], table.ne[i]) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
