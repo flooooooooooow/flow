@@ -101,7 +101,6 @@ the development driver.
 | `flow run <program.flow>` | Compiles through the Stable C path, executes the program, and propagates the program's exit status once execution begins. Compile/tool failures are nonzero. |
 | `flow run --backend=c <program.flow>` | Explicit spelling of the default Stable C execution path. |
 | `flow test` | Runs the selected Flow test operation and returns zero only when it succeeds. Development-only test flags are not automatically Stable. |
-| `flow fmt <files...>` | Formats Stable Flow source. Its deterministic/idempotent qualification is a final-1.0 requirement under #651. |
 
 Stable CLI automation may depend on command/argument meaning, produced build artefacts
 where documented, and the exit behaviour above. Human-readable diagnostics, colour,
@@ -112,11 +111,11 @@ migration/development control rather than a Stable 1.x API; Stable applications 
 invoke the ordinary commands without selecting a host.
 
 All other current commands and flags remain Experimental unless another stability entry
-promotes them. This includes MLIR/JIT/GPU and `--backend=mlir`; audio, graphics, shader,
-Vulkan and recording helpers; debugger/DAP/playground tooling; advanced
-`transpile`/`explain`/FIR commands; specialised `test-*` commands; Python/WASM
-generators; and package/registry/native-build commands such as `init`, `add`, `pkg`,
-`publish`, `build-native` and `run-native`.
+promotes them. This includes `flow fmt`; MLIR/JIT/GPU and `--backend=mlir`; audio,
+graphics, shader, Vulkan and recording helpers; debugger/DAP/playground tooling;
+advanced `transpile`/`explain`/FIR commands; specialised `test-*` commands;
+Python/WASM generators; and package/registry/native-build commands such as `init`,
+`add`, `pkg`, `publish`, `build-native` and `run-native`.
 
 Within 1.x, a Stable command will not be removed or incompatibly repurposed. A
 replacement is introduced additively and the old Stable spelling follows the
@@ -161,9 +160,11 @@ normal deprecation/major-version process.
 
 ## Formatter compatibility
 
-`flow fmt` must be deterministic and idempotent for the Stable 1.0 grammar.
-Formatting output itself is not a source ABI, but formatter changes must not alter
-program meaning and must preserve parse/format/parse equivalence.
+`flow fmt` remains Experimental in Flow 1.0. The current formatter does not yet
+round-trip the full Stable grammar, so it is deliberately outside the 1.x compatibility
+promise rather than being frozen prematurely. Promotion requires deterministic and
+idempotent formatting across the Stable corpus, parse/format/parse meaning preservation,
+and proof that formatting does not drop declarations or alter program semantics.
 
 ## Deprecation policy
 
