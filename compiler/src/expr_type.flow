@@ -13,9 +13,6 @@ extern {
 }
 
 function expr_type_copy_string(value: string, out: ptr<u8>, cap: i32) -> i32 {
-    if value == null {
-        return 0 - 1
-    }
     let n: i32 = strlen(value) as i32
     if cap <= 0 or n + 1 > cap {
         return 0 - 1
@@ -56,13 +53,15 @@ function expr_type_copy_span(
 # Return the normalized type name length written to `out`, or -1 when Stage-A
 # cannot infer the expression without broader semantic context.
 #
-# For AST_IDENT the caller supplies the already-known binding type name. This
-# keeps scope lookup in TcCtx rather than creating a second symbol table here.
+# For AST_IDENT the caller supplies the already-known binding type name plus an
+# explicit presence flag. Flow strings are not nullable, so absence must not be
+# represented with a ptr<void> `null` sentinel.
 export function flowc_expr_type_into(
     arena: AstArena,
     src: ptr<u8>,
     id: i32,
     known_ident_type: string,
+    has_known_ident_type: i32,
     out: ptr<u8>,
     cap: i32
 ) -> i32 {
@@ -84,7 +83,7 @@ export function flowc_expr_type_into(
         return expr_type_copy_string("string", out, cap)
     }
     if kind == AST_IDENT {
-        if known_ident_type == null {
+        if has_known_ident_type == 0 {
             return 0 - 1
         }
         if strlen(known_ident_type) == 0 {
