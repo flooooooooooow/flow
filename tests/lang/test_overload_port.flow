@@ -89,6 +89,57 @@ function main() -> i32 {
         return 19
     }
 
+    if flowc_overload_argument_match("i32" as string, "i32" as string, 0, 0) != 3 {
+        puts("FAIL: textual exact rank")
+        return 20
+    }
+    if flowc_overload_argument_match("f64" as string, "f32" as string, 0, 0) != 1 {
+        puts("FAIL: compatible rank")
+        return 21
+    }
+    if flowc_overload_argument_match("u32" as string, "i32" as string, 1, 0) != 0 {
+        puts("FAIL: widening must not happen in exact phase")
+        return 22
+    }
+    if flowc_overload_argument_match("u32" as string, "i32" as string, 1, 1) != 2 {
+        puts("FAIL: integer literal widening phase")
+        return 23
+    }
+    if flowc_overload_argument_match("u32" as string, "i32" as string, 0, 1) != 0 {
+        puts("FAIL: typed integer must not widen as literal")
+        return 24
+    }
+
+    if flowc_overload_match_count_decision(0) != 0 {
+        puts("FAIL: no-match decision")
+        return 25
+    }
+    if flowc_overload_match_count_decision(1) != 1 {
+        puts("FAIL: unique-match decision")
+        return 26
+    }
+    if flowc_overload_match_count_decision(2) != -1 {
+        puts("FAIL: ambiguity decision")
+        return 27
+    }
+
+    if flowc_overload_sole_fallback(2, 2, 1, 0) != 1 {
+        puts("FAIL: sole compatible overload fallback")
+        return 28
+    }
+    if flowc_overload_sole_fallback(2, 2, 0, 1) != 1 {
+        puts("FAIL: sole unknown-type fallback")
+        return 29
+    }
+    if flowc_overload_sole_fallback(2, 1, 1, 1) != 0 {
+        puts("FAIL: sole fallback must respect arity")
+        return 30
+    }
+    if flowc_overload_sole_fallback(2, 2, 0, 0) != 0 {
+        puts("FAIL: incompatible known args must not fallback")
+        return 31
+    }
+
     puts("All overload Flow port tests passed")
     return 0
 }
