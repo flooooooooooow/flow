@@ -1,0 +1,139 @@
+# @module flowc.expr_type
+# @means  Minimal deterministic expression type classification for Stage-A
+#         overload selection. Unknown or composite cases remain unknown rather
+#         than guessing a production type.
+
+import .ast {
+    AstArena, AST_NONE, AST_IDENT, AST_INT, AST_BOOL, AST_STRING, AST_FLOAT,
+    AST_CAST, AST_STRUCT_LIT, AST_TYPE
+}
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+function expr_type_copy_string(value: string, out: ptr<u8>, cap: i32) -> i32 {
+    let n: i32 = strlen(value) as i32
+    if cap <= 0 or n + 1 > cap {
+        return 0 - 1
+    }
+    let p: ptr<u8> = value
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = p[i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+function expr_type_copy_span(
+    src: ptr<u8>,
+    start: i32,
+    end: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if src == null or start < 0 or end <= start {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if cap <= 0 or n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+# Return the normalized type name length written to `out`, or -1 when Stage-A
+# cannot infer the expression without broader semantic context.
+#
+# For AST_IDENT the caller supplies the already-known binding type name plus an
+# explicit presence flag. Flow strings are not nullable, so absence must not be
+# represented with a ptr<void> `null` sentinel.
+export function flowc_expr_type_into(
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32,
+    known_ident_type: string,
+    has_known_ident_type: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena.len {
+        return 0 - 1
+    }
+
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_INT {
+        return expr_type_copy_string("i32", out, cap)
+    }
+    if kind == AST_FLOAT {
+        return expr_type_copy_string("f32", out, cap)
+    }
+    if kind == AST_BOOL {
+        return expr_type_copy_string("bool", out, cap)
+    }
+    if kind == AST_STRING {
+        return expr_type_copy_string("string", out, cap)
+    }
+    if kind == AST_IDENT {
+        if has_known_ident_type == 0 {
+            return 0 - 1
+        }
+        if strlen(known_ident_type) == 0 {
+            return 0 - 1
+        }
+        return expr_type_copy_string(known_ident_type, out, cap)
+    }
+    if kind == AST_STRUCT_LIT {
+        return expr_type_copy_span(
+            src,
+            arena.nodes[id].name_start,
+            arena.nodes[id].name_end,
+            out,
+            cap
+        )
+    }
+    if kind == AST_CAST {
+        let ty: i32 = arena.nodes[id].b
+        if ty == AST_NONE or ty < 0 or ty >= arena.len {
+            return 0 - 1
+        }
+        if arena.nodes[ty].kind != AST_TYPE {
+            return 0 - 1
+        }
+        # Composite ptr/array/reference forms use child metadata and need a
+        # dedicated AST_TYPE normalizer. Do not pretend the outer span alone
+        # is a complete overload type name.
+        if arena.nodes[ty].a != AST_NONE {
+            return 0 - 1
+        }
+        return expr_type_copy_span(
+            src,
+            arena.nodes[ty].name_start,
+            arena.nodes[ty].name_end,
+            out,
+            cap
+        )
+    }
+
+    return 0 - 1
+}
+
+# The Python resolver gives unsuffixed integer literals a second matching pass
+# across integer widths. Keep that syntactic fact separate from inferred i32.
+export function flowc_expr_is_unsuffixed_int_literal(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena.len {
+        return 0
+    }
+    if arena.nodes[id].kind == AST_INT {
+        return 1
+    }
+    return 0
+}
