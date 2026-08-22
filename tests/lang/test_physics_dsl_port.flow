@@ -1,0 +1,80 @@
+# Tests for compiler/src/physics_dsl.flow.
+
+import "compiler/src/physics_dsl.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    if flowc_physics_line_kind("world Particles {" as string) != 1 {
+        puts("FAIL: world line")
+        return 1
+    }
+    if flowc_physics_line_kind("    entity Particle {" as string) != 2 {
+        puts("FAIL: entity line")
+        return 2
+    }
+    if flowc_physics_line_kind("  const gravity = 9.8" as string) != 3 {
+        puts("FAIL: const line")
+        return 3
+    }
+    if flowc_physics_line_kind("rule \"gravity\":" as string) != 4 {
+        puts("FAIL: rule line")
+        return 4
+    }
+    if flowc_physics_line_kind("constraint \"floor\" when y > h:" as string) != 5 {
+        puts("FAIL: constraint line")
+        return 5
+    }
+    if flowc_physics_line_kind("interact \"collision\" between a, b when x:" as string) != 6 {
+        puts("FAIL: interaction line")
+        return 6
+    }
+    if flowc_physics_line_kind("velocity += gravity * dt" as string) != 0 {
+        puts("FAIL: ordinary body line")
+        return 7
+    }
+
+    if flowc_physics_is_vec2_type("Vec2" as string) != 1 {
+        puts("FAIL: Vec2 type")
+        return 8
+    }
+    if flowc_physics_is_vec2_type("f64" as string) != 0 {
+        puts("FAIL: scalar type")
+        return 9
+    }
+
+    if flowc_physics_entity_stride(3) != 6 {
+        puts("FAIL: entity stride")
+        return 10
+    }
+    if flowc_physics_field_offset(2) != 4 {
+        puts("FAIL: field offset")
+        return 11
+    }
+    if flowc_physics_entity_stride(-1) != -1 {
+        puts("FAIL: invalid field count")
+        return 12
+    }
+
+    if flowc_physics_field_syntax_valid("position: Vec2" as string) != 1 {
+        puts("FAIL: field without default")
+        return 13
+    }
+    if flowc_physics_field_syntax_valid("mass: f64 = 1.0" as string) != 1 {
+        puts("FAIL: field with default")
+        return 14
+    }
+    if flowc_physics_field_syntax_valid("mass = 1.0" as string) != 0 {
+        puts("FAIL: missing type separator")
+        return 15
+    }
+    if flowc_physics_field_syntax_valid(": f64" as string) != 0 {
+        puts("FAIL: missing field name")
+        return 16
+    }
+
+    puts("All physics DSL Flow port tests passed")
+    return 0
+}
