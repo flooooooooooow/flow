@@ -174,6 +174,24 @@ jobs:
             SHA256SUMS.txt
           fail_on_unmatched_files: true
 
+      - name: Sync Homebrew formula to the published tarball
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.name }}"
+          SHA="$(sha256sum "flow-${TAG}.tar.gz" | awk '{print $1}')"
+          git fetch origin main
+          git switch -C release-homebrew origin/main
+          python3 scripts/sync_version.py --homebrew --sha256 "$SHA"
+          if git diff --quiet -- packaging/homebrew/Formula/flow.rb; then
+            echo "Homebrew formula already matches $TAG"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- packaging/homebrew/Formula/flow.rb
+          git commit -m "packaging: point Homebrew at ${TAG}"
+          git push origin HEAD:main
+
       - name: Compute release summary
         id: summary
         run: |

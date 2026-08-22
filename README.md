@@ -35,18 +35,20 @@
   <a href="tests"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.tests&label=tests&color=2da44e" alt="Tests"></a>
 </p>
 
-Flow is a statically typed, compiled language with algebraic effects, autodiff in the stdlib, dynamics and control analysis, and native graphics. You write how a system evolves; that description is what runs.
+Flow is a statically typed, compiled systems language. Flow 1.0 freezes a deliberately small production core around the self-hosted `flowc` compiler and portable C backend; algebraic effects, dynamics/control DSLs, verification, advanced stdlib domains and alternate backends continue to ship as explicitly Experimental surfaces until they are promoted.
 
 | | |
 |--|--|
-| Version | 0.12.0 |
+| Version | 1.0.0 |
 | Install | `brew tap flooooooooooow/flow && brew install flow` |
 | License | [MIT](LICENSE) |
 | Cite | [CITATION.cff](CITATION.cff) |
 
+Flow 1.0's compatibility promise is defined in [STABILITY.md](STABILITY.md). Linux x86-64 and macOS arm64 are the initial Tier-1 platforms; every published `v1.*` release is qualified from the exact tag before GitHub Release publication.
+
 ## Quickstart
 
-The full-language quickstart uses the Python host explicitly so the first copy-paste example works exactly as shown.
+The default production path is the self-hosted `flowc` compiler targeting portable C.
 
 ```flow
 function main() -> i32 {
@@ -56,7 +58,7 @@ function main() -> i32 {
 ```
 
 ```bash
-FLOW_HOST=python flow run hello.flow
+flow run hello.flow
 ```
 
 [Full quickstart](docs/getting-started.md) covers variables, functions, structs, loops, and a complete `flow` evolution model.
@@ -92,10 +94,9 @@ Full thesis: [VISION.md](VISION.md). Vision mapped onto grammar: [docs/vision/no
 
 ## What you get
 
-- Dynamical systems, controllers, and simulations in one language ([VISION](VISION.md)).
-- Algebraic effects so you can swap I/O and other handlers without rewriting call sites.
-- Forward and reverse autodiff helpers in the stdlib; ML demos train on CPU in seconds.
-- C backend by default (no LLVM required). MLIR, WASM, and Metal when you need them.
+- A Stable systems-language core with a self-hosted `flowc` compiler and portable C backend.
+- Dynamical systems, controllers, algebraic effects, autodiff, graphics and domain libraries available as shipped Experimental surfaces with explicit promotion boundaries.
+- C backend by default with no LLVM requirement; MLIR/JIT, CUDA and other specialised targets remain Experimental in 1.0.
 - Games, morphogenesis, neurodynamics, and real-time DSP as ordinary examples under `examples/`.
 
 ---
@@ -121,7 +122,7 @@ cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-Needs Python 3.9+ and Clang or GCC (Xcode Command Line Tools on macOS).
+The production compiler path requires a conforming C11 toolchain. Python 3.9+ is retained for the reference/bootstrap compiler and development tooling, not as the canonical 1.0 execution host.
 
 Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
