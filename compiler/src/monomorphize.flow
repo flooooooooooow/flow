@@ -1,0 +1,179 @@
+# @module flowc.monomorphize
+# @means  Deterministic naming and request-policy primitives for generic
+#         monomorphization. AST discovery/substitution remains on the host.
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+}
+
+const FLOWC_MONO_MAX_DEPTH: i32 = 64
+
+function mono_copy(src: string, dst: ptr<u8>, cap: i32) -> i32 {
+    let p: ptr<u8> = src as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = p[i]
+        i = i + 1
+    }
+    dst[n] = 0
+    return n
+}
+
+function mono_append(src: string, dst: ptr<u8>, offset: i32, cap: i32) -> i32 {
+    let p: ptr<u8> = src as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    if offset < 0 || offset + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        dst[offset + i] = p[i]
+        i = i + 1
+    }
+    dst[offset + n] = 0
+    return offset + n
+}
+
+# Build the common specialization form used for plain named type arguments:
+# `identity` + `i32` -> `identity_i32`.
+export function flowc_mono_mangle_one(
+    name: string,
+    type_arg: string,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    let n: i32 = mono_copy(name, out, out_cap)
+    if n < 0 {
+        return 0 - 1
+    }
+    if n + 2 > out_cap {
+        return 0 - 1
+    }
+    out[n] = 95
+    out[n + 1] = 0
+    return mono_append(type_arg, out, n + 1, out_cap)
+}
+
+# Build the two-argument specialization form: `Pair_i32_f32`.
+export function flowc_mono_mangle_two(
+    name: string,
+    first: string,
+    second: string,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    let n: i32 = flowc_mono_mangle_one(name, first, out, out_cap)
+    if n < 0 {
+        return 0 - 1
+    }
+    if n + 2 > out_cap {
+        return 0 - 1
+    }
+    out[n] = 95
+    out[n + 1] = 0
+    return mono_append(second, out, n + 1, out_cap)
+}
+
+# Plain named types use their short names. Compound types use the same
+# unambiguous prefix vocabulary as MonomorphRequest._type_to_str.
+# The caller supplies already-mangled nested element/type-argument text.
+export function flowc_mono_encode_type(
+    name: string,
+    is_pointer: i32,
+    is_reference: i32,
+    is_capability: i32,
+    size: i32,
+    has_size: i32,
+    nested_suffix: string,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    let nested_len: i32 = strlen(nested_suffix as ptr<u8>) as i32
+    if is_pointer == 0 && is_reference == 0 && is_capability == 0 && has_size == 0 && nested_len == 0 {
+        return mono_copy(name, out, out_cap)
+    }
+
+    let mut o: i32 = 0
+    if is_pointer == 1 {
+        if o + 3 > out_cap { return 0 - 1 }
+        out[o] = 80
+        out[o + 1] = 95
+        out[o + 2] = 95
+        o = o + 3
+    }
+    if is_reference == 1 {
+        if o + 3 > out_cap { return 0 - 1 }
+        out[o] = 82
+        out[o + 1] = 95
+        out[o + 2] = 95
+        o = o + 3
+    }
+    if is_capability == 1 {
+        if o + 3 > out_cap { return 0 - 1 }
+        out[o] = 67
+        out[o + 1] = 95
+        out[o + 2] = 95
+        o = o + 3
+    }
+
+    # Stage-A has no integer-to-decimal string formatter in this module yet;
+    # expose the stable compound prefix and let the AST adapter append numeric
+    # lengths/size and recursively encoded suffixes when it is ported.
+    if o + 2 > out_cap {
+        return 0 - 1
+    }
+    out[o] = 78
+    out[o + 1] = 0
+    o = o + 1
+    o = mono_append(name, out, o, out_cap)
+    if o < 0 {
+        return 0 - 1
+    }
+    if has_size == 1 {
+        if o + 4 > out_cap { return 0 - 1 }
+        out[o] = 95
+        out[o + 1] = 95
+        out[o + 2] = 83
+        out[o + 3] = 0
+        o = o + 3
+    }
+    if nested_len > 0 {
+        if o + 3 > out_cap { return 0 - 1 }
+        out[o] = 95
+        out[o + 1] = 95
+        out[o + 2] = 0
+        o = o + 2
+        o = mono_append(nested_suffix, out, o, out_cap)
+    }
+    return o
+}
+
+export function flowc_mono_depth_allowed(depth: i32) -> i32 {
+    if depth < 0 {
+        return 0
+    }
+    if depth >= FLOWC_MONO_MAX_DEPTH {
+        return 0
+    }
+    return 1
+}
+
+# A specialization colliding with a concrete declaration is resolved by the
+# concrete declaration instead of synthesized, matching the Python pass.
+export function flowc_mono_should_generate(
+    already_generated: i32,
+    collides_with_concrete: i32,
+    depth: i32
+) -> i32 {
+    if already_generated == 1 {
+        return 0
+    }
+    if collides_with_concrete == 1 {
+        return 0
+    }
+    return flowc_mono_depth_allowed(depth)
+}
