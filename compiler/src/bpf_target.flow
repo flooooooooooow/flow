@@ -1,0 +1,104 @@
+# @module flowc.bpf_target
+# @means  Pure eBPF target contract and verifier-oriented checks.
+#         Port of the deterministic parts of src/flow/bpf_target.py.
+#
+# Toolchain execution remains in Python: invoking Flow -> LLVM, clang object
+# emission, filesystem handling, and temporary directories are host concerns.
+
+extern {
+    function strstr(haystack: ptr<u8>, needle: ptr<u8>) -> ptr<u8>
+}
+
+export const FLOWC_BPF_POINTER_BITS: i32 = 64
+export const FLOWC_BPF_MAX_STACK_BYTES: i32 = 512
+
+# Public target-name aliases accepted by src/flow/bpf_target.py.
+export function flowc_bpf_target_name_valid(name: string) -> i32 {
+    let p: ptr<u8> = name as ptr<u8>
+    if flowc_bpf_streq(p, "bpf" as ptr<u8>) == 1 {
+        return 1
+    }
+    if flowc_bpf_streq(p, "bpfel" as ptr<u8>) == 1 {
+        return 1
+    }
+    if flowc_bpf_streq(p, "ebpf" as ptr<u8>) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_bpf_streq(a: ptr<u8>, b: ptr<u8>) -> i32 {
+    let mut i: i32 = 0
+    while true {
+        let ca: u8 = a[i]
+        let cb: u8 = b[i]
+        if ca != cb {
+            return 0
+        }
+        if ca == 0 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function flowc_bpf_contains(text: string, needle: ptr<u8>) -> i32 {
+    let found: ptr<u8> = strstr(text as ptr<u8>, needle)
+    if found == null {
+        return 0
+    }
+    return 1
+}
+
+# Userspace/runtime symbols forbidden by the Python BPF target contract.
+export function flowc_bpf_has_forbidden_external(llvm_ir: string) -> i32 {
+    if flowc_bpf_contains(llvm_ir, "malloc" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "calloc" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "realloc" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "free" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "operator new" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "_Znwm" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "_Znam" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "__cxa_throw" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "__cxa_allocate_exception" as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, "_Unwind_" as ptr<u8>) == 1 { return 1 }
+    return 0
+}
+
+# Exception/unwind IR constructs rejected before object emission.
+export function flowc_bpf_has_forbidden_ir_op(llvm_ir: string) -> i32 {
+    if flowc_bpf_contains(llvm_ir, " invoke " as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, " landingpad " as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, " resume " as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, " catchswitch " as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, " catchpad " as ptr<u8>) == 1 { return 1 }
+    if flowc_bpf_contains(llvm_ir, " cleanuppad " as ptr<u8>) == 1 { return 1 }
+    return 0
+}
+
+# Equivalent to the non-regex part of validate_bpf_llvm_ir().
+# Returns 0 when valid, 1 for a forbidden IR op, 2 for a forbidden runtime.
+export function flowc_bpf_validate_ir_core(llvm_ir: string) -> i32 {
+    if flowc_bpf_has_forbidden_ir_op(llvm_ir) == 1 {
+        return 1
+    }
+    if flowc_bpf_has_forbidden_external(llvm_ir) == 1 {
+        return 2
+    }
+    return 0
+}
+
+# Candidate symbol order used by BPFProgram.candidate_symbols:
+# the C-backend alias is preferred when present, otherwise the plain entry.
+# This helper reports which form should win from already-detected presence.
+# 2 = flow_export_<entry>, 1 = plain entry, 0 = missing.
+export function flowc_bpf_choose_entry_symbol(has_export_alias: i32, has_plain: i32) -> i32 {
+    if has_export_alias == 1 {
+        return 2
+    }
+    if has_plain == 1 {
+        return 1
+    }
+    return 0
+}

@@ -1,0 +1,76 @@
+# Test for compiler/src/bpf_target.flow.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_bpf_target_port.flow
+
+import "compiler/src/bpf_target.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    if FLOWC_BPF_POINTER_BITS != 64 {
+        puts("FAIL: BPF pointer width")
+        return 1
+    }
+    if FLOWC_BPF_MAX_STACK_BYTES != 512 {
+        puts("FAIL: BPF stack bound")
+        return 2
+    }
+
+    if flowc_bpf_target_name_valid("bpf" as string) != 1 {
+        puts("FAIL: bpf alias")
+        return 3
+    }
+    if flowc_bpf_target_name_valid("bpfel" as string) != 1 {
+        puts("FAIL: bpfel alias")
+        return 4
+    }
+    if flowc_bpf_target_name_valid("ebpf" as string) != 1 {
+        puts("FAIL: ebpf alias")
+        return 5
+    }
+    if flowc_bpf_target_name_valid("bpfeb" as string) != 0 {
+        puts("FAIL: invalid target accepted")
+        return 6
+    }
+
+    let clean: string = "define i32 @packet(ptr %ctx) { ret i32 0 }"
+    if flowc_bpf_validate_ir_core(clean) != 0 {
+        puts("FAIL: clean IR rejected")
+        return 7
+    }
+
+    let heap: string = " declare ptr @malloc(i64) "
+    if flowc_bpf_validate_ir_core(heap) != 2 {
+        puts("FAIL: malloc dependency not rejected")
+        return 8
+    }
+
+    let unwind: string = " %x = invoke i32 @foo() to label %ok unwind label %bad "
+    if flowc_bpf_validate_ir_core(unwind) != 1 {
+        puts("FAIL: invoke not rejected")
+        return 9
+    }
+
+    let exception: string = " call ptr @__cxa_allocate_exception(i64 8) "
+    if flowc_bpf_has_forbidden_external(exception) != 1 {
+        puts("FAIL: C++ exception runtime not rejected")
+        return 10
+    }
+
+    if flowc_bpf_choose_entry_symbol(1, 1) != 2 {
+        puts("FAIL: export alias should win")
+        return 11
+    }
+    if flowc_bpf_choose_entry_symbol(0, 1) != 1 {
+        puts("FAIL: plain symbol fallback")
+        return 12
+    }
+    if flowc_bpf_choose_entry_symbol(0, 0) != 0 {
+        puts("FAIL: missing symbol selection")
+        return 13
+    }
+
+    puts("All bpf_target Flow-port tests passed")
+    return 0
+}
