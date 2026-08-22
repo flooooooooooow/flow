@@ -4,6 +4,29 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+## [1.0.0] - 2026-08-22
+
+Flow 1.0 establishes the first explicit compatibility contract for the language rather than freezing every feature currently present in the repository.
+
+### Stable 1.0 core
+
+- The self-hosted `flowc` compiler is the canonical production host for Stable Flow; the Python implementation remains a reference/bootstrap oracle.
+- The portable C backend is the Stable production target for the declared Stable language core.
+- Linux x86-64 and macOS arm64 are the initial Tier-1 platforms. Their compiler/package/install path is continuously qualified and release publication repeats qualification on the exact tag.
+- Stable CLI and manifest behavior is defined in `STABILITY.md`; runtime ABI version `1` records the deliberately narrow C/FFI-visible binary-compatibility boundary.
+- The permanent conformance corpus compares observable behavior between the Python reference path and self-hosted `flowc`.
+
+### Explicitly Experimental
+
+Algebraic effects, dynamics/`dsys`, verification syntax, advanced/partial language forms, specialised standard-library domains, MLIR/JIT, CUDA and other non-C targets continue to ship for real use but are outside the 1.x compatibility promise until separately promoted. Multi-shot continuation semantics remain Reserved/Future.
+
+### Release engineering and documentation
+
+- `v1.*` publication is blocked until the exact tag passes stability completeness, strict documentation verification, Stable conformance, strict corpus checks, bootstrap/self-host qualification, Tier-1 package rebuild/use and bounded release fuzzing.
+- Official documentation now has zero ordinary `flow` debt: every executable Flow fence is compiler-verified, every deliberate rejection is an `expect-error` test, and illustrative/incomplete notation is explicitly marked `flow-pseudocode` rather than hidden behind `ignore=`.
+- The C toolchain floor is capability-based and exercised as a strict C11 contract instead of being tied to an arbitrary Clang/GCC version number.
+- The 1.x security-support lifecycle, coordinated-disclosure policy and release trust-boundary regression checks are documented and enforced.
+
 ## [0.12.0] - 2026-08-19
 
 Range algebra is the new language feature. The rest of this release is seven
