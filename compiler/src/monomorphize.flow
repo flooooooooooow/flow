@@ -1,7 +1,6 @@
 # @module flowc.monomorphize
-# @means  Deterministic plain-type naming and request-policy primitives for
-#         generic monomorphization. Compound type encoding, AST discovery and
-#         substitution remain on the host until they can be ported byte-exactly.
+# @means  Deterministic naming and request-policy primitives for generic
+#         monomorphization. AST discovery and substitution remain on the host.
 
 extern {
     function strlen(s: ptr<u8>) -> i64
@@ -37,6 +36,50 @@ function mono_append(src: string, dst: ptr<u8>, offset: i32, cap: i32) -> i32 {
     }
     dst[offset + n] = 0
     return offset + n
+}
+
+function mono_append_decimal(value: i32, dst: ptr<u8>, offset: i32, cap: i32) -> i32 {
+    if value < 0 || offset < 0 {
+        return 0 - 1
+    }
+    let mut divisor: i32 = 1
+    while value / divisor >= 10 {
+        divisor = divisor * 10
+    }
+    let mut o: i32 = offset
+    let mut d: i32 = divisor
+    while d > 0 {
+        if o + 2 > cap {
+            return 0 - 1
+        }
+        let digit: i32 = (value / d) % 10
+        dst[o] = (48 + digit) as u8
+        o = o + 1
+        d = d / 10
+    }
+    dst[o] = 0
+    return o
+}
+
+function mono_append_separator(dst: ptr<u8>, offset: i32, cap: i32) -> i32 {
+    if offset == 0 {
+        return 0
+    }
+    if offset < 0 || offset + 3 > cap {
+        return 0 - 1
+    }
+    dst[offset] = 95
+    dst[offset + 1] = 95
+    dst[offset + 2] = 0
+    return offset + 2
+}
+
+function mono_append_part(part: string, dst: ptr<u8>, offset: i32, cap: i32) -> i32 {
+    let o: i32 = mono_append_separator(dst, offset, cap)
+    if o < 0 {
+        return 0 - 1
+    }
+    return mono_append(part, dst, o, cap)
 }
 
 # Build the common specialization form used for plain named type arguments:
@@ -77,6 +120,92 @@ export function flowc_mono_mangle_two(
     out[n] = 95
     out[n + 1] = 0
     return mono_append(second, out, n + 1, out_cap)
+}
+
+# Byte-exact compound Type encoding used by Python MonomorphRequest._type_to_str.
+# Nested element/type-argument strings are supplied already encoded, allowing
+# recursive callers to build from the leaves without duplicating Type objects.
+# `type_args_joined` must join encoded arguments with a single underscore.
+export function flowc_mono_encode_compound(
+    name: string,
+    is_pointer: i32,
+    is_reference: i32,
+    is_capability: i32,
+    has_size: i32,
+    size: i32,
+    has_element: i32,
+    element_encoded: string,
+    type_arg_count: i32,
+    type_args_joined: string,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    if out_cap <= 0 || type_arg_count < 0 {
+        return 0 - 1
+    }
+    if has_size == 1 && size < 0 {
+        return 0 - 1
+    }
+    out[0] = 0
+    let mut o: i32 = 0
+
+    if is_pointer == 1 {
+        o = mono_append_part("P", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+    }
+    if is_reference == 1 {
+        o = mono_append_part("R", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+    }
+    if is_capability == 1 {
+        o = mono_append_part("C", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+    }
+
+    o = mono_append_separator(out, o, out_cap)
+    if o < 0 { return 0 - 1 }
+    o = mono_append("N", out, o, out_cap)
+    if o < 0 { return 0 - 1 }
+    let name_len: i32 = strlen(name as ptr<u8>) as i32
+    o = mono_append_decimal(name_len, out, o, out_cap)
+    if o < 0 { return 0 - 1 }
+    o = mono_append("_", out, o, out_cap)
+    if o < 0 { return 0 - 1 }
+    o = mono_append(name, out, o, out_cap)
+    if o < 0 { return 0 - 1 }
+
+    if has_size == 1 {
+        o = mono_append_separator(out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append("S", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append_decimal(size, out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+    }
+
+    if has_element == 1 {
+        o = mono_append_separator(out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append("E", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append(element_encoded, out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+    }
+
+    if type_arg_count > 0 {
+        o = mono_append_separator(out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append("T", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append_decimal(type_arg_count, out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append("_", out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+        o = mono_append(type_args_joined, out, o, out_cap)
+        if o < 0 { return 0 - 1 }
+    }
+
+    return o
 }
 
 export function flowc_mono_depth_allowed(depth: i32) -> i32 {
