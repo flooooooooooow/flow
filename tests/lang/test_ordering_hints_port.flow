@@ -8,37 +8,37 @@ extern {
 }
 
 function main() -> i32 {
-    let asc: [4]f64 = [1.0, 2.0, 3.0, 4.0]
+    let asc: array<f64, 4> = [1.0, 2.0, 3.0, 4.0]
     if flowc_order_of_f64(&asc[0], 4) != FLOWC_ORDER_ASC_STRICT {
         puts("FAIL: strict ascending")
         return 1
     }
 
-    let asc_eq: [4]f64 = [1.0, 2.0, 2.0, 4.0]
+    let asc_eq: array<f64, 4> = [1.0, 2.0, 2.0, 4.0]
     if flowc_order_of_f64(&asc_eq[0], 4) != FLOWC_ORDER_ASC {
         puts("FAIL: ascending with equality")
         return 2
     }
 
-    let desc: [4]f64 = [4.0, 3.0, 2.0, 1.0]
+    let desc: array<f64, 4> = [4.0, 3.0, 2.0, 1.0]
     if flowc_order_of_f64(&desc[0], 4) != FLOWC_ORDER_DESC_STRICT {
         puts("FAIL: strict descending")
         return 3
     }
 
-    let desc_eq: [4]f64 = [4.0, 3.0, 3.0, 1.0]
+    let desc_eq: array<f64, 4> = [4.0, 3.0, 3.0, 1.0]
     if flowc_order_of_f64(&desc_eq[0], 4) != FLOWC_ORDER_DESC {
         puts("FAIL: descending with equality")
         return 4
     }
 
-    let mixed: [4]f64 = [1.0, 3.0, 2.0, 4.0]
+    let mixed: array<f64, 4> = [1.0, 3.0, 2.0, 4.0]
     if flowc_order_of_f64(&mixed[0], 4) != FLOWC_ORDER_UNKNOWN {
         puts("FAIL: mixed order")
         return 5
     }
 
-    let ints: [5]i64 = [9, -3, 17, 4, 2]
+    let ints: array<i64, 5> = [9, -3, 17, 4, 2]
     let range: FlowcKeyRange = flowc_key_range_i64(&ints[0], 5)
     if range.valid != 1 || range.lo != -3 || range.hi != 17 {
         puts("FAIL: key range")
