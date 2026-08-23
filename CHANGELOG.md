@@ -12,7 +12,7 @@ That history covers the project from the initial `0.1.0` implementation through 
 
 ## Release history
 
-| Version | Date | Headline |
+| Version | Recorded date | Headline |
 |---|---|---|
 | 1.0.0 | 2026-08-22 | First explicit Stable 1.x compatibility contract; self-hosted `flowc` + portable C Stable core; exact-tag qualification |
 | 0.12.0 | 2026-08-19 | Range algebra and correctness fixes found by executable-documentation verification |
@@ -21,14 +21,15 @@ That history covers the project from the initial `0.1.0` implementation through 
 | 0.10.0 | 2026-08-08 | MLIR/WASM expansion, three-generation self-hosting and broader runtime/stdlib work |
 | 0.9.0 | 2026-08-05 | Concurrency/runtime consolidation, registry and deeper self-hosting |
 | 0.8.0 | 2026-08-05 | Official public-language release and repository/release infrastructure |
+| 0.7.0 | 2026-02-09 | Security and quality audit/hardening release |
 | 0.6.0 | 2026-01-08 | Import/export system and multi-backend GPU integration |
 | 0.5.0 | 2026-01-08 | Documentation/project overhaul, type-system and graphics foundations |
-| 0.4.0 | historical | MLIR optimisation pipeline |
-| 0.3.0 | historical | DWARF, loop-carried SSA and LSP/VS Code support |
-| 0.2.0 | historical | Strings/I/O, arrays, pointers, loops and parallel constructs |
+| 0.4.0 | 2025-01-05* | MLIR optimisation pipeline |
+| 0.3.0 | 2025-01-05* | DWARF, loop-carried SSA and LSP/VS Code support |
+| 0.2.0 | 2025-01-05* | Strings/I/O, arrays, pointers, loops and parallel constructs |
 | 0.1.0 | 2026-01-05 | Initial Flow language implementation |
 
-The historical changelog preserves the dates recorded by the project at the time. Some early `0.x` entries predate the formal release process and contain legacy date/version metadata; they are retained as project history rather than silently rewritten.
+`*` The early changelog contains legacy chronology metadata that predates the formal public release process. Those recorded dates are preserved rather than silently rewritten. The detailed changelog also contains an older duplicate `0.2.0` historical section from the project's pre-release documentation era; it is retained as provenance rather than presented here as a second release.
 
 ## Changelog policy
 
