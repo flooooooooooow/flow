@@ -39,7 +39,7 @@ Flow is a statically typed, compiled systems language. Flow 1.0 freezes a delibe
 
 | | |
 |--|--|
-| Version | 1.0.0 |
+| Version | 1.0.1 |
 | Install | `brew tap flooooooooooow/flow && brew install flow` |
 | License | [MIT](LICENSE) |
 | Cite | [CITATION.cff](CITATION.cff) |
