@@ -16,7 +16,8 @@ from .parser import (
     MatchStatement, StructPattern, ListPattern, ConstDecl, StaticDecl, LayoutStatement, CastExpression, TypeAliasDecl, DistinctTypeDecl,
     ExpectStatement, RecordUpdate,
     BreakStatement, ContinueStatement, DeferStatement,
-    EnumDecl, Parameter, Lambda,
+    EnumDecl, Parameter, Lambda, SliceExpr,
+    is_span_type_name, span_is_mutable, span_element_name, make_span_type,
 )
 
 from .mlir_canonicalize import canonicalize_counted_loops, find_trivial_accessors
@@ -1666,6 +1667,29 @@ class MLIRGenerator:
                 if isinstance(access.index, Variable) and access.index.name in self.symbol_table:
                     index_type = self.symbol_table[access.index.name].get('mlir_type', index_type)
 
+                array_flow = self._flow_type_of_expr(access.array)
+                if self._is_span_flow_type(array_flow):
+                    span_ty = self._span_mlir_type()
+                    data_ptr = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(
+                        f"{self.indent()}{data_ptr} = llvm.extractvalue {array_ssa}[0] : {span_ty}"
+                    )
+                    elem_flow = self._span_element_flow_type(array_flow)
+                    elem_type = self.flow_type_to_mlir(elem_flow)
+                    val_type = self._ssa_types.get(value_ssa) or self.get_expression_type(assignment.value)
+                    if val_type != elem_type:
+                        value_ssa, cast_ops = self._emit_cast(value_ssa, val_type, elem_type)
+                        ops.extend(cast_ops)
+                    gep, gep_ops = self._emit_ptr_index_gep(
+                        data_ptr, index_ssa, index_type, elem_type
+                    )
+                    ops.extend(gep_ops)
+                    ops.append(
+                        f"{self.indent()}llvm.store {value_ssa}, {gep} : {elem_type}, !llvm.ptr"
+                    )
+                    return "\n".join(ops)
+
                 # Match generate_array_access: !llvm.array globals/locals need
                 # gep[0, i], not flat ptr indexing (array<ptr>/array<string>).
                 llvm_array_ty = self._llvm_array_type_for(access.array, array_ssa)
@@ -3230,6 +3254,26 @@ class MLIRGenerator:
 
     def _generate_scf_match(self, match_stmt: 'MatchStatement') -> str:
         """Generate match using control flow (cf) dialect for maximum flexibility."""
+        # An or-pattern is semantically a sequence of equivalent match arms.
+        # Expand it here so every alternative goes through the same literal,
+        # struct, list, enum and binding lowering as a standalone pattern.
+        # The parser already guarantees compatible bindings across alternatives.
+        if any(type(case.pattern).__name__ == "OrPattern" for case in match_stmt.cases):
+            import copy
+
+            expanded_cases = []
+            for case in match_stmt.cases:
+                if type(case.pattern).__name__ == "OrPattern":
+                    for pattern in case.pattern.patterns:
+                        expanded = copy.copy(case)
+                        expanded.pattern = pattern
+                        expanded_cases.append(expanded)
+                else:
+                    expanded_cases.append(case)
+
+            match_stmt = copy.copy(match_stmt)
+            match_stmt.cases = expanded_cases
+
         mlir_code = []
         val_ssa, val_ops = self.generate_expression(match_stmt.value)
         mlir_code.extend(val_ops)
@@ -3565,6 +3609,8 @@ class MLIRGenerator:
             if target_is_unsigned:
                 self._ssa_unsigned.add(cast_ssa)
             return cast_ssa, value_ops + cast_ops
+        elif isinstance(expr, SliceExpr):
+            return self.generate_slice_expr(expr)
         elif isinstance(expr, ArrayAccess):
             return self.generate_array_access(expr)
         elif isinstance(expr, FieldAccess):
@@ -4417,6 +4463,17 @@ class MLIRGenerator:
                     var_info["ssa_name"] = obj_ssa
                 self._ssa_types[obj_ssa] = obj_mlir
 
+        object_flow = self._flow_type_of_expr(field_access.object)
+        if self._is_span_flow_type(object_flow) and field_access.field == "len":
+            span_ty = self._span_mlir_type()
+            length = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{length} = llvm.extractvalue {obj_ssa}[1] : {span_ty}"
+            )
+            self._ssa_types[length] = "i64"
+            return length, ops
+
         # Try to determine the field type by walking the struct hierarchy
         field_type = self._determine_field_type(field_access)
         
@@ -4792,6 +4849,137 @@ class MLIRGenerator:
             getattr(flow_type, 'is_pointer', False) or flow_type.name.startswith('ptr_')
         )
 
+    @staticmethod
+    def _is_span_flow_type(flow_type: Optional[Type]) -> bool:
+        return bool(
+            flow_type is not None
+            and is_span_type_name(getattr(flow_type, "name", ""))
+        )
+
+    def _span_element_flow_type(self, flow_type: Type) -> Type:
+        elem = getattr(flow_type, "element_type", None)
+        if elem is not None:
+            return elem
+        return Type(span_element_name(flow_type.name))
+
+    @staticmethod
+    def _span_mlir_type() -> str:
+        return "!llvm.struct<(!llvm.ptr, i64)>"
+
+    def _build_span_value(
+        self, data_ptr: str, length_ssa: str, ops: List[str]
+    ) -> tuple[str, List[str]]:
+        span_ty = self._span_mlir_type()
+        agg = f"%{self.function_counter}"
+        self.function_counter += 1
+        with_ptr = f"%{self.function_counter}"
+        self.function_counter += 1
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{agg} = llvm.mlir.undef : {span_ty}")
+        ops.append(
+            f"{self.indent()}{with_ptr} = llvm.insertvalue {data_ptr}, {agg}[0] : {span_ty}"
+        )
+        ops.append(
+            f"{self.indent()}{result} = llvm.insertvalue {length_ssa}, {with_ptr}[1] : {span_ty}"
+        )
+        self._ssa_types[result] = span_ty
+        return result, ops
+
+    def _generate_span_borrow(
+        self, expr: Expression, target_type: Optional[Type] = None
+    ) -> tuple[str, List[str]]:
+        if isinstance(expr, SliceExpr):
+            return self.generate_slice_expr(expr)
+
+        source_flow = self._flow_type_of_expr(expr)
+        value_ssa, ops = self.generate_expression(expr)
+        ops = list(ops)
+        if self._is_span_flow_type(source_flow):
+            return value_ssa, ops
+
+        source_mlir = self._ssa_types.get(value_ssa) or self.get_expression_type(expr)
+        if not source_mlir.startswith("memref<"):
+            raise NotImplementedError(
+                "MLIR span borrowing currently requires an array, span, or explicit slice"
+            )
+
+        data_ptr, ptr_ops = self._emit_cast(value_ssa, source_mlir, "!llvm.ptr")
+        ops.extend(ptr_ops)
+
+        size = getattr(source_flow, "size", None) if source_flow is not None else None
+        if size is not None:
+            length = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{length} = arith.constant {int(size)} : i64")
+        else:
+            dim = f"%{self.function_counter}"
+            self.function_counter += 1
+            idx = f"%{self.function_counter}"
+            self.function_counter += 1
+            length = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{idx} = arith.constant 0 : index")
+            ops.append(
+                f"{self.indent()}{dim} = memref.dim {value_ssa}, {idx} : {source_mlir}"
+            )
+            ops.append(
+                f"{self.indent()}{length} = arith.index_cast {dim} : index to i64"
+            )
+
+        return self._build_span_value(data_ptr, length, ops)
+
+    def generate_slice_expr(self, expr: SliceExpr) -> tuple[str, List[str]]:
+        base_flow = self._flow_type_of_expr(expr.base)
+        base_ssa, base_ops = self.generate_expression(expr.base)
+        ops = list(base_ops)
+
+        if self._is_span_flow_type(base_flow):
+            span_ty = self._span_mlir_type()
+            base_ptr = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{base_ptr} = llvm.extractvalue {base_ssa}[0] : {span_ty}"
+            )
+            elem_flow = self._span_element_flow_type(base_flow)
+        else:
+            base_mlir = self._ssa_types.get(base_ssa) or self.get_expression_type(expr.base)
+            if base_mlir == "!llvm.ptr":
+                base_ptr = base_ssa
+            elif base_mlir.startswith("memref<"):
+                base_ptr, ptr_ops = self._emit_cast(base_ssa, base_mlir, "!llvm.ptr")
+                ops.extend(ptr_ops)
+            else:
+                raise NotImplementedError(
+                    f"MLIR slice lowering does not support base type {base_mlir}"
+                )
+            elem_flow = getattr(base_flow, "element_type", None)
+            if elem_flow is None:
+                elem_flow = Type("i8")
+
+        start_ssa, start_ops = self.generate_expression(expr.start)
+        end_ssa, end_ops = self.generate_expression(expr.end)
+        ops.extend(start_ops)
+        ops.extend(end_ops)
+        start_ty = self._ssa_types.get(start_ssa) or self.get_expression_type(expr.start)
+        end_ty = self._ssa_types.get(end_ssa) or self.get_expression_type(expr.end)
+        start64, start_cast = self._index_to_i64(start_ssa, start_ty)
+        end64, end_cast = self._index_to_i64(end_ssa, end_ty)
+        ops.extend(start_cast)
+        ops.extend(end_cast)
+
+        elem_mlir = self.flow_type_to_mlir(elem_flow)
+        data_ptr, gep_ops = self._emit_ptr_index_gep(
+            base_ptr, start64, "i64", elem_mlir
+        )
+        ops.extend(gep_ops)
+        length = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{length} = arith.subi {end64}, {start64} : i64"
+        )
+        return self._build_span_value(data_ptr, length, ops)
+
     def _flow_type_of_expr(self, expr) -> Optional[Type]:
         """Resolve the FLOW type of an expression, including chained postfix shapes.
 
@@ -4812,6 +5000,15 @@ class MLIRGenerator:
             if elem is not None:
                 return elem
             return None
+        if isinstance(expr, SliceExpr):
+            base_ty = self._flow_type_of_expr(expr.base)
+            if base_ty is None:
+                return None
+            if self._is_span_flow_type(base_ty):
+                elem = self._span_element_flow_type(base_ty)
+                return make_span_type(elem, span_is_mutable(base_ty.name))
+            elem = getattr(base_ty, "element_type", None)
+            return make_span_type(elem, False) if elem is not None else None
         if isinstance(expr, FunctionCall):
             info = self.symbol_table.get(expr.name)
             if info and info.get('type') == 'function':
@@ -4965,6 +5162,8 @@ class MLIRGenerator:
     def _determine_field_type(self, field_access):
         """Determine the type of a field access by walking the struct hierarchy."""
         current_type = self._flow_type_of_expr(field_access.object)
+        if self._is_span_flow_type(current_type) and field_access.field == "len":
+            return Type("i64")
         # Pointer-to-struct objects access fields of the pointee.
         current_type = self._pointee_struct_type(current_type)
 
@@ -5528,9 +5727,11 @@ class MLIRGenerator:
         # Resolve signature before arg codegen so tensor-returning callees can
         # evaluate arguments last-to-first (keeps early tensor args off clobbered stack).
         expected_arg_types = []
+        expected_flow_types: List[Type] = []
         if func_call.name in self.symbol_table:
             func_info = self.symbol_table[func_call.name]
             for param in func_info.get('parameters', []):
+                expected_flow_types.append(param.type)
                 expected_arg_types.append(self.flow_type_to_mlir(param.type))
             if func_info.get('is_variadic'):
                 for extra in func_call.arguments[len(expected_arg_types):]:
@@ -5568,7 +5769,15 @@ class MLIRGenerator:
                 ops.append(f"{self.indent()}{arg_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
                 arg_values[i] = arg_ssa
             else:
-                v, vops = self.generate_expression(arg)
+                expected_flow = (
+                    expected_flow_types[i]
+                    if i < len(expected_flow_types)
+                    else None
+                )
+                if self._is_span_flow_type(expected_flow):
+                    v, vops = self._generate_span_borrow(arg, expected_flow)
+                else:
+                    v, vops = self.generate_expression(arg)
                 ops.extend(vops)
                 arg_values[i] = v
 
@@ -6258,6 +6467,7 @@ class MLIRGenerator:
         ops: List[str] = []
 
         array_result = self.generate_expression(access.array)
+        array_flow = self._flow_type_of_expr(access.array)
         if not array_result:
             array_ssa = f"%{self.function_counter}"
             self.function_counter += 1
@@ -6278,6 +6488,25 @@ class MLIRGenerator:
         index_type = self._ssa_types.get(index_ssa, 'i32')
         if isinstance(access.index, Variable) and access.index.name in self.symbol_table:
             index_type = self.symbol_table[access.index.name].get('mlir_type', index_type)
+
+        if self._is_span_flow_type(array_flow):
+            span_ty = self._span_mlir_type()
+            data_ptr = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{data_ptr} = llvm.extractvalue {array_ssa}[0] : {span_ty}"
+            )
+            elem_flow = self._span_element_flow_type(array_flow)
+            elem_type = self.flow_type_to_mlir(elem_flow)
+            gep, gep_ops = self._emit_ptr_index_gep(
+                data_ptr, index_ssa, index_type, elem_type
+            )
+            ops.extend(gep_ops)
+            ops.append(
+                f"{self.indent()}{ssa_name} = llvm.load {gep} : !llvm.ptr -> {elem_type}"
+            )
+            self._ssa_types[ssa_name] = elem_type
+            return ssa_name, ops
 
         llvm_array_ty = self._llvm_array_type_for(access.array, array_ssa)
         if llvm_array_ty is not None:
@@ -6429,6 +6658,8 @@ class MLIRGenerator:
                 total_size = sum(field['size'] for field in self.struct_layouts[expr.struct_name].values())
                 return f"memref<{total_size}xi8>"
             return 'i32'
+        elif isinstance(expr, SliceExpr):
+            return self._span_mlir_type()
         elif isinstance(expr, ArrayAccess):
             elem_flow = self._flow_type_of_expr(expr)
             if elem_flow is not None:
@@ -6467,6 +6698,8 @@ class MLIRGenerator:
         _unsigned_to_signed = {
             'u8': 'i8', 'u16': 'i16', 'u32': 'i32', 'u64': 'i64', 'u128': 'i128',
         }
+        if self._is_span_flow_type(flow_type):
+            return self._span_mlir_type()
         if flow_type.name in _unsigned_to_signed:
             return _unsigned_to_signed[flow_type.name]
         if flow_type.name in ['i8', 'i16', 'i32', 'i64', 'i128', 'f32', 'f64']:
