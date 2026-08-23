@@ -6,7 +6,7 @@ That history covers the project from the initial `0.1.0` implementation through 
 
 ## Current release
 
-**Flow 1.0.0** is the first release governed by the explicit 1.x compatibility contract in [`STABILITY.md`](STABILITY.md). The Stable core is intentionally narrower than the full set of shipped Experimental features.
+**Flow 1.0.1** is the current release on the explicit 1.x compatibility contract in [`STABILITY.md`](STABILITY.md). Stabilization patch with no Stable 1.x surface expansion.
 
 [Read the complete changelog →](docs/project/CHANGELOG.md)
 
@@ -14,6 +14,7 @@ That history covers the project from the initial `0.1.0` implementation through 
 
 | Version | Recorded date | Headline |
 |---|---|---|
+| 1.0.1 | 2026-08-23 | Stabilization patch with no Stable 1.x surface expansion |
 | 1.0.0 | 2026-08-22 | First explicit Stable 1.x compatibility contract; self-hosted `flowc` + portable C Stable core; exact-tag qualification |
 | 0.12.0 | 2026-08-19 | Range algebra and correctness fixes found by executable-documentation verification |
 | 0.11.1 | 2026-08-14 | Linux `@cImport` correctness patch |
