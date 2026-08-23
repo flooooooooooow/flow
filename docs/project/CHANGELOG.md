@@ -4,6 +4,27 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+## [1.0.1] - 2026-08-23
+
+Flow 1.0.1 is a stabilization patch over the Flow 1.0 compatibility contract. It does not promote, remove, or incompatibly change any Stable 1.x syntax or API.
+
+### Stable compiler hardening
+
+- Continued self-hosted `flowc` convergence without widening the Stable surface: native overload matching primitives, a multi-signature overload table, a minimal expression-type classifier, and canonical AST type-name normalization now have dedicated Flow implementations and regression coverage.
+- Made the repository changelog canonical and CI-enforced so the source version, root release index, and detailed release history cannot silently drift apart.
+- Kept the portable C backend and the existing Stable 1.0 language and CLI contract unchanged. Pending MLIR parity work and incomplete self-hosting integration are intentionally excluded from this patch release.
+
+### Experimental correctness fixes
+
+- The legacy dynamics/`dsys` expander now rejects invalid dimensions and explicit A/B/C matrices whose element counts do not match `n*n`, `n*m`, and `p*n`, producing a DSL error instead of misleading downstream C failures.
+- Generated dynamics setup now preserves an existing one-line `main` body instead of joining it to the generated expansion comment. Zero-input systems and schematic declarations retain their prior behavior.
+
+### Release discipline
+
+- 1.0.1 carries only changes merged to `main` and exercised by the repository CI and Tier-1 qualification path.
+- Large unmerged MLIR parity work and draft overload integration remain post-release work rather than being rushed into a patch tag.
+
+
 ## [1.0.0] - 2026-08-22
 
 Flow 1.0 establishes the first explicit compatibility contract for the language rather than freezing every feature currently present in the repository.
