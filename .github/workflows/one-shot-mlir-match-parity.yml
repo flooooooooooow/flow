@@ -1,0 +1,146 @@
+name: One-shot MLIR match parity patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/mlir-or-patterns
+          fetch-depth: 0
+
+      - name: Patch MLIR binding, wildcard, and guard semantics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/flow/mlir_generator.py')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'anchor not found:\n{old}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          '''            cond_ssa = ""
+            binding_ops = []
+            saved_locals = None
+''',
+          '''            cond_ssa = ""
+            binding_ops = []
+            saved_locals = self.symbol_table.copy()
+''')
+
+          replace_once(
+          '''                if struct_decl:
+                    saved_locals = self.symbol_table.copy()
+                    
+                    # Create temp variable for val_ssa to allow FieldAccess reuse.
+''',
+          '''                if struct_decl:
+                    # Create temp variable for val_ssa to allow FieldAccess reuse.
+''')
+
+          replace_once(
+          '''                if saved_locals is None:
+                    saved_locals = self.symbol_table.copy()
+            else:
+                # Path/const pattern (including Enum_Variant tags). When the
+''',
+          '''            elif isinstance(case.pattern, Variable) and (
+                case.pattern.name == "_"
+                or getattr(self, "_enum_variant_owner", {}).get(case.pattern.name) is None
+            ):
+                # Bare identifiers bind the scrutinee; `_` is an unconditional
+                # match without a binding. Enum variants still use tag compare.
+                cond_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(
+                    f"{self.indent()}{cond_ssa} = arith.constant 1 : i1"
+                )
+                self._ssa_types[cond_ssa] = "i1"
+                if case.pattern.name != "_":
+                    flow_type = self._flow_type_of_expr(match_stmt.value) or Type("i32")
+                    self.symbol_table[case.pattern.name] = {
+                        "type": "variable",
+                        "ssa_name": val_ssa,
+                        "mlir_type": val_type,
+                        "flow_type": flow_type,
+                    }
+            else:
+                # Path/const pattern (including Enum_Variant tags). When the
+''')
+
+          replace_once(
+          '''            # Branch to case body or next case
+            mlir_code.append(f"{self.indent()}cf.cond_br {cond_ssa}, ^{case_label}, ^{next_label}")
+            
+            # Generate case body block
+''',
+          '''            # Destructuring definitions must dominate both the guard and
+            # the arm body. Emit them in the test block exactly once.
+            if binding_ops:
+                mlir_code.extend(binding_ops)
+                binding_ops = []
+
+            if case.guard is not None:
+                guard_ssa, guard_ops = self.generate_expression(case.guard)
+                mlir_code.extend(guard_ops)
+                guard_ty = self._ssa_types.get(guard_ssa) or self.get_expression_type(case.guard)
+                guard_ssa, guard_cast_ops = self._as_i1(guard_ssa, guard_ty)
+                mlir_code.extend(guard_cast_ops)
+                guarded = f"%{self.function_counter}"
+                self.function_counter += 1
+                mlir_code.append(
+                    f"{self.indent()}{guarded} = arith.andi {cond_ssa}, {guard_ssa} : i1"
+                )
+                self._ssa_types[guarded] = "i1"
+                cond_ssa = guarded
+
+            # Branch to case body or next case
+            mlir_code.append(f"{self.indent()}cf.cond_br {cond_ssa}, ^{case_label}, ^{next_label}")
+            
+            # Generate case body block
+''')
+
+          replace_once(
+          '''            if binding_ops:
+                mlir_code.extend(binding_ops)
+
+            # Each arm starts from the pre-match bindings; assignments in a
+''',
+          '''            # Binding/destructuring SSA was emitted in the test block so it
+            # dominates guard evaluation and this body.
+
+            # Each arm starts from the pre-match bindings; assignments in a
+''')
+
+          path.write_text(text)
+
+          test = Path('tests/unit/test_mlir_match_bindings.py')
+          test.write_text('''from flow.mlir_generator import MLIRGenerator\nfrom flow.parser import parse_flow_code\n\n\ndef _lower(source: str) -> str:\n    return MLIRGenerator().generate_module(parse_flow_code(source))\n\n\ndef test_binding_pattern_is_visible_to_guard_and_body() -> None:\n    mlir = _lower(\"\"\"\n    function classify(value: i32) -> i32 {\n        match value {\n            x if x > 1 => { return x }\n            _ => { return 0 }\n        }\n    }\n    \"\"\")\n    assert \"Undefined variable\" not in mlir\n    assert \"arith.cmpi sgt\" in mlir\n    assert \"arith.andi\" in mlir\n\n\ndef test_wildcard_pattern_is_unconditional() -> None:\n    mlir = _lower(\"\"\"\n    function classify(value: i32) -> i32 {\n        match value {\n            0 => { return 1 }\n            _ => { return 2 }\n        }\n    }\n    \"\"\")\n    assert \"Undefined variable: _\" not in mlir\n    assert \"arith.constant 1 : i1\" in mlir\n''')
+          PY
+
+      - name: Verify focused regressions
+        run: |
+          python -m pip install -q pytest
+          PYTHONPATH=src pytest -q tests/unit/test_mlir_or_patterns.py tests/unit/test_mlir_match_bindings.py
+
+      - name: Commit patch to parity branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/flow/mlir_generator.py tests/unit/test_mlir_match_bindings.py
+          git commit -m "Lower MLIR binding and guarded match patterns"
+          git push origin HEAD:fix/mlir-or-patterns
