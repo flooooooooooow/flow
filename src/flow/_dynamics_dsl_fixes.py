@@ -1,7 +1,7 @@
 """Correctness guards for the legacy Python dynamics DSL expander.
 
 Keep these fixes isolated while the Python expander is being retired in favour
-of the self-hosted compiler.  Importing this module does not install anything;
+of the self-hosted compiler. Importing this module does not install anything;
 call :func:`install` from the package initialiser.
 """
 
@@ -16,18 +16,25 @@ _ORIGINAL_PARSE_DYNAMICS_DSL = _dsl.parse_dynamics_dsl
 
 
 def _validate_raw_dsys(program: _dsl.DynamicsProgram) -> None:
-    """Reject malformed raw ``dsys`` declarations before code generation."""
+    """Reject malformed explicit ``dsys`` matrices before code generation."""
     synthesized = {f"{rep.flow_name}_lin" for rep in program.represents}
 
     for name, decl in program.systems.items():
         if name in synthesized:
             continue
 
-        for dim_name, value in (("n", decl.n), ("m", decl.m), ("p", decl.p)):
-            if value <= 0:
-                raise SyntaxError(
-                    f"dsys '{name}': {dim_name} must be positive, got {value}"
-                )
+        if decl.n <= 0:
+            raise SyntaxError(f"dsys '{name}': n must be positive, got {decl.n}")
+        if decl.m < 0:
+            raise SyntaxError(f"dsys '{name}': m must be non-negative, got {decl.m}")
+        if decl.p <= 0:
+            raise SyntaxError(f"dsys '{name}': p must be positive, got {decl.p}")
+
+        # Preserve schematic/future forms that provide no explicit matrices at
+        # all. Once any matrix literal is present, the declaration is concrete
+        # and all dimensions are known, so reject partial/wrong-length input.
+        if not (decl.A or decl.B or decl.C):
+            continue
 
         expected = (
             ("A", decl.n * decl.n, len(decl.A), f"n = {decl.n}"),
