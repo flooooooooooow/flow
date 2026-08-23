@@ -52,15 +52,15 @@ def test_dsys_rejects_non_positive_dimensions() -> None:
 dsys invalid {
     discrete
     dt 1.0
-    n 2 m 0 p 1
-    A 1.0 0.0 0.0 1.0
+    n 0 m 1 p 1
+    A 0.0
     B 0.0
-    C 1.0 0.0
+    C 0.0
 }
 """
 
     with pytest.raises(
         SyntaxError,
-        match=r"dsys 'invalid': m must be positive, got 0",
+        match=r"dsys 'invalid': n must be positive, got 0",
     ):
         parse_dynamics_dsl(source)
