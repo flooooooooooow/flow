@@ -1,0 +1,85 @@
+# @module flowc.overload_args
+# @means  Convert a Stage-A AST call argument chain into normalized overload
+#         type rows. Scope-specific identifier type node ids are supplied by
+#         TcCtx so this module stays independent of name-table ownership.
+
+import .ast { AstArena, AST_NONE, AST_IDENT, AST_CAST }
+import .expr_type {
+    flowc_expr_type_into,
+    flowc_expr_is_unsuffixed_int_literal
+}
+import .type_name { flowc_type_name_into }
+
+const FLOWC_OVERLOAD_ARG_TYPE_CAP: i32 = 128
+
+# Fill one row per argument. `ident_type_nodes[i]` is the known AST_TYPE node id
+# for an identifier argument, or AST_NONE otherwise. Returns the number of args
+# consumed, or -1 for malformed storage. Unknown expression types are valid and
+# are represented with known[i] = 0 and an empty row.
+export function flowc_overload_classify_args(
+    arena: AstArena,
+    src: ptr<u8>,
+    first_arg: i32,
+    ident_type_nodes: ptr<i32>,
+    arg_count: i32,
+    rows: ptr<u8>,
+    known: ptr<i32>,
+    literal_flags: ptr<i32>,
+    row_cap: i32
+) -> i32 {
+    if arg_count < 0 or row_cap <= 0 or row_cap > FLOWC_OVERLOAD_ARG_TYPE_CAP {
+        return 0 - 1
+    }
+    if arg_count > 0 {
+        if ident_type_nodes == null or rows == null or known == null or literal_flags == null {
+            return 0 - 1
+        }
+    }
+
+    let mut arg: i32 = first_arg
+    let mut i: i32 = 0
+    while arg != AST_NONE and i < arg_count {
+        let row: ptr<u8> = rows + (i * row_cap)
+        row[0] = 0
+        known[i] = 0
+        literal_flags[i] = flowc_expr_is_unsuffixed_int_literal(arena, arg)
+
+        let kind: i32 = arena.nodes[arg].kind
+        if kind == AST_CAST {
+            let ty: i32 = arena.nodes[arg].b
+            if flowc_type_name_into(arena, src, ty, row, row_cap) >= 0 {
+                known[i] = 1
+            }
+        } else {
+            let mut has_ident_type: i32 = 0
+            let mut ident_name: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            if kind == AST_IDENT {
+                let ident_ty: i32 = ident_type_nodes[i]
+                if ident_ty != AST_NONE {
+                    if flowc_type_name_into(arena, src, ident_ty, &ident_name[0], FLOWC_OVERLOAD_ARG_TYPE_CAP) >= 0 {
+                        has_ident_type = 1
+                    }
+                }
+            }
+            let ident_ptr: ptr<u8> = &ident_name[0]
+            if flowc_expr_type_into(
+                arena,
+                src,
+                arg,
+                ident_ptr as string,
+                has_ident_type,
+                row,
+                row_cap
+            ) >= 0 {
+                known[i] = 1
+            }
+        }
+
+        arg = arena.nodes[arg].next
+        i = i + 1
+    }
+    if arg != AST_NONE or i != arg_count {
+        return 0 - 1
+    }
+    return i
+}
