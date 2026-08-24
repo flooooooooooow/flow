@@ -72,7 +72,7 @@ Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 
 <a class="wiki-doc" href="demos/overview.md">
 <strong>Galleries</strong>
-<span>Games, morphogenesis, neurons, planets, evolution, WASM. Real <code>gfx</code> recordings.</span>
+<span>Games, photoreal shaders, morphogenesis, neurons, planets, evolution, WASM. Real compiled Flow programs.</span>
 </a>
 
 <a class="wiki-doc" href="language/spec-index.md">
@@ -238,6 +238,7 @@ Frames below come from the native `gfx` backend: the same drawing calls a window
 
 | Gallery | What you get |
 |---|---|
+| [Shaders · 64 Photoreal](language/shaders.md#photorealistic-showcase) | Four full ray-marched scenes plus 60 PBR-style material studies, all procedural FSL |
 | [Games](demos/games.md) | Snake, Tetris, Asteroids, Flappy, and more (25 GIFs) |
 | [Morphogenesis](demos/morphogenesis.md) | Reaction-diffusion, Turing patterns, Physarum (40) |
 | [Neurons](demos/neuro.md) | Hodgkin-Huxley, Izhikevich, Hopfield, CPG (15) |
@@ -246,6 +247,8 @@ Frames below come from the native `gfx` backend: the same drawing calls a window
 | [Planets](demos/planet.md) · [Procgen](demos/procgen.md) · [Numerical](demos/numerical.md) · [WASM](demos/wasm.md) | Cubesphere, WFC, FMM, live browser demos |
 
 <p class="wiki-section-foot">
+<a href="language/shaders.md#photorealistic-showcase">64 photoreal shaders →</a>
+<span class="wiki-dot">·</span>
 <a href="demos/overview.md">All galleries →</a>
 <span class="wiki-dot">·</span>
 <a href="wasm/index.html">Live WASM demos →</a>
