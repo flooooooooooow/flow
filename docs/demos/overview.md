@@ -10,6 +10,7 @@ represents each one. A correct low-level translation is deliberately not the goa
 
 | Gallery | What it is | GIFs |
 |---|---|---|
+| [Shaders · 64 Photoreal](../language/shaders.md#photorealistic-showcase) | FSL ray marching, PBR-style materials, glass, metals, stone, automotive finishes, emissive and cinematic studies | runnable |
 | [Solve It the Flow Way](../../examples/flow_way/README.md) | Problem-first idioms: pipelines, effects, RT contracts, hybrid dynamics, concurrency, control | runnable |
 | [Games](games.md) | Complete, playable games: Snake, Tetris, Asteroids, Flappy, and more | 25 |
 | [Morphogenesis](morphogenesis.md) | Reaction-diffusion, Turing patterns, DLA, L-systems, Physarum, wave-2 | 40 |
@@ -23,7 +24,19 @@ represents each one. A correct low-level translation is deliberately not the goa
 | [Evolution Suite](evolution.md) | Systems evolving through time, each checked against theory | 34 |
 | [WebAssembly](wasm.md) | The games and demos running live in a browser | live |
 
-Run any of them natively:
+## Photoreal shader gallery
+
+The shader gallery contains **64 runnable FSL examples** with no texture, mesh, cubemap, or external image assets. Four full ray-marched scenes cover studio materials, chromatic glass, polished marble, and sunset chrome; another 60 studies cover metals, crystals, stone and ceramics, automotive coatings, wood and soft materials, industrial surfaces, emissive materials, and cinematic environments.
+
+```bash
+./flow shader examples/gpu/shader_photoreal.flow
+./flow shader examples/gpu/shader_photoreal_materials.flow
+./flow shader examples/gpu/shader_photoreal_materials.flow --name photoreal_diamond
+```
+
+See the [FSL shader gallery and language reference](../language/shaders.md#photorealistic-showcase) for the full breakdown and controls.
+
+Run any of the recorded `gfx` galleries natively:
 
 ```bash
 ./flow gfx examples/<path>/<name>_gfx.flow
