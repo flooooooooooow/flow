@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the Wiki's Gallery tab aligned with docs/demos/catalog.json."""
+"""Keep the Wiki's Demos tab aligned with docs/demos/catalog.json."""
 
 from __future__ import annotations
 
@@ -88,8 +88,15 @@ def build_sections(catalog: dict) -> list[dict]:
 def sync(nav: dict, catalog: dict) -> dict:
     sections = nav["sections"]
 
+    # The top-level surface is broader than any one gallery: it contains the
+    # curated showcase plus all visual collections, so call the tab Demos.
+    for tab in nav.get("tabs", []):
+        if tab.get("id") == "gallery":
+            tab["label"] = "Demos"
+            break
+
     # Replace the Start tab's redundant gallery list with a deliberately small
-    # set of entry points. The full taxonomy belongs in the Gallery tab.
+    # set of entry points. The full taxonomy belongs in the Demos tab.
     for section in sections:
         if section.get("id") == "start-galleries":
             section["title"] = "Popular demos"
@@ -131,7 +138,7 @@ def main() -> int:
         return 0
 
     NAV.write_text(expected, encoding="utf-8")
-    print("updated docs/nav.json gallery navigation")
+    print("updated docs/nav.json demo navigation")
     return 0
 
 
