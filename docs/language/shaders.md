@@ -81,24 +81,25 @@ Swizzles: `.xyzw`, `.rgb`, …
 ./flow shader examples/gpu/shader_plasma.flow --name plasma
 ```
 
-### Photorealistic showcase
+### Photorealistic showcase — 64 examples
 
-`examples/gpu/shader_photoreal.flow` — four procedural ray-marched material studies:
+The photoreal gallery contains 64 runnable FSL shaders split across two launchable files. `examples/gpu/shader_photoreal.flow` contains four full ray-marched scene studies: `photoreal_studio`, `photoreal_glass`, `photoreal_marble`, and `photoreal_chrome`. They demonstrate SDF scene composition, finite-difference normals, soft shadows, ambient occlusion, Fresnel response, chromatic refraction, reflection, procedural stone, metals, wet surfaces, moving cameras, and environment lighting.
 
-| Shader | What it demonstrates |
-|------|------|
-| `photoreal_studio` | SDF scene composition, ceramic/copper/gold materials, soft shadows, ambient occlusion and environment reflection |
-| `photoreal_glass` | Glass Fresnel, chromatic refraction, absorption and procedural stone |
-| `photoreal_marble` | Warped FBM veins, polished stone, glossy indirect reflection and tiled floor treatment |
-| `photoreal_chrome` | Mirror metal, wet asphalt, moving camera and sunset environment lighting |
+`examples/gpu/shader_photoreal_materials.flow` adds 60 compact PBR-style material-ball studies. The set covers polished and brushed metals; clear, smoked, amber, aqua and frosted glass; ruby, sapphire and emerald crystals; marble, jade, granite, travertine, porcelain, terracotta and obsidian; lacquer, candy paint, pearlescent and iridescent coatings, enamel, clearcoat and carbon weave; walnut, mahogany, oak, leather, velvet, satin, silk and wax; concrete, wet concrete, asphalt, wet asphalt, rubber, ABS plastic, acrylic and ceramic tile; neon glass, holographic alloy, plasma, lava, ice, alien alloy, reactor metal and energy crystal; plus sunset, overcast, night-city, desert, arctic, forest and underwater environment studies.
 
-The scenes do not depend on texture files or model assets. Geometry, materials, lighting and environment response are generated directly in FSL.
+The material gallery shares one procedural renderer rather than duplicating the shading implementation. Every entry still becomes its own FSL fragment entry and can be selected independently. Materials vary base/accent response, metalness, roughness, procedural surface structure, environment, transmission/refraction and emission. No textures, meshes, cubemaps, or image assets are required.
 
 ```bash
 ./flow shader examples/gpu/shader_photoreal.flow
 ./flow shader examples/gpu/shader_photoreal.flow --name photoreal_glass
-./flow shader examples/gpu/shader_photoreal.flow --name photoreal_chrome --emit-only
+
+./flow shader examples/gpu/shader_photoreal_materials.flow
+./flow shader examples/gpu/shader_photoreal_materials.flow --name photoreal_gold
+./flow shader examples/gpu/shader_photoreal_materials.flow --name photoreal_energy_crystal
+./flow shader examples/gpu/shader_photoreal_materials.flow --emit-only
 ```
+
+The shader unit tests enforce exactly 64 unique photoreal gallery entries across the two files and code-generate both galleries to Metal.
 
 ## Pipeline
 
