@@ -9,12 +9,17 @@ on:
       - 'scripts/record_shader_gallery.py'
       - 'scripts/build_shader_gallery.py'
       - 'scripts/build_demo_overview.py'
+      - 'scripts/sync_demo_nav.py'
       - 'scripts/frames_to_gif.py'
       - 'docs/demos/catalog.json'
       - 'docs/demos/overview.md'
       - 'docs/demos/shaders.md'
       - 'docs/demos/shaders/**'
-      - 'site/wiki.css'
+      - 'docs/nav.json'
+      - 'docs/wiki-home.md'
+      - 'docs/assets/demo-gallery.css'
+      - 'docs/assets/gallery-enhance.js'
+      - 'site/index.html'
       - '.github/workflows/shader-gallery.yml'
   workflow_dispatch:
 
@@ -62,23 +67,28 @@ jobs:
             --gif-width 360 \
             --out docs/demos/shaders
 
-      - name: Regenerate gallery pages and verify asset coverage
+      - name: Regenerate gallery pages and navigation
         run: |
           python3 scripts/build_shader_gallery.py
           python3 scripts/build_demo_overview.py
+          python3 scripts/sync_demo_nav.py
+
+      - name: Verify generated gallery contract
+        run: |
           python3 scripts/build_shader_gallery.py --check --check-assets
           python3 scripts/build_demo_overview.py --check --check-previews
+          python3 scripts/sync_demo_nav.py --check
 
       - name: Commit refreshed gallery assets to same-repo PR
         if: github.event_name == 'pull_request'
         shell: bash
         run: |
-          git add docs/demos/shaders.md docs/demos/shaders docs/demos/overview.md
+          git add docs/demos/shaders.md docs/demos/shaders docs/demos/overview.md docs/nav.json
           if git diff --cached --quiet; then
             echo 'Shader gallery is already current.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'docs: refresh photoreal shader gallery assets'
+          git commit -m 'docs: refresh generated demo gallery assets'
           git push origin "HEAD:${{ github.head_ref }}"
