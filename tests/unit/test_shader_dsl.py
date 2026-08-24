@@ -100,6 +100,30 @@ def test_showcase_extracts_many():
     assert "julia_frag" in metal
 
 
+def test_photoreal_gallery_codegen():
+    from pathlib import Path
+
+    text = Path("examples/gpu/shader_photoreal.flow").read_text(encoding="utf-8")
+    mod = extract_shader_module(text)
+    names = [fill.name for fill in mod.fills]
+    assert names == [
+        "photoreal_studio",
+        "photoreal_glass",
+        "photoreal_marble",
+        "photoreal_chrome",
+    ]
+    assert len(mod.funcs) >= 10
+
+    metal = generate_metal_for_module(mod)
+    assert "photoreal_studio_frag" in metal
+    assert "photoreal_glass_frag" in metal
+    assert "photoreal_marble_frag" in metal
+    assert "photoreal_chrome_frag" in metal
+    assert "refract(" in metal
+    assert "reflect(" in metal
+    assert "fsl_fbm" in metal
+
+
 def test_has_fill_shader_dsl():
     assert has_fill_shader_dsl(PLASMA)
     assert has_fill_shader_dsl(RICH)
@@ -110,10 +134,17 @@ def test_fill_shader_modules_resolve_for_c_transpile():
     """FSL examples must resolve via host stub so tier-2 C transpile passes."""
     from pathlib import Path
 
-    for name in ("shader_plasma.flow", "shader_ripple.flow", "shader_showcase.flow"):
+    for name in (
+        "shader_plasma.flow",
+        "shader_ripple.flow",
+        "shader_showcase.flow",
+        "shader_photoreal.flow",
+    ):
         path = Path("examples/gpu") / name
         decls = resolve_modules(str(path))
         assert any(getattr(d, "name", None) == "main" for d in decls)
+
+
 def test_shader_dsl_parse():
     from flow.shader_dsl import parse_shader_body
     src = """
