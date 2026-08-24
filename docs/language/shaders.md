@@ -69,7 +69,9 @@ Swizzles: `.xyzw`, `.rgb`, …
 | `fbm(p)` | 5-octave fractal noise |
 | `palette(t)` | Cosine palette → `vec3` |
 
-## Showcase
+## Galleries
+
+### Classic showcase
 
 `examples/gpu/shader_showcase.flow` — 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
 
@@ -77,6 +79,25 @@ Swizzles: `.xyzw`, `.rgb`, …
 ./flow shader examples/gpu/shader_showcase.flow
 ./flow shader examples/gpu/shader_showcase.flow --emit-only
 ./flow shader examples/gpu/shader_plasma.flow --name plasma
+```
+
+### Photorealistic showcase
+
+`examples/gpu/shader_photoreal.flow` — four procedural ray-marched material studies:
+
+| Shader | What it demonstrates |
+|------|------|
+| `photoreal_studio` | SDF scene composition, ceramic/copper/gold materials, soft shadows, ambient occlusion and environment reflection |
+| `photoreal_glass` | Glass Fresnel, chromatic refraction, absorption and procedural stone |
+| `photoreal_marble` | Warped FBM veins, polished stone, glossy indirect reflection and tiled floor treatment |
+| `photoreal_chrome` | Mirror metal, wet asphalt, moving camera and sunset environment lighting |
+
+The scenes do not depend on texture files or model assets. Geometry, materials, lighting and environment response are generated directly in FSL.
+
+```bash
+./flow shader examples/gpu/shader_photoreal.flow
+./flow shader examples/gpu/shader_photoreal.flow --name photoreal_glass
+./flow shader examples/gpu/shader_photoreal.flow --name photoreal_chrome --emit-only
 ```
 
 ## Pipeline
