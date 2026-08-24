@@ -8,7 +8,10 @@ on:
       - 'runtime/shader_record_metal.m'
       - 'scripts/record_shader_gallery.py'
       - 'scripts/build_shader_gallery.py'
+      - 'scripts/build_demo_overview.py'
       - 'scripts/frames_to_gif.py'
+      - 'docs/demos/catalog.json'
+      - 'docs/demos/overview.md'
       - 'docs/demos/shaders.md'
       - 'docs/demos/shaders/**'
       - 'site/wiki.css'
@@ -59,16 +62,18 @@ jobs:
             --gif-width 360 \
             --out docs/demos/shaders
 
-      - name: Regenerate gallery page and verify asset coverage
+      - name: Regenerate gallery pages and verify asset coverage
         run: |
           python3 scripts/build_shader_gallery.py
+          python3 scripts/build_demo_overview.py
           python3 scripts/build_shader_gallery.py --check --check-assets
+          python3 scripts/build_demo_overview.py --check --check-previews
 
       - name: Commit refreshed gallery assets to same-repo PR
         if: github.event_name == 'pull_request'
         shell: bash
         run: |
-          git add docs/demos/shaders.md docs/demos/shaders
+          git add docs/demos/shaders.md docs/demos/shaders docs/demos/overview.md
           if git diff --cached --quiet; then
             echo 'Shader gallery is already current.'
             exit 0
