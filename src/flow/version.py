@@ -11,4 +11,4 @@ Tagging ``v*`` also triggers .github/workflows/version-bump.yml, which opens
 a PR syncing the tree to the tag.
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
