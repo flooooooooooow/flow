@@ -13,8 +13,6 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from flow.mlir_spirv import MLIRSPIRVCompiler
-
 
 def _flow_to_spirv(source: Path, output: Path) -> None:
     env = os.environ.copy()
@@ -47,6 +45,8 @@ def _flow_to_spirv(source: Path, output: Path) -> None:
 
 
 def main() -> int:
+    from flow.mlir_spirv import MLIRSPIRVCompiler
+
     parser = argparse.ArgumentParser(
         description="Flow GPU -> SPIR-V -> Metal compiler driver"
     )
@@ -75,7 +75,11 @@ def main() -> int:
         parser.error(f"input does not exist: {source}")
 
     suffix = ".metal" if args.msl_only else ".metallib"
-    output = Path(args.output) if args.output else ROOT / "build" / f"{source.stem}{suffix}"
+    output = (
+        Path(args.output)
+        if args.output
+        else ROOT / "build" / f"{source.stem}{suffix}"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
 
     compiler = MLIRSPIRVCompiler()
