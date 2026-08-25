@@ -54,9 +54,15 @@ export const AST_ENUM: i32 = 43
 export const AST_ENUM_VARIANT: i32 = 44
 export const AST_IF_EXPR: i32 = 45
 
+# AST_TYPE.c metadata. Keep this in the existing child slot so AstNode remains
+# 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep
+# c = AST_NONE as initialized by flowc_ast_alloc.
+export const AST_TYPE_SPAN_MUTABLE: i32 = 1
+
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
-# AST_TYPE: plain name, or ptr/array — a = inner type, ival = array size (0 if none).
+# AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array size
+# (0 if none), c = AST_TYPE_SPAN_MUTABLE for span<mut T>, else AST_NONE.
 # AST_FIELD_ACCESS: a = base expr, name_* = field; AST_INDEX: a = base, b = index.
 # AST_STRUCT_LIT: name_* = type, a = AST_FIELD chain (a child = field expr).
 # AST_CONST: name_* = name, a = type (AST_TYPE), b = init expr, ival = 1 if export else 0.
@@ -134,6 +140,40 @@ export function flowc_ast_alloc(arena: ptr<AstArena>, kind: i32, start: i32, end
     arena[0].nodes[id].name_start = 0
     arena[0].nodes[id].name_end = 0
     return id
+}
+
+# Checked AST_TYPE span-mutability accessors. Parser/type-name passes should use
+# these rather than depending directly on the c-field encoding.
+export function flowc_ast_type_set_span_mutable(
+    arena: ptr<AstArena>,
+    id: i32,
+    is_mutable: i32
+) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena[0].len {
+        return 0 - 1
+    }
+    if arena[0].nodes[id].kind != AST_TYPE {
+        return 0 - 1
+    }
+    if is_mutable == 0 {
+        arena[0].nodes[id].c = AST_NONE
+    } else {
+        arena[0].nodes[id].c = AST_TYPE_SPAN_MUTABLE
+    }
+    return 0
+}
+
+export function flowc_ast_type_span_mutable(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena.len {
+        return 0
+    }
+    if arena.nodes[id].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[id].c == AST_TYPE_SPAN_MUTABLE {
+        return 1
+    }
+    return 0
 }
 
 export function flowc_ast_count_kind(arena: AstArena, kind: i32) -> i32 {
