@@ -1,0 +1,73 @@
+# Tests for compiler/src/overload_registry.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/overload_registry.flow"
+import "compiler/src/overload_table.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_param(arena: ptr<AstArena>) -> i32 {
+    return flowc_ast_alloc(arena, AST_PARAM, 0, 0)
+}
+
+function make_fn(arena: ptr<AstArena>, ns: i32, ne: i32, arity: i32) -> i32 {
+    let fn: i32 = flowc_ast_alloc(arena, AST_FN, ns, ne)
+    arena[0].nodes[fn].name_start = ns
+    arena[0].nodes[fn].name_end = ne
+    let mut params: i32 = AST_NONE
+    let mut i: i32 = 0
+    while i < arity {
+        let p: i32 = make_param(arena)
+        params = flowc_ast_chain_push(arena, params, p)
+        i = i + 1
+    }
+    arena[0].nodes[fn].a = params
+    return fn
+}
+
+function main() -> i32 {
+    let src: string = "pick other"
+    let mut arena: AstArena = flowc_ast_new(32)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+
+    let pick1: i32 = make_fn(&arena, 0, 4, 1)
+    let pick2: i32 = make_fn(&arena, 0, 4, 2)
+    let other: i32 = make_fn(&arena, 5, 10, 0)
+    let exported: i32 = flowc_ast_alloc(&arena, AST_EXPORT, 0, 0)
+    arena.nodes[exported].a = other
+
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, pick1)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, pick2)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, exported)
+
+    let mut table: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 8)
+    if flowc_overload_registry_collect(&table, arena, root) != 3 {
+        puts("FAIL: registry count")
+        return 1
+    }
+    if flowc_overload_table_count(table, 0, 4, 1) != 1 {
+        puts("FAIL: pick arity 1")
+        return 2
+    }
+    if flowc_overload_table_count(table, 0, 4, 2) != 1 {
+        puts("FAIL: pick arity 2")
+        return 3
+    }
+    if flowc_overload_table_count(table, 5, 10, 0) != 1 {
+        puts("FAIL: exported function")
+        return 4
+    }
+
+    flowc_overload_registry_reset(&table, src as ptr<u8>)
+    if table.len != 0 or table.err != 0 {
+        puts("FAIL: registry reset")
+        return 5
+    }
+
+    flowc_overload_table_free(&table)
+    flowc_ast_free(arena)
+    puts("All local overload registry Flow port tests passed")
+    return 0
+}
