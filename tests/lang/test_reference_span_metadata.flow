@@ -1,14 +1,20 @@
 # Representation contract for &[T] / &mut [T] / sized reference spans (#720).
 
 import "compiler/src/ast.flow"
+import "compiler/src/type_name.flow"
 
 extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
     function puts(s: string) -> i32
 }
 
 function main() -> i32 {
+    let src: string = "i32"
     let mut arena: AstArena = flowc_ast_new(16)
     let elem: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[elem].name_start = 0
+    arena.nodes[elem].name_end = 3
+    let name: array<u8, 128>
 
     let const_span: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
     arena.nodes[const_span].a = elem
@@ -24,46 +30,70 @@ function main() -> i32 {
         puts("FAIL: const synthetic mutability")
         return 3
     }
+    if flowc_type_name_into(arena, src as ptr<u8>, const_span, &name[0], 128) < 0 {
+        puts("FAIL: const synthetic normalize")
+        return 4
+    }
+    if strcmp(&name[0], "span_const_i32" as ptr<u8>) != 0 {
+        puts("FAIL: const synthetic spelling")
+        return 5
+    }
 
     let mut_span: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
     arena.nodes[mut_span].a = elem
     arena.nodes[mut_span].ival = 32
     if flowc_ast_type_set_synthetic_span(&arena, mut_span, 1) != 0 {
         puts("FAIL: mark mutable synthetic span")
-        return 4
+        return 6
     }
     if flowc_ast_type_is_synthetic_span(arena, mut_span) != 1 {
         puts("FAIL: mutable synthetic identity")
-        return 5
+        return 7
     }
     if flowc_ast_type_span_mutable(arena, mut_span) != 1 {
         puts("FAIL: mutable synthetic mutability")
-        return 6
+        return 8
     }
     if arena.nodes[mut_span].ival != 32 {
         puts("FAIL: synthetic span extent")
-        return 7
+        return 9
+    }
+    if flowc_type_name_into(arena, src as ptr<u8>, mut_span, &name[0], 128) < 0 {
+        puts("FAIL: mutable synthetic normalize")
+        return 10
+    }
+    if strcmp(&name[0], "span_mut_i32" as ptr<u8>) != 0 {
+        puts("FAIL: mutable synthetic spelling")
+        return 11
     }
 
     if flowc_ast_type_set_span_mutable(&arena, mut_span, 0) != 0 {
         puts("FAIL: clear synthetic mutability")
-        return 8
+        return 12
     }
     if flowc_ast_type_is_synthetic_span(arena, mut_span) != 1 {
         puts("FAIL: clearing mutability erased synthetic identity")
-        return 9
+        return 13
     }
     if flowc_ast_type_span_mutable(arena, mut_span) != 0 {
         puts("FAIL: synthetic clear mutability")
-        return 10
+        return 14
+    }
+    if flowc_type_name_into(arena, src as ptr<u8>, mut_span, &name[0], 128) < 0 {
+        puts("FAIL: cleared synthetic normalize")
+        return 15
+    }
+    if strcmp(&name[0], "span_const_i32" as ptr<u8>) != 0 {
+        puts("FAIL: extent must not alter overload name")
+        return 16
     }
     if flowc_ast_type_set_span_mutable(&arena, mut_span, 1) != 0 {
         puts("FAIL: restore synthetic mutability")
-        return 11
+        return 17
     }
     if flowc_ast_type_is_synthetic_span(arena, mut_span) != 1 or flowc_ast_type_span_mutable(arena, mut_span) != 1 {
         puts("FAIL: restore synthetic metadata")
-        return 12
+        return 18
     }
 
     flowc_ast_free(arena)
