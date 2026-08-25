@@ -1,0 +1,121 @@
+# Red contract for the final #677 TcCtx overload integration.
+# This intentionally fails against the pre-integration typecheck path because
+# same-name calls are currently checked by arity only.
+
+import "compiler/src/ast.flow"
+import "compiler/src/typecheck.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_type(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, 0, 0)
+    arena[0].nodes[ty].name_start = start
+    arena[0].nodes[ty].name_end = end
+    return ty
+}
+
+function make_one_arg_decl(
+    arena: ptr<AstArena>,
+    name_start: i32,
+    name_end: i32,
+    ty_start: i32,
+    ty_end: i32
+) -> i32 {
+    let ty: i32 = make_type(arena, ty_start, ty_end)
+    let param: i32 = flowc_ast_alloc(arena, AST_PARAM, 0, 0)
+    arena[0].nodes[param].a = ty
+    let fn: i32 = flowc_ast_alloc(arena, AST_FN, name_start, name_end)
+    arena[0].nodes[fn].name_start = name_start
+    arena[0].nodes[fn].name_end = name_end
+    arena[0].nodes[fn].a = param
+    return fn
+}
+
+function make_caller(
+    arena: ptr<AstArena>,
+    caller_start: i32,
+    caller_end: i32,
+    callee_start: i32,
+    callee_end: i32,
+    arg: i32
+) -> i32 {
+    let call: i32 = flowc_ast_alloc(arena, AST_CALL, callee_start, callee_end)
+    arena[0].nodes[call].name_start = callee_start
+    arena[0].nodes[call].name_end = callee_end
+    arena[0].nodes[call].a = arg
+
+    let stmt: i32 = flowc_ast_alloc(arena, AST_EXPR_STMT, 0, 0)
+    arena[0].nodes[stmt].a = call
+    let body: i32 = flowc_ast_alloc(arena, AST_BLOCK, 0, 0)
+    arena[0].nodes[body].a = stmt
+
+    let fn: i32 = flowc_ast_alloc(arena, AST_FN, caller_start, caller_end)
+    arena[0].nodes[fn].name_start = caller_start
+    arena[0].nodes[fn].name_end = caller_end
+    arena[0].nodes[fn].c = body
+    return fn
+}
+
+function append_item(arena: ptr<AstArena>, root: i32, item: i32) {
+    arena[0].nodes[root].a = flowc_ast_chain_push(arena, arena[0].nodes[root].a, item)
+}
+
+function exact_case(src: string) -> i32 {
+    let mut arena: AstArena = flowc_ast_new(32)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+    append_item(&arena, root, make_one_arg_decl(&arena, 0, 4, 16, 19))
+    append_item(&arena, root, make_one_arg_decl(&arena, 0, 4, 20, 23))
+    let arg: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
+    append_item(&arena, root, make_caller(&arena, 9, 15, 0, 4, arg))
+    let errs: i32 = flowc_typecheck(arena, root, src as ptr<u8>)
+    flowc_ast_free(arena)
+    return errs
+}
+
+function no_match_case(src: string) -> i32 {
+    let mut arena: AstArena = flowc_ast_new(32)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+    append_item(&arena, root, make_one_arg_decl(&arena, 0, 4, 16, 19))
+    append_item(&arena, root, make_one_arg_decl(&arena, 0, 4, 20, 23))
+    let arg: i32 = flowc_ast_alloc(&arena, AST_STRING, 0, 0)
+    append_item(&arena, root, make_caller(&arena, 9, 15, 0, 4, arg))
+    let errs: i32 = flowc_typecheck(arena, root, src as ptr<u8>)
+    flowc_ast_free(arena)
+    return errs
+}
+
+function ambiguous_case(src: string) -> i32 {
+    let mut arena: AstArena = flowc_ast_new(32)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+    append_item(&arena, root, make_one_arg_decl(&arena, 5, 8, 24, 27))
+    append_item(&arena, root, make_one_arg_decl(&arena, 5, 8, 28, 31))
+    let arg: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
+    append_item(&arena, root, make_caller(&arena, 9, 15, 5, 8, arg))
+    let errs: i32 = flowc_typecheck(arena, root, src as ptr<u8>)
+    flowc_ast_free(arena)
+    return errs
+}
+
+function main() -> i32 {
+    #                  1111111111222222222233
+    #        01234567890123456789012345678901
+    let src: string = "pick amb caller i32 f32 u32 u64"
+
+    if exact_case(src) != 0 {
+        puts("FAIL: exact overload should typecheck")
+        return 1
+    }
+    if no_match_case(src) <= 0 {
+        puts("FAIL: known overload no-match must diagnose")
+        return 2
+    }
+    if ambiguous_case(src) <= 0 {
+        puts("FAIL: ambiguous widened literal must diagnose")
+        return 3
+    }
+
+    puts("All native typecheck overload integration tests passed")
+    return 0
+}
