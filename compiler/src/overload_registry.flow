@@ -30,9 +30,14 @@ function overload_registry_unwrap_fn(arena: AstArena, item: i32) -> i32 {
 }
 
 # Clear module-local entries while retaining allocated storage and source.
+# A table that never initialized successfully stays failed after reset.
 export function flowc_overload_registry_reset(table: ptr<FlowcOverloadTable>, src: ptr<u8>) {
     table[0].src = src
     table[0].len = 0
+    if table[0].cap <= 0 or table[0].ns == null or table[0].ne == null or table[0].arity == null or table[0].decl == null {
+        table[0].err = 1
+        return
+    }
     table[0].err = 0
 }
 
