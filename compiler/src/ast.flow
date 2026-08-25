@@ -55,14 +55,16 @@ export const AST_ENUM_VARIANT: i32 = 44
 export const AST_IF_EXPR: i32 = 45
 
 # AST_TYPE.c metadata. Keep this in the existing child slot so AstNode remains
-# 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep
-# c = AST_NONE as initialized by flowc_ast_alloc.
+# 40 bytes. Explicit `span<mut T>` uses SPAN_MUTABLE; reference-span sugar has
+# no literal `span` source token, so it uses a synthetic span tag instead.
 export const AST_TYPE_SPAN_MUTABLE: i32 = 1
+export const AST_TYPE_SYNTHETIC_SPAN_CONST: i32 = 2
+export const AST_TYPE_SYNTHETIC_SPAN_MUTABLE: i32 = 3
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
-# AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array size
-# (0 if none), c = AST_TYPE_SPAN_MUTABLE for span<mut T>, else AST_NONE.
+# AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array/span
+# extent (0 if none); c carries the span metadata constants above.
 # AST_FIELD_ACCESS: a = base expr, name_* = field; AST_INDEX: a = base, b = index.
 # AST_STRUCT_LIT: name_* = type, a = AST_FIELD chain (a child = field expr).
 # AST_CONST: name_* = name, a = type (AST_TYPE), b = init expr, ival = 1 if export else 0.
@@ -156,9 +158,53 @@ export function flowc_ast_type_set_span_mutable(
         return 0 - 1
     }
     if is_mutable == 0 {
-        arena[0].nodes[id].c = AST_NONE
+        if arena[0].nodes[id].c == AST_TYPE_SYNTHETIC_SPAN_MUTABLE {
+            arena[0].nodes[id].c = AST_TYPE_SYNTHETIC_SPAN_CONST
+        } else {
+            if arena[0].nodes[id].c != AST_TYPE_SYNTHETIC_SPAN_CONST {
+                arena[0].nodes[id].c = AST_NONE
+            }
+        }
     } else {
-        arena[0].nodes[id].c = AST_TYPE_SPAN_MUTABLE
+        if arena[0].nodes[id].c == AST_TYPE_SYNTHETIC_SPAN_CONST or arena[0].nodes[id].c == AST_TYPE_SYNTHETIC_SPAN_MUTABLE {
+            arena[0].nodes[id].c = AST_TYPE_SYNTHETIC_SPAN_MUTABLE
+        } else {
+            arena[0].nodes[id].c = AST_TYPE_SPAN_MUTABLE
+        }
+    }
+    return 0
+}
+
+# Mark an AST_TYPE as canonical span sugar even though its source has no `span`
+# identifier token. `ival` may retain a sized-reference extent.
+export function flowc_ast_type_set_synthetic_span(
+    arena: ptr<AstArena>,
+    id: i32,
+    is_mutable: i32
+) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena[0].len {
+        return 0 - 1
+    }
+    if arena[0].nodes[id].kind != AST_TYPE {
+        return 0 - 1
+    }
+    if is_mutable == 0 {
+        arena[0].nodes[id].c = AST_TYPE_SYNTHETIC_SPAN_CONST
+    } else {
+        arena[0].nodes[id].c = AST_TYPE_SYNTHETIC_SPAN_MUTABLE
+    }
+    return 0
+}
+
+export function flowc_ast_type_is_synthetic_span(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena.len {
+        return 0
+    }
+    if arena.nodes[id].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[id].c == AST_TYPE_SYNTHETIC_SPAN_CONST or arena.nodes[id].c == AST_TYPE_SYNTHETIC_SPAN_MUTABLE {
+        return 1
     }
     return 0
 }
@@ -170,7 +216,7 @@ export function flowc_ast_type_span_mutable(arena: AstArena, id: i32) -> i32 {
     if arena.nodes[id].kind != AST_TYPE {
         return 0
     }
-    if arena.nodes[id].c == AST_TYPE_SPAN_MUTABLE {
+    if arena.nodes[id].c == AST_TYPE_SPAN_MUTABLE or arena.nodes[id].c == AST_TYPE_SYNTHETIC_SPAN_MUTABLE {
         return 1
     }
     return 0
