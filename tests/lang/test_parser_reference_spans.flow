@@ -1,0 +1,82 @@
+# End-to-end parser contract for reference-span sugar (#720).
+
+import "compiler/src/ast.flow"
+import "compiler/src/parser.flow"
+import "compiler/src/type_name.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function strlen(s: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function check_param(
+    p: ptr<Parser>,
+    fn: i32,
+    mutable: i32,
+    extent: i32,
+    expected: string,
+    src: ptr<u8>
+) -> i32 {
+    if fn == AST_NONE or p[0].arena.nodes[fn].kind != AST_FN {
+        return 0
+    }
+    let param: i32 = p[0].arena.nodes[fn].a
+    if param == AST_NONE or p[0].arena.nodes[param].kind != AST_PARAM {
+        return 0
+    }
+    let ty: i32 = p[0].arena.nodes[param].a
+    if flowc_ast_type_is_synthetic_span(p[0].arena, ty) != 1 {
+        return 0
+    }
+    if flowc_ast_type_span_mutable(p[0].arena, ty) != mutable {
+        return 0
+    }
+    if p[0].arena.nodes[ty].ival != extent {
+        return 0
+    }
+    let name: array<u8, 128>
+    if flowc_type_name_into(p[0].arena, src, ty, &name[0], 128) < 0 {
+        return 0
+    }
+    if strcmp(&name[0], expected as ptr<u8>) != 0 {
+        return 0
+    }
+    return 1
+}
+
+function main() -> i32 {
+    let src: ptr<u8> = "function a(x: &[i32]) { }\nfunction b(x: &mut [i32]) { }\nfunction c(x: &[i32; 32]) { }\nfunction d(x: &mut [i32; 64]) { }"
+    let mut p: Parser = flowc_parser_new(src, strlen(src), 128)
+    let root: i32 = flowc_parse_program(&p)
+    if p.err != 0 or root == AST_NONE {
+        puts("FAIL: parse reference spans")
+        return 1
+    }
+
+    let a: i32 = p.arena.nodes[root].a
+    let b: i32 = p.arena.nodes[a].next
+    let c: i32 = p.arena.nodes[b].next
+    let d: i32 = p.arena.nodes[c].next
+
+    if check_param(&p, a, 0, 0, "span_const_i32", src) != 1 {
+        puts("FAIL: &[T]")
+        return 2
+    }
+    if check_param(&p, b, 1, 0, "span_mut_i32", src) != 1 {
+        puts("FAIL: &mut [T]")
+        return 3
+    }
+    if check_param(&p, c, 0, 32, "span_const_i32", src) != 1 {
+        puts("FAIL: &[T; N]")
+        return 4
+    }
+    if check_param(&p, d, 1, 64, "span_mut_i32", src) != 1 {
+        puts("FAIL: &mut [T; N]")
+        return 5
+    }
+
+    flowc_parser_free(p)
+    puts("All reference-span parser tests passed")
+    return 0
+}
