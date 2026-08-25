@@ -1,0 +1,74 @@
+# @module flowc.overload_registry
+# @means  Populate a native overload table from local Stage-A function
+#         declarations without coupling table ownership to typecheck.flow.
+
+import .ast {
+    AstArena, AST_NONE, AST_PROGRAM, AST_FN, AST_EXPORT,
+    flowc_ast_chain_len
+}
+import .overload_table {
+    FlowcOverloadTable,
+    flowc_overload_table_add
+}
+
+function overload_registry_unwrap_fn(arena: AstArena, item: i32) -> i32 {
+    if item == AST_NONE or item < 0 or item >= arena.len {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == AST_FN {
+        return item
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and inner >= 0 and inner < arena.len {
+            if arena.nodes[inner].kind == AST_FN {
+                return inner
+            }
+        }
+    }
+    return AST_NONE
+}
+
+# Clear module-local entries while retaining allocated storage and source.
+export function flowc_overload_registry_reset(table: ptr<FlowcOverloadTable>, src: ptr<u8>) {
+    table[0].src = src
+    table[0].len = 0
+    table[0].err = 0
+}
+
+# Register every local function declaration, including exported functions and
+# generics. Same-name entries are intentionally retained; duplicate-signature
+# diagnostics remain the typechecker's responsibility.
+# Returns entries added, or -1 on malformed input/table exhaustion.
+export function flowc_overload_registry_collect(
+    table: ptr<FlowcOverloadTable>,
+    arena: AstArena,
+    root: i32
+) -> i32 {
+    if root == AST_NONE or root < 0 or root >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[root].kind != AST_PROGRAM or table[0].err != 0 {
+        return 0 - 1
+    }
+
+    let before: i32 = table[0].len
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = overload_registry_unwrap_fn(arena, item)
+        if fn != AST_NONE {
+            let arity: i32 = flowc_ast_chain_len(arena, arena.nodes[fn].a)
+            if flowc_overload_table_add(
+                table,
+                arena.nodes[fn].name_start,
+                arena.nodes[fn].name_end,
+                arity,
+                fn
+            ) < 0 {
+                return 0 - 1
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    return table[0].len - before
+}
