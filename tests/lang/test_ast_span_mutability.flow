@@ -1,0 +1,54 @@
+# Tests for the zero-layout-cost AST_TYPE span mutability metadata contract.
+
+import "compiler/src/ast.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut arena: AstArena = flowc_ast_new(8)
+    let ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    let expr: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
+
+    if arena.nodes[ty].c != AST_NONE {
+        puts("FAIL: AST_TYPE metadata must default empty")
+        return 1
+    }
+    if flowc_ast_type_span_mutable(arena, ty) != 0 {
+        puts("FAIL: default span mutability must be const")
+        return 2
+    }
+    if flowc_ast_type_set_span_mutable(&arena, ty, 1) != 0 {
+        puts("FAIL: set mutable")
+        return 3
+    }
+    if arena.nodes[ty].c != AST_TYPE_SPAN_MUTABLE {
+        puts("FAIL: mutable flag encoding")
+        return 4
+    }
+    if flowc_ast_type_span_mutable(arena, ty) != 1 {
+        puts("FAIL: mutable accessor")
+        return 5
+    }
+    if flowc_ast_type_set_span_mutable(&arena, ty, 0) != 0 {
+        puts("FAIL: clear mutable")
+        return 6
+    }
+    if flowc_ast_type_span_mutable(arena, ty) != 0 or arena.nodes[ty].c != AST_NONE {
+        puts("FAIL: clear mutable encoding")
+        return 7
+    }
+    if flowc_ast_type_set_span_mutable(&arena, expr, 1) != -1 {
+        puts("FAIL: non-type set must reject")
+        return 8
+    }
+    if flowc_ast_type_span_mutable(arena, expr) != 0 {
+        puts("FAIL: non-type get must be false")
+        return 9
+    }
+
+    flowc_ast_free(arena)
+    puts("All AST span mutability metadata tests passed")
+    return 0
+}
