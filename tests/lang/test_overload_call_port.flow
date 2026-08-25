@@ -1,0 +1,122 @@
+# Tests for compiler/src/overload_call.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/overload_call.flow"
+import "compiler/src/overload_select.flow"
+import "compiler/src/overload_table.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_zero_fn(arena: ptr<AstArena>) -> i32 {
+    return flowc_ast_alloc(arena, AST_FN, 0, 0)
+}
+
+function make_one_arg_fn(arena: ptr<AstArena>, ty_start: i32, ty_end: i32) -> i32 {
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, 0, 0)
+    arena[0].nodes[ty].name_start = ty_start
+    arena[0].nodes[ty].name_end = ty_end
+    let param: i32 = flowc_ast_alloc(arena, AST_PARAM, 0, 0)
+    arena[0].nodes[param].a = ty
+    let fn: i32 = flowc_ast_alloc(arena, AST_FN, 0, 0)
+    arena[0].nodes[fn].a = param
+    return fn
+}
+
+function main() -> i32 {
+    #                  111111111122222222
+    #        012345678901234567890123456
+    let src: string = "zero pick widen i32 f32 u32"
+    let mut arena: AstArena = flowc_ast_new(64)
+    let mut table: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 16)
+    let mut scratch: FlowcOverloadCallScratch = flowc_overload_call_scratch_init(4)
+    if table.err != 0 or scratch.err != 0 {
+        return 90
+    }
+
+    let zero_fn: i32 = make_zero_fn(&arena)
+    flowc_overload_table_add(&table, 0, 4, 0, zero_fn)
+    if flowc_overload_resolve_call(
+        &scratch, table, arena, src as ptr<u8>, 0, 4, AST_NONE, 0
+    ) != zero_fn {
+        puts("FAIL: zero-arg selection")
+        return 1
+    }
+
+    let pick_i32: i32 = make_one_arg_fn(&arena, 16, 19)
+    let pick_f32: i32 = make_one_arg_fn(&arena, 20, 23)
+    flowc_overload_table_add(&table, 5, 9, 1, pick_i32)
+    flowc_overload_table_add(&table, 5, 9, 1, pick_f32)
+
+    let int_arg: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
+    if flowc_overload_call_prepare(&scratch, 1) != 1 {
+        puts("FAIL: prepare literal")
+        return 2
+    }
+    if flowc_overload_resolve_call(
+        &scratch, table, arena, src as ptr<u8>, 5, 9, int_arg, 1
+    ) != pick_i32 {
+        puts("FAIL: literal ordinary selection")
+        return 3
+    }
+
+    let widen_u32: i32 = make_one_arg_fn(&arena, 24, 27)
+    flowc_overload_table_add(&table, 10, 15, 1, widen_u32)
+    if flowc_overload_call_prepare(&scratch, 1) != 1 {
+        puts("FAIL: prepare widening")
+        return 4
+    }
+    if flowc_overload_resolve_call(
+        &scratch, table, arena, src as ptr<u8>, 10, 15, int_arg, 1
+    ) != widen_u32 {
+        puts("FAIL: integer literal widening")
+        return 5
+    }
+
+    let ident_arg: i32 = flowc_ast_alloc(&arena, AST_IDENT, 5, 9)
+    arena.nodes[ident_arg].name_start = 5
+    arena.nodes[ident_arg].name_end = 9
+    if flowc_overload_call_prepare(&scratch, 1) != 1 {
+        puts("FAIL: prepare unknown ident")
+        return 6
+    }
+    if flowc_overload_resolve_call(
+        &scratch, table, arena, src as ptr<u8>, 5, 9, ident_arg, 1
+    ) != FLOWC_OVERLOAD_SELECT_UNKNOWN {
+        puts("FAIL: unknown multi-candidate call")
+        return 7
+    }
+
+    let i32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[i32_ty].name_start = 16
+    arena.nodes[i32_ty].name_end = 19
+    if flowc_overload_call_set_ident_type(&scratch, 0, i32_ty) != 0 {
+        puts("FAIL: set identifier type")
+        return 8
+    }
+    if flowc_overload_resolve_call(
+        &scratch, table, arena, src as ptr<u8>, 5, 9, ident_arg, 1
+    ) != pick_i32 {
+        puts("FAIL: typed identifier selection")
+        return 9
+    }
+
+    # Preparation must clear the previous identifier type so stale scope data
+    # cannot affect the next call.
+    flowc_overload_call_prepare(&scratch, 1)
+    if scratch.ident_types[0] != AST_NONE {
+        puts("FAIL: prepare must clear identifier type")
+        return 10
+    }
+    if flowc_overload_call_prepare(&scratch, 5) != -1 {
+        puts("FAIL: capacity guard")
+        return 11
+    }
+
+    flowc_overload_call_scratch_free(&scratch)
+    flowc_overload_table_free(&table)
+    flowc_ast_free(arena)
+    puts("All overload call bridge Flow port tests passed")
+    return 0
+}

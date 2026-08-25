@@ -1,0 +1,81 @@
+# Tests for compiler/src/mono_subst.flow.
+
+import "compiler/src/mono_subst.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut env: FlowcMonoSubst = flowc_mono_subst_init(2)
+    if env.err != 0 {
+        return 90
+    }
+
+    let mut param_buf: array<u8, 2> = [84, 0]
+    let mut type_buf: array<u8, 8> = [112, 116, 114, 95, 105, 51, 50, 0]
+    if flowc_mono_subst_add(&env, &param_buf[0] as string, &type_buf[0] as string) != 0 {
+        puts("FAIL: first binding")
+        return 1
+    }
+
+    # Prove the environment owns its rows rather than borrowing request buffers.
+    param_buf[0] = 88
+    type_buf[0] = 102
+    let out: array<u8, 128>
+    if flowc_mono_subst_get(env, "T", &out[0], 128) < 0 {
+        puts("FAIL: copied parameter lookup")
+        return 2
+    }
+    if strcmp(&out[0], "ptr_i32" as ptr<u8>) != 0 {
+        puts("FAIL: copied concrete type")
+        return 3
+    }
+
+    if flowc_mono_subst_add(&env, "T", "ptr_i32") != 0 {
+        puts("FAIL: idempotent duplicate")
+        return 4
+    }
+    if env.len != 1 {
+        puts("FAIL: duplicate changed length")
+        return 5
+    }
+    if flowc_mono_subst_add(&env, "T", "f32") != -1 {
+        puts("FAIL: conflicting duplicate")
+        return 6
+    }
+    if flowc_mono_subst_add(&env, "U", "Result_i32_string") != 1 {
+        puts("FAIL: second binding")
+        return 7
+    }
+    if flowc_mono_subst_get(env, "U", &out[0], 128) < 0 {
+        puts("FAIL: second lookup")
+        return 8
+    }
+    if strcmp(&out[0], "Result_i32_string" as ptr<u8>) != 0 {
+        puts("FAIL: second type spelling")
+        return 9
+    }
+    if flowc_mono_subst_get(env, "Missing", &out[0], 128) != -1 {
+        puts("FAIL: missing binding")
+        return 10
+    }
+    if flowc_mono_subst_get(env, "U", &out[0], 4) != -1 {
+        puts("FAIL: output capacity")
+        return 11
+    }
+
+    if flowc_mono_subst_add(&env, "V", "u64") != -1 {
+        puts("FAIL: environment capacity")
+        return 12
+    }
+    if env.err == 0 {
+        puts("FAIL: capacity must poison environment")
+        return 13
+    }
+
+    flowc_mono_subst_free(&env)
+    puts("All monomorph substitution environment tests passed")
+    return 0
+}
