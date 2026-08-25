@@ -1,0 +1,102 @@
+# @module flowc.overload_call
+# @means  Context-neutral bridge from one AST_CALL argument chain to native
+#         overload selection. TcCtx supplies identifier binding type nodes;
+#         scratch storage and argument normalization stay out of typecheck.flow.
+
+import .ast { AstArena }
+import .overload_args { flowc_overload_classify_args }
+import .overload_select {
+    FLOWC_OVERLOAD_SELECT_UNKNOWN,
+    flowc_overload_select_decl
+}
+import .overload_table { FlowcOverloadTable }
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+export const FLOWC_OVERLOAD_CALL_TYPE_CAP: i32 = 128
+
+# Resolve one call after TcCtx has mapped identifier arguments to AST_TYPE ids.
+# Returns a declaration id, or one of FLOWC_OVERLOAD_SELECT_* from
+# overload_select.flow. Storage/classification failures remain UNKNOWN because
+# Stage-A must not turn incomplete local analysis into a false overload error.
+export function flowc_overload_resolve_call(
+    table: FlowcOverloadTable,
+    arena: AstArena,
+    src: ptr<u8>,
+    name_start: i32,
+    name_end: i32,
+    first_arg: i32,
+    ident_type_nodes: ptr<i32>,
+    arg_count: i32
+) -> i32 {
+    if arg_count < 0 {
+        return FLOWC_OVERLOAD_SELECT_UNKNOWN
+    }
+    if arg_count == 0 {
+        return flowc_overload_select_decl(
+            table,
+            arena,
+            src,
+            name_start,
+            name_end,
+            0,
+            null,
+            null,
+            null,
+            FLOWC_OVERLOAD_CALL_TYPE_CAP
+        )
+    }
+    if ident_type_nodes == null {
+        return FLOWC_OVERLOAD_SELECT_UNKNOWN
+    }
+
+    let rows_raw: ptr<u8> = malloc((arg_count as i64) * FLOWC_OVERLOAD_CALL_TYPE_CAP)
+    let known_raw: ptr<u8> = malloc((arg_count as i64) * 4)
+    let literal_raw: ptr<u8> = malloc((arg_count as i64) * 4)
+    if rows_raw == null or known_raw == null or literal_raw == null {
+        if rows_raw != null { free(rows_raw) }
+        if known_raw != null { free(known_raw) }
+        if literal_raw != null { free(literal_raw) }
+        return FLOWC_OVERLOAD_SELECT_UNKNOWN
+    }
+
+    let known: ptr<i32> = known_raw as ptr<i32>
+    let literal_flags: ptr<i32> = literal_raw as ptr<i32>
+    let classified: i32 = flowc_overload_classify_args(
+        arena,
+        src,
+        first_arg,
+        ident_type_nodes,
+        arg_count,
+        rows_raw,
+        known,
+        literal_flags,
+        FLOWC_OVERLOAD_CALL_TYPE_CAP
+    )
+    if classified != arg_count {
+        free(rows_raw)
+        free(known_raw)
+        free(literal_raw)
+        return FLOWC_OVERLOAD_SELECT_UNKNOWN
+    }
+
+    let selected: i32 = flowc_overload_select_decl(
+        table,
+        arena,
+        src,
+        name_start,
+        name_end,
+        arg_count,
+        rows_raw,
+        known,
+        literal_flags,
+        FLOWC_OVERLOAD_CALL_TYPE_CAP
+    )
+    free(rows_raw)
+    free(known_raw)
+    free(literal_raw)
+    return selected
+}
