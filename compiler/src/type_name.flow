@@ -4,6 +4,7 @@
 
 import .ast {
     AstArena, AST_NONE, AST_TYPE,
+    flowc_ast_type_is_synthetic_span,
     flowc_ast_type_span_mutable
 }
 
@@ -139,7 +140,8 @@ function type_name_into_at(
         return type_name_append_span(src, ns, ne, out, cap, off)
     }
 
-    if type_name_span_is(src, ns, ne, "span") == 1 {
+    let synthetic_span: i32 = flowc_ast_type_is_synthetic_span(arena, ty)
+    if synthetic_span == 1 or type_name_span_is(src, ns, ne, "span") == 1 {
         let mut p: i32 = off
         if flowc_ast_type_span_mutable(arena, ty) == 1 {
             p = type_name_append_lit(out, cap, p, "span_mut_")
