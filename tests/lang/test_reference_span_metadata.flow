@@ -1,0 +1,72 @@
+# Representation contract for &[T] / &mut [T] / sized reference spans (#720).
+
+import "compiler/src/ast.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut arena: AstArena = flowc_ast_new(16)
+    let elem: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+
+    let const_span: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[const_span].a = elem
+    if flowc_ast_type_set_synthetic_span(&arena, const_span, 0) != 0 {
+        puts("FAIL: mark const synthetic span")
+        return 1
+    }
+    if flowc_ast_type_is_synthetic_span(arena, const_span) != 1 {
+        puts("FAIL: const synthetic identity")
+        return 2
+    }
+    if flowc_ast_type_span_mutable(arena, const_span) != 0 {
+        puts("FAIL: const synthetic mutability")
+        return 3
+    }
+
+    let mut_span: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[mut_span].a = elem
+    arena.nodes[mut_span].ival = 32
+    if flowc_ast_type_set_synthetic_span(&arena, mut_span, 1) != 0 {
+        puts("FAIL: mark mutable synthetic span")
+        return 4
+    }
+    if flowc_ast_type_is_synthetic_span(arena, mut_span) != 1 {
+        puts("FAIL: mutable synthetic identity")
+        return 5
+    }
+    if flowc_ast_type_span_mutable(arena, mut_span) != 1 {
+        puts("FAIL: mutable synthetic mutability")
+        return 6
+    }
+    if arena.nodes[mut_span].ival != 32 {
+        puts("FAIL: synthetic span extent")
+        return 7
+    }
+
+    if flowc_ast_type_set_span_mutable(&arena, mut_span, 0) != 0 {
+        puts("FAIL: clear synthetic mutability")
+        return 8
+    }
+    if flowc_ast_type_is_synthetic_span(arena, mut_span) != 1 {
+        puts("FAIL: clearing mutability erased synthetic identity")
+        return 9
+    }
+    if flowc_ast_type_span_mutable(arena, mut_span) != 0 {
+        puts("FAIL: synthetic clear mutability")
+        return 10
+    }
+    if flowc_ast_type_set_span_mutable(&arena, mut_span, 1) != 0 {
+        puts("FAIL: restore synthetic mutability")
+        return 11
+    }
+    if flowc_ast_type_is_synthetic_span(arena, mut_span) != 1 or flowc_ast_type_span_mutable(arena, mut_span) != 1 {
+        puts("FAIL: restore synthetic metadata")
+        return 12
+    }
+
+    flowc_ast_free(arena)
+    puts("All reference span metadata tests passed")
+    return 0
+}
