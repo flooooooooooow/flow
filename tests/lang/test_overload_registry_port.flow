@@ -66,6 +66,18 @@ function main() -> i32 {
         return 5
     }
 
+    let mut dead: FlowcOverloadTable = flowc_overload_table_init(src as ptr<u8>, 0)
+    if dead.err == 0 {
+        puts("FAIL: zero-cap table should fail init")
+        return 6
+    }
+    flowc_overload_registry_reset(&dead, src as ptr<u8>)
+    if dead.err == 0 {
+        puts("FAIL: reset must not revive dead table")
+        return 7
+    }
+
+    flowc_overload_table_free(&dead)
     flowc_overload_table_free(&table)
     flowc_ast_free(arena)
     puts("All local overload registry Flow port tests passed")
