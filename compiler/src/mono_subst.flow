@@ -1,0 +1,148 @@
+# @module flowc.mono_subst
+# @means  Source-independent generic parameter -> concrete canonical type binding
+#         environment for cross-module monomorphization requests.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: ptr<u8>) -> i64
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+}
+
+export const FLOWC_MONO_SUBST_PARAM_CAP: i32 = 64
+export const FLOWC_MONO_SUBST_TYPE_CAP: i32 = 128
+
+export struct FlowcMonoSubst {
+    params: ptr<u8>,
+    types: ptr<u8>,
+    len: i32,
+    cap: i32,
+    err: i32
+}
+
+function mono_subst_row(base: ptr<u8>, index: i32, row_cap: i32) -> ptr<u8> {
+    return base + (index * row_cap)
+}
+
+function mono_subst_copy(value: string, out: ptr<u8>, cap: i32) -> i32 {
+    let p: ptr<u8> = value as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    if n <= 0 or n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = p[i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+export function flowc_mono_subst_init(cap: i32) -> FlowcMonoSubst {
+    if cap <= 0 {
+        return FlowcMonoSubst { params: null, types: null, len: 0, cap: 0, err: 1 }
+    }
+    let param_raw: ptr<u8> = malloc((cap as i64) * FLOWC_MONO_SUBST_PARAM_CAP)
+    let type_raw: ptr<u8> = malloc((cap as i64) * FLOWC_MONO_SUBST_TYPE_CAP)
+    if param_raw == null or type_raw == null {
+        if param_raw != null { free(param_raw) }
+        if type_raw != null { free(type_raw) }
+        return FlowcMonoSubst { params: null, types: null, len: 0, cap: 0, err: 1 }
+    }
+    return FlowcMonoSubst { params: param_raw, types: type_raw, len: 0, cap: cap, err: 0 }
+}
+
+export function flowc_mono_subst_free(env: ptr<FlowcMonoSubst>) {
+    if env[0].params != null {
+        free(env[0].params)
+        env[0].params = null
+    }
+    if env[0].types != null {
+        free(env[0].types)
+        env[0].types = null
+    }
+    env[0].len = 0
+    env[0].cap = 0
+}
+
+export function flowc_mono_subst_find(env: FlowcMonoSubst, param: string) -> i32 {
+    if env.err != 0 or env.params == null {
+        return 0 - 1
+    }
+    let needle: ptr<u8> = param as ptr<u8>
+    let mut i: i32 = 0
+    while i < env.len {
+        if strcmp(mono_subst_row(env.params, i, FLOWC_MONO_SUBST_PARAM_CAP), needle) == 0 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Add one binding. Re-adding the exact same binding is idempotent; a conflicting
+# duplicate generic parameter is rejected rather than silently changing a request.
+export function flowc_mono_subst_add(
+    env: ptr<FlowcMonoSubst>,
+    param: string,
+    concrete_type: string
+) -> i32 {
+    if env[0].err != 0 {
+        return 0 - 1
+    }
+    let existing: i32 = flowc_mono_subst_find(env[0], param)
+    if existing >= 0 {
+        let row: ptr<u8> = mono_subst_row(env[0].types, existing, FLOWC_MONO_SUBST_TYPE_CAP)
+        if strcmp(row, concrete_type as ptr<u8>) == 0 {
+            return existing
+        }
+        return 0 - 1
+    }
+    if env[0].len >= env[0].cap {
+        env[0].err = 1
+        return 0 - 1
+    }
+
+    let index: i32 = env[0].len
+    let param_row: ptr<u8> = mono_subst_row(env[0].params, index, FLOWC_MONO_SUBST_PARAM_CAP)
+    let type_row: ptr<u8> = mono_subst_row(env[0].types, index, FLOWC_MONO_SUBST_TYPE_CAP)
+    if mono_subst_copy(param, param_row, FLOWC_MONO_SUBST_PARAM_CAP) < 0 {
+        return 0 - 1
+    }
+    if mono_subst_copy(concrete_type, type_row, FLOWC_MONO_SUBST_TYPE_CAP) < 0 {
+        param_row[0] = 0
+        return 0 - 1
+    }
+    env[0].len = index + 1
+    return index
+}
+
+# Copy the concrete canonical type name for a parameter into caller storage.
+# Returns bytes written, or -1 if the parameter is not bound / storage is too small.
+export function flowc_mono_subst_get(
+    env: FlowcMonoSubst,
+    param: string,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    if out == null or out_cap <= 0 {
+        return 0 - 1
+    }
+    let index: i32 = flowc_mono_subst_find(env, param)
+    if index < 0 {
+        return 0 - 1
+    }
+    let row: ptr<u8> = mono_subst_row(env.types, index, FLOWC_MONO_SUBST_TYPE_CAP)
+    let n: i32 = strlen(row) as i32
+    if n + 1 > out_cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = row[i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
