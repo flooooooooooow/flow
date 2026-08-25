@@ -4,9 +4,9 @@ class Flow < Formula
   desc "Statically typed language with algebraic effects, autodiff, and a C backend"
   homepage "https://flooooooooooow.github.io/flow/"
   license "MIT"
-  url "https://github.com/flooooooooooow/flow/releases/download/v0.10.0/flow-v0.10.0.tar.gz"
-  sha256 "05dc81ee33089724977cf1e6dfac00e9bfd8bbd81da8649570ea8c21669da486"
-  version "0.10.0"
+  url "https://github.com/flooooooooooow/flow/releases/download/v1.0.1/flow-v1.0.1.tar.gz"
+  sha256 "deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b"
+  version "1.0.1"
   head "https://github.com/flooooooooooow/flow.git", branch: "main"
 
   depends_on "python@3.12"
