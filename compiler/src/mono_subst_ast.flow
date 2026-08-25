@@ -1,0 +1,120 @@
+# @module flowc.mono_subst_ast
+# @means  Cross-arena Stage-A adapter that binds generic parameter AST_TYPE
+#         names to canonical concrete AST_TYPE names in an owned substitution env.
+
+import .ast { AstArena, AST_NONE, AST_TYPE }
+import .mono_subst {
+    FlowcMonoSubst,
+    FLOWC_MONO_SUBST_PARAM_CAP,
+    FLOWC_MONO_SUBST_TYPE_CAP,
+    flowc_mono_subst_add
+}
+import .type_name { flowc_type_name_into }
+
+function mono_subst_ast_chain_count(arena: AstArena, first: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut cur: i32 = first
+    while cur != AST_NONE {
+        if cur < 0 or cur >= arena.len {
+            return 0 - 1
+        }
+        n = n + 1
+        cur = arena.nodes[cur].next
+    }
+    return n
+}
+
+function mono_subst_ast_param_name(
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[id].kind != AST_TYPE {
+        return 0 - 1
+    }
+    let start: i32 = arena.nodes[id].name_start
+    let end: i32 = arena.nodes[id].name_end
+    let n: i32 = end - start
+    if src == null or n <= 0 or n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+# Zip definition-arena generic parameters with concrete argument-arena types.
+# The environment owns the resulting strings, so neither arena/source must stay
+# alive after this call. On failure, bindings appended by this call are rolled
+# back by restoring env.len; pre-existing bindings remain intact.
+export function flowc_mono_subst_bind_ast_chains(
+    env: ptr<FlowcMonoSubst>,
+    param_arena: AstArena,
+    param_src: ptr<u8>,
+    first_param: i32,
+    arg_arena: AstArena,
+    arg_src: ptr<u8>,
+    first_arg: i32
+) -> i32 {
+    if env[0].err != 0 {
+        return 0 - 1
+    }
+    let param_count: i32 = mono_subst_ast_chain_count(param_arena, first_param)
+    let arg_count: i32 = mono_subst_ast_chain_count(arg_arena, first_arg)
+    if param_count < 0 or arg_count < 0 or param_count != arg_count {
+        return 0 - 1
+    }
+    if env[0].len + param_count > env[0].cap {
+        return 0 - 1
+    }
+
+    let start_len: i32 = env[0].len
+    let mut param: i32 = first_param
+    let mut arg: i32 = first_arg
+    let mut bound: i32 = 0
+    while param != AST_NONE and arg != AST_NONE {
+        let mut param_name: array<u8, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut concrete: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if mono_subst_ast_param_name(
+            param_arena,
+            param_src,
+            param,
+            &param_name[0],
+            FLOWC_MONO_SUBST_PARAM_CAP
+        ) < 0 {
+            env[0].len = start_len
+            return 0 - 1
+        }
+        if flowc_type_name_into(
+            arg_arena,
+            arg_src,
+            arg,
+            &concrete[0],
+            FLOWC_MONO_SUBST_TYPE_CAP
+        ) < 0 {
+            env[0].len = start_len
+            return 0 - 1
+        }
+        if flowc_mono_subst_add(
+            env,
+            &param_name[0] as string,
+            &concrete[0] as string
+        ) < 0 {
+            env[0].len = start_len
+            return 0 - 1
+        }
+        bound = bound + 1
+        param = param_arena.nodes[param].next
+        arg = arg_arena.nodes[arg].next
+    }
+    return bound
+}
