@@ -1,0 +1,15 @@
+[package]
+name = "flow_cmajor_patch_corpus"
+version = "0.1.0"
+description = "Flow-native Cmajor patch corpus smoke harnesses"
+author = "Flow Contributors"
+license = "MIT"
+entry = "build/patches/entry.flow"
+
+[paths]
+cmajor_examples = "."
+
+[dependencies]
+flow_audio = { path = "../.." }
+
+[dev-dependencies]

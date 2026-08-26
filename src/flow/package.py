@@ -11,53 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import subprocess
 import signal
-
-# For Python < 3.11, fall back
-try:
-    import tomllib
-except ImportError:
-    try:
-        import tomli as tomllib  # pip install tomli
-    except ImportError:
-        # Simple TOML parser fallback
-        class tomllib:
-            @staticmethod
-            def loads(s):
-                """Very basic TOML parser for our limited use case."""
-                result = {"package": {}, "dependencies": {}, "dev-dependencies": {}, "native": {}}
-                current_section = None
-                for line in s.strip().split("\n"):
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if line.startswith("["):
-                        section = line[1:-1].strip()
-                        if section == "package":
-                            current_section = "package"
-                        elif section == "dependencies":
-                            current_section = "dependencies"
-                        elif section == "dev-dependencies":
-                            current_section = "dev-dependencies"
-                        elif section == "native":
-                            current_section = "native"
-                    elif "=" in line and current_section:
-                        key, value = line.split("=", 1)
-                        key = key.strip()
-                        value = value.strip()
-                        # Handle array values [...]
-                        if value.startswith("[") and value.endswith("]"):
-                            # Parse simple array
-                            array_str = value[1:-1]
-                            items = []
-                            for item in array_str.split(","):
-                                item = item.strip().strip('"').strip("'")
-                                if item:
-                                    items.append(item)
-                            result[current_section][key] = items
-                        else:
-                            value = value.strip('"').strip("'")
-                            result[current_section][key] = value
-                return result
+from .toml_compat import loads as toml_loads
 
 
 @dataclass
@@ -169,7 +123,7 @@ class FlowPackage:
     @classmethod
     def from_toml(cls, toml_str: str) -> 'FlowPackage':
         """Parse from TOML string."""
-        data = tomllib.loads(toml_str)
+        data = toml_loads(toml_str)
         pkg = data.get("package", {})
         native = data.get("native", {})
         return cls(
@@ -817,6 +771,32 @@ flow_packages/
             print(f"\n{self.GREEN}✓ All dependencies installed (flow.lock updated){self.RESET}")
         
         return success
+
+    @classmethod
+    def sync_for_program(cls, program: str) -> bool:
+        """Synchronize the project containing ``program`` if it has deps.
+
+        This is intentionally conservative: an existing lockfile and package
+        directory are treated as synchronized. Explicit ``flow sync`` remains
+        available when the manifest or lockfile has changed.
+        """
+        from .project_config import find_flow_toml
+
+        toml_path = find_flow_toml(program)
+        if not toml_path:
+            return True
+        project_dir = Path(toml_path).parent
+        manager = cls(str(project_dir))
+        config = manager.load_config()
+        if config is None or not config.dependencies:
+            return config is not None
+        installed = all(
+            (manager.packages_dir / name).exists()
+            for name in config.dependencies
+        )
+        if manager.lock_file.exists() and installed:
+            return True
+        return manager.install()
     
     def build(self, release: bool = False) -> bool:
         """Build the project."""
@@ -1152,8 +1132,14 @@ def main():
         help="Dependency name (with --git/--path; inferred from URL if omitted)",
     )
     
-    # install
+    # install/sync
     subparsers.add_parser("install", help="Install all dependencies from flow.toml")
+    sync_parser = subparsers.add_parser(
+        "sync", help="Synchronize dependencies for a project or Flow program"
+    )
+    sync_parser.add_argument(
+        "--program", help="Flow source file whose project should be synchronized"
+    )
 
     # search / info / publish
     search_parser = subparsers.add_parser("search", help="Search the package registry")
@@ -1229,6 +1215,10 @@ def main():
         )
     elif args.command == "install":
         pm.install()
+    elif args.command == "sync":
+        if args.program:
+            raise SystemExit(0 if FlowPackageManager.sync_for_program(args.program) else 1)
+        raise SystemExit(0 if pm.install() else 1)
     elif args.command == "search":
         pm.search(args.query)
     elif args.command == "info":
