@@ -21,7 +21,7 @@ cd my_app
 ./flow add hello_lib@0.1.0
 ./flow add hello_lib@^0.1
 
-./flow install          # refresh flow_packages/ + flow.lock
+./flow sync             # refresh flow_packages/ + flow.lock
 ./flow search verify
 ./flow info hello_lib
 ```
@@ -67,7 +67,9 @@ Installed packages land in `flow_packages/<name>/` and are pinned in `flow.lock`
 
 Also: `./flow pkg <subcommand>` → `python -m flow.package …`.
 
-`./flow install` installs **project dependencies** when `flow.toml` exists.
+`./flow sync` installs **project dependencies** when `flow.toml` exists.
+`flow run` performs the same synchronization automatically when a project has
+missing dependencies. `./flow install` remains an alias for compatibility.
 Use `./flow setup` (or `./flow install --tools`) for LLVM/compiler tooling.
 
 ---

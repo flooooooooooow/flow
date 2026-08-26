@@ -24,6 +24,17 @@ Requirements are Clang or GCC and Python 3.9+ for the full compiler host. `flow 
 
 If you installed from source, replace `flow` with `./flow` in the commands below.
 
+Flow projects declare dependencies in `flow.toml`. `flow run` synchronizes the
+nearest project's dependencies automatically, including local `path`
+dependencies. To synchronize explicitly, use:
+
+```bash
+flow sync
+```
+
+The installed packages and lockfile are local project state and are recreated
+from `flow.toml`; they should not be committed.
+
 ## 2. Hello, Flow
 
 Create `hello.flow`:

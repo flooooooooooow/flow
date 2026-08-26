@@ -5,6 +5,16 @@ from pathlib import Path
 from flow.module_resolver import get_module_resolver
 from flow.package import FlowPackage, FlowPackageManager
 from flow.project_config import load_project_config
+from flow.toml_compat import _fallback_loads
+
+
+def test_toml_fallback_reads_inline_path_dependencies():
+    data = _fallback_loads(
+        '[package]\nname = "app"\n\n[dependencies]\n'
+        'flow_audio = { path = "../flow-audio" }\n'
+    )
+
+    assert data["dependencies"]["flow_audio"] == {"path": "../flow-audio"}
 
 
 def test_package_config_round_trips_path_dependency():
@@ -47,6 +57,31 @@ def test_install_path_dependency_copies_package_and_updates_lock(tmp_path):
     assert manager.install()
     assert (app / "flow_packages" / "mathkit" / "src" / "ops.flow").exists()
     assert '"source": "path"' in (app / "flow.lock").read_text(encoding="utf-8")
+
+
+def test_sync_for_program_discovers_nearest_project(tmp_path):
+    dep = tmp_path / "mathkit"
+    (dep / "src").mkdir(parents=True)
+    (dep / "flow.toml").write_text(
+        '[package]\nname = "mathkit"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (dep / "src" / "ops.flow").write_text(
+        "export function add_one(x: i32) -> i32 { return x + 1 }\n",
+        encoding="utf-8",
+    )
+    app = tmp_path / "app"
+    (app / "src").mkdir(parents=True)
+    (app / "flow.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nmathkit = { path = "../mathkit" }\n',
+        encoding="utf-8",
+    )
+    main = app / "src" / "main.flow"
+    main.write_text("function main() -> i32 { return 0 }\n", encoding="utf-8")
+
+    assert FlowPackageManager.sync_for_program(str(main))
+    assert (app / "flow_packages" / "mathkit" / "src" / "ops.flow").exists()
 
 
 def test_dot_import_resolves_installed_path_dependency(tmp_path):

@@ -372,6 +372,8 @@ show_help() {
     echo "Project / packages:"
     echo "  init [name]       Initialize a new project (flow.toml)"
     echo "  add <package>     Add dependency (name, name@^1.0, --git, --path)"
+    echo "  patch <file.flow>  Compile and run a corpus patch smoke harness"
+    echo "  sync [--program FILE]  Synchronize the nearest project's dependencies"
     echo "  pkg install       Install flow.toml dependencies → flow_packages/"
     echo "  search [query]    Search the Flow package registry"
     echo "  info <package>    Show package versions / source"
@@ -1030,6 +1032,12 @@ run_program() {
     local program="$FLOW_PARSE_PROGRAM"
     local backend="$FLOW_PARSE_BACKEND"
     require_flow_file "$program"
+    if ! grep -Eq 'function[[:space:]]+main' "$program"; then
+        print_error "This Flow file does not define main() and cannot be run directly."
+        print_info "If it is a library or patch, use: flow patch $program"
+        return 2
+    fi
+    python3 -m flow.package sync --program "$program"
     local basename
     basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
@@ -1048,6 +1056,37 @@ run_program() {
     print_success "Program finished"
     echo "Exit code: $status"
     return $status
+}
+
+# Compile a patch-library file through a generated executable harness. Corpus
+# patches intentionally expose DSP functions rather than defining main().
+run_patch_smoke() {
+    local patch="${1:-}"
+    if [ -z "$patch" ] || [ ! -f "$patch" ]; then
+        print_error "Usage: flow patch <patch.flow>"
+        return 1
+    fi
+    local patch_dir
+    patch_dir="$(cd "$(dirname "$patch")" && pwd)"
+    local patch_name
+    patch_name="$(basename "$patch" .flow)"
+    local harness_dir="$patch_dir/build/patches"
+    local harness="$harness_dir/${patch_name}_smoke.flow"
+    mkdir -p "$harness_dir"
+    cp "$patch" "$harness_dir/${patch_name}.flow"
+    cat > "$harness" <<EOF
+import "$(basename "$patch")"
+
+function main() -> i32 {
+    println("flow patch smoke: $patch_name compiled")
+    return 0
+}
+EOF
+    # Corpus patches use the full Flow language and generally do not fit the
+    # Stage-A flowc subset. Keep `flow patch` usable with the normal global
+    # flowc default while allowing callers to opt into flowc explicitly.
+    local patch_host="${FLOW_PATCH_HOST:-${FLOW_HOST:-python}}"
+    FLOW_HOST="$patch_host" run_program "$harness"
 }
 
 # Compile only (honors --backend / FLOW_CPU_BACKEND)
@@ -1150,6 +1189,7 @@ compile_audio_program() {
 run_audio_program() {
     local program="$1"
     require_flow_file "$program"
+    python3 -m flow.package sync --program "$program"
     local basename
     basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
@@ -2776,10 +2816,20 @@ case "${1:-help}" in
         shift
         # FLOW_RUN_PYTHON=1 uses the shell-independent Python runner (#400).
         if [ "${FLOW_RUN_PYTHON:-0}" = "1" ]; then
+            python3 -m flow.package sync --program "${1:-}"
             PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.run "$@"
         else
             run_program "$@"
         fi
+        ;;
+    "sync")
+        shift
+        python3 -m flow.package sync "$@"
+        ;;
+    "patch")
+        check_deps
+        shift
+        run_patch_smoke "$@"
         ;;
     "audio")
         check_deps
