@@ -4372,6 +4372,32 @@ class MLIRGenerator:
             return gep, ops
 
         if isinstance(expr, ArrayAccess):
+            # `&xs.data[i]` where `xs` is a span. The pair carries the data
+            # pointer in field 0, so the address is that pointer advanced by
+            # `i` at the span's own element type. Without this case the shape
+            # reaches the spill fallback below, which loads the element and
+            # hands out the address of a fresh copy. A callee writing through
+            # that pointer (`__sincos(phase, &s.data[i], &c.data[i])`) then
+            # updates the copy and the span keeps its old contents.
+            span_data = self._span_data_field(expr.array)
+            if span_data is not None:
+                span_expr, span_type = span_data
+                ops: List[str] = []
+                span_ssa, span_ops = self.generate_expression(span_expr)
+                ops.extend(span_ops)
+                index_ssa, index_ops = self.generate_expression(expr.index)
+                ops.extend(index_ops)
+                index_ssa = self._to_i64(index_ssa, ops)
+                element_mlir = self._span_element_mlir(span_type)
+                data_ssa = self._extract_span_part(span_ssa, 0, "!llvm.ptr", ops)
+                gep = self._next_ssa()
+                ops.append(
+                    f"{self.indent()}{gep} = llvm.getelementptr {data_ssa}[{index_ssa}] "
+                    f": (!llvm.ptr, i64) -> !llvm.ptr, {self._gep_elem_mlir(element_mlir)}"
+                )
+                self._ssa_types[gep] = "!llvm.ptr"
+                return gep, ops
+
             arr_ty = self._flow_type_of_expr(expr.array)
             index_ssa, index_ops = self.generate_expression(expr.index)
             index_type = self._ssa_types.get(index_ssa, "i32")
@@ -6841,6 +6867,19 @@ class MLIRGenerator:
             if self._is_span_flow_type(candidate):
                 return candidate
         return None
+
+    def _span_data_field(self, expr):
+        """Match `<span>.data`, returning (span expression, span type).
+
+        Returns None for anything else, including `<span>.len` and a `.data`
+        field on a declared struct that happens to share the name.
+        """
+        if not isinstance(expr, FieldAccess) or expr.field != "data":
+            return None
+        span_type = self._span_flow_type_of(expr.object)
+        if span_type is None:
+            return None
+        return expr.object, span_type
 
     def _next_ssa(self) -> str:
         name = f"%{self.function_counter}"

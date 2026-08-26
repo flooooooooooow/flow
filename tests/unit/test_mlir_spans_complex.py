@@ -7,6 +7,7 @@ matched if something checks.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -177,3 +178,50 @@ def test_the_pipeline_lowers_complex(tmp_path):
     )
     assert done.returncode == 0, done.stderr
     assert "complex." not in done.stdout, "complex dialect survived lowering"
+
+
+def test_address_of_span_element_is_the_element_not_a_copy(tmp_path):
+    """`&xs.data[i]` must address the span's storage.
+
+    The lvalue case was missing, so this shape reached the spill fallback:
+    load the element, alloca a fresh slot, copy into it, hand out the copy's
+    address. A callee writing through the pointer updated the copy and the
+    span kept its old contents. In the diffBloch port that made
+    `__sincos(phase, &sine.data[i], &cosine.data[i])` leave the trig cache at
+    zero, and every structure factor came out zero.
+    """
+    mlir = emit(textwrap.dedent("""
+        extern {
+            function __sincos(x: f64, s: ptr<f64>, c: ptr<f64>) -> void
+        }
+
+        export function fill(sine: span<mut f64>, cosine: span<mut f64>, n: i32) -> void {
+            for i in 0 to n {
+                __sincos(i as f64, &sine.data[i], &cosine.data[i])
+            }
+        }
+    """), tmp_path)
+
+    body = mlir.split("@fill", 1)[1].split("llvm.func", 1)[0]
+    call = [l for l in body.splitlines() if "@__sincos" in l]
+    assert call, body
+
+    # Both out-pointers must be defined by a gep off the pair's data pointer.
+    # An alloca here would mean the callee writes into a throwaway copy. Note
+    # the span parameters themselves are legitimately spilled in the prologue,
+    # so this checks the definition of the arguments rather than the function.
+    args = re.findall(r"%\d+", call[0].split("(", 1)[1])
+    ptr_args = args[1:3]
+    assert len(ptr_args) == 2, call[0]
+
+    defs = {}
+    for line in body.splitlines():
+        m = re.match(r"\s*(%\d+) = (.*)", line)
+        if m:
+            defs[m.group(1)] = m.group(2)
+
+    for arg in ptr_args:
+        rhs = defs.get(arg, "")
+        assert rhs.startswith("llvm.getelementptr"), f"{arg} is {rhs!r}, expected a gep"
+        assert rhs.rstrip().endswith("f64"), f"{arg} geps at {rhs!r}, expected f64 slots"
+        assert "alloca" not in rhs, f"{arg} came from a spilled copy: {rhs!r}"
