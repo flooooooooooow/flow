@@ -1,0 +1,291 @@
+/* Unified visual language for Flow demos, galleries and the curated showcase.
+ * Loaded after wiki.css, so all colours and radii come from the documentation
+ * theme instead of creating a second design system. */
+
+.demo-gallery-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1.25rem;
+    margin: 0.9rem 0 1.8rem;
+    padding: 0.8rem 0 1rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.84rem;
+}
+
+.demo-gallery-summary strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.demo-showcase-grid,
+.demo-feature-grid,
+.demo-collection-grid,
+.demo-tile-grid {
+    display: grid;
+    gap: 1rem;
+    margin: 1.1rem 0 2rem;
+}
+
+.demo-showcase-grid,
+.demo-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.demo-collection-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.demo-tile-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.demo-collection-card,
+.demo-tile {
+    min-width: 0;
+    margin: 0 !important;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    transition: transform var(--med), border-color var(--med), box-shadow var(--med);
+}
+
+.demo-collection-card:hover,
+.demo-tile:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+}
+
+.demo-collection-featured {
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+.markdown-body a.demo-collection-media,
+.markdown-body a.demo-tile-media {
+    display: block;
+    overflow: hidden;
+    background: var(--bg-far);
+    text-decoration: none;
+}
+
+.markdown-body .demo-collection-media img,
+.markdown-body .demo-tile-media img,
+.markdown-body .demo-tile > img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--bg-far);
+    transition: transform var(--med), filter var(--med);
+}
+
+.demo-collection-card:hover img,
+.demo-tile:hover img {
+    transform: scale(1.012);
+    filter: saturate(1.05) contrast(1.015);
+}
+
+.demo-collection-body,
+.demo-tile figcaption {
+    padding: 0.9rem 1rem 1rem;
+}
+
+.demo-collection-kicker {
+    margin-bottom: 0.3rem;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    font-weight: 650;
+    letter-spacing: 0.065em;
+    text-transform: uppercase;
+}
+
+.markdown-body .demo-collection-body h3 {
+    margin: 0 0 0.45rem;
+    padding: 0;
+    border: 0;
+    font-size: 1.05rem;
+    line-height: 1.3;
+}
+
+.markdown-body .demo-collection-body h3 a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.markdown-body .demo-collection-body h3 a:hover {
+    color: var(--accent);
+}
+
+.markdown-body .demo-collection-body p {
+    margin: 0 0 0.85rem;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    line-height: 1.52;
+}
+
+.demo-collection-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.8rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+}
+
+.demo-collection-meta strong {
+    color: var(--text-muted);
+}
+
+.markdown-body a.demo-collection-open {
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.demo-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0.85rem 0 1.6rem;
+}
+
+.markdown-body a.demo-chip,
+.demo-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0.28rem 0.65rem;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 550;
+    text-decoration: none;
+}
+
+.markdown-body a.demo-chip:hover {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.demo-section-meta {
+    margin-top: -0.45rem !important;
+    color: var(--text-faint) !important;
+    font-family: var(--mono);
+    font-size: 0.72rem !important;
+}
+
+.demo-tile figcaption {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    line-height: 1.48;
+}
+
+.demo-tile figcaption > :last-child {
+    margin-bottom: 0;
+}
+
+.demo-tile-title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.65rem;
+}
+
+.demo-tile-title strong {
+    min-width: 0;
+    color: var(--text);
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+
+.demo-badge {
+    flex-shrink: 0;
+    padding: 0.14rem 0.42rem;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    line-height: 1.3;
+}
+
+.markdown-body code.demo-run {
+    display: block;
+    width: 100%;
+    margin: 0 0 0.65rem;
+    padding: 0.42rem 0.55rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 0.64rem;
+}
+
+.demo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.7rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+/* Existing gallery markdown uses alternating image/caption table rows so it
+ * remains pleasant on GitHub. gallery-enhance.js converts those tables into
+ * these cards only on the Wiki. */
+.demo-tile-grid-enhanced .demo-tile figcaption {
+    min-height: 5.5rem;
+}
+
+.demo-tile-grid-enhanced .demo-tile figcaption code {
+    font-size: 0.72rem;
+}
+
+@media (max-width: 960px) {
+    .demo-tile-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .demo-showcase-grid,
+    .demo-feature-grid,
+    .demo-collection-grid,
+    .demo-tile-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .demo-gallery-summary {
+        gap: 0.45rem 0.9rem;
+    }
+
+    .demo-collection-body,
+    .demo-tile figcaption {
+        padding: 0.8rem 0.85rem 0.9rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .demo-collection-card,
+    .demo-tile,
+    .demo-collection-card img,
+    .demo-tile img {
+        transition: none;
+    }
+
+    .demo-collection-card:hover,
+    .demo-tile:hover {
+        transform: none;
+    }
+}

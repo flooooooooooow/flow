@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "terms": {
+    "demo": "One runnable Flow program or independently selectable shader entry.",
+    "gallery": "A visual collection of related demos with recorded or live output.",
+    "showcase": "The curated front door: a small cross-section chosen to explain what Flow can do."
+  },
+  "collections": [
+    {
+      "id": "shaders",
+      "title": "Photoreal FSL",
+      "page": "shaders.md",
+      "preview": "shaders/photoreal_studio.gif",
+      "section": "Rendering",
+      "count": 64,
+      "count_label": "shaders",
+      "runtime": "FSL → Metal",
+      "featured": true,
+      "description": "Ray-marched scenes and a procedural PBR-style material library: metals, glass, stone, coatings, soft materials, industrial surfaces and emissive studies."
+    },
+    {
+      "id": "games",
+      "title": "Games",
+      "page": "games.md",
+      "preview": "games/tetris.gif",
+      "section": "Interactive",
+      "count": 25,
+      "count_label": "games",
+      "runtime": "gfx · native + WASM",
+      "featured": true,
+      "description": "Complete playable games from arcade staples through puzzle, board and sandbox examples."
+    },
+    {
+      "id": "morphogenesis",
+      "title": "Morphogenesis",
+      "page": "morphogenesis.md",
+      "preview": "morphogenesis/gray_scott.gif",
+      "section": "Systems through time",
+      "count": 40,
+      "count_label": "simulations",
+      "runtime": "gfx · recorded",
+      "featured": true,
+      "description": "Reaction-diffusion, Turing patterns, aggregation, L-systems, Physarum, cellular automata and biological growth."
+    },
+    {
+      "id": "neuro",
+      "title": "Neurons & Networks",
+      "page": "neuro.md",
+      "preview": "neuro/hodgkin_huxley.gif",
+      "section": "Systems through time",
+      "count": 15,
+      "count_label": "simulations",
+      "runtime": "gfx · recorded",
+      "featured": true,
+      "description": "Single neurons, cable models, plasticity, balanced networks, attractors and central pattern generators with quantitative gates."
+    },
+    {
+      "id": "threed",
+      "title": "3D",
+      "page": "threed.md",
+      "preview": "threed/spinning_solids.gif",
+      "section": "Rendering",
+      "count": 8,
+      "count_label": "demos",
+      "runtime": "software rasterizer",
+      "featured": true,
+      "description": "A software rasterizer written in Flow: solids, voxels, terrain, particles, cameras, ray picking and rigid-body motion."
+    },
+    {
+      "id": "planet",
+      "title": "Planet Pipeline",
+      "page": "planet.md",
+      "preview": "planet/planet_spin.gif",
+      "section": "Rendering",
+      "count": 7,
+      "count_label": "stages",
+      "runtime": "gfx · recorded",
+      "featured": true,
+      "description": "A cubesphere world pipeline from tectonics through elevation, erosion, climate, biomes and a rotating final globe."
+    },
+    {
+      "id": "procgen",
+      "title": "Procedural Generation",
+      "page": "procgen.md",
+      "preview": "procgen/wfc_dungeon.gif",
+      "section": "Rendering",
+      "count": 8,
+      "count_label": "demos",
+      "runtime": "gfx · recorded",
+      "featured": false,
+      "description": "Noise atlases, heightmaps, domain warping, caves, Voronoi, islands, biomes and wave-function collapse."
+    },
+    {
+      "id": "evoleco",
+      "title": "Evolutionary Biology",
+      "page": "evoleco.md",
+      "preview": "evoleco/red_queen.gif",
+      "section": "Systems through time",
+      "count": 25,
+      "count_label": "simulations",
+      "runtime": "gfx · recorded",
+      "featured": false,
+      "description": "Population genetics, evolutionary games, ecology, selection, drift, sweeps, Red Queen dynamics and spatial models."
+    },
+    {
+      "id": "social",
+      "title": "Opinion Dynamics",
+      "page": "social.md",
+      "preview": "social/voter_model.gif",
+      "section": "Systems through time",
+      "count": 5,
+      "count_label": "models",
+      "runtime": "gfx · recorded",
+      "featured": false,
+      "description": "Voter, Sznajd, majority-rule and bounded-confidence models with their conserved quantities or closed-form checks."
+    },
+    {
+      "id": "evolution",
+      "title": "Evolution Suite",
+      "page": "evolution.md",
+      "preview": "lorenz.gif",
+      "section": "Systems through time",
+      "count": 34,
+      "count_label": "programs",
+      "runtime": "C + MLIR",
+      "featured": false,
+      "description": "The language thesis directly: continuous, hybrid, population and control systems declared with Flow's evolution syntax."
+    },
+    {
+      "id": "numerical",
+      "title": "Numerical Methods",
+      "page": "numerical.md",
+      "preview": "numerical/fmm_adaptive.gif",
+      "section": "Numerics",
+      "count": 1,
+      "count_label": "recorded proof",
+      "runtime": "gfx · gated",
+      "featured": false,
+      "description": "Numerical algorithms that both visualize their state and gate correctness and performance, beginning with adaptive FMM."
+    },
+    {
+      "id": "wasm",
+      "title": "Live WebAssembly",
+      "page": "wasm.md",
+      "preview": "games/2048.gif",
+      "section": "Interactive",
+      "count": 1,
+      "count_label": "live collection",
+      "runtime": "browser · live",
+      "featured": false,
+      "description": "The same games and graphics programs compiled for the browser so the gallery becomes something you can play and manipulate."
+    }
+  ]
+}
