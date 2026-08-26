@@ -1,0 +1,119 @@
+# Tests for compiler/src/expr_type.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/expr_type.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let src: string = "Widget i64"
+    let mut arena: AstArena = flowc_ast_new(16)
+    let buf: array<u8, 64>
+
+    let int_id: i32 = flowc_ast_alloc(&arena, AST_INT, 0, 0)
+    if flowc_expr_type_into(arena, src as ptr<u8>, int_id, "", 0, &buf[0], 64) != 3 {
+        puts("FAIL: int classification")
+        return 1
+    }
+    if strcmp(&buf[0], "i32" as ptr<u8>) != 0 {
+        puts("FAIL: int type spelling")
+        return 2
+    }
+    if flowc_expr_is_unsuffixed_int_literal(arena, int_id) != 1 {
+        puts("FAIL: int literal widening marker")
+        return 3
+    }
+
+    let float_id: i32 = flowc_ast_alloc(&arena, AST_FLOAT, 0, 0)
+    if flowc_expr_type_into(arena, src as ptr<u8>, float_id, "", 0, &buf[0], 64) != 3 {
+        puts("FAIL: float classification")
+        return 4
+    }
+    if strcmp(&buf[0], "f32" as ptr<u8>) != 0 {
+        puts("FAIL: float type spelling")
+        return 5
+    }
+
+    let bool_id: i32 = flowc_ast_alloc(&arena, AST_BOOL, 0, 0)
+    if flowc_expr_type_into(arena, src as ptr<u8>, bool_id, "", 0, &buf[0], 64) != 4 {
+        puts("FAIL: bool classification")
+        return 6
+    }
+    if strcmp(&buf[0], "bool" as ptr<u8>) != 0 {
+        puts("FAIL: bool type spelling")
+        return 7
+    }
+
+    let string_id: i32 = flowc_ast_alloc(&arena, AST_STRING, 0, 0)
+    if flowc_expr_type_into(arena, src as ptr<u8>, string_id, "", 0, &buf[0], 64) != 6 {
+        puts("FAIL: string classification")
+        return 8
+    }
+    if strcmp(&buf[0], "string" as ptr<u8>) != 0 {
+        puts("FAIL: string type spelling")
+        return 9
+    }
+
+    let ident_id: i32 = flowc_ast_alloc(&arena, AST_IDENT, 0, 0)
+    if flowc_expr_type_into(arena, src as ptr<u8>, ident_id, "u64", 1, &buf[0], 64) != 3 {
+        puts("FAIL: known ident classification")
+        return 10
+    }
+    if strcmp(&buf[0], "u64" as ptr<u8>) != 0 {
+        puts("FAIL: known ident spelling")
+        return 11
+    }
+    if flowc_expr_type_into(arena, src as ptr<u8>, ident_id, "", 0, &buf[0], 64) != -1 {
+        puts("FAIL: unknown ident should stay unknown")
+        return 12
+    }
+
+    let struct_id: i32 = flowc_ast_alloc(&arena, AST_STRUCT_LIT, 0, 0)
+    arena.nodes[struct_id].name_start = 0
+    arena.nodes[struct_id].name_end = 6
+    if flowc_expr_type_into(arena, src as ptr<u8>, struct_id, "", 0, &buf[0], 64) != 6 {
+        puts("FAIL: struct literal classification")
+        return 13
+    }
+    if strcmp(&buf[0], "Widget" as ptr<u8>) != 0 {
+        puts("FAIL: struct literal spelling")
+        return 14
+    }
+
+    let ty_id: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    arena.nodes[ty_id].name_start = 7
+    arena.nodes[ty_id].name_end = 10
+    let cast_id: i32 = flowc_ast_alloc(&arena, AST_CAST, 0, 0)
+    arena.nodes[cast_id].b = ty_id
+    if flowc_expr_type_into(arena, src as ptr<u8>, cast_id, "", 0, &buf[0], 64) != 3 {
+        puts("FAIL: plain cast classification")
+        return 15
+    }
+    if strcmp(&buf[0], "i64" as ptr<u8>) != 0 {
+        puts("FAIL: plain cast spelling")
+        return 16
+    }
+
+    arena.nodes[ty_id].a = int_id
+    if flowc_expr_type_into(arena, src as ptr<u8>, cast_id, "", 0, &buf[0], 64) != -1 {
+        puts("FAIL: composite cast should stay unknown")
+        return 17
+    }
+    arena.nodes[ty_id].a = AST_NONE
+
+    if flowc_expr_type_into(arena, src as ptr<u8>, struct_id, "", 0, &buf[0], 4) != -1 {
+        puts("FAIL: output capacity guard")
+        return 18
+    }
+    if flowc_expr_is_unsuffixed_int_literal(arena, float_id) != 0 {
+        puts("FAIL: non-int literal widening marker")
+        return 19
+    }
+
+    flowc_ast_free(arena)
+    puts("All expression type Flow port tests passed")
+    return 0
+}

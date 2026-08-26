@@ -1,8 +1,25 @@
 # Demo recordings
 
-The GIFs in this folder are produced by running the real Flow programs. They are
-not illustrations of what the programs would look like — the pixels come from
-the same drawing calls the native window would receive.
+The visual output in this folder is produced by running real Flow code. It is
+not illustration or concept art. CPU `gfx` demos are recorded from the same
+drawing API used by native windows; FSL shader demos are rendered through the
+same generated Metal fragment shaders used by `./flow shader`.
+
+## Three terms, one hierarchy
+
+The Wiki uses these words deliberately:
+
+- A **demo** is one runnable Flow program or one independently selectable shader
+  entry.
+- A **gallery** is a visual collection of related demos.
+- The **showcase** is the small curated front door that samples several
+  galleries. It is not another synonym for the complete example bank.
+
+The canonical collection metadata lives in [`catalog.json`](catalog.json).
+`scripts/build_demo_overview.py` turns it into the visual
+[Demo Showcase](overview.md), and `scripts/sync_demo_nav.py` uses the same
+catalog to keep the Gallery tab organised by rendering, systems-through-time,
+and interactive work.
 
 ## Naming contract
 
@@ -14,10 +31,16 @@ Every example in `examples/neuro/` has one at `docs/demos/neuro/<name>.gif`.
 Every example in `examples/evoleco/` has one at `docs/demos/evoleco/<name>.gif`.
 Every example in `examples/planet/` has one at `docs/demos/planet/<name>.gif`.
 Every example in `examples/procgen/` has one at `docs/demos/procgen/<name>.gif`.
-Numerical clips (FMM) live at `docs/demos/numerical/<name>.gif`.
+Numerical clips live at `docs/demos/numerical/<name>.gif`.
+
+FSL gallery entries use the shader-fill name directly:
+`shader fill photoreal_gold` → `docs/demos/shaders/photoreal_gold.gif`.
+`scripts/build_shader_gallery.py` derives the page from the two photoreal FSL
+source files and enforces the current **64 unique shader** contract.
+
 The three original demos also keep their GIFs directly in this folder
-(`lorenz.gif`, `tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are
-copied into `games/` as well so the games directory covers every game.
+(`lorenz.gif`, `tetris.gif`, `2048.gif`); `tetris.gif` and `2048.gif` are copied
+into `games/` as well so the games directory covers every game.
 
 The eight software-3D examples in `examples/threed/` have clips at
 `docs/demos/threed/<name>.gif`. Those are recorded directly with
@@ -25,25 +48,9 @@ The eight software-3D examples in `examples/threed/` have clips at
 rather than through `record_demos.py`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
-The galleries: [games](games.md), [morphogenesis](morphogenesis.md),
-[neuro](neuro.md), [evoleco](evoleco.md), [planet](planet.md),
-[procgen](procgen.md), and [numerical](numerical.md).
+## Two real recording paths
 
-Regenerate everything with:
-
-```bash
-python3 scripts/record_demos.py                      # all demos
-python3 scripts/record_demos.py frogger              # just one
-python3 scripts/record_demos.py --group morphogenesis # one gallery
-python3 scripts/record_demos.py --group neuro        # neuron atlas
-python3 scripts/record_demos.py --group evoleco      # evolution / ecology
-python3 scripts/record_demos.py --group planet       # cubesphere planet
-python3 scripts/record_demos.py --group procgen      # procedural generation
-python3 scripts/record_demos.py --group numerical    # FMM and friends
-python3 scripts/record_demos.py --check              # which GIFs exist, and their sizes
-```
-
-## How it works
+### CPU `gfx` recordings
 
 `runtime/gfx_record.c` implements the same API as the windowed backends
 (`gfx_macos.m`, `gfx_linux.c`, `gfx_windows.c`), with two differences: it draws
@@ -51,18 +58,45 @@ into an off-screen buffer instead of a window, and `flow_gfx_present` writes the
 buffer out as a numbered PPM. Because it needs no display, recordings work over
 SSH and in CI.
 
+Regenerate the CPU galleries with:
+
 ```bash
-# Every demo, encoded straight into docs/demos/
-python3 scripts/record_demos.py
-
-# Just one
-python3 scripts/record_demos.py tetris
-
-# Which demos are missing a GIF?
-python3 scripts/record_demos.py --check
+python3 scripts/record_demos.py                       # all registered gfx demos
+python3 scripts/record_demos.py frogger               # just one
+python3 scripts/record_demos.py --group morphogenesis # one gallery
+python3 scripts/record_demos.py --group neuro         # neuron atlas
+python3 scripts/record_demos.py --group evoleco       # evolution / ecology
+python3 scripts/record_demos.py --group planet        # cubesphere planet
+python3 scripts/record_demos.py --group procgen       # procedural generation
+python3 scripts/record_demos.py --group numerical     # FMM and friends
+python3 scripts/record_demos.py --check               # missing GIFs + sizes
 ```
 
-## Recording a program by hand
+### FSL / Metal recordings
+
+`runtime/shader_record_metal.m` is a deterministic, windowless Metal renderer.
+It compiles the MSL produced from the real FSL source, renders the requested
+fragment entry into an offscreen `BGRA8Unorm` texture, copies the pixels back,
+and writes PPM frames. Animation time is `frame_number / fps`, not wall-clock
+time, so scheduling jitter cannot change the captured animation.
+
+```bash
+# All 64 photoreal shader entries
+python3 scripts/record_shader_gallery.py --group photoreal
+
+# One material study
+python3 scripts/record_shader_gallery.py --name photoreal_gold
+
+# Rebuild and validate the generated Wiki page
+python3 scripts/build_shader_gallery.py
+python3 scripts/build_shader_gallery.py --check --check-assets
+```
+
+This path requires macOS with an exposed Metal device. The repository's shader
+gallery workflow probes Metal before recording and never substitutes a fake or
+software recreation when Metal is unavailable.
+
+## Recording a `gfx` program by hand
 
 ```bash
 ./flow record examples/evolution/lorenz_gfx.flow \
@@ -105,23 +139,37 @@ Two things to keep in mind when writing a script:
 - Gravity is usually slow. Tetris falls one cell every 48 frames, so the demo
   script uses hard drops (Space, keycode 49) to keep pieces landing.
 
-## Adding a demo
+## Adding a demo or gallery
 
-Add an entry to `DEMOS` in `scripts/record_demos.py` with the program path, a
-frame budget, and — if it is interactive — a key script. Frame count, `skip`,
-and `duration_ms` together set the length and pace of the GIF; `scale` shrinks
-large windows so the file stays small enough for a docs page (games target
-320–480 px wide and under ~500 KB, hard cap 1 MB).
+For a CPU demo, add an entry to `DEMOS` in `scripts/record_demos.py` with the
+program path, frame budget and, if interactive, a key script. Frame count,
+`skip`, duration and scale should keep the clip readable without turning the
+Wiki into an asset dump.
 
-Because the recorder and the games are fully deterministic (fixed RNG seeds,
-frame-counted input), a key script is a repeatable flight plan. The longer
-scripts in `record_demos.py` were derived by simulating a game's exact integer
-logic offline and searching for input that plays well — the committed frame
-windows encode that play, and re-recording reproduces it bit for bit.
+For an FSL photoreal demo, add the `shader fill photoreal_*` entry to the
+canonical source file. The gallery generator discovers it automatically; the
+asset check then forces a matching real GIF to be recorded before the gallery
+can be considered current.
 
-A simulation demo (`morph(...)` in the same file) takes no input, so its only
-tuning is the frame budget: `frames` has to run past the point where the
-pattern finishes forming, and `skip` sets both the pace and the size. Those
-demos also set `resample=Image.NEAREST`, because a grid drawn as blocks of
-identical pixels loses both sharpness and compressibility under an
-interpolating filter.
+For a new **gallery**, add one record to `docs/demos/catalog.json` with its page,
+preview, count, runtime and section. Re-run:
+
+```bash
+python3 scripts/build_demo_overview.py
+python3 scripts/sync_demo_nav.py
+```
+
+The Wiki presentation is intentionally separate from the Markdown source.
+`docs/assets/gallery-enhance.js` upgrades the historical image/caption tables
+into responsive cards on the Wiki, while GitHub still gets simple readable
+Markdown tables.
+
+Because the CPU recorder and its demos are deterministic (fixed RNG seeds and
+frame-counted input), a key script is a repeatable flight plan. Simulation demos
+need no input; their frame budget simply needs to run past the point where the
+interesting structure has formed.
+
+Browse: [Demo Showcase](overview.md) · [Photoreal FSL](shaders.md) ·
+[Games](games.md) · [Morphogenesis](morphogenesis.md) · [Neuro](neuro.md) ·
+[3D](threed.md) · [Planets](planet.md) · [Procedural Generation](procgen.md) ·
+[Evolutionary Biology](evoleco.md) · [Numerical](numerical.md) · [WASM](wasm.md)

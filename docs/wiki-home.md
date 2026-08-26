@@ -1,7 +1,7 @@
 <div class="wiki-hero">
 
 <h1 class="wiki-hero-brand">Flow</h1>
-<p class="wiki-hero-eyebrow">v0.12.0 · systems through time</p>
+<p class="wiki-hero-eyebrow">v1.0.1 · systems through time</p>
 
 <p class="wiki-hero-title">Write with effects.<br>Compile like C.</p>
 
@@ -13,9 +13,9 @@ C / MLIR backends.
 
 <div class="wiki-hero-actions">
   <a href="start-here.md" class="wiki-cta wiki-cta-primary">Start here</a>
+  <a href="demos/overview.md" class="wiki-cta">Showcase</a>
   <a href="effects-showcase.md" class="wiki-cta">Effects &amp; capabilities</a>
   <a href="getting-started.md" class="wiki-cta">Install</a>
-  <a href="demos/overview.md" class="wiki-cta">Galleries</a>
   <a href="tutorials/index.html" class="wiki-cta">Interactive tutorials</a>
 </div>
 
@@ -35,8 +35,8 @@ C / MLIR backends.
 <span><strong>257</strong> interactive lessons</span>
 <span><strong>24</strong> effect patterns</span>
 <span><strong>150+</strong> recorded demos</span>
-<span><strong>9</strong> galleries</span>
-<span><strong>C + MLIR</strong> backends</span>
+<span><strong>12</strong> visual collections</span>
+<span><strong>64</strong> photoreal FSL shaders</span>
 </div>
 
 ## Documentation
@@ -71,8 +71,8 @@ Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 </a>
 
 <a class="wiki-doc" href="demos/overview.md">
-<strong>Galleries</strong>
-<span>Games, morphogenesis, neurons, planets, evolution, WASM. Real <code>gfx</code> recordings.</span>
+<strong>Demo showcase</strong>
+<span>A visual front door into shaders, games, 3D, morphogenesis, neuroscience, planets, evolution and live WASM.</span>
 </a>
 
 <a class="wiki-doc" href="language/spec-index.md">
@@ -199,54 +199,54 @@ let q: Dual = quadratic(x, 2.0, 3.0, 1.0)
 
 ---
 
-## See it run
+## See Flow moving
 
-Frames below come from the native `gfx` backend: the same drawing calls a window receives.
+This is the curated **showcase**, not the whole example bank. Each tile opens a proper gallery. GIFs are recordings of compiled Flow output: CPU `gfx` galleries use the headless framebuffer, while FSL shader GIFs come from the offscreen Metal renderer.
 
-<div class="wiki-demo-grid">
+<div class="demo-showcase-grid">
 
-<figure class="wiki-demo">
-<img src="demos/lorenz.gif" alt="Lorenz attractor traced in real time" loading="lazy">
-<figcaption>
-
-**[Lorenz](../examples/evolution/lorenz_gfx.flow)** — `flow` block, RK4, drawn each frame.
-
-</figcaption>
+<figure class="demo-tile demo-tile-featured">
+<a class="demo-tile-media" href="demos/shaders.md"><img src="demos/shaders/photoreal_studio.gif" alt="Photoreal FSL studio scene" loading="lazy"></a>
+<figcaption><div class="demo-tile-title"><strong>Photoreal FSL</strong><span class="demo-badge">GPU</span></div>64 procedural shader studies, from glass and metals to full ray-marched scenes.<div class="demo-actions"><a href="demos/shaders.md">Open gallery →</a></div></figcaption>
 </figure>
 
-<figure class="wiki-demo">
-<img src="demos/tetris.gif" alt="Tetris being played" loading="lazy">
-<figcaption>
-
-**[Tetris](../examples/games/tetris_gfx.flow)** — full game loop with ghost piece.
-
-</figcaption>
+<figure class="demo-tile">
+<a class="demo-tile-media" href="demos/games.md"><img src="demos/games/tetris.gif" alt="Tetris running in Flow" loading="lazy"></a>
+<figcaption><div class="demo-tile-title"><strong>Games</strong><span class="demo-badge">Playable</span></div>25 complete games with native and browser paths.<div class="demo-actions"><a href="demos/games.md">Open gallery →</a></div></figcaption>
 </figure>
 
-<figure class="wiki-demo">
-<img src="demos/2048.gif" alt="2048 tiles merging" loading="lazy">
-<figcaption>
+<figure class="demo-tile">
+<a class="demo-tile-media" href="demos/morphogenesis.md"><img src="demos/morphogenesis/gray_scott.gif" alt="Gray-Scott reaction diffusion pattern" loading="lazy"></a>
+<figcaption><div class="demo-tile-title"><strong>Morphogenesis</strong><span class="demo-badge">Dynamics</span></div>Pattern formation where the trajectory is the subject.<div class="demo-actions"><a href="demos/morphogenesis.md">Open gallery →</a></div></figcaption>
+</figure>
 
-**[2048](../examples/games/2048_gfx.flow)** — grid logic under scripted input.
+<figure class="demo-tile">
+<a class="demo-tile-media" href="demos/neuro.md"><img src="demos/neuro/hodgkin_huxley.gif" alt="Hodgkin-Huxley neuron simulation" loading="lazy"></a>
+<figcaption><div class="demo-tile-title"><strong>Neurons &amp; networks</strong><span class="demo-badge">Science</span></div>Spikes, cables, plasticity, attractors and network dynamics with quantitative gates.<div class="demo-actions"><a href="demos/neuro.md">Open gallery →</a></div></figcaption>
+</figure>
 
-</figcaption>
+<figure class="demo-tile">
+<a class="demo-tile-media" href="demos/planet.md"><img src="demos/planet/planet_spin.gif" alt="Procedurally generated Flow planet" loading="lazy"></a>
+<figcaption><div class="demo-tile-title"><strong>Planet pipeline</strong><span class="demo-badge">Procedural</span></div>Tectonics through erosion, climate and biomes on a cubesphere.<div class="demo-actions"><a href="demos/planet.md">Open gallery →</a></div></figcaption>
+</figure>
+
+<figure class="demo-tile">
+<a class="demo-tile-media" href="demos/threed.md"><img src="demos/threed/spinning_solids.gif" alt="Flow software rasterizer rendering spinning solids" loading="lazy"></a>
+<figcaption><div class="demo-tile-title"><strong>3D renderer</strong><span class="demo-badge">CPU</span></div>A software rasterizer written in Flow, down to the packed RGB framebuffer.<div class="demo-actions"><a href="demos/threed.md">Open gallery →</a></div></figcaption>
 </figure>
 
 </div>
 
-### Galleries
-
-| Gallery | What you get |
-|---|---|
-| [Games](demos/games.md) | Snake, Tetris, Asteroids, Flappy, and more (25 GIFs) |
-| [Morphogenesis](demos/morphogenesis.md) | Reaction-diffusion, Turing patterns, Physarum (40) |
-| [Neurons](demos/neuro.md) | Hodgkin-Huxley, Izhikevich, Hopfield, CPG (15) |
-| [Evolutionary biology](demos/evoleco.md) | Wright-Fisher, SIR, Red Queen (25) |
-| [Evolution suite](demos/evolution.md) | Systems through time, checked against theory (34) |
-| [Planets](demos/planet.md) · [Procgen](demos/procgen.md) · [Numerical](demos/numerical.md) · [WASM](demos/wasm.md) | Cubesphere, WFC, FMM, live browser demos |
+<nav class="wiki-paths" aria-label="Browse demo collections by intent">
+<a class="wiki-path" href="demos/overview.md#rendering"><span class="wiki-path-kicker">Render</span><strong>Visual &amp; GPU</strong><span>FSL shaders, 3D, planets and procedural generation.</span></a>
+<a class="wiki-path" href="demos/overview.md#systems-through-time"><span class="wiki-path-kicker">Evolve</span><strong>Systems through time</strong><span>Morphogenesis, neurons, evolutionary biology, social dynamics and the evolution suite.</span></a>
+<a class="wiki-path" href="demos/overview.md#interactive"><span class="wiki-path-kicker">Play</span><strong>Interactive</strong><span>Complete games and the live WebAssembly collection.</span></a>
+</nav>
 
 <p class="wiki-section-foot">
-<a href="demos/overview.md">All galleries →</a>
+<a href="demos/overview.md">Open the full demo showcase →</a>
+<span class="wiki-dot">·</span>
+<a href="demos/shaders.md">64-shader FSL gallery →</a>
 <span class="wiki-dot">·</span>
 <a href="wasm/index.html">Live WASM demos →</a>
 </p>
@@ -279,7 +279,7 @@ Everyday commands:
 
 | | |
 |---|---|
-| Version | 0.12.0 · [changelog](project/CHANGELOG.md) |
+| Version | 1.0.1 · [changelog](project/CHANGELOG.md) |
 | License | MIT |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |

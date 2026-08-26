@@ -1,0 +1,67 @@
+name: Prepare release PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prepare:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'release/') &&
+      endsWith(github.head_ref, '-final')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-pr-prepare-${{ github.head_ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ ! "$HEAD_REF" =~ ^release/([0-9]+\.[0-9]+\.[0-9]+)-final$ ]]; then
+            echo "::error::Release branch must be release/X.Y.Z-final"
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare synchronized release tree
+        shell: bash
+        run: |
+          VERSION='${{ steps.release.outputs.version }}'
+          NOTES=".github/releases/${VERSION}.md"
+          test -f "$NOTES" || {
+            echo "::error::Missing $NOTES"
+            exit 1
+          }
+          python3 scripts/prepare_release.py \
+            --version "$VERSION" \
+            --release-date "$(date -u +%Y-%m-%d)" \
+            --notes "$NOTES"
+
+      - name: Commit synchronized release metadata
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Release tree is already synchronized."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "release: synchronize Flow ${{ steps.release.outputs.version }}"
+          git push origin "HEAD:$HEAD_REF"
