@@ -12,9 +12,10 @@ class Flow < Formula
   depends_on "python@3.12"
 
   def install
-    # Keep the repo layout intact — the `flow` driver resolves SCRIPT_DIR via
-    # realpath and expects src/, lib/, runtime/ next to itself.
-    libexec.install "flow", "flow-lsp"
+    # Keep the repo layout intact — the public `flow` dispatcher and its
+    # internal `flow-driver` resolve SCRIPT_DIR and expect src/, lib/, runtime/
+    # next to themselves.
+    libexec.install "flow", "flow-driver", "flow-lsp"
     libexec.install "src", "lib", "runtime", "compiler"
     libexec.install "tools" if (buildpath/"tools").exist?
     libexec.install "wasm" if (buildpath/"wasm").exist?
@@ -23,6 +24,7 @@ class Flow < Formula
     libexec.install "requirements.txt" if (buildpath/"requirements.txt").exist?
 
     chmod 0755, libexec/"flow"
+    chmod 0755, libexec/"flow-driver"
     chmod 0755, libexec/"flow-lsp" if (libexec/"flow-lsp").exist?
 
     python = Formula["python@3.12"].opt_bin/"python3.12"

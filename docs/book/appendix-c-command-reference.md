@@ -80,21 +80,44 @@ Historical Vulkan and UI command aliases remain accepted.
 
 ## Tests
 
+For normal Flow projects, `flow test` discovers and executes named tests under
+`tests/` (or `[test].paths` in `flow.toml`):
+
+```flow
+test "answer" {
+    expect 6 * 7 == 42
+}
+```
+
 | Command | Purpose |
 |---|---|
-| `flow test` | transpile and validate Flow files |
-| `flow test-strict` | strict shortcut |
-| `flow test-runtime` | compile and execute runtime tests |
-| `flow test-lang` | strict language regression programs |
-| `flow test-mlir` | MLIR verification |
-| `flow test-python` | Python unit tests |
-| `flow test-interop` | interoperation runtime tests |
-| `flow test-gpu` | GPU feature and code-generation tests |
+| `flow test` | discover, compile and run the current project's tests |
+| `flow test PATHS...` | test selected files/directories |
+| `flow test --list` | list discovered cases without compiling |
+| `flow test --filter TEXT` | run matching file/test names |
+| `flow test --backend=c` | qualify the portable C backend |
+| `flow test --backend=mlir` | qualify MLIR/LLVM |
+| `flow test --backend=all` | run every case through C and MLIR |
+| `flow test --sanitize=ub,asan` | compile tests with sanitizers |
+| `flow test --profile=safety` | compile tests with the safety profile |
+| `flow test --compiler` | Flow-repository compiler tier sweep |
+| `flow test --project ...` | force project semantics from the Flow repo root |
+| `flow test-runtime` | legacy compiler-repository runtime corpus |
+| `flow test-lang` | legacy strict language regression programs |
+| `flow test-mlir` | compiler-repository MLIR verification |
+| `flow test-python` | compiler Python unit tests |
+| `flow test-interop` | compiler interoperation runtime tests |
+| `flow test-gpu` | compiler GPU feature/code-generation tests |
 | `flow test-matmul` | matrix optimisation and assembly demonstration |
-| `flow test-all` | Flow and Python suites |
+| `flow test-all` | compiler Flow and Python suites |
 
-`flow test` accepts `--strict`, `--lenient`, `--tier1`, `--tier2`,
-`--verbose`, and sanitizer selection.
+Project testing also supports `--timeout`, `--fail-fast`, `--host`, `--keep`
+and `-v/--verbose`. Existing standalone test programs whose `main()` returns
+zero remain valid. Exact output/expected-failure tests can use sibling
+`.expected`, `.expected-stderr`, and `.exitcode` files.
+
+See [`../language/testing.md`](../language/testing.md) for the complete project
+testing contract.
 
 ## Projects and packages
 
