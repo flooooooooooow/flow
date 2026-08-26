@@ -1,0 +1,510 @@
+# FLOW Shader Language — photoreal material-ball gallery
+#
+# 60 PBR-style material studies. Together with shader_photoreal.flow's four
+# ray-marched scenes this gives the photoreal gallery 64 runnable examples.
+
+fn gallery_env(d: vec3, mode: f32) -> vec3 {
+    let h: f32 = clamp(d.y * 0.5 + 0.5, 0.0, 1.0)
+    let sun_dir: vec3 = normalize(vec3(-0.45, 0.55, -0.70))
+    let s: f32 = max(dot(d, sun_dir), 0.0)
+    let glow: f32 = pow(s, 12.0)
+    let sun: f32 = pow(s, 180.0)
+    if mode < 0.5 {
+        return mix(vec3(0.72, 0.78, 0.88), vec3(0.07, 0.14, 0.28), h) + vec3(1.0, 0.82, 0.58) * glow * 0.35 + vec3(1.0) * sun * 3.0
+    } else if mode < 1.5 {
+        return mix(vec3(1.0, 0.32, 0.08), vec3(0.15, 0.03, 0.20), h) + vec3(1.0, 0.52, 0.12) * glow * 0.8 + vec3(1.0, 0.82, 0.42) * sun * 4.0
+    } else if mode < 2.5 {
+        return mix(vec3(0.68, 0.72, 0.76), vec3(0.30, 0.36, 0.44), h) + vec3(0.92, 0.96, 1.0) * glow * 0.15
+    } else if mode < 3.5 {
+        let stars: f32 = step(0.985, hash(floor(d.xz * 120.0)))
+        return mix(vec3(0.03, 0.01, 0.07), vec3(0.006, 0.012, 0.04), h) + vec3(stars) * 0.75
+    } else if mode < 4.5 {
+        return mix(vec3(0.98, 0.62, 0.30), vec3(0.24, 0.48, 0.78), h) + vec3(1.0, 0.88, 0.56) * glow * 0.5 + vec3(1.0) * sun * 4.5
+    } else if mode < 5.5 {
+        let city: f32 = step(0.92, hash(floor(d.xz * 36.0))) * smoothstep(0.28, 0.0, abs(d.y + 0.08))
+        return mix(vec3(0.04, 0.06, 0.16), vec3(0.008, 0.012, 0.05), h) + vec3(1.0, 0.12, 0.62) * city * 1.7
+    } else if mode < 6.5 {
+        return mix(vec3(0.76, 0.88, 0.96), vec3(0.18, 0.34, 0.56), h) + vec3(0.86, 0.94, 1.0) * glow * 0.25
+    } else {
+        let c: f32 = 0.5 + 0.5 * sin(d.x * 38.0 + d.z * 29.0)
+        return mix(vec3(0.02, 0.34, 0.40), vec3(0.004, 0.05, 0.12), h) + vec3(0.08, 0.62, 0.56) * c * 0.16
+    }
+}
+
+fn gallery_pattern(p: vec3, base: vec3, accent: vec3, mode: f32) -> vec3 {
+    if mode < 0.5 {
+        return base * (0.95 + 0.05 * fbm(p.xz * 8.0))
+    } else if mode < 1.5 {
+        let b: f32 = 0.88 + 0.12 * sin(p.y * 165.0 + fbm(p.xz * 12.0) * 5.0)
+        return mix(base * b, accent, 0.08)
+    } else if mode < 2.5 {
+        let w: f32 = fbm(p.xz * 2.6 + vec2(p.y * 0.7, p.y * 0.3))
+        let v: f32 = smoothstep(0.74, 0.94, 0.5 + 0.5 * sin((p.x + p.z) * 7.0 + w * 15.0))
+        return mix(base, accent, v * 0.82)
+    } else if mode < 3.5 {
+        let w: f32 = fbm(p.xy * 3.5)
+        let r: f32 = 0.5 + 0.5 * sin(length(p.xz) * 24.0 + w * 9.0)
+        return mix(base, accent, smoothstep(0.30, 0.78, r) * 0.62)
+    } else if mode < 4.5 {
+        let n: f32 = fbm(p.xz * 18.0 + p.xy * 3.0)
+        return mix(base, accent, smoothstep(0.54, 0.78, n) * 0.46)
+    } else if mode < 5.5 {
+        let w: f32 = 0.5 + 0.5 * sin(p.x * 92.0) * sin(p.y * 88.0)
+        return mix(base * 0.72, accent, w * 0.34)
+    } else if mode < 6.5 {
+        let cell: f32 = mod(floor(p.x * 12.0) + floor(p.y * 12.0), 2.0)
+        return mix(base, accent, cell * 0.34)
+    } else {
+        let w: f32 = fbm(p.xz * 5.0 + p.xy * 1.7)
+        let b: f32 = 0.5 + 0.5 * sin((p.x + p.y + p.z) * 13.0 + w * 11.0)
+        return mix(base, accent, smoothstep(0.42, 0.72, b) * 0.72)
+    }
+}
+
+fn gallery_tonemap(c: vec3) -> vec3 {
+    let x: vec3 = max(c, vec3(0.0))
+    return x / (x + vec3(1.0))
+}
+
+fn gallery_ball(
+    screen: vec2,
+    t: f32,
+    base: vec3,
+    accent: vec3,
+    metal: f32,
+    roughness: f32,
+    pattern: f32,
+    environment: f32,
+    transmission: f32,
+    eta: f32,
+    emission: f32
+) -> vec3 {
+    let ro: vec3 = vec3(0.0, 0.0, 2.75)
+    let rd: vec3 = normalize(vec3(screen.x, screen.y, -1.85))
+    let b: f32 = dot(ro, rd)
+    let c: f32 = dot(ro, ro) - 0.82 * 0.82
+    let h: f32 = b * b - c
+    var col: vec3 = gallery_env(rd, environment)
+
+    if h > 0.0 {
+        let travel: f32 = -b - sqrt(h)
+        let p: vec3 = ro + rd * travel
+        let n: vec3 = normalize(p)
+        let view: vec3 = normalize(ro - p)
+        let light: vec3 = normalize(vec3(-0.48, 0.78, 0.42))
+        let half_dir: vec3 = normalize(light + view)
+        let ndl: f32 = max(dot(n, light), 0.0)
+        let facing: f32 = max(dot(n, view), 0.0)
+        let fresnel: f32 = pow(1.0 - facing, 5.0)
+        let mat: vec3 = gallery_pattern(p, base, accent, pattern)
+        let spec_power: f32 = mix(190.0, 10.0, clamp(roughness, 0.0, 1.0))
+        let spec: f32 = pow(max(dot(n, half_dir), 0.0), spec_power)
+        let reflected: vec3 = gallery_env(reflect(-view, n), environment)
+        let f0: f32 = mix(0.04, 0.72, clamp(metal, 0.0, 1.0))
+        let reflectance: f32 = f0 + (1.0 - f0) * fresnel
+        let diffuse: vec3 = mat * (0.08 + ndl * 1.42) * (1.0 - metal) * (1.0 - transmission)
+        col = diffuse + reflected * reflectance * (0.34 + metal * 0.92) + vec3(spec) * reflectance * 1.75
+
+        if transmission > 0.01 {
+            let rr: vec3 = refract(rd, n, eta * 0.985)
+            let rg: vec3 = refract(rd, n, eta)
+            let rb: vec3 = refract(rd, n, eta * 1.015)
+            let through: vec3 = vec3(gallery_env(rr, environment).r, gallery_env(rg, environment).g, gallery_env(rb, environment).b)
+            col = mix(col, through * mix(vec3(1.0), mat, 0.46), transmission * (1.0 - fresnel)) + reflected * fresnel * transmission
+        }
+
+        if pattern > 6.5 {
+            let irid: f32 = 0.5 + 0.5 * sin(facing * 25.0 + fbm(p.xz * 4.0) * 7.0)
+            col = col + accent * irid * (0.10 + metal * 0.10)
+        }
+
+        if emission > 0.0 {
+            let pulse: f32 = 0.72 + 0.28 * sin(t * 2.1 + fbm(p.xz * 4.0) * 6.0)
+            col = col + mix(mat, accent, 0.55) * emission * pulse
+        }
+
+        let contact: f32 = smoothstep(-0.80, -0.15, p.y)
+        col = col * (0.72 + 0.28 * contact)
+    }
+
+    let floor_y: f32 = screen.y + 0.62
+    let floor_glow: f32 = smoothstep(0.05, 0.0, abs(floor_y)) * smoothstep(1.15, 0.2, abs(screen.x))
+    col = col + gallery_env(vec3(screen.x, 0.08, -1.0), environment) * floor_glow * 0.08
+    return gallery_tonemap(col)
+}
+
+# Metals
+shader fill photoreal_gold {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(1.000, 0.720, 0.180), vec3(1.000, 0.450, 0.080), 1.000, 0.100, 0.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_copper {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.950, 0.420, 0.180), vec3(0.350, 0.090, 0.030), 1.000, 0.240, 1.0, 0.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_silver {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.880, 0.900, 0.940), vec3(0.450, 0.520, 0.600), 1.000, 0.140, 0.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_bronze {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.580, 0.320, 0.120), vec3(0.120, 0.340, 0.200), 0.950, 0.320, 4.0, 3.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_titanium {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.550, 0.600, 0.680), vec3(0.280, 0.180, 0.550), 1.000, 0.200, 7.0, 4.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_brushed_steel {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.620, 0.660, 0.700), vec3(0.150, 0.180, 0.200), 1.000, 0.380, 1.0, 5.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_gunmetal {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.160, 0.180, 0.210), vec3(0.450, 0.480, 0.520), 0.960, 0.270, 4.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+
+# Glass and crystals
+shader fill photoreal_smoked_glass {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.240, 0.280, 0.320), vec3(0.550, 0.620, 0.700), 0.000, 0.070, 0.0, 6.0, 0.880, 0.670, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_amber_glass {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.960, 0.520, 0.120), vec3(1.000, 0.800, 0.280), 0.000, 0.080, 0.0, 1.0, 0.900, 0.650, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_aqua_glass {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.320, 0.920, 0.920), vec3(0.120, 0.520, 0.720), 0.000, 0.050, 0.0, 7.0, 0.920, 0.670, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_frosted_glass {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.780, 0.900, 0.940), vec3(0.450, 0.620, 0.680), 0.000, 0.420, 4.0, 2.0, 0.720, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_ruby_crystal {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.025, 0.060), vec3(1.000, 0.180, 0.220), 0.000, 0.090, 7.0, 3.0, 0.820, 0.640, 0.080)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_sapphire_crystal {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.020, 0.160, 0.720), vec3(0.120, 0.480, 1.000), 0.000, 0.080, 7.0, 4.0, 0.840, 0.640, 0.080)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_emerald_crystal {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.020, 0.480, 0.240), vec3(0.180, 1.000, 0.520), 0.000, 0.100, 7.0, 5.0, 0.820, 0.650, 0.060)
+    color = vec4(col, 1.0)
+}
+
+# Stone and ceramics
+shader fill photoreal_nero_marble {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.060, 0.070, 0.075), vec3(0.680, 0.620, 0.500), 0.000, 0.160, 2.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_jade {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.160, 0.580, 0.340), vec3(0.660, 0.900, 0.600), 0.000, 0.200, 4.0, 7.0, 0.180, 0.680, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_granite {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.330, 0.340, 0.320), vec3(0.720, 0.700, 0.640), 0.000, 0.480, 4.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_travertine {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.580, 0.400), vec3(0.380, 0.260, 0.140), 0.000, 0.580, 4.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_porcelain {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.940, 0.950, 0.920), vec3(0.520, 0.660, 0.820), 0.000, 0.090, 0.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_terracotta {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.680, 0.240, 0.100), vec3(0.380, 0.120, 0.050), 0.000, 0.720, 4.0, 3.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_obsidian {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.025, 0.030, 0.040), vec3(0.300, 0.160, 0.520), 0.050, 0.050, 7.0, 6.0, 0.180, 0.670, 0.000)
+    color = vec4(col, 1.0)
+}
+
+# Coatings and automotive finishes
+shader fill photoreal_piano_lacquer {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.018, 0.020, 0.024), vec3(0.480, 0.520, 0.580), 0.000, 0.035, 0.0, 0.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_candy_red {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.620, 0.012, 0.018), vec3(1.000, 0.120, 0.080), 0.120, 0.060, 7.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_pearl {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.900, 0.880, 0.840), vec3(0.440, 0.680, 0.920), 0.060, 0.100, 7.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_iridescent {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.180, 0.200, 0.240), vec3(0.900, 0.200, 0.880), 0.450, 0.080, 7.0, 5.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_enamel_blue {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.020, 0.180, 0.520), vec3(0.220, 0.640, 1.000), 0.000, 0.110, 0.0, 4.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_clearcoat_black {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.012, 0.014, 0.018), vec3(0.550, 0.620, 0.720), 0.180, 0.045, 0.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_automotive_silver {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.540, 0.580, 0.620), vec3(0.880, 0.900, 0.920), 0.720, 0.180, 4.0, 0.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_carbon_clearcoat {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.035, 0.040, 0.045), vec3(0.180, 0.200, 0.230), 0.280, 0.060, 6.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+
+# Organic and textile-like surfaces
+shader fill photoreal_walnut {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.260, 0.090, 0.025), vec3(0.620, 0.280, 0.080), 0.000, 0.400, 3.0, 3.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_mahogany {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.380, 0.055, 0.025), vec3(0.780, 0.220, 0.060), 0.000, 0.240, 3.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_oak {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.620, 0.380, 0.160), vec3(0.900, 0.700, 0.380), 0.000, 0.460, 3.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_leather {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.200, 0.055, 0.025), vec3(0.520, 0.160, 0.060), 0.000, 0.620, 5.0, 3.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_velvet {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.300, 0.008, 0.018), vec3(0.780, 0.060, 0.120), 0.000, 0.860, 5.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_satin {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.580, 0.440), vec3(0.980, 0.860, 0.680), 0.000, 0.340, 5.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_silk {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.060, 0.180, 0.460), vec3(0.240, 0.620, 0.920), 0.000, 0.280, 5.0, 4.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_wax {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.860, 0.720, 0.520), vec3(1.000, 0.880, 0.680), 0.000, 0.520, 4.0, 1.0, 0.200, 0.730, 0.020)
+    color = vec4(col, 1.0)
+}
+
+# Industrial materials
+shader fill photoreal_concrete {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.340, 0.350, 0.340), vec3(0.620, 0.620, 0.580), 0.000, 0.820, 4.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_wet_concrete {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.160, 0.170, 0.170), vec3(0.460, 0.500, 0.520), 0.000, 0.220, 4.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_asphalt {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.055, 0.060, 0.065), vec3(0.300, 0.320, 0.340), 0.000, 0.880, 4.0, 0.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_wet_asphalt {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.025, 0.030, 0.035), vec3(0.240, 0.340, 0.440), 0.050, 0.120, 4.0, 5.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_rubber {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.025, 0.028, 0.030), vec3(0.100, 0.110, 0.120), 0.000, 0.920, 5.0, 6.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_plastic {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.120, 0.200, 0.320), vec3(0.280, 0.480, 0.720), 0.000, 0.340, 0.0, 4.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_acrylic {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.120, 0.280), vec3(1.000, 0.420, 0.580), 0.000, 0.180, 0.0, 1.0, 0.540, 0.720, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_ceramic_tile {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.120, 0.420, 0.520), vec3(0.720, 0.920, 0.940), 0.000, 0.100, 6.0, 7.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+
+# Science-fiction and emissive materials
+shader fill photoreal_neon_glass {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.080, 0.720, 1.000), vec3(0.580, 0.080, 1.000), 0.000, 0.050, 7.0, 5.0, 0.540, 0.670, 1.400)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_holographic {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.180, 0.220, 0.280), vec3(0.200, 0.920, 1.000), 0.780, 0.080, 7.0, 4.0, 0.000, 0.660, 0.350)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_plasma_core {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.180, 0.380, 1.000), vec3(0.920, 0.180, 1.000), 0.000, 0.120, 7.0, 5.0, 0.350, 0.700, 2.200)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_lava_rock {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.035, 0.022, 0.018), vec3(1.000, 0.180, 0.015), 0.000, 0.920, 7.0, 3.0, 0.000, 0.660, 1.600)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_ice_core {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.580, 0.880, 1.000), vec3(0.080, 0.480, 1.000), 0.000, 0.160, 4.0, 2.0, 0.620, 0.690, 0.280)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_alien_alloy {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.120, 0.340, 0.220), vec3(0.720, 0.180, 0.920), 0.880, 0.160, 7.0, 7.0, 0.000, 0.660, 0.220)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_reactor_shell {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.200, 0.220, 0.240), vec3(1.000, 0.460, 0.060), 0.820, 0.320, 6.0, 6.0, 0.000, 0.660, 0.180)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_energy_crystal {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.060, 0.660, 0.920), vec3(0.420, 1.000, 0.920), 0.000, 0.080, 7.0, 5.0, 0.720, 0.680, 1.500)
+    color = vec4(col, 1.0)
+}
+
+# Cinematic environment studies
+shader fill photoreal_sunset {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.260, 0.080), vec3(1.000, 0.620, 0.180), 0.350, 0.140, 0.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_overcast {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.560, 0.600, 0.640), vec3(0.780, 0.820, 0.860), 0.000, 0.300, 0.0, 2.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_night_city {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.060, 0.080, 0.140), vec3(0.920, 0.120, 0.680), 0.520, 0.100, 7.0, 5.0, 0.000, 0.660, 0.180)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_desert_sun {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.460, 0.200), vec3(1.000, 0.780, 0.440), 0.000, 0.420, 4.0, 1.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_arctic {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.720, 0.860, 0.940), vec3(0.260, 0.580, 0.920), 0.000, 0.180, 4.0, 2.0, 0.140, 0.690, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_forest {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.200, 0.340, 0.160), vec3(0.620, 0.780, 0.280), 0.000, 0.360, 3.0, 7.0, 0.000, 0.660, 0.000)
+    color = vec4(col, 1.0)
+}
+shader fill photoreal_underwater {
+    let q: vec2 = uv * 2.0 - vec2(1.0)
+    let screen: vec2 = vec2(q.x * resolution.x / resolution.y, -q.y)
+    let col: vec3 = gallery_ball(screen, time, vec3(0.040, 0.340, 0.480), vec3(0.080, 0.820, 0.720), 0.000, 0.200, 7.0, 7.0, 0.240, 0.740, 0.120)
+    color = vec4(col, 1.0)
+}

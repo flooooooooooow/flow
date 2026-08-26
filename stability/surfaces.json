@@ -86,7 +86,15 @@
       "classification": "stable",
       "source": "STABILITY.md",
       "owner_issue": 651,
-      "note": "Stable 1.x core: help, version, C compile/run, test and fmt; flow run propagates the executed program's exit status."
+      "note": "Stable 1.x core: help, version, C compile/run and test; flow run propagates the executed program's exit status."
+    },
+    {
+      "id": "formatter",
+      "kind": "cli",
+      "classification": "experimental",
+      "source": "src/flow/formatter.py",
+      "owner_issue": 651,
+      "note": "flow fmt remains Experimental in 1.0. The current formatter does not yet round-trip the full Stable grammar; promotion requires deterministic/idempotent parse-format-parse qualification without dropping declarations or changing semantics."
     },
     {
       "id": "cli-extended",
@@ -94,7 +102,7 @@
       "classification": "experimental",
       "source": "flow",
       "owner_issue": 651,
-      "note": "Specialised backends, graphics/audio/debug tooling, advanced compiler commands and package/native workflows remain outside the Stable CLI promise unless separately promoted."
+      "note": "Specialised backends, graphics/audio/debug tooling, advanced compiler commands, formatter and package/native workflows remain outside the Stable CLI promise unless separately promoted."
     },
     {
       "id": "manifest-core",

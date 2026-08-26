@@ -1,0 +1,30 @@
+name: Changelog
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'CHANGELOG.md'
+      - 'docs/project/CHANGELOG.md'
+      - 'src/flow/version.py'
+      - 'scripts/check_changelog.py'
+      - '.github/workflows/changelog.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'CHANGELOG.md'
+      - 'docs/project/CHANGELOG.md'
+      - 'src/flow/version.py'
+      - 'scripts/check_changelog.py'
+      - '.github/workflows/changelog.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  version-history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require current version in canonical changelog
+        run: python3 scripts/check_changelog.py

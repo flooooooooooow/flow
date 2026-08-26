@@ -1,0 +1,193 @@
+# @module flowc.overload_select
+# @means  AST-aware selection across the native Stage-A overload table.
+#         Actual argument type rows are supplied by the caller so this module
+#         stays independent of TcCtx and expression-scope bookkeeping.
+
+import .ast { AstArena, AST_NONE, AST_FN }
+import .overload {
+    flowc_overload_argument_match,
+    flowc_overload_sole_fallback
+}
+import .overload_table {
+    FlowcOverloadTable,
+    flowc_overload_table_count,
+    flowc_overload_table_nth_decl
+}
+import .type_name { flowc_type_name_into }
+
+export const FLOWC_OVERLOAD_SELECT_NO_MATCH: i32 = -1
+export const FLOWC_OVERLOAD_SELECT_AMBIGUOUS: i32 = -2
+export const FLOWC_OVERLOAD_SELECT_UNKNOWN: i32 = -3
+
+const FLOWC_OVERLOAD_SELECT_TYPE_CAP: i32 = 128
+
+# Match one declaration against normalized actual-type rows.
+# Returns 1 for a complete match, 0 for a known mismatch, and -1 when the
+# candidate cannot be decided because an argument or parameter type is unknown.
+export function flowc_overload_candidate_matches(
+    arena: AstArena,
+    src: ptr<u8>,
+    decl: i32,
+    actual_rows: ptr<u8>,
+    actual_known: ptr<i32>,
+    literal_flags: ptr<i32>,
+    arg_count: i32,
+    row_cap: i32,
+    widening_phase: i32
+) -> i32 {
+    if decl == AST_NONE or decl < 0 or decl >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[decl].kind != AST_FN {
+        return 0 - 1
+    }
+    if arg_count < 0 {
+        return 0 - 1
+    }
+    if arg_count > 0 {
+        if actual_rows == null or actual_known == null or literal_flags == null {
+            return 0 - 1
+        }
+    }
+    if row_cap <= 0 or row_cap > FLOWC_OVERLOAD_SELECT_TYPE_CAP {
+        return 0 - 1
+    }
+
+    let mut param: i32 = arena.nodes[decl].a
+    let mut i: i32 = 0
+    while param != AST_NONE and i < arg_count {
+        if actual_known[i] == 0 {
+            return 0 - 1
+        }
+        let pty: i32 = arena.nodes[param].a
+        let mut expected: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if flowc_type_name_into(arena, src, pty, &expected[0], FLOWC_OVERLOAD_SELECT_TYPE_CAP) < 0 {
+            return 0 - 1
+        }
+        let expected_ptr: ptr<u8> = &expected[0]
+        let actual: ptr<u8> = actual_rows + (i * row_cap)
+        if flowc_overload_argument_match(
+            expected_ptr as string,
+            actual as string,
+            literal_flags[i],
+            widening_phase
+        ) == 0 {
+            return 0
+        }
+        param = arena.nodes[param].next
+        i = i + 1
+    }
+    if param != AST_NONE or i != arg_count {
+        return 0
+    }
+    return 1
+}
+
+function overload_select_phase(
+    table: FlowcOverloadTable,
+    arena: AstArena,
+    src: ptr<u8>,
+    name_start: i32,
+    name_end: i32,
+    arg_count: i32,
+    actual_rows: ptr<u8>,
+    actual_known: ptr<i32>,
+    literal_flags: ptr<i32>,
+    row_cap: i32,
+    widening_phase: i32
+) -> i32 {
+    let candidates: i32 = flowc_overload_table_count(table, name_start, name_end, arg_count)
+    let mut matched: i32 = 0
+    let mut selected: i32 = FLOWC_OVERLOAD_SELECT_NO_MATCH
+    let mut saw_unknown: i32 = 0
+    let mut nth: i32 = 0
+    while nth < candidates {
+        let decl: i32 = flowc_overload_table_nth_decl(table, name_start, name_end, arg_count, nth)
+        let m: i32 = flowc_overload_candidate_matches(
+            arena,
+            src,
+            decl,
+            actual_rows,
+            actual_known,
+            literal_flags,
+            arg_count,
+            row_cap,
+            widening_phase
+        )
+        if m == 1 {
+            matched = matched + 1
+            selected = decl
+        } elif m < 0 {
+            saw_unknown = 1
+        }
+        nth = nth + 1
+    }
+    if matched == 1 {
+        return selected
+    }
+    if matched > 1 {
+        return FLOWC_OVERLOAD_SELECT_AMBIGUOUS
+    }
+    if saw_unknown == 1 {
+        return FLOWC_OVERLOAD_SELECT_UNKNOWN
+    }
+    return FLOWC_OVERLOAD_SELECT_NO_MATCH
+}
+
+# Select one same-name/same-arity declaration using the production resolver's
+# two phases: ordinary compatibility first, then unsuffixed integer widening.
+# A sole candidate may be selected when argument typing is incomplete, matching
+# the Python fallback. Unknown typing with multiple candidates remains UNKNOWN
+# rather than being reported as an ambiguity or a known no-match.
+export function flowc_overload_select_decl(
+    table: FlowcOverloadTable,
+    arena: AstArena,
+    src: ptr<u8>,
+    name_start: i32,
+    name_end: i32,
+    arg_count: i32,
+    actual_rows: ptr<u8>,
+    actual_known: ptr<i32>,
+    literal_flags: ptr<i32>,
+    row_cap: i32
+) -> i32 {
+    let candidates: i32 = flowc_overload_table_count(table, name_start, name_end, arg_count)
+    if candidates <= 0 {
+        return FLOWC_OVERLOAD_SELECT_NO_MATCH
+    }
+
+    let first: i32 = overload_select_phase(
+        table, arena, src, name_start, name_end, arg_count,
+        actual_rows, actual_known, literal_flags, row_cap, 0
+    )
+    if first >= 0 or first == FLOWC_OVERLOAD_SELECT_AMBIGUOUS {
+        return first
+    }
+
+    let second: i32 = overload_select_phase(
+        table, arena, src, name_start, name_end, arg_count,
+        actual_rows, actual_known, literal_flags, row_cap, 1
+    )
+    if second >= 0 or second == FLOWC_OVERLOAD_SELECT_AMBIGUOUS {
+        return second
+    }
+
+    if candidates == 1 {
+        let mut has_unknown: i32 = 0
+        let mut i: i32 = 0
+        while i < arg_count {
+            if actual_known[i] == 0 {
+                has_unknown = 1
+            }
+            i = i + 1
+        }
+        if flowc_overload_sole_fallback(arg_count, arg_count, 0, has_unknown) == 1 {
+            return flowc_overload_table_nth_decl(table, name_start, name_end, arg_count, 0)
+        }
+    }
+
+    if first == FLOWC_OVERLOAD_SELECT_UNKNOWN or second == FLOWC_OVERLOAD_SELECT_UNKNOWN {
+        return FLOWC_OVERLOAD_SELECT_UNKNOWN
+    }
+    return FLOWC_OVERLOAD_SELECT_NO_MATCH
+}

@@ -1,14 +1,17 @@
 # @module flowc.overload
-# @means  Type-compatibility core for overload resolution.
-#         Port of the deterministic compatibility rules from
-#         src/flow/overload.py. Function registration and AST expression type
-#         inference remain in the Python host until the Stage-A AST exposes
-#         the complete production object graph.
+# @means  Type compatibility and deterministic matching policy for overload resolution.
+#         Function registration and AST expression type inference remain in the
+#         Python host until the Stage-A AST exposes the complete production graph.
 
 extern {
     function strlen(s: ptr<u8>) -> i64
     function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
 }
+
+const FLOWC_OVERLOAD_NO_MATCH: i32 = 0
+const FLOWC_OVERLOAD_COMPATIBLE: i32 = 1
+const FLOWC_OVERLOAD_LITERAL_WIDEN: i32 = 2
+const FLOWC_OVERLOAD_EXACT: i32 = 3
 
 function ov_streq(a: string, b: ptr<u8>) -> i32 {
     if strcmp(a as ptr<u8>, b) == 0 {
@@ -139,8 +142,6 @@ export function flowc_overload_is_int_type(type_name: string) -> i32 {
     return 0
 }
 
-# Return whether an actual type can satisfy an overload parameter type.
-# This mirrors OverloadResolver._types_compatible in src/flow/overload.py.
 export function flowc_overload_types_compatible(expected: string, actual: string) -> i32 {
     if ov_streq(expected, actual as ptr<u8>) == 1 {
         return 1
@@ -199,10 +200,8 @@ export function flowc_overload_types_compatible(expected: string, actual: string
         return 1
     }
 
-    let expected_float: i32 = 0
-    let actual_float: i32 = 0
-    let mut ef: i32 = expected_float
-    let mut af: i32 = actual_float
+    let mut ef: i32 = 0
+    let mut af: i32 = 0
     if ov_streq(expected, "f32" as ptr<u8>) == 1 { ef = 1 }
     if ov_streq(expected, "f64" as ptr<u8>) == 1 { ef = 1 }
     if ov_streq(actual, "f32" as ptr<u8>) == 1 { af = 1 }
@@ -224,9 +223,62 @@ export function flowc_overload_types_compatible(expected: string, actual: string
     return 0
 }
 
-# The Python resolver widens only unsuffixed integer literals and only after
-# exact matching. This helper supplies the deterministic type-side predicate;
-# the AST layer remains responsible for proving that the argument is a literal.
 export function flowc_overload_literal_can_widen(expected: string) -> i32 {
     return flowc_overload_is_int_type(expected)
+}
+
+# Match one argument using the same two-phase policy as the Python resolver.
+# Phase 0 admits only ordinary compatibility. Phase 1 additionally admits an
+# unsuffixed integer literal for any integer parameter type.
+export function flowc_overload_argument_match(
+    expected: string,
+    actual: string,
+    is_unsuffixed_int_literal: i32,
+    widening_phase: i32
+) -> i32 {
+    if ov_streq(expected, actual as ptr<u8>) == 1 {
+        return FLOWC_OVERLOAD_EXACT
+    }
+    if flowc_overload_types_compatible(expected, actual) == 1 {
+        return FLOWC_OVERLOAD_COMPATIBLE
+    }
+    if widening_phase == 1 && is_unsuffixed_int_literal == 1 {
+        if flowc_overload_literal_can_widen(expected) == 1 {
+            return FLOWC_OVERLOAD_LITERAL_WIDEN
+        }
+    }
+    return FLOWC_OVERLOAD_NO_MATCH
+}
+
+# Collapse a candidate count to the resolver decision used by resolve_call:
+# 0 = no match, 1 = unique match, -1 = ambiguous.
+export function flowc_overload_match_count_decision(match_count: i32) -> i32 {
+    if match_count <= 0 {
+        return 0
+    }
+    if match_count == 1 {
+        return 1
+    }
+    return 0 - 1
+}
+
+# The Python resolver falls back to a sole overload only when arity matches and
+# either every known argument is compatible or at least one argument type is
+# unknown. This helper keeps that policy in Flow without depending on Python ASTs.
+export function flowc_overload_sole_fallback(
+    param_count: i32,
+    arg_count: i32,
+    all_known_compatible: i32,
+    has_unknown: i32
+) -> i32 {
+    if param_count != arg_count {
+        return 0
+    }
+    if all_known_compatible == 1 {
+        return 1
+    }
+    if has_unknown == 1 {
+        return 1
+    }
+    return 0
 }
