@@ -1189,6 +1189,7 @@ compile_audio_program() {
 run_audio_program() {
     local program="$1"
     require_flow_file "$program"
+    python3 -m flow.package sync --program "$program"
     local basename
     basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
