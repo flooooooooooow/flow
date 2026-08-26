@@ -1,0 +1,3589 @@
+#!/bin/bash
+# FLOW Programming Language Runner
+# The main entry point for running FLOW programs
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLOWC_MODULE="flow.transpiler"
+export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+LLVM_PATH="${LLVM_PATH:-}"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Print colored output
+print_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+resolve_llvm_path() {
+    if [ -n "$LLVM_PATH" ]; then
+        return
+    fi
+    if command -v mlir-opt &> /dev/null; then
+        LLVM_PATH="$(dirname "$(command -v mlir-opt)")"
+        return
+    fi
+    if command -v brew &> /dev/null; then
+        local brew_prefix
+        brew_prefix="$(brew --prefix llvm 2>/dev/null || true)"
+        if [ -n "$brew_prefix" ]; then
+            LLVM_PATH="$brew_prefix/bin"
+            return
+        fi
+    fi
+    LLVM_PATH="/opt/homebrew/opt/llvm/bin"
+}
+
+# ---------------------------------------------------------------------------
+# Host selection (Phase C self-hosting cutover)
+#   FLOW_HOST=flowc   — Stage-A flowc driver only (default for run/compile)
+#   FLOW_HOST=python  — legacy Python transpiler
+#   FLOW_HOST=auto    — try flowc, fall back to python with a warning
+# ---------------------------------------------------------------------------
+flow_host_mode() {
+    local mode="${FLOW_HOST:-flowc}"
+    case "$mode" in
+        flowc|python|auto) printf '%s\n' "$mode" ;;
+        *)
+            print_error "Unknown FLOW_HOST='$mode' (expected flowc|python|auto)"
+            exit 1
+            ;;
+    esac
+}
+
+# CPU backend selection (dual C / MLIR). Default remains C.
+#   FLOW_CPU_BACKEND=c|mlir
+#   ./flow run --backend=mlir <prog>
+flow_cpu_backend() {
+    local mode="${FLOW_CPU_BACKEND:-c}"
+    case "$mode" in
+        c|mlir) printf '%s\n' "$mode" ;;
+        *)
+            print_error "Unknown FLOW_CPU_BACKEND='$mode' (expected c|mlir)"
+            exit 1
+            ;;
+    esac
+}
+
+# GPU memory objects + frameworks for native links (C and MLIR paths).
+# Sets FLOW_GPU_SOURCES and FLOW_GPU_LDFLAGS (bash arrays).
+flow_gpu_link_flags() {
+    FLOW_GPU_SOURCES=()
+    FLOW_GPU_LDFLAGS=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        FLOW_GPU_SOURCES+=("$SCRIPT_DIR/runtime/gpu_metal.m")
+        FLOW_GPU_LDFLAGS+=("-framework" "Metal" "-framework" "Foundation")
+    fi
+}
+
+flow_resolve_flowc() {
+    local driver=""
+    if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
+        driver="$FLOWC_BIN"
+    else
+        driver="$(FLOW_HOST=python bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh")" || true
+    fi
+    if [[ -z "$driver" || ! -x "$driver" ]]; then
+        print_error "No Stage-A flowc driver (set FLOWC_BIN or run compiler/scripts/roundtrip.sh)"
+        return 1
+    fi
+    printf '%s\n' "$driver"
+}
+
+flowc_emit_to_c() {
+    local program="$1"
+    local c_out="$2"
+    local driver
+    if ! driver="$(flow_resolve_flowc)"; then
+        return 1
+    fi
+    print_info "flowc emit via $driver"
+    # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
+    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+    FLOWC_IN="$program" FLOWC_OUT="$c_out" \
+        "$driver"
+}
+
+# ---------------------------------------------------------------------------
+# MISRA Phase 0 (#269 / #270): C compiler flags + sanitizers
+#   Default: -std=c11 -Wall -Wextra
+#   FLOW_PROFILE=safety|flight → also -pedantic -Werror
+#   FLOW_UBSAN=1 / FLOW_ASAN=1 / FLOW_TSAN=1 or FLOW_SANITIZE=ub,asan,tsan
+#   CLI: --sanitize=ub,asan,tsan  --profile=safety  compile --show-flags
+# ---------------------------------------------------------------------------
+flow_profile_mode() {
+    printf '%s\n' "${FLOW_PROFILE:-}"
+}
+
+flow_clang_warning_flags() {
+    # Populate FLOW_CLANG_WARN_FLAGS (bash array).
+    # -std=c11 with _DEFAULT_SOURCE: C11 dialect + POSIX/BSD decls the
+    # runtime needs (usleep, posix_memalign). Bare -std=c11 hides them;
+    # _POSIX_C_SOURCE=200809L also hides usleep on glibc.
+    # -Wno-unused-{function,variable,parameter}: generated preamble stubs,
+    # Flow `let _ = …` discard pattern, and stub ABI params — keeps -Werror
+    # usable under --profile safety (#269).
+    FLOW_CLANG_WARN_FLAGS=(
+        "-std=c11"
+        "-D_DEFAULT_SOURCE"
+        "-Wall"
+        "-Wextra"
+        "-Wno-unused-function"
+        "-Wno-unused-variable"
+        "-Wno-unused-parameter"
+        # C11 makes these constraint violations (errors) by default. The
+        # codegen still has sites that call unmangled DSL-lowered names or
+        # rely on implicit int conversions. Downgrade to warnings so the
+        # default profile stays green until the codegen is fixed (#273).
+        "-Wno-error=implicit-function-declaration"
+        "-Wno-error=int-conversion"
+    )
+    case "$(flow_profile_mode)" in
+        safety|flight)
+            # -Werror is the MISRA ask (#269). Suppressions cover known
+            # runtime/codegen noise until follow-ups land:
+            #   strict-prototypes — hand-written runtime/*.c
+            #   c23-extensions    — Flow emits `T x = { };` empty inits
+            #   format            — int64_t vs long long on LP64
+            # Full -pedantic without these Waivers is tracked with #273.
+            # #283: promote implicit-function-declaration to hard error
+            # under safety (override the default-profile downgrade above).
+            FLOW_CLANG_WARN_FLAGS+=(
+                "-Werror"
+                "-Werror=implicit-function-declaration"
+                "-Wno-strict-prototypes"
+                "-Wno-c23-extensions"
+                "-Wno-format"
+            )
+            ;;
+    esac
+}
+
+flow_apply_sanitize_to_arrays() {
+    # Append sanitizer flags to the named cflags/ldflags arrays.
+    # Usage: flow_apply_sanitize_to_arrays cflags_var ldflags_var
+    local _cflags_var=$1
+    local _ldflags_var=$2
+    local sanitize="${FLOW_SANITIZE:-}"
+    local item
+    local -a parts=()
+
+    if [ -n "$sanitize" ]; then
+        IFS=',' read -ra parts <<< "$sanitize"
+        for item in "${parts[@]}"; do
+            case "$item" in
+                ub|undefined|ubsan) FLOW_UBSAN=1 ;;
+                asan|address) FLOW_ASAN=1 ;;
+                tsan|thread) FLOW_TSAN=1 ;;
+                "" ) ;;
+                *)
+                    print_error "Unknown sanitizer '$item' (expected ub,asan,tsan)"
+                    exit 1
+                    ;;
+            esac
+        done
+    fi
+
+    if [ "${FLOW_UBSAN:-}" = "1" ]; then
+        eval "${_cflags_var}+=(\"-fsanitize=undefined\" \"-fno-sanitize-recover=all\" \"-g\" \"-fno-omit-frame-pointer\")"
+        eval "${_ldflags_var}+=(\"-fsanitize=undefined\")"
+    fi
+    if [ "${FLOW_ASAN:-}" = "1" ]; then
+        eval "${_cflags_var}+=(\"-fsanitize=address\" \"-g\" \"-fno-omit-frame-pointer\")"
+        eval "${_ldflags_var}+=(\"-fsanitize=address\")"
+    fi
+    if [ "${FLOW_TSAN:-}" = "1" ]; then
+        eval "${_cflags_var}+=(\"-fsanitize=thread\" \"-g\" \"-fno-omit-frame-pointer\")"
+        eval "${_ldflags_var}+=(\"-fsanitize=thread\")"
+    fi
+}
+
+flow_collect_cflags() {
+    # Build FLOW_COLLECTED_CFLAGS / FLOW_COLLECTED_LDFLAGS from env + profile.
+    # Optional extra FLOW_CFLAGS tokens are appended last (user override).
+    flow_clang_warning_flags
+    FLOW_COLLECTED_CFLAGS=("${FLOW_CLANG_WARN_FLAGS[@]}")
+    FLOW_COLLECTED_LDFLAGS=()
+    flow_apply_sanitize_to_arrays FLOW_COLLECTED_CFLAGS FLOW_COLLECTED_LDFLAGS
+    if [ -n "${FLOW_CFLAGS:-}" ]; then
+        # shellcheck disable=SC2206
+        local -a _extra=(${FLOW_CFLAGS})
+        FLOW_COLLECTED_CFLAGS+=("${_extra[@]}")
+    fi
+    if [ -n "${FLOW_LDFLAGS:-}" ]; then
+        # shellcheck disable=SC2206
+        local -a _ld=(${FLOW_LDFLAGS})
+        FLOW_COLLECTED_LDFLAGS+=("${_ld[@]}")
+    fi
+}
+
+flow_show_clang_flags() {
+    flow_collect_cflags
+    echo "Flow C compile flags (MISRA Phase 0):"
+    echo "  cflags:  ${FLOW_COLLECTED_CFLAGS[*]}"
+    if [ ${#FLOW_COLLECTED_LDFLAGS[@]} -gt 0 ]; then
+        echo "  ldflags: ${FLOW_COLLECTED_LDFLAGS[*]}"
+    else
+        echo "  ldflags: (none beyond defaults)"
+    fi
+    echo "  profile: ${FLOW_PROFILE:-default}"
+    echo "  opt:     -O${FLOW_OPT_LEVEL:-2} (override with FLOW_OPT_LEVEL=0|1|2|3|s)"
+    echo "  sanitize: UBSAN=${FLOW_UBSAN:-0} ASAN=${FLOW_ASAN:-0} TSAN=${FLOW_TSAN:-0} FLOW_SANITIZE=${FLOW_SANITIZE:-}"
+}
+
+flowc_link_c() {
+    local c_file="$1"
+    local exe_file="$2"
+    flow_collect_cflags
+    # Show compiler diagnostics on failure (#252 / #269).
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
+        "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
+        -o "$exe_file" "$c_file"; then
+        if ! cc "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
+            -o "$exe_file" "$c_file"; then
+            print_error "C compilation/linking failed (flowc host)"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+compile_program_flowc() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    mkdir -p "$build_dir"
+    print_info "Compiling $program (host=flowc)..."
+    if ! flowc_emit_to_c "$program" "$build_dir/$basename.c"; then
+        print_error "flowc emit failed (Stage-A subset?). Use FLOW_HOST=python for full language."
+        return 1
+    fi
+    print_success "FLOW → C: $basename.c"
+    if ! flowc_link_c "$build_dir/$basename.c" "$build_dir/$basename"; then
+        return 1
+    fi
+    print_success "C → Executable: $basename"
+    print_success "🚀 Ready to run: $build_dir/$basename"
+    return 0
+}
+
+require_flow_file() {
+    local program="${1:-}"
+    if [ -z "$program" ]; then
+        print_error "Usage: flow <command> <program.flow>"
+        exit 1
+    fi
+    if [[ "$program" != *.flow ]]; then
+        print_error "Expected a .flow file, got: $program"
+        exit 1
+    fi
+    if [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+}
+
+# Show help
+show_help() {
+    echo "Flow Programming Language v1.0.1"
+    echo ""
+    echo "Usage: flow [OPTIONS] <program.flow>"
+    echo ""
+    echo "Options:"
+    echo "  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety]"
+    echo "                    Compile and run program"
+    echo "  compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]"
+    echo "                    Compile program only; --show-flags prints clang flags"
+    echo "  show-flags [--profile=safety] [--sanitize=...]  Print clang CFLAGS for current profile"
+    echo "  analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
+    echo "                    Scan generated C for MISRA/CERT patterns (#277)"
+    echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
+    echo "  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)"
+    echo "  C flags: -std=c11 -Wall -Wextra (MISRA Phase 0); FLOW_PROFILE=safety adds -Werror"
+    echo "  Sanitizers: FLOW_UBSAN=1 FLOW_ASAN=1 FLOW_TSAN=1 or FLOW_SANITIZE=ub,asan,tsan"
+    echo "  audio <program> [--mlir]   Compile and run with audio backend"
+    echo "  compile-audio <program> [--mlir]  Compile with audio backend"
+    echo "  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)"
+    echo "  window <program>  Run with SDL2 window backend"
+    echo "  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)"
+    echo "  record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]] [--keys SPEC] [--mouse SPEC]"
+    echo "                   [--fps N] [--stride N] [--width PX]"
+    echo "                    Run a gfx program headless; write PPM frames, or a GIF with --gif"
+    echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
+    echo "  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)"
+    echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]"
+    echo "  demo ui-layout[|-window]  UI layout demos (SDL2 for -window)"
+    echo "  Compat aliases (same as demo …): vulkan-demo[-basic|-advanced], vulkan-2048,"
+    echo "    vulkan-tetris, vulkan-snake, vulkan-pong, vulkan-breakout,"
+    echo "    vulkan-layout[-dsl], ui-layout[-window]"
+    echo "  mlir <program> [flags]  Generate MLIR (pass --optimize / --opt-level / --no-*)"
+    echo "  mlir-run <program> Compile via MLIR and run"
+    echo "  fir-g <program>    Dump FIR-G graph + analyses; --calibrate / --opts"
+    echo "  jit <program>      JIT compile and run (fastest)"
+    echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
+    echo "  gpu <program>      Generate @gpu compute kernels as Metal sources"
+    echo "  shader <program>   Run fill-shader demo (Metal; macOS)"
+    echo "  explain <program>  Print the compilation plan for every declarative"
+    echo "                    construct: implementations considered, their costs,"
+    echo "                    the choice, and what each rejected candidate failed"
+    echo "                    (same as: transpile <program> --c --strict --explain)"
+    echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
+    echo "  fmt <files...>    Format FLOW source files"
+    echo ""
+    echo "Testing:"
+    echo "  test [flags]      Run FLOW tests (transpile + clang validate)"
+    echo "                    --strict    Fail on type errors"
+    echo "                    --lenient   Warnings only (default)"
+    echo "                    --tier1     Transpile only (fast)"
+    echo "                    --tier2     Transpile + clang (default)"
+    echo "                    --verbose   Show error details"
+    echo "                    --sanitize=ub,asan,tsan  Enable sanitizers for compile/run tests"
+    echo "  test-strict       Shortcut for: test --strict"
+    echo "  test-runtime      Run runtime tests (compile + execute)"
+    echo "  test-lang         Run tests/lang/ language tests (strict transpile + compile + execute)"
+    echo "  test-mlir         Run MLIR verification (requires LLVM)"
+    echo "  test-python       Run Python unit tests"
+    echo "  test-interop      Run interop runtime tests"
+    echo "  test-gpu          Run GPU feature + codegen tests"
+    echo "  test-matmul       Run matmul optimization demo + print assembly"
+    echo "  test-all          Run FLOW + Python tests"
+    echo ""
+    echo "Project / packages:"
+    echo "  init [name]       Initialize a new project (flow.toml)"
+    echo "  add <package>     Add dependency (name, name@^1.0, --git, --path)"
+    echo "  pkg install       Install flow.toml dependencies → flow_packages/"
+    echo "  search [query]    Search the Flow package registry"
+    echo "  info <package>    Show package versions / source"
+    echo "  publish           Register package in local registry/index.json"
+    echo "  build             Build the project"
+    echo "  build-native      Build with native sources (uses flow.toml)"
+    echo "  run-native        Build and run with native sources"
+    echo "  clean             Clean build artifacts"
+    echo "  install           Install project deps if flow.toml exists; else LLVM tools"
+    echo "  setup             Install LLVM / compiler tooling"
+    echo "  python <program>  Generate Python package (wheel)"
+    echo "  wasm <program> [--backend=c|mlir] [--preload DIR@/MOUNT] [--link PATH]"
+    echo "                    [--threads] [--fs memfs|idbfs] [--out DIR]"
+    echo "                    Compile to WebAssembly + a runnable page"
+    echo "  repl              Start interactive REPL"
+    echo "  examples          List example programs"
+    echo "  playground        Start native-local compile API + open playground docs"
+    echo "  dap <file>        Debug Adapter (IDE) / opens flow debug on TTY"
+    echo "  version           Print Flow version (1.0.1)"
+    echo "  help              Show this help"
+    echo ""
+    echo "Environment:"
+    echo "  FLOW_STRICT_EFFECTS=1  Abort on unhandled effect ops (C backend)"
+    echo "                         Also enables compile-time effect-row checks with --strict-effects"
+    echo "  FLOW_CPU_BACKEND=c|mlir  Select CPU codegen (default c; same as --backend)"
+    echo "  FLOW_HOST=flowc|python|auto  Compiler host for the C path (default flowc)"
+    echo ""
+    echo "Examples:"
+    echo "  flow run examples/fibonacci.flow"
+    echo "  flow run --backend=mlir examples/basics/hello_world.flow"
+    echo "  flow compile examples/loops.flow"
+    echo "  flow test --strict --verbose"
+    echo "  flow test-runtime --verbose"
+    echo "  flow test-interop"
+    echo "  flow test-gpu --verbose"
+    echo "  flow test-matmul [--no-asm] [--no-mlir]"
+}
+
+# Check dependencies
+check_deps() {
+    local mode
+    mode="$(flow_host_mode)"
+
+    if ! command -v clang &> /dev/null && ! command -v cc &> /dev/null; then
+        print_error "clang or cc is required"
+        exit 1
+    fi
+
+    # flowc-only run/compile: Python is only needed to bootstrap Gen0 once.
+    if [[ "$mode" == "flowc" ]]; then
+        return 0
+    fi
+
+    if ! command -v python3 &> /dev/null; then
+        print_error "Python 3 is required for FLOW_HOST=$mode"
+        exit 1
+    fi
+
+    # Module import check
+    python3 -c "import $FLOWC_MODULE" 2>/dev/null || {
+        print_error "FLOW compiler module not found ($FLOWC_MODULE). Check PYTHONPATH/src layout."
+        exit 1
+    }
+}
+
+check_mlir_deps() {
+    resolve_llvm_path
+    export LLVM_PATH
+    if [ -d "$LLVM_PATH" ]; then
+        case ":$PATH:" in
+            *":$LLVM_PATH:"*) ;;
+            *) export PATH="$LLVM_PATH:$PATH" ;;
+        esac
+    fi
+    if [ ! -x "$LLVM_PATH/mlir-opt" ]; then
+        print_error "MLIR tools not found. Run './flow install' (or brew install llvm)"
+        exit 1
+    fi
+    if [ ! -x "$LLVM_PATH/mlir-translate" ]; then
+        print_error "mlir-translate not found. Run './flow install' (or brew install llvm)"
+        exit 1
+    fi
+}
+
+# Concurrency runtime + optional OpenMP (parallel for). Sets:
+#   FLOW_CONC_SOURCES, FLOW_CONC_CFLAGS, FLOW_CONC_LDFLAGS (bash arrays)
+flow_concurrency_flags() {
+    FLOW_CONC_SOURCES=(
+        "$SCRIPT_DIR/runtime/flow_concurrency.c"
+        "$SCRIPT_DIR/runtime/flow_fiber.c"
+        "$SCRIPT_DIR/runtime/flow_fctx_init.c"
+        "$SCRIPT_DIR/runtime/flow_netpoll.c"
+        "$SCRIPT_DIR/runtime/flow_netpoll_fiber.c"
+        "$SCRIPT_DIR/runtime/flow_http_bench.c"
+        "$SCRIPT_DIR/runtime/flow_tcp.c"
+        "$SCRIPT_DIR/runtime/flow_race.c"
+        "$SCRIPT_DIR/runtime/flow_cont.c"
+        "$SCRIPT_DIR/runtime/flow_rt_support.c"
+        "$SCRIPT_DIR/runtime/flow_rt_task_store.c"
+        "$SCRIPT_DIR/runtime/flow_rt_fiber_async.c"
+        "$SCRIPT_DIR/runtime/flow_rt_parallel.c"
+        "$SCRIPT_DIR/runtime/flow_rt_cchan.c"
+        "$SCRIPT_DIR/runtime/flow_rt_sysinfo.c"
+        "$SCRIPT_DIR/runtime/flow_rt_crypto.c"
+        "$SCRIPT_DIR/runtime/flow_tls.c"
+    )
+    case "$(uname -m)" in
+        arm64|aarch64)
+            FLOW_CONC_SOURCES+=("$SCRIPT_DIR/runtime/flow_fctx_arm64.S")
+            ;;
+        x86_64|amd64)
+            FLOW_CONC_SOURCES+=("$SCRIPT_DIR/runtime/flow_fctx_x86_64.S")
+            ;;
+    esac
+    FLOW_CONC_CFLAGS=("-I$SCRIPT_DIR/runtime")
+    FLOW_CONC_LDFLAGS=("-pthread")
+    # Probe OpenSSL once (HTTPS accept-loop / flow_tls.c).
+    if [ -z "${FLOW_OPENSSL_PROBED:-}" ]; then
+        FLOW_OPENSSL_PROBED=1
+        FLOW_OPENSSL_CFLAGS=()
+        FLOW_OPENSSL_LDFLAGS=()
+        local ossl_prefix=""
+        if command -v brew >/dev/null 2>&1; then
+            ossl_prefix="$(brew --prefix openssl@3 2>/dev/null || brew --prefix openssl 2>/dev/null || true)"
+        fi
+        local probe="$SCRIPT_DIR/build/.ossl_probe.c"
+        mkdir -p "$SCRIPT_DIR/build"
+        printf '#include <openssl/ssl.h>\nint main(void){SSL_CTX_new(TLS_method());return 0;}\n' > "$probe"
+        if [ -n "$ossl_prefix" ] && clang -I"$ossl_prefix/include" "$probe" -L"$ossl_prefix/lib" -lssl -lcrypto -o "$SCRIPT_DIR/build/.ossl_probe" 2>/dev/null; then
+            FLOW_OPENSSL_CFLAGS=("-DFLOW_HAS_OPENSSL=1" "-I$ossl_prefix/include")
+            FLOW_OPENSSL_LDFLAGS=("-L$ossl_prefix/lib" "-Wl,-rpath,$ossl_prefix/lib" "-lssl" "-lcrypto")
+        elif pkg-config --exists openssl 2>/dev/null && clang $(pkg-config --cflags openssl) "$probe" $(pkg-config --libs openssl) -o "$SCRIPT_DIR/build/.ossl_probe" 2>/dev/null; then
+            # shellcheck disable=SC2207
+            FLOW_OPENSSL_CFLAGS=("-DFLOW_HAS_OPENSSL=1" $(pkg-config --cflags openssl))
+            # shellcheck disable=SC2207
+            FLOW_OPENSSL_LDFLAGS=($(pkg-config --libs openssl))
+        else
+            FLOW_OPENSSL_CFLAGS=("-DFLOW_HAS_OPENSSL=0")
+        fi
+        rm -f "$probe" "$SCRIPT_DIR/build/.ossl_probe"
+    fi
+    if [ "${#FLOW_OPENSSL_CFLAGS[@]}" -gt 0 ]; then
+        FLOW_CONC_CFLAGS+=("${FLOW_OPENSSL_CFLAGS[@]}")
+    fi
+    if [ "${#FLOW_OPENSSL_LDFLAGS[@]}" -gt 0 ]; then
+        FLOW_CONC_LDFLAGS+=("${FLOW_OPENSSL_LDFLAGS[@]}")
+    fi
+    # Probe OpenMP once per shell invocation (Apple clang needs libomp).
+    if [ -z "${FLOW_OPENMP_PROBED:-}" ]; then
+        FLOW_OPENMP_PROBED=1
+        FLOW_OPENMP_FLAGS=()
+        local probe="$SCRIPT_DIR/build/.omp_probe.c"
+        mkdir -p "$SCRIPT_DIR/build"
+        printf 'int main(void){return 0;}\n' > "$probe"
+        if clang -fopenmp "$probe" -o "$SCRIPT_DIR/build/.omp_probe" -lomp 2>/dev/null; then
+            FLOW_OPENMP_FLAGS=("-fopenmp" "-lomp")
+        elif clang -fopenmp "$probe" -o "$SCRIPT_DIR/build/.omp_probe" 2>/dev/null; then
+            FLOW_OPENMP_FLAGS=("-fopenmp")
+        elif clang -Xpreprocessor -fopenmp "$probe" -o "$SCRIPT_DIR/build/.omp_probe" -lomp 2>/dev/null; then
+            FLOW_OPENMP_FLAGS=("-Xpreprocessor" "-fopenmp" "-lomp")
+        fi
+        rm -f "$probe" "$SCRIPT_DIR/build/.omp_probe"
+    fi
+    if [ "${#FLOW_OPENMP_FLAGS[@]}" -gt 0 ]; then
+        FLOW_CONC_CFLAGS+=("${FLOW_OPENMP_FLAGS[@]}")
+        FLOW_CONC_LDFLAGS+=("${FLOW_OPENMP_FLAGS[@]}")
+    fi
+}
+
+# Always-linked Flow runtime modules (lib/runtime/*.flow → build/runtime_flow/*.c).
+# Sets FLOW_RUNTIME_FLOW_SOURCES. Skips gpu_memory_stub.flow on Darwin (Metal provides ABI).
+flow_runtime_flow_sources() {
+    FLOW_RUNTIME_FLOW_SOURCES=()
+    local rt_dir="$SCRIPT_DIR/lib/runtime"
+    local out_dir="$SCRIPT_DIR/build/runtime_flow"
+    mkdir -p "$out_dir"
+    if [ ! -d "$rt_dir" ]; then
+        return 0
+    fi
+    local f base out
+    for f in "$rt_dir"/*.flow; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f" .flow)
+        # Platform GPU: Metal on Darwin, Flow stub elsewhere.
+        if [ "$base" = "gpu_memory_stub" ] && [ "$(uname -s)" = "Darwin" ]; then
+            continue
+        fi
+        # Shader host is a standalone CLI binary, not always-linked.
+        if [ "$base" = "shader_host" ]; then
+            continue
+        fi
+        # Recorder logic is linked only by `flow record` (runtime/gfx_record.c
+        # provides the gfx ABI there; real backends provide it everywhere else).
+        if [ "$base" = "gfx_record" ]; then
+            continue
+        fi
+        # Real miniaudio backend provides flow_audio_*; skip Flow stub then.
+        if [ "$base" = "audio_device_stub" ] && [ "${FLOW_SKIP_AUDIO_STUB:-}" = "1" ]; then
+            continue
+        fi
+        out="$out_dir/${base}.c"
+        if ! python3 -m "$FLOWC_MODULE" "$f" --c --library --lenient -o "$out" 2>"$build_dir/.flowc_err"; then
+            print_error "Flow runtime module failed: $base.flow"
+            cat "$build_dir/.flowc_err" >&2
+            exit 1
+        fi
+        FLOW_RUNTIME_FLOW_SOURCES+=("$out")
+    done
+}
+
+# Compile FLOW to executable
+compile_program() {
+    local program="$1"
+    local mode
+    mode="$(flow_host_mode)"
+    case "$mode" in
+        flowc)
+            compile_program_flowc "$program"
+            return $?
+            ;;
+        python)
+            compile_program_python "$program"
+            return $?
+            ;;
+        auto)
+            if compile_program_flowc "$program"; then
+                return 0
+            fi
+            print_warning "flowc failed — falling back to FLOW_HOST=python"
+            compile_program_python "$program"
+            return $?
+            ;;
+    esac
+}
+
+# Legacy Python-host compile path
+compile_program_python() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+    
+    print_info "Compiling $program..."
+    
+    # Create build directory
+    mkdir -p "$build_dir"
+    
+    # FLOW to C (use --lenient for now until type checker is fully stable)
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>"$build_dir/.flowc_err"; then
+        print_error "FLOW compilation failed"
+        cat "$build_dir/.flowc_err" >&2
+        exit 1
+    fi
+    print_success "FLOW → C: $basename.c"
+
+    # C to executable
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    # First-class GPU memory: Metal on Darwin, Flow stub elsewhere.
+    flow_gpu_link_flags
+    # else: lib/runtime/gpu_memory_stub.flow via flow_runtime_flow_sources
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    # MISRA Phase 0 (#269/#270): -std=c11 -Wall -Wextra + optional sanitizers.
+    # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
+    flow_collect_cflags
+    FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")" "$build_dir/$basename.c" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" -lm -o "$build_dir/$basename"; then
+        print_error "C compilation/linking failed"
+        exit 1
+    fi
+    print_success "C → Executable: $basename"
+    
+    print_success "🚀 Ready to run: $build_dir/$basename"
+}
+
+# MLIR CPU backend: FLOW → MLIR → LLVM IR → clang + Flow runtime (same ABI as C path).
+compile_program_mlir() {
+    local program="$1"
+    require_flow_file "$program"
+    check_mlir_deps
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+
+    print_info "Compiling $program (CPU backend=mlir)..."
+    mkdir -p "$build_dir"
+
+    if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>"$build_dir/.flowc_err"; then
+        print_error "FLOW MLIR/LLVM compilation failed"
+        cat "$build_dir/.flowc_err" >&2
+        exit 1
+    fi
+    print_success "FLOW → MLIR → LLVM: $basename.ll"
+
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    flow_gpu_link_flags
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+
+    flow_collect_cflags
+    FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
+
+    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" -O2 -fno-omit-frame-pointer \
+        "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
+        "$build_dir/$basename.ll" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
+        -lm -o "$build_dir/$basename"; then
+        print_error "MLIR/LLVM compilation/linking failed"
+        exit 1
+    fi
+    print_success "LLVM → Executable: $basename"
+    print_success "🚀 Ready to run (mlir): $build_dir/$basename"
+}
+
+# Parse optional --backend=c|mlir / --sanitize= / --profile= / --show-flags
+# from argv; sets FLOW_PARSE_PROGRAM and FLOW_PARSE_BACKEND.
+flow_parse_program_backend() {
+    FLOW_PARSE_PROGRAM=""
+    FLOW_PARSE_BACKEND="$(flow_cpu_backend)"
+    FLOW_PARSE_SHOW_FLAGS=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --backend=*)
+                FLOW_PARSE_BACKEND="${1#*=}"
+                shift
+                ;;
+            --backend)
+                if [ -z "${2:-}" ]; then
+                    print_error "--backend requires c or mlir"
+                    exit 1
+                fi
+                FLOW_PARSE_BACKEND="$2"
+                shift 2
+                ;;
+            --sanitize=*)
+                FLOW_SANITIZE="${1#*=}"
+                export FLOW_SANITIZE
+                shift
+                ;;
+            --sanitize)
+                if [ -z "${2:-}" ]; then
+                    print_error "--sanitize requires ub,asan,tsan (comma-separated)"
+                    exit 1
+                fi
+                FLOW_SANITIZE="$2"
+                export FLOW_SANITIZE
+                shift 2
+                ;;
+            --profile=*)
+                FLOW_PROFILE="${1#*=}"
+                export FLOW_PROFILE
+                shift
+                ;;
+            --profile)
+                if [ -z "${2:-}" ]; then
+                    print_error "--profile requires safety|flight"
+                    exit 1
+                fi
+                FLOW_PROFILE="$2"
+                export FLOW_PROFILE
+                shift 2
+                ;;
+            --show-flags)
+                FLOW_PARSE_SHOW_FLAGS=1
+                shift
+                ;;
+            -*)
+                print_error "Unknown option: $1"
+                exit 1
+                ;;
+            *)
+                if [ -z "$FLOW_PARSE_PROGRAM" ]; then
+                    FLOW_PARSE_PROGRAM="$1"
+                else
+                    print_error "Unexpected argument: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+    case "$FLOW_PARSE_BACKEND" in
+        c|mlir) ;;
+        *)
+            print_error "Unknown backend: $FLOW_PARSE_BACKEND (expected c|mlir)"
+            exit 1
+            ;;
+    esac
+    if [ "${FLOW_PARSE_SHOW_FLAGS}" = "1" ]; then
+        flow_show_clang_flags
+        if [ -z "$FLOW_PARSE_PROGRAM" ]; then
+            exit 0
+        fi
+    fi
+    export FLOW_CPU_BACKEND="$FLOW_PARSE_BACKEND"
+}
+
+# Compile with debug symbols and open a debugger (LLDB preferred).
+# Usage: flow debug <program.flow> [--break N|--break main] [--no-launch]
+debug_program() {
+    local program=""
+    local break_spec="main"
+    local no_launch=0
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --break)
+                break_spec="${2:-}"
+                if [ -z "$break_spec" ]; then
+                    print_error "--break requires a line number or 'main'"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --no-launch|--keep)
+                # --keep retained for compatibility; debug builds always live in build/
+                no_launch=1
+                shift
+                ;;
+            -h|--help)
+                echo "Usage: flow debug <program.flow> [--break N|--break main] [--no-launch]"
+                echo "  --break N     Break at Flow source line N (LLDB/GDB)"
+                echo "  --break main  Break at main (default)"
+                echo "  --no-launch   Build only; print paths and exit"
+                exit 0
+                ;;
+            -*)
+                print_error "Unknown debug option: $1"
+                exit 1
+                ;;
+            *)
+                if [ -z "$program" ]; then
+                    program="$1"
+                else
+                    print_error "Unexpected argument: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local c_file="$build_dir/$basename.debug.c"
+    local exe_file="$build_dir/$basename.debug"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+    
+    check_deps
+    mkdir -p "$build_dir"
+    
+    print_info "Compiling $program (debug)..."
+    
+    # FLOW to C with statement-level #line mappings (see --debug-info)
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --debug-info -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C (debug): $(basename "$c_file")"
+    
+    # C to debug executable
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    local gpu_sources=()
+    local gpu_ldflags=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
+        gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
+    fi
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    # -g3 keeps macro info; -fno-omit-frame-pointer helps backtraces.
+    # Absolute path in #line lets LLDB open the .flow file when stopped.
+    if ! clang -g3 -O0 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$c_file" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${gpu_sources[@]}" \
+        "${py_ldflags[@]}" "${gpu_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm; then
+        print_error "C compilation/linking failed"
+        exit 1
+    fi
+    print_success "Built debug binary: $exe_file"
+    local abs_program
+    abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+    print_info "Source maps: #line → $abs_program (statement-level)"
+    print_info "C mapping file: $c_file"
+
+    if [ "$no_launch" -eq 1 ]; then
+        print_info "Skipping debugger launch (--no-launch). Run manually:"
+        print_info "  lldb \"$exe_file\""
+        return 0
+    fi
+    
+    # Launch debugger with Flow source path hint
+    local break_cmd=""
+    local gdb_break=""
+    if [ "$break_spec" = "main" ]; then
+        break_cmd="breakpoint set --name main"
+        gdb_break="break main"
+    elif [[ "$break_spec" =~ ^[0-9]+$ ]]; then
+        break_cmd="breakpoint set --file \"$abs_program\" --line $break_spec"
+        gdb_break="break $abs_program:$break_spec"
+    else
+        print_error "--break expects 'main' or a numeric Flow line"
+        exit 1
+    fi
+
+    if command -v lldb &> /dev/null; then
+        print_info "Launching LLDB ($break_spec)..."
+        print_info "Tip: step with 'n'/'s'; 'frame variable'; 'source list'"
+        lldb "$exe_file" -o "settings set target.source-map . \"$(dirname "$abs_program")\"" \
+            -o "$break_cmd" -o "run"
+    elif command -v gdb &> /dev/null; then
+        print_info "Launching GDB ($break_spec)..."
+        gdb -ex "$gdb_break" -ex "run" "$exe_file"
+    else
+        print_warning "No debugger found (lldb/gdb). Install one and run:"
+        print_info "  lldb \"$exe_file\""
+    fi
+}
+
+# Compile + show a `shader fill` demo (Metal window on macOS).
+run_fill_shader() {
+    local program="$1"
+    shift
+    local shader_name=""
+    local max_frames=0
+    local width=1280
+    local height=720
+    local emit_only=0
+    local layout="--grid"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --name)
+                shader_name="${2:-}"
+                shift 2
+                ;;
+            --frames)
+                max_frames="${2:-0}"
+                shift 2
+                ;;
+            --size)
+                local wh="${2:-1280x720}"
+                width="${wh%x*}"
+                height="${wh#*x}"
+                shift 2
+                ;;
+            --grid)
+                layout="--grid"
+                shift
+                ;;
+            --cycle)
+                layout="--cycle"
+                shift
+                ;;
+            --emit-only)
+                emit_only=1
+                shift
+                ;;
+            *)
+                print_error "Unknown shader option: $1"
+                exit 1
+                ;;
+        esac
+    done
+    print_info "Compiling fill-shader from $program..."
+    local shader_out="$SCRIPT_DIR/build/shaders"
+    mkdir -p "$shader_out"
+    local metal_path
+    metal_path=$(python3 - "$SCRIPT_DIR" "$program" "$shader_out" "$shader_name" <<'PY'
+import sys
+script_dir, program, out_dir, name = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+sys.path.insert(0, f"{script_dir}/src")
+from flow.shader_codegen import compile_shader_file
+path = compile_shader_file(program, out_dir, shader_name=name or None)
+print(path)
+PY
+) || {
+        print_error "Shader compilation failed"
+        exit 1
+    }
+    print_success "FLOW → Metal: $(basename "$metal_path")"
+    local entries_path="${metal_path%.metal}.entries"
+    if [ -f "$entries_path" ]; then
+        print_info "Gallery entries: $(wc -l < "$entries_path" | tr -d ' ') shader(s)"
+    fi
+    if [ "$emit_only" -eq 1 ]; then
+        print_info "Emit-only: $metal_path"
+        return 0
+    fi
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        print_error "flow shader viewer requires macOS (Metal). Use --emit-only to generate .metal."
+        exit 1
+    fi
+    local shader_exe="$SCRIPT_DIR/build/flow_shader_host"
+    local shader_flow_c="$SCRIPT_DIR/build/runtime_flow/shader_host.c"
+    mkdir -p "$SCRIPT_DIR/build/runtime_flow"
+    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/shader_host.flow" \
+        --c --library --lenient -o "$shader_flow_c" 2>"$SCRIPT_DIR/build/.flowc_err"; then
+        print_error "Failed to transpile shader_host.flow"
+        cat "$SCRIPT_DIR/build/.flowc_err" >&2
+        exit 1
+    fi
+    if ! clang -O2 -fobjc-arc -I"$SCRIPT_DIR/runtime" \
+        "$SCRIPT_DIR/runtime/shader_host.c" \
+        "$shader_flow_c" \
+        "$SCRIPT_DIR/runtime/shader_view_metal.m" \
+        -framework Metal -framework Cocoa -framework QuartzCore \
+        -o "$shader_exe"; then
+        print_error "Failed to build shader host"
+        exit 1
+    fi
+    if [ "$layout" = "--grid" ]; then
+        print_info "Running shader GRID ${width}x${height} (all at once · click cell / G / Esc)..."
+    else
+        print_info "Running shader CYCLE ${width}x${height} (←/→ · G for grid · Esc)..."
+    fi
+    "$shader_exe" "$layout" "$metal_path" "$width" "$height" "$max_frames"
+}
+
+# Run program
+run_program() {
+    flow_parse_program_backend "$@"
+    local program="$FLOW_PARSE_PROGRAM"
+    local backend="$FLOW_PARSE_BACKEND"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local executable="$SCRIPT_DIR/build/$basename"
+
+    if [ "$backend" = "mlir" ]; then
+        compile_program_mlir "$program"
+    else
+        compile_program "$program"
+    fi
+
+    print_info "Running $basename..."
+    echo "----------------------------------------"
+    "$executable"
+    status=$?
+    echo "----------------------------------------"
+    print_success "Program finished"
+    echo "Exit code: $status"
+    return $status
+}
+
+# Compile only (honors --backend / FLOW_CPU_BACKEND)
+compile_program_cli() {
+    flow_parse_program_backend "$@"
+    local program="$FLOW_PARSE_PROGRAM"
+    local backend="$FLOW_PARSE_BACKEND"
+    if [ "$backend" = "mlir" ]; then
+        compile_program_mlir "$program"
+    else
+        compile_program "$program"
+    fi
+}
+
+# Compile with audio backend (real-time I/O)
+compile_audio_program() {
+    local program="$1"
+    local backend="${2:-}"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+    local audio_cflags=()
+    local audio_ldflags=()
+    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c")
+    
+    local use_mlir=0
+    if [ "$backend" = "--mlir" ] || [ "${FLOW_AUDIO_BACKEND:-}" = "mlir" ]; then
+        use_mlir=1
+    fi
+
+    print_info "Compiling $program (audio backend)..."
+    
+    mkdir -p "$build_dir"
+    
+    if [ $use_mlir -eq 1 ]; then
+        if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>"$build_dir/.flowc_err"; then
+            print_error "FLOW MLIR/LLVM compilation failed"
+            cat "$build_dir/.flowc_err" >&2
+            exit 1
+        fi
+        print_success "FLOW → MLIR → LLVM: $basename.ll"
+    else
+        if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>"$build_dir/.flowc_err"; then
+            print_error "FLOW compilation failed"
+            cat "$build_dir/.flowc_err" >&2
+            exit 1
+        fi
+        print_success "FLOW → C: $basename.c"
+    fi
+
+    if [ -f "$SCRIPT_DIR/third_party/miniaudio.h" ]; then
+        audio_cflags+=("-I$SCRIPT_DIR/third_party" "-DFLOW_AUDIO_BACKEND_MINIAUDIO")
+        FLOW_SKIP_AUDIO_STUB=1
+    else
+        print_warning "miniaudio.h not found; building with Flow audio stub (no real-time audio)"
+        audio_sources=()
+    fi
+
+    case "$(uname -s)" in
+        Darwin)
+            audio_sources+=("$SCRIPT_DIR/runtime/audio_gpu_metal.m")
+            audio_ldflags+=("-framework" "CoreAudio" "-framework" "AudioToolbox" "-framework" "AudioUnit" "-framework" "Metal" "-framework" "Foundation")
+            ;;
+        Linux)
+            audio_ldflags+=("-ldl" "-pthread" "-lm")
+            ;;
+    esac
+
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    local flow_input="$build_dir/$basename.c"
+    if [ $use_mlir -eq 1 ]; then
+        flow_input="$build_dir/$basename.ll"
+    fi
+
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$flow_input" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${audio_sources[@]}" \
+        "${py_ldflags[@]}" "${audio_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" 2>/dev/null; then
+        print_error "C compilation/linking failed"
+        exit 1
+    fi
+    print_success "C → Executable: $basename"
+    
+    print_success "🎧 Ready to run (audio): $build_dir/$basename"
+}
+
+# Run program with audio backend
+run_audio_program() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local executable="$SCRIPT_DIR/build/$basename"
+    
+    compile_audio_program "$program" "${2:-}"
+    
+    print_info "Running $basename (audio)..."
+    echo "----------------------------------------"
+    "$executable"
+    status=$?
+    echo "----------------------------------------"
+    print_success "Program finished"
+    echo "Exit code: $status"
+    return $status
+}
+
+# Run program in an SDL2 window (requires SDL2 installed, via pkg-config).
+run_window_program() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+    
+    check_deps
+    
+    if ! command -v pkg-config &> /dev/null; then
+        print_error "pkg-config is required for SDL2 linking"
+        print_info "Install: brew install pkg-config"
+        exit 1
+    fi
+    if ! pkg-config --exists sdl2; then
+        print_error "SDL2 not found (pkg-config sdl2)"
+        print_info "Install: brew install sdl2"
+        exit 1
+    fi
+    
+    mkdir -p "$build_dir"
+    local c_file="$build_dir/$basename.window.c"
+    local exe_file="$build_dir/$basename.window"
+    
+    print_info "Compiling $program (SDL2 window)..."
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $(basename "$c_file")"
+    
+    local sdl_cflags
+    local sdl_libs
+    sdl_cflags=$(pkg-config --cflags sdl2)
+    sdl_libs=$(pkg-config --libs sdl2)
+    
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    flow_runtime_flow_sources
+    # shellcheck disable=SC2086
+    if ! clang -O2 -fno-omit-frame-pointer $sdl_cflags "${py_cflags[@]}" "$c_file" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+        "$SCRIPT_DIR/runtime/flow_rt_sysinfo.c" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${py_ldflags[@]}" -o "$exe_file" $sdl_libs -lm 2>/dev/null; then
+        print_error "C compilation/linking failed (SDL2)"
+        exit 1
+    fi
+    print_success "Built: $exe_file"
+    
+    print_info "Running..."
+    "$exe_file"
+}
+# Generate MLIR only
+generate_mlir() {
+    local program=""
+    local flags=()
+    # Accept flags before or after the program path
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -*)
+                flags+=("$1")
+                # Flags that take a value
+                case "$1" in
+                    --spirv-out|--output|-o|--opt-level)
+                        shift
+                        if [ $# -gt 0 ]; then
+                            flags+=("$1")
+                        fi
+                        ;;
+                esac
+                ;;
+            *)
+                if [ -z "$program" ]; then
+                    program="$1"
+                else
+                    flags+=("$1")
+                fi
+                ;;
+        esac
+        shift
+    done
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    
+    if [ -z "$program" ] || [ ! -f "$program" ]; then
+        print_error "Program not found: $program"
+        exit 1
+    fi
+    
+    mkdir -p "$build_dir"
+
+    check_mlir_deps
+
+    local mlir_cmd=(python3 -m "$FLOWC_MODULE" "$program" --mlir)
+    if [ ${#flags[@]} -gt 0 ]; then
+        mlir_cmd+=("${flags[@]}")
+    fi
+    mlir_cmd+=(-o "$build_dir/$basename.mlir")
+    if "${mlir_cmd[@]}"; then
+        print_success "Generated MLIR: $build_dir/$basename.mlir"
+        echo "----------------------------------------"
+        cat "$build_dir/$basename.mlir"
+        echo "----------------------------------------"
+    else
+        print_error "MLIR generation failed"
+        exit 1
+    fi
+}
+
+# JIT compile and run via MLIR (links Flow runtime when FLOW_JIT_LINK_RUNTIME=1).
+run_flow_jit() {
+    local program="$1"
+    # Link Flow runtime into JIT executables by default (matches mlir-run / --backend=mlir).
+    FLOW_JIT_LINK_RUNTIME="${FLOW_JIT_LINK_RUNTIME:-1}" \
+    python3 -c "
+from flow.jit_runner import FlowJITRunner
+import sys
+sys.exit(0 if FlowJITRunner(sys.argv[1]).run_once() else 1)
+" "$program"
+}
+
+mlir_lower_and_link() {
+    local mlir_file="$1"
+    local obj_file="$2"
+    local exe_file="$3"
+    local opt_level="${4:-3}"
+
+    print_info "Lowering MLIR to LLVM IR..."
+    set -o pipefail
+    if ! "$LLVM_PATH"/mlir-opt "$mlir_file" \
+        --convert-vector-to-scf \
+        --convert-scf-to-cf \
+        --memref-expand \
+        --convert-vector-to-llvm \
+        --convert-arith-to-llvm \
+        --convert-index-to-llvm \
+        --convert-cf-to-llvm \
+        --convert-func-to-llvm \
+        --finalize-memref-to-llvm \
+        --reconcile-unrealized-casts | \
+        "$LLVM_PATH"/mlir-translate --mlir-to-llvmir | \
+        "$LLVM_PATH"/llc "-O${opt_level}" -filetype=obj -o "$obj_file"; then
+        print_error "MLIR to LLVM lowering failed"
+        return 1
+    fi
+    set +o pipefail
+    print_success "MLIR → LLVM IR → Object"
+
+    print_info "Linking executable (Flow runtime)..."
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    flow_gpu_link_flags
+    if ! clang "-O${opt_level}" -fno-omit-frame-pointer "${FLOW_CONC_CFLAGS[@]}" \
+        "$obj_file" \
+        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+        "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
+        -lm -o "$exe_file" 2>/dev/null; then
+        print_error "Linking failed"
+        return 1
+    fi
+    print_success "Built: $exe_file"
+    return 0
+}
+
+run_gfx_program() {
+    local program="$1"
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+    local py_cflags=()
+    local py_ldflags=()
+    
+    check_deps
+    mkdir -p "$build_dir"
+    
+    local c_file="$build_dir/$basename.gfx.c"
+    local exe_file="$build_dir/$basename.gfx"
+    
+    print_info "Compiling $program (native gfx)..."
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $(basename "$c_file")"
+    
+    if [ -d "$py_header_dir" ]; then
+        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+    fi
+    # The Flow runtime pack (FLOW_RUNTIME_FLOW_SOURCES) references C symbols
+    # spread across runtime/*.c — flow_rt_uname_machine in flow_rt_sysinfo.c,
+    # the TLS entry points in flow_tls.c, and so on. Linking only
+    # flow_rt_support.c left those undefined, so a gfx program that touched
+    # get_time(), sysinfo or crypto failed to link. FLOW_CONC_SOURCES is the
+    # canonical set `flow run` uses; use it here too so the windowed, recorded
+    # and console builds all accept the same programs.
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+    local gfx_link_err="$build_dir/.gfx_link_err"
+    local gfx_ok=0
+    local host_kernel
+    host_kernel="$(uname -s)"
+    if [[ "$host_kernel" == "Darwin" ]]; then
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
+            "${FLOW_CONC_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+            -framework Cocoa -framework CoreGraphics -framework QuartzCore \
+            "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
+            -o "$exe_file" -lm 2>"$gfx_link_err"; then
+            gfx_ok=1
+        fi
+    elif [[ "$host_kernel" == MINGW* || "$host_kernel" == MSYS* || "$host_kernel" == CYGWIN* ]]; then
+        # Windows (MSYS2/Git Bash/Cygwin shell running this script): shares
+        # the exact same SDL2 implementation as Linux via
+        # runtime/gfx_sdl_impl.inc, compiled through runtime/gfx_windows.c
+        # (falls back to stub if headers missing — pass -DFLOW_GFX_STUB to
+        # force stub). Native MSVC/clang-cl builds outside this script should
+        # link runtime/gfx_windows.c directly — see its header comment for
+        # exact commands.
+        local sdl_cflags=()
+        local sdl_libs=(-lSDL2)
+        if command -v sdl2-config >/dev/null 2>&1; then
+            # shellcheck disable=SC2207
+            sdl_cflags=($(sdl2-config --cflags))
+            # shellcheck disable=SC2207
+            sdl_libs=($(sdl2-config --libs))
+        elif command -v pkg-config >/dev/null 2>&1 && pkg-config --exists sdl2; then
+            # shellcheck disable=SC2207
+            sdl_cflags=($(pkg-config --cflags sdl2))
+            # shellcheck disable=SC2207
+            sdl_libs=($(pkg-config --libs sdl2))
+        fi
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_windows.c" \
+            "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+            "${sdl_cflags[@]}" "${sdl_libs[@]}" \
+            "${py_ldflags[@]}" \
+            -o "$exe_file" -lm 2>/dev/null; then
+            gfx_ok=1
+        fi
+    else
+        # Linux: SDL2 backend in runtime/gfx_linux.c (falls back to stub if
+        # headers missing — pass -DFLOW_GFX_STUB to force stub).
+        local sdl_cflags=()
+        local sdl_libs=(-lSDL2)
+        if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists sdl2; then
+            # shellcheck disable=SC2207
+            sdl_cflags=($(pkg-config --cflags sdl2))
+            # shellcheck disable=SC2207
+            sdl_libs=($(pkg-config --libs sdl2))
+        fi
+        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_linux.c" \
+            "$SCRIPT_DIR/runtime/flow_rt_support.c" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+            "${sdl_cflags[@]}" "${sdl_libs[@]}" \
+            "${py_ldflags[@]}" \
+            -o "$exe_file" -lm 2>/dev/null; then
+            gfx_ok=1
+        fi
+    fi
+    if [[ "$gfx_ok" -ne 1 ]]; then
+        print_error "Native gfx build failed (clang / platform graphics libs)"
+        # The link errors used to go to /dev/null, which turned a missing
+        # symbol into an unexplained one-line failure. Show them.
+        if [ -s "$gfx_link_err" ]; then
+            sed 's/^/    /' "$gfx_link_err" >&2
+        fi
+        exit 1
+    fi
+    print_success "Built: $exe_file"
+    
+    print_info "Running..."
+    "$exe_file"
+}
+
+# Build a gfx program against the headless recording backend and run it, so demo
+# frames come from the real program instead of a mock-up. Configured through
+# FLOW_GFX_RECORD_* — see runtime/gfx_record.c.
+# flow record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]]
+#                       [--keys SPEC] [--mouse SPEC] [--fps N] [--stride N]
+#                       [--width PX]
+#
+# --frames/--skip/--out/--keys/--mouse shape the capture; --fps/--stride/--width
+# shape the GIF and are handed to scripts/frames_to_gif.py.
+#
+# --mouse drives a scripted pointer so mouse-driven demos still record. Its
+# spec is ';'-separated segments of
+#   first,last,x0,y0,x1,y1,buttons,wheel
+# where the cursor lerps from (x0,y0) to (x1,y1) across the frame window,
+# `buttons` is a mask held throughout (1 left, 2 right, 4 middle), and `wheel`
+# is added once per frame. Integer interpolation, so it is bit-identical on
+# every platform. Example: sweep while dragging, then right-click and hold:
+#   --mouse '0,30,10,10,300,200,1,0;31,60,300,200,300,200,2,0'
+#
+# Flags win; the FLOW_GFX_RECORD_* environment variables remain as a fallback
+# so existing scripts keep working.
+record_gfx_program() {
+    local program=""
+    local rec_frames=""
+    local rec_skip=""
+    local rec_dir=""
+    local rec_keys=""
+    local rec_mouse=""
+    local rec_gif=""
+    local want_gif=0
+    local gif_fps=""
+    local gif_stride=""
+    local gif_width=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --frames|-n)
+                rec_frames="${2:-}"
+                if [ -z "$rec_frames" ]; then
+                    print_error "--frames needs a count, e.g. --frames 90"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --frames=*) rec_frames="${1#*=}"; shift ;;
+            --skip)
+                rec_skip="${2:-}"
+                if [ -z "$rec_skip" ]; then
+                    print_error "--skip needs a count, e.g. --skip 2 (keep every 2nd frame)"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --skip=*) rec_skip="${1#*=}"; shift ;;
+            --out|-o)
+                rec_dir="${2:-}"
+                if [ -z "$rec_dir" ]; then
+                    print_error "--out needs a directory, e.g. --out build/frames"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            --out=*) rec_dir="${1#*=}"; shift ;;
+            --keys)
+                rec_keys="${2:-}"
+                shift 2
+                ;;
+            --keys=*) rec_keys="${1#*=}"; shift ;;
+            --mouse)
+                rec_mouse="${2:-}"
+                shift 2
+                ;;
+            --mouse=*) rec_mouse="${1#*=}"; shift ;;
+            --gif)
+                want_gif=1
+                case "${2:-}" in
+                    ""|-*) ;;
+                    *) rec_gif="$2"; shift ;;
+                esac
+                shift
+                ;;
+            --gif=*) want_gif=1; rec_gif="${1#*=}"; shift ;;
+            --fps) gif_fps="${2:-}"; shift 2 ;;
+            --fps=*) gif_fps="${1#*=}"; shift ;;
+            --stride) gif_stride="${2:-}"; shift 2 ;;
+            --stride=*) gif_stride="${1#*=}"; shift ;;
+            --width) gif_width="${2:-}"; shift 2 ;;
+            --width=*) gif_width="${1#*=}"; shift ;;
+            -*)
+                print_error "Unknown flag for 'flow record': $1"
+                echo "  usage: flow record <program.flow> [--frames N] [--skip N] [--out DIR]"
+                echo "                     [--gif [PATH]] [--keys SPEC] [--fps N] [--stride N] [--width PX]"
+                exit 1
+                ;;
+            *)
+                if [ -z "$program" ]; then program="$1"; fi
+                shift
+                ;;
+        esac
+    done
+
+    require_flow_file "$program"
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$SCRIPT_DIR/build"
+
+    # A GIF needs frames somewhere; default to a scratch dir under build/.
+    if [ "$want_gif" = "1" ]; then
+        if [ -z "$rec_gif" ]; then
+            rec_gif="$build_dir/$basename.gif"
+        fi
+        if [ -z "$rec_dir" ]; then
+            rec_dir="$build_dir/frames_$basename"
+            rm -rf "$rec_dir"
+        fi
+        if [ -z "$rec_frames" ]; then
+            rec_frames=120
+        fi
+    fi
+
+    [ -n "$rec_frames" ] && export FLOW_GFX_RECORD_FRAMES="$rec_frames"
+    [ -n "$rec_skip" ] && export FLOW_GFX_RECORD_SKIP="$rec_skip"
+    [ -n "$rec_dir" ] && export FLOW_GFX_RECORD_DIR="$rec_dir"
+    [ -n "$rec_keys" ] && export FLOW_GFX_RECORD_KEYS="$rec_keys"
+    [ -n "$rec_mouse" ] && export FLOW_GFX_RECORD_MOUSE="$rec_mouse"
+
+    check_deps
+    mkdir -p "$build_dir"
+
+    local c_file="$build_dir/$basename.record.c"
+    local exe_file="$build_dir/$basename.record"
+
+    print_info "Compiling $program (headless recorder)..."
+    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+        print_error "FLOW compilation failed"
+        exit 1
+    fi
+    print_success "FLOW → C: $(basename "$c_file")"
+
+    # Recorder logic lives in lib/runtime/gfx_record.flow; transpile just that
+    # module. flow_runtime_flow_sources deliberately skips gfx_record, so the
+    # two compose without a duplicate definition.
+    local rec_logic_c="$build_dir/runtime_flow/gfx_record.c"
+    mkdir -p "$build_dir/runtime_flow"
+    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/gfx_record.flow" \
+        --c --library --lenient -o "$rec_logic_c" 2>/dev/null; then
+        print_error "Flow runtime module failed: gfx_record.flow"
+        exit 1
+    fi
+    print_success "FLOW → C: runtime_flow/gfx_record.c"
+
+    # The recorder used to link only the program plus gfx_record.c. Anything
+    # backed by lib/runtime/ — get_time, audio, crypto, threads, tcp — then
+    # compiled fine and failed at link time with an undefined symbol, which is
+    # the worst possible moment: the program works under `./flow gfx` and only
+    # dies when you try to record its GIF. Link the same runtime pack the
+    # windowed path uses so the two build modes accept the same programs.
+    flow_concurrency_flags
+    flow_runtime_flow_sources
+
+    # flow_rt_support.c raises its fatal-error popup through
+    # CFUserNotificationDisplayNotice on Darwin. The windowed build picks
+    # CoreFoundation up transitively from Cocoa; the recorder links no
+    # frameworks at all, so it has to ask for it explicitly.
+    local rec_frameworks=()
+    if [ "$(uname -s)" = "Darwin" ]; then
+        rec_frameworks=(-framework CoreFoundation)
+    fi
+
+    if ! clang -O2 -fno-omit-frame-pointer \
+        -Wno-error=implicit-function-declaration \
+        "${FLOW_CONC_CFLAGS[@]}" \
+        "$c_file" \
+        "$rec_logic_c" \
+        "$SCRIPT_DIR/runtime/gfx_record.c" \
+        "${FLOW_CONC_SOURCES[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+        "${FLOW_CONC_LDFLAGS[@]}" \
+        "${rec_frameworks[@]+"${rec_frameworks[@]}"}" \
+        -o "$exe_file" -lm; then
+        print_error "Recorder build failed"
+        exit 1
+    fi
+    print_success "Built: $exe_file"
+
+    print_info "Recording..."
+    "$exe_file"
+
+    if [ "$want_gif" = "1" ]; then
+        print_info "Encoding $rec_gif ..."
+        local gif_args=()
+        [ -n "$gif_fps" ] && gif_args+=(--fps "$gif_fps")
+        [ -n "$gif_stride" ] && gif_args+=(--stride "$gif_stride")
+        [ -n "$gif_width" ] && gif_args+=(--width "$gif_width")
+        if python3 "$SCRIPT_DIR/scripts/frames_to_gif.py" "${rec_dir:-frames}" "$rec_gif" \
+            "${gif_args[@]+"${gif_args[@]}"}"; then
+            print_success "GIF: $rec_gif"
+        else
+            print_error "GIF encoding failed"
+            exit 1
+        fi
+    fi
+}
+
+# Build and run Vulkan triangle demo (macOS + MoltenVK).
+run_vulkan_demo() {
+    local demo_dir="$SCRIPT_DIR/demos/vulkan_triangle"
+
+    if [ ! -d "$demo_dir" ]; then
+        print_error "Vulkan demo not found: $demo_dir"
+        exit 1
+    fi
+
+    if ! command -v make &> /dev/null; then
+        print_error "make is required to build the Vulkan demo"
+        exit 1
+    fi
+
+    if ! command -v pkg-config &> /dev/null; then
+        print_error "pkg-config is required to build the Vulkan demo"
+        print_info "Install: brew install pkg-config"
+        exit 1
+    fi
+
+    if ! command -v glslangValidator &> /dev/null; then
+        print_error "glslangValidator is required to compile shaders"
+        print_info "Install: brew install vulkan-tools"
+        exit 1
+    fi
+
+    if ! pkg-config --exists vulkan; then
+        print_error "Vulkan loader/headers not found (pkg-config vulkan)"
+        print_info "Install: brew install vulkan-loader vulkan-headers molten-vk"
+        exit 1
+    fi
+
+    if ! pkg-config --exists glfw3; then
+        print_error "GLFW not found (pkg-config glfw3)"
+        print_info "Install: brew install glfw"
+        exit 1
+    fi
+
+    print_info "Building Vulkan triangle demo..."
+    if make -C "$demo_dir" -q 2>/dev/null; then
+        print_info "Build up to date (skipping rebuild)."
+    elif ! make -C "$demo_dir"; then
+        print_error "Vulkan demo build failed"
+        exit 1
+    fi
+
+    print_info "Running Vulkan triangle demo..."
+    "$demo_dir/run.sh"
+}
+
+run_vulkan_demo_advanced() {
+    local demo_dir="$SCRIPT_DIR/demos/vulkan_scene"
+
+    if [ ! -d "$demo_dir" ]; then
+        print_error "Vulkan advanced demo not found: $demo_dir"
+        exit 1
+    fi
+
+    if ! command -v make &> /dev/null; then
+        print_error "make is required to build the Vulkan demo"
+        exit 1
+    fi
+
+    if ! command -v pkg-config &> /dev/null; then
+        print_error "pkg-config is required to build the Vulkan demo"
+        print_info "Install: brew install pkg-config"
+        exit 1
+    fi
+
+    if ! command -v glslangValidator &> /dev/null; then
+        print_error "glslangValidator is required to compile shaders"
+        print_info "Install: brew install vulkan-tools"
+        exit 1
+    fi
+
+    if ! pkg-config --exists vulkan; then
+        print_error "Vulkan loader/headers not found (pkg-config vulkan)"
+        print_info "Install: brew install vulkan-loader vulkan-headers molten-vk"
+        exit 1
+    fi
+
+    if ! pkg-config --exists glfw3; then
+        print_error "GLFW not found (pkg-config glfw3)"
+        print_info "Install: brew install glfw"
+        exit 1
+    fi
+
+    print_info "Building Vulkan scene demo..."
+    if make -C "$demo_dir" -q 2>/dev/null; then
+        print_info "Build up to date (skipping rebuild)."
+    elif ! make -C "$demo_dir"; then
+        print_error "Vulkan advanced demo build failed"
+        exit 1
+    fi
+
+    print_info "Running Vulkan scene demo..."
+    "$demo_dir/run.sh"
+}
+
+run_vulkan_2048() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_2048_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_2048_flow/src/main.flow')
+"
+}
+
+run_vulkan_tetris() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_tetris_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_tetris_flow/src/main.flow')
+"
+}
+
+run_vulkan_snake() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_snake_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_snake_flow/src/main.flow')
+"
+}
+
+run_vulkan_pong() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_pong_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_pong_flow/src/main.flow')
+"
+}
+
+run_vulkan_breakout() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_breakout_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_breakout_flow/src/main.flow')
+"
+}
+
+run_vulkan_layout() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_flow/src/main.flow')
+"
+}
+
+run_vulkan_layout_dsl() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow/src/main.flow')
+"
+}
+
+run_ui_layout() {
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/ui_layout_flow')
+pm.run_native('$SCRIPT_DIR/demos/ui_layout_flow/src/main.flow')
+"
+}
+
+run_ui_layout_window() {
+    run_window_program "$SCRIPT_DIR/demos/ui_layout_window_flow/src/main.flow"
+}
+
+# Run the underlying transpiler directly (advanced flags)
+run_transpiler() {
+    check_deps
+    python3 -m "$FLOWC_MODULE" "$@"
+}
+
+# Run tests with tiered validation
+# Tier 1: Transpile FLOW to C (catches parser/typechecker/codegen crashes)
+# Tier 2: Compile generated C with clang (catches invalid C backend output)
+# Tier 3: Run selected programs (catches semantic bugs) - see test-runtime
+run_tests() {
+    local strict_mode="--lenient"
+    local tier=2  # Default: transpile + clang compile
+    local verbose=0
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --strict)
+                strict_mode="--strict"
+                shift
+                ;;
+            --lenient)
+                strict_mode="--lenient"
+                shift
+                ;;
+            --tier1)
+                tier=1
+                shift
+                ;;
+            --tier2)
+                tier=2
+                shift
+                ;;
+            --tier)
+                if [[ -n "${2:-}" ]]; then
+                    tier="$2"
+                    shift 2
+                else
+                    tier=2
+                    shift
+                fi
+                ;;
+            --verbose|-v)
+                verbose=1
+                shift
+                ;;
+            --sanitize=*)
+                FLOW_SANITIZE="${1#*=}"
+                export FLOW_SANITIZE
+                shift
+                ;;
+            --sanitize)
+                if [ -z "${2:-}" ]; then
+                    print_error "--sanitize requires ub,asan,tsan (comma-separated)"
+                    exit 1
+                fi
+                FLOW_SANITIZE="$2"
+                export FLOW_SANITIZE
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    
+    if [ "$strict_mode" = "--strict" ]; then
+        print_info "Running FLOW tests (STRICT MODE, Tier $tier)..."
+    else
+        print_info "Running FLOW tests (Tier $tier)..."
+    fi
+
+    echo "DEBUG: Starting tests, tier=$tier, strict=$strict_mode"
+    echo "DEBUG: SCRIPT_DIR=$SCRIPT_DIR"
+    echo "DEBUG: Looking for tests in tests/ and examples/"
+
+    local transpile_failed=0
+    local clang_failed=0
+    local total=0
+    local failed_files=""
+    
+    # Create temp directory for test outputs
+    local test_build_dir
+    test_build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_test)"
+    echo "DEBUG: Created temp dir: $test_build_dir"
+    mkdir -p "$test_build_dir"
+
+    # Only run git-tracked .flow files so local WIP verify corpora do not break tier tests.
+    # examples/ecosystem/ and examples/demos/ are package projects (registry deps,
+    # cross-directory imports) that cannot transpile standalone; their own tooling
+    # verifies them.
+    _list_suite_flow_files() {
+        local suite="$1"
+        if command -v git >/dev/null 2>&1 && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$SCRIPT_DIR" ls-files "$suite" 2>/dev/null \
+                | grep '\.flow$' \
+                | grep -v '/wip/' \
+                | grep -v '^examples/verify/' \
+                | grep -v '^tests/fuzz/crashes/' \
+                | grep -v '^examples/ecosystem/' \
+                | grep -v '^examples/demos/' \
+                | while read -r rel; do
+                    echo "$SCRIPT_DIR/$rel"
+                done
+        else
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
+        fi
+    }
+
+    echo "DEBUG: About to loop through test suites..."
+    for suite in "tests" "examples"; do
+        echo "DEBUG: Processing suite: $suite"
+        local dir="$SCRIPT_DIR/$suite"
+        if [ ! -d "$dir" ]; then
+            echo "DEBUG: Directory $dir does not exist, skipping"
+            continue
+        fi
+
+        echo "DEBUG: Finding .flow files in $dir..."
+        local file_count=$(_list_suite_flow_files "$suite" | wc -l | tr -d ' ')
+        echo "DEBUG: Found $file_count tracked .flow files in $suite"
+
+        while read program || [ -n "$program" ]; do
+            if [ -z "$program" ]; then
+                echo "DEBUG: Empty program entry, skipping"
+                continue
+            fi
+            echo "DEBUG: Processing file: $program"
+            total=$((total + 1))
+            local rel_path=${program#$SCRIPT_DIR/}
+            local safe_name="${rel_path//\//-}"
+            local c_file="$test_build_dir/${safe_name}.c"
+            local exe_file="$test_build_dir/${safe_name}"
+            
+            # Per-file strictness: files carrying a "flow:lenient" pragma in
+            # their first lines are intentionally checked leniently even when
+            # the suite runs with --strict (checker gaps documented in-file).
+            local file_mode="$strict_mode"
+            if [ "$strict_mode" = "--strict" ] && head -n 3 "$program" | grep -q "flow:lenient"; then
+                file_mode="--lenient"
+                print_warning "~ $rel_path (marked flow:lenient)"
+            fi
+
+            # Tier 1: Transpile FLOW to C
+            local transpile_output
+            set +e  # Temporarily disable exit on error to capture failures
+            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c $file_mode -o "$c_file" 2>&1)
+            local transpile_status=$?
+            set -e  # Re-enable exit on error
+            
+            if [ $transpile_status -ne 0 ]; then
+                print_error "✗ $rel_path (transpile failed)"
+                # Always show errors in CI, not just verbose mode
+                echo "    Error output:"
+                echo "$transpile_output" | head -10
+                transpile_failed=$((transpile_failed + 1))
+                failed_files="$failed_files\n  - $rel_path (transpile)"
+                continue
+            fi
+            
+            # Tier 2: Compile C with clang (if enabled).
+            # Examples often need platform libs/graphics; clang-check tests/ only.
+            if [ "$tier" -ge 2 ] && [ "$suite" = "tests" ]; then
+                # MISRA #269: use -std=c11 -Wall instead of -Wno-everything.
+                # Warnings do not fail the syntax check (no -Werror here).
+                # Add -I for the source file's directory so @cImport headers resolve.
+                local src_dir
+                src_dir="$(dirname "$program")"
+                local clang_output
+                set +e
+                clang_output=$(clang -fsyntax-only -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-error=implicit-function-declaration -Wno-error=int-conversion -I"$src_dir" "$c_file" 2>&1)
+                local clang_status=$?
+                set -e
+                
+                if [ $clang_status -ne 0 ]; then
+                    print_error "✗ $rel_path (clang failed)"
+                    # Always show clang errors in CI, not just verbose mode
+                    echo "    clang output:"
+                    echo "$clang_output" | head -10
+                    clang_failed=$((clang_failed + 1))
+                    failed_files="$failed_files\n  - $rel_path (clang)"
+                    continue
+                fi
+            fi
+            
+            print_success "✓ $rel_path"
+            
+        done < <(_list_suite_flow_files "$suite")
+    done
+    
+    # Cleanup
+    rm -rf "$test_build_dir"
+
+    echo "----------------------------------------"
+    echo "DEBUG: Total tests found: $total"
+    echo "DEBUG: Transpile failures: $transpile_failed"
+    echo "DEBUG: Clang failures: $clang_failed"
+    local total_failed=$((transpile_failed + clang_failed))
+
+    if [ $total_failed -eq 0 ]; then
+        print_success "All $total tests passed! (Tier $tier)"
+        return 0
+    else
+        echo ""
+        print_error "Test failures: $total_failed/$total"
+        if [ $transpile_failed -gt 0 ]; then
+            print_error "  Transpile failures: $transpile_failed"
+        fi
+        if [ $clang_failed -gt 0 ]; then
+            print_error "  Clang compile failures: $clang_failed"
+        fi
+        if [ -n "$failed_files" ]; then
+            echo -e "\nFailed files:$failed_files"
+        fi
+        exit 1
+    fi
+}
+
+# List examples
+list_examples() {
+    print_info "Available FLOW programs:"
+    echo ""
+    
+    local examples_dir="$SCRIPT_DIR/examples"
+    local tests_dir="$SCRIPT_DIR/tests"
+    
+    echo "📚 Examples (standard programs):"
+    find "$examples_dir" -name "*.flow" | while read program; do
+        local rel_path=${program#$SCRIPT_DIR/}
+        echo "  📄 $rel_path"
+        # Show first line as description
+        local desc=$(head -n 1 "$program" | sed 's/^# *//')
+        echo "     $desc"
+        echo ""
+    done
+    
+    echo "🧪 Tests (compiler/language demos):"
+    find "$tests_dir" -name "*.flow" | while read program; do
+        local rel_path=${program#$SCRIPT_DIR/}
+        echo "  📄 $rel_path"
+        # Show first line as description
+        local desc=$(head -n 1 "$program" | sed 's/^# *//')
+        echo "     $desc"
+        echo ""
+    done
+}
+
+# Run Python unit tests
+run_python_tests() {
+    if command -v pytest &> /dev/null; then
+        print_info "Running Python unit tests..."
+        cd "$SCRIPT_DIR"
+        PYTHONPATH="$SCRIPT_DIR/src" pytest tests/unit/ tests/integration/ -v --tb=short
+        local status=$?
+        if [ $status -eq 0 ]; then
+            print_success "✅ All Python tests passed!"
+        else
+            print_error "❌ Python tests failed"
+            exit 1
+        fi
+    else
+        print_warning "pytest not found. Install test dependencies with:"
+        print_info "  pip install -e .[test]"
+        print_info "  or: pip install pytest pytest-cov pytest-mock"
+        exit 1
+    fi
+}
+
+# Run interop tests (Python embedding)
+run_interop_tests() {
+    print_info "Running interop tests..."
+    check_deps
+    run_runtime_tests "$SCRIPT_DIR/tests/runtime/interop"
+}
+
+# Run matmul optimization demo + MLIR + assembly dump
+run_matmul_tests() {
+    local program="$SCRIPT_DIR/examples/bench/matmul_optimizations.flow"
+    local mlir_program="$SCRIPT_DIR/examples/bench/matmul_mlir.flow"
+    local build_dir="$SCRIPT_DIR/build"
+    local c_file="$build_dir/matmul_optimizations.asm.c"
+    local s_file="$build_dir/matmul_optimizations.s"
+    local mlir_file="$build_dir/matmul_mlir.mlir"
+    local print_asm=1
+    local print_mlir=1
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --no-asm)
+                print_asm=0
+                shift
+                ;;
+            --no-mlir)
+                print_mlir=0
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    print_info "Running matmul optimizations..."
+    run_program "$program"
+
+    print_info "Generating MLIR..."
+    python3 -m "$FLOWC_MODULE" "$mlir_program" --mlir -o "$mlir_file" >/dev/null 2>&1 || {
+        print_warning "MLIR generation failed"
+    }
+
+    print_info "Generating assembly..."
+    python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file" >/dev/null 2>&1 || {
+        print_error "C generation failed"
+        exit 1
+    }
+    if ! clang -O2 -S "$c_file" -o "$s_file" 2>/dev/null; then
+        print_error "Assembly generation failed"
+        exit 1
+    fi
+
+    if [ $print_asm -eq 1 ]; then
+        echo "----------------------------------------"
+        echo "Assembly: $s_file"
+        echo "----------------------------------------"
+        head -n 200 "$s_file"
+        echo "----------------------------------------"
+    fi
+
+    if [ $print_mlir -eq 1 ] && [ -f "$mlir_file" ]; then
+        echo "MLIR: $mlir_file"
+        echo "----------------------------------------"
+        head -n 120 "$mlir_file"
+        echo "----------------------------------------"
+    fi
+}
+
+# Run GPU feature tests (runtime + codegen)
+run_gpu_tests() {
+    print_info "Running GPU feature tests..."
+    check_deps
+    local runtime_args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --verbose|-v)
+                runtime_args+=("--verbose")
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    if [ ${#runtime_args[@]} -eq 0 ]; then
+        run_runtime_tests "$SCRIPT_DIR/tests/runtime/gpu_features.flow"
+    else
+        run_runtime_tests "${runtime_args[@]}" "$SCRIPT_DIR/tests/runtime/gpu_features.flow"
+    fi
+
+    if command -v pytest &> /dev/null; then
+        print_info "Running GPU codegen integration test..."
+        PYTHONPATH="$SCRIPT_DIR/src" pytest tests/integration/test_gpu_codegen.py -q --tb=short
+        local status=$?
+        if [ $status -eq 0 ]; then
+            print_success "✅ GPU codegen test passed!"
+        else
+            print_error "❌ GPU codegen test failed"
+            exit 1
+        fi
+    else
+        print_warning "pytest not found. Skipping GPU codegen test."
+        print_info "Install with: pip install pytest"
+    fi
+}
+
+# Run runtime tests (compile + execute programs and check exit codes/output)
+run_runtime_tests() {
+    print_info "Running FLOW runtime tests..."
+
+    local runtime_dir="$SCRIPT_DIR/tests/runtime"
+    local build_dir
+    build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_runtime_test)"
+    local verbose=0
+    local targets=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --verbose|-v)
+                verbose=1
+                shift
+                ;;
+            *)
+                targets+=("$1")
+                shift
+                ;;
+        esac
+    done
+    mkdir -p "$build_dir"
+    
+    if [ ! -d "$runtime_dir" ]; then
+        print_warning "No runtime tests directory found at $runtime_dir"
+        print_info "Creating runtime tests directory..."
+        mkdir -p "$runtime_dir"
+        print_info "Add .flow files to tests/runtime/ to run runtime tests."
+        return 0
+    fi
+    
+    local total=0
+    local passed=0
+    local failed=0
+    local failed_files=""
+    
+    # Bash 3.2 + set -u: empty "${arr[@]}" is an unbound-variable error.
+    # Collect paths into a newline list, then iterate with while-read.
+    local program_list_file
+    program_list_file="$(mktemp 2>/dev/null || mktemp -t flow_rt_list)"
+    if [ ${#targets[@]} -gt 0 ]; then
+        for t in "${targets[@]}"; do
+            if [ -f "$t" ]; then
+                printf '%s\n' "$t" >> "$program_list_file"
+            elif [ -d "$t" ]; then
+                find "$t" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
+            fi
+        done
+    else
+        find "$runtime_dir" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
+    fi
+
+    if [ ! -s "$program_list_file" ]; then
+        rm -f "$program_list_file"
+        print_error "No runtime test programs found under $runtime_dir"
+        exit 1
+    fi
+
+    while IFS= read -r program; do
+        if [ -z "$program" ]; then continue; fi
+        total=$((total + 1))
+        local rel_path=${program#$SCRIPT_DIR/}
+        local basename
+        basename=$(basename "$program" .flow)
+        local c_file="$build_dir/${basename}.c"
+        local exe_file="$build_dir/${basename}"
+        
+        # Step 1: Transpile FLOW to C
+        # || true / status vars: set -e must not abort before we record failures
+        local transpile_output
+        local transpile_status=0
+        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file" 2>&1) || transpile_status=$?
+        if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
+            print_error "✗ $rel_path (transpile failed)"
+            if [ $verbose -eq 1 ] && [ -n "$transpile_output" ]; then
+                echo "$transpile_output"
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (transpile)"
+            continue
+        fi
+        
+        # Step 2: Compile C to executable
+        local clang_output
+        local clang_status=0
+        local extra_cflags=()
+        local extra_ldflags=()
+        local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+        local py_header_dir="$py_framework_dir/Python3.framework/Headers"
+        if [ -d "$py_header_dir" ]; then
+            extra_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
+            extra_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
+        fi
+        flow_concurrency_flags
+        flow_runtime_flow_sources
+        flow_collect_cflags
+        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
+            "$SCRIPT_DIR/runtime/flow_python_embed.c" \
+            "${FLOW_CONC_SOURCES[@]}" \
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+            "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
+        if [ "$clang_status" -ne 0 ]; then
+            print_error "✗ $rel_path (clang compile failed)"
+            if [ -n "$clang_output" ]; then
+                if [ $verbose -eq 1 ]; then
+                    echo "$clang_output"
+                else
+                    # Always show a short snippet so silent undefined-symbol
+                    # failures are diagnosable without --verbose.
+                    echo "$clang_output" | tail -n 12
+                fi
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (clang)"
+            continue
+        fi
+        
+        # Step 3: Run the executable and check exit code
+        local run_output
+        local exit_code=0
+        run_output=$("$exe_file" 2>&1) || exit_code=$?
+        
+        # Check for expected output file (optional)
+        local expected_file="${program%.flow}.expected"
+        if [ -f "$expected_file" ]; then
+            local expected_output=$(cat "$expected_file")
+            if [ "$run_output" != "$expected_output" ]; then
+                print_error "✗ $rel_path (output mismatch)"
+                failed=$((failed + 1))
+                failed_files="$failed_files\n  - $rel_path (output)"
+                continue
+            fi
+        fi
+        
+        # Exit code 0 = pass, non-zero = fail
+        if [ $exit_code -eq 0 ]; then
+            print_success "✓ $rel_path"
+            if [ $verbose -eq 1 ] && [ -n "$run_output" ]; then
+                echo "---- output: $rel_path ----"
+                echo "$run_output"
+                echo "---------------------------"
+            fi
+            passed=$((passed + 1))
+        else
+            print_error "✗ $rel_path (exit code $exit_code)"
+            if [ $verbose -eq 1 ] && [ -n "$run_output" ]; then
+                echo "---- output: $rel_path ----"
+                echo "$run_output"
+                echo "---------------------------"
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (exit=$exit_code)"
+        fi
+        
+    done < "$program_list_file"
+    
+    # Cleanup
+    rm -f "$program_list_file"
+    rm -rf "$build_dir"
+    
+    echo "----------------------------------------"
+    if [ $total -eq 0 ]; then
+        print_warning "No runtime tests found in $runtime_dir"
+        return 0
+    fi
+    
+    if [ $failed -eq 0 ]; then
+        print_success "All $total runtime tests passed!"
+    else
+        print_error "Runtime test failures: $failed/$total"
+        if [ -n "$failed_files" ]; then
+            echo -e "\nFailed files:$failed_files"
+        fi
+        exit 1
+    fi
+}
+
+# Run Flow-native language tests (tests/lang/): strict transpile, clang
+# compile, then execute. A test passes when it exits 0; a nonzero exit
+# identifies the failing check inside the file. Mirrors run_runtime_tests
+# but always transpiles with --strict (tests/lang/ is strict-only).
+run_lang_tests() {
+    print_info "Running FLOW language tests (tests/lang/, strict)..."
+
+    local lang_dir="$SCRIPT_DIR/tests/lang"
+    local build_dir
+    build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_lang_test)"
+    local verbose=0
+    local targets=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --verbose|-v)
+                verbose=1
+                shift
+                ;;
+            *)
+                targets+=("$1")
+                shift
+                ;;
+        esac
+    done
+    mkdir -p "$build_dir"
+
+    if [ ! -d "$lang_dir" ]; then
+        print_error "No language tests directory found at $lang_dir"
+        exit 1
+    fi
+
+    local total=0
+    local passed=0
+    local failed=0
+    local failed_files=""
+
+    # Bash 3.2 + set -u: empty "${arr[@]}" is an unbound-variable error.
+    # Collect paths into a newline list, then iterate with while-read.
+    local program_list_file
+    program_list_file="$(mktemp 2>/dev/null || mktemp -t flow_lang_list)"
+    if [ ${#targets[@]} -gt 0 ]; then
+        for t in "${targets[@]}"; do
+            if [ -f "$t" ]; then
+                printf '%s\n' "$t" >> "$program_list_file"
+            elif [ -d "$t" ]; then
+                find "$t" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
+            fi
+        done
+    else
+        find "$lang_dir" -name "*.flow" ! -path "*/wip/*" 2>/dev/null >> "$program_list_file" || true
+    fi
+
+    if [ ! -s "$program_list_file" ]; then
+        rm -f "$program_list_file"
+        print_error "No language test programs found under $lang_dir"
+        exit 1
+    fi
+
+    while IFS= read -r program; do
+        if [ -z "$program" ]; then continue; fi
+        total=$((total + 1))
+        local rel_path=${program#$SCRIPT_DIR/}
+        local basename
+        basename=$(basename "$program" .flow)
+        local c_file="$build_dir/${basename}.c"
+        local exe_file="$build_dir/${basename}"
+
+        # Step 1: Transpile FLOW to C (strict; tests/lang/ must be strict-clean)
+        # || true / status vars: set -e must not abort before we record failures
+        local transpile_output
+        local transpile_status=0
+        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
+        if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
+            print_error "✗ $rel_path (strict transpile failed)"
+            if [ -n "$transpile_output" ]; then
+                echo "$transpile_output" | tail -n 12
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (transpile)"
+            continue
+        fi
+
+        # Step 2: Compile C to executable. Tests that import the concurrency
+        # stdlib call into runtime/flow_*.c (threads, channels, fibers), so
+        # link those sources for them; plain tests stay a one-file clang.
+        local clang_output
+        local clang_status=0
+        local lang_conc_sources=()
+        local lang_conc_cflags=()
+        local lang_conc_ldflags=()
+        if grep -q 'stdlib/concurrent.flow' "$program" 2>/dev/null; then
+            flow_concurrency_flags
+            flow_runtime_flow_sources
+            lang_conc_sources=("${FLOW_CONC_SOURCES[@]}" "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}")
+            lang_conc_cflags=("${FLOW_CONC_CFLAGS[@]}")
+            lang_conc_ldflags=("${FLOW_CONC_LDFLAGS[@]}")
+        fi
+        flow_collect_cflags
+        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
+            "$c_file" "${lang_conc_sources[@]+"${lang_conc_sources[@]}"}" \
+            "${lang_conc_ldflags[@]+"${lang_conc_ldflags[@]}"}" \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
+        if [ "$clang_status" -ne 0 ]; then
+            print_error "✗ $rel_path (clang compile failed)"
+            if [ -n "$clang_output" ]; then
+                if [ $verbose -eq 1 ]; then
+                    echo "$clang_output"
+                else
+                    echo "$clang_output" | tail -n 12
+                fi
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (clang)"
+            continue
+        fi
+
+        # Step 3: Run the executable, keeping the two streams apart.
+        local run_output
+        local exit_code=0
+        local stdout_file="$build_dir/${basename}.stdout"
+        local stderr_file="$build_dir/${basename}.stderr"
+        "$exe_file" > "$stdout_file" 2> "$stderr_file" || exit_code=$?
+        run_output=$(cat "$stdout_file" "$stderr_file")
+
+        # Step 3b: Some tests are about *failing*. `expect false` aborts, and
+        # the abort is the behaviour under test, so a nonzero exit is the pass.
+        # A sibling `.exitcode` file holding a single integer says which code
+        # the program must exit with; without one the expected code is 0.
+        local exitcode_file="${program%.flow}.exitcode"
+        local want_exit=0
+        if [ -f "$exitcode_file" ]; then
+            want_exit=$(tr -d '[:space:]' < "$exitcode_file")
+        fi
+
+        # Step 4: Some behaviour is only visible on a stream — print ordering,
+        # what a `defer` runs and when, which effect handler answered a call,
+        # the diagnostic a failed `expect` writes. A test may put the exact
+        # expected text in a sibling `.expected` (stdout) or `.expected-stderr`
+        # file; a mismatch fails the test just like a wrong exit code.
+        local stream_mismatch=0
+        local expected_file="${program%.flow}.expected"
+        if [ "$exit_code" -eq "$want_exit" ] && [ -f "$expected_file" ]; then
+            if ! diff -u "$expected_file" "$stdout_file" > "$build_dir/${basename}.diff" 2>&1; then
+                print_error "✗ $rel_path (stdout differs from ${expected_file#$SCRIPT_DIR/})"
+                cat "$build_dir/${basename}.diff"
+                stream_mismatch=1
+                failed_files="$failed_files\n  - $rel_path (stdout)"
+            fi
+        fi
+
+        local expected_err_file="${program%.flow}.expected-stderr"
+        if [ $stream_mismatch -eq 0 ] && [ "$exit_code" -eq "$want_exit" ] && [ -f "$expected_err_file" ]; then
+            if ! diff -u "$expected_err_file" "$stderr_file" > "$build_dir/${basename}.errdiff" 2>&1; then
+                print_error "✗ $rel_path (stderr differs from ${expected_err_file#$SCRIPT_DIR/})"
+                cat "$build_dir/${basename}.errdiff"
+                stream_mismatch=1
+                failed_files="$failed_files\n  - $rel_path (stderr)"
+            fi
+        fi
+
+        if [ $stream_mismatch -eq 1 ]; then
+            failed=$((failed + 1))
+            continue
+        fi
+
+        if [ "$exit_code" -eq "$want_exit" ]; then
+            print_success "✓ $rel_path"
+            if [ $verbose -eq 1 ] && [ -n "$run_output" ]; then
+                echo "---- output: $rel_path ----"
+                echo "$run_output"
+                echo "---------------------------"
+            fi
+            passed=$((passed + 1))
+        else
+            print_error "✗ $rel_path (exit code $exit_code, expected $want_exit)"
+            if [ -n "$run_output" ]; then
+                echo "---- output: $rel_path ----"
+                echo "$run_output"
+                echo "---------------------------"
+            fi
+            failed=$((failed + 1))
+            failed_files="$failed_files\n  - $rel_path (exit=$exit_code want=$want_exit)"
+        fi
+
+    done < "$program_list_file"
+
+    # Cleanup
+    rm -f "$program_list_file"
+    rm -rf "$build_dir"
+
+    echo "----------------------------------------"
+    if [ $failed -eq 0 ]; then
+        print_success "All $total language tests passed!"
+    else
+        print_error "Language test failures: $failed/$total"
+        if [ -n "$failed_files" ]; then
+            echo -e "\nFailed files:$failed_files"
+        fi
+        exit 1
+    fi
+}
+
+# Run MLIR verification tests (optional - requires MLIR toolchain)
+run_mlir_tests() {
+    print_info "Running MLIR verification tests..."
+    resolve_llvm_path
+    
+    # Check if MLIR tools are available
+    if ! command -v "$LLVM_PATH/mlir-opt" &> /dev/null; then
+        print_warning "MLIR tools not found. Skipping MLIR verification tests."
+        print_info "Install with: brew install llvm"
+        return 0  # Skip, don't fail
+    fi
+    
+    local mlir_test_dir="$SCRIPT_DIR/tests/mlir"
+    local build_dir
+    build_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_mlir_test)"
+    mkdir -p "$build_dir"
+    
+    # If no dedicated MLIR tests, use a subset of core tests
+    local test_files=()
+    if [ -d "$mlir_test_dir" ]; then
+        while IFS= read -r -d '' file; do
+            test_files+=("$file")
+        done < <(find "$mlir_test_dir" -name "*.flow" -print0 2>/dev/null)
+    fi
+    
+    # Also test a few core programs
+    for core_test in "tests/core/hello_world.flow" "tests/core/fibonacci.flow" "tests/core/loops.flow"; do
+        if [ -f "$SCRIPT_DIR/$core_test" ]; then
+            test_files+=("$SCRIPT_DIR/$core_test")
+        fi
+    done
+    
+    if [ ${#test_files[@]} -eq 0 ]; then
+        print_warning "No MLIR test files found."
+        rm -rf "$build_dir"
+        return 0
+    fi
+    
+    local total=0
+    local passed=0
+    local failed=0
+    local skipped=0
+    
+    for program in "${test_files[@]}"; do
+        total=$((total + 1))
+        local rel_path=${program#$SCRIPT_DIR/}
+        local basename
+        basename=$(basename "$program" .flow)
+        local mlir_file="$build_dir/${basename}.mlir"
+        
+        # Step 1: Generate MLIR
+        local gen_output
+        gen_output=$(python3 -m "$FLOWC_MODULE" "$program" --mlir --lenient -o "$mlir_file" 2>&1)
+        if [ $? -ne 0 ]; then
+            print_error "✗ $rel_path (MLIR generation failed)"
+            failed=$((failed + 1))
+            continue
+        fi
+        
+        # Step 2: Verify MLIR with mlir-opt
+        local verify_output
+        verify_output=$("$LLVM_PATH/mlir-opt" "$mlir_file" --verify-diagnostics 2>&1)
+        local verify_status=$?
+        
+        # mlir-opt may fail for some dialects - check if it's a verification failure vs missing dialect
+        if [ $verify_status -ne 0 ]; then
+            if echo "$verify_output" | grep -q "unknown dialect\|unregistered operation"; then
+                print_warning "⊘ $rel_path (skipped: dialect not available)"
+                skipped=$((skipped + 1))
+            else
+                print_error "✗ $rel_path (MLIR verification failed)"
+                failed=$((failed + 1))
+            fi
+            continue
+        fi
+        
+        print_success "✓ $rel_path"
+        passed=$((passed + 1))
+    done
+    
+    # Cleanup
+    rm -rf "$build_dir"
+    
+    echo "----------------------------------------"
+    print_info "MLIR tests: $passed passed, $failed failed, $skipped skipped (of $total)"
+    
+    if [ $failed -gt 0 ]; then
+        return 1
+    fi
+    return 0
+}
+
+# Run all tests (FLOW + Runtime + Python)
+run_all_tests() {
+    print_info "Running all tests..."
+    local any_failed=0
+    
+    echo ""
+    print_info "Phase 1: FLOW language tests (Tier 2: transpile + clang)..."
+    run_tests --tier2
+    local flow_status=$?
+    [ $flow_status -ne 0 ] && any_failed=1
+    
+    echo ""
+    print_info "Phase 2: FLOW runtime tests (compile + execute)..."
+    run_runtime_tests
+    local runtime_status=$?
+    [ $runtime_status -ne 0 ] && any_failed=1
+    
+    echo ""
+    print_info "Phase 3: Python unit tests..."
+    run_python_tests
+    local python_status=$?
+    [ $python_status -ne 0 ] && any_failed=1
+    
+    echo ""
+    echo "========================================"
+    print_info "Test Summary:"
+    if [ $any_failed -eq 0 ]; then
+        print_success "All tests passed!"
+    else
+        print_error "Some tests failed:"
+        [ $flow_status -ne 0 ] && print_error "  - FLOW language tests"
+        [ $runtime_status -ne 0 ] && print_error "  - Runtime tests"
+        [ $python_status -ne 0 ] && print_error "  - Python tests"
+        exit 1
+    fi
+}
+
+# Install dependencies
+install_deps() {
+    print_info "Installing FLOW dependencies..."
+    resolve_llvm_path
+    
+    # Install LLVM
+    if [ ! -x "$LLVM_PATH/mlir-opt" ]; then
+        print_info "Installing LLVM..."
+        if command -v brew &> /dev/null; then
+            brew install llvm
+            resolve_llvm_path
+            export LLVM_PATH
+            export PATH="$LLVM_PATH:$PATH"
+        else
+            print_error "Please install LLVM manually"
+            exit 1
+        fi
+    fi
+    
+    # Optionally install test dependencies
+    if command -v pip3 &> /dev/null; then
+        print_info "Installing test dependencies (optional)..."
+        pip3 install -e .[test] 2>/dev/null || {
+            print_warning "Failed to install test dependencies. Install manually with:"
+            print_info "  pip install pytest pytest-cov pytest-mock"
+        }
+    fi
+    
+    print_success "Dependencies installed!"
+}
+
+# Main command dispatcher
+case "${1:-help}" in
+    "version"|"--version"|"-V")
+        echo "Flow 1.0.1"
+        echo "host: $(flow_host_mode) (override with FLOW_HOST=flowc|python|auto)"
+        ;;
+    "check")
+        shift
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.check "$@"
+        ;;
+    "run")
+        check_deps
+        shift
+        # FLOW_RUN_PYTHON=1 uses the shell-independent Python runner (#400).
+        if [ "${FLOW_RUN_PYTHON:-0}" = "1" ]; then
+            PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.run "$@"
+        else
+            run_program "$@"
+        fi
+        ;;
+    "audio")
+        check_deps
+        run_audio_program "${2:-}" "${3:-}"
+        ;;
+    "compile")
+        check_deps
+        shift
+        compile_program_cli "$@"
+        ;;
+    "show-flags")
+        shift
+        # Allow --profile= / --sanitize= before showing.
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --sanitize=*) FLOW_SANITIZE="${1#*=}"; export FLOW_SANITIZE; shift ;;
+                --sanitize) FLOW_SANITIZE="$2"; export FLOW_SANITIZE; shift 2 ;;
+                --profile=*) FLOW_PROFILE="${1#*=}"; export FLOW_PROFILE; shift ;;
+                --profile) FLOW_PROFILE="$2"; export FLOW_PROFILE; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        flow_show_clang_flags
+        ;;
+    "analyze")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow analyze <file.c|file.flow> [--standard=misra-c-2024|cert-c]"
+            print_info "                  [--wcet] [--stack-depth] [--budget N] [--fail-on-violation]"
+            exit 1
+        fi
+        # Route .flow files to WCET/stack analysis, .c files to MISRA scan.
+        case "${1:-}" in
+            *.flow)
+                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
+                ;;
+            --wcet|--stack-depth)
+                # Flags before the file: still WCET analysis on a .flow file.
+                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
+                ;;
+            *)
+                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
+                ;;
+        esac
+        ;;
+    "compile-audio")
+        check_deps
+        compile_audio_program "${2:-}" "${3:-}"
+        ;;
+    "dap")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow dap <program.flow>"
+            print_info "IDE: VS Code FLOW debugger type (lldb-dap). CLI opens ./flow debug."
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.dap_server "$@"
+        ;;
+    "debug")
+        shift
+        debug_program "$@"
+        ;;
+    "window")
+        run_window_program "${2:-}"
+        ;;
+    "gfx")
+        run_gfx_program "${2:-}"
+        ;;
+    "record")
+        shift
+        record_gfx_program "$@"
+        ;;
+    "vulkan-demo")
+        run_vulkan_demo
+        ;;
+    "vulkan-demo-basic")
+        run_vulkan_demo
+        ;;
+    "vulkan-demo-advanced")
+        run_vulkan_demo_advanced
+        ;;
+    "vulkan-2048")
+        run_vulkan_2048
+        ;;
+    "vulkan-tetris")
+        run_vulkan_tetris
+        ;;
+    "vulkan-snake")
+        run_vulkan_snake
+        ;;
+    "vulkan-pong")
+        run_vulkan_pong
+        ;;
+    "vulkan-breakout")
+        run_vulkan_breakout
+        ;;
+    "vulkan-layout")
+        run_vulkan_layout
+        ;;
+    "vulkan-layout-dsl")
+        run_vulkan_layout_dsl
+        ;;
+    "ui-layout")
+        run_ui_layout
+        ;;
+    "ui-layout-window")
+        run_ui_layout_window
+        ;;
+    "demo")
+        if [ -z "${2:-}" ]; then
+            print_error "Usage: flow demo <name> [variant]"
+            exit 1
+        fi
+        case "${2:-}" in
+            "vulkan")
+                case "${3:-basic}" in
+                    "basic")
+                        run_vulkan_demo
+                        ;;
+                    "advanced")
+                        run_vulkan_demo_advanced
+                        ;;
+                    *)
+                        print_error "Unknown Vulkan demo variant: ${3:-} (use basic or advanced)"
+                        exit 1
+                        ;;
+                esac
+                ;;
+            "vulkan-flow")
+                case "${3:-basic}" in
+                    "basic")
+                        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_basic')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_basic/src/main.flow')
+"
+                        ;;
+                    "advanced")
+                        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_advanced')
+pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
+"
+                        ;;
+                    "2048")
+                        run_vulkan_2048
+                        ;;
+                    "tetris")
+                        run_vulkan_tetris
+                        ;;
+                    "snake")
+                        run_vulkan_snake
+                        ;;
+                    "pong")
+                        run_vulkan_pong
+                        ;;
+                    "breakout")
+                        run_vulkan_breakout
+                        ;;
+                    "layout")
+                        run_vulkan_layout
+                        ;;
+                    "layout-dsl")
+                        run_vulkan_layout_dsl
+                        ;;
+                    *)
+                        print_error "Unknown Vulkan Flow demo variant: ${3:-} (use basic, advanced, 2048, tetris, snake, pong, breakout, layout, or layout-dsl)"
+                        exit 1
+                        ;;
+                esac
+                ;;
+            "ui-layout")
+                run_ui_layout
+                ;;
+            "ui-layout-window")
+                run_ui_layout_window
+                ;;
+            *)
+                print_error "Unknown demo: ${2:-}"
+                exit 1
+                ;;
+        esac
+        ;;
+    "mlir")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow mlir <program.flow>"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        generate_mlir "$@"
+        ;;
+    "mlir-run")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow mlir-run <program.flow>"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        check_mlir_deps
+        generate_mlir "${1:-}"
+        if [ $? -ne 0 ]; then
+            print_error "MLIR generation failed"
+            exit 1
+        fi
+        
+        PROGRAM_NAME=$(basename "${1:-}" .flow)
+        BUILD_DIR="$SCRIPT_DIR/build"
+        MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
+        OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
+        EXE_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir"
+        
+        if ! mlir_lower_and_link "$MLIR_FILE" "$OBJ_FILE" "$EXE_FILE" 2; then
+            exit 1
+        fi
+        
+        print_info "Running..."
+        echo "----------------------------------------"
+        "$EXE_FILE"
+        EXIT_CODE=$?
+        echo "----------------------------------------"
+        print_success "Program finished with exit code: $EXIT_CODE"
+        ;;
+    "fir-g"|"firg")
+        shift
+        # Allow `flow fir-g --calibrate` with no program; otherwise require .flow.
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow fir-g <program.flow> [--json] [--device=…] [--bench] [--opts]"
+            print_info "       flow fir-g --calibrate [--thresholds PATH] [--json]"
+            print_info "Docs: docs/project/fir-g.md"
+            exit 1
+        fi
+        if [[ "${1}" == *.flow ]]; then
+            require_flow_file "${1}"
+        elif [[ "${1}" != --* ]]; then
+            print_error "Usage: flow fir-g <program.flow> […]  or  flow fir-g --calibrate"
+            exit 1
+        fi
+        check_deps
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
+            python3 -m flow.fir_cli "$@"
+        ;;
+    "shader")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow shader <program.flow> [--grid|--cycle] [--name SHADER] [--frames N] [--size WxH] [--emit-only]"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        check_deps
+        run_fill_shader "$@"
+        ;;
+    "gpu")
+        shift
+        # --wgsl emits WebGPU shaders instead of Metal, from the same AST.
+        gpu_lang="metal"
+        gpu_args=()
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --wgsl) gpu_lang="wgsl" ;;
+                --metal) gpu_lang="metal" ;;
+                *) gpu_args+=("$1") ;;
+            esac
+            shift
+        done
+        set -- ${gpu_args[@]+"${gpu_args[@]}"}
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow gpu <program.flow> [--wgsl]"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        check_deps
+        print_info "Generating GPU shaders from ${1:-} ($gpu_lang)..."
+        python3 - "$SCRIPT_DIR" "${1:-}" "$gpu_lang" <<'PY'
+import sys
+
+script_dir = sys.argv[1]
+program = sys.argv[2]
+lang = sys.argv[3] if len(sys.argv) > 3 else "metal"
+sys.path.insert(0, f"{script_dir}/src")
+
+from flow.module_resolver import ModuleResolver
+from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
+from flow.wgsl_codegen import generate_wgsl_shaders
+
+# Resolve modules
+resolver = ModuleResolver(program)
+try:
+    declarations = resolver.resolve()
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)
+
+# Check for @gpu functions
+gpu_funcs = extract_gpu_functions(declarations)
+if not gpu_funcs:
+    print("No @gpu functions found in the program.")
+    print("Mark GPU functions with @gpu decorator:")
+    print()
+    print("@gpu")
+    print("function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {")
+    print("    let i = gpu_thread_id()")
+    print("    if i < n {")
+    print("        out[i] = a[i] + b[i]")
+    print("    }")
+    print("}")
+    sys.exit(0)
+
+if lang == "wgsl":
+    results = generate_wgsl_shaders(declarations, f"{script_dir}/build/wgsl")
+    for name, path, _layout in results:
+        print(f"Generated WGSL shader: {path}")
+else:
+    results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
+print(f"Generated {len(results)} GPU shader(s)")
+PY
+        ;;
+    "jit")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow jit <program.flow>"
+            exit 1
+        fi
+        require_flow_file "${1:-}"
+        check_deps
+        check_mlir_deps
+        print_info "JIT compiling ${1:-}..."
+        run_flow_jit "${1:-}"
+        ;;
+    "ml")
+        shift
+        subcmd="${1:-run}"
+        case "$subcmd" in
+            run|jit|bench)
+                shift
+                program="${1:-$SCRIPT_DIR/examples/ml/mlir_tensor_bench.flow}"
+                require_flow_file "$program"
+                check_deps
+                check_mlir_deps
+                print_info "MLIR ML ($subcmd): $program"
+                if [ "$subcmd" = "bench" ]; then
+                    generate_mlir "$program"
+                    BUILD_DIR="$SCRIPT_DIR/build"
+                    PROGRAM_NAME=$(basename "$program" .flow)
+                    MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
+                    OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
+                    EXE_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir"
+                    if ! mlir_lower_and_link "$MLIR_FILE" "$OBJ_FILE" "$EXE_FILE" 3; then
+                        exit 1
+                    fi
+                    print_info "Running benchmark..."
+                    /usr/bin/time -p "$EXE_FILE"
+                else
+                    run_flow_jit "$program"
+                fi
+                ;;
+            test)
+                check_deps
+                print_info "Running ML tensor tests..."
+                for t in "$SCRIPT_DIR/tests/stdlib/test_tensor.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_ml_autograd.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_matmul_backward.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_ml_nn.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_dense_backward.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_mlp2_backward.flow" \
+                         "$SCRIPT_DIR/tests/stdlib/test_ml_opt.flow" \
+                         "$SCRIPT_DIR/examples/ml/models/mlp_xor.flow" \
+                         "$SCRIPT_DIR/examples/ml/models/mlp_xor_adam.flow"; do
+                    if [ -f "$t" ]; then
+                        print_info "  $t"
+                        if ! python3 -m flow.transpiler "$t" --c --lenient -o "$SCRIPT_DIR/build/$(basename "$t" .flow).c" 2>"$SCRIPT_DIR/build/.flowc_err"; then
+                            print_error "Failed: $t"
+                            cat "$SCRIPT_DIR/build/.flowc_err" >&2
+                            exit 1
+                        fi
+                        print_success "  ✓ $(basename "$t")"
+                    fi
+                done
+                if command -v "$LLVM_PATH/mlir-opt" &>/dev/null || command -v mlir-opt &>/dev/null; then
+                    check_mlir_deps
+                    print_info "  MLIR JIT smoke: test_tensor"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_tensor.flow"
+                    print_info "  MLIR JIT smoke: test_ml_autograd"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_ml_autograd.flow"
+                    print_info "  MLIR JIT smoke: test_matmul_backward"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_matmul_backward.flow"
+                    print_info "  MLIR JIT smoke: test_dense_backward"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_dense_backward.flow"
+                    print_info "  MLIR JIT smoke: test_dense_create_only"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_dense_create_only.flow"
+                    print_info "  MLIR JIT smoke: test_backward_a_from_layer"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_backward_a_from_layer.flow"
+                    print_info "  MLIR JIT smoke: test_mlp2_backward"
+                    run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_mlp2_backward.flow"
+                    print_info "  MLIR AOT smoke: mlir_tensor_bench"
+                    generate_mlir "$SCRIPT_DIR/examples/ml/mlir_tensor_bench.flow" >/dev/null
+                    BENCH_MLIR="$SCRIPT_DIR/build/mlir_tensor_bench.mlir"
+                    BENCH_OBJ="$SCRIPT_DIR/build/mlir_tensor_bench_mlir.o"
+                    BENCH_EXE="$SCRIPT_DIR/build/mlir_tensor_bench_mlir"
+                    if ! mlir_lower_and_link "$BENCH_MLIR" "$BENCH_OBJ" "$BENCH_EXE" 3; then
+                        exit 1
+                    fi
+                    print_info "  MLIR GPU smoke: gpu_kernels"
+                    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/stdlib/gpu_kernels.flow" \
+                        --mlir --mlir-gpu -o "$SCRIPT_DIR/build/gpu_kernels.mlir" >/dev/null 2>&1; then
+                        print_error "GPU MLIR generation failed"
+                        exit 1
+                    fi
+                    print_info "  MLIR SPIR-V smoke: gpu_kernels (best-effort)"
+                    if python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/stdlib/gpu_kernels.flow" \
+                        --mlir --mlir-gpu --emit-spirv -o "$SCRIPT_DIR/build/gpu_kernels.spv" >/dev/null 2>&1; then
+                        print_success "  SPIR-V lowering ok"
+                    else
+                        print_warning "  SPIR-V lowering WIP (GPU MLIR codegen ok)"
+                    fi
+                else
+                    print_warning "Skipping MLIR JIT (install llvm: brew install llvm)"
+                fi
+                print_success "ML tests passed"
+                ;;
+            *)
+                print_error "Usage: flow ml [run|jit|bench|test] [program.flow]"
+                exit 1
+                ;;
+        esac
+        ;;
+    "transpile")
+        shift
+        run_transpiler "$@"
+        ;;
+    "explain")
+        shift
+        program="${1:-}"
+        require_flow_file "$program"
+        shift
+        check_deps
+        explain_out="$(mktemp 2>/dev/null || mktemp -t flow_explain).c"
+        # The plan report goes to stderr; the C output is the byproduct here.
+        python3 -m "$FLOWC_MODULE" "$program" --c --strict --explain \
+            -o "$explain_out" "$@" 2>&1 >/dev/null \
+            | grep -v '^Resolving modules\|^Parsed \|^Generated C written to '
+        rm -f "$explain_out"
+        ;;
+    "fmt")
+        shift
+        check_deps
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.formatter import format_file
+for f in sys.argv[1:]:
+    format_file(f)
+" "$@"
+        ;;
+    "test")
+        shift
+        run_tests "$@"
+        ;;
+    "test-strict")
+        run_tests --strict
+        ;;
+    "test-runtime")
+        shift
+        check_deps
+        run_runtime_tests "$@"
+        ;;
+    "test-lang")
+        shift
+        check_deps
+        run_lang_tests "$@"
+        ;;
+    "test-mlir")
+        check_deps
+        run_mlir_tests
+        ;;
+    "test-python")
+        run_python_tests
+        ;;
+    "test-interop")
+        run_interop_tests
+        ;;
+    "test-gpu")
+        run_gpu_tests "$@"
+        ;;
+    "test-matmul")
+        run_matmul_tests
+        ;;
+    "test-all")
+        run_all_tests
+        ;;
+    "python")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow python <program.flow> [--name NAME] [--version VER] [--source]"
+            exit 1
+        fi
+        program="${1:-}"
+        require_flow_file "$program"
+        shift
+        
+        # Parse python-specific options
+        py_name=""
+        py_version="0.1.0"
+        py_source_only=0
+        
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --name)
+                    py_name="$2"
+                    shift 2
+                    ;;
+                --version)
+                    py_version="$2"
+                    shift 2
+                    ;;
+                --source)
+                    py_source_only=1
+                    shift
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        
+        print_info "Generating Python package from $program..."
+        
+        py_args=(--python --python-version "$py_version")
+        if [ "$py_source_only" -eq 1 ]; then
+            py_args+=(--python-source-only)
+        fi
+        if [ -n "$py_name" ]; then
+            py_args+=(--python-name "$py_name")
+        fi
+
+        python3 -m "$FLOWC_MODULE" "$program" "${py_args[@]}"
+        ;;
+    "wasm")
+        shift
+        # Homebrew's emscripten ships a config pointing LLVM_ROOT at /usr/bin
+        # (Xcode clang, no wasm backend) and a launcher that picks the system
+        # python3, which is too old to parse its own sources. Point both at
+        # emscripten's own copies unless the caller already has.
+        if [ -z "${EMSDK_PYTHON:-}" ] && [ -x /opt/homebrew/bin/python3.14 ]; then
+            export EMSDK_PYTHON=/opt/homebrew/bin/python3.14
+        fi
+        if [ -z "${EM_LLVM_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/llvm/bin ]; then
+            export EM_LLVM_ROOT=/opt/homebrew/opt/emscripten/libexec/llvm/bin
+        fi
+        if [ -z "${EM_BINARYEN_ROOT:-}" ] && [ -d /opt/homebrew/opt/emscripten/libexec/binaryen ]; then
+            export EM_BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen
+        fi
+        # --threads builds pthreads over Web Workers, --fs mounts MEMFS/IDBFS;
+        # both are documented in docs/language/wasm-crossings.md. Everything
+        # else goes to the standard page builder. --preload without --fs is
+        # forwarded to wasm_build.py (emcc --preload-file) for both backends.
+        wasm_threads=0
+        wasm_workers=8
+        wasm_fs=""
+        wasm_preload=()
+        wasm_link=()
+        wasm_backend=""
+        wasm_args=()
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --threads) wasm_threads=1 ;;
+                --workers) shift; wasm_workers="${1:-8}" ;;
+                --fs) shift; wasm_fs="${1:-memfs}" ;;
+                --preload) shift; wasm_preload+=(--preload "${1:-}") ;;
+                --link) shift; wasm_link+=(--link "${1:-}") ;;
+                --backend=*) wasm_backend="${1#--backend=}"; wasm_args+=("$1") ;;
+                --backend)
+                    shift
+                    wasm_backend="${1:-}"
+                    wasm_args+=(--backend "$wasm_backend")
+                    ;;
+                *) wasm_args+=("$1") ;;
+            esac
+            shift
+        done
+        set -- ${wasm_args[@]+"${wasm_args[@]}"}
+        if [ -z "$wasm_backend" ]; then
+            wasm_backend="$(flow_cpu_backend)"
+        fi
+        if [ -z "${1:-}" ] || [ "${1:-}" = "--help" ]; then
+            print_error "Usage: flow wasm <program.flow> [--out DIR] [--legacy]"
+            print_info "                 [--backend=c|mlir] [--link PATH] [--preload DIR@/MOUNT]"
+            print_info "                 [--threads [--workers N]] [--fs memfs|idbfs]"
+            print_info "Writes .wasm + .js + a runnable index.html."
+            print_info "gfx programs get a canvas page; others print into the page."
+            print_info "Requires emcc (Emscripten). See docs/language/wasm.md"
+            print_info "Whole gallery: python3 scripts/build_wasm_gallery.py"
+            exit 1
+        fi
+        if [ "${1:-}" = "--legacy" ]; then
+            shift
+            require_flow_file "${1:-}"
+            python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "$@"
+            exit $?
+        fi
+        require_flow_file "${1:-}"
+        if ! command -v emcc >/dev/null 2>&1; then
+            print_error "emcc not on PATH — install emsdk to emit .wasm"
+            print_info "  docs: docs/language/wasm.md"
+            exit 1
+        fi
+        if [ -n "$wasm_fs" ]; then
+            if [ "$wasm_backend" = "mlir" ]; then
+                print_error "--fs currently requires --backend=c (MEMFS/IDBFS crossings are C-only)"
+                print_info "  For MLIR, use --preload HOST@/mount without --fs (FORCE_FILESYSTEM)"
+                exit 1
+            fi
+            print_info "Flow → C → WASM with a $wasm_fs filesystem (see docs/language/wasm-crossings.md)"
+            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_fs.py" "$1" --fs "$wasm_fs" \
+                    ${wasm_preload[@]+"${wasm_preload[@]}"}; then
+                print_error "Filesystem WASM build failed"
+                exit 1
+            fi
+            exit 0
+        fi
+        if [ "$wasm_threads" -eq 1 ]; then
+            if [ "$wasm_backend" = "mlir" ]; then
+                print_error "--threads currently requires --backend=c"
+                exit 1
+            fi
+            print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
+            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
+                print_error "Threaded WASM build failed"
+                exit 1
+            fi
+            exit 0
+        fi
+        if [ "$wasm_backend" = "mlir" ]; then
+            print_info "Flow → MLIR → LLVM → WASM (see docs/language/wasm.md)"
+        else
+            print_info "Flow → C → WASM (see docs/language/wasm.md)"
+        fi
+        if ! python3 "$SCRIPT_DIR/scripts/wasm_build.py" "$@" \
+                ${wasm_preload[@]+"${wasm_preload[@]}"} \
+                ${wasm_link[@]+"${wasm_link[@]}"}; then
+            print_error "WASM build failed"
+            exit 1
+        fi
+        ;;
+    "playground")
+        # Runnable playground: loopback Flow→C API + pointer to the UI.
+        pg_port="${2:-8765}"
+        print_info "Starting playground compile server on 127.0.0.1:${pg_port}"
+        print_info "UI: docs/playground/index.html  (or wiki /flow/ playground)"
+        print_info "Click: Run (native local)"
+        print_info "Docs: docs/language/debugging.md · docs/language/wasm.md"
+        if command -v open >/dev/null 2>&1; then
+            open "$SCRIPT_DIR/docs/playground/index.html" 2>/dev/null || true
+        fi
+        python3 "$SCRIPT_DIR/scripts/playground_compile_server.py" --port "$pg_port"
+        ;;
+    "setup"|"install-tools")
+        install_deps
+        ;;
+    "install")
+        # Install project deps when flow.toml present; else tooling.
+        if [ -f "flow.toml" ] || [ "${2:-}" = "--deps" ]; then
+            python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+raise SystemExit(0 if FlowPackageManager().install() else 1)
+"
+        elif [ "${2:-}" = "--tools" ]; then
+            install_deps
+        else
+            print_info "No flow.toml here — installing compiler tools (LLVM)."
+            print_info "For package deps: cd <project> && ./flow install   or  ./flow pkg install"
+            install_deps
+        fi
+        ;;
+    "pkg")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow pkg <install|add|search|info|publish|init|…>"
+            exit 1
+        fi
+        python3 -m flow.package "$@"
+        ;;
+    "search")
+        shift
+        python3 -m flow.package search "$@"
+        ;;
+    "info")
+        shift
+        if [ -z "${1:-}" ]; then
+            print_error "Usage: flow info <package>"
+            exit 1
+        fi
+        python3 -m flow.package info "$@"
+        ;;
+    "publish")
+        shift
+        python3 -m flow.package publish "$@"
+        ;;
+    "repl")
+        check_deps
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.repl import main
+main()
+"
+        ;;
+    "init")
+        shift
+        python3 -m flow.package init "$@"
+        ;;
+    "add")
+        shift
+        if [ $# -eq 0 ]; then
+            print_error "Usage: flow add <package[@version]> | <git-url> | --git URL [--name NAME] [--subdir DIR] | --path DIR --name NAME"
+            exit 1
+        fi
+        python3 -m flow.package add "$@"
+        ;;
+    "build")
+        python3 -m flow.package build
+        ;;
+    "build-native")
+        shift
+        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
+import sys
+
+script_dir = sys.argv[1]
+arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
+sys.path.insert(0, f"{script_dir}/src")
+
+from flow.package import FlowPackageManager
+
+pm = FlowPackageManager()
+pm.build_native(arg)
+PY
+        ;;
+    "run-native")
+        shift
+        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
+import sys
+
+script_dir = sys.argv[1]
+arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
+sys.path.insert(0, f"{script_dir}/src")
+
+from flow.package import FlowPackageManager
+
+pm = FlowPackageManager()
+pm.run_native(arg)
+PY
+        ;;
+    "clean")
+        python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from flow.package import FlowPackageManager
+pm = FlowPackageManager()
+pm.clean()
+"
+        ;;
+    "examples")
+        list_examples
+        ;;
+    know)
+        shift
+        python3 "$SCRIPT_DIR/tools/flow_know.py" "$@"
+        ;;
+    "doc")
+        shift
+        sub="${1:-}"
+        shift || true
+        case "$sub" in
+            proof)
+                if [ -z "${1:-}" ]; then
+                    print_error "Usage: flow doc proof <file.flow|directory> [-r]"
+                    exit 1
+                fi
+                python3 "$SCRIPT_DIR/tools/flow_doc.py" proof "$@"
+                ;;
+            bundle)
+                python3 "$SCRIPT_DIR/tools/flow_doc.py" bundle "$@"
+                ;;
+            kernel)
+                if [ -z "${1:-}" ]; then
+                    print_error "Usage: flow doc kernel <file.flow> [--param n=0] [--plot out.dot]"
+                    exit 1
+                fi
+                python3 "$SCRIPT_DIR/tools/flow_doc.py" kernel "$@"
+                ;;
+            *)
+                print_error "Usage: flow doc proof <file|dir> [-r]  |  flow doc bundle  |  flow doc kernel <file.flow> [--param n=0] [--plot out.png]"
+                exit 1
+                ;;
+        esac
+        ;;
+    "help"|*)
+        show_help
+        ;;
+esac
