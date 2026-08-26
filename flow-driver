@@ -1082,7 +1082,11 @@ function main() -> i32 {
     return 0
 }
 EOF
-    run_program "$harness"
+    # Corpus patches use the full Flow language and generally do not fit the
+    # Stage-A flowc subset. Keep `flow patch` usable with the normal global
+    # flowc default while allowing callers to opt into flowc explicitly.
+    local patch_host="${FLOW_PATCH_HOST:-${FLOW_HOST:-python}}"
+    FLOW_HOST="$patch_host" run_program "$harness"
 }
 
 # Compile only (honors --backend / FLOW_CPU_BACKEND)
