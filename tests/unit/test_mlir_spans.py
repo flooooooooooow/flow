@@ -25,7 +25,7 @@ def test_mlir_lowers_span_slice_len_and_indexing() -> None:
     ast = parse_flow_code(source)
     mlir = MLIRGenerator().generate_module(ast)
 
-    assert "!llvm.struct<(!llvm.ptr, i64)>" in mlir
+    assert "!llvm.struct<(ptr, i64)>" in mlir  # what mlir-opt normalises to
     assert "llvm.getelementptr" in mlir
     assert "llvm.extractvalue" in mlir
     assert "llvm.insertvalue" in mlir
@@ -48,4 +48,4 @@ def test_mlir_lowers_mutable_span_store() -> None:
     mlir = MLIRGenerator().generate_module(ast)
 
     assert "llvm.store" in mlir
-    assert "!llvm.struct<(!llvm.ptr, i64)>" in mlir
+    assert "!llvm.struct<(ptr, i64)>" in mlir  # what mlir-opt normalises to

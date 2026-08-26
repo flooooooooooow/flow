@@ -4953,9 +4953,12 @@ class MLIRGenerator:
             return elem
         return Type(span_element_name(flow_type.name))
 
-    @staticmethod
-    def _span_mlir_type() -> str:
-        return "!llvm.struct<(!llvm.ptr, i64)>"
+    def _span_mlir_type(self) -> str:
+        # One spelling for the pair. MLIR normalises `!llvm.ptr` to `ptr`
+        # inside a struct, so both parse, but emitting both leaves two
+        # spellings of one layout in the same module and invites a string
+        # comparison somewhere to disagree with itself.
+        return self.SPAN_MLIR_TYPE
 
     def _build_span_value(
         self, data_ptr: str, length_ssa: str, ops: List[str]
