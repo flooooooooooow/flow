@@ -1,0 +1,252 @@
+# @module flowc.mono_usage
+# @means  Native generic-usage discovery primitives for monomorphization.
+
+import .ast { AstArena, AST_NONE, AST_TYPE }
+import .mono_defs {
+    FlowcMonoDefs,
+    FLOWC_MONO_DEF_GENERIC_STRUCT,
+    flowc_mono_defs_find
+}
+import .mono_requests {
+    FlowcMonoRequests,
+    flowc_mono_requests_add
+}
+import .mono_type_encode { flowc_mono_type_encode }
+
+const FLOWC_MONO_USAGE_NAME_CAP: i32 = 192
+const FLOWC_MONO_USAGE_TYPE_CAP: i32 = 256
+
+function mono_usage_span_eq(
+    src: ptr<u8>,
+    a0: i32,
+    a1: i32,
+    b0: i32,
+    b1: i32
+) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    let n: i32 = a1 - a0
+    while i < n {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function mono_usage_copy_span(
+    src: ptr<u8>,
+    start: i32,
+    end: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if src == null or start < 0 or end <= start or out == null {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+function mono_usage_append(
+    out: ptr<u8>,
+    cap: i32,
+    offset: i32,
+    value: ptr<u8>
+) -> i32 {
+    if out == null or value == null or offset < 0 {
+        return 0 - 1
+    }
+    let mut n: i32 = 0
+    while value[n] != 0 {
+        n = n + 1
+    }
+    if offset + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[offset + i] = value[i]
+        i = i + 1
+    }
+    out[offset + n] = 0
+    return offset + n
+}
+
+function mono_usage_leaf_is_param(
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    type_params: i32
+) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].a != AST_NONE {
+        return 0
+    }
+    let mut param: i32 = type_params
+    while param != AST_NONE {
+        if param >= 0 and param < arena.len and arena.nodes[param].kind == AST_TYPE {
+            if mono_usage_span_eq(
+                src,
+                arena.nodes[ty].name_start,
+                arena.nodes[ty].name_end,
+                arena.nodes[param].name_start,
+                arena.nodes[param].name_end
+            ) == 1 {
+                return 1
+            }
+        }
+        param = arena.nodes[param].next
+    }
+    return 0
+}
+
+# True when a type tree contains any generic parameter belonging to the current
+# generic declaration. Used to match Python's all-concrete request rule.
+export function flowc_mono_type_contains_param(
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    type_params: i32
+) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if mono_usage_leaf_is_param(arena, src, ty, type_params) == 1 {
+        return 1
+    }
+    let mut child: i32 = arena.nodes[ty].a
+    while child != AST_NONE {
+        if flowc_mono_type_contains_param(arena, src, child, type_params) == 1 {
+            return 1
+        }
+        child = arena.nodes[child].next
+    }
+    return 0
+}
+
+function mono_usage_request_for_application(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    type_params: i32
+) -> i32 {
+    let first_arg: i32 = arena.nodes[ty].a
+    if first_arg == AST_NONE {
+        return 0
+    }
+
+    let mut base: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if mono_usage_copy_span(
+        src,
+        arena.nodes[ty].name_start,
+        arena.nodes[ty].name_end,
+        &base[0],
+        FLOWC_MONO_USAGE_NAME_CAP
+    ) < 0 {
+        return 0 - 1
+    }
+    if flowc_mono_defs_find(defs, &base[0] as string, FLOWC_MONO_DEF_GENERIC_STRUCT) < 0 {
+        return 0
+    }
+
+    let mut arg: i32 = first_arg
+    while arg != AST_NONE {
+        if flowc_mono_type_contains_param(arena, src, arg, type_params) == 1 {
+            return 0
+        }
+        arg = arena.nodes[arg].next
+    }
+
+    let mut request: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut pos: i32 = mono_usage_append(&request[0], FLOWC_MONO_USAGE_NAME_CAP, 0, &base[0])
+    if pos < 0 or pos + 2 > FLOWC_MONO_USAGE_NAME_CAP {
+        return 0 - 1
+    }
+    request[pos] = 95
+    pos = pos + 1
+    request[pos] = 0
+
+    arg = first_arg
+    let mut index: i32 = 0
+    while arg != AST_NONE {
+        let mut encoded: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if flowc_mono_type_encode(arena, src, arg, &encoded[0], FLOWC_MONO_USAGE_TYPE_CAP) < 0 {
+            return 0 - 1
+        }
+        if index > 0 {
+            if pos + 2 > FLOWC_MONO_USAGE_NAME_CAP {
+                return 0 - 1
+            }
+            request[pos] = 95
+            pos = pos + 1
+            request[pos] = 0
+        }
+        pos = mono_usage_append(&request[0], FLOWC_MONO_USAGE_NAME_CAP, pos, &encoded[0])
+        if pos < 0 {
+            return 0 - 1
+        }
+        index = index + 1
+        arg = arena.nodes[arg].next
+    }
+
+    if flowc_mono_requests_add(requests, &request[0] as string, 0) < 0 {
+        return 0 - 1
+    }
+    return 1
+}
+
+# Scan one AST_TYPE tree. Returns number of newly recognized request sites (not
+# necessarily new worklist entries, since the request worklist deduplicates).
+export function flowc_mono_scan_type_usage(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    type_params: i32
+) -> i32 {
+    if ty == AST_NONE {
+        return 0
+    }
+    if ty < 0 or ty >= arena.len or arena.nodes[ty].kind != AST_TYPE {
+        return 0 - 1
+    }
+
+    let mut found: i32 = 0
+    let site: i32 = mono_usage_request_for_application(requests, defs, arena, src, ty, type_params)
+    if site < 0 {
+        return 0 - 1
+    }
+    found = found + site
+
+    let mut child: i32 = arena.nodes[ty].a
+    while child != AST_NONE {
+        let nested: i32 = flowc_mono_scan_type_usage(requests, defs, arena, src, child, type_params)
+        if nested < 0 {
+            return 0 - 1
+        }
+        found = found + nested
+        child = arena.nodes[child].next
+    }
+    return found
+}
