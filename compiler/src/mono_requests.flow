@@ -1,6 +1,7 @@
 # @module flowc.mono_requests
-# @means  Owned deduplicating specialization-request worklist keyed by the
-#         byte-exact mangled specialization name used by the Python pass.
+# @means  Owned deduplicating specialization-request worklist. Python keeps
+#         struct_requests and function_requests in separate dictionaries, so
+#         native identity is (kind, byte-exact mangled specialization name).
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -75,24 +76,32 @@ export function flowc_mono_requests_free(set: ptr<FlowcMonoRequests>) {
     set[0].cursor = 0
 }
 
-export function flowc_mono_requests_find(set: FlowcMonoRequests, mangled_name: string) -> i32 {
+# Find by request class and specialization name. Keeping kind in the key matches
+# Python's separate struct_requests / function_requests dictionaries: a struct
+# and function may legally share the same mangled spelling.
+export function flowc_mono_requests_find(
+    set: FlowcMonoRequests,
+    mangled_name: string,
+    kind: i32
+) -> i32 {
     if set.err != 0 or set.names == null {
         return 0 - 1
     }
     let needle: ptr<u8> = mangled_name as ptr<u8>
     let mut i: i32 = 0
     while i < set.len {
-        if strcmp(mono_request_row(set, i), needle) == 0 {
-            return i
+        if set.kinds[i] == kind {
+            if strcmp(mono_request_row(set, i), needle) == 0 {
+                return i
+            }
         }
         i = i + 1
     }
     return 0 - 1
 }
 
-# kind is caller-defined (e.g. 0 struct, 1 function) and retained only so one
-# worklist can host both request classes if desired. Identity is still the
-# mangled specialization name, matching the Python dict keys.
+# kind convention is caller-defined (currently 0 struct, 1 function). Identity
+# is (kind, mangled specialization name), preserving Python's separate maps.
 export function flowc_mono_requests_add(
     set: ptr<FlowcMonoRequests>,
     mangled_name: string,
@@ -101,7 +110,7 @@ export function flowc_mono_requests_add(
     if set[0].err != 0 {
         return 0 - 1
     }
-    let existing: i32 = flowc_mono_requests_find(set[0], mangled_name)
+    let existing: i32 = flowc_mono_requests_find(set[0], mangled_name, kind)
     if existing >= 0 {
         return existing
     }
