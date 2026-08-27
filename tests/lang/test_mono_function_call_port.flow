@@ -1,0 +1,113 @@
+# Tests for compiler/src/mono_function_call.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_function_call.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_call(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let id: i32 = flowc_ast_alloc(arena, AST_CALL, start, end)
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+    return id
+}
+
+function make_type(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let id: i32 = flowc_ast_alloc(arena, AST_TYPE, start, end)
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+    return id
+}
+
+function main() -> i32 {
+    let src: string = "identity i32 ptr pair_i32_f32 pair_i32 foo_bar_i64 foo_bar"
+    let mut arena: AstArena = flowc_ast_new(32)
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(12)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(12)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+
+    flowc_mono_defs_add(&defs, "identity", FLOWC_MONO_DEF_GENERIC_FUNCTION, 0, 1, 1)
+    flowc_mono_defs_add(&defs, "pair", FLOWC_MONO_DEF_GENERIC_FUNCTION, 0, 2, 2)
+    flowc_mono_defs_add(&defs, "foo", FLOWC_MONO_DEF_GENERIC_FUNCTION, 0, 3, 1)
+    flowc_mono_defs_add(&defs, "foo_bar", FLOWC_MONO_DEF_GENERIC_FUNCTION, 0, 4, 1)
+
+    # Explicit identity<i32>(...).
+    let explicit: i32 = make_call(&arena, 0, 8)
+    arena.nodes[explicit].b = make_type(&arena, 9, 12)
+    if flowc_mono_request_function_call(&reqs, defs, arena, src as ptr<u8>, explicit) != 1 {
+        puts("FAIL: explicit type-arg site")
+        return 1
+    }
+    if flowc_mono_requests_find(reqs, "identity_i32", 1) < 0 {
+        puts("FAIL: explicit type-arg request")
+        return 2
+    }
+
+    # Explicit compound type arg uses MonomorphRequest compound encoding.
+    let explicit_ptr: i32 = make_call(&arena, 0, 8)
+    let ptr_inner: i32 = make_type(&arena, 9, 12)
+    let ptr_ty: i32 = make_type(&arena, 13, 16)
+    arena.nodes[ptr_ty].a = ptr_inner
+    arena.nodes[explicit_ptr].b = ptr_ty
+    if flowc_mono_request_function_call(&reqs, defs, arena, src as ptr<u8>, explicit_ptr) != 1 {
+        puts("FAIL: compound explicit site")
+        return 3
+    }
+    if flowc_mono_requests_find(reqs, "identity_P__N7_ptr_i32__Ei32", 1) < 0 {
+        puts("FAIL: compound explicit request")
+        return 4
+    }
+
+    # Parser-mangled call with exact generic arity.
+    let pair: i32 = make_call(&arena, 17, 29)
+    if flowc_mono_request_function_call(&reqs, defs, arena, src as ptr<u8>, pair) != 1 {
+        puts("FAIL: mangled pair site")
+        return 5
+    }
+    if flowc_mono_requests_find(reqs, "pair_i32_f32", 1) < 0 {
+        puts("FAIL: mangled pair request")
+        return 6
+    }
+
+    # Two-param generic with only one suffix part is not a valid mangled request.
+    let bad_pair: i32 = make_call(&arena, 30, 38)
+    let before_bad: i32 = reqs.len
+    if flowc_mono_request_function_call(&reqs, defs, arena, src as ptr<u8>, bad_pair) != 0 {
+        puts("FAIL: invalid mangled arity")
+        return 7
+    }
+    if reqs.len != before_bad {
+        puts("FAIL: invalid mangled request inserted")
+        return 8
+    }
+
+    # Longest matching generic base must win over `foo`.
+    let foo_bar_mangled: i32 = make_call(&arena, 39, 50)
+    if flowc_mono_request_function_call(&reqs, defs, arena, src as ptr<u8>, foo_bar_mangled) != 1 {
+        puts("FAIL: longest mangled site")
+        return 9
+    }
+    if flowc_mono_requests_find(reqs, "foo_bar_i64", 1) < 0 {
+        puts("FAIL: longest mangled request")
+        return 10
+    }
+
+    # Exact generic call without explicit type args remains for value inference (#785).
+    let infer_later: i32 = make_call(&arena, 51, 58)
+    if flowc_mono_request_function_call(&reqs, defs, arena, src as ptr<u8>, infer_later) != 0 {
+        puts("FAIL: unsupported inference must remain unresolved")
+        return 11
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All monomorph function-call request tests passed")
+    return 0
+}
