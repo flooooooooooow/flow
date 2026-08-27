@@ -1,0 +1,141 @@
+# @module flowc.mono_plan
+# @means  Resolve pending monomorph requests to generic definitions before AST
+#         cloning, including function concrete-name collision and depth policy.
+
+import .monomorphize { flowc_mono_depth_allowed }
+import .mono_requests {
+    FlowcMonoRequests,
+    FLOWC_MONO_REQUEST_NAME_CAP,
+    FLOWC_MONO_REQUEST_GENERATED,
+    FLOWC_MONO_REQUEST_RESOLVED_EXISTING,
+    flowc_mono_requests_next,
+    flowc_mono_requests_name,
+    flowc_mono_requests_mark
+}
+import .mono_defs {
+    FlowcMonoDefs,
+    FLOWC_MONO_DEF_NAME_CAP,
+    FLOWC_MONO_DEF_GENERIC_STRUCT,
+    FLOWC_MONO_DEF_GENERIC_FUNCTION,
+    FLOWC_MONO_DEF_CONCRETE_FUNCTION,
+    flowc_mono_defs_find
+}
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+}
+
+export const FLOWC_MONO_PLAN_EXHAUSTED: i32 = 0
+export const FLOWC_MONO_PLAN_READY: i32 = 1
+export const FLOWC_MONO_PLAN_RESOLVED_EXISTING: i32 = 2
+export const FLOWC_MONO_PLAN_MISSING_DEF: i32 = -1
+export const FLOWC_MONO_PLAN_DEPTH_EXCEEDED: i32 = -2
+export const FLOWC_MONO_PLAN_ERROR: i32 = -3
+
+function mono_plan_def_row(defs: FlowcMonoDefs, index: i32) -> ptr<u8> {
+    return defs.names + (index * FLOWC_MONO_DEF_NAME_CAP)
+}
+
+function mono_plan_prefix(request: ptr<u8>, base: ptr<u8>) -> i32 {
+    let rn: i32 = strlen(request) as i32
+    let bn: i32 = strlen(base) as i32
+    if bn <= 0 or rn <= bn {
+        return 0
+    }
+    if request[bn] != 95 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < bn {
+        if request[i] != base[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+export function flowc_mono_plan_match_def(
+    defs: FlowcMonoDefs,
+    request_name: string,
+    request_kind: i32
+) -> i32 {
+    if defs.err != 0 or defs.names == null {
+        return 0 - 1
+    }
+    let mut generic_kind: i32 = FLOWC_MONO_DEF_GENERIC_STRUCT
+    if request_kind == 1 {
+        generic_kind = FLOWC_MONO_DEF_GENERIC_FUNCTION
+    } elif request_kind != 0 {
+        return 0 - 1
+    }
+
+    let req: ptr<u8> = request_name as ptr<u8>
+    let mut best: i32 = 0 - 1
+    let mut best_len: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < defs.len {
+        if defs.kinds[i] == generic_kind {
+            let base: ptr<u8> = mono_plan_def_row(defs, i)
+            if mono_plan_prefix(req, base) == 1 {
+                let n: i32 = strlen(base) as i32
+                if n > best_len {
+                    best = i
+                    best_len = n
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+export function flowc_mono_plan_next(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    depth: i32,
+    out_request: ptr<i32>,
+    out_def: ptr<i32>
+) -> i32 {
+    if requests[0].err != 0 or defs.err != 0 or out_request == null or out_def == null {
+        return FLOWC_MONO_PLAN_ERROR
+    }
+    let request_index: i32 = flowc_mono_requests_next(requests)
+    if request_index < 0 {
+        return FLOWC_MONO_PLAN_EXHAUSTED
+    }
+
+    let mut name: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if flowc_mono_requests_name(requests[0], request_index, &name[0], FLOWC_MONO_REQUEST_NAME_CAP) < 0 {
+        return FLOWC_MONO_PLAN_ERROR
+    }
+    let request_kind: i32 = requests[0].kinds[request_index]
+    let def_index: i32 = flowc_mono_plan_match_def(defs, &name[0] as string, request_kind)
+    out_request[0] = request_index
+    out_def[0] = def_index
+    if def_index < 0 {
+        return FLOWC_MONO_PLAN_MISSING_DEF
+    }
+
+    if request_kind == 1 {
+        let concrete: i32 = flowc_mono_defs_find(defs, &name[0] as string, FLOWC_MONO_DEF_CONCRETE_FUNCTION)
+        if concrete >= 0 {
+            if flowc_mono_requests_mark(requests, request_index, FLOWC_MONO_REQUEST_RESOLVED_EXISTING) < 0 {
+                return FLOWC_MONO_PLAN_ERROR
+            }
+            return FLOWC_MONO_PLAN_RESOLVED_EXISTING
+        }
+    }
+
+    if flowc_mono_depth_allowed(depth) == 0 {
+        return FLOWC_MONO_PLAN_DEPTH_EXCEEDED
+    }
+    return FLOWC_MONO_PLAN_READY
+}
+
+export function flowc_mono_plan_mark_generated(
+    requests: ptr<FlowcMonoRequests>,
+    request_index: i32
+) -> i32 {
+    return flowc_mono_requests_mark(requests, request_index, FLOWC_MONO_REQUEST_GENERATED)
+}
