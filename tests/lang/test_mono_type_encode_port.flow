@@ -1,0 +1,145 @@
+# Tests for compiler/src/mono_type_encode.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_type_encode.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function set_name(arena: ptr<AstArena>, id: i32, start: i32, end: i32) {
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+}
+
+function main() -> i32 {
+    #                  11111111112222222222333333333344444
+    #        01234567890123456789012345678901234567890123
+    let src: string = "i32 f32 ptr array Option Result span vec4"
+    let mut arena: AstArena = flowc_ast_new(64)
+    let mut out: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    let i32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 3)
+    set_name(&arena, i32_ty, 0, 3)
+    if flowc_mono_type_encode(arena, src as ptr<u8>, i32_ty, &out[0], 256) != 3 or strcmp(&out[0], "i32" as ptr<u8>) != 0 {
+        puts("FAIL: plain encoding")
+        return 1
+    }
+
+    let ptr_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 8, 11)
+    set_name(&arena, ptr_ty, 8, 11)
+    arena.nodes[ptr_ty].a = i32_ty
+    if flowc_mono_type_encode(arena, src as ptr<u8>, ptr_ty, &out[0], 256) < 0 {
+        puts("FAIL: pointer encoding")
+        return 2
+    }
+    if strcmp(&out[0], "P__N7_ptr_i32__Ei32" as ptr<u8>) != 0 {
+        puts("FAIL: pointer ABI")
+        return 3
+    }
+
+    let array_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 12, 17)
+    set_name(&arena, array_ty, 12, 17)
+    arena.nodes[array_ty].a = i32_ty
+    arena.nodes[array_ty].ival = 4
+    if flowc_mono_type_encode(arena, src as ptr<u8>, array_ty, &out[0], 256) < 0 {
+        puts("FAIL: sized array encoding")
+        return 4
+    }
+    if strcmp(&out[0], "N11_array_4_i32__S4__Ei32" as ptr<u8>) != 0 {
+        puts("FAIL: sized array ABI")
+        return 5
+    }
+
+    arena.nodes[array_ty].ival = 0
+    if flowc_mono_type_encode(arena, src as ptr<u8>, array_ty, &out[0], 256) < 0 {
+        puts("FAIL: unsized array encoding")
+        return 6
+    }
+    if strcmp(&out[0], "N9_array_i32__Ei32" as ptr<u8>) != 0 {
+        puts("FAIL: unsized array ABI")
+        return 7
+    }
+    arena.nodes[array_ty].ival = 4
+
+    let option_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 3)
+    set_name(&arena, option_arg, 0, 3)
+    let option_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 18, 24)
+    set_name(&arena, option_ty, 18, 24)
+    arena.nodes[option_ty].a = option_arg
+    if flowc_mono_type_encode(arena, src as ptr<u8>, option_ty, &out[0], 256) < 0 {
+        puts("FAIL: generic encoding")
+        return 8
+    }
+    if strcmp(&out[0], "N6_Option__T1_i32" as ptr<u8>) != 0 {
+        puts("FAIL: generic ABI")
+        return 9
+    }
+
+    let result_a: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 3)
+    set_name(&arena, result_a, 0, 3)
+    let result_b: i32 = flowc_ast_alloc(&arena, AST_TYPE, 4, 7)
+    set_name(&arena, result_b, 4, 7)
+    arena.nodes[result_a].next = result_b
+    let result_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 25, 31)
+    set_name(&arena, result_ty, 25, 31)
+    arena.nodes[result_ty].a = result_a
+    if flowc_mono_type_encode(arena, src as ptr<u8>, result_ty, &out[0], 256) < 0 {
+        puts("FAIL: multi generic encoding")
+        return 10
+    }
+    if strcmp(&out[0], "N6_Result__T2_i32_f32" as ptr<u8>) != 0 {
+        puts("FAIL: multi generic ABI")
+        return 11
+    }
+
+    # Nested compound argument must embed the compound encoding, not overload
+    # canonical Type.name spelling.
+    let nested_option: i32 = flowc_ast_alloc(&arena, AST_TYPE, 18, 24)
+    set_name(&arena, nested_option, 18, 24)
+    let nested_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 3)
+    set_name(&arena, nested_arg, 0, 3)
+    arena.nodes[nested_option].a = nested_arg
+    let nested_ptr: i32 = flowc_ast_alloc(&arena, AST_TYPE, 8, 11)
+    set_name(&arena, nested_ptr, 8, 11)
+    arena.nodes[nested_ptr].a = nested_option
+    if flowc_mono_type_encode(arena, src as ptr<u8>, nested_ptr, &out[0], 256) < 0 {
+        puts("FAIL: nested pointer encoding")
+        return 12
+    }
+    if strcmp(&out[0], "P__N14_ptr_Option_i32__EN6_Option__T1_i32" as ptr<u8>) != 0 {
+        puts("FAIL: nested pointer ABI")
+        return 13
+    }
+
+    # Deliberate refusals until their Stage-A semantic representation is exact.
+    let span_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 3)
+    set_name(&arena, span_arg, 0, 3)
+    let span_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 32, 36)
+    set_name(&arena, span_ty, 32, 36)
+    arena.nodes[span_ty].a = span_arg
+    if flowc_mono_type_encode(arena, src as ptr<u8>, span_ty, &out[0], 256) != -1 {
+        puts("FAIL: span refusal")
+        return 14
+    }
+
+    let vec_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 3)
+    set_name(&arena, vec_arg, 0, 3)
+    let vec_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 37, 41)
+    set_name(&arena, vec_ty, 37, 41)
+    arena.nodes[vec_ty].a = vec_arg
+    if flowc_mono_type_encode(arena, src as ptr<u8>, vec_ty, &out[0], 256) != -1 {
+        puts("FAIL: vector refusal")
+        return 15
+    }
+
+    if flowc_mono_type_encode(arena, src as ptr<u8>, result_ty, &out[0], 8) != -1 {
+        puts("FAIL: output capacity guard")
+        return 16
+    }
+
+    flowc_ast_free(arena)
+    puts("All monomorph request type encoding tests passed")
+    return 0
+}
