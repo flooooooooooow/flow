@@ -1,0 +1,134 @@
+# Tests for compiler/src/mono_usage_program.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_usage_program.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function set_name(arena: ptr<AstArena>, id: i32, start: i32, end: i32) {
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+}
+
+function make_named_type(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, start, end)
+    set_name(arena, ty, start, end)
+    return ty
+}
+
+function make_app(arena: ptr<AstArena>, ns: i32, ne: i32, args: i32) -> i32 {
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, ns, ne)
+    set_name(arena, ty, ns, ne)
+    arena[0].nodes[ty].a = args
+    return ty
+}
+
+function main() -> i32 {
+    #                  111111111122222222223333333333444444
+    #        012345678901234567890123456789012345678901234
+    let src: string = "T i32 Option Result Box generic normal top"
+    let mut arena: AstArena = flowc_ast_new(96)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(8)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(16)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+    flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 1, 1)
+    flowc_mono_defs_add(&defs, "Result", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 2, 2)
+
+    # generic struct Box<T> { a: Option<T>, b: Option<i32> }
+    let tp: i32 = make_named_type(&arena, 0, 1)
+    let opt_t_arg: i32 = make_named_type(&arena, 0, 1)
+    let opt_t: i32 = make_app(&arena, 6, 12, opt_t_arg)
+    let field_a: i32 = flowc_ast_alloc(&arena, AST_FIELD, 0, 0)
+    arena.nodes[field_a].a = opt_t
+
+    let opt_i_arg: i32 = make_named_type(&arena, 2, 5)
+    let opt_i: i32 = make_app(&arena, 6, 12, opt_i_arg)
+    let field_b: i32 = flowc_ast_alloc(&arena, AST_FIELD, 0, 0)
+    arena.nodes[field_b].a = opt_i
+    arena.nodes[field_a].next = field_b
+
+    let box: i32 = flowc_ast_alloc(&arena, AST_STRUCT, 20, 23)
+    set_name(&arena, box, 20, 23)
+    arena.nodes[box].a = field_a
+    arena.nodes[box].b = tp
+
+    # normal(param: Result<i32,i32>) -> Option<i32>
+    let r_a: i32 = make_named_type(&arena, 2, 5)
+    let r_b: i32 = make_named_type(&arena, 2, 5)
+    arena.nodes[r_a].next = r_b
+    let result_ty: i32 = make_app(&arena, 13, 19, r_a)
+    let param: i32 = flowc_ast_alloc(&arena, AST_PARAM, 0, 0)
+    arena.nodes[param].a = result_ty
+    let ret_arg: i32 = make_named_type(&arena, 2, 5)
+    let ret_ty: i32 = make_app(&arena, 6, 12, ret_arg)
+    let normal: i32 = flowc_ast_alloc(&arena, AST_FN, 32, 38)
+    set_name(&arena, normal, 32, 38)
+    arena.nodes[normal].a = param
+    arena.nodes[normal].b = ret_ty
+    arena.nodes[normal].ival = 0
+    let exported_normal: i32 = flowc_ast_alloc(&arena, AST_EXPORT, 0, 0)
+    arena.nodes[exported_normal].a = normal
+
+    # generic<T>(x: Option<T>) -> Option<i32>. Until #785 restores T's name
+    # chain, the whole signature is conservatively skipped rather than
+    # manufacturing Option_T or partially scanning the return.
+    let g_arg: i32 = make_named_type(&arena, 0, 1)
+    let g_param_ty: i32 = make_app(&arena, 6, 12, g_arg)
+    let g_param: i32 = flowc_ast_alloc(&arena, AST_PARAM, 0, 0)
+    arena.nodes[g_param].a = g_param_ty
+    let g_ret_arg: i32 = make_named_type(&arena, 2, 5)
+    let g_ret: i32 = make_app(&arena, 6, 12, g_ret_arg)
+    let generic: i32 = flowc_ast_alloc(&arena, AST_FN, 24, 31)
+    set_name(&arena, generic, 24, 31)
+    arena.nodes[generic].a = g_param
+    arena.nodes[generic].b = g_ret
+    arena.nodes[generic].ival = 1
+
+    # top-level typed value duplicates Option<i32> request but still counts site.
+    let top_arg: i32 = make_named_type(&arena, 2, 5)
+    let top_ty: i32 = make_app(&arena, 6, 12, top_arg)
+    let top: i32 = flowc_ast_alloc(&arena, AST_LET, 39, 42)
+    set_name(&arena, top, 39, 42)
+    arena.nodes[top].a = top_ty
+
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, box)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, exported_normal)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, generic)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, top)
+
+    let sites: i32 = flowc_mono_scan_program_declaration_types(&reqs, defs, arena, root, src as ptr<u8>)
+    if sites != 4 {
+        puts("FAIL: declaration request site count")
+        return 1
+    }
+    if reqs.len != 2 {
+        puts("FAIL: declaration request dedup")
+        return 2
+    }
+    if flowc_mono_requests_find(reqs, "Option_i32", 0) < 0 {
+        puts("FAIL: Option declaration request")
+        return 3
+    }
+    if flowc_mono_requests_find(reqs, "Result_i32_i32", 0) < 0 {
+        puts("FAIL: Result declaration request")
+        return 4
+    }
+    if flowc_mono_requests_find(reqs, "Option_T", 0) >= 0 {
+        puts("FAIL: generic parameter request leaked")
+        return 5
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All declaration-level monomorph usage tests passed")
+    return 0
+}
