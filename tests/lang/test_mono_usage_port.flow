@@ -1,0 +1,126 @@
+# Tests for compiler/src/mono_usage.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_usage.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function set_name(arena: ptr<AstArena>, id: i32, start: i32, end: i32) {
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+}
+
+function main() -> i32 {
+    #                  111111111122222222223333333
+    #        012345678901234567890123456789012345
+    let src: string = "T i32 f32 Option Result ptr"
+    let mut arena: AstArena = flowc_ast_new(64)
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(8)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(16)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+    flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 1, 1)
+    flowc_mono_defs_add(&defs, "Result", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 2, 2)
+
+    let type_param: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 1)
+    set_name(&arena, type_param, 0, 1)
+
+    let i32_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 2, 5)
+    set_name(&arena, i32_ty, 2, 5)
+    let option_i32_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 2, 5)
+    set_name(&arena, option_i32_arg, 2, 5)
+    let option_i32: i32 = flowc_ast_alloc(&arena, AST_TYPE, 10, 16)
+    set_name(&arena, option_i32, 10, 16)
+    arena.nodes[option_i32].a = option_i32_arg
+
+    if flowc_mono_scan_type_usage(&reqs, defs, arena, src as ptr<u8>, option_i32, AST_NONE) != 1 {
+        puts("FAIL: Option<i32> site")
+        return 1
+    }
+    if flowc_mono_requests_find(reqs, "Option_i32", 0) < 0 {
+        puts("FAIL: Option<i32> request")
+        return 2
+    }
+
+    # Generic context: Option<T> is not concrete and must not request.
+    let generic_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 1)
+    set_name(&arena, generic_arg, 0, 1)
+    let option_t: i32 = flowc_ast_alloc(&arena, AST_TYPE, 10, 16)
+    set_name(&arena, option_t, 10, 16)
+    arena.nodes[option_t].a = generic_arg
+    let before_generic: i32 = reqs.len
+    if flowc_mono_scan_type_usage(&reqs, defs, arena, src as ptr<u8>, option_t, type_param) != 0 {
+        puts("FAIL: Option<T> site")
+        return 3
+    }
+    if reqs.len != before_generic {
+        puts("FAIL: Option<T> requested")
+        return 4
+    }
+
+    # Nested Result<i32,f32> within Option<...> requests both levels.
+    let result_a: i32 = flowc_ast_alloc(&arena, AST_TYPE, 2, 5)
+    set_name(&arena, result_a, 2, 5)
+    let result_b: i32 = flowc_ast_alloc(&arena, AST_TYPE, 6, 9)
+    set_name(&arena, result_b, 6, 9)
+    arena.nodes[result_a].next = result_b
+    let result_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 17, 23)
+    set_name(&arena, result_ty, 17, 23)
+    arena.nodes[result_ty].a = result_a
+    let outer_option: i32 = flowc_ast_alloc(&arena, AST_TYPE, 10, 16)
+    set_name(&arena, outer_option, 10, 16)
+    arena.nodes[outer_option].a = result_ty
+
+    if flowc_mono_scan_type_usage(&reqs, defs, arena, src as ptr<u8>, outer_option, AST_NONE) != 2 {
+        puts("FAIL: nested request sites")
+        return 5
+    }
+    if flowc_mono_requests_find(reqs, "Result_i32_f32", 0) < 0 {
+        puts("FAIL: nested Result request")
+        return 6
+    }
+    if flowc_mono_requests_find(reqs, "Option_N6_Result__T2_i32_f32", 0) < 0 {
+        puts("FAIL: outer compound Option request")
+        return 7
+    }
+
+    # Requests nested under non-generic wrappers are still discovered.
+    let wrapped_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 2, 5)
+    set_name(&arena, wrapped_arg, 2, 5)
+    let wrapped_option: i32 = flowc_ast_alloc(&arena, AST_TYPE, 10, 16)
+    set_name(&arena, wrapped_option, 10, 16)
+    arena.nodes[wrapped_option].a = wrapped_arg
+    let ptr_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 24, 27)
+    set_name(&arena, ptr_ty, 24, 27)
+    arena.nodes[ptr_ty].a = wrapped_option
+    let before_ptr: i32 = reqs.len
+    if flowc_mono_scan_type_usage(&reqs, defs, arena, src as ptr<u8>, ptr_ty, AST_NONE) != 1 {
+        puts("FAIL: wrapper nested site")
+        return 8
+    }
+    # Dedup means the existing Option_i32 request is reused.
+    if reqs.len != before_ptr {
+        puts("FAIL: wrapper nested dedup")
+        return 9
+    }
+
+    if flowc_mono_type_contains_param(arena, src as ptr<u8>, option_t, type_param) != 1 {
+        puts("FAIL: nested type-param detection")
+        return 10
+    }
+    if flowc_mono_type_contains_param(arena, src as ptr<u8>, option_i32, type_param) != 0 {
+        puts("FAIL: concrete param false positive")
+        return 11
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All generic struct type-usage discovery tests passed")
+    return 0
+}
