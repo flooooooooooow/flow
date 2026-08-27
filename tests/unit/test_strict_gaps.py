@@ -400,6 +400,40 @@ class TestSoleOverloadUnknownArgFallback:
         assert " fly(424242" not in c
 
 
+OVERLOAD_TYPE_INFERENCE = """
+const KEY_ESC: i32 = 53
+
+function take_i32(value: i32) -> i32 {
+    return value
+}
+
+function take_f32(value: f32) -> f32 {
+    return value
+}
+
+function main() -> i32 {
+    let values: array<f32, 1> = [1.0]
+    let key: i32 = take_i32(KEY_ESC)
+    let value: f32 = take_f32(values[0] as f32)
+    if key == 53 and value == 1.0 { return 0 }
+    return 1
+}
+"""
+
+
+class TestOverloadTypeInference:
+    """Known constants, indexed values, and casts should not degrade to
+    unknown arguments when a call is lowered by the C backend."""
+
+    def test_common_expression_types_resolve_without_fallback_warnings(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(OVERLOAD_TYPE_INFERENCE))
+        assert "take_i32_i32(KEY_ESC)" in c
+        assert "take_f32_f32(" in c
+        assert flow_to_c.last_warnings == []
+
+
 # ---------------------------------------------------------------------------
 # Gap 5: print(expr) discarded its argument (flow-print-expr-discarded)
 # ---------------------------------------------------------------------------
