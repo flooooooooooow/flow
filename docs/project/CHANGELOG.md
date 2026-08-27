@@ -4,6 +4,32 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+## [1.0.2] - 2026-08-24
+
+Flow 1.0.2 is a patch release over the Flow 1.x compatibility contract. It does not promote, remove, or incompatibly change any Stable 1.x syntax or API, and the runtime ABI remains version 1.
+
+### Stable compiler hardening
+
+- Continued self-hosted `flowc` convergence without widening the Stable surface: cross-module monomorphization naming policy and AST-aware overload candidate selection now have native Flow implementations and focused regression coverage.
+- Kept the portable C backend as the Stable 1.x semantic baseline. The self-hosting work included here is implementation convergence, not a declaration that the larger Python-retirement programme is complete.
+
+### Experimental backend correctness and GPU work
+
+- Closed MLIR parity gaps exposed by the executable `flow-idiomatics` corpus and fixed exhaustive control-flow lowering so terminal matches, `llvm.unreachable`, and dead statements are handled consistently.
+- Added an Experimental SPIR-V-to-Metal path using SPIR-V as the shared GPU artifact and lowering it to MSL / metallib where the host toolchain is available. This does not change the Stable portable-C contract.
+- Added and surfaced a 64-example photoreal FSL shader gallery, increasing executable shader coverage and making the graphics surface easier to inspect without promoting that surface to Stable.
+
+### Developer experience
+
+- Flow 1.0.2 establishes the release workstream for compiler-aware idiom advice shared by `flow check`, editor tooling, and future pull-request review. Only implementation that is merged, regression-tested, opt-in, and compatible with the Stable 1.x contract may be included in the final tag; the release does not invent or standardize future syntax merely to provide style suggestions.
+
+### Release discipline
+
+- 1.0.2 is prepared through the reproducible patch-release workflow introduced for 1.0.1, which synchronizes version mirrors and changelog metadata from this release-notes file.
+- The final tag must be cut from the exact reviewed tree that passes the Tier-1 qualification, strict corpus, executable-documentation, bootstrap/self-host, and release-artifact gates.
+- User-facing Homebrew metadata must be synchronized from the exact published 1.0.2 artifact and SHA-256 rather than from a guessed or pre-publication digest.
+
+
 ## [1.0.1] - 2026-08-23
 
 Flow 1.0.1 is a stabilization patch over the Flow 1.0 compatibility contract. It does not promote, remove, or incompatibly change any Stable 1.x syntax or API.
