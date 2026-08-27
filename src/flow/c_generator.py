@@ -1155,6 +1155,12 @@ class CGenerator:
             lines.append(f"static const {self._c_type(const.type)} {_c_ident(const.name)} = {self._gen_expr(const.value)};")
             # Track constant types for print formatting
             self._var_types[const.name] = const.type
+            # Constants participate in overload resolution just like local
+            # variables. Register their declared type before function bodies
+            # are emitted.
+            self._overload_resolver.set_var_type(
+                const.name, self._type_to_string(const.type)
+            )
             # File-scope constants stay reachable from lifted lambda
             # functions, so they are never captured into closure envs.
             self._const_names.add(const.name)

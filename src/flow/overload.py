@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from .parser import (
     FunctionDecl, Type, Expression, Variable, Literal, FunctionCall,
     StructLiteral, FieldAccess, BinaryOperation, UnaryOperation, SliceExpr,
+    ArrayAccess,
+    CastExpression,
     is_span_type_name, span_element_name,
 )
 
@@ -154,9 +156,24 @@ class OverloadResolver:
         elif isinstance(expr, FieldAccess):
             # Get type of object, then look up field type
             obj_type = self.get_expr_type(expr.object)
+            # Pointer receivers are represented as `ptr_<Struct>` in the
+            # resolver, while struct metadata is keyed by `<Struct>`.
+            # Field access through a pointer is still statically typed.
+            if obj_type and obj_type.startswith("ptr_"):
+                obj_type = self._element_name(obj_type)
             if obj_type and obj_type in self._structs:
                 return self._structs[obj_type].get(expr.field)
             return None
+
+        elif isinstance(expr, ArrayAccess):
+            # Indexing preserves the element type. This matters for overload
+            # resolution in generic-looking library code such as `bytes[i]`.
+            return self._element_name(self.get_expr_type(expr.array))
+
+        elif isinstance(expr, CastExpression):
+            # A cast is an explicit type assertion, so retain its target at
+            # overload call sites (for example, `u8 as i32`).
+            return self._normalize_type(expr.target_type)
         
         elif isinstance(expr, FunctionCall):
             # Try to find return type
