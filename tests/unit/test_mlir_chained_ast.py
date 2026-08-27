@@ -138,6 +138,29 @@ function main() -> i32 {
 }
 """
 
+INLINE_STRUCT_ARRAY_LITERAL_PROGRAM = """
+struct Slot {
+    active: bool,
+    note: f32
+}
+
+struct Pool {
+    count: i32,
+    slots: array<Slot, 2>
+}
+
+function make_pool() -> Pool {
+    let slots: array<Slot, 2> = []
+    return Pool { count: 0, slots: slots }
+}
+
+function main() -> i32 {
+    let pool: Pool = make_pool()
+    if pool.count == 0 { return 0 }
+    return 1
+}
+"""
+
 
 def _generate(source: str) -> str:
     return MLIRGenerator().generate_module(parse_flow_code(source))
@@ -216,6 +239,32 @@ class TestChainedNestedFieldIR:
         gep_lines = [ln for ln in mlir.splitlines() if "llvm.getelementptr" in ln]
         assert any("[0, 0]" in ln for ln in gep_lines), mlir
         assert "llvm.load" in mlir
+
+
+class TestInlineStructArrayLiteralIR:
+    def test_struct_array_field_uses_inline_array_value(self):
+        mlir = _generate(INLINE_STRUCT_ARRAY_LITERAL_PROGRAM)
+        assert "llvm.insertvalue" in mlir
+        assert "!llvm.array<2 x !llvm.struct<(i1, f32)>>" in mlir
+        # The inline field must be an array aggregate, never a pointer cast.
+        assert "llvm.inttoptr" not in mlir.split("func.func @make_pool", 1)[1].split("}", 1)[0]
+
+    @needs_mlir_opt
+    def test_struct_array_field_is_accepted_by_mlir_opt(self):
+        mlir = _generate(INLINE_STRUCT_ARRAY_LITERAL_PROGRAM)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".mlir", delete=False) as f:
+            f.write(mlir)
+            path = f.name
+        try:
+            result = subprocess.run(
+                [MLIR_OPT, path, "-o", os.devnull],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert result.returncode == 0, result.stderr
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 class TestChainedASTMlirOpt:
