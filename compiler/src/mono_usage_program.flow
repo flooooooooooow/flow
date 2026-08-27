@@ -1,0 +1,147 @@
+# @module flowc.mono_usage_program
+# @means  Declaration-level generic struct usage discovery for native
+#         monomorphization. Body/expression scanning is a later slice.
+
+import .ast {
+    AstArena, AST_NONE, AST_PROGRAM, AST_EXPORT, AST_STRUCT, AST_FIELD,
+    AST_FN, AST_PARAM, AST_LET, AST_CONST
+}
+import .mono_defs { FlowcMonoDefs }
+import .mono_requests { FlowcMonoRequests }
+import .mono_usage { flowc_mono_scan_type_usage }
+
+function mono_usage_program_unwrap(arena: AstArena, item: i32) -> i32 {
+    if item == AST_NONE or item < 0 or item >= arena.len {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and inner >= 0 and inner < arena.len {
+            return inner
+        }
+    }
+    return item
+}
+
+function mono_usage_program_scan_type(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    type_params: i32
+) -> i32 {
+    if ty == AST_NONE {
+        return 0
+    }
+    return flowc_mono_scan_type_usage(requests, defs, arena, src, ty, type_params)
+}
+
+function mono_usage_program_scan_struct(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    decl: i32
+) -> i32 {
+    let type_params: i32 = arena.nodes[decl].b
+    let mut field: i32 = arena.nodes[decl].a
+    let mut found: i32 = 0
+    while field != AST_NONE {
+        if field < 0 or field >= arena.len or arena.nodes[field].kind != AST_FIELD {
+            return 0 - 1
+        }
+        let n: i32 = mono_usage_program_scan_type(
+            requests, defs, arena, src, arena.nodes[field].a, type_params
+        )
+        if n < 0 {
+            return 0 - 1
+        }
+        found = found + n
+        field = arena.nodes[field].next
+    }
+    return found
+}
+
+function mono_usage_program_scan_function_signature(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    decl: i32
+) -> i32 {
+    # #785: generic function type-parameter names are currently parsed then
+    # discarded. Scanning their signature without the parameter-name set could
+    # manufacture requests for types containing T/U, so stay conservative.
+    if arena.nodes[decl].ival > 0 {
+        return 0
+    }
+
+    let mut found: i32 = 0
+    let ret_n: i32 = mono_usage_program_scan_type(
+        requests, defs, arena, src, arena.nodes[decl].b, AST_NONE
+    )
+    if ret_n < 0 {
+        return 0 - 1
+    }
+    found = found + ret_n
+
+    let mut param: i32 = arena.nodes[decl].a
+    while param != AST_NONE {
+        if param < 0 or param >= arena.len or arena.nodes[param].kind != AST_PARAM {
+            return 0 - 1
+        }
+        let n: i32 = mono_usage_program_scan_type(
+            requests, defs, arena, src, arena.nodes[param].a, AST_NONE
+        )
+        if n < 0 {
+            return 0 - 1
+        }
+        found = found + n
+        param = arena.nodes[param].next
+    }
+    return found
+}
+
+# Scan declaration type surfaces equivalent to the Python monomorphizer's
+# struct-field and function-signature type scan, plus typed module-level values.
+# Returns recognized request sites; the request worklist itself deduplicates.
+export function flowc_mono_scan_program_declaration_types(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    root: i32,
+    src: ptr<u8>
+) -> i32 {
+    if root == AST_NONE or root < 0 or root >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return 0 - 1
+    }
+
+    let mut found: i32 = 0
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let decl: i32 = mono_usage_program_unwrap(arena, item)
+        if decl != AST_NONE {
+            let kind: i32 = arena.nodes[decl].kind
+            let mut n: i32 = 0
+            if kind == AST_STRUCT {
+                n = mono_usage_program_scan_struct(requests, defs, arena, src, decl)
+            } elif kind == AST_FN {
+                n = mono_usage_program_scan_function_signature(requests, defs, arena, src, decl)
+            } elif kind == AST_LET or kind == AST_CONST {
+                n = mono_usage_program_scan_type(
+                    requests, defs, arena, src, arena.nodes[decl].a, AST_NONE
+                )
+            }
+            if n < 0 {
+                return 0 - 1
+            }
+            found = found + n
+        }
+        item = arena.nodes[item].next
+    }
+    return found
+}
