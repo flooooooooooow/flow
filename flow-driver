@@ -1393,9 +1393,15 @@ run_gfx_program() {
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
     local py_ldflags=()
+    local audio_cflags=()
+    local audio_sources=("$SCRIPT_DIR/runtime/audio_miniaudio.c")
     
     check_deps
     mkdir -p "$build_dir"
+    if [ -f "$SCRIPT_DIR/third_party/miniaudio.h" ]; then
+        audio_cflags+=("-I$SCRIPT_DIR/third_party" "-DFLOW_AUDIO_BACKEND_MINIAUDIO")
+        FLOW_SKIP_AUDIO_STUB=1
+    fi
     
     local c_file="$build_dir/$basename.gfx.c"
     local exe_file="$build_dir/$basename.gfx"
@@ -1425,10 +1431,12 @@ run_gfx_program() {
     local host_kernel
     host_kernel="$(uname -s)"
     if [[ "$host_kernel" == "Darwin" ]]; then
-        if clang -O2 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
+        if clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" "$SCRIPT_DIR/runtime/gfx_macos.m" \
             "${FLOW_CONC_SOURCES[@]}" \
             "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
+            "${audio_sources[@]}" \
             -framework Cocoa -framework CoreGraphics -framework QuartzCore \
+            -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
             "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
             -o "$exe_file" -lm 2>"$gfx_link_err"; then
             gfx_ok=1
