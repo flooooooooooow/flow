@@ -1515,6 +1515,14 @@ class MLIRGenerator:
                 init_value = f"%{self.function_counter}"
                 self.function_counter += 1
                 init_ops = [f"{self.indent()}{init_value} = llvm.mlir.addressof @{global_name} : !llvm.ptr"]
+            elif (
+                isinstance(var_decl.initializer, ArrayLiteral)
+                and self._llvm_array_type_from_flow(var_decl.type)
+            ):
+                init_value, init_ops = self.generate_array_literal(
+                    var_decl.initializer,
+                    array_type_hint=self._llvm_array_type_from_flow(var_decl.type),
+                )
             elif isinstance(var_decl.initializer, ArrayLiteral) and mlir_type.startswith("memref<"):
                 init_value, init_ops = self.generate_array_literal(
                     var_decl.initializer,
@@ -5375,6 +5383,37 @@ class MLIRGenerator:
         self._ssa_types[result] = ret_ty
         return result, ops
 
+    def _generate_llvm_array_aggregate(
+        self, array_literal: ArrayLiteral, array_type: str
+    ) -> tuple[str, List[str]]:
+        """Build an inline LLVM array value for a struct field.
+
+        Standalone arrays use pointer-backed storage so indexed mutation can
+        remain addressable. An array field inside an LLVM struct is an inline
+        aggregate, however, and must be assembled with insertvalue.
+        """
+        agg = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops = [f"{self.indent()}{agg} = llvm.mlir.zero : {array_type}"]
+        inner = array_type[len("!llvm.array<"):-1]
+        elem_type = inner.split(" x ", 1)[1]
+        for index, element in enumerate(array_literal.elements):
+            value, value_ops = self.generate_expression(element)
+            ops.extend(value_ops)
+            value_type = self.get_expression_type(element)
+            if value_type != elem_type:
+                value, cast_ops = self._emit_cast(value, value_type, elem_type)
+                ops.extend(cast_ops)
+            next_agg = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{next_agg} = llvm.insertvalue {value}, "
+                f"{agg}[{index}] : {array_type}"
+            )
+            agg = next_agg
+        self._ssa_types[agg] = array_type
+        return agg, ops
+
     def generate_struct_literal(self, struct_literal: StructLiteral) -> tuple[str, List[str]]:
         """Generate struct literal with actual memory allocation and field storage"""
         struct_name = struct_literal.struct_name
@@ -5396,10 +5435,31 @@ class MLIRGenerator:
 
             for idx, field in enumerate(decl.fields):
                 field_type = self.flow_type_to_mlir(field.type)
+                if self._is_array_flow_type(field.type):
+                    field_type = self._llvm_array_type_from_flow(field.type) or field_type
                 if field.name in provided:
-                    val_ssa, val_ops = self.generate_expression(provided[field.name])
+                    provided_value = provided[field.name]
+                    if (
+                        isinstance(provided_value, ArrayLiteral)
+                        and field_type.startswith("!llvm.array<")
+                    ):
+                        val_ssa, val_ops = self._generate_llvm_array_aggregate(
+                            provided_value, field_type
+                        )
+                        val_type = field_type
+                    else:
+                        val_ssa, val_ops = self.generate_expression(provided_value)
+                        val_type = self.get_expression_type(provided_value)
                     ops.extend(val_ops)
-                    val_type = self.get_expression_type(provided[field.name])
+                    if field_type.startswith("!llvm.array<") and val_type == "!llvm.ptr":
+                        loaded = f"%{self.function_counter}"
+                        self.function_counter += 1
+                        ops.append(
+                            f"{self.indent()}{loaded} = llvm.load {val_ssa} : "
+                            f"!llvm.ptr -> {field_type}"
+                        )
+                        val_ssa = loaded
+                        val_type = field_type
                     if val_type != field_type:
                         val_ssa, cast_ops = self._emit_cast(val_ssa, val_type, field_type)
                         ops.extend(cast_ops)
@@ -6225,7 +6285,10 @@ class MLIRGenerator:
         return self.generate_function_call(FunctionCall(method_call.method, args))
     
     def generate_array_literal(
-        self, array_literal: ArrayLiteral, elem_type_hint: Optional[str] = None
+        self,
+        array_literal: ArrayLiteral,
+        elem_type_hint: Optional[str] = None,
+        array_type_hint: Optional[str] = None,
     ) -> tuple[str, List[str]]:
         self.function_counter += 1
 
@@ -6235,6 +6298,38 @@ class MLIRGenerator:
             v, vops = self.generate_expression(element)
             ops.extend(vops)
             element_values.append(v)
+
+        if array_type_hint:
+            array_ty = array_type_hint
+            inner = array_ty[len("!llvm.array<"):-1]
+            storage_elem = inner.split(" x ", 1)[1]
+            store_ty = "!llvm.ptr" if storage_elem == "ptr" else storage_elem
+            one = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{one} = llvm.mlir.constant(1 : i64) : i64")
+            ptr = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{ptr} = llvm.alloca {one} x {array_ty} : "
+                f"(i64) -> !llvm.ptr"
+            )
+            self._ssa_types[ptr] = "!llvm.ptr"
+            self._llvm_array_types[ptr] = array_ty
+            for index, element_value in enumerate(element_values):
+                idx = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(f"{self.indent()}{idx} = llvm.mlir.constant({index} : i64) : i64")
+                gep = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{gep} = llvm.getelementptr {ptr}[0, {idx}] "
+                    f": (!llvm.ptr, i64) -> !llvm.ptr, {array_ty}"
+                )
+                ops.append(
+                    f"{self.indent()}llvm.store {element_value}, {gep} : "
+                    f"{store_ty}, !llvm.ptr"
+                )
+            return ptr, ops
 
         elem_type = self.get_expression_type(array_literal.elements[0]) if array_literal.elements else 'f32'
         # The declared element type wins: `array<i64, 3> = [1, 2, 3]` parses its
