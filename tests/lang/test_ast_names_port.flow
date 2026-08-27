@@ -1,0 +1,89 @@
+# Tests for compiler/src/ast_names.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/ast_names.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let source: string = "parsed other"
+    let mut arena: AstArena = flowc_ast_new(8)
+    let parsed: i32 = flowc_ast_alloc(&arena, AST_IDENT, 0, 6)
+    arena.nodes[parsed].name_start = 0
+    arena.nodes[parsed].name_end = 6
+    let generated: i32 = flowc_ast_alloc(&arena, AST_IDENT, 0, 0)
+
+    let mut names: FlowcAstNames = flowc_ast_names_init(8)
+    if names.err != 0 {
+        return 90
+    }
+
+    let mut out: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if flowc_ast_name_copy(names, arena, source as ptr<u8>, parsed, &out[0], 192) != 6 {
+        puts("FAIL: parsed fallback length")
+        return 1
+    }
+    if strcmp(&out[0], "parsed" as ptr<u8>) != 0 or flowc_ast_name_is(names, arena, source as ptr<u8>, parsed, "parsed") != 1 {
+        puts("FAIL: parsed fallback")
+        return 2
+    }
+
+    let mut temporary: array<u8, 16> = [105, 100, 101, 110, 116, 105, 116, 121, 95, 105, 51, 50, 0, 0, 0, 0]
+    if flowc_ast_names_set(&names, generated, &temporary[0] as string) != 12 {
+        puts("FAIL: synthetic set")
+        return 3
+    }
+    # Prove ownership: mutate caller storage after insertion.
+    temporary[0] = 88
+    if flowc_ast_name_copy(names, arena, source as ptr<u8>, generated, &out[0], 192) != 12 {
+        puts("FAIL: synthetic copy length")
+        return 4
+    }
+    if strcmp(&out[0], "identity_i32" as ptr<u8>) != 0 {
+        puts("FAIL: synthetic ownership")
+        return 5
+    }
+    if flowc_ast_name_is(names, arena, source as ptr<u8>, generated, "identity_i32") != 1 {
+        puts("FAIL: synthetic equality")
+        return 6
+    }
+
+    if flowc_ast_names_set(&names, generated, "identity_f32") != 12 {
+        puts("FAIL: synthetic replace")
+        return 7
+    }
+    if flowc_ast_name_is(names, arena, source as ptr<u8>, generated, "identity_f32") != 1 {
+        puts("FAIL: synthetic replacement value")
+        return 8
+    }
+    if flowc_ast_name_copy(names, arena, source as ptr<u8>, generated, &out[0], 4) != -1 {
+        puts("FAIL: output capacity guard")
+        return 9
+    }
+
+    if flowc_ast_names_clear(&names, generated) != 0 or flowc_ast_names_has(names, generated) != 0 {
+        puts("FAIL: synthetic clear")
+        return 10
+    }
+    # Generated node has no parsed span, so fallback must fail after clearing.
+    if flowc_ast_name_copy(names, arena, source as ptr<u8>, generated, &out[0], 192) != -1 {
+        puts("FAIL: cleared synthetic fallback")
+        return 11
+    }
+    if flowc_ast_names_set(&names, 99, "bad") != -1 {
+        puts("FAIL: invalid node guard")
+        return 12
+    }
+    if flowc_ast_name_copy(names, arena, source as ptr<u8>, AST_NONE, &out[0], 192) != -1 {
+        puts("FAIL: AST_NONE guard")
+        return 13
+    }
+
+    flowc_ast_names_free(&names)
+    flowc_ast_free(arena)
+    puts("All synthetic AST name tests passed")
+    return 0
+}
