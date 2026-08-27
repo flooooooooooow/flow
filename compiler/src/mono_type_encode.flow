@@ -1,0 +1,226 @@
+# @module flowc.mono_type_encode
+# @means  Byte-exact MonomorphRequest._type_to_str encoding from Stage-A
+#         AST_TYPE structure. This ABI intentionally differs from overload
+#         canonical Type.name spelling for compound types.
+
+import .ast { AstArena, AST_NONE, AST_TYPE }
+import .type_name { flowc_type_name_into }
+import .monomorphize { flowc_mono_encode_compound }
+
+const FLOWC_MONO_TYPE_TMP_CAP: i32 = 256
+const FLOWC_MONO_TYPE_MAX_DEPTH: i32 = 32
+
+function mono_type_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit as ptr<u8>
+    let mut n: i32 = 0
+    while p[n] != 0 {
+        n = n + 1
+    }
+    if end - start != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[start + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function mono_type_span_starts_vec(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if end - start < 4 {
+        return 0
+    }
+    if src[start] == 118 and src[start + 1] == 101 and src[start + 2] == 99 {
+        return 1
+    }
+    return 0
+}
+
+function mono_type_copy_span(
+    src: ptr<u8>,
+    start: i32,
+    end: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if src == null or start < 0 or end <= start or out == null {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+function mono_type_append(
+    dst: ptr<u8>,
+    cap: i32,
+    offset: i32,
+    src: ptr<u8>
+) -> i32 {
+    if dst == null or src == null or offset < 0 {
+        return 0 - 1
+    }
+    let mut n: i32 = 0
+    while src[n] != 0 {
+        n = n + 1
+    }
+    if offset + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        dst[offset + i] = src[i]
+        i = i + 1
+    }
+    dst[offset + n] = 0
+    return offset + n
+}
+
+function mono_type_encode_at(
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    out: ptr<u8>,
+    out_cap: i32,
+    depth: i32
+) -> i32 {
+    if depth >= FLOWC_MONO_TYPE_MAX_DEPTH {
+        return 0 - 1
+    }
+    if ty == AST_NONE or ty < 0 or ty >= arena.len or out == null or out_cap <= 0 {
+        return 0 - 1
+    }
+    if arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].ival < 0 {
+        return 0 - 1
+    }
+
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+
+    # Plain named Type: Python _type_to_str returns its short name verbatim.
+    if inner == AST_NONE {
+        return mono_type_copy_span(src, ns, ne, out, out_cap)
+    }
+
+    # Span/request encoding needs the span representation slices (#769-#773)
+    # before it can reproduce Python Type(name=span_*, size, element_type).
+    if mono_type_span_is(src, ns, ne, "span") == 1 {
+        return 0 - 1
+    }
+
+    # ptr<T>: Python Type has canonical name ptr_<T>, is_pointer=True and
+    # element_type=T. Therefore all three pieces participate in _type_to_str.
+    if mono_type_span_is(src, ns, ne, "ptr") == 1 {
+        let mut canonical: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut elem: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if flowc_type_name_into(arena, src, ty, &canonical[0], FLOWC_MONO_TYPE_TMP_CAP) < 0 {
+            return 0 - 1
+        }
+        if mono_type_encode_at(arena, src, inner, &elem[0], FLOWC_MONO_TYPE_TMP_CAP, depth + 1) < 0 {
+            return 0 - 1
+        }
+        return flowc_mono_encode_compound(
+            &canonical[0] as string,
+            1, 0, 0,
+            0, 0,
+            1, &elem[0] as string,
+            0, "",
+            out, out_cap
+        )
+    }
+
+    # array<T[,N]>: Python Type.name is canonical array[_N]_<T>, with size and
+    # element_type also retained and therefore included again in compound ABI.
+    if mono_type_span_is(src, ns, ne, "array") == 1 {
+        let mut canonical: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut elem: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if flowc_type_name_into(arena, src, ty, &canonical[0], FLOWC_MONO_TYPE_TMP_CAP) < 0 {
+            return 0 - 1
+        }
+        if mono_type_encode_at(arena, src, inner, &elem[0], FLOWC_MONO_TYPE_TMP_CAP, depth + 1) < 0 {
+            return 0 - 1
+        }
+        let has_size: i32 = arena.nodes[ty].ival > 0
+        return flowc_mono_encode_compound(
+            &canonical[0] as string,
+            0, 0, 0,
+            has_size, arena.nodes[ty].ival,
+            1, &elem[0] as string,
+            0, "",
+            out, out_cap
+        )
+    }
+
+    # Stage-A currently models vecN<T> through the same generic-child shape but
+    # Python Type stores vec size/element metadata, not generic type_args. Refuse
+    # until that distinction is explicit rather than emitting a wrong request key.
+    if mono_type_span_starts_vec(src, ns, ne) == 1 {
+        return 0 - 1
+    }
+
+    # Generic application: Python Type keeps the outer source name and type_args.
+    let mut outer: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if mono_type_copy_span(src, ns, ne, &outer[0], FLOWC_MONO_TYPE_TMP_CAP) < 0 {
+        return 0 - 1
+    }
+
+    let mut joined: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut count: i32 = 0
+    let mut pos: i32 = 0
+    let mut arg: i32 = inner
+    while arg != AST_NONE {
+        let mut encoded: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if mono_type_encode_at(arena, src, arg, &encoded[0], FLOWC_MONO_TYPE_TMP_CAP, depth + 1) < 0 {
+            return 0 - 1
+        }
+        if count > 0 {
+            if pos + 2 > FLOWC_MONO_TYPE_TMP_CAP {
+                return 0 - 1
+            }
+            joined[pos] = 95
+            pos = pos + 1
+            joined[pos] = 0
+        }
+        pos = mono_type_append(&joined[0], FLOWC_MONO_TYPE_TMP_CAP, pos, &encoded[0])
+        if pos < 0 {
+            return 0 - 1
+        }
+        count = count + 1
+        arg = arena.nodes[arg].next
+    }
+
+    return flowc_mono_encode_compound(
+        &outer[0] as string,
+        0, 0, 0,
+        0, 0,
+        0, "",
+        count, &joined[0] as string,
+        out, out_cap
+    )
+}
+
+export function flowc_mono_type_encode(
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    if out == null or out_cap <= 0 {
+        return 0 - 1
+    }
+    out[0] = 0
+    return mono_type_encode_at(arena, src, ty, out, out_cap, 0)
+}
