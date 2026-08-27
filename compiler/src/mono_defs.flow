@@ -1,0 +1,226 @@
+# @module flowc.mono_defs
+# @means  Owned discovery registry for generic struct/function definitions and
+#         concrete function names across bundle modules.
+
+import .ast {
+    AstArena, AST_NONE, AST_PROGRAM, AST_STRUCT, AST_FN, AST_EXPORT,
+    flowc_ast_chain_len
+}
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: ptr<u8>) -> i64
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+}
+
+export const FLOWC_MONO_DEF_NAME_CAP: i32 = 96
+export const FLOWC_MONO_DEF_GENERIC_STRUCT: i32 = 0
+export const FLOWC_MONO_DEF_GENERIC_FUNCTION: i32 = 1
+export const FLOWC_MONO_DEF_CONCRETE_FUNCTION: i32 = 2
+
+export struct FlowcMonoDefs {
+    names: ptr<u8>,
+    module_ids: ptr<i32>,
+    decl_ids: ptr<i32>,
+    kinds: ptr<i32>,
+    param_counts: ptr<i32>,
+    len: i32,
+    cap: i32,
+    err: i32
+}
+
+function mono_def_row(defs: FlowcMonoDefs, index: i32) -> ptr<u8> {
+    return defs.names + (index * FLOWC_MONO_DEF_NAME_CAP)
+}
+
+export function flowc_mono_defs_init(cap: i32) -> FlowcMonoDefs {
+    if cap <= 0 {
+        return FlowcMonoDefs {
+            names: null, module_ids: null, decl_ids: null, kinds: null,
+            param_counts: null, len: 0, cap: 0, err: 1
+        }
+    }
+    let names: ptr<u8> = malloc((cap as i64) * FLOWC_MONO_DEF_NAME_CAP)
+    let modules_raw: ptr<u8> = malloc((cap as i64) * 4)
+    let decls_raw: ptr<u8> = malloc((cap as i64) * 4)
+    let kinds_raw: ptr<u8> = malloc((cap as i64) * 4)
+    let counts_raw: ptr<u8> = malloc((cap as i64) * 4)
+    if names == null or modules_raw == null or decls_raw == null or kinds_raw == null or counts_raw == null {
+        if names != null { free(names) }
+        if modules_raw != null { free(modules_raw) }
+        if decls_raw != null { free(decls_raw) }
+        if kinds_raw != null { free(kinds_raw) }
+        if counts_raw != null { free(counts_raw) }
+        return FlowcMonoDefs {
+            names: null, module_ids: null, decl_ids: null, kinds: null,
+            param_counts: null, len: 0, cap: 0, err: 1
+        }
+    }
+    return FlowcMonoDefs {
+        names: names,
+        module_ids: modules_raw as ptr<i32>,
+        decl_ids: decls_raw as ptr<i32>,
+        kinds: kinds_raw as ptr<i32>,
+        param_counts: counts_raw as ptr<i32>,
+        len: 0, cap: cap, err: 0
+    }
+}
+
+export function flowc_mono_defs_free(defs: ptr<FlowcMonoDefs>) {
+    if defs[0].names != null { free(defs[0].names); defs[0].names = null }
+    if defs[0].module_ids != null { free(defs[0].module_ids as ptr<u8>); defs[0].module_ids = null }
+    if defs[0].decl_ids != null { free(defs[0].decl_ids as ptr<u8>); defs[0].decl_ids = null }
+    if defs[0].kinds != null { free(defs[0].kinds as ptr<u8>); defs[0].kinds = null }
+    if defs[0].param_counts != null { free(defs[0].param_counts as ptr<u8>); defs[0].param_counts = null }
+    defs[0].len = 0
+    defs[0].cap = 0
+}
+
+export function flowc_mono_defs_find(defs: FlowcMonoDefs, name: string, kind: i32) -> i32 {
+    if defs.err != 0 or defs.names == null {
+        return 0 - 1
+    }
+    let needle: ptr<u8> = name as ptr<u8>
+    let mut i: i32 = 0
+    while i < defs.len {
+        if defs.kinds[i] == kind and strcmp(mono_def_row(defs, i), needle) == 0 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Add/update by (kind,name). Generic dictionaries in the Python pass use name as
+# key, so a later declaration of the same generic kind replaces the earlier one.
+# Concrete function names behave as a set; updating location is harmless.
+export function flowc_mono_defs_add(
+    defs: ptr<FlowcMonoDefs>,
+    name: string,
+    kind: i32,
+    module_id: i32,
+    decl_id: i32,
+    param_count: i32
+) -> i32 {
+    if defs[0].err != 0 or module_id < 0 or decl_id < 0 or param_count < 0 {
+        return 0 - 1
+    }
+    if kind < FLOWC_MONO_DEF_GENERIC_STRUCT or kind > FLOWC_MONO_DEF_CONCRETE_FUNCTION {
+        return 0 - 1
+    }
+    let existing: i32 = flowc_mono_defs_find(defs[0], name, kind)
+    if existing >= 0 {
+        defs[0].module_ids[existing] = module_id
+        defs[0].decl_ids[existing] = decl_id
+        defs[0].param_counts[existing] = param_count
+        return existing
+    }
+    if defs[0].len >= defs[0].cap {
+        defs[0].err = 1
+        return 0 - 1
+    }
+    let p: ptr<u8> = name as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    if n <= 0 or n + 1 > FLOWC_MONO_DEF_NAME_CAP {
+        return 0 - 1
+    }
+    let index: i32 = defs[0].len
+    let row: ptr<u8> = mono_def_row(defs[0], index)
+    let mut i: i32 = 0
+    while i < n {
+        row[i] = p[i]
+        i = i + 1
+    }
+    row[n] = 0
+    defs[0].module_ids[index] = module_id
+    defs[0].decl_ids[index] = decl_id
+    defs[0].kinds[index] = kind
+    defs[0].param_counts[index] = param_count
+    defs[0].len = index + 1
+    return index
+}
+
+function mono_defs_item_decl(arena: AstArena, item: i32) -> i32 {
+    if item == AST_NONE or item < 0 or item >= arena.len {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and inner >= 0 and inner < arena.len {
+            return inner
+        }
+    }
+    return item
+}
+
+function mono_defs_copy_span(src: ptr<u8>, start: i32, end: i32, out: ptr<u8>, cap: i32) -> i32 {
+    if src == null or start < 0 or end <= start {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+# Discover representable generic definitions and concrete function names in one
+# module. Generic function parameter *names* are currently lost by Stage-A and
+# tracked by #785; this registry still records their declaration/count/location.
+export function flowc_mono_defs_collect_module(
+    defs: ptr<FlowcMonoDefs>,
+    arena: AstArena,
+    root: i32,
+    src: ptr<u8>,
+    module_id: i32
+) -> i32 {
+    if defs[0].err != 0 or module_id < 0 or root == AST_NONE or root < 0 or root >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return 0 - 1
+    }
+    let before: i32 = defs[0].len
+    let mut item: i32 = arena.nodes[root].a
+    let mut name: array<u8, 96> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    while item != AST_NONE {
+        let decl: i32 = mono_defs_item_decl(arena, item)
+        if decl != AST_NONE {
+            let kind: i32 = arena.nodes[decl].kind
+            if kind == AST_STRUCT or kind == AST_FN {
+                if mono_defs_copy_span(src, arena.nodes[decl].name_start, arena.nodes[decl].name_end, &name[0], FLOWC_MONO_DEF_NAME_CAP) < 0 {
+                    return 0 - 1
+                }
+                if kind == AST_STRUCT {
+                    let type_params: i32 = arena.nodes[decl].b
+                    if type_params != AST_NONE {
+                        let count: i32 = flowc_ast_chain_len(arena, type_params)
+                        if flowc_mono_defs_add(defs, &name[0] as string, FLOWC_MONO_DEF_GENERIC_STRUCT, module_id, decl, count) < 0 {
+                            return 0 - 1
+                        }
+                    }
+                } else {
+                    let count: i32 = arena.nodes[decl].ival
+                    if count > 0 {
+                        if flowc_mono_defs_add(defs, &name[0] as string, FLOWC_MONO_DEF_GENERIC_FUNCTION, module_id, decl, count) < 0 {
+                            return 0 - 1
+                        }
+                    } else {
+                        if flowc_mono_defs_add(defs, &name[0] as string, FLOWC_MONO_DEF_CONCRETE_FUNCTION, module_id, decl, 0) < 0 {
+                            return 0 - 1
+                        }
+                    }
+                }
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    return defs[0].len - before
+}
