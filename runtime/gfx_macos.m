@@ -14,6 +14,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <CoreText/CoreText.h>
 
 typedef struct FlowGfxContext FlowGfxContext;
 @class FlowGfxWindowDelegate;
@@ -418,6 +419,38 @@ void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h
             p[idx + 3] = 255;
         }
     }
+}
+
+/* Render platform typography into the same framebuffer as the UI shapes. */
+void flow_gfx_text(void *handle, int32_t x, int32_t y, const char *text,
+                   int32_t size, uint8_t r, uint8_t g, uint8_t b) {
+    FlowGfxContext *ctx = (FlowGfxContext *)handle;
+    if (!ctx || !ctx->pixels || !text || size <= 0) return;
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef cg = CGBitmapContextCreate(ctx->pixels, ctx->width, ctx->height,
+                                             8, (size_t)ctx->width * 4u, cs,
+                                             kCGImageAlphaPremultipliedLast);
+    if (!cg) { CGColorSpaceRelease(cs); return; }
+    CFStringRef value = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);
+    CTFontRef font = CTFontCreateWithName(CFSTR("SF Pro Display"), (CGFloat)size, NULL);
+    if (!font) font = CTFontCreateWithName(CFSTR("Helvetica Neue"), (CGFloat)size, NULL);
+    if (value && font) {
+        CGFloat components[4] = { r / 255.0, g / 255.0, b / 255.0, 1.0 };
+        CGColorRef color = CGColorCreate(cs, components);
+        const void *keys[] = { kCTFontAttributeName, kCTForegroundColorAttributeName };
+        const void *vals[] = { font, color };
+        CFDictionaryRef attrs = CFDictionaryCreate(NULL, keys, vals, 2,
+                                                     &kCFTypeDictionaryKeyCallBacks,
+                                                     &kCFTypeDictionaryValueCallBacks);
+        CFAttributedStringRef attributed = CFAttributedStringCreate(NULL, value, attrs);
+        CTLineRef line = CTLineCreateWithAttributedString(attributed);
+        CGContextSetTextPosition(cg, (CGFloat)x, (CGFloat)(ctx->height - y - size));
+        CTLineDraw(line, cg);
+        CFRelease(line); CFRelease(attributed); CFRelease(attrs); CGColorRelease(color);
+    }
+    if (font) CFRelease(font);
+    if (value) CFRelease(value);
+    CGContextRelease(cg); CGColorSpaceRelease(cs);
 }
 
 /* Milliseconds since the first call. CACurrentMediaTime is the mach monotonic

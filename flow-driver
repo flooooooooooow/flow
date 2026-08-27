@@ -1435,7 +1435,7 @@ run_gfx_program() {
             "${FLOW_CONC_SOURCES[@]}" \
             "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
             "${audio_sources[@]}" \
-            -framework Cocoa -framework CoreGraphics -framework QuartzCore \
+            -framework Cocoa -framework CoreGraphics -framework QuartzCore -framework CoreText \
             -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
             "${py_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
             -o "$exe_file" -lm 2>"$gfx_link_err"; then
