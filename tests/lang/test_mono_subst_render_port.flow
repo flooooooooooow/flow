@@ -1,0 +1,118 @@
+# Tests for compiler/src/mono_subst_render.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_subst.flow"
+import "compiler/src/mono_subst_render.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function set_name(arena: ptr<AstArena>, id: i32, start: i32, end: i32) {
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+}
+
+function main() -> i32 {
+    #                  11111111112222222222333333333344444444
+    #        01234567890123456789012345678901234567890123456
+    let src: string = "T U i32 f32 ptr array Option Result"
+    let mut arena: AstArena = flowc_ast_new(64)
+    let mut env: FlowcMonoSubst = flowc_mono_subst_init(8)
+    if env.err != 0 {
+        return 90
+    }
+    if flowc_mono_subst_add(&env, "T", "i32") < 0 {
+        return 91
+    }
+
+    let t: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_name(&arena, t, 0, 1)
+    let u: i32 = flowc_ast_alloc(&arena, AST_TYPE, 2, 3)
+    set_name(&arena, u, 2, 3)
+
+    let mut out: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, t, &out[0], 128) != 3 {
+        puts("FAIL: leaf substitution length")
+        return 1
+    }
+    if strcmp(&out[0], "i32" as ptr<u8>) != 0 {
+        puts("FAIL: leaf substitution")
+        return 2
+    }
+
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, u, &out[0], 128) != 1 {
+        puts("FAIL: unbound leaf length")
+        return 3
+    }
+    if strcmp(&out[0], "U" as ptr<u8>) != 0 {
+        puts("FAIL: unbound leaf preserved")
+        return 4
+    }
+
+    let ptr_t: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_name(&arena, ptr_t, 12, 15)
+    arena.nodes[ptr_t].a = t
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, ptr_t, &out[0], 128) < 0 {
+        puts("FAIL: ptr render")
+        return 5
+    }
+    if strcmp(&out[0], "ptr_i32" as ptr<u8>) != 0 {
+        puts("FAIL: ptr substitution")
+        return 6
+    }
+
+    let option_t: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_name(&arena, option_t, 22, 28)
+    let option_arg: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 1)
+    set_name(&arena, option_arg, 0, 1)
+    arena.nodes[option_t].a = option_arg
+
+    let array_option: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_name(&arena, array_option, 16, 21)
+    arena.nodes[array_option].a = option_t
+    arena.nodes[array_option].ival = 4
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, array_option, &out[0], 128) < 0 {
+        puts("FAIL: nested array render")
+        return 7
+    }
+    if strcmp(&out[0], "array_4_Option_i32" as ptr<u8>) != 0 {
+        puts("FAIL: nested substitution")
+        return 8
+    }
+
+    let result_t: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_name(&arena, result_t, 29, 35)
+    let result_a: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 1)
+    set_name(&arena, result_a, 0, 1)
+    let result_b: i32 = flowc_ast_alloc(&arena, AST_TYPE, 2, 3)
+    set_name(&arena, result_b, 2, 3)
+    arena.nodes[result_a].next = result_b
+    arena.nodes[result_t].a = result_a
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, result_t, &out[0], 128) < 0 {
+        puts("FAIL: multi-arg render")
+        return 9
+    }
+    if strcmp(&out[0], "Result_i32_U" as ptr<u8>) != 0 {
+        puts("FAIL: multi-arg substitution")
+        return 10
+    }
+
+    let fn_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
+    set_name(&arena, fn_ty, 0, 1)
+    arena.nodes[fn_ty].ival = -1
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, fn_ty, &out[0], 128) != -1 {
+        puts("FAIL: function type refusal")
+        return 11
+    }
+    if flowc_mono_subst_render_type(env, arena, src as ptr<u8>, array_option, &out[0], 8) != -1 {
+        puts("FAIL: output capacity guard")
+        return 12
+    }
+
+    flowc_mono_subst_free(&env)
+    flowc_ast_free(arena)
+    puts("All canonical generic substitution render tests passed")
+    return 0
+}
