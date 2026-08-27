@@ -1,6 +1,6 @@
 # @module flowc.mono_usage_program
-# @means  Declaration-level generic struct usage discovery for native
-#         monomorphization. Body/expression scanning is a later slice.
+# @means  Program-level native monomorph request discovery across declaration
+#         type surfaces and non-generic function bodies.
 
 import .ast {
     AstArena, AST_NONE, AST_PROGRAM, AST_EXPORT, AST_STRUCT, AST_FIELD,
@@ -9,6 +9,7 @@ import .ast {
 import .mono_defs { FlowcMonoDefs }
 import .mono_requests { FlowcMonoRequests }
 import .mono_usage { flowc_mono_scan_type_usage }
+import .mono_usage_body { flowc_mono_scan_function_body_types }
 
 function mono_usage_program_unwrap(arena: AstArena, item: i32) -> i32 {
     if item == AST_NONE or item < 0 or item >= arena.len {
@@ -140,6 +141,44 @@ export function flowc_mono_scan_program_declaration_types(
                 return 0 - 1
             }
             found = found + n
+        }
+        item = arena.nodes[item].next
+    }
+    return found
+}
+
+# Full Stage-A-representable usage scan: declaration type surfaces plus bodies
+# of non-generic functions. Python deliberately does not scan generic function
+# bodies during initial usage collection; preserve that behavior here.
+export function flowc_mono_scan_program_usages(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    root: i32,
+    src: ptr<u8>
+) -> i32 {
+    let mut found: i32 = flowc_mono_scan_program_declaration_types(
+        requests, defs, arena, root, src
+    )
+    if found < 0 {
+        return 0 - 1
+    }
+
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let decl: i32 = mono_usage_program_unwrap(arena, item)
+        if decl != AST_NONE and arena.nodes[decl].kind == AST_FN {
+            # ival is generic type-param count. Only non-generic functions have
+            # their bodies scanned during Python's initial collection phase.
+            if arena.nodes[decl].ival == 0 and arena.nodes[decl].c != AST_NONE {
+                let n: i32 = flowc_mono_scan_function_body_types(
+                    requests, defs, arena, src, arena.nodes[decl].c
+                )
+                if n < 0 {
+                    return 0 - 1
+                }
+                found = found + n
+            }
         }
         item = arena.nodes[item].next
     }

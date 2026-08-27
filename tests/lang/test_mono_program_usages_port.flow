@@ -1,0 +1,92 @@
+# Integration tests for full program-level monomorph usage discovery.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_usage_program.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_named(arena: ptr<AstArena>, kind: i32, start: i32, end: i32) -> i32 {
+    let id: i32 = flowc_ast_alloc(arena, kind, start, end)
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+    return id
+}
+
+function main() -> i32 {
+    let src: string = "i32 Option_i32 identity Ghost_i32"
+    let mut arena: AstArena = flowc_ast_new(48)
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(8)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(8)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+    flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 1, 1)
+    flowc_mono_defs_add(&defs, "Ghost", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 2, 1)
+    flowc_mono_defs_add(&defs, "identity", FLOWC_MONO_DEF_GENERIC_FUNCTION, 0, 3, 1)
+
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+
+    # Non-generic function: body must be scanned.
+    let body: i32 = flowc_ast_alloc(&arena, AST_BLOCK, 0, 0)
+    let lit: i32 = make_named(&arena, AST_STRUCT_LIT, 4, 14)
+    let lit_stmt: i32 = flowc_ast_alloc(&arena, AST_EXPR_STMT, 0, 0)
+    arena.nodes[lit_stmt].a = lit
+
+    let call: i32 = make_named(&arena, AST_CALL, 15, 23)
+    let type_arg: i32 = make_named(&arena, AST_TYPE, 0, 3)
+    arena.nodes[call].b = type_arg
+    let call_stmt: i32 = flowc_ast_alloc(&arena, AST_EXPR_STMT, 0, 0)
+    arena.nodes[call_stmt].a = call
+
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, lit_stmt)
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, call_stmt)
+
+    let ordinary_fn: i32 = flowc_ast_alloc(&arena, AST_FN, 0, 0)
+    arena.nodes[ordinary_fn].ival = 0
+    arena.nodes[ordinary_fn].c = body
+
+    # Generic function: Python initial usage collection does not scan its body.
+    let generic_body: i32 = flowc_ast_alloc(&arena, AST_BLOCK, 0, 0)
+    let ghost: i32 = make_named(&arena, AST_STRUCT_LIT, 24, 33)
+    let ghost_stmt: i32 = flowc_ast_alloc(&arena, AST_EXPR_STMT, 0, 0)
+    arena.nodes[ghost_stmt].a = ghost
+    arena.nodes[generic_body].a = ghost_stmt
+
+    let generic_fn: i32 = flowc_ast_alloc(&arena, AST_FN, 0, 0)
+    arena.nodes[generic_fn].ival = 1
+    arena.nodes[generic_fn].c = generic_body
+
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, ordinary_fn)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, generic_fn)
+
+    if flowc_mono_scan_program_usages(&reqs, defs, arena, root, src as ptr<u8>) != 2 {
+        puts("FAIL: full program usage site count")
+        return 1
+    }
+    if reqs.len != 2 {
+        puts("FAIL: full program request count")
+        return 2
+    }
+    if flowc_mono_requests_find(reqs, "Option_i32", 0) < 0 {
+        puts("FAIL: non-generic body struct request")
+        return 3
+    }
+    if flowc_mono_requests_find(reqs, "identity_i32", 1) < 0 {
+        puts("FAIL: non-generic body function request")
+        return 4
+    }
+    if flowc_mono_requests_find(reqs, "Ghost_i32", 0) >= 0 {
+        puts("FAIL: generic function body was scanned")
+        return 5
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All full program monomorph usage tests passed")
+    return 0
+}
