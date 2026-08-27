@@ -11,7 +11,9 @@ import .mono_defs {
 import .mono_requests {
     FlowcMonoRequests,
     FLOWC_MONO_REQUEST_NAME_CAP,
-    flowc_mono_requests_add
+    FLOWC_MONO_REQUEST_TYPE_CAP,
+    flowc_mono_requests_add,
+    flowc_mono_requests_set_arg
 }
 
 extern {
@@ -60,11 +62,29 @@ function mono_struct_lit_copy_span(
     return n
 }
 
-# Return one discovered request site, zero for a non-generic literal, or -1 on
-# malformed input/storage failure. Python's struct-literal path reconstructs
-# plain Type names from the parser-mangled suffix; the resulting request key is
-# therefore the literal spelling itself, except that suffix components beyond
-# the generic's declared arity are ignored.
+function mono_struct_lit_copy_range(
+    src: ptr<u8>,
+    start: i32,
+    end: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if src == null or out == null or start < 0 or end <= start {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
 export function flowc_mono_request_struct_literal(
     requests: ptr<FlowcMonoRequests>,
     defs: FlowcMonoDefs,
@@ -82,7 +102,7 @@ export function flowc_mono_request_struct_literal(
         return 0 - 1
     }
 
-    let mut name: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut name: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     let name_len: i32 = mono_struct_lit_copy_span(
         src,
         arena.nodes[literal].name_start,
@@ -146,7 +166,34 @@ export function flowc_mono_request_struct_literal(
         name[request_len] = 0
     }
 
-    if flowc_mono_requests_add(requests, &name[0] as string, 0) < 0 {
+    let request_index: i32 = flowc_mono_requests_add(requests, &name[0] as string, 0)
+    if request_index < 0 {
+        return 0 - 1
+    }
+
+    # Python splits the parser-mangled struct suffix, takes the first N declared
+    # type parameters, and constructs plain Type(part) values from them.
+    let mut arg_index: i32 = 0
+    let mut part_start: i32 = suffix_start
+    p = suffix_start
+    while p <= request_len and arg_index < param_count {
+        if p == request_len or name[p] == 95 {
+            let mut value: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            if mono_struct_lit_copy_range(&name[0], part_start, p, &value[0], FLOWC_MONO_REQUEST_TYPE_CAP) < 0 {
+                requests[0].err = 1
+                return 0 - 1
+            }
+            if flowc_mono_requests_set_arg(requests, request_index, arg_index, &value[0] as string) < 0 {
+                requests[0].err = 1
+                return 0 - 1
+            }
+            arg_index = arg_index + 1
+            part_start = p + 1
+        }
+        p = p + 1
+    }
+    if arg_index != param_count {
+        requests[0].err = 1
         return 0 - 1
     }
     return 1
