@@ -1,0 +1,271 @@
+# @module flowc.mono_usage_body
+# @means  Recursive body/expression traversal for generic type usage discovery.
+#         Function-call and struct-literal request semantics remain separate.
+
+import .ast {
+    AstArena, AST_NONE,
+    AST_BLOCK, AST_LET, AST_CONST, AST_RETURN, AST_ASSIGN,
+    AST_IF, AST_WHILE, AST_FOR, AST_EXPR_STMT, AST_DEFER, AST_MATCH,
+    AST_BINOP, AST_UNARY, AST_CALL, AST_FIELD_ACCESS, AST_INDEX, AST_CAST,
+    AST_STRUCT_LIT, AST_ARRAY_LIT, AST_IF_EXPR, AST_MATCH_ARM
+}
+import .mono_defs { FlowcMonoDefs }
+import .mono_requests { FlowcMonoRequests }
+import .mono_usage { flowc_mono_scan_type_usage }
+
+function mono_usage_body_expr(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32
+) -> i32
+
+function mono_usage_body_block(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32
+) -> i32
+
+function mono_usage_body_expr_chain(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    first: i32
+) -> i32 {
+    let mut found: i32 = 0
+    let mut cur: i32 = first
+    while cur != AST_NONE {
+        let n: i32 = mono_usage_body_expr(requests, defs, arena, src, cur)
+        if n < 0 {
+            return 0 - 1
+        }
+        found = found + n
+        cur = arena.nodes[cur].next
+    }
+    return found
+}
+
+function mono_usage_body_expr(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32
+) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if id < 0 or id >= arena.len {
+        return 0 - 1
+    }
+    let kind: i32 = arena.nodes[id].kind
+
+    if kind == AST_CAST {
+        let type_sites: i32 = flowc_mono_scan_type_usage(
+            requests, defs, arena, src, arena.nodes[id].b, AST_NONE
+        )
+        if type_sites < 0 {
+            return 0 - 1
+        }
+        let value_sites: i32 = mono_usage_body_expr(
+            requests, defs, arena, src, arena.nodes[id].a
+        )
+        if value_sites < 0 {
+            return 0 - 1
+        }
+        return type_sites + value_sites
+    }
+
+    if kind == AST_BINOP or kind == AST_INDEX {
+        let left: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if left < 0 {
+            return 0 - 1
+        }
+        let right: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].b)
+        if right < 0 {
+            return 0 - 1
+        }
+        return left + right
+    }
+
+    if kind == AST_UNARY or kind == AST_FIELD_ACCESS or kind == AST_DEFER or kind == AST_EXPR_STMT {
+        return mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+    }
+
+    if kind == AST_CALL or kind == AST_ARRAY_LIT {
+        return mono_usage_body_expr_chain(requests, defs, arena, src, arena.nodes[id].a)
+    }
+
+    if kind == AST_STRUCT_LIT {
+        let mut found: i32 = 0
+        let mut field: i32 = arena.nodes[id].a
+        while field != AST_NONE {
+            if field < 0 or field >= arena.len {
+                return 0 - 1
+            }
+            let n: i32 = mono_usage_body_expr(
+                requests, defs, arena, src, arena.nodes[field].a
+            )
+            if n < 0 {
+                return 0 - 1
+            }
+            found = found + n
+            field = arena.nodes[field].next
+        }
+        return found
+    }
+
+    if kind == AST_IF_EXPR {
+        let a: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if a < 0 { return 0 - 1 }
+        let b: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].b)
+        if b < 0 { return 0 - 1 }
+        let c: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].c)
+        if c < 0 { return 0 - 1 }
+        return a + b + c
+    }
+
+    return 0
+}
+
+function mono_usage_body_stmt(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32
+) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if id < 0 or id >= arena.len {
+        return 0 - 1
+    }
+    let kind: i32 = arena.nodes[id].kind
+
+    if kind == AST_LET or kind == AST_CONST {
+        let mut found: i32 = 0
+        let ty_sites: i32 = flowc_mono_scan_type_usage(
+            requests, defs, arena, src, arena.nodes[id].a, AST_NONE
+        )
+        if ty_sites < 0 {
+            return 0 - 1
+        }
+        found = found + ty_sites
+        let init_sites: i32 = mono_usage_body_expr(
+            requests, defs, arena, src, arena.nodes[id].b
+        )
+        if init_sites < 0 {
+            return 0 - 1
+        }
+        return found + init_sites
+    }
+
+    if kind == AST_RETURN or kind == AST_DEFER or kind == AST_EXPR_STMT {
+        return mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+    }
+
+    if kind == AST_ASSIGN {
+        let lhs: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if lhs < 0 { return 0 - 1 }
+        let rhs: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].b)
+        if rhs < 0 { return 0 - 1 }
+        return lhs + rhs
+    }
+
+    if kind == AST_IF {
+        let cond: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if cond < 0 { return 0 - 1 }
+        let then_sites: i32 = mono_usage_body_block(requests, defs, arena, src, arena.nodes[id].b)
+        if then_sites < 0 { return 0 - 1 }
+        let else_sites: i32 = mono_usage_body_block(requests, defs, arena, src, arena.nodes[id].c)
+        if else_sites < 0 { return 0 - 1 }
+        return cond + then_sites + else_sites
+    }
+
+    if kind == AST_WHILE {
+        let cond: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if cond < 0 { return 0 - 1 }
+        let body: i32 = mono_usage_body_block(requests, defs, arena, src, arena.nodes[id].b)
+        if body < 0 { return 0 - 1 }
+        return cond + body
+    }
+
+    if kind == AST_FOR {
+        let start_sites: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if start_sites < 0 { return 0 - 1 }
+        let end_sites: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].b)
+        if end_sites < 0 { return 0 - 1 }
+        let body_sites: i32 = mono_usage_body_block(requests, defs, arena, src, arena.nodes[id].c)
+        if body_sites < 0 { return 0 - 1 }
+        return start_sites + end_sites + body_sites
+    }
+
+    if kind == AST_MATCH {
+        let mut found: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
+        if found < 0 {
+            return 0 - 1
+        }
+        let mut arm: i32 = arena.nodes[id].b
+        while arm != AST_NONE {
+            if arm < 0 or arm >= arena.len or arena.nodes[arm].kind != AST_MATCH_ARM {
+                return 0 - 1
+            }
+            let n: i32 = mono_usage_body_block(
+                requests, defs, arena, src, arena.nodes[arm].b
+            )
+            if n < 0 {
+                return 0 - 1
+            }
+            found = found + n
+            arm = arena.nodes[arm].next
+        }
+        return found
+    }
+
+    if kind == AST_BLOCK {
+        return mono_usage_body_block(requests, defs, arena, src, id)
+    }
+
+    return mono_usage_body_expr(requests, defs, arena, src, id)
+}
+
+function mono_usage_body_block(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    id: i32
+) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if id < 0 or id >= arena.len or arena.nodes[id].kind != AST_BLOCK {
+        return 0 - 1
+    }
+    let mut found: i32 = 0
+    let mut stmt: i32 = arena.nodes[id].a
+    while stmt != AST_NONE {
+        let n: i32 = mono_usage_body_stmt(requests, defs, arena, src, stmt)
+        if n < 0 {
+            return 0 - 1
+        }
+        found = found + n
+        stmt = arena.nodes[stmt].next
+    }
+    return found
+}
+
+export function flowc_mono_scan_function_body_types(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    body: i32
+) -> i32 {
+    return mono_usage_body_block(requests, defs, arena, src, body)
+}
