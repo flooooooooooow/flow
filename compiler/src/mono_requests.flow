@@ -2,6 +2,8 @@
 # @means  Owned deduplicating specialization-request worklist. Python keeps
 #         struct_requests and function_requests in separate dictionaries, so
 #         native identity is (kind, byte-exact mangled specialization name).
+#         Each request also owns the ordered canonical concrete type arguments
+#         needed later to build a specialization substitution environment.
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -11,6 +13,8 @@ extern {
 }
 
 export const FLOWC_MONO_REQUEST_NAME_CAP: i32 = 192
+export const FLOWC_MONO_REQUEST_TYPE_CAP: i32 = 128
+export const FLOWC_MONO_REQUEST_MAX_ARGS: i32 = 16
 export const FLOWC_MONO_REQUEST_PENDING: i32 = 0
 export const FLOWC_MONO_REQUEST_GENERATED: i32 = 1
 export const FLOWC_MONO_REQUEST_RESOLVED_EXISTING: i32 = 2
@@ -19,6 +23,8 @@ export struct FlowcMonoRequests {
     names: ptr<u8>,
     states: ptr<i32>,
     kinds: ptr<i32>,
+    arg_counts: ptr<i32>,
+    arg_types: ptr<u8>,
     len: i32,
     cap: i32,
     cursor: i32,
@@ -29,29 +35,46 @@ function mono_request_row(set: FlowcMonoRequests, index: i32) -> ptr<u8> {
     return set.names + (index * FLOWC_MONO_REQUEST_NAME_CAP)
 }
 
+function mono_request_arg_row(set: FlowcMonoRequests, index: i32, arg_index: i32) -> ptr<u8> {
+    let row_index: i32 = index * FLOWC_MONO_REQUEST_MAX_ARGS + arg_index
+    return set.arg_types + (row_index * FLOWC_MONO_REQUEST_TYPE_CAP)
+}
+
 export function flowc_mono_requests_init(cap: i32) -> FlowcMonoRequests {
     if cap <= 0 {
         return FlowcMonoRequests {
             names: null, states: null, kinds: null,
+            arg_counts: null, arg_types: null,
             len: 0, cap: 0, cursor: 0, err: 1
         }
     }
     let names: ptr<u8> = malloc((cap as i64) * FLOWC_MONO_REQUEST_NAME_CAP)
     let states_raw: ptr<u8> = malloc((cap as i64) * 4)
     let kinds_raw: ptr<u8> = malloc((cap as i64) * 4)
-    if names == null or states_raw == null or kinds_raw == null {
+    let counts_raw: ptr<u8> = malloc((cap as i64) * 4)
+    let arg_rows: i64 = (cap as i64) * FLOWC_MONO_REQUEST_MAX_ARGS
+    let arg_types: ptr<u8> = malloc(arg_rows * FLOWC_MONO_REQUEST_TYPE_CAP)
+    if names == null or states_raw == null or kinds_raw == null or counts_raw == null or arg_types == null {
         if names != null { free(names) }
         if states_raw != null { free(states_raw) }
         if kinds_raw != null { free(kinds_raw) }
+        if counts_raw != null { free(counts_raw) }
+        if arg_types != null { free(arg_types) }
         return FlowcMonoRequests {
             names: null, states: null, kinds: null,
+            arg_counts: null, arg_types: null,
             len: 0, cap: 0, cursor: 0, err: 1
         }
     }
     let states: ptr<i32> = states_raw as ptr<i32>
     let kinds: ptr<i32> = kinds_raw as ptr<i32>
+    let counts: ptr<i32> = counts_raw as ptr<i32>
     return FlowcMonoRequests {
-        names: names, states: states, kinds: kinds,
+        names: names,
+        states: states,
+        kinds: kinds,
+        arg_counts: counts,
+        arg_types: arg_types,
         len: 0, cap: cap, cursor: 0, err: 0
     }
 }
@@ -70,6 +93,15 @@ export function flowc_mono_requests_free(set: ptr<FlowcMonoRequests>) {
         let raw: ptr<u8> = set[0].kinds as ptr<u8>
         free(raw)
         set[0].kinds = null
+    }
+    if set[0].arg_counts != null {
+        let raw: ptr<u8> = set[0].arg_counts as ptr<u8>
+        free(raw)
+        set[0].arg_counts = null
+    }
+    if set[0].arg_types != null {
+        free(set[0].arg_types)
+        set[0].arg_types = null
     }
     set[0].len = 0
     set[0].cap = 0
@@ -133,8 +165,88 @@ export function flowc_mono_requests_add(
     row[n] = 0
     set[0].states[index] = FLOWC_MONO_REQUEST_PENDING
     set[0].kinds[index] = kind
+    set[0].arg_counts[index] = 0
     set[0].len = index + 1
     return index
+}
+
+# Attach one ordered canonical concrete type argument. Reattaching the same
+# request/value pair is idempotent. New arguments must be appended in order;
+# gaps and conflicting values are rejected so a deduplicated request cannot be
+# silently reinterpreted by a later discovery path.
+export function flowc_mono_requests_set_arg(
+    set: ptr<FlowcMonoRequests>,
+    index: i32,
+    arg_index: i32,
+    concrete_type: string
+) -> i32 {
+    if set[0].err != 0 or index < 0 or index >= set[0].len {
+        return 0 - 1
+    }
+    if arg_index < 0 or arg_index >= FLOWC_MONO_REQUEST_MAX_ARGS {
+        return 0 - 1
+    }
+    let count: i32 = set[0].arg_counts[index]
+    if arg_index > count {
+        return 0 - 1
+    }
+
+    let value: ptr<u8> = concrete_type as ptr<u8>
+    let n: i32 = strlen(value) as i32
+    if n <= 0 or n + 1 > FLOWC_MONO_REQUEST_TYPE_CAP {
+        return 0 - 1
+    }
+    let row: ptr<u8> = mono_request_arg_row(set[0], index, arg_index)
+
+    if arg_index < count {
+        if strcmp(row, value) == 0 {
+            return 0
+        }
+        return 0 - 1
+    }
+
+    let mut i: i32 = 0
+    while i < n {
+        row[i] = value[i]
+        i = i + 1
+    }
+    row[n] = 0
+    set[0].arg_counts[index] = count + 1
+    return 0
+}
+
+export function flowc_mono_requests_arg_count(set: FlowcMonoRequests, index: i32) -> i32 {
+    if set.err != 0 or index < 0 or index >= set.len or set.arg_counts == null {
+        return 0 - 1
+    }
+    return set.arg_counts[index]
+}
+
+export function flowc_mono_requests_arg(
+    set: FlowcMonoRequests,
+    index: i32,
+    arg_index: i32,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    if set.err != 0 or index < 0 or index >= set.len or out == null or out_cap <= 0 {
+        return 0 - 1
+    }
+    if arg_index < 0 or arg_index >= set.arg_counts[index] {
+        return 0 - 1
+    }
+    let row: ptr<u8> = mono_request_arg_row(set, index, arg_index)
+    let n: i32 = strlen(row) as i32
+    if n + 1 > out_cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = row[i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
 }
 
 # Return the next pending request index in insertion order, or -1 when exhausted.

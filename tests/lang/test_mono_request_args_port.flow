@@ -1,0 +1,101 @@
+# Tests for concrete type arguments retained by FlowcMonoRequests.
+
+import "compiler/src/mono_requests.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(4)
+    if reqs.err != 0 {
+        return 90
+    }
+
+    let s: i32 = flowc_mono_requests_add(&reqs, "Pair_i32_ptr", 0)
+    if s < 0 {
+        return 91
+    }
+    if flowc_mono_requests_arg_count(reqs, s) != 0 {
+        puts("FAIL: initial arg count")
+        return 1
+    }
+    if flowc_mono_requests_set_arg(&reqs, s, 1, "ptr_i32") != -1 {
+        puts("FAIL: argument gap accepted")
+        return 2
+    }
+    if flowc_mono_requests_set_arg(&reqs, s, 0, "i32") != 0 {
+        puts("FAIL: first arg")
+        return 3
+    }
+    if flowc_mono_requests_set_arg(&reqs, s, 1, "ptr_i32") != 0 {
+        puts("FAIL: second arg")
+        return 4
+    }
+    if flowc_mono_requests_arg_count(reqs, s) != 2 {
+        puts("FAIL: appended arg count")
+        return 5
+    }
+
+    # Rediscovery of the same request/value tuple is idempotent.
+    if flowc_mono_requests_add(&reqs, "Pair_i32_ptr", 0) != s {
+        puts("FAIL: request dedup")
+        return 6
+    }
+    if flowc_mono_requests_set_arg(&reqs, s, 0, "i32") != 0 {
+        puts("FAIL: idempotent arg 0")
+        return 7
+    }
+    if flowc_mono_requests_set_arg(&reqs, s, 1, "ptr_i32") != 0 {
+        puts("FAIL: idempotent arg 1")
+        return 8
+    }
+    if flowc_mono_requests_set_arg(&reqs, s, 1, "f32") != -1 {
+        puts("FAIL: conflicting concrete arg accepted")
+        return 9
+    }
+
+    let mut out: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if flowc_mono_requests_arg(reqs, s, 0, &out[0], 128) < 0 or strcmp(&out[0], "i32" as ptr<u8>) != 0 {
+        puts("FAIL: read arg 0")
+        return 10
+    }
+    if flowc_mono_requests_arg(reqs, s, 1, &out[0], 128) < 0 or strcmp(&out[0], "ptr_i32" as ptr<u8>) != 0 {
+        puts("FAIL: read compound canonical arg")
+        return 11
+    }
+    if flowc_mono_requests_arg(reqs, s, 2, &out[0], 128) != -1 {
+        puts("FAIL: out-of-range arg read")
+        return 12
+    }
+    if flowc_mono_requests_arg(reqs, s, 1, &out[0], 4) != -1 {
+        puts("FAIL: output capacity guard")
+        return 13
+    }
+
+    # Same specialization spelling in the function request namespace is
+    # independent, matching Python's separate request dictionaries.
+    let f: i32 = flowc_mono_requests_add(&reqs, "Pair_i32_ptr", 1)
+    if f < 0 or f == s {
+        puts("FAIL: cross-kind request identity")
+        return 14
+    }
+    if flowc_mono_requests_set_arg(&reqs, f, 0, "f32") != 0 {
+        puts("FAIL: cross-kind arg independence")
+        return 15
+    }
+    if flowc_mono_requests_arg_count(reqs, f) != 1 or flowc_mono_requests_arg_count(reqs, s) != 2 {
+        puts("FAIL: cross-kind arg counts")
+        return 16
+    }
+
+    if flowc_mono_requests_set_arg(&reqs, s, FLOWC_MONO_REQUEST_MAX_ARGS, "i32") != -1 {
+        puts("FAIL: max arg guard")
+        return 17
+    }
+
+    flowc_mono_requests_free(&reqs)
+    puts("All monomorph request argument tests passed")
+    return 0
+}
