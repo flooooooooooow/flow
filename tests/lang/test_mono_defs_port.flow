@@ -1,0 +1,96 @@
+# Tests for compiler/src/mono_defs.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let src: string = "Box identity concrete T"
+    let mut arena: AstArena = flowc_ast_new(32)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+
+    let tp: i32 = flowc_ast_alloc(&arena, AST_TYPE, 22, 23)
+    arena.nodes[tp].name_start = 22
+    arena.nodes[tp].name_end = 23
+
+    let box: i32 = flowc_ast_alloc(&arena, AST_STRUCT, 0, 3)
+    arena.nodes[box].name_start = 0
+    arena.nodes[box].name_end = 3
+    arena.nodes[box].b = tp
+
+    let identity: i32 = flowc_ast_alloc(&arena, AST_FN, 4, 12)
+    arena.nodes[identity].name_start = 4
+    arena.nodes[identity].name_end = 12
+    arena.nodes[identity].ival = 1
+    let exported_identity: i32 = flowc_ast_alloc(&arena, AST_EXPORT, 4, 12)
+    arena.nodes[exported_identity].a = identity
+
+    let concrete: i32 = flowc_ast_alloc(&arena, AST_FN, 13, 21)
+    arena.nodes[concrete].name_start = 13
+    arena.nodes[concrete].name_end = 21
+    arena.nodes[concrete].ival = 0
+
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, box)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, exported_identity)
+    arena.nodes[root].a = flowc_ast_chain_push(&arena, arena.nodes[root].a, concrete)
+
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(8)
+    if defs.err != 0 {
+        return 90
+    }
+    if flowc_mono_defs_collect_module(&defs, arena, root, src as ptr<u8>, 7) != 3 {
+        puts("FAIL: discovery count")
+        return 1
+    }
+
+    let si: i32 = flowc_mono_defs_find(defs, "Box", FLOWC_MONO_DEF_GENERIC_STRUCT)
+    if si < 0 or defs.module_ids[si] != 7 or defs.decl_ids[si] != box or defs.param_counts[si] != 1 {
+        puts("FAIL: generic struct")
+        return 2
+    }
+    let fi: i32 = flowc_mono_defs_find(defs, "identity", FLOWC_MONO_DEF_GENERIC_FUNCTION)
+    if fi < 0 or defs.module_ids[fi] != 7 or defs.decl_ids[fi] != identity or defs.param_counts[fi] != 1 {
+        puts("FAIL: generic function")
+        return 3
+    }
+    let ci: i32 = flowc_mono_defs_find(defs, "concrete", FLOWC_MONO_DEF_CONCRETE_FUNCTION)
+    if ci < 0 or defs.module_ids[ci] != 7 or defs.decl_ids[ci] != concrete or defs.param_counts[ci] != 0 {
+        puts("FAIL: concrete function")
+        return 4
+    }
+
+    let mut arena2: AstArena = flowc_ast_new(16)
+    let root2: i32 = flowc_ast_alloc(&arena2, AST_PROGRAM, 0, 0)
+    let tp2: i32 = flowc_ast_alloc(&arena2, AST_TYPE, 22, 23)
+    arena2.nodes[tp2].name_start = 22
+    arena2.nodes[tp2].name_end = 23
+    let box2: i32 = flowc_ast_alloc(&arena2, AST_STRUCT, 0, 3)
+    arena2.nodes[box2].name_start = 0
+    arena2.nodes[box2].name_end = 3
+    arena2.nodes[box2].b = tp2
+    arena2.nodes[root2].a = box2
+
+    if flowc_mono_defs_collect_module(&defs, arena2, root2, src as ptr<u8>, 9) != 0 {
+        puts("FAIL: replacement must not grow registry")
+        return 5
+    }
+    let si2: i32 = flowc_mono_defs_find(defs, "Box", FLOWC_MONO_DEF_GENERIC_STRUCT)
+    if si2 != si or defs.module_ids[si2] != 9 or defs.decl_ids[si2] != box2 {
+        puts("FAIL: later definition replacement")
+        return 6
+    }
+
+    if flowc_mono_defs_find(defs, "identity", FLOWC_MONO_DEF_CONCRETE_FUNCTION) != -1 {
+        puts("FAIL: kind-separated identity")
+        return 7
+    }
+
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena2)
+    flowc_ast_free(arena)
+    puts("All monomorph definition registry tests passed")
+    return 0
+}
