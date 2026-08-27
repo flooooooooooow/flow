@@ -1,0 +1,107 @@
+# Tests for compiler/src/mono_plan.flow.
+
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_plan.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(16)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(16)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+
+    # Longest-prefix resolution: foo_bar_i32 must resolve foo_bar, not foo.
+    let foo: i32 = flowc_mono_defs_add(&defs, "foo", FLOWC_MONO_DEF_GENERIC_FUNCTION, 1, 10, 1)
+    let foo_bar: i32 = flowc_mono_defs_add(&defs, "foo_bar", FLOWC_MONO_DEF_GENERIC_FUNCTION, 2, 20, 1)
+    if foo < 0 or foo_bar < 0 {
+        return 91
+    }
+    let r0: i32 = flowc_mono_requests_add(&reqs, "foo_bar_i32", 1)
+    let mut request_index: i32 = -1
+    let mut def_index: i32 = -1
+    if flowc_mono_plan_next(&reqs, defs, 0, &request_index, &def_index) != FLOWC_MONO_PLAN_READY {
+        puts("FAIL: longest-prefix ready")
+        return 1
+    }
+    if request_index != r0 or def_index != foo_bar {
+        puts("FAIL: longest-prefix definition")
+        return 2
+    }
+    if flowc_mono_plan_mark_generated(&reqs, request_index) != 0 {
+        puts("FAIL: generated mark")
+        return 3
+    }
+
+    # Function specialization collision resolves to an existing concrete name.
+    let size_def: i32 = flowc_mono_defs_add(&defs, "size", FLOWC_MONO_DEF_GENERIC_FUNCTION, 1, 30, 1)
+    let size_concrete: i32 = flowc_mono_defs_add(&defs, "size_i32", FLOWC_MONO_DEF_CONCRETE_FUNCTION, 1, 31, 0)
+    if size_def < 0 or size_concrete < 0 {
+        return 92
+    }
+    let r1: i32 = flowc_mono_requests_add(&reqs, "size_i32", 1)
+    if flowc_mono_plan_next(&reqs, defs, 0, &request_index, &def_index) != FLOWC_MONO_PLAN_RESOLVED_EXISTING {
+        puts("FAIL: concrete collision outcome")
+        return 4
+    }
+    if request_index != r1 or def_index != size_def {
+        puts("FAIL: collision source definition")
+        return 5
+    }
+    if reqs.states[r1] != FLOWC_MONO_REQUEST_RESOLVED_EXISTING {
+        puts("FAIL: collision terminal state")
+        return 6
+    }
+
+    # Struct requests ignore same-spelling concrete FUNCTION names.
+    let option: i32 = flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 3, 40, 1)
+    flowc_mono_defs_add(&defs, "Option_i32", FLOWC_MONO_DEF_CONCRETE_FUNCTION, 3, 41, 0)
+    let r2: i32 = flowc_mono_requests_add(&reqs, "Option_i32", 0)
+    if flowc_mono_plan_next(&reqs, defs, 1, &request_index, &def_index) != FLOWC_MONO_PLAN_READY {
+        puts("FAIL: struct request should not use fn collision")
+        return 7
+    }
+    if request_index != r2 or def_index != option {
+        puts("FAIL: struct definition")
+        return 8
+    }
+    flowc_mono_plan_mark_generated(&reqs, request_index)
+
+    # Missing definitions are reported explicitly rather than fabricated.
+    let missing: i32 = flowc_mono_requests_add(&reqs, "Ghost_i32", 0)
+    if flowc_mono_plan_next(&reqs, defs, 0, &request_index, &def_index) != FLOWC_MONO_PLAN_MISSING_DEF {
+        puts("FAIL: missing definition")
+        return 9
+    }
+    if request_index != missing or def_index != -1 {
+        puts("FAIL: missing definition outputs")
+        return 10
+    }
+
+    if flowc_mono_plan_next(&reqs, defs, 0, &request_index, &def_index) != FLOWC_MONO_PLAN_EXHAUSTED {
+        puts("FAIL: exhausted planner")
+        return 11
+    }
+
+    # Depth guard is independently observable on a fresh request stream.
+    let mut deep: FlowcMonoRequests = flowc_mono_requests_init(2)
+    flowc_mono_requests_add(&deep, "foo_i32", 1)
+    if flowc_mono_plan_next(&deep, defs, 64, &request_index, &def_index) != FLOWC_MONO_PLAN_DEPTH_EXCEEDED {
+        puts("FAIL: depth guard")
+        return 12
+    }
+    if def_index != foo {
+        puts("FAIL: depth still resolves definition")
+        return 13
+    }
+
+    flowc_mono_requests_free(&deep)
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    puts("All monomorph specialization planner tests passed")
+    return 0
+}
