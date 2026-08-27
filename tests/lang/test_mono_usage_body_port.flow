@@ -1,0 +1,80 @@
+# Tests for compiler/src/mono_usage_body.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_usage_body.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_option_i32(arena: ptr<AstArena>) -> i32 {
+    let arg: i32 = flowc_ast_alloc(arena, AST_TYPE, 0, 3)
+    arena[0].nodes[arg].name_start = 0
+    arena[0].nodes[arg].name_end = 3
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, 4, 10)
+    arena[0].nodes[ty].name_start = 4
+    arena[0].nodes[ty].name_end = 10
+    arena[0].nodes[ty].a = arg
+    return ty
+}
+
+function main() -> i32 {
+    let src: string = "i32 Option"
+    let mut arena: AstArena = flowc_ast_new(64)
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(4)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(8)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+    if flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 1, 1) < 0 {
+        return 91
+    }
+
+    let body: i32 = flowc_ast_alloc(&arena, AST_BLOCK, 0, 0)
+
+    # Local annotation.
+    let local: i32 = flowc_ast_alloc(&arena, AST_LET, 0, 0)
+    arena.nodes[local].a = make_option_i32(&arena)
+
+    # Cast target nested inside an expression statement.
+    let cast: i32 = flowc_ast_alloc(&arena, AST_CAST, 0, 0)
+    arena.nodes[cast].a = AST_NONE
+    arena.nodes[cast].b = make_option_i32(&arena)
+    let expr_stmt: i32 = flowc_ast_alloc(&arena, AST_EXPR_STMT, 0, 0)
+    arena.nodes[expr_stmt].a = cast
+
+    # A nested control-flow body must also be traversed.
+    let nested: i32 = flowc_ast_alloc(&arena, AST_BLOCK, 0, 0)
+    let nested_const: i32 = flowc_ast_alloc(&arena, AST_CONST, 0, 0)
+    arena.nodes[nested_const].a = make_option_i32(&arena)
+    arena.nodes[nested].a = nested_const
+    let loop: i32 = flowc_ast_alloc(&arena, AST_WHILE, 0, 0)
+    arena.nodes[loop].a = AST_NONE
+    arena.nodes[loop].b = nested
+
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, local)
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, expr_stmt)
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, loop)
+
+    if flowc_mono_scan_function_body_types(&reqs, defs, arena, src as ptr<u8>, body) != 3 {
+        puts("FAIL: body type-use site count")
+        return 1
+    }
+    if reqs.len != 1 or flowc_mono_requests_find(reqs, "Option_i32", 0) < 0 {
+        puts("FAIL: body request dedup")
+        return 2
+    }
+
+    if flowc_mono_scan_function_body_types(&reqs, defs, arena, src as ptr<u8>, local) != -1 {
+        puts("FAIL: non-block guard")
+        return 3
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All monomorph body type-usage tests passed")
+    return 0
+}
