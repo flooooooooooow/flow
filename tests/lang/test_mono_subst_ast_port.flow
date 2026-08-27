@@ -1,0 +1,147 @@
+# Tests for compiler/src/mono_subst_ast.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_subst.flow"
+import "compiler/src/mono_subst_ast.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function named_type(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let id: i32 = flowc_ast_alloc(arena, AST_TYPE, 0, 0)
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+    return id
+}
+
+function main() -> i32 {
+    let param_src: string = "T U"
+    let arg_src: string = "i32 f32 ptr Option"
+    let mut params: AstArena = flowc_ast_new(8)
+    let mut args: AstArena = flowc_ast_new(16)
+
+    let t: i32 = named_type(&params, 0, 1)
+    let u: i32 = named_type(&params, 2, 3)
+    params.nodes[t].next = u
+
+    let i32_ty: i32 = named_type(&args, 0, 3)
+    let ptr_ty: i32 = named_type(&args, 8, 11)
+    args.nodes[ptr_ty].a = i32_ty
+
+    let f32_ty: i32 = named_type(&args, 4, 7)
+    let option_ty: i32 = named_type(&args, 12, 18)
+    args.nodes[option_ty].a = f32_ty
+    args.nodes[ptr_ty].next = option_ty
+
+    let mut env: FlowcMonoSubst = flowc_mono_subst_init(8)
+    if flowc_mono_subst_add(&env, "Existing", "u64") != 0 {
+        return 90
+    }
+    if flowc_mono_subst_bind_ast_chains(
+        &env,
+        params,
+        param_src as ptr<u8>,
+        t,
+        args,
+        arg_src as ptr<u8>,
+        ptr_ty
+    ) != 2 {
+        puts("FAIL: cross-arena bind")
+        return 1
+    }
+    if env.len != 3 {
+        puts("FAIL: cross-arena length")
+        return 2
+    }
+
+    let out: array<u8, 128>
+    if flowc_mono_subst_get(env, "T", &out[0], 128) < 0 or strcmp(&out[0], "ptr_i32" as ptr<u8>) != 0 {
+        puts("FAIL: T canonical type")
+        return 3
+    }
+    if flowc_mono_subst_get(env, "U", &out[0], 128) < 0 or strcmp(&out[0], "Option_f32" as ptr<u8>) != 0 {
+        puts("FAIL: U canonical type")
+        return 4
+    }
+    if flowc_mono_subst_get(env, "Existing", &out[0], 128) < 0 or strcmp(&out[0], "u64" as ptr<u8>) != 0 {
+        puts("FAIL: pre-existing binding")
+        return 5
+    }
+
+    # Count mismatch must not append a partial substitution.
+    let before_mismatch: i32 = env.len
+    if flowc_mono_subst_bind_ast_chains(
+        &env,
+        params,
+        param_src as ptr<u8>,
+        t,
+        args,
+        arg_src as ptr<u8>,
+        ptr_ty
+    ) != 2 {
+        puts("FAIL: idempotent chain bind")
+        return 6
+    }
+    if env.len != before_mismatch {
+        puts("FAIL: idempotent bind changed length")
+        return 7
+    }
+
+    let mut short_params: AstArena = flowc_ast_new(4)
+    let only_t: i32 = named_type(&short_params, 0, 1)
+    let before_count_error: i32 = env.len
+    if flowc_mono_subst_bind_ast_chains(
+        &env,
+        short_params,
+        param_src as ptr<u8>,
+        only_t,
+        args,
+        arg_src as ptr<u8>,
+        ptr_ty
+    ) != -1 {
+        puts("FAIL: mismatched chain count")
+        return 8
+    }
+    if env.len != before_count_error {
+        puts("FAIL: count mismatch mutated environment")
+        return 9
+    }
+
+    # A later unrepresentable type must roll back an earlier append from the
+    # same request while preserving bindings that existed before the call.
+    let mut bad_params: AstArena = flowc_ast_new(8)
+    let p: i32 = named_type(&bad_params, 0, 1)
+    let q: i32 = named_type(&bad_params, 2, 3)
+    bad_params.nodes[p].next = q
+    let plain_i32: i32 = named_type(&args, 0, 3)
+    let fn_ty: i32 = named_type(&args, 0, 3)
+    args.nodes[fn_ty].ival = -1
+    args.nodes[plain_i32].next = fn_ty
+    let before_bad_type: i32 = env.len
+    if flowc_mono_subst_bind_ast_chains(
+        &env,
+        bad_params,
+        param_src as ptr<u8>,
+        p,
+        args,
+        arg_src as ptr<u8>,
+        plain_i32
+    ) != -1 {
+        puts("FAIL: unrepresentable concrete type")
+        return 10
+    }
+    if env.len != before_bad_type {
+        puts("FAIL: failed request did not roll back")
+        return 11
+    }
+
+    flowc_mono_subst_free(&env)
+    flowc_ast_free(bad_params)
+    flowc_ast_free(short_params)
+    flowc_ast_free(args)
+    flowc_ast_free(params)
+    puts("All cross-arena monomorph substitution tests passed")
+    return 0
+}
