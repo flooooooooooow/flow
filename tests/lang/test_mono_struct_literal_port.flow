@@ -1,0 +1,94 @@
+# Tests for compiler/src/mono_struct_literal.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_struct_literal.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_lit(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let id: i32 = flowc_ast_alloc(arena, AST_STRUCT_LIT, start, end)
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+    return id
+}
+
+function main() -> i32 {
+    let src: string = "Option_i32 Pair_i32_f32 Pair_i32_f32_extra my_box_i64 Unknown_i32"
+    let mut arena: AstArena = flowc_ast_new(16)
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(8)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(8)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+
+    flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 1, 1)
+    flowc_mono_defs_add(&defs, "Pair", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 2, 2)
+    flowc_mono_defs_add(&defs, "my", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 3, 1)
+    flowc_mono_defs_add(&defs, "my_box", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 4, 1)
+
+    let option: i32 = make_lit(&arena, 0, 10)
+    let pair: i32 = make_lit(&arena, 11, 23)
+    let pair_extra: i32 = make_lit(&arena, 24, 42)
+    let my_box: i32 = make_lit(&arena, 43, 53)
+    let unknown: i32 = make_lit(&arena, 54, 65)
+
+    if flowc_mono_request_struct_literal(&reqs, defs, arena, src as ptr<u8>, option) != 1 {
+        puts("FAIL: Option literal site")
+        return 1
+    }
+    if flowc_mono_requests_find(reqs, "Option_i32", 0) < 0 {
+        puts("FAIL: Option literal request")
+        return 2
+    }
+
+    if flowc_mono_request_struct_literal(&reqs, defs, arena, src as ptr<u8>, pair) != 1 {
+        puts("FAIL: Pair literal site")
+        return 3
+    }
+    if flowc_mono_requests_find(reqs, "Pair_i32_f32", 0) < 0 {
+        puts("FAIL: Pair literal request")
+        return 4
+    }
+
+    let before_extra: i32 = reqs.len
+    if flowc_mono_request_struct_literal(&reqs, defs, arena, src as ptr<u8>, pair_extra) != 1 {
+        puts("FAIL: excess suffix site")
+        return 5
+    }
+    if reqs.len != before_extra {
+        puts("FAIL: excess suffix must truncate and dedup")
+        return 6
+    }
+
+    if flowc_mono_request_struct_literal(&reqs, defs, arena, src as ptr<u8>, my_box) != 1 {
+        puts("FAIL: underscore generic site")
+        return 7
+    }
+    if flowc_mono_requests_find(reqs, "my_box_i64", 0) < 0 {
+        puts("FAIL: longest generic base")
+        return 8
+    }
+    if flowc_mono_requests_find(reqs, "my_box", 0) >= 0 {
+        puts("FAIL: shorter generic captured literal")
+        return 9
+    }
+
+    if flowc_mono_request_struct_literal(&reqs, defs, arena, src as ptr<u8>, unknown) != 0 {
+        puts("FAIL: unknown literal must be ignored")
+        return 10
+    }
+    if reqs.len != 3 {
+        puts("FAIL: request count")
+        return 11
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All monomorph struct-literal request tests passed")
+    return 0
+}
