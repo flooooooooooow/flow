@@ -42,7 +42,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 MANIFEST = DOCS / "nav.json"
 
-# Trees that are not documentation pages: vendored, generated, or presentation.
+# Trees that are not independently sidebar-indexed documentation pages:
+# vendored/generated/presentation content, or sub-sites with their own hub.
 SKIP_DIRS = {
     "formal",  # vendored Lean/mathlib
     "playground",  # a web app, copied verbatim
@@ -50,6 +51,7 @@ SKIP_DIRS = {
     "stylesheets",
     "generated",
     "demos",  # gallery media, indexed by its own overview pages
+    "comparisons",  # language pages, indexed by docs/comparison.md
 }
 
 
