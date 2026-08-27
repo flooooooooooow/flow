@@ -1,0 +1,153 @@
+# @module flowc.mono_struct_literal
+# @means  Discover generic struct specialization requests from parser-mangled
+#         struct-literal names without guessing type ASTs that no longer exist.
+
+import .ast { AstArena, AST_NONE, AST_STRUCT_LIT }
+import .mono_defs {
+    FlowcMonoDefs,
+    FLOWC_MONO_DEF_NAME_CAP,
+    FLOWC_MONO_DEF_GENERIC_STRUCT
+}
+import .mono_requests {
+    FlowcMonoRequests,
+    FLOWC_MONO_REQUEST_NAME_CAP,
+    flowc_mono_requests_add
+}
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+}
+
+function mono_struct_lit_def_row(defs: FlowcMonoDefs, index: i32) -> ptr<u8> {
+    return defs.names + (index * FLOWC_MONO_DEF_NAME_CAP)
+}
+
+function mono_struct_lit_prefix(name: ptr<u8>, name_len: i32, base: ptr<u8>) -> i32 {
+    let n: i32 = strlen(base) as i32
+    if n <= 0 or name_len <= n or name[n] != 95 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if name[i] != base[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function mono_struct_lit_copy_span(
+    src: ptr<u8>,
+    start: i32,
+    end: i32,
+    out: ptr<u8>,
+    cap: i32
+) -> i32 {
+    if src == null or out == null or start < 0 or end <= start {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+# Return one discovered request site, zero for a non-generic literal, or -1 on
+# malformed input/storage failure. Python's struct-literal path reconstructs
+# plain Type names from the parser-mangled suffix; the resulting request key is
+# therefore the literal spelling itself, except that suffix components beyond
+# the generic's declared arity are ignored.
+export function flowc_mono_request_struct_literal(
+    requests: ptr<FlowcMonoRequests>,
+    defs: FlowcMonoDefs,
+    arena: AstArena,
+    src: ptr<u8>,
+    literal: i32
+) -> i32 {
+    if requests[0].err != 0 or defs.err != 0 {
+        return 0 - 1
+    }
+    if literal == AST_NONE or literal < 0 or literal >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[literal].kind != AST_STRUCT_LIT {
+        return 0 - 1
+    }
+
+    let mut name: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let name_len: i32 = mono_struct_lit_copy_span(
+        src,
+        arena.nodes[literal].name_start,
+        arena.nodes[literal].name_end,
+        &name[0],
+        FLOWC_MONO_REQUEST_NAME_CAP
+    )
+    if name_len < 0 {
+        return 0 - 1
+    }
+
+    let mut best: i32 = 0 - 1
+    let mut best_len: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < defs.len {
+        if defs.kinds[i] == FLOWC_MONO_DEF_GENERIC_STRUCT {
+            let base: ptr<u8> = mono_struct_lit_def_row(defs, i)
+            if mono_struct_lit_prefix(&name[0], name_len, base) == 1 {
+                let n: i32 = strlen(base) as i32
+                if n > best_len {
+                    best = i
+                    best_len = n
+                }
+            }
+        }
+        i = i + 1
+    }
+    if best < 0 {
+        return 0
+    }
+
+    let param_count: i32 = defs.param_counts[best]
+    if param_count <= 0 {
+        return 0
+    }
+
+    let suffix_start: i32 = best_len + 1
+    let mut parts: i32 = 1
+    let mut p: i32 = suffix_start
+    while p < name_len {
+        if name[p] == 95 {
+            parts = parts + 1
+        }
+        p = p + 1
+    }
+
+    let mut request_len: i32 = name_len
+    if parts > param_count {
+        let mut seen: i32 = 0
+        p = suffix_start
+        while p < name_len {
+            if name[p] == 95 {
+                seen = seen + 1
+                if seen == param_count {
+                    request_len = p
+                    p = name_len
+                }
+            }
+            p = p + 1
+        }
+        name[request_len] = 0
+    }
+
+    if flowc_mono_requests_add(requests, &name[0] as string, 0) < 0 {
+        return 0 - 1
+    }
+    return 1
+}
