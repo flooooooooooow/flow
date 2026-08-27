@@ -1,0 +1,192 @@
+# @module flowc.mono_subst_render
+# @means  Render Stage-A AST_TYPE trees with generic leaf substitutions applied.
+
+import .ast { AstArena, AST_NONE, AST_TYPE }
+import .mono_subst {
+    FlowcMonoSubst,
+    flowc_mono_subst_get
+}
+
+extern {
+    function strlen(s: ptr<u8>) -> i64
+}
+
+const FLOWC_MONO_RENDER_MAX_DEPTH: i32 = 32
+const FLOWC_MONO_RENDER_TMP_CAP: i32 = 128
+
+function mono_render_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    if end - start != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[start + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function mono_render_append_span(
+    src: ptr<u8>, start: i32, end: i32,
+    out: ptr<u8>, cap: i32, off: i32
+) -> i32 {
+    if src == null or start < 0 or end <= start or off < 0 {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if off + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[off + i] = src[start + i]
+        i = i + 1
+    }
+    out[off + n] = 0
+    return off + n
+}
+
+function mono_render_append_lit(out: ptr<u8>, cap: i32, off: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit as ptr<u8>
+    let n: i32 = strlen(p) as i32
+    if off < 0 or off + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[off + i] = p[i]
+        i = i + 1
+    }
+    out[off + n] = 0
+    return off + n
+}
+
+function mono_render_append_i32(out: ptr<u8>, cap: i32, off: i32, value: i32) -> i32 {
+    if value < 0 or off < 0 {
+        return 0 - 1
+    }
+    let mut divisor: i32 = 1
+    while value / divisor >= 10 {
+        divisor = divisor * 10
+    }
+    let mut d: i32 = divisor
+    let mut pos: i32 = off
+    while d > 0 {
+        if pos + 2 > cap {
+            return 0 - 1
+        }
+        let digit: i32 = (value / d) % 10
+        out[pos] = 48 + digit
+        pos = pos + 1
+        d = d / 10
+    }
+    out[pos] = 0
+    return pos
+}
+
+function mono_render_leaf(
+    env: FlowcMonoSubst,
+    src: ptr<u8>, start: i32, end: i32,
+    out: ptr<u8>, cap: i32, off: i32
+) -> i32 {
+    if end <= start or end - start >= FLOWC_MONO_RENDER_TMP_CAP {
+        return 0 - 1
+    }
+    let mut name: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let n: i32 = end - start
+    let mut i: i32 = 0
+    while i < n {
+        name[i] = src[start + i]
+        i = i + 1
+    }
+    name[n] = 0
+
+    let mut concrete: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let got: i32 = flowc_mono_subst_get(env, &name[0] as string, &concrete[0], FLOWC_MONO_RENDER_TMP_CAP)
+    if got >= 0 {
+        return mono_render_append_lit(out, cap, off, &concrete[0] as string)
+    }
+    return mono_render_append_span(src, start, end, out, cap, off)
+}
+
+function mono_render_at(
+    env: FlowcMonoSubst,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    out: ptr<u8>,
+    cap: i32,
+    off: i32,
+    depth: i32
+) -> i32 {
+    if depth >= FLOWC_MONO_RENDER_MAX_DEPTH {
+        return 0 - 1
+    }
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0 - 1
+    }
+    if arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].ival < 0 {
+        return 0 - 1
+    }
+
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+    if inner == AST_NONE {
+        return mono_render_leaf(env, src, ns, ne, out, cap, off)
+    }
+
+    if mono_render_span_is(src, ns, ne, "ptr") == 1 {
+        let p: i32 = mono_render_append_lit(out, cap, off, "ptr_")
+        if p < 0 { return 0 - 1 }
+        return mono_render_at(env, arena, src, inner, out, cap, p, depth + 1)
+    }
+
+    if mono_render_span_is(src, ns, ne, "array") == 1 {
+        let mut p: i32 = mono_render_append_lit(out, cap, off, "array_")
+        if p < 0 { return 0 - 1 }
+        if arena.nodes[ty].ival > 0 {
+            p = mono_render_append_i32(out, cap, p, arena.nodes[ty].ival)
+            if p < 0 { return 0 - 1 }
+            p = mono_render_append_lit(out, cap, p, "_")
+            if p < 0 { return 0 - 1 }
+        }
+        return mono_render_at(env, arena, src, inner, out, cap, p, depth + 1)
+    }
+
+    # Generic application / vector: preserve the outer canonical name and
+    # substitute recursively within every type argument.
+    let mut p: i32 = mono_render_append_span(src, ns, ne, out, cap, off)
+    if p < 0 { return 0 - 1 }
+    let mut arg: i32 = inner
+    while arg != AST_NONE {
+        p = mono_render_append_lit(out, cap, p, "_")
+        if p < 0 { return 0 - 1 }
+        p = mono_render_at(env, arena, src, arg, out, cap, p, depth + 1)
+        if p < 0 { return 0 - 1 }
+        arg = arena.nodes[arg].next
+    }
+    return p
+}
+
+# Render one canonical type name after applying any bound generic leaf
+# substitutions. Unbound leaves are preserved unchanged. Returns bytes written,
+# or -1 for malformed/unrepresentable AST or insufficient output capacity.
+export function flowc_mono_subst_render_type(
+    env: FlowcMonoSubst,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    out: ptr<u8>,
+    out_cap: i32
+) -> i32 {
+    if env.err != 0 or out == null or out_cap <= 0 {
+        return 0 - 1
+    }
+    out[0] = 0
+    return mono_render_at(env, arena, src, ty, out, out_cap, 0, 0)
+}
