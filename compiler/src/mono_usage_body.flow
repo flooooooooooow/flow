@@ -1,6 +1,6 @@
 # @module flowc.mono_usage_body
-# @means  Recursive body/expression traversal for generic type usage discovery.
-#         Function-call and struct-literal request semantics remain separate.
+# @means  Recursive body/expression traversal for native monomorph request
+#         discovery, including type uses, generic calls and struct literals.
 
 import .ast {
     AstArena, AST_NONE,
@@ -12,6 +12,8 @@ import .ast {
 import .mono_defs { FlowcMonoDefs }
 import .mono_requests { FlowcMonoRequests }
 import .mono_usage { flowc_mono_scan_type_usage }
+import .mono_function_call { flowc_mono_request_function_call }
+import .mono_struct_literal { flowc_mono_request_struct_literal }
 
 function mono_usage_body_expr(
     requests: ptr<FlowcMonoRequests>,
@@ -96,12 +98,27 @@ function mono_usage_body_expr(
         return mono_usage_body_expr(requests, defs, arena, src, arena.nodes[id].a)
     }
 
-    if kind == AST_CALL or kind == AST_ARRAY_LIT {
+    if kind == AST_CALL {
+        let request_sites: i32 = flowc_mono_request_function_call(requests, defs, arena, src, id)
+        if request_sites < 0 {
+            return 0 - 1
+        }
+        let arg_sites: i32 = mono_usage_body_expr_chain(requests, defs, arena, src, arena.nodes[id].a)
+        if arg_sites < 0 {
+            return 0 - 1
+        }
+        return request_sites + arg_sites
+    }
+
+    if kind == AST_ARRAY_LIT {
         return mono_usage_body_expr_chain(requests, defs, arena, src, arena.nodes[id].a)
     }
 
     if kind == AST_STRUCT_LIT {
-        let mut found: i32 = 0
+        let mut found: i32 = flowc_mono_request_struct_literal(requests, defs, arena, src, id)
+        if found < 0 {
+            return 0 - 1
+        }
         let mut field: i32 = arena.nodes[id].a
         while field != AST_NONE {
             if field < 0 or field >= arena.len {
