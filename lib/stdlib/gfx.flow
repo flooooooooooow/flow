@@ -37,6 +37,7 @@ extern { function flow_gfx_run(ctx: ptr<void>, max_frames: i32) -> i32 }
 extern { function flow_gfx_time_ms(ctx: ptr<void>) -> f64 }
 extern { function flow_gfx_wait_frame(ctx: ptr<void>, target_fps: i32) -> void }
 extern { function flow_gfx_mouse(ctx: ptr<void>, out: ptr<i32>) -> i32 }
+extern { function flow_gfx_text(ctx: ptr<void>, x: i32, y: i32, text: string, size: i32, r: u8, g: u8, b: u8) -> void }
 
 export function gfx_open(w: i32, h: i32, title: string) -> Gfx {
     return Gfx { ctx: flow_gfx_init(w, h, title) }
@@ -64,6 +65,13 @@ export function gfx_clear(g: Gfx, r: i32, g2: i32, b: i32) -> void {
 
 export function gfx_fill_rect(g: Gfx, x: i32, y: i32, w: i32, h: i32, r: i32, g2: i32, b: i32) -> void {
     flow_gfx_fill_rect(g.ctx, x, y, w, h, r, g2, b)
+}
+
+# Native platform text. The macOS backend uses CoreText/SF Pro; other
+# backends provide a link-compatible fallback.
+export function gfx_text(g: Gfx, x: i32, y: i32, text: string, size: i32,
+                         r: i32, g2: i32, b: i32) -> void {
+    flow_gfx_text(g.ctx, x, y, text, size, r, g2, b)
 }
 
 # Blit a packed RGB8 buffer (w*h*3 bytes, row-major) at (x, y).
