@@ -8,6 +8,36 @@ extern {
 }
 
 function main() -> i32 {
+    # Python keeps struct_requests and function_requests in separate dicts.
+    # The same mangled spelling must therefore remain distinct across kinds.
+    let mut kind_set: FlowcMonoRequests = flowc_mono_requests_init(3)
+    if kind_set.err != 0 {
+        return 89
+    }
+    let same_struct: i32 = flowc_mono_requests_add(&kind_set, "Same_i32", 0)
+    let same_fn: i32 = flowc_mono_requests_add(&kind_set, "Same_i32", 1)
+    if same_struct != 0 or same_fn != 1 or kind_set.len != 2 {
+        puts("FAIL: cross-kind identity")
+        return 1
+    }
+    if flowc_mono_requests_find(kind_set, "Same_i32", 0) != same_struct {
+        puts("FAIL: find struct request")
+        return 2
+    }
+    if flowc_mono_requests_find(kind_set, "Same_i32", 1) != same_fn {
+        puts("FAIL: find function request")
+        return 3
+    }
+    if flowc_mono_requests_add(&kind_set, "Same_i32", 0) != same_struct or kind_set.len != 2 {
+        puts("FAIL: same-kind struct dedup")
+        return 4
+    }
+    if flowc_mono_requests_add(&kind_set, "Same_i32", 1) != same_fn or kind_set.len != 2 {
+        puts("FAIL: same-kind function dedup")
+        return 5
+    }
+    flowc_mono_requests_free(&kind_set)
+
     let mut set: FlowcMonoRequests = flowc_mono_requests_init(4)
     if set.err != 0 {
         return 90
@@ -17,87 +47,87 @@ function main() -> i32 {
     let b: i32 = flowc_mono_requests_add(&set, "identity_i32", 1)
     if a != 0 or b != 1 {
         puts("FAIL: insertion order")
-        return 1
+        return 6
     }
     if flowc_mono_requests_add(&set, "Option_i32", 0) != a or set.len != 2 {
         puts("FAIL: dedup")
-        return 2
+        return 7
     }
     if set.kinds[a] != 0 or set.kinds[b] != 1 {
         puts("FAIL: request kind")
-        return 3
+        return 8
     }
 
     let mut name: array<u8, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     if flowc_mono_requests_name(set, a, &name[0], 64) < 0 {
         puts("FAIL: name copy")
-        return 4
+        return 9
     }
     if strcmp(&name[0], "Option_i32" as ptr<u8>) != 0 {
         puts("FAIL: name value")
-        return 5
+        return 10
     }
 
     let first: i32 = flowc_mono_requests_next(&set)
     if first != a {
         puts("FAIL: first pending")
-        return 6
+        return 11
     }
     if flowc_mono_requests_mark(&set, first, FLOWC_MONO_REQUEST_GENERATED) != 0 {
         puts("FAIL: mark generated")
-        return 7
+        return 12
     }
 
     # Append while the worklist is already being consumed; next() must see it.
     let c: i32 = flowc_mono_requests_add(&set, "Pair_i32_f32", 0)
     if c != 2 {
         puts("FAIL: dynamic append")
-        return 8
+        return 13
     }
     let second: i32 = flowc_mono_requests_next(&set)
     if second != b {
         puts("FAIL: second pending")
-        return 9
+        return 14
     }
     if flowc_mono_requests_mark(&set, second, FLOWC_MONO_REQUEST_RESOLVED_EXISTING) != 0 {
         puts("FAIL: mark resolved existing")
-        return 10
+        return 15
     }
     let third: i32 = flowc_mono_requests_next(&set)
     if third != c {
         puts("FAIL: dynamic request observed")
-        return 11
+        return 16
     }
     if flowc_mono_requests_mark(&set, third, FLOWC_MONO_REQUEST_GENERATED) != 0 {
         puts("FAIL: mark third")
-        return 12
+        return 17
     }
     if flowc_mono_requests_next(&set) != -1 {
         puts("FAIL: exhausted worklist")
-        return 13
+        return 18
     }
 
     if flowc_mono_requests_mark(&set, 99, FLOWC_MONO_REQUEST_GENERATED) != -1 {
         puts("FAIL: invalid index guard")
-        return 14
+        return 19
     }
     if flowc_mono_requests_mark(&set, a, FLOWC_MONO_REQUEST_PENDING) != -1 {
         puts("FAIL: invalid terminal state")
-        return 15
+        return 20
     }
     if flowc_mono_requests_name(set, a, &name[0], 4) != -1 {
         puts("FAIL: name output guard")
-        return 16
+        return 21
     }
 
     let d: i32 = flowc_mono_requests_add(&set, "Result_i32_string", 0)
     if d != 3 {
         puts("FAIL: last capacity slot")
-        return 17
+        return 22
     }
     if flowc_mono_requests_add(&set, "TooMany_i32", 0) != -1 or set.err == 0 {
         puts("FAIL: capacity poison")
-        return 18
+        return 23
     }
 
     flowc_mono_requests_free(&set)
