@@ -1,0 +1,72 @@
+# Integration tests for composed monomorph body request discovery.
+
+import "compiler/src/ast.flow"
+import "compiler/src/mono_defs.flow"
+import "compiler/src/mono_requests.flow"
+import "compiler/src/mono_usage_body.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_name_node(arena: ptr<AstArena>, kind: i32, start: i32, end: i32) -> i32 {
+    let id: i32 = flowc_ast_alloc(arena, kind, start, end)
+    arena[0].nodes[id].name_start = start
+    arena[0].nodes[id].name_end = end
+    return id
+}
+
+function main() -> i32 {
+    let src: string = "i32 Option_i32 identity"
+    let mut arena: AstArena = flowc_ast_new(32)
+    let mut defs: FlowcMonoDefs = flowc_mono_defs_init(8)
+    let mut reqs: FlowcMonoRequests = flowc_mono_requests_init(8)
+    if defs.err != 0 or reqs.err != 0 {
+        return 90
+    }
+    flowc_mono_defs_add(&defs, "Option", FLOWC_MONO_DEF_GENERIC_STRUCT, 0, 1, 1)
+    flowc_mono_defs_add(&defs, "identity", FLOWC_MONO_DEF_GENERIC_FUNCTION, 0, 2, 1)
+
+    let body: i32 = flowc_ast_alloc(&arena, AST_BLOCK, 0, 0)
+
+    # Standalone parser-mangled struct literal.
+    let lit1: i32 = make_name_node(&arena, AST_STRUCT_LIT, 4, 14)
+    let stmt1: i32 = flowc_ast_alloc(&arena, AST_EXPR_STMT, 0, 0)
+    arena.nodes[stmt1].a = lit1
+
+    # identity<i32>(Option_i32 { ... }) requests the function and recursively
+    # sees the same struct specialization through the argument expression.
+    let call: i32 = make_name_node(&arena, AST_CALL, 15, 23)
+    let type_arg: i32 = make_name_node(&arena, AST_TYPE, 0, 3)
+    arena.nodes[call].b = type_arg
+    let lit2: i32 = make_name_node(&arena, AST_STRUCT_LIT, 4, 14)
+    arena.nodes[call].a = lit2
+    let stmt2: i32 = flowc_ast_alloc(&arena, AST_EXPR_STMT, 0, 0)
+    arena.nodes[stmt2].a = call
+
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, stmt1)
+    arena.nodes[body].a = flowc_ast_chain_push(&arena, arena.nodes[body].a, stmt2)
+
+    if flowc_mono_scan_function_body_types(&reqs, defs, arena, src as ptr<u8>, body) != 3 {
+        puts("FAIL: composed request site count")
+        return 1
+    }
+    if reqs.len != 2 {
+        puts("FAIL: composed request dedup")
+        return 2
+    }
+    if flowc_mono_requests_find(reqs, "Option_i32", 0) < 0 {
+        puts("FAIL: struct request")
+        return 3
+    }
+    if flowc_mono_requests_find(reqs, "identity_i32", 1) < 0 {
+        puts("FAIL: function request")
+        return 4
+    }
+
+    flowc_mono_requests_free(&reqs)
+    flowc_mono_defs_free(&defs)
+    flowc_ast_free(arena)
+    puts("All composed monomorph body request tests passed")
+    return 0
+}
