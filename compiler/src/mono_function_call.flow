@@ -13,13 +13,15 @@ import .mono_defs {
 import .mono_requests {
     FlowcMonoRequests,
     FLOWC_MONO_REQUEST_NAME_CAP,
-    flowc_mono_requests_add
+    FLOWC_MONO_REQUEST_TYPE_CAP,
+    flowc_mono_requests_add,
+    flowc_mono_requests_set_arg
 }
 import .mono_type_encode { flowc_mono_type_encode }
+import .type_name { flowc_type_name_into }
 
 extern {
     function strlen(s: ptr<u8>) -> i64
-    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
 }
 
 function mono_fn_def_row(defs: FlowcMonoDefs, index: i32) -> ptr<u8> {
@@ -27,6 +29,25 @@ function mono_fn_def_row(defs: FlowcMonoDefs, index: i32) -> ptr<u8> {
 }
 
 function mono_fn_copy_span(
+    src: ptr<u8>, start: i32, end: i32, out: ptr<u8>, cap: i32
+) -> i32 {
+    if src == null or out == null or start < 0 or end <= start {
+        return 0 - 1
+    }
+    let n: i32 = end - start
+    if n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return n
+}
+
+function mono_fn_copy_range(
     src: ptr<u8>, start: i32, end: i32, out: ptr<u8>, cap: i32
 ) -> i32 {
     if src == null or out == null or start < 0 or end <= start {
@@ -75,9 +96,6 @@ function mono_fn_suffix_parts(name: ptr<u8>, start: i32, name_len: i32) -> i32 {
     return parts
 }
 
-# Return a generic function definition matched by parser-mangled call spelling.
-# Python accepts any non-empty suffix for one type parameter, and exactly N
-# underscore-separated suffix parts for N>1. Longest valid base wins.
 function mono_fn_match_mangled(
     defs: FlowcMonoDefs,
     name: ptr<u8>,
@@ -129,8 +147,49 @@ function mono_fn_append(
     return offset + n
 }
 
-# Return one discovered request site, zero when the call is not currently
-# requestable, or -1 on malformed input/storage failure.
+function mono_fn_attach_mangled_args(
+    requests: ptr<FlowcMonoRequests>,
+    request_index: i32,
+    defs: FlowcMonoDefs,
+    def_index: i32,
+    name: ptr<u8>,
+    name_len: i32
+) -> i32 {
+    let base: ptr<u8> = mono_fn_def_row(defs, def_index)
+    let base_len: i32 = strlen(base) as i32
+    let count: i32 = defs.param_counts[def_index]
+    let suffix_start: i32 = base_len + 1
+    if count == 1 {
+        let mut value: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if mono_fn_copy_range(name, suffix_start, name_len, &value[0], FLOWC_MONO_REQUEST_TYPE_CAP) < 0 {
+            return 0 - 1
+        }
+        return flowc_mono_requests_set_arg(requests, request_index, 0, &value[0] as string)
+    }
+
+    let mut part_start: i32 = suffix_start
+    let mut arg_index: i32 = 0
+    let mut i: i32 = suffix_start
+    while i <= name_len {
+        if i == name_len or name[i] == 95 {
+            let mut value: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            if mono_fn_copy_range(name, part_start, i, &value[0], FLOWC_MONO_REQUEST_TYPE_CAP) < 0 {
+                return 0 - 1
+            }
+            if flowc_mono_requests_set_arg(requests, request_index, arg_index, &value[0] as string) < 0 {
+                return 0 - 1
+            }
+            arg_index = arg_index + 1
+            part_start = i + 1
+        }
+        i = i + 1
+    }
+    if arg_index != count {
+        return 0 - 1
+    }
+    return 0
+}
+
 export function flowc_mono_request_function_call(
     requests: ptr<FlowcMonoRequests>,
     defs: FlowcMonoDefs,
@@ -145,7 +204,7 @@ export function flowc_mono_request_function_call(
         return 0 - 1
     }
 
-    let mut name: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut name: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     let name_len: i32 = mono_fn_copy_span(
         src,
         arena.nodes[call].name_start,
@@ -157,24 +216,27 @@ export function flowc_mono_request_function_call(
         return 0 - 1
     }
 
-    # Python first checks exact generic name, otherwise parser-mangled spelling.
     let exact: i32 = flowc_mono_defs_find(defs, &name[0] as string, FLOWC_MONO_DEF_GENERIC_FUNCTION)
     if exact < 0 {
         let mangled: i32 = mono_fn_match_mangled(defs, &name[0], name_len)
         if mangled < 0 {
             return 0
         }
-        if flowc_mono_requests_add(requests, &name[0] as string, 1) < 0 {
+        let request_index: i32 = flowc_mono_requests_add(requests, &name[0] as string, 1)
+        if request_index < 0 {
+            return 0 - 1
+        }
+        if mono_fn_attach_mangled_args(requests, request_index, defs, mangled, &name[0], name_len) < 0 {
+            requests[0].err = 1
             return 0 - 1
         }
         return 1
     }
 
-    # Explicit type args survive Stage-A parsing in AST_CALL.b.
     let type_args: i32 = arena.nodes[call].b
     let count: i32 = defs.param_counts[exact]
     if type_args != AST_NONE and flowc_ast_chain_len(arena, type_args) == count {
-        let mut request: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut request: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         let mut off: i32 = mono_fn_append(&request[0], FLOWC_MONO_REQUEST_NAME_CAP, 0, &name[0])
         if off < 0 {
             return 0 - 1
@@ -187,7 +249,7 @@ export function flowc_mono_request_function_call(
             request[off] = 95
             off = off + 1
             request[off] = 0
-            let mut encoded: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            let mut encoded: array<u8, 192> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             if flowc_mono_type_encode(arena, src, arg, &encoded[0], FLOWC_MONO_REQUEST_NAME_CAP) < 0 {
                 return 0 - 1
             }
@@ -197,14 +259,27 @@ export function flowc_mono_request_function_call(
             }
             arg = arena.nodes[arg].next
         }
-        if flowc_mono_requests_add(requests, &request[0] as string, 1) < 0 {
+        let request_index: i32 = flowc_mono_requests_add(requests, &request[0] as string, 1)
+        if request_index < 0 {
             return 0 - 1
+        }
+        arg = type_args
+        let mut arg_index: i32 = 0
+        while arg != AST_NONE {
+            let mut canonical: array<u8, 128> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            if flowc_type_name_into(arena, src, arg, &canonical[0], FLOWC_MONO_REQUEST_TYPE_CAP) < 0 {
+                requests[0].err = 1
+                return 0 - 1
+            }
+            if flowc_mono_requests_set_arg(requests, request_index, arg_index, &canonical[0] as string) < 0 {
+                requests[0].err = 1
+                return 0 - 1
+            }
+            arg_index = arg_index + 1
+            arg = arena.nodes[arg].next
         }
         return 1
     }
 
-    # Value-argument inference is the remaining Python path. Native Stage-A
-    # currently keeps only the generic parameter count for functions; #785
-    # restores the ordered names needed to assemble inferred multi-param calls.
     return 0
 }
