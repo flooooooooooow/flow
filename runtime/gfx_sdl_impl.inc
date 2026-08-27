@@ -433,6 +433,12 @@ int32_t flow_gfx_run(void* handle, int32_t max_frames) {
     return max_frames;
 }
 
+void flow_gfx_text(void* handle, int32_t x, int32_t y, const char* text,
+                   int32_t size, uint8_t r, uint8_t g, uint8_t b) {
+    (void)handle; (void)x; (void)y; (void)text; (void)size;
+    (void)r; (void)g; (void)b;
+}
+
 #else /* FLOW_GFX_STUB or no SDL2 headers */
 
 #ifndef FLOW_GFX_STUB_MSG
