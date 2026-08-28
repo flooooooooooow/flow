@@ -93,6 +93,26 @@ def test_vgpu_gradient_fixture_tracks_compiler_surface():
     assert "fn vgpu_gradient_frag" in wgsl
 
 
+def test_existing_fsl_galleries_generate_wgsl():
+    scene_mod = extract_shader_module(
+        Path("examples/gpu/shader_photoreal.flow").read_text(encoding="utf-8")
+    )
+    material_mod = extract_shader_module(
+        Path("examples/gpu/shader_photoreal_materials.flow").read_text(encoding="utf-8")
+    )
+
+    scene_wgsl = generate_wgsl_for_module(scene_mod)
+    material_wgsl = generate_wgsl_for_module(material_mod)
+
+    assert len(scene_mod.fills) == 4
+    assert len(material_mod.fills) == 60
+    assert "fn photoreal_studio_frag" in scene_wgsl
+    assert "fn photoreal_glass_frag" in scene_wgsl
+    assert "fn photoreal_gold_frag" in material_wgsl
+    assert "fn photoreal_energy_crystal_frag" in material_wgsl
+    assert "fn photoreal_underwater_frag" in material_wgsl
+
+
 def test_wgsl_requires_color_assignment():
     bad = extract_fill_shaders("shader fill x { let u = uv.x\n }")[0]
     try:
