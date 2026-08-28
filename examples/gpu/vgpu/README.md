@@ -35,11 +35,16 @@ Flow already has a separate `@gpu` compute path with Metal and WGSL backends. Th
 compatibility work should converge these surfaces around shared resources and
 pipeline declarations rather than create another shader language.
 
+The browser host renders FSL WGSL into an offscreen `rgba8unorm` texture, copies it
+to a readback buffer and removes WebGPU row padding before comparison. This keeps
+the conformance bytes independent of canvas DPR, swap-chain format and browser
+compositing. `compareRgba` then provides an exact byte comparison primitive.
+
 ## Cases
 
 | Case | Flow source | Metal | WGSL | Reference comparison |
 | --- | --- | --- | --- | --- |
-| Gradient | `gradient.flow` | source-ready | source-ready | pending capture harness |
+| Gradient | `gradient.flow` | source-ready | offscreen renderer ready | upstream reference bytes pending |
 
 The next tranche should deliberately exercise missing capabilities instead of
 adding only fragment effects: textures/samplers, vertex and index buffers,
@@ -60,5 +65,14 @@ WGSL emission uses:
 python3 scripts/emit_fsl_wgsl.py examples/gpu/vgpu/gradient.flow --name vgpu_gradient
 ```
 
+Build a browser runner backed by deterministic offscreen WebGPU readback:
+
+```bash
+python3 wasm/flow_webgpu_shader.py examples/gpu/vgpu/gradient.flow \
+    --name vgpu_gradient --size 640x360
+python3 -m http.server -d build/webgpu-shader 8000
+```
+
 The generated WebGPU entry points are `flow_shader_vertex` and
-`vgpu_gradient_frag`.
+`vgpu_gradient_frag`. The suite parameters used for reference comparisons live in
+`manifest.json`.
