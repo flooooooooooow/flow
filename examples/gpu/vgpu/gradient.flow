@@ -1,0 +1,10 @@
+# vgpu compatibility case: https://vgpu.sh/examples/gradient
+#
+# The fragment math intentionally mirrors the public vgpu gradient example.
+# This source is compiled by both the existing FSL -> Metal backend and the
+# FSL -> WGSL backend so backend drift is caught at the shader-language layer.
+
+shader fill vgpu_gradient {
+    let vignette: f32 = smoothstep(1.2, 0.2, distance(uv, vec2(0.5)))
+    color = vec4(uv.x, uv.y, 0.46 + 0.16 * vignette, 1.0)
+}
