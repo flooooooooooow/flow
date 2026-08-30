@@ -389,7 +389,8 @@ show_help() {
     echo "                    [--threads] [--fs memfs|idbfs] [--out DIR]"
     echo "                    Compile to WebAssembly + a runnable page"
     echo "  repl              Start interactive REPL"
-    echo "  examples          List example programs"
+    echo "  examples          List project examples (or compiler examples outside a project)"
+    echo "  examples run NAME Run a packaged project example from the current root"
     echo "  playground        Start native-local compile API + open playground docs"
     echo "  dap <file>        Debug Adapter (IDE) / opens flow debug on TTY"
     echo "  version           Print Flow version (1.0.1)"
@@ -2113,6 +2114,33 @@ run_tests() {
 
 # List examples
 list_examples() {
+    local project_examples_dir="$(pwd -P)/examples"
+    local project_count=0
+    if [ -d "$project_examples_dir" ]; then
+        while IFS= read -r project_manifest; do
+            [ -n "$project_manifest" ] && project_count=$((project_count + 1))
+        done < <(find "$project_examples_dir" -mindepth 2 -maxdepth 2 -name flow.toml -print 2>/dev/null)
+    fi
+
+    if [ "$project_count" -gt 0 ]; then
+        print_info "Available project examples in $(pwd -P):"
+        echo ""
+        find "$project_examples_dir" -mindepth 2 -maxdepth 2 -name flow.toml -print 2>/dev/null | sort | while read -r manifest; do
+            local example_dir
+            example_dir="$(dirname "$manifest")"
+            local name
+            name="$(basename "$example_dir")"
+            local entry
+            entry="$(sed -n 's/^entry[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$manifest" | head -n 1)"
+            [ -z "$entry" ] && entry="src/main.flow"
+            echo "  📦 $name"
+            echo "     $example_dir/$entry"
+        done
+        echo ""
+        echo "Run one with: flow examples run <name>"
+        return 0
+    fi
+
     print_info "Available FLOW programs:"
     echo ""
     
@@ -2138,6 +2166,33 @@ list_examples() {
         echo "     $desc"
         echo ""
     done
+}
+
+# Run a package-shaped example from the current project root.
+run_project_example() {
+    local name="${1:-}"
+    local project_examples_dir="$(pwd -P)/examples"
+    if [ -z "$name" ]; then
+        print_error "Usage: flow examples run <name>"
+        list_examples
+        exit 1
+    fi
+    local example_dir="$project_examples_dir/$name"
+    if [ ! -f "$example_dir/flow.toml" ]; then
+        print_error "Example not found: $name"
+        print_info "Run 'flow examples' to list available project examples."
+        exit 1
+    fi
+
+    local entry
+    entry="$(sed -n 's/^entry[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$example_dir/flow.toml" | head -n 1)"
+    [ -z "$entry" ] && entry="src/main.flow"
+    if [ ! -f "$example_dir/$entry" ]; then
+        print_error "Example entry not found: $example_dir/$entry"
+        exit 1
+    fi
+    print_info "Running project example '$name'..."
+    (cd "$example_dir" && "$SCRIPT_DIR/flow" run "$entry")
 }
 
 # Run Python unit tests
@@ -3607,7 +3662,11 @@ pm.clean()
 "
         ;;
     "examples")
-        list_examples
+        if [ "${2:-}" = "run" ]; then
+            run_project_example "${3:-}"
+        else
+            list_examples
+        fi
         ;;
     know)
         shift
