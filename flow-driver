@@ -2115,29 +2115,29 @@ run_tests() {
 # List examples
 list_examples() {
     local project_examples_dir="$(pwd -P)/examples"
-    local project_count=0
+    local -a project_rows=()
     if [ -d "$project_examples_dir" ]; then
         while IFS= read -r project_manifest; do
-            [ -n "$project_manifest" ] && project_count=$((project_count + 1))
+            [ -z "$project_manifest" ] && continue
+            local example_dir="$(dirname "$project_manifest")"
+            local name="$(basename "$example_dir")"
+            local entry
+            entry="$(sed -n 's/^entry[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$project_manifest" | head -n 1)"
+            [ -z "$entry" ] && entry="src/main.flow"
+            [[ "$entry" == build/* ]] && continue
+            [ -f "$example_dir/$entry" ] || continue
+            project_rows+=("$name	$entry")
         done < <(find "$project_examples_dir" -mindepth 2 -maxdepth 2 -name flow.toml -print 2>/dev/null)
     fi
 
-    if [ "$project_count" -gt 0 ]; then
-        print_info "Available project examples in $(pwd -P):"
-        echo ""
-        find "$project_examples_dir" -mindepth 2 -maxdepth 2 -name flow.toml -print 2>/dev/null | sort | while read -r manifest; do
-            local example_dir
-            example_dir="$(dirname "$manifest")"
-            local name
-            name="$(basename "$example_dir")"
-            local entry
-            entry="$(sed -n 's/^entry[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$manifest" | head -n 1)"
-            [ -z "$entry" ] && entry="src/main.flow"
-            echo "  📦 $name"
-            echo "     $example_dir/$entry"
+    if [ "${#project_rows[@]}" -gt 0 ]; then
+        echo "Project examples"
+        echo "----------------"
+        printf '%s\n' "${project_rows[@]}" | sort -f | while IFS=$'\t' read -r name entry; do
+            printf "  %-20s %s\n" "$name" "$entry"
         done
         echo ""
-        echo "Run one with: flow examples run <name>"
+        echo "Run: flow examples run <name>"
         return 0
     fi
 
