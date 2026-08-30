@@ -239,10 +239,8 @@ checked. None of it is partially checked.
 - **Pointer laundering.** Casts, integer round-trips, and pointer arithmetic
   that leaves the tracked expression shapes (variable, slice, address-of,
   field/index under address-of).
-- **The domain of arena-allocated memory.** `arena_alloc` returns a pointer
-  whose real lifetime is the arena's, not the caller's frame. v0 does not
-  model it, so a pointer from a frame arena stored in an application static is
-  not rejected.
+- **Extern functions.** An `extern` C call is assumed to have no domain and to
+  allocate nothing unless it is on the RT-unsafe name list.
 - **Extern functions.** An `extern` C call is assumed to have no domain and to
   allocate nothing unless it is on the RT-unsafe name list.
 - **Cross-module domains.** Annotations are checked within one type-checking
@@ -369,7 +367,7 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | LD4 call ordering between declared domains | ✅ |
 | `FrameArena` bump API in the stdlib | ✅ `lib/stdlib/memory.flow` |
 | Escape through a call, struct field, closure or heap | ❌ not checked, by design in v0 |
-| Domain of arena-allocated memory | ❌ |
+| Domain of arena-allocated memory | ✅ |
 | Domains on parameters / in types | ❌ |
 | `request` / `persistent` domains | ❌ |
 | `domain frame { ... }` blocks | ❌ |
@@ -384,8 +382,7 @@ same C as the unannotated function.
 - `domain frame { ... }` blocks that imply `frame_begin` / `frame_end`.
 - Domains on parameters and in types (`ptr<f32> @ frame`), which is what would
   close the escape-through-a-call gap.
-- Domain of arena-allocated memory, so a pointer from a frame arena carries
-  `frame` rather than nothing.
+
 - Cross-module domain checking.
 - Lowering defaults: choosing stack, arena or heap automatically from the
   domain rather than from the call the programmer wrote.
