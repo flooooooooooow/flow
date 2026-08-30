@@ -3490,7 +3490,12 @@ class Parser:
             return self.parse_expression_statement()
 
     def _parse_attribute_args(self) -> List[str]:
-        """Parse the comma-separated arguments inside `@name(...)`."""
+        """Parse the comma-separated arguments inside `@name(...)`.
+
+        Grammar:
+        attribute_args -> attribute_arg ( "," attribute_arg )*
+        attribute_arg -> ( IDENTIFIER "=" )? ( IDENTIFIER | STRING_LITERAL | NUMBER | BOOLEAN )
+        """
         args: List[str] = []
         if self.current_token.type != TokenType.RPAREN:
             while True:
@@ -3508,6 +3513,9 @@ class Parser:
                     arg_str += self.current_token.value.strip('"').strip("'")
                     self.advance()
                 elif self.current_token.type == TokenType.NUMBER:
+                    arg_str += self.current_token.value
+                    self.advance()
+                elif self.current_token.type == TokenType.BOOLEAN:
                     arg_str += self.current_token.value
                     self.advance()
                 else:
