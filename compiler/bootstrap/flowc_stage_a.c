@@ -814,9 +814,12 @@ const int32_t AST_DEFER = 42;
 const int32_t AST_ENUM = 43;
 const int32_t AST_ENUM_VARIANT = 44;
 const int32_t AST_IF_EXPR = 45;
+const int32_t AST_TYPE_SPAN_MUTABLE = 1;
 AstArena flowc_ast_new(int32_t cap);
 void flowc_ast_free(AstArena arena);
 int32_t flowc_ast_alloc(AstArena* arena, int32_t kind, int32_t start, int32_t end);
+int32_t flowc_ast_type_set_span_mutable(AstArena* arena, int32_t id, int32_t is_mutable);
+int32_t flowc_ast_type_span_mutable(AstArena arena, int32_t id);
 int32_t flowc_ast_count_kind(AstArena arena, int32_t kind);
 int32_t flowc_ast_chain_push(AstArena* arena, int32_t head, int32_t node);
 int32_t flowc_ast_chain_len(AstArena arena, int32_t head);
@@ -863,6 +866,34 @@ int32_t flowc_ast_alloc(AstArena* arena, int32_t kind, int32_t start, int32_t en
   ((arena[0]).nodes[id]).name_start = 0;
   ((arena[0]).nodes[id]).name_end = 0;
   return id;
+}
+
+int32_t flowc_ast_type_set_span_mutable(AstArena* arena, int32_t id, int32_t is_mutable) {
+  if (id == AST_NONE || id < 0 || id >= (arena[0]).len) {
+  return (0 - 1);
+}
+  if (((arena[0]).nodes[id]).kind != AST_TYPE) {
+  return (0 - 1);
+}
+  if (is_mutable == 0) {
+  ((arena[0]).nodes[id]).c = AST_NONE;
+} else {
+  ((arena[0]).nodes[id]).c = AST_TYPE_SPAN_MUTABLE;
+}
+  return 0;
+}
+
+int32_t flowc_ast_type_span_mutable(AstArena arena, int32_t id) {
+  if (id == AST_NONE || id < 0 || id >= (arena).len) {
+  return 0;
+}
+  if (((arena).nodes[id]).kind != AST_TYPE) {
+  return 0;
+}
+  if (((arena).nodes[id]).c == AST_TYPE_SPAN_MUTABLE) {
+  return 1;
+}
+  return 0;
 }
 
 int32_t flowc_ast_count_kind(AstArena arena, int32_t kind) {
