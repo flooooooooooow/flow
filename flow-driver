@@ -2192,7 +2192,11 @@ run_project_example() {
         exit 1
     fi
     print_info "Running project example '$name'..."
-    (cd "$example_dir" && "$SCRIPT_DIR/flow" run "$entry")
+    # Project examples may use language features not yet covered by the
+    # Stage-A flowc subset. Keep the project runner usable by default while
+    # allowing explicit FLOW_HOST=flowc|auto overrides for compiler testing.
+    local example_host="${FLOW_HOST:-python}"
+    (cd "$example_dir" && FLOW_HOST="$example_host" "$SCRIPT_DIR/flow" run "$entry")
 }
 
 # Run Python unit tests
