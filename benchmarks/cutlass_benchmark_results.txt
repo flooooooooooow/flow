@@ -1,0 +1,6 @@
+Benchmarking GEMM for size 1024x1024
+  Note: Naive implementation on CPU is too slow for large matrices. Simulating bounds...
+  Optimized BLAS time: 0.00946s (0.23 TFLOPS equivalent)
+Benchmarking GEMM for size 4096x4096
+  Note: Naive implementation on CPU is too slow for large matrices. Simulating bounds...
+  Optimized BLAS time: 0.47852s (0.29 TFLOPS equivalent)
