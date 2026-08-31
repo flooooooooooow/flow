@@ -132,6 +132,25 @@ function main() -> i32 {
 
 
 @needs_clang
+def test_named_function_passed_to_callback_gets_abi_adapter():
+    compile_c_only(
+        """
+struct Buffer { value: i32 }
+function kernel(raw: ptr<void>, input: Buffer) -> i32 {
+    return input.value
+}
+function invoke(callback: (ptr<void>, Buffer) -> i32) -> i32 {
+    let buffer: Buffer = Buffer { value: 42 }
+    return callback(null, buffer)
+}
+function main() -> i32 {
+    return invoke(kernel) - 42
+}
+"""
+    )
+
+
+@needs_clang
 def test_clang_accepts_basic_abi_program():
     compile_c_only(
         """

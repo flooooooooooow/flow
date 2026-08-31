@@ -211,6 +211,8 @@ class CGenerator:
         self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
         self._fn_fat_vars = set()  # vars typed as (T)->R fat-pointer closures
         self._pending_fn_bridges = []  # static bridge fns for non-capturing → fat
+        self._pending_callback_adapters = []  # named functions passed as fat callbacks
+        self._callback_adapters_emitted = set()
         self._fn_typedefs_emitted = set()
         self._capture_stack = []  # sets of captured names, one per nested lambda body
         self._const_names = set()  # file-scope constants (reachable without capture)
@@ -896,8 +898,13 @@ class CGenerator:
         # Include structs already emitted for effects
         emitted = set(effect_structs_emitted)
 
-        # Escaping function types must be fully defined before forward decls
-        # that use them as parameter/return types.
+        # Escaping function types must be fully defined after the value types
+        # used by their signatures. Emitting them here used to put callback
+        # typedefs such as `(ptr<StateBlob>) -> i32` and
+        # `(AudioBufferF32, AudioBufferF32) -> i32` ahead of the corresponding
+        # struct definitions, which makes otherwise valid programs fail C99
+        # compilation.
+        pending_fn_typedef_lines = []
         for fn in functions:
             if self._is_fn_type(fn.return_type):
                 self._ensure_fn_typedef(fn.return_type)
@@ -909,11 +916,11 @@ class CGenerator:
                 if self._is_cfn_type(p.type):
                     self._ensure_cfn_typedef(p.type)
         if self._fn_typedefs_emitted:
-            for line in list(self._pending_env_structs):
-                if line.startswith("typedef struct {") and "void* env;" in line:
-                    lines.append(line)
-                elif line.startswith("typedef ") and "(*cfn_" in line:
-                    lines.append(line)
+            pending_fn_typedef_lines = [
+                line for line in self._pending_env_structs
+                if (line.startswith("typedef struct {") and "void* env;" in line)
+                or (line.startswith("typedef ") and "(*cfn_" in line)
+            ]
             # Keep non-fn pending structs for the lambda insert block; drop
             # the fn/cfn typedefs we already emitted so they are not duplicated.
             self._pending_env_structs = [
@@ -923,8 +930,6 @@ class CGenerator:
                         and "(*fn)(void*" in line)
                 and not (line.startswith("typedef ") and "(*cfn_" in line)
             ]
-            if self._fn_typedefs_emitted:
-                lines.append("")
 
         # Forward-declare every remaining struct as `typedef struct Name Name;`
         # so that pointer fields (e.g. `ptr<Route>` inside `HttpServer`) can
@@ -1014,6 +1019,10 @@ class CGenerator:
             if struct_name in getattr(self, '_c_import_types', ()):
                 continue
             emit_struct(struct_name)
+
+        if pending_fn_typedef_lines:
+            lines.extend(pending_fn_typedef_lines)
+            lines.append("")
 
         # Forward declarations for capability methods (mangled names: CapabilityName_methodName)
         for cap_name, cap in self._capabilities.items():
@@ -1192,10 +1201,22 @@ class CGenerator:
                 lines.extend(self._gen_capability_method(cap_name, method))
                 lines.append("")
 
-        # Definitions
+        # Generate function bodies before appending them. Callback arguments
+        # discovered in a body may need a thunk; collecting the bodies first
+        # lets those thunks be declared before the first caller.
+        generated_functions: List[str] = []
         for fn in functions:
-            lines.extend(self._gen_function(fn))
-            lines.append("")
+            generated_functions.extend(self._gen_function(fn))
+            generated_functions.append("")
+
+        if self._pending_callback_adapters:
+            lines.append("/* Adapters for named functions used as callbacks */")
+            for adapter in self._pending_callback_adapters:
+                lines.extend(adapter.splitlines())
+                lines.append("")
+
+        # Definitions
+        lines.extend(generated_functions)
 
         # Emit any lambdas that were generated during function processing.
         # Env/closure typedefs come first (lambda signatures reference them),
@@ -1911,6 +1932,35 @@ class CGenerator:
             f"typedef struct {{ {ret_c} (*fn)({fn_params}); void* env; }} {c_name};"
         )
         return c_name
+
+    def _ensure_callback_adapter(self, fn: FunctionDecl) -> str:
+        """Adapt a named Flow function to an escaping callback value.
+
+        Escaping callbacks carry an environment pointer in their C ABI. A
+        named, non-capturing Flow function does not need that hidden argument,
+        so it needs a tiny generated thunk rather than an incompatible C cast.
+        """
+        registered = self._mangled_names.get(id(fn), fn.name)
+        adapter = f"flow_callback_adapter_{_c_ident(registered)}"
+        if adapter in self._callback_adapters_emitted:
+            return adapter
+        self._callback_adapters_emitted.add(adapter)
+        ret = self._c_type(fn.return_type)
+        params = ["void* _env"]
+        names = []
+        for index, parameter in enumerate(fn.parameters):
+            name = _c_ident(parameter.name or f"arg{index}")
+            params.append(f"{self._c_type(parameter.type)} {name}")
+            names.append(name)
+        call = f"{_c_ident(registered)}({', '.join(names)})"
+        body = [f"static {ret} {adapter}({', '.join(params)}) {{", "    (void)_env;"]
+        if ret == "void":
+            body.append(f"    {call};")
+        else:
+            body.append(f"    return {call};")
+        body.append("}")
+        self._pending_callback_adapters.append("\n".join(body))
+        return adapter
 
     # --- Spans (docs/language/spans.md) ---------------------------------
 
@@ -4328,6 +4378,26 @@ class CGenerator:
                 # at the call site with no wrapper in the source program.
                 if borrow_overload and i < len(borrow_overload.function.parameters):
                     declared = borrow_overload.function.parameters[i].type
+                    # A named function passed as a callback is a value at the
+                    # call site, but its C symbol may be overload-mangled.
+                    # Calls already resolve this through the overload table;
+                    # callback arguments need the same mapping or C sees the
+                    # source-level name and reports an undeclared identifier.
+                    if isinstance(arg, Variable) and self._is_fn_type(declared):
+                        callback_overloads = self._overload_resolver.get_overloads(arg.name)
+                        if len(callback_overloads) == 1:
+                            registered = self._mangled_names.get(
+                                id(callback_overloads[0].function)
+                            )
+                            if registered:
+                                callback_type = self._c_type(declared)
+                                adapter = self._ensure_callback_adapter(
+                                    callback_overloads[0].function
+                                )
+                                arg_strs.append(
+                                    f"({callback_type}){{ .fn = {adapter}, .env = NULL }}"
+                                )
+                                continue
                     if self._is_span_type(declared):
                         arg_strs.append(self._gen_span_borrow(arg, declared))
                         continue
