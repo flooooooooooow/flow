@@ -4353,6 +4353,15 @@ class CGenerator:
                     target_overload, implicit_effect_args = implicit_match
                     func_name = _c_ident(target_overload.mangled_name)
 
+            # A unique declaration is sufficient when argument inference cannot
+            # classify an expression such as an indexed byte. Use the emitted
+            # declaration's registered C name so both sides link.
+            if target_overload is None and not resolved_name and len(overloads) == 1:
+                target_overload = overloads[0]
+                registered = self._mangled_names.get(id(target_overload.function))
+                if registered:
+                    func_name = _c_ident(registered)
+
             # The definition site names a function through _mangled_names, which
             # keeps `sin` plain so it links against libm and is never emitted.
             # The fallback above takes the sole overload's mangled name instead,

@@ -400,6 +400,30 @@ class TestSoleOverloadUnknownArgFallback:
         assert " fly(424242" not in c
 
 
+INDEXED_SOLE_OVERLOAD = """
+function classify(value: i32) -> i32 {
+    return value
+}
+
+function main() -> i32 {
+    let values: array<i32, 1> = [42]
+    return classify(values[0])
+}
+"""
+
+
+class TestIndexedSoleOverloadFallback:
+    """An indexed expression may have no inferred type, but a sole overload
+    still provides an unambiguous C symbol."""
+
+    def test_indexed_call_uses_the_mangled_definition_name(self):
+        from flow.c_generator import flow_to_c
+
+        c = flow_to_c(parse_flow_code(INDEXED_SOLE_OVERLOAD))
+        assert "return classify_i32(" in c
+        assert "return classify(values[0])" not in c
+
+
 OVERLOAD_TYPE_INFERENCE = """
 const KEY_ESC: i32 = 53
 
