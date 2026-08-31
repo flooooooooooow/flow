@@ -3895,12 +3895,18 @@ class MLIRGenerator:
             ]))
 
         fn_type = f"(!llvm.ptr{', ' if param_types else ''}{', '.join(param_types)}) -> {ret_type}"
-        fn = f"%{self.function_counter}"; self.function_counter += 1
-        fn_ptr = f"%{self.function_counter}"; self.function_counter += 1
-        env = f"%{self.function_counter}"; self.function_counter += 1
-        zero = f"%{self.function_counter}"; self.function_counter += 1
-        closure = f"%{self.function_counter}"; self.function_counter += 1
-        result = f"%{self.function_counter}"; self.function_counter += 1
+        fn = f"%{self.function_counter}"
+        self.function_counter += 1
+        fn_ptr = f"%{self.function_counter}"
+        self.function_counter += 1
+        env = f"%{self.function_counter}"
+        self.function_counter += 1
+        zero = f"%{self.function_counter}"
+        self.function_counter += 1
+        closure = f"%{self.function_counter}"
+        self.function_counter += 1
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
         closure_ty = "!llvm.struct<(!llvm.ptr, !llvm.ptr)>"
         ops = [
             f"{self.indent()}{fn} = func.constant @{adapter_name} : {fn_type}",
