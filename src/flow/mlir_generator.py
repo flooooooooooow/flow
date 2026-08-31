@@ -398,6 +398,8 @@ class MLIRGenerator:
         self.distinct_types = {}  # name -> base Type
         self.struct_llvm_types: Dict[str, Optional[str]] = {}
         self._struct_llvm_building: Set[str] = set()
+        self._pending_callback_adapters: List[str] = []
+        self._callback_adapters: Set[str] = set()
         self._init_per_function_state()
 
     def _pointer_bytes(self) -> int:
@@ -1057,6 +1059,8 @@ class MLIRGenerator:
         # Lifted non-capturing lambdas (must appear before uses as func.constant)
         if self._pending_lambdas:
             decl_code = self._pending_lambdas + decl_code
+        if self._pending_callback_adapters:
+            decl_code = self._pending_callback_adapters + decl_code
 
         # Fill capability vtables with function addresses at startup
         # (llvm.mlir.addressof cannot reference func.func symbols, so the
@@ -1532,11 +1536,17 @@ class MLIRGenerator:
                 init_value, init_ops = self.generate_expression(var_decl.initializer)
             
             # Cast the initializer to the variable's type if needed
+            llvm_array_init_type = (
+                self._llvm_array_type_from_flow(var_decl.type)
+                if isinstance(var_decl.initializer, ArrayLiteral)
+                else None
+            )
+            value_mlir_type = "!llvm.ptr" if llvm_array_init_type else mlir_type
             init_type = self._ssa_types.get(init_value) or self.get_expression_type(var_decl.initializer)
-            if init_type != mlir_type:
-                init_value, cast_ops = self._emit_cast(init_value, init_type, mlir_type)
+            if init_type != value_mlir_type:
+                init_value, cast_ops = self._emit_cast(init_value, init_type, value_mlir_type)
                 init_ops.extend(cast_ops)
-            self._ssa_types[init_value] = mlir_type
+            self._ssa_types[init_value] = value_mlir_type
             if getattr(var_decl.type, 'name', '').startswith('u'):
                 self._ssa_unsigned.add(init_value)
 
@@ -1560,7 +1570,7 @@ class MLIRGenerator:
             var_entry = {
                 'type': 'variable',
                 'flow_type': var_decl.type,  # Store original FLOW type
-                'mlir_type': mlir_type,
+                'mlir_type': value_mlir_type,
                 'ssa_name': init_value
             }
             if from_tensor_field and self._is_tensor_struct(mlir_type):
@@ -3864,6 +3874,51 @@ class MLIRGenerator:
         self._ssa_types[ptr_ssa] = "!llvm.ptr"
         return ptr_ssa, ops
 
+    def _emit_callback_closure(self, name: str, info: dict) -> tuple[str, List[str]]:
+        """Materialize a non-capturing Flow callback as `{ fn, env }`."""
+        params = info.get("parameters") or []
+        param_types = [self.flow_type_to_mlir(p.type) for p in params]
+        ret_type = self.flow_type_to_mlir(info["return_type"])
+        adapter_name = f"__flow_callback_{name}"
+        if adapter_name not in self._callback_adapters:
+            self._callback_adapters.add(adapter_name)
+            args = ", ".join(f"%arg{i + 1}" for i in range(len(params)))
+            typed_args = ", ".join(
+                f"%arg{i + 1}: {ty}" for i, ty in enumerate(param_types)
+            )
+            call_types = ", ".join(param_types)
+            self._pending_callback_adapters.append("\n".join([
+                f"  func.func @{adapter_name}(%env: !llvm.ptr{', ' if typed_args else ''}{typed_args}) -> {ret_type} {{",
+                f"    %result = func.call @{name}({args}) : ({call_types}) -> {ret_type}",
+                f"    func.return %result : {ret_type}",
+                "  }",
+            ]))
+
+        fn_type = f"(!llvm.ptr{', ' if param_types else ''}{', '.join(param_types)}) -> {ret_type}"
+        fn = f"%{self.function_counter}"
+        self.function_counter += 1
+        fn_ptr = f"%{self.function_counter}"
+        self.function_counter += 1
+        env = f"%{self.function_counter}"
+        self.function_counter += 1
+        zero = f"%{self.function_counter}"
+        self.function_counter += 1
+        closure = f"%{self.function_counter}"
+        self.function_counter += 1
+        result = f"%{self.function_counter}"
+        self.function_counter += 1
+        closure_ty = "!llvm.struct<(!llvm.ptr, !llvm.ptr)>"
+        ops = [
+            f"{self.indent()}{fn} = func.constant @{adapter_name} : {fn_type}",
+            f"{self.indent()}{fn_ptr} = builtin.unrealized_conversion_cast {fn} : {fn_type} to !llvm.ptr",
+            f"{self.indent()}{env} = llvm.mlir.zero : !llvm.ptr",
+            f"{self.indent()}{zero} = llvm.mlir.zero : {closure_ty}",
+            f"{self.indent()}{closure} = llvm.insertvalue {fn_ptr}, {zero}[0] : {closure_ty}",
+            f"{self.indent()}{result} = llvm.insertvalue {env}, {closure}[1] : {closure_ty}",
+        ]
+        self._ssa_types[result] = closure_ty
+        return result, ops
+
     def generate_variable(self, variable: Variable) -> tuple[str, List[str]]:
         if variable.name in self.symbol_table:
             var_info = self.symbol_table[variable.name]
@@ -5836,6 +5891,14 @@ class MLIRGenerator:
                 )
                 if self._is_span_flow_type(expected_flow):
                     v, vops = self._generate_span_borrow(arg, expected_flow)
+                elif (
+                    isinstance(arg, Variable)
+                    and i < len(expected_arg_types)
+                    and expected_arg_types[i] == "!llvm.struct<(!llvm.ptr, !llvm.ptr)>"
+                    and arg.name in self.symbol_table
+                    and self.symbol_table[arg.name].get("type") == "function"
+                ):
+                    v, vops = self._emit_callback_closure(arg.name, self.symbol_table[arg.name])
                 else:
                     v, vops = self.generate_expression(arg)
                 ops.extend(vops)
@@ -6315,6 +6378,10 @@ class MLIRGenerator:
             )
             self._ssa_types[ptr] = "!llvm.ptr"
             self._llvm_array_types[ptr] = array_ty
+            zero = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{zero} = llvm.mlir.zero : {array_ty}")
+            ops.append(f"{self.indent()}llvm.store {zero}, {ptr} : {array_ty}, !llvm.ptr")
             for index, element_value in enumerate(element_values):
                 idx = f"%{self.function_counter}"
                 self.function_counter += 1

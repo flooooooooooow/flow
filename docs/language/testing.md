@@ -154,7 +154,7 @@ tests/parser.exitcode
 
 For a named test, use its stable slug. `flow test --list` shows the test names; slugs are lower-case words joined by `_`:
 
-```flow
+```flow ignore="illustrative placeholder syntax"
 test "rejects a zero-delay cycle" {
     ...
 }
@@ -200,7 +200,7 @@ All other Flow projects get the project test runner from plain `flow test`.
 
 Prefer small named semantic properties over large scenario scripts:
 
-```flow
+```flow ignore="illustrative placeholder syntax"
 test "automation changes exactly at its frame" { ... }
 test "feedback without positive delay is rejected" { ... }
 test "state roundtrip is deterministic" { ... }

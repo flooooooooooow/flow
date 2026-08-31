@@ -528,6 +528,10 @@
         {
           "label": "Modules & Namespacing",
           "path": "language/modules-namespacing.md"
+        },
+        {
+          "label": "Testing",
+          "path": "language/testing.md"
         }
       ]
     },
