@@ -15,8 +15,9 @@ Usage::
 
 The Homebrew formula is only touched with ``--homebrew``: its ``url`` and
 ``sha256`` point at a release tarball that does not exist until the tag is
-pushed, so bumping it early leaves the formula unusable. The release workflow
-passes ``--homebrew --sha256 <digest>`` once the tarball is published.
+published, so bumping it early leaves the formula unusable. Qualify and publish
+the release locally first, compute the digest from the published artifact, then
+run ``--homebrew --sha256 <digest>`` and synchronize the public Homebrew tap.
 """
 
 from __future__ import annotations
