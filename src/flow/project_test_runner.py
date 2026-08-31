@@ -35,7 +35,6 @@ import fnmatch
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -185,7 +184,6 @@ def _rewrite_native_file(source: str, selected: NativeTest) -> str:
 
     def replace(match: re.Match[str]) -> str:
         nonlocal counter
-        raw_name = _decode_test_name(match.group("name"))
         # Recompute the exact stable function name in source order. Slugs are
         # already made unique by _native_tests; use that table by index.
         all_tests = tests_by_index[counter]

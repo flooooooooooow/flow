@@ -26,6 +26,9 @@ cd my_app
 ./flow info hello_lib
 ```
 
+For a library or audio patch without a `main` entry point, use `./flow patch
+path/to/patch.flow` to compile it as a patch artifact rather than an executable.
+
 ```toml
 # flow.toml
 [dependencies]
