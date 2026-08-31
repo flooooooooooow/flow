@@ -211,6 +211,8 @@ class CGenerator:
         self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
         self._fn_fat_vars = set()  # vars typed as (T)->R fat-pointer closures
         self._pending_fn_bridges = []  # static bridge fns for non-capturing → fat
+        self._pending_callback_adapters = []  # named functions passed as fat callbacks
+        self._callback_adapters_emitted = set()
         self._fn_typedefs_emitted = set()
         self._capture_stack = []  # sets of captured names, one per nested lambda body
         self._const_names = set()  # file-scope constants (reachable without capture)
@@ -487,6 +489,7 @@ class CGenerator:
         lines.append("#include <stdio.h>")
         lines.append("#include <stdlib.h>")  # For malloc/free
         lines.append("#include <string.h>")  # For memcpy/memset
+        lines.append("#include <time.h>")  # For the Flow clock() builtin
         # Skip-listed POSIX libc externs (usleep, gettimeofday, ...) are never
         # given Flow-style declarations — their real headers must be included
         # so the calls compile. Only add the header when the extern is present.
@@ -540,10 +543,10 @@ class CGenerator:
         # through FLOW_LOG so safety-critical builds can replace printf with
         # a certified I/O abstraction via -DFLOW_LOG(fmt, ...)=...
         lines.append("#ifndef FLOW_LOG")
-        lines.append("#define FLOW_LOG(fmt, ...) printf(fmt, __VA_ARGS__)")
+        lines.append("#define FLOW_LOG(fmt, ...) do { printf(fmt, __VA_ARGS__); fflush(stdout); } while (0)")
         lines.append("#endif")
         lines.append("#ifndef FLOW_LOG_EMPTY")
-        lines.append("#define FLOW_LOG_EMPTY(fmt) printf(fmt)")
+        lines.append("#define FLOW_LOG_EMPTY(fmt) do { printf(fmt); fflush(stdout); } while (0)")
         lines.append("#endif")
         lines.append("static char* flow_strcat(const char* a, const char* b) {")
         if self._no_heap_enabled():
@@ -560,6 +563,18 @@ class CGenerator:
             lines.append("    if (lb) memcpy(r + la, b, lb);")
             lines.append("    r[la + lb] = '\\0';")
             lines.append("    return r;")
+        lines.append("}")
+        lines.append("static size_t flow_str_len(const char* s) { return s ? strlen(s) : 0; }")
+        lines.append("static char* flow_char(int c) { char* r = (char*)flow_temp_alloc(2); if (!r) return \"\"; r[0] = (char)c; r[1] = '\\0'; return r; }")
+        lines.append("static char* flow_str_slice(const char* s, size_t start, size_t end) {")
+        lines.append("    size_t n = flow_str_len(s); if (start > n) start = n; if (end > n) end = n; if (end < start) end = start;")
+        lines.append("    char* r = (char*)flow_temp_alloc(end - start + 1); if (!r) return NULL;")
+        lines.append("    memcpy(r, s + start, end - start); r[end - start] = '\\0'; return r;")
+        lines.append("}")
+        lines.append("static char* flow_read_line(void) {")
+        lines.append("    char buf[4096]; if (!fgets(buf, sizeof(buf), stdin)) return \"\";")
+        lines.append("    size_t n = strlen(buf); while (n && (buf[n-1] == '\\n' || buf[n-1] == '\\r')) buf[--n] = '\\0';")
+        lines.append("    char* r = (char*)flow_temp_alloc(n + 1); if (!r) return \"\"; memcpy(r, buf, n + 1); return r;")
         lines.append("}")
         lines.append("")
         # `in` operator helper: linear scan over an array<T,N>.
@@ -896,8 +911,13 @@ class CGenerator:
         # Include structs already emitted for effects
         emitted = set(effect_structs_emitted)
 
-        # Escaping function types must be fully defined before forward decls
-        # that use them as parameter/return types.
+        # Escaping function types must be fully defined after the value types
+        # used by their signatures. Emitting them here used to put callback
+        # typedefs such as `(ptr<StateBlob>) -> i32` and
+        # `(AudioBufferF32, AudioBufferF32) -> i32` ahead of the corresponding
+        # struct definitions, which makes otherwise valid programs fail C99
+        # compilation.
+        pending_fn_typedef_lines = []
         for fn in functions:
             if self._is_fn_type(fn.return_type):
                 self._ensure_fn_typedef(fn.return_type)
@@ -909,13 +929,14 @@ class CGenerator:
                 if self._is_cfn_type(p.type):
                     self._ensure_cfn_typedef(p.type)
         if self._fn_typedefs_emitted:
-            for line in list(self._pending_env_structs):
-                if line.startswith("typedef struct {") and "void* env;" in line:
-                    lines.append(line)
-                elif line.startswith("typedef ") and "(*cfn_" in line:
-                    lines.append(line)
+            pending_fn_typedef_lines = [
+                line for line in self._pending_env_structs
+                if (line.startswith("typedef struct {") and "void* env;" in line)
+                or (line.startswith("typedef ") and "(*cfn_" in line)
+            ]
             # Keep non-fn pending structs for the lambda insert block; drop
-            # the fn/cfn typedefs we already emitted so they are not duplicated.
+            # the fn/cfn typedefs so they can be emitted after all value
+            # structs have been completed.
             self._pending_env_structs = [
                 line
                 for line in self._pending_env_structs
@@ -923,8 +944,6 @@ class CGenerator:
                         and "(*fn)(void*" in line)
                 and not (line.startswith("typedef ") and "(*cfn_" in line)
             ]
-            if self._fn_typedefs_emitted:
-                lines.append("")
 
         # Forward-declare every remaining struct as `typedef struct Name Name;`
         # so that pointer fields (e.g. `ptr<Route>` inside `HttpServer`) can
@@ -1014,6 +1033,10 @@ class CGenerator:
             if struct_name in getattr(self, '_c_import_types', ()):
                 continue
             emit_struct(struct_name)
+
+        if pending_fn_typedef_lines:
+            lines.extend(pending_fn_typedef_lines)
+            lines.append("")
 
         # Forward declarations for capability methods (mangled names: CapabilityName_methodName)
         for cap_name, cap in self._capabilities.items():
@@ -1155,6 +1178,13 @@ class CGenerator:
             lines.append(f"static const {self._c_type(const.type)} {_c_ident(const.name)} = {self._gen_expr(const.value)};")
             # Track constant types for print formatting
             self._var_types[const.name] = const.type
+            # Constants participate in overload resolution just like local
+            # variables. Register their declared type before function bodies
+            # are emitted so calls such as gfx_key_down(g, KEY_ESC) resolve
+            # without falling back to an unknown argument type.
+            self._overload_resolver.set_var_type(
+                const.name, self._type_to_string(const.type)
+            )
             # File-scope constants stay reachable from lifted lambda
             # functions, so they are never captured into closure envs.
             self._const_names.add(const.name)
@@ -1186,10 +1216,22 @@ class CGenerator:
                 lines.extend(self._gen_capability_method(cap_name, method))
                 lines.append("")
 
-        # Definitions
+        # Generate function bodies before appending them. Callback arguments
+        # discovered in a body may need a thunk; collecting the bodies first
+        # lets those thunks be declared before the first caller.
+        generated_functions: List[str] = []
         for fn in functions:
-            lines.extend(self._gen_function(fn))
-            lines.append("")
+            generated_functions.extend(self._gen_function(fn))
+            generated_functions.append("")
+
+        if self._pending_callback_adapters:
+            lines.append("/* Adapters for named functions used as callbacks */")
+            for adapter in self._pending_callback_adapters:
+                lines.extend(adapter.splitlines())
+                lines.append("")
+
+        # Definitions
+        lines.extend(generated_functions)
 
         # Emit any lambdas that were generated during function processing.
         # Env/closure typedefs come first (lambda signatures reference them),
@@ -1277,6 +1319,9 @@ class CGenerator:
                     f"static {elem_c} {name}[{t.size}] = "
                     f"{self._gen_array_literal(init, as_initializer=True)};"
                 )
+            return f"static {elem_c} {name}[{t.size}] = {{0}};"
+        if getattr(t, "name", "") in self._structs and (st.value is None or self._is_zero_literal(st.value)):
+            return f"static {self._c_type(t)} {name} = {{0}};"
         return f"static {self._c_type(t)} {name} = {self._gen_expr(st.value)};"
 
     def _gen_capability_method(self, capability_name: str, method: CapabilityMethod) -> List[str]:
@@ -1331,6 +1376,12 @@ class CGenerator:
         lines: List[str] = []
         name = _c_ident(enum.name)
 
+        # Keep unit enums tagged as well as data-carrying enums.  Flow's enum
+        # surface exposes the discriminant through `.tag` and permits tagged
+        # construction (`Kind { tag: Kind_A }`), so lowering unit variants to
+        # a scalar C enum makes otherwise valid Flow produce invalid C.
+        has_data = any(len(v.fields) > 0 for v in enum.variants)
+
         # Generate tag enum
         lines.append("typedef enum {")
         for i, variant in enumerate(enum.variants):
@@ -1344,7 +1395,6 @@ class CGenerator:
         lines.append(f"    {name}_Tag tag;")
 
         # Check if any variants have data
-        has_data = any(len(v.fields) > 0 for v in enum.variants)
         if has_data:
             lines.append("    union {")
             for variant in enum.variants:
@@ -1645,6 +1695,10 @@ class CGenerator:
             lambda_info = self._closure_vars.get(expr.name) or self._fnptr_vars.get(expr.name)
             if lambda_info is not None:
                 return lambda_info.get("flow_ret") or Type("i32")
+            if expr.name == "readLine":
+                return Type("string")
+            if expr.name == "char":
+                return Type("string")
             resolved = self._overload_resolver.resolve_call(expr)
             ret = None
             if resolved:
@@ -1663,6 +1717,8 @@ class CGenerator:
             return self._span_type_for_expr(expr) or Type("i32")
         elif isinstance(expr, FieldAccess):
             obj_type = self._infer_expr_type(expr.object)
+            if expr.field == "len" and obj_type and obj_type.name == "string":
+                return Type("u64")
             # A span exposes only `.len` (i64).
             if self._is_span_type(obj_type) and expr.field == "len":
                 return Type("i64")
@@ -1687,7 +1743,10 @@ class CGenerator:
                 # Fall back to name-based unwrapping: ptr_Point -> Point
                 for prefix in ("ptr_", "array_"):
                     if base_type.name.startswith(prefix):
-                        return Type(base_type.name[len(prefix):])
+                        elem_name = base_type.name[len(prefix):]
+                        if prefix == "array_" and "_" in elem_name and elem_name.split("_", 1)[0].isdigit():
+                            elem_name = elem_name.split("_", 1)[1]
+                        return Type(elem_name)
             return Type("i32")
         elif isinstance(expr, MethodCall):
             impl_method = self._impl_method_for_receiver(
@@ -1905,6 +1964,35 @@ class CGenerator:
             f"typedef struct {{ {ret_c} (*fn)({fn_params}); void* env; }} {c_name};"
         )
         return c_name
+
+    def _ensure_callback_adapter(self, fn: FunctionDecl) -> str:
+        """Adapt a named Flow function to an escaping callback value.
+
+        Escaping callbacks carry an environment pointer in their C ABI. A
+        named, non-capturing Flow function does not need that hidden argument,
+        so it needs a tiny generated thunk rather than an incompatible C cast.
+        """
+        registered = self._mangled_names.get(id(fn), fn.name)
+        adapter = f"flow_callback_adapter_{_c_ident(registered)}"
+        if adapter in self._callback_adapters_emitted:
+            return adapter
+        self._callback_adapters_emitted.add(adapter)
+        ret = self._c_type(fn.return_type)
+        params = ["void* _env"]
+        names = []
+        for index, parameter in enumerate(fn.parameters):
+            name = _c_ident(parameter.name or f"arg{index}")
+            params.append(f"{self._c_type(parameter.type)} {name}")
+            names.append(name)
+        call = f"{_c_ident(registered)}({', '.join(names)})"
+        body = [f"static {ret} {adapter}({', '.join(params)}) {{", "    (void)_env;"]
+        if ret == "void":
+            body.append(f"    {call};")
+        else:
+            body.append(f"    return {call};")
+        body.append("}")
+        self._pending_callback_adapters.append("\n".join(body))
+        return adapter
 
     # --- Spans (docs/language/spans.md) ---------------------------------
 
@@ -2147,6 +2235,11 @@ class CGenerator:
         if t.name == "u32":
             return "uint32_t"
         if t.name == "u64":
+            return "uint64_t"
+        # Legacy FLOW uses usize for array indices and extents. Keep it a
+        # plain integer in the C backend; modeling it as an opaque alias
+        # produces an empty struct and invalid array declarations.
+        if t.name == "usize":
             return "uint64_t"
         if t.name == "f32":
             return "float"
@@ -3827,6 +3920,8 @@ class CGenerator:
                 else:
                     composed = f"(({ctype})0x{mag:X}ULL)"
                 return f"(-{composed})" if neg else composed
+            if e.type.name == "u64":
+                return f"({e.value}ULL)"
             return e.value
 
         if isinstance(e, Variable):
@@ -3922,6 +4017,13 @@ class CGenerator:
             return "({ " + " ".join(stmts) + " })"
 
         if isinstance(e, FieldAccess):
+            if e.field == "len" and self._is_string_expr(e.object):
+                return f"flow_str_len({self._gen_expr(e.object)})"
+            # Enum variants are encoded as C enum constants, not struct field
+            # access.  The AST represents `Piece.WP` as FieldAccess(Variable,
+            # field), so lower it before recursively generating the object.
+            if isinstance(e.object, Variable) and e.object.name in self._enums:
+                return f"{_c_ident(e.object.name)}_{_c_ident(e.field)}"
             obj_expr = self._gen_expr(e.object)
             if self._is_pointer_expr(e.object):
                 if self._overflow_checks_enabled():
@@ -4085,6 +4187,9 @@ class CGenerator:
 
             # Comparison operators don't need outer parens (they have low precedence)
             if c_operator in ['==', '!=', '<', '<=', '>', '>=']:
+                if self._is_string_expr(e.left) and self._is_string_expr(e.right):
+                    cmp = f"strcmp({left_expr}, {right_expr})"
+                    return f"({cmp} {c_operator} 0)"
                 return f"{left_expr} {c_operator} {right_expr}"
 
             # MISRA Rule 12.5 / CERT INT33-C: guard integer / and %.
@@ -4133,6 +4238,21 @@ class CGenerator:
             return self._gen_find_expr(e)
 
         if isinstance(e, FunctionCall):
+            if e.name == "char" and len(e.arguments) == 1:
+                return f"flow_char({self._gen_expr(e.arguments[0])})"
+            if e.name == "readLine" and not e.arguments:
+                return "flow_read_line()"
+            # Flow's builtin bit operations map to compiler intrinsics.  The
+            # source names are intentionally portable; keep the C spelling in
+            # the backend so the generated file remains self-contained.
+            builtin_names = {
+                "builtin_popcount": "__builtin_popcountll",
+                "builtin_ctz": "__builtin_ctzll",
+                "builtin_clz": "__builtin_clzll",
+            }
+            if e.name in builtin_names:
+                args = ", ".join(self._gen_expr(a) for a in e.arguments)
+                return f"{builtin_names[e.name]}({args})"
             # A function returning `array<T, N>` hands back a wrapper struct
             # (#573). Reading `.v` gives the same `T*` the old signature
             # produced, so every consumer below stays as it was.
@@ -4210,6 +4330,8 @@ class CGenerator:
                 return (
                     f'(fprintf(stderr, "%s\\n", {msg}), exit(1))'
                 )
+            if e.name == "slice" and len(e.arguments) == 3:
+                return f"flow_str_slice({self._gen_expr(e.arguments[0])}, {self._gen_expr(e.arguments[1])}, {self._gen_expr(e.arguments[2])})"
             # Handle len() builtin for arrays and slices
             if e.name == "len":
                 if len(e.arguments) == 1:
@@ -4231,6 +4353,8 @@ class CGenerator:
                                 return str(var_type.size)
                     # Default: try sizeof/sizeof for C arrays
                     arg_expr = self._gen_expr(arg)
+                    if self._is_string_expr(arg):
+                        return f"strlen({arg_expr})"
                     return f"(sizeof({arg_expr})/sizeof({arg_expr}[0]))"
 
             # Handle print/println intrinsics
@@ -4307,6 +4431,14 @@ class CGenerator:
                 registered = self._mangled_names.get(id(target_overload.function))
                 if registered:
                     func_name = _c_ident(registered)
+            elif len(overloads) == 1:
+                # Lenient legacy typing can leave resolve_call without a
+                # result even though the name has exactly one declaration.
+                # Use that declaration's registered symbol instead of emitting
+                # an unresolved source-level name.
+                registered = self._mangled_names.get(id(overloads[0].function))
+                if registered:
+                    func_name = _c_ident(registered)
 
             # A single non-overloaded candidate still tells us the declared
             # parameter types: spans borrow, so an argument's own type never
@@ -4322,9 +4454,35 @@ class CGenerator:
                 # at the call site with no wrapper in the source program.
                 if borrow_overload and i < len(borrow_overload.function.parameters):
                     declared = borrow_overload.function.parameters[i].type
+                    # A named function passed as a callback is a value at the
+                    # call site, but its C symbol may be overload-mangled.
+                    # Calls already resolve this through the overload table;
+                    # callback arguments need the same mapping or C sees the
+                    # source-level name and reports an undeclared identifier.
+                    if isinstance(arg, Variable) and self._is_fn_type(declared):
+                        callback_overloads = self._overload_resolver.get_overloads(arg.name)
+                        if len(callback_overloads) == 1:
+                            registered = self._mangled_names.get(
+                                id(callback_overloads[0].function)
+                            )
+                            if registered:
+                                callback_type = self._c_type(declared)
+                                adapter = self._ensure_callback_adapter(
+                                    callback_overloads[0].function
+                                )
+                                arg_strs.append(
+                                    f"({callback_type}){{ .fn = {adapter}, .env = NULL }}"
+                                )
+                                continue
                     if self._is_span_type(declared):
                         arg_strs.append(self._gen_span_borrow(arg, declared))
                         continue
+                    if isinstance(arg, Variable):
+                        actual = self._var_types.get(arg.name)
+                        if actual is not None and (getattr(actual, "is_pointer", False) or actual.name.startswith("ptr_")):
+                            if not (getattr(declared, "is_pointer", False) or declared.name.startswith("ptr_")):
+                                arg_strs.append(f"(*({self._gen_expr(arg)}))")
+                                continue
                     # Lambda passed to a function-typed parameter: wrap as fat pointer
                     if isinstance(arg, Lambda) and self._is_fn_type(declared):
                         arg_expr = self._gen_expr(arg)
@@ -4344,6 +4502,14 @@ class CGenerator:
                         if isinstance(arg, Variable):
                             arg_expr = f"&{arg_expr}"
                 arg_strs.append(arg_expr)
+            if borrow_overload is not None:
+                missing = len(borrow_overload.function.parameters) - len(e.arguments)
+                # `_resolve_call_with_implicit_effect_args` accounts for the
+                # trailing handled-effect parameters itself.  Do not pad
+                # those same parameters with the generic zero placeholder.
+                missing -= len(implicit_effect_args)
+                if missing > 0:
+                    arg_strs.extend(["0"] * missing)
             arg_strs.extend(implicit_effect_args)
 
             args = ", ".join(arg_strs)
@@ -4434,6 +4600,11 @@ class CGenerator:
 
     def _gen_method_call(self, e: MethodCall) -> str:
         """Generate code for a method-style call (obj.method(args))."""
+        if e.method in ("to_i32", "to_i64", "to_u32"):
+            obj = self._gen_expr(e.object)
+            cfn = {"to_i32": "strtol", "to_i64": "strtoll", "to_u32": "strtoul"}[e.method]
+            cast = {"to_i32": "int32_t", "to_i64": "int64_t", "to_u32": "uint32_t"}[e.method]
+            return f"(({cast}){cfn}({obj}, NULL, 10))"
         if isinstance(e.object, Variable):
             if e.object.name in self._effects:
                 effect_call = EffectCall(e.object.name, e.method, e.arguments)
