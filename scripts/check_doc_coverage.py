@@ -65,7 +65,7 @@ def _cli_commands() -> set[str]:
     Read from the `case` arms rather than the help text, so a command that
     exists but was never added to `show_help` still counts.
     """
-    driver = (ROOT / "flow").read_text()
+    driver = (ROOT / "flow-driver").read_text()
     start = driver.index('case "${1:-help}" in')
     # Stop at the matching esac, i.e. the first one at column 0.
     end = driver.index("\nesac", start)
