@@ -92,3 +92,32 @@ def test_closure_can_capture_other_first_class_function_values() -> None:
     assert f"!llvm.struct<({CLOSURE}, {CLOSURE})>" in mlir
     assert mlir.count("llvm.call %") >= 3
     assert "MLIR closure capture of memref/vector values" not in mlir
+
+
+def test_named_function_callback_gets_hidden_environment_adapter() -> None:
+    mlir = _lower(
+        """
+        struct Blob { value: i32 }
+
+        function write(raw: ptr<void>, blob: ptr<Blob>) -> i32 {
+            return 0
+        }
+
+        function serialize(
+            callback: (ptr<void>, ptr<Blob>) -> i32,
+            raw: ptr<void>,
+            blob: ptr<Blob>
+        ) -> i32 {
+            return callback(raw, blob)
+        }
+
+        function main() -> i32 {
+            return serialize(write, null, null)
+        }
+        """
+    )
+
+    assert "func.func @__flow_callback_write(%env: !llvm.ptr" in mlir
+    assert "func.constant @__flow_callback_write" in mlir
+    assert "llvm.insertvalue" in mlir
+    assert "func.call @serialize(%" in mlir
