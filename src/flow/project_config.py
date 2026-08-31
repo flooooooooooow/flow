@@ -10,13 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-try:
-    import tomllib
-except ImportError:  # pragma: no cover
-    try:
-        import tomli as tomllib  # type: ignore
-    except ImportError:
-        tomllib = None  # type: ignore
+from .toml_compat import loads as toml_loads
 
 
 @dataclass
@@ -47,9 +41,7 @@ class ProjectConfig:
 
 def _parse_toml(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
-    if tomllib is None:
-        raise RuntimeError("tomllib/tomli required to read flow.toml")
-    return tomllib.loads(text)
+    return toml_loads(text)
 
 
 def find_flow_toml(start_path: str) -> Optional[str]:
