@@ -3815,7 +3815,11 @@ class CGenerator:
                 first = args[0]
                 if isinstance(first, Variable):
                     var_type = self._var_types.get(first.name)
-                    if var_type and (getattr(var_type, 'is_pointer', False) or var_type.name.startswith("ptr_")):
+                    if var_type and (
+                        getattr(var_type, 'is_pointer', False)
+                        or var_type.name.startswith("ptr_")
+                        or var_type.name.startswith("array_")
+                    ):
                         needs_implicit = False
                     else:
                         needs_implicit = True
