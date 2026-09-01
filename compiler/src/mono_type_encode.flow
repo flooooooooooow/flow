@@ -152,7 +152,7 @@ function mono_type_encode_at(
         if mono_type_encode_at(arena, src, inner, &elem[0], FLOWC_MONO_TYPE_TMP_CAP, depth + 1) < 0 {
             return 0 - 1
         }
-        let has_size: i32 = arena.nodes[ty].ival > 0
+        let has_size: i32 = if arena.nodes[ty].ival > 0 { 1 } else { 0 }
         return flowc_mono_encode_compound(
             &canonical[0] as string,
             0, 0, 0,
