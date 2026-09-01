@@ -4359,10 +4359,9 @@ class CGenerator:
             # so `import "stdlib/math.flow"` produced a call to sin_f32 that
             # nothing declared or defined (#590). Settle on the registered name
             # once, after the overload is chosen, so both sites agree.
-            if target_overload is not None:
-                registered = self._mangled_names.get(id(target_overload.function))
-                if registered:
-                    func_name = _c_ident(registered)
+            final_fn = target_overload.function if target_overload is not None else (overloads[0].function if len(overloads) == 1 else None)
+            if final_fn is not None:
+                func_name = _c_ident(self._mangled_names.get(id(final_fn), final_fn.name))
 
             # A single non-overloaded candidate still tells us the declared
             # parameter types: spans borrow, so an argument's own type never
