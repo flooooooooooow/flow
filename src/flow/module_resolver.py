@@ -397,6 +397,11 @@ class ModuleResolver:
         elif parts[0] in self.project.paths:
             root = os.path.join(self.project.project_root, self.project.paths[parts[0]])
             roots.append((root, parts[1:]))
+        elif parts[0] == self.project.name:
+            src_dir = os.path.join(self.project.project_root, "src")
+            if os.path.isdir(src_dir):
+                roots.append((src_dir, parts[1:]))
+            roots.append((self.project.project_root, parts[1:]))
         elif parts[0] in self.project.dependencies:
             package_root = os.path.join(
                 self.project.project_root, "flow_packages", parts[0]

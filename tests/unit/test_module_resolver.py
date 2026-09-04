@@ -408,3 +408,14 @@ function video() -> i32 {
 
         assert len(decls) == 2
         assert [getattr(d, "name", None) for d in decls] == ["gain", "video"]
+
+
+
+class TestSelfImport:
+    def test_root_package_self_import(self):
+        code_path = os.path.join(FIXTURES, "self_import.flow")
+        resolver = get_module_resolver(code_path)
+        
+        info = resolver.get_module_info(os.path.join(FIXTURES, "foo.flow"))
+        assert info is not None
+        assert "self_hello" in info.symbols

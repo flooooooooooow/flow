@@ -1,0 +1,1 @@
+export function self_hello() -> i32 { return 42 }

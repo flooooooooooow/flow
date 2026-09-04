@@ -1,5 +1,5 @@
 [package]
-name = "module-fixtures"
+name = "module_fixtures"
 version = "0.0.1"
 
 [paths]
