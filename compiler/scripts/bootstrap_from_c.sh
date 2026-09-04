@@ -26,7 +26,15 @@ if [[ ! -f "$BOOT_C" ]]; then
 fi
 
 echo "=== cc ${BOOT_C} -> ${BOOT_BIN} ==="
-$CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C"
+$CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C" &
+cc_pid=$!
+while kill -0 $cc_pid 2>/dev/null; do
+    sleep 30
+    if kill -0 $cc_pid 2>/dev/null; then
+        echo "  ... still compiling ${BOOT_C} ..."
+    fi
+done
+wait $cc_pid
 
 # Smoke: the bootstrap compiler compiles an ordinary Stage-A program.
 # Positional argv runs the self-test suite; emit needs FLOWC_IN / FLOWC_OUT.

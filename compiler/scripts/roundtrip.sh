@@ -17,7 +17,15 @@ stage_a_emit() {
     if [[ "${FLOWC_FORCE_HOST:-}" == "1" ]] && [[ -f compiler/src/main.flow ]]; then
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        ./flow run compiler/src/main.flow &
+        local pid=$!
+        while kill -0 $pid 2>/dev/null; do
+            sleep 30
+            if kill -0 $pid 2>/dev/null; then
+                echo "  ... still running ./flow on main.flow ..."
+            fi
+        done
+        wait $pid
     elif [[ -x compiler/build/stage_a_driver_flow ]]; then
         ./compiler/build/stage_a_driver_flow "$src" "$c_out"
     elif [[ -x compiler/build/stage_a_driver ]]; then
@@ -25,7 +33,15 @@ stage_a_emit() {
     elif [[ -f compiler/src/main.flow ]]; then
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        ./flow run compiler/src/main.flow &
+        local pid=$!
+        while kill -0 $pid 2>/dev/null; do
+            sleep 30
+            if kill -0 $pid 2>/dev/null; then
+                echo "  ... still running ./flow on main.flow ..."
+            fi
+        done
+        wait $pid
     else
         echo "FAIL stage_a_emit: no emitter (compiler/src/main.flow or stage_a_driver*)" >&2
         return 1

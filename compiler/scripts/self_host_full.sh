@@ -57,7 +57,16 @@ emit_compiler() {
     # driver.flow binaries prefer argv, main.flow binaries read the env — pass
     # both so any generation works without knowing which shape it is.
     FLOWC_BUNDLE=1 FLOWC_DIR="$SRCDIR" FLOWC_IN="$ENTRY" FLOWC_OUT="$out" \
-        "$bin" "$ENTRY" "$out"
+        "$bin" "$ENTRY" "$out" &
+    local pid=$!
+    while kill -0 $pid 2>/dev/null; do
+        sleep 30
+        if kill -0 $pid 2>/dev/null; then
+            echo "  ... still emitting ${out} ..."
+        fi
+    done
+    wait $pid
+
     if [[ ! -s "$out" ]]; then
         echo "FAIL emit: ${bin} wrote no C to ${out}" >&2
         exit 1

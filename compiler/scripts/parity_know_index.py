@@ -130,21 +130,29 @@ KNOWN_DIVERGENCE: dict[tuple[str, str], str] = {}
 
 def run_demo() -> list[str]:
     env = dict(os.environ, FLOW_HOST="python")
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         [str(ROOT / "flow"), "run", str(DEMO)],
         cwd=ROOT,
         env=env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
     )
+    while True:
+        try:
+            stdout_data, stderr_data = proc.communicate(timeout=30)
+            break
+        except subprocess.TimeoutExpired:
+            print("  ... still running flow demo ...", flush=True)
+
     if proc.returncode != 0:
-        sys.stderr.write(proc.stdout)
-        sys.stderr.write(proc.stderr)
+        sys.stderr.write(stdout_data)
+        sys.stderr.write(stderr_data)
         sys.exit(f"demo failed to build or run (exit {proc.returncode})")
 
     # Results span lines, so a record continues until the next known prefix.
     rows: list[str] = []
-    for line in proc.stdout.splitlines():
+    for line in stdout_data.splitlines():
         if line.strip() == "##END##":
             break
         head = line.split("|", 1)[0]
@@ -153,7 +161,7 @@ def run_demo() -> list[str]:
         elif rows:
             rows[-1] = rows[-1] + "\n" + line
     if not rows:
-        sys.stderr.write(proc.stdout)
+        sys.stderr.write(stdout_data)
         sys.exit("demo produced no comparable output")
     return rows
 

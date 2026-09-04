@@ -48,7 +48,15 @@ stage_a_emit() {
     # Host emit: picks up latest Stage-A sources; no stale driver binary.
     export FLOWC_IN="$src"
     export FLOWC_OUT="$c_out"
-    ./flow run compiler/src/main.flow
+    ./flow run compiler/src/main.flow &
+    local pid=$!
+    while kill -0 $pid 2>/dev/null; do
+        sleep 30
+        if kill -0 $pid 2>/dev/null; then
+            echo "  ... still running ./flow on main.flow ..."
+        fi
+    done
+    wait $pid
 }
 
 echo "=== stage_a_smoke (${FIXTURE} → exit ${EXPECT}) ==="
