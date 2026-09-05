@@ -135,9 +135,25 @@ function main() -> i32 {
     let span_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
     set_type_name(&arena, span_ty, 44, 48)
     arena.nodes[span_ty].a = span_arg
-    if flowc_type_name_into(arena, src as ptr<u8>, span_ty, &buf[0], 128) != -1 {
-        puts("FAIL: span must stay unknown until mutability is preserved")
+    if flowc_type_name_into(arena, src as ptr<u8>, span_ty, &buf[0], 128) < 0 {
+        puts("FAIL: const span normalize")
         return 17
+    }
+    if strcmp(&buf[0], "span_const_i32" as ptr<u8>) != 0 {
+        puts("FAIL: const span spelling")
+        return 18
+    }
+    if flowc_ast_type_set_span_mutable(&arena, span_ty, 1) != 0 {
+        puts("FAIL: mark span mutable")
+        return 19
+    }
+    if flowc_type_name_into(arena, src as ptr<u8>, span_ty, &buf[0], 128) < 0 {
+        puts("FAIL: mutable span normalize")
+        return 20
+    }
+    if strcmp(&buf[0], "span_mut_i32" as ptr<u8>) != 0 {
+        puts("FAIL: mutable span spelling")
+        return 21
     }
 
     let fn_ty: i32 = flowc_ast_alloc(&arena, AST_TYPE, 0, 0)
@@ -145,12 +161,12 @@ function main() -> i32 {
     arena.nodes[fn_ty].ival = -1
     if flowc_type_name_into(arena, src as ptr<u8>, fn_ty, &buf[0], 128) != -1 {
         puts("FAIL: function type should stay unknown")
-        return 18
+        return 22
     }
 
     if flowc_type_name_into(arena, src as ptr<u8>, result_ty, &buf[0], 8) != -1 {
         puts("FAIL: capacity guard")
-        return 19
+        return 23
     }
 
     flowc_ast_free(arena)
