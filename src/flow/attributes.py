@@ -44,12 +44,13 @@ SEMANTIC_ATTRIBUTES = frozenset({
     "test",       # synthesized by the parser for `test "..." { }` blocks
     "monomorphized",  # synthesized by monomorphize.py
     "lifetime",   # lifetime domain (type_checker; docs/language/lifetime-domains.md)
+    "python",     # Python target export overrides (#592)
 })
 
 KNOWN_ATTRIBUTES = CODEGEN_ATTRIBUTES | GUARD_ATTRIBUTES | SEMANTIC_ATTRIBUTES
 
 # Attributes that take arguments. Everything else must be bare.
-ATTRIBUTES_WITH_ARGS = frozenset({"only", "guard", "target", "lifetime"})
+ATTRIBUTES_WITH_ARGS = frozenset({"only", "guard", "target", "lifetime", "python"})
 
 # Lifetime domains, shortest-lived first (docs/language/lifetime-domains.md).
 # The index in this tuple *is* the order: a domain may not hold a reference to,

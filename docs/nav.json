@@ -223,79 +223,79 @@
           "path": "book/README.md"
         },
         {
-          "label": "1 · A Complete Program",
+          "label": "1 \u00b7 A Complete Program",
           "path": "book/01-a-complete-program.md"
         },
         {
-          "label": "2 · Values and Types",
+          "label": "2 \u00b7 Values and Types",
           "path": "book/02-values-and-types.md"
         },
         {
-          "label": "3 · Decisions and Repetition",
+          "label": "3 \u00b7 Decisions and Repetition",
           "path": "book/03-decisions-and-repetition.md"
         },
         {
-          "label": "4 · Functions",
+          "label": "4 \u00b7 Functions",
           "path": "book/04-functions.md"
         },
         {
-          "label": "5 · Records and Arrays",
+          "label": "5 \u00b7 Records and Arrays",
           "path": "book/05-records-and-arrays.md"
         },
         {
-          "label": "6 · Pipelines and Results",
+          "label": "6 \u00b7 Pipelines and Results",
           "path": "book/06-pipelines-and-results.md"
         },
         {
-          "label": "7 · Updates to Flows",
+          "label": "7 \u00b7 Updates to Flows",
           "path": "book/07-from-updates-to-flows.md"
         },
         {
-          "label": "8 · Types and Declarations",
+          "label": "8 \u00b7 Types and Declarations",
           "path": "book/08-types-and-declarations.md"
         },
         {
-          "label": "9 · Expressions and Matching",
+          "label": "9 \u00b7 Expressions and Matching",
           "path": "book/09-expressions-and-matching.md"
         },
         {
-          "label": "10 · Memory and Lifetimes",
+          "label": "10 \u00b7 Memory and Lifetimes",
           "path": "book/10-memory-and-lifetimes.md"
         },
         {
-          "label": "11 · Modules and Packages",
+          "label": "11 \u00b7 Modules and Packages",
           "path": "book/11-modules-packages-and-interop.md"
         },
         {
-          "label": "12 · Effects and Concurrency",
+          "label": "12 \u00b7 Effects and Concurrency",
           "path": "book/12-effects-and-concurrency.md"
         },
         {
-          "label": "13 · Evolution and Dynamics",
+          "label": "13 \u00b7 Evolution and Dynamics",
           "path": "book/13-evolution-and-dynamics.md"
         },
         {
-          "label": "14 · Numerics, Autodiff, and ML",
+          "label": "14 \u00b7 Numerics, Autodiff, and ML",
           "path": "book/14-numerics-autodiff-and-ml.md"
         },
         {
-          "label": "15 · Media, GPU, and Audio",
+          "label": "15 \u00b7 Media, GPU, and Audio",
           "path": "book/15-media-gpu-and-audio.md"
         },
         {
-          "label": "16 · Targets and Distribution",
+          "label": "16 \u00b7 Targets and Distribution",
           "path": "book/16-targets-and-distribution.md"
         },
         {
-          "label": "17 · Engineering and Verification",
+          "label": "17 \u00b7 Engineering and Verification",
           "path": "book/17-engineering-and-verification.md"
         },
         {
-          "label": "18 · Complete Instrument",
+          "label": "18 \u00b7 Complete Instrument",
           "path": "book/18-a-complete-instrument.md"
         },
         {
-          "label": "19 · Coding Challenges",
+          "label": "19 \u00b7 Coding Challenges",
           "path": "book/19-coding-challenge-series.md"
         }
       ]
@@ -985,10 +985,12 @@
     "coverage_plan.md": "internal test-coverage plan for src/flow, not reader documentation",
     "discord-webhooks.md": "operations runbook for the project's Discord integration",
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",
-    "project/dangling-claude-agents.md": "internal note on agent housekeeping",
-    "project/archive/README.md": "archived; kept for history",
     "project/archive/AUDIT_2026-02-10.md": "archived; kept for history",
     "project/archive/PROJECT_STRUCTURE.md": "archived; the sidebar entry pointing here was dead and has been removed",
-    "project/linguist/PR_TEMPLATE.md": "template body for the upstream github-linguist PR, not a wiki page"
+    "project/archive/README.md": "archived; kept for history",
+    "project/dangling-claude-agents.md": "internal note on agent housekeeping",
+    "project/linguist/PR_TEMPLATE.md": "template body for the upstream github-linguist PR, not a wiki page",
+    "project/linguist/UPSTREAM.md": "maintainer procedure for registering the language with GitHub Linguist",
+    "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide"
   }
 }

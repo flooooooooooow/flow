@@ -153,20 +153,20 @@ Python Export Analysis: mathlib
 
 ## Advanced: Export Overrides
 
-For advanced cases, explicit control is available (future):
+For advanced cases, explicit control is available:
 
-```flow-pseudocode
+```flow
 # Rename for Python
 @python(name="py_func_name")
-function flow_func_name() -> void { ... }
+function flow_func_name() -> void { }
 
 # Add documentation
 @python(doc="Computes the square root")
-function sqrt(x: f64) -> f64 { ... }
+function sqrt(x: f64) -> f64 { return x }
 
 # Force exclude
 @python(exclude=true)
-function dont_export() -> void { ... }
+function dont_export() -> void { }
 ```
 
 ## Design Principles

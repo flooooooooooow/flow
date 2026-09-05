@@ -199,6 +199,21 @@ class ExportResult:
     diagnostics: List[ExportDiagnostic] = field(default_factory=list)
 
 
+
+def get_python_attrs(attrs):
+    from flow.transpiler import _parse_decorator
+    py_attrs = {}
+    for attr in attrs:
+        name, args = _parse_decorator(attr)
+        if name == "python":
+            for arg in args:
+                if "=" in arg:
+                    k, v = arg.split("=", 1)
+                    py_attrs[k.strip()] = v.strip().strip('"').strip("'")
+                elif arg.strip() == "exclude":
+                    py_attrs["exclude"] = "true"
+    return py_attrs
+
 def infer_exports(
     functions: List[FunctionDecl],
     structs: Dict[str, StructDecl],
@@ -219,6 +234,11 @@ def infer_exports(
     
     # Functions
     for fn in functions:
+        py_attrs = get_python_attrs(fn.attributes)
+        if py_attrs.get("exclude") == "true":
+            result.diagnostics.append(ExportDiagnostic(fn.name, "excluded", "Excluded by @python(exclude=true)"))
+            continue
+            
         if not is_public_symbol(fn.name):
             result.diagnostics.append(ExportDiagnostic(
                 fn.name, "excluded", "Private symbol (starts with underscore)"
@@ -258,9 +278,10 @@ def infer_exports(
         # Export this function
         result.exports.append(ExportedSymbol(
             name=fn.name,
-            python_name=fn.name,
+            python_name=py_attrs.get("name", fn.name),
             kind="function",
-            decl=fn
+            decl=fn,
+            doc=py_attrs.get("doc", "")
         ))
         result.diagnostics.append(ExportDiagnostic(
             fn.name, "exported", "Public function with ABI-compatible signature"

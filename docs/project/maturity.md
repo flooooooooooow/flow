@@ -45,7 +45,7 @@ in stages 1 to 12 runs up to that line.
 | ARM64 (Apple Silicon) | DONE. Native and CI-covered on macOS. |
 | ARM64 (Linux) | PARTIAL. Supported in the toolchain, not systematically covered. |
 
-CI builds and exercises FLOW on `ubuntu-latest`, `macos-latest` and a
+CI builds and exercises FLOW on `ubuntu-latest`, `macos-14` and a
 `windows-latest` gfx-stub smoke job. The self-hosted `flowc` toolchain is
 built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 
