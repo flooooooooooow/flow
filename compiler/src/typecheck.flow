@@ -144,7 +144,7 @@ function flowc_tc_err(ctx: ptr<TcCtx>) {
 function flowc_tc_note(ctx: ptr<TcCtx>, label: string, start: i32, end: i32) {
     puts(label)
     let path: string = ctx[0].path
-    if path != null {
+    if path as ptr<u8> != null {
         let plen: i64 = strlen(path)
         if plen > 0 {
             puts("flowc tc: file")
@@ -186,7 +186,7 @@ function flowc_tc_note(ctx: ptr<TcCtx>, label: string, start: i32, end: i32) {
         i = i + 1
     }
     buf[n] = 0
-    let s: string = buf
+    let s: string = buf as string
     puts(s)
     free(buf)
 }
@@ -1255,7 +1255,7 @@ export function flowc_typecheck_ex(arena: AstArena, root: i32, src: ptr<u8>, pat
     if ctx.ns == null {
         return 1
     }
-    if path != null {
+    if path as ptr<u8> != null {
         ctx.path = path
     }
 
