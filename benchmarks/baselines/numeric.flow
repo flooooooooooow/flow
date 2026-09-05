@@ -1,0 +1,46 @@
+# Dense matrix multiply, naive triple loop, 100x100 doubles.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const N: i32 = 100
+
+function matmul(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, n: i32) {
+    for i in 0 to n {
+        for j in 0 to n {
+            let mut sum: f64 = 0.0
+            for k in 0 to n {
+                sum = sum + A[i * n + k] * B[k * n + j]
+            }
+            C[i * n + j] = sum
+        }
+    }
+}
+
+function main() -> i32 {
+    let A: array<f64, 10000> = [0.0; 10000]
+    let B: array<f64, 10000> = [0.0; 10000]
+    let C: array<f64, 10000> = [0.0; 10000]
+
+    let A_ptr: ptr<f64> = A
+    let B_ptr: ptr<f64> = B
+    let C_ptr: ptr<f64> = C
+
+    for i in 0 to N {
+        for j in 0 to N {
+            A[i * N + j] = 0.001 * (i + j) as f64
+            B[i * N + j] = 0.001 * (i - j) as f64
+        }
+    }
+
+    matmul(A_ptr, B_ptr, C_ptr, N)
+
+    let mut check: f64 = 0.0
+    for i in 0 to N * N {
+        check = check + C[i]
+    }
+
+    printf("result %.6f\n", check)
+    return 0
+}

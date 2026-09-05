@@ -1,0 +1,16 @@
+import "stdlib/string.flow"
+
+function main() -> i32 {
+    let mut s: string = "hello"
+    # Do less concatenations to prevent OOM / huge slowdowns, since we aren't measuring it directly inside the benchmark anyway.
+    for i in 0 to 10000 {
+        s = concat(s, " world")
+    }
+    
+    let len = str_len(s)
+    
+    print("result ")
+    println(len)
+    
+    return 0
+}

@@ -94,6 +94,10 @@ extern {
                      ipiv: ptr<i32>, info: ptr<i32>) -> void
     function dgetri_(n: ptr<i32>, A: ptr<f64>, lda: ptr<i32>, ipiv: ptr<i32>,
                      work: ptr<f64>, lwork: ptr<i32>, info: ptr<i32>) -> void
+
+    # Solve using LU: A * X = B where A = L * U
+    function dgetrs_(trans: ptr<i8>, n: ptr<i32>, nrhs: ptr<i32>, A: ptr<f64>, lda: ptr<i32>,
+                     ipiv: ptr<i32>, B: ptr<f64>, ldb: ptr<i32>, info: ptr<i32>) -> void
 }
 
 # ============================================================================
@@ -181,8 +185,13 @@ export function gemm(A: Mat, B: Mat, C: Mat) -> void {
     let m: i32 = A.rows
     let k: i32 = A.cols
     let n: i32 = B.cols
-    cblas_dgemm(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, CBLAS_NO_TRANS,
-                m, n, k, 1.0, A.data, k, B.data, n, 0.0, C.data, n)
+    if n == 1 {
+        cblas_dgemv(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, m, k,
+                    1.0, A.data, k, B.data, 1, 0.0, C.data, 1)
+    } else {
+        cblas_dgemm(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, CBLAS_NO_TRANS,
+                    m, n, k, 1.0, A.data, k, B.data, n, 0.0, C.data, n)
+    }
 }
 
 # Scaled GEMM: C = alpha * A @ B + beta * C (BLAS dgemm).
@@ -191,8 +200,13 @@ export function gemm_alpha_beta(alpha: f64, A: Mat, B: Mat, beta: f64, C: Mat) -
     let m: i32 = A.rows
     let k: i32 = A.cols
     let n: i32 = B.cols
-    cblas_dgemm(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, CBLAS_NO_TRANS,
-                m, n, k, alpha, A.data, k, B.data, n, beta, C.data, n)
+    if n == 1 {
+        cblas_dgemv(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, m, k,
+                    alpha, A.data, k, B.data, 1, beta, C.data, 1)
+    } else {
+        cblas_dgemm(CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, CBLAS_NO_TRANS,
+                    m, n, k, alpha, A.data, k, B.data, n, beta, C.data, n)
+    }
 }
 
 # Matrix-vector product via BLAS dgemv: y = A @ x.
@@ -228,14 +242,16 @@ export function scal(alpha: f64, x: ptr<f64>, n: i32) -> void {
 # LAPACK WRAPPERS
 # ============================================================================
 
-# Solve A x = b via LAPACK dgesv (LU). Writes solution to x.
+# Solve A x = b via LAPACK (LU). Writes solution to x.
 # Returns 0 on success; non-zero info on failure. A is not modified.
 export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
     # Solve A * x = b, result in x
     # Returns 0 on success, non-zero on failure
     let n: i32 = A.rows
     
-    # Copy A (will be overwritten)
+    # Copy A (will be overwritten by LU factorization)
+    # Note: We clone row-major, but LAPACK expects col-major. 
+    # By using dgetrf + dgetrs with trans='T', we avoid an expensive transpose.
     let A_copy: Mat = mat_clone(A)
     
     # Copy b to x (will be overwritten with solution)
@@ -281,7 +297,14 @@ export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {
     let mut ldb: i32 = n
     let mut info: i32 = 0
     
-    dgesv_(&n_val, &nrhs, A_copy.data, &lda, ipiv, x, &ldb, &info)
+    # Factorize A
+    dgetrf_(&n_val, &n_val, A_copy.data, &lda, ipiv, &info)
+    
+    if info == 0 {
+        # Solve using factorization with trans='T' (84) because A_copy is row-major
+        let mut trans: i8 = 84
+        dgetrs_(&trans, &n_val, &nrhs, A_copy.data, &lda, ipiv, x, &ldb, &info)
+    }
     
     mat_free(A_copy)
     return info
