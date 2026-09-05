@@ -1,0 +1,86 @@
+# Test for taking a Flow function's address and handing it to C.
+#
+# A call resolves its callee through the overload table and reaches the mangled
+# C symbol. A function named as a value did not, and emitted the source-level
+# name, which the generated C never declares. Any callback handed to a C
+# dispatcher failed to compile with "use of undeclared identifier".
+#
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_function_as_value.flow
+# Exit 0 on success.
+
+extern {
+    function puts(s: string) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function qsort(base: ptr<void>, n: i64, size: i64, cmp: ptr<void>) -> void
+}
+
+# Passed to qsort by address. Ascending order on i32.
+function cmp_i32(a: ptr<void>, b: ptr<void>) -> i32 {
+    let x: i32 = (a as ptr<i32>)[0]
+    let y: i32 = (b as ptr<i32>)[0]
+    if x < y { return 0 - 1 }
+    if x > y { return 1 }
+    return 0
+}
+
+# Overloaded on the argument type, so the mangled symbols differ. Only the
+# call form is exercised here: a bare `scale` would be ambiguous, and the
+# generator deliberately leaves an ambiguous name to the C compiler.
+function scale(v: i32) -> i32 {
+    return v * 2
+}
+
+function scale(v: f32) -> f32 {
+    return v * 3.0
+}
+
+# A local binding of the same name as a function stays the local. Kept in its
+# own function because the generator tracks bindings per function body.
+function shadowing_keeps_the_local() -> i32 {
+    let cmp_i32: i32 = 5
+    if cmp_i32 != 5 { return 1 }
+    return 0
+}
+
+function main() -> i32 {
+    # A named function reaches C through a cast to a raw pointer.
+    let n: i32 = 5
+    let a: ptr<i32> = malloc(20) as ptr<i32>
+    a[0] = 42
+    a[1] = 7
+    a[2] = 99
+    a[3] = 1
+    a[4] = 23
+    qsort(a as ptr<void>, 5, 4, cmp_i32 as ptr<void>)
+
+    let mut bad: i32 = 0
+    for i in 1 to n {
+        if a[i - 1] > a[i] { bad = bad + 1 }
+    }
+    if a[0] != 1 { bad = bad + 1 }
+    if a[4] != 99 { bad = bad + 1 }
+    free(a as ptr<void>)
+    if bad != 0 {
+        puts("FAIL: qsort with a Flow comparator did not sort")
+        return 1
+    }
+
+    if shadowing_keeps_the_local() != 0 {
+        puts("FAIL: a local was shadowed by the function of the same name")
+        return 2
+    }
+
+    # An overloaded name still resolves normally when it is called.
+    if scale(21) != 42 {
+        puts("FAIL: overloaded call on i32")
+        return 3
+    }
+    if scale(2.0) != 6.0 {
+        puts("FAIL: overloaded call on f32")
+        return 4
+    }
+
+    puts("PASS: a Flow function can be handed to C as a value")
+    return 0
+}
