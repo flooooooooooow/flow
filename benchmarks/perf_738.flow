@@ -1,0 +1,76 @@
+import "stdlib/blas.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function clock() -> i64
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+function bench_gemm_skinny(n: i32) -> void {
+    let A: Mat = mat_new(n, n)
+    let B: Mat = mat_new(n, 1)
+    let C: Mat = mat_new(n, 1)
+    
+    # Warm up
+    gemm(A, B, C)
+    
+    let t0: i64 = clock()
+    for iter in 0 to 1000 {
+        gemm(A, B, C)
+    }
+    let t1: i64 = clock()
+    
+    let t_ms: f64 = (t1 - t0) / CLOCKS_PER_SEC / 1000.0 * 1000.0
+    
+    print("GEMM ")
+    print(n)
+    print("x")
+    print(n)
+    print(" with B as ")
+    print(n)
+    print("x1: ")
+    printf("%.4f", t_ms)
+    println(" ms")
+}
+
+function bench_solve(n: i32) -> void {
+    let A: Mat = mat_new(n, n)
+    let b: Mat = mat_new(n, 1)
+    let x: Mat = mat_new(n, 1)
+    
+    for i in 0 to n {
+        mat_set(A, i, i, 1.0)
+    }
+    
+    # Warm up
+    solve(A, b.data, x.data)
+    
+    let t0: i64 = clock()
+    for iter in 0 to 10 {
+        solve(A, b.data, x.data)
+    }
+    let t1: i64 = clock()
+    
+    let t_ms: f64 = (t1 - t0) / CLOCKS_PER_SEC / 10.0 * 1000.0
+    
+    print("LU Solve ")
+    print(n)
+    print("x")
+    print(n)
+    print(": ")
+    printf("%.4f", t_ms)
+    println(" ms")
+}
+
+function main() -> i32 {
+    println("=== Performance 738 Benchmark ===")
+    println("Benchmarking GEMM (n x n @ n x 1)...")
+    bench_gemm_skinny(128)
+    bench_gemm_skinny(512)
+    
+    println("Benchmarking LU Solve (n x n)...")
+    bench_solve(128)
+    bench_solve(512)
+    return 0
+}

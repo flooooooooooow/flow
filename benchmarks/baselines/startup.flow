@@ -1,0 +1,5 @@
+function main() -> i32 {
+    print("result ")
+    println(0)
+    return 0
+}
