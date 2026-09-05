@@ -30,7 +30,7 @@ This track closes the gap rather than inventing a third GPU stack.
                         |
             +-----------+-----------+
             |                       |
-       shader fill                  @gpu
+       "shader fill"                @gpu
             |                       |
        FSL parsed AST          Flow compiler AST
             |                       |
@@ -62,7 +62,7 @@ source on Metal and WebGPU, with pixel comparison in the compatibility harness.
 
 Add typed GPU resources and stage declarations:
 
-```flow
+```flow-future
 let albedo = gpu.texture<rgba8unorm>(size)
 let linear = gpu.sampler(filter: linear)
 
@@ -81,7 +81,7 @@ environment map, Earth, anti-aliasing, clipping and transmission/material scenes
 
 Make pass ordering and resource hazards first-class rather than hidden host calls:
 
-```flow
+```flow-future
 gpu frame {
     compute advect(velocity.read, velocity.next)
     compute divergence(velocity.next, divergence)

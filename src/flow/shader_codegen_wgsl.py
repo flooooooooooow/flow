@@ -8,7 +8,7 @@ not tied to Metal.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from .shader_dsl import (
     AssignStmt,

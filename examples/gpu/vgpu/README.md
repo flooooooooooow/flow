@@ -25,7 +25,7 @@ A compatibility case is complete only when:
 Fullscreen FSL now has two source generators from the same parsed AST:
 
 ```text
-shader fill
+"shader fill"
     -> shader_dsl.py
        -> shader_codegen.py       -> MSL / Metal
        -> shader_codegen_wgsl.py  -> WGSL / WebGPU
