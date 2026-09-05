@@ -1,4 +1,4 @@
-"""Pin CF + alloca lowering for while loops (mutable slots, not SSA-carried)."""
+"""Pin CF and alloca lowering for while loops, using mutable slots."""
 
 from flow.mlir_generator import MLIRGenerator
 from tests.unit.compiler_helpers import parse
@@ -57,7 +57,14 @@ function main() -> i32 {
     assert len(store_lines) >= 4, store_lines
 
 
-def test_memref_store_uses_fixed_shape():
+def test_array_store_uses_fixed_shape():
+    """A known-size array is addressed at its declared size.
+
+    This checked `memref<3xi32>` over `memref<?xi32>` when arrays lowered
+    through memref. They lower to llvm.alloca now, and the same property is
+    that the GEPs carry `!llvm.array<3 x i32>`: an index is scaled by the real
+    element size rather than walked as raw bytes.
+    """
     mlir = MLIRGenerator().generate_module(
         parse(
             """
@@ -69,7 +76,10 @@ function main() -> i32 {
 """
         )
     )
-    store_lines = [ln for ln in mlir.splitlines() if "memref.store" in ln]
+    gep_lines = [ln for ln in mlir.splitlines() if "llvm.getelementptr" in ln]
+    assert gep_lines, mlir
+    assert all("!llvm.array<3 x i32>" in ln for ln in gep_lines), gep_lines
+    assert all("!llvm.array<? x i32>" not in ln for ln in gep_lines), gep_lines
+
+    store_lines = [ln for ln in mlir.splitlines() if "llvm.store" in ln]
     assert store_lines, mlir
-    assert any("memref<3xi32>" in ln for ln in store_lines), store_lines
-    assert all("memref<?xi32>" not in ln for ln in store_lines), store_lines

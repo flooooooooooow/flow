@@ -22,7 +22,7 @@ class TestMLIRTypeConversion:
             ("i16", "i16"),
             ("i32", "i32"),
             ("i64", "i64"),
-            # MLIR has no unsigned ints — Flow uN maps to signed iN of same width.
+            # MLIR has no unsigned ints. Flow uN maps to signed iN of the same width.
             ("u8", "i8"),
             ("u16", "i16"),
             ("u32", "i32"),
@@ -65,9 +65,16 @@ class TestMLIRTypeConversion:
 
 
 class TestMLIRArrayPointerDecay:
-    """array<T,N> decayed to ptr<T> must not retag the memref SSA (#224)."""
+    """array<T,N> decayed to ptr<T> must address the same storage (#224).
 
-    def test_array_ptr_decay_emits_extract_and_keeps_memref_stores(self):
+    Arrays used to lower through memref and this checked that decaying one to
+    a pointer did not retag the memref SSA. They now lower to a single
+    llvm.alloca, so the same property is that the array variable and the
+    pointer taken from it index that one allocation. Retagging is impossible
+    when there is only ever one SSA value to index.
+    """
+
+    def test_array_ptr_decay_shares_one_allocation(self):
         from flow.parser import parse_flow_code
         from flow.mlir_generator import MLIRGenerator
 
@@ -81,16 +88,25 @@ function main() -> i32 {
 }
 """
         mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(code))
-        assert "memref.extract_aligned_pointer_as_index" in mlir
-        assert "llvm.inttoptr" in mlir
-        # Indexing the array variable must stay on memref.store, not GEP the alloc SSA.
-        assert "memref.store %14" in mlir or "memref.store" in mlir
-        # The memref alloc SSA (%5 in the minimal fixture) must not be GEP'd.
-        assert "llvm.getelementptr %5[" not in mlir
+
+        allocas = re.findall(r"(%\w+) = llvm\.alloca .*!llvm\.array<4 x i32>", mlir)
+        assert len(allocas) == 1, mlir
+        base = allocas[0]
+
+        # Both the array variable and the pointer decayed from it index that
+        # one allocation, which is what stops the two views diverging.
+        geps = re.findall(r"llvm\.getelementptr (%\w+)\[", mlir)
+        assert geps, mlir
+        assert set(geps) == {base}, geps
+
+        # The element type stays the declared fixed-size array, so an index is
+        # scaled by the real element size rather than walked as raw bytes.
+        assert "!llvm.array<4 x i32>" in mlir
+        assert "!llvm.array<? x i32>" not in mlir
 
 
 class TestMLIRNullPointerLiterals:
-    """null must lower to llvm.mlir.zero, not arith.constant null (#223)."""
+    """null must lower to llvm.mlir.zero (#223). arith.constant null is wrong."""
 
     def test_null_literal_and_ptr_eq_use_llvm_ops(self):
         code = """
@@ -131,7 +147,7 @@ class TestMLIRCFBlockArgNoCrossFunctionLeak:
 
     def test_stale_i_param_does_not_retag_ptr_arg0(self):
         # First function binds i as %arg0 : i32. Second takes a string (%arg0
-        # : !llvm.ptr) and assigns to a local `i` inside an if — without a
+        # : !llvm.ptr) and assigns to a local `i` inside an if, without a
         # per-function symbol reset, CF merge reused the stale i→%arg0:i32
         # binding and emitted `cf.br ^bb(%arg0 : i32)` against a ptr arg.
         code = """
@@ -161,7 +177,7 @@ function later(name: string) -> i32 {
 
 
 class TestMLIRUnsignedAndBitwiseEasyWins:
-    """Typed uN ops and ~ — easy in Flow IR, awkward with Python ints."""
+    """Typed uN ops and ~. Easy in Flow IR, awkward with Python ints."""
 
     def test_unsigned_shift_div_cmp_and_not(self):
         code = """
