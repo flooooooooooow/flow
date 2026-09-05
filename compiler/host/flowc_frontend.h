@@ -15,6 +15,17 @@
 #include "lexer_flowc.h"
 #include "parser_flowc.h"
 #include "cgen_flowc.h"
+/* typecheck.flow resolves calls through the native overload modules, so its
+   header names their types. Include order matters here: each of these names
+   types declared by the one above it. */
+#include "overload_flowc.h"
+#include "overload_table_flowc.h"
+#include "type_name_flowc.h"
+#include "expr_type_flowc.h"
+#include "overload_args_flowc.h"
+#include "overload_select_flowc.h"
+#include "overload_registry_flowc.h"
+#include "overload_call_flowc.h"
 #include "typecheck_flowc.h"
 #include "resolve_flowc.h"
 

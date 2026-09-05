@@ -2,7 +2,7 @@
 # @means  Canonical Stage-A AST_TYPE -> production overload type-name spelling.
 #         Only forms whose Stage-A AST preserves enough information are emitted.
 
-import .ast { AstArena, AST_NONE, AST_TYPE }
+import .ast { AstArena, AST_NONE, AST_TYPE, flowc_ast_type_span_mutable }
 
 const FLOWC_TYPE_NAME_MAX_DEPTH: i32 = 32
 

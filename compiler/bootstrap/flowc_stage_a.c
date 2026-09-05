@@ -9493,6 +9493,1256 @@ int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const 
 }
 
 
+int32_t flowc_streq_span(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
+int32_t flowc_streq(const char* s, uint8_t* lit);
+int32_t flowc_strlen(const char* s);
+int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t end);
+const char* flowc_strdup(const char* s);
+int32_t flowc_span_starts_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
+int32_t flowc_span_find_last(uint8_t* text, int32_t start, int32_t end, int32_t ch);
+int32_t flowc_span_find_first(uint8_t* text, int32_t start, int32_t end, int32_t ch);
+int32_t flowc_path_basename_start(uint8_t* text, int32_t start, int32_t end);
+int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
+int32_t flowc_streq_span(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
+  int32_t lit_len = (int32_t)(strlen(lit));
+  if ((end - start) != lit_len) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < lit_len) {
+  if (text[(start + i)] != lit[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t flowc_streq(const char* s, uint8_t* lit) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  if (strcmp(sp, lit) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_strlen(const char* s) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  return (int32_t)(strlen(sp));
+}
+
+int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t end) {
+  int32_t n = (end - start);
+  if (n <= 0) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < n) {
+  dst[i] = src[(start + i)];
+  i = (i + 1);
+}
+  return n;
+}
+
+const char* flowc_strdup(const char* s) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  int32_t len = (int32_t)(strlen(sp));
+  uint8_t* buf = (uint8_t*)(malloc((len + 1)));
+  if (buf == NULL) {
+  return (const char*)("");
+}
+  if (len > 0) {
+  uint8_t* _m = (uint8_t*)(memcpy(buf, sp, (int64_t)(len)));
+}
+  buf[len] = 0;
+  return (const char*)(buf);
+}
+
+int32_t flowc_span_starts_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
+  int32_t lit_len = (int32_t)(strlen(lit));
+  if ((end - start) < lit_len) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < lit_len) {
+  if (text[(start + i)] != lit[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t flowc_span_find_last(uint8_t* text, int32_t start, int32_t end, int32_t ch) {
+  int32_t i = (end - 1);
+  while (i >= start) {
+  if (text[i] == ch) {
+  return i;
+}
+  i = (i - 1);
+}
+  return (0 - 1);
+}
+
+int32_t flowc_span_find_first(uint8_t* text, int32_t start, int32_t end, int32_t ch) {
+  int32_t i = start;
+  while (i < end) {
+  if (text[i] == ch) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t flowc_path_basename_start(uint8_t* text, int32_t start, int32_t end) {
+  int32_t slash = flowc_span_find_last(text, start, end, 47);
+  if (slash < 0) {
+  return start;
+}
+  return (slash + 1);
+}
+
+int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
+  int32_t lit_len = (int32_t)(strlen(lit));
+  if ((end - start) < lit_len) {
+  return 0;
+}
+  int32_t off = (end - lit_len);
+  int32_t i = 0;
+  while (i < lit_len) {
+  if (text[(off + i)] != lit[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+
+typedef struct FlowcOverloadTable {
+  uint8_t* src;
+  int32_t* ns;
+  int32_t* ne;
+  int32_t* arity;
+  int32_t* decl;
+  int32_t len;
+  int32_t cap;
+  int32_t err;
+} FlowcOverloadTable;
+
+int32_t overload_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
+FlowcOverloadTable flowc_overload_table_init(uint8_t* src, int32_t cap);
+void flowc_overload_table_free(FlowcOverloadTable* table);
+int32_t flowc_overload_table_add(FlowcOverloadTable* table, int32_t name_start, int32_t name_end, int32_t arity, int32_t decl);
+int32_t flowc_overload_table_count(FlowcOverloadTable table, int32_t name_start, int32_t name_end, int32_t arity);
+int32_t flowc_overload_table_nth_decl(FlowcOverloadTable table, int32_t name_start, int32_t name_end, int32_t arity, int32_t nth);
+int32_t flowc_overload_table_has_decl(FlowcOverloadTable table, int32_t name_start, int32_t name_end, int32_t decl);
+int32_t overload_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
+  if ((a1 - a0) != (b1 - b0)) {
+  return 0;
+}
+  int32_t i = 0;
+  while ((a0 + i) < a1) {
+  if (src[(a0 + i)] != src[(b0 + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+FlowcOverloadTable flowc_overload_table_init(uint8_t* src, int32_t cap) {
+  if (cap <= 0) {
+  return (FlowcOverloadTable){ .src = src, .ns = NULL, .ne = NULL, .arity = NULL, .decl = NULL, .len = 0, .cap = 0, .err = 1 };
+}
+  uint8_t* raw_ns = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_ne = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_arity = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_decl = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  if (raw_ns == NULL || raw_ne == NULL || raw_arity == NULL || raw_decl == NULL) {
+  if (raw_ns != NULL) {
+  free(raw_ns);
+}
+  if (raw_ne != NULL) {
+  free(raw_ne);
+}
+  if (raw_arity != NULL) {
+  free(raw_arity);
+}
+  if (raw_decl != NULL) {
+  free(raw_decl);
+}
+  return (FlowcOverloadTable){ .src = src, .ns = NULL, .ne = NULL, .arity = NULL, .decl = NULL, .len = 0, .cap = 0, .err = 1 };
+}
+  return (FlowcOverloadTable){ .src = src, .ns = (int32_t*)(raw_ns), .ne = (int32_t*)(raw_ne), .arity = (int32_t*)(raw_arity), .decl = (int32_t*)(raw_decl), .len = 0, .cap = cap, .err = 0 };
+}
+
+void flowc_overload_table_free(FlowcOverloadTable* table) {
+  if ((table[0]).ns != NULL) {
+  free((table[0]).ns);
+  (table[0]).ns = NULL;
+}
+  if ((table[0]).ne != NULL) {
+  free((table[0]).ne);
+  (table[0]).ne = NULL;
+}
+  if ((table[0]).arity != NULL) {
+  free((table[0]).arity);
+  (table[0]).arity = NULL;
+}
+  if ((table[0]).decl != NULL) {
+  free((table[0]).decl);
+  (table[0]).decl = NULL;
+}
+  (table[0]).len = 0;
+  (table[0]).cap = 0;
+}
+
+int32_t flowc_overload_table_add(FlowcOverloadTable* table, int32_t name_start, int32_t name_end, int32_t arity, int32_t decl) {
+  if ((table[0]).err != 0) {
+  return (0 - 1);
+}
+  if (name_start < 0 || name_end <= name_start || arity < 0 || decl < 0) {
+  return (0 - 1);
+}
+  if ((table[0]).len >= (table[0]).cap) {
+  (table[0]).err = 1;
+  return (0 - 1);
+}
+  int32_t i = (table[0]).len;
+  (table[0]).ns[i] = name_start;
+  (table[0]).ne[i] = name_end;
+  (table[0]).arity[i] = arity;
+  (table[0]).decl[i] = decl;
+  (table[0]).len = (i + 1);
+  return i;
+}
+
+int32_t flowc_overload_table_count(FlowcOverloadTable table, int32_t name_start, int32_t name_end, int32_t arity) {
+  int32_t count = 0;
+  int32_t i = 0;
+  while (i < (table).len) {
+  if ((table).arity[i] == arity) {
+  if (overload_span_eq((table).src, name_start, name_end, (table).ns[i], (table).ne[i]) == 1) {
+  count = (count + 1);
+}
+}
+  i = (i + 1);
+}
+  return count;
+}
+
+int32_t flowc_overload_table_nth_decl(FlowcOverloadTable table, int32_t name_start, int32_t name_end, int32_t arity, int32_t nth) {
+  if (nth < 0) {
+  return (0 - 1);
+}
+  int32_t seen = 0;
+  int32_t i = 0;
+  while (i < (table).len) {
+  if ((table).arity[i] == arity) {
+  if (overload_span_eq((table).src, name_start, name_end, (table).ns[i], (table).ne[i]) == 1) {
+  if (seen == nth) {
+  return (table).decl[i];
+}
+  seen = (seen + 1);
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t flowc_overload_table_has_decl(FlowcOverloadTable table, int32_t name_start, int32_t name_end, int32_t decl) {
+  int32_t i = 0;
+  while (i < (table).len) {
+  if ((table).decl[i] == decl) {
+  if (overload_span_eq((table).src, name_start, name_end, (table).ns[i], (table).ne[i]) == 1) {
+  return 1;
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+
+int32_t overload_registry_unwrap_fn(AstArena arena, int32_t item);
+void flowc_overload_registry_reset(FlowcOverloadTable* table, uint8_t* src);
+int32_t flowc_overload_registry_collect(FlowcOverloadTable* table, AstArena arena, int32_t root);
+int32_t overload_registry_unwrap_fn(AstArena arena, int32_t item) {
+  if (item == AST_NONE || item < 0 || item >= (arena).len) {
+  return AST_NONE;
+}
+  if (((arena).nodes[item]).kind == AST_FN) {
+  return item;
+}
+  if (((arena).nodes[item]).kind == AST_EXPORT) {
+  int32_t inner = ((arena).nodes[item]).a;
+  if (inner != AST_NONE && inner >= 0 && inner < (arena).len) {
+  if (((arena).nodes[inner]).kind == AST_FN) {
+  return inner;
+}
+}
+}
+  return AST_NONE;
+}
+
+void flowc_overload_registry_reset(FlowcOverloadTable* table, uint8_t* src) {
+  (table[0]).src = src;
+  (table[0]).len = 0;
+  if ((table[0]).cap <= 0 || (table[0]).ns == NULL || (table[0]).ne == NULL || (table[0]).arity == NULL || (table[0]).decl == NULL) {
+  (table[0]).err = 1;
+  return;
+}
+  (table[0]).err = 0;
+}
+
+int32_t flowc_overload_registry_collect(FlowcOverloadTable* table, AstArena arena, int32_t root) {
+  if (root == AST_NONE || root < 0 || root >= (arena).len) {
+  return (0 - 1);
+}
+  if (((arena).nodes[root]).kind != AST_PROGRAM || (table[0]).err != 0) {
+  return (0 - 1);
+}
+  int32_t before = (table[0]).len;
+  int32_t item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t fn = overload_registry_unwrap_fn(arena, item);
+  if (fn != AST_NONE && ((arena).nodes[fn]).c == AST_NONE) {
+  item = ((arena).nodes[item]).next;
+  continue;
+}
+  if (fn != AST_NONE) {
+  int32_t arity = flowc_ast_chain_len(arena, ((arena).nodes[fn]).a);
+  if (flowc_overload_table_add(table, ((arena).nodes[fn]).name_start, ((arena).nodes[fn]).name_end, arity, fn) < 0) {
+  return (0 - 1);
+}
+}
+  item = ((arena).nodes[item]).next;
+}
+  return ((table[0]).len - before);
+}
+
+
+static const int32_t FLOWC_OVERLOAD_NO_MATCH = 0;
+static const int32_t FLOWC_OVERLOAD_COMPATIBLE = 1;
+static const int32_t FLOWC_OVERLOAD_LITERAL_WIDEN = 2;
+static const int32_t FLOWC_OVERLOAD_EXACT = 3;
+int32_t ov_streq(const char* a, uint8_t* b);
+int32_t ov_starts_with(const char* value, uint8_t* prefix);
+int32_t ov_is_digit(uint8_t ch);
+int32_t ov_tail_equal(const char* a, int32_t a_start, const char* b, int32_t b_start);
+int32_t ov_span_element_start(const char* type_name);
+int32_t ov_array_element_start(const char* type_name);
+int32_t flowc_overload_is_span_type(const char* type_name);
+int32_t flowc_overload_is_primitive(const char* type_name);
+int32_t flowc_overload_is_int_type(const char* type_name);
+int32_t flowc_overload_types_compatible(const char* expected, const char* actual);
+int32_t flowc_overload_literal_can_widen(const char* expected);
+int32_t flowc_overload_argument_match(const char* expected, const char* actual, int32_t is_unsuffixed_int_literal, int32_t widening_phase);
+int32_t flowc_overload_match_count_decision(int32_t match_count);
+int32_t flowc_overload_sole_fallback(int32_t param_count, int32_t arg_count, int32_t all_known_compatible, int32_t has_unknown);
+int32_t ov_streq(const char* a, uint8_t* b) {
+  if (strcmp((uint8_t*)(a), b) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ov_starts_with(const char* value, uint8_t* prefix) {
+  uint8_t* vp = (uint8_t*)((uint8_t*)(value));
+  int32_t value_len = (int32_t)(strlen(vp));
+  int32_t prefix_len = (int32_t)(strlen(prefix));
+  if (value_len < prefix_len) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < prefix_len) {
+  if (vp[i] != prefix[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t ov_is_digit(uint8_t ch) {
+  if (ch < 48) {
+  return 0;
+}
+  if (ch > 57) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t ov_tail_equal(const char* a, int32_t a_start, const char* b, int32_t b_start) {
+  uint8_t* ap = (uint8_t*)((uint8_t*)(a));
+  uint8_t* bp = (uint8_t*)((uint8_t*)(b));
+  int32_t a_len = (int32_t)(strlen(ap));
+  int32_t b_len = (int32_t)(strlen(bp));
+  if (a_start < 0) {
+  return 0;
+}
+  if (b_start < 0) {
+  return 0;
+}
+  if ((a_len - a_start) != (b_len - b_start)) {
+  return 0;
+}
+  int32_t i = 0;
+  while ((a_start + i) < a_len) {
+  if (ap[(a_start + i)] != bp[(b_start + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t ov_span_element_start(const char* type_name) {
+  if (ov_starts_with(type_name, (uint8_t*)("span_const_")) == 1) {
+  return 11;
+}
+  if (ov_starts_with(type_name, (uint8_t*)("span_")) == 1) {
+  return 5;
+}
+  return (0 - 1);
+}
+
+int32_t ov_array_element_start(const char* type_name) {
+  if (ov_starts_with(type_name, (uint8_t*)("array_")) == 0) {
+  return (0 - 1);
+}
+  uint8_t* p = (uint8_t*)((uint8_t*)(type_name));
+  int32_t n = (int32_t)(strlen(p));
+  int32_t i = 6;
+  int32_t saw_digit = 0;
+  while (i < n && ov_is_digit(p[i]) == 1) {
+  saw_digit = 1;
+  i = (i + 1);
+}
+  if (saw_digit == 1) {
+  if (i < n) {
+  if (p[i] == 95) {
+  return (i + 1);
+}
+}
+}
+  return 6;
+}
+
+int32_t flowc_overload_is_span_type(const char* type_name) {
+  if (ov_span_element_start(type_name) >= 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_overload_is_primitive(const char* type_name) {
+  if (ov_streq(type_name, (uint8_t*)("f32")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("f64")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("i32")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("i64")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("float")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("double")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("int")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("bool")) == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_overload_is_int_type(const char* type_name) {
+  if (ov_streq(type_name, (uint8_t*)("i8")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("i16")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("i32")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("i64")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("i128")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("u8")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("u16")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("u32")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("u64")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("u128")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("int")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("char")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("short")) == 1) {
+  return 1;
+}
+  if (ov_streq(type_name, (uint8_t*)("long")) == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_overload_types_compatible(const char* expected, const char* actual) {
+  if (ov_streq(expected, (uint8_t*)(actual)) == 1) {
+  return 1;
+}
+  int32_t expected_span_start = ov_span_element_start(expected);
+  if (expected_span_start >= 0) {
+  int32_t actual_span_start = ov_span_element_start(actual);
+  if (actual_span_start >= 0) {
+  return ov_tail_equal(expected, expected_span_start, actual, actual_span_start);
+}
+  int32_t actual_array_start = ov_array_element_start(actual);
+  if (actual_array_start >= 0) {
+  return ov_tail_equal(expected, expected_span_start, actual, actual_array_start);
+}
+  return 0;
+}
+  int32_t actual_array_start = ov_array_element_start(actual);
+  if (actual_array_start >= 0) {
+  if (ov_starts_with(expected, (uint8_t*)("ptr_")) == 1) {
+  if (ov_tail_equal(expected, 4, actual, actual_array_start) == 1) {
+  return 1;
+}
+}
+}
+  if (ov_starts_with(expected, (uint8_t*)("ptr_")) == 1) {
+  if (ov_tail_equal(expected, 4, actual, 0) == 1) {
+  return 1;
+}
+}
+  if (ov_streq(expected, (uint8_t*)("ptr_i8")) == 1) {
+  if (ov_streq(actual, (uint8_t*)("string")) == 1) {
+  return 1;
+}
+}
+  if (ov_streq(actual, (uint8_t*)("ptr_void")) == 1) {
+  if (ov_starts_with(expected, (uint8_t*)("ptr_")) == 1) {
+  return 1;
+}
+  if (ov_streq(expected, (uint8_t*)("ptr_void")) == 1) {
+  return 1;
+}
+}
+  if (ov_starts_with(expected, (uint8_t*)("capability_")) == 1) {
+  if (flowc_overload_is_primitive(actual) == 1) {
+  return 0;
+}
+  if (ov_starts_with(actual, (uint8_t*)("ptr_")) == 1) {
+  return 0;
+}
+  return 1;
+}
+  int32_t ef = 0;
+  int32_t af = 0;
+  if (ov_streq(expected, (uint8_t*)("f32")) == 1) {
+  ef = 1;
+}
+  if (ov_streq(expected, (uint8_t*)("f64")) == 1) {
+  ef = 1;
+}
+  if (ov_streq(actual, (uint8_t*)("f32")) == 1) {
+  af = 1;
+}
+  if (ov_streq(actual, (uint8_t*)("f64")) == 1) {
+  af = 1;
+}
+  if (ef == 1 && af == 1) {
+  return 1;
+}
+  int32_t ei = 0;
+  int32_t ai = 0;
+  if (ov_streq(expected, (uint8_t*)("i32")) == 1) {
+  ei = 1;
+}
+  if (ov_streq(expected, (uint8_t*)("i64")) == 1) {
+  ei = 1;
+}
+  if (ov_streq(actual, (uint8_t*)("i32")) == 1) {
+  ai = 1;
+}
+  if (ov_streq(actual, (uint8_t*)("i64")) == 1) {
+  ai = 1;
+}
+  if (ei == 1 && ai == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_overload_literal_can_widen(const char* expected) {
+  return flowc_overload_is_int_type(expected);
+}
+
+int32_t flowc_overload_argument_match(const char* expected, const char* actual, int32_t is_unsuffixed_int_literal, int32_t widening_phase) {
+  if (ov_streq(expected, (uint8_t*)(actual)) == 1) {
+  return FLOWC_OVERLOAD_EXACT;
+}
+  if (flowc_overload_types_compatible(expected, actual) == 1) {
+  return FLOWC_OVERLOAD_COMPATIBLE;
+}
+  if (widening_phase == 1 && is_unsuffixed_int_literal == 1) {
+  if (flowc_overload_literal_can_widen(expected) == 1) {
+  return FLOWC_OVERLOAD_LITERAL_WIDEN;
+}
+}
+  return FLOWC_OVERLOAD_NO_MATCH;
+}
+
+int32_t flowc_overload_match_count_decision(int32_t match_count) {
+  if (match_count <= 0) {
+  return 0;
+}
+  if (match_count == 1) {
+  return 1;
+}
+  return (0 - 1);
+}
+
+int32_t flowc_overload_sole_fallback(int32_t param_count, int32_t arg_count, int32_t all_known_compatible, int32_t has_unknown) {
+  if (param_count != arg_count) {
+  return 0;
+}
+  if (all_known_compatible == 1) {
+  return 1;
+}
+  if (has_unknown == 1) {
+  return 1;
+}
+  return 0;
+}
+
+
+static const int32_t FLOWC_TYPE_NAME_MAX_DEPTH = 32;
+int32_t type_name_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit);
+int32_t type_name_append_byte(uint8_t* out, int32_t cap, int32_t off, int32_t value);
+int32_t type_name_append_lit(uint8_t* out, int32_t cap, int32_t off, const char* lit);
+int32_t type_name_append_span(uint8_t* src, int32_t start, int32_t end, uint8_t* out, int32_t cap, int32_t off);
+int32_t type_name_append_i32(uint8_t* out, int32_t cap, int32_t off, int32_t value);
+int32_t type_name_into_at(AstArena arena, uint8_t* src, int32_t ty, uint8_t* out, int32_t cap, int32_t off, int32_t depth);
+int32_t flowc_type_name_into(AstArena arena, uint8_t* src, int32_t ty, uint8_t* out, int32_t cap);
+int32_t type_name_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit) {
+  uint8_t* p = (uint8_t*)(lit);
+  int32_t n = 0;
+  while (p[n] != 0) {
+  n = (n + 1);
+}
+  if ((end - start) != n) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < n) {
+  if (src[(start + i)] != p[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t type_name_append_byte(uint8_t* out, int32_t cap, int32_t off, int32_t value) {
+  if (off < 0 || (off + 1) >= cap) {
+  return (0 - 1);
+}
+  out[off] = value;
+  out[(off + 1)] = 0;
+  return (off + 1);
+}
+
+int32_t type_name_append_lit(uint8_t* out, int32_t cap, int32_t off, const char* lit) {
+  uint8_t* p = (uint8_t*)(lit);
+  int32_t n = 0;
+  while (p[n] != 0) {
+  n = (n + 1);
+}
+  if (off < 0 || (off + n) >= cap) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < n) {
+  out[(off + i)] = p[i];
+  i = (i + 1);
+}
+  out[(off + n)] = 0;
+  return (off + n);
+}
+
+int32_t type_name_append_span(uint8_t* src, int32_t start, int32_t end, uint8_t* out, int32_t cap, int32_t off) {
+  if (src == NULL || start < 0 || end <= start) {
+  return (0 - 1);
+}
+  int32_t n = (end - start);
+  if (off < 0 || (off + n) >= cap) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < n) {
+  out[(off + i)] = src[(start + i)];
+  i = (i + 1);
+}
+  out[(off + n)] = 0;
+  return (off + n);
+}
+
+int32_t type_name_append_i32(uint8_t* out, int32_t cap, int32_t off, int32_t value) {
+  if (value < 0) {
+  return (0 - 1);
+}
+  if (value == 0) {
+  return type_name_append_byte(out, cap, off, 48);
+}
+  uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  int32_t n = 0;
+  int32_t v = value;
+  while (v > 0) {
+  digits[n] = ((v % 10) + 48);
+  n = (n + 1);
+  v = (v / 10);
+}
+  if (off < 0 || (off + n) >= cap) {
+  return (0 - 1);
+}
+  int32_t pos = off;
+  int32_t i = n;
+  while (i > 0) {
+  i = (i - 1);
+  out[pos] = digits[i];
+  pos = (pos + 1);
+}
+  out[pos] = 0;
+  return pos;
+}
+
+int32_t type_name_into_at(AstArena arena, uint8_t* src, int32_t ty, uint8_t* out, int32_t cap, int32_t off, int32_t depth) {
+  if (depth >= FLOWC_TYPE_NAME_MAX_DEPTH) {
+  return (0 - 1);
+}
+  if (ty == AST_NONE || ty < 0 || ty >= (arena).len) {
+  return (0 - 1);
+}
+  if (((arena).nodes[ty]).kind != AST_TYPE) {
+  return (0 - 1);
+}
+  if (((arena).nodes[ty]).ival < 0) {
+  return (0 - 1);
+}
+  int32_t ns = ((arena).nodes[ty]).name_start;
+  int32_t ne = ((arena).nodes[ty]).name_end;
+  int32_t inner = ((arena).nodes[ty]).a;
+  if (inner == AST_NONE) {
+  return type_name_append_span(src, ns, ne, out, cap, off);
+}
+  if (type_name_span_is(src, ns, ne, "span") == 1 || src[ns] == 38) {
+  int32_t is_mut = flowc_ast_type_span_mutable(arena, ty);
+  int32_t p = (-1);
+  if (is_mut == 1) {
+  p = type_name_append_lit(out, cap, off, "span_mut_");
+} else {
+  p = type_name_append_lit(out, cap, off, "span_const_");
+}
+  if (p < 0) {
+  return (0 - 1);
+}
+  return type_name_into_at(arena, src, inner, out, cap, p, (depth + 1));
+}
+  if (type_name_span_is(src, ns, ne, "ptr") == 1) {
+  int32_t p = type_name_append_lit(out, cap, off, "ptr_");
+  if (p < 0) {
+  return (0 - 1);
+}
+  return type_name_into_at(arena, src, inner, out, cap, p, (depth + 1));
+}
+  if (type_name_span_is(src, ns, ne, "array") == 1) {
+  int32_t p = type_name_append_lit(out, cap, off, "array_");
+  if (p < 0) {
+  return (0 - 1);
+}
+  if (((arena).nodes[ty]).ival > 0) {
+  p = type_name_append_i32(out, cap, p, ((arena).nodes[ty]).ival);
+  if (p < 0) {
+  return (0 - 1);
+}
+  p = type_name_append_byte(out, cap, p, 95);
+  if (p < 0) {
+  return (0 - 1);
+}
+}
+  return type_name_into_at(arena, src, inner, out, cap, p, (depth + 1));
+}
+  int32_t p = type_name_append_span(src, ns, ne, out, cap, off);
+  if (p < 0) {
+  return (0 - 1);
+}
+  int32_t arg = inner;
+  while (arg != AST_NONE) {
+  p = type_name_append_byte(out, cap, p, 95);
+  if (p < 0) {
+  return (0 - 1);
+}
+  p = type_name_into_at(arena, src, arg, out, cap, p, (depth + 1));
+  if (p < 0) {
+  return (0 - 1);
+}
+  arg = ((arena).nodes[arg]).next;
+}
+  return p;
+}
+
+int32_t flowc_type_name_into(AstArena arena, uint8_t* src, int32_t ty, uint8_t* out, int32_t cap) {
+  if (out == NULL || cap <= 0) {
+  return (0 - 1);
+}
+  out[0] = 0;
+  return type_name_into_at(arena, src, ty, out, cap, 0, 0);
+}
+
+
+int32_t expr_type_copy_string(const char* value, uint8_t* out, int32_t cap);
+int32_t expr_type_copy_span(uint8_t* src, int32_t start, int32_t end, uint8_t* out, int32_t cap);
+int32_t flowc_expr_type_into(AstArena arena, uint8_t* src, int32_t id, const char* known_ident_type, int32_t has_known_ident_type, uint8_t* out, int32_t cap);
+int32_t flowc_expr_is_unsuffixed_int_literal(AstArena arena, int32_t id);
+int32_t expr_type_copy_string(const char* value, uint8_t* out, int32_t cap) {
+  int32_t n = (int32_t)(strlen(value));
+  if (cap <= 0 || (n + 1) > cap) {
+  return (0 - 1);
+}
+  uint8_t* p = (uint8_t*)(value);
+  int32_t i = 0;
+  while (i < n) {
+  out[i] = p[i];
+  i = (i + 1);
+}
+  out[n] = 0;
+  return n;
+}
+
+int32_t expr_type_copy_span(uint8_t* src, int32_t start, int32_t end, uint8_t* out, int32_t cap) {
+  if (src == NULL || start < 0 || end <= start) {
+  return (0 - 1);
+}
+  int32_t n = (end - start);
+  if (cap <= 0 || (n + 1) > cap) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < n) {
+  out[i] = src[(start + i)];
+  i = (i + 1);
+}
+  out[n] = 0;
+  return n;
+}
+
+int32_t flowc_expr_type_into(AstArena arena, uint8_t* src, int32_t id, const char* known_ident_type, int32_t has_known_ident_type, uint8_t* out, int32_t cap) {
+  if (id == AST_NONE || id < 0 || id >= (arena).len) {
+  return (0 - 1);
+}
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_INT) {
+  return expr_type_copy_string("i32", out, cap);
+}
+  if (kind == AST_FLOAT) {
+  return expr_type_copy_string("f32", out, cap);
+}
+  if (kind == AST_BOOL) {
+  return expr_type_copy_string("bool", out, cap);
+}
+  if (kind == AST_STRING) {
+  return expr_type_copy_string("string", out, cap);
+}
+  if (kind == AST_IDENT) {
+  if (has_known_ident_type == 0) {
+  return (0 - 1);
+}
+  if (strlen(known_ident_type) == 0) {
+  return (0 - 1);
+}
+  return expr_type_copy_string(known_ident_type, out, cap);
+}
+  if (kind == AST_STRUCT_LIT) {
+  return expr_type_copy_span(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, out, cap);
+}
+  if (kind == AST_CAST) {
+  int32_t ty = ((arena).nodes[id]).b;
+  if (ty == AST_NONE || ty < 0 || ty >= (arena).len) {
+  return (0 - 1);
+}
+  if (((arena).nodes[ty]).kind != AST_TYPE) {
+  return (0 - 1);
+}
+  if (((arena).nodes[ty]).a != AST_NONE) {
+  return (0 - 1);
+}
+  return expr_type_copy_span(src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end, out, cap);
+}
+  return (0 - 1);
+}
+
+int32_t flowc_expr_is_unsuffixed_int_literal(AstArena arena, int32_t id) {
+  if (id == AST_NONE || id < 0 || id >= (arena).len) {
+  return 0;
+}
+  if (((arena).nodes[id]).kind == AST_INT) {
+  return 1;
+}
+  return 0;
+}
+
+
+int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize);
+int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize) {
+  uint8_t* cmd = (uint8_t*)(malloc(4096));
+  if (cmd == NULL) {
+  return 1;
+}
+  int32_t _s1 = sprintf(cmd, (uint8_t*)("PYTHONPATH=src python3 -m flow.transpiler %s --llvm --optimize --opt-level O%s -o build/flow_bpf_tmp.ll"), (uint8_t*)(in_path), (uint8_t*)(optimize), (uint8_t*)(""));
+  int32_t rc1 = flowc_io_system((const char*)(cmd));
+  if (rc1 != 0) {
+  puts("error: Flow -> LLVM IR lowering failed");
+  free(cmd);
+  return 1;
+}
+  const char* tmp_path = "build/flow_bpf_tmp.ll";
+  int64_t sz = flowc_io_file_size(tmp_path);
+  if (sz <= 0) {
+  free(cmd);
+  return 1;
+}
+  uint8_t* ir_buf = (uint8_t*)(malloc((sz + 1)));
+  int32_t nread = flowc_read_file(tmp_path, ir_buf, (int32_t)(sz));
+  if (nread < 0) {
+  free(ir_buf);
+  free(cmd);
+  return 1;
+}
+  ir_buf[nread] = 0;
+  uint8_t* out_buf = (uint8_t*)(malloc((sz + 1024)));
+  int32_t out_len = 0;
+  int32_t _s_out = sprintf(out_buf, (uint8_t*)("target datalayout = \"e-m:e-p:64:64-i64:64-i128:128-n32:64-S128\"\ntarget triple = \"bpfel\"\n"), (uint8_t*)(""), (uint8_t*)(""), (uint8_t*)(""));
+  out_len = flowc_strlen((const char*)(out_buf));
+  int32_t i = 0;
+  while (i < nread) {
+  int32_t nl = flowc_span_find_first(ir_buf, i, nread, 10);
+  int32_t end = nread;
+  if (nl >= 0) {
+  end = (nl + 1);
+}
+  int32_t is_dl = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target datalayout ="));
+  int32_t is_tt = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target triple ="));
+  if (is_dl == 0 && is_tt == 0) {
+  uint8_t* _m = (uint8_t*)(memcpy((out_buf + out_len), (ir_buf + i), (int64_t)((end - i))));
+  out_len = (out_len + (end - i));
+}
+  i = end;
+}
+  int32_t _w = flowc_write_file(tmp_path, out_buf, out_len);
+  free(ir_buf);
+  free(out_buf);
+  int32_t _s2 = sprintf(cmd, (uint8_t*)("clang -target bpfel -O%s -x ir -c -o %s build/flow_bpf_tmp.ll"), (uint8_t*)(optimize), (uint8_t*)(out_path), (uint8_t*)(""));
+  int32_t rc2 = flowc_io_system((const char*)(cmd));
+  if (rc2 != 0) {
+  puts("error: LLVM IR -> eBPF compilation failed");
+  free(cmd);
+  return 1;
+}
+  free(cmd);
+  return 0;
+}
+
+
+const int32_t FLOWC_OVERLOAD_SELECT_NO_MATCH = (-1);
+const int32_t FLOWC_OVERLOAD_SELECT_AMBIGUOUS = (-2);
+const int32_t FLOWC_OVERLOAD_SELECT_UNKNOWN = (-3);
+static const int32_t FLOWC_OVERLOAD_SELECT_TYPE_CAP = 128;
+int32_t flowc_overload_candidate_matches(AstArena arena, uint8_t* src, int32_t decl, uint8_t* actual_rows, int32_t* actual_known, int32_t* literal_flags, int32_t arg_count, int32_t row_cap, int32_t widening_phase);
+int32_t overload_select_phase(FlowcOverloadTable table, AstArena arena, uint8_t* src, int32_t name_start, int32_t name_end, int32_t arg_count, uint8_t* actual_rows, int32_t* actual_known, int32_t* literal_flags, int32_t row_cap, int32_t widening_phase);
+int32_t flowc_overload_select_decl(FlowcOverloadTable table, AstArena arena, uint8_t* src, int32_t name_start, int32_t name_end, int32_t arg_count, uint8_t* actual_rows, int32_t* actual_known, int32_t* literal_flags, int32_t row_cap);
+int32_t flowc_overload_candidate_matches(AstArena arena, uint8_t* src, int32_t decl, uint8_t* actual_rows, int32_t* actual_known, int32_t* literal_flags, int32_t arg_count, int32_t row_cap, int32_t widening_phase) {
+  if (decl == AST_NONE || decl < 0 || decl >= (arena).len) {
+  return (0 - 1);
+}
+  if (((arena).nodes[decl]).kind != AST_FN) {
+  return (0 - 1);
+}
+  if (arg_count < 0) {
+  return (0 - 1);
+}
+  if (arg_count > 0) {
+  if (actual_rows == NULL || actual_known == NULL || literal_flags == NULL) {
+  return (0 - 1);
+}
+}
+  if (row_cap <= 0 || row_cap > FLOWC_OVERLOAD_SELECT_TYPE_CAP) {
+  return (0 - 1);
+}
+  int32_t param = ((arena).nodes[decl]).a;
+  int32_t i = 0;
+  while (param != AST_NONE && i < arg_count) {
+  if (actual_known[i] == 0) {
+  return (0 - 1);
+}
+  int32_t pty = ((arena).nodes[param]).a;
+  uint8_t expected[128] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  if (flowc_type_name_into(arena, src, pty, (&expected[0]), FLOWC_OVERLOAD_SELECT_TYPE_CAP) < 0) {
+  return (0 - 1);
+}
+  uint8_t* expected_ptr = (uint8_t*)((&expected[0]));
+  uint8_t* actual = (uint8_t*)((actual_rows + (i * row_cap)));
+  if (flowc_overload_argument_match((const char*)(expected_ptr), (const char*)(actual), literal_flags[i], widening_phase) == 0) {
+  return 0;
+}
+  param = ((arena).nodes[param]).next;
+  i = (i + 1);
+}
+  if (param != AST_NONE || i != arg_count) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t overload_select_phase(FlowcOverloadTable table, AstArena arena, uint8_t* src, int32_t name_start, int32_t name_end, int32_t arg_count, uint8_t* actual_rows, int32_t* actual_known, int32_t* literal_flags, int32_t row_cap, int32_t widening_phase) {
+  int32_t candidates = flowc_overload_table_count(table, name_start, name_end, arg_count);
+  int32_t matched = 0;
+  int32_t selected = FLOWC_OVERLOAD_SELECT_NO_MATCH;
+  int32_t saw_unknown = 0;
+  int32_t nth = 0;
+  while (nth < candidates) {
+  int32_t decl = flowc_overload_table_nth_decl(table, name_start, name_end, arg_count, nth);
+  int32_t m = flowc_overload_candidate_matches(arena, src, decl, actual_rows, actual_known, literal_flags, arg_count, row_cap, widening_phase);
+  if (m == 1) {
+  matched = (matched + 1);
+  selected = decl;
+} else {
+  if (m < 0) {
+  saw_unknown = 1;
+}
+}
+  nth = (nth + 1);
+}
+  if (matched == 1) {
+  return selected;
+}
+  if (matched > 1) {
+  return FLOWC_OVERLOAD_SELECT_AMBIGUOUS;
+}
+  if (saw_unknown == 1) {
+  return FLOWC_OVERLOAD_SELECT_UNKNOWN;
+}
+  return FLOWC_OVERLOAD_SELECT_NO_MATCH;
+}
+
+int32_t flowc_overload_select_decl(FlowcOverloadTable table, AstArena arena, uint8_t* src, int32_t name_start, int32_t name_end, int32_t arg_count, uint8_t* actual_rows, int32_t* actual_known, int32_t* literal_flags, int32_t row_cap) {
+  int32_t candidates = flowc_overload_table_count(table, name_start, name_end, arg_count);
+  if (candidates <= 0) {
+  return FLOWC_OVERLOAD_SELECT_NO_MATCH;
+}
+  int32_t first = overload_select_phase(table, arena, src, name_start, name_end, arg_count, actual_rows, actual_known, literal_flags, row_cap, 0);
+  if (first >= 0 || first == FLOWC_OVERLOAD_SELECT_AMBIGUOUS) {
+  return first;
+}
+  int32_t second = overload_select_phase(table, arena, src, name_start, name_end, arg_count, actual_rows, actual_known, literal_flags, row_cap, 1);
+  if (second >= 0 || second == FLOWC_OVERLOAD_SELECT_AMBIGUOUS) {
+  return second;
+}
+  if (candidates == 1) {
+  int32_t has_unknown = 0;
+  int32_t i = 0;
+  while (i < arg_count) {
+  if (actual_known[i] == 0) {
+  has_unknown = 1;
+}
+  i = (i + 1);
+}
+  if (flowc_overload_sole_fallback(arg_count, arg_count, 0, has_unknown) == 1) {
+  return flowc_overload_table_nth_decl(table, name_start, name_end, arg_count, 0);
+}
+}
+  if (first == FLOWC_OVERLOAD_SELECT_UNKNOWN || second == FLOWC_OVERLOAD_SELECT_UNKNOWN) {
+  return FLOWC_OVERLOAD_SELECT_UNKNOWN;
+}
+  return FLOWC_OVERLOAD_SELECT_NO_MATCH;
+}
+
+
+static const int32_t FLOWC_OVERLOAD_ARG_TYPE_CAP = 128;
+int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first_arg, int32_t* ident_type_nodes, int32_t arg_count, uint8_t* rows, int32_t* known, int32_t* literal_flags, int32_t row_cap);
+int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first_arg, int32_t* ident_type_nodes, int32_t arg_count, uint8_t* rows, int32_t* known, int32_t* literal_flags, int32_t row_cap) {
+  if (arg_count < 0 || row_cap <= 0 || row_cap > FLOWC_OVERLOAD_ARG_TYPE_CAP) {
+  return (0 - 1);
+}
+  if (arg_count > 0) {
+  if (ident_type_nodes == NULL || rows == NULL || known == NULL || literal_flags == NULL) {
+  return (0 - 1);
+}
+}
+  int32_t arg = first_arg;
+  int32_t i = 0;
+  while (arg != AST_NONE && i < arg_count) {
+  uint8_t* row = (uint8_t*)((rows + (i * row_cap)));
+  row[0] = 0;
+  known[i] = 0;
+  literal_flags[i] = flowc_expr_is_unsuffixed_int_literal(arena, arg);
+  int32_t kind = ((arena).nodes[arg]).kind;
+  if (kind == AST_CAST) {
+  int32_t ty = ((arena).nodes[arg]).b;
+  if (flowc_type_name_into(arena, src, ty, row, row_cap) >= 0) {
+  known[i] = 1;
+}
+} else {
+  int32_t has_ident_type = 0;
+  uint8_t ident_name[128] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  if (kind == AST_IDENT) {
+  int32_t ident_ty = ident_type_nodes[i];
+  if (ident_ty != AST_NONE) {
+  if (flowc_type_name_into(arena, src, ident_ty, (&ident_name[0]), FLOWC_OVERLOAD_ARG_TYPE_CAP) >= 0) {
+  has_ident_type = 1;
+}
+}
+}
+  uint8_t* ident_ptr = (uint8_t*)((&ident_name[0]));
+  if (flowc_expr_type_into(arena, src, arg, (const char*)(ident_ptr), has_ident_type, row, row_cap) >= 0) {
+  known[i] = 1;
+}
+}
+  arg = ((arena).nodes[arg]).next;
+  i = (i + 1);
+}
+  if (arg != AST_NONE || i != arg_count) {
+  return (0 - 1);
+}
+  return i;
+}
+
+
+typedef struct FlowcOverloadCallScratch {
+  uint8_t* rows;
+  int32_t* ident_types;
+  int32_t* known;
+  int32_t* literal_flags;
+  int32_t cap;
+  int32_t err;
+} FlowcOverloadCallScratch;
+
+const int32_t FLOWC_OVERLOAD_CALL_TYPE_CAP = 128;
+FlowcOverloadCallScratch flowc_overload_call_scratch_init(int32_t cap);
+void flowc_overload_call_scratch_free(FlowcOverloadCallScratch* scratch);
+int32_t flowc_overload_call_prepare(FlowcOverloadCallScratch* scratch, int32_t arg_count);
+int32_t flowc_overload_call_set_ident_type(FlowcOverloadCallScratch* scratch, int32_t arg_index, int32_t ty);
+int32_t flowc_overload_resolve_call(FlowcOverloadCallScratch* scratch, FlowcOverloadTable table, AstArena arena, uint8_t* src, int32_t name_start, int32_t name_end, int32_t first_arg, int32_t arg_count);
+FlowcOverloadCallScratch flowc_overload_call_scratch_init(int32_t cap) {
+  if (cap <= 0) {
+  return (FlowcOverloadCallScratch){ .rows = NULL, .ident_types = NULL, .known = NULL, .literal_flags = NULL, .cap = 0, .err = 1 };
+}
+  uint8_t* rows_raw = (uint8_t*)(malloc(((int64_t)(cap) * FLOWC_OVERLOAD_CALL_TYPE_CAP)));
+  uint8_t* ident_raw = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* known_raw = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* literal_raw = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  if (rows_raw == NULL || ident_raw == NULL || known_raw == NULL || literal_raw == NULL) {
+  if (rows_raw != NULL) {
+  free(rows_raw);
+}
+  if (ident_raw != NULL) {
+  free(ident_raw);
+}
+  if (known_raw != NULL) {
+  free(known_raw);
+}
+  if (literal_raw != NULL) {
+  free(literal_raw);
+}
+  return (FlowcOverloadCallScratch){ .rows = NULL, .ident_types = NULL, .known = NULL, .literal_flags = NULL, .cap = 0, .err = 1 };
+}
+  return (FlowcOverloadCallScratch){ .rows = rows_raw, .ident_types = (int32_t*)(ident_raw), .known = (int32_t*)(known_raw), .literal_flags = (int32_t*)(literal_raw), .cap = cap, .err = 0 };
+}
+
+void flowc_overload_call_scratch_free(FlowcOverloadCallScratch* scratch) {
+  if ((scratch[0]).rows != NULL) {
+  free((scratch[0]).rows);
+  (scratch[0]).rows = NULL;
+}
+  if ((scratch[0]).ident_types != NULL) {
+  free((scratch[0]).ident_types);
+  (scratch[0]).ident_types = NULL;
+}
+  if ((scratch[0]).known != NULL) {
+  free((scratch[0]).known);
+  (scratch[0]).known = NULL;
+}
+  if ((scratch[0]).literal_flags != NULL) {
+  free((scratch[0]).literal_flags);
+  (scratch[0]).literal_flags = NULL;
+}
+  (scratch[0]).cap = 0;
+  (scratch[0]).err = 0;
+}
+
+int32_t flowc_overload_call_prepare(FlowcOverloadCallScratch* scratch, int32_t arg_count) {
+  if ((scratch[0]).err != 0 || arg_count < 0 || arg_count > (scratch[0]).cap) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < arg_count) {
+  (scratch[0]).ident_types[i] = AST_NONE;
+  i = (i + 1);
+}
+  return arg_count;
+}
+
+int32_t flowc_overload_call_set_ident_type(FlowcOverloadCallScratch* scratch, int32_t arg_index, int32_t ty) {
+  if ((scratch[0]).err != 0 || arg_index < 0 || arg_index >= (scratch[0]).cap) {
+  return (0 - 1);
+}
+  (scratch[0]).ident_types[arg_index] = ty;
+  return 0;
+}
+
+int32_t flowc_overload_resolve_call(FlowcOverloadCallScratch* scratch, FlowcOverloadTable table, AstArena arena, uint8_t* src, int32_t name_start, int32_t name_end, int32_t first_arg, int32_t arg_count) {
+  if ((scratch[0]).err != 0 || arg_count < 0 || arg_count > (scratch[0]).cap) {
+  return FLOWC_OVERLOAD_SELECT_UNKNOWN;
+}
+  if (arg_count == 0) {
+  return flowc_overload_select_decl(table, arena, src, name_start, name_end, 0, NULL, NULL, NULL, FLOWC_OVERLOAD_CALL_TYPE_CAP);
+}
+  int32_t classified = flowc_overload_classify_args(arena, src, first_arg, (scratch[0]).ident_types, arg_count, (scratch[0]).rows, (scratch[0]).known, (scratch[0]).literal_flags, FLOWC_OVERLOAD_CALL_TYPE_CAP);
+  if (classified != arg_count) {
+  return FLOWC_OVERLOAD_SELECT_UNKNOWN;
+}
+  return flowc_overload_select_decl(table, arena, src, name_start, name_end, arg_count, (scratch[0]).rows, (scratch[0]).known, (scratch[0]).literal_flags, FLOWC_OVERLOAD_CALL_TYPE_CAP);
+}
+
+
 typedef struct TcCtx {
   uint8_t* src;
   int32_t* ns;
@@ -9513,6 +10763,8 @@ typedef struct TcCtx {
   int32_t seed_cap;
   int32_t seed_len;
   int32_t seed_nlen;
+  FlowcOverloadTable overloads;
+  FlowcOverloadCallScratch overload_scratch;
   const char* path;
 } TcCtx;
 
@@ -9619,7 +10871,7 @@ void flowc_tc_err(TcCtx* ctx) {
 void flowc_tc_note(TcCtx* ctx, const char* label, int32_t start, int32_t end) {
   puts(label);
   const char* path = (ctx[0]).path;
-  if (path != NULL) {
+  if ((uint8_t*)(path) != NULL) {
   int64_t plen = strlen(path);
   if (plen > 0) {
   puts("flowc tc: file");
@@ -9661,7 +10913,7 @@ void flowc_tc_note(TcCtx* ctx, const char* label, int32_t start, int32_t end) {
   i = (i + 1);
 }
   buf[n] = 0;
-  const char* s = buf;
+  const char* s = (const char*)(buf);
   puts(s);
   free(buf);
 }
@@ -10026,6 +11278,7 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   if (kind == AST_CALL) {
   int32_t ns = ((arena).nodes[id]).name_start;
   int32_t ne = ((arena).nodes[id]).name_end;
+  int32_t nargs = flowc_ast_chain_len(arena, ((arena).nodes[id]).a);
   if (flowc_tc_lookup_fn(ctx[0], ns, ne) == 0) {
   int32_t is_gpu_builtin = 0;
   if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_thread_id") == 1) {
@@ -10086,12 +11339,39 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
 }
 }
 } else {
+  int32_t local_candidates = flowc_overload_table_count((ctx[0]).overloads, ns, ne, nargs);
+  if (local_candidates > 0) {
+  if (flowc_overload_call_prepare((&(ctx[0]).overload_scratch), nargs) >= 0) {
+  int32_t typed_arg = ((arena).nodes[id]).a;
+  int32_t arg_index = 0;
+  while (typed_arg != AST_NONE) {
+  if (((arena).nodes[typed_arg]).kind == AST_IDENT) {
+  int32_t ident_ty = flowc_tc_lookup_val_type(ctx[0], ((arena).nodes[typed_arg]).name_start, ((arena).nodes[typed_arg]).name_end);
+  if (ident_ty != AST_NONE) {
+  flowc_overload_call_set_ident_type((&(ctx[0]).overload_scratch), arg_index, ident_ty);
+}
+}
+  typed_arg = ((arena).nodes[typed_arg]).next;
+  arg_index = (arg_index + 1);
+}
+  int32_t selected = flowc_overload_resolve_call((&(ctx[0]).overload_scratch), (ctx[0]).overloads, arena, (ctx[0]).src, ns, ne, ((arena).nodes[id]).a, nargs);
+  if (selected == FLOWC_OVERLOAD_SELECT_AMBIGUOUS) {
+  flowc_tc_note(ctx, "flowc tc: ambiguous overload call", ns, ne);
+  flowc_tc_err(ctx);
+} else {
+  if (selected == FLOWC_OVERLOAD_SELECT_NO_MATCH) {
+  flowc_tc_note(ctx, "flowc tc: no matching overload", ns, ne);
+  flowc_tc_err(ctx);
+}
+}
+}
+} else {
   int32_t arity = flowc_tc_lookup_fn_arity(ctx[0], ns, ne);
   if (arity >= 0) {
-  int32_t nargs = flowc_ast_chain_len(arena, ((arena).nodes[id]).a);
   if (nargs != arity) {
   flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne);
   flowc_tc_err(ctx);
+}
 }
 }
 }
@@ -10507,13 +11787,16 @@ TcCtx flowc_tc_init(uint8_t* src) {
   int32_t ncap = 4096;
   int32_t mcap = 128;
   int32_t seed_cap = 32768;
+  int32_t overload_arg_cap = 128;
+  FlowcOverloadTable overloads = flowc_overload_table_init(src, ncap);
+  FlowcOverloadCallScratch overload_scratch = flowc_overload_call_scratch_init(overload_arg_cap);
   uint8_t* raw_ns = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
   uint8_t* raw_ne = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
   uint8_t* raw_nk = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
   uint8_t* raw_na = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
   uint8_t* raw_mk = (uint8_t*)(malloc(((int64_t)(mcap) * 4)));
   uint8_t* raw_seed = (uint8_t*)(malloc((int64_t)(seed_cap)));
-  if (raw_ns == NULL || raw_ne == NULL || raw_nk == NULL || raw_na == NULL || raw_mk == NULL || raw_seed == NULL) {
+  if (raw_ns == NULL || raw_ne == NULL || raw_nk == NULL || raw_na == NULL || raw_mk == NULL || raw_seed == NULL || (overloads).err != 0 || (overload_scratch).err != 0) {
   if (raw_ns != NULL) {
   free(raw_ns);
 }
@@ -10532,7 +11815,9 @@ TcCtx flowc_tc_init(uint8_t* src) {
   if (raw_seed != NULL) {
   free(raw_seed);
 }
-  return (TcCtx){ .src = src, .ns = NULL, .ne = NULL, .nk = NULL, .na = NULL, .nlen = 0, .ncap = 0, .marks = NULL, .mlen = 0, .mcap = 0, .err = 1, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .seed_buf = NULL, .seed_cap = 0, .seed_len = 0, .seed_nlen = 0, .path = "" };
+  flowc_overload_table_free((&overloads));
+  flowc_overload_call_scratch_free((&overload_scratch));
+  return (TcCtx){ .src = src, .ns = NULL, .ne = NULL, .nk = NULL, .na = NULL, .nlen = 0, .ncap = 0, .marks = NULL, .mlen = 0, .mcap = 0, .err = 1, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .seed_buf = NULL, .seed_cap = 0, .seed_len = 0, .seed_nlen = 0, .overloads = overloads, .overload_scratch = overload_scratch, .path = "" };
 }
   int32_t zi = 0;
   while (zi < seed_cap) {
@@ -10544,7 +11829,7 @@ TcCtx flowc_tc_init(uint8_t* src) {
   int32_t* nk = (int32_t*)(raw_nk);
   int32_t* na = (int32_t*)(raw_na);
   int32_t* marks = (int32_t*)(raw_mk);
-  return (TcCtx){ .src = src, .ns = ns, .ne = ne, .nk = nk, .na = na, .nlen = 0, .ncap = ncap, .marks = marks, .mlen = 0, .mcap = mcap, .err = 0, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .seed_buf = raw_seed, .seed_cap = seed_cap, .seed_len = 0, .seed_nlen = 0, .path = "" };
+  return (TcCtx){ .src = src, .ns = ns, .ne = ne, .nk = nk, .na = na, .nlen = 0, .ncap = ncap, .marks = marks, .mlen = 0, .mcap = mcap, .err = 0, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .seed_buf = raw_seed, .seed_cap = seed_cap, .seed_len = 0, .seed_nlen = 0, .overloads = overloads, .overload_scratch = overload_scratch, .path = "" };
 }
 
 void flowc_tc_free(TcCtx* ctx) {
@@ -10572,6 +11857,8 @@ void flowc_tc_free(TcCtx* ctx) {
   free((ctx[0]).seed_buf);
   (ctx[0]).seed_buf = NULL;
 }
+  flowc_overload_table_free((&(ctx[0]).overloads));
+  flowc_overload_call_scratch_free((&(ctx[0]).overload_scratch));
 }
 
 void flowc_tc_reset_module(TcCtx* ctx, uint8_t* src) {
@@ -10582,6 +11869,7 @@ void flowc_tc_reset_module(TcCtx* ctx, uint8_t* src) {
   (ctx[0]).cur_ret = AST_NONE;
   (ctx[0]).loop_depth = 0;
   (ctx[0]).has_extern = 0;
+  flowc_overload_registry_reset((&(ctx[0]).overloads), src);
 }
 
 void flowc_tc_set_path(TcCtx* ctx, const char* path) {
@@ -10596,6 +11884,10 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   if (((arena).nodes[root]).kind != AST_PROGRAM) {
   flowc_tc_err(ctx);
   return (ctx[0]).err;
+}
+  flowc_overload_registry_reset((&(ctx[0]).overloads), (ctx[0]).src);
+  if (flowc_overload_registry_collect((&(ctx[0]).overloads), arena, root) < 0) {
+  flowc_tc_err(ctx);
 }
   flowc_tc_collect_globals(ctx, arena, root);
   flowc_tc_check_fns(ctx, arena, root);
@@ -10613,7 +11905,7 @@ int32_t flowc_typecheck_ex(AstArena arena, int32_t root, uint8_t* src, const cha
   if ((ctx).ns == NULL) {
   return 1;
 }
-  if (path != NULL) {
+  if ((uint8_t*)(path) != NULL) {
   (ctx).path = path;
 }
   flowc_tc_check_program((&ctx), arena, root);
@@ -11413,194 +12705,6 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   free(order_store);
   free(path_store);
   return written;
-}
-
-
-int32_t flowc_streq_span(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
-int32_t flowc_streq(const char* s, uint8_t* lit);
-int32_t flowc_strlen(const char* s);
-int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t end);
-const char* flowc_strdup(const char* s);
-int32_t flowc_span_starts_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
-int32_t flowc_span_find_last(uint8_t* text, int32_t start, int32_t end, int32_t ch);
-int32_t flowc_span_find_first(uint8_t* text, int32_t start, int32_t end, int32_t ch);
-int32_t flowc_path_basename_start(uint8_t* text, int32_t start, int32_t end);
-int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
-int32_t flowc_streq_span(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
-  int32_t lit_len = (int32_t)(strlen(lit));
-  if ((end - start) != lit_len) {
-  return 0;
-}
-  int32_t i = 0;
-  while (i < lit_len) {
-  if (text[(start + i)] != lit[i]) {
-  return 0;
-}
-  i = (i + 1);
-}
-  return 1;
-}
-
-int32_t flowc_streq(const char* s, uint8_t* lit) {
-  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
-  if (strcmp(sp, lit) == 0) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t flowc_strlen(const char* s) {
-  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
-  return (int32_t)(strlen(sp));
-}
-
-int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t end) {
-  int32_t n = (end - start);
-  if (n <= 0) {
-  return 0;
-}
-  int32_t i = 0;
-  while (i < n) {
-  dst[i] = src[(start + i)];
-  i = (i + 1);
-}
-  return n;
-}
-
-const char* flowc_strdup(const char* s) {
-  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
-  int32_t len = (int32_t)(strlen(sp));
-  uint8_t* buf = (uint8_t*)(malloc((len + 1)));
-  if (buf == NULL) {
-  return (const char*)("");
-}
-  if (len > 0) {
-  uint8_t* _m = (uint8_t*)(memcpy(buf, sp, (int64_t)(len)));
-}
-  buf[len] = 0;
-  return (const char*)(buf);
-}
-
-int32_t flowc_span_starts_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
-  int32_t lit_len = (int32_t)(strlen(lit));
-  if ((end - start) < lit_len) {
-  return 0;
-}
-  int32_t i = 0;
-  while (i < lit_len) {
-  if (text[(start + i)] != lit[i]) {
-  return 0;
-}
-  i = (i + 1);
-}
-  return 1;
-}
-
-int32_t flowc_span_find_last(uint8_t* text, int32_t start, int32_t end, int32_t ch) {
-  int32_t i = (end - 1);
-  while (i >= start) {
-  if (text[i] == ch) {
-  return i;
-}
-  i = (i - 1);
-}
-  return (0 - 1);
-}
-
-int32_t flowc_span_find_first(uint8_t* text, int32_t start, int32_t end, int32_t ch) {
-  int32_t i = start;
-  while (i < end) {
-  if (text[i] == ch) {
-  return i;
-}
-  i = (i + 1);
-}
-  return (0 - 1);
-}
-
-int32_t flowc_path_basename_start(uint8_t* text, int32_t start, int32_t end) {
-  int32_t slash = flowc_span_find_last(text, start, end, 47);
-  if (slash < 0) {
-  return start;
-}
-  return (slash + 1);
-}
-
-int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
-  int32_t lit_len = (int32_t)(strlen(lit));
-  if ((end - start) < lit_len) {
-  return 0;
-}
-  int32_t off = (end - lit_len);
-  int32_t i = 0;
-  while (i < lit_len) {
-  if (text[(off + i)] != lit[i]) {
-  return 0;
-}
-  i = (i + 1);
-}
-  return 1;
-}
-
-
-int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize);
-int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize) {
-  uint8_t* cmd = (uint8_t*)(malloc(4096));
-  if (cmd == NULL) {
-  return 1;
-}
-  int32_t _s1 = sprintf(cmd, (uint8_t*)("PYTHONPATH=src python3 -m flow.transpiler %s --llvm --optimize --opt-level O%s -o build/flow_bpf_tmp.ll"), (uint8_t*)(in_path), (uint8_t*)(optimize), (uint8_t*)(""));
-  int32_t rc1 = flowc_io_system((const char*)(cmd));
-  if (rc1 != 0) {
-  puts("error: Flow -> LLVM IR lowering failed");
-  free(cmd);
-  return 1;
-}
-  const char* tmp_path = "build/flow_bpf_tmp.ll";
-  int64_t sz = flowc_io_file_size(tmp_path);
-  if (sz <= 0) {
-  free(cmd);
-  return 1;
-}
-  uint8_t* ir_buf = (uint8_t*)(malloc((sz + 1)));
-  int32_t nread = flowc_read_file(tmp_path, ir_buf, (int32_t)(sz));
-  if (nread < 0) {
-  free(ir_buf);
-  free(cmd);
-  return 1;
-}
-  ir_buf[nread] = 0;
-  uint8_t* out_buf = (uint8_t*)(malloc((sz + 1024)));
-  int32_t out_len = 0;
-  int32_t _s_out = sprintf(out_buf, (uint8_t*)("target datalayout = \"e-m:e-p:64:64-i64:64-i128:128-n32:64-S128\"\ntarget triple = \"bpfel\"\n"), (uint8_t*)(""), (uint8_t*)(""), (uint8_t*)(""));
-  out_len = flowc_strlen((const char*)(out_buf));
-  int32_t i = 0;
-  while (i < nread) {
-  int32_t nl = flowc_span_find_first(ir_buf, i, nread, 10);
-  int32_t end = nread;
-  if (nl >= 0) {
-  end = (nl + 1);
-}
-  int32_t is_dl = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target datalayout ="));
-  int32_t is_tt = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target triple ="));
-  if (is_dl == 0 && is_tt == 0) {
-  uint8_t* _m = (uint8_t*)(memcpy((out_buf + out_len), (ir_buf + i), (int64_t)((end - i))));
-  out_len = (out_len + (end - i));
-}
-  i = end;
-}
-  int32_t _w = flowc_write_file(tmp_path, out_buf, out_len);
-  free(ir_buf);
-  free(out_buf);
-  int32_t _s2 = sprintf(cmd, (uint8_t*)("clang -target bpfel -O%s -x ir -c -o %s build/flow_bpf_tmp.ll"), (uint8_t*)(optimize), (uint8_t*)(out_path), (uint8_t*)(""));
-  int32_t rc2 = flowc_io_system((const char*)(cmd));
-  if (rc2 != 0) {
-  puts("error: LLVM IR -> eBPF compilation failed");
-  free(cmd);
-  return 1;
-}
-  free(cmd);
-  return 0;
 }
 
 

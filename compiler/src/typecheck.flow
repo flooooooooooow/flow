@@ -12,6 +12,28 @@ import .ast {
     AST_DEFER, AST_ENUM, AST_IF_EXPR,
     flowc_ast_chain_len
 }
+import .overload_table {
+    FlowcOverloadTable,
+    flowc_overload_table_init,
+    flowc_overload_table_free,
+    flowc_overload_table_count
+}
+import .overload_call {
+    FlowcOverloadCallScratch,
+    flowc_overload_call_scratch_init,
+    flowc_overload_call_scratch_free,
+    flowc_overload_call_prepare,
+    flowc_overload_call_set_ident_type,
+    flowc_overload_resolve_call
+}
+import .overload_registry {
+    flowc_overload_registry_reset,
+    flowc_overload_registry_collect
+}
+import .overload_select {
+    FLOWC_OVERLOAD_SELECT_NO_MATCH,
+    FLOWC_OVERLOAD_SELECT_AMBIGUOUS
+}
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -48,6 +70,8 @@ export struct TcCtx {
     seed_cap: i32,
     seed_len: i32,
     seed_nlen: i32,
+    overloads: FlowcOverloadTable,
+    overload_scratch: FlowcOverloadCallScratch,
     # Optional source path for diagnostics (may be empty).
     path: string
 }
@@ -120,7 +144,7 @@ function flowc_tc_err(ctx: ptr<TcCtx>) {
 function flowc_tc_note(ctx: ptr<TcCtx>, label: string, start: i32, end: i32) {
     puts(label)
     let path: string = ctx[0].path
-    if path != null {
+    if path as ptr<u8> != null {
         let plen: i64 = strlen(path)
         if plen > 0 {
             puts("flowc tc: file")
@@ -162,7 +186,7 @@ function flowc_tc_note(ctx: ptr<TcCtx>, label: string, start: i32, end: i32) {
         i = i + 1
     }
     buf[n] = 0
-    let s: string = buf
+    let s: string = buf as string
     puts(s)
     free(buf)
 }
@@ -526,6 +550,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_CALL {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
+        let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
             # GPU built-ins
             let mut is_gpu_builtin: i32 = 0
@@ -552,12 +577,50 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
                 }
             }
         } else {
-            let arity: i32 = flowc_tc_lookup_fn_arity(ctx[0], ns, ne)
-            if arity >= 0 {
-                let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
-                if nargs != arity {
-                    flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
-                    flowc_tc_err(ctx)
+            let local_candidates: i32 = flowc_overload_table_count(ctx[0].overloads, ns, ne, nargs)
+            if local_candidates > 0 {
+                if flowc_overload_call_prepare(&ctx[0].overload_scratch, nargs) >= 0 {
+                    let mut typed_arg: i32 = arena.nodes[id].a
+                    let mut arg_index: i32 = 0
+                    while typed_arg != AST_NONE {
+                        if arena.nodes[typed_arg].kind == AST_IDENT {
+                            let ident_ty: i32 = flowc_tc_lookup_val_type(
+                                ctx[0],
+                                arena.nodes[typed_arg].name_start,
+                                arena.nodes[typed_arg].name_end
+                            )
+                            if ident_ty != AST_NONE {
+                                flowc_overload_call_set_ident_type(&ctx[0].overload_scratch, arg_index, ident_ty)
+                            }
+                        }
+                        typed_arg = arena.nodes[typed_arg].next
+                        arg_index = arg_index + 1
+                    }
+                    let selected: i32 = flowc_overload_resolve_call(
+                        &ctx[0].overload_scratch,
+                        ctx[0].overloads,
+                        arena,
+                        ctx[0].src,
+                        ns,
+                        ne,
+                        arena.nodes[id].a,
+                        nargs
+                    )
+                    if selected == FLOWC_OVERLOAD_SELECT_AMBIGUOUS {
+                        flowc_tc_note(ctx, "flowc tc: ambiguous overload call", ns, ne)
+                        flowc_tc_err(ctx)
+                    } elif selected == FLOWC_OVERLOAD_SELECT_NO_MATCH {
+                        flowc_tc_note(ctx, "flowc tc: no matching overload", ns, ne)
+                        flowc_tc_err(ctx)
+                    }
+                }
+            } else {
+                let arity: i32 = flowc_tc_lookup_fn_arity(ctx[0], ns, ne)
+                if arity >= 0 {
+                    if nargs != arity {
+                        flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
+                        flowc_tc_err(ctx)
+                    }
                 }
             }
         }
@@ -1022,13 +1085,16 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     let ncap: i32 = 4096
     let mcap: i32 = 128
     let seed_cap: i32 = 32768
+    let overload_arg_cap: i32 = 128
+    let mut overloads: FlowcOverloadTable = flowc_overload_table_init(src, ncap)
+    let mut overload_scratch: FlowcOverloadCallScratch = flowc_overload_call_scratch_init(overload_arg_cap)
     let raw_ns: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_ne: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_nk: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_na: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_mk: ptr<u8> = malloc((mcap as i64) * 4)
     let raw_seed: ptr<u8> = malloc(seed_cap as i64)
-    if raw_ns == null or raw_ne == null or raw_nk == null or raw_na == null or raw_mk == null or raw_seed == null {
+    if raw_ns == null or raw_ne == null or raw_nk == null or raw_na == null or raw_mk == null or raw_seed == null or overloads.err != 0 or overload_scratch.err != 0 {
         if raw_ns != null {
             free(raw_ns)
         }
@@ -1047,6 +1113,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         if raw_seed != null {
             free(raw_seed)
         }
+        flowc_overload_table_free(&overloads)
+        flowc_overload_call_scratch_free(&overload_scratch)
         return TcCtx {
             src: src,
             ns: null,
@@ -1067,6 +1135,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             seed_cap: 0,
             seed_len: 0,
             seed_nlen: 0,
+            overloads: overloads,
+            overload_scratch: overload_scratch,
             path: ""
         }
     }
@@ -1100,6 +1170,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         seed_cap: seed_cap,
         seed_len: 0,
         seed_nlen: 0,
+        overloads: overloads,
+        overload_scratch: overload_scratch,
         path: ""
     }
 }
@@ -1129,6 +1201,8 @@ export function flowc_tc_free(ctx: ptr<TcCtx>) {
         free(ctx[0].seed_buf)
         ctx[0].seed_buf = null
     }
+    flowc_overload_table_free(&ctx[0].overloads)
+    flowc_overload_call_scratch_free(&ctx[0].overload_scratch)
 }
 
 # Drop module-local bindings; keep seeded exports. Reset check state.
@@ -1140,6 +1214,7 @@ export function flowc_tc_reset_module(ctx: ptr<TcCtx>, src: ptr<u8>) {
     ctx[0].cur_ret = AST_NONE
     ctx[0].loop_depth = 0
     ctx[0].has_extern = 0
+    flowc_overload_registry_reset(&ctx[0].overloads, src)
 }
 
 export function flowc_tc_set_path(ctx: ptr<TcCtx>, path: string) {
@@ -1155,6 +1230,10 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
     if arena.nodes[root].kind != AST_PROGRAM {
         flowc_tc_err(ctx)
         return ctx[0].err
+    }
+    flowc_overload_registry_reset(&ctx[0].overloads, ctx[0].src)
+    if flowc_overload_registry_collect(&ctx[0].overloads, arena, root) < 0 {
+        flowc_tc_err(ctx)
     }
     flowc_tc_collect_globals(ctx, arena, root)
     flowc_tc_check_fns(ctx, arena, root)
@@ -1176,7 +1255,7 @@ export function flowc_typecheck_ex(arena: AstArena, root: i32, src: ptr<u8>, pat
     if ctx.ns == null {
         return 1
     }
-    if path != null {
+    if path as ptr<u8> != null {
         ctx.path = path
     }
 

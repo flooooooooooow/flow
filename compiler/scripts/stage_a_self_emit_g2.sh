@@ -94,8 +94,46 @@ g2_emit_module cgen \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h
 
+# typecheck.flow resolves calls through the native overload modules, so those
+# are emitted first, in dependency order, and their headers are included below.
+g2_emit_module overload
+g2_emit_module overload_table
+g2_emit_module type_name compiler/build/g2_ast.h
+g2_emit_module expr_type compiler/build/g2_ast.h
+for m in overload overload_table type_name expr_type; do
+    python3 compiler/scripts/flowc_c_to_hdr.py \
+        "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
+done
+g2_emit_module overload_args \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_expr_type.h \
+    compiler/build/g2_type_name.h
+g2_emit_module overload_select \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_overload_table.h \
+    compiler/build/g2_overload.h \
+    compiler/build/g2_type_name.h
+g2_emit_module overload_registry \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_overload_table.h
+for m in overload_args overload_select overload_registry; do
+    python3 compiler/scripts/flowc_c_to_hdr.py \
+        "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
+done
+g2_emit_module overload_call \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_overload_table.h \
+    compiler/build/g2_overload_args.h \
+    compiler/build/g2_overload_select.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/g2_overload_call.c compiler/build/g2_overload_call.h
+
 g2_emit_module typecheck \
-    compiler/build/g2_ast.h
+    compiler/build/g2_ast.h \
+    compiler/build/g2_overload_table.h \
+    compiler/build/g2_overload_call.h \
+    compiler/build/g2_overload_registry.h \
+    compiler/build/g2_overload_select.h
 
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/g2_parser.c compiler/build/g2_parser.h
@@ -113,6 +151,8 @@ g2_emit_module resolve \
     compiler/build/g2_parser.h \
     compiler/build/g2_fileio.h \
     compiler/build/g2_cgen.h \
+    compiler/build/g2_overload_table.h \
+    compiler/build/g2_overload_call.h \
     compiler/build/g2_typecheck.h
 
 # Relocatable link: proves driver_self-emitted frontend objects resolve together.
@@ -123,6 +163,14 @@ cc -r -o compiler/build/flowc_frontend_g2.o \
     compiler/build/g2_parser.o \
     compiler/build/g2_fileio.o \
     compiler/build/g2_cgen.o \
+    compiler/build/g2_overload.o \
+    compiler/build/g2_overload_table.o \
+    compiler/build/g2_type_name.o \
+    compiler/build/g2_expr_type.o \
+    compiler/build/g2_overload_args.o \
+    compiler/build/g2_overload_select.o \
+    compiler/build/g2_overload_registry.o \
+    compiler/build/g2_overload_call.o \
     compiler/build/g2_typecheck.o \
     compiler/build/g2_resolve.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do

@@ -1,0 +1,147 @@
+# End-to-end tests for native overload resolution inside compiler/src/typecheck.flow.
+
+import "compiler/src/ast.flow"
+import "compiler/src/typecheck.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function make_type(arena: ptr<AstArena>, start: i32, end: i32) -> i32 {
+    let ty: i32 = flowc_ast_alloc(arena, AST_TYPE, start, end)
+    arena[0].nodes[ty].name_start = start
+    arena[0].nodes[ty].name_end = end
+    return ty
+}
+
+function make_param(
+    arena: ptr<AstArena>,
+    name_start: i32,
+    name_end: i32,
+    ty: i32
+) -> i32 {
+    let param: i32 = flowc_ast_alloc(arena, AST_PARAM, name_start, name_end)
+    arena[0].nodes[param].name_start = name_start
+    arena[0].nodes[param].name_end = name_end
+    arena[0].nodes[param].a = ty
+    return param
+}
+
+function make_fn(
+    arena: ptr<AstArena>,
+    name_start: i32,
+    name_end: i32,
+    params: i32
+) -> i32 {
+    let body: i32 = flowc_ast_alloc(arena, AST_BLOCK, 0, 0)
+    let fn: i32 = flowc_ast_alloc(arena, AST_FN, name_start, name_end)
+    arena[0].nodes[fn].name_start = name_start
+    arena[0].nodes[fn].name_end = name_end
+    arena[0].nodes[fn].a = params
+    arena[0].nodes[fn].c = body
+    return fn
+}
+
+function add_overload(
+    arena: ptr<AstArena>,
+    root: i32,
+    name_start: i32,
+    name_end: i32,
+    type_a_start: i32,
+    type_a_end: i32,
+    type_b_start: i32,
+    type_b_end: i32,
+    arity: i32
+) {
+    let ty_a: i32 = make_type(arena, type_a_start, type_a_end)
+    let p_a: i32 = make_param(arena, 37, 38, ty_a)
+    let mut params: i32 = flowc_ast_chain_push(arena, AST_NONE, p_a)
+    if arity == 2 {
+        let ty_b: i32 = make_type(arena, type_b_start, type_b_end)
+        let p_b: i32 = make_param(arena, 39, 40, ty_b)
+        params = flowc_ast_chain_push(arena, params, p_b)
+    }
+    let fn: i32 = make_fn(arena, name_start, name_end, params)
+    arena[0].nodes[root].a = flowc_ast_chain_push(arena, arena[0].nodes[root].a, fn)
+}
+
+function add_caller(
+    arena: ptr<AstArena>,
+    root: i32,
+    callee_start: i32,
+    callee_end: i32,
+    arg_kind: i32,
+    arg_count: i32
+) {
+    let call: i32 = flowc_ast_alloc(arena, AST_CALL, callee_start, callee_end)
+    arena[0].nodes[call].name_start = callee_start
+    arena[0].nodes[call].name_end = callee_end
+
+    let mut args: i32 = AST_NONE
+    let first: i32 = flowc_ast_alloc(arena, arg_kind, 0, 0)
+    args = flowc_ast_chain_push(arena, args, first)
+    if arg_count == 2 {
+        let second: i32 = flowc_ast_alloc(arena, arg_kind, 0, 0)
+        args = flowc_ast_chain_push(arena, args, second)
+    }
+    arena[0].nodes[call].a = args
+
+    let stmt: i32 = flowc_ast_alloc(arena, AST_EXPR_STMT, 0, 0)
+    arena[0].nodes[stmt].a = call
+    let body: i32 = flowc_ast_alloc(arena, AST_BLOCK, 0, 0)
+    arena[0].nodes[body].a = stmt
+    let caller: i32 = flowc_ast_alloc(arena, AST_FN, 32, 36)
+    arena[0].nodes[caller].name_start = 32
+    arena[0].nodes[caller].name_end = 36
+    arena[0].nodes[caller].c = body
+    arena[0].nodes[root].a = flowc_ast_chain_push(arena, arena[0].nodes[root].a, caller)
+}
+
+function run_case(callee: i32, arg_kind: i32, arg_count: i32) -> i32 {
+    #             pick amb i32 f32 u32 u64 string main a b
+    let src: string = "pick amb i32 f32 u32 u64 string main a b"
+    let mut arena: AstArena = flowc_ast_new(128)
+    let root: i32 = flowc_ast_alloc(&arena, AST_PROGRAM, 0, 0)
+
+    add_overload(&arena, root, 0, 4, 9, 12, 0, 0, 1)
+    add_overload(&arena, root, 0, 4, 13, 16, 0, 0, 1)
+    add_overload(&arena, root, 0, 4, 9, 12, 9, 12, 2)
+    add_overload(&arena, root, 5, 8, 17, 20, 0, 0, 1)
+    add_overload(&arena, root, 5, 8, 21, 24, 0, 0, 1)
+
+    if callee == 0 {
+        add_caller(&arena, root, 0, 4, arg_kind, arg_count)
+    } else {
+        add_caller(&arena, root, 5, 8, arg_kind, arg_count)
+    }
+
+    let errors: i32 = flowc_typecheck_ex(arena, root, src as ptr<u8>, "")
+    flowc_ast_free(arena)
+    return errors
+}
+
+function main() -> i32 {
+    if run_case(0, AST_INT, 1) != 0 {
+        puts("FAIL: pick(i32 literal) should resolve uniquely")
+        return 1
+    }
+    if run_case(0, AST_FLOAT, 1) != 0 {
+        puts("FAIL: pick(f32 literal) should resolve uniquely")
+        return 2
+    }
+    if run_case(0, AST_INT, 2) != 0 {
+        puts("FAIL: same-name different-arity overload should resolve")
+        return 3
+    }
+    if run_case(0, AST_STRING, 1) != 1 {
+        puts("FAIL: known incompatible call should report one no-match")
+        return 4
+    }
+    if run_case(1, AST_INT, 1) != 1 {
+        puts("FAIL: u32/u64 integer-literal widening should be ambiguous")
+        return 5
+    }
+
+    puts("All native overload typecheck integration tests passed")
+    return 0
+}
