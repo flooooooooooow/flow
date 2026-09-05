@@ -21,6 +21,8 @@ import .fileio { flowc_read_file, flowc_write_file }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
 import .fmt { flowc_fmt_emit }
+import .wasm_gen { flowc_wasm_gen_compile }
+import .bpf_gen { flowc_bpf_gen_compile }
 import .typecheck { flowc_typecheck }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck,
@@ -99,6 +101,24 @@ function flowc_want_typecheck() -> i32 {
 # Returns 0 on success, 1 on failure. Does not run self-tests.
 function flowc_emit_mode() -> i32 {
     let in_path: string = getenv("FLOWC_IN")
+    let out_path: string = getenv("FLOWC_OUT")
+
+    if flowc_env_eq("FLOWC_BACKEND", "wasm") == 1 {
+        if out_path == null {
+            puts("flowc emit: wasm requires FLOWC_OUT")
+            return 1
+        }
+        return flowc_wasm_gen_compile(in_path, out_path, "2")
+    }
+
+    if flowc_env_eq("FLOWC_BACKEND", "bpf") == 1 {
+        if out_path == null {
+            puts("flowc emit: bpf requires FLOWC_OUT")
+            return 1
+        }
+        return flowc_bpf_gen_compile(in_path, out_path, "2")
+    }
+
     # 1MB: parser bundle (token+ast+lexer+parser) needs headroom beyond 512K.
     let out_cap: i32 = 1048576
     let out: ptr<u8> = malloc(out_cap as i64)

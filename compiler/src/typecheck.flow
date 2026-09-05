@@ -527,8 +527,24 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
+            # GPU built-ins
+            let mut is_gpu_builtin: i32 = 0
+            if flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_thread_id") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_thread_id_x") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_thread_id_y") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_thread_id_z") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_id") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_id_x") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_id_y") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_id_z") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_local_id") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_local_id_x") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_size") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_sync") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_barrier") == 1 { is_gpu_builtin = 1 }
+
             # Check if it's a bound local variable (e.g. a lambda function pointer).
-            if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+            if flowc_tc_lookup(ctx[0], ns, ne) == 0 and is_gpu_builtin == 0 {
                 # extern { ... } bodies are brace-skipped — allow unknown calls.
                 if ctx[0].has_extern == 0 {
                     flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne)

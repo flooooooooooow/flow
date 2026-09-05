@@ -155,14 +155,50 @@ function flowc_parser_eat_gt(p: ptr<Parser>) -> i32 {
 # Plain name, ptr<T> (a=inner, ival=0), array<T, N> (a=inner, ival=N),
 # or function pointer (A, B) -> R (a=param chain, b=return type).
 function flowc_parse_type(p: ptr<Parser>) -> i32 {
-    # Reference type: &[T] or &T or &mut [T] — skip the & and optional mut.
+    # Reference type: &[T] or &T or &mut [T]
     if flowc_parser_check(p[0], TOK_AMP) == 1 {
+        let start: i32 = p[0].cur.start
         flowc_parser_advance(p)
-        # Skip `mut` keyword after & (e.g. &mut [i32]).
+        let mut is_mut: i32 = 0
         if flowc_parser_check_kw(p[0], KW_MUT) == 1 {
+            is_mut = 1
             flowc_parser_advance(p)
         }
-        return flowc_parse_type(p)
+        
+        if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
+            flowc_parser_advance(p)
+            let inner: i32 = flowc_parse_type(p)
+            if inner == AST_NONE {
+                return AST_NONE
+            }
+            let mut extent: i32 = 0
+            if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+                flowc_parser_advance(p)
+                if flowc_parser_check(p[0], TOK_INT) == 1 {
+                    extent = flowc_parse_int_span(p[0].lex.input, p[0].cur.start, p[0].cur.end)
+                    flowc_parser_advance(p)
+                } else {
+                    p[0].err = 1
+                    return AST_NONE
+                }
+            }
+            if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+                return AST_NONE
+            }
+            let id: i32 = flowc_ast_alloc(&p[0].arena, AST_TYPE, start, p[0].cur.start)
+            if id == AST_NONE {
+                p[0].err = 1
+                return AST_NONE
+            }
+            p[0].arena.nodes[id].a = inner
+            p[0].arena.nodes[id].ival = extent
+            if is_mut == 1 {
+                flowc_ast_type_set_span_mutable(&p[0].arena, id, 1)
+            }
+            return id
+        } else {
+            return flowc_parse_type(p)
+        }
     }
     # Slice type: [T] — skip brackets and inner type.
     if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
