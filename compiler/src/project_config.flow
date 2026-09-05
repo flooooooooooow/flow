@@ -1,0 +1,59 @@
+# @module flowc.project_config
+# @means  Project configuration parser for flow.toml
+
+import .fileio { flowc_read_file, flowc_io_exists }
+import .toml { toml_has_key, toml_get_string }
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function puts(s: string) -> i32
+}
+
+export struct ProjectConfig {
+    name: string,
+    version: string,
+    entry: string
+}
+
+export function flowc_load_project_config(path: string, out: ptr<ProjectConfig>) -> i32 {
+    if flowc_io_exists(path) == 0 {
+        return 1
+    }
+    
+    let buf: ptr<u8> = malloc(65536)
+    let n: i32 = flowc_read_file(path, buf, 65535)
+    if n < 0 {
+        free(buf)
+        return 1
+    }
+    buf[n] = 0
+    let src: string = buf as string
+    
+    let name_buf: ptr<u8> = malloc(256)
+    let ver_buf: ptr<u8> = malloc(256)
+    let entry_buf: ptr<u8> = malloc(256)
+    
+    name_buf[0] = 102; name_buf[1] = 108; name_buf[2] = 111; name_buf[3] = 119; name_buf[4] = 0
+    ver_buf[0] = 48; ver_buf[1] = 46; ver_buf[2] = 49; ver_buf[3] = 46; ver_buf[4] = 48; ver_buf[5] = 0
+    entry_buf[0] = 0
+    
+    if toml_has_key(src, "package.name") == 1 {
+        let _r: i32 = toml_get_string(src, "package.name", name_buf, 256)
+    }
+    if toml_has_key(src, "package.version") == 1 {
+        let _r: i32 = toml_get_string(src, "package.version", ver_buf, 256)
+    }
+    if toml_has_key(src, "package.entry") == 1 {
+        let _r: i32 = toml_get_string(src, "package.entry", entry_buf, 256)
+    }
+    
+    out.name = name_buf as string
+    out.version = ver_buf as string
+    out.entry = entry_buf as string
+    
+    free(buf)
+    return 0
+}

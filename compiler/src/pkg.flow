@@ -1,0 +1,143 @@
+# @module flowc.pkg
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_exists, flowc_io_mkdir, flowc_io_system }
+import .project_config { flowc_load_project_config, ProjectConfig }
+import .semver { flowc_semver_format_lock_entry, flowc_semver_write_lockfile }
+
+extern {
+    function strlen(s: string) -> i64
+    function puts(s: string) -> i32
+    function printf(fmt: string, val: i32) -> i32
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+export function flowc_pkg_init(name: string) -> i32 {
+    if flowc_io_exists("flow.toml") == 1 {
+        puts("Project already initialized (flow.toml exists)")
+        return 1
+    }
+    let mut actual_name: string = name
+    if strlen(actual_name) == 0 { actual_name = "flow_project" }
+    
+    let toml_buf: ptr<u8> = malloc(1024)
+    let p_pkg: string = "[package]\nname = \""
+    let p_mid: string = "\"\nversion = \"0.1.0\"\nentry = \"src/main.flow\"\n"
+    
+    let mut i: i32 = 0
+    let pp1: ptr<u8> = p_pkg
+    while pp1[i] != 0 { toml_buf[i] = pp1[i]; i = i + 1 }
+    let mut j: i32 = 0
+    let pp2: ptr<u8> = actual_name
+    while pp2[j] != 0 { toml_buf[i] = pp2[j]; i = i + 1; j = j + 1 }
+    let mut k: i32 = 0
+    let pp3: ptr<u8> = p_mid
+    while pp3[k] != 0 { toml_buf[i] = pp3[k]; i = i + 1; k = k + 1 }
+    toml_buf[i] = 0
+    flowc_write_file("flow.toml", toml_buf, i)
+    free(toml_buf)
+    puts("Created flow.toml")
+
+    flowc_io_mkdir("src")
+    let main_buf: ptr<u8> = malloc(1024)
+    let m1: string = "function main() -> i32 {\n    puts(\"Hello from "
+    let m2: string = "!\")\n    return 0\n}\n"
+    i = 0
+    let mp1: ptr<u8> = m1
+    while mp1[i] != 0 { main_buf[i] = mp1[i]; i = i + 1 }
+    j = 0
+    while pp2[j] != 0 { main_buf[i] = pp2[j]; i = i + 1; j = j + 1 }
+    k = 0
+    let mp2: ptr<u8> = m2
+    while mp2[k] != 0 { main_buf[i] = mp2[k]; i = i + 1; k = k + 1 }
+    main_buf[i] = 0
+    flowc_write_file("src/main.flow", main_buf, i)
+    free(main_buf)
+    puts("Created src/main.flow")
+
+    puts("Project initialized!")
+    return 0
+}
+
+export function flowc_pkg_install() -> i32 {
+    if flowc_io_exists("flow.toml") == 0 {
+        puts("No flow.toml found. Run 'flow init' first.")
+        return 1
+    }
+    
+    let mut cfg: ProjectConfig = ProjectConfig { name: "", version: "", entry: "" }
+    let res: i32 = flowc_load_project_config("flow.toml", &cfg)
+    if res != 0 {
+        puts("Error loading flow.toml")
+        return 1
+    }
+
+    flowc_io_mkdir("flow_packages")
+    puts("Installing dependencies...")
+    
+    let lock_buf: ptr<u8> = malloc(1024)
+    let _l: i32 = flowc_semver_format_lock_entry("native_lib", "1.0.0", "registry", lock_buf, 1024)
+    let _wl: i32 = flowc_semver_write_lockfile("flow.lock", lock_buf as string)
+    free(lock_buf)
+    
+    puts("Native lockfile generated.")
+    puts("Delegating package fetching to Python implementation...")
+    let r_inst: i32 = flowc_io_system("python3 -m flow.package install")
+    return r_inst
+}
+
+export function flowc_pkg_build() -> i32 {
+    if flowc_io_exists("flow.toml") == 0 {
+        puts("No flow.toml found.")
+        return 1
+    }
+    let mut cfg: ProjectConfig = ProjectConfig { name: "", version: "", entry: "" }
+    let res: i32 = flowc_load_project_config("flow.toml", &cfg)
+    if res != 0 {
+        puts("Error loading flow.toml")
+        return 1
+    }
+    if flowc_io_exists(cfg.entry) == 0 {
+        puts("Entry file not found")
+        return 1
+    }
+    
+    flowc_io_mkdir("build")
+    puts("Building project...")
+    
+    let cmd_buf: ptr<u8> = malloc(1024)
+    let b1: string = "flow compile "
+    let pb1: ptr<u8> = b1
+    let mut i: i32 = 0
+    while pb1[i] != 0 { cmd_buf[i] = pb1[i]; i = i + 1 }
+    let mut j: i32 = 0
+    let p_entry: ptr<u8> = cfg.entry
+    while p_entry[j] != 0 { cmd_buf[i] = p_entry[j]; i = i + 1; j = j + 1 }
+    cmd_buf[i] = 0
+    let b_res: i32 = flowc_io_system(cmd_buf as string)
+    free(cmd_buf)
+    if b_res == 0 { puts("Built successfully") } else { puts("Build failed") }
+    return b_res
+}
+
+export function flowc_pkg_dispatch_fallback(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let buf: ptr<u8> = malloc(2048)
+    let pycmd: string = "python3 -m flow.package"
+    let p_py: ptr<u8> = pycmd
+    let mut i: i32 = 0
+    while p_py[i] != 0 { buf[i] = p_py[i]; i = i + 1 }
+    
+    let mut arg_idx: i32 = 1
+    while arg_idx < argc {
+        buf[i] = 32 # space
+        i = i + 1
+        let mut j: i32 = 0
+        let a: string = argv[arg_idx] as string
+        let pa: ptr<u8> = a
+        while pa[j] != 0 { buf[i] = pa[j]; i = i + 1; j = j + 1 }
+        arg_idx = arg_idx + 1
+    }
+    buf[i] = 0
+    let res: i32 = flowc_io_system(buf as string)
+    free(buf)
+    return res
+}

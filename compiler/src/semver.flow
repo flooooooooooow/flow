@@ -1,0 +1,158 @@
+# @module flowc.semver
+# @means  Semantic version parsing and requirements matching
+
+import .fileio { flowc_write_file }
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+export struct Semver {
+    major: i32,
+    minor: i32,
+    patch: i32
+}
+
+export function flowc_semver_parse(v_str: string) -> Semver {
+    let s: ptr<u8> = v_str
+    let len: i32 = strlen(v_str) as i32
+    let mut i: i32 = 0
+    let mut num: i32 = 0
+    let mut part: i32 = 0
+    let mut maj: i32 = 0
+    let mut min: i32 = 0
+    let mut pat: i32 = 0
+    
+    if len > 0 and s[0] == 118 { i = i + 1 }
+    
+    while i < len {
+        let c: i32 = s[i] as i32
+        if c == 43 or c == 45 { break }
+        if c == 46 {
+            if part == 0 { maj = num } else { if part == 1 { min = num } }
+            num = 0
+            part = part + 1
+        } else {
+            if c >= 48 and c <= 57 { num = num * 10 + (c - 48) }
+        }
+        i = i + 1
+    }
+    if part == 0 { maj = num } else { if part == 1 { min = num } else { if part == 2 { pat = num } } }
+    return Semver { major: maj, minor: min, patch: pat }
+}
+
+export function flowc_semver_eq(a: Semver, b: Semver) -> i32 {
+    if a.major == b.major and a.minor == b.minor and a.patch == b.patch { return 1 }
+    return 0
+}
+
+export function flowc_semver_gt(a: Semver, b: Semver) -> i32 {
+    if a.major > b.major { return 1 }
+    if a.major < b.major { return 0 }
+    if a.minor > b.minor { return 1 }
+    if a.minor < b.minor { return 0 }
+    if a.patch > b.patch { return 1 }
+    return 0
+}
+
+export function flowc_semver_gte(a: Semver, b: Semver) -> i32 {
+    if flowc_semver_gt(a, b) == 1 { return 1 }
+    if flowc_semver_eq(a, b) == 1 { return 1 }
+    return 0
+}
+
+export function flowc_semver_matches(req: string, version: string) -> i32 {
+    let r_len: i32 = strlen(req) as i32
+    if r_len == 0 or strcmp(req, "*") == 0 or strcmp(req, "latest") == 0 { return 1 }
+    
+    let pr: ptr<u8> = req
+    if r_len > 1 and pr[0] == 94 {
+        let base_s: string = (pr + 1) as string
+        let base: Semver = flowc_semver_parse(base_s)
+        let ver: Semver = flowc_semver_parse(version)
+        if ver.major != base.major { return 0 }
+        if base.major == 0 {
+            if ver.minor == base.minor and ver.patch >= base.patch { return 1 }
+            return 0
+        }
+        if flowc_semver_gte(ver, base) == 1 { return 1 }
+        return 0
+    }
+    
+    if r_len > 2 and pr[0] == 62 and pr[1] == 61 {
+        let base_s: string = (pr + 2) as string
+        let mut base_ptr: ptr<u8> = base_s as ptr<u8>
+        while base_ptr[0] == 32 { base_ptr = base_ptr + 1 }
+        let base: Semver = flowc_semver_parse(base_ptr as string)
+        let ver: Semver = flowc_semver_parse(version)
+        return flowc_semver_gte(ver, base)
+    }
+    
+    if r_len > 2 and pr[0] == 61 and pr[1] == 61 {
+        let base_s: string = (pr + 2) as string
+        let mut base_ptr: ptr<u8> = base_s as ptr<u8>
+        while base_ptr[0] == 32 { base_ptr = base_ptr + 1 }
+        let base: Semver = flowc_semver_parse(base_ptr as string)
+        let ver: Semver = flowc_semver_parse(version)
+        return flowc_semver_eq(ver, base)
+    }
+    
+    let base2: Semver = flowc_semver_parse(req)
+    let ver2: Semver = flowc_semver_parse(version)
+    return flowc_semver_eq(ver2, base2)
+}
+
+export function flowc_semver_format_lock_entry(name: string, ver: string, source: string, out: ptr<u8>, cap: i32) -> i32 {
+    let mut i: i32 = 0
+    let mut j: i32 = 0
+    let p_start: string = "  \""
+    let p1: ptr<u8> = p_start
+    while p1[j] != 0 { out[i] = p1[j]; i = i + 1; j = j + 1 }
+    j = 0
+    let pname: ptr<u8> = name
+    while pname[j] != 0 { out[i] = pname[j]; i = i + 1; j = j + 1 }
+    let p_mid: string = "\" = { \"version\" = \""
+    j = 0
+    let pmid: ptr<u8> = p_mid
+    while pmid[j] != 0 { out[i] = pmid[j]; i = i + 1; j = j + 1 }
+    j = 0
+    let pver: ptr<u8> = ver
+    while pver[j] != 0 { out[i] = pver[j]; i = i + 1; j = j + 1 }
+    let p_src: string = "\", \"source\" = \""
+    j = 0
+    let psrc: ptr<u8> = p_src
+    while psrc[j] != 0 { out[i] = psrc[j]; i = i + 1; j = j + 1 }
+    j = 0
+    let psource: ptr<u8> = source
+    while psource[j] != 0 { out[i] = psource[j]; i = i + 1; j = j + 1 }
+    let p_end: string = "\" }\n"
+    j = 0
+    let pend: ptr<u8> = p_end
+    while pend[j] != 0 { out[i] = pend[j]; i = i + 1; j = j + 1 }
+    out[i] = 0
+    return i
+}
+
+export function flowc_semver_write_lockfile(path: string, entries: string) -> i32 {
+    let mut out: ptr<u8> = malloc(4096)
+    let header: string = "{\n  \"version\" = 1,\n  \"packages\" = {\n"
+    let mut i: i32 = 0
+    let mut j: i32 = 0
+    let ph: ptr<u8> = header
+    while ph[j] != 0 { out[i] = ph[j]; i = i + 1; j = j + 1 }
+    j = 0
+    let pent: ptr<u8> = entries
+    while pent[j] != 0 { out[i] = pent[j]; i = i + 1; j = j + 1 }
+    let footer: string = "  }\n}\n"
+    j = 0
+    let pf: ptr<u8> = footer
+    while pf[j] != 0 { out[i] = pf[j]; i = i + 1; j = j + 1 }
+    out[i] = 0
+    let res: i32 = flowc_write_file(path, out, i)
+    free(out)
+    return res
+}
