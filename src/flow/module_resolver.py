@@ -140,21 +140,26 @@ class ModuleResolver:
 
         cache_dir = os.path.join(os.path.dirname(self.root_file), ".flow_cache")
         os.makedirs(cache_dir, exist_ok=True)
-        
+
         with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
         file_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
         cache_path = os.path.join(cache_dir, f"{file_hash}.pkl")
-        
+
         declarations = None
         if os.path.exists(cache_path):
             try:
                 with open(cache_path, "rb") as f:
-                    declarations = pickle.load(f)
+                    # The compiler is the only writer of this file. The name is
+                    # the SHA-256 of the source it was parsed from, so a cache
+                    # entry is reachable only by compiling that exact source,
+                    # and a corrupted or foreign file falls through to a reparse
+                    # below rather than being trusted.
+                    declarations = pickle.load(f)  # nosec B301
             except Exception:
                 pass
-                
+
         if declarations is None:
             # Fill-shader dialect (`shader fill` / FSL `fn`) is not host Flow.
             # Validate the FSL module, then provide a stub main for C transpile.
@@ -176,7 +181,7 @@ class ModuleResolver:
                 lexer = Lexer(code)
                 parser = Parser(lexer)
                 declarations = parser.parse()
-                
+
             try:
                 with open(cache_path, "wb") as f:
                     pickle.dump(declarations, f)
