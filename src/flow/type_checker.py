@@ -908,6 +908,10 @@ class TypeChecker:
 
     def _local_borrow_origin(self, expr: Any) -> Optional[str]:
         """Name of function-local storage this expression borrows, if any."""
+        if isinstance(expr, FunctionCall) and (expr.name.startswith("arena_alloc") or expr.name.startswith("frame_alloc")):
+            if expr.arguments:
+                return self._borrow_root_name(expr.arguments[0])
+            return None
         if isinstance(expr, SliceExpr):
             return self._local_borrow_origin(expr.base)
         if isinstance(expr, Variable):
@@ -1608,16 +1612,21 @@ class TypeChecker:
 
         Only expression shapes that genuinely produce a reference into named
         local storage count. A local `ptr` variable holding a value from
-        `malloc` or `arena_alloc` is not one of them: its pointee outlives the
-        frame, and treating it as an escape would be a false positive. The
-        shapes tracked are:
+        `malloc` is not one of them: its pointee outlives the frame. However, 
+        returns from `arena_alloc` and `frame_alloc` are bound to their arena
+        argument. The shapes tracked are:
 
           - a local `array<T, N>` variable (decays to a pointer)
           - a local struct variable under `&`
           - a slice of either
-          - a span local whose origin is already recorded by the span pass
+          - a span or ptr local whose origin is already recorded
           - `&expr` where `expr` indexes or projects one of the above
+          - returns from `arena_alloc` and `frame_alloc`
         """
+        if isinstance(expr, FunctionCall) and (expr.name.startswith("arena_alloc") or expr.name.startswith("frame_alloc")):
+            if expr.arguments:
+                return self._borrow_root_name(expr.arguments[0])
+            return None
         if isinstance(expr, SliceExpr):
             return self._domain_borrow_root(expr.base)
         if isinstance(expr, UnaryOperation) and expr.operator == "&":
@@ -2492,13 +2501,15 @@ class TypeChecker:
             expected_type = expr_type
 
         # Span bookkeeping: a local of storage kind can be borrowed from; a
-        # local span records which storage (if any) it borrows.
-        if expected_type.kind == TypeKind.SPAN:
+        # local span or ptr records which storage (if any) it borrows.
+        if expected_type.kind in (TypeKind.SPAN, TypeKind.POINTER):
             origin = self._local_borrow_origin(var.initializer)
             if origin is not None:
                 self._span_origin[var.name] = origin
             else:
                 self._span_origin.pop(var.name, None)
+            if expected_type.kind == TypeKind.POINTER and self._current_function_name is not None:
+                self._function_local_storage.add(var.name)
         elif self._current_function_name is not None:
             self._function_local_storage.add(var.name)
 
@@ -2582,7 +2593,7 @@ class TypeChecker:
         reported = self._check_domain_escape_to_static(assign, assign.target, symbol.type)
         if (
             not reported
-            and self._is_span(symbol.type)
+            and self._is_reference_type(symbol.type)
             and assign.target in self.static_names
         ):
             origin = self._local_borrow_origin(assign.value)
