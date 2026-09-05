@@ -7,6 +7,8 @@ Resolves dot-path imports (verify.nat) and legacy string imports.
 from __future__ import annotations
 
 import os
+import hashlib
+import pickle
 import warnings
 from itertools import product
 from pathlib import Path
@@ -136,29 +138,50 @@ class ModuleResolver:
         module_info = ModuleInfo(file_path)
         self.modules[file_path] = module_info
 
+        cache_dir = os.path.join(os.path.dirname(self.root_file), ".flow_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        
         with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
-        # Fill-shader dialect (`shader fill` / FSL `fn`) is not host Flow.
-        # Validate the FSL module, then provide a stub main for C transpile.
-        if has_fill_shader_dsl(code):
-            mod = extract_shader_module(code)
-            if not mod.fills:
-                raise SyntaxError(
-                    f"Fill-shader module has no `shader fill` blocks: {file_path}"
-                )
-            declarations = _fill_shader_host_stub()
-        else:
-            from .field_dsl import expand_field_dsl, has_field_dsl
+        file_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        cache_path = os.path.join(cache_dir, f"{file_hash}.pkl")
+        
+        declarations = None
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "rb") as f:
+                    declarations = pickle.load(f)
+            except Exception:
+                pass
+                
+        if declarations is None:
+            # Fill-shader dialect (`shader fill` / FSL `fn`) is not host Flow.
+            # Validate the FSL module, then provide a stub main for C transpile.
+            if has_fill_shader_dsl(code):
+                mod = extract_shader_module(code)
+                if not mod.fills:
+                    raise SyntaxError(
+                        f"Fill-shader module has no `shader fill` blocks: {file_path}"
+                    )
+                declarations = _fill_shader_host_stub()
+            else:
+                from .field_dsl import expand_field_dsl, has_field_dsl
 
-            if has_field_dsl(code):
-                code = expand_field_dsl(code)
-            if has_dynamics_dsl(code):
-                code = expand_dynamics_dsl(code)
+                if has_field_dsl(code):
+                    code = expand_field_dsl(code)
+                if has_dynamics_dsl(code):
+                    code = expand_dynamics_dsl(code)
 
-            lexer = Lexer(code)
-            parser = Parser(lexer)
-            declarations = parser.parse()
+                lexer = Lexer(code)
+                parser = Parser(lexer)
+                declarations = parser.parse()
+                
+            try:
+                with open(cache_path, "wb") as f:
+                    pickle.dump(declarations, f)
+            except Exception:
+                pass
 
         imports = [d for d in declarations if isinstance(d, ImportDecl)]
         others = [

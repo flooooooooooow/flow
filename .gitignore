@@ -144,3 +144,4 @@ btree_test.db
 # in #598 because `git add -A` swept it up.
 /test.txt
 /out.gif
+.flow_cache/
