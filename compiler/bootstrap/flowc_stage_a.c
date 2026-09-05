@@ -9809,6 +9809,10 @@ int32_t flowc_overload_registry_collect(FlowcOverloadTable* table, AstArena aren
   int32_t item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
   int32_t fn = overload_registry_unwrap_fn(arena, item);
+  if (fn != AST_NONE && ((arena).nodes[fn]).c == AST_NONE) {
+  item = ((arena).nodes[item]).next;
+  continue;
+}
   if (fn != AST_NONE) {
   int32_t arity = flowc_ast_chain_len(arena, ((arena).nodes[fn]).a);
   if (flowc_overload_table_add(table, ((arena).nodes[fn]).name_start, ((arena).nodes[fn]).name_end, arity, fn) < 0) {

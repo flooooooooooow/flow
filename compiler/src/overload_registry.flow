@@ -61,6 +61,15 @@ export function flowc_overload_registry_collect(
     let mut item: i32 = arena.nodes[root].a
     while item != AST_NONE {
         let fn: i32 = overload_registry_unwrap_fn(arena, item)
+        # A forward declaration carries no body and is followed by its
+        # definition in the same module. Registering both makes every call to
+        # a mutually recursive function look like two candidates of the same
+        # name and arity, so the resolver reports AMBIGUOUS on a name that has
+        # exactly one meaning. Externs are AST_EXTERN and never reach here.
+        if fn != AST_NONE and arena.nodes[fn].c == AST_NONE {
+            item = arena.nodes[item].next
+            continue
+        }
         if fn != AST_NONE {
             let arity: i32 = flowc_ast_chain_len(arena, arena.nodes[fn].a)
             if flowc_overload_table_add(
