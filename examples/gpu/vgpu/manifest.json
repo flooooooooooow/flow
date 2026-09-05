@@ -1,0 +1,23 @@
+{
+  "suite": "vgpu",
+  "reference": "https://vgpu.sh/examples/",
+  "cases": [
+    {
+      "id": "gradient",
+      "upstream": "https://vgpu.sh/examples/gradient",
+      "source": "examples/gpu/vgpu/gradient.flow",
+      "fill": "vgpu_gradient",
+      "fragmentEntry": "vgpu_gradient_frag",
+      "width": 160,
+      "height": 90,
+      "time": 0.0,
+      "comparison": {
+        "mode": "exact-rgba8"
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    }
+  ]
+}
