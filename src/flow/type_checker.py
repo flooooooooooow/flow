@@ -2506,10 +2506,19 @@ class TypeChecker:
             origin = self._local_borrow_origin(var.initializer)
             if origin is not None:
                 self._span_origin[var.name] = origin
+                # A ptr counts as function-local storage only when it actually
+                # borrows some. One holding a malloc result does not: its
+                # pointee outlives the frame, and treating every ptr local as
+                # local storage rejects the ordinary case of stashing a
+                # heap pointer in a global.
+                if (
+                    expected_type.kind == TypeKind.POINTER
+                    and self._current_function_name is not None
+                ):
+                    self._function_local_storage.add(var.name)
             else:
                 self._span_origin.pop(var.name, None)
-            if expected_type.kind == TypeKind.POINTER and self._current_function_name is not None:
-                self._function_local_storage.add(var.name)
+                self._function_local_storage.discard(var.name)
         elif self._current_function_name is not None:
             self._function_local_storage.add(var.name)
 
