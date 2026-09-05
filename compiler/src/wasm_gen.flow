@@ -1,0 +1,37 @@
+# @module flowc.wasm_gen
+# @means  WebAssembly generation logic for Flow.
+
+import .fileio { flowc_io_system }
+
+@unsafe extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function puts(s: string) -> i32
+    function sprintf(str: ptr<u8>, format: ptr<u8>, a1: ptr<u8>, a2: ptr<u8>, a3: ptr<u8>) -> i32
+}
+
+export function flowc_wasm_gen_compile(in_path: string, out_path: string, optimize: string) -> i32 {
+    let cmd: ptr<u8> = malloc(4096)
+    if cmd == null { return 1 }
+    
+    # 1. Flow -> LLVM IR
+    let _s1: i32 = sprintf(cmd, "PYTHONPATH=src python3 -m flow.transpiler %s --wasm32 --llvm -o build/flow_wasm_tmp.ll" as ptr<u8>, in_path as ptr<u8>, "" as ptr<u8>, "" as ptr<u8>)
+    let rc1: i32 = flowc_io_system(cmd as string)
+    if rc1 != 0 {
+        puts("error: Flow -> LLVM IR lowering failed")
+        free(cmd)
+        return 1
+    }
+    
+    # 2. LLVM IR -> WebAssembly
+    let _s2: i32 = sprintf(cmd, "clang --target=wasm32-unknown-unknown -x ir -O%s -nostdlib build/flow_wasm_tmp.ll -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined -Wl,--export-memory -o %s" as ptr<u8>, optimize as ptr<u8>, out_path as ptr<u8>, "" as ptr<u8>)
+    let rc2: i32 = flowc_io_system(cmd as string)
+    if rc2 != 0 {
+        puts("error: LLVM IR -> WebAssembly compilation failed")
+        free(cmd)
+        return 1
+    }
+    
+    free(cmd)
+    return 0
+}

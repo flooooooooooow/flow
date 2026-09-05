@@ -1087,11 +1087,47 @@ int32_t flowc_parser_eat_gt(Parser* p) {
 
 int32_t flowc_parse_type(Parser* p) {
   if (flowc_parser_check(p[0], TOK_AMP) == 1) {
+  int32_t start = ((p[0]).cur).start;
   flowc_parser_advance(p);
+  int32_t is_mut = 0;
   if (flowc_parser_check_kw(p[0], KW_MUT) == 1) {
+  is_mut = 1;
   flowc_parser_advance(p);
 }
+  if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
+  flowc_parser_advance(p);
+  int32_t inner = flowc_parse_type(p);
+  if (inner == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t extent = 0;
+  if (flowc_parser_check(p[0], TOK_SEMI) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_INT) == 1) {
+  extent = flowc_parse_int_span(((p[0]).lex).input, ((p[0]).cur).start, ((p[0]).cur).end);
+  flowc_parser_advance(p);
+} else {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+}
+  if (flowc_parser_eat(p, TOK_RBRACK) == 0) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_TYPE, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = inner;
+  (((p[0]).arena).nodes[id]).ival = extent;
+  if (is_mut == 1) {
+  flowc_ast_type_set_span_mutable((&(p[0]).arena), id, 1);
+}
+  return id;
+} else {
   return flowc_parse_type(p);
+}
 }
   if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
   int32_t start = ((p[0]).cur).start;
@@ -9424,6 +9460,31 @@ int32_t flowc_fmt_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out,
 }
 
 
+int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const char* optimize);
+int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const char* optimize) {
+  uint8_t* cmd = (uint8_t*)(malloc(4096));
+  if (cmd == NULL) {
+  return 1;
+}
+  int32_t _s1 = sprintf(cmd, (uint8_t*)("PYTHONPATH=src python3 -m flow.transpiler %s --wasm32 --llvm -o build/flow_wasm_tmp.ll"), (uint8_t*)(in_path), (uint8_t*)(""), (uint8_t*)(""));
+  int32_t rc1 = flowc_io_system((const char*)(cmd));
+  if (rc1 != 0) {
+  puts("error: Flow -> LLVM IR lowering failed");
+  free(cmd);
+  return 1;
+}
+  int32_t _s2 = sprintf(cmd, (uint8_t*)("clang --target=wasm32-unknown-unknown -x ir -O%s -nostdlib build/flow_wasm_tmp.ll -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined -Wl,--export-memory -o %s"), (uint8_t*)(optimize), (uint8_t*)(out_path), (uint8_t*)(""));
+  int32_t rc2 = flowc_io_system((const char*)(cmd));
+  if (rc2 != 0) {
+  puts("error: LLVM IR -> WebAssembly compilation failed");
+  free(cmd);
+  return 1;
+}
+  free(cmd);
+  return 0;
+}
+
+
 typedef struct TcCtx {
   uint8_t* src;
   int32_t* ns;
@@ -9958,7 +10019,59 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   int32_t ns = ((arena).nodes[id]).name_start;
   int32_t ne = ((arena).nodes[id]).name_end;
   if (flowc_tc_lookup_fn(ctx[0], ns, ne) == 0) {
-  if (flowc_tc_lookup(ctx[0], ns, ne) == 0) {
+  int32_t is_gpu_builtin = 0;
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_thread_id") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_thread_id_x") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_thread_id_y") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_thread_id_z") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_block_id") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_block_id_x") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_block_id_y") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_block_id_z") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_local_id") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_local_id_x") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_block_size") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_sync") == 1) {
+  is_gpu_builtin = 1;
+} else {
+  if (flowc_tc_span_is((ctx[0]).src, ns, ne, "gpu_barrier") == 1) {
+  is_gpu_builtin = 1;
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  if (flowc_tc_lookup(ctx[0], ns, ne) == 0 && is_gpu_builtin == 0) {
   if ((ctx[0]).has_extern == 0) {
   flowc_tc_note(ctx, "flowc tc: unbound call", ns, ne);
   flowc_tc_err(ctx);
@@ -11295,6 +11408,194 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
 }
 
 
+int32_t flowc_streq_span(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
+int32_t flowc_streq(const char* s, uint8_t* lit);
+int32_t flowc_strlen(const char* s);
+int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t end);
+const char* flowc_strdup(const char* s);
+int32_t flowc_span_starts_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
+int32_t flowc_span_find_last(uint8_t* text, int32_t start, int32_t end, int32_t ch);
+int32_t flowc_span_find_first(uint8_t* text, int32_t start, int32_t end, int32_t ch);
+int32_t flowc_path_basename_start(uint8_t* text, int32_t start, int32_t end);
+int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit);
+int32_t flowc_streq_span(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
+  int32_t lit_len = (int32_t)(strlen(lit));
+  if ((end - start) != lit_len) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < lit_len) {
+  if (text[(start + i)] != lit[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t flowc_streq(const char* s, uint8_t* lit) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  if (strcmp(sp, lit) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_strlen(const char* s) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  return (int32_t)(strlen(sp));
+}
+
+int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t end) {
+  int32_t n = (end - start);
+  if (n <= 0) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < n) {
+  dst[i] = src[(start + i)];
+  i = (i + 1);
+}
+  return n;
+}
+
+const char* flowc_strdup(const char* s) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  int32_t len = (int32_t)(strlen(sp));
+  uint8_t* buf = (uint8_t*)(malloc((len + 1)));
+  if (buf == NULL) {
+  return (const char*)("");
+}
+  if (len > 0) {
+  uint8_t* _m = (uint8_t*)(memcpy(buf, sp, (int64_t)(len)));
+}
+  buf[len] = 0;
+  return (const char*)(buf);
+}
+
+int32_t flowc_span_starts_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
+  int32_t lit_len = (int32_t)(strlen(lit));
+  if ((end - start) < lit_len) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < lit_len) {
+  if (text[(start + i)] != lit[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t flowc_span_find_last(uint8_t* text, int32_t start, int32_t end, int32_t ch) {
+  int32_t i = (end - 1);
+  while (i >= start) {
+  if (text[i] == ch) {
+  return i;
+}
+  i = (i - 1);
+}
+  return (0 - 1);
+}
+
+int32_t flowc_span_find_first(uint8_t* text, int32_t start, int32_t end, int32_t ch) {
+  int32_t i = start;
+  while (i < end) {
+  if (text[i] == ch) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t flowc_path_basename_start(uint8_t* text, int32_t start, int32_t end) {
+  int32_t slash = flowc_span_find_last(text, start, end, 47);
+  if (slash < 0) {
+  return start;
+}
+  return (slash + 1);
+}
+
+int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t* lit) {
+  int32_t lit_len = (int32_t)(strlen(lit));
+  if ((end - start) < lit_len) {
+  return 0;
+}
+  int32_t off = (end - lit_len);
+  int32_t i = 0;
+  while (i < lit_len) {
+  if (text[(off + i)] != lit[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+
+int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize);
+int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize) {
+  uint8_t* cmd = (uint8_t*)(malloc(4096));
+  if (cmd == NULL) {
+  return 1;
+}
+  int32_t _s1 = sprintf(cmd, (uint8_t*)("PYTHONPATH=src python3 -m flow.transpiler %s --llvm --optimize --opt-level O%s -o build/flow_bpf_tmp.ll"), (uint8_t*)(in_path), (uint8_t*)(optimize), (uint8_t*)(""));
+  int32_t rc1 = flowc_io_system((const char*)(cmd));
+  if (rc1 != 0) {
+  puts("error: Flow -> LLVM IR lowering failed");
+  free(cmd);
+  return 1;
+}
+  const char* tmp_path = "build/flow_bpf_tmp.ll";
+  int64_t sz = flowc_io_file_size(tmp_path);
+  if (sz <= 0) {
+  free(cmd);
+  return 1;
+}
+  uint8_t* ir_buf = (uint8_t*)(malloc((sz + 1)));
+  int32_t nread = flowc_read_file(tmp_path, ir_buf, (int32_t)(sz));
+  if (nread < 0) {
+  free(ir_buf);
+  free(cmd);
+  return 1;
+}
+  ir_buf[nread] = 0;
+  uint8_t* out_buf = (uint8_t*)(malloc((sz + 1024)));
+  int32_t out_len = 0;
+  int32_t _s_out = sprintf(out_buf, (uint8_t*)("target datalayout = \"e-m:e-p:64:64-i64:64-i128:128-n32:64-S128\"\ntarget triple = \"bpfel\"\n"), (uint8_t*)(""), (uint8_t*)(""), (uint8_t*)(""));
+  out_len = flowc_strlen((const char*)(out_buf));
+  int32_t i = 0;
+  while (i < nread) {
+  int32_t nl = flowc_span_find_first(ir_buf, i, nread, 10);
+  int32_t end = nread;
+  if (nl >= 0) {
+  end = (nl + 1);
+}
+  int32_t is_dl = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target datalayout ="));
+  int32_t is_tt = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target triple ="));
+  if (is_dl == 0 && is_tt == 0) {
+  uint8_t* _m = (uint8_t*)(memcpy((out_buf + out_len), (ir_buf + i), (int64_t)((end - i))));
+  out_len = (out_len + (end - i));
+}
+  i = end;
+}
+  int32_t _w = flowc_write_file(tmp_path, out_buf, out_len);
+  free(ir_buf);
+  free(out_buf);
+  int32_t _s2 = sprintf(cmd, (uint8_t*)("clang -target bpfel -O%s -x ir -c -o %s build/flow_bpf_tmp.ll"), (uint8_t*)(optimize), (uint8_t*)(out_path), (uint8_t*)(""));
+  int32_t rc2 = flowc_io_system((const char*)(cmd));
+  if (rc2 != 0) {
+  puts("error: LLVM IR -> eBPF compilation failed");
+  free(cmd);
+  return 1;
+}
+  free(cmd);
+  return 0;
+}
+
+
 int32_t flowc_env_set(const char* name);
 int32_t flowc_env_eq(const char* name, const char* want);
 int32_t flowc_env_is_zero(const char* name);
@@ -11396,6 +11697,21 @@ int32_t flowc_want_typecheck() {
 
 int32_t flowc_emit_mode() {
   const char* in_path = getenv("FLOWC_IN");
+  const char* out_path = getenv("FLOWC_OUT");
+  if (flowc_env_eq("FLOWC_BACKEND", "wasm") == 1) {
+  if (out_path == NULL) {
+  puts("flowc emit: wasm requires FLOWC_OUT");
+  return 1;
+}
+  return flowc_wasm_gen_compile(in_path, out_path, "2");
+}
+  if (flowc_env_eq("FLOWC_BACKEND", "bpf") == 1) {
+  if (out_path == NULL) {
+  puts("flowc emit: bpf requires FLOWC_OUT");
+  return 1;
+}
+  return flowc_bpf_gen_compile(in_path, out_path, "2");
+}
   int32_t out_cap = 1048576;
   uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
   if (out == NULL) {

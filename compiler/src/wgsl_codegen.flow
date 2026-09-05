@@ -1,0 +1,471 @@
+# @module flowc.wgsl_codegen
+# @means  Emit WGSL from the Flow AST.
+
+import .token {
+    TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
+    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE, TOK_BAR, TOK_CARET, TOK_SHL, TOK_SHR, TOK_IN,
+    KW_DBG, KW_EXPECT
+}
+import .ast {
+    AstArena, AST_NONE,
+    AST_PROGRAM, AST_FN, AST_PARAM, AST_BLOCK, AST_LET, AST_RETURN,
+    AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_BOOL,
+    AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
+    AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
+    AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT,
+    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS, AST_IF_EXPR, AST_MATCH, AST_MATCH_ARM,
+    AST_EXTERN, AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT
+}
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+export struct WgslGenBuf {
+    out: ptr<u8>,
+    cap: i32,
+    len: i32,
+    err: i32,
+    indent: i32
+}
+
+function flowc_wgsl_buf_init(out: ptr<u8>, cap: i32) -> WgslGenBuf {
+    return WgslGenBuf { out: out, cap: cap, len: 0, err: 0, indent: 0 }
+}
+
+function flowc_wgsl_putc(w: ptr<WgslGenBuf>, c: i32) {
+    if w[0].err != 0 { return }
+    if w[0].len >= w[0].cap {
+        w[0].err = 1
+        return
+    }
+    w[0].out[w[0].len] = c as u8
+    w[0].len = w[0].len + 1
+}
+
+function flowc_wgsl_puts(w: ptr<WgslGenBuf>, s: string) {
+    let len: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < len {
+        flowc_wgsl_putc(w, (s as ptr<u8>)[i] as i32)
+        i = i + 1
+    }
+}
+
+function flowc_wgsl_put_span(w: ptr<WgslGenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    let mut i: i32 = start
+    while i < end {
+        flowc_wgsl_putc(w, src[i] as i32)
+        i = i + 1
+    }
+}
+
+function flowc_wgsl_indent(w: ptr<WgslGenBuf>) {
+    let mut i: i32 = 0
+    while i < w[0].indent {
+        flowc_wgsl_puts(w, "    ")
+        i = i + 1
+    }
+}
+
+function flowc_wgsl_span_is(src: ptr<u8>, start: i32, end: i32, s: string) -> i32 {
+    let len: i32 = strlen(s) as i32
+    if (end - start) != len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < len {
+        if src[start + i] != (s as ptr<u8>)[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function flowc_wgsl_emit_type(w: ptr<WgslGenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE {
+        flowc_wgsl_puts(w, "void")
+        return
+    }
+    if arena.nodes[id].kind != AST_TYPE {
+        return
+    }
+    let a: i32 = arena.nodes[id].a
+    if a != AST_NONE {
+        let ival: i32 = arena.nodes[id].ival
+        if ival > 0 {
+            flowc_wgsl_emit_type(w, arena, src, a)
+            return
+        } else {
+            if 1 == 1 {
+                flowc_wgsl_puts(w, "ptr<storage, ")
+                flowc_wgsl_emit_type(w, arena, src, a)
+                flowc_wgsl_puts(w, ", read_write>")
+            } else {
+                flowc_wgsl_puts(w, "device ")
+                flowc_wgsl_emit_type(w, arena, src, a)
+                flowc_wgsl_puts(w, "*")
+            }
+            return
+        }
+    }
+    if flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "f32") == 1 {
+        flowc_wgsl_puts(w, "f32")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "f64") == 1 {
+        flowc_wgsl_puts(w, "f64")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "i32") == 1 {
+        flowc_wgsl_puts(w, "i32")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "u32") == 1 {
+        flowc_wgsl_puts(w, "u32")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "i64") == 1 {
+        flowc_wgsl_puts(w, "i64")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "u64") == 1 {
+        flowc_wgsl_puts(w, "u64")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "bool") == 1 {
+        flowc_wgsl_puts(w, "bool")
+    } elif flowc_wgsl_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "void") == 1 {
+        flowc_wgsl_puts(w, "void")
+    } else {
+        flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    }
+}
+
+function flowc_wgsl_emit_expr(w: ptr<WgslGenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE { return }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_INT or kind == AST_FLOAT or kind == AST_BOOL or kind == AST_STRING {
+        flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if kind == AST_FLOAT {
+            flowc_wgsl_puts(w, "")
+        }
+    } elif kind == AST_IDENT {
+        let name_start: i32 = arena.nodes[id].name_start
+        let name_end: i32 = arena.nodes[id].name_end
+        if flowc_wgsl_span_is(src, name_start, name_end, "gpu_thread_id") == 1 {
+            flowc_wgsl_puts(w, "tid")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_thread_id_x") == 1 {
+            flowc_wgsl_puts(w, "i32(global_id.x)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_thread_id_y") == 1 {
+            flowc_wgsl_puts(w, "i32(global_id.y)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_thread_id_z") == 1 {
+            flowc_wgsl_puts(w, "i32(global_id.z)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_block_id") == 1 {
+            flowc_wgsl_puts(w, "i32(group_id.x)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_block_id_x") == 1 {
+            flowc_wgsl_puts(w, "i32(group_id.x)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_block_id_y") == 1 {
+            flowc_wgsl_puts(w, "i32(group_id.y)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_block_id_z") == 1 {
+            flowc_wgsl_puts(w, "i32(group_id.z)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_local_id") == 1 {
+            flowc_wgsl_puts(w, "i32(local_id.x)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_local_id_x") == 1 {
+            flowc_wgsl_puts(w, "i32(local_id.x)")
+        } elif flowc_wgsl_span_is(src, name_start, name_end, "gpu_block_size") == 1 {
+            flowc_wgsl_puts(w, "WORKGROUP_SIZE")
+        } else {
+            flowc_wgsl_put_span(w, src, name_start, name_end)
+        }
+    } elif kind == AST_BINOP {
+        flowc_wgsl_puts(w, "(")
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, " ")
+        let op: i32 = arena.nodes[id].ival
+        if op == TOK_EQEQ { flowc_wgsl_puts(w, "==") }
+        elif op == TOK_NE { flowc_wgsl_puts(w, "!=") }
+        elif op == TOK_LT { flowc_wgsl_puts(w, "<") }
+        elif op == TOK_GT { flowc_wgsl_puts(w, ">") }
+        elif op == TOK_LE { flowc_wgsl_puts(w, "<=") }
+        elif op == TOK_GE { flowc_wgsl_puts(w, ">=") }
+        elif op == TOK_PLUS { flowc_wgsl_puts(w, "+") }
+        elif op == TOK_MINUS { flowc_wgsl_puts(w, "-") }
+        elif op == TOK_STAR { flowc_wgsl_puts(w, "*") }
+        elif op == TOK_SLASH { flowc_wgsl_puts(w, "/") }
+        elif op == TOK_PERCENT { flowc_wgsl_puts(w, "%") }
+        elif op == TOK_AMPAMP { flowc_wgsl_puts(w, "&&") }
+        elif op == TOK_BARBAR { flowc_wgsl_puts(w, "||") }
+        elif op == TOK_AMP { flowc_wgsl_puts(w, "&") }
+        elif op == TOK_BAR { flowc_wgsl_puts(w, "|") }
+        elif op == TOK_CARET { flowc_wgsl_puts(w, "^") }
+        elif op == TOK_SHL { flowc_wgsl_puts(w, "<<") }
+        elif op == TOK_SHR { flowc_wgsl_puts(w, ">>") }
+        flowc_wgsl_puts(w, " ")
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_wgsl_puts(w, ")")
+    } elif kind == AST_UNARY {
+        let op: i32 = arena.nodes[id].ival
+        if op == TOK_MINUS { flowc_wgsl_puts(w, "-") }
+        elif op == TOK_BANG { flowc_wgsl_puts(w, "!") }
+        elif op == TOK_TILDE { flowc_wgsl_puts(w, "~") }
+        elif op == TOK_AMP { flowc_wgsl_puts(w, "&") }
+        elif op == TOK_STAR { flowc_wgsl_puts(w, "*") }
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+    } elif kind == AST_CALL {
+        let name_start: i32 = arena.nodes[id].name_start
+        let name_end: i32 = arena.nodes[id].name_end
+        if flowc_wgsl_span_is(src, name_start, name_end, "gpu_barrier") == 1 or flowc_wgsl_span_is(src, name_start, name_end, "gpu_sync") == 1 {
+            flowc_wgsl_puts(w, "workgroupBarrier() /* args:")
+        } else {
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_wgsl_puts(w, "(")
+        }
+        let mut curr: i32 = arena.nodes[id].a
+        let mut first: i32 = 1
+        while curr != AST_NONE {
+            if first == 0 { flowc_wgsl_puts(w, ", ") }
+            first = 0
+            flowc_wgsl_emit_expr(w, arena, src, curr)
+            curr = arena.nodes[curr].next
+        }
+        if flowc_wgsl_span_is(src, name_start, name_end, "gpu_barrier") == 1 or flowc_wgsl_span_is(src, name_start, name_end, "gpu_sync") == 1 {
+            flowc_wgsl_puts(w, " */")
+        } else {
+            flowc_wgsl_puts(w, ")")
+        }
+    } elif kind == AST_INDEX {
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, "[")
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_wgsl_puts(w, "]")
+    } elif kind == AST_FIELD_ACCESS {
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, ".")
+        flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    } elif kind == AST_CAST {
+        if 1 == 1 {
+            flowc_wgsl_emit_type(w, arena, src, arena.nodes[id].b)
+            flowc_wgsl_puts(w, "(")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_wgsl_puts(w, ")")
+        } else {
+            flowc_wgsl_puts(w, "((")
+            flowc_wgsl_emit_type(w, arena, src, arena.nodes[id].b)
+            flowc_wgsl_puts(w, ")")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_wgsl_puts(w, ")")
+        }
+    }
+}
+
+function flowc_wgsl_emit_stmt(w: ptr<WgslGenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if id == AST_NONE { return }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_LET {
+        flowc_wgsl_indent(w)
+        if 1 == 1 {
+            if arena.nodes[id].ival == 1 {
+                flowc_wgsl_puts(w, "var ")
+            } else {
+                flowc_wgsl_puts(w, "let ")
+            }
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            if arena.nodes[id].a != AST_NONE {
+                flowc_wgsl_puts(w, ": ")
+                flowc_wgsl_emit_type(w, arena, src, arena.nodes[id].a)
+            }
+            if arena.nodes[id].b != AST_NONE {
+                flowc_wgsl_puts(w, " = ")
+                flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+            }
+            flowc_wgsl_puts(w, ";\n")
+        } else {
+            flowc_wgsl_emit_type(w, arena, src, arena.nodes[id].a)
+            flowc_wgsl_puts(w, " ")
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            if arena.nodes[id].b != AST_NONE {
+                flowc_wgsl_puts(w, " = ")
+                flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+            }
+            flowc_wgsl_puts(w, ";\n")
+        }
+    } elif kind == AST_ASSIGN {
+        flowc_wgsl_indent(w)
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, " = ")
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_wgsl_puts(w, ";\n")
+    } elif kind == AST_RETURN {
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "return")
+        if arena.nodes[id].a != AST_NONE {
+            flowc_wgsl_puts(w, " ")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        }
+        flowc_wgsl_puts(w, ";\n")
+    } elif kind == AST_IF {
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "if (")
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, ") ")
+        flowc_wgsl_emit_block(w, arena, src, arena.nodes[id].b)
+        if arena.nodes[id].c != AST_NONE {
+            flowc_wgsl_puts(w, " else ")
+            if arena.nodes[arena.nodes[id].c].kind == AST_IF {
+                let mut temp_indent: i32 = w[0].indent
+                w[0].indent = 0
+                flowc_wgsl_emit_stmt(w, arena, src, arena.nodes[id].c)
+                w[0].indent = temp_indent
+            } else {
+                flowc_wgsl_emit_block(w, arena, src, arena.nodes[id].c)
+                flowc_wgsl_puts(w, "\n")
+            }
+        } else {
+            flowc_wgsl_puts(w, "\n")
+        }
+    } elif kind == AST_WHILE {
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "while (")
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, ") ")
+        flowc_wgsl_emit_block(w, arena, src, arena.nodes[id].b)
+        flowc_wgsl_puts(w, "\n")
+    } elif kind == AST_FOR {
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "for (var ")
+        flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if 1 == 1 {
+            flowc_wgsl_puts(w, ": i32 = ")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_wgsl_puts(w, "; ")
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_wgsl_puts(w, " < ")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_wgsl_puts(w, "; ")
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_wgsl_puts(w, " += ")
+            if arena.nodes[id].c != AST_NONE {
+                flowc_wgsl_puts(w, "1")
+            } else {
+                flowc_wgsl_puts(w, "1")
+            }
+        } else {
+            flowc_wgsl_puts(w, " = ")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_wgsl_puts(w, "; ")
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_wgsl_puts(w, " < ")
+            flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_wgsl_puts(w, "; ")
+            flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_wgsl_puts(w, " += ")
+            flowc_wgsl_puts(w, "1")
+        }
+        flowc_wgsl_puts(w, ") ")
+        flowc_wgsl_emit_block(w, arena, src, arena.nodes[id].c)
+        flowc_wgsl_puts(w, "\n")
+    } elif kind == AST_EXPR_STMT {
+        flowc_wgsl_indent(w)
+        flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, ";\n")
+    }
+}
+
+function flowc_wgsl_emit_block(w: ptr<WgslGenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_wgsl_puts(w, "{\n")
+    w[0].indent = w[0].indent + 1
+    if id != AST_NONE {
+        let mut curr: i32 = arena.nodes[id].a
+        while curr != AST_NONE {
+            flowc_wgsl_emit_stmt(w, arena, src, curr)
+            curr = arena.nodes[curr].next
+        }
+    }
+    w[0].indent = w[0].indent - 1
+    flowc_wgsl_indent(w)
+    flowc_wgsl_puts(w, "}")
+}
+
+function flowc_wgsl_emit_fn(w: ptr<WgslGenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if arena.nodes[id].kind != AST_FN { return }
+    
+    if 0 == 1 {
+        flowc_wgsl_puts(w, "kernel void ")
+        flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_wgsl_puts(w, "(\n")
+    } else {
+        flowc_wgsl_puts(w, "@compute @workgroup_size(64)\n")
+        flowc_wgsl_puts(w, "fn ")
+        flowc_wgsl_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_wgsl_puts(w, "(\n")
+    }
+    
+    let mut param: i32 = arena.nodes[id].a
+    let mut param_idx: i32 = 0
+    while param != AST_NONE {
+        if param_idx > 0 {
+            flowc_wgsl_puts(w, ",\n")
+        }
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "    ")
+        if 1 == 1 {
+            flowc_wgsl_put_span(w, src, arena.nodes[param].name_start, arena.nodes[param].name_end)
+            flowc_wgsl_puts(w, ": ")
+            flowc_wgsl_emit_type(w, arena, src, arena.nodes[param].b)
+        } else {
+            flowc_wgsl_emit_type(w, arena, src, arena.nodes[param].b)
+            flowc_wgsl_puts(w, " ")
+            flowc_wgsl_put_span(w, src, arena.nodes[param].name_start, arena.nodes[param].name_end)
+            flowc_wgsl_puts(w, " [[buffer(")
+            let mut j: i32 = 0
+            if param_idx == 0 { flowc_wgsl_puts(w, "0") }
+            elif param_idx == 1 { flowc_wgsl_puts(w, "1") }
+            elif param_idx == 2 { flowc_wgsl_puts(w, "2") }
+            elif param_idx == 3 { flowc_wgsl_puts(w, "3") }
+            elif param_idx == 4 { flowc_wgsl_puts(w, "4") }
+            elif param_idx == 5 { flowc_wgsl_puts(w, "5") }
+            elif param_idx == 6 { flowc_wgsl_puts(w, "6") }
+            elif param_idx == 7 { flowc_wgsl_puts(w, "7") }
+            elif param_idx == 8 { flowc_wgsl_puts(w, "8") }
+            else { flowc_wgsl_puts(w, "9") }
+            flowc_wgsl_puts(w, ")]]")
+        }
+        param = arena.nodes[param].next
+        param_idx = param_idx + 1
+    }
+    
+    if param_idx > 0 {
+        flowc_wgsl_puts(w, ",\n")
+    }
+    
+    flowc_wgsl_indent(w)
+    flowc_wgsl_puts(w, "    ")
+    if 0 == 1 {
+        flowc_wgsl_puts(w, "uint tid [[thread_position_in_grid]]\n")
+    } else {
+        flowc_wgsl_puts(w, "@builtin(global_invocation_id) global_id: vec3<u32>,\n")
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "    @builtin(local_invocation_id) local_id: vec3<u32>,\n")
+        flowc_wgsl_indent(w)
+        flowc_wgsl_puts(w, "    @builtin(workgroup_id) group_id: vec3<u32>\n")
+    }
+
+    flowc_wgsl_puts(w, ") ")
+    
+    flowc_wgsl_emit_block(w, arena, src, arena.nodes[id].c)
+    flowc_wgsl_puts(w, "\n\n")
+}
+
+export function flowc_wgsl_emit(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32) -> i32 {
+    let mut w_val: WgslGenBuf = flowc_wgsl_buf_init(out, out_cap)
+    let w: ptr<WgslGenBuf> = &w_val
+    
+    if 0 == 1 {
+        flowc_wgsl_puts(w, "#include <metal_stdlib>\n")
+        flowc_wgsl_puts(w, "using namespace metal;\n\n")
+    }
+    
+    let mut curr: i32 = arena.nodes[root].a
+    while curr != AST_NONE {
+        if arena.nodes[curr].kind == AST_FN {
+            flowc_wgsl_emit_fn(w, arena, src, curr)
+        }
+        curr = arena.nodes[curr].next
+    }
+    
+    if w_val.err != 0 {
+        return 0 - 1
+    }
+    return w_val.len
+}

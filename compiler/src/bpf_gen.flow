@@ -1,0 +1,73 @@
+# @module flowc.bpf_gen
+# @means  eBPF bytecode generation logic for Flow.
+
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_system, flowc_io_file_size }
+import .strutil { flowc_span_starts_with, flowc_span_find_first, flowc_strlen }
+
+@unsafe extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function puts(s: string) -> i32
+    function sprintf(str: ptr<u8>, format: ptr<u8>, a1: ptr<u8>, a2: ptr<u8>, a3: ptr<u8>) -> i32
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+}
+
+export function flowc_bpf_gen_compile(in_path: string, out_path: string, optimize: string) -> i32 {
+    let cmd: ptr<u8> = malloc(4096)
+    if cmd == null { return 1 }
+    
+    # 1. Flow -> LLVM IR
+    let _s1: i32 = sprintf(cmd, "PYTHONPATH=src python3 -m flow.transpiler %s --llvm --optimize --opt-level O%s -o build/flow_bpf_tmp.ll" as ptr<u8>, in_path as ptr<u8>, optimize as ptr<u8>, "" as ptr<u8>)
+    let rc1: i32 = flowc_io_system(cmd as string)
+    if rc1 != 0 {
+        puts("error: Flow -> LLVM IR lowering failed")
+        free(cmd)
+        return 1
+    }
+
+    # 2. Rewrite IR header
+    let tmp_path: string = "build/flow_bpf_tmp.ll"
+    let sz: i64 = flowc_io_file_size(tmp_path)
+    if sz <= 0 { free(cmd); return 1 }
+    let ir_buf: ptr<u8> = malloc(sz + 1)
+    let nread: i32 = flowc_read_file(tmp_path, ir_buf, sz as i32)
+    if nread < 0 { free(ir_buf); free(cmd); return 1 }
+    ir_buf[nread] = 0
+
+    let out_buf: ptr<u8> = malloc(sz + 1024)
+    let mut out_len: i32 = 0
+    let _s_out: i32 = sprintf(out_buf, "target datalayout = \"e-m:e-p:64:64-i64:64-i128:128-n32:64-S128\"\ntarget triple = \"bpfel\"\n" as ptr<u8>, "" as ptr<u8>, "" as ptr<u8>, "" as ptr<u8>)
+    out_len = flowc_strlen(out_buf as string)
+
+    let mut i: i32 = 0
+    while i < nread {
+        let nl: i32 = flowc_span_find_first(ir_buf, i, nread, 10)
+        let mut end: i32 = nread
+        if nl >= 0 { end = nl + 1 }
+
+        let is_dl: i32 = flowc_span_starts_with(ir_buf, i, end, "target datalayout =" as ptr<u8>)
+        let is_tt: i32 = flowc_span_starts_with(ir_buf, i, end, "target triple =" as ptr<u8>)
+
+        if is_dl == 0 and is_tt == 0 {
+            let _m: ptr<u8> = memcpy(out_buf + out_len, ir_buf + i, (end - i) as i64)
+            out_len = out_len + (end - i)
+        }
+        i = end
+    }
+
+    let _w: i32 = flowc_write_file(tmp_path, out_buf, out_len)
+    free(ir_buf)
+    free(out_buf)
+
+    # 3. LLVM IR -> eBPF Object
+    let _s2: i32 = sprintf(cmd, "clang -target bpfel -O%s -x ir -c -o %s build/flow_bpf_tmp.ll" as ptr<u8>, optimize as ptr<u8>, out_path as ptr<u8>, "" as ptr<u8>)
+    let rc2: i32 = flowc_io_system(cmd as string)
+    if rc2 != 0 {
+        puts("error: LLVM IR -> eBPF compilation failed")
+        free(cmd)
+        return 1
+    }
+    
+    free(cmd)
+    return 0
+}
