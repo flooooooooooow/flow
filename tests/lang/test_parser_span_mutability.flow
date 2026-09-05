@@ -1,0 +1,69 @@
+# End-to-end parser contract for explicit span mutability (#718).
+
+import "compiler/src/ast.flow"
+import "compiler/src/parser.flow"
+import "compiler/src/type_name.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function strlen(s: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let src: ptr<u8> = "function read(x: span<i32>) { }\nfunction write(x: span<mut i32>) { }"
+    let mut p: Parser = flowc_parser_new(src, strlen(src), 64)
+    let root: i32 = flowc_parse_program(&p)
+    if p.err != 0 or root == AST_NONE {
+        puts("FAIL: parser")
+        return 1
+    }
+
+    let read_fn: i32 = p.arena.nodes[root].a
+    if read_fn == AST_NONE or p.arena.nodes[read_fn].kind != AST_FN {
+        puts("FAIL: read function")
+        return 2
+    }
+    let write_fn: i32 = p.arena.nodes[read_fn].next
+    if write_fn == AST_NONE or p.arena.nodes[write_fn].kind != AST_FN {
+        puts("FAIL: write function")
+        return 3
+    }
+
+    let read_param: i32 = p.arena.nodes[read_fn].a
+    let write_param: i32 = p.arena.nodes[write_fn].a
+    let read_ty: i32 = p.arena.nodes[read_param].a
+    let write_ty: i32 = p.arena.nodes[write_param].a
+
+    if flowc_ast_type_span_mutable(p.arena, read_ty) != 0 {
+        puts("FAIL: const span parsed mutable")
+        return 4
+    }
+    if flowc_ast_type_span_mutable(p.arena, write_ty) != 1 {
+        puts("FAIL: mutable span metadata lost")
+        return 5
+    }
+
+    let read_name: array<u8, 128>
+    let write_name: array<u8, 128>
+    if flowc_type_name_into(p.arena, src, read_ty, &read_name[0], 128) < 0 {
+        puts("FAIL: const span normalize")
+        return 6
+    }
+    if flowc_type_name_into(p.arena, src, write_ty, &write_name[0], 128) < 0 {
+        puts("FAIL: mutable span normalize")
+        return 7
+    }
+    if strcmp(&read_name[0], "span_const_i32" as ptr<u8>) != 0 {
+        puts("FAIL: const span canonical name")
+        return 8
+    }
+    if strcmp(&write_name[0], "span_mut_i32" as ptr<u8>) != 0 {
+        puts("FAIL: mutable span canonical name")
+        return 9
+    }
+
+    flowc_parser_free(p)
+    puts("All parser span mutability tests passed")
+    return 0
+}

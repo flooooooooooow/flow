@@ -28,7 +28,8 @@ import .ast {
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
     AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR,
-    flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push
+    flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push,
+    flowc_ast_type_set_span_mutable
 }
 
 extern {
@@ -313,8 +314,11 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
     }
     if flowc_parser_check(p[0], TOK_LT) == 1 {
         flowc_parser_advance(p)
-        # Skip `mut` keyword inside type parameters (e.g. span<mut i32>).
+        let mut saw_mut: i32 = 0
+        # Preserve `mut` only for span<mut T>; other generic applications keep
+        # their existing representation and simply consume the keyword.
         if flowc_parser_check_kw(p[0], KW_MUT) == 1 {
+            saw_mut = 1
             flowc_parser_advance(p)
         }
         let inner: i32 = flowc_parse_type(p)
@@ -322,6 +326,12 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
             return AST_NONE
         }
         p[0].arena.nodes[id].a = inner
+        if saw_mut == 1 and flowc_parser_span_is(p[0], start, end, "span") == 1 {
+            if flowc_ast_type_set_span_mutable(&p[0].arena, id, 1) != 0 {
+                p[0].err = 1
+                return AST_NONE
+            }
+        }
         if flowc_parser_check(p[0], TOK_COMMA) == 1 {
             flowc_parser_advance(p)
             if flowc_parser_check(p[0], TOK_INT) == 1 {
@@ -1225,7 +1235,7 @@ function flowc_parse_expr(p: ptr<Parser>) -> i32 {
     # sort DSL modifiers, not separate statements. Consume them as extra args.
     while flowc_parser_check(p[0], TOK_PIPELINE) == 1 {
         flowc_parser_advance(p)
-        let rhs: i32 = flowc_parse_cast(p)
+        let mut rhs: i32 = flowc_parse_cast(p)
         if rhs == AST_NONE {
             return AST_NONE
         }
@@ -1282,7 +1292,7 @@ function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32 {
     }
     # right is not a call: build a call with right's name and left as arg.
     # For index nodes (e.g. sortBy[asc .key]), extract name from the base.
-    let name_src: i32 = right
+    let mut name_src: i32 = right
     if p[0].arena.nodes[right].kind == AST_INDEX {
         name_src = p[0].arena.nodes[right].a
     }

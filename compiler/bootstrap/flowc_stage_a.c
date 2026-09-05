@@ -1238,7 +1238,9 @@ int32_t flowc_parse_type(Parser* p) {
 }
   if (flowc_parser_check(p[0], TOK_LT) == 1) {
   flowc_parser_advance(p);
+  int32_t saw_mut = 0;
   if (flowc_parser_check_kw(p[0], KW_MUT) == 1) {
+  saw_mut = 1;
   flowc_parser_advance(p);
 }
   int32_t inner = flowc_parse_type(p);
@@ -1246,6 +1248,12 @@ int32_t flowc_parse_type(Parser* p) {
   return AST_NONE;
 }
   (((p[0]).arena).nodes[id]).a = inner;
+  if (saw_mut == 1 && flowc_parser_span_is(p[0], start, end, "span") == 1) {
+  if (flowc_ast_type_set_span_mutable((&(p[0]).arena), id, 1) != 0) {
+  (p[0]).err = 1;
+  return AST_NONE;
+}
+}
   if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
   flowc_parser_advance(p);
   if (flowc_parser_check(p[0], TOK_INT) == 1) {
