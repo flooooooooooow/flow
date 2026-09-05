@@ -785,6 +785,16 @@ class CGenerator:
         if structs:
             all_declarations.extend(structs)
 
+        # This pass walks every function body to find struct types, and records
+        # local declaration types as it goes because _infer_expr_type needs
+        # them while walking. Those entries described locals of other
+        # functions, and outlived the pass, so by the time any body was
+        # generated _var_types held every local name in the program. Each
+        # function body saves and restores this map around itself, which only
+        # preserved the pollution rather than clearing it. Restore the
+        # pre-pass state so the map means what its name says: the bindings
+        # visible where code is being generated.
+        pre_collect_var_types = self._var_types.copy()
         for decl in all_declarations:
             if isinstance(decl, FunctionDecl):
                 self._collect_structs_from_function(decl)
@@ -794,6 +804,7 @@ class CGenerator:
                     self._structs[decl.name] = {}
                 for field in decl.fields:
                     self._structs[decl.name][field.name] = field.type
+        self._var_types = pre_collect_var_types
 
         # Collect enums
         if enums:
@@ -1894,6 +1905,28 @@ class CGenerator:
         if is_span_type_name(t.name):
             return False
         return True
+
+    def _function_value_symbol(self, name: str) -> Optional[str]:
+        """C symbol for a function referenced as a value, or None.
+
+        A call resolves its callee through the overload table, so it reaches
+        the mangled symbol. A function named as a value does not, and used to
+        emit the source-level name, which no longer exists in the generated C.
+        Handing a callback to a C dispatcher then failed to compile.
+
+        Two conditions keep this from firing on anything but a function value.
+        A name bound to a variable, parameter, constant or pattern binding is
+        left alone, so a local always shadows a function of the same name. And
+        only a single-overload function resolves, because a name on its own
+        does not say which overload is meant and guessing would be worse than
+        letting the C compiler report it.
+        """
+        if name in self._var_types:
+            return None
+        overloads = self._overload_resolver.get_overloads(name)
+        if len(overloads) != 1:
+            return None
+        return self._mangled_names.get(id(overloads[0].function))
 
     def _is_fn_type(self, t: Optional[Type]) -> bool:
         return bool(t and getattr(t, "name", "").startswith("fn_") and "__" in t.name)
@@ -3895,6 +3928,9 @@ class CGenerator:
             # that merely contain a capture as a substring stay intact.
             if self._capture_stack and e.name in self._capture_stack[-1]:
                 return f"_env->{_c_ident(e.name)}"
+            symbol = self._function_value_symbol(e.name)
+            if symbol is not None:
+                return symbol
             return _c_ident(e.name)
 
         if isinstance(e, IfExpression):
