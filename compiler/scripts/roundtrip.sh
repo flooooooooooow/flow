@@ -256,9 +256,57 @@ if ! grep -Fq 'void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* sr
 fi
 echo "PASS compile_module cgen greps"
 
-# Seventh module: typecheck.flow (imports ast — -include ast header).
-compile_module typecheck compiler/src/typecheck.flow \
+# typecheck.flow resolves calls through the native overload modules, so those
+# come first, in dependency order, and their headers are included below.
+compile_module overload compiler/src/overload.flow
+compile_module overload_table compiler/src/overload_table.flow
+compile_module type_name compiler/src/type_name.flow \
     compiler/build/ast_flowc.h
+compile_module expr_type compiler/src/expr_type.flow \
+    compiler/build/ast_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/overload_flowc.c compiler/build/overload_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/overload_table_flowc.c compiler/build/overload_table_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/type_name_flowc.c compiler/build/type_name_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/expr_type_flowc.c compiler/build/expr_type_flowc.h
+compile_module overload_args compiler/src/overload_args.flow \
+    compiler/build/ast_flowc.h \
+    compiler/build/expr_type_flowc.h \
+    compiler/build/type_name_flowc.h
+compile_module overload_select compiler/src/overload_select.flow \
+    compiler/build/ast_flowc.h \
+    compiler/build/overload_table_flowc.h \
+    compiler/build/overload_flowc.h \
+    compiler/build/type_name_flowc.h
+compile_module overload_registry compiler/src/overload_registry.flow \
+    compiler/build/ast_flowc.h \
+    compiler/build/overload_table_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/overload_args_flowc.c compiler/build/overload_args_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/overload_select_flowc.c compiler/build/overload_select_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/overload_registry_flowc.c compiler/build/overload_registry_flowc.h
+# Header order matters: -include applies in sequence, and the select header
+# names FlowcOverloadTable, so the table header comes first.
+compile_module overload_call compiler/src/overload_call.flow \
+    compiler/build/ast_flowc.h \
+    compiler/build/overload_table_flowc.h \
+    compiler/build/overload_args_flowc.h \
+    compiler/build/overload_select_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/overload_call_flowc.c compiler/build/overload_call_flowc.h
+
+# Seventh module: typecheck.flow (imports ast and the overload modules).
+compile_module typecheck compiler/src/typecheck.flow \
+    compiler/build/ast_flowc.h \
+    compiler/build/overload_table_flowc.h \
+    compiler/build/overload_call_flowc.h \
+    compiler/build/overload_registry_flowc.h \
+    compiler/build/overload_select_flowc.h
 for needle in 'flowc_typecheck' 'flowc_tc_init' 'flowc_tc_seed_export' 'flowc_tc_check_program' 'typedef struct TcCtx' 'seed_nlen'; do
     if ! grep -Fq "$needle" compiler/build/typecheck_flowc.c; then
         echo "FAIL compile_module typecheck: missing '${needle}' in emitted C" >&2
@@ -283,6 +331,8 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
     compiler/build/cgen_flowc.h \
+    compiler/build/overload_table_flowc.h \
+    compiler/build/overload_call_flowc.h \
     compiler/build/typecheck_flowc.h
 for needle in 'flowc_bundle_emit' 'flowc_bundle_typecheck' 'flowc_resolve_sibling_path' 'flowc_resolve_dirname'; do
     if ! grep -Fq "$needle" compiler/build/resolve_flowc.c; then
@@ -585,6 +635,14 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/parser_flowc.o \
     compiler/build/fileio_flowc.o \
     compiler/build/cgen_flowc.o \
+    compiler/build/overload_flowc.o \
+    compiler/build/overload_table_flowc.o \
+    compiler/build/type_name_flowc.o \
+    compiler/build/expr_type_flowc.o \
+    compiler/build/overload_args_flowc.o \
+    compiler/build/overload_select_flowc.o \
+    compiler/build/overload_registry_flowc.o \
+    compiler/build/overload_call_flowc.o \
     compiler/build/typecheck_flowc.o \
     compiler/build/resolve_flowc.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
@@ -635,6 +693,8 @@ compile_module driver compiler/src/driver.flow \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
     compiler/build/cgen_flowc.h \
+    compiler/build/overload_table_flowc.h \
+    compiler/build/overload_call_flowc.h \
     compiler/build/typecheck_flowc.h \
     compiler/build/resolve_flowc.h
 if ! grep -Fq 'int main(int argc, char **argv)' compiler/build/driver_flowc.c; then

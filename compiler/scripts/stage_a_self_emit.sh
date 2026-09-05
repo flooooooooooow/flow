@@ -65,8 +65,46 @@ self_emit_module cgen \
     compiler/build/self_token.h \
     compiler/build/self_ast.h
 
+# typecheck.flow resolves calls through the native overload modules, so those
+# are emitted first, in dependency order, and their headers are included below.
+self_emit_module overload
+self_emit_module overload_table
+self_emit_module type_name compiler/build/self_ast.h
+self_emit_module expr_type compiler/build/self_ast.h
+for m in overload overload_table type_name expr_type; do
+    python3 compiler/scripts/flowc_c_to_hdr.py \
+        "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
+done
+self_emit_module overload_args \
+    compiler/build/self_ast.h \
+    compiler/build/self_expr_type.h \
+    compiler/build/self_type_name.h
+self_emit_module overload_select \
+    compiler/build/self_ast.h \
+    compiler/build/self_overload_table.h \
+    compiler/build/self_overload.h \
+    compiler/build/self_type_name.h
+self_emit_module overload_registry \
+    compiler/build/self_ast.h \
+    compiler/build/self_overload_table.h
+for m in overload_args overload_select overload_registry; do
+    python3 compiler/scripts/flowc_c_to_hdr.py \
+        "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
+done
+self_emit_module overload_call \
+    compiler/build/self_ast.h \
+    compiler/build/self_overload_table.h \
+    compiler/build/self_overload_args.h \
+    compiler/build/self_overload_select.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_overload_call.c compiler/build/self_overload_call.h
+
 self_emit_module typecheck \
-    compiler/build/self_ast.h
+    compiler/build/self_ast.h \
+    compiler/build/self_overload_table.h \
+    compiler/build/self_overload_call.h \
+    compiler/build/self_overload_registry.h \
+    compiler/build/self_overload_select.h
 
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_parser.c compiler/build/self_parser.h
@@ -84,6 +122,8 @@ self_emit_module resolve \
     compiler/build/self_parser.h \
     compiler/build/self_fileio.h \
     compiler/build/self_cgen.h \
+    compiler/build/self_overload_table.h \
+    compiler/build/self_overload_call.h \
     compiler/build/self_typecheck.h
 
 # Relocatable link: proves driver-emitted frontend objects resolve together.
@@ -94,6 +134,14 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_parser.o \
     compiler/build/self_fileio.o \
     compiler/build/self_cgen.o \
+    compiler/build/self_overload.o \
+    compiler/build/self_overload_table.o \
+    compiler/build/self_type_name.o \
+    compiler/build/self_expr_type.o \
+    compiler/build/self_overload_args.o \
+    compiler/build/self_overload_select.o \
+    compiler/build/self_overload_registry.o \
+    compiler/build/self_overload_call.o \
     compiler/build/self_typecheck.o \
     compiler/build/self_resolve.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
@@ -137,6 +185,8 @@ cc -O0 -c \
     -include compiler/build/self_parser.h \
     -include compiler/build/self_fileio.h \
     -include compiler/build/self_cgen.h \
+    -include compiler/build/self_overload_table.h \
+    -include compiler/build/self_overload_call.h \
     -include compiler/build/self_typecheck.h \
     -include compiler/build/self_resolve.h \
     compiler/build/self_driver.c -o compiler/build/self_driver.o
