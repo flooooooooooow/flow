@@ -218,17 +218,14 @@ function process() -> void {
 
 
 def test_ld1_does_not_fire_for_a_pointer_that_is_not_local_storage():
-    # `block` points into the arena, which outlives the frame. Flagging it
-    # would be a false positive, and a lifetime system with false positives
-    # gets turned off.
     assert domain_errors(
-        ARENA
+        MALLOC
         + """
 let mut cache: ptr<void> = null
 
-@lifetime(frame)
-function build(a: ptr<Arena>) -> void {
-    let block: ptr<void> = arena_alloc(a, 64)
+@lifetime(session)
+function build() -> void {
+    let block: ptr<void> = malloc(64)
     cache = block
 }
 """
@@ -665,8 +662,8 @@ function process() -> void {
 """
         ) == []
 
-    def test_the_domain_of_arena_memory_is_not_modelled(self):
-        assert domain_errors(
+    def test_the_domain_of_arena_memory_is_modelled(self):
+        assert only_error(
             ARENA
             + """
 let mut cache: ptr<void> = null
@@ -674,6 +671,22 @@ let mut cache: ptr<void> = null
 @lifetime(frame)
 function build(a: ptr<Arena>) -> void {
     cache = arena_alloc(a, 64)
+}
+"""
+        ).startswith(
+            "lifetime domain escape: `a` lives in the `frame` domain but is stored in `cache`, "
+            "which lives in the `application` domain (a longer-lived domain may not hold a "
+            "reference to a shorter-lived one)"
+        )
+
+    def test_the_domain_of_arena_memory_is_accepted_within_its_lifetime(self):
+        assert domain_errors(
+            ARENA
+            + """
+@lifetime(frame)
+function build(a: ptr<Arena>) -> void {
+    let mut local_cache: ptr<void> = null
+    local_cache = arena_alloc(a, 64)
 }
 """
         ) == []
