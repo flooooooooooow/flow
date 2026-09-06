@@ -570,6 +570,17 @@ class MLIRGenerator:
             and getattr(flow_type, "size", None) is not None
         )
 
+    def _param_mlir_type(self, flow_type) -> str:
+        """MLIR type for a parameter.
+
+        A fixed-size array local is an `llvm.alloca` returning `!llvm.ptr`, so
+        a parameter of that type takes the pointer too. Declaring it as a
+        memref instead makes every call passing a local array fail to verify.
+        """
+        if self._llvm_array_type_from_flow(flow_type):
+            return "!llvm.ptr"
+        return self.flow_type_to_mlir(flow_type)
+
     def _llvm_array_type_from_flow(self, flow_type) -> Optional[str]:
         """`!llvm.array<N x T>` for a Flow array type, or None if unsupported."""
         if not self._is_array_flow_type(flow_type):
@@ -1165,7 +1176,7 @@ class MLIRGenerator:
         mlir_code = []
         
         # Function signature
-        param_types = [self.flow_type_to_mlir(p.type) for p in func.parameters]
+        param_types = [self._param_mlir_type(p.type) for p in func.parameters]
         return_type = self.flow_type_to_mlir(func.return_type)
         
         func_signature = f"func.func @{func.name}({', '.join([f'%arg{i}: {param_types[i]}' for i in range(len(param_types))])}) -> {return_type}"
@@ -1179,10 +1190,15 @@ class MLIRGenerator:
         
         param_prologue: List[str] = []
         for i, param in enumerate(func.parameters):
-            param_mlir = self.flow_type_to_mlir(param.type)
+            param_mlir = self._param_mlir_type(param.type)
             arg_ssa = f'%arg{i}'
             bind_ssa = arg_ssa
             self._ssa_types[arg_ssa] = param_mlir
+            param_array_ty = self._llvm_array_type_from_flow(param.type)
+            if param_array_ty:
+                # Indexing this parameter goes through the same GEP path a
+                # local alloca array uses.
+                self._llvm_array_types[arg_ssa] = param_array_ty
             if getattr(param.type, 'name', '').startswith('u'):
                 self._ssa_unsigned.add(arg_ssa)
             var_entry = {
@@ -5847,7 +5863,7 @@ class MLIRGenerator:
             func_info = self.symbol_table[func_call.name]
             for param in func_info.get('parameters', []):
                 expected_flow_types.append(param.type)
-                expected_arg_types.append(self.flow_type_to_mlir(param.type))
+                expected_arg_types.append(self._param_mlir_type(param.type))
             if func_info.get('is_variadic'):
                 for extra in func_call.arguments[len(expected_arg_types):]:
                     expected_arg_types.append(self.get_expression_type(extra))
@@ -6382,6 +6398,19 @@ class MLIRGenerator:
             self.function_counter += 1
             ops.append(f"{self.indent()}{zero} = llvm.mlir.zero : {array_ty}")
             ops.append(f"{self.indent()}llvm.store {zero}, {ptr} : {array_ty}, !llvm.ptr")
+            # The declared element type wins. `array<i64, 3> = [1, 2, 3]` parses
+            # its elements as i32 literals, and storing one straight into an
+            # i64 slot is a verifier error rather than a silent widening.
+            for index, element in enumerate(array_literal.elements):
+                src_ty = (
+                    self._ssa_types.get(element_values[index])
+                    or self.get_expression_type(element)
+                )
+                if src_ty != store_ty:
+                    element_values[index], cast_ops = self._emit_cast(
+                        element_values[index], src_ty, store_ty
+                    )
+                    ops.extend(cast_ops)
             for index, element_value in enumerate(element_values):
                 idx = f"%{self.function_counter}"
                 self.function_counter += 1

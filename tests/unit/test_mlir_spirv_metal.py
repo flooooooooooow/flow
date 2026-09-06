@@ -120,9 +120,13 @@ def test_msl_to_metallib_uses_xcrun(tmp_path: Path, monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    # Pin every tool. Left unset, the constructor searches for spirv-cross,
+    # and on a machine with brew installed that search shells out through the
+    # patched subprocess.run and lands in calls[0].
     compiler = MLIRSPIRVCompiler(
         mlir_opt="mlir-opt",
         mlir_translate="mlir-translate",
+        spirv_cross="spirv-cross",
         xcrun=str(xcrun),
     )
     compiler.compile_msl_to_metallib(str(source), str(output), sdk="macosx")
