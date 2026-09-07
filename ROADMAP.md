@@ -927,3 +927,13 @@ The language is feature-complete! Future work:
 ---
 
 *This roadmap will be updated as priorities shift. Day-to-day status lives on the Helm board (`http://127.0.0.1:9470/app?project=flow`).*
+
+---
+
+## What's Next? (Flow 2.0 Memory Safety)
+
+🔲 **[Flow 2.0 Epic] Ergonomic Memory Safety Architecture**
+ROADMAP-SYNC: flow-2-0-epic-ergonomic-memory-safety-architecture
+
+Track the design and implementation of Flow 2.0 memory safety architecture.
+See: `docs/project/roadmap-2.0.md`
