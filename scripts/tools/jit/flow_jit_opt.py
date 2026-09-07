@@ -13,7 +13,6 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from flow.transpiler import main as transpiler_main
 from flow.mlir_optimizer import MLIROptimizer
 
 def run_flow_jit_optimized(flow_file: str, opt_level: str = "O2"):
