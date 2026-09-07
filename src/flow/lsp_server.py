@@ -77,6 +77,11 @@ class FlowLanguageServer:
     
     DEBOUNCE_SECONDS = 0.2  # delay before re-analyzing on keystrokes
 
+    _STRUCT_FIELD_RE = re.compile(
+        r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_<>]*)'
+    )
+    _STRUCT_END_RE = re.compile(r'^\s*\}')
+
     def __init__(self):
         self.documents: Dict[str, str] = {}  # uri -> content
         self.symbols: Dict[str, Dict[str, Any]] = {}  # uri -> {name: symbol_info}
@@ -950,18 +955,15 @@ class FlowLanguageServer:
     ) -> List[tuple]:
         """Pull `name: type` fields from a struct body (regex fallback)."""
         fields: List[tuple] = []
-        field_re = re.compile(
-            r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_<>]*)'
-        )
         # Same-line body: struct Point { x: f32, y: f32 }
         for i in range(start, min(start + 40, len(lines))):
             row = lines[i]
-            for m in field_re.finditer(row):
+            for m in FlowLanguageServer._STRUCT_FIELD_RE.finditer(row):
                 fname, ftype = m.group(1), m.group(2)
                 if fname in ('struct', 'function', 'enum', 'trait'):
                     continue
                 fields.append((fname, ftype))
-            if i > start and re.search(r'^\s*\}', row):
+            if i > start and FlowLanguageServer._STRUCT_END_RE.search(row):
                 break
         return fields
 
