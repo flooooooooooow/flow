@@ -12,7 +12,6 @@ Total: 25 agents providing multi-perspective prioritization.
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any
 import json
 import time
 from pathlib import Path
