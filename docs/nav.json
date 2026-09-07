@@ -987,6 +987,7 @@
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",
     "project/SIZE_REPORT.md": "generated binary-size measurements, regenerated per run rather than written for a reader",
     "project/archive/AUDIT_2026-02-10.md": "archived; kept for history",
+    "project/flow-3-0-feature-request-tracker.md": "issue tracker for Flow 3.0 feature requests, not reader documentation",
     "project/archive/PROJECT_STRUCTURE.md": "archived; the sidebar entry pointing here was dead and has been removed",
     "project/archive/README.md": "archived; kept for history",
     "project/dangling-claude-agents.md": "internal note on agent housekeeping",
