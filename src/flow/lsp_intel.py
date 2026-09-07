@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 from pathlib import Path
@@ -151,16 +152,27 @@ def symbol_info_from_decl(
     return None
 
 
-def _decl_line_in_text(text: str, keyword: str, name: str) -> int:
-    pat = re.compile(
+@functools.lru_cache(maxsize=1024)
+def _get_decl_pattern(keyword: str, name: str) -> re.Pattern:
+    return re.compile(
         rf'^\s*(?:export\s+)?{re.escape(keyword)}\s+{re.escape(name)}\b'
     )
-    for i, row in enumerate(text.split('\n')):
+
+
+@functools.lru_cache(maxsize=1024)
+def _get_loose_decl_pattern(keyword: str, name: str) -> re.Pattern:
+    return re.compile(rf'\b{re.escape(keyword)}\s+{re.escape(name)}\b')
+
+
+def _decl_line_in_text(text: str, keyword: str, name: str) -> int:
+    pat = _get_decl_pattern(keyword, name)
+    lines = text.split('\n')
+    for i, row in enumerate(lines):
         if pat.search(row):
             return i
     # looser
-    pat2 = re.compile(rf'\b{re.escape(keyword)}\s+{re.escape(name)}\b')
-    for i, row in enumerate(text.split('\n')):
+    pat2 = _get_loose_decl_pattern(keyword, name)
+    for i, row in enumerate(lines):
         if pat2.search(row):
             return i
     return 0
