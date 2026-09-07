@@ -14,7 +14,6 @@ The orchestrator combines all agent scores to produce a final ranking.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
 import json
 import re
 from pathlib import Path
