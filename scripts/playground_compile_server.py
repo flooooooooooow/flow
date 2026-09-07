@@ -28,7 +28,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
