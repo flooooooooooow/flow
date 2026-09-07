@@ -1,0 +1,7 @@
+function main() -> i32 {
+    let mut arr: [i32; 1000] = [0; 1000];
+    for i in 0..1000 {
+        arr[i] = i;
+    }
+    return 0;
+}
