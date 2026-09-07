@@ -9,6 +9,7 @@ import os
 import sys
 import re
 import threading
+import functools
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -785,10 +786,15 @@ class FlowLanguageServer:
                 return i
         return max(0, start)
 
+    @staticmethod
+    @functools.lru_cache(maxsize=128)
+    def _get_for_var_regex(name: str):
+        return re.compile(rf'^\s*for\s+{re.escape(name)}\b')
+
     def _find_for_var_line(
         self, lines: List[str], name: str, start: int = 0
     ) -> int:
-        pat = re.compile(rf'^\s*for\s+{re.escape(name)}\b')
+        pat = self._get_for_var_regex(name)
         for i in range(max(0, start), len(lines)):
             if pat.search(lines[i]):
                 return i
