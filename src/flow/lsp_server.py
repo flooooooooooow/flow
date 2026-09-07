@@ -9,6 +9,7 @@ import os
 import sys
 import re
 import threading
+import functools
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -771,15 +772,28 @@ class FlowLanguageServer:
                 )
         return cursor
 
+    @staticmethod
+    @functools.lru_cache(maxsize=128)
+    def _compile_let_re(name: str) -> re.Pattern:
+        return re.compile(rf'^\s*let\s+(?:mut\s+)?{re.escape(name)}\b')
+
+    @staticmethod
+    @functools.lru_cache(maxsize=128)
+    def _compile_let_fallback_re(name: str) -> re.Pattern:
+        return re.compile(rf'\blet\s+(?:mut\s+)?{re.escape(name)}\b')
+
+    @staticmethod
+    @functools.lru_cache(maxsize=128)
+    def _compile_for_var_re(name: str) -> re.Pattern:
+        return re.compile(rf'^\s*for\s+{re.escape(name)}\b')
+
     def _find_let_line(self, lines: List[str], name: str, start: int = 0) -> int:
-        pat = re.compile(
-            rf'^\s*let\s+(?:mut\s+)?{re.escape(name)}\b'
-        )
+        pat = self._compile_let_re(name)
         for i in range(max(0, start), len(lines)):
             if pat.search(lines[i]):
                 return i
         # Fallback: any let with the name
-        pat2 = re.compile(rf'\blet\s+(?:mut\s+)?{re.escape(name)}\b')
+        pat2 = self._compile_let_fallback_re(name)
         for i in range(len(lines)):
             if pat2.search(lines[i]):
                 return i
@@ -788,7 +802,7 @@ class FlowLanguageServer:
     def _find_for_var_line(
         self, lines: List[str], name: str, start: int = 0
     ) -> int:
-        pat = re.compile(rf'^\s*for\s+{re.escape(name)}\b')
+        pat = self._compile_for_var_re(name)
         for i in range(max(0, start), len(lines)):
             if pat.search(lines[i]):
                 return i
