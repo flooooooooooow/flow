@@ -3407,6 +3407,13 @@ class Parser:
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise SyntaxError("Unterminated block: expected '}' before end of file")
+            # A semicolon is a statement separator, so it can also appear where
+            # a statement would start: after a block, as in `if c { ... }; more`,
+            # or doubled. Nothing follows from it, so step over it rather than
+            # trying to parse one as an expression.
+            if self.current_token.type == TokenType.SEMICOLON:
+                self.advance()
+                continue
             statements.append(self.parse_statement())
 
         self.expect(TokenType.RBRACE)
