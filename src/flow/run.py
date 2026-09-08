@@ -35,7 +35,7 @@ def main() -> int:
     parser.add_argument("input", help="Input .flow file")
     parser.add_argument(
         "--backend",
-        choices=["c", "mlir"],
+        choices=["c", "mlir", "auto"],
         default="c",
         help="Compilation backend (default: c)",
     )
@@ -77,55 +77,96 @@ def main() -> int:
     c_path = out_dir / f"{basename}.c"
     exe_path = out_dir / basename
 
+    # Auto backend resolution
+    backend = args.backend
+    if backend == "auto":
+        from flow.cost_model import estimate_backend
+        from flow.parser import Parser
+        from flow.type_checker import TypeChecker
+        from flow.module_resolver import resolve_modules
+        
+        try:
+            with open(input_path) as f:
+                source = f.read()
+            from flow.parser import Lexer
+            ast = Parser(Lexer(source), str(input_path)).parse()
+            resolve_modules([ast], ROOT, lambda n: None)
+            TypeChecker().check(ast)
+            backend = estimate_backend(ast)
+        except Exception as e:
+            # Fallback to C if auto-detection fails
+            backend = "c"
+
     # Step 1: Transpile
     t0 = time.monotonic()
-    transpile_cmd = [
-        sys.executable, "-m", "flow.transpiler",
-        str(input_path), "--c", "-o", str(c_path),
-    ]
-    if args.lenient:
-        transpile_cmd.append("--lenient")
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-    result = subprocess.run(transpile_cmd, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        msg = result.stderr.strip() or result.stdout.strip()
-        if args.json:
-            _emit_json("", 1, t0, error=f"transpile failed: {msg}")
-        else:
-            print(f"Transpile failed:\n{msg}", file=sys.stderr)
-        return 1
-    t1 = time.monotonic()
+    
+    if backend == "c":
+        transpile_cmd = [
+            sys.executable, "-m", "flow.transpiler",
+            str(input_path), "--c", "-o", str(c_path),
+        ]
+        if args.lenient:
+            transpile_cmd.append("--lenient")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run(transpile_cmd, capture_output=True, text=True, env=env)
+        if result.returncode != 0:
+            msg = result.stderr.strip() or result.stdout.strip()
+            if args.json:
+                _emit_json("", 1, t0, error=f"transpile failed: {msg}")
+            else:
+                print(f"Transpile failed:\n{msg}", file=sys.stderr)
+            return 1
+        t1 = time.monotonic()
 
-    # Step 2: Compile
-    clang = shutil.which("clang") or shutil.which("cc")
-    if not clang:
-        if args.json:
-            _emit_json("", 1, t0, error="clang not found")
-        else:
-            print("Error: clang not found", file=sys.stderr)
-        return 1
+        # Step 2: Compile
+        clang = shutil.which("clang") or shutil.which("cc")
+        if not clang:
+            if args.json:
+                _emit_json("", 1, t0, error="clang not found")
+            else:
+                print("Error: clang not found", file=sys.stderr)
+            return 1
 
-    cflags = ["-std=c11", "-O2", "-Wno-everything", "-lm"]
-    # Enable vector math library if running on Linux/glibc
-    if sys.platform.startswith("linux"):
-        cflags.append("-fveclib=libmvec")
-    if args.extra_cflags:
-        cflags.extend(args.extra_cflags.split())
-    compile_cmd = [clang] + cflags + [str(c_path), "-o", str(exe_path)]
-    result = subprocess.run(compile_cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        msg = result.stderr.strip()
-        if args.json:
-            _emit_json("", 1, t0, error=f"compile failed: {msg}")
-        else:
-            print(f"Compile failed:\n{msg}", file=sys.stderr)
-        return 1
-    t2 = time.monotonic()
+        cflags = ["-std=c11", "-O2", "-Wno-everything", "-lm"]
+        # Enable vector math library on Linux/glibc (see #751)
+        if sys.platform.startswith("linux"):
+            cflags.append("-fveclib=libmvec")
+        if args.extra_cflags:
+            cflags.extend(args.extra_cflags.split())
+        compile_cmd = [clang] + cflags + [str(c_path), "-o", str(exe_path)]
+        result = subprocess.run(compile_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            msg = result.stderr.strip()
+            if args.json:
+                _emit_json("", 1, t0, error=f"compile failed: {msg}")
+            else:
+                print(f"Compile failed:\n{msg}", file=sys.stderr)
+            return 1
+        t2 = time.monotonic()
 
-    # Step 3: Run
-    result = subprocess.run([str(exe_path)], capture_output=True, text=True)
-    t3 = time.monotonic()
+        # Step 3: Run
+        result = subprocess.run([str(exe_path)], capture_output=True, text=True)
+        t3 = time.monotonic()
+    else:
+        # MLIR execution
+        # We can just run the JIT via transpiler --jit
+        t1 = time.monotonic()
+        t2 = t1 # JIT compiles and runs together
+        jit_cmd = [
+            sys.executable, "-m", "flow.transpiler",
+            str(input_path), "--jit"
+        ]
+        if args.lenient:
+            jit_cmd.append("--lenient")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run(jit_cmd, capture_output=True, text=True, env=env)
+        t3 = time.monotonic()
+        
+        # the transpiler with --jit prints "JIT exit code: X" to stderr, but we can't easily capture exit code from mlir subprocess.
+        # Actually wait, `subprocess.run` on flow.transpiler --jit will return the exit code of JIT if jit_compile_and_run returns it.
+        # Let's check transpiler.py: wait, transpiler.py returns `sys.exit(1)` on error, but does it return JIT's code? Let's verify.
 
     if args.json:
         _emit_json(

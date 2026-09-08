@@ -653,7 +653,7 @@ def main():
             try:
                 result = jit.jit_compile_and_run(out_code, "main")
                 if result is not None:
-                    print(f"JIT exit code: {result}", file=sys.stderr)
+                    return result
                 else:
                     print("JIT execution failed", file=sys.stderr)
                     print(
@@ -681,7 +681,8 @@ def main():
             sys.exit(1)
     else:
         print(out_code)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
