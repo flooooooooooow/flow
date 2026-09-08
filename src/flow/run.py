@@ -107,6 +107,9 @@ def main() -> int:
         return 1
 
     cflags = ["-std=c11", "-O2", "-Wno-everything", "-lm"]
+    # Enable vector math library if running on Linux/glibc
+    if sys.platform.startswith("linux"):
+        cflags.append("-fveclib=libmvec")
     if args.extra_cflags:
         cflags.extend(args.extra_cflags.split())
     compile_cmd = [clang] + cflags + [str(c_path), "-o", str(exe_path)]
