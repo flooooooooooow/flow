@@ -301,6 +301,32 @@ class TestModuleBlockFlattening:
     the design note stays accurate. Change these and change that note.
     """
 
+    def test_flatten_module_declarations(self):
+        from flow.module_resolver import flatten_module_declarations
+        from flow.parser import ModuleDecl
+        
+        # Test empty list
+        assert flatten_module_declarations([]) == []
+        
+        # Test list without modules
+        assert flatten_module_declarations([1, "a", True]) == [1, "a", True]
+        
+        # Test list with flat modules
+        assert flatten_module_declarations([
+            1,
+            ModuleDecl(name="m1", declarations=["a", "b"]),
+            2
+        ]) == [1, "a", "b", 2]
+        
+        # Test nested modules
+        assert flatten_module_declarations([
+            ModuleDecl(name="outer", declarations=[
+                "x",
+                ModuleDecl(name="inner", declarations=["y", "z"]),
+                "w"
+            ])
+        ]) == ["x", "y", "z", "w"]
+
     def test_module_block_declarations_become_globals(self):
         from flow.module_resolver import flatten_module_declarations
 
