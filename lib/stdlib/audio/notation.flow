@@ -39,19 +39,81 @@ export effect Notation {
 # =============================================================================
 
 # Parse note name to MIDI number (e.g., "C4" -> 60)
+# Returns -1 for rests or invalid input
 export function parse_note_name(name: string) -> i32 {
-    # For now, return common notes
-    # TODO: Implement full parser when string operations available
-    # Format: C4, D4, E4, etc.
-    # This is a placeholder - would need string parsing
-    return 60  # Default to C4
+    let p: ptr<u8> = name as ptr<u8>
+    let mut i: i32 = 0
+    let mut c: u8 = p[i]
+    
+    # Empty string
+    if c == 0 {
+        return -1
+    }
+    
+    if c == 82 { # 'R' (Rest)
+        i = i + 1
+        if p[i] != 0 {
+            return -1 # Trailing characters
+        }
+        return -1
+    }
+    
+    let mut base_note: i32 = 0
+    match c {
+        67 => { base_note = 0 }   # C
+        68 => { base_note = 2 }   # D
+        69 => { base_note = 4 }   # E
+        70 => { base_note = 5 }   # F
+        71 => { base_note = 7 }   # G
+        65 => { base_note = 9 }   # A
+        66 => { base_note = 11 }  # B
+        _ => { return -1 }        # Invalid base note
+    }
+    
+    i = i + 1
+    c = p[i]
+    if c == 0 {
+        return -1 # Missing octave
+    }
+    
+    let mut modifier: i32 = 0
+    match c {
+        35 => { # '#'
+            modifier = 1
+            i = i + 1
+            c = p[i]
+        }
+        98 => { # 'b'
+            modifier = -1
+            i = i + 1
+            c = p[i]
+        }
+    }
+    
+    let mut octave: i32 = 4
+    if c >= 48 {
+        if c <= 57 {
+            octave = (c as i32) - 48
+            i = i + 1
+            c = p[i]
+        } else {
+            return -1 # Invalid octave character
+        }
+    } else {
+        return -1 # Invalid octave character
+    }
+    
+    if c != 0 {
+        return -1 # Trailing characters
+    }
+    
+    return (octave + 1) * 12 + base_note + modifier
 }
 
 # Helper: Parse a single note/duration pair
 # Format: "C4/4" means C4 for 4 sixteenth notes (quarter note)
 export function parse_note_simple(note_str: string, duration: i32) -> MusicNote {
-    # Simplified version - would parse string properly
-    let midi: i32 = 60  # Default C4
+    let midi: i32 = parse_note_name(note_str)
     return MusicNote { midi: midi, duration: duration }
 }
 
