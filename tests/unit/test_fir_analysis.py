@@ -1,6 +1,9 @@
 import pytest
-from flow.fir_g import FirG, OpCode, EFF_IO, EFF_ALLOCATES
-from flow.fir_analysis import propagate_effects
+from flow.fir_g import (
+    FirG, OpCode, EFF_IO, EFF_ALLOCATES, EFF_NONE, EFF_READS_MEMORY,
+    EFF_WRITES_MEMORY, EFF_FFI, EFF_UNKNOWN, EFF_GPU, EFF_PANIC, EFF_ATOMIC
+)
+from flow.fir_analysis import propagate_effects, purity_flags
 
 def test_propagate_effects_max_iters():
     g = FirG()
@@ -70,3 +73,39 @@ def test_propagate_effects_empty_graph():
     g = FirG()
     bits = propagate_effects(g)
     assert bits == []
+
+def test_purity_flags():
+    g = FirG()
+    g.add_function("f_pure1")
+    g.add_function("f_pure2")
+    g.add_function("f_pure3")
+    g.add_function("f_impure_io")
+    g.add_function("f_impure_ffi")
+    g.add_function("f_impure_alloc")
+    g.add_function("f_impure_write")
+    g.add_function("f_impure_unknown")
+    g.add_function("f_impure_gpu")
+
+    # Manually assign effect bits
+    g.func_effect_bits = [
+        EFF_NONE,                                      # f_pure1 (pure)
+        EFF_READS_MEMORY,                              # f_pure2 (pure: read-only)
+        EFF_PANIC | EFF_ATOMIC,                        # f_pure3 (pure: panic/atomic is allowed)
+        EFF_IO,                                        # f_impure_io
+        EFF_FFI,                                       # f_impure_ffi
+        EFF_ALLOCATES,                                 # f_impure_alloc
+        EFF_WRITES_MEMORY,                             # f_impure_write
+        EFF_UNKNOWN,                                   # f_impure_unknown
+        EFF_GPU,                                       # f_impure_gpu
+    ]
+
+    flags = purity_flags(g)
+    assert flags["f_pure1"] is True
+    assert flags["f_pure2"] is True
+    assert flags["f_pure3"] is True
+    assert flags["f_impure_io"] is False
+    assert flags["f_impure_ffi"] is False
+    assert flags["f_impure_alloc"] is False
+    assert flags["f_impure_write"] is False
+    assert flags["f_impure_unknown"] is False
+    assert flags["f_impure_gpu"] is False
