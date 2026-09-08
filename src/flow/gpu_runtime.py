@@ -6,6 +6,7 @@ Provides CUDA and OpenCL integration for FLOW GPU programs.
 
 import os
 import ctypes
+import time
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
 try:
@@ -21,6 +22,9 @@ _NdArray = "np.ndarray" if np is None else np.ndarray
 
 # Suppress warnings by default
 SUPPRESS_GPU_WARNINGS = os.environ.get('FLOW_SUPPRESS_GPU_WARNINGS', '1') == '1'
+
+# Profiling configuration
+PROFILE_GPU = os.environ.get('FLOW_GPU_PROFILE', '0') == '1'
 
 class GPUBackend:
     """Base class for GPU backends."""
@@ -385,21 +389,33 @@ def gpu_free(ptr: int, backend: str = "cuda") -> None:
 
 def gpu_copy_to_device(host_data: _NdArray, device_ptr: int, backend: str = "cuda") -> None:
     """Copy data from host to device."""
+    t0 = time.perf_counter() if PROFILE_GPU else 0
     runtime = get_gpu_runtime()
     gpu_backend = runtime.get_backend(backend)
     gpu_backend.copy_to_device(host_data, device_ptr)
+    if PROFILE_GPU:
+        elapsed = time.perf_counter() - t0
+        print(f"[GPU Profile] H2D Transfer: {elapsed:.6f}s ({host_data.nbytes} bytes)")
 
 def gpu_copy_from_device(device_ptr: int, host_data: _NdArray, backend: str = "cuda") -> None:
     """Copy data from device to host."""
+    t0 = time.perf_counter() if PROFILE_GPU else 0
     runtime = get_gpu_runtime()
     gpu_backend = runtime.get_backend(backend)
     gpu_backend.copy_from_device(device_ptr, host_data)
+    if PROFILE_GPU:
+        elapsed = time.perf_counter() - t0
+        print(f"[GPU Profile] D2H Transfer: {elapsed:.6f}s ({host_data.nbytes} bytes)")
 
 def gpu_synchronize(backend: str = "cuda") -> None:
     """Synchronize GPU operations."""
+    t0 = time.perf_counter() if PROFILE_GPU else 0
     runtime = get_gpu_runtime()
     gpu_backend = runtime.get_backend(backend)
     gpu_backend.synchronize()
+    if PROFILE_GPU:
+        elapsed = time.perf_counter() - t0
+        print(f"[GPU Profile] Synchronize: {elapsed:.6f}s")
 
 def gpu_is_available() -> bool:
     """Check if GPU is available."""

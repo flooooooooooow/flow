@@ -8,7 +8,11 @@ Supports CUDA, OpenCL, and Metal (Apple Silicon).
 import os
 import subprocess
 import tempfile
+import time
 from typing import List, Dict, Any, Optional
+
+# Profiling configuration
+PROFILE_GPU = os.environ.get('FLOW_GPU_PROFILE', '0') == '1'
 
 # Import Metal runtime for Apple Silicon
 try:
@@ -355,10 +359,20 @@ class GPUExecutor:
             grid_dim = (1, 1, 1)
             block_dim = (256, 1, 1)
             
+            t0 = time.perf_counter() if PROFILE_GPU else 0
+            
             print(f"Launching {backend} kernel with grid {grid_dim}, block {block_dim}")
             
-            # Synchronize and clean up
+            if PROFILE_GPU:
+                elapsed_launch = time.perf_counter() - t0
+                print(f"[GPU Profile] Kernel Launch Overhead: {elapsed_launch:.6f}s")
+            
+            # Synchronize and clean up (which effectively times kernel execution + sync)
+            t_sync0 = time.perf_counter() if PROFILE_GPU else 0
             self.gpu_runtime.synchronize()
+            if PROFILE_GPU:
+                elapsed_exec = time.perf_counter() - t_sync0
+                print(f"[GPU Profile] Kernel Compute + Sync: {elapsed_exec:.6f}s")
             
             # Clean up device memory
             for device_ptr in device_args:
@@ -370,7 +384,6 @@ class GPUExecutor:
         except Exception as e:
             print(f"Error executing GPU kernel: {e}")
             return False
-
 class GPUIntegration:
     """Main GPU integration class for FLOW with Metal support."""
     
