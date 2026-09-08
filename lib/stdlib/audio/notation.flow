@@ -39,15 +39,22 @@ export effect Notation {
 # =============================================================================
 
 # Parse note name to MIDI number (e.g., "C4" -> 60)
+# Returns -1 for rests or invalid input
 export function parse_note_name(name: string) -> i32 {
     let p: ptr<u8> = name as ptr<u8>
     let mut i: i32 = 0
     let mut c: u8 = p[i]
+
+    # Empty string
     if c == 0 {
-        return 60
+        return -1
     }
 
     if c == 82 { # 'R' (Rest)
+        i = i + 1
+        if p[i] != 0 {
+            return -1 # Trailing characters
+        }
         return -1
     }
 
@@ -60,10 +67,14 @@ export function parse_note_name(name: string) -> i32 {
         71 => { base_note = 7 }   # G
         65 => { base_note = 9 }   # A
         66 => { base_note = 11 }  # B
+        _ => { return -1 }        # Invalid base note
     }
 
     i = i + 1
     c = p[i]
+    if c == 0 {
+        return -1 # Missing octave
+    }
 
     let mut modifier: i32 = 0
     match c {
@@ -83,7 +94,17 @@ export function parse_note_name(name: string) -> i32 {
     if c >= 48 {
         if c <= 57 {
             octave = (c as i32) - 48
+            i = i + 1
+            c = p[i]
+        } else {
+            return -1 # Invalid octave character
         }
+    } else {
+        return -1 # Invalid octave character
+    }
+
+    if c != 0 {
+        return -1 # Trailing characters
     }
 
     return (octave + 1) * 12 + base_note + modifier
