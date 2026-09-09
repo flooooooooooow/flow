@@ -6,7 +6,6 @@ These agents focus on specific aspects of the Flow language project.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 import re
 
 try:
