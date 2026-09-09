@@ -102,3 +102,20 @@ def test_run_keep_intermediate():
             assert len(c_files) >= 1
         finally:
             Path(path).unlink(missing_ok=True)
+
+
+import shutil
+import pytest
+
+@pytest.mark.skipif(not shutil.which("mlir-opt"), reason="mlir-opt not found")
+def test_run_mlir_backend():
+    result = _run_flow(HELLO, "--backend=mlir")
+    assert result.returncode == 0
+    assert "hello from flow" in result.stdout
+
+@pytest.mark.skipif(not shutil.which("mlir-opt"), reason="mlir-opt not found")
+def test_run_mlir_backend_exit_code():
+    result = _run_flow(EXIT42, "--backend=mlir")
+    assert result.returncode == 42
+    # JIT prints nothing for exit codes unless asked, but standard stdout should be captured
+    assert "exiting with 42" in result.stdout
