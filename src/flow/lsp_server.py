@@ -25,6 +25,18 @@ from .lsp_ordering import ordering_completion_items, ordering_hover
 from .lsp_syntax import syntax_hover, syntax_token_at_position, MULTI_CHAR_OPS
 from . import lsp_intel
 
+
+@functools.lru_cache(maxsize=1024)
+def _get_decl_pattern(kind: str, name: str) -> re.Pattern:
+    escaped = re.escape(name)
+    return re.compile(rf'^\s*(?:export\s+)?(?:inline\s+)?{kind}\s+{escaped}\b')
+
+
+@functools.lru_cache(maxsize=128)
+def _get_soft_pattern(kind: str) -> re.Pattern:
+    return re.compile(rf'\b{kind}\b')
+
+
 # LSP Message Types
 @dataclass
 class Position:
@@ -902,15 +914,12 @@ class FlowLanguageServer:
     def _find_decl_line(self, lines: List[str], kind: str, name: str) -> int:
         """Best-effort 0-based line of `kind name` (handles claim paths)."""
         # Claim paths may contain `/`, `+`, `.`, etc.
-        escaped = re.escape(name)
-        pattern = re.compile(
-            rf'^\s*(?:export\s+)?(?:inline\s+)?{kind}\s+{escaped}\b'
-        )
+        pattern = _get_decl_pattern(kind, name)
         for idx, line in enumerate(lines):
             if pattern.search(line):
                 return idx
         # Softer fallback: kind + name substring
-        soft = re.compile(rf'\b{kind}\b')
+        soft = _get_soft_pattern(kind)
         for idx, line in enumerate(lines):
             if soft.search(line) and name in line:
                 return idx
