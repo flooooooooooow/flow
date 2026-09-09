@@ -3236,8 +3236,13 @@ class CGenerator:
                     return False
             return True
         def _check_expr(expr) -> bool:
-            if isinstance(expr, (FunctionCall, MethodCall)):
+            if isinstance(expr, FunctionCall):
+                math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
+                if expr.name not in math_functions:
+                    return False
+            elif isinstance(expr, MethodCall):
                 return False
+
             for attr in ("left", "right", "operand", "expr", "array", "index",
                          "object", "field", "base", "value", "callee", "condition"):
                 val = getattr(expr, attr, None)

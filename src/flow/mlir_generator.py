@@ -5846,6 +5846,22 @@ class MLIRGenerator:
         # operand is simply evaluated.)
         if func_call.name == '__flow_dbg' and len(func_call.arguments) == 1:
             return self.generate_expression(func_call.arguments[0])
+            
+        math_intrinsics = {'sin': 'math.sin', 'cos': 'math.cos', 'tan': 'math.tan',
+                           'exp': 'math.exp', 'log': 'math.log', 'sqrt': 'math.sqrt',
+                           'abs': 'math.absf', 'fabs': 'math.absf', 'tanh': 'math.tanh'}
+        if func_call.name in math_intrinsics and len(func_call.arguments) == 1:
+            arg = func_call.arguments[0]
+            arg_type = self.get_expression_type(arg)
+            if arg_type in ('f32', 'f64') or arg_type.startswith('tensor<') or arg_type.startswith('vector<'):
+                arg_ssa, arg_ops = self.generate_expression(arg)
+                ops = list(arg_ops)
+                result_ssa = f"%{self.function_counter}"
+                self.function_counter += 1
+                op_name = math_intrinsics[func_call.name]
+                ops.append(f"{self.indent()}{result_ssa} = {op_name} {arg_ssa} : {arg_type}")
+                self._ssa_types[result_ssa] = arg_type
+                return result_ssa, ops
 
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
