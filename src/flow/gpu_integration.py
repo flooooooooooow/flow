@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 import time
 from typing import List, Dict, Any, Optional
+from .gpu_runtime import get_gpu_runtime
+from .parser import FunctionDecl
 
 # Profiling configuration
 PROFILE_GPU = os.environ.get('FLOW_GPU_PROFILE', '0') == '1'
@@ -21,8 +23,6 @@ try:
 except ImportError:
     METAL_AVAILABLE = False
 
-from .gpu_runtime import get_gpu_runtime
-from .parser import FunctionDecl
 
 class GPUCodeGenerator:
     """Generates GPU code from FLOW AST."""

@@ -93,7 +93,7 @@ def main() -> int:
             resolve_modules([ast], ROOT, lambda n: None)
             TypeChecker().check(ast)
             backend = estimate_backend(ast)
-        except Exception as e:
+        except Exception:
             # Fallback to C if auto-detection fails
             backend = "c"
 

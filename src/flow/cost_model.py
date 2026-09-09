@@ -1,6 +1,5 @@
-import sys
-from typing import Set, List, Any
-from .parser import FunctionDecl, ForStatement, WhileStatement, BinaryOperation, MatchStatement, Literal
+from typing import List, Any
+from .parser import FunctionDecl, ForStatement, BinaryOperation, MatchStatement, Literal
 
 def estimate_backend(ast: List[Any]) -> str:
     """
@@ -38,7 +37,7 @@ def estimate_backend(ast: List[Any]) -> str:
                         if hasattr(node, 'range_start') and isinstance(node.range_start, Literal):
                             start_val = int(node.range_start.value)
                         bound = end_val - start_val
-                    except:
+                    except (ValueError, AttributeError, TypeError):
                         pass
                 
                 total_loop_iters += (bound ** self.depth)
