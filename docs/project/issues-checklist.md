@@ -130,3 +130,4 @@
 - [ ] #168 [roadmap:route-linalg-examples-through-blas-flow] Route linalg examples through blas.flow https://github.com/flooooooooooow/flow/issues/168
 - [ ] #169 [roadmap:tier-0-tourist-examples] Tier-0 tourist examples https://github.com/flooooooooooow/flow/issues/169
 - [ ] #170 [roadmap:wire-ml-demos-through-dual-grad-codegen] Wire ML demos through Dual / grad codegen https://github.com/flooooooooooow/flow/issues/170
+- [ ] #679 [roadmap:flow-2-0-epic-ergonomic-memory-safety-architecture] [Flow 2.0 Epic] Ergonomic Memory Safety Architecture https://github.com/flooooooooooow/flow/issues/679

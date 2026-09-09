@@ -1,0 +1,4 @@
+# Just a dummy that passes typechecking.
+function main() -> i32 {
+    return 0;
+}

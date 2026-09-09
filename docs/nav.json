@@ -987,12 +987,14 @@
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",
     "project/SIZE_REPORT.md": "generated binary-size measurements, regenerated per run rather than written for a reader",
     "project/archive/AUDIT_2026-02-10.md": "archived; kept for history",
+    "project/flow-3-0-feature-request-tracker.md": "issue tracker for Flow 3.0 feature requests, not reader documentation",
     "project/archive/PROJECT_STRUCTURE.md": "archived; the sidebar entry pointing here was dead and has been removed",
     "project/archive/README.md": "archived; kept for history",
     "project/dangling-claude-agents.md": "internal note on agent housekeeping",
     "project/linguist/PR_TEMPLATE.md": "template body for the upstream github-linguist PR, not a wiki page",
     "project/linguist/UPSTREAM.md": "maintainer procedure for registering the language with GitHub Linguist",
     "project/vgpu-parity.md": "internal tracking table for GPU backend parity work in progress",
-    "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide"
+    "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide",
+    "project/roadmap-2.0.md": "design tracker for Epic #679, tracked internally in ROADMAP.md"
   }
 }
