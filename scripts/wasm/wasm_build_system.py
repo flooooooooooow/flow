@@ -7,7 +7,6 @@ Handles all examples including SIMD, structs, GPU operations, and complex featur
 import sys
 import os
 import subprocess
-import json
 from pathlib import Path
 from flow_to_wasm import FlowToWasmConverter
 
