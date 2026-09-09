@@ -902,20 +902,21 @@ class FlowLanguageServer:
                 return idx
         return 0
 
+    _DECL_RE = re.compile(
+        r'^\s*(?P<export>export\s+)?'
+        r'(?:inline\s+)?'
+        r'(?P<kind>function|struct|enum|trait|theorem)\s+'
+        r'(?P<name>[A-Za-z_][A-Za-z0-9_/.+\-]*)'
+    )
+
     def _extract_symbols_regex(
         self, text: str, *, exported_only: bool = False
     ) -> Dict[str, Dict[str, Any]]:
         """Regex fallback when the parser cannot load a file."""
         symbols: Dict[str, Dict[str, Any]] = {}
         lines = text.split('\n')
-        decl_re = re.compile(
-            r'^\s*(?P<export>export\s+)?'
-            r'(?:inline\s+)?'
-            r'(?P<kind>function|struct|enum|trait|theorem)\s+'
-            r'(?P<name>[A-Za-z_][A-Za-z0-9_/.+\-]*)'
-        )
         for idx, line in enumerate(lines):
-            m = decl_re.match(line)
+            m = self._DECL_RE.match(line)
             if not m:
                 continue
             if exported_only and not m.group('export'):
@@ -944,19 +945,20 @@ class FlowLanguageServer:
             symbols[name] = info
         return symbols
 
+    _FIELD_RE = re.compile(
+        r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_<>]*)'
+    )
+
     @staticmethod
     def _regex_struct_fields(
         lines: List[str], start: int
     ) -> List[tuple]:
         """Pull `name: type` fields from a struct body (regex fallback)."""
         fields: List[tuple] = []
-        field_re = re.compile(
-            r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_<>]*)'
-        )
         # Same-line body: struct Point { x: f32, y: f32 }
         for i in range(start, min(start + 40, len(lines))):
             row = lines[i]
-            for m in field_re.finditer(row):
+            for m in FlowLanguageServer._FIELD_RE.finditer(row):
                 fname, ftype = m.group(1), m.group(2)
                 if fname in ('struct', 'function', 'enum', 'trait'):
                     continue
