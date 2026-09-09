@@ -139,3 +139,28 @@ def test_receiver_before_dot_helper():
     text = "    return p.x\n"
     assert lsp_intel.receiver_before_dot(text, 0, len("    return p.")) == "p"
     assert lsp_intel.field_access_at(text, 0, text.index("x")) == ("p", "x")
+
+def test_resolve_type_name():
+    symbol_types = {}
+    struct_fields = {"Point": [("x", "f32"), ("y", "f32")]}
+
+    # Empty cases
+    assert lsp_intel.resolve_type_name(None, symbol_types, struct_fields) is None
+    assert lsp_intel.resolve_type_name("", symbol_types, struct_fields) is None
+    assert lsp_intel.resolve_type_name("   ", symbol_types, struct_fields) is None
+
+    # Plain type
+    assert lsp_intel.resolve_type_name("Point", symbol_types, struct_fields) == "Point"
+    assert lsp_intel.resolve_type_name("  Point  ", symbol_types, struct_fields) == "Point"
+
+    # Pointer type
+    assert lsp_intel.resolve_type_name("ptr<Point>", symbol_types, struct_fields) == "Point"
+    assert lsp_intel.resolve_type_name(" ptr < Point > ", symbol_types, struct_fields) == "Point"
+    assert lsp_intel.resolve_type_name("ptr<  Point >", symbol_types, struct_fields) == "Point"
+
+    # Not in struct_fields
+    assert lsp_intel.resolve_type_name("Line", symbol_types, struct_fields) is None
+    assert lsp_intel.resolve_type_name("ptr<Line>", symbol_types, struct_fields) is None
+
+    # Invalid pointer syntax (will just try to match the outer 'ptr' as struct)
+    assert lsp_intel.resolve_type_name("ptr< Point", symbol_types, struct_fields) is None
