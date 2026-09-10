@@ -1160,6 +1160,54 @@ class FlowLanguageServer:
             sys.stderr.write(f"LSP type-check error: {e}\n")
             sys.stderr.flush()
 
+        # Phase 3: idioms (severity 4 - Hint)
+        try:
+            from .idioms import IdiomAdvisor
+            from .parser import FunctionDecl
+            advisor = IdiomAdvisor()
+            for decl in declarations:
+                if isinstance(decl, FunctionDecl):
+                    advisor.analyze_function(decl)
+            
+            for finding in advisor.findings:
+                # Diagnostics severity 4 is Hint
+                # Check for suppressions in the file text
+                lines = text.split('\n')
+                suppress_str = f"# flow-idiom: allow {finding.rule_id}"
+                
+                # Check if suppression exists on the line before the finding
+                line_idx = finding.line - 1
+                if 0 <= line_idx - 1 < len(lines):
+                    if suppress_str in lines[line_idx - 1]:
+                        continue
+                if 0 <= line_idx < len(lines):
+                    if suppress_str in lines[line_idx]:
+                        continue
+
+                r = self._word_range(text, line_idx if line_idx >= 0 else 0, max(0, finding.column - 1))
+                if finding.span_len > 0:
+                    r['end']['character'] = r['start']['character'] + finding.span_len
+
+                diag = {
+                    'range': r,
+                    'severity': 4,
+                    'source': 'flow-idiom',
+                    'code': finding.rule_id,
+                    'message': f"{finding.title}\n{finding.rationale}",
+                }
+                
+                # Store replacement data in 'data' for the CodeAction provider
+                if finding.replacement and finding.applicability == "machine-applicable":
+                    diag['data'] = {
+                        'replacement': finding.replacement,
+                        'rule_id': finding.rule_id
+                    }
+
+                diagnostics.append(diag)
+        except Exception as e:
+            sys.stderr.write(f"LSP idiom analysis error: {e}\n")
+            sys.stderr.flush()
+
         return diagnostics
 
     def _range_for_type_error(self, text: str, message: str) -> dict:
@@ -2193,6 +2241,38 @@ class FlowLanguageServer:
                 sys.stderr.write(f"LSP Error: {e}\n")
                 sys.stderr.flush()
 
+
+    def _handle_code_action(self, params: dict) -> List[dict]:
+        """Handle textDocument/codeAction requests."""
+        context = params.get('context', {})
+        diagnostics = context.get('diagnostics', [])
+        uri = params['textDocument']['uri']
+        
+        actions = []
+        
+        for diag in diagnostics:
+            if diag.get('source') == 'flow-idiom' and 'data' in diag:
+                data = diag['data']
+                replacement = data.get('replacement')
+                rule_id = data.get('rule_id')
+                
+                if replacement:
+                    action = {
+                        'title': f"Apply fix for {rule_id}",
+                        'kind': 'quickfix',
+                        'diagnostics': [diag],
+                        'edit': {
+                            'changes': {
+                                uri: [{
+                                    'range': diag['range'],
+                                    'newText': replacement
+                                }]
+                            }
+                        }
+                    }
+                    actions.append(action)
+                    
+        return actions
 
 def main():
     """Entry point for the LSP server."""
