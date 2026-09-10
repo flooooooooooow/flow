@@ -275,3 +275,45 @@ function wait_for(c: ptr<void>, m: ptr<void>) -> i32 {
     ))
     assert len(errors) == 1, errors
     assert "pthread_cond_wait" in errors[0]
+
+def test_rt_safe_certification_compositional_method_calls():
+    """Method calls inside helpers are resolved and tracked for RT-safety."""
+    errors = rt_errors(check_strict(
+        MALLOC_EXTERN
+        + """
+struct ParamSmoother { x: i32 }
+impl ParamSmoother for ParamSmoother {
+    function tick(self: ParamSmoother) -> ptr<void> {
+        return malloc(64)
+    }
+}
+function do_tick(s: ParamSmoother) -> ptr<void> {
+    return s.tick()
+}
+@rt_safe
+function render(s: ParamSmoother) -> ptr<void> {
+    return do_tick(s)
+}
+"""
+    ))
+    assert len(errors) == 1, errors
+    assert "ParamSmoother_ParamSmoother_tick" in errors[0]
+
+def test_rt_safe_certification_compositional_trait_calls():
+    """Unresolved dynamic trait calls are conservatively rejected in RT-safe functions."""
+    errors = rt_errors(check_strict(
+        """
+trait Tickable {
+    function tick() -> i32
+}
+function do_tick(s: ptr<Tickable>) -> i32 {
+    return s.tick()
+}
+@rt_safe
+function render(s: ptr<Tickable>) -> i32 {
+    return do_tick(s)
+}
+"""
+    ))
+    assert len(errors) == 1, errors
+    assert "makes an unresolved dynamic call" in errors[0]
