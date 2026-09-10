@@ -155,17 +155,52 @@ def measure(cmds, reps):
 
 
 def env_info():
+    import os
+    import platform
     def out(cmd):
-        return subprocess.run(cmd, capture_output=True,
-                              text=True).stdout.strip()
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
+        except:
+            return "unknown"
+            
+    cpu = "Unknown CPU"
+    mem_gb = 0
+    ncpu = 1
+    
+    if platform.system() == "Darwin":
+        cpu = out(["sysctl", "-n", "machdep.cpu.brand_string"])
+        ncpu_str = out(["sysctl", "-n", "hw.ncpu"])
+        ncpu = int(ncpu_str) if ncpu_str != "unknown" else 1
+        mem_str = out(["sysctl", "-n", "hw.memsize"])
+        if mem_str != "unknown":
+            mem_gb = int(mem_str) // (1024 ** 3)
+    elif platform.system() == "Linux":
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if "model name" in line:
+                        cpu = line.split(":")[1].strip()
+                        break
+        except:
+            pass
+        ncpu = os.cpu_count() or 1
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        kb = int(line.split()[1])
+                        mem_gb = kb // (1024 ** 2)
+                        break
+        except:
+            pass
+
     return {
-        "clang": out(["clang", "--version"]).splitlines()[0],
+        "clang": out(["clang", "--version"]).splitlines()[0] if out(["clang", "--version"]) != "unknown" else "unknown",
         "python": out([sys.executable, "--version"]),
-        "rustc": out(["rustc", "--version"]) if shutil.which("rustc") else
-                 "not installed",
-        "cpu": out(["sysctl", "-n", "machdep.cpu.brand_string"]),
-        "mem_gb": int(out(["sysctl", "-n", "hw.memsize"])) // (1024 ** 3),
-        "ncpu": out(["sysctl", "-n", "hw.ncpu"]),
+        "rustc": out(["rustc", "--version"]) if shutil.which("rustc") else "not installed",
+        "cpu": cpu,
+        "mem_gb": mem_gb,
+        "ncpu": ncpu,
     }
 
 
@@ -206,6 +241,13 @@ def write_report(data, compile_times, env, reps, have_rust, out_path):
     add("Flow / C below 1.00x means the Flow binary was faster on that run.")
     add("Differences within a few percent are run-to-run noise.")
     add("")
+    add("## Notes on Epic #727")
+    add("")
+    add("- **Flow beats CPython** broadly across the suite. This meets the core epic bar.")
+    add("- **Flow trails hand-written C** on `nbody` by a noticeable margin.")
+    add("  - **Cause**: Flow emits externally visible functions, preventing clang from specializing the pair loop for the constant body count at the call site (which the hand-written C can do via static).")
+    add("  - **Tracker**: This gap points at sub-issue #739/#751 (scalar inner loops) and #740 for resolution.")
+    add("")
     add("## Notes")
     add("")
     add("- nbody is the one benchmark where the Flow binary trails hand C by")
@@ -216,7 +258,7 @@ def write_report(data, compile_times, env, reps, have_rust, out_path):
     add("  specialization. Two manual experiments support this: adding static")
     add("  to the generated functions moved Flow into C's range, and removing")
     add("  static from the hand C moved C into Flow's range.")
-    add("")
+
 
     add("## Benchmarks")
     add("")

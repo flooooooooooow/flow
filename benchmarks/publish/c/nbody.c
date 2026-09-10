@@ -1,3 +1,15 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include <time.h>
+#include <stdint.h>
+#ifndef __APPLE__
+static uint64_t clock_gettime_nsec_np(int clock_id) {
+    struct timespec ts;
+    clock_gettime(clock_id, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+#endif
 /* N-body simulation of the outer solar system, from the Computer Language
  * Benchmarks Game. Same algorithm and size as nbody.flow. */
 #include <stdio.h>
