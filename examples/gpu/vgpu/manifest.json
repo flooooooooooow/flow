@@ -18,6 +18,24 @@
         "metal",
         "webgpu"
       ]
+    },
+    {
+      "id": "mnist",
+      "upstream": "https://vgpu.sh/examples/mnist",
+      "source": "examples/gpu/vgpu/mnist.flow",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "depth",
+      "upstream": "https://vgpu.sh/examples/depth",
+      "source": "examples/gpu/vgpu/depth_estimation.flow",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
     }
   ]
 }

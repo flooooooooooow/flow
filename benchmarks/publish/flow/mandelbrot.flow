@@ -2,6 +2,17 @@
 # Region: x in [-2.0, 0.5], y in [-1.25, 1.25].
 # Result is the integer count of points that stay bounded.
 
+@cEmbed("#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include <time.h>
+#ifndef __APPLE__
+static uint64_t clock_gettime_nsec_np(int clock_id) {
+    struct timespec ts;
+    clock_gettime(clock_id, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+#endif")
 extern {
     function clock_gettime_nsec_np(clock_id: i32) -> i64
     function printf(fmt: string, val: f64) -> i32
