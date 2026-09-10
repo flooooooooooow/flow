@@ -556,10 +556,16 @@ class TypeChecker:
         # Heap-only variant of `_rt_unsafe_reason`, used by the `frame` domain:
         # bumping an existing arena is how a frame allocates, and a frame loop
         # may take a lock, so only heap create/destroy is forbidden there.
+        
         self._heap_unsafe_reason: Dict[str, str] = {}
+        # direct calls tracked during Phase 3, used to build a robust call graph in Phase 4
+        self._resolved_direct_calls: Dict[str, Set[str]] = {}
+
         # ids of AST nodes that already produced a lifetime-domain diagnostic,
         # so the older span message does not double-report the same escape.
         self._domain_reported: Set[int] = set()
+        self._rt_safe_call_sites: List[tuple] = []
+        self._domain_call_sites: List[tuple] = []
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -1116,15 +1122,10 @@ class TypeChecker:
         # Phase 2: Collect function signatures and global symbols
         self._collect_symbols(declarations)
 
-        # Phase 2.5: Build the RT-safety call graph (which functions reach a
-        # banned API, directly or transitively) so `@rt_safe` violations can
-        # be reported at the call site during Phase 3.
-        self._rt_unsafe_reason = self._compute_rt_unsafe_functions(declarations)
-        # Same fixed point over heap names only, for the `frame` domain
-        # (docs/language/lifetime-domains.md, LD3).
-        self._heap_unsafe_reason = self._compute_rt_unsafe_functions(
-            declarations, seed=self.FRAME_UNSAFE_NAMES
-        )
+        # Phase 2.5 is skipped. RT-safety fixed point over the call graph is now built
+        # during Phase 3.1 because method calls must be resolved to their implementation
+        # functions first in order to catch transitive safety violations through traits
+        # and methods.
 
         # Phase 2.6: Collect declared lifetime domains, so a call site can be
         # checked against the callee's domain (LD4) before its body is seen.
@@ -1132,6 +1133,12 @@ class TypeChecker:
 
         # Phase 3: Type check all declarations
         self._check_declarations(declarations)
+        
+        # Phase 3.1: Compute RT-safety fixed point and verify calls
+        self._rt_unsafe_reason = self._compute_rt_unsafe_functions()
+        self._heap_unsafe_reason = self._compute_rt_unsafe_functions(seed=self.FRAME_UNSAFE_NAMES)
+        self._verify_rt_safe_calls()
+        self._verify_domain_calls()
 
         # Phase 3.5: Safety profile enforcement (MISRA 17.2 / 17.4).
         # Detect unbounded recursion and unbounded while loops under
@@ -1343,6 +1350,8 @@ class TypeChecker:
                 self._check_function(decl)
             elif isinstance(decl, ImplDecl):
                 for method in decl.methods:
+                    mangled_name = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
+                    method._mangled_name = mangled_name
                     self._check_function(method)
             elif isinstance(decl, ConstDecl):
                 self._check_const(decl)
@@ -1362,6 +1371,8 @@ class TypeChecker:
             return names
         if isinstance(node, FunctionCall):
             names.append(node.name)
+        elif isinstance(node, MethodCall):
+            names.append(node.method)
         if dataclasses.is_dataclass(node) and not isinstance(node, type):
             node_id = id(node)
             if node_id in seen:
@@ -1379,45 +1390,20 @@ class TypeChecker:
 
     def _compute_rt_unsafe_functions(
         self,
-        declarations: List[Any],
         seed: Optional[frozenset] = None,
     ) -> Dict[str, str]:
         """Compute which user-defined functions are RT-unsafe.
-
-        Returns a map from function name to the name of the nearest
-        banned call it reaches (itself, for `RT_UNSAFE_HEAP_NAMES`
-        members; a callee's name otherwise). This is a simple fixed-point
-        over the direct-call graph, so it also catches indirect/transitive
-        violations (e.g. an RT-safe function calling a helper that itself
-        calls `malloc` or `mutex_lock`).
-
-        `seed` selects which leaf names count as banned. The default is every
-        RT-unsafe name; the `frame` lifetime domain passes
-        `FRAME_UNSAFE_NAMES`, which is allocation only
-        (docs/language/lifetime-domains.md).
+        
+        Uses `self._resolved_direct_calls` populated during Phase 3 type checking.
         """
-        direct_calls: Dict[str, Set[str]] = {}
-
-        def register(name: str, body: Optional[Block]) -> None:
-            if body is None:
-                return
-            direct_calls[name] = set(self._iter_call_names(body, set()))
-
-        for decl in declarations:
-            if isinstance(decl, FunctionDecl) and not getattr(decl, 'is_extern', False):
-                register(decl.name, decl.body)
-            elif isinstance(decl, ImplDecl):
-                for method in decl.methods:
-                    mangled_name = f"{decl.for_type.name}_{decl.trait_name}_{method.name}"
-                    register(mangled_name, method.body)
-
-        leaves = self.RT_UNSAFE_ALL_NAMES if seed is None else seed
+        leaves = set(self.RT_UNSAFE_ALL_NAMES if seed is None else seed)
+        leaves.add("__unresolved_dynamic_call")
         unsafe_reason: Dict[str, str] = {name: name for name in leaves}
 
         changed = True
         while changed:
             changed = False
-            for name, callees in direct_calls.items():
+            for name, callees in self._resolved_direct_calls.items():
                 if name in unsafe_reason:
                     continue
                 for callee in callees:
@@ -1547,37 +1533,48 @@ class TypeChecker:
             )
 
     def _check_rt_safe_call(self, name: str) -> None:
-        """If we're inside an `@rt_safe` function body, flag calls that reach
-        a banned API (heap, device/file I/O, GPU alloc/sync, or blocking lock),
+        """If we're inside an `@rt_safe` function body, record the call for
+        post-Phase-3 checking against banned APIs (heap, device/file I/O, GPU alloc/sync, or blocking lock),
         directly or transitively."""
         if self._current_rt_safe_fn is None:
             return
-        reason = self._rt_unsafe_reason.get(name)
-        if reason is None:
-            return
-        fn = self._current_rt_safe_fn
-        # `@lifetime(callback)` composes with `@rt_safe` (LD3): the check is
-        # the same call graph, the diagnostic names the domain instead of the
-        # attribute (docs/language/lifetime-domains.md).
-        if self._rt_safe_from_domain:
-            marked = "is in the `callback` lifetime domain, which forbids allocation,"
-            doc = "docs/language/lifetime-domains.md"
-        else:
-            marked = "is marked '@rt_safe'"
-            doc = "docs/library/rt-safety.md"
-        if reason == name:
-            self.errors.append(
-                f"RT-safety violation: '{fn}' {marked} but calls "
-                f"'{name}', which is forbidden on an RT-safe path "
-                f"(heap, device/file I/O, GPU, or blocking lock; "
-                f"see {doc})"
-            )
-        else:
-            self.errors.append(
-                f"RT-safety violation: '{fn}' {marked} but calls "
-                f"'{name}', which is not RT-safe because it calls '{reason}' "
-                f"(forbidden on an RT-safe path; see {doc})"
-            )
+        self._rt_safe_call_sites.append((self._current_rt_safe_fn, name, self._rt_safe_from_domain))
+
+    def _verify_rt_safe_calls(self) -> None:
+        for fn, name, from_domain in self._rt_safe_call_sites:
+            reason = self._rt_unsafe_reason.get(name)
+            if reason is None:
+                continue
+            if from_domain:
+                marked = "is in the `callback` lifetime domain, which forbids allocation,"
+                doc = "docs/language/lifetime-domains.md"
+            else:
+                marked = "is marked '@rt_safe'"
+                doc = "docs/library/rt-safety.md"
+            if reason == "__unresolved_dynamic_call":
+                if reason == name:
+                    self.errors.append(
+                        f"RT-safety violation: '{fn}' {marked} but makes an unresolved dynamic call "
+                        f"(forbidden on an RT-safe path because its safety cannot be proven; see {doc})"
+                    )
+                else:
+                    self.errors.append(
+                        f"RT-safety violation: '{fn}' {marked} but calls '{name}', "
+                        f"which makes an unresolved dynamic call (forbidden on an RT-safe path; see {doc})"
+                    )
+            elif reason == name:
+                self.errors.append(
+                    f"RT-safety violation: '{fn}' {marked} but calls "
+                    f"'{name}', which is forbidden on an RT-safe path "
+                    f"(heap, device/file I/O, GPU, or blocking lock; "
+                    f"see {doc})"
+                )
+            else:
+                self.errors.append(
+                    f"RT-safety violation: '{fn}' {marked} but calls "
+                    f"'{name}', which is not RT-safe because it calls '{reason}' "
+                    f"(forbidden on an RT-safe path; see {doc})"
+                )
 
     # ---- Lifetime domains (docs/language/lifetime-domains.md) --------------
 
@@ -1720,24 +1717,28 @@ class TypeChecker:
         # `_check_rt_safe_call`, which is strictly stronger.
         if caller_domain != 'frame':
             return
-        reason = self._heap_unsafe_reason.get(name)
-        if reason is None:
-            return
-        if reason == name:
-            self.errors.append(
-                f"lifetime domain violation: '{self._current_function_name}' "
-                f"is in the `frame` domain but calls '{name}', which allocates "
-                f"or frees heap memory. Frame-domain code allocates by bumping "
-                f"a frame arena (frame_alloc_*); see {self.LIFETIME_DOC}"
-            )
-        else:
-            self.errors.append(
-                f"lifetime domain violation: '{self._current_function_name}' "
-                f"is in the `frame` domain but calls '{name}', which allocates "
-                f"or frees heap memory because it calls '{reason}'. "
-                f"Frame-domain code allocates by bumping a frame arena "
-                f"(frame_alloc_*); see {self.LIFETIME_DOC}"
-            )
+        self._domain_call_sites.append((self._current_function_name, name))
+        
+    def _verify_domain_calls(self) -> None:
+        for fn_name, name in self._domain_call_sites:
+            reason = self._heap_unsafe_reason.get(name)
+            if reason is None:
+                continue
+            if reason == name:
+                self.errors.append(
+                    f"lifetime domain violation: '{fn_name}' "
+                    f"is in the `frame` domain but calls '{name}', which allocates "
+                    f"or frees heap memory. Frame-domain code allocates by bumping "
+                    f"a frame arena (frame_alloc_*); see {self.LIFETIME_DOC}"
+                )
+            else:
+                self.errors.append(
+                    f"lifetime domain violation: '{fn_name}' "
+                    f"is in the `frame` domain but calls '{name}', which allocates "
+                    f"or frees heap memory because it calls '{reason}'. "
+                    f"Frame-domain code allocates by bumping a frame arena "
+                    f"(frame_alloc_*); see {self.LIFETIME_DOC}"
+                )
 
     def _check_trait_bounds(self, func: FunctionDecl) -> None:
         """Validate generic type parameter trait bounds when concrete types are known."""
@@ -1801,17 +1802,23 @@ class TypeChecker:
         prev_domain = self._current_domain
         prev_rt_from_domain = self._rt_safe_from_domain
         self._current_domain = domain
+        
+        # Determine actual function name including impl trait mangling
+        actual_fn_name = func.name
+        if hasattr(func, '_mangled_name') and func._mangled_name:
+             actual_fn_name = func._mangled_name
+             
         if 'rt_safe' in attrs:
-            self._current_rt_safe_fn = func.name
+            self._current_rt_safe_fn = actual_fn_name
             self._rt_safe_from_domain = False
         elif domain == 'callback':
-            self._current_rt_safe_fn = func.name
+            self._current_rt_safe_fn = actual_fn_name
             self._rt_safe_from_domain = True
         else:
             self._current_rt_safe_fn = None
             self._rt_safe_from_domain = False
-        self._current_safe_fn = func.name if 'safe' in attrs else None
-        self._current_function_name = func.name
+        self._current_safe_fn = actual_fn_name if 'safe' in attrs else None
+        self._current_function_name = actual_fn_name
 
         # Effect-row Phase 2: declared `with E…` effects are assumed available
         # in the body (caller must supply them via handle or its own row).
@@ -2717,9 +2724,22 @@ class TypeChecker:
             receiver_type = self._check_expression(expr.object)
             impl_method = self._impl_method_for_receiver(receiver_type, expr.method)
             if impl_method is not None:
+                if self._current_function_name is not None:
+                    if self._current_function_name not in self._resolved_direct_calls:
+                        self._resolved_direct_calls[self._current_function_name] = set()
+                    self._resolved_direct_calls[self._current_function_name].add(impl_method)
                 return self._check_function_call(
                     FunctionCall(impl_method, [expr.object] + list(expr.arguments))
                 )
+            # Unresolved dynamic dispatch
+            if self._current_function_name is not None:
+                if self._current_function_name not in self._resolved_direct_calls:
+                    self._resolved_direct_calls[self._current_function_name] = set()
+                self._resolved_direct_calls[self._current_function_name].add("__unresolved_dynamic_call")
+            
+            # Record the unresolved call site so _verify_rt_safe_calls can flag it directly
+            self._check_rt_safe_call("__unresolved_dynamic_call")
+            
             desugared = FunctionCall(expr.method, [expr.object] + list(expr.arguments))
             return self._check_function_call(desugared)
         elif isinstance(expr, StructLiteral):
@@ -3365,6 +3385,11 @@ class TypeChecker:
 
     def _check_function_call(self, call: FunctionCall) -> SemanticType:
         """Type check a function call."""
+        if self._current_function_name is not None:
+            if self._current_function_name not in self._resolved_direct_calls:
+                self._resolved_direct_calls[self._current_function_name] = set()
+            self._resolved_direct_calls[self._current_function_name].add(call.name)
+
         self._check_rt_safe_call(call.name)
         self._check_safe_call(call.name)
         self._check_domain_call(call.name)
