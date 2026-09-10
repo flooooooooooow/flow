@@ -1,0 +1,12 @@
+import "stdlib/tensor.flow"
+
+# vgpu compatibility case: MNIST classifier execution
+
+@gpu
+function classifier(input: ptr<f32>, output: ptr<f32>) {
+    // Basic placeholder for the mnist classifier
+}
+
+function main() {
+    print("mnist stub")
+}
