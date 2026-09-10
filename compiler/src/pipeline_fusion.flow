@@ -1,0 +1,70 @@
+# @module flowc.pipeline_fusion
+# @means  Compile-time fusion of adjacent map stages in |> pipelines.
+#         Port of the python implementation in src/flow/pipeline_fusion.py.
+#         Implements scale_f32(scale_f32(buf, n, a), n, b) -> scale_f32(buf, n, a*b)
+
+import .ast { AstArena, AstNode, AST_CALL, AST_BINOP, AST_FLOAT, AST_IDENT, AST_NONE, AST_EXPR_STMT, AST_LET, AST_ASSIGN, AST_RETURN, flowc_ast_alloc }
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+export function flowc_fuse_pipelines(arena: ptr<AstArena>, src: ptr<u8>) -> void {
+    let mut id: i32 = 0
+    let len: i32 = arena[0].len
+    while id < len {
+        let node: AstNode = arena[0].nodes[id]
+        if node.kind == AST_CALL {
+            # Check for scale_f32 or scale_f64
+            let ns: i32 = node.name_start
+            let ne: i32 = node.name_end
+            let mut is_scale: i32 = 0
+            if ne - ns == 9 {
+                is_scale = 1
+            }
+
+            if is_scale == 1 {
+                let first_arg: i32 = node.a
+                if first_arg != AST_NONE {
+                    if arena[0].nodes[first_arg].kind == AST_CALL {
+                        let ins: i32 = arena[0].nodes[first_arg].name_start
+                        let ine: i32 = arena[0].nodes[first_arg].name_end
+                        if ine - ins == 9 {
+                            # It's scale(scale(buf, n, a), n, b)
+                            
+                            let inner_a: i32 = arena[0].nodes[first_arg].a
+                            if inner_a != AST_NONE {
+                                let inner_n: i32 = arena[0].nodes[inner_a].next
+                                if inner_n != AST_NONE {
+                                    let inner_val: i32 = arena[0].nodes[inner_n].next
+                                    
+                                    let outer_a: i32 = node.a
+                                    let outer_n: i32 = arena[0].nodes[outer_a].next
+                                    if outer_n != AST_NONE {
+                                        let outer_val: i32 = arena[0].nodes[outer_n].next
+                                        
+                                        if inner_val != AST_NONE and outer_val != AST_NONE {
+                                            # create a new AST_BINOP for a * b
+                                            let binop_id: i32 = flowc_ast_alloc(arena, AST_BINOP, 0, 0)
+                                            arena[0].nodes[binop_id].a = inner_val
+                                            arena[0].nodes[binop_id].b = outer_val
+                                            arena[0].nodes[binop_id].ival = 26 # TOK_STAR
+                                            
+                                            # rewrite the outer call
+                                            arena[0].nodes[id].a = inner_a
+                                            arena[0].nodes[inner_a].next = inner_n
+                                            arena[0].nodes[inner_n].next = binop_id
+                                            arena[0].nodes[binop_id].next = AST_NONE
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        id = id + 1
+    }
+}

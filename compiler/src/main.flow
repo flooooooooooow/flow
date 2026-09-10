@@ -18,6 +18,7 @@ import .ast {
 }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
 import .fileio { flowc_read_file, flowc_write_file }
+import .pipeline_fusion { flowc_fuse_pipelines }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
 import .fmt { flowc_fmt_emit }
@@ -210,6 +211,7 @@ function flowc_emit_mode() -> i32 {
         # Stage-A typecheck ON by default. Opt-out for intentional bad fixtures:
         # FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
         if flowc_want_typecheck() == 1 {
+            flowc_fuse_pipelines(&p.arena, src)
             let tc_errs: i32 = flowc_typecheck(p.arena, root, src)
             if tc_errs > 0 {
                 puts("flowc emit: typecheck failed")

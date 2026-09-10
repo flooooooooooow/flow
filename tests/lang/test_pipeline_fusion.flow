@@ -1,0 +1,79 @@
+# Test for pipeline_fusion.flow port of pipeline_fusion.py.
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_pipeline_fusion.flow
+# Exit 0 on success.
+
+import "compiler/src/pipeline_fusion.flow"
+import "compiler/src/ast.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let mut arena = flowc_ast_new(100)
+
+    # buf
+    let id_buf: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    # n
+    let id_n1: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    # 2.0
+    let id_2: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    
+    # inner scale call: scale_f32(buf, n, 2.0)
+    let inner_call: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[inner_call].name_start = 0
+    arena.nodes[inner_call].name_end = 9
+    arena.nodes[inner_call].a = id_buf
+    arena.nodes[id_buf].next = id_n1
+    arena.nodes[id_n1].next = id_2
+    arena.nodes[id_2].next = -1
+
+    # n
+    let id_n2: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    # 3.0
+    let id_3: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+
+    # outer scale call: scale_f32(inner, n, 3.0)
+    let outer_call: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[outer_call].name_start = 0
+    arena.nodes[outer_call].name_end = 9
+    arena.nodes[outer_call].a = inner_call
+    arena.nodes[inner_call].next = id_n2
+    arena.nodes[id_n2].next = id_3
+    arena.nodes[id_3].next = -1
+
+    # create a dummy src
+    let src: string = "dummy"
+
+    # fuse
+    flowc_fuse_pipelines(&arena, src as ptr<u8>)
+
+    # verify
+    if arena.nodes[outer_call].a != id_buf {
+        puts("FAIL: outer_call.a should be buf")
+        return 1
+    }
+    let n_node: i32 = arena.nodes[id_buf].next
+    if n_node != id_n1 {
+        puts("FAIL: first arg next should be n1")
+        return 2
+    }
+    let binop_node: i32 = arena.nodes[n_node].next
+    if arena.nodes[binop_node].kind != 9 {
+        puts("FAIL: third arg should be BINOP")
+        return 3
+    }
+    if arena.nodes[binop_node].a != id_2 {
+        puts("FAIL: binop left should be 2.0")
+        return 4
+    }
+    if arena.nodes[binop_node].b != id_3 {
+        puts("FAIL: binop right should be 3.0")
+        return 5
+    }
+
+    flowc_ast_free(arena)
+    puts("All pipeline_fusion tests passed")
+    return 0
+}

@@ -3937,6 +3937,58 @@ int32_t flowc_parse_program(Parser* p) {
 static const int32_t FLOWC_IO_SEEK_SET = 0;
 static const int32_t FLOWC_IO_SEEK_END = 2;
 
+void flowc_fuse_pipelines(AstArena* arena, uint8_t* src);
+void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
+  int32_t id = 0;
+  int32_t len = (arena[0]).len;
+  while (id < len) {
+  AstNode node = (arena[0]).nodes[id];
+  if ((node).kind == AST_CALL) {
+  int32_t ns = (node).name_start;
+  int32_t ne = (node).name_end;
+  int32_t is_scale = 0;
+  if ((ne - ns) == 9) {
+  is_scale = 1;
+}
+  if (is_scale == 1) {
+  int32_t first_arg = (node).a;
+  if (first_arg != AST_NONE) {
+  if (((arena[0]).nodes[first_arg]).kind == AST_CALL) {
+  int32_t ins = ((arena[0]).nodes[first_arg]).name_start;
+  int32_t ine = ((arena[0]).nodes[first_arg]).name_end;
+  if ((ine - ins) == 9) {
+  int32_t inner_a = ((arena[0]).nodes[first_arg]).a;
+  if (inner_a != AST_NONE) {
+  int32_t inner_n = ((arena[0]).nodes[inner_a]).next;
+  if (inner_n != AST_NONE) {
+  int32_t inner_val = ((arena[0]).nodes[inner_n]).next;
+  int32_t outer_a = (node).a;
+  int32_t outer_n = ((arena[0]).nodes[outer_a]).next;
+  if (outer_n != AST_NONE) {
+  int32_t outer_val = ((arena[0]).nodes[outer_n]).next;
+  if (inner_val != AST_NONE && outer_val != AST_NONE) {
+  int32_t binop_id = flowc_ast_alloc(arena, AST_BINOP, 0, 0);
+  ((arena[0]).nodes[binop_id]).a = inner_val;
+  ((arena[0]).nodes[binop_id]).b = outer_val;
+  ((arena[0]).nodes[binop_id]).ival = 26;
+  ((arena[0]).nodes[id]).a = inner_a;
+  ((arena[0]).nodes[inner_a]).next = inner_n;
+  ((arena[0]).nodes[inner_n]).next = binop_id;
+  ((arena[0]).nodes[binop_id]).next = AST_NONE;
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  id = (id + 1);
+}
+}
+
+
 typedef struct CgenBuf {
   uint8_t* out;
   int32_t cap;
@@ -12907,6 +12959,7 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   if (flowc_want_typecheck() == 1) {
+  flowc_fuse_pipelines((&(p).arena), src);
   int32_t tc_errs = flowc_typecheck((p).arena, root, src);
   if (tc_errs > 0) {
   puts("flowc emit: typecheck failed");
