@@ -101,7 +101,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Test suite | DONE | 87 Python unit, 10 integration, 222 `.flow` runtime/lang/stdlib, tier CLI. |
 | Spec-to-test mapping | PARTIAL | No automated binding of each spec clause to a test. |
 | Compiler regression suite | DONE | Every crash is pinned as a regression test. |
-| Differential tests | DONE | `tests/unit/test_backend_parity.py` compares C vs MLIR outputs. |
+| Differential tests | DONE | `tests/unit/test_backend_parity.py` (+`_extended`) compares C vs MLIR output across ~69 cases spanning arithmetic (i32/i64/u32/f32/f64), integer div/mod, bitwise and shift ops, comparisons, control flow, structs and nested aggregates, arrays, match, closures (capturing and not), mutual recursion, effect handlers, and loop-in-parallel nesting. The one recorded MLIR gap is string runtime helpers (`len`, concatenation), pinned by `test_mlir_known_gap_still_open`. |
 | Fuzzing | DONE | `tests/fuzz/harness.py` (mutation, grammar-directed, pipeline). |
 | Torture tests | DONE | `test_torture_nesting.py`, `tests/lang/test_torture.flow`. |
 | Compatibility corpus | PARTIAL | Some old programs continuously rebuilt; not a curated corpus. |
