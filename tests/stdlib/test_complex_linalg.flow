@@ -1,0 +1,68 @@
+import "stdlib/complex_linalg.flow"
+import "stdlib/posix.flow"
+
+function assert_approx_eq(a: c128, b: c128) -> void {
+    let diff_r: f64 = cabs(a - b)
+    if diff_r > 1e-4 {
+        print("Assertion failed!")
+        exit(1)
+    }
+}
+
+function main() -> i32 {
+    let A: CMat = cmat_new(2, 2)
+    let B: CMat = cmat_new(2, 2)
+    let C: CMat = cmat_new(2, 2)
+    
+    A.data[0] = c128(1.0, 0.0)
+    A.data[1] = c128(0.0, 1.0)
+    A.data[2] = c128(0.0, -1.0)
+    A.data[3] = c128(1.0, 0.0)
+    
+    B.data[0] = c128(1.0, 0.0)
+    B.data[1] = c128(0.0, 0.0)
+    B.data[2] = c128(0.0, 0.0)
+    B.data[3] = c128(1.0, 0.0)
+    
+    cgemm(A, B, C)
+    
+    # A * B where B is [[1, 0], [0, 1]]
+    assert_approx_eq(C.data[0], c128(1.0, 0.0))
+    assert_approx_eq(C.data[1], c128(0.0, 1.0))
+    assert_approx_eq(C.data[2], c128(0.0, -1.0))
+    assert_approx_eq(C.data[3], c128(1.0, 0.0))
+    
+    let E: CMat = cmat_exp(A)
+    # e^A approx = [e*cosh(1), e*i*sinh(1); -e*i*sinh(1), e*cosh(1)]
+    assert_approx_eq(E.data[0], c128(4.1945, 0.0))
+    assert_approx_eq(E.data[1], c128(0.0, 3.1945))
+    
+    # csolve test
+    A.data[0] = c128(2.0, 0.0)
+    A.data[1] = c128(0.0, 1.0)
+    A.data[2] = c128(0.0, -1.0)
+    A.data[3] = c128(2.0, 0.0)
+    
+    let b: ptr<c128> = malloc(32) as ptr<c128>
+    let x: ptr<c128> = malloc(32) as ptr<c128>
+    b[0] = c128(1.0, 0.0)
+    b[1] = c128(0.0, 1.0)
+    
+    let info: i32 = csolve(A, b, x)
+    if info != 0 {
+        return 1
+    }
+    
+    assert_approx_eq(x[0], c128(1.0, 0.0))
+    assert_approx_eq(x[1], c128(0.0, 1.0))
+
+    cmat_free(A)
+    cmat_free(B)
+    cmat_free(C)
+    cmat_free(E)
+    free(b as ptr<void>)
+    free(x as ptr<void>)
+    
+    print("Complex linalg test passed")
+    return 0
+}

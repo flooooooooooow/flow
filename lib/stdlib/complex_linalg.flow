@@ -1,0 +1,211 @@
+# Complex linear algebra additions (Pure Flow Implementation).
+
+export type Complex = c128
+
+export struct CMat {
+    data: ptr<c128>,
+    rows: i32,
+    cols: i32,
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memset(s: ptr<void>, c: i32, n: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+export function cmat_new(rows: i32, cols: i32) -> CMat {
+    let size: i32 = rows * cols * 16 # 16 bytes for c128
+    let data: ptr<c128> = malloc(size as i64) as ptr<c128>
+    memset(data as ptr<void>, 0, size as i64)
+    return CMat { data: data, rows: rows, cols: cols }
+}
+
+export function cmat_free(A: CMat) -> void {
+    free(A.data as ptr<void>)
+}
+
+export function cmat_clone(A: CMat) -> CMat {
+    let B: CMat = cmat_new(A.rows, A.cols)
+    let size: i64 = (A.rows * A.cols * 16) as i64
+    memcpy(B.data as ptr<void>, A.data as ptr<void>, size)
+    return B
+}
+
+export function cmat_get(A: CMat, r: i32, c: i32) -> c128 {
+    return A.data[r * A.cols + c]
+}
+
+export function cmat_set(A: CMat, r: i32, c: i32, val: c128) -> void {
+    A.data[r * A.cols + c] = val
+}
+
+# Pure Flow complex matrix multiplication C = A @ B
+export function cgemm(A: CMat, B: CMat, C: CMat) -> void {
+    let m: i32 = A.rows
+    let k: i32 = A.cols
+    let n: i32 = B.cols
+    
+    for i in 0 to m {
+        for j in 0 to n {
+            let mut sum: c128 = c128(0.0, 0.0)
+            for p in 0 to k {
+                let a_val: c128 = A.data[i * k + p]
+                let b_val: c128 = B.data[p * n + j]
+                sum = sum + a_val * b_val
+            }
+            C.data[i * n + j] = sum
+        }
+    }
+}
+
+# Scaled GEMM: C = alpha * A @ B + beta * C
+export function cgemm_alpha_beta(alpha: c128, A: CMat, B: CMat, beta: c128, C: CMat) -> void {
+    let m: i32 = A.rows
+    let k: i32 = A.cols
+    let n: i32 = B.cols
+    
+    for i in 0 to m {
+        for j in 0 to n {
+            let mut sum: c128 = c128(0.0, 0.0)
+            for p in 0 to k {
+                sum = sum + A.data[i * k + p] * B.data[p * n + j]
+            }
+            C.data[i * n + j] = alpha * sum + beta * C.data[i * n + j]
+        }
+    }
+}
+
+# LU decomposition with partial pivoting
+export function cgetrf(A: CMat, pivots: ptr<i32>) -> i32 {
+    let m: i32 = A.rows
+    let n: i32 = A.cols
+    let min_dim: i32 = if m < n { m } else { n }
+    
+    # Initialize pivots
+    for i in 0 to min_dim {
+        pivots[i] = i
+    }
+    
+    for k in 0 to min_dim {
+        # Find pivot
+        let mut p: i32 = k
+        let mut max_val: f64 = cabs(A.data[k * n + k])
+        for i in (k + 1) to m {
+            let val: f64 = cabs(A.data[i * n + k])
+            if val > max_val {
+                max_val = val
+                p = i
+            }
+        }
+        
+        # Swap rows
+        if p != k {
+            pivots[k] = p
+            for j in 0 to n {
+                let temp: c128 = A.data[k * n + j]
+                A.data[k * n + j] = A.data[p * n + j]
+                A.data[p * n + j] = temp
+            }
+        }
+        
+        # Factorize
+        let pivot_val: c128 = A.data[k * n + k]
+        # Avoid division by exact zero
+        if cabs(pivot_val) > 0.0 {
+            for i in (k + 1) to m {
+                let factor: c128 = A.data[i * n + k] / pivot_val
+                A.data[i * n + k] = factor
+                for j in (k + 1) to n {
+                    A.data[i * n + j] = A.data[i * n + j] - factor * A.data[k * n + j]
+                }
+            }
+        } else {
+            return k + 1 # Singular matrix
+        }
+    }
+    
+    return 0
+}
+
+# Solve system A*x = b using previously computed LU
+export function cgetrs(A: CMat, pivots: ptr<i32>, b: ptr<c128>, x: ptr<c128>) -> void {
+    let n: i32 = A.rows
+    
+    # Copy b to x
+    memcpy(x as ptr<void>, b as ptr<void>, (n * 16) as i64)
+    
+    # Forward substitution with row permutation
+    for i in 0 to n {
+        let p: i32 = pivots[i]
+        if p != i {
+            let temp: c128 = x[i]
+            x[i] = x[p]
+            x[p] = temp
+        }
+        
+        for j in 0 to i {
+            x[i] = x[i] - A.data[i * n + j] * x[j]
+        }
+    }
+    
+    # Backward substitution
+    let mut i: i32 = n - 1
+    while i >= 0 {
+        for j in (i + 1) to n {
+            x[i] = x[i] - A.data[i * n + j] * x[j]
+        }
+        x[i] = x[i] / A.data[i * n + i]
+        i = i - 1
+    }
+}
+
+# Solve system A*x = b
+export function csolve(A: CMat, b: ptr<c128>, x: ptr<c128>) -> i32 {
+    let n: i32 = A.rows
+    let A_copy: CMat = cmat_clone(A)
+    
+    let pivots: ptr<i32> = malloc((n * 4) as i64) as ptr<i32>
+    
+    let info: i32 = cgetrf(A_copy, pivots)
+    if info == 0 {
+        cgetrs(A_copy, pivots, b, x)
+    }
+    
+    free(pivots as ptr<void>)
+    cmat_free(A_copy)
+    return info
+}
+
+# Matrix exponential using Taylor series approximation
+export function cmat_exp(A: CMat) -> CMat {
+    let n: i32 = A.rows
+    let res: CMat = cmat_new(n, n)
+    let term: CMat = cmat_new(n, n)
+    let next_term: CMat = cmat_new(n, n)
+    
+    # Initialize res = I, term = I
+    for i in 0 to n {
+        res.data[i * n + i] = c128(1.0, 0.0)
+        term.data[i * n + i] = c128(1.0, 0.0)
+    }
+    
+    let iterations: i32 = 15
+    for k in 1 to iterations {
+        # next_term = term * A
+        cgemm(term, A, next_term)
+        
+        # next_term = next_term / k
+        let factor: c128 = c128(1.0 / (k as f64), 0.0)
+        for i in 0 to (n * n) {
+            next_term.data[i] = next_term.data[i] * factor
+            res.data[i] = res.data[i] + next_term.data[i]
+            term.data[i] = next_term.data[i]
+        }
+    }
+    
+    cmat_free(term)
+    cmat_free(next_term)
+    return res
+}
