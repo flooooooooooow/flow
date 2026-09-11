@@ -1,0 +1,95 @@
+# Benchmark comparing complex * real vs complex * complex to show vectorization
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function clock() -> i64
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+
+function benchmark_complex_mul_real(buf: ptr<c64>, s: f32, n: i32) {
+    for i in 0 to n {
+        buf[i] = buf[i] * s
+    }
+}
+
+function benchmark_complex_mul_complex(buf: ptr<c64>, s: c64, n: i32) {
+    for i in 0 to n {
+        buf[i] = buf[i] * s
+    }
+}
+
+function main() -> i32 {
+    let size: i32 = 100000
+    let iter: i32 = 10000
+    
+    let buf: array<c64, 100000>
+    let p: ptr<c64> = buf
+
+    # warmup
+    for i in 0 to size {
+        p[i] = c64(1.0, 2.0)
+    }
+    
+    benchmark_complex_mul_real(p, 1.00001, size)
+    
+    let start_cr: i64 = clock()
+    for _ in 0 to iter {
+        benchmark_complex_mul_real(p, 1.00001, size)
+    }
+    let end_cr: i64 = clock()
+    
+    # consume result to prevent dead code elimination
+    let mut sum_cr: f64 = 0.0
+    for i in 0 to size {
+        sum_cr = sum_cr + creal(p[i]) + cimag(p[i])
+    }
+    
+    # reset
+    for i in 0 to size {
+        p[i] = c64(1.0, 2.0)
+    }
+    
+    benchmark_complex_mul_complex(p, c64(1.00001, 0.0), size)
+    
+    let start_cc: i64 = clock()
+    for _ in 0 to iter {
+        benchmark_complex_mul_complex(p, c64(1.00001, 0.0), size)
+    }
+    let end_cc: i64 = clock()
+    
+    # consume result to prevent dead code elimination
+    let mut sum_cc: f64 = 0.0
+    for i in 0 to size {
+        sum_cc = sum_cc + creal(p[i]) + cimag(p[i])
+    }
+    
+    let time_cr: f64 = (end_cr - start_cr) / CLOCKS_PER_SEC
+    let time_cc: f64 = (end_cc - start_cc) / CLOCKS_PER_SEC
+    
+    let total_ops: f64 = size * iter
+    let gops_cr: f64 = total_ops / time_cr / 1e9
+    let gops_cc: f64 = total_ops / time_cc / 1e9
+    
+    print("Complex*Real: ")
+    printf("%.3f", time_cr)
+    print(" s, ")
+    printf("%.2f", gops_cr)
+    println(" GOPS")
+    
+    print("Complex*Complex: ")
+    printf("%.3f", time_cc)
+    print(" s, ")
+    printf("%.2f", gops_cc)
+    println(" GOPS")
+    
+    # print sum to prevent dead code elimination
+    print("sum_cr: ")
+    printf("%.2f", sum_cr)
+    println("")
+    print("sum_cc: ")
+    printf("%.2f", sum_cc)
+    println("")
+    
+    return 0
+}

@@ -4117,6 +4117,23 @@ class CGenerator:
 
             left_expr = self._gen_expr(e.left)
             right_expr = self._gen_expr(e.right)
+            left_t = self._infer_expr_type(e.left)
+            right_t = self._infer_expr_type(e.right)
+
+            # Complex times real scalar lowers to direct element-wise real
+            # multiplies (real*=s, imag*=s) rather than the complex-multiply
+            # helper (__mulsc3) to enable loop vectorization.
+            if e.operator == "*":
+                if left_t and left_t.name in ("c64", "c128") and right_t and right_t.name in ("f32", "f64"):
+                    c_type = "float" if left_t.name == "c64" else "double"
+                    creal = "crealf" if left_t.name == "c64" else "creal"
+                    cimag = "cimagf" if left_t.name == "c64" else "cimag"
+                    return f"__extension__ ({{ {c_type} complex _z = {left_expr}; {c_type} _s = {right_expr}; (({c_type}){creal}(_z) * _s) + (({c_type}){cimag}(_z) * _s) * I; }})"
+                if right_t and right_t.name in ("c64", "c128") and left_t and left_t.name in ("f32", "f64"):
+                    c_type = "float" if right_t.name == "c64" else "double"
+                    creal = "crealf" if right_t.name == "c64" else "creal"
+                    cimag = "cimagf" if right_t.name == "c64" else "cimag"
+                    return f"__extension__ ({{ {c_type} complex _z = {right_expr}; {c_type} _s = {left_expr}; (({c_type}){creal}(_z) * _s) + (({c_type}){cimag}(_z) * _s) * I; }})"
 
             # C's '%' operator requires integer operands. Flow lets '%' be used
             # on fields/values that are declared f32/f64 but are semantically

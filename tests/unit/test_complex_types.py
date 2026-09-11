@@ -172,3 +172,20 @@ def test_complex_compile_and_run():
     }
     """)
     assert rc == 0
+
+def test_complex_mul_real_codegen_no_mulsc3():
+    """Verify complex * real lowers to direct element-wise multiplies without mulsc3."""
+    from tests.unit.compiler_helpers import compile_c_only
+    c_code = compile_c_only("""
+    function main() -> i32 {
+        let z: c64 = c64(1.0, 2.0)
+        let s: f32 = 3.0
+        let p: c64 = z * s
+        return 0
+    }
+    """)
+    # Should not use a direct binary op * (which clang turns into __mulsc3)
+    assert "(z * s)" not in c_code
+    assert "crealf" in c_code
+    assert "cimagf" in c_code
+    assert "__mulsc3" not in c_code
