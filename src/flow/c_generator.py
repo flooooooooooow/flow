@@ -869,8 +869,11 @@ class CGenerator:
                 self._mangled_names[id(fn)] = fn.name
                 continue
 
-            # Don't mangle C math functions with primitive args - use C stdlib names
-            if fn.name in c_math_functions:
+            # Don't mangle the stdlib's `@libm` math shims with primitive args -
+            # keep the plain C name so calls link against libm. A user function
+            # sharing a libm name but without the marker is mangled like any
+            # other, so calls resolve to it rather than to libm (#874).
+            if fn.name in c_math_functions and "libm" in (getattr(fn, "attributes", None) or []):
                 all_primitive = all(pt in primitives for pt in param_types)
                 if all_primitive:
                     self._mangled_names[id(fn)] = fn.name  # Keep original name
@@ -2522,10 +2525,13 @@ class CGenerator:
                 f"{c_ret} {_c_ident(fn.name)}(void) {{ "
                 f"return ({c_ret})sizeof({c_ty}); }}"
             ]
-        # Skip math functions that are provided by the standard library
-        # BUT only if they take primitive float types (not custom types like Dual)
+        # The stdlib declares sin/cos/etc. as Flow shims carrying `@libm` so the
+        # C backend drops the shim and links the real libm symbol instead. A
+        # user-defined function that happens to share a libm name has no `@libm`
+        # marker, so it is emitted and called rather than silently bypassed
+        # (#874). Only skip when the shim is marked and all params are primitive.
         math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
-        if fn.name in math_functions:
+        if fn.name in math_functions and "libm" in (getattr(fn, "attributes", None) or []):
             # Only skip if all parameters are primitive types
             primitives = {'f32', 'f64', 'c64', 'c128', 'i32', 'i64', 'float', 'double', 'int'}
             all_primitive = all(
@@ -2533,7 +2539,7 @@ class CGenerator:
                 for p in fn.parameters
             )
             if all_primitive:
-                return []  # Skip - this is the C math function
+                return []  # Skip - libm provides this symbol
 
         lines: List[str] = []
 
