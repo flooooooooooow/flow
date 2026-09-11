@@ -255,6 +255,67 @@ class MLIROptimizer:
             print(f"Error running MLIR optimizer: {e}", file=sys.stderr)
             return 1
     
+    def autotune_transform(self, kernel_mlir: str, transform_template: str, parameter_values: List[int], evaluator_fn=None) -> tuple[str, Optional[int], float]:
+        """
+        Auto-tunes a single parameter (e.g., tile size) in a transform dialect template.
+        Uses the provided `evaluator_fn(optimized_mlir)` to measure runtime performance.
+        Returns a tuple: (best_mlir_string, best_parameter_value, best_metric).
+        """
+        best_metric = float('inf')
+        best_mlir = kernel_mlir
+        best_param = None
+        
+        if not self._toolchain_supports_flow_mlir():
+            return kernel_mlir, None, float('inf')
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            
+            for param in parameter_values:
+                # Format the template with the tuning parameter
+                try:
+                    transform_ir = transform_template.format(param=param)
+                except KeyError:
+                    # Fallback if the template doesn't match the expected {param}
+                    transform_ir = transform_template.replace("{param}", str(param))
+                
+                # Combine kernel and transform
+                full_mlir = kernel_mlir + "\n" + transform_ir
+                
+                mlir_in = tmp_path / f"in_{param}.mlir"
+                mlir_out = tmp_path / f"out_{param}.mlir"
+                mlir_in.write_text(full_mlir)
+                
+                cmd = [
+                    self.mlir_opt,
+                    "--mlir-print-op-on-diagnostic=false",
+                    "--pass-pipeline=builtin.module(transform-interpreter)",
+                    str(mlir_in),
+                    "-o",
+                    str(mlir_out)
+                ]
+                
+                try:
+                    subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    optimized_mlir = mlir_out.read_text()
+                    
+                    if evaluator_fn:
+                        metric = evaluator_fn(optimized_mlir)
+                        if metric is None:
+                            continue
+                    else:
+                        metric = 0.0 # dummy metric if no evaluator
+
+                    if metric < best_metric:
+                        best_metric = metric
+                        best_mlir = optimized_mlir
+                        best_param = param
+                        
+                except subprocess.CalledProcessError:
+                    continue
+                    
+        return best_mlir, best_param, best_metric
+
     def analyze_vectorization(self, mlir_file: str) -> List[str]:
         """Analyze vectorization opportunities."""
         cmd = [
