@@ -51,6 +51,8 @@ class MLIROptimizer:
         enable_gvn: bool = True,
         enable_dce: bool = True,
         enable_inline: bool = True,
+        enable_loop_pipelining: bool = False,
+        enable_multi_buffering: bool = False,
         optimization_level: str = "O2",
     ) -> str:
         """
@@ -95,6 +97,10 @@ class MLIROptimizer:
                 func_passes.append("loop-invariant-code-motion")
             if enable_loop_fusion:
                 func_passes.append("affine-loop-fusion")
+            if enable_multi_buffering:
+                func_passes.append("test-multi-buffering{multiplier=2}")
+            if enable_loop_pipelining:
+                func_passes.append("test-scf-pipelining")
 
         if o3 and enable_vectorization:
             # Best available mlir-opt vectorize pass. Needs affine/scf loops
@@ -193,6 +199,8 @@ class MLIROptimizer:
                  enable_gvn: bool = True,
                  enable_dce: bool = True,
                  enable_inline: bool = True,
+                 enable_loop_pipelining: bool = False,
+                 enable_multi_buffering: bool = False,
                  optimization_level: str = "O2") -> int:
         """
         Apply MLIR optimization passes.
@@ -223,6 +231,8 @@ class MLIROptimizer:
             enable_gvn=enable_gvn,
             enable_dce=enable_dce,
             enable_inline=enable_inline,
+            enable_loop_pipelining=enable_loop_pipelining,
+            enable_multi_buffering=enable_multi_buffering,
             optimization_level=optimization_level,
         )
 
@@ -327,7 +337,8 @@ if __name__ == "__main__":
             "Usage: python mlir_optimizer.py <input.mlir> <output.mlir> "
             "[--O0|--O1|--O2|--O3] [--no-vectorization] [--no-loop-fusion] "
             "[--no-mem2reg] [--no-sccp] [--no-licm] [--no-cse] [--no-dce] "
-            "[--no-inline] [--print-pass-pipeline]"
+            "[--no-inline] [--enable-loop-pipelining] "
+            "[--enable-multi-buffering] [--print-pass-pipeline]"
         )
         sys.exit(1)
     
@@ -343,6 +354,8 @@ if __name__ == "__main__":
     enable_gvn = "--no-cse" not in argv
     enable_dce = "--no-dce" not in argv
     enable_inline = "--no-inline" not in argv
+    enable_loop_pipelining = "--enable-loop-pipelining" in argv
+    enable_multi_buffering = "--enable-multi-buffering" in argv
     optimization_level = "O2"
     
     for arg in argv:
@@ -358,6 +371,8 @@ if __name__ == "__main__":
         enable_gvn=enable_gvn,
         enable_dce=enable_dce,
         enable_inline=enable_inline,
+        enable_loop_pipelining=enable_loop_pipelining,
+        enable_multi_buffering=enable_multi_buffering,
         optimization_level=optimization_level,
     )
 

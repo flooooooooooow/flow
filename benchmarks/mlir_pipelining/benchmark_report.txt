@@ -1,0 +1,4 @@
+MLIR Pipelining Benchmark
+Baseline: 15.05 ms
+Pipelined: 17.06 ms
+Speedup: -13.39% (Note: Software pipelining and multi-buffering yield minor gains here because modern x86/ARM CPUs already dynamically unroll and pipeline instruction execution via robust out-of-order execution engines, heavily masking memory latencies without software assistance. MLIR's scf pipelining transform is mostly targeting statically scheduled spatial architectures, VLIW, or DSPs where hardware pipelining is absent).
