@@ -5850,7 +5850,8 @@ class MLIRGenerator:
         math_intrinsics = {'sin': 'math.sin', 'cos': 'math.cos', 'tan': 'math.tan',
                            'exp': 'math.exp', 'log': 'math.log', 'sqrt': 'math.sqrt',
                            'abs': 'math.absf', 'fabs': 'math.absf', 'tanh': 'math.tanh'}
-        if func_call.name in math_intrinsics and len(func_call.arguments) == 1:
+        is_user_defined = func_call.name in self.symbol_table
+        if func_call.name in math_intrinsics and not is_user_defined and len(func_call.arguments) == 1:
             arg = func_call.arguments[0]
             arg_type = self.get_expression_type(arg)
             if arg_type in ('f32', 'f64') or arg_type.startswith('tensor<') or arg_type.startswith('vector<'):

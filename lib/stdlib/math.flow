@@ -49,12 +49,14 @@ export function power(base: f32, exponent: f32) -> f32 {
 }
 
 # Sine of x (radians). Intrinsic in MLIR; stub returns 0 in C fallback.
+@libm
 export function sin(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
 # Cosine of x (radians). Intrinsic in MLIR; stub returns 0 in C fallback.
+@libm
 export function cos(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
@@ -62,18 +64,21 @@ export function cos(x: f32) -> f32 {
 
 # Square root of x. Intrinsic in MLIR; stub returns 0 in C fallback.
 # Domain: x >= 0 for real results.
+@libm
 export function sqrt(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
 # Absolute value of x (fabs intrinsic in MLIR; stub returns 0 in C fallback).
+@libm
 export function fabs(x: f32) -> f32 {
     # Handled as intrinsic in MLIR generator
     return 0.0
 }
 
 # Absolute value of x: |x|.
+@libm
 export function abs(x: f32) -> f32 {
     if x < 0.0 {
         return -x
@@ -82,6 +87,7 @@ export function abs(x: f32) -> f32 {
 }
 
 # Tangent of x (radians): sin(x)/cos(x). Returns 0 if cos(x) == 0.
+@libm
 export function tan(x: f32) -> f32 {
     let cos_val: f32 = cos(x)
     if cos_val == 0.0 {
@@ -93,6 +99,7 @@ export function tan(x: f32) -> f32 {
 
 # Natural logarithm ln(x) via Newton's method.
 # Domain: x > 0; returns 0 and prints for non-positive input.
+@libm
 export function log(x: f32) -> f32 {
     if x <= 0.0 {
         print("Error: Logarithm of non-positive number")
@@ -117,6 +124,7 @@ export function log(x: f32) -> f32 {
 }
 
 # Exponential e^x via Taylor series (20 terms).
+@libm
 export function exp(x: f32) -> f32 {
     # Taylor series approximation for e^x
     let mut result: f32 = 1.0

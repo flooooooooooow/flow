@@ -45,6 +45,7 @@ SEMANTIC_ATTRIBUTES = frozenset({
     "monomorphized",  # synthesized by monomorphize.py
     "lifetime",   # lifetime domain (type_checker; docs/language/lifetime-domains.md)
     "python",     # Python target export overrides (#592)
+    "libm",       # stdlib math shim: C drops the body and links libm (#874)
 })
 
 KNOWN_ATTRIBUTES = CODEGEN_ATTRIBUTES | GUARD_ATTRIBUTES | SEMANTIC_ATTRIBUTES
