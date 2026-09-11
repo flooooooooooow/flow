@@ -260,7 +260,7 @@ flow/
 ├── lib/
 │   ├── verify/
 │   │   ├── nat.flow              → verify.nat
-│   │   └── bool.flow             → verify.bool
+│   │   └── bool.flow
 │   └── stdlib/                   → std.*  (built-in root)
 │       ├── math.flow             → std.math
 │       └── audio/
@@ -381,6 +381,16 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 | **3** | `import .sibling`, `export import` re-export, LSP autocomplete on exports |
 | **4** | `[dependencies]` remote resolution + lock file |
 | **5** | `flow doc <module>`, orphan-export CI lint |
+
+---
+
+## Compiler-recognized standard-library contracts
+
+Most standard-library code is ordinary Flow, but a small number of declarations carry compiler-recognized contracts.
+
+`@libm` marks the canonical standard-library math wrappers that may lower to the platform math implementation or an equivalent backend intrinsic. The compiler must first resolve the call to an `@libm` declaration. A user-defined function that merely shares a name such as `sin`, `exp`, or `sqrt` remains an ordinary Flow function and must be called normally.
+
+The `complex_linalg` module (`lib/stdlib/complex_linalg.flow`) is the pure-Flow complex linear-algebra reference module. It exposes `CMat`, allocation/clone/access helpers, complex GEMM, LU factorization/solve, and a matrix-exponential implementation. Matrix storage is explicitly owned through `cmat_new` / `cmat_free`; the module is a correctness/reference surface rather than a claim that every operation is already mapped to optimized BLAS/LAPACK.
 
 ---
 
