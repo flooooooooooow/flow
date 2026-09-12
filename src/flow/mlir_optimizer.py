@@ -101,6 +101,7 @@ class MLIROptimizer:
                 func_passes.append("loop-invariant-code-motion")
             if enable_loop_fusion:
                 func_passes.append("affine-loop-fusion")
+                func_passes.append("linalg-fuse-elementwise-ops")
             if enable_multi_buffering:
                 func_passes.append("test-multi-buffering{multiplier=2}")
             if enable_loop_pipelining:

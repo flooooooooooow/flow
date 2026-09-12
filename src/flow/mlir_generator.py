@@ -2616,6 +2616,105 @@ class MLIRGenerator:
             return out
         return None
 
+    def _try_linalg_elementwise_for(self, for_stmt: ForStatement) -> Optional[str]:
+        # Emits a linalg.generic loop nest for elementwise ops.
+        # This is specifically to enable linalg fusion passes on simple elementwise array operations.
+        if for_stmt.is_parallel or for_stmt.step is not None:
+            return None
+        if not for_stmt.body or len(for_stmt.body.statements) != 1:
+            return None
+        stmt = for_stmt.body.statements[0]
+        if not isinstance(stmt, Assignment) or stmt.target_expr is None:
+            return None
+        access = stmt.target_expr
+        if not isinstance(access, ArrayAccess):
+            return None
+
+        # Check bounds are constants 0 to N
+        if not isinstance(for_stmt.range_start, Literal) or str(for_stmt.range_start.value) != "0":
+            return None
+        if not isinstance(for_stmt.range_end, Literal):
+            return None
+            
+        N = str(for_stmt.range_end.value)
+        iv = for_stmt.variable
+        if not self._expr_is_loop_index(access.index, iv):
+            return None
+
+        expr = stmt.value
+        if not isinstance(expr, BinaryOperation):
+            return None
+            
+        if not isinstance(expr.left, ArrayAccess) or not self._expr_is_loop_index(expr.left.index, iv):
+            return None
+            
+        if not isinstance(expr.right, ArrayAccess) or not self._expr_is_loop_index(expr.right.index, iv):
+            return None
+            
+        # OK, we have out[i] = in1[i] OP in2[i]
+        # Get base pointers.
+        out_base = None
+        in1_base = None
+        in2_base = None
+        
+        for candidate in ("f32", "i32"):
+            out_base = self._memref_scalar_base(access.array, candidate)
+            if out_base is not None:
+                elem = candidate
+                break
+        if out_base is None:
+            return None
+            
+        in1_base = self._memref_scalar_base(expr.left.array, elem)
+        in2_base = self._memref_scalar_base(expr.right.array, elem)
+        if in1_base is None or in2_base is None:
+            return None
+            
+        # In Linalg specialized loop, we just grab the SSA values for the array access base
+        out_base_ssa, out_ops = self.generate_expression(access.array)
+        in1_base_ssa, in1_ops = self.generate_expression(expr.left.array)
+        in2_base_ssa, in2_ops = self.generate_expression(expr.right.array)
+        
+        # We can use unrealized_conversion_cast to go from !llvm.ptr to memref
+        memref_ty = f"memref<{N}x{elem}>"
+        ops = []
+        if out_ops: ops.extend(out_ops)
+        if in1_ops: ops.extend(in1_ops)
+        if in2_ops: ops.extend(in2_ops)
+        
+        out_m = f"%{self.function_counter}"; self.function_counter += 1
+        in1_m = f"%{self.function_counter}"; self.function_counter += 1
+        in2_m = f"%{self.function_counter}"; self.function_counter += 1
+        
+        ops.append(f"{self.indent()}{out_m} = builtin.unrealized_conversion_cast {out_base_ssa} : !llvm.ptr to {memref_ty}")
+        ops.append(f"{self.indent()}{in1_m} = builtin.unrealized_conversion_cast {in1_base_ssa} : !llvm.ptr to {memref_ty}")
+        ops.append(f"{self.indent()}{in2_m} = builtin.unrealized_conversion_cast {in2_base_ssa} : !llvm.ptr to {memref_ty}")
+        
+        # Now linalg.generic
+        op_mlir = ""
+        if expr.operator == "+":
+            if elem == "f32": op_mlir = "arith.addf"
+            else: op_mlir = "arith.addi"
+        elif expr.operator == "-":
+            if elem == "f32": op_mlir = "arith.subf"
+            else: op_mlir = "arith.subi"
+        elif expr.operator == "*":
+            if elem == "f32": op_mlir = "arith.mulf"
+            else: op_mlir = "arith.muli"
+        else:
+            return None
+            
+        ops.append(f"{self.indent()}linalg.generic {{indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = [\"parallel\"]}} ins({in1_m}, {in2_m} : {memref_ty}, {memref_ty}) outs({out_m} : {memref_ty}) {{")
+        self.indent_level += 1
+        ops.append(f"{self.indent()}^bb0(%in1: {elem}, %in2: {elem}, %out: {elem}):")
+        res = f"%{self.function_counter}"; self.function_counter += 1
+        ops.append(f"{self.indent()}  {res} = {op_mlir} %in1, %in2 : {elem}")
+        ops.append(f"{self.indent()}  linalg.yield {res} : {elem}")
+        self.indent_level -= 1
+        ops.append(f"{self.indent()}}}")
+        
+        return "\n".join(ops)
+
     def _try_vectorize_elementwise_for(self, for_stmt: ForStatement) -> Optional[str]:
         """Emit vector<4xT> transfer loops for simple elementwise f32/i32 bodies.
 
@@ -2965,6 +3064,10 @@ class MLIRGenerator:
     def generate_for(self, for_stmt: ForStatement) -> str:
         mlir_code = []
 
+        linalg_gen = self._try_linalg_elementwise_for(for_stmt)
+        if linalg_gen is not None:
+            return linalg_gen
+            
         vectorized = self._try_vectorize_elementwise_for(for_stmt)
         if vectorized is not None:
             return vectorized
