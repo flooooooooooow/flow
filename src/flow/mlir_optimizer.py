@@ -7,6 +7,7 @@ Applies various MLIR optimization passes to improve performance
 import shutil
 import subprocess
 import tempfile
+import re
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -450,3 +451,28 @@ if __name__ == "__main__":
         print(f"Optimization failed with exit code {result}")
     
     sys.exit(result)
+
+def specialize_shapes(mlir_code: str, func_name: str, replacements: dict[str, str]) -> str:
+    """
+    Replace dynamic shapes in a specified MLIR function.
+    
+    Args:
+        mlir_code: The original MLIR code.
+        func_name: The name of the function to specialize (e.g. 'compute').
+        replacements: A dictionary mapping dynamic types to static types 
+                     (e.g., {'memref<?xf32>': 'memref<1024xf32>'}).
+                     
+    Returns:
+        The specialized MLIR code.
+    """
+    pattern = re.compile(rf"(func\.func\s+@{func_name}\b.*?)(\n[ \t]*}}\n|\n[ \t]*}}\r\n|\n[ \t]*}}$)", re.DOTALL | re.MULTILINE)
+    
+    def replacer(match):
+        func_body = match.group(1)
+        suffix = match.group(2)
+        for dyn_type, static_type in replacements.items():
+            func_body = func_body.replace(dyn_type, static_type)
+        return func_body + suffix
+
+    new_mlir, count = pattern.subn(replacer, mlir_code)
+    return new_mlir

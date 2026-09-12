@@ -11,6 +11,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+from .mlir_optimizer import specialize_shapes
 import os
 import shutil
 
@@ -79,7 +80,7 @@ class MLIRJIT:
         self._loaded_libs: List[ctypes.CDLL] = []
         self._module_seq = 0
         
-    def compile_mlir_to_llvm(self, mlir_code: str, module_name: str = "jit_module") -> str:
+    def compile_mlir_to_llvm(self, mlir_code: str, module_name: str = "jit_module", shape_replacements: Optional[dict[str, str]] = None) -> str:
         """Compile MLIR to LLVM IR using mlir-opt"""
         mlir_opt = self._find_mlir_opt()
         if mlir_opt is None:
@@ -89,6 +90,11 @@ class MLIRJIT:
                 f"Current PATH: {os.environ.get('PATH','')}"
             )
 
+
+        if shape_replacements:
+            # We assume the main entry point name is known, e.g., 'main' or passed as a replacement key '__func__'
+            func_name = shape_replacements.pop('__func__', 'main')
+            mlir_code = specialize_shapes(mlir_code, func_name, shape_replacements)
         mlir_translate = self._find_mlir_translate()
         if mlir_translate is None:
             raise RuntimeError(
@@ -387,6 +393,7 @@ class MLIRJIT:
             return None
 
     def jit_compile_and_run(self, mlir_code: str, func_name: str = "main",
+                           shape_replacements: Optional[dict[str, str]] = None,
                            args: List[Any] = None,
                            *,
                            link_runtime: Optional[bool] = None) -> Optional[Any]:
@@ -397,7 +404,11 @@ class MLIRJIT:
         """
         del func_name, args  # entry point is always main() in the JIT executable
         try:
-            llvm_ir = self.compile_mlir_to_llvm(mlir_code)
+            
+            if shape_replacements:
+                shape_replacements = shape_replacements.copy()
+                shape_replacements['__func__'] = func_name
+            llvm_ir = self.compile_mlir_to_llvm(mlir_code, shape_replacements=shape_replacements)
             if not llvm_ir:
                 return None
 
