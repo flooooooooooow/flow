@@ -53,6 +53,7 @@ export const AST_DEFER: i32 = 42
 export const AST_ENUM: i32 = 43
 export const AST_ENUM_VARIANT: i32 = 44
 export const AST_IF_EXPR: i32 = 45
+export const AST_SHADER: i32 = 46
 
 # AST_TYPE.c metadata. Keep this in the existing child slot so AstNode remains
 # 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep

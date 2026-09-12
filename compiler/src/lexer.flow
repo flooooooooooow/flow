@@ -136,6 +136,7 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     let dbg_kw: array<u8, 3> = [100, 98, 103]
     let expect_kw: array<u8, 6> = [101, 120, 112, 101, 99, 116]
     let default_kw: array<u8, 7> = [100, 101, 102, 97, 117, 108, 116]
+    let shader_kw: array<u8, 6> = [115, 104, 97, 100, 101, 114]
     let mut p: ptr<u8> = let_kw
     if flowc_lex_ident_eq(src, start, end, p, 3) == 1 { return KW_LET }
     p = fn_kw
@@ -214,6 +215,8 @@ function flowc_lex_classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
     if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_EXPECT }
     p = default_kw
     if flowc_lex_ident_eq(src, start, end, p, 7) == 1 { return KW_DEFAULT }
+    p = shader_kw
+    if flowc_lex_ident_eq(src, start, end, p, 6) == 1 { return KW_SHADER }
     return 0
 }
 

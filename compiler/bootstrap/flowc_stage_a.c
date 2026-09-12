@@ -204,6 +204,7 @@ const int32_t KW_PARALLEL = 36;
 const int32_t KW_DBG = 37;
 const int32_t KW_EXPECT = 38;
 const int32_t KW_DEFAULT = 39;
+const int32_t KW_SHADER = 40;
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col);
 Token flowc_make_tok(int32_t kind, int32_t kw, int32_t start, int32_t end, int32_t line, int32_t col) {
   return (Token){ .kind = kind, .kw = kw, .start = start, .end = end, .line = line, .col = col };
@@ -339,6 +340,7 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t dbg_kw[3] = { 100, 98, 103 };
   uint8_t expect_kw[6] = { 101, 120, 112, 101, 99, 116 };
   uint8_t default_kw[7] = { 100, 101, 102, 97, 117, 108, 116 };
+  uint8_t shader_kw[6] = { 115, 104, 97, 100, 101, 114 };
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -494,6 +496,10 @@ int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   p = default_kw;
   if (flowc_lex_ident_eq(src, start, end, p, 7) == 1) {
   return KW_DEFAULT;
+}
+  p = shader_kw;
+  if (flowc_lex_ident_eq(src, start, end, p, 6) == 1) {
+  return KW_SHADER;
 }
   return 0;
 }
@@ -814,6 +820,7 @@ const int32_t AST_DEFER = 42;
 const int32_t AST_ENUM = 43;
 const int32_t AST_ENUM_VARIANT = 44;
 const int32_t AST_IF_EXPR = 45;
+const int32_t AST_SHADER = 46;
 const int32_t AST_TYPE_SPAN_MUTABLE = 1;
 AstArena flowc_ast_new(int32_t cap);
 void flowc_ast_free(AstArena arena);
@@ -3867,6 +3874,18 @@ int32_t flowc_parse_program(Parser* p) {
   if (flowc_parser_check_kw(p[0], KW_EXTERN) == 1) {
   item = flowc_parse_extern(p);
 } else {
+  if (flowc_parser_check_kw(p[0], KW_SHADER) == 1) {
+  int32_t shader_start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+  if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
+  flowc_parser_advance(p);
+}
+  flowc_parser_skip_brace_block(p);
+  item = flowc_ast_alloc((&(p[0]).arena), AST_SHADER, shader_start, ((p[0]).cur).start);
+} else {
   if (flowc_parser_check_kw(p[0], KW_CONST) == 1) {
   item = flowc_parse_const(p, 0);
 } else {
@@ -3907,6 +3926,7 @@ int32_t flowc_parse_program(Parser* p) {
 } else {
   (p[0]).err = 1;
   return AST_NONE;
+}
 }
 }
 }
