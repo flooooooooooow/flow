@@ -14,7 +14,7 @@ import .token {
     KW_STRUCT, KW_EXTERN, KW_MUT, KW_TRUE, KW_FALSE, KW_NULL, KW_IMPORT, KW_EXPORT,
     KW_BREAK, KW_CONTINUE, KW_CONST, KW_AS, KW_AND, KW_OR, KW_MATCH, KW_ELIF,
     KW_TYPE, KW_UNIT, KW_EFFECT, KW_CAPABILITY, KW_NOT, KW_DEFER, KW_ENUM,
-    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL, KW_DBG, KW_EXPECT, KW_DEFAULT
+    KW_TRAIT, KW_IMPL, KW_TEST, KW_PARALLEL, KW_DBG, KW_EXPECT, KW_DEFAULT, KW_SHADER
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next, flowc_token_is_kw }
 import .ast {
@@ -2989,7 +2989,22 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                         if flowc_parser_check_kw(p[0], KW_EXTERN) == 1 {
                             item = flowc_parse_extern(p)
                         } else {
-                            if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
+                            if flowc_parser_check_kw(p[0], KW_SHADER) == 1 {
+                                let shader_start: i32 = p[0].cur.start
+                                flowc_parser_advance(p)
+                                # skip 'fill' or 'compute'
+                                if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                                    flowc_parser_advance(p)
+                                }
+                                # skip name
+                                if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                                    flowc_parser_advance(p)
+                                }
+                                flowc_parser_skip_brace_block(p)
+                                item = flowc_ast_alloc(&p[0].arena, AST_SHADER, shader_start, p[0].cur.start)
+                            } else {
+                                if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
+
                                 item = flowc_parse_const(p, 0)
                             } else {
                                 if flowc_parser_check_kw(p[0], KW_TYPE) == 1 {
@@ -3039,6 +3054,7 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }
