@@ -648,10 +648,47 @@ def main():
             runner = FlowJITRunner(args.input, args.watch, hot_mode=True)
             runner.start_hot_reload()
             return
+
+
         else:
             jit = MLIRJIT()
             try:
+                # We need to run mlir optimization first before jit!
+                from .mlir_optimizer import MLIROptimizer
+                import tempfile
+                from pathlib import Path as pathlib_Path
+                
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", suffix=".mlir", delete=False
+                    ) as tmp:
+                        tmp.write(out_code)
+                        tmp_path = tmp.name
+
+                    # Optimize
+                    optimizer = MLIROptimizer()
+                    opt_kwargs = mlir_opt_kwargs_from_args(args)
+                    opt_result = optimizer.optimize(
+                        tmp_path,
+                        tmp_path,
+                        **opt_kwargs,
+                    )
+
+                    if opt_result != 0:
+                        print("MLIR optimization failed", file=sys.stderr)
+                        sys.exit(1)
+
+                    # Read optimized MLIR
+                    with open(tmp_path, "r") as f:
+                        out_code = f.read()
+                finally:
+                    if tmp_path and pathlib_Path(tmp_path).exists():
+                        pathlib_Path(tmp_path).unlink()
+
                 result = jit.jit_compile_and_run(out_code, "main")
+
+
                 if result is not None:
                     return result
                 else:

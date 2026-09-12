@@ -118,7 +118,9 @@ class MLIRJIT:
                     mlir_opt,
                     # vector.transfer_* -> scf/vector.load-store must run before
                     # scf-to-cf, and convert-vector-to-llvm before func-to-llvm.
+                    "--convert-linalg-to-loops",
                     "--convert-vector-to-scf",
+                    "--convert-math-to-llvm",
                     "--convert-scf-to-cf",
                     "--memref-expand",
                     "--convert-vector-to-llvm",
