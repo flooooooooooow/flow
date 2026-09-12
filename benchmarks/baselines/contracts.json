@@ -1,0 +1,11 @@
+{
+  "numeric": {
+    "max_median_s": 0.05
+  },
+  "string_io": {
+    "max_median_s": 0.5
+  },
+  "startup": {
+    "max_median_s": 0.01
+  }
+}
