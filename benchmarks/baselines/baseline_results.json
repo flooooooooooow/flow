@@ -1,0 +1,32 @@
+{
+  "metadata": {
+    "date": "2026-09-12",
+    "os": "Linux",
+    "arch": "x86_64",
+    "cores": 4,
+    "flow_version": "1.0.2",
+    "git_sha": "06bb3e1caacb107f3fa66a16334c3a2b824b65dc",
+    "host": "Python 3.12.13",
+    "flags": "clang -O3 -march=native -lm"
+  },
+  "benchmarks": {
+    "numeric": {
+      "median_s": 0.003665527000066504,
+      "min_s": 0.003490636000037739,
+      "max_s": 0.003965221000044039,
+      "result": "833.250000"
+    },
+    "string_io": {
+      "median_s": 0.2709659529999726,
+      "min_s": 0.26541597499999625,
+      "max_s": 0.6812681430000112,
+      "result": "60005"
+    },
+    "startup": {
+      "median_s": 0.0022467469999583045,
+      "min_s": 0.0021101180000187014,
+      "max_s": 0.002584488000024976,
+      "result": "0"
+    }
+  }
+}
