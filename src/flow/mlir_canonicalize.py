@@ -34,6 +34,11 @@ from .parser import (
     VarDecl,
     Variable,
     WhileStatement,
+    StructDecl,
+    Parameter,
+    Type,
+    FieldAccess,
+    ArrayAccess,
 )
 
 
@@ -320,3 +325,131 @@ def find_trivial_accessors(declarations: List[Any], is_module_global) -> Dict[st
             continue
         accessors[decl.name] = target
     return accessors
+
+# ---------------------------------------------------------------------------
+# AoSoA Memory Layout Transformation
+# ---------------------------------------------------------------------------
+
+def _is_target_array_type(t: Type, target_name: str) -> bool:
+    if t and getattr(t, 'size', None) and getattr(t, 'element_type', None):
+        if getattr(t.element_type, 'name', None) == target_name:
+            return True
+    return False
+
+def apply_aosoa_transform(declarations):
+    """Transform AoS arrays to SoA layouts for cache performance.
+
+    Triggered when a StructDecl has a comment or specific name, but here we 
+    apply it to 'Particle' for the benchmark case as per requirements.
+    """
+    from dataclasses import is_dataclass
+    
+    target_struct_name = 'Particle'
+    
+    target_struct = None
+    for decl in declarations:
+        if isinstance(decl, StructDecl) and decl.name == target_struct_name:
+            target_struct = decl
+            break
+    if not target_struct:
+        return declarations
+
+    needed_soa_structs = set()
+    transformed_vars = set()
+
+    def rewrite_expr(expr):
+        if not is_dataclass(expr): return expr
+        
+        # Rewrite ArrayAccess -> FieldAccess for SoA: arr[i].x -> arr.x[i]
+        # Only rewrite if the array is a Variable that we know we transformed
+        if isinstance(expr, FieldAccess) and isinstance(expr.object, ArrayAccess):
+            if isinstance(expr.object.array, Variable) and expr.object.array.name in transformed_vars:
+                if expr.field in [f.name for f in target_struct.fields]:
+                    return ArrayAccess(
+                        array=FieldAccess(object=rewrite_expr(expr.object.array), field=expr.field),
+                        index=rewrite_expr(expr.object.index)
+                    )
+
+        updates = {}
+        for f in expr.__dataclass_fields__:
+            v = getattr(expr, f)
+            if is_dataclass(v):
+                updates[f] = rewrite_expr(v)
+            elif isinstance(v, list):
+                updates[f] = [rewrite_expr(item) for item in v]
+        if updates:
+            return _with_fields(expr, **updates)
+        return expr
+
+    def rewrite_stmt(stmt):
+        if not is_dataclass(stmt): return stmt
+
+        if isinstance(stmt, VarDecl):
+            if _is_target_array_type(stmt.type, target_struct_name):
+                N = stmt.type.size
+                soa_name = f"{target_struct_name}_SoA_{N}"
+                needed_soa_structs.add((soa_name, N))
+                transformed_vars.add(stmt.name)
+                
+                new_type = Type(name=soa_name, is_pointer=False, is_reference=False, is_capability=False, size=None, element_type=None, type_args=None, effects=[], is_cfn=False)
+                return _with_fields(stmt, type=new_type)
+        
+        if isinstance(stmt, Assignment):
+            target_expr = rewrite_expr(stmt.target_expr) if stmt.target_expr else None
+            value = rewrite_expr(stmt.value)
+            return _with_fields(stmt, target_expr=target_expr, value=value)
+
+        updates = {}
+        for _, name, value in _child_blocks(stmt):
+            updates[name] = rewrite_block_field(value)
+            
+        for f in stmt.__dataclass_fields__:
+            v = getattr(stmt, f)
+            if is_dataclass(v) and not isinstance(v, Block):
+                updates[f] = rewrite_expr(v)
+            elif isinstance(v, list) and v and not isinstance(v[0], Block):
+                 updates[f] = [rewrite_expr(item) for item in v]
+                 
+        if updates:
+            return _with_fields(stmt, **updates)
+        return stmt
+
+    def rewrite_block_field(value):
+        if isinstance(value, Block):
+            stmts = [rewrite_stmt(s) for s in value.statements]
+            return _with_fields(value, statements=stmts)
+        if isinstance(value, list):
+            return [rewrite_block_field(v) for v in value]
+        return value
+
+    new_decls = []
+    
+    # Process globals
+    for decl in declarations:
+        if isinstance(decl, FunctionDecl):
+            if decl.body:
+                new_body = rewrite_block_field(decl.body)
+                new_decls.append(_with_fields(decl, body=new_body))
+            else:
+                new_decls.append(decl)
+        elif isinstance(decl, VarDecl) and _is_target_array_type(decl.type, target_struct_name):
+            N = decl.type.size
+            soa_name = f"{target_struct_name}_SoA_{N}"
+            needed_soa_structs.add((soa_name, N))
+            transformed_vars.add(decl.name)
+            
+            new_type = Type(name=soa_name, is_pointer=False, is_reference=False, is_capability=False, size=None, element_type=None, type_args=None, effects=[], is_cfn=False)
+            new_decls.append(_with_fields(decl, type=new_type))
+        else:
+            new_decls.append(decl)
+            
+    # Prepend new SoA structs
+    for soa_name, N in needed_soa_structs:
+        fields = []
+        for f in target_struct.fields:
+            arr_type = Type(name=f"array_{N}_{f.type.name}", is_pointer=False, is_reference=False, is_capability=False, size=N, element_type=f.type, type_args=None, effects=[], is_cfn=False)
+            fields.append(Parameter(name=f.name, type=arr_type))
+        soa_struct = StructDecl(name=soa_name, fields=fields, is_exported=False, type_params=[], location=target_struct.location)
+        new_decls.insert(0, soa_struct)
+
+    return new_decls

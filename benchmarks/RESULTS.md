@@ -140,3 +140,8 @@ workload number.
 
 This regenerates benchmarks/RESULTS.md in place. A full run takes
 a few minutes; most of that is the Python repetitions.
+
+### MLIR Opt: Automatic memory layout transformations (AoSoA)
+- **AoS execution time**: 12.2181s
+- **SoA execution time**: 12.0111s
+- **Improvement**: 1.02x speedup

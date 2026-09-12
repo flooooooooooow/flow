@@ -165,6 +165,9 @@ def main():
         "--no-inline", action="store_true", help="Disable module inliner (O2+)"
     )
     parser.add_argument(
+        "--no-aosoa", action="store_true", help="Disable automatic AoSoA layout transforms"
+    )
+    parser.add_argument(
         "--print-pass-pipeline",
         action="store_true",
         help="Print the mlir-opt --pass-pipeline for the selected flags and exit",

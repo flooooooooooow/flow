@@ -20,7 +20,7 @@ from .parser import (
     is_span_type_name, span_is_mutable, span_element_name, make_span_type,
 )
 
-from .mlir_canonicalize import canonicalize_counted_loops, find_trivial_accessors
+from .mlir_canonicalize import canonicalize_counted_loops, find_trivial_accessors, apply_aosoa_transform
 
 
 class MLIRGenerator:
@@ -862,6 +862,9 @@ class MLIRGenerator:
         return agg, ops
     
     def generate_module(self, declarations: List[Any], emit_gpu: bool = False) -> str:
+        import os
+        if not os.environ.get('FLOW_NO_AOSOA'):
+            declarations = apply_aosoa_transform(declarations)
         mlir_code = []
 
         # Reset state for new module
