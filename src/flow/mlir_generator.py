@@ -1140,6 +1140,8 @@ class MLIRGenerator:
                 return ""
             if func.name in self._declared_externs:
                 return ""
+            if func.name == "tensor_add":
+                return ""
             self._declared_externs.add(func.name)
             # Use the (possibly shortened) symbol-table signature for C varargs.
             info = self.symbol_table.get(func.name) or {}
@@ -5864,6 +5866,27 @@ class MLIRGenerator:
                 self._ssa_types[result_ssa] = arg_type
                 return result_ssa, ops
 
+        if func_call.name == 'tensor_add' and len(func_call.arguments) == 2:
+            arg0_ssa, arg0_ops = self.generate_expression(func_call.arguments[0])
+            arg1_ssa, arg1_ops = self.generate_expression(func_call.arguments[1])
+            ops = list(arg0_ops) + list(arg1_ops)
+            arg0_type = self._ssa_types.get(arg0_ssa) or self.get_expression_type(func_call.arguments[0])
+            
+            result_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{result_ssa} = linalg.generic {{")
+            ops.append(f"{self.indent()}  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+            ops.append(f"{self.indent()}  iterator_types = [\"parallel\"]")
+            ops.append(f"{self.indent()}}} ins({arg1_ssa} : {arg0_type}) outs({arg0_ssa} : {arg0_type}) {{")
+            ops.append(f"{self.indent()}^bb0(%in: f32, %out: f32):")
+            add_res = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}  {add_res} = arith.addf %in, %out : f32")
+            ops.append(f"{self.indent()}  linalg.yield {add_res} : f32")
+            ops.append(f"{self.indent()}}} -> {arg0_type}")
+            self._ssa_types[result_ssa] = arg0_type
+            return result_ssa, ops
+
         ssa_name = f"%{self.function_counter}"
         self.function_counter += 1
 
@@ -6938,6 +6961,10 @@ class MLIRGenerator:
         elif flow_type.name.startswith('struct_'):
             # Struct type: struct_MyStruct -> !flow.struct<MyStruct>
             return f"!flow.struct<{flow_type.name.replace('struct_', '')}>"
+        elif flow_type.name.startswith('tensor_') or flow_type.name.startswith('tensor<'):
+            if flow_type.name.startswith('tensor<'): return flow_type.name
+            elem = flow_type.name.replace('tensor_', '')
+            return f"tensor<?x{elem}>"
         elif flow_type.name.startswith('vec'):
             # Vector type: vec4f32 -> vector<4xf32>
             if flow_type.size and elem_type:

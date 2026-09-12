@@ -86,6 +86,9 @@ class MLIROptimizer:
             # enable_gvn → cse (no dedicated MLIR GVN pass)
             if enable_gvn:
                 func_passes.append("cse")
+            
+            # Tensor bufferization (value semantics -> reference semantics)
+            module_prefix.append("one-shot-bufferize{bufferize-function-boundaries=1}")
 
         if o2_plus:
             if enable_inline:

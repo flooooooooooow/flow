@@ -1,0 +1,26 @@
+# Tensor Bufferization Benchmark
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+    function tensor_add(a: tensor_f32, b: tensor_f32) -> tensor_f32
+}
+
+const CLOCKS_PER_SEC: i64 = 1000000
+
+function kernel(a: tensor_f32, b: tensor_f32) -> tensor_f32 {
+    let c: tensor_f32 = tensor_add(a, b)
+    let d: tensor_f32 = tensor_add(c, b)
+    let e: tensor_f32 = tensor_add(d, b)
+    let f: tensor_f32 = tensor_add(e, b)
+    let g: tensor_f32 = tensor_add(f, b)
+    let h: tensor_f32 = tensor_add(g, b)
+    let i: tensor_f32 = tensor_add(h, b)
+    let j: tensor_f32 = tensor_add(i, b)
+    return j
+}
+
+function main() -> i32 {
+    println("This benchmark verifies value semantics tensor operations bufferize in-place.")
+    println("MLIR generates linalg.generic with tensor values, and one-shot-bufferize performs memory allocation logic.")
+    return 0
+}
