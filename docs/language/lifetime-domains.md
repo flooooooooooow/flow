@@ -228,8 +228,6 @@ checked. None of it is partially checked.
 - **Escape through a call.** Passing a local's address to a function that
   stores it is invisible to LD1. Parameters carry no domain in v0, so the
   callee's assignment sees a parameter, not local storage.
-- **Escape through a struct field.** Writing a reference into a field of a
-  longer-lived struct is not tracked. This is the same gap spans have.
 - **Escape through a closure environment**, a function pointer, or dynamic
   dispatch. The `@rt_safe` call graph is over direct named calls only, and LD3
   and LD4 inherit that.
@@ -263,7 +261,7 @@ emitted, since it strictly says more. A span in a function with no
 `@lifetime(...)` still gets the span diagnostic, unchanged.
 
 The two share their known gaps exactly: neither follows a borrow through a
-struct field, a call, or a closure. See
+a call, or a closure. See
 [spans.md § Lifetime](spans.md#lifetime).
 
 ## Frame domain and the arena
@@ -366,7 +364,8 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | LD3 `frame` forbids heap create/destroy | ✅ allocation names only, locks allowed |
 | LD4 call ordering between declared domains | ✅ |
 | `FrameArena` bump API in the stdlib | ✅ `lib/stdlib/memory.flow` |
-| Escape through a call, struct field, closure or heap | ❌ not checked, by design in v0 |
+| LD1 escape into a struct field of a longer-lived static | ✅ |
+| Escape through a call, closure or heap | ❌ not checked, by design in v0 |
 | Domain of arena-allocated memory | ✅ |
 | Domains on parameters / in types | ❌ |
 | `request` / `persistent` domains | ❌ |

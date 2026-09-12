@@ -645,9 +645,9 @@ function process() -> void {
 """
         ) == []
 
-    def test_escape_through_a_struct_field_is_not_caught(self):
-        assert domain_errors(
-            """
+def test_escape_through_a_struct_field():
+    assert only_error(
+        """
 struct Holder {
     view: ptr<i32>
 }
@@ -660,7 +660,12 @@ function process() -> void {
     holder.view = &scratch
 }
 """
-        ) == []
+    ) == (
+        "lifetime domain escape: `scratch` lives in the `callback` domain but "
+        "is stored in `holder`, which lives in the `application` domain "
+        "(a longer-lived domain may not hold a reference to a shorter-lived "
+        "one) at line 11, column 5"
+    )
 
     def test_the_domain_of_arena_memory_is_modelled(self):
         assert only_error(
