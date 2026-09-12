@@ -2583,6 +2583,20 @@ class TypeChecker:
             # Other field/array assignments are permitted; a full mutability
             # check would require tracking whether the base object is mutable.
             expr_type = self._check_expression(assign.value)
+            
+            target_type = self._infer_type_quiet(assign.target_expr)
+            if target_type is not None:
+                base_name = self._borrow_root_name(assign.target_expr)
+                if base_name is not None and base_name in self.static_names:
+                    reported = self._check_domain_escape_to_static(assign, base_name, target_type)
+                    if not reported and self._is_reference_type(target_type):
+                        origin = self._local_borrow_origin(assign.value)
+                        if origin is not None:
+                            self.errors.append(
+                                f"span outlives borrowed storage `{origin}`"
+                                f"{self._location_suffix(assign)}"
+                            )
+
             return expr_type
 
         symbol = self.current_scope.lookup(assign.target)
