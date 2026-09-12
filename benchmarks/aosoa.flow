@@ -1,0 +1,38 @@
+struct Particle { x: f32, y: f32, z: f32, vx: f32, vy: f32, vz: f32, m: f32, pad: f32, pad2: f32, pad3: f32, pad4: f32, pad5: f32, pad6: f32, pad7: f32, pad8: f32, pad9: f32, pad10: f32, pad11: f32, pad12: f32, pad13: f32, pad14: f32, pad15: f32, pad16: f32, pad17: f32, pad18: f32, pad19: f32, pad20: f32, pad21: f32, pad22: f32, pad23: f32, pad24: f32, pad25: f32 }
+
+function main() -> i32 {
+    let mut pts: [Particle; 80000];
+    let mut i = 0;
+    while i < 80000 {
+        pts[i].x = 1.0;
+        pts[i].y = 2.0;
+        pts[i].z = 3.0;
+        pts[i].vx = 1.0;
+        pts[i].vy = 2.0;
+        pts[i].vz = 3.0;
+        pts[i].m = 4.0;
+        pts[i].pad = 0.0;
+        i = i + 1;
+    }
+    
+    let mut it = 0;
+    while it < 50000 {
+        i = 0;
+        while i < 80000 {
+            pts[i].x = pts[i].x + pts[i].vx;
+            pts[i].y = pts[i].y + pts[i].vy;
+            pts[i].z = pts[i].z + pts[i].vz;
+            i = i + 1;
+        }
+        it = it + 1;
+    }
+    
+    let mut sum = 0.0;
+    i = 0;
+    while i < 80000 {
+        sum = sum + pts[i].x;
+        i = i + 1;
+    }
+    
+    return sum as i32;
+}
