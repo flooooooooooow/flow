@@ -628,8 +628,8 @@ class TestKnownGaps:
     should say so.
     """
 
-    def test_escape_through_a_call_is_not_caught(self):
-        assert domain_errors(
+    def test_escape_through_a_call_is_caught(self):
+        errs = domain_errors(
             """
 let mut cache: ptr<i32> = null
 
@@ -639,11 +639,13 @@ function stash(p: ptr<i32>) -> void {
 
 @lifetime(callback)
 function process() -> void {
-    let scratch: array<i32, 4> = [1, 2, 3, 4]
-    stash(&scratch)
+    let mut scratch: array<i32, 4> = [1, 2, 3, 4]
+    stash(&scratch[0])
 }
 """
-        ) == []
+        )
+        assert len(errs) == 1
+        assert "lifetime domain escape: local `scratch` is passed to parameter of 'stash', which escapes to a static/global scope" in errs[0]
 
 def test_escape_through_a_struct_field():
     assert only_error(

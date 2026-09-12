@@ -225,9 +225,8 @@ A lifetime system that misses violations is worse than no lifetime system,
 because people trust it. Everything below compiles today and is **not**
 checked. None of it is partially checked.
 
-- **Escape through a call.** Passing a local's address to a function that
-  stores it is invisible to LD1. Parameters carry no domain in v0, so the
-  callee's assignment sees a parameter, not local storage.
+- **Escape through a struct field.** Writing a reference into a field of a
+  longer-lived struct is not tracked. This is the same gap spans have.
 - **Escape through a closure environment**, a function pointer, or dynamic
   dispatch. The `@rt_safe` call graph is over direct named calls only, and LD3
   and LD4 inherit that.
