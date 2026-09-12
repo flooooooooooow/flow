@@ -37,7 +37,6 @@ from .attributes import (
     lifetime_domain,
 )
 
-
 class TypeKind(Enum):
     VOID = "void"
     BOOL = "bool"
@@ -65,7 +64,6 @@ class TypeKind(Enum):
     TYPE_ALIAS = "type_alias"  # Transparent type alias
     DISTINCT = "distinct"  # Opaque distinct type
     UNKNOWN = "unknown"
-
 
 @dataclass
 class SemanticType:
@@ -170,7 +168,6 @@ class SemanticType:
             )
         )
 
-
 @dataclass
 class Symbol:
     name: str
@@ -180,7 +177,6 @@ class Symbol:
     is_mutable: bool = False  # For variables: True if declared with 'let mut'
     definition: Any = None  # Reference to AST node
     overloads: List[SemanticType] = field(default_factory=list)
-
 
 @dataclass
 class Scope:
@@ -205,7 +201,6 @@ class Scope:
             # Allow redefinition (e.g., for imports that re-export the same symbol)
             self.symbols[symbol.name] = symbol
 
-
 @dataclass
 class TypeCheckResult:
     typed_ast: List[Any]  # Will be refined later
@@ -220,7 +215,6 @@ class TypeCheckResult:
     struct_fields: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
     # Ordered local/param bindings seen during check: {name,type,kind,container,mutable}
     locals: List[Dict[str, Any]] = field(default_factory=list)
-
 
 class TypeChecker:
     # Known external/builtin functions that are always available
@@ -563,9 +557,36 @@ class TypeChecker:
 
         # ids of AST nodes that already produced a lifetime-domain diagnostic,
         # so the older span message does not double-report the same escape.
+                # ids of AST nodes that already produced a lifetime-domain diagnostic,
+        # so the older span message does not double-report the same escape.
         self._domain_reported: Set[int] = set()
         self._rt_safe_call_sites: List[tuple] = []
         self._domain_call_sites: List[tuple] = []
+
+        # Interprocedural escape analysis
+        self._param_escapes_to_static: Set[Tuple[str, int]] = set()
+        self._param_escapes_to_return: Set[Tuple[str, int]] = set()
+        self._param_propagates_to: Dict[Tuple[str, int], Set[Tuple[str, int]]] = {}
+        self._reference_call_sites: Set[tuple] = set()
+
+    def _get_root_parameter_index(self, expr: Any) -> Optional[int]:
+        """If this expression is derived from a parameter, return its index."""
+        if isinstance(expr, Variable):
+            func_decl = self.function_decls.get(self._current_function_name) if self._current_function_name else None
+            if func_decl:
+                for i, param in enumerate(func_decl.parameters):
+                    if param.name == expr.name:
+                        return i
+            return None
+        if isinstance(expr, UnaryOperation) and expr.operator == "&":
+            return self._get_root_parameter_index(expr.operand)
+        if isinstance(expr, SliceExpr):
+            return self._get_root_parameter_index(expr.base)
+        if isinstance(expr, ArrayAccess):
+            return self._get_root_parameter_index(expr.array)
+        if isinstance(expr, FieldAccess):
+            return self._get_root_parameter_index(expr.object)
+        return None
 
     def _is_numeric(self, t: SemanticType) -> bool:
         return t.kind in {
@@ -911,7 +932,6 @@ class TypeChecker:
         if isinstance(expr, FieldAccess):
             return self._borrow_root_name(expr.object)
         return None
-
     def _local_borrow_origin(self, expr: Any) -> Optional[str]:
         """Name of function-local storage this expression borrows, if any."""
         if isinstance(expr, FunctionCall) and (expr.name.startswith("arena_alloc") or expr.name.startswith("frame_alloc")):
@@ -920,7 +940,14 @@ class TypeChecker:
             return None
         if isinstance(expr, SliceExpr):
             return self._local_borrow_origin(expr.base)
+        if isinstance(expr, UnaryOperation) and expr.operator == "&":
+            return self._local_borrow_origin(expr.operand)
+        if isinstance(expr, ArrayAccess):
+            return self._local_borrow_origin(expr.array)
+        if isinstance(expr, FieldAccess):
+            return self._local_borrow_origin(expr.object)
         if isinstance(expr, Variable):
+
             if expr.name in self._function_local_storage:
                 return expr.name
             return self._span_origin.get(expr.name)
@@ -1116,6 +1143,11 @@ class TypeChecker:
         self.warnings = []
         self._lsp_locals: List[Dict[str, Any]] = []
 
+        self._param_escapes_to_static = set()
+        self._param_escapes_to_return = set()
+        self._param_propagates_to = {}
+        self._reference_call_sites = set()
+
         # Phase 1: Collect type definitions (structs, effects, capabilities)
         self._collect_types(declarations)
 
@@ -1134,8 +1166,12 @@ class TypeChecker:
         # Phase 3: Type check all declarations
         self._check_declarations(declarations)
         
+
         # Phase 3.1: Compute RT-safety fixed point and verify calls
+        self._compute_parameter_escapes()
+        self._verify_parameter_escapes()
         self._rt_unsafe_reason = self._compute_rt_unsafe_functions()
+
         self._heap_unsafe_reason = self._compute_rt_unsafe_functions(seed=self.FRAME_UNSAFE_NAMES)
         self._verify_rt_safe_calls()
         self._verify_domain_calls()
@@ -1652,6 +1688,11 @@ class TypeChecker:
     def _check_domain_escape_to_static(self, assign: Assignment, target: str,
                                        target_type: SemanticType) -> bool:
         """LD1: a longer-lived static may not be given a shorter-lived view."""
+        if target in self.static_names and self._is_reference_type(target_type):
+            param_idx = self._get_root_parameter_index(assign.value)
+            if param_idx is not None and self._current_function_name:
+                self._param_escapes_to_static.add((self._current_function_name, param_idx))
+
         if self._current_domain is None or target not in self.static_names:
             return False
         if not self._is_reference_type(target_type):
@@ -1674,6 +1715,11 @@ class TypeChecker:
 
     def _check_domain_escape_by_return(self, ret: ReturnStatement) -> bool:
         """LD2: a domain function may not return a view of its own frame."""
+        if self._current_function_name and self._is_reference_type(self._current_return_type):
+            param_idx = self._get_root_parameter_index(ret.value)
+            if param_idx is not None:
+                self._param_escapes_to_return.add((self._current_function_name, param_idx))
+
         if self._current_domain is None or ret.value is None:
             return False
         if not self._is_reference_type(self._current_return_type):
@@ -1719,6 +1765,41 @@ class TypeChecker:
             return
         self._domain_call_sites.append((self._current_function_name, name))
         
+
+    def _compute_parameter_escapes(self) -> None:
+        changed = True
+        while changed:
+            changed = False
+            for callee_param, caller_params in self._param_propagates_to.items():
+                if callee_param in self._param_escapes_to_static:
+                    for caller_param in caller_params:
+                        if caller_param not in self._param_escapes_to_static:
+                            self._param_escapes_to_static.add(caller_param)
+                            changed = True
+
+        changed = True
+        while changed:
+            changed = False
+            for callee_param, caller_params in self._param_propagates_to.items():
+                if callee_param in self._param_escapes_to_return:
+                    for caller_param in caller_params:
+                        if caller_param not in self._param_escapes_to_return:
+                            self._param_escapes_to_return.add(caller_param)
+                            changed = True
+
+    def _verify_parameter_escapes(self) -> None:
+        for call_id, caller, callee, param_idx, origin, loc_suffix in self._reference_call_sites:
+            if (callee, param_idx) in self._param_escapes_to_static:
+                if call_id not in self._domain_reported:
+                    self._domain_reported.add(call_id)
+                    self.errors.append(
+                        f"lifetime domain escape: local `{origin}` is passed to parameter "
+                        f"of '{callee}', which escapes to a static/global scope"
+                        f"{loc_suffix}"
+                    )
+            elif (callee, param_idx) in self._param_escapes_to_return:
+                pass
+
     def _verify_domain_calls(self) -> None:
         for fn_name, name in self._domain_call_sites:
             reason = self._heap_unsafe_reason.get(name)
@@ -3533,6 +3614,25 @@ class TypeChecker:
 
         if matching_overload:
             self._check_span_arguments(call, matching_overload)
+            
+            if self._current_function_name is not None:
+                for idx, arg in enumerate(call.arguments):
+                    if idx >= len(matching_overload.param_types):
+                        break
+                    if not self._is_reference_type(matching_overload.param_types[idx]):
+                        continue
+                        
+                    param_idx = self._get_root_parameter_index(arg)
+                    if param_idx is not None:
+                        callee_param = (call.name, idx)
+                        if callee_param not in self._param_propagates_to:
+                            self._param_propagates_to[callee_param] = set()
+                        self._param_propagates_to[callee_param].add((self._current_function_name, param_idx))
+                    
+                    origin = self._local_borrow_origin(arg)
+                    if origin is not None and origin in self._function_local_storage:
+                        self._reference_call_sites.add((id(call), self._current_function_name, call.name, idx, origin, self._location_suffix(call)))
+
             return matching_overload.return_type
 
         # Trailing capability parameters are supplied by the enclosing
