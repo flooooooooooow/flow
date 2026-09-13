@@ -91,6 +91,8 @@ export const KW_DBG: i32 = 37
 export const KW_EXPECT: i32 = 38
 export const KW_DEFAULT: i32 = 39
 export const KW_SHADER: i32 = 40
+export const KW_HANDLE: i32 = 41
+export const KW_WITH: i32 = 42
 
 export struct Token {
     kind: i32,
