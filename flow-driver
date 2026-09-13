@@ -5,6 +5,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Build root for compilation artifacts. Defaults to the repo-global build dir.
+# `flow run` overrides this with a per-invocation directory so concurrent runs
+# of two projects that share a source basename (e.g. src/main.flow) cannot
+# clobber each other's executable or generated runtime C (#817).
+: "${FLOW_BUILD_ROOT:=$SCRIPT_DIR/build}"
 FLOWC_MODULE="flow.transpiler"
 export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 LLVM_PATH="${LLVM_PATH:-}"
@@ -272,7 +277,7 @@ compile_program_flowc() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     mkdir -p "$build_dir"
     print_info "Compiling $program (host=flowc)..."
     if ! flowc_emit_to_c "$program" "$build_dir/$basename.c"; then
@@ -549,7 +554,7 @@ flow_concurrency_flags() {
 flow_runtime_flow_sources() {
     FLOW_RUNTIME_FLOW_SOURCES=()
     local rt_dir="$SCRIPT_DIR/lib/runtime"
-    local out_dir="$SCRIPT_DIR/build/runtime_flow"
+    local out_dir="$FLOW_BUILD_ROOT/runtime_flow"
     mkdir -p "$out_dir"
     if [ ! -d "$rt_dir" ]; then
         return 0
@@ -616,7 +621,7 @@ compile_program_python() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
@@ -670,7 +675,7 @@ compile_program_mlir() {
     check_mlir_deps
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
@@ -844,7 +849,7 @@ debug_program() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local c_file="$build_dir/$basename.debug.c"
     local exe_file="$build_dir/$basename.debug"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
@@ -1041,7 +1046,23 @@ run_program() {
     python3 -m flow.package sync --program "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local executable="$SCRIPT_DIR/build/$basename"
+
+    # Isolate this invocation's build artifacts so two projects that share a
+    # source basename (e.g. src/main.flow) cannot clobber each other's
+    # executable or generated runtime C when run concurrently (#817). Every
+    # compile/runtime path honors FLOW_BUILD_ROOT, so overriding it here threads
+    # the isolation through the whole run.
+    mkdir -p "$SCRIPT_DIR/build"
+    local run_build_root
+    run_build_root="$(mktemp -d "$SCRIPT_DIR/build/run.XXXXXX")" || {
+        print_error "Could not create an isolated build directory for this run."
+        return 1
+    }
+    # Bake the path into the trap now: run_build_root is function-local and
+    # would be out of scope (empty) if expanded at EXIT time.
+    trap "rm -rf -- '$run_build_root'" EXIT INT TERM
+    export FLOW_BUILD_ROOT="$run_build_root"
+    local executable="$run_build_root/$basename"
 
     if [ "$backend" = "mlir" ]; then
         compile_program_mlir "$program"
@@ -1109,7 +1130,7 @@ compile_audio_program() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
@@ -1213,7 +1234,7 @@ run_window_program() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
@@ -1299,7 +1320,7 @@ generate_mlir() {
     done
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     
     if [ -z "$program" ] || [ ! -f "$program" ]; then
         print_error "Program not found: $program"
@@ -1389,7 +1410,7 @@ run_gfx_program() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
@@ -1610,7 +1631,7 @@ record_gfx_program() {
     require_flow_file "$program"
     local basename
     basename=$(basename "$program" .flow)
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
 
     # A GIF needs frames somewhere; default to a scratch dir under build/.
     if [ "$want_gif" = "1" ]; then
@@ -2231,7 +2252,7 @@ run_interop_tests() {
 run_matmul_tests() {
     local program="$SCRIPT_DIR/examples/bench/matmul_optimizations.flow"
     local mlir_program="$SCRIPT_DIR/examples/bench/matmul_mlir.flow"
-    local build_dir="$SCRIPT_DIR/build"
+    local build_dir="$FLOW_BUILD_ROOT"
     local c_file="$build_dir/matmul_optimizations.asm.c"
     local s_file="$build_dir/matmul_optimizations.s"
     local mlir_file="$build_dir/matmul_mlir.mlir"
