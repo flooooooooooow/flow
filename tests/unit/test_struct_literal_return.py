@@ -86,3 +86,26 @@ function make() -> Foo {
 }
 """)
     assert "make" in c
+
+
+def test_multiline_typed_struct_literal_in_let():
+    """Multi-line typed struct literal bound in a `let x: T =` and passed to a
+    call, using a variable field value. This is the flow-audio foundation
+    conformance shape that once raised 'Unexpected token in expression: LBRACE'
+    (#810); it must parse and emit both the constructor and the callee.
+    """
+    c = _gen_c("""
+struct PrepareConfig { rate: i32, max_block_size: i32, event_capacity: i32 }
+function host_prepare(cfg: PrepareConfig) -> i32 { return cfg.max_block_size }
+function main() -> i32 {
+    let rate: i32 = 48000
+    let config: PrepareConfig = PrepareConfig {
+        rate: rate,
+        max_block_size: 64,
+        event_capacity: 256
+    }
+    return host_prepare(config)
+}
+""")
+    assert "host_prepare" in c
+    assert "PrepareConfig" in c
