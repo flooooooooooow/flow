@@ -3442,6 +3442,86 @@ class CGenerator:
                 return False
         return True
 
+    @staticmethod
+    def _is_int_literal(expr, n: int) -> bool:
+        """True when `expr` is the integer literal `n`."""
+        if not isinstance(expr, Literal):
+            return False
+        try:
+            return int(str(expr.value).strip()) == n
+        except (TypeError, ValueError):
+            return False
+
+    def _extract_len_span_var(self, expr) -> Optional[str]:
+        """Return the span variable name when `expr` is `<var>.len`, possibly
+        cast to an integer type. `<var>` must be a span.
+
+        A loop `for i in 0 to values.len` keeps `i` in `[0, values.len)` for the
+        whole body, which discharges the span bounds check on `values[i]`
+        (issue #615). Only integer casts preserve that fact.
+        """
+        inner = expr
+        while isinstance(inner, CastExpression):
+            tt = getattr(inner, "target_type", None)
+            if tt is None or not self._is_integer_type_name(getattr(tt, "name", None)):
+                return None
+            inner = inner.expr
+        if (isinstance(inner, FieldAccess) and inner.field == "len"
+                and isinstance(inner.object, Variable)):
+            if self._is_span_type(self._infer_expr_type(inner.object)):
+                return inner.object.name
+        return None
+
+    def _body_reassigns(self, body, names) -> bool:
+        """True when any name in `names` is rebound anywhere inside `body`.
+
+        Element writes such as `values[i] = x` do not rebind the span or the
+        index, so they leave the range fact intact. A plain `values = other` or
+        `i = j` does invalidate it, so elision is refused when one is present.
+        """
+        if body is None:
+            return False
+        stmts = getattr(body, "statements", None)
+        if not stmts:
+            return False
+        for st in stmts:
+            if isinstance(st, Assignment):
+                if st.target in names:
+                    return True
+                te = getattr(st, "target_expr", None)
+                if isinstance(te, Variable) and te.name in names:
+                    return True
+            for attr in ("body", "then_block", "else_block"):
+                if self._body_reassigns(getattr(st, attr, None), names):
+                    return True
+            for _cond, blk in (getattr(st, "elif_blocks", None) or []):
+                if self._body_reassigns(blk, names):
+                    return True
+            for case in (getattr(st, "cases", None) or []):
+                if self._body_reassigns(getattr(case, "body", None), names):
+                    return True
+            if self._body_reassigns(getattr(st, "default_case", None), names):
+                return True
+        return False
+
+    def _loop_elidable_span(self, st: ForStatement) -> Optional[str]:
+        """Span whose bounds check is dead inside `st`, or None.
+
+        The pattern is `for i in 0 to span.len { ... span[i] ... }` with an
+        ascending unit step, where neither `i` nor `span` is rebound in the
+        body (issue #615).
+        """
+        if not self._is_int_literal(st.range_start, 0):
+            return None
+        if st.step is not None and not self._is_int_literal(st.step, 1):
+            return None
+        span_name = self._extract_len_span_var(st.range_end)
+        if span_name is None:
+            return None
+        if self._body_reassigns(st.body, {st.variable, span_name}):
+            return None
+        return span_name
+
     def _gen_for(self, st: ForStatement) -> List[str]:
         """Generate C for loop from FLOW for statement.
 
@@ -3464,6 +3544,22 @@ class CGenerator:
         # Track the loop variable type
         self._var_types[var] = Type("i32")
         self._overload_resolver.set_var_type(var, "i32")
+
+        # A `for i in 0 to span.len` loop keeps `i` in range, so `span[i]`
+        # inside the body needs no bounds check (issue #615). Register the fact
+        # for the duration of the body, saving any shadowed outer entry so a
+        # nested loop reusing the same variable name restores it cleanly.
+        if not hasattr(self, "_safe_span_indices"):
+            self._safe_span_indices: Dict[str, set] = {}
+        _elide_span = self._loop_elidable_span(st)
+        _saved_safe = self._safe_span_indices.get(var, None)
+        self._safe_span_indices[var] = {_elide_span} if _elide_span else set()
+
+        def _restore_safe() -> None:
+            if _saved_safe is None:
+                self._safe_span_indices.pop(var, None)
+            else:
+                self._safe_span_indices[var] = _saved_safe
 
         is_parallel = getattr(st, "is_parallel", False)
         if is_parallel:
@@ -3505,6 +3601,7 @@ class CGenerator:
             lines.append(f"{self._i()}}}")
             self._indent -= 1
             lines.append(f"{self._i()}}}")
+            _restore_safe()
             return lines
 
         if not has_explicit_step:
@@ -3527,6 +3624,7 @@ class CGenerator:
         lines.extend(self._gen_block(st.body))
         self._indent -= 1
         lines.append(f"{self._i()}}}")
+        _restore_safe()
         return lines
 
     def _gen_literal_eq_cond(self, match_expr: str, literal: "Literal") -> str:
@@ -4998,6 +5096,12 @@ class CGenerator:
             span_expr = self._gen_expr(e.array)
             index_expr = self._gen_expr(e.index)
             if self._bounds_check:
+                safe = getattr(self, "_safe_span_indices", None)
+                if (safe is not None and isinstance(e.index, Variable)
+                        and isinstance(e.array, Variable)
+                        and e.array.name in safe.get(e.index.name, ())):
+                    # Index provably in [0, span.len): check is dead (#615).
+                    return f"({span_expr}).data[{index_expr}]"
                 return (
                     f'((int64_t)({index_expr}) < ({span_expr}).len '
                     f'? ({span_expr}).data[{index_expr}] '
