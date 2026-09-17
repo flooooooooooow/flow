@@ -3007,6 +3007,44 @@ class CGenerator:
                     out = [f"{self._i()}{prefix[0]}", f"{self._i()}{extra[0]}"] + body
         return out
 
+    def _record_update_parts(self, e: "RecordUpdate", dest: str):
+        """Lower a `Struct { ..base, f: v }` update targeting `dest`.
+
+        Returns (struct_c_name, base_c, update_stmts) where `base_c` is the C
+        expression for the base value and each entry in `update_stmts` mutates a
+        field of `dest`. Callers place the base copy into `dest` (either the
+        declared variable or a temporary) and then apply the updates.
+        """
+        inferred = self._infer_expr_type(e.base)
+        struct_name = inferred.name if inferred else None
+        struct_c_name = _c_ident(struct_name or "")
+        base_c = self._gen_expr(e.base)
+        struct_fields = self._structs.get(struct_name, {})
+
+        def _is_array_field(name):
+            ft = struct_fields.get(name)
+            return bool(ft and getattr(ft, "name", "").startswith("array_"))
+
+        update_stmts = []
+        for name, value in e.updates:
+            c_field = _c_ident(name)
+            if _is_array_field(name):
+                if isinstance(value, ArrayLiteral):
+                    value_expr = self._gen_array_literal(value, as_initializer=False)
+                else:
+                    value_expr = self._gen_expr(value)
+                update_stmts.append(
+                    f"memcpy({dest}.{c_field}, {value_expr}, sizeof({dest}.{c_field}));"
+                )
+            else:
+                update_stmts.append(f"{dest}.{c_field} = {self._gen_expr(value)};")
+        return struct_c_name, base_c, update_stmts
+
+    def _record_update_is_known_struct(self, e: "RecordUpdate") -> bool:
+        inferred = self._infer_expr_type(e.base)
+        struct_name = inferred.name if inferred else None
+        return bool(struct_name and struct_name in self._structs)
+
     def _gen_statement_body(self, st: Statement, defer_stack: List[DeferStatement]) -> List[str]:
         if isinstance(st, VarDecl):
             # A local declaration shadows any same-named captured variable
@@ -3080,6 +3118,21 @@ class CGenerator:
             safe_name = _sanitize_identifier(st.name)
             if st.initializer is None:
                 return [f"{self._i()}{c_t} {safe_name};"]
+            # `let q = Struct { ..base, f: v }`: build the update in place. The
+            # new binding must receive its own copy of `base` regardless, so
+            # constructing into `q` directly elides the intermediate
+            # `_flow_rupdate` temporary and its extra full-struct copy while
+            # keeping value semantics: `q` is distinct from `base` (#732).
+            if (
+                isinstance(st.initializer, RecordUpdate)
+                and self._record_update_is_known_struct(st.initializer)
+            ):
+                _sc, base_c, update_stmts = self._record_update_parts(
+                    st.initializer, safe_name
+                )
+                lines = [f"{self._i()}{c_t} {safe_name} = {base_c};"]
+                lines.extend(f"{self._i()}{u}" for u in update_stmts)
+                return lines
             # If mono left a bare generic literal name but the decl type is
             # specialized (`Pair` vs `Pair_i32_bool`), retarget the literal
             # so the compound cast matches the variable type.
@@ -4108,31 +4161,14 @@ class CGenerator:
             return f"({struct_c_name}){{ {fields} }}"
 
         if isinstance(e, RecordUpdate):
-            # `Point { ..p, x: 3 }` -> `({ Point _ru = p; _ru.x = 3; _ru; })`
-            inferred = self._infer_expr_type(e.base)
-            struct_name = inferred.name if inferred else None
-            struct_c_name = _c_ident(struct_name)
-            if not struct_name or struct_name not in self._structs:
-                struct_c_name = _c_ident(struct_name or "")
+            # `Point { ..p, x: 3 }` -> `({ Point _ru = p; _ru.x = 3; _ru; })`.
+            # In expression position the update needs a temporary so it yields a
+            # value. A `let` initializer skips this temp and builds in place; see
+            # the VarDecl handling in _gen_statement_body (#732).
             tmp = f"_flow_rupdate_{id(e) & 0xFFFFFF}"
-            base_c = self._gen_expr(e.base)
+            struct_c_name, base_c, update_stmts = self._record_update_parts(e, tmp)
             stmts = [f"{struct_c_name} {tmp} = {base_c};"]
-            struct_fields = self._structs.get(struct_name, {})
-
-            def ru_is_array_field(name):
-                ft = struct_fields.get(name)
-                return bool(ft and getattr(ft, "name", "").startswith("array_"))
-
-            for name, value in e.updates:
-                c_field = _c_ident(name)
-                if ru_is_array_field(name):
-                    if isinstance(value, ArrayLiteral):
-                        value_expr = self._gen_array_literal(value, as_initializer=False)
-                    else:
-                        value_expr = self._gen_expr(value)
-                    stmts.append(f"memcpy({tmp}.{c_field}, {value_expr}, sizeof({tmp}.{c_field}));")
-                else:
-                    stmts.append(f"{tmp}.{c_field} = {self._gen_expr(value)};")
+            stmts.extend(update_stmts)
             stmts.append(f"{tmp};")
             return "({ " + " ".join(stmts) + " })"
 
