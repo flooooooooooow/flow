@@ -106,6 +106,16 @@ import re
 
 _C_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
+# libm functions whose bare name is the f64 entry point and that also have a
+# precision-correct single-precision variant with an `f` suffix (`sqrtf`,
+# `expf`). `abs`/`labs` are integer-only and deliberately excluded (#734).
+_LIBM_F32_VARIANTS = frozenset({
+    'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+    'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+    'sqrt', 'cbrt', 'pow', 'exp', 'exp2', 'log', 'log2', 'log10',
+    'fabs', 'floor', 'ceil', 'round', 'fmod', 'fmin', 'fmax', 'hypot',
+})
+
 # C reserved words that must not be used as identifiers
 _C_RESERVED = frozenset({
     'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do',
@@ -4646,6 +4656,16 @@ class CGenerator:
                             arg_expr = f"&{arg_expr}"
                 arg_strs.append(arg_expr)
             arg_strs.extend(implicit_effect_args)
+
+            # f32 math uses the precision-correct *f intrinsic (#734). The stdlib
+            # math shims declare f32 overloads that lower to the bare libm name,
+            # which is the f64 entry point and widens f32 to f64 and back. Switch
+            # to the *f variant when every argument is f32. An f64 argument keeps
+            # the double-precision call.
+            if func_name in _LIBM_F32_VARIANTS and e.arguments:
+                arg_types = [self._infer_expr_type(a) for a in e.arguments]
+                if all(getattr(t, "name", None) == "f32" for t in arg_types):
+                    func_name = func_name + "f"
 
             args = ", ".join(arg_strs)
             return f"{func_name}({args})"
