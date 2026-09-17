@@ -225,6 +225,12 @@ class CGenerator:
         self._span_typedefs_emitted: set = set()
         self._pending_span_typedefs: List[str] = []
 
+        # Loop-invariant span `.len` hoisting (#729). Maps a span variable
+        # name to the C temp holding its length while a `for` whose bound is
+        # that span's `.len` is being generated, so in-loop `.len` reads use
+        # the temp instead of reloading the span length field each iteration.
+        self._len_hoist_subst: Dict[str, str] = {}
+
     def _i(self) -> str:
         return "    " * self._indent
 
@@ -3271,6 +3277,49 @@ class CGenerator:
                 return False
         return True
 
+    @staticmethod
+    def _name_rebound_in_body(body, name: str) -> bool:
+        """Conservatively report whether `name` may be rebound inside `body`.
+
+        A span is a two-word value (data pointer plus length). Its length is
+        loop-invariant unless the name is rebound. Rebinding only happens
+        through a direct assignment to the name, a shadowing declaration, or
+        taking the name's address. Element writes (`xs[i] = v`) and passing
+        the span to a function by value cannot change it. This is the same
+        conservative condition used for bounds-check elision: any doubt means
+        the length is treated as variant and not hoisted.
+
+        The walk is a generic descent over the AST dataclass fields, so it
+        catches rebinding in nested `if`/`while`/`for` bodies too.
+        """
+        stack = [body]
+        while stack:
+            node = stack.pop()
+            if node is None:
+                continue
+            if isinstance(node, (list, tuple)):
+                stack.extend(node)
+                continue
+            if isinstance(node, Assignment):
+                if node.target == name:
+                    return True
+            elif isinstance(node, VarDecl):
+                if node.name == name:
+                    return True
+            elif isinstance(node, UnaryOperation):
+                if (node.operator == "&"
+                        and isinstance(node.operand, Variable)
+                        and node.operand.name == name):
+                    return True
+            child = getattr(node, "__dict__", None)
+            if child:
+                for value in child.values():
+                    if isinstance(value, (list, tuple)):
+                        stack.extend(value)
+                    elif hasattr(value, "__dict__"):
+                        stack.append(value)
+        return False
+
     def _gen_for(self, st: ForStatement) -> List[str]:
         """Generate C for loop from FLOW for statement.
 
@@ -3282,7 +3331,6 @@ class CGenerator:
         var = st.variable
         safe_var = _c_ident(var)
         start = self._gen_expr(st.range_start)
-        end = self._gen_expr(st.range_end)
         has_explicit_step = st.step is not None
         step = self._gen_expr(st.step) if st.step else "1"
         if not hasattr(self, "_for_counter"):
@@ -3294,11 +3342,56 @@ class CGenerator:
         self._var_types[var] = Type("i32")
         self._overload_resolver.set_var_type(var, "i32")
 
+        # Hoist an invariant span `.len` loop bound (#729). A loop written as
+        # `for i in 0 to xs.len { ... xs[i] ... }` reloads the span length
+        # field on every iteration test (up to three times in the default
+        # no-step condition). When the bound is `<span>.len` for a local span
+        # that is provably not rebound in the body, load the length once into
+        # a temp and read the bound plus any in-loop `xs.len` from it.
+        hoist_name: Optional[str] = None
+        len_temp: Optional[str] = None
+        len_decl: Optional[str] = None
+        re = st.range_end
+        if (isinstance(re, FieldAccess) and re.field == "len"
+                and isinstance(re.object, Variable)
+                and re.object.name != var
+                and self._is_span_type(self._infer_expr_type(re.object))
+                and not self._name_rebound_in_body(st.body, re.object.name)):
+            hoist_name = re.object.name
+            self._for_counter += 1
+            len_temp = f"__flow_len_{self._for_counter}"
+            len_decl = f"const int64_t {len_temp} = ({_c_ident(hoist_name)}).len;"
+            end = len_temp
+        else:
+            end = self._gen_expr(st.range_end)
+
         is_parallel = getattr(st, "is_parallel", False)
         if is_parallel:
             self._uses_parallel_for = True
 
         lines.append(f"{self._i()}int32_t {step_var} = {step};")
+        if len_decl is not None:
+            lines.append(f"{self._i()}{len_decl}")
+
+        prev_subst = self._len_hoist_subst.get(hoist_name) if hoist_name else None
+        if hoist_name:
+            self._len_hoist_subst[hoist_name] = len_temp
+        try:
+            return self._gen_for_body(
+                st, lines, var, safe_var, start, end, step_var,
+                has_explicit_step, is_parallel,
+            )
+        finally:
+            if hoist_name:
+                if prev_subst is None:
+                    self._len_hoist_subst.pop(hoist_name, None)
+                else:
+                    self._len_hoist_subst[hoist_name] = prev_subst
+
+    def _gen_for_body(
+        self, st, lines, var, safe_var, start, end, step_var,
+        has_explicit_step, is_parallel,
+    ) -> List[str]:
         # Vectorization pragmas were always-on (#113) but unsafe for loops
         # with data-dependent control flow or floating-point accumulation
         # (#414). Now only emitted when the loop body is trivially
@@ -4029,6 +4122,11 @@ class CGenerator:
             return "({ " + " ".join(stmts) + " })"
 
         if isinstance(e, FieldAccess):
+            # In-loop read of a span `.len` hoisted by _gen_for (#729): read
+            # the once-loaded temp instead of reloading the length field.
+            if (e.field == "len" and isinstance(e.object, Variable)
+                    and e.object.name in self._len_hoist_subst):
+                return self._len_hoist_subst[e.object.name]
             obj_expr = self._gen_expr(e.object)
             if self._is_pointer_expr(e.object):
                 if self._overflow_checks_enabled():
@@ -4340,6 +4438,10 @@ class CGenerator:
                     arg = e.arguments[0]
                     # Spans carry their own length: `len(s)` == `s.len`.
                     if self._is_span_type(self._infer_expr_type(arg)):
+                        # Reuse a hoisted `.len` temp when one is live (#729).
+                        if (isinstance(arg, Variable)
+                                and arg.name in self._len_hoist_subst):
+                            return self._len_hoist_subst[arg.name]
                         return f"({self._gen_expr(arg)}).len"
                     # For array types, use sizeof(arr)/sizeof(arr[0])
                     # For slice types (structs with .len field), use .len
