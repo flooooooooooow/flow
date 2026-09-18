@@ -195,10 +195,12 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | Linguist detection | PARTIAL | `.gitattributes` opts in; upstream `github-linguist` does not know Flow yet. |
-| Syntax highlighting (editors) | DONE | VS Code extension + TextMate grammar; syntax-oriented referencing. |
-| Tree-sitter | GAP | No tree-sitter grammar yet. |
-| Pygments | GAP | Not upstreamed. |
-| Language servers | DONE | `flow-lsp`. |
+| Syntax highlighting (editors) | DONE | VS Code extension + TextMate grammar; Vim syntax; Tree-sitter source; Helix/Vim/Neovim integration assets. |
+| Tree-sitter | PARTIAL | Grammar and highlight queries are checked in under `third_party/integrations/tree-sitter-flow`; dedicated release/upstream consumers remain. |
+| Pygments | PARTIAL | Installable local plugin is checked in under `third_party/integrations/pygments-flow`; upstream merge remains. |
+| Language servers | DONE | `flow-lsp`; VS Code plus checked-in Neovim/Helix launch configuration. |
+| Rosetta Code | PARTIAL | Submission pack is checked in; external category/tasks still need publishing. |
+| Independent tutorials | PARTIAL | First-party tutorial corpus and external-author kit exist; qualifying third-party tutorials remain the acceptance condition. |
 | Benchmark suites | PARTIAL | `tests/benchmarks`; no external comparative matrix. |
 | Package ecosystems | PARTIAL | Homebrew tap + Open VSX + registry catalogues. |
 
