@@ -1,0 +1,66 @@
+name: Community project
+description: Submit a public project built with Flow for the community projects index.
+title: "[community] "
+labels:
+  - community
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for building with Flow. This form is for public projects that use meaningful Flow source and can be reproduced by another user.
+  - type: input
+    id: repository
+    attributes:
+      label: Repository
+      description: Public repository URL.
+      placeholder: https://github.com/owner/project
+    validations:
+      required: true
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Person or group responsible for the project.
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What does it do?
+      description: A short technical description of the project and why Flow is used.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Flow version
+      description: Release tag or commit tested.
+      placeholder: v1.0.2
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform tested
+      placeholder: macOS arm64 / Linux x86-64
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduce
+      description: Shortest commands another user can use to build or run it.
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: The repository is public and contains meaningful Flow source.
+          required: true
+        - label: This is not a mirror, benchmark copy, or repository created to inflate language statistics.
+          required: true
+        - label: I am happy for the project to be linked from Flow's community documentation.
+          required: true
