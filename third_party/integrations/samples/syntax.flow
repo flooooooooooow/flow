@@ -1,0 +1,28 @@
+# Syntax smoke sample for editor integrations
+struct Point {
+    x: f64,
+    y: f64
+}
+
+function magnitude_squared(p: Point) -> f64 {
+    return p.x * p.x + p.y * p.y
+}
+
+flow Oscillator {
+    state x: f64 = 1.0
+    state v: f64 = 0.0
+    param damping: f64 = 0.1
+
+    x evolves as v
+    v evolves as -x - damping * v
+}
+
+function main() -> i32 {
+    let p = Point { x: 3.0, y: 4.0 }
+
+    if magnitude_squared(p) > 0.0 {
+        println("Flow")
+    }
+
+    return 0
+}
