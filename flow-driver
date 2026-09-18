@@ -38,6 +38,25 @@ print_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
+# Opt-in per-phase profiling (#735). When FLOW_PROFILE is truthy, wrap the C
+# toolchain and the produced executable so their wall time joins the phase
+# report the Python host prints. The prefix is empty otherwise, so a normal
+# compile is unaffected.
+flow_profile_enabled() {
+    case "${FLOW_PROFILE:-}" in
+        ""|0|false|no|off) return 1 ;;
+    esac
+    return 0
+}
+
+flow_profile_prefix() {
+    # $1: phase name. Populates the FLOW_PROFILE_PREFIX array in place.
+    FLOW_PROFILE_PREFIX=()
+    if flow_profile_enabled; then
+        FLOW_PROFILE_PREFIX=(python3 -m flow.compile_profiling "$1")
+    fi
+}
+
 resolve_llvm_path() {
     if [ -n "$LLVM_PATH" ]; then
         return
@@ -639,6 +658,11 @@ compile_program_python() {
         exit 1
     fi
     print_success "FLOW → C: $basename.c"
+    # Surface the per-phase profile (#735) that the host prints to its stderr,
+    # which we otherwise keep quiet on success.
+    if flow_profile_enabled; then
+        grep -a "^\[flow-profile\]" "$build_dir/.flowc_err" >&2 || true
+    fi
 
     # C to executable
     if [ -d "$py_header_dir" ]; then
@@ -654,7 +678,8 @@ compile_program_python() {
     # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
     flow_collect_cflags
     FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")" "$build_dir/$basename.c" \
+    flow_profile_prefix external_compile
+    if ! "${FLOW_PROFILE_PREFIX[@]+"${FLOW_PROFILE_PREFIX[@]}"}" clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")" "$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
@@ -1072,7 +1097,8 @@ run_program() {
 
     print_info "Running $basename..."
     echo "----------------------------------------"
-    "$executable"
+    flow_profile_prefix process_launch
+    "${FLOW_PROFILE_PREFIX[@]+"${FLOW_PROFILE_PREFIX[@]}"}" "$executable"
     status=$?
     echo "----------------------------------------"
     print_success "Program finished"
