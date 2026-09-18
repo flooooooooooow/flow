@@ -4,19 +4,23 @@ Goal: teach [github-linguist/linguist](https://github.com/github-linguist/lingui
 about **Flow** (`.flow`, `source.flow`) so GitHub’s language bar / highlighting
 stop treating this repo as “mostly Python”.
 
-## Honest status (2026-08-05)
+## Honest status (2026-09-18)
 
 | Check | Result |
 |-------|--------|
 | `.flow` free in `languages.yml`? | Yes (not listed) |
 | Grammar (MIT TextMate)? | Yes — publish as `flooooooooooow/flow-tmLanguage` |
 | Real-world samples? | Ready under `docs/project/linguist/samples/Flow/` |
-| Popularity bar (~2000 non-fork files / year)? | **Not yet** for *this* Flow |
-| Collision with Facebook Flow? | Yes — many `*.js.flow` libdefs match extension `.flow` |
+| Popularity bar (2,000 indexed files / year for this extension class)? | **Not yet** for independently used *this* Flow |
+| Collision with JavaScript Flow libdefs? | Yes — many `*.js.flow` files match `extension:flow` |
+| Collision with Area9 Flow? | Yes — Area9 Flow uses plain `.flow` files with different syntax |
+| `.flow` currently assigned in Linguist? | No |
 
-`extension:flow` on GitHub is dominated by Facebook’s **Flow type checker**
-libdefs (`foo.js.flow`), not this language. Any Linguist PR **must** ship a
-heuristic (and samples for both sides if they keep sharing `.flow`).
+`extension:flow` on GitHub is not evidence for this language by itself. A search on 2026-09-18 returned about 138,752 files, with top results dominated by JavaScript Flow libdefs such as `foo.js.flow`; Area9's established Flow language also uses ordinary `.flow` files.
+
+Distinctive searches show the real adoption problem. `"function main() ->"` returned 1,716 files after excluding the `flooooooooooow` organization, but all visible results were under the project maintainer's own account; excluding that account as well returned zero. `"evolves as"` returned one file outside the organization, also under the maintainer's account. These figures must be re-run before any upstream submission.
+
+Any Linguist proposal therefore needs both independent-usage evidence and a collision strategy. Do not treat unrelated `.flow`, Area9 Flow, or JavaScript Flow libdefs as adoption of this language.
 
 ## Decision (2026-08-05): wait, prepare, then one PR
 
@@ -29,15 +33,14 @@ While usage grows, keep ready in `docs/project/linguist/`:
 
 1. Two or more representative, licensed Flow samples.
 2. Representative `.js.flow` JavaScript libdefs as the competing corpus.
-3. Heuristic rules keyed to stable syntax (`let mut`, `evolves as`), never
-   repository paths or owner names.
-4. A local cross-validation breakdown showing both corpora classify correctly.
+3. Representative Area9 Flow samples as a second plain-`.flow` corpus.
+4. Heuristic rules keyed to stable syntax (`function ... ->`, `let mut`, `evolves as`) rather than repository paths or owner names.
+5. A local cross-validation breakdown showing Flow, Area9 Flow, and JavaScript Flow libdefs do not steal one another's files.
+6. Agreement with Linguist maintainers on naming and how the Area9 collision should be represented before opening a PR.
 
-Display name stays **Flow** (canonical project name; no current Flow entry or
-`.flow` extension in `languages.yml`). An alias like `flow-lang` can aid
-selection without changing the displayed name. When the owner-filtered search
-clears 2,000 with real repository diversity, open a single PR: Flow entry plus
-the `.flow` disambiguation heuristic together.
+Do not assume the Linguist display name can simply be **Flow**. There is no current `Flow` entry or `.flow` extension in `languages.yml`, but Area9 already has an established language named Flow outside Linguist. Resolve the naming question in the existing Linguist discussion before proposing an entry.
+
+When owner-filtered searches clear the current 2,000-file rule with real repository diversity, open a PR only after the collision plan is accepted.
 
 Search snippets to cite (re-run before opening the PR):
 
@@ -97,7 +100,7 @@ Confirm with community before arguing branding in the PR.
 
 ## Heuristic draft (`heuristics.yml`)
 
-Disambiguate `.flow` between this language and Facebook `*.js.flow` libdefs:
+The previous two-way heuristic is insufficient because Area9 Flow also owns plain `.flow` in the wild. A safe upstream rule cannot map unmatched `.flow` files to this Flow by default. The distinctive signatures for this language are:
 
 ```yaml
 - extensions: ['.flow']
