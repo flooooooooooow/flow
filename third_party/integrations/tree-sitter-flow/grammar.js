@@ -37,11 +37,11 @@ module.exports = grammar({
       optional(seq("(", optional(commaSep1($.expression)), ")")),
     )),
 
-    import_declaration: $ => seq(
+    import_declaration: $ => prec.right(seq(
       "import",
       choice($.string, $.identifier),
       optional(seq("{", optional(commaSep1($.identifier)), "}")),
-    ),
+    )),
 
     module_declaration: $ => seq("module", $.identifier),
 
