@@ -11,6 +11,7 @@ example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
 
 | Track | Focus |
 |-------|--------|
+| [flow-in-one-hour.md](flow-in-one-hour.md) | Fast tour from Hello World to evolution models |
 | [beginner.md](beginner.md) | First programs |
 | [control.md](control.md) | If / while / for |
 | [functions.md](functions.md) | Params, recursion |
@@ -43,7 +44,7 @@ example, plus native-only tracks for gfx / shaders / `flow` blocks / `@rt_safe`.
 
 ## Learning paths
 
-1. **New to Flow:** beginner → control → functions → pipelines → structs → arrays → spans → projects  
+1. **New to Flow:** flow-in-one-hour → beginner → control → functions → pipelines → structs → arrays → spans → projects  
 2. **Systems / C background:** pointers → **memory** → systems → algorithms → spans → rt-audio  
 3. **ML / DSP:** autodiff-basics → [ml-on-macbook](ml-on-macbook.md) → audio-basics → rt-audio  
 4. **Vision / control:** pipelines → **evolution** → dynamics → effects-basics → autodiff-basics  
