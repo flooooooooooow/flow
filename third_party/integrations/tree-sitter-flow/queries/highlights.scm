@@ -52,7 +52,7 @@
 ] @keyword.operator
 
 (primitive_type) @type.builtin
-(type_declaration name: (identifier) @type.definition)
+(type_declaration (identifier) @type.definition)
 (struct_declaration name: (identifier) @type.definition)
 (enum_declaration name: (identifier) @type.definition)
 (trait_declaration (identifier) @type.definition)
