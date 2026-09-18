@@ -23,8 +23,9 @@
   "solver"
   "import"
   "module"
-  "export"
 ] @keyword
+
+(export_modifier) @keyword
 
 [
   "if"
