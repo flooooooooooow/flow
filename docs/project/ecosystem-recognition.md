@@ -15,7 +15,7 @@ The rule is deliberately strict: a local integration is not marked upstream unti
 | Vim | Filetype + syntax files in `third_party/integrations/vim-flow` | Local integration | Upstream runtime files or a standalone community plugin with users |
 | Neovim | Vim syntax + `flow lsp` bootstrap | Local integration | Community plugin / upstream ecosystem listing using Flow LSP |
 | Helix | `languages.toml` LSP configuration | Local integration | Tree-sitter grammar published and Flow accepted into Helix languages |
-| Zed | LSP can be consumed once an extension exists | Not packaged | Dedicated Tree-sitter repository, then a Zed language extension |
+| Zed | Integration handoff in `third_party/integrations/zed` + existing `flow lsp` | Local handoff | Dedicated Tree-sitter repository, then a published Zed language extension |
 | Rosetta Code | Submission pack in `docs/community/rosetta-code.md` | Ready to publish | Flow category exists with multiple tasks |
 | Independent tutorials | Author kit and reproducibility contract | Waiting on outside authors | At least three technically substantive tutorials by non-core authors |
 | Homebrew | Tap + formula | Available | Maintain release compatibility |
@@ -66,7 +66,7 @@ editor filetype / Tree-sitter
       Flow compiler
 ```
 
-VS Code already follows this direction. Vim/Neovim and Helix integration assets are checked in under `third_party/integrations/`.
+VS Code already follows this direction. Vim/Neovim and Helix integration assets are checked in under `third_party/integrations/`; Zed has a handoff package ready for the standalone Tree-sitter revision.
 
 Zed should wait until `tree-sitter-flow` has a stable repository and revision, because Zed language extensions normally need a versioned grammar source rather than an unversioned subdirectory of the compiler repository.
 
