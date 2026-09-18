@@ -333,6 +333,10 @@
           "path": "tutorials/README.md"
         },
         {
+          "label": "Flow in One Hour",
+          "path": "tutorials/flow-in-one-hour.md"
+        },
+        {
           "label": "Interactive App",
           "path": "tutorials/index.html",
           "external": true
@@ -863,6 +867,21 @@
         {
           "label": "Linguist Registration",
           "path": "project/linguist.md"
+        }
+      ]
+    },
+    {
+      "id": "community-recognition",
+      "tab": "project",
+      "title": "Community & recognition",
+      "items": [
+        {
+          "label": "Rosetta Code",
+          "path": "community/rosetta-code.md"
+        },
+        {
+          "label": "Independent Tutorial Author Kit",
+          "path": "community/tutorial-author-kit.md"
         }
       ]
     },
