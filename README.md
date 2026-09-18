@@ -379,6 +379,7 @@ Other editor/tooling integrations:
 
 - Vim / Neovim filetype, syntax and `flow lsp` bootstrap: `third_party/integrations/vim-flow/`
 - Helix language-server configuration: `third_party/integrations/helix/`
+- Zed integration handoff: `third_party/integrations/zed/`
 - Tree-sitter grammar and highlight queries: `third_party/integrations/tree-sitter-flow/`
 - Pygments lexer plugin: `third_party/integrations/pygments-flow/`
 
