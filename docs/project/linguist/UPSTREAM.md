@@ -4,8 +4,9 @@ This document outlines the steps a maintainer needs to follow in order to regist
 
 ## Prerequisites
 
-1. Ensure Flow's usage across public GitHub repositories meets the minimum requirements required by the Linguist project (generally at least 2000 non-fork files from diverse users).
-2. You will need a GitHub account, a local git environment, and Docker installed to run the linguist test suite locally.
+1. Re-run Linguist's current popularity check. For an extension such as `.flow`, the current rule is at least 2,000 indexed files in the last year, excluding forks, with reasonable distribution across unique users/repos. Owner-dominated results are filtered out.
+2. Resolve the `.flow` collision with both JavaScript Flow libdefs (`*.js.flow`) and Area9 Flow before opening a PR. A raw `extension:flow` count is not evidence for this language.
+3. You will need a GitHub account, a local git environment, and Docker installed to run the linguist test suite locally.
 
 ## Steps to Open the Upstream PR
 
@@ -37,16 +38,8 @@ This document outlines the steps a maintainer needs to follow in order to regist
      - flow-lang
    ```
 
-4. **Update `lib/linguist/heuristics.yml` (if necessary)**
-   Because `.flow` is also used for JavaScript (Facebook Flow type checker) libdefs (`*.js.flow`), a heuristic is required to disambiguate. Add an entry to `lib/linguist/heuristics.yml` (copy a nearby multi-rule block format):
-   ```yaml
-   - extensions: ['.flow']
-     rules:
-     - language: Flow
-       pattern: '^\s*(?:export\s+)?(?:function|effect|capability|struct|extern|flow)\b|^\s*let\s+mut\b|\bevolves\s+as\b'
-     - language: JavaScript
-       pattern: '^\s*(?:declare\s+(?:module|export|var|function|class)\b|//\s*@flow\b)'
-   ```
+4. **Resolve extension ambiguity before writing heuristics**
+   `.flow` is used by JavaScript Flow libdefs and by Area9 Flow. Do not add a two-way heuristic that defaults unmatched `.flow` files to this language. Use `docs/project/linguist.md` for the current signature analysis, collect licensed samples for every competing corpus, and agree the language naming/collision model with Linguist maintainers first.
 
 5. **Copy the Samples**
    Linguist requires real-world samples to validate the grammar and heuristics. Copy the sample files from this repository (`docs/project/linguist/samples/Flow/`) to the corresponding directory in your `linguist` clone:

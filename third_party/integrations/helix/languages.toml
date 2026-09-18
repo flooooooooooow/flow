@@ -1,0 +1,11 @@
+[language-server.flow-lsp]
+command = "flow"
+args = ["lsp"]
+
+[[language]]
+name = "flow"
+scope = "source.flow"
+file-types = ["flow"]
+comment-token = "#"
+language-servers = ["flow-lsp"]
+indent = { tab-width = 4, unit = "    " }

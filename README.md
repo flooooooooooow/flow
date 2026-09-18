@@ -375,6 +375,16 @@ python3 scripts/verify_examples.py
 
 Extension source: `third_party/integrations/vscode/flow-language/`.
 
+Other editor/tooling integrations:
+
+- Vim / Neovim filetype, syntax and `flow lsp` bootstrap: `third_party/integrations/vim-flow/`
+- Helix language-server configuration: `third_party/integrations/helix/`
+- Zed integration handoff: `third_party/integrations/zed/`
+- Tree-sitter grammar and highlight queries: `third_party/integrations/tree-sitter-flow/`
+- Pygments lexer plugin: `third_party/integrations/pygments-flow/`
+
+External recognition status and upstream acceptance criteria: [docs/project/ecosystem-recognition.md](docs/project/ecosystem-recognition.md).
+
 ### Python wheels from Flow
 
 ```bash
