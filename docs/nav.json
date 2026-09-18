@@ -886,6 +886,10 @@
         {
           "label": "Independent Tutorial Author Kit",
           "path": "community/tutorial-author-kit.md"
+        },
+        {
+          "label": "Community Projects",
+          "path": "community/projects.md"
         }
       ]
     },
