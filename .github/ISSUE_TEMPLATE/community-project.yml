@@ -1,8 +1,7 @@
 name: Community project
 description: Submit a public project built with Flow for the community projects index.
 title: "[community] "
-labels:
-  - community
+labels: []
 body:
   - type: markdown
     attributes:
