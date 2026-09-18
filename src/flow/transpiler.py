@@ -5,6 +5,12 @@ Main entry point for transpiling FLOW to MLIR/LLVMIR
 With module system and GPU integration
 """
 
+import time as _time
+
+# Captured as early as possible so the "startup" phase reflects the fixed cost
+# of importing the heavy compiler modules below plus argparse setup (#735).
+_PROCESS_START = _time.monotonic()
+
 import sys
 import argparse
 from pathlib import Path
@@ -20,6 +26,12 @@ from .module_resolver import resolve_modules, get_module_resolver
 from .gpu_integration import get_gpu_integration
 from .type_checker import TypeChecker
 from .monomorphize import monomorphize
+from .compile_profiling import (
+    CompileProfiler,
+    profiling_enabled,
+    count_ast_nodes,
+    count_source_loc,
+)
 
 
 def _parse_decorator(attr: str) -> tuple[str, list[str]]:
@@ -282,10 +294,24 @@ def main():
     if args.lenient:
         strict_mode = False
 
+    # Opt-in per-phase profiling (#735). Off unless FLOW_PROFILE is truthy, so a
+    # normal compile pays nothing but two cheap branches.
+    profiler = CompileProfiler() if profiling_enabled() else None
+    if profiler is not None:
+        # Fixed startup cost: everything from module load up to the first real
+        # work (heavy imports + argparse).
+        profiler.mark_startup(_PROCESS_START)
+
     # Read input file
     try:
-        with open(args.input, "r") as f:
-            f.read()
+        if profiler is not None:
+            with profiler.phase("source_read"):
+                with open(args.input, "r") as f:
+                    _source_text = f.read()
+            profiler.set_source_loc(count_source_loc(_source_text))
+        else:
+            with open(args.input, "r") as f:
+                f.read()
     except FileNotFoundError:
         print(f"Error: File '{args.input}' not found", file=sys.stderr)
         sys.exit(1)
@@ -296,13 +322,25 @@ def main():
     # Resolve modules and imports
     try:
         print("Resolving modules...", file=sys.stderr)
-        declarations = resolve_modules(args.input)
+        if profiler is not None:
+            # Parsing runs inside resolve_modules, so parse time is folded into
+            # this phase (see compile_profiling docstring).
+            with profiler.phase("parse_resolve"):
+                declarations = resolve_modules(args.input)
 
-        # Process @cImport directives: parse C headers and generate externs
-        from .c_header_parser import resolve_c_imports
-        import os as _os
-        source_dir = _os.path.dirname(_os.path.abspath(args.input))
-        declarations = resolve_c_imports(declarations, source_dir)
+                # Process @cImport directives: parse C headers, generate externs
+                from .c_header_parser import resolve_c_imports
+                import os as _os
+                source_dir = _os.path.dirname(_os.path.abspath(args.input))
+                declarations = resolve_c_imports(declarations, source_dir)
+        else:
+            declarations = resolve_modules(args.input)
+
+            # Process @cImport directives: parse C headers and generate externs
+            from .c_header_parser import resolve_c_imports
+            import os as _os
+            source_dir = _os.path.dirname(_os.path.abspath(args.input))
+            declarations = resolve_c_imports(declarations, source_dir)
 
         # Decide backend early so mode filtering can use it.
         backend = "mlir"
@@ -321,7 +359,11 @@ def main():
         # in addition to runtime abort on unhandled ops.
         if getattr(args, "strict_effects", False):
             type_checker.check_effect_rows = True
-        type_result = type_checker.check(declarations)
+        if profiler is not None:
+            with profiler.phase("typecheck"):
+                type_result = type_checker.check(declarations)
+        else:
+            type_result = type_checker.check(declarations)
 
         if type_result.errors:
             if strict_mode:
@@ -357,7 +399,12 @@ def main():
                     sys.exit(1)
 
         # Monomorphization pass: expand generics to concrete types
-        declarations = monomorphize(declarations)
+        if profiler is not None:
+            with profiler.phase("monomorphize"):
+                declarations = monomorphize(declarations)
+            profiler.set_ast_nodes(count_ast_nodes(declarations))
+        else:
+            declarations = monomorphize(declarations)
         declarations = _filter_declarations(declarations, active_modes)
 
         functions = [d for d in declarations if isinstance(d, FunctionDecl)]
@@ -513,6 +560,12 @@ def main():
     if args.c:
         backend = "c"
 
+    # IR/lowering + C/MLIR generation share one "codegen" phase (#735).
+    from contextlib import nullcontext
+
+    def _codegen_ctx():
+        return profiler.phase("codegen") if profiler is not None else nullcontext()
+
     if backend == "c":
         try:
             # For the C backend, reuse --debug-info to emit coarse source mappings
@@ -523,16 +576,17 @@ def main():
                     src_path = str(Path(args.input).resolve())
                 except Exception:
                     src_path = args.input
-            out_code = flow_to_c(
-                declarations,
-                source_file=src_path,
-                debug_info=args.debug_info,
-                strict_effects=args.strict_effects,
-                library=args.library,
-                no_bounds_check=getattr(args, "no_bounds_check", False),
-                export_names=getattr(args, "export", None),
-                module_name=getattr(args, "module_name", None),
-            )
+            with _codegen_ctx():
+                out_code = flow_to_c(
+                    declarations,
+                    source_file=src_path,
+                    debug_info=args.debug_info,
+                    strict_effects=args.strict_effects,
+                    library=args.library,
+                    no_bounds_check=getattr(args, "no_bounds_check", False),
+                    export_names=getattr(args, "export", None),
+                    module_name=getattr(args, "module_name", None),
+                )
             if getattr(args, "explain", False):
                 from .plan_selector import format_selections
 
@@ -558,13 +612,14 @@ def main():
         # Generate MLIR
         try:
             source_file = Path(args.input).name
-            out_code = flow_to_mlir(
-                declarations,
-                source_file=source_file,
-                emit_debug_info=args.debug_info,
-                emit_gpu=args.mlir_gpu,
-                size_t_bits=32 if args.wasm32 else 64,
-            )
+            with _codegen_ctx():
+                out_code = flow_to_mlir(
+                    declarations,
+                    source_file=source_file,
+                    emit_debug_info=args.debug_info,
+                    emit_gpu=args.mlir_gpu,
+                    size_t_bits=32 if args.wasm32 else 64,
+                )
 
             # Apply optimizations if requested
             if args.optimize:
@@ -704,6 +759,12 @@ def main():
             finally:
                 jit.cleanup()
             return
+
+    # Emit the per-phase profile before writing output (#735). The external
+    # compiler/link and process-launch phases run in the driver, out of this
+    # process, so they are not part of this report.
+    if profiler is not None:
+        profiler.emit()
 
     # Output handling
     if args.output:
