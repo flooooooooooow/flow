@@ -31,11 +31,11 @@ module.exports = grammar({
 
     comment: _ => token(seq("#", /.*/)),
 
-    attribute: $ => seq(
+    attribute: $ => prec.right(seq(
       "@",
       $.identifier,
       optional(seq("(", optional(commaSep1($.expression)), ")")),
-    ),
+    )),
 
     import_declaration: $ => seq(
       "import",
