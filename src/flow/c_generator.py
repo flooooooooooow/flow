@@ -512,13 +512,19 @@ class CGenerator:
         # Nodes are freed via flow_temp_free_all (atexit + end of main).
         # Skipped under --profile flight (#274) which bans heap allocation.
         if not self._no_heap_enabled():
-            lines.append("typedef struct flow_temp_node { struct flow_temp_node* next; } flow_temp_node;")
+            # Opt-in runtime memory profiling (#740). Everything here stays
+            # dormant unless FLOW_MEM_PROFILE is set in the environment when the
+            # program starts, so a normal run pays one predictable branch per
+            # allocation and nothing else. The report prints to stderr at exit.
+            self._emit_mem_profile_prelude(lines)
+            lines.append("typedef struct flow_temp_node { struct flow_temp_node* next; size_t size; } flow_temp_node;")
             lines.append("static flow_temp_node* flow_temp_head = NULL;")
             lines.append("static int flow_temp_atexit_set = 0;")
             lines.append("__attribute__((unused)) static void flow_temp_free_all(void) {")
             lines.append("    while (flow_temp_head) {")
             lines.append("        flow_temp_node* n = flow_temp_head;")
             lines.append("        flow_temp_head = n->next;")
+            lines.append("        flow_mem_note_free(n->size);")
             lines.append("        free(n);")
             lines.append("    }")
             lines.append("}")
@@ -526,7 +532,9 @@ class CGenerator:
             lines.append("    flow_temp_node* node = (flow_temp_node*)malloc(sizeof(flow_temp_node) + nbytes);")
             lines.append("    if (!node) return NULL;")
             lines.append("    node->next = flow_temp_head;")
+            lines.append("    node->size = nbytes;")
             lines.append("    flow_temp_head = node;")
+            lines.append("    flow_mem_note_alloc(nbytes);")
             lines.append("    if (!flow_temp_atexit_set) {")
             lines.append("        flow_temp_atexit_set = 1;")
             lines.append("        atexit(flow_temp_free_all);")
@@ -2567,6 +2575,11 @@ class CGenerator:
             lines.append(self._c_function_decl(fn, use_mangled=True) + " {")
         self._indent += 1
 
+        # Opt-in memory profiler (#740): read FLOW_MEM_PROFILE once at entry and
+        # arm the atexit report. Dormant unless the variable is set.
+        if fn.name == "main" and not self._library and not self._no_heap_enabled():
+            lines.append(f"{self._i()}flow_mem_profile_init();")
+
         # Save current var_types scope and create new scope for this function
         self._current_fn_name = fn.name
         saved_var_types = self._var_types.copy()
@@ -4278,7 +4291,11 @@ class CGenerator:
                 elem_type = Type(e.name[len("array_"):])
                 elem_c = self._c_type(elem_type)
                 count = self._gen_expr(e.arguments[0])
-                return f"(({elem_c}*)calloc({count}, sizeof({elem_c})))"
+                # Route array<T>(N) through the counting wrapper so #740's
+                # profiler sees it. Under the flight profile there is no
+                # profiler prelude, so keep the plain calloc there.
+                alloc = "calloc" if self._no_heap_enabled() else "flow_mem_calloc"
+                return f"(({elem_c}*){alloc}({count}, sizeof({elem_c})))"
             # Complex constructors: c64(re, im) -> (float)(re) + (float)(im) * I,
             # c128(re, im) -> (double)(re) + (double)(im) * I.
             # Uses the C99 I macro from <complex.h> (more portable than CMPLXF).
@@ -4713,6 +4730,82 @@ class CGenerator:
     def _no_heap_enabled(self) -> bool:
         """Flight profile bans compiler-injected heap (#274 / MISRA 21.3)."""
         return bool(getattr(self, "_no_heap", False)) and not self._library
+
+    def _emit_mem_profile_prelude(self, lines: List[str]) -> None:
+        """Emit the opt-in runtime memory profiler (#740).
+
+        The counters route the runtime's own allocation entry points
+        (flow_temp_alloc for strcat/closure envs, flow_mem_calloc for
+        array<T>(N)) through a note-alloc/note-free pair. The whole thing is
+        gated on a single flag read once from FLOW_MEM_PROFILE at program
+        start, so a build with the profiler compiled in but the variable unset
+        behaves like the old runtime: one predictable branch per allocation and
+        no output.
+
+        Metrics reported:
+          - heap allocation count and cumulative bytes requested,
+          - peak live heap (high-water mark of currently-live bytes routed
+            through the runtime allocators),
+          - peak resident set size via getrusage(RUSAGE_SELF).ru_maxrss.
+
+        Deferred (reported honestly rather than faked): stack/arena promotion
+        byte accounting and per-source/per-compiler-site copy attribution. Those
+        need the escape-analysis / lifetime work tracked in #669 and are not
+        derivable from the current single counting layer.
+        """
+        lines.append("#include <sys/resource.h>  /* getrusage, #740 */")
+        lines.append("static int flow_mem_profile_on = 0;")
+        lines.append("static unsigned long long flow_mem_alloc_count = 0ULL;")
+        lines.append("static unsigned long long flow_mem_alloc_bytes = 0ULL;")
+        lines.append("static long long flow_mem_live_bytes = 0;")
+        lines.append("static long long flow_mem_peak_live = 0;")
+        lines.append("static int flow_mem_report_set = 0;")
+        lines.append("__attribute__((unused)) static inline void flow_mem_note_alloc(size_t nbytes) {")
+        lines.append("    if (!flow_mem_profile_on) return;")
+        lines.append("    flow_mem_alloc_count++;")
+        lines.append("    flow_mem_alloc_bytes += (unsigned long long)nbytes;")
+        lines.append("    flow_mem_live_bytes += (long long)nbytes;")
+        lines.append("    if (flow_mem_live_bytes > flow_mem_peak_live)")
+        lines.append("        flow_mem_peak_live = flow_mem_live_bytes;")
+        lines.append("}")
+        lines.append("__attribute__((unused)) static inline void flow_mem_note_free(size_t nbytes) {")
+        lines.append("    if (!flow_mem_profile_on) return;")
+        lines.append("    flow_mem_live_bytes -= (long long)nbytes;")
+        lines.append("    if (flow_mem_live_bytes < 0) flow_mem_live_bytes = 0;")
+        lines.append("}")
+        lines.append("__attribute__((unused)) static void* flow_mem_calloc(size_t count, size_t esize) {")
+        lines.append("    void* p = calloc(count, esize);")
+        lines.append("    if (p) flow_mem_note_alloc(count * esize);")
+        lines.append("    return p;")
+        lines.append("}")
+        lines.append("__attribute__((unused)) static void flow_mem_report(void) {")
+        lines.append("    if (!flow_mem_profile_on) return;")
+        lines.append("    struct rusage ru;")
+        lines.append("    long long peak_rss_kb = 0;")
+        lines.append("    if (getrusage(RUSAGE_SELF, &ru) == 0) {")
+        lines.append("#if defined(__APPLE__)")
+        lines.append("        peak_rss_kb = (long long)ru.ru_maxrss / 1024;  /* macOS: bytes */")
+        lines.append("#else")
+        lines.append("        peak_rss_kb = (long long)ru.ru_maxrss;         /* Linux: kilobytes */")
+        lines.append("#endif")
+        lines.append("    }")
+        lines.append('    fprintf(stderr, "\\n=== Flow memory profile (#740) ===\\n");')
+        lines.append('    fprintf(stderr, "heap allocations      : %llu\\n", flow_mem_alloc_count);')
+        lines.append('    fprintf(stderr, "heap bytes requested  : %llu\\n", flow_mem_alloc_bytes);')
+        lines.append('    fprintf(stderr, "peak live heap (bytes): %lld\\n", flow_mem_peak_live);')
+        lines.append('    fprintf(stderr, "peak RSS (kB)         : %lld\\n", peak_rss_kb);')
+        lines.append('    fprintf(stderr, "stack/arena bytes     : (deferred, needs #669)\\n");')
+        lines.append('    fprintf(stderr, "copy volume by site   : (deferred, needs #669)\\n");')
+        lines.append('    fprintf(stderr, "==================================\\n");')
+        lines.append("}")
+        lines.append("__attribute__((unused)) static void flow_mem_profile_init(void) {")
+        lines.append("    const char* e = getenv(\"FLOW_MEM_PROFILE\");")
+        lines.append("    flow_mem_profile_on = (e != NULL && e[0] != '\\0' && !(e[0] == '0' && e[1] == '\\0'));")
+        lines.append("    if (flow_mem_profile_on && !flow_mem_report_set) {")
+        lines.append("        flow_mem_report_set = 1;")
+        lines.append("        atexit(flow_mem_report);")
+        lines.append("    }")
+        lines.append("}")
 
     @staticmethod
     def _is_integer_type_name(name: Optional[str]) -> bool:
