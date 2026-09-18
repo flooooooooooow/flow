@@ -223,8 +223,16 @@ class CGenerator:
         no_heap: bool = False,
         strict_effects: bool = False,
         library: bool = False,
+        perf_report: bool = False,
     ) -> None:
         self._indent = 0
+        # Opt-in performance-report mode (#744). Off by default. When on, the
+        # generator records a remark at each codegen site where an idiomatic
+        # construct kept a runtime cost that a proof or a different shape would
+        # have removed. Each remark names the source construct and marks the
+        # decision as a proven fact or a heuristic.
+        self._perf_report = perf_report
+        self._perf_remarks: List[str] = []
         self._structs = {}  # name -> dict of field_name -> field_type
         # Ordered source-order field layout for genuine user `struct` decls,
         # used to derive a stable type key (#775). name -> [(field_name, Type)].
@@ -3667,6 +3675,17 @@ class CGenerator:
         if not is_parallel and has_explicit_step and self._loop_body_is_simple(st):
             lines.append(f"{self._i()}#pragma clang loop vectorize(enable) interleave(enable)")
             lines.append(f"{self._i()}#pragma GCC ivdep")
+        elif not is_parallel and has_explicit_step:
+            # The loop had an explicit step, so it was a vectorization
+            # candidate, but the body carried a function call or control flow
+            # and stayed scalar (#414).
+            self._perf_remark(
+                "loop-not-vectorized",
+                f"for loop over `{var}`",
+                "loop stayed scalar: the body has a function call or control "
+                "flow, so no vectorization pragma was emitted",
+                proven=True,
+            )
         if is_parallel:
             # OpenMP needs a canonical ascending for; descending stays serial.
             lines.append(f"{self._i()}if ({step_var} > 0) {{")
@@ -4861,10 +4880,28 @@ class CGenerator:
             # which is the f64 entry point and widens f32 to f64 and back. Switch
             # to the *f variant when every argument is f32. An f64 argument keeps
             # the double-precision call.
+            widened_f32_arg = False
             if func_name in _LIBM_F32_VARIANTS and e.arguments:
                 arg_types = [self._infer_expr_type(a) for a in e.arguments]
                 if all(getattr(t, "name", None) == "f32" for t in arg_types):
                     func_name = func_name + "f"
+                elif any(getattr(t, "name", None) == "f32" for t in arg_types):
+                    # A mixed-precision call (e.g. pow(f32, f64)) stays on the
+                    # double entry point, so the f32 argument still widens.
+                    widened_f32_arg = True
+
+            # Perf remark (#744): an f32 argument that still lowers to the bare
+            # double-precision libm name widens to f64. After #734 the all-f32
+            # case uses the *f form and does not widen, so only the mixed case
+            # is reported here.
+            if getattr(self, "_perf_report", False) and widened_f32_arg:
+                self._perf_remark(
+                    "f32-math-widened-to-f64",
+                    f"call to `{e.name}`",
+                    "an f32 argument widened to f64: the call lowers to the "
+                    "bare double-precision libm name",
+                    proven=True,
+                )
 
             args = ", ".join(arg_strs)
             return f"{func_name}({args})"
@@ -5157,6 +5194,23 @@ class CGenerator:
         lines.append("    }")
         lines.append("}")
 
+    def _perf_remark(self, kind: str, construct: str, message: str,
+                     *, proven: bool) -> None:
+        """Record one performance remark (#744).
+
+        Off unless perf-report mode is on. `kind` is a stable machine-readable
+        tag for tooling. `construct` names the source that carried the cost.
+        `proven` is True for a fact the codegen established and False for a
+        heuristic. Each remark is recorded once per identical text so a loop
+        body does not repeat it.
+        """
+        if not getattr(self, "_perf_report", False):
+            return
+        basis = "fact" if proven else "heuristic"
+        remark = f"perf[{kind}] ({basis}): {construct}: {message}"
+        if remark not in self._perf_remarks:
+            self._perf_remarks.append(remark)
+
     @staticmethod
     def _is_integer_type_name(name: Optional[str]) -> bool:
         return name in {
@@ -5203,6 +5257,15 @@ class CGenerator:
                         and e.array.name in safe.get(e.index.name, ())):
                     # Index provably in [0, span.len): check is dead (#615).
                     return f"({span_expr}).data[{index_expr}]"
+                # The check is kept: the index is not proven in range (#744).
+                arr_name = e.array.name if isinstance(e.array, Variable) else "span"
+                self._perf_remark(
+                    "span-bounds-check-retained",
+                    f"index into span `{arr_name}`",
+                    "runtime bounds check kept: the index is not proven "
+                    "in range against the span's own length",
+                    proven=True,
+                )
                 return (
                     f'((int64_t)({index_expr}) < ({span_expr}).len '
                     f'? ({span_expr}).data[{index_expr}] '
@@ -6071,6 +6134,7 @@ def flow_to_c(
     no_bounds_check: bool = False,
     export_names: list[str] | None = None,
     module_name: str | None = None,
+    perf_report: bool | None = None,
 ) -> str:
     """Convert FLOW declarations to C code"""
     try:
@@ -6078,6 +6142,12 @@ def flow_to_c(
         env_profile = os.environ.get("FLOW_PROFILE", "")
         if no_heap is None:
             no_heap = env_profile == "flight"
+        # Performance-report mode is off by default (#744). Enable it with the
+        # perf_report argument or by setting FLOW_PERF_REPORT to a truthy value.
+        if perf_report is None:
+            perf_report = os.environ.get("FLOW_PERF_REPORT", "").strip().lower() in (
+                "1", "true", "on", "yes",
+            )
         generator = CGenerator(
             source_file=source_file,
             debug_info=debug_info,
@@ -6085,6 +6155,7 @@ def flow_to_c(
             library=library,
             bounds_check=not library and not no_bounds_check,
             no_heap=no_heap,
+            perf_report=perf_report,
         )
 
         # Separate declarations by type
@@ -6249,6 +6320,17 @@ def flow_to_c(
         flow_to_c.last_warnings = list(generator._overload_resolver.warnings)
         # Same for the plan records `--explain` prints (issue #146).
         flow_to_c.last_selections = list(generator._selections)
+        # Performance remarks (#744). Exposed the same way, and, when the mode
+        # is on, printed to stderr and prepended to the C as a comment block so
+        # a plain build surfaces them. Off by default, so nothing changes.
+        flow_to_c.last_perf_remarks = list(generator._perf_remarks)
+        if perf_report and generator._perf_remarks:
+            import sys as _sys
+            comment_lines = ["/* Flow performance remarks (#744) */"]
+            for remark in generator._perf_remarks:
+                comment_lines.append(f"/* {remark} */")
+                print(f"flow: {remark}", file=_sys.stderr)
+            out = "\n".join(comment_lines) + "\n" + out
         return out
     except Exception as e:
         print(f"C generation error: {e}")

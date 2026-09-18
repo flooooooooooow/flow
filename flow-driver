@@ -664,6 +664,14 @@ compile_program_python() {
         grep -a "^\[flow-profile\]" "$build_dir/.flowc_err" >&2 || true
     fi
 
+    # Performance remarks (#744): host stderr is captured to .flowc_err, so
+    # surface any perf remarks here when the opt-in mode is on.
+    case "${FLOW_PERF_REPORT:-}" in
+        1|true|on|yes|TRUE|ON|YES)
+            grep -a 'flow: perf\[' "$build_dir/.flowc_err" >&2 || true
+            ;;
+    esac
+
     # C to executable
     if [ -d "$py_header_dir" ]; then
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
