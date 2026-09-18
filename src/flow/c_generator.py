@@ -581,6 +581,7 @@ class CGenerator:
         lines.append("#include <stdio.h>")
         lines.append("#include <stdlib.h>")  # For malloc/free
         lines.append("#include <string.h>")  # For memcpy/memset
+        lines.append("#include <stdarg.h>")  # For flow_strcatn variadic concat (#747)
         # Skip-listed POSIX libc externs (usleep, gettimeofday, ...) are never
         # given Flow-style declarations — their real headers must be included
         # so the calls compile. Only add the header when the extern is present.
@@ -663,6 +664,34 @@ class CGenerator:
             lines.append("    r[la + lb] = '\\0';")
             lines.append("    return r;")
         lines.append("}")
+        # N-way string concat (#747). A chain like `a + b + c + d` used to emit
+        # flow_strcat(flow_strcat(flow_strcat(a, b), c), d), which allocates a
+        # fresh buffer per join and recopies every prefix, so an n-part join did
+        # n-1 allocations and O(n^2) copying. flow_strcatn sums the lengths once,
+        # allocates once, and copies each part once. NULL parts count as empty,
+        # matching flow_strcat.
+        if not self._no_heap_enabled():
+            lines.append("__attribute__((unused)) static char* flow_strcatn(int n, ...) {")
+            lines.append("    va_list ap;")
+            lines.append("    size_t total = 0;")
+            lines.append("    va_start(ap, n);")
+            lines.append("    for (int i = 0; i < n; i++) {")
+            lines.append("        const char* s = va_arg(ap, const char*);")
+            lines.append("        if (s) total += strlen(s);")
+            lines.append("    }")
+            lines.append("    va_end(ap);")
+            lines.append("    char* r = (char*)flow_temp_alloc(total + 1);")
+            lines.append("    if (!r) return NULL;")
+            lines.append("    size_t off = 0;")
+            lines.append("    va_start(ap, n);")
+            lines.append("    for (int i = 0; i < n; i++) {")
+            lines.append("        const char* s = va_arg(ap, const char*);")
+            lines.append("        if (s) { size_t l = strlen(s); if (l) { memcpy(r + off, s, l); off += l; } }")
+            lines.append("    }")
+            lines.append("    va_end(ap);")
+            lines.append("    r[off] = '\\0';")
+            lines.append("    return r;")
+            lines.append("}")
         lines.append("")
         # `in` operator helper: linear scan over an array<T,N>.
         lines.append("#define __flow_in_arr(arr, val) __extension__ ({ \\")
@@ -1979,6 +2008,17 @@ class CGenerator:
             # Pointer arithmetic: ptr + offset yields a pointer
             return self._is_pointer_expr(expr.left) or self._is_pointer_expr(expr.right)
         return False
+
+    def _flatten_concat_leaves(self, expr: Expression) -> List[Expression]:
+        """Flatten a string-concat chain into its leaf operands, in
+        left-to-right order (#747). A leaf is a maximal subexpression that is
+        not itself a string `+` concatenation.
+        """
+        if (isinstance(expr, BinaryOperation) and expr.operator == '+'
+                and (self._is_string_expr(expr.left) or self._is_string_expr(expr.right))):
+            return (self._flatten_concat_leaves(expr.left)
+                    + self._flatten_concat_leaves(expr.right))
+        return [expr]
 
     def _flatten_string_concat(self, expr: Expression) -> List[Tuple[str, str]]:
         """Flatten a string concatenation expression into (expr_code, type_name) pairs."""
@@ -4533,6 +4573,23 @@ class CGenerator:
                 # Non-string operands (numbers, bools) are stringified first,
                 # matching common "text: " + value ergonomics.
                 if left_is_string or right_is_string:
+                    # Flatten the whole concat chain so `a + b + c + d` becomes a
+                    # single N-way join (flow_strcatn) instead of nested
+                    # flow_strcat calls, which allocated per join and recopied
+                    # every prefix (#747). This is restricted to chains whose
+                    # every leaf is already a string: those yield stable pointers
+                    # (static literals, variables, heap results). A stringified
+                    # numeric leaf lives in a per-expression stack buffer whose
+                    # GCC statement-expression storage may be reused across the
+                    # sibling arguments of one call, so mixed chains keep the
+                    # nested flow_strcat path, which copies each buffer to the
+                    # heap before the next is formed. Two-part joins and the
+                    # flight/no-heap profile are also unchanged.
+                    if not self._no_heap_enabled():
+                        leaves = self._flatten_concat_leaves(e)
+                        if len(leaves) > 2 and all(self._is_string_expr(p) for p in leaves):
+                            joined = ", ".join(self._gen_expr(p) for p in leaves)
+                            return f"flow_strcatn({len(leaves)}, {joined})"
                     left_str = left_expr if left_is_string else self._gen_stringify_expr(e.left)
                     right_str = right_expr if right_is_string else self._gen_stringify_expr(e.right)
                     return f"flow_strcat({left_str}, {right_str})"
