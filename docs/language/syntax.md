@@ -27,6 +27,53 @@ true, false
 null
 ```
 
+## Text blocks
+
+An indentation-based block writes multiline output without quotes, escapes, or
+repeated `print` calls. `print:` emits the block directly. `text:` produces a
+`string` value.
+
+```flow
+print:
+    Hello ${name}.
+
+    Welcome to Flow.
+    Your score is ${score}.
+```
+
+The block begins after the colon and a newline. It ends when indentation
+returns to the level of the introducing line. The common leading indentation
+is removed, deeper indentation is kept, and blank lines are preserved.
+
+Text inside a block is literal. Quotes and backslashes need no escaping:
+
+```flow
+print:
+    He said "hello".
+    C:\Users\foo\bar
+    JSON: {"enabled": true}
+```
+
+`${expr}` interpolates any Flow expression. Write `$${` for a literal `${`:
+
+```flow
+print:
+    Total: ${price * quantity}
+    JS interpolation looks like $${value}
+```
+
+`text:` binds the same block to a value:
+
+```flow
+let message: string = text:
+    Hello ${name},
+
+    Your build ${build.id} succeeded.
+print(message)
+```
+
+Inline `print("...")` is unchanged.
+
 ## Comments
 
 ```text

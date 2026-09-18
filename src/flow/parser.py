@@ -215,6 +215,12 @@ class TokenType(Enum):
     COMMENT = "COMMENT"
     EOF = "EOF"
     AT = "AT"  # @ for decorators like @gpu
+    # Indentation-based multiline text blocks (#721). The lexer captures the
+    # whole dedented block as one token; the parser lowers it to a string
+    # concatenation chain. TEXT_BLOCK is the expression form, PRINT_BLOCK the
+    # direct-output form (`print:`).
+    TEXT_BLOCK = "TEXT_BLOCK"
+    PRINT_BLOCK = "PRINT_BLOCK"
 
 
 @dataclass
@@ -1475,6 +1481,128 @@ class Lexer:
                 continue
             i += 1
 
+    @staticmethod
+    def _indent_width(ws: str) -> int:
+        """Width of a leading-whitespace run, tabs expanded to 4 columns."""
+        return len(ws.expandtabs(4))
+
+    @staticmethod
+    def _split_leading(line: str):
+        """Return (leading_whitespace, rest) for a physical line."""
+        rest = line.lstrip(" \t")
+        return line[: len(line) - len(rest)], rest
+
+    def _try_lex_text_block(self, kind: str, ident_start: int, after_ident: int):
+        """Detect and lex a `print:` / `text:` indentation block (#721).
+
+        Returns a PRINT_BLOCK / TEXT_BLOCK Token whose value is the dedented
+        block text (physical newlines preserved, `${...}` and `$${` kept
+        verbatim for the parser), or None when this is not a block form. On a
+        successful match the lexer position advances to the terminating line.
+        """
+        text = self.text
+        n = len(text)
+
+        # Require `<ws>*:` immediately after the identifier.
+        p = after_ident
+        while p < n and text[p] in " \t":
+            p += 1
+        if p >= n or text[p] != ":":
+            return None
+        p += 1  # past ':'
+        # Optional trailing spaces and a line comment, then a newline.
+        while p < n and text[p] in " \t":
+            p += 1
+        if p < n and text[p] == "#":
+            while p < n and text[p] != "\n":
+                p += 1
+        if p >= n or text[p] != "\n":
+            # No newline after the colon: this is `text: Type` or similar.
+            return None
+        newline_pos = p
+
+        # Indentation of the introducing physical line (its leading whitespace).
+        line_start = text.rfind("\n", 0, ident_start) + 1
+        li = line_start
+        while li < n and text[li] in " \t":
+            li += 1
+        intro_indent = self._indent_width(text[line_start:li])
+
+        # Collect physical lines that belong to the block: every blank line, and
+        # every non-blank line more indented than the introducing line. Stop at
+        # the first non-blank line whose indent returns to the enclosing level.
+        block_lines = []
+        q = newline_pos + 1
+        term_pos = n
+        while q <= n:
+            eol = text.find("\n", q)
+            if eol == -1:
+                line = text[q:]
+                next_q = n
+                had_newline = False
+            else:
+                line = text[q:eol]
+                next_q = eol + 1
+                had_newline = True
+
+            lead, rest = self._split_leading(line)
+            if rest == "":
+                # Blank line: part of the block for now (trailing ones trimmed).
+                block_lines.append("")
+                q = next_q
+                if not had_newline:
+                    term_pos = n
+                    break
+                continue
+
+            if self._indent_width(lead) > intro_indent:
+                block_lines.append(line)
+                q = next_q
+                if not had_newline:
+                    term_pos = n
+                    break
+                continue
+
+            # Dedent back to (or past) the enclosing level ends the block.
+            term_pos = q
+            break
+
+        # Trailing blank lines separate the block from following code.
+        while block_lines and block_lines[-1] == "":
+            block_lines.pop()
+
+        # Dedent by the common leading indentation of non-blank lines.
+        min_indent = None
+        for line in block_lines:
+            lead, rest = self._split_leading(line)
+            if rest == "":
+                continue
+            w = self._indent_width(lead)
+            min_indent = w if min_indent is None else min(min_indent, w)
+        if min_indent is None:
+            min_indent = 0
+
+        out_lines = []
+        for line in block_lines:
+            lead, rest = self._split_leading(line)
+            if rest == "":
+                out_lines.append("")
+            else:
+                out_lines.append(lead.expandtabs(4)[min_indent:] + rest)
+        block_text = "\n".join(out_lines)
+
+        # Report position/line of the introducing keyword, then advance the
+        # lexer to the terminating line so parsing resumes there.
+        intro_line = self.line
+        intro_column = self.column
+        self.pos = term_pos
+        self.line = 1 + text.count("\n", 0, term_pos)
+        bol = text.rfind("\n", 0, term_pos) + 1
+        self.column = 1 + len(text[bol:term_pos].expandtabs(4))
+
+        tok_type = TokenType.PRINT_BLOCK if kind == "print" else TokenType.TEXT_BLOCK
+        return Token(tok_type, block_text, intro_line, intro_column)
+
     def next_token(self) -> Token:
         while self.pos < len(self.text):
             m = self.get_token(self.text, self.pos)
@@ -1485,6 +1613,17 @@ class Lexer:
 
             token_type_name = m.lastgroup
             token_value = m.group(token_type_name)
+
+            # Indentation-based text blocks (#721): `print:` / `text:` followed
+            # by a newline introduce a raw indented block. Capture it here so
+            # its content is never tokenized as ordinary Flow source (quotes
+            # and backslashes stay literal). A non-block use (`print(...)`,
+            # a `text:` type-annotation on the same line) returns None and
+            # falls through to normal tokenizing.
+            if token_type_name == "IDENTIFIER" and token_value in ("print", "text"):
+                block_token = self._try_lex_text_block(token_value, self.pos, m.end())
+                if block_token is not None:
+                    return block_token
 
             # Skip whitespace and comments
             if token_type_name not in ["WHITESPACE", "COMMENT", "NEWLINE"]:
@@ -4760,6 +4899,18 @@ class Parser:
                 return self._parse_interpolated_string(value)
             return Literal(value, Type("string"))
 
+        elif self.current_token.type == TokenType.TEXT_BLOCK:
+            # `text:` block: an ordinary string expression.
+            value = self.current_token.value
+            self.advance()
+            return self._build_text_block_expr(value)
+
+        elif self.current_token.type == TokenType.PRINT_BLOCK:
+            # `print:` block: sugar for printing a `text:` block.
+            value = self.current_token.value
+            self.advance()
+            return FunctionCall("print", [self._build_text_block_expr(value)])
+
         elif self.current_token.type == TokenType.NULL:
             self.advance()
             # null is a pointer literal with type ptr<void>
@@ -5335,6 +5486,85 @@ class Parser:
                     expr = ArrayAccess(expr, index)
 
         return expr
+
+    @staticmethod
+    def _c_escape_text(s: str) -> str:
+        """Escape raw block text for a C string literal body. Backslashes and
+        quotes stay literal in the output because they are escaped here rather
+        than interpreted; newlines and tabs become their C escapes."""
+        out = []
+        for ch in s:
+            if ch == "\\":
+                out.append("\\\\")
+            elif ch == '"':
+                out.append('\\"')
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\t":
+                out.append("\\t")
+            elif ch == "\r":
+                out.append("\\r")
+            else:
+                out.append(ch)
+        return "".join(out)
+
+    def _build_text_block_expr(self, block_text: str) -> "Expression":
+        """Lower a `print:` / `text:` block body to a string expression (#721).
+
+        The body is split on `${...}` interpolations (with `$${` as a literal
+        `${`). Literal runs become string `Literal`s with no escape processing
+        of their own content; interpolations are parsed as ordinary Flow
+        expressions and stringified through the existing string `+` lowering.
+        An empty leading literal guarantees the whole chain is typed `string`.
+        """
+        parts: List["Expression"] = [Literal('""', Type("string"))]
+        buf = []
+        i = 0
+        n = len(block_text)
+
+        def flush_literal():
+            if buf:
+                lit = self._c_escape_text("".join(buf))
+                parts.append(Literal(f'"{lit}"', Type("string")))
+                buf.clear()
+
+        while i < n:
+            if block_text.startswith("$${", i):
+                # Literal `${` opener.
+                buf.append("${")
+                i += 3
+                continue
+            if block_text.startswith("${", i):
+                flush_literal()
+                j = block_text.find("}", i + 2)
+                if j == -1:
+                    raise SyntaxError(
+                        "Unterminated interpolation: missing '}' in text block"
+                    )
+                inner_src = block_text[i + 2:j]
+                if not inner_src.strip():
+                    raise SyntaxError("Empty interpolation '${}' is not allowed")
+                try:
+                    sub_lexer = Lexer(inner_src)
+                    sub_parser = Parser(sub_lexer)
+                    inner = sub_parser.parse_expression_without_assign()
+                except SyntaxError as e:
+                    raise SyntaxError(
+                        f"Invalid expression in text-block interpolation "
+                        f"'${{{inner_src}}}': {e}"
+                    )
+                parts.append(inner)
+                i = j + 1
+                continue
+            buf.append(block_text[i])
+            i += 1
+
+        flush_literal()
+
+        result = parts[0]
+        for part in parts[1:]:
+            result = BinaryOperation(result, "+", part)
+        return result
 
     def _parse_interpolated_string(self, literal_value: str) -> "Expression":
         """Parse a string literal containing `${...}` interpolations.
