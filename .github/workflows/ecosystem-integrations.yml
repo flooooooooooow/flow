@@ -31,6 +31,13 @@ jobs:
           cache-dependency-path: third_party/integrations/tree-sitter-flow/package.json
       - run: npm install
       - run: npm test
+      - name: Parse representative Flow programs
+        run: |
+          npx tree-sitter parse \
+            ../../../examples/basics/hello_world.flow \
+            ../../../examples/basics/gcd.flow \
+            ../../../examples/evolution/pendulum_evolves.flow \
+            >/dev/null
 
   pygments:
     runs-on: ubuntu-latest
