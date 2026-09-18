@@ -1,0 +1,23 @@
+{
+  "name": "tree-sitter-flow",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar source for the Flow programming language",
+  "main": "bindings/node",
+  "keywords": ["tree-sitter", "flow", "parser"],
+  "license": "MIT",
+  "files": ["grammar.js", "queries"],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.25.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.flow",
+      "file-types": ["flow"],
+      "highlights": "queries/highlights.scm"
+    }
+  ]
+}
