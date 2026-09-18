@@ -865,6 +865,10 @@
           "path": "project/runtime-in-flow.md"
         },
         {
+          "label": "Ecosystem Recognition",
+          "path": "project/ecosystem-recognition.md"
+        },
+        {
           "label": "Linguist Registration",
           "path": "project/linguist.md"
         }
