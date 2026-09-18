@@ -247,7 +247,7 @@ module.exports = grammar({
       $.expression,
     ),
 
-    return_statement: $ => seq("return", optional($.expression)),
+    return_statement: $ => prec.right(seq("return", optional($.expression))),
     break_statement: _ => "break",
     continue_statement: _ => "continue",
 
