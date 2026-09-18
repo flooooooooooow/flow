@@ -568,6 +568,29 @@ flow_concurrency_flags() {
     fi
 }
 
+# Cold-start link trimming (#746). The native C link always lists the Python3,
+# Metal/Foundation and OpenSSL frameworks and compiles the ObjC Metal shim, so a
+# program that touches none of them still paid to load every one at exec time
+# (measured ~8 ms of dyld work on macOS for a `return 0` program: Python3 ~6.4 ms,
+# Metal/Foundation ~4.4 ms, OpenSSL ~1.6 ms). -dead_strip_dylibs does not drop the
+# load commands once the ObjC Metal shim is present, so trimming has to happen at
+# the link boundary. The strategy is a probe link that omits all three optional
+# groups (and the ObjC shim) with -dead_strip: if it succeeds the program reaches
+# none of those symbols and the lean binary is used as-is; if it fails the caller
+# falls back to the original full link, so a program that does use a framework is
+# byte-for-byte the same as before. Set FLOW_NO_LINK_TRIM=1 to force the full link.
+flow_link_trim_enabled() {
+    case "${FLOW_NO_LINK_TRIM:-}" in
+        1|true|on|yes|TRUE|ON|YES) return 1 ;;
+    esac
+    # Sanitizer builds keep every dylib so interceptors stay resolvable.
+    if [ -n "${FLOW_SANITIZE:-}" ] || [ "${FLOW_UBSAN:-}" = "1" ] \
+        || [ "${FLOW_ASAN:-}" = "1" ] || [ "${FLOW_TSAN:-}" = "1" ]; then
+        return 1
+    fi
+    return 0
+}
+
 # Always-linked Flow runtime modules (lib/runtime/*.flow → build/runtime_flow/*.c).
 # Sets FLOW_RUNTIME_FLOW_SOURCES. Skips gpu_memory_stub.flow on Darwin (Metal provides ABI).
 flow_runtime_flow_sources() {
@@ -685,16 +708,43 @@ compile_program_python() {
     # MISRA Phase 0 (#269/#270): -std=c11 -Wall -Wextra + optional sanitizers.
     # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
     flow_collect_cflags
-    FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
     flow_profile_prefix external_compile
-    if ! "${FLOW_PROFILE_PREFIX[@]+"${FLOW_PROFILE_PREFIX[@]}"}" clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")" "$build_dir/$basename.c" \
+
+    # Compiler + include flags and the program/runtime translation units shared
+    # by both link attempts.
+    local -a _link_cc=("${FLOW_PROFILE_PREFIX[@]+"${FLOW_PROFILE_PREFIX[@]}"}" clang \
+        "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" \
+        "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")")
+    local -a _prog_srcs=("$build_dir/$basename.c" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
-        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
-        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" -lm -o "$build_dir/$basename"; then
-        print_error "C compilation/linking failed"
-        exit 1
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}")
+
+    # Cold-start probe link (#746): drop the optional frameworks (Python3,
+    # Metal/Foundation, OpenSSL) and the ObjC Metal shim, and dead-strip. When
+    # the program reaches none of their symbols this links and its exec-time
+    # dyld work drops by the frameworks the tiny program never needed.
+    local _linked=0
+    if flow_link_trim_enabled; then
+        if "${_link_cc[@]}" "${_prog_srcs[@]}" \
+            -pthread "${FLOW_OPENMP_FLAGS[@]+"${FLOW_OPENMP_FLAGS[@]}"}" \
+            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
+            -Wl,-dead_strip -lm -o "$build_dir/$basename" 2>"$build_dir/.link_trim_err"; then
+            _linked=1
+        fi
+    fi
+
+    # Full link (unchanged behavior): every optional framework and the Metal
+    # shim. Used when trimming is off or when the probe found a needed symbol.
+    if [ "$_linked" -eq 0 ]; then
+        FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
+        if ! "${_link_cc[@]}" "${_prog_srcs[@]}" \
+            "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
+            "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" \
+            "${FLOW_CONC_LDFLAGS[@]}" -lm -o "$build_dir/$basename"; then
+            print_error "C compilation/linking failed"
+            exit 1
+        fi
     fi
     print_success "C → Executable: $basename"
     
