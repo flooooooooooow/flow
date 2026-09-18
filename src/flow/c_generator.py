@@ -101,6 +101,7 @@ from .attributes import (
     validate_target_spec,
 )
 
+import hashlib
 import re
 
 _C_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -140,6 +141,68 @@ def _c_ident(name: str) -> str:
     return _sanitize_identifier(name)
 
 
+# --- Stable type identity (#775) -------------------------------------------
+# A user struct gets a compiler-derived 64-bit type key so libraries can stop
+# assigning manual keys. The key is a deterministic hash of the type's public
+# definition: its name and its ordered fields. It is derived from Flow type
+# names, so it is independent of C/MLIR/Wasm lowering details and stays the
+# same for the same public definition across compilations. This first slice
+# emits the key for the C backend only.
+
+TYPE_KEY_SCHEME_VERSION = 1
+
+
+def _canonical_type_repr(t: "Type") -> str:
+    """A stable string for a Flow type, used to build a type key.
+
+    Leans on the parser's own type name (which already encodes array extent
+    and pointer element, e.g. ``array_4_i32`` / ``ptr_Point``) and folds in
+    the structural fields so two types that differ only in those still differ.
+    Deliberately excludes any C spelling.
+    """
+    if t is None:
+        return "?"
+    parts = [getattr(t, "name", None) or "?"]
+    if getattr(t, "is_pointer", False):
+        parts.append("*")
+    if getattr(t, "is_reference", False):
+        parts.append("&")
+    size = getattr(t, "size", None)
+    if size is not None:
+        parts.append(f"[{size}]")
+    elem = getattr(t, "element_type", None)
+    if elem is not None:
+        parts.append("<" + _canonical_type_repr(elem) + ">")
+    type_args = getattr(t, "type_args", None)
+    if type_args:
+        parts.append("(" + ",".join(_canonical_type_repr(a) for a in type_args) + ")")
+    return "".join(parts)
+
+
+def _canonical_struct_repr(name: str, fields) -> str:
+    """Canonical, lowering-independent description of a struct definition.
+
+    ``fields`` is an ordered iterable of ``(field_name, Type)`` pairs in source
+    order. Field order is part of the identity because it is part of the type.
+    """
+    body = ";".join(
+        f"{fname}:{_canonical_type_repr(ftype)}" for fname, ftype in fields
+    )
+    return f"v{TYPE_KEY_SCHEME_VERSION};struct {name}{{{body}}}"
+
+
+def derive_type_key(name: str, fields) -> int:
+    """Derive a deterministic 64-bit type key from a struct's public definition.
+
+    ``fields`` is an ordered iterable of ``(field_name, Type)`` pairs. Uses
+    SHA-256 (deterministic across runs and machines, unlike ``hash``) over the
+    canonical description, truncated to the low 64 bits.
+    """
+    canon = _canonical_struct_repr(name, fields).encode("utf-8")
+    digest = hashlib.sha256(canon).digest()
+    return int.from_bytes(digest[:8], "big")
+
+
 class CGenerator:
     def __init__(
         self,
@@ -153,6 +216,11 @@ class CGenerator:
     ) -> None:
         self._indent = 0
         self._structs = {}  # name -> dict of field_name -> field_type
+        # Ordered source-order field layout for genuine user `struct` decls,
+        # used to derive a stable type key (#775). name -> [(field_name, Type)].
+        # Synthetic structs (closure envs, spans, array-return wrappers) are
+        # not user types and get no key, so they stay out of this map.
+        self._user_struct_layouts: "Dict[str, List[Tuple[str, Type]]]" = {}
         # One list per open block. A `return` runs every pending defer, not
         # only the enclosing block's, and runs them after the return value has
         # been read (#594).
@@ -804,6 +872,14 @@ class CGenerator:
                     self._structs[decl.name] = {}
                 for field in decl.fields:
                     self._structs[decl.name][field.name] = field.type
+                # Record the source-order field layout so a stable type key can
+                # be derived. A generic struct (type_params present) has no
+                # single concrete layout, so it is skipped here; monomorphized
+                # instances arrive as their own concrete decls.
+                if not getattr(decl, "type_params", None):
+                    self._user_struct_layouts[decl.name] = [
+                        (field.name, field.type) for field in decl.fields
+                    ]
         self._var_types = pre_collect_var_types
 
         # Collect enums
@@ -1033,6 +1109,25 @@ class CGenerator:
             if struct_name in getattr(self, '_c_import_types', ()):
                 continue
             emit_struct(struct_name)
+
+        # Stable type identity (#775): emit a compiler-derived 64-bit key for
+        # each user struct that was defined here, in source order. The key is
+        # deterministic for the same public definition and derived from Flow
+        # type names, so it is stable across compilations and independent of
+        # the C lowering. Skip synthetic and header-provided types.
+        type_key_lines: List[str] = []
+        for struct_name, layout in self._user_struct_layouts.items():
+            if struct_name not in emitted:
+                continue
+            if struct_name in getattr(self, '_c_import_types', ()):
+                continue
+            key = derive_type_key(struct_name, layout)
+            macro = f"{_c_ident(struct_name)}_TYPE_KEY"
+            type_key_lines.append(f"#define {macro} 0x{key:016X}ULL")
+        if type_key_lines:
+            lines.append("/* stable type identity (#775) */")
+            lines.extend(type_key_lines)
+            lines.append("")
 
         if pending_fn_typedef_lines:
             lines.extend(pending_fn_typedef_lines)
