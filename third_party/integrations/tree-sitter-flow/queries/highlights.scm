@@ -37,12 +37,13 @@
   "parallel"
   "return"
   "match"
-  "break"
-  "continue"
   "every"
   "evolves"
   "as"
 ] @keyword.control
+
+(break_statement) @keyword.control
+(continue_statement) @keyword.control
 
 [
   "and"
