@@ -403,13 +403,13 @@ module.exports = grammar({
       "]",
     )),
 
-    struct_literal: $ => seq(
+    struct_literal: $ => prec(14, seq(
       $.identifier,
       "{",
       optional(commaSep1($.field_initializer)),
       optional(","),
       "}",
-    ),
+    )),
 
     field_initializer: $ => seq($.identifier, ":", $.expression),
 
