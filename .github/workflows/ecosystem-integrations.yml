@@ -1,0 +1,48 @@
+name: Ecosystem integrations
+
+on:
+  pull_request:
+    paths:
+      - "third_party/integrations/tree-sitter-flow/**"
+      - "third_party/integrations/pygments-flow/**"
+      - ".github/workflows/ecosystem-integrations.yml"
+  push:
+    branches: [main]
+    paths:
+      - "third_party/integrations/tree-sitter-flow/**"
+      - "third_party/integrations/pygments-flow/**"
+      - ".github/workflows/ecosystem-integrations.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  tree-sitter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/integrations/tree-sitter-flow
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: third_party/integrations/tree-sitter-flow/package.json
+      - run: npm install
+      - run: npm test
+
+  pygments:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/integrations/pygments-flow
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e .
+      - run: python test_lexer.py
+      - run: pygmentize -L lexers | grep -i "flow"
