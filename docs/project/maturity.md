@@ -195,9 +195,9 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | Linguist detection | PARTIAL | `.gitattributes` opts in; upstream `github-linguist` does not know Flow yet. |
-| Syntax highlighting (editors) | DONE | VS Code extension + TextMate grammar; syntax-oriented referencing. |
-| Tree-sitter | GAP | No tree-sitter grammar yet. |
-| Pygments | GAP | Not upstreamed. |
+| Syntax highlighting (editors) | DONE | VS Code extension + TextMate grammar + first-party Vim/Neovim syntax/filetype support under `third_party/integrations/vim-flow`. |
+| Tree-sitter | PARTIAL | Grammar source and highlight queries are maintained under `third_party/integrations/tree-sitter-flow`; standalone upstream packaging/consumer adoption remains. |
+| Pygments | PARTIAL | A first-party lexer implementation is maintained under `third_party/integrations/pygments-flow`; upstream acceptance remains. |
 | Language servers | DONE | `flow-lsp`. |
 | Benchmark suites | PARTIAL | `tests/benchmarks`; no external comparative matrix. |
 | Package ecosystems | PARTIAL | Homebrew tap + Open VSX + registry catalogues. |
@@ -220,8 +220,8 @@ DONE count: roughly 40 of 60 rows. The gaps cluster into four levers:
 2. **Missing tooling surface.** A `flow lint` (the repo linter is `ruff`, not a
    FLOW source linter) and a top-level `flow bench`, plus a source-level
    debugger.
-3. **External recognition.** Tree-sitter and Pygments capture, upstream
-   github-linguist, and more curated library ecosystem.
+3. **External recognition.** Upstream the maintained Tree-sitter and Pygments assets,
+   clear github-linguist's external-usage threshold, and broaden editor/package-manager adoption.
 4. **Distribution completeness.** Windows binary installer / winget, signed
    artifacts, and a named governance model.
 
