@@ -9,18 +9,19 @@ The rule is deliberately strict: a local integration is not marked upstream unti
 | Surface | Repository support | External state | Exit criterion |
 |---|---|---|---|
 | GitHub Linguist | TextMate grammar, samples, PR template, issue #172 | Blocked on independent public usage evidence | Upstream Linguist release identifies `.flow` as Flow |
-| Tree-sitter | Grammar + highlight queries in `third_party/integrations/tree-sitter-flow` | Local integration | Dedicated grammar repository, generated parser, tagged release, external consumers |
-| Pygments | Installable lexer plugin in `third_party/integrations/pygments-flow` | Local integration | Lexer merged into Pygments and released |
+| Tree-sitter | Grammar + highlight queries in `third_party/integrations/tree-sitter-flow` | Local integration · #899 | Dedicated grammar repository, generated parser, tagged release, external consumers |
+| Pygments | Installable lexer plugin in `third_party/integrations/pygments-flow` | Local integration · #900 | Lexer merged into Pygments and released |
 | VS Code / Cursor | Extension and TextMate grammar | Published project integration | Keep extension compatible with current syntax |
 | Vim | Filetype + syntax files in `third_party/integrations/vim-flow` | Local integration | Upstream runtime files or a standalone community plugin with users |
 | Neovim | Vim syntax + `flow lsp` bootstrap | Local integration | Community plugin / upstream ecosystem listing using Flow LSP |
-| Helix | `languages.toml` LSP configuration | Local integration | Tree-sitter grammar published and Flow accepted into Helix languages |
-| Zed | Integration handoff in `third_party/integrations/zed` + existing `flow lsp` | Local handoff | Dedicated Tree-sitter repository, then a published Zed language extension |
+| Helix | `languages.toml` LSP configuration | Local integration · #901 | Tree-sitter grammar published and Flow accepted into Helix languages |
+| Zed | Integration handoff in `third_party/integrations/zed` + existing `flow lsp` | Local handoff · #902 | Dedicated Tree-sitter repository, then a published Zed language extension |
 | Rosetta Code | Submission pack in `docs/community/rosetta-code.md` | Ready to publish | Flow category exists with multiple tasks |
 | Independent tutorials | Author kit and reproducibility contract | Waiting on outside authors | At least three technically substantive tutorials by non-core authors |
 | Homebrew | Tap + formula | Available | Maintain release compatibility |
+| Other package managers | Homebrew is the only mature external package-manager path today | Tracked · #904 | Reproducible Nix packaging and additional supported-platform distribution |
 | Open VSX | VS Code-family extension path documented | Available/project-controlled | External installs and continued publication |
-| Benchmarks | Internal + standardized benchmark layouts | Partial external visibility | Accepted entries in independent benchmark suites |
+| Benchmarks | Internal + standardized benchmark layouts | Partial external visibility · #903 | Accepted entries in independent benchmark suites |
 
 ## Tree-sitter
 
