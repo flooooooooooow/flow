@@ -125,7 +125,13 @@ def main():
     parser.add_argument(
         "--strict-effects",
         action="store_true",
-        help="Abort on unhandled effect ops (also: FLOW_STRICT_EFFECTS=1 at runtime)",
+        help="Deprecated no-op: strict effects are the Stable default (#563)",
+    )
+    parser.add_argument(
+        "--permissive-effects",
+        action="store_true",
+        help="Opt out of Stable effect coverage: unhandled effects return "
+             "zero defaults instead of failing (legacy, #563)",
     )
     parser.add_argument(
         "--opt-level",
@@ -317,9 +323,11 @@ def main():
         # Wire CLI --strict/--lenient into checker policy (bool↔numeric,
         # immutable assign, non-bool if/while, unknown annotations, …).
         type_checker.strict = strict_mode
-        # --strict-effects enables compile-time effect-row checking (Phase 1)
-        # in addition to runtime abort on unhandled ops.
-        if getattr(args, "strict_effects", False):
+        # Stable 1.0 default: effect-row coverage checking is on, and an
+        # unhandled effect fails rather than returning a zero default (#563).
+        # `--permissive-effects` restores the legacy soft path.
+        effective_strict_effects = not getattr(args, "permissive_effects", False)
+        if effective_strict_effects:
             type_checker.check_effect_rows = True
         type_result = type_checker.check(declarations)
 
@@ -527,7 +535,7 @@ def main():
                 declarations,
                 source_file=src_path,
                 debug_info=args.debug_info,
-                strict_effects=args.strict_effects,
+                strict_effects=effective_strict_effects,
                 library=args.library,
                 no_bounds_check=getattr(args, "no_bounds_check", False),
                 export_names=getattr(args, "export", None),

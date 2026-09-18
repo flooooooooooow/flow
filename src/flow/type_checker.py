@@ -3470,10 +3470,10 @@ class TypeChecker:
                 else ""
             )
             self.errors.append(
-                f"Unhandled effect '{call.effect_name}.{call.operation}'{where} "
-                f"— wrap in `handle {call.effect_name} with …`, declare "
-                f"`with {call.effect_name}` on the function, or omit "
-                f"--strict-effects to allow zero defaults"
+                f"Unhandled effect '{call.effect_name}.{call.operation}'{where}. "
+                f"Wrap it in `handle {call.effect_name} with …`, or declare "
+                f"`with {call.effect_name}` on the function. Pass "
+                f"--permissive-effects to fall back to zero defaults (legacy)"
             )
 
         return self._parse_type(operation.return_type)

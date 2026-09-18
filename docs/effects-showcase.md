@@ -267,21 +267,23 @@ With strict effects enabled, the call is valid because the enclosing handler cov
 ./flow transpile program.flow --c --strict-effects -o build/program.c
 ```
 
-`--strict-effects` checks bare performs and function effect rows. The default language mode
-remains backwards-compatible with soft defaults.
+Effect-row coverage checking is the Stable default (#563): an unhandled effect is a compile
+error where coverage is statically knowable, and the remaining runtime path fails loudly rather
+than returning a silent zero. `--strict-effects` is now a no-op that names the default.
 
-### 14. Turn unhandled effects into runtime failures
+### 14. Opt out to the legacy soft fallback
 
 ```sh
-FLOW_STRICT_EFFECTS=1 ./flow run program.flow
+./flow run program.flow --permissive-effects
 ```
 
-This is useful when you want fail-loud behaviour without changing source syntax.
+`--permissive-effects` restores the pre-1.0 behaviour: an unhandled operation returns its zeroed
+default and `void` operations become no-ops. Use it only for legacy programs.
 
-### 15. Use the default soft fallback deliberately
+### 15. What the soft fallback does
 
-Without strict effects, an unhandled operation returns its zeroed default and `void` operations
-become no-ops.
+Under `--permissive-effects`, an unhandled operation returns its zeroed default and `void`
+operations become no-ops.
 
 ```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function main() -> i32 {

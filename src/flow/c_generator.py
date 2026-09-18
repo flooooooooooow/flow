@@ -1440,7 +1440,7 @@ class CGenerator:
             lines.append("    if (_flow_strict_effects()) {")
             lines.append(
                 '        fprintf(stderr, "flow: unhandled effect %s.%s '
-                '(set FLOW_STRICT_EFFECTS=0 to allow zero defaults)\\n", effect, op);'
+                '(compile with --permissive-effects for legacy zero defaults)\\n", effect, op);'
             )
             lines.append("        abort();")
             lines.append("    }")
