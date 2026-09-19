@@ -1713,6 +1713,73 @@ class TypeChecker:
         )
         return True
 
+    def _field_domain(self, target_expr: Any) -> Optional[Tuple[str, str]]:
+        """Declared `@lifetime(D)` of the field a `base.field` store writes.
+
+        Returns `(field_name, domain)` when `target_expr` is a field access
+        whose statically-known struct type declares that field with an explicit
+        domain, else None. The struct type is read through one pointer
+        indirection (`p.field` where `p: ptr<Struct>`) so heap/arena structs
+        count too. Only annotated fields are consulted, so unannotated code is
+        never affected.
+        """
+        if not isinstance(target_expr, FieldAccess):
+            return None
+        obj_type = self._infer_type_quiet(target_expr.object)
+        if obj_type is None:
+            return None
+        struct_name: Optional[str] = None
+        if obj_type.kind == TypeKind.STRUCT:
+            struct_name = obj_type.name
+        elif (
+            obj_type.kind == TypeKind.POINTER
+            and obj_type.element_type is not None
+            and obj_type.element_type.kind == TypeKind.STRUCT
+        ):
+            struct_name = obj_type.element_type.name
+        if not struct_name:
+            return None
+        decl = self.struct_types.get(struct_name)
+        domain = getattr(decl, 'field_domains', {}).get(target_expr.field) if decl else None
+        if domain is None:
+            return None
+        return (target_expr.field, domain)
+
+    def _check_domain_escape_to_field(self, assign: Assignment,
+                                      target_type: SemanticType) -> bool:
+        """LD5: a shorter-lived reference may not be stored in a field whose
+        declared domain outlives it.
+
+        Fires only when the writing function declares a domain, the field is
+        annotated with a longer-lived one, the field holds a reference, and the
+        value is rooted in the function's own frame storage. Every one of those
+        is an explicit signal, so the rule adds no false positives to code that
+        does not opt in (issue #684, docs/language/lifetime-domains.md).
+        """
+        if self._current_domain is None:
+            return False
+        if not self._is_reference_type(target_type):
+            return False
+        found = self._field_domain(assign.target_expr)
+        if found is None:
+            return False
+        field_name, field_domain = found
+        if domain_rank(field_domain) <= domain_rank(self._current_domain):
+            return False
+        origin = self._domain_borrow_root(assign.value)
+        if origin is None:
+            return False
+        self._domain_reported.add(id(assign))
+        self.errors.append(
+            f"lifetime domain escape: `{origin}` lives in the "
+            f"`{self._current_domain}` domain but is stored in field "
+            f"`{field_name}`, which is declared to live in the "
+            f"`{field_domain}` domain (a longer-lived domain may not hold a "
+            f"reference to a shorter-lived one)"
+            f"{self._location_suffix(assign)}"
+        )
+        return True
+
     def _check_domain_escape_by_return(self, ret: ReturnStatement) -> bool:
         """LD2: a domain function may not return a view of its own frame."""
         if self._current_function_name and self._is_reference_type(self._current_return_type):
@@ -2668,15 +2735,27 @@ class TypeChecker:
             target_type = self._infer_type_quiet(assign.target_expr)
             if target_type is not None:
                 base_name = self._borrow_root_name(assign.target_expr)
+                reported = False
                 if base_name is not None and base_name in self.static_names:
                     reported = self._check_domain_escape_to_static(assign, base_name, target_type)
-                    if not reported and self._is_reference_type(target_type):
-                        origin = self._local_borrow_origin(assign.value)
-                        if origin is not None:
-                            self.errors.append(
-                                f"span outlives borrowed storage `{origin}`"
-                                f"{self._location_suffix(assign)}"
-                            )
+                # LD5: a struct field declared `@lifetime(D)` is a contract that
+                # it points to D-domain storage. Storing a reference rooted in a
+                # shorter-lived frame breaks that contract, wherever the struct
+                # instance itself lives (issue #684).
+                if not reported:
+                    reported = self._check_domain_escape_to_field(assign, target_type)
+                if (
+                    not reported
+                    and base_name is not None
+                    and base_name in self.static_names
+                    and self._is_reference_type(target_type)
+                ):
+                    origin = self._local_borrow_origin(assign.value)
+                    if origin is not None:
+                        self.errors.append(
+                            f"span outlives borrowed storage `{origin}`"
+                            f"{self._location_suffix(assign)}"
+                        )
 
             return expr_type
 

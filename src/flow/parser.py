@@ -666,6 +666,11 @@ class StructDecl:
         default_factory=list
     )  # Generic type parameters like <T, U>
     location: Optional[SourceLocation] = None  # For LSP
+    # Lifetime domain declared on a field with `@lifetime(D)`, keyed by field
+    # name. A field's domain is a contract on the storage it may point to; the
+    # type checker rejects storing a shorter-lived reference into it (issue
+    # #684, docs/language/lifetime-domains.md). Empty when no field is annotated.
+    field_domains: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -2356,14 +2361,22 @@ class Parser:
 
         self.expect(TokenType.LBRACE)
 
+        from .attributes import lifetime_domain
+
         fields = []
+        field_domains: Dict[str, str] = {}
         while self.current_token.type != TokenType.RBRACE:
             if self.current_token.type == TokenType.EOF:
                 raise SyntaxError("Unterminated struct: expected '}' before end of file")
+            # Optional field decorators, e.g. `@lifetime(application) view: ptr<i32>`.
+            field_attrs = self._parse_leading_attributes()
             field_name = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.COLON)
             field_type = self.parse_type()
             fields.append(Parameter(field_name, field_type))
+            domain = lifetime_domain(field_attrs)
+            if domain is not None:
+                field_domains[field_name] = domain
 
             if self.current_token.type == TokenType.COMMA:
                 self.advance()
@@ -2376,7 +2389,10 @@ class Parser:
             end_line=name_token.line - 1,
             end_column=name_token.column - 1 + len(name),
         )
-        return StructDecl(name, fields, type_params=type_params, location=loc)
+        return StructDecl(
+            name, fields, type_params=type_params, location=loc,
+            field_domains=field_domains,
+        )
 
     def parse_flow_decl(self) -> FlowDecl:
         """Parse `flow Name { ... }` (docs/vision/north-star.md 1.1).
