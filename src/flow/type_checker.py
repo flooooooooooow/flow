@@ -1685,6 +1685,42 @@ class TypeChecker:
         """Types that can carry a reference into someone else's storage."""
         return t is not None and t.kind in (TypeKind.POINTER, TypeKind.SPAN, TypeKind.ARRAY)
 
+    def _arena_instance_domain(self, value: Any) -> Optional[Tuple[str, str]]:
+        """Declared domain of the arena a `value` bumps memory from (issue #690).
+
+        Returns `(arena_name, domain)` when `value` is an `arena_alloc` /
+        `frame_alloc` call whose arena argument names a *module static* arena
+        instance, so its lifetime domain is known statically: its declared
+        `@lifetime(D)`, or `application` when unannotated. The argument may be
+        written `&arena` or `arena`. Returns None when the argument is not a
+        named module static (a parameter or a local), because then the arena's
+        domain is not statically clear and the writer-domain heuristic in
+        `_check_domain_escape_to_static` handles it instead.
+
+        Only a module static reads back a domain here, and an unannotated static
+        reads back `application`, which never outlives any target. So this adds
+        no false positive: it fires only for an arena a programmer has declared
+        to live in a shorter domain than the place its memory is stored.
+        """
+        if not (
+            isinstance(value, FunctionCall)
+            and (
+                value.name.startswith("arena_alloc")
+                or value.name.startswith("frame_alloc")
+            )
+        ):
+            return None
+        if not value.arguments:
+            return None
+        arg = value.arguments[0]
+        if isinstance(arg, UnaryOperation) and arg.operator == "&":
+            arg = arg.operand
+        if not isinstance(arg, Variable):
+            return None
+        if arg.name not in self.static_domains:
+            return None
+        return (arg.name, self.static_domains[arg.name])
+
     def _check_domain_escape_to_static(self, assign: Assignment, target: str,
                                        target_type: SemanticType) -> bool:
         """LD1: a longer-lived static may not be given a shorter-lived view."""
@@ -1693,11 +1729,31 @@ class TypeChecker:
             if param_idx is not None and self._current_function_name:
                 self._param_escapes_to_static.add((self._current_function_name, param_idx))
 
-        if self._current_domain is None or target not in self.static_names:
+        if target not in self.static_names:
             return False
         if not self._is_reference_type(target_type):
             return False
         target_domain = self._static_domain(target)
+
+        # #690: memory bumped from a module-static arena carries that arena's
+        # own declared domain. This is provable from the arena declaration
+        # alone, so it fires even when the writing function declares no domain.
+        arena = self._arena_instance_domain(assign.value)
+        if arena is not None:
+            arena_name, arena_domain = arena
+            if domain_rank(target_domain) > domain_rank(arena_domain):
+                self._domain_reported.add(id(assign))
+                self.errors.append(
+                    f"lifetime domain escape: `{arena_name}` lives in the "
+                    f"`{arena_domain}` domain but is stored in `{target}`, "
+                    f"which lives in the `{target_domain}` domain (a "
+                    f"longer-lived domain may not hold a reference to a "
+                    f"shorter-lived one){self._location_suffix(assign)}"
+                )
+                return True
+
+        if self._current_domain is None:
+            return False
         if domain_rank(target_domain) <= domain_rank(self._current_domain):
             return False
         origin = self._domain_borrow_root(assign.value)
@@ -1756,14 +1812,33 @@ class TypeChecker:
         is an explicit signal, so the rule adds no false positives to code that
         does not opt in (issue #684, docs/language/lifetime-domains.md).
         """
-        if self._current_domain is None:
-            return False
         if not self._is_reference_type(target_type):
             return False
         found = self._field_domain(assign.target_expr)
         if found is None:
             return False
         field_name, field_domain = found
+
+        # #690: a module-static arena's memory carries its own declared domain,
+        # so a frame arena bumped into a longer-lived field is caught even from
+        # a function that declares no domain.
+        arena = self._arena_instance_domain(assign.value)
+        if arena is not None:
+            arena_name, arena_domain = arena
+            if domain_rank(field_domain) > domain_rank(arena_domain):
+                self._domain_reported.add(id(assign))
+                self.errors.append(
+                    f"lifetime domain escape: `{arena_name}` lives in the "
+                    f"`{arena_domain}` domain but is stored in field "
+                    f"`{field_name}`, which is declared to live in the "
+                    f"`{field_domain}` domain (a longer-lived domain may not "
+                    f"hold a reference to a shorter-lived one)"
+                    f"{self._location_suffix(assign)}"
+                )
+                return True
+
+        if self._current_domain is None:
+            return False
         if domain_rank(field_domain) <= domain_rank(self._current_domain):
             return False
         origin = self._domain_borrow_root(assign.value)
