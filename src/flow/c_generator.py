@@ -21,7 +21,7 @@ Not supported yet:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .parser import (
     ArrayAccess,
@@ -293,6 +293,11 @@ class CGenerator:
         # `--explain` report is a rendering of this list.
         self._selections: List[Selection] = []
         self._current_fn_name = ""
+        # Local bindings the region analysis (#694) proves disjoint from every
+        # parameter and from each other, so a local pointer declaration for one
+        # of these may carry the C `restrict` qualifier (#731). Recomputed once
+        # per function in `_gen_function`; empty outside a function body.
+        self._restrict_locals: Set[str] = set()
         self._closure_vars = {}  # var name -> lambda info (capturing lambdas)
         self._fnptr_vars = {}  # var name -> lambda info (non-capturing lambdas)
         self._fn_fat_vars = set()  # vars typed as (T)->R fat-pointer closures
@@ -2746,7 +2751,20 @@ class CGenerator:
         saved_return_type = self._current_return_type
         saved_closure_vars = self._closure_vars.copy()
         saved_fnptr_vars = self._fnptr_vars.copy()
+        saved_restrict_locals = self._restrict_locals
         self._current_return_type = fn.return_type
+
+        # Region non-aliasing proof (#731): compute the local bindings this
+        # function proves disjoint from every parameter and from each other.
+        # A local pointer declaration for one of these is safe to mark
+        # `restrict`. The analysis is intraprocedural and declines whenever it
+        # cannot prove disjointness, so a failure here yields the empty set and
+        # simply emits no `restrict` rather than an unsound one.
+        try:
+            from .region_inference import analyze_function
+            self._restrict_locals = analyze_function(fn).restrict_candidates()
+        except Exception:
+            self._restrict_locals = set()
 
         # Track parameter types for overload resolution and effect call handling
         for param in fn.parameters:
@@ -2795,6 +2813,7 @@ class CGenerator:
         self._current_return_type = saved_return_type
         self._closure_vars = saved_closure_vars
         self._fnptr_vars = saved_fnptr_vars
+        self._restrict_locals = saved_restrict_locals
         self._indent -= 1
         lines.append("}")
         if is_fiber_main:
@@ -3211,8 +3230,22 @@ class CGenerator:
 
             c_t = self._c_type(decl_type)
             safe_name = _sanitize_identifier(st.name)
+            # Proven-disjoint local pointers may carry `restrict` (#731). The
+            # qualifier sits after the `*` (which `_c_type` already appended),
+            # so `int32_t*` becomes `int32_t* restrict`. Only pointer-typed
+            # locals in the region analysis's proven set qualify; every other
+            # declaration is emitted unchanged.
+            is_ptr_decl = bool(
+                getattr(decl_type, "is_pointer", False)
+                or (decl_type.name and decl_type.name.startswith("ptr_"))
+            )
+            restrict_kw = (
+                "restrict "
+                if is_ptr_decl and st.name in self._restrict_locals
+                else ""
+            )
             if st.initializer is None:
-                return [f"{self._i()}{c_t} {safe_name};"]
+                return [f"{self._i()}{c_t} {restrict_kw}{safe_name};"]
             # `let q = Struct { ..base, f: v }`: build the update in place. The
             # new binding must receive its own copy of `base` regardless, so
             # constructing into `q` directly elides the intermediate
@@ -3246,7 +3279,7 @@ class CGenerator:
                 # ptr<HashEntry>); modern clang treats the uncasted C as an
                 # error, so make the conversion explicit.
                 init_expr = f"({c_t})({init_expr})"
-            return [f"{self._i()}{c_t} {safe_name} = {init_expr};"]
+            return [f"{self._i()}{c_t} {restrict_kw}{safe_name} = {init_expr};"]
 
         if isinstance(st, Assignment):
             # Handle array element assignment: arr[i] = value
