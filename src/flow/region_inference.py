@@ -59,6 +59,7 @@ from .parser import (
     StructLiteral,
     Literal,
     BinaryOperation,
+    CastExpression,
     IfStatement,
     WhileStatement,
     ForStatement,
@@ -201,20 +202,63 @@ class RegionInference:
         if expr is None:
             # `let mut r: T` with no initializer: fresh owned storage.
             return self._fresh(LOCAL)
-        if isinstance(expr, (ArrayLiteral, VectorLiteral, StructLiteral, Literal,
-                             BinaryOperation)):
+        if isinstance(expr, (ArrayLiteral, VectorLiteral, StructLiteral, Literal)):
             return self._fresh(LOCAL)
+        if isinstance(expr, BinaryOperation):
+            # Arithmetic can derive a pointer into an operand's storage
+            # (`base + off` points into `base`), so it is not fresh. Inherit the
+            # region when the expression references exactly one tracked binding;
+            # fall back to TOP when the provenance is mixed or unclear. Only
+            # arithmetic over pure literals is genuinely fresh.
+            return self._derived_region(expr)
         if isinstance(expr, UnaryOperation):
             if expr.operator == "&":
                 return self._root_region(expr.operand)
-            # A unary arithmetic op (`-x`) yields a fresh value.
-            return self._fresh(LOCAL)
+            # `-x` and similar: derive from the operand for the same reason.
+            return self._derived_region(expr)
         if isinstance(expr, (Variable, SliceExpr, ArrayAccess, FieldAccess)):
             # Conservatively share the root's region. This never over-claims
             # disjointness; it only costs precision for value copies.
             return self._root_region(expr)
         # FunctionCall and everything else: provenance unknown.
         return TOP
+
+    def _derived_region(self, expr: Any) -> Region:
+        """Region of an arithmetic expression that may derive from operands.
+
+        Collects the root region of every reference leaf. No references means
+        pure literal arithmetic (fresh LOCAL). Exactly one referenced region is
+        inherited, so `base + off` shares `base`'s region and is never claimed
+        disjoint from it. Two or more distinct regions, or any unknown leaf,
+        yield TOP, which aliases everything and is the safe answer.
+        """
+        regions = self._referenced_regions(expr)
+        if not regions:
+            return self._fresh(LOCAL)
+        if len(regions) == 1:
+            return next(iter(regions))
+        return TOP
+
+    def _referenced_regions(self, expr: Any) -> set:
+        """Root regions of every reference leaf inside an expression."""
+        out = set()
+        stack = [expr]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, BinaryOperation):
+                stack.append(node.left)
+                stack.append(node.right)
+            elif isinstance(node, UnaryOperation):
+                if node.operator == "&":
+                    out.add(self._root_region(node.operand))
+                else:
+                    stack.append(node.operand)
+            elif isinstance(node, CastExpression):
+                stack.append(node.expr)
+            elif isinstance(node, (Variable, SliceExpr, ArrayAccess, FieldAccess)):
+                out.add(self._root_region(node))
+            # Literals and unrecognised forms contribute no reference.
+        return out
 
     # -- region at the root of a reference expression -----------------------
     def _root_region(self, expr: Any) -> Region:

@@ -174,3 +174,37 @@ function f(p: array<i32, 4>) -> i32 {
     # sole owner and neither is claimed.
     assert "b" not in cand
     assert "c" not in cand
+
+
+# --- regression: pointer arithmetic derives from its base, not fresh -------
+
+def test_pointer_arithmetic_is_not_a_restrict_candidate():
+    # `base + off` points into `base`'s storage, so it must not be treated as
+    # fresh disjoint storage. Marking it restrict would be undefined behaviour.
+    # Guards the region_inference soundness fix.
+    ri = _analyze(
+        """
+function f(base: ptr<i32>, n: i32) -> i32 {
+    let p: ptr<i32> = base + 0
+    let q: ptr<i32> = base + n
+    return 0
+}
+"""
+    )
+    cand = ri.restrict_candidates()
+    assert "p" not in cand, cand
+    assert "q" not in cand, cand
+
+
+def test_literal_arithmetic_stays_fresh():
+    # Arithmetic over pure literals allocates a fresh value with no operand
+    # provenance, so it remains a distinct local.
+    ri = _analyze(
+        """
+function f() -> i32 {
+    let x: i32 = 2 + 3
+    return x
+}
+"""
+    )
+    assert "x" in ri.restrict_candidates()
