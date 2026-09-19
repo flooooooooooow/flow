@@ -7,8 +7,10 @@ Resolves dot-path imports (verify.nat) and legacy string imports.
 from __future__ import annotations
 
 import os
+import json
 import hashlib
 import pickle
+import functools
 import warnings
 from itertools import product
 from pathlib import Path
@@ -30,6 +32,84 @@ from .parser import (
 )
 from .project_config import load_project_config
 from .shader_dsl import extract_shader_module, has_fill_shader_dsl
+
+
+# Bump when the on-disk cache entry format changes, or when a frontend change
+# that the source fingerprint below cannot see would alter a parse. Any bump
+# changes every cache key, so entries written by an older schema become
+# unreachable and can never be served as stale.
+CACHE_SCHEMA_VERSION = "2"
+
+# Frontend source files whose behaviour determines the parsed declaration
+# graph. Their contents are folded into the cache key, so changing the lexer,
+# parser, resolver or any DSL expander invalidates every cached parse even when
+# the .flow source text is byte-for-byte identical. Without this, an upgraded
+# compiler silently reuses declarations produced by the old frontend.
+_FRONTEND_SOURCE_FILES = (
+    "lexer.py",
+    "parser.py",
+    "module_resolver.py",
+    "dynamics_dsl.py",
+    "field_dsl.py",
+    "field_dsl_core.py",
+    "shader_dsl.py",
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _frontend_code_fingerprint() -> str:
+    """SHA-256 over the frontend source files that shape a parse."""
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    digest = hashlib.sha256()
+    for name in _FRONTEND_SOURCE_FILES:
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        try:
+            with open(os.path.join(pkg_dir, name), "rb") as handle:
+                digest.update(handle.read())
+        except OSError:
+            # A frontend module we cannot read is treated as changed, so a
+            # parse from an unknown implementation is never reused.
+            digest.update(b"<unreadable>")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _compiler_cache_salt() -> str:
+    """Everything about the compiler that can change a parse of fixed source."""
+    from .version import __version__
+
+    salt = f"{CACHE_SCHEMA_VERSION}:{__version__}:{_frontend_code_fingerprint()}"
+    # An explicit override lets a caller (or a test) perturb the key without
+    # editing source. It augments the real salt, so genuine protection stays.
+    override = os.environ.get("FLOW_CACHE_SALT")
+    if override:
+        salt = f"{salt}:{override}"
+    return salt
+
+
+def _config_cache_salt(project: Any) -> str:
+    """Resolution config that can change which file an import resolves to."""
+    try:
+        relevant = {
+            "stdlib_root": project.stdlib_root,
+            "project_root": project.project_root,
+            "paths": project.paths,
+            "dependencies": sorted(project.dependencies),
+        }
+        blob = json.dumps(relevant, sort_keys=True, default=str)
+    except Exception:
+        blob = repr(project)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _file_content_hash(path: str) -> Optional[str]:
+    """SHA-256 of a file's current bytes, or None if it cannot be read."""
+    try:
+        with open(path, "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
 
 
 def _fill_shader_host_stub() -> List[Any]:
@@ -107,6 +187,15 @@ class ModuleResolver:
         self.circular_imports: Set[Tuple[str, ...]] = set()
         self._legacy_import_warnings: Set[str] = set()
 
+        # Salt for every cache key produced by this resolver. It captures the
+        # compiler/schema version, the frontend source fingerprint and the
+        # resolution config, so a cached parse is reused only under an identical
+        # frontend and configuration. Recomputing it per resolver keeps it in
+        # step with the project config loaded above.
+        self._cache_salt = (
+            _compiler_cache_salt() + ":" + _config_cache_salt(self.project)
+        )
+
         # Legacy search paths (string imports)
         compiler_root = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..")
@@ -144,21 +233,17 @@ class ModuleResolver:
         with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
-        file_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
-        cache_path = os.path.join(cache_dir, f"{file_hash}.pkl")
+        # Content-addressed key over the salt (compiler/schema version, frontend
+        # fingerprint, resolution config) and the source text. Identical source
+        # can no longer reuse declarations produced by a different frontend or
+        # under a different configuration.
+        cache_key = hashlib.sha256(
+            f"{self._cache_salt}\0{code}".encode("utf-8")
+        ).hexdigest()
+        cache_path = os.path.join(cache_dir, f"{cache_key}.pkl")
 
-        declarations = None
-        if os.path.exists(cache_path):
-            try:
-                with open(cache_path, "rb") as f:
-                    # The compiler is the only writer of this file. The name is
-                    # the SHA-256 of the source it was parsed from, so a cache
-                    # entry is reachable only by compiling that exact source,
-                    # and a corrupted or foreign file falls through to a reparse
-                    # below rather than being trusted.
-                    declarations = pickle.load(f)  # nosec B301
-            except Exception:
-                pass
+        declarations = self._load_cache_entry(cache_path)
+        cache_hit = declarations is not None
 
         if declarations is None:
             # Fill-shader dialect (`shader fill` / FSL `fn`) is not host Flow.
@@ -182,12 +267,6 @@ class ModuleResolver:
                 parser = Parser(lexer)
                 declarations = parser.parse()
 
-            try:
-                with open(cache_path, "wb") as f:
-                    pickle.dump(declarations, f)
-            except Exception:
-                pass
-
         imports = [d for d in declarations if isinstance(d, ImportDecl)]
         others = [
             d
@@ -201,10 +280,17 @@ class ModuleResolver:
 
         base_dir = os.path.dirname(file_path)
 
+        # Content hashes of the direct imports this module resolves to. Recorded
+        # in the cache entry so a later run misses when any imported module
+        # changed on disk. A change to this file's own text is already covered
+        # by the content-addressed key above.
+        dep_hashes: Dict[str, Optional[str]] = {}
+
         for imp in imports:
             resolved_path, import_symbols = self._resolve_import(imp, base_dir)
             if resolved_path:
                 module_info.dependencies.add(resolved_path)
+                dep_hashes[resolved_path] = _file_content_hash(resolved_path)
                 is_reexport = getattr(imp, "is_reexport", False)
                 try:
                     self._resolve_recursive(resolved_path)
@@ -223,6 +309,12 @@ class ModuleResolver:
                     self._apply_reexport(
                         imp, resolved_path, import_symbols, module_info
                     )
+
+        # Persist only on a miss; a hit already validated its dependencies.
+        # Writing after the imports loop lets the entry carry the dependency
+        # hashes needed for import-aware invalidation.
+        if not cache_hit:
+            self._store_cache_entry(cache_path, declarations, dep_hashes)
 
         for decl in others:
             if isinstance(decl, ImplDecl):
@@ -279,6 +371,73 @@ class ModuleResolver:
 
         module_info.is_loaded = True
         self.import_stack.pop()
+
+    def _load_cache_entry(self, cache_path: str) -> Optional[List[Any]]:
+        """Return cached declarations for `cache_path`, or None to recompile.
+
+        Any doubt yields None so the caller reparses. The entry is trusted only
+        when its schema and salt match this resolver and every recorded
+        dependency still hashes to the same content on disk.
+        """
+        if not os.path.exists(cache_path):
+            return None
+        try:
+            with open(cache_path, "rb") as handle:
+                # The compiler is the only writer of this file, and the entry is
+                # rejected below unless its schema and salt match. A corrupt or
+                # foreign file raises here and falls through to a reparse.
+                entry = pickle.load(handle)  # nosec B301
+        except Exception:
+            return None
+
+        if not isinstance(entry, dict):
+            return None
+        if entry.get("schema") != CACHE_SCHEMA_VERSION:
+            return None
+        if entry.get("salt") != self._cache_salt:
+            # The filename already encodes the salt; this rejects a hash
+            # collision or a hand-placed file that lands on the same name.
+            return None
+
+        deps = entry.get("deps")
+        declarations = entry.get("declarations")
+        if not isinstance(deps, dict) or declarations is None:
+            return None
+
+        # Dependency-aware invalidation: if any imported module's current
+        # content differs from what this entry was built against, miss.
+        for dep_path, recorded_hash in deps.items():
+            if _file_content_hash(dep_path) != recorded_hash:
+                return None
+
+        return declarations
+
+    def _store_cache_entry(
+        self,
+        cache_path: str,
+        declarations: List[Any],
+        dep_hashes: Dict[str, Optional[str]],
+    ) -> None:
+        """Write a cache entry atomically. Failure is silent and safe."""
+        entry = {
+            "schema": CACHE_SCHEMA_VERSION,
+            "salt": self._cache_salt,
+            "deps": dep_hashes,
+            "declarations": declarations,
+        }
+        tmp_path = f"{cache_path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp_path, "wb") as handle:
+                pickle.dump(entry, handle)
+            # Atomic rename so a crashed writer never leaves a half-written
+            # entry that a later run could load and misread as valid.
+            os.replace(tmp_path, cache_path)
+        except Exception:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _apply_reexport(
         self,
