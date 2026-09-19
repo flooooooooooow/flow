@@ -3109,6 +3109,37 @@ class CGenerator:
         struct_name = inferred.name if inferred else None
         return bool(struct_name and struct_name in self._structs)
 
+    @staticmethod
+    def _expr_references_name(node: object, name: str) -> bool:
+        """True if `name` appears as a variable read anywhere inside `node`.
+
+        A generic descent over the AST dataclass fields, so it catches a
+        reference nested inside a binary operation, call argument, field
+        access, or a further record update. Used to keep move elision safe:
+        if an update value reads the spread source, building the update in
+        place on that source would overwrite a field before it is read.
+        """
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur is None:
+                continue
+            if isinstance(cur, Variable):
+                if cur.name == name:
+                    return True
+                continue
+            if isinstance(cur, (list, tuple)):
+                stack.extend(cur)
+                continue
+            child = getattr(cur, "__dict__", None)
+            if child:
+                for value in child.values():
+                    if isinstance(value, (list, tuple)):
+                        stack.extend(value)
+                    elif hasattr(value, "__dict__"):
+                        stack.append(value)
+        return False
+
     def _gen_statement_body(self, st: Statement, defer_stack: List[DeferStatement]) -> List[str]:
         if isinstance(st, VarDecl):
             # A local declaration shadows any same-named captured variable
@@ -3298,6 +3329,43 @@ class CGenerator:
                     value = self._gen_expr(st.value)
                     lines.append(f"{self._i()}memcpy({tmp}.v, {value}, sizeof({tmp}.v));")
                 lines.append(f"{self._i()}return {tmp};")
+                return lines
+            # Move a uniquely-owned local into a returned record update instead
+            # of copying it (#696). `return Struct { ..base, f: v }` normally
+            # lowers to `({ Struct _ru = base; _ru.f = v; _ru; })`, which copies
+            # the whole struct into a temporary. When `base` is a plain local
+            # binding this return is its provable last use: nothing runs after a
+            # return, so `base` is dead. Building the update in place on `base`
+            # and returning it elides the temporary and its full-struct copy.
+            # Guards keep it safe:
+            #   - the struct is known, so the field list is resolvable;
+            #   - `base` is a plain variable that is not captured (mutating a
+            #     closure environment could outlive the frame) and not a
+            #     function-value symbol;
+            #   - no update value reads `base`, so no field is overwritten
+            #     before another update reads it.
+            # C returns `base` by value into the caller's slot, so value
+            # semantics hold.
+            if (
+                isinstance(st.value, RecordUpdate)
+                and self._record_update_is_known_struct(st.value)
+                and isinstance(st.value.base, Variable)
+                and not (
+                    self._capture_stack
+                    and st.value.base.name in self._capture_stack[-1]
+                )
+                and self._function_value_symbol(st.value.base.name) is None
+                and not any(
+                    self._expr_references_name(value, st.value.base.name)
+                    for _field, value in st.value.updates
+                )
+            ):
+                base_c = self._gen_expr(st.value.base)
+                _sc, _base_expr, update_stmts = self._record_update_parts(
+                    st.value, base_c
+                )
+                lines = [f"{self._i()}{u}" for u in update_stmts]
+                lines.append(f"{self._i()}return {base_c};")
                 return lines
             return [f"{self._i()}return {self._gen_expr(st.value)};"]
 
