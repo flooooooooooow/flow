@@ -219,14 +219,60 @@ error: lifetime domain violation: 'process' is in the `callback` domain but
 The other direction is fine and normal: a `session` function calls a
 `callback` function to run one block.
 
+### LD5: a shorter-lived reference may not be stored in a longer-lived field
+
+LD1 covers module statics. LD5 extends the same rule to composite storage
+(issue #684). A store `base.field = value` is an escape when the field's domain
+outlives the writing frame and `value` is rooted in that frame.
+
+A field's domain comes from one of two places:
+
+- **The static it belongs to.** A reference stored anywhere inside a module
+  static, at any field depth or through an array element, takes the static's
+  domain. `holder.inner.view = &scratch` and `table[0] = &scratch` are both
+  caught when `holder` and `table` are statics.
+- **An `@lifetime(D)` on the field itself.** The annotation is a contract that
+  the field holds a `D`-domain reference, so a shorter-lived store breaks it
+  wherever the struct instance lives:
+
+```flow expect-error
+struct Holder {
+    @lifetime(application)
+    view: ptr<i32>
+}
+
+@lifetime(callback)
+function process() -> void {
+    let mut h: Holder = Holder { view: null }
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    h.view = &scratch
+}
+```
+
+```text
+error: lifetime domain escape: `scratch` lives in the `callback` domain but is
+       stored in field `view`, which is declared to live in the `application`
+       domain (a longer-lived domain may not hold a reference to a
+       shorter-lived one) at line 11, column 5
+```
+
+Both halves are opt-in. A store fires only when the writing function declares a
+domain, the field's domain outlives it, and the value is rooted in the writing
+frame. An unannotated field on a local struct is left alone, because a local
+struct dies with the frame and receives no longer-lived promise.
+
 ## What the compiler does not check
 
 A lifetime system that misses violations is worse than no lifetime system,
 because people trust it. Everything below compiles today and is **not**
 checked. None of it is partially checked.
 
-- **Escape through a struct field.** Writing a reference into a field of a
-  longer-lived struct is not tracked. This is the same gap spans have.
+- **Escape through an unannotated field of a struct whose lifetime is not
+  known.** Two field cases are checked (see LD5 below): a store into any field
+  or element of a module static, and a store into a field declared with
+  `@lifetime(D)`. A store into a plain field of a struct reached only through a
+  pointer parameter is still not tracked, because the checker cannot prove that
+  struct outlives the writing frame.
 - **Escape through a closure environment**, a function pointer, or dynamic
   dispatch. The `@rt_safe` call graph is over direct named calls only, and LD3
   and LD4 inherit that.
