@@ -7,8 +7,11 @@ so we build the update in place: `T q = base; q.f = v;`. That removes one full
 struct copy while keeping value semantics, because `q` stays distinct from
 `base`.
 
-The same record update in expression position (a return value, an argument)
-still needs the temporary so it yields a value, so those keep their copy.
+A returned record update goes one step further under move inference (#696):
+when the base is a plain local, the return is its last use, so the update is
+built in place on the base and returned, eliding the temporary. A returned
+update whose value reads the base keeps the temporary, because an in-place
+write would clobber a field before it is read.
 """
 
 from __future__ import annotations
@@ -83,8 +86,8 @@ function relabel(g: Grid) -> i32 {
     assert re.search(r"\bh\.tag\s*=\s*7\s*;", c)
 
 
-def test_return_record_update_keeps_temporary() -> None:
-    """A record update in expression position still needs its value temporary."""
+def test_return_record_update_moves_local_base() -> None:
+    """A returned update of a local base is moved: no temporary, no copy (#696)."""
     c = _gen_c(
         """
 struct Vec3 { x: f64, y: f64, z: f64 }
@@ -93,7 +96,25 @@ function bump(p: Vec3) -> Vec3 {
 }
 """
     )
-    # Return position has no destination variable, so the statement-expression
-    # temporary is retained and copies the base once.
+    # The return is the last use of `p`, so the update is built in place on `p`
+    # and `p` is returned, eliding the statement-expression temporary and the
+    # full-struct copy it carried.
+    assert "_flow_rupdate" not in c
+    assert re.search(r"\bp\.x\s*=\s*1\.0\s*;", c)
+    assert re.search(r"return\s+p\s*;", c)
+
+
+def test_return_record_update_reading_base_keeps_temporary() -> None:
+    """A returned update whose value reads the base keeps its value temporary."""
+    c = _gen_c(
+        """
+struct Vec3 { x: f64, y: f64, z: f64 }
+function shift(p: Vec3) -> Vec3 {
+    return Vec3 { ..p, x: p.y }
+}
+"""
+    )
+    # `p.y` is read by the update, so an in-place write onto `p` could clobber
+    # it. The statement-expression temporary copies the base first.
     assert "_flow_rupdate" in c
     assert re.search(r"Vec3\s+_flow_rupdate_\d+\s*=\s*p\s*;", c)
