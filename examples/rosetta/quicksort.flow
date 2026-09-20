@@ -1,0 +1,42 @@
+# Rosetta Code task: Sorting algorithms/Quicksort
+# Sort an array in place with Lomuto partition quicksort.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function quicksort(xs: span<mut i32>, lo: i32, hi: i32) {
+    if lo >= hi {
+        return
+    }
+    let pivot: i32 = xs[hi]
+    let mut i: i32 = lo - 1
+    let mut j: i32 = lo
+    while j < hi {
+        if xs[j] < pivot {
+            i = i + 1
+            let tmp: i32 = xs[i]
+            xs[i] = xs[j]
+            xs[j] = tmp
+        }
+        j = j + 1
+    }
+    let store: i32 = i + 1
+    let tmp2: i32 = xs[store]
+    xs[store] = xs[hi]
+    xs[hi] = tmp2
+    quicksort(xs, lo, store - 1)
+    quicksort(xs, store + 1, hi)
+}
+
+function main() -> i32 {
+    let mut xs: array<i32, 10> = [9, 3, 7, 1, 8, 2, 6, 5, 0, 4]
+    quicksort(xs, 0, 9)
+    let mut i: i32 = 0
+    while i < 10 {
+        printf("%d ", xs[i])
+        i = i + 1
+    }
+    println("")
+    return 0
+}
