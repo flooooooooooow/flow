@@ -577,6 +577,10 @@
           "path": "language/multi-implementation.md"
         },
         {
+          "label": "Recognition Semantics",
+          "path": "language/recognition-semantics.md"
+        },
+        {
           "label": "Design Notes",
           "path": "language/language_design.md"
         }
