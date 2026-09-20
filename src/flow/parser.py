@@ -1228,6 +1228,20 @@ class FlowNeverDecl:
 
 
 @dataclass
+class FlowRecognitionDecl:
+    """`recognize { domain ... }`: semantic projections that transformations
+    must preserve for this flow.
+
+    Recognition domains name observer-relative denotations. The compiler keeps
+    the declaration as metadata through lowering; src/flow/recognition.py maps
+    each domain to a canonical projection of the flow denotation.
+    """
+
+    domains: List[str]
+    line: int = 0
+
+
+@dataclass
 class FlowDecl:
     """`flow Name { ... }`: a struct plus continuous dynamics.
 
@@ -1250,6 +1264,7 @@ class FlowDecl:
     solver: Optional[FlowSolverDecl] = None
     children: List[FlowChildDecl] = field(default_factory=list)
     connections: List[FlowConnection] = field(default_factory=list)
+    recognition: Optional[FlowRecognitionDecl] = None
     is_exported: bool = False
     location: Optional[SourceLocation] = None
 
@@ -2248,9 +2263,10 @@ class Parser:
           NAME evolves as expr
           when NAME reaches expr { NAME becomes expr ... }
           always { expr ... } / never { expr ... }
+          recognize { numerical realtime causal safety memory }
           connect { NAME.NAME -> NAME.NAME ... }
         `flow`, `state`, `input`, `output`, `param`, `evolves`, `when`,
-        `reaches`, `becomes`, `always`, `never`, `connect` are contextual
+        `reaches`, `becomes`, `always`, `never`, `recognize`, `connect` are contextual
         keywords: each is recognized only by its position and at most two
         tokens of lookahead, so all of them remain ordinary identifiers
         elsewhere.
@@ -2274,6 +2290,7 @@ class Parser:
         nevers: List[FlowNeverDecl] = []
         children: List[FlowChildDecl] = []
         connections: List[FlowConnection] = []
+        recognition: Optional[FlowRecognitionDecl] = None
         solver: Optional[FlowSolverDecl] = None
         section_words = ("state", "input", "output", "param")
 
@@ -2330,6 +2347,14 @@ class Parser:
             is_never = (
                 tok.type == TokenType.IDENTIFIER
                 and tok.value == "never"
+                and self.lookahead.type == TokenType.LBRACE
+            )
+            # `recognize { ... }`: names denotational projections that must
+            # survive admissible transformations. The word remains an ordinary
+            # identifier everywhere else.
+            is_recognize = (
+                tok.type == TokenType.IDENTIFIER
+                and tok.value == "recognize"
                 and self.lookahead.type == TokenType.LBRACE
             )
             # `connect { ... }`: `connect` directly before '{' is the
@@ -2400,6 +2425,13 @@ class Parser:
                 alwayses.append(self._parse_flow_invariant(name, "always"))
             elif is_never:
                 nevers.append(self._parse_flow_invariant(name, "never"))
+            elif is_recognize:
+                if recognition is not None:
+                    raise self.error(
+                        f"flow '{name}' has two 'recognize' blocks",
+                        suggestion="merge the domains into one recognize block",
+                    )
+                recognition = self._parse_flow_recognition(name)
             elif is_connect:
                 connections.extend(self._parse_flow_connect(name))
             elif is_child:
@@ -2429,6 +2461,7 @@ class Parser:
                         "discrete blocks ('every 10 ms { x becomes expr }'), "
                         "composition ('connect { a.out -> b.in }'), "
                         "invariants ('always { expr }' / 'never { expr }'), "
+                        "semantic contracts ('recognize { numerical realtime }'), "
                         "and settings ('solver { dt 1 ms }')"
                     ),
                 )
@@ -2443,8 +2476,55 @@ class Parser:
         return FlowDecl(
             name, states, inputs, outputs, params, evolves, whens, everys,
             alwayses, nevers, solver,
-            children=children, connections=connections, location=loc
+            children=children, connections=connections,
+            recognition=recognition, location=loc
         )
+
+    def _parse_flow_recognition(self, flow_name: str) -> FlowRecognitionDecl:
+        """Parse `recognize { domain ... }`.
+
+        Domains are contextual identifiers separated by whitespace or commas.
+        Validation of supported domains lives in src/flow/recognition.py so the
+        parser remains concerned only with syntax.
+        """
+        recognize_token = self.current_token
+        self.advance()  # consume contextual 'recognize'
+        self.expect(TokenType.LBRACE)
+        domains: List[str] = []
+
+        while self.current_token.type != TokenType.RBRACE:
+            if self.current_token.type == TokenType.EOF:
+                raise self.error(
+                    f"Unterminated 'recognize' block in flow '{flow_name}': "
+                    f"expected '}}' before end of file"
+                )
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+                continue
+
+            domain_token = self.expect(TokenType.IDENTIFIER)
+            domain = domain_token.value
+            if domain in domains:
+                raise self.error(
+                    f"recognition domain '{domain}' appears twice in flow "
+                    f"'{flow_name}'",
+                    suggestion="list each recognition domain once",
+                )
+            domains.append(domain)
+
+            if self.current_token.type == TokenType.COMMA:
+                self.advance()
+
+        self.expect(TokenType.RBRACE)
+        if not domains:
+            raise self.error(
+                f"'recognize' block in flow '{flow_name}' needs at least one "
+                f"domain",
+                suggestion=(
+                    "write 'recognize { numerical realtime causal safety memory }'"
+                ),
+            )
+        return FlowRecognitionDecl(domains, recognize_token.line)
 
     def _parse_flow_connect(self, flow_name: str) -> List[FlowConnection]:
         """Parse `connect { a.out -> b.in ... }` (docs/vision/north-star.md §8).

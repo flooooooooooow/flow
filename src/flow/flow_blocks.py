@@ -60,6 +60,11 @@ generated body the same way it checks user code.
 
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from .recognition import (
+    RecognitionError,
+    recognition_manifest,
+    validate_recognition_contract,
+)
 from .parser import (
     ArrayAccess,
     ArrayLiteral,
@@ -376,6 +381,16 @@ def _validate_flow(
     connections = list(getattr(flow, "connections", None) or [])
     if flow_by_name is None:
         flow_by_name = {flow.name: flow}
+
+    try:
+        validate_recognition_contract(flow)
+    except RecognitionError as exc:
+        recognition = getattr(flow, "recognition", None)
+        raise _error(
+            str(exc),
+            getattr(recognition, "line", None) or flow_line,
+            source,
+        ) from None
 
     if not flow.states and not children:
         raise _error(
@@ -1048,6 +1063,11 @@ def _lower_flow(
         location=flow.location,
     )
     struct.flow_decl = flow  # dynamics metadata for later cards and tooling
+    # Canonical observer-relative denotations survive front-end lowering.
+    # Later optimization/IR passes can compare this manifest against a
+    # transformed flow rather than treating the lowered struct as "the"
+    # semantics.
+    struct.recognition_manifest = recognition_manifest(flow)
 
     evolved = [ev for ev in flow.evolves]
     has_outputs = bool(flow.outputs)
