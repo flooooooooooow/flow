@@ -12,7 +12,7 @@ Add the [Flow](https://github.com/flooooooooooow/flow) programming language
 ## Checklist
 
 - [ ] **I am adding a new language.**
-  - [ ] The extension of the new language is used in hundreds of repositories on GitHub.com.
+  - [ ] The extension meets Linguist's current usage requirement after excluding forks, project-owner concentration, JavaScript Flow libdefs, Area9 Flow, and other unrelated `.flow` files.
     - Search results for each extension:
       - https://github.com/search?type=code&q=NOT+is%3Afork+extension%3Aflow+%22let+mut%22
       - https://github.com/search?type=code&q=NOT+is%3Afork+extension%3Aflow+%22evolves+as%22
@@ -28,10 +28,10 @@ Add the [Flow](https://github.com/flooooooooooow/flow) programming language
   - [x] I have added a color
     - Hex value: `#5B8DEF`
     - Rationale: blue accent used in Flow documentation / branding; chosen to avoid collision with Facebook Flow’s pink branding and with nearby Linguist blues where possible.
-  - [x] I have updated the heuristics to distinguish my language from others using the same extension.
-    - `.flow` is also used by Facebook Flow libdefs (`*.js.flow`). Heuristic prefers this language on `function` / `let mut` / `effect` / `evolves as`, and JavaScript on `declare module` / `// @flow`.
+  - [ ] I have resolved the shared-extension classification problem with maintainers.
+    - `.flow` is also used by JavaScript Flow libdefs (`*.js.flow`) and Area9 Flow. The final heuristic/naming strategy must demonstrate that all three corpora classify safely.
 
 ## Notes for maintainers
 
-- Language name **Flow** may be confusing given Facebook’s type checker; happy to rename the Linguist entry to **Flow Lang** if preferred.
+- Language name **Flow** collides conceptually with both Facebook's Flow type checker and Area9 Flow. Use the name agreed in the prior Linguist discussion rather than assuming the canonical project brand can be the Linguist display name.
 - Popularity: please assess with queries that exclude `*.js.flow` / `declare module` noise and, if needed, `-org:flooooooooooow` to measure third-party adoption.

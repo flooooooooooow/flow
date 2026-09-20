@@ -869,6 +869,10 @@
           "path": "project/runtime-in-flow.md"
         },
         {
+          "label": "Ecosystem Recognition",
+          "path": "project/ecosystem-recognition.md"
+        },
+        {
           "label": "Linguist Registration",
           "path": "project/linguist.md"
         }
@@ -886,6 +890,10 @@
         {
           "label": "Independent Tutorial Author Kit",
           "path": "community/tutorial-author-kit.md"
+        },
+        {
+          "label": "Community Projects",
+          "path": "community/projects.md"
         }
       ]
     },
