@@ -261,6 +261,16 @@ def main():
         help="Module name for WASM/Python package (default: input filename stem). "
         "Sets the Emscripten MODULARIZE name and the --export prefix.",
     )
+    parser.add_argument(
+        "--emit-denotational-mlir",
+        nargs="?",
+        const=0,
+        type=int,
+        metavar="N",
+        help="Emit the denotational flow.* MLIR for the file's evolution blocks "
+        "and exit. With N, emit the fused vectorized step for N instances. "
+        "See docs/design/denotational-mlir.md.",
+    )
 
     args = parser.parse_args()
 
@@ -272,6 +282,27 @@ def main():
 
     if not args.input:
         parser.error("the following arguments are required: input")
+
+    if getattr(args, "emit_denotational_mlir", None) is not None:
+        from .denotational_mlir import (
+            raw_flow_decls,
+            emit_denotational_mlir,
+            emit_ensemble_step,
+        )
+
+        with open(args.input, "r") as f:
+            source = f.read()
+        blocks = raw_flow_decls(source)
+        if not blocks:
+            print("// no flow blocks found", file=sys.stderr)
+            sys.exit(0)
+        n = args.emit_denotational_mlir
+        rendered = [
+            emit_ensemble_step(b, n) if n else emit_denotational_mlir(b)
+            for b in blocks
+        ]
+        print("\n\n".join(rendered))
+        sys.exit(0)
 
     if args.c and args.llvm:
         print("Error: --llvm is only valid for MLIR backend (remove --c).", file=sys.stderr)

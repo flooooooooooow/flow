@@ -1001,6 +1001,7 @@
     }
   ],
   "unlisted": {
+    "design/denotational-mlir.md": "internal design doc for the denotational MLIR lane, tracked outside the reader wiki",
     "coverage_plan.md": "internal test-coverage plan for src/flow, not reader documentation",
     "discord-webhooks.md": "operations runbook for the project's Discord integration",
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",

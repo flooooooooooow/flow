@@ -54,7 +54,25 @@ If multiple agents are editing `compiler/src/` simultaneously:
 
 ### Current in-flight work
 
-No active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
+Denotational MLIR lane (Claude, 2026-09-22): a `flow.*` dialect that keeps the
+vector-field structure of `flow` evolution blocks so the MLIR passes (#664,
+#665, #667, #671) can fuse and vectorize ensembles instead of seeing an opaque
+`_derivs` function. New files: `src/flow/denotational_mlir.py` (emitter, covers
+evolve/every/when plus a fused ensemble step), `scripts/emit_denotational_mlir.py`
+(standalone CLI), `tests/unit/test_denotational_mlir.py`, and
+`docs/design/denotational-mlir.md`. It deliberately does NOT touch
+`src/flow/mlir_generator.py` or `src/flow/dynamics_dsl.py`.
+
+One edit to a shared file: an ADDITIVE `--emit-denotational-mlir [N]` flag on
+`src/flow/transpiler.py`, a new argument plus an early-exit branch that mirror
+the existing `--print-pass-pipeline` path and leave normal compilation
+unchanged. If you are editing transpiler.py, keep the new argument and its
+early-exit block; they touch nothing else. The deeper integration (emitting
+`flow.*` inside the normal MLIR lowering, and the ensemble fusion as a real
+`mlir-opt` pass) is the next slice and does touch `mlir_generator.py`, so it is
+sequenced after this lane is reviewed. See docs/design/denotational-mlir.md.
+
+The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
 env vars (not positional args, which trigger the self-test). The Python unit
 suite is at 1424 passed, 0 failed, 6 skipped (all clean).
 
