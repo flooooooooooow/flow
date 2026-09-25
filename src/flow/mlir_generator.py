@@ -4504,6 +4504,41 @@ class MLIRGenerator:
             return gep, ops
 
         if isinstance(expr, ArrayAccess):
+            # `&xs[i]` and `&xs.data[i]` on a span. Both reached the spill
+            # fallback below, which loads the element and hands out the address
+            # of a fresh copy, so a callee writing through the pointer left the
+            # span untouched. The address is the pair's data pointer advanced by
+            # `i` at the span's own element type.
+            span_target = self._span_index_target(expr.array)
+            if span_target is not None:
+                span_expr, span_flow = span_target
+                ops: List[str] = []
+                span_ssa, span_ops = self.generate_expression(span_expr)
+                ops.extend(span_ops)
+                index_ssa, index_ops = self.generate_expression(expr.index)
+                ops.extend(index_ops)
+                index_type = self._ssa_types.get(index_ssa, "i32")
+                if isinstance(expr.index, Variable) and expr.index.name in self.symbol_table:
+                    index_type = self.symbol_table[expr.index.name].get(
+                        "mlir_type", index_type
+                    )
+                data_ptr = f"%{self.function_counter}"
+                self.function_counter += 1
+                ops.append(
+                    f"{self.indent()}{data_ptr} = llvm.extractvalue {span_ssa}[0] "
+                    f": {self._span_mlir_type()}"
+                )
+                self._ssa_types[data_ptr] = "!llvm.ptr"
+                elem_type = self.flow_type_to_mlir(
+                    self._span_element_flow_type(span_flow)
+                )
+                gep, gep_ops = self._emit_ptr_index_gep(
+                    data_ptr, index_ssa, index_type, elem_type
+                )
+                ops.extend(gep_ops)
+                self._ssa_types[gep] = "!llvm.ptr"
+                return gep, ops
+
             arr_ty = self._flow_type_of_expr(expr.array)
             index_ssa, index_ops = self.generate_expression(expr.index)
             index_type = self._ssa_types.get(index_ssa, "i32")
@@ -5042,6 +5077,23 @@ class MLIRGenerator:
             flow_type is not None
             and is_span_type_name(getattr(flow_type, "name", ""))
         )
+
+    def _span_index_target(self, expr) -> Optional[tuple]:
+        """Resolve what `expr[i]` indexes when it is a span.
+
+        Returns the expression holding the pair and its flow type, for `xs`
+        itself and for `xs.data`, or None when neither applies. A `.data` field
+        on a declared struct that happens to share the name is not a span, so
+        the span type check decides rather than the field name.
+        """
+        flow_type = self._flow_type_of_expr(expr)
+        if self._is_span_flow_type(flow_type):
+            return expr, flow_type
+        if isinstance(expr, FieldAccess) and expr.field == "data":
+            parent = self._flow_type_of_expr(expr.object)
+            if self._is_span_flow_type(parent):
+                return expr.object, parent
+        return None
 
     def _span_element_flow_type(self, flow_type: Type) -> Type:
         elem = getattr(flow_type, "element_type", None)
