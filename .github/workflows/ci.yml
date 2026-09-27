@@ -532,6 +532,11 @@ jobs:
 
       - uses: ./.github/actions/setup-python
 
+      # The parser hands DSL and flow-block expansion to flowc. Build it
+      # first, or the first such input spends the per-input timeout in cc.
+      - name: Build flowc from the bootstrap C
+        run: bash compiler/scripts/ensure_flowc.sh
+
       - name: Fuzz targets (30s each, fails only on new crash classes)
         env:
           PYTHONPATH: src
