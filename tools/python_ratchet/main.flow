@@ -27,7 +27,6 @@ extern {
     function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i32
     function fwrite(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i32
     function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
-    function puts(s: string) -> i32
 }
 
 const BASELINE: string = "tools/python_ratchet/baseline.txt"
@@ -35,11 +34,6 @@ const CURRENT: string = "build/python-ratchet/current.txt"
 const MODE_FILE: string = "build/python-ratchet/mode.txt"
 const READ_CAP: i32 = 4194304
 const MAX_LINES: i32 = 65536
-
-# Stage-A println formats any non-literal string with %d, so print through puts.
-function say(s: string) -> void {
-    let _r: i32 = puts(s)
-}
 
 function i32_str(n: i32) -> string {
     let buf: ptr<i8> = malloc(48) as ptr<i8>
@@ -171,7 +165,7 @@ function main() -> i32 {
     let base_text: string = read_whole_file(BASELINE)
     let cur_text: string = read_whole_file(CURRENT)
     if strlen(base_text) == 0 {
-        say("python-ratchet: cannot read " + BASELINE)
+        println("python-ratchet: cannot read " + BASELINE)
         return 2
     }
 
@@ -183,7 +177,7 @@ function main() -> i32 {
     # First baseline line is "total <lines>". The rest is the sorted file list.
     let header: string = line_at(base_text, base_starts[0])
     if starts_with(header, "total ") == false {
-        say("python-ratchet: first line of " + BASELINE + " must be 'total <lines>'")
+        println("python-ratchet: first line of " + BASELINE + " must be 'total <lines>'")
         return 2
     }
     let hp: ptr<u8> = header as ptr<u8>
@@ -223,7 +217,7 @@ function main() -> i32 {
                 gone_files = gone_files + 1
                 bi = bi + 1
             } else {
-                say("  new Python file: " + line_at(cur_text, cur_starts[ci]))
+                println("  new Python file: " + line_at(cur_text, cur_starts[ci]))
                 new_files = new_files + 1
                 ci = ci + 1
             }
@@ -238,7 +232,7 @@ function main() -> i32 {
     }
 
     let msg: string = "python-ratchet: " + i32_str(cur_n) + " Python files, " + i32_str(total) + " lines (limit " + i32_str(allowed_total) + ")"
-    say(msg)
+    println(msg)
 
     if update {
         let mut new_total: i32 = allowed_total
@@ -247,13 +241,13 @@ function main() -> i32 {
         }
         let body: string = "total " + i32_str(new_total) + "\n" + kept
         if write_whole_file(BASELINE, body) != 0 {
-            say("python-ratchet: cannot write " + BASELINE)
+            println("python-ratchet: cannot write " + BASELINE)
             return 2
         }
         let msg: string = "python-ratchet: baseline tightened, dropped " + i32_str(gone_files) + " files, limit now " + i32_str(new_total)
-        say(msg)
+        println(msg)
         if new_files > 0 {
-            say("python-ratchet: the new files above were not added. Write them in Flow.")
+            println("python-ratchet: the new files above were not added. Write them in Flow.")
             return 1
         }
         return 0
@@ -262,21 +256,21 @@ function main() -> i32 {
     let mut failed: bool = false
     if new_files > 0 {
         let msg: string = "python-ratchet: FAIL. " + i32_str(new_files) + " new Python file(s). New code is written in Flow."
-        say(msg)
+        println(msg)
         failed = true
     }
     if total > allowed_total {
         let msg: string = "python-ratchet: FAIL. Python grew by " + i32_str(total - allowed_total) + " lines. Port the change to Flow or remove Python elsewhere."
-        say(msg)
+        println(msg)
         failed = true
     }
     if gone_files > 0 or total < allowed_total {
-        say("python-ratchet: Python shrank. Run scripts/python_ratchet.sh --update to lock it in.")
+        println("python-ratchet: Python shrank. Run scripts/python_ratchet.sh --update to lock it in.")
     }
     if failed {
-        say("python-ratchet: see AGENTS.md, section 'Flow first'.")
+        println("python-ratchet: see AGENTS.md, section 'Flow first'.")
         return 1
     }
-    say("python-ratchet: PASS")
+    println("python-ratchet: PASS")
     return 0
 }

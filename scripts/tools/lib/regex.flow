@@ -207,8 +207,7 @@ export function rx_is_word(cp: i32) -> bool {
         return rx_in(cp, 688, 705)
     }
     if cp < 1280 {
-        let greek_punct: bool = cp == 885 or cp == 894 or cp == 900 or cp == 901 or cp == 903 or cp == 1014 or rx_in(cp, 1154, 1161)
-        return greek_punct == false
+        return not (cp == 885 or cp == 894 or cp == 900 or cp == 901 or cp == 903 or cp == 1014 or rx_in(cp, 1154, 1161))
     }
     if cp < 8192 {
         return true
@@ -217,8 +216,7 @@ export function rx_is_word(cp: i32) -> bool {
         return false
     }
     if cp < 8352 {
-        let signs: bool = rx_in(cp, 8314, 8318) or rx_in(cp, 8330, 8334)
-        return signs == false
+        return not (rx_in(cp, 8314, 8318) or rx_in(cp, 8330, 8334))
     }
     if cp < 8448 {
         return false
@@ -807,7 +805,7 @@ function rx_class_match(r: ptr<Regex>, id: i32, cp: i32) -> bool {
         }
     }
     if cg[id] != 0 {
-        return hit == false
+        return not hit
     }
     return hit
 }
