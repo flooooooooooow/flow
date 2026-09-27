@@ -1801,8 +1801,10 @@ function fb_parse_stage_params(c: ptr<Fb>, name_tok: i32, source: i32) -> i32 {
             }
             k = c[0].nx[k]
         }
+        let vs: i32 = c[0].pos
         let v: i32 = fb_parse_expr(c)
         if v < 0 { return 0 - 1 }
+        fb_wrap_top(c, v, vs)
         params = fb_list_add(c, params, fb_node2(c, N_FINIT, pt, v, 0 - 1))
         if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
             fb_advance(c)
@@ -1831,6 +1833,77 @@ function fb_tok_span_eq(c: ptr<Fb>, a: i32, b: i32) -> i32 {
     return 1
 }
 
+# A fork block `|> Rec { a = f, b = g |> h }` after its `{`: parsed for its
+# diagnostics and kept whole; it is never a flow stage.
+function fb_parse_fork(c: ptr<Fb>, t: i32, source: i32) -> i32 {
+    let mut nfields: i32 = 0
+    let first_field: i32 = c[0].pos
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        let ft: i32 = c[0].pos
+        if fb_is_ident(c, ft) == 0 {
+            fb_puts(fb_perr(c), "Expected a fork field name before '='")
+            return 0 - 1
+        }
+        fb_advance(c)
+        if fb_is_op(c, c[0].pos, OP_COLON) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `")
+            fb_put_tok(m, c, ft)
+            fb_puts(m, "  = source-pipeline`")
+            return 0 - 1
+        }
+        if fb_expect(c, "ASSIGN") < 0 { return 0 - 1 }
+        # Earlier field with the same name?
+        let mut q: i32 = first_field
+        while q < ft {
+            if fb_is_ident(c, q) == 1 and fb_is_op(c, q + 1, OP_ASSIGN) == 1 and fb_tok_span_eq(c, q, ft) == 1 and fb_fork_field_start(c, first_field, q) == 1 {
+                let m2: ptr<FbBuf> = fb_perr(c)
+                fb_puts(m2, "Duplicate fork field '")
+                fb_put_tok(m2, c, ft)
+                fb_puts(m2, "'")
+                return 0 - 1
+            }
+            q = q + 1
+        }
+        let rhs: i32 = fb_parse_or(c)
+        if rhs < 0 { return 0 - 1 }
+        let src: i32 = fb_node(c, N_OPAQUE, ft)
+        let k: i32 = c[0].nk[rhs]
+        if k != N_CALL and k != N_METHOD and k != N_VAR {
+            fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
+            return 0 - 1
+        }
+        if fb_parse_pipeline(c, src) < 0 { return 0 - 1 }
+        nfields = nfields + 1
+        if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+        }
+    }
+    if nfields == 0 {
+        fb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch")
+        return 0 - 1
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    return fb_node2(c, N_FORK, t, source, 0 - 1)
+}
+
+# Is token q the start of a fork field (the first token, or right after a
+# depth-0 comma) within the fork body that starts at `first`?
+function fb_fork_field_start(c: ptr<Fb>, first: i32, q: i32) -> i32 {
+    if q == first { return 1 }
+    let mut depth: i32 = 0
+    let mut i: i32 = first
+    let mut at_start: i32 = 1
+    while i < q {
+        if fb_is_op(c, i, OP_LPAREN) == 1 or fb_is_op(c, i, OP_LBRACKET) == 1 or fb_is_op(c, i, OP_LBRACE) == 1 { depth = depth + 1 }
+        if fb_is_op(c, i, OP_RPAREN) == 1 or fb_is_op(c, i, OP_RBRACKET) == 1 or fb_is_op(c, i, OP_RBRACE) == 1 { depth = depth - 1 }
+        at_start = 0
+        if depth == 0 and fb_is_op(c, i, OP_COMMA) == 1 { at_start = 1 }
+        i = i + 1
+    }
+    return at_start
+}
+
 function fb_parse_pipeline(c: ptr<Fb>, left0: i32) -> i32 {
     let mut left: i32 = left0
     while fb_is_op(c, c[0].pos, OP_PIPELINE) == 1 {
@@ -1856,10 +1929,8 @@ function fb_parse_pipeline(c: ptr<Fb>, left0: i32) -> i32 {
                 left = fb_parse_stage_params(c, rec, left)
                 if left < 0 { return 0 - 1 }
             } else {
-                # A fork block: kept whole, never a flow stage.
-                c[0].pos = c[0].pos - 1
-                if fb_skip_braces(c) < 0 { return 0 - 1 }
-                left = fb_node2(c, N_FORK, t, left, 0 - 1)
+                left = fb_parse_fork(c, t, left)
+                if left < 0 { return 0 - 1 }
             }
         } else {
             let rhs: i32 = fb_parse_or(c)
