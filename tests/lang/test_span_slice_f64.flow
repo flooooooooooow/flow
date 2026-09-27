@@ -1,0 +1,35 @@
+# Flow-native language test: slicing a ptr<f64> builds a span of f64 (#613).
+#
+# Slice lowering in the self-hosted compiler used to assume an int32_t
+# element, so this program failed in clang on a generated `flowc_span_int32_t`.
+# The bootstrap suite compiles it with Stage-A, which is where the defect was.
+#
+# Supersedes (behavioral parts of):
+#   tests/integration/test_flowc_span_element_type.py::test_slicing_a_double_pointer_builds_a_double_span
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+function total(v: span<f64>) -> f64 {
+    let mut acc: f64 = 0.0
+    for i in 0 to v.len as i32 {
+        acc = acc + v[i]
+    }
+    return acc
+}
+
+function main() -> i32 {
+    let raw: ptr<f64> = malloc(24)
+    raw[0] = 1.0
+    raw[1] = 2.0
+    raw[2] = 3.5
+    let sum: f64 = total(raw[0..3])
+    free(raw)
+    if sum != 6.5 {
+        return 1
+    }
+    return 0
+}

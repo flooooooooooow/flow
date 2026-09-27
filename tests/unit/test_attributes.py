@@ -9,8 +9,8 @@ The last section pins the observed behaviour of the `dbg` / `expect` / `test`
 helpers, whose coverage differs per backend. Those tests exist so the spec's
 description of them stays true; they assert what is, including the gaps.
 
-Every "it works" claim here is backed by a clang compile and a process run,
-not by string matching alone.
+Every "it works" claim here is backed by a clang compile and a process run.
+String matching alone does not count.
 """
 
 import os
@@ -131,10 +131,10 @@ function main() -> i32 {
     assert "extern inline int32_t main(void)" in c
 
 
-# test_inline_compiles_and_runs -> tests/lang/test_attributes.flow
+# test_inline_compiles_and_runs -> tests/lang/test_function_attributes.flow
 
 
-# test_exported_inline_compiles_and_runs -> tests/lang/test_attributes.flow
+# test_exported_inline_compiles_and_runs -> tests/lang/test_function_attributes.flow
 
 
 # --------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def test_noinline_emits_gnu_attribute():
     assert "static" not in " ".join(lines)
 
 
-# test_noinline_compiles_and_runs -> tests/lang/test_attributes.flow.
+# test_noinline_compiles_and_runs -> tests/lang/test_function_attributes.flow.
 # test_noinline_survives_optimization stays: test-lang compiles every
 # program with one fixed clang invocation, so it cannot ask for -O2.
 
@@ -215,7 +215,7 @@ def test_always_inline_emits_attribute_and_inline_specifier():
         ), line
 
 
-# test_always_inline_compiles_and_runs -> tests/lang/test_attributes.flow.
+# test_always_inline_compiles_and_runs -> tests/lang/test_function_attributes.flow.
 # test_always_inline_is_accepted_at_O0 stays for the same reason as the
 # -O2 case above: it needs its own clang flags.
 
@@ -311,13 +311,7 @@ function main() -> i32 {
         to_c(src)
 
 
-@needs_clang
-def test_target_compiles_and_runs():
-    """`crypto` is a real feature on arm64 and an unknown one elsewhere;
-    clang warns on unknown features rather than failing, so this compiles
-    and runs on every host. Whether the feature exists is the C compiler's
-    call, not Flow's."""
-    assert compile_and_run(TARGET_SRC) == 0
+# test_target_compiles_and_runs -> tests/lang/test_function_attributes.flow.
 
 
 # --------------------------------------------------------------------------
@@ -354,9 +348,8 @@ def test_combined_attributes_emit_both_specifiers():
     ), line
 
 
-@needs_clang
-def test_combined_attributes_compile_and_run():
-    assert compile_and_run(COMBINED_SRC) == 0
+# test_combined_attributes_compile_and_run ->
+# tests/lang/test_function_attributes.flow.
 
 
 def test_always_inline_with_target_emits_both_but_is_a_c_level_conflict():
@@ -605,7 +598,7 @@ function main() -> i32 {
 
 def test_expect_in_mlir_evaluates_but_does_not_abort():
     """MLIR backend: the condition is emitted for its side effects only. The
-    runtime abort is C-backend behaviour, not a language-wide guarantee."""
+    runtime abort is C-backend behaviour. The language does not guarantee it."""
     from flow.mlir_generator import MLIRGenerator
 
     mlir = MLIRGenerator("t.flow").generate_module(parse_flow_code(EXPECT_FAIL_SRC))

@@ -7,11 +7,6 @@ synchronous reset staging, guard memory updates), and end-to-end
 compile-and-run checks including a decaying bouncing ball.
 """
 
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 
 from flow.c_generator import flow_to_c
@@ -56,32 +51,6 @@ def parse_raw(code: str):
 def parse_lowered(code: str):
     """Parse with the default flow lowering applied."""
     return Parser(Lexer(code), source=code).parse()
-
-
-def run_flow_program(program: str, tmp_path, name: str) -> str:
-    """Transpile --strict, compile with clang, run, return stdout."""
-    src = tmp_path / f"{name}.flow"
-    src.write_text(program)
-    c_file = tmp_path / f"{name}.c"
-    exe = tmp_path / name
-    repo_root = Path(__file__).resolve().parents[2]
-
-    transpile = subprocess.run(
-        [sys.executable, "-m", "flow.transpiler", str(src), "--c",
-         "--strict", "-o", str(c_file)],
-        capture_output=True, text=True, timeout=120,
-        cwd=repo_root, env={"PYTHONPATH": str(repo_root / "src"),
-                            "PATH": "/usr/bin:/bin"},
-    )
-    assert transpile.returncode == 0, transpile.stderr
-    compile_run = subprocess.run(
-        ["clang", str(c_file), "-o", str(exe), "-lm"],
-        capture_output=True, text=True, timeout=120,
-    )
-    assert compile_run.returncode == 0, compile_run.stderr
-    run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
-    assert run.returncode == 0, run.stdout + run.stderr
-    return run.stdout
 
 
 class TestParseShapes:

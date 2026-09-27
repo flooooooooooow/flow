@@ -1,4 +1,4 @@
-"""Decorator arguments accept numbers and keywords, not only bare words.
+"""Decorator arguments accept numbers and keywords as well as bare words.
 
 `docs/language/safety-profiles.md` says every `while` under a safety profile
 must carry `@max_iterations(N)`, and the parser rejected the documented form
@@ -12,18 +12,10 @@ escape hatch. Parsing only; #592 stays open for the behaviour.
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
 import textwrap
-from pathlib import Path
-
-import pytest
 
 from flow.parser import Lexer, Parser
 from tests.unit.compiler_helpers import to_c
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse(source: str):
@@ -77,21 +69,5 @@ def test_the_bound_survives_monomorphization_and_reaches_the_c_backend():
     assert "while exceeded @max_iterations(1000)" in c
 
 
-@pytest.mark.skipif(not shutil.which("cc"), reason="needs a C compiler")
-def test_the_counter_stops_a_loop_that_exceeds_its_bound(tmp_path):
-    src = tmp_path / "bound.flow"
-    src.write_text(textwrap.dedent("""
-        function main() -> i32 {
-            let mut i: i32 = 0
-            @max_iterations(5)
-            while i < 1000000 { i = i + 1 }
-            return i
-        }
-    """))
-    run = subprocess.run(
-        ["./flow", "run", str(src)],
-        cwd=ROOT, capture_output=True, text=True,
-        env={**os.environ, "FLOW_HOST": "python"},
-    )
-    combined = run.stdout + run.stderr
-    assert "while exceeded @max_iterations(5)" in combined, combined[-2000:]
+# test_the_counter_stops_a_loop_that_exceeds_its_bound ->
+# tests/lang/test_max_iterations_abort.flow (.exitcode 134, .expected-stderr).

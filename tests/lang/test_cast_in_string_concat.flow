@@ -1,0 +1,65 @@
+# Flow-native language test: `x as T` inside a string concatenation (#577).
+#
+# A cast used to fall through expression-type inference, so
+# `"a" + (buf as string)` printed the buffer pointer with "%d". Concatenating a
+# wide numeric type used to infer a numeric result; arithmetic with no string
+# operand must still promote.
+#
+# Supersedes (behavioral parts of):
+#   tests/integration/test_cast_in_string_concat.py::test_array_cast_to_string_is_not_printed_as_a_pointer
+#   tests/integration/test_cast_in_string_concat.py::test_the_cast_content_survives_not_just_the_length
+#   tests/integration/test_cast_in_string_concat.py::test_the_documented_workaround_still_works
+#   tests/integration/test_cast_in_string_concat.py::test_arithmetic_without_a_string_still_promotes
+#
+# Not superseded: the numeric-operand concatenations ("i64=" + v and friends).
+# The Stage-A compiler passes the number to the concat helper unformatted, so
+# those checks stay host-side until it stringifies numeric operands.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let mut ov: array<u8, 6000> = []
+    let mut oi: i32 = 0
+    while oi < 5000 {
+        ov[oi] = 112
+        oi = oi + 1
+    }
+    ov[5000] = 0
+    let sql: string = "INSERT INTO t VALUES (1, '" + (ov as string) + "');"
+    if strlen(sql) != 5029 {
+        return 1
+    }
+
+    let mut buf: array<u8, 8> = []
+    buf[0] = 104
+    buf[1] = 105
+    buf[2] = 0
+    let cast: string = "cast=" + (buf as string) + "!"
+    if strcmp(cast, "cast=hi!") != 0 {
+        return 2
+    }
+
+    let mut small: array<u8, 64> = []
+    small[0] = 97
+    small[1] = 0
+    let ovs: string = small as string
+    let via: string = "via var=" + ovs + "!"
+    if strcmp(via, "via var=a!") != 0 {
+        return 3
+    }
+
+    let a: i32 = 3
+    let b: i64 = 4
+    let c: f64 = 0.5
+    if (a + b) * 2 != 14 {
+        return 4
+    }
+    if c + 1.0 != 1.5 {
+        return 5
+    }
+    return 0
+}
