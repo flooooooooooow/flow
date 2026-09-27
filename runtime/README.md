@@ -18,9 +18,9 @@ Contract is defined by `lib/stdlib/gfx.flow` and implemented for macOS in
 
 | File | Platform | Status |
 |------|----------|--------|
-| `gfx_macos.m` | macOS | **Working** — Cocoa window, software RGBA blit |
+| `gfx_macos.m` | macOS | **Working**: Cocoa window, software RGBA blit |
 | `gfx_linux.c` | Linux | **SDL2** when `<SDL2/SDL.h>` is present; otherwise stub (`-DFLOW_GFX_STUB`) |
-| `gfx_windows.c` | Windows | **SDL2 (partial)** — thin driver sharing `gfx_sdl_impl.inc` with Linux; compiles clean but not yet smoke-tested on real Windows (MSVC/clang) hardware/CI |
+| `gfx_windows.c` | Windows | **SDL2 (partial)**: thin driver sharing `gfx_sdl_impl.inc` with Linux; compiles clean but not yet smoke-tested on real Windows (MSVC/clang) hardware/CI |
 
 Both `gfx_linux.c` and `gfx_windows.c` are thin drivers that `#include`
 `gfx_sdl_impl.inc`, which holds the actual SDL2 implementation (and its
@@ -28,7 +28,7 @@ no-SDL2 stub fallback) once so the two platforms can't drift apart.
 
 Linux/Windows keycodes are mapped to the same macOS virtual codes used by
 `lib/stdlib/gfx.flow` so demos stay portable. Vulkan demos under
-`vulkan_flow_*_bridge.cpp` are a separate experimental path, not this 2D API.
+`vulkan_flow_*_bridge.cpp` are a separate experimental path outside this 2D API.
 
 See [docs/language/graphics.md](../docs/language/graphics.md).
 
@@ -36,7 +36,7 @@ See [docs/language/graphics.md](../docs/language/graphics.md).
 
 | File | Purpose |
 |------|---------|
-| `gpu_memory.h` / `gpu_metal.m` / `gpu_memory_stub.c` | First-class GPU/unified buffers (`stdlib/gpu_memory.flow`); Metal on Darwin, stub elsewhere — linked by `./flow run` |
+| `gpu_memory.h` / `gpu_metal.m` / `gpu_memory_stub.c` | First-class GPU/unified buffers (`stdlib/gpu_memory.flow`); Metal on Darwin, stub elsewhere; linked by `./flow run` |
 | `shader_view_metal.m` / `shader_host.c` | Fullscreen `shader fill` viewer for `./flow shader` |
 | `audio_*.c` / `audio_gpu_metal.m` | Audio I/O and Metal GPU audio helpers |
 | `flow_time.c` / `flow_sys_info.c` | Time / host info |
@@ -75,5 +75,5 @@ clang -O2 -DFLOW_GFX_STUB build/your_prog.c runtime/gfx_windows.c -o your_prog.e
 ```
 
 `gfx_windows.c` shares its SDL2 implementation with `gfx_linux.c` via
-`gfx_sdl_impl.inc` — it compiles clean (including the `-DFLOW_GFX_STUB` path)
+`gfx_sdl_impl.inc`. It compiles clean (including the `-DFLOW_GFX_STUB` path)
 but has not yet been smoke-tested against a real Windows toolchain/CI.

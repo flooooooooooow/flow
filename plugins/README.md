@@ -1,4 +1,4 @@
-# Flow Plugins — Schur Lattice in Native Audio
+# Flow Plugins: Schur Lattice in Native Audio
 
 Two audio plugins for macOS, built with JUCE 8: **Schur Phase** and **Phase Align**. Both are native implementations of the many-pole Schur-lattice all-pass filter that the Flow project develops across the whole stack. This is the "juce rewrite" step: what began as research math and Flow code now runs in a DAW as real VST3/AU/Standalone plugins.
 
@@ -47,10 +47,10 @@ The coefficients `k_i` are reflection coefficients obtained by **Schur step-down
 
 `SchurLatticeDSP.cpp` provides:
 
-- `designFromPoles` / `schurStepDown` — pole product to reflections, O(n) per rebuild
-- `processSample` — the cascade, per-sample modulation of `k_i`
-- `fillModulatedK` — LFO wobble with per-section phase, stereo offset
-- `computeResponse` — magnitude, wrapped phase, exact group delay, and the dry+wet comb (what the ear actually hears at a given mix) for the visualiser
+- `designFromPoles` / `schurStepDown`: pole product to reflections, O(n) per rebuild
+- `processSample`: the cascade, per-sample modulation of `k_i`
+- `fillModulatedK`: LFO wobble with per-section phase, stereo offset
+- `computeResponse`: magnitude, wrapped phase, exact group delay, and the dry+wet comb (what the ear actually hears at a given mix) for the visualiser
 
 The engine is deliberately free of JUCE dependencies. `tests/dsp_test.cpp` compiles against `SchurLatticeDSP.{h,cpp}` alone and checks the properties a production all-pass must hold:
 

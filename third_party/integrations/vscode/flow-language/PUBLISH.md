@@ -7,9 +7,9 @@ the end as an optional extra.
 
 Publisher / Open VSX namespace: **`quilio`** (matches `"publisher"` in
 `package.json`). The GitHub org for the Flow repo remains
-`flooooooooooow` — that is unrelated.
+`flooooooooooow`. That is unrelated.
 
-The recommended path is the GitHub Actions workflow — no token ever touches your
+The recommended path is the GitHub Actions workflow. No token ever touches your
 machine. Local publishing is documented too, for one-off releases.
 
 ---
@@ -24,7 +24,7 @@ builds, packages and publishes `flow-language` to Open VSX.
 1. Sign in at https://open-vsx.org with GitHub.
 2. **Sign the Eclipse Foundation Publisher Agreement** (Profile → *Publisher
    Agreement*). Publishing is rejected until this is signed, with an unhelpful
-   error — this is the step everyone gets stuck on.
+   error. This is the step everyone gets stuck on.
 3. Create a token: Profile → *Access Tokens* → **Generate New Token**.
 4. Add it to the repository as an Actions secret named `OVSX_PAT`:
 
@@ -40,9 +40,9 @@ builds, packages and publishes `flow-language` to Open VSX.
 
 The workflow triggers two ways:
 
-- **Manually** — Actions tab → *Publish VS Code extension to Open VSX* → **Run
+- **Manually**: Actions tab → *Publish VS Code extension to Open VSX* → **Run
   workflow**.
-- **On a tag** — push a tag matching `vscode-v*`:
+- **On a tag**: push a tag matching `vscode-v*`:
 
   ```bash
   git tag vscode-v0.1.3
@@ -115,7 +115,7 @@ https://marketplace.visualstudio.com/manage.
 
 **Do not build a workflow around `VSCE_PAT`.** Global Azure DevOps Personal
 Access Tokens are retired on **1 December 2026**. Use trusted publishing
-instead — GitHub Actions OIDC, no stored secret:
+instead: GitHub Actions OIDC, no stored secret.
 
 ```yaml
 permissions:

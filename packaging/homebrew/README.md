@@ -11,7 +11,7 @@ brew install flooooooooooow/flow/flow
 flow help
 ```
 
-This is a **formula** (CLI / language toolchain), not a **cask**. Casks are for
+This is a **formula** (CLI / language toolchain) rather than a **cask**. Casks are for
 GUI `.app` / binary app distributions; Flow ships as source + a `flow` driver.
 
 ## Tap repository

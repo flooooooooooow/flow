@@ -51,8 +51,8 @@ See `PUBLISH.md` (Open VSX under the `quilio` namespace).
 | FLOW: Compile Current File | `Cmd+Shift+B` |
 | FLOW: Debug Current File | `Cmd+Shift+D` |
 | FLOW: Format Current File | Format Document |
-| FLOW: Restart Language Server | — |
-| FLOW: Refresh Test Explorer | — |
+| FLOW: Restart Language Server | - |
+| FLOW: Refresh Test Explorer | - |
 
 ## Settings
 
@@ -64,5 +64,5 @@ See `PUBLISH.md` (Open VSX under the `quilio` namespace).
 
 ## Related
 
-- `flow-themes` — Flow Dark / Flow Dim
-- `flow-pack` — language + themes + CodeLLDB
+- `flow-themes`: Flow Dark / Flow Dim
+- `flow-pack`: language + themes + CodeLLDB
