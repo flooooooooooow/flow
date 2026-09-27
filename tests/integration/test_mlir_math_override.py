@@ -1,9 +1,12 @@
 import pytest
 import subprocess
 import sys
+import shutil
 import os
 
 def test_mlir_math_intrinsic_override(tmp_path):
+    if not (shutil.which("mlir-opt") and shutil.which("mlir-translate") and shutil.which("clang")):
+        pytest.skip("mlir-opt/mlir-translate/clang toolchain is not available")
     """
     Test that a user-defined function named identically to a math intrinsic
     is called correctly, instead of lowering to the math dialect.

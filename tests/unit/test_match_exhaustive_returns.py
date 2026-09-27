@@ -52,13 +52,31 @@ function main() -> i32 {
 def built(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("match")
     src = tmp / "m.flow"
+    c_out = tmp / "m.c"
     src.write_text(textwrap.dedent(SOURCE))
+    comp = subprocess.run(
+        [
+            "python3",
+            "-m",
+            "flow.transpiler",
+            str(src),
+            "--c",
+            "--lenient",
+            "-o",
+            str(c_out),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": "src"},
+    )
+    assert comp.returncode == 0, f"Transpile failed: {comp.stderr}"
     run = subprocess.run(
         ["./flow", "run", str(src)],
         cwd=ROOT, capture_output=True, text=True,
         env={**os.environ, "FLOW_HOST": "python"},
     )
-    return run, (ROOT / "build" / "m.c").read_text()
+    return run, c_out.read_text()
 
 
 def test_every_arm_still_dispatches_to_its_own_variant(built):
