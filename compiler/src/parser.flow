@@ -34,6 +34,7 @@ import .ast {
 
 extern {
     function puts(s: string) -> i32
+    function printf(fmt: string, ...) -> i32
 }
 
 export struct Parser {
@@ -41,6 +42,21 @@ export struct Parser {
     cur: Token,
     arena: AstArena,
     err: i32
+}
+
+# Say where parsing stopped, as `path:line:col: parse error at 'tok'`. A
+# keyword there is often a reserved word used as a name (#970).
+export function flowc_parser_report(p: Parser, path: string) {
+    let n: i32 = p.cur.end - p.cur.start
+    let text: ptr<u8> = p.lex.input + p.cur.start
+    if p.cur.kind == TOK_EOF {
+        printf("%s:%d:%d: parse error at end of file\n", path, p.cur.line, p.cur.col)
+        return
+    }
+    printf("%s:%d:%d: parse error at '%.*s'\n", path, p.cur.line, p.cur.col, n, text)
+    if p.cur.kind == TOK_KEYWORD {
+        printf("%s:%d:%d: note: '%.*s' is a reserved word and cannot be used as a name\n", path, p.cur.line, p.cur.col, n, text)
+    }
 }
 
 export function flowc_parser_new(input: ptr<u8>, len: i32, ast_cap: i32) -> Parser {
