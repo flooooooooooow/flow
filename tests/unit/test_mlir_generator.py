@@ -609,3 +609,36 @@ class TestMLIRGeneratorUnit:
         # Clear symbol table
         mlir_generator.symbol_table.clear()
         assert len(mlir_generator.symbol_table) == 0
+
+    def test_const_eval_int(self, mlir_generator):
+        """Test constant integer evaluation in MLIRGenerator._const_eval_int."""
+        from flow.parser import Literal, Variable, UnaryOperation, BinaryOperation, Type
+
+        # Test valid literals
+        assert mlir_generator._const_eval_int(Literal("42", Type("i32"))) == 42
+        assert mlir_generator._const_eval_int(Literal("0x10", Type("i32"))) == 16
+        assert mlir_generator._const_eval_int(Literal("true", Type("bool"))) == 1
+        assert mlir_generator._const_eval_int(Literal("false", Type("bool"))) == 0
+        assert mlir_generator._const_eval_int(Literal("null", Type("string"))) == 0
+
+        # Test variable null
+        assert mlir_generator._const_eval_int(Variable("null")) == 0
+        assert mlir_generator._const_eval_int(Variable("other")) is None
+
+        # Test invalid literal value triggering ValueError error path
+        assert mlir_generator._const_eval_int(Literal("invalid_int", Type("i32"))) is None
+        assert mlir_generator._const_eval_int(Literal("12.34", Type("f32"))) is None
+
+        # Test unary operations
+        neg_op = UnaryOperation("-", Literal("10", Type("i32")))
+        assert mlir_generator._const_eval_int(neg_op) == -10
+        not_op = UnaryOperation("!", Literal("0", Type("i32")))
+        assert mlir_generator._const_eval_int(not_op) == 1
+        bnot_op = UnaryOperation("~", Literal("0", Type("i32")))
+        assert mlir_generator._const_eval_int(bnot_op) == -1
+
+        # Test binary operations
+        add_op = BinaryOperation(Literal("10", Type("i32")), "+", Literal("20", Type("i32")))
+        assert mlir_generator._const_eval_int(add_op) == 30
+        div_zero = BinaryOperation(Literal("10", Type("i32")), "/", Literal("0", Type("i32")))
+        assert mlir_generator._const_eval_int(div_zero) is None
