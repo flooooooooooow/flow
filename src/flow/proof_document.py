@@ -1036,19 +1036,19 @@ def _euclid_book_vi_bundle() -> List[str]:
 
 EUCLID_BOOK_VI_BUNDLE: List[str] = _euclid_book_vi_bundle()
 
-# Unified proof book — continuous numbering.
+# Unified proof book with continuous numbering.
 BOOK_PARTS: List[Tuple[str, List[str]]] = [
-    ("Part I — Logic and Arithmetic", BASIC_PROOF_BUNDLE),
-    ("Part II — Data Structures", DATA_PROOF_BUNDLE),
-    ("Book I — Euclid's Elements", EUCLID_BOOK_I_BUNDLE),
-    ("Book II — Euclid's Elements", EUCLID_BOOK_II_BUNDLE),
-    ("Book III — Euclid's Elements", EUCLID_BOOK_III_BUNDLE),
-    ("Book IV — Euclid's Elements", EUCLID_BOOK_IV_BUNDLE),
-    ("Book V — Euclid's Elements", EUCLID_BOOK_V_BUNDLE),
-    ("Book VI — Euclid's Elements", EUCLID_BOOK_VI_BUNDLE),
-    ("Geometry — Derived Lemmas", GEOMETRY_DERIVED_BUNDLE),
-    ("Part III — Algebra", ALGEBRA_PROOF_BUNDLE),
-    ("Appendix — Analysis", ANALYSIS_APPENDIX),
+    ("Part I: Logic and Arithmetic", BASIC_PROOF_BUNDLE),
+    ("Part II: Data Structures", DATA_PROOF_BUNDLE),
+    ("Book I: Euclid's Elements", EUCLID_BOOK_I_BUNDLE),
+    ("Book II: Euclid's Elements", EUCLID_BOOK_II_BUNDLE),
+    ("Book III: Euclid's Elements", EUCLID_BOOK_III_BUNDLE),
+    ("Book IV: Euclid's Elements", EUCLID_BOOK_IV_BUNDLE),
+    ("Book V: Euclid's Elements", EUCLID_BOOK_V_BUNDLE),
+    ("Book VI: Euclid's Elements", EUCLID_BOOK_VI_BUNDLE),
+    ("Geometry: Derived Lemmas", GEOMETRY_DERIVED_BUNDLE),
+    ("Part III: Algebra", ALGEBRA_PROOF_BUNDLE),
+    ("Appendix: Analysis", ANALYSIS_APPENDIX),
 ]
 
 FLOW_PROOF_BOOK: List[str] = (
@@ -1387,7 +1387,7 @@ def _parse_steps(body: str) -> Tuple[List[ProofStep], str]:
 
 
 def flow_expr_to_english(expr: str) -> str:
-    """Readable mathematics — no type abbreviations or code syntax."""
+    """Readable mathematics without type abbreviations or code syntax."""
     return flow_expr_to_mathematical_english(expr)
 
 
@@ -1408,7 +1408,7 @@ def _natural_claim_sentence(thm: TheoremDoc) -> str:
             "n + 0 = n": "Adding zero on the right gives you the same number.",
             "a + b = b + a": "You can swap the order when you add.",
             "x = x": "Anything is always equal to itself.",
-            "a or b = b or a": "Order doesn't matter for or — either way you get the same truth.",
+            "a or b = b or a": "Order doesn't matter for or. Either way you get the same truth.",
             "sq >= 0": "Squaring never gives you a negative number.",
         }
         key = flow_expr_to_english(thm.claim_expr)
@@ -1654,7 +1654,7 @@ def build_tutorial_lines(
         lines.append(
             TutorialLine(
                 step_num,
-                "We split into exhaustive cases — the claim must hold in each one.",
+                "We split into exhaustive cases. The claim must hold in each one.",
             )
         )
         step_num += 1
@@ -1885,7 +1885,7 @@ def build_tutorial_lines(
 
 
 def _natural_proof_narrative(thm: TheoremDoc) -> List[str]:
-    """Legacy string list — one entry per tutorial line."""
+    """Legacy string list: one entry per tutorial line."""
     out: List[str] = []
     for tl in build_tutorial_lines(thm):
         if tl.is_goal:
@@ -1986,7 +1986,7 @@ def render_english(doc: ModuleDoc) -> str:
     for thm in doc.theorems:
         title = _facet_title(thm.claim_path, thm.meta)
         label = tier_label(thm.meta.tier or "derived")
-        parts.append(f"## {label} {thm.number} — {title}")
+        parts.append(f"## {label} {thm.number}: {title}")
         parts.append("")
         parts.extend(_render_theorem_markdown(thm, tier_index=tier_index))
         parts.append("")
@@ -2085,7 +2085,7 @@ def _english_proof_steps(thm: TheoremDoc) -> List[str]:
 
 
 def _render_math_cell_latex(tl: TutorialLine) -> str:
-    """Mathematics column — plain display math only."""
+    """Mathematics column: plain display math only."""
     if not tl.math_latex:
         return "&"
     return rf"& $\displaystyle {tl.math_latex}$"
@@ -2149,7 +2149,7 @@ def _render_theorem_latex_block(
     if book_mode:
         parts.append(
             r"\addcontentsline{toc}{subsection}{"
-            + _latex_escape(f"{tier} {thm.number} — {title}")
+            + _latex_escape(f"{tier} {thm.number}: {title}")
             + "}"
         )
     claim = try_parse_claim_address(thm.claim_path)
@@ -2388,7 +2388,7 @@ def render_side_by_side_bundle(
     book_parts: Optional[List[BookPart]] = None,
     title: str = "Flow Proof Book",
 ) -> str:
-    """LaTeX textbook tutorial — circled steps, proof | math columns."""
+    """LaTeX textbook tutorial: circled steps, proof | math columns."""
     preamble = _latex_preamble(title, title_prefix=title)
     for i, line in enumerate(preamble):
         if line.startswith(r"\title{"):

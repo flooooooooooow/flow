@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mathematical prose — every proof line reads as a mathematician would speak it.
+Mathematical prose: every proof line reads as a mathematician would speak it.
 
 No Nat, Bool, Int, bool, or symbol soup in English output.
 """
@@ -164,7 +164,7 @@ def addr_coordinate_display(addr: ClaimAddress) -> str:
 
 
 def addr_coordinate_latex(addr: ClaimAddress) -> str:
-    """Coordinate line for PDF — uses math-center dots, not Unicode middots."""
+    """Coordinate line for PDF. Uses math-center dots in place of Unicode middots."""
     carrier = carrier_mathematical(addr.carrier)
     structure = structure_coordinate_display(addr.structure)
     law = addr.law.replace("_", r"\_")
@@ -186,13 +186,13 @@ def tier_opening_mathematical(tier: str, addr: ClaimAddress) -> str:
     ctx = on_structure_carrier(addr.structure, addr.carrier)
     if t == "definition":
         return (
-            f"We stipulate {law_phrase(addr.law)} for {ctx} "
-            f"— this is a definition, not a derived fact."
+            f"We stipulate {law_phrase(addr.law)} for {ctx}. "
+            f"This is a definition rather than a derived fact."
         )
     if t == "axiom":
         return (
-            f"We accept {law_phrase(addr.law)} for {ctx} without proof "
-            f"— an ontological commitment, not a lemma."
+            f"We accept {law_phrase(addr.law)} for {ctx} without proof. "
+            f"This is an ontological commitment rather than a lemma."
         )
     return f"We prove that {law_phrase(addr.law)} for {ctx}."
 
