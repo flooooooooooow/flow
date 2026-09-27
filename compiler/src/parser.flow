@@ -1531,6 +1531,10 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         if flowc_token_is_kw(p[0].cur, KW_NULL) == 1 {
             is_expr = 1
         }
+        # Prefix keyword operators: `return not (a or b)` (#963).
+        if flowc_token_is_kw(p[0].cur, KW_NOT) == 1 or flowc_token_is_kw(p[0].cur, KW_DBG) == 1 {
+            is_expr = 1
+        }
         if is_expr == 1 {
             val = flowc_parse_expr(p)
         }
