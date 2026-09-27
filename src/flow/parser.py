@@ -331,6 +331,7 @@ class FunctionDecl:
     # Variadic is only set on extern declarations. Kept as the LAST field so
     # legacy positional FunctionDecl(...) callers stay field-stable.
     is_variadic: bool = False
+    is_forward_decl: bool = False
 
 
 @dataclass
