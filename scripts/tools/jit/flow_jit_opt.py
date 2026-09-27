@@ -13,7 +13,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from flow.mlir_optimizer import MLIROptimizer
+from flow.mlir_optimizer import MLIROptimizer, MLIRPassPipelineConfig
 
 def run_flow_jit_optimized(flow_file: str, opt_level: str = "O2"):
     """Run FLOW file with MLIR optimizations."""
@@ -39,11 +39,14 @@ def run_flow_jit_optimized(flow_file: str, opt_level: str = "O2"):
         # 2) Optimize MLIR
         opt_file = tmpdir / "out.opt.mlir"
         optimizer = MLIROptimizer()
-        opt_result = optimizer.optimize(
-            str(mlir_file), str(opt_file),
+        opt_config = MLIRPassPipelineConfig(
             enable_vectorization=True,
             enable_loop_fusion=True,
             optimization_level=opt_level
+        )
+        opt_result = optimizer.optimize(
+            str(mlir_file), str(opt_file),
+            config=opt_config
         )
         
         if opt_result != 0:

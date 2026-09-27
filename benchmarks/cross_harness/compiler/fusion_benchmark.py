@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from flow.parser import Parser, Lexer
 from flow.mlir_generator import MLIRGenerator
-from flow.mlir_optimizer import MLIROptimizer
+from flow.mlir_optimizer import MLIROptimizer, MLIRPassPipelineConfig
 
 FLOW_CODE = """
 function main() -> i32 {
@@ -46,8 +46,9 @@ def main():
     
     optimizer = MLIROptimizer()
     
+    config = MLIRPassPipelineConfig(optimization_level="O3", enable_loop_fusion=True)
     result = optimizer.optimize("fusion_benchmark_unoptimized.mlir", "fusion_benchmark_optimized.mlir", 
-                                optimization_level="O3", enable_loop_fusion=True)
+                                config=config)
                                 
     if result != 0 or not os.path.exists("fusion_benchmark_optimized.mlir"):
         print("Note: mlir-opt not found or failed, structural proof of polyhedral transformation is pending CI.")

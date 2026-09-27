@@ -5,11 +5,12 @@ These assert on pipeline strings from build_pass_pipeline() and do not
 require mlir-opt to be installed.
 """
 
-from flow.mlir_optimizer import MLIROptimizer
+from flow.mlir_optimizer import MLIROptimizer, MLIRPassPipelineConfig
 
 
 def _names(**kwargs):
-    pipeline = MLIROptimizer.build_pass_pipeline(**kwargs)
+    config = MLIRPassPipelineConfig.from_dict(kwargs)
+    pipeline = MLIROptimizer.build_pass_pipeline(config)
     return MLIROptimizer.pipeline_pass_names(pipeline), pipeline
 
 
@@ -114,9 +115,9 @@ class TestMLIROptimizerPassPipeline:
 class TestMLIROptCLIFlags:
     """CLI `--no-*` flags map onto optimizer kwargs (#166)."""
 
-    def test_kwargs_from_args_defaults(self):
+    def test_config_from_args_defaults(self):
         from types import SimpleNamespace
-        from flow.transpiler import mlir_opt_kwargs_from_args
+        from flow.transpiler import mlir_opt_config_from_args
 
         args = SimpleNamespace(
             no_vectorization=False,
@@ -130,16 +131,16 @@ class TestMLIROptCLIFlags:
             no_inline=False,
             opt_level="O2",
         )
-        kwargs = mlir_opt_kwargs_from_args(args)
-        assert kwargs["enable_vectorization"] is True
-        assert kwargs["enable_inline"] is True
-        assert kwargs["enable_sccp"] is True
-        assert kwargs["enable_loop_fusion"] is False
-        assert kwargs["optimization_level"] == "O2"
+        config = mlir_opt_config_from_args(args)
+        assert config.enable_vectorization is True
+        assert config.enable_inline is True
+        assert config.enable_sccp is True
+        assert config.enable_loop_fusion is False
+        assert config.optimization_level == "O2"
 
-    def test_kwargs_from_args_disables(self):
+    def test_config_from_args_disables(self):
         from types import SimpleNamespace
-        from flow.transpiler import mlir_opt_kwargs_from_args
+        from flow.transpiler import mlir_opt_config_from_args
 
         args = SimpleNamespace(
             no_vectorization=True,
@@ -153,8 +154,9 @@ class TestMLIROptCLIFlags:
             no_inline=True,
             opt_level="O3",
         )
-        kwargs = mlir_opt_kwargs_from_args(args)
-        names, _ = _names(**kwargs)
+        config = mlir_opt_config_from_args(args)
+        pipeline = MLIROptimizer.build_pass_pipeline(config)
+        names = MLIROptimizer.pipeline_pass_names(pipeline)
         assert "affine-super-vectorize" not in names
         assert "affine-loop-fusion" not in names
         assert "mem2reg" not in names

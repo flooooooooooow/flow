@@ -48,21 +48,29 @@ def _active_modes(args, backend: str) -> set[str]:
     return base
 
 
-def mlir_opt_kwargs_from_args(args) -> dict:
-    """Map CLI `--no-*` / `--opt-level` flags to MLIROptimizer.optimize kwargs."""
-    return {
-        "enable_vectorization": not getattr(args, "no_vectorization", False),
+from .mlir_optimizer import MLIRPassPipelineConfig
+
+
+def mlir_opt_config_from_args(args) -> MLIRPassPipelineConfig:
+    """Map CLI `--no-*` / `--opt-level` flags to MLIRPassPipelineConfig."""
+    return MLIRPassPipelineConfig(
+        enable_vectorization=not getattr(args, "no_vectorization", False),
         # loop_fusion is opt-in (--loop-fusion) since the generator emits
         # scf/cf, not affine. Default off to avoid mlir-opt hangs (flow#466).
-        "enable_loop_fusion": getattr(args, "loop_fusion", False),
-        "enable_mem2reg": not getattr(args, "no_mem2reg", False),
-        "enable_sccp": not getattr(args, "no_sccp", False),
-        "enable_licm": not getattr(args, "no_licm", False),
-        "enable_gvn": not getattr(args, "no_cse", False),
-        "enable_dce": not getattr(args, "no_dce", False),
-        "enable_inline": not getattr(args, "no_inline", False),
-        "optimization_level": getattr(args, "opt_level", "O2"),
-    }
+        enable_loop_fusion=getattr(args, "loop_fusion", False),
+        enable_mem2reg=not getattr(args, "no_mem2reg", False),
+        enable_sccp=not getattr(args, "no_sccp", False),
+        enable_licm=not getattr(args, "no_licm", False),
+        enable_gvn=not getattr(args, "no_cse", False),
+        enable_dce=not getattr(args, "no_dce", False),
+        enable_inline=not getattr(args, "no_inline", False),
+        optimization_level=getattr(args, "opt_level", "O2"),
+    )
+
+
+def mlir_opt_kwargs_from_args(args) -> dict:
+    """Map CLI `--no-*` / `--opt-level` flags to MLIROptimizer.optimize kwargs dict."""
+    return mlir_opt_config_from_args(args).__dict__
 
 
 def _function_allowed(fn: FunctionDecl, active_modes: set[str]) -> bool:
@@ -267,7 +275,7 @@ def main():
     if getattr(args, "print_pass_pipeline", False):
         from .mlir_optimizer import MLIROptimizer
 
-        print(MLIROptimizer.build_pass_pipeline(**mlir_opt_kwargs_from_args(args)))
+        print(MLIROptimizer.build_pass_pipeline(mlir_opt_config_from_args(args)))
         sys.exit(0)
 
     if not args.input:
@@ -582,11 +590,11 @@ def main():
 
                     # Optimize
                     optimizer = MLIROptimizer()
-                    opt_kwargs = mlir_opt_kwargs_from_args(args)
+                    opt_config = mlir_opt_config_from_args(args)
                     opt_result = optimizer.optimize(
                         tmp_path,
                         tmp_path,
-                        **opt_kwargs,
+                        config=opt_config,
                     )
 
                     if opt_result != 0:
@@ -600,7 +608,7 @@ def main():
                     # Generate optimization report if requested
                     if args.opt_report:
                         report = optimizer.get_optimization_report(
-                            tmp_path, **opt_kwargs
+                            tmp_path, config=opt_config
                         )
                         print(report, file=sys.stderr)
                 finally:
@@ -671,11 +679,11 @@ def main():
 
                     # Optimize
                     optimizer = MLIROptimizer()
-                    opt_kwargs = mlir_opt_kwargs_from_args(args)
+                    opt_config = mlir_opt_config_from_args(args)
                     opt_result = optimizer.optimize(
                         tmp_path,
                         tmp_path,
-                        **opt_kwargs,
+                        config=opt_config,
                     )
 
                     if opt_result != 0:

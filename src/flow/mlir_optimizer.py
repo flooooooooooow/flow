@@ -9,8 +9,33 @@ import subprocess
 import tempfile
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+
+
+@dataclass
+class MLIRPassPipelineConfig:
+    """Configuration options for building MLIR pass pipelines."""
+
+    enable_vectorization: bool = True
+    enable_loop_fusion: bool = False
+    enable_mem2reg: bool = True
+    enable_sccp: bool = True
+    enable_licm: bool = True
+    enable_gvn: bool = True
+    enable_dce: bool = True
+    enable_inline: bool = True
+    enable_loop_pipelining: bool = False
+    enable_multi_buffering: bool = False
+    optimization_level: str = "O2"
+
+    @classmethod
+    def from_dict(cls, kwargs: dict) -> "MLIRPassPipelineConfig":
+        """Construct config from dictionary or keyword arguments, ignoring unknown keys."""
+        valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys}
+        return cls(**filtered_kwargs)
 
 
 class MLIROptimizer:
@@ -44,20 +69,11 @@ class MLIROptimizer:
 
     @staticmethod
     def build_pass_pipeline(
-        enable_vectorization: bool = True,
-        enable_loop_fusion: bool = False,
-        enable_mem2reg: bool = True,
-        enable_sccp: bool = True,
-        enable_licm: bool = True,
-        enable_gvn: bool = True,
-        enable_dce: bool = True,
-        enable_inline: bool = True,
-        enable_loop_pipelining: bool = False,
-        enable_multi_buffering: bool = False,
-        optimization_level: str = "O2",
+        config: Optional[MLIRPassPipelineConfig] = None,
+        **kwargs,
     ) -> str:
         """
-        Build an mlir-opt --pass-pipeline string from flags and O-level.
+        Build an mlir-opt --pass-pipeline string from MLIRPassPipelineConfig or kwargs.
 
         Inspectable without running mlir-opt (for unit tests).
 
@@ -72,7 +88,14 @@ class MLIROptimizer:
           affine dialect operations.
         - MLIR has no standalone ``gvn`` pass; ``enable_gvn`` maps to ``cse``.
         """
-        level = optimization_level
+        if config is None:
+            config = MLIRPassPipelineConfig.from_dict(kwargs) if kwargs else MLIRPassPipelineConfig()
+        elif kwargs:
+            # If both config and kwargs provided, override config with kwargs
+            merged = {**config.__dict__, **kwargs}
+            config = MLIRPassPipelineConfig.from_dict(merged)
+
+        level = config.optimization_level
         o1_plus = level in ("O1", "O2", "O3")
         o2_plus = level in ("O2", "O3")
         o3 = level == "O3"
@@ -84,35 +107,35 @@ class MLIROptimizer:
         if o1_plus:
             func_passes.append("canonicalize")
             # enable_gvn → cse (no dedicated MLIR GVN pass)
-            if enable_gvn:
+            if config.enable_gvn:
                 func_passes.append("cse")
             
             # Tensor bufferization (value semantics -> reference semantics)
             module_prefix.append("one-shot-bufferize{bufferize-function-boundaries=1}")
 
         if o2_plus:
-            if enable_inline:
+            if config.enable_inline:
                 module_prefix.append("inline")
-            if enable_sccp:
+            if config.enable_sccp:
                 func_passes.append("sccp")
-            if enable_mem2reg:
+            if config.enable_mem2reg:
                 func_passes.append("mem2reg")
-            if enable_licm:
+            if config.enable_licm:
                 func_passes.append("loop-invariant-code-motion")
-            if enable_loop_fusion:
+            if config.enable_loop_fusion:
                 func_passes.append("affine-loop-fusion")
                 func_passes.append("linalg-fuse-elementwise-ops")
-            if enable_multi_buffering:
+            if config.enable_multi_buffering:
                 func_passes.append("test-multi-buffering{multiplier=2}")
-            if enable_loop_pipelining:
+            if config.enable_loop_pipelining:
                 func_passes.append("test-scf-pipelining")
 
-        if o3 and enable_vectorization:
+        if o3 and config.enable_vectorization:
             # Best available mlir-opt vectorize pass. Needs affine/scf loops
             # from the generator; otherwise this pass has nothing to transform.
             func_passes.append("affine-super-vectorize")
 
-        if enable_dce and o1_plus:
+        if config.enable_dce and o1_plus:
             # symbol-dce is module-scoped; follow with a canonicalize round
             module_suffix.append("symbol-dce")
             module_suffix.append("canonicalize")
@@ -196,50 +219,21 @@ class MLIROptimizer:
         return self._opt_capable
 
     def optimize(self, input_mlir: str, output_mlir: str,
-                 enable_vectorization: bool = True,
-                 enable_loop_fusion: bool = False,
-                 enable_mem2reg: bool = True,
-                 enable_sccp: bool = True,
-                 enable_licm: bool = True,
-                 enable_gvn: bool = True,
-                 enable_dce: bool = True,
-                 enable_inline: bool = True,
-                 enable_loop_pipelining: bool = False,
-                 enable_multi_buffering: bool = False,
-                 optimization_level: str = "O2") -> int:
+                 config: Optional[MLIRPassPipelineConfig] = None,
+                 **kwargs) -> int:
         """
         Apply MLIR optimization passes.
 
         Args:
             input_mlir: Path to input MLIR file
             output_mlir: Path to output MLIR file
-            enable_vectorization: Enable loop vectorization (O3; needs affine/scf)
-            enable_loop_fusion: Enable affine loop fusion (O2+; disabled by
-                default since the generator emits scf/cf, not affine. See flow#466.)
-            enable_mem2reg: Enable memory-to-register promotion (O2+)
-            enable_sccp: Enable sparse conditional constant propagation (O2+)
-            enable_licm: Enable loop invariant code motion (O2+)
-            enable_gvn: Enable CSE as GVN stand-in (O1+; no MLIR gvn pass)
-            enable_dce: Enable symbol-dce + canonicalize round (O1+)
-            enable_inline: Enable module inliner (O2+; default True)
-            optimization_level: O0, O1, O2, or O3
+            config: MLIRPassPipelineConfig object (optional)
+            **kwargs: Additional or legacy configuration keyword arguments
         
         Returns:
             Exit code of mlir-opt process
         """
-        pipeline = self.build_pass_pipeline(
-            enable_vectorization=enable_vectorization,
-            enable_loop_fusion=enable_loop_fusion,
-            enable_mem2reg=enable_mem2reg,
-            enable_sccp=enable_sccp,
-            enable_licm=enable_licm,
-            enable_gvn=enable_gvn,
-            enable_dce=enable_dce,
-            enable_inline=enable_inline,
-            enable_loop_pipelining=enable_loop_pipelining,
-            enable_multi_buffering=enable_multi_buffering,
-            optimization_level=optimization_level,
-        )
+        pipeline = self.build_pass_pipeline(config=config, **kwargs)
 
         if not self._toolchain_supports_flow_mlir():
             self._copy_if_different(input_mlir, output_mlir)
@@ -350,14 +344,16 @@ class MLIROptimizer:
         except Exception:
             return []
     
-    def get_optimization_report(self, mlir_file: str, **opt_kwargs) -> str:
+    def get_optimization_report(self, mlir_file: str,
+                                config: Optional[MLIRPassPipelineConfig] = None,
+                                **opt_kwargs) -> str:
         """Generate optimization report using the same pipeline as optimize()."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mlir', delete=False) as tmp:
             tmp.write(Path(mlir_file).read_text())
             tmp_path = tmp.name
         
         try:
-            pipeline = self.build_pass_pipeline(**opt_kwargs)
+            pipeline = self.build_pass_pipeline(config=config, **opt_kwargs)
 
             cmd = [
                 self.mlir_opt,
@@ -428,7 +424,7 @@ if __name__ == "__main__":
         if arg.startswith("--O") and arg[3:].isdigit():
             optimization_level = arg[2:]
 
-    kwargs = dict(
+    config = MLIRPassPipelineConfig(
         enable_vectorization=enable_vectorization,
         enable_loop_fusion=enable_loop_fusion,
         enable_mem2reg=enable_mem2reg,
@@ -443,11 +439,11 @@ if __name__ == "__main__":
     )
 
     if "--print-pass-pipeline" in argv:
-        print(MLIROptimizer.build_pass_pipeline(**kwargs))
+        print(MLIROptimizer.build_pass_pipeline(config))
         sys.exit(0)
 
     optimizer = MLIROptimizer()
-    result = optimizer.optimize(input_file, output_file, **kwargs)
+    result = optimizer.optimize(input_file, output_file, config=config)
     
     if result == 0:
         print(f"Optimized {input_file} -> {output_file}")
