@@ -2,7 +2,7 @@
 
 Flow ships a declarative surface for linear dynamical systems: declare a plant, choose an analysis horizon, measure controllability and stability, evolve feedback gains, and certify the closed loop.
 
-The DSL is expanded before the core parser by `src/flow/dynamics_dsl.py`. Every `flow` block on this page is compiler-checked in CI and is self-contained rather than relying on declarations from an earlier fence.
+The DSL is expanded before the core parser by flowc (`compiler/src/dynamics_dsl.flow`). Every `flow` block on this page is compiler-checked in CI and is self-contained rather than relying on declarations from an earlier fence.
 
 The command-line entry point is `flow analyze`. Larger working examples are [`examples/dynamics/ga_dsys_syntax.flow`](../../examples/dynamics/ga_dsys_syntax.flow) and [`examples/evolution/spring_mass_control.flow`](../../examples/evolution/spring_mass_control.flow).
 
