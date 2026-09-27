@@ -628,6 +628,12 @@ flow_concurrency_flags() {
     esac
     FLOW_CONC_CFLAGS=("-I$SCRIPT_DIR/runtime")
     FLOW_CONC_LDFLAGS=("-pthread")
+    # flow_rt_support.c shows its fatal-error popup through CoreFoundation
+    # on Darwin. Builds that link Cocoa get it anyway; the rest, such as
+    # test-lang, must ask for it (#953).
+    if [ "$(uname -s)" = "Darwin" ]; then
+        FLOW_CONC_LDFLAGS+=("-framework" "CoreFoundation")
+    fi
     # Probe OpenSSL once (HTTPS accept-loop / flow_tls.c).
     if [ -z "${FLOW_OPENSSL_PROBED:-}" ]; then
         FLOW_OPENSSL_PROBED=1
