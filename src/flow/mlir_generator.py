@@ -2681,13 +2681,19 @@ class MLIRGenerator:
         # We can use unrealized_conversion_cast to go from !llvm.ptr to memref
         memref_ty = f"memref<{N}x{elem}>"
         ops = []
-        if out_ops: ops.extend(out_ops)
-        if in1_ops: ops.extend(in1_ops)
-        if in2_ops: ops.extend(in2_ops)
+        if out_ops:
+            ops.extend(out_ops)
+        if in1_ops:
+            ops.extend(in1_ops)
+        if in2_ops:
+            ops.extend(in2_ops)
         
-        out_m = f"%{self.function_counter}"; self.function_counter += 1
-        in1_m = f"%{self.function_counter}"; self.function_counter += 1
-        in2_m = f"%{self.function_counter}"; self.function_counter += 1
+        out_m = f"%{self.function_counter}"
+        self.function_counter += 1
+        in1_m = f"%{self.function_counter}"
+        self.function_counter += 1
+        in2_m = f"%{self.function_counter}"
+        self.function_counter += 1
         
         ops.append(f"{self.indent()}{out_m} = builtin.unrealized_conversion_cast {out_base_ssa} : !llvm.ptr to {memref_ty}")
         ops.append(f"{self.indent()}{in1_m} = builtin.unrealized_conversion_cast {in1_base_ssa} : !llvm.ptr to {memref_ty}")
@@ -2696,21 +2702,28 @@ class MLIRGenerator:
         # Now linalg.generic
         op_mlir = ""
         if expr.operator == "+":
-            if elem == "f32": op_mlir = "arith.addf"
-            else: op_mlir = "arith.addi"
+            if elem == "f32":
+                op_mlir = "arith.addf"
+            else:
+                op_mlir = "arith.addi"
         elif expr.operator == "-":
-            if elem == "f32": op_mlir = "arith.subf"
-            else: op_mlir = "arith.subi"
+            if elem == "f32":
+                op_mlir = "arith.subf"
+            else:
+                op_mlir = "arith.subi"
         elif expr.operator == "*":
-            if elem == "f32": op_mlir = "arith.mulf"
-            else: op_mlir = "arith.muli"
+            if elem == "f32":
+                op_mlir = "arith.mulf"
+            else:
+                op_mlir = "arith.muli"
         else:
             return None
             
         ops.append(f"{self.indent()}linalg.generic {{indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = [\"parallel\"]}} ins({in1_m}, {in2_m} : {memref_ty}, {memref_ty}) outs({out_m} : {memref_ty}) {{")
         self.indent_level += 1
         ops.append(f"{self.indent()}^bb0(%in1: {elem}, %in2: {elem}, %out: {elem}):")
-        res = f"%{self.function_counter}"; self.function_counter += 1
+        res = f"%{self.function_counter}"
+        self.function_counter += 1
         ops.append(f"{self.indent()}  {res} = {op_mlir} %in1, %in2 : {elem}")
         ops.append(f"{self.indent()}  linalg.yield {res} : {elem}")
         self.indent_level -= 1
@@ -7068,7 +7081,8 @@ class MLIRGenerator:
             # Struct type: struct_MyStruct -> !flow.struct<MyStruct>
             return f"!flow.struct<{flow_type.name.replace('struct_', '')}>"
         elif flow_type.name.startswith('tensor_') or flow_type.name.startswith('tensor<'):
-            if flow_type.name.startswith('tensor<'): return flow_type.name
+            if flow_type.name.startswith('tensor<'):
+                return flow_type.name
             elem = flow_type.name.replace('tensor_', '')
             return f"tensor<?x{elem}>"
         elif flow_type.name.startswith('vec'):
