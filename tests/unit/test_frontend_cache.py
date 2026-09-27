@@ -3,7 +3,7 @@ import os
 import glob
 import shutil
 from src.flow.module_resolver import resolve_modules, ast_to_dict, dict_to_ast
-from src.flow.parser import Lexer, Parser, SourceLocation
+from src.flow.parser import Lexer, Parser
 
 
 def test_ast_json_serialization_roundtrip():
@@ -60,12 +60,12 @@ def test_incremental_compilation_cache():
         start = time.time()
         # First resolve (cache miss)
         declarations_1 = resolve_modules(test_file)
-        time_1 = time.time() - start
+        _ = time.time() - start
         
         start = time.time()
         # Second resolve (cache hit)
         declarations_2 = resolve_modules(test_file)
-        time_2 = time.time() - start
+        _ = time.time() - start
         
         assert len(declarations_1) == len(declarations_2)
         assert declarations_1[0].name == declarations_2[0].name
@@ -76,7 +76,7 @@ def test_incremental_compilation_cache():
             
         start = time.time()
         declarations_3 = resolve_modules(test_file)
-        time_3 = time.time() - start
+        _ = time.time() - start
         
         # Check that we got the new AST
         assert len(declarations_3) > 0
