@@ -224,17 +224,10 @@
         </p>
         
         <pre style="background: var(--surface); padding: 1rem; border-radius: 8px; margin-top: 1rem; overflow-x: auto;">
-<code style="background: none;">$ python3 scripts/wasm/flow_wasm.py my_program.flow -o output/
+<code style="background: none;">$ ./flow wasm my_program.flow --out output/
 
-🔄 Compiling my_program.flow to WebAssembly...
-  1. Parsing Flow source...
-  2. Generating C code...
-  3. Compiling to WebAssembly...
-  ✅ Generated my_program.wasm (XXX bytes)
-  4. Generating HTML wrapper...
-  ✅ Generated my_program.html
-
-🎉 Done! Open output/my_program.html in a browser to run.</code></pre>
+Writes .wasm + .js + a runnable index.html.
+Open output/index.html in a browser to run.</code></pre>
     </main>
     
     <footer>
