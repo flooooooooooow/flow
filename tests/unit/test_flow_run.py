@@ -26,6 +26,12 @@ function main() -> i32 {
 }
 """
 
+INVALID_SYNTAX = """
+function main( -> i32 {
+    return 0
+}
+"""
+
 
 def _run_flow(source: str, *extra_args: str) -> subprocess.CompletedProcess:
     with tempfile.NamedTemporaryFile(suffix=".flow", mode="w", delete=False) as f:
@@ -119,3 +125,43 @@ def test_run_mlir_backend_exit_code():
     assert result.returncode == 42
     # JIT prints nothing for exit codes unless asked, but standard stdout should be captured
     assert "exiting with 42" in result.stdout
+
+
+def test_run_auto_backend():
+    result = _run_flow(HELLO, "--backend=auto")
+    assert result.returncode == 0
+    assert "hello from flow" in result.stdout
+
+
+def test_run_lenient_flag():
+    result = _run_flow(HELLO, "--lenient")
+    assert result.returncode == 0
+    assert "hello from flow" in result.stdout
+
+
+def test_run_extra_cflags():
+    result = _run_flow(HELLO, "--extra-cflags=-O1")
+    assert result.returncode == 0
+    assert "hello from flow" in result.stdout
+
+
+def test_run_transpile_error():
+    result = _run_flow(INVALID_SYNTAX)
+    assert result.returncode == 1
+    assert "Transpile failed" in result.stderr
+
+
+def test_run_transpile_error_json():
+    result = _run_flow(INVALID_SYNTAX, "--json")
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["exit_code"] == 1
+    assert "transpile failed" in data.get("error", "")
+
+
+def test_run_compile_error_json():
+    result = _run_flow(HELLO, "--json", "--extra-cflags=-finvalid-option-test-flag")
+    assert result.returncode == 1
+    data = json.loads(result.stdout)
+    assert data["exit_code"] == 1
+    assert "compile failed" in data.get("error", "")
