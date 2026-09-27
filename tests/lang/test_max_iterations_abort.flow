@@ -1,0 +1,19 @@
+# Flow-native language test: @max_iterations stops a runaway loop.
+#
+# The bound must survive monomorphization and reach the C backend as a
+# counter. A loop that would run a million times is bounded at five, so the
+# program aborts with a diagnostic instead of returning. The expected code is
+# in the sibling .exitcode file and the diagnostic in .expected-stderr.
+#
+# Supersedes (behavioral parts of):
+#   tests/unit/test_decorator_arguments.py::test_the_counter_stops_a_loop_that_exceeds_its_bound
+# Exits nonzero with the bound diagnostic on stderr; anything else fails.
+
+function main() -> i32 {
+    let mut i: i32 = 0
+    @max_iterations(5)
+    while i < 1000000 {
+        i = i + 1
+    }
+    return 0
+}

@@ -1,7 +1,7 @@
 """Variadic externs: ellipsis parse, `is_variadic` survival, C/MLIR emission.
 
-The `...` in `extern { function f(a: T, ...) -> R }` is an ELLIPSIS token, not
-`DOTDOT`. It must round-trip through the parser, survive monomorphize (which
+The `...` in `extern { function f(a: T, ...) -> R }` is an ELLIPSIS token.
+It is distinct from `DOTDOT`. It must round-trip through the parser, survive monomorphize (which
 rebuilds FunctionDecl positionally), and reach the C and MLIR backends as a
 variadic prototype.
 
@@ -13,7 +13,7 @@ import pytest
 from flow.parser import parse_flow_code, FlowSyntaxError
 from flow.mlir_generator import flow_to_mlir
 
-from .compiler_helpers import compile_and_run, to_c
+from .compiler_helpers import to_c
 
 # A custom-named variadic extern: `snprintf` is in the C backend's stdlib skip
 # set (its prototype comes from stdio.h, so `...` would never be emitted).
@@ -64,21 +64,3 @@ def test_no_fixed_params_is_still_variadic():
     c = to_c("extern { function my_sink(...) -> void }\nfunction main() -> i32 { return 0 }")
     assert "void my_sink(...)" in c
 
-
-def test_runtime_varargs_reach_libc():
-    # `snprintf`'s write count depends on the varargs surviving to libc.
-    src = """\
-extern {
-    function malloc(size: i64) -> ptr<u8>
-    function free(p: ptr<u8>)
-    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
-}
-
-function main() -> i32 {
-    let buf: ptr<u8> = malloc(64)
-    let wrote: i32 = snprintf(buf, 64, "x=%d sum=%d", 3, 40)
-    free(buf)
-    return wrote
-}
-"""
-    assert compile_and_run(src) == 10

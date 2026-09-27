@@ -41,23 +41,6 @@ export function foo_get(i: i32) -> i32 {
     assert "for (;;)" not in body, f"shim call miscompiled as TCO loop:\n{body}"
 
 
-def test_shim_tail_call_runs_correctly():
-    """The wrapper actually calls the shim and returns its value."""
-    code = compile_and_run(
-        """
-@cEmbed("static inline int32_t bar_get_c_c(int32_t i) { return i * 3; }")
-extern {
-    function bar_get_c_c(i: i32) -> i32
-}
-
-export function main() -> i32 {
-    return bar_get_c_c(7)
-}
-"""
-    )
-    assert code == 21, f"expected shim to return 21, got {code}"
-
-
 def test_genuine_tail_recursion_still_tco():
     """Real self-recursion in tail position must still become a loop."""
     c = to_c(

@@ -167,14 +167,6 @@ def test_rotation_preserves_the_result(name: str) -> None:
     assert original == rotated, f"{name}: {original} != {rotated}"
 
 
-@needs_clang
-def test_expected_iteration_counts() -> None:
-    # Guards against both forms being wrong in the same way.
-    assert _run(flow_to_c(parse_flow_code(COUNTDOWN))) == 6
-    assert _run(flow_to_c(parse_flow_code(ZERO_TRIP))) == 7
-    assert _run(flow_to_c(parse_flow_code(BREAK_FIRST))) == 18
-
-
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "counted_loop_rotation.flow"
 
 

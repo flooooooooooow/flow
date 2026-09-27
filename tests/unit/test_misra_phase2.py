@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -94,15 +93,7 @@ def test_misra_scan_flags_malloc():
     assert any(f.rule == "MISRA 21.3" for f in findings)
 
 
-def test_checked_arith_smoke_runs():
-    src = (ROOT / "examples" / "basics" / "checked_arith_smoke.flow").read_text()
-    with tempfile.TemporaryDirectory() as td:
-        c_path = Path(td) / "t.c"
-        exe = Path(td) / "t"
-        c_path.write_text(flow_to_c(parse_flow_code(src)))
-        subprocess.check_call(["cc", "-O0", str(c_path), "-o", str(exe)])
-        r = subprocess.run([str(exe)], check=False)
-        assert r.returncode == 0
+# test_checked_arith_smoke_runs -> tests/lang/test_basics_smokes.flow.
 
 
 def test_show_flags_safety_implicit_error():
