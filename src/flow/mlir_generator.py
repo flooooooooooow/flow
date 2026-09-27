@@ -5875,155 +5875,128 @@ class MLIRGenerator:
             return None
         return self.generate_expression(target)
 
-    def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
-        # Indirect call through a non-capturing lambda / fn-typed local.
-        if func_call.name in self.symbol_table:
-            info = self.symbol_table[func_call.name]
-            if info.get("is_closure") and info.get("fn_mlir_type"):
-                return self._generate_closure_call(func_call, info)
+    def _generate_array_constructor_call(
+        self, func_call: FunctionCall, elem_type: str
+    ) -> tuple[str, List[str]]:
+        if len(func_call.arguments) == 1:
+            # Array with specified size: array<i32>(10)
+            size_ssa, size_ops = self.generate_expression(func_call.arguments[0])
+            ops = list(size_ops)
 
-        inlined = self._inline_trivial_accessor(func_call)
-        if inlined is not None:
-            return inlined
-
-        # Handle array<T>(...) constructors specially. The parser normalizes
-        # generic constructor names to array_T; keep the legacy spelling for
-        # direct AST producers. Never steal a real declared array_* function.
-        elem_type = None
-        if func_call.name.startswith('array<') and func_call.name.endswith('>'):
-            elem_type = func_call.name[6:-1]
-        elif func_call.name.startswith('array_') and func_call.name not in self.symbol_table:
-            elem_type = func_call.name[len('array_'):]
-
-        if elem_type is not None:
-            
-            if len(func_call.arguments) == 1:
-                # Array with specified size: array<i32>(10)
-                size_ssa, size_ops = self.generate_expression(func_call.arguments[0])
-                ops = list(size_ops)
-                
-                # Cast size to index if needed
-                size_type = self.get_expression_type(func_call.arguments[0])
-                if size_type != 'index':
-                    size_cast = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    ops.append(f"{self.indent()}{size_cast} = arith.index_cast {size_ssa} : {size_type} to index")
-                    size_ssa = size_cast
-                
-                # Allocate memref
-                array_ssa = f"%{self.function_counter}"
+            # Cast size to index if needed
+            size_type = self.get_expression_type(func_call.arguments[0])
+            if size_type != "index":
+                size_cast = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{array_ssa} = memref.alloc({size_ssa}) : memref<?x{elem_type}>")
-                self._ssa_types[array_ssa] = f"memref<?x{elem_type}>"
-                return array_ssa, ops
-            else:
-                # Array with initial values: array<i32>(1, 2, 3)
-                element_values = []
-                ops = []
-                
-                for arg in func_call.arguments:
-                    val, val_ops = self.generate_expression(arg)
-                    ops.extend(val_ops)
-                    element_values.append(val)
-                
-                size = len(element_values)
-                array_ssa = f"%{self.function_counter}"
+                ops.append(
+                    f"{self.indent()}{size_cast} = arith.index_cast {size_ssa} :"
+                    f" {size_type} to index"
+                )
+                size_ssa = size_cast
+
+            # Allocate memref
+            array_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{array_ssa} = memref.alloc({size_ssa}) :"
+                f" memref<?x{elem_type}>"
+            )
+            self._ssa_types[array_ssa] = f"memref<?x{elem_type}>"
+            return array_ssa, ops
+        else:
+            # Array with initial values: array<i32>(1, 2, 3)
+            element_values = []
+            ops = []
+
+            for arg in func_call.arguments:
+                val, val_ops = self.generate_expression(arg)
+                ops.extend(val_ops)
+                element_values.append(val)
+
+            size = len(element_values)
+            array_ssa = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{array_ssa} = memref.alloca() :"
+                f" memref<{size}x{elem_type}>"
+            )
+            self._ssa_types[array_ssa] = f"memref<{size}x{elem_type}>"
+
+            # Store each element
+            for i, element_value in enumerate(element_values):
+                index_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{array_ssa} = memref.alloca() : memref<{size}x{elem_type}>")
-                self._ssa_types[array_ssa] = f"memref<{size}x{elem_type}>"
-                
-                # Store each element
-                for i, element_value in enumerate(element_values):
-                    index_ssa = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    ops.append(f"{self.indent()}{index_ssa} = arith.constant {i} : index")
-                    ops.append(f"{self.indent()}memref.store {element_value}, {array_ssa}[{index_ssa}] : memref<{size}x{elem_type}>")
-                
-                return array_ssa, ops
-        
-        # Handle print/println intrinsics specially
-        if func_call.name in ('print', 'println'):
-            return self.generate_print_call(func_call, newline=(func_call.name == 'println'))
+                ops.append(
+                    f"{self.indent()}{index_ssa} = arith.constant {i} : index"
+                )
+                ops.append(
+                    f"{self.indent()}memref.store {element_value},"
+                    f" {array_ssa}[{index_ssa}] : memref<{size}x{elem_type}>"
+                )
 
-        # Handle printf intrinsic specially (format string + varargs)
-        if func_call.name == 'printf':
-            return self.generate_printf_call(func_call)
+            return array_ssa, ops
 
-        # dbg intrinsic: `dbg x` == `x`; evaluate the argument and yield its
-        # value. (Runtime printing is emitted by the C backend; in MLIR the
-        # operand is simply evaluated.)
-        if func_call.name == '__flow_dbg' and len(func_call.arguments) == 1:
-            return self.generate_expression(func_call.arguments[0])
-            
-        math_intrinsics = {'sin': 'math.sin', 'cos': 'math.cos', 'tan': 'math.tan',
-                           'exp': 'math.exp', 'log': 'math.log', 'sqrt': 'math.sqrt',
-                           'abs': 'math.absf', 'fabs': 'math.absf', 'tanh': 'math.tanh'}
-        is_user_defined = func_call.name in self.symbol_table
-        if func_call.name in math_intrinsics and not is_user_defined and len(func_call.arguments) == 1:
-            arg = func_call.arguments[0]
-            arg_type = self.get_expression_type(arg)
-            if arg_type in ('f32', 'f64') or arg_type.startswith('tensor<') or arg_type.startswith('vector<'):
-                arg_ssa, arg_ops = self.generate_expression(arg)
-                ops = list(arg_ops)
-                result_ssa = f"%{self.function_counter}"
-                self.function_counter += 1
-                op_name = math_intrinsics[func_call.name]
-                ops.append(f"{self.indent()}{result_ssa} = {op_name} {arg_ssa} : {arg_type}")
-                self._ssa_types[result_ssa] = arg_type
-                return result_ssa, ops
-
-        if func_call.name == 'tensor_add' and len(func_call.arguments) == 2:
-            arg0_ssa, arg0_ops = self.generate_expression(func_call.arguments[0])
-            arg1_ssa, arg1_ops = self.generate_expression(func_call.arguments[1])
-            ops = list(arg0_ops) + list(arg1_ops)
-            arg0_type = self._ssa_types.get(arg0_ssa) or self.get_expression_type(func_call.arguments[0])
-            
+    def _generate_math_intrinsic_call(
+        self, func_call: FunctionCall, math_op_name: str
+    ) -> Optional[tuple[str, List[str]]]:
+        arg = func_call.arguments[0]
+        arg_type = self.get_expression_type(arg)
+        if (
+            arg_type in ("f32", "f64")
+            or arg_type.startswith("tensor<")
+            or arg_type.startswith("vector<")
+        ):
+            arg_ssa, arg_ops = self.generate_expression(arg)
+            ops = list(arg_ops)
             result_ssa = f"%{self.function_counter}"
             self.function_counter += 1
-            ops.append(f"{self.indent()}{result_ssa} = linalg.generic {{")
-            ops.append(f"{self.indent()}  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
-            ops.append(f"{self.indent()}  iterator_types = [\"parallel\"]")
-            ops.append(f"{self.indent()}}} ins({arg1_ssa} : {arg0_type}) outs({arg0_ssa} : {arg0_type}) {{")
-            ops.append(f"{self.indent()}^bb0(%in: f32, %out: f32):")
-            add_res = f"%{self.function_counter}"
-            self.function_counter += 1
-            ops.append(f"{self.indent()}  {add_res} = arith.addf %in, %out : f32")
-            ops.append(f"{self.indent()}  linalg.yield {add_res} : f32")
-            ops.append(f"{self.indent()}}} -> {arg0_type}")
-            self._ssa_types[result_ssa] = arg0_type
+            ops.append(
+                f"{self.indent()}{result_ssa} = {math_op_name} {arg_ssa} :"
+                f" {arg_type}"
+            )
+            self._ssa_types[result_ssa] = arg_type
             return result_ssa, ops
+        return None
 
-        ssa_name = f"%{self.function_counter}"
-        self.function_counter += 1
-
-        callee = f"@{func_call.name}"
-        if func_call.name in self.symbol_table:
-            func_info = self.symbol_table[func_call.name]
-            callee = func_info.get("mlir_name") or f"@{func_call.name}"
-
-        # Resolve signature before arg codegen so tensor-returning callees can
-        # evaluate arguments last-to-first (keeps early tensor args off clobbered stack).
-        expected_arg_types = []
-        expected_flow_types: List[Type] = []
-        if func_call.name in self.symbol_table:
-            func_info = self.symbol_table[func_call.name]
-            for param in func_info.get('parameters', []):
-                expected_flow_types.append(param.type)
-                expected_arg_types.append(self._param_mlir_type(param.type))
-            if func_info.get('is_variadic'):
-                for extra in func_call.arguments[len(expected_arg_types):]:
-                    expected_arg_types.append(self.get_expression_type(extra))
-        else:
-            expected_arg_types = [self.get_expression_type(a) for a in func_call.arguments]
-
-        ret_type = 'i32'
-        if func_call.name in self.symbol_table:
-            ret_type = self.flow_type_to_mlir(self.symbol_table[func_call.name]['return_type'])
-        callee_returns_tensor = self._is_tensor_struct(ret_type)
-        callee_returns_composite = (
-            ret_type.startswith("!llvm.struct") and not callee_returns_tensor
+    def _generate_tensor_add_call(
+        self, func_call: FunctionCall
+    ) -> tuple[str, List[str]]:
+        arg0_ssa, arg0_ops = self.generate_expression(func_call.arguments[0])
+        arg1_ssa, arg1_ops = self.generate_expression(func_call.arguments[1])
+        ops = list(arg0_ops) + list(arg1_ops)
+        arg0_type = self._ssa_types.get(arg0_ssa) or self.get_expression_type(
+            func_call.arguments[0]
         )
 
+        result_ssa = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{result_ssa} = linalg.generic {{")
+        ops.append(
+            f"{self.indent()}  indexing_maps = [affine_map<(d0) -> (d0)>,"
+            " affine_map<(d0) -> (d0)>],"
+        )
+        ops.append(f'{self.indent()}  iterator_types = ["parallel"]')
+        ops.append(
+            f"{self.indent()}}} ins({arg1_ssa} : {arg0_type}) outs({arg0_ssa} :"
+            f" {arg0_type}) {{"
+        )
+        ops.append(f"{self.indent()}^bb0(%in: f32, %out: f32):")
+        add_res = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}  {add_res} = arith.addf %in, %out : f32")
+        ops.append(f"{self.indent()}  linalg.yield {add_res} : f32")
+        ops.append(f"{self.indent()}}} -> {arg0_type}")
+        self._ssa_types[result_ssa] = arg0_type
+        return result_ssa, ops
+
+    def _prepare_call_arguments(
+        self,
+        func_call: FunctionCall,
+        expected_arg_types: List[str],
+        expected_flow_types: List[Type],
+        callee_returns_tensor: bool,
+        callee_returns_composite: bool,
+    ) -> tuple[List[str], List[str]]:
         arg_indices = list(range(len(func_call.arguments)))
         if callee_returns_tensor or callee_returns_composite:
             arg_indices = list(reversed(arg_indices))
@@ -6032,7 +6005,7 @@ class MLIRGenerator:
         ops: List[str] = []
         for i in arg_indices:
             arg = func_call.arguments[i]
-            if isinstance(arg, Literal) and arg.type.name == 'string':
+            if isinstance(arg, Literal) and arg.type.name == "string":
                 str_val = arg.value
                 if str_val not in self.string_constants:
                     global_name = f"str_{self.string_counter}"
@@ -6043,7 +6016,10 @@ class MLIRGenerator:
 
                 arg_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{arg_ssa} = llvm.mlir.addressof @{global_name} : !llvm.ptr")
+                ops.append(
+                    f"{self.indent()}{arg_ssa} = llvm.mlir.addressof"
+                    f" @{global_name} : !llvm.ptr"
+                )
                 arg_values[i] = arg_ssa
             else:
                 expected_flow = (
@@ -6056,11 +6032,14 @@ class MLIRGenerator:
                 elif (
                     isinstance(arg, Variable)
                     and i < len(expected_arg_types)
-                    and expected_arg_types[i] == "!llvm.struct<(!llvm.ptr, !llvm.ptr)>"
+                    and expected_arg_types[i]
+                    == "!llvm.struct<(!llvm.ptr, !llvm.ptr)>"
                     and arg.name in self.symbol_table
                     and self.symbol_table[arg.name].get("type") == "function"
                 ):
-                    v, vops = self._emit_callback_closure(arg.name, self.symbol_table[arg.name])
+                    v, vops = self._emit_callback_closure(
+                        arg.name, self.symbol_table[arg.name]
+                    )
                 else:
                     v, vops = self.generate_expression(arg)
                 ops.extend(vops)
@@ -6071,11 +6050,15 @@ class MLIRGenerator:
         ]
 
         prepared_args = list(resolved_arg_values)
-        for i, (arg_val, expected_type) in enumerate(zip(prepared_args, expected_arg_types)):
+        for i, (arg_val, expected_type) in enumerate(
+            zip(prepared_args, expected_arg_types)
+        ):
             if expected_type.startswith("!llvm.struct") and (
                 not self._is_tensor_struct(expected_type)
             ) and (callee_returns_tensor or callee_returns_composite):
-                stable, mat_ops = self._materialize_struct_value(arg_val, expected_type)
+                stable, mat_ops = self._materialize_struct_value(
+                    arg_val, expected_type
+                )
                 ops.extend(mat_ops)
                 prepared_args[i] = stable
 
@@ -6101,29 +6084,183 @@ class MLIRGenerator:
 
         # Cast arguments if needed (width mismatches, index/i32, memref shapes)
         cast_args = []
-        for i, (arg_val, expected_type) in enumerate(zip(prepared_args, expected_arg_types)):
-            actual_type = self._ssa_types.get(arg_val) or self.get_expression_type(
-                func_call.arguments[i]
-            )
+        for i, (arg_val, expected_type) in enumerate(
+            zip(prepared_args, expected_arg_types)
+        ):
+            actual_type = self._ssa_types.get(
+                arg_val
+            ) or self.get_expression_type(func_call.arguments[i])
             if actual_type == expected_type:
                 cast_args.append(arg_val)
-            elif (actual_type, expected_type) in (('index', 'i32'), ('i32', 'index')):
+            elif (actual_type, expected_type) in (
+                ("index", "i32"),
+                ("i32", "index"),
+            ):
                 cast_arg = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{cast_arg} = arith.index_cast {arg_val} : {actual_type} to {expected_type}")
+                ops.append(
+                    f"{self.indent()}{cast_arg} = arith.index_cast {arg_val} :"
+                    f" {actual_type} to {expected_type}"
+                )
                 cast_args.append(cast_arg)
-            elif 'memref<' in actual_type and 'memref<' in expected_type:
+            elif "memref<" in actual_type and "memref<" in expected_type:
                 cast_arg = f"%{self.function_counter}"
                 self.function_counter += 1
-                ops.append(f"{self.indent()}{cast_arg} = memref.cast {arg_val} : {actual_type} to {expected_type}")
+                ops.append(
+                    f"{self.indent()}{cast_arg} = memref.cast {arg_val} :"
+                    f" {actual_type} to {expected_type}"
+                )
                 cast_args.append(cast_arg)
             elif actual_type != expected_type:
-                cast_arg, cast_ops = self._emit_cast(arg_val, actual_type, expected_type)
+                cast_arg, cast_ops = self._emit_cast(
+                    arg_val, actual_type, expected_type
+                )
                 ops.extend(cast_ops)
                 cast_args.append(cast_arg)
             else:
                 cast_args.append(arg_val)
-        
+
+        return cast_args, ops
+
+    def _post_call_variable_refresh(
+        self,
+        func_call: FunctionCall,
+        cast_args: List[str],
+        expected_arg_types: List[str],
+    ) -> List[str]:
+        ops: List[str] = []
+        for i, arg in enumerate(func_call.arguments):
+            if not isinstance(arg, Variable):
+                continue
+            var_info = self.symbol_table.get(arg.name)
+            if not var_info or "ssa_name" not in var_info:
+                continue
+            expected_type = expected_arg_types[i]
+            mlir_type = var_info.get("mlir_type") or expected_type
+            if self._is_tensor_struct(expected_type):
+                # Refresh from the call-site copy, not the variable SSA that may
+                # share the callee's aggregate return stack slot.
+                fresh, mat_ops = self._materialize_tensor_for_call(
+                    cast_args[i], mlir_type, ""
+                )
+                ops.extend(mat_ops)
+                var_info["ssa_name"] = fresh
+                self._ssa_types[fresh] = mlir_type
+                self._tensor_stable_ssas.add(fresh)
+                ops.extend(self._store_aggregate_var(var_info, fresh))
+            elif expected_type.startswith(
+                "!llvm.struct"
+            ) and not self._is_tensor_struct(expected_type):
+                fresh, mat_ops = self._stabilize_aggregate_ssa(
+                    cast_args[i], mlir_type
+                )
+                ops.extend(mat_ops)
+                var_info["ssa_name"] = fresh
+                self._ssa_types[fresh] = mlir_type
+                ops.extend(self._store_aggregate_var(var_info, fresh))
+        return ops
+
+    def generate_function_call(self, func_call: FunctionCall) -> tuple[str, List[str]]:
+        """
+        Generate MLIR for a function call.
+        """
+        # Indirect call through a non-capturing lambda / fn-typed local.
+        if func_call.name in self.symbol_table:
+            info = self.symbol_table[func_call.name]
+            if info.get("is_closure") and info.get("fn_mlir_type"):
+                return self._generate_closure_call(func_call, info)
+
+        inlined = self._inline_trivial_accessor(func_call)
+        if inlined is not None:
+            return inlined
+
+        # Handle array<T>(...) constructors specially. The parser normalizes
+        # generic constructor names to array_T; keep the legacy spelling for
+        # direct AST producers. Never steal a real declared array_* function.
+        elem_type = None
+        if func_call.name.startswith("array<") and func_call.name.endswith(">"):
+            elem_type = func_call.name[6:-1]
+        elif func_call.name.startswith("array_") and func_call.name not in self.symbol_table:
+            elem_type = func_call.name[len("array_") :]
+
+        if elem_type is not None:
+            return self._generate_array_constructor_call(func_call, elem_type)
+
+        # Handle print/println intrinsics specially
+        if func_call.name in ("print", "println"):
+            return self.generate_print_call(func_call, newline=(func_call.name == "println"))
+
+        # Handle printf intrinsic specially (format string + varargs)
+        if func_call.name == "printf":
+            return self.generate_printf_call(func_call)
+
+        # dbg intrinsic: `dbg x` == `x`; evaluate the argument and yield its
+        # value. (Runtime printing is emitted by the C backend; in MLIR the
+        # operand is simply evaluated.)
+        if func_call.name == "__flow_dbg" and len(func_call.arguments) == 1:
+            return self.generate_expression(func_call.arguments[0])
+
+        math_intrinsics = {
+            "sin": "math.sin",
+            "cos": "math.cos",
+            "tan": "math.tan",
+            "exp": "math.exp",
+            "log": "math.log",
+            "sqrt": "math.sqrt",
+            "abs": "math.absf",
+            "fabs": "math.absf",
+            "tanh": "math.tanh",
+        }
+        is_user_defined = func_call.name in self.symbol_table
+        if func_call.name in math_intrinsics and not is_user_defined and len(func_call.arguments) == 1:
+            math_res = self._generate_math_intrinsic_call(
+                func_call, math_intrinsics[func_call.name]
+            )
+            if math_res is not None:
+                return math_res
+
+        if func_call.name == "tensor_add" and len(func_call.arguments) == 2:
+            return self._generate_tensor_add_call(func_call)
+
+        ssa_name = f"%{self.function_counter}"
+        self.function_counter += 1
+
+        callee = f"@{func_call.name}"
+        if func_call.name in self.symbol_table:
+            func_info = self.symbol_table[func_call.name]
+            callee = func_info.get("mlir_name") or f"@{func_call.name}"
+
+        # Resolve signature before arg codegen so tensor-returning callees can
+        # evaluate arguments last-to-first (keeps early tensor args off clobbered stack).
+        expected_arg_types = []
+        expected_flow_types: List[Type] = []
+        if func_call.name in self.symbol_table:
+            func_info = self.symbol_table[func_call.name]
+            for param in func_info.get("parameters", []):
+                expected_flow_types.append(param.type)
+                expected_arg_types.append(self._param_mlir_type(param.type))
+            if func_info.get("is_variadic"):
+                for extra in func_call.arguments[len(expected_arg_types) :]:
+                    expected_arg_types.append(self.get_expression_type(extra))
+        else:
+            expected_arg_types = [self.get_expression_type(a) for a in func_call.arguments]
+
+        ret_type = "i32"
+        if func_call.name in self.symbol_table:
+            ret_type = self.flow_type_to_mlir(self.symbol_table[func_call.name]["return_type"])
+        callee_returns_tensor = self._is_tensor_struct(ret_type)
+        callee_returns_composite = (
+            ret_type.startswith("!llvm.struct") and not callee_returns_tensor
+        )
+
+        cast_args, ops = self._prepare_call_arguments(
+            func_call,
+            expected_arg_types,
+            expected_flow_types,
+            callee_returns_tensor,
+            callee_returns_composite,
+        )
+
         # llvm.func varargs (snprintf/…) need llvm.call + vararg(callee type).
         use_llvm_call = bool(
             func_call.name in getattr(self, "_c_variadic_funcs", set())
@@ -6139,15 +6276,17 @@ class MLIRGenerator:
             for p in info.get("parameters") or []:
                 ty = self.flow_type_to_mlir(p.type)
                 fixed.append("ptr" if ty == "!llvm.ptr" else ty)
-            ret = "void" if ret_type == "()" else (
-                "ptr" if ret_type == "!llvm.ptr" else ret_type
+            ret = (
+                "void"
+                if ret_type == "()"
+                else ("ptr" if ret_type == "!llvm.ptr" else ret_type)
             )
             if fixed:
                 return f"!llvm.func<{ret} ({', '.join(fixed)}, ...)>"
             return f"!llvm.func<{ret} (...)>"
 
         # For void functions, don't assign to SSA value
-        if ret_type == '()':
+        if ret_type == "()":
             if use_llvm_call:
                 ops.append(
                     f"{self.indent()}llvm.call {callee}({', '.join(cast_args)}) "
@@ -6189,36 +6328,10 @@ class MLIRGenerator:
                 if self._is_tensor_struct(ret_type):
                     self._tensor_stable_ssas.add(ssa_name)
             if callee_returns_tensor or callee_returns_composite:
-                for i, arg in enumerate(func_call.arguments):
-                    if not isinstance(arg, Variable):
-                        continue
-                    var_info = self.symbol_table.get(arg.name)
-                    if not var_info or "ssa_name" not in var_info:
-                        continue
-                    expected_type = expected_arg_types[i]
-                    mlir_type = var_info.get("mlir_type") or expected_type
-                    if self._is_tensor_struct(expected_type):
-                        # Refresh from the call-site copy, not the variable SSA that may
-                        # share the callee's aggregate return stack slot.
-                        fresh, mat_ops = self._materialize_tensor_for_call(
-                            cast_args[i], mlir_type, ""
-                        )
-                        ops.extend(mat_ops)
-                        var_info["ssa_name"] = fresh
-                        self._ssa_types[fresh] = mlir_type
-                        self._tensor_stable_ssas.add(fresh)
-                        ops.extend(self._store_aggregate_var(var_info, fresh))
-                    elif (
-                        expected_type.startswith("!llvm.struct")
-                        and not self._is_tensor_struct(expected_type)
-                    ):
-                        fresh, mat_ops = self._stabilize_aggregate_ssa(
-                            cast_args[i], mlir_type
-                        )
-                        ops.extend(mat_ops)
-                        var_info["ssa_name"] = fresh
-                        self._ssa_types[fresh] = mlir_type
-                        ops.extend(self._store_aggregate_var(var_info, fresh))
+                refresh_ops = self._post_call_variable_refresh(
+                    func_call, cast_args, expected_arg_types
+                )
+                ops.extend(refresh_ops)
             return ssa_name, ops
     
     def generate_print_call(self, func_call: FunctionCall, *, newline: bool = False) -> tuple[str, List[str]]:
