@@ -322,6 +322,21 @@ function flowc_tc_struct_has_field(arena: AstArena, src: ptr<u8>, st: i32, fs: i
     return 0
 }
 
+function flowc_tc_is_complex_builtin(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_tc_span_is(src, start, end, "c64") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "c128") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "creal") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "cimag") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "cabs") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "carg") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "conj") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "cexp") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "clog") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "csqrt") == 1 { return 1 }
+    if flowc_tc_span_is(src, start, end, "cpow") == 1 { return 1 }
+    return 0
+}
+
 function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     # Intrinsics: println, print, puts — always available.
     if flowc_tc_span_is(ctx.src, start, end, "println") == 1 {
@@ -341,6 +356,14 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     }
     # sum(a..b step s) range sum.
     if flowc_tc_span_is(ctx.src, start, end, "sum") == 1 {
+        return 1
+    }
+    # sizeof<T>() (#952).
+    if flowc_tc_span_is(ctx.src, start, end, "sizeof") == 1 {
+        return 1
+    }
+    # Complex constructors and <complex.h> functions (#942).
+    if flowc_tc_is_complex_builtin(ctx.src, start, end) == 1 {
         return 1
     }
     if flowc_tc_span_is(ctx.src, start, end, "len") == 1 {
