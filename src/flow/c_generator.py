@@ -3835,7 +3835,7 @@ class CGenerator:
 
             # Restore previous handler
             lines.append("")
-            for effect_name in reversed(list(handler_map.keys())):
+            for effect_name in reversed(handler_map.keys()):
                 lines.append(f"{self._i()}_current_{effect_name}_handler = _prev_{effect_name}_handler;")
 
             self._indent -= 1
