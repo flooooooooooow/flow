@@ -24,6 +24,7 @@ import .effects {
     FLOWC_EFF_EFFECT, flowc_eff_collect, flowc_eff_has_fiber_cap, flowc_eff_copy_entries, flowc_eff_find,
     flowc_eff_is_effect, flowc_eff_is_cap
 }
+import .proof_lower { flowc_proof_erase }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
@@ -6191,6 +6192,7 @@ export function flowc_cgen_emit_sigs(
     if arena.nodes[root].kind != AST_PROGRAM {
         return 0 - 1
     }
+    flowc_proof_erase(arena, root)
     if flowc_ast_reject_unsupported(arena, src, "flowc cgen") != 0 {
         return 0 - 1
     }
