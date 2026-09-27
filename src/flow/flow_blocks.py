@@ -16,13 +16,15 @@ import re
 
 from .field_dsl import run_flowc_expand
 
-_HEAD_RE = re.compile(r"\bflow\s+\w+\s*\{")
+_HEAD_RE = re.compile(r"^\s*flow\s+\w+\s*\{", re.MULTILINE)
 _DIAG = "flowc flow: "
 _HINT = "flowc flow hint: "
 _AT_RE = re.compile(r"^Error: (.*) at line (\d+)(?:, column (\d+))?$", re.DOTALL)
 
 
 def has_flow_blocks(source: str) -> bool:
+    """Cheap check for a flow block at the start of a line. Parser.parse
+    still hands the source to flowc if a block it missed turns up."""
     return bool(_HEAD_RE.search(source))
 
 
@@ -31,7 +33,7 @@ def expand_flow_blocks(source: str) -> str:
     line, column and hint flowc reports."""
     from .parser import FlowSyntaxError
 
-    if not has_flow_blocks(source):
+    if "flow" not in source:
         return source
     text, log = run_flowc_expand(source, "flow")
     if log is None:

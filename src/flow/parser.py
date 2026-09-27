@@ -1897,6 +1897,8 @@ class Parser:
                 declarations.append(decl)
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
+        if expand_flows and any(isinstance(d, FlowDecl) for d in declarations):
+            return self._parse_lowered_flows()
         if self._has_fork:
             from .fork_records import desugar_forks
 
