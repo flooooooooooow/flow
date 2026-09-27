@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD,
     flowc_ast_chain_len
 }
 import .overload_table {
@@ -557,13 +557,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         # Sort DSL modifiers used as identifiers in pipe expressions.
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "descending") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "ascending") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "unique") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "adaptive") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "general") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "asc") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "desc") == 1 { return }
+        if arena.nodes[id].ival == AST_IDENT_SORT_MOD { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown idents
             # (e.g. function pointers declared in extern blocks).

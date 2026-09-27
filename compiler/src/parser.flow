@@ -27,7 +27,7 @@ import .ast {
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
-    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR,
+    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR, AST_IDENT_SORT_MOD,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push,
     flowc_ast_type_set_span_mutable
 }
@@ -1192,14 +1192,14 @@ function flowc_parse_cast(p: ptr<Parser>) -> i32 {
     return base
 }
 
-# A range bound or step inside sum(...): binds tighter than the `|` and `&`
-# that combine ranges.
+# A range bound or step inside sum(...): parses at equality precedence, like
+# the Python host, so a following `|` or `&` combines ranges.
 function flowc_parse_range_bound(p: ptr<Parser>) -> i32 {
     let lhs: i32 = flowc_parse_cast(p)
     if lhs == AST_NONE {
         return AST_NONE
     }
-    return flowc_parse_binop_rhs(p, 4, lhs)
+    return flowc_parse_binop_rhs(p, 6, lhs)
 }
 
 # At `..`: parse `..hi [step s]` and push hi and the step onto `args`. A
@@ -1265,18 +1265,19 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
     return 0 - 1
 }
 
+# Levels match the Python parser (src/flow/parser.py), loosest to tightest:
+# or, and, |, ^, &, == !=, < <= > >= in, << >>, + -, * / %.
 function flowc_parse_binop_prec(op: i32) -> i32 {
     if op == TOK_BARBAR { return 1 }
     if op == TOK_AMPAMP { return 2 }
-    if op == TOK_AMP { return 3 }
     if op == TOK_BAR { return 3 }
-    if op == TOK_CARET { return 3 }
-    if op == TOK_SHL { return 3 }
-    if op == TOK_SHR { return 3 }
-    if op == TOK_EQEQ or op == TOK_NE { return 4 }
-    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE or op == TOK_IN { return 5 }
-    if op == TOK_PLUS or op == TOK_MINUS { return 6 }
-    if op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT { return 7 }
+    if op == TOK_CARET { return 4 }
+    if op == TOK_AMP { return 5 }
+    if op == TOK_EQEQ or op == TOK_NE { return 6 }
+    if op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE or op == TOK_IN { return 7 }
+    if op == TOK_SHL or op == TOK_SHR { return 8 }
+    if op == TOK_PLUS or op == TOK_MINUS { return 9 }
+    if op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT { return 10 }
     return 0 - 1
 }
 
@@ -1343,6 +1344,7 @@ function flowc_parse_expr(p: ptr<Parser>) -> i32 {
                     }
                     p[0].arena.nodes[mnode].name_start = ms
                     p[0].arena.nodes[mnode].name_end = me
+                    p[0].arena.nodes[mnode].ival = AST_IDENT_SORT_MOD
                     mods = flowc_ast_chain_push(&p[0].arena, mods, mnode)
                     flowc_parser_advance(p)
                 }
