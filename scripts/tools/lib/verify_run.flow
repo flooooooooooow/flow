@@ -1,0 +1,386 @@
+# @module tools.verify_run
+# @means  Shared pieces of the example-sweep tools (verify_examples and
+#         triage_verify_failures): argument helpers, file discovery, the
+#         per-file transpile and clang stages, and failure-line picking.
+#
+# Discovery runs find(1) through popen, because Flow cannot list
+# directories. Each stage runs under perl's alarm() so a hung transpile is
+# stopped after the timeout, the way subprocess.run(timeout=...) stopped it
+# in the Python scripts these tools replace. Work fans out with xargs -P:
+# the tool re-runs itself as `--worker` once per file, and every worker
+# leaves its result in a file named after the file's index.
+
+import .text { ft_out, ft_err, ft_eq, ft_len, ft_starts, ft_ends, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_itoa, ft_read_file, ft_exists, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, StrList }
+import .unicode { uc_decode, uc_len, uc_is_space, uc_strip, uc_lower_str }
+import .mdtext { md_splitlines, md_collapse_ws }
+import .proc { pr_quote, pr_run, pr_capture, pr_is_dir }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: f64) -> i32
+}
+
+# getenv, with "" for an unset variable.
+export function vr_env(name: string) -> string {
+    let v: string = getenv(name)
+    if v == null {
+        return ""
+    }
+    return v
+}
+
+# Python f"{x:.1f}"; snprintf rounds the double the same way.
+export function vr_fixed1(x: f64) -> string {
+    let buf: ptr<i8> = malloc(64) as ptr<i8>
+    let _n: i32 = snprintf(buf, 64, "%.1f", x)
+    return buf as string
+}
+
+# int(s) for argparse's type=int: optional surrounding whitespace, a sign,
+# ASCII digits with single underscores between them. ok[0] is 1 on success.
+export function vr_parse_int(s: string, ok: ptr<i32>) -> i32 {
+    ok[0] = 0
+    let t: string = uc_strip(s)
+    let p: ptr<u8> = t as ptr<u8>
+    let n: i32 = ft_len(t)
+    let mut i: i32 = 0
+    let mut neg: bool = false
+    if n > 0 and (p[0] == 43 or p[0] == 45) {
+        neg = p[0] == 45
+        i = 1
+    }
+    if i >= n {
+        return 0
+    }
+    let mut v: i32 = 0
+    let mut prev_digit: bool = false
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c >= 48 and c <= 57 {
+            v = v * 10 + (c - 48)
+            prev_digit = true
+        } elif c == 95 and prev_digit and i + 1 < n {
+            prev_digit = false
+        } else {
+            return 0
+        }
+        i = i + 1
+    }
+    if prev_digit == false {
+        return 0
+    }
+    ok[0] = 1
+    if neg {
+        return 0 - v
+    }
+    return v
+}
+
+# os.cpu_count()
+export function vr_cpu_count() -> i32 {
+    let got: string = uc_strip(pr_capture("getconf _NPROCESSORS_ONLN 2>/dev/null"))
+    let ok: ptr<i32> = malloc(4) as ptr<i32>
+    let n: i32 = vr_parse_int(got, ok)
+    if ok[0] == 1 and n > 0 {
+        return n
+    }
+    return 4
+}
+
+# A root argument as pathlib would hold it: empty and "." parts dropped,
+# repeated and trailing slashes collapsed. ".." is kept, as Path keeps it.
+export function vr_norm_root(root: string) -> string {
+    let parts: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = root as ptr<u8>
+    let n: i32 = ft_len(root)
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 47 {
+            let part: string = ft_slice(root, s, i)
+            if ft_len(part) > 0 and ft_eq(part, ".") == false {
+                ft_list_push(parts, part)
+            }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    let mut joined: string = ""
+    if ft_starts(root, "/") {
+        joined = "/"
+    }
+    let mut k: i32 = 0
+    while k < ft_list_len(parts) {
+        if k > 0 {
+            joined = joined + "/"
+        }
+        joined = joined + ft_list_get(parts, k)
+        k = k + 1
+    }
+    return joined
+}
+
+function vr_has_part(rel: string, name: string) -> bool {
+    let wrapped: string = "/" + rel + "/"
+    return ft_contains(wrapped, "/" + name + "/")
+}
+
+# Path(name).suffix == ".flow"
+function vr_flow_suffix(path: string) -> bool {
+    let slash: i32 = vr_last_slash(path)
+    let base: string = ft_from(path, slash + 1)
+    return ft_ends(base, ".flow") and ft_len(base) > 5
+}
+
+function vr_last_slash(s: string) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = ft_len(s) - 1
+    while i >= 0 {
+        if p[i] == 47 {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+# sorted(set(rglob("*.flow") over each root)), as paths relative to the
+# repository root (the current directory). allow_file keeps a root that is
+# itself a .flow file; skip_third_party drops paths with a third_party part.
+export function vr_discover(roots: ptr<StrList>, allow_file: bool, skip_third_party: bool) -> ptr<StrList> {
+    let found: ptr<StrList> = ft_list_new()
+    let mut r: i32 = 0
+    while r < ft_list_len(roots) {
+        let base: string = vr_norm_root(ft_list_get(roots, r))
+        let mut dir: string = base
+        if ft_len(dir) == 0 {
+            dir = "."
+        }
+        if allow_file and pr_is_dir(dir) == false and ft_exists(dir) and vr_flow_suffix(dir) {
+            ft_list_push(found, base)
+        } elif pr_is_dir(dir) {
+            let listing: string = pr_capture("find " + pr_quote(dir) + " -mindepth 1 -name '*.flow' 2>/dev/null")
+            let lines: ptr<StrList> = ft_split_lines(listing)
+            let mut j: i32 = 0
+            while j < ft_list_len(lines) {
+                let mut path: string = ft_list_get(lines, j)
+                if ft_eq(dir, ".") and ft_starts(path, "./") {
+                    path = ft_from(path, 2)
+                }
+                if skip_third_party == false or vr_has_part(path, "third_party") == false {
+                    ft_list_push(found, path)
+                }
+                j = j + 1
+            }
+        }
+        r = r + 1
+    }
+    ft_list_sort(found)
+    let uniq: ptr<StrList> = ft_list_new()
+    let mut k: i32 = 0
+    while k < ft_list_len(found) {
+        let item: string = ft_list_get(found, k)
+        if k == 0 or ft_eq(item, ft_list_get(found, k - 1)) == false {
+            ft_list_push(uniq, item)
+        }
+        k = k + 1
+    }
+    return uniq
+}
+
+# " ".join(text.split())
+export function vr_collapse(text: string) -> string {
+    return uc_strip(md_collapse_ws(text))
+}
+
+# text[:n] counted in code points.
+export function vr_cp_prefix(text: string, n: i32) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while k < n and p[i] != 0 {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    return ft_slice(text, 0, i)
+}
+
+function vr_cp_count(text: string) -> i32 {
+    let p: ptr<u8> = text as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while p[i] != 0 {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    return k
+}
+
+# shorten(): collapse whitespace, optionally escape "|", cut to `limit`
+# code points with a "..." tail.
+export function vr_shorten(text: string, limit: i32, escape_pipe: bool) -> string {
+    let mut t: string = vr_collapse(text)
+    if escape_pipe {
+        t = ft_replace(t, "|", "\\|")
+    }
+    if vr_cp_count(t) > limit {
+        t = vr_cp_prefix(t, limit - 3) + "..."
+    }
+    return t
+}
+
+# The line categorize_transpile_failure() reports: the last line of a
+# Python traceback (tb[0] = 1), else the last line that mentions an error,
+# else the last line, else "no output".
+export function vr_pick_line(output: string, tb: ptr<i32>) -> string {
+    tb[0] = 0
+    let raw: ptr<StrList> = md_splitlines(output)
+    let lines: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(raw) {
+        let ln: string = uc_strip(ft_list_get(raw, i))
+        if ft_len(ln) > 0 {
+            ft_list_push(lines, ln)
+        }
+        i = i + 1
+    }
+    let count: i32 = ft_list_len(lines)
+    i = 0
+    while i < count {
+        if ft_starts(ft_list_get(lines, i), "Traceback (most recent call last)") {
+            tb[0] = 1
+            return ft_list_get(lines, count - 1)
+        }
+        i = i + 1
+    }
+    let mut err_line: string = ""
+    i = 0
+    while i < count {
+        let low: string = uc_lower_str(ft_list_get(lines, i))
+        if ft_contains(low, "error") or ft_contains(low, "unexpected") or ft_contains(low, "unknown") {
+            err_line = ft_list_get(lines, i)
+        }
+        i = i + 1
+    }
+    if ft_len(err_line) == 0 {
+        if count > 0 {
+            err_line = ft_list_get(lines, count - 1)
+        } else {
+            err_line = "no output"
+        }
+    }
+    return err_line
+}
+
+# Run `cmd` (already quoted) from `root` with a timeout, stdout and stderr
+# to the given files. Returns the exit code, or -1 when the timeout hit.
+export function vr_run_stage(root: string, cmd: string, timeout: i32, out_path: string, err_path: string) -> i32 {
+    if timeout <= 0 {
+        return -1
+    }
+    let full: string = "cd " + pr_quote(root) + " && exec perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' " + ft_itoa(timeout) + " " + cmd + " >" + pr_quote(out_path) + " 2>" + pr_quote(err_path)
+    let rc: i32 = pr_run(full)
+    if rc == 142 {
+        return -1
+    }
+    return rc
+}
+
+# The transpile command line for one file, as check_one() ran it.
+export function vr_transpile_cmd(root: string, flow_file: string, c_file: string) -> string {
+    let mut pypath: string = root + "/src"
+    let old: string = vr_env("PYTHONPATH")
+    if ft_len(old) > 0 {
+        pypath = pypath + ":" + old
+    }
+    let mut py: string = vr_env("VERIFY_PYTHON")
+    if ft_len(py) == 0 {
+        py = "python3"
+    }
+    return "env PYTHONPATH=" + pr_quote(pypath) + " " + pr_quote(py) + " -m flow.transpiler " + pr_quote(flow_file) + " --c --lenient -o " + pr_quote(c_file)
+}
+
+# Temp-file name check_one() used: the relative path with "/" as "-".
+export function vr_c_name(tmp: string, rel: string) -> string {
+    return tmp + "/" + ft_replace(rel, "/", "-") + ".c"
+}
+
+# Fan the workers out: `self --worker <args> <index>` for every index.
+export function vr_fan_out(self_path: string, worker_args: string, count: i32, jobs: i32) -> i32 {
+    let cmd: string = "seq 0 " + ft_itoa(count - 1) + " | xargs -P " + ft_itoa(jobs) + " -n 1 " + pr_quote(self_path) + " --worker " + worker_args
+    return pr_run(cmd)
+}
+
+# Python's usage error: usage text, "prog: error: msg", exit 2.
+export function vr_usage_error(usage: string, prog: string, msg: string) -> i32 {
+    ft_err(usage + prog + ": error: " + msg + "\n")
+    return 2
+}
+
+# argparse option lookup with unique-prefix matching. Returns the full
+# name, "" when unknown, or "?<message>" when the prefix is ambiguous.
+export function vr_resolve_opt(opts: ptr<StrList>, name: string) -> string {
+    let mut i: i32 = 0
+    while i < ft_list_len(opts) {
+        if ft_eq(ft_list_get(opts, i), name) {
+            return name
+        }
+        i = i + 1
+    }
+    let hits: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < ft_list_len(opts) {
+        if ft_starts(ft_list_get(opts, i), name) {
+            ft_list_push(hits, ft_list_get(opts, i))
+        }
+        i = i + 1
+    }
+    if ft_list_len(hits) == 1 {
+        return ft_list_get(hits, 0)
+    }
+    if ft_list_len(hits) > 1 {
+        let mut msg: string = "?ambiguous option: " + name + " could match "
+        i = 0
+        while i < ft_list_len(hits) {
+            if i > 0 {
+                msg = msg + ", "
+            }
+            msg = msg + ft_list_get(hits, i)
+            i = i + 1
+        }
+        return msg
+    }
+    return ""
+}
+
+# True when `arg` would be read by argparse as an option rather than a value.
+# A negative number (^-\d+$ or ^-\d*\.\d+$) is a value, since these parsers
+# define no options that look like one.
+export function vr_is_optlike(arg: string) -> bool {
+    if ft_starts(arg, "-") == false or ft_len(arg) < 2 {
+        return false
+    }
+    let p: ptr<u8> = arg as ptr<u8>
+    let mut i: i32 = 1
+    let mut digits: i32 = 0
+    while p[i] >= 48 and p[i] <= 57 {
+        i = i + 1
+        digits = digits + 1
+    }
+    if p[i] == 0 and digits > 0 {
+        return false
+    }
+    if p[i] == 46 {
+        i = i + 1
+        let mut frac: i32 = 0
+        while p[i] >= 48 and p[i] <= 57 {
+            i = i + 1
+            frac = frac + 1
+        }
+        if p[i] == 0 and frac > 0 {
+            return false
+        }
+    }
+    return true
+}

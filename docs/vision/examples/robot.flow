@@ -2,7 +2,7 @@
 # North-star composition example for the Helm epic "Vision: Evolution"
 # (cards: evolves-syntax, time-blocks, connect, constraints).
 # Spec: docs/vision/north-star.md. Kept under docs/ deliberately: excluded
-# from `./flow test` and scripts/verify_examples.py discovery by location.
+# from `./flow test` and scripts/verify_examples.sh discovery by location.
 
 flow Motor {
     state speed   : f64 = 0.0
