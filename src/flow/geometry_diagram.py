@@ -115,7 +115,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
                 ("B", "A", "C", "β"),
                 ("C", "B", "A", "γ"),
             ],
-            caption="Triangle ABC — the three interior angles α, β, and γ sum to two right angles.",
+            caption="Triangle ABC: the three interior angles α, β, and γ sum to two right angles.",
         ),
         "isosceles-base-angles": GeometryDiagram(
             title="Isosceles triangle",
@@ -132,7 +132,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
                 ("A", "C", "B", "ψ"),
             ],
             equal_tick_angles=[["θ", "θ"], ["φ", "ψ"]],
-            caption="Isosceles triangle with AB = AC — the base angles at B and C are equal.",
+            caption="Isosceles triangle with AB = AC: the base angles at B and C are equal.",
         ),
         "vertical-angles": GeometryDiagram(
             title="Vertical angles",
@@ -151,7 +151,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
                 ("O", "D", "A", "β′"),
             ],
             equal_tick_angles=[["α", "α′"], ["β", "β′"]],
-            caption="Intersecting lines — vertical angles α and α′ are equal, as are β and β′.",
+            caption="Intersecting lines: vertical angles α and α′ are equal, as are β and β′.",
         ),
         "right-triangle-pythagoras": GeometryDiagram(
             title="Right triangle",
@@ -166,7 +166,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
                 ("B", "A", "C", "a"),
                 ("C", "B", "A", "b"),
             ],
-            caption="Right triangle with legs a, b and hypotenuse c — c² = a² + b².",
+            caption="Right triangle with legs a, b and hypotenuse c: c² = a² + b².",
         ),
         "parallel-lines-alternate": GeometryDiagram(
             title="Parallel lines and a transversal",
@@ -189,10 +189,10 @@ def _templates() -> Dict[str, GeometryDiagram]:
                 ("Y", "S", "U", "β"),
             ],
             equal_tick_angles=[["α", "α"], ["β", "β"]],
-            caption="Parallel lines cut by a transversal — alternate interior angles are equal.",
+            caption="Parallel lines cut by a transversal: alternate interior angles are equal.",
         ),
         "triangle-congruence-sas": GeometryDiagram(
-            title="Side–angle–side congruence",
+            title="Side-angle-side congruence",
             points={
                 "A": Point("A", 90, 280),
                 "B": Point("B", 220, 280),
@@ -207,7 +207,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
                 ("D", "E", "F", "θ"),
             ],
             equal_tick_angles=[["θ", "θ"]],
-            caption="Two triangles with two sides and the included angle equal — the triangles are congruent.",
+            caption="Two triangles with two sides and the included angle equal: the triangles are congruent.",
         ),
         "thales-right-angle": GeometryDiagram(
             title="Thales' theorem",
@@ -223,7 +223,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
             angle_marks=[
                 ("C", "A", "B", "θ"),
             ],
-            caption="Angle in a semicircle — when AB is a diameter, the inscribed angle at C is a right angle.",
+            caption="Angle in a semicircle: when AB is a diameter, the inscribed angle at C is a right angle.",
         ),
         "circle-radii-equal": GeometryDiagram(
             title="Radii of a circle",
@@ -235,7 +235,7 @@ def _templates() -> Dict[str, GeometryDiagram]:
             circles=[("O", 130)],
             segments=[("O", "A"), ("O", "B")],
             equal_tick_angles=[],
-            caption="Circle with centre O — radii OA and OB are equal.",
+            caption="Circle with centre O: radii OA and OB are equal.",
         ),
         "inscribed-angle-half-central": GeometryDiagram(
             title="Inscribed and central angles",
