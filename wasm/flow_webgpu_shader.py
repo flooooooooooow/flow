@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from flow.shader_dsl import compile_shader_file, fill_names
+from flow.shader_dsl import compile_shader_file, fill_names  # noqa: E402
 
 
 def parse_size(value: str) -> tuple[int, int]:
