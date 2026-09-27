@@ -93,6 +93,19 @@ roundtrip_python() {
     exit 0
 }
 
+# --cc-only: the driver built from the checked-in bootstrap C, never the
+# Python roundtrip. flow-driver builds its helper tools (pkg_sync, the package
+# manager) with it, because `flow run` itself is part of the roundtrip and
+# must not start another one.
+if [[ "${1:-}" == "--cc-only" ]]; then
+    if [[ -f "$BOOT_C" ]] && build_bootstrap; then
+        printf '%s\n' "$BOOT_BIN"
+        exit 0
+    fi
+    echo "ensure_flowc: bootstrap C did not build" >&2
+    exit 1
+fi
+
 if pick_selfhosted >/dev/null; then
     pick_selfhosted
     exit 0

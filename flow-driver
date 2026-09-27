@@ -117,23 +117,46 @@ flow_resolve_flowc() {
     printf '%s\n' "$driver"
 }
 
-# Build the dependency-sync check (scripts/tools/pkg_sync, a Flow program) with
-# the Stage-A flowc driver and print the binary's path. Rebuilt when its source
-# or the driver changes; written under a temporary name so concurrent runs
-# never execute a half-written binary.
-flow_pkg_sync_tool() {
-    local src="$SCRIPT_DIR/scripts/tools/pkg_sync/main.flow"
-    local dir="$SCRIPT_DIR/build/tools/pkg_sync"
-    local bin="$dir/pkg_sync"
+# Build a Flow tool with the Stage-A flowc driver and print the binary's path.
+#   flow_build_flow_tool NAME ENTRY [SOURCE...]
+# The binary lands in build/tools/NAME/NAME. It is rebuilt when the entry, any
+# listed source or the driver is newer, and written under a temporary name so
+# concurrent runs never execute a half-written binary. Entries with sibling
+# imports are bundled from the repository root.
+# The compiler is the one built from the checked-in bootstrap C (or FLOWC_BIN):
+# `flow run` is part of the Python roundtrip that ensure_flowc may start, so a
+# tool build must never start one itself.
+flow_build_flow_tool() {
+    local name="$1"
+    local src="$SCRIPT_DIR/$2"
+    shift 2
+    local dir="$SCRIPT_DIR/build/tools/$name"
+    local bin="$dir/$name"
     local driver
-    driver="$(flow_resolve_flowc 2>/dev/null)" || return 1
-    if [[ -x "$bin" && ! "$src" -nt "$bin" && ! "$driver" -nt "$bin" ]]; then
+    if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
+        driver="$FLOWC_BIN"
+    else
+        driver="$(bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh" --cc-only 2>/dev/null)" || return 1
+        [[ "$driver" == /* ]] || driver="$SCRIPT_DIR/$driver"
+    fi
+    local stale=0
+    if [[ ! -x "$bin" || "$src" -nt "$bin" || "$driver" -nt "$bin" ]]; then
+        stale=1
+    fi
+    local dep
+    for dep in "$@"; do
+        if [[ "$SCRIPT_DIR/$dep" -nt "$bin" ]]; then
+            stale=1
+        fi
+    done
+    if [[ "$stale" = 0 ]]; then
         printf '%s\n' "$bin"
         return 0
     fi
     mkdir -p "$dir"
-    local tmp="$dir/pkg_sync.tmp.$$"
-    if ! FLOWC_TYPECHECK=1 FLOWC_IN="$src" FLOWC_OUT="$tmp.c" "$driver" >/dev/null 2>&1 \
+    local tmp="$dir/$name.tmp.$$"
+    if ! (cd "$SCRIPT_DIR" && FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" FLOWC_TYPECHECK=1 \
+            FLOWC_IN="$src" FLOWC_OUT="$tmp.c" "$driver") >/dev/null 2>&1 \
         || ! "${CC:-cc}" -std=c11 -D_DEFAULT_SOURCE -O2 -o "$tmp" "$tmp.c" >/dev/null 2>&1; then
         rm -f "$tmp" "$tmp.c"
         return 1
@@ -143,11 +166,33 @@ flow_pkg_sync_tool() {
     printf '%s\n' "$bin"
 }
 
+# The dependency-sync check (scripts/tools/pkg_sync), a Flow program.
+flow_pkg_sync_tool() {
+    flow_build_flow_tool pkg_sync scripts/tools/pkg_sync/main.flow
+}
+
+# The package manager (compiler/src/pkg_main.flow), a Flow program.
+flow_pkg_tool() {
+    flow_build_flow_tool flow_pkg compiler/src/pkg_main.flow \
+        compiler/src/pkg.flow compiler/src/pkg_json.flow \
+        compiler/src/semver.flow compiler/src/fileio.flow
+}
+
+# Run the Flow package manager: add, install, sync, search, info.
+flow_pkg_native() {
+    local tool
+    if ! tool="$(flow_pkg_tool)"; then
+        print_error "Could not build the package manager (compiler/src/pkg_main.flow)."
+        return 1
+    fi
+    FLOW_REPO_ROOT="$SCRIPT_DIR" "$tool" "$@"
+}
+
 # Install the dependencies of the project containing a program, if it needs
-# any. The Flow check answers the common cases (no flow.toml, no dependencies,
-# everything already installed and locked) without Python. Only a project that
-# must actually fetch something goes to the package manager in
-# src/flow/package.py, exactly as before.
+# any. The small Flow check answers the common cases (no flow.toml, no
+# dependencies, everything already installed and locked) without building the
+# package manager. A project that must fetch something goes to the package
+# manager, which installs what is missing and writes flow.lock.
 flow_sync_program() {
     local program="$1"
     local abs_program
@@ -161,12 +206,7 @@ flow_sync_program() {
             *) return "$rc" ;;
         esac
     fi
-    if ! command -v python3 >/dev/null 2>&1; then
-        print_error "$program belongs to a project whose dependencies are not installed."
-        print_info "Installing them needs python3 (python3 -m flow.package sync)."
-        return 1
-    fi
-    python3 -m flow.package sync --program "$program"
+    flow_pkg_native sync --program "$abs_program"
 }
 
 # A main.flow flowc for the FLOWC_* modes the driver.flow binaries lack
@@ -3090,7 +3130,7 @@ case "${1:-help}" in
         shift
         # FLOW_RUN_PYTHON=1 uses the shell-independent Python runner (#400).
         if [ "${FLOW_RUN_PYTHON:-0}" = "1" ]; then
-            python3 -m flow.package sync --program "${1:-}"
+            flow_sync_program "${1:-}" || exit $?
             PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.run "$@"
         else
             run_program "$@"
@@ -3098,7 +3138,11 @@ case "${1:-help}" in
         ;;
     "sync")
         shift
-        python3 -m flow.package sync "$@"
+        flow_pkg_native sync "$@"
+        ;;
+    "__pkg-tool-path")
+        # Build the package manager and print its path (used by scripts).
+        flow_pkg_tool
         ;;
     "patch")
         check_deps
@@ -3776,12 +3820,7 @@ for f in sys.argv[1:]:
     "install")
         # Install project deps when flow.toml present; else tooling.
         if [ -f "flow.toml" ] || [ "${2:-}" = "--deps" ]; then
-            python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-raise SystemExit(0 if FlowPackageManager().install() else 1)
-"
+            flow_pkg_native sync
         elif [ "${2:-}" = "--tools" ]; then
             install_deps
         else
@@ -3796,11 +3835,14 @@ raise SystemExit(0 if FlowPackageManager().install() else 1)
             print_error "Usage: flow pkg <install|add|search|info|publish|init|…>"
             exit 1
         fi
-        python3 -m flow.package "$@"
+        case "$1" in
+            add|install|sync|search|info) flow_pkg_native "$@" ;;
+            *) python3 -m flow.package "$@" ;;
+        esac
         ;;
     "search")
         shift
-        python3 -m flow.package search "$@"
+        flow_pkg_native search "$@"
         ;;
     "info")
         shift
@@ -3808,7 +3850,7 @@ raise SystemExit(0 if FlowPackageManager().install() else 1)
             print_error "Usage: flow info <package>"
             exit 1
         fi
-        python3 -m flow.package info "$@"
+        flow_pkg_native info "$@"
         ;;
     "publish")
         shift
@@ -3836,7 +3878,7 @@ raise SystemExit(0 if FlowPackageManager().install() else 1)
             print_error "Usage: flow add <package[@version]> | <git-url> | --git URL [--name NAME] [--subdir DIR] | --path DIR --name NAME"
             exit 1
         fi
-        python3 -m flow.package add "$@"
+        flow_pkg_native add "$@"
         ;;
     "build")
         python3 -m flow.package build

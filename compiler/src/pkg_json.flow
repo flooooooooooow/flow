@@ -1,0 +1,1723 @@
+# @module flowc.pkg_json
+# @means  Value tree, JSON and TOML for the package manager.
+#
+# One JDoc arena holds every value the package manager touches: flow.toml,
+# flow.lock and the registry index. Nodes are indices into parallel arrays.
+# Objects keep insertion order, like Python dicts, and the JSON writer
+# reproduces json.dumps(value, indent=2) byte for byte (ensure_ascii on).
+# The string helpers at the top (SBuf and friends) are shared with pkg.flow.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+}
+
+# ---------------------------------------------------------------------------
+# String builder
+# ---------------------------------------------------------------------------
+
+export struct SBuf {
+    data: ptr<u8>,
+    len: i32,
+    cap: i32
+}
+
+export function sb_new() -> ptr<SBuf> {
+    let b: ptr<SBuf> = malloc(24) as ptr<SBuf>
+    b[0].cap = 64
+    b[0].len = 0
+    b[0].data = malloc(64) as ptr<u8>
+    b[0].data[0] = 0
+    return b
+}
+
+function sb_reserve(b: ptr<SBuf>, extra: i32) {
+    let need: i32 = b[0].len + extra + 1
+    if need <= b[0].cap {
+        return
+    }
+    let mut nc: i32 = b[0].cap * 2
+    while nc < need {
+        nc = nc * 2
+    }
+    b[0].data = realloc(b[0].data as ptr<void>, nc as i64) as ptr<u8>
+    b[0].cap = nc
+}
+
+export function sb_putc(b: ptr<SBuf>, c: i32) {
+    sb_reserve(b, 1)
+    b[0].data[b[0].len] = c as u8
+    b[0].len = b[0].len + 1
+    b[0].data[b[0].len] = 0
+}
+
+export function sb_put_span(b: ptr<SBuf>, s: string, start: i32, end: i32) {
+    if end <= start {
+        return
+    }
+    sb_reserve(b, end - start)
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = start
+    while i < end {
+        b[0].data[b[0].len] = p[i]
+        b[0].len = b[0].len + 1
+        i = i + 1
+    }
+    b[0].data[b[0].len] = 0
+}
+
+export function sb_puts(b: ptr<SBuf>, s: string) {
+    sb_put_span(b, s, 0, strlen(s) as i32)
+}
+
+export function sb_put_int(b: ptr<SBuf>, v: i64) {
+    if v < 0 {
+        sb_putc(b, 45)
+        sb_put_int(b, 0 - v)
+        return
+    }
+    if v >= 10 {
+        sb_put_int(b, v / 10)
+    }
+    sb_putc(b, (48 + (v % 10)) as i32)
+}
+
+export function sb_put_hex4(b: ptr<SBuf>, v: i32) {
+    let digits: string = "0123456789abcdef"
+    let dp: ptr<u8> = digits as ptr<u8>
+    sb_putc(b, dp[(v / 4096) % 16] as i32)
+    sb_putc(b, dp[(v / 256) % 16] as i32)
+    sb_putc(b, dp[(v / 16) % 16] as i32)
+    sb_putc(b, dp[v % 16] as i32)
+}
+
+export function sb_str(b: ptr<SBuf>) -> string {
+    return b[0].data as string
+}
+
+# Copy of the builder's contents; the builder stays usable.
+export function sb_take(b: ptr<SBuf>) -> string {
+    return str_slice(b[0].data as string, 0, b[0].len)
+}
+
+# ---------------------------------------------------------------------------
+# String helpers
+# ---------------------------------------------------------------------------
+
+export function str_len(s: string) -> i32 {
+    return strlen(s) as i32
+}
+
+export function str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+export function str_slice(s: string, start: i32, end: i32) -> string {
+    let mut n: i32 = end - start
+    if n < 0 {
+        n = 0
+    }
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = p[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+export function str_dup(s: string) -> string {
+    return str_slice(s, 0, str_len(s))
+}
+
+export function str_cat(a: string, b: string) -> string {
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, a)
+    sb_puts(sb, b)
+    return sb_str(sb)
+}
+
+export function str_cat3(a: string, b: string, c: string) -> string {
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, a)
+    sb_puts(sb, b)
+    sb_puts(sb, c)
+    return sb_str(sb)
+}
+
+export function str_starts(s: string, prefix: string) -> bool {
+    let n: i32 = str_len(prefix)
+    if str_len(s) < n {
+        return false
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let q: ptr<u8> = prefix as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] != q[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+export function str_ends(s: string, suffix: string) -> bool {
+    let n: i32 = str_len(suffix)
+    let m: i32 = str_len(s)
+    if m < n {
+        return false
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let q: ptr<u8> = suffix as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        if p[m - n + i] != q[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Index of the first occurrence of sub in s at or after from, or -1.
+export function str_find_from(s: string, sub: string, from: i32) -> i32 {
+    let n: i32 = str_len(s)
+    let m: i32 = str_len(sub)
+    let p: ptr<u8> = s as ptr<u8>
+    let q: ptr<u8> = sub as ptr<u8>
+    let mut i: i32 = from
+    while i + m <= n {
+        let mut j: i32 = 0
+        while j < m and p[i + j] == q[j] {
+            j = j + 1
+        }
+        if j == m {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+export function str_find(s: string, sub: string) -> i32 {
+    return str_find_from(s, sub, 0)
+}
+
+export function str_contains(s: string, sub: string) -> bool {
+    return str_find(s, sub) >= 0
+}
+
+export function str_find_byte(s: string, c: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] as i32 == c {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+export function str_rfind_byte(s: string, c: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = str_len(s) - 1
+    while i >= 0 {
+        if p[i] as i32 == c {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+export function str_lower(s: string) -> string {
+    let out: string = str_dup(s)
+    let p: ptr<u8> = out as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] >= 65 and p[i] <= 90 {
+            p[i] = p[i] + 32
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# Python str.isspace for ASCII: space, \t, \n, \v, \f, \r (and 0x1c..0x1f).
+export function is_py_space(c: i32) -> bool {
+    return c == 32 or (c >= 9 and c <= 13) or (c >= 28 and c <= 31)
+}
+
+export function str_strip(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut a: i32 = 0
+    let mut b: i32 = str_len(s)
+    while a < b and is_py_space(p[a] as i32) {
+        a = a + 1
+    }
+    while b > a and is_py_space(p[b - 1] as i32) {
+        b = b - 1
+    }
+    return str_slice(s, a, b)
+}
+
+# ---------------------------------------------------------------------------
+# Value tree
+# ---------------------------------------------------------------------------
+
+export const JV_NULL: i32 = 0
+export const JV_BOOL: i32 = 1
+export const JV_INT: i32 = 2
+export const JV_FLOAT: i32 = 3
+export const JV_STR: i32 = 4
+export const JV_ARR: i32 = 5
+export const JV_OBJ: i32 = 6
+export const JV_MEM: i32 = 7
+
+# kind: JV_*; ival: bool value; sval: string, number text or member key;
+# first: first child (containers) or the value (members); next: sibling.
+export struct JDoc {
+    kind: ptr<i32>,
+    ival: ptr<i64>,
+    sval: ptr<string>,
+    first: ptr<i32>,
+    next: ptr<i32>,
+    len: i32,
+    cap: i32,
+    err: string
+}
+
+export function jd_new() -> ptr<JDoc> {
+    let d: ptr<JDoc> = malloc(64) as ptr<JDoc>
+    d[0].cap = 256
+    d[0].len = 0
+    d[0].kind = malloc(1024) as ptr<i32>
+    d[0].ival = malloc(2048) as ptr<i64>
+    d[0].sval = malloc(2048) as ptr<string>
+    d[0].first = malloc(1024) as ptr<i32>
+    d[0].next = malloc(1024) as ptr<i32>
+    d[0].err = ""
+    return d
+}
+
+export function jd_add(d: ptr<JDoc>, kind: i32, s: string, iv: i64) -> i32 {
+    if d[0].len >= d[0].cap {
+        let nc: i32 = d[0].cap * 2
+        d[0].kind = realloc(d[0].kind as ptr<void>, (nc as i64) * 4) as ptr<i32>
+        d[0].ival = realloc(d[0].ival as ptr<void>, (nc as i64) * 8) as ptr<i64>
+        d[0].sval = realloc(d[0].sval as ptr<void>, (nc as i64) * 8) as ptr<string>
+        d[0].first = realloc(d[0].first as ptr<void>, (nc as i64) * 4) as ptr<i32>
+        d[0].next = realloc(d[0].next as ptr<void>, (nc as i64) * 4) as ptr<i32>
+        d[0].cap = nc
+    }
+    let i: i32 = d[0].len
+    d[0].kind[i] = kind
+    d[0].ival[i] = iv
+    d[0].sval[i] = s
+    d[0].first[i] = -1
+    d[0].next[i] = -1
+    d[0].len = i + 1
+    return i
+}
+
+export function jd_str(d: ptr<JDoc>, s: string) -> i32 {
+    return jd_add(d, JV_STR, s, 0)
+}
+
+export function jd_obj(d: ptr<JDoc>) -> i32 {
+    return jd_add(d, JV_OBJ, "", 0)
+}
+
+export function jd_arr(d: ptr<JDoc>) -> i32 {
+    return jd_add(d, JV_ARR, "", 0)
+}
+
+export function jd_kind(d: ptr<JDoc>, v: i32) -> i32 {
+    if v < 0 {
+        return -1
+    }
+    return d[0].kind[v]
+}
+
+export function jd_sval(d: ptr<JDoc>, v: i32) -> string {
+    return d[0].sval[v]
+}
+
+export function jd_is_str(d: ptr<JDoc>, v: i32) -> bool {
+    return jd_kind(d, v) == JV_STR
+}
+
+export function jd_is_obj(d: ptr<JDoc>, v: i32) -> bool {
+    return jd_kind(d, v) == JV_OBJ
+}
+
+export function jd_first(d: ptr<JDoc>, v: i32) -> i32 {
+    return d[0].first[v]
+}
+
+export function jd_next(d: ptr<JDoc>, v: i32) -> i32 {
+    return d[0].next[v]
+}
+
+# Value of an object member node.
+export function jd_mem_val(d: ptr<JDoc>, m: i32) -> i32 {
+    return d[0].first[m]
+}
+
+export function jd_mem_key(d: ptr<JDoc>, m: i32) -> string {
+    return d[0].sval[m]
+}
+
+export function jd_append(d: ptr<JDoc>, parent: i32, child: i32) {
+    let mut c: i32 = d[0].first[parent]
+    if c < 0 {
+        d[0].first[parent] = child
+        return
+    }
+    while d[0].next[c] >= 0 {
+        c = d[0].next[c]
+    }
+    d[0].next[c] = child
+}
+
+export function jd_count(d: ptr<JDoc>, v: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut c: i32 = d[0].first[v]
+    while c >= 0 {
+        n = n + 1
+        c = d[0].next[c]
+    }
+    return n
+}
+
+# Member node for key, or -1.
+export function jd_obj_member(d: ptr<JDoc>, obj: i32, key: string) -> i32 {
+    if jd_kind(d, obj) != JV_OBJ {
+        return -1
+    }
+    let mut c: i32 = d[0].first[obj]
+    while c >= 0 {
+        if str_eq(d[0].sval[c], key) {
+            return c
+        }
+        c = d[0].next[c]
+    }
+    return -1
+}
+
+# Value for key, or -1 (Python dict.get returning None).
+export function jd_get(d: ptr<JDoc>, obj: i32, key: string) -> i32 {
+    let m: i32 = jd_obj_member(d, obj, key)
+    if m < 0 {
+        return -1
+    }
+    return d[0].first[m]
+}
+
+export function jd_has(d: ptr<JDoc>, obj: i32, key: string) -> bool {
+    return jd_obj_member(d, obj, key) >= 0
+}
+
+# obj[key] = val, keeping the key's position when it already exists.
+export function jd_set(d: ptr<JDoc>, obj: i32, key: string, val: i32) {
+    let m: i32 = jd_obj_member(d, obj, key)
+    if m >= 0 {
+        d[0].first[m] = val
+        return
+    }
+    let nm: i32 = jd_add(d, JV_MEM, key, 0)
+    d[0].first[nm] = val
+    jd_append(d, obj, nm)
+}
+
+# Shallow copy of an object (Python dict(x)); other values are shared.
+export function jd_copy_obj(d: ptr<JDoc>, obj: i32) -> i32 {
+    let out: i32 = jd_obj(d)
+    let mut c: i32 = d[0].first[obj]
+    while c >= 0 {
+        jd_set(d, out, d[0].sval[c], d[0].first[c])
+        c = d[0].next[c]
+    }
+    return out
+}
+
+# Python truthiness. A missing value (-1) is None.
+export function jd_truthy(d: ptr<JDoc>, v: i32) -> bool {
+    let k: i32 = jd_kind(d, v)
+    if k < 0 or k == JV_NULL {
+        return false
+    }
+    if k == JV_BOOL {
+        return d[0].ival[v] != 0
+    }
+    if k == JV_INT {
+        return str_eq(d[0].sval[v], "0") == false
+    }
+    if k == JV_FLOAT {
+        let p: ptr<u8> = d[0].sval[v] as ptr<u8>
+        let mut i: i32 = 0
+        while p[i] != 0 {
+            let c: i32 = p[i] as i32
+            if c >= 49 and c <= 57 {
+                return true
+            }
+            if c == 101 or c == 69 {
+                return false
+            }
+            if c == 110 or c == 105 {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+    if k == JV_STR {
+        return str_len(d[0].sval[v]) > 0
+    }
+    return d[0].first[v] >= 0
+}
+
+# ---------------------------------------------------------------------------
+# Python str() and repr()
+# ---------------------------------------------------------------------------
+
+function py_repr_str(sb: ptr<SBuf>, s: string) {
+    let mut quote: i32 = 39
+    if str_find_byte(s, 39) >= 0 and str_find_byte(s, 34) < 0 {
+        quote = 34
+    }
+    sb_putc(sb, quote)
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        let c: i32 = p[i] as i32
+        if c == quote or c == 92 {
+            sb_putc(sb, 92)
+            sb_putc(sb, c)
+        } else {
+            if c == 10 {
+                sb_puts(sb, "\\n")
+            } else {
+                if c == 13 {
+                    sb_puts(sb, "\\r")
+                } else {
+                    if c == 9 {
+                        sb_puts(sb, "\\t")
+                    } else {
+                        if c < 32 or c == 127 {
+                            sb_puts(sb, "\\x")
+                            let hx: string = "0123456789abcdef"
+                            let hp: ptr<u8> = hx as ptr<u8>
+                            sb_putc(sb, hp[c / 16] as i32)
+                            sb_putc(sb, hp[c % 16] as i32)
+                        } else {
+                            sb_putc(sb, c)
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    sb_putc(sb, quote)
+}
+
+export function jd_py_repr(d: ptr<JDoc>, v: i32, sb: ptr<SBuf>) {
+    let k: i32 = jd_kind(d, v)
+    if k == JV_STR {
+        py_repr_str(sb, d[0].sval[v])
+        return
+    }
+    if k == JV_ARR {
+        sb_putc(sb, 91)
+        let mut c: i32 = d[0].first[v]
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                sb_puts(sb, ", ")
+            }
+            first = false
+            jd_py_repr(d, c, sb)
+            c = d[0].next[c]
+        }
+        sb_putc(sb, 93)
+        return
+    }
+    if k == JV_OBJ {
+        sb_putc(sb, 123)
+        let mut c: i32 = d[0].first[v]
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                sb_puts(sb, ", ")
+            }
+            first = false
+            py_repr_str(sb, d[0].sval[c])
+            sb_puts(sb, ": ")
+            jd_py_repr(d, d[0].first[c], sb)
+            c = d[0].next[c]
+        }
+        sb_putc(sb, 125)
+        return
+    }
+    jd_py_str(d, v, sb)
+}
+
+export function jd_py_str(d: ptr<JDoc>, v: i32, sb: ptr<SBuf>) {
+    let k: i32 = jd_kind(d, v)
+    if k < 0 or k == JV_NULL {
+        sb_puts(sb, "None")
+        return
+    }
+    if k == JV_BOOL {
+        if d[0].ival[v] != 0 {
+            sb_puts(sb, "True")
+        } else {
+            sb_puts(sb, "False")
+        }
+        return
+    }
+    if k == JV_STR or k == JV_INT or k == JV_FLOAT {
+        sb_puts(sb, d[0].sval[v])
+        return
+    }
+    jd_py_repr(d, v, sb)
+}
+
+export function jd_py_str_s(d: ptr<JDoc>, v: i32) -> string {
+    let sb: ptr<SBuf> = sb_new()
+    jd_py_str(d, v, sb)
+    return sb_str(sb)
+}
+
+# FlowPackage._toml_value: the small TOML subset flow.toml specs use.
+export function jd_toml_value(d: ptr<JDoc>, v: i32, sb: ptr<SBuf>) {
+    let k: i32 = jd_kind(d, v)
+    if k == JV_OBJ {
+        sb_puts(sb, "{ ")
+        let mut c: i32 = d[0].first[v]
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                sb_puts(sb, ", ")
+            }
+            first = false
+            sb_puts(sb, d[0].sval[c])
+            sb_puts(sb, " = ")
+            jd_toml_value(d, d[0].first[c], sb)
+            c = d[0].next[c]
+        }
+        sb_puts(sb, " }")
+        return
+    }
+    if k == JV_ARR {
+        sb_putc(sb, 91)
+        let mut c: i32 = d[0].first[v]
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                sb_puts(sb, ", ")
+            }
+            first = false
+            jd_toml_value(d, c, sb)
+            c = d[0].next[c]
+        }
+        sb_putc(sb, 93)
+        return
+    }
+    if k == JV_BOOL {
+        if d[0].ival[v] != 0 {
+            sb_puts(sb, "true")
+        } else {
+            sb_puts(sb, "false")
+        }
+        return
+    }
+    sb_putc(sb, 34)
+    jd_py_str(d, v, sb)
+    sb_putc(sb, 34)
+}
+
+# ---------------------------------------------------------------------------
+# UTF-8
+# ---------------------------------------------------------------------------
+
+export function sb_put_utf8(sb: ptr<SBuf>, cp: i32) {
+    if cp < 128 {
+        sb_putc(sb, cp)
+        return
+    }
+    if cp < 2048 {
+        sb_putc(sb, 192 + cp / 64)
+        sb_putc(sb, 128 + cp % 64)
+        return
+    }
+    if cp < 65536 {
+        sb_putc(sb, 224 + cp / 4096)
+        sb_putc(sb, 128 + (cp / 64) % 64)
+        sb_putc(sb, 128 + cp % 64)
+        return
+    }
+    sb_putc(sb, 240 + cp / 262144)
+    sb_putc(sb, 128 + (cp / 4096) % 64)
+    sb_putc(sb, 128 + (cp / 64) % 64)
+    sb_putc(sb, 128 + cp % 64)
+}
+
+# ---------------------------------------------------------------------------
+# JSON
+# ---------------------------------------------------------------------------
+
+function json_ws(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut k: i32 = i
+    while k < n and (p[k] == 32 or p[k] == 9 or p[k] == 10 or p[k] == 13) {
+        k = k + 1
+    }
+    return k
+}
+
+function hex_val(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return c - 48
+    }
+    if c >= 97 and c <= 102 {
+        return c - 87
+    }
+    if c >= 65 and c <= 70 {
+        return c - 55
+    }
+    return -1
+}
+
+function hex4_at(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 4 > n {
+        return -1
+    }
+    let mut v: i32 = 0
+    let mut k: i32 = 0
+    while k < 4 {
+        let h: i32 = hex_val(p[i + k] as i32)
+        if h < 0 {
+            return -1
+        }
+        v = v * 16 + h
+        k = k + 1
+    }
+    return v
+}
+
+# Parse a JSON string starting at the opening quote. Writes the decoded
+# bytes into sb and returns the index after the closing quote, or -1.
+function json_string(p: ptr<u8>, i: i32, n: i32, sb: ptr<SBuf>) -> i32 {
+    let mut k: i32 = i + 1
+    while k < n {
+        let c: i32 = p[k] as i32
+        if c == 34 {
+            return k + 1
+        }
+        if c < 32 {
+            return -1
+        }
+        if c == 92 {
+            if k + 1 >= n {
+                return -1
+            }
+            let e: i32 = p[k + 1] as i32
+            k = k + 2
+            if e == 34 or e == 92 or e == 47 {
+                sb_putc(sb, e)
+            } else {
+                if e == 98 {
+                    sb_putc(sb, 8)
+                } else {
+                    if e == 102 {
+                        sb_putc(sb, 12)
+                    } else {
+                        if e == 110 {
+                            sb_putc(sb, 10)
+                        } else {
+                            if e == 114 {
+                                sb_putc(sb, 13)
+                            } else {
+                                if e == 116 {
+                                    sb_putc(sb, 9)
+                                } else {
+                                    if e != 117 {
+                                        return -1
+                                    }
+                                    let mut cp: i32 = hex4_at(p, k, n)
+                                    if cp < 0 {
+                                        return -1
+                                    }
+                                    k = k + 4
+                                    if cp >= 55296 and cp <= 56319 and k + 6 <= n and p[k] == 92 and p[k + 1] == 117 {
+                                        let lo: i32 = hex4_at(p, k + 2, n)
+                                        if lo >= 56320 and lo <= 57343 {
+                                            cp = 65536 + (cp - 55296) * 1024 + (lo - 56320)
+                                            k = k + 6
+                                        }
+                                    }
+                                    sb_put_utf8(sb, cp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            sb_putc(sb, c)
+            k = k + 1
+        }
+    }
+    return -1
+}
+
+# Parse one JSON value at p[i]. Stores the node in out[0]; returns the index
+# after the value, or -1 on a syntax error.
+function json_value(d: ptr<JDoc>, p: ptr<u8>, i0: i32, n: i32, out: ptr<i32>) -> i32 {
+    let i: i32 = json_ws(p, i0, n)
+    if i >= n {
+        return -1
+    }
+    let c: i32 = p[i] as i32
+    if c == 123 {
+        let obj: i32 = jd_obj(d)
+        out[0] = obj
+        let mut k: i32 = json_ws(p, i + 1, n)
+        if k < n and p[k] == 125 {
+            return k + 1
+        }
+        while k < n {
+            k = json_ws(p, k, n)
+            if k >= n or p[k] != 34 {
+                return -1
+            }
+            let kb: ptr<SBuf> = sb_new()
+            k = json_string(p, k, n, kb)
+            if k < 0 {
+                return -1
+            }
+            k = json_ws(p, k, n)
+            if k >= n or p[k] != 58 {
+                return -1
+            }
+            let vout: array<i32, 1> = [0]
+            k = json_value(d, p, k + 1, n, &vout[0] as ptr<i32>)
+            if k < 0 {
+                return -1
+            }
+            jd_set(d, obj, sb_str(kb), vout[0])
+            k = json_ws(p, k, n)
+            if k < n and p[k] == 44 {
+                k = k + 1
+            } else {
+                if k < n and p[k] == 125 {
+                    return k + 1
+                }
+                return -1
+            }
+        }
+        return -1
+    }
+    if c == 91 {
+        let arr: i32 = jd_arr(d)
+        out[0] = arr
+        let mut k: i32 = json_ws(p, i + 1, n)
+        if k < n and p[k] == 93 {
+            return k + 1
+        }
+        while k < n {
+            let vout: array<i32, 1> = [0]
+            k = json_value(d, p, k, n, &vout[0] as ptr<i32>)
+            if k < 0 {
+                return -1
+            }
+            jd_append(d, arr, vout[0])
+            k = json_ws(p, k, n)
+            if k < n and p[k] == 44 {
+                k = k + 1
+            } else {
+                if k < n and p[k] == 93 {
+                    return k + 1
+                }
+                return -1
+            }
+        }
+        return -1
+    }
+    if c == 34 {
+        let sb: ptr<SBuf> = sb_new()
+        let k: i32 = json_string(p, i, n, sb)
+        if k < 0 {
+            return -1
+        }
+        out[0] = jd_str(d, sb_str(sb))
+        return k
+    }
+    let rest: string = (p + i) as string
+    if str_starts(rest, "true") {
+        out[0] = jd_add(d, JV_BOOL, "", 1)
+        return i + 4
+    }
+    if str_starts(rest, "false") {
+        out[0] = jd_add(d, JV_BOOL, "", 0)
+        return i + 5
+    }
+    if str_starts(rest, "null") {
+        out[0] = jd_add(d, JV_NULL, "", 0)
+        return i + 4
+    }
+    if c == 45 or (c >= 48 and c <= 57) {
+        let mut k: i32 = i
+        let mut is_float: bool = false
+        if p[k] == 45 {
+            k = k + 1
+        }
+        let ds: i32 = k
+        while k < n and p[k] >= 48 and p[k] <= 57 {
+            k = k + 1
+        }
+        if k == ds {
+            return -1
+        }
+        if k < n and p[k] == 46 {
+            is_float = true
+            k = k + 1
+            while k < n and p[k] >= 48 and p[k] <= 57 {
+                k = k + 1
+            }
+        }
+        if k < n and (p[k] == 101 or p[k] == 69) {
+            is_float = true
+            k = k + 1
+            if k < n and (p[k] == 43 or p[k] == 45) {
+                k = k + 1
+            }
+            while k < n and p[k] >= 48 and p[k] <= 57 {
+                k = k + 1
+            }
+        }
+        let txt: string = str_slice(p as string, i, k)
+        if is_float {
+            out[0] = jd_add(d, JV_FLOAT, txt, 0)
+        } else {
+            out[0] = jd_add(d, JV_INT, txt, 0)
+        }
+        return k
+    }
+    return -1
+}
+
+# Parse a whole JSON document. Returns the root node or -1.
+export function jd_parse_json(d: ptr<JDoc>, src: string) -> i32 {
+    let p: ptr<u8> = src as ptr<u8>
+    let n: i32 = str_len(src)
+    let vout: array<i32, 1> = [0]
+    let k: i32 = json_value(d, p, 0, n, &vout[0] as ptr<i32>)
+    if k < 0 {
+        return -1
+    }
+    if json_ws(p, k, n) != n {
+        return -1
+    }
+    return vout[0]
+}
+
+# JSON string with ensure_ascii escaping, as Python's json module writes it.
+export function jd_json_str(sb: ptr<SBuf>, s: string) {
+    let p: ptr<u8> = s as ptr<u8>
+    sb_putc(sb, 34)
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        let c: i32 = p[i] as i32
+        if c == 34 {
+            sb_puts(sb, "\\\"")
+            i = i + 1
+        } else {
+            if c == 92 {
+                sb_puts(sb, "\\\\")
+                i = i + 1
+            } else {
+                if c == 10 {
+                    sb_puts(sb, "\\n")
+                    i = i + 1
+                } else {
+                    if c == 13 {
+                        sb_puts(sb, "\\r")
+                        i = i + 1
+                    } else {
+                        if c == 9 {
+                            sb_puts(sb, "\\t")
+                            i = i + 1
+                        } else {
+                            if c == 8 {
+                                sb_puts(sb, "\\b")
+                                i = i + 1
+                            } else {
+                                if c == 12 {
+                                    sb_puts(sb, "\\f")
+                                    i = i + 1
+                                } else {
+                                    if c >= 32 and c < 127 {
+                                        sb_putc(sb, c)
+                                        i = i + 1
+                                    } else {
+                                        let mut cp: i32 = c
+                                        let mut extra: i32 = 0
+                                        if c >= 240 {
+                                            cp = c % 8
+                                            extra = 3
+                                        } else {
+                                            if c >= 224 {
+                                                cp = c % 16
+                                                extra = 2
+                                            } else {
+                                                if c >= 192 {
+                                                    cp = c % 32
+                                                    extra = 1
+                                                }
+                                            }
+                                        }
+                                        i = i + 1
+                                        while extra > 0 and p[i] != 0 {
+                                            cp = cp * 64 + (p[i] as i32) % 64
+                                            i = i + 1
+                                            extra = extra - 1
+                                        }
+                                        sb_puts(sb, "\\u")
+                                        if cp >= 65536 {
+                                            let v: i32 = cp - 65536
+                                            sb_put_hex4(sb, 55296 + v / 1024)
+                                            sb_puts(sb, "\\u")
+                                            sb_put_hex4(sb, 56320 + v % 1024)
+                                        } else {
+                                            sb_put_hex4(sb, cp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    sb_putc(sb, 34)
+}
+
+function put_indent(sb: ptr<SBuf>, level: i32) {
+    let mut i: i32 = 0
+    while i < level * 2 {
+        sb_putc(sb, 32)
+        i = i + 1
+    }
+}
+
+# json.dumps(value, indent=2) for the value at v.
+export function jd_dump_json(d: ptr<JDoc>, v: i32, sb: ptr<SBuf>, level: i32) {
+    let k: i32 = jd_kind(d, v)
+    if k == JV_OBJ or k == JV_ARR {
+        let mut c: i32 = d[0].first[v]
+        if c < 0 {
+            if k == JV_OBJ {
+                sb_puts(sb, "{}")
+            } else {
+                sb_puts(sb, "[]")
+            }
+            return
+        }
+        if k == JV_OBJ {
+            sb_putc(sb, 123)
+        } else {
+            sb_putc(sb, 91)
+        }
+        let mut first: bool = true
+        while c >= 0 {
+            if first {
+                sb_putc(sb, 10)
+            } else {
+                sb_puts(sb, ",\n")
+            }
+            first = false
+            put_indent(sb, level + 1)
+            if k == JV_OBJ {
+                jd_json_str(sb, d[0].sval[c])
+                sb_puts(sb, ": ")
+                jd_dump_json(d, d[0].first[c], sb, level + 1)
+            } else {
+                jd_dump_json(d, c, sb, level + 1)
+            }
+            c = d[0].next[c]
+        }
+        sb_putc(sb, 10)
+        put_indent(sb, level)
+        if k == JV_OBJ {
+            sb_putc(sb, 125)
+        } else {
+            sb_putc(sb, 93)
+        }
+        return
+    }
+    if k == JV_STR {
+        jd_json_str(sb, d[0].sval[v])
+        return
+    }
+    if k == JV_BOOL {
+        if d[0].ival[v] != 0 {
+            sb_puts(sb, "true")
+        } else {
+            sb_puts(sb, "false")
+        }
+        return
+    }
+    if k == JV_INT or k == JV_FLOAT {
+        sb_puts(sb, d[0].sval[v])
+        return
+    }
+    sb_puts(sb, "null")
+}
+
+# ---------------------------------------------------------------------------
+# TOML (the subset tomllib accepts that flow.toml files use: tables, arrays
+# of tables, dotted and quoted keys, basic/literal/multi-line strings,
+# integers, floats, booleans, arrays and inline tables).
+# ---------------------------------------------------------------------------
+
+export struct TomlP {
+    p: ptr<u8>,
+    n: i32,
+    i: i32,
+    line: i32,
+    err: i32
+}
+
+function tp_fail(t: ptr<TomlP>) -> i32 {
+    t[0].err = 1
+    return -1
+}
+
+function tp_skip_ws(t: ptr<TomlP>) {
+    while t[0].i < t[0].n and (t[0].p[t[0].i] == 32 or t[0].p[t[0].i] == 9) {
+        t[0].i = t[0].i + 1
+    }
+}
+
+function tp_skip_comment(t: ptr<TomlP>) {
+    if t[0].i < t[0].n and t[0].p[t[0].i] == 35 {
+        while t[0].i < t[0].n and t[0].p[t[0].i] != 10 {
+            t[0].i = t[0].i + 1
+        }
+    }
+}
+
+# Whitespace, newlines and comments (inside arrays).
+function tp_skip_all(t: ptr<TomlP>) {
+    while t[0].i < t[0].n {
+        let c: i32 = t[0].p[t[0].i] as i32
+        if c == 32 or c == 9 or c == 13 {
+            t[0].i = t[0].i + 1
+        } else {
+            if c == 10 {
+                t[0].line = t[0].line + 1
+                t[0].i = t[0].i + 1
+            } else {
+                if c == 35 {
+                    tp_skip_comment(t)
+                } else {
+                    return
+                }
+            }
+        }
+    }
+}
+
+function tp_peek(t: ptr<TomlP>) -> i32 {
+    if t[0].i >= t[0].n {
+        return -1
+    }
+    return t[0].p[t[0].i] as i32
+}
+
+function tp_at(t: ptr<TomlP>, s: string) -> bool {
+    return str_starts((t[0].p + t[0].i) as string, s)
+}
+
+function tp_bare_char(c: i32) -> bool {
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 45
+}
+
+# Escape sequence after a backslash in a basic string. Returns false on error.
+function tp_escape(t: ptr<TomlP>, sb: ptr<SBuf>) -> bool {
+    if t[0].i >= t[0].n {
+        return false
+    }
+    let e: i32 = t[0].p[t[0].i] as i32
+    t[0].i = t[0].i + 1
+    if e == 98 {
+        sb_putc(sb, 8)
+        return true
+    }
+    if e == 116 {
+        sb_putc(sb, 9)
+        return true
+    }
+    if e == 110 {
+        sb_putc(sb, 10)
+        return true
+    }
+    if e == 102 {
+        sb_putc(sb, 12)
+        return true
+    }
+    if e == 114 {
+        sb_putc(sb, 13)
+        return true
+    }
+    if e == 34 or e == 92 {
+        sb_putc(sb, e)
+        return true
+    }
+    if e == 117 or e == 85 {
+        let mut digits: i32 = 4
+        if e == 85 {
+            digits = 8
+        }
+        if t[0].i + digits > t[0].n {
+            return false
+        }
+        let mut cp: i32 = 0
+        let mut k: i32 = 0
+        while k < digits {
+            let h: i32 = hex_val(t[0].p[t[0].i + k] as i32)
+            if h < 0 {
+                return false
+            }
+            cp = cp * 16 + h
+            k = k + 1
+        }
+        t[0].i = t[0].i + digits
+        sb_put_utf8(sb, cp)
+        return true
+    }
+    return false
+}
+
+# Parse a string of any of the four TOML forms at the cursor.
+# Returns the decoded string, or "" with err set.
+function tp_string(t: ptr<TomlP>) -> string {
+    let sb: ptr<SBuf> = sb_new()
+    if tp_at(t, "\"\"\"") or tp_at(t, "'''") {
+        let q: i32 = t[0].p[t[0].i] as i32
+        t[0].i = t[0].i + 3
+        if tp_peek(t) == 10 {
+            t[0].i = t[0].i + 1
+            t[0].line = t[0].line + 1
+        } else {
+            if tp_peek(t) == 13 and t[0].i + 1 < t[0].n and t[0].p[t[0].i + 1] == 10 {
+                t[0].i = t[0].i + 2
+                t[0].line = t[0].line + 1
+            }
+        }
+        while t[0].i < t[0].n {
+            let c: i32 = t[0].p[t[0].i] as i32
+            if c == q and t[0].i + 2 < t[0].n + 0 and t[0].p[t[0].i + 1] as i32 == q and t[0].p[t[0].i + 2] as i32 == q {
+                # Up to two extra quotes may close the string.
+                let mut extra: i32 = 0
+                while extra < 2 and t[0].i + 3 + extra < t[0].n and t[0].p[t[0].i + 3 + extra] as i32 == q {
+                    extra = extra + 1
+                }
+                let mut k: i32 = 0
+                while k < extra {
+                    sb_putc(sb, q)
+                    k = k + 1
+                }
+                t[0].i = t[0].i + 3 + extra
+                return sb_str(sb)
+            }
+            if c == 92 and q == 34 {
+                t[0].i = t[0].i + 1
+                # Line-ending backslash: trim the newline and leading space.
+                let mut j: i32 = t[0].i
+                while j < t[0].n and (t[0].p[j] == 32 or t[0].p[j] == 9) {
+                    j = j + 1
+                }
+                if j < t[0].n and (t[0].p[j] == 10 or t[0].p[j] == 13) {
+                    t[0].i = j
+                    while t[0].i < t[0].n and (t[0].p[t[0].i] == 32 or t[0].p[t[0].i] == 9 or t[0].p[t[0].i] == 10 or t[0].p[t[0].i] == 13) {
+                        if t[0].p[t[0].i] == 10 {
+                            t[0].line = t[0].line + 1
+                        }
+                        t[0].i = t[0].i + 1
+                    }
+                } else {
+                    if tp_escape(t, sb) == false {
+                        t[0].err = 1
+                        return ""
+                    }
+                }
+            } else {
+                if c == 10 {
+                    t[0].line = t[0].line + 1
+                }
+                sb_putc(sb, c)
+                t[0].i = t[0].i + 1
+            }
+        }
+        t[0].err = 1
+        return ""
+    }
+    let q: i32 = t[0].p[t[0].i] as i32
+    t[0].i = t[0].i + 1
+    while t[0].i < t[0].n {
+        let c: i32 = t[0].p[t[0].i] as i32
+        if c == q {
+            t[0].i = t[0].i + 1
+            return sb_str(sb)
+        }
+        if c == 10 {
+            t[0].err = 1
+            return ""
+        }
+        if c == 92 and q == 34 {
+            t[0].i = t[0].i + 1
+            if tp_escape(t, sb) == false {
+                t[0].err = 1
+                return ""
+            }
+        } else {
+            sb_putc(sb, c)
+            t[0].i = t[0].i + 1
+        }
+    }
+    t[0].err = 1
+    return ""
+}
+
+# One key segment (bare or quoted).
+function tp_key_part(t: ptr<TomlP>) -> string {
+    let c: i32 = tp_peek(t)
+    if c == 34 or c == 39 {
+        if tp_at(t, "\"\"\"") or tp_at(t, "'''") {
+            t[0].err = 1
+            return ""
+        }
+        return tp_string(t)
+    }
+    let s: i32 = t[0].i
+    while t[0].i < t[0].n and tp_bare_char(t[0].p[t[0].i] as i32) {
+        t[0].i = t[0].i + 1
+    }
+    if t[0].i == s {
+        t[0].err = 1
+        return ""
+    }
+    return str_slice(t[0].p as string, s, t[0].i)
+}
+
+# Dotted key into keys[]; returns the segment count or -1.
+function tp_key(t: ptr<TomlP>, keys: ptr<string>, cap: i32) -> i32 {
+    let mut n: i32 = 0
+    while true {
+        tp_skip_ws(t)
+        let part: string = tp_key_part(t)
+        if t[0].err != 0 {
+            return -1
+        }
+        if n >= cap {
+            t[0].err = 1
+            return -1
+        }
+        keys[n] = part
+        n = n + 1
+        tp_skip_ws(t)
+        if tp_peek(t) == 46 {
+            t[0].i = t[0].i + 1
+        } else {
+            return n
+        }
+    }
+    return n
+}
+
+function tp_number(d: ptr<JDoc>, t: ptr<TomlP>) -> i32 {
+    let s: i32 = t[0].i
+    while t[0].i < t[0].n {
+        let c: i32 = t[0].p[t[0].i] as i32
+        if tp_bare_char(c) or c == 43 or c == 46 {
+            t[0].i = t[0].i + 1
+        } else {
+            break
+        }
+    }
+    let raw: string = str_slice(t[0].p as string, s, t[0].i)
+    let rp: ptr<u8> = raw as ptr<u8>
+    let rn: i32 = str_len(raw)
+    if rn == 0 {
+        return tp_fail(t)
+    }
+    let mut k: i32 = 0
+    let mut neg: bool = false
+    if rp[0] == 43 or rp[0] == 45 {
+        neg = rp[0] == 45
+        k = 1
+    }
+    let body: string = str_slice(raw, k, rn)
+    if str_eq(body, "inf") or str_eq(body, "nan") {
+        if neg {
+            return jd_add(d, JV_FLOAT, str_cat("-", body), 0)
+        }
+        return jd_add(d, JV_FLOAT, body, 0)
+    }
+    let bp: ptr<u8> = body as ptr<u8>
+    let bn: i32 = str_len(body)
+    if bn >= 2 and bp[0] == 48 and (bp[1] == 120 or bp[1] == 111 or bp[1] == 98) and k == 0 {
+        let mut base: i64 = 16
+        if bp[1] == 111 {
+            base = 8
+        }
+        if bp[1] == 98 {
+            base = 2
+        }
+        let mut v: i64 = 0
+        let mut j: i32 = 2
+        let mut prev_digit: bool = false
+        while j < bn {
+            let c: i32 = bp[j] as i32
+            if c == 95 {
+                if prev_digit == false {
+                    return tp_fail(t)
+                }
+                prev_digit = false
+            } else {
+                let h: i32 = hex_val(c)
+                if h < 0 or (h as i64) >= base {
+                    return tp_fail(t)
+                }
+                v = v * base + (h as i64)
+                prev_digit = true
+            }
+            j = j + 1
+        }
+        if prev_digit == false {
+            return tp_fail(t)
+        }
+        let sb: ptr<SBuf> = sb_new()
+        sb_put_int(sb, v)
+        return jd_add(d, JV_INT, sb_str(sb), 0)
+    }
+    # Decimal integer or float: digits with single underscores between.
+    let clean: ptr<SBuf> = sb_new()
+    if neg {
+        sb_putc(clean, 45)
+    }
+    let mut is_float: bool = false
+    let mut prev_digit: bool = false
+    let mut j: i32 = 0
+    while j < bn {
+        let c: i32 = bp[j] as i32
+        if c >= 48 and c <= 57 {
+            sb_putc(clean, c)
+            prev_digit = true
+        } else {
+            if c == 95 {
+                if prev_digit == false or j + 1 >= bn or bp[j + 1] < 48 or bp[j + 1] > 57 {
+                    return tp_fail(t)
+                }
+                prev_digit = false
+            } else {
+                if c == 46 or c == 101 or c == 69 or c == 43 or c == 45 {
+                    is_float = true
+                    sb_putc(clean, c)
+                    prev_digit = false
+                } else {
+                    return tp_fail(t)
+                }
+            }
+        }
+        j = j + 1
+    }
+    if bn == 0 or bp[0] < 48 or bp[0] > 57 {
+        return tp_fail(t)
+    }
+    if is_float {
+        return jd_add(d, JV_FLOAT, sb_str(clean), 0)
+    }
+    # Leading zeros are not allowed in TOML integers.
+    if bn > 1 and bp[0] == 48 {
+        return tp_fail(t)
+    }
+    let txt: string = sb_str(clean)
+    if str_eq(txt, "-0") {
+        return jd_add(d, JV_INT, "0", 0)
+    }
+    return jd_add(d, JV_INT, txt, 0)
+}
+
+function tp_inline_table(d: ptr<JDoc>, t: ptr<TomlP>) -> i32 {
+    t[0].i = t[0].i + 1
+    let obj: i32 = jd_obj(d)
+    tp_skip_ws(t)
+    if tp_peek(t) == 125 {
+        t[0].i = t[0].i + 1
+        return obj
+    }
+    let keys: ptr<string> = malloc(256) as ptr<string>
+    while true {
+        let nk: i32 = tp_key(t, keys, 32)
+        if nk < 0 {
+            return -1
+        }
+        if tp_peek(t) != 61 {
+            return tp_fail(t)
+        }
+        t[0].i = t[0].i + 1
+        tp_skip_ws(t)
+        let v: i32 = tp_value(d, t)
+        if v < 0 {
+            return -1
+        }
+        if tp_assign(d, t, obj, keys, nk, v) == false {
+            return -1
+        }
+        tp_skip_ws(t)
+        let c: i32 = tp_peek(t)
+        if c == 44 {
+            t[0].i = t[0].i + 1
+            tp_skip_ws(t)
+        } else {
+            if c == 125 {
+                t[0].i = t[0].i + 1
+                return obj
+            }
+            return tp_fail(t)
+        }
+    }
+    return -1
+}
+
+function tp_array(d: ptr<JDoc>, t: ptr<TomlP>) -> i32 {
+    t[0].i = t[0].i + 1
+    let arr: i32 = jd_arr(d)
+    while true {
+        tp_skip_all(t)
+        if tp_peek(t) == 93 {
+            t[0].i = t[0].i + 1
+            return arr
+        }
+        let v: i32 = tp_value(d, t)
+        if v < 0 {
+            return -1
+        }
+        jd_append(d, arr, v)
+        tp_skip_all(t)
+        let c: i32 = tp_peek(t)
+        if c == 44 {
+            t[0].i = t[0].i + 1
+        } else {
+            if c == 93 {
+                t[0].i = t[0].i + 1
+                return arr
+            }
+            return tp_fail(t)
+        }
+    }
+    return -1
+}
+
+function tp_value(d: ptr<JDoc>, t: ptr<TomlP>) -> i32 {
+    let c: i32 = tp_peek(t)
+    if c == 34 or c == 39 {
+        let s: string = tp_string(t)
+        if t[0].err != 0 {
+            return -1
+        }
+        return jd_str(d, s)
+    }
+    if c == 91 {
+        return tp_array(d, t)
+    }
+    if c == 123 {
+        return tp_inline_table(d, t)
+    }
+    if tp_at(t, "true") and tp_bare_char(t[0].p[t[0].i + 4] as i32) == false {
+        t[0].i = t[0].i + 4
+        return jd_add(d, JV_BOOL, "", 1)
+    }
+    if tp_at(t, "false") and tp_bare_char(t[0].p[t[0].i + 5] as i32) == false {
+        t[0].i = t[0].i + 5
+        return jd_add(d, JV_BOOL, "", 0)
+    }
+    if c == 43 or c == 45 or (c >= 48 and c <= 57) or c == 105 or c == 110 {
+        return tp_number(d, t)
+    }
+    return tp_fail(t)
+}
+
+# Walk/create the tables for keys[0..n-1) under obj and set the last key.
+# Redefining a key is an error, as in tomllib.
+function tp_assign(d: ptr<JDoc>, t: ptr<TomlP>, obj: i32, keys: ptr<string>, n: i32, v: i32) -> bool {
+    let mut cur: i32 = obj
+    let mut k: i32 = 0
+    while k < n - 1 {
+        let mut next: i32 = jd_get(d, cur, keys[k])
+        if next < 0 {
+            next = jd_obj(d)
+            jd_set(d, cur, keys[k], next)
+        }
+        if jd_kind(d, next) != JV_OBJ {
+            t[0].err = 1
+            return false
+        }
+        cur = next
+        k = k + 1
+    }
+    if jd_has(d, cur, keys[n - 1]) {
+        t[0].err = 1
+        return false
+    }
+    jd_set(d, cur, keys[n - 1], v)
+    return true
+}
+
+# Table header path: returns the table node (creating as needed), or -1.
+function tp_header(d: ptr<JDoc>, t: ptr<TomlP>, root: i32, keys: ptr<string>, n: i32, is_array: bool) -> i32 {
+    let mut cur: i32 = root
+    let mut k: i32 = 0
+    while k < n {
+        let last: bool = k == n - 1
+        let mut next: i32 = jd_get(d, cur, keys[k])
+        if last and is_array {
+            if next < 0 {
+                next = jd_arr(d)
+                jd_set(d, cur, keys[k], next)
+            }
+            if jd_kind(d, next) != JV_ARR {
+                return tp_fail(t)
+            }
+            let tbl: i32 = jd_obj(d)
+            jd_append(d, next, tbl)
+            return tbl
+        }
+        if next < 0 {
+            next = jd_obj(d)
+            jd_set(d, cur, keys[k], next)
+        }
+        if jd_kind(d, next) == JV_ARR {
+            # Continue into the last table of an array of tables.
+            let mut c: i32 = d[0].first[next]
+            if c < 0 {
+                return tp_fail(t)
+            }
+            while d[0].next[c] >= 0 {
+                c = d[0].next[c]
+            }
+            next = c
+        }
+        if jd_kind(d, next) != JV_OBJ {
+            return tp_fail(t)
+        }
+        cur = next
+        k = k + 1
+    }
+    return cur
+}
+
+# Parse a TOML document into an object node. Returns -1 on error and sets
+# d.err to a short message.
+export function jd_parse_toml(d: ptr<JDoc>, src: string) -> i32 {
+    let t: ptr<TomlP> = malloc(32) as ptr<TomlP>
+    t[0].p = src as ptr<u8>
+    t[0].n = str_len(src)
+    t[0].i = 0
+    t[0].line = 1
+    t[0].err = 0
+    let root: i32 = jd_obj(d)
+    let mut cur: i32 = root
+    let keys: ptr<string> = malloc(256) as ptr<string>
+    while t[0].i < t[0].n {
+        tp_skip_ws(t)
+        tp_skip_comment(t)
+        let c: i32 = tp_peek(t)
+        if c == -1 {
+            break
+        }
+        if c == 13 {
+            t[0].i = t[0].i + 1
+            continue
+        }
+        if c == 10 {
+            t[0].i = t[0].i + 1
+            t[0].line = t[0].line + 1
+            continue
+        }
+        if c == 91 {
+            let mut is_array: bool = false
+            t[0].i = t[0].i + 1
+            if tp_peek(t) == 91 {
+                is_array = true
+                t[0].i = t[0].i + 1
+            }
+            let nk: i32 = tp_key(t, keys, 32)
+            if nk < 0 {
+                break
+            }
+            if tp_peek(t) != 93 {
+                t[0].err = 1
+                break
+            }
+            t[0].i = t[0].i + 1
+            if is_array {
+                if tp_peek(t) != 93 {
+                    t[0].err = 1
+                    break
+                }
+                t[0].i = t[0].i + 1
+            }
+            cur = tp_header(d, t, root, keys, nk, is_array)
+            if cur < 0 {
+                break
+            }
+        } else {
+            let nk: i32 = tp_key(t, keys, 32)
+            if nk < 0 {
+                break
+            }
+            if tp_peek(t) != 61 {
+                t[0].err = 1
+                break
+            }
+            t[0].i = t[0].i + 1
+            tp_skip_ws(t)
+            let v: i32 = tp_value(d, t)
+            if v < 0 {
+                break
+            }
+            if tp_assign(d, t, cur, keys, nk, v) == false {
+                break
+            }
+        }
+        tp_skip_ws(t)
+        tp_skip_comment(t)
+        let e: i32 = tp_peek(t)
+        if e != -1 and e != 10 and e != 13 {
+            t[0].err = 1
+            break
+        }
+    }
+    if t[0].err != 0 {
+        let sb: ptr<SBuf> = sb_new()
+        sb_puts(sb, "Invalid TOML (at line ")
+        sb_put_int(sb, t[0].line as i64)
+        sb_puts(sb, ")")
+        d[0].err = sb_str(sb)
+        return -1
+    }
+    return root
+}

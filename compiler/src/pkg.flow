@@ -1,143 +1,1542 @@
 # @module flowc.pkg
-import .fileio { flowc_read_file, flowc_write_file, flowc_io_exists, flowc_io_mkdir, flowc_io_system }
-import .project_config { flowc_load_project_config, ProjectConfig }
-import .semver { flowc_semver_format_lock_entry, flowc_semver_write_lockfile }
+# @means  Flow package manager: registry index, version selection,
+#         install into flow_packages/, flow.lock, `add`, `sync`, `search`
+#         and `info`.
+#
+# This is the package manager that src/flow/package.py used to be for these
+# commands, ported rule for rule so that flow.lock and flow_packages/ come out
+# byte-identical. Flow programs cannot spawn processes with arguments, so the
+# few steps that need another program (git, curl, tar, cp) go through
+# scripts/tools/pkg_fetch.sh. Every decision stays here: which command to run,
+# with which arguments, and what to do with the result.
+
+import .pkg_json {
+    SBuf, JDoc,
+    sb_new, sb_putc, sb_puts, sb_put_int, sb_str,
+    str_len, str_eq, str_slice, str_dup, str_cat, str_cat3, str_starts, str_ends,
+    str_find, str_contains, str_find_byte, str_rfind_byte, str_lower, str_strip,
+    JV_NULL, JV_BOOL, JV_INT, JV_FLOAT, JV_STR, JV_ARR, JV_OBJ, JV_MEM,
+    jd_new, jd_add, jd_str, jd_obj, jd_arr, jd_kind, jd_sval, jd_is_str, jd_is_obj,
+    jd_first, jd_next, jd_mem_val, jd_mem_key, jd_append, jd_count,
+    jd_get, jd_has, jd_set, jd_copy_obj, jd_truthy,
+    jd_py_str, jd_py_str_s, jd_py_repr, jd_toml_value,
+    jd_parse_json, jd_parse_toml, jd_dump_json
+}
+import .semver { Semver, flowc_semver_parse, flowc_semver_cmp, flowc_semver_matches }
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_system, flowc_io_popen_read, flowc_io_mkdir }
 
 extern {
-    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
     function puts(s: string) -> i32
-    function printf(fmt: string, val: i32) -> i32
-    function malloc(size: i64) -> ptr<u8>
-    function free(p: ptr<u8>) -> void
+    function getenv(name: string) -> string
+    function getcwd(buf: ptr<u8>, size: i64) -> ptr<u8>
+    function readlink(path: string, buf: ptr<u8>, size: i64) -> i64
+    function access(path: string, mode: i32) -> i32
+    function opendir(path: string) -> ptr<void>
+    function closedir(dir: ptr<void>) -> i32
+    function fflush(fp: ptr<void>) -> i32
+    function exit(code: i32) -> void
+    function strcmp(a: string, b: string) -> i32
+    function getpid() -> i32
 }
 
-export function flowc_pkg_init(name: string) -> i32 {
-    if flowc_io_exists("flow.toml") == 1 {
-        puts("Project already initialized (flow.toml exists)")
-        return 1
+const GREEN: string = "\x1b[92m"
+const BLUE: string = "\x1b[94m"
+const YELLOW: string = "\x1b[93m"
+const RED: string = "\x1b[91m"
+const RESET: string = "\x1b[0m"
+const BOLD: string = "\x1b[1m"
+const CHECK: string = "\xe2\x9c\x93"
+const DOWN: string = "\xe2\x86\x93"
+const ARROW: string = "\xe2\x86\x92"
+const DASH: string = "\xe2\x80\x94"
+
+const READ_CAP: i32 = 16777216
+
+export struct Pm {
+    d: ptr<JDoc>,
+    project_dir: string,
+    repo_root: string,
+    shim: string,
+    reg: i32,
+    reg_pkgs: i32,
+    reg_name: string,
+    last_sha: string
+}
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+function say(s: string) {
+    let _r: i32 = puts(s)
+}
+
+function say_color(color: string, s: string) {
+    say(str_cat3(color, s, RESET))
+}
+
+# ---------------------------------------------------------------------------
+# Paths and files
+# ---------------------------------------------------------------------------
+
+export function pkg_env(name: string) -> string {
+    let v: string = getenv(name)
+    if v == null {
+        return ""
     }
-    let mut actual_name: string = name
-    if strlen(actual_name) == 0 { actual_name = "flow_project" }
-    
-    let toml_buf: ptr<u8> = malloc(1024)
-    let p_pkg: string = "[package]\nname = \""
-    let p_mid: string = "\"\nversion = \"0.1.0\"\nentry = \"src/main.flow\"\n"
-    
+    return v
+}
+
+function cwd() -> string {
+    let buf: ptr<u8> = malloc(4096) as ptr<u8>
+    let r: ptr<u8> = getcwd(buf, 4096)
+    if r == null {
+        return "."
+    }
+    return buf as string
+}
+
+function path_join(a: string, b: string) -> string {
+    if str_starts(b, "/") {
+        return b
+    }
+    if str_ends(a, "/") {
+        return str_cat(a, b)
+    }
+    return str_cat3(a, "/", b)
+}
+
+export function path_exists(p: string) -> bool {
+    return access(p, 0) == 0
+}
+
+function path_is_dir(p: string) -> bool {
+    let dir: ptr<void> = opendir(p)
+    if dir == null {
+        return false
+    }
+    let _c: i32 = closedir(dir)
+    return true
+}
+
+function path_is_file(p: string) -> bool {
+    return path_exists(p) and path_is_dir(p) == false
+}
+
+# Last path component (pathlib's .name) of a normalised path.
+function path_name(p: string) -> string {
+    let s: i32 = str_rfind_byte(p, 47)
+    return str_slice(p, s + 1, str_len(p))
+}
+
+function path_parent(p: string) -> string {
+    let s: i32 = str_rfind_byte(p, 47)
+    if s <= 0 {
+        if s == 0 {
+            return "/"
+        }
+        return "."
+    }
+    return str_slice(p, 0, s)
+}
+
+# What str(pathlib.Path(p)) prints: repeated and trailing slashes and "."
+# components removed. ".." is kept, as pathlib keeps it.
+export function path_normalize(p: string) -> string {
+    let pp: ptr<u8> = p as ptr<u8>
+    let n: i32 = str_len(p)
+    let sb: ptr<SBuf> = sb_new()
+    let abs: bool = n > 0 and pp[0] == 47
+    if abs {
+        sb_putc(sb, 47)
+    }
     let mut i: i32 = 0
-    let pp1: ptr<u8> = p_pkg
-    while pp1[i] != 0 { toml_buf[i] = pp1[i]; i = i + 1 }
-    let mut j: i32 = 0
-    let pp2: ptr<u8> = actual_name
-    while pp2[j] != 0 { toml_buf[i] = pp2[j]; i = i + 1; j = j + 1 }
-    let mut k: i32 = 0
-    let pp3: ptr<u8> = p_mid
-    while pp3[k] != 0 { toml_buf[i] = pp3[k]; i = i + 1; k = k + 1 }
-    toml_buf[i] = 0
-    flowc_write_file("flow.toml", toml_buf, i)
-    free(toml_buf)
-    puts("Created flow.toml")
-
-    flowc_io_mkdir("src")
-    let main_buf: ptr<u8> = malloc(1024)
-    let m1: string = "function main() -> i32 {\n    puts(\"Hello from "
-    let m2: string = "!\")\n    return 0\n}\n"
-    i = 0
-    let mp1: ptr<u8> = m1
-    while mp1[i] != 0 { main_buf[i] = mp1[i]; i = i + 1 }
-    j = 0
-    while pp2[j] != 0 { main_buf[i] = pp2[j]; i = i + 1; j = j + 1 }
-    k = 0
-    let mp2: ptr<u8> = m2
-    while mp2[k] != 0 { main_buf[i] = mp2[k]; i = i + 1; k = k + 1 }
-    main_buf[i] = 0
-    flowc_write_file("src/main.flow", main_buf, i)
-    free(main_buf)
-    puts("Created src/main.flow")
-
-    puts("Project initialized!")
-    return 0
+    let mut wrote: bool = false
+    while i < n {
+        while i < n and pp[i] == 47 {
+            i = i + 1
+        }
+        let s: i32 = i
+        while i < n and pp[i] != 47 {
+            i = i + 1
+        }
+        if i > s {
+            let comp: string = str_slice(p, s, i)
+            if str_eq(comp, ".") == false {
+                if wrote {
+                    sb_putc(sb, 47)
+                }
+                sb_puts(sb, comp)
+                wrote = true
+            }
+        }
+    }
+    if wrote == false and abs == false {
+        return "."
+    }
+    return sb_str(sb)
 }
 
-export function flowc_pkg_install() -> i32 {
-    if flowc_io_exists("flow.toml") == 0 {
-        puts("No flow.toml found. Run 'flow init' first.")
-        return 1
+# pathlib's expanduser for "~" and "~/...".
+function expand_user(p: string) -> string {
+    if str_eq(p, "~") or str_starts(p, "~/") {
+        let home: string = pkg_env("HOME")
+        if str_len(home) > 0 {
+            return str_cat(home, str_slice(p, 1, str_len(p)))
+        }
     }
-    
-    let mut cfg: ProjectConfig = ProjectConfig { name: "", version: "", entry: "" }
-    let res: i32 = flowc_load_project_config("flow.toml", &cfg)
-    if res != 0 {
-        puts("Error loading flow.toml")
-        return 1
-    }
-
-    flowc_io_mkdir("flow_packages")
-    puts("Installing dependencies...")
-    
-    let lock_buf: ptr<u8> = malloc(1024)
-    let _l: i32 = flowc_semver_format_lock_entry("native_lib", "1.0.0", "registry", lock_buf, 1024)
-    let _wl: i32 = flowc_semver_write_lockfile("flow.lock", lock_buf as string)
-    free(lock_buf)
-    
-    puts("Native lockfile generated.")
-    puts("Delegating package fetching to Python implementation...")
-    let r_inst: i32 = flowc_io_system("python3 -m flow.package install")
-    return r_inst
+    return p
 }
 
-export function flowc_pkg_build() -> i32 {
-    if flowc_io_exists("flow.toml") == 0 {
-        puts("No flow.toml found.")
-        return 1
+# Target of the symlink at p, or "" when p is not a symlink (or missing).
+function read_link(p: string) -> string {
+    let buf: ptr<u8> = malloc(4097) as ptr<u8>
+    let n: i64 = readlink(p, buf, 4096)
+    if n <= 0 {
+        return ""
     }
-    let mut cfg: ProjectConfig = ProjectConfig { name: "", version: "", entry: "" }
-    let res: i32 = flowc_load_project_config("flow.toml", &cfg)
-    if res != 0 {
-        puts("Error loading flow.toml")
-        return 1
+    buf[n as i32] = 0
+    return buf as string
+}
+
+# pathlib's Path.resolve() (strict=False), which is os.path.realpath: make
+# the path absolute, then walk it one component at a time, following
+# symlinks, applying ".." to what has been resolved so far, and keeping
+# components that do not exist as written.
+export function path_resolve(p: string) -> string {
+    let mut rest: string = p
+    if str_starts(p, "/") == false {
+        rest = path_join(cwd(), p)
     }
-    if flowc_io_exists(cfg.entry) == 0 {
-        puts("Entry file not found")
-        return 1
+    let mut cur: string = "/"
+    let mut links: i32 = 0
+    while str_len(rest) > 0 {
+        let rp: ptr<u8> = rest as ptr<u8>
+        let n: i32 = str_len(rest)
+        let mut i: i32 = 0
+        while i < n and rp[i] == 47 {
+            i = i + 1
+        }
+        let s: i32 = i
+        while i < n and rp[i] != 47 {
+            i = i + 1
+        }
+        let comp: string = str_slice(rest, s, i)
+        rest = str_slice(rest, i, n)
+        if str_len(comp) == 0 or str_eq(comp, ".") {
+            continue
+        }
+        if str_eq(comp, "..") {
+            cur = path_parent(cur)
+            continue
+        }
+        let cand: string = path_join(cur, comp)
+        let target: string = read_link(cand)
+        if str_len(target) == 0 or links > 40 {
+            cur = cand
+            continue
+        }
+        links = links + 1
+        if str_starts(target, "/") {
+            cur = "/"
+        }
+        rest = str_cat3(target, "/", rest)
     }
-    
-    flowc_io_mkdir("build")
-    puts("Building project...")
-    
-    let cmd_buf: ptr<u8> = malloc(1024)
-    let b1: string = "flow compile "
-    let pb1: ptr<u8> = b1
+    return cur
+}
+
+# os.makedirs(p, exist_ok=True)
+function mkdirs(p: string) {
+    if str_len(p) == 0 or path_is_dir(p) {
+        return
+    }
+    let parent: string = path_parent(p)
+    if str_eq(parent, p) == false {
+        mkdirs(parent)
+    }
+    let _m: i32 = flowc_io_mkdir(p)
+}
+
+function read_text(path: string) -> string {
+    let buf: ptr<u8> = malloc(READ_CAP as i64) as ptr<u8>
+    let n: i32 = flowc_read_file(path, buf, READ_CAP - 1)
+    if n < 0 {
+        buf[0] = 0
+        return buf as string
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+function write_text(path: string, s: string) -> bool {
+    return flowc_write_file(path, s as ptr<u8>, str_len(s)) == 0
+}
+
+# ---------------------------------------------------------------------------
+# The bash shim (scripts/tools/pkg_fetch.sh)
+# ---------------------------------------------------------------------------
+
+function shell_quote(sb: ptr<SBuf>, s: string) {
+    sb_putc(sb, 39)
+    let p: ptr<u8> = s as ptr<u8>
     let mut i: i32 = 0
-    while pb1[i] != 0 { cmd_buf[i] = pb1[i]; i = i + 1 }
-    let mut j: i32 = 0
-    let p_entry: ptr<u8> = cfg.entry
-    while p_entry[j] != 0 { cmd_buf[i] = p_entry[j]; i = i + 1; j = j + 1 }
-    cmd_buf[i] = 0
-    let b_res: i32 = flowc_io_system(cmd_buf as string)
-    free(cmd_buf)
-    if b_res == 0 { puts("Built successfully") } else { puts("Build failed") }
-    return b_res
-}
-
-export function flowc_pkg_dispatch_fallback(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
-    let buf: ptr<u8> = malloc(2048)
-    let pycmd: string = "python3 -m flow.package"
-    let p_py: ptr<u8> = pycmd
-    let mut i: i32 = 0
-    while p_py[i] != 0 { buf[i] = p_py[i]; i = i + 1 }
-    
-    let mut arg_idx: i32 = 1
-    while arg_idx < argc {
-        buf[i] = 32 # space
+    while p[i] != 0 {
+        if p[i] == 39 {
+            sb_puts(sb, "'\\''")
+        } else {
+            sb_putc(sb, p[i] as i32)
+        }
         i = i + 1
-        let mut j: i32 = 0
-        let a: string = argv[arg_idx] as string
-        let pa: ptr<u8> = a
-        while pa[j] != 0 { buf[i] = pa[j]; i = i + 1; j = j + 1 }
-        arg_idx = arg_idx + 1
     }
-    buf[i] = 0
-    let res: i32 = flowc_io_system(buf as string)
-    free(buf)
-    return res
+    sb_putc(sb, 39)
+}
+
+# Shell command line for the shim with the arguments in args (an array node
+# of strings). The exit status is the shim's.
+function shim_cmd(pm: ptr<Pm>, args: i32) -> string {
+    let d: ptr<JDoc> = pm[0].d
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, "bash ")
+    shell_quote(sb, pm[0].shim)
+    let mut c: i32 = jd_first(d, args)
+    while c >= 0 {
+        sb_putc(sb, 32)
+        shell_quote(sb, jd_sval(d, c))
+        c = jd_next(d, c)
+    }
+    return sb_str(sb)
+}
+
+function shim_run(pm: ptr<Pm>, args: i32) -> i32 {
+    let _f: i32 = fflush(null)
+    let st: i32 = flowc_io_system(shim_cmd(pm, args))
+    if st < 0 {
+        return 255
+    }
+    return (st / 256) % 256
+}
+
+function args1(pm: ptr<Pm>, a: string) -> i32 {
+    let arr: i32 = jd_arr(pm[0].d)
+    jd_append(pm[0].d, arr, jd_str(pm[0].d, a))
+    return arr
+}
+
+function args_push(pm: ptr<Pm>, arr: i32, a: string) {
+    jd_append(pm[0].d, arr, jd_str(pm[0].d, a))
+}
+
+function shim2(pm: ptr<Pm>, cmd: string, a: string) -> i32 {
+    let arr: i32 = args1(pm, cmd)
+    args_push(pm, arr, a)
+    return shim_run(pm, arr)
+}
+
+function shim3(pm: ptr<Pm>, cmd: string, a: string, b: string) -> i32 {
+    let arr: i32 = args1(pm, cmd)
+    args_push(pm, arr, a)
+    args_push(pm, arr, b)
+    return shim_run(pm, arr)
+}
+
+function rmtree(pm: ptr<Pm>, p: string) {
+    let _r: i32 = shim2(pm, "rmtree", p)
+}
+
+# shutil.copytree(src, dest, ignore=.git, build, flow_packages, __pycache__,
+# *.pyc) after removing dest.
+function copy_package_dir(pm: ptr<Pm>, src: string, dest: string) {
+    let _r: i32 = shim3(pm, "copytree", src, dest)
+}
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+
+export function pm_new(project_dir: string) -> ptr<Pm> {
+    let pm: ptr<Pm> = malloc(64) as ptr<Pm>
+    pm[0].d = jd_new()
+    let mut dir: string = project_dir
+    if str_starts(dir, "/") == false {
+        dir = path_join(cwd(), dir)
+    }
+    pm[0].project_dir = path_normalize(dir)
+    let mut root: string = pkg_env("FLOW_REPO_ROOT")
+    if str_len(root) == 0 {
+        root = "."
+    }
+    pm[0].repo_root = path_resolve(root)
+    pm[0].shim = path_join(pm[0].repo_root, "scripts/tools/pkg_fetch.sh")
+    pm[0].reg = -1
+    pm[0].reg_pkgs = -1
+    pm[0].reg_name = "flow-packages"
+    pm[0].last_sha = ""
+    return pm
+}
+
+function config_file(pm: ptr<Pm>) -> string {
+    return path_join(pm[0].project_dir, "flow.toml")
+}
+
+function packages_dir(pm: ptr<Pm>) -> string {
+    return path_join(pm[0].project_dir, "flow_packages")
+}
+
+function lock_file(pm: ptr<Pm>) -> string {
+    return path_join(pm[0].project_dir, "flow.lock")
+}
+
+function stdlib_file(pm: ptr<Pm>, name: string) -> string {
+    return path_join(pm[0].repo_root, str_cat3("lib/stdlib/", name, ".flow"))
+}
+
+# ---------------------------------------------------------------------------
+# Registry index
+# ---------------------------------------------------------------------------
+
+function fail_hard(msg: string) {
+    say(msg)
+    let _f: i32 = fflush(null)
+    exit(1)
+}
+
+function empty_index(pm: ptr<Pm>) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let o: i32 = jd_obj(d)
+    jd_set(d, o, "version", jd_add(d, JV_INT, "1", 0))
+    jd_set(d, o, "name", jd_str(d, "flow-packages"))
+    jd_set(d, o, "packages", jd_obj(d))
+    return o
+}
+
+function load_index_file(pm: ptr<Pm>, path: string) -> i32 {
+    if path_exists(path) == false {
+        return empty_index(pm)
+    }
+    let root: i32 = jd_parse_json(pm[0].d, read_text(path))
+    if root < 0 {
+        fail_hard(str_cat3("Registry index is not valid JSON: ", path, ""))
+    }
+    return root
+}
+
+function fetch_remote_index(pm: ptr<Pm>, url: string) -> i32 {
+    let mut home: string = pkg_env("FLOW_HOME")
+    if str_len(home) == 0 {
+        home = path_join(pkg_env("HOME"), ".flow")
+    }
+    let cache_dir: string = path_join(home, "cache")
+    mkdirs(cache_dir)
+    let cache: string = path_join(cache_dir, "index.json")
+    if str_starts(url, "https://") == false and str_starts(url, "http://") == false {
+        fail_hard(str_cat("registry URL must be http(s): ", url))
+    }
+    let tmp: string = str_cat(cache, ".download")
+    if shim3(pm, "fetch-url", url, tmp) == 0 {
+        let raw: string = read_text(tmp)
+        let _w: bool = write_text(cache, raw)
+        rmtree(pm, tmp)
+        let root: i32 = jd_parse_json(pm[0].d, raw)
+        if root >= 0 {
+            return root
+        }
+    }
+    rmtree(pm, tmp)
+    if path_exists(cache) {
+        let root2: i32 = jd_parse_json(pm[0].d, read_text(cache))
+        if root2 >= 0 {
+            return root2
+        }
+    }
+    fail_hard(str_cat("Failed to fetch registry index from ", url))
+    return -1
+}
+
+function registry(pm: ptr<Pm>) {
+    if pm[0].reg >= 0 {
+        return
+    }
+    let d: ptr<JDoc> = pm[0].d
+    let override: string = pkg_env("FLOW_REGISTRY_PATH")
+    let url: string = pkg_env("FLOW_REGISTRY_URL")
+    let mut root: i32 = -1
+    if str_len(url) > 0 and str_len(override) == 0 {
+        root = fetch_remote_index(pm, url)
+    } else {
+        let mut path: string = path_join(pm[0].repo_root, "registry/index.json")
+        if str_len(override) > 0 {
+            path = path_resolve(expand_user(override))
+        }
+        root = load_index_file(pm, path)
+    }
+    pm[0].reg = root
+    let mut pkgs: i32 = jd_get(d, root, "packages")
+    if jd_truthy(d, pkgs) == false {
+        pkgs = jd_get(d, root, "packets")
+    }
+    if jd_truthy(d, pkgs) == false {
+        pkgs = jd_get(d, root, "crates")
+    }
+    if jd_truthy(d, pkgs) == false or jd_kind(d, pkgs) != JV_OBJ {
+        pkgs = jd_obj(d)
+    }
+    pm[0].reg_pkgs = pkgs
+    let nm: i32 = jd_get(d, root, "name")
+    if nm >= 0 {
+        pm[0].reg_name = jd_py_str_s(d, nm)
+    }
+}
+
+function reg_get(pm: ptr<Pm>, name: string) -> i32 {
+    registry(pm)
+    return jd_get(pm[0].d, pm[0].reg_pkgs, name)
+}
+
+# PackageVersion.version: str(data.get("version", "0.0.0")).
+function pv_version(pm: ptr<Pm>, v: i32) -> string {
+    let x: i32 = jd_get(pm[0].d, v, "version")
+    if x < 0 {
+        return "0.0.0"
+    }
+    return jd_py_str_s(pm[0].d, x)
+}
+
+function pv_yanked(pm: ptr<Pm>, v: i32) -> bool {
+    return jd_truthy(pm[0].d, jd_get(pm[0].d, v, "yanked"))
+}
+
+# Highest matching version that is not yanked; the first listed wins a tie.
+function resolve_version(pm: ptr<Pm>, meta: i32, req: string) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let versions: i32 = jd_get(d, meta, "versions")
+    if jd_kind(d, versions) != JV_ARR {
+        return -1
+    }
+    let mut best: i32 = -1
+    let mut best_sv: Semver = Semver { major: 0, minor: 0, patch: 0 }
+    let mut c: i32 = jd_first(d, versions)
+    while c >= 0 {
+        if pv_yanked(pm, c) == false {
+            let ver: string = pv_version(pm, c)
+            if flowc_semver_matches(req, ver) {
+                let sv: Semver = flowc_semver_parse(ver)
+                if best < 0 or flowc_semver_cmp(sv, best_sv) > 0 {
+                    best = c
+                    best_sv = sv
+                }
+            }
+        }
+        c = jd_next(d, c)
+    }
+    return best
+}
+
+function reg_resolve(pm: ptr<Pm>, name: string, req: string) -> i32 {
+    let meta: i32 = reg_get(pm, name)
+    if meta < 0 {
+        return -1
+    }
+    return resolve_version(pm, meta, req)
+}
+
+# PackageVersion.to_dep_spec(): the flow.toml table for a registry version.
+function to_dep_spec(pm: ptr<Pm>, v: i32) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let spec: i32 = jd_obj(d)
+    let path: i32 = jd_get(d, v, "path")
+    if jd_truthy(d, path) {
+        let ps: string = jd_py_str_s(d, path)
+        let mut out: string = path_normalize(ps)
+        if str_starts(ps, "/") == false {
+            out = path_resolve(path_join(pm[0].repo_root, ps))
+        }
+        jd_set(d, spec, "path", jd_str(d, out))
+        return spec
+    }
+    let git: i32 = jd_get(d, v, "git")
+    if jd_truthy(d, git) {
+        jd_set(d, spec, "git", git)
+        let tag: i32 = jd_get(d, v, "tag")
+        let rev: i32 = jd_get(d, v, "rev")
+        let branch: i32 = jd_get(d, v, "branch")
+        if jd_truthy(d, tag) {
+            jd_set(d, spec, "tag", tag)
+        } else {
+            if jd_truthy(d, rev) {
+                jd_set(d, spec, "rev", rev)
+            } else {
+                if jd_truthy(d, branch) {
+                    jd_set(d, spec, "branch", branch)
+                }
+            }
+        }
+        return spec
+    }
+    fail_hard(str_cat3("version ", pv_version(pm, v), " has no path or git source"))
+    return -1
+}
+
+# ---------------------------------------------------------------------------
+# flow.toml and flow.lock
+# ---------------------------------------------------------------------------
+
+export function pm_load_config(pm: ptr<Pm>) -> i32 {
+    let path: string = config_file(pm)
+    if path_exists(path) == false {
+        say_color(RED, "No flow.toml found. Run 'flow init' first.")
+        return -1
+    }
+    let root: i32 = jd_parse_toml(pm[0].d, read_text(path))
+    if root < 0 {
+        say_color(RED, str_cat("Error parsing flow.toml: ", pm[0].d[0].err))
+        return -1
+    }
+    return root
+}
+
+# config.dependencies (data.get("dependencies", {})).
+function cfg_table(pm: ptr<Pm>, root: i32, key: string) -> i32 {
+    let v: i32 = jd_get(pm[0].d, root, key)
+    if v < 0 {
+        let o: i32 = jd_obj(pm[0].d)
+        jd_set(pm[0].d, root, key, o)
+        return o
+    }
+    return v
+}
+
+function cfg_str(pm: ptr<Pm>, tbl: i32, key: string, dflt: string) -> string {
+    let v: i32 = jd_get(pm[0].d, tbl, key)
+    if v < 0 {
+        return dflt
+    }
+    return jd_py_str_s(pm[0].d, v)
+}
+
+function toml_list_line(pm: ptr<Pm>, sb: ptr<SBuf>, key: string, list: i32) {
+    let d: ptr<JDoc> = pm[0].d
+    if jd_truthy(d, list) == false or jd_kind(d, list) != JV_ARR {
+        return
+    }
+    sb_puts(sb, key)
+    sb_puts(sb, " = [")
+    let mut c: i32 = jd_first(d, list)
+    let mut first: bool = true
+    while c >= 0 {
+        if first == false {
+            sb_puts(sb, ", ")
+        }
+        first = false
+        sb_putc(sb, 34)
+        jd_py_str(d, c, sb)
+        sb_putc(sb, 34)
+        c = jd_next(d, c)
+    }
+    sb_puts(sb, "]\n")
+}
+
+# FlowPackage.to_toml(): the manifest as `flow add` rewrites it.
+function to_toml(pm: ptr<Pm>, root: i32) -> string {
+    let d: ptr<JDoc> = pm[0].d
+    let mut pkg: i32 = jd_get(d, root, "package")
+    if pkg < 0 {
+        pkg = jd_obj(d)
+    }
+    let mut native: i32 = jd_get(d, root, "native")
+    if native < 0 {
+        native = jd_obj(d)
+    }
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, "[package]\nname = \"")
+    sb_puts(sb, cfg_str(pm, pkg, "name", "unnamed"))
+    sb_puts(sb, "\"\nversion = \"")
+    sb_puts(sb, cfg_str(pm, pkg, "version", "0.1.0"))
+    sb_puts(sb, "\"\ndescription = \"")
+    sb_puts(sb, cfg_str(pm, pkg, "description", ""))
+    sb_puts(sb, "\"\nauthor = \"")
+    sb_puts(sb, cfg_str(pm, pkg, "author", ""))
+    sb_puts(sb, "\"\nlicense = \"")
+    sb_puts(sb, cfg_str(pm, pkg, "license", "MIT"))
+    sb_puts(sb, "\"\nentry = \"")
+    sb_puts(sb, cfg_str(pm, pkg, "entry", "src/main.flow"))
+    sb_puts(sb, "\"\n\n[dependencies]\n")
+    let deps: i32 = cfg_table(pm, root, "dependencies")
+    let mut c: i32 = jd_first(d, deps)
+    while c >= 0 {
+        sb_puts(sb, jd_mem_key(d, c))
+        sb_puts(sb, " = ")
+        jd_toml_value(d, jd_mem_val(d, c), sb)
+        sb_putc(sb, 10)
+        c = jd_next(d, c)
+    }
+    sb_puts(sb, "\n[dev-dependencies]\n")
+    let dev: i32 = cfg_table(pm, root, "dev-dependencies")
+    c = jd_first(d, dev)
+    while c >= 0 {
+        sb_puts(sb, jd_mem_key(d, c))
+        sb_puts(sb, " = ")
+        jd_toml_value(d, jd_mem_val(d, c), sb)
+        sb_putc(sb, 10)
+        c = jd_next(d, c)
+    }
+    let sources: i32 = jd_get(d, native, "sources")
+    let frameworks: i32 = jd_get(d, native, "frameworks")
+    let libs: i32 = jd_get(d, native, "libs")
+    if jd_truthy(d, sources) or jd_truthy(d, frameworks) or jd_truthy(d, libs) {
+        sb_puts(sb, "\n[native]\n")
+        toml_list_line(pm, sb, "sources", sources)
+        toml_list_line(pm, sb, "frameworks", frameworks)
+        toml_list_line(pm, sb, "libs", libs)
+        toml_list_line(pm, sb, "cflags", jd_get(d, native, "cflags"))
+        toml_list_line(pm, sb, "ldflags", jd_get(d, native, "ldflags"))
+    }
+    sb_puts(sb, "\n[build]\nhost = \"python\"\n")
+    sb_puts(sb, "# test_command = \"FLOW_HOST=python flow run tests/test_main.flow\"\n")
+    sb_puts(sb, "\n[conventions]\n# avoid = [\n")
+    sb_puts(sb, "#   { pattern = \"reverse for loop\", reason = \"generates incorrect step direction (#410)\", workaround = \"use while with explicit decrement\" },\n")
+    sb_puts(sb, "# ]\n\n[patterns]\n")
+    sb_puts(sb, "# math = \"use fabs((x) as f64) as f32 for single-precision abs\"\n")
+    return sb_str(sb)
+}
+
+function read_lock(pm: ptr<Pm>) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let path: string = lock_file(pm)
+    if path_exists(path) {
+        let root: i32 = jd_parse_json(d, read_text(path))
+        if root >= 0 and jd_kind(d, root) == JV_OBJ {
+            return root
+        }
+    }
+    let o: i32 = jd_obj(d)
+    jd_set(d, o, "version", jd_add(d, JV_INT, "1", 0))
+    jd_set(d, o, "packages", jd_obj(d))
+    return o
+}
+
+function write_lock(pm: ptr<Pm>, lock: i32) {
+    let sb: ptr<SBuf> = sb_new()
+    jd_dump_json(pm[0].d, lock, sb, 0)
+    sb_putc(sb, 10)
+    let _w: bool = write_text(lock_file(pm), sb_str(sb))
+}
+
+# lock.setdefault("packages", {})
+function lock_packages(pm: ptr<Pm>, lock: i32) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let p: i32 = jd_get(d, lock, "packages")
+    if p >= 0 {
+        return p
+    }
+    let o: i32 = jd_obj(d)
+    jd_set(d, lock, "packages", o)
+    return o
+}
+
+function lock_entry(pm: ptr<Pm>, version: i32, source: string, resolved: i32) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let e: i32 = jd_obj(d)
+    jd_set(d, e, "version", version)
+    jd_set(d, e, "source", jd_str(d, source))
+    if resolved >= 0 {
+        jd_set(d, e, "resolved", resolved)
+    }
+    return e
+}
+
+# ---------------------------------------------------------------------------
+# Git URLs
+# ---------------------------------------------------------------------------
+
+export function looks_like_git_url(value: string) -> bool {
+    let v: string = str_strip(value)
+    if str_starts(v, "git+") or str_starts(v, "git@") or str_starts(v, "ssh://git@") or str_starts(v, "file://") {
+        return true
+    }
+    if str_starts(v, "http://") or str_starts(v, "https://") {
+        let lower: string = str_lower(v)
+        if str_ends(lower, ".git") or str_contains(lower, ".git#") {
+            return true
+        }
+        if str_contains(lower, "github.com/") or str_contains(lower, "gitlab.com/") or str_contains(lower, "bitbucket.org/") or str_contains(lower, "codeberg.org/") {
+            return true
+        }
+    }
+    return false
+}
+
+export function normalize_git_url(url: string) -> string {
+    let mut u: string = str_strip(url)
+    if str_starts(u, "git+") {
+        u = str_slice(u, 4, str_len(u))
+    }
+    if str_contains(u, "#") and str_starts(u, "file://") == false {
+        u = str_slice(u, 0, str_find_byte(u, 35))
+    }
+    let p: ptr<u8> = u as ptr<u8>
+    let mut n: i32 = str_len(u)
+    while n > 0 and p[n - 1] == 47 {
+        n = n - 1
+    }
+    return str_slice(u, 0, n)
+}
+
+export function infer_git_name(url: string) -> string {
+    let u: string = normalize_git_url(url)
+    let mut path: string = u
+    if str_starts(u, "git@") and str_contains(u, ":") {
+        path = str_slice(u, str_find_byte(u, 58) + 1, str_len(u))
+    }
+    let mut name: string = ""
+    let np: string = path_normalize(path)
+    if str_eq(np, ".") == false and str_eq(np, "/") == false {
+        name = path_name(np)
+    }
+    if str_ends(name, ".git") {
+        name = str_slice(name, 0, str_len(name) - 4)
+    }
+    if str_len(name) == 0 {
+        return "unnamed"
+    }
+    return name
+}
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+
+function is_hex_sha(d: ptr<JDoc>, ref: i32) -> bool {
+    if jd_kind(d, ref) != JV_STR {
+        return false
+    }
+    let s: string = str_lower(jd_sval(d, ref))
+    if str_len(s) < 7 {
+        return false
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        let c: i32 = p[i] as i32
+        if (c >= 48 and c <= 57) == false and (c >= 97 and c <= 102) == false {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Run git through the shim. argv holds git's arguments; errfile receives
+# stderr. Returns git's exit status, or 200 when git is not on PATH.
+function run_git(pm: ptr<Pm>, argv: i32, errfile: string) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let arr: i32 = args1(pm, "git")
+    args_push(pm, arr, errfile)
+    # argv starts with "git" itself, as the Python command list did.
+    let mut c: i32 = jd_next(d, jd_first(d, argv))
+    while c >= 0 {
+        args_push(pm, arr, jd_sval(d, c))
+        c = jd_next(d, c)
+    }
+    return shim_run(pm, arr)
+}
+
+function git_argv(pm: ptr<Pm>) -> i32 {
+    return args1(pm, "git")
+}
+
+function git_head_sha(pm: ptr<Pm>, repo: string) -> string {
+    let arr: i32 = args1(pm, "git-head")
+    args_push(pm, arr, repo)
+    let _f: i32 = fflush(null)
+    let buf: ptr<u8> = malloc(256) as ptr<u8>
+    let n: i32 = flowc_io_popen_read(shim_cmd(pm, arr), buf, 255)
+    if n <= 0 {
+        return ""
+    }
+    buf[n] = 0
+    return str_strip(buf as string)
+}
+
+# CalledProcessError's message for a failed git command.
+function called_process_error(pm: ptr<Pm>, argv: i32, rc: i32) -> string {
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, "Command '")
+    jd_py_repr(pm[0].d, argv, sb)
+    sb_puts(sb, "' returned non-zero exit status ")
+    sb_put_int(sb, rc as i64)
+    sb_puts(sb, ".")
+    return sb_str(sb)
+}
+
+function git_failed(pm: ptr<Pm>, name: string, argv: i32, rc: i32, errfile: string, staging: string) -> bool {
+    if rc == 200 {
+        say_color(RED, "git not found on PATH")
+        return false
+    }
+    let err: string = read_text(errfile)
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, "Git dependency install failed for ")
+    sb_puts(sb, name)
+    sb_puts(sb, ": ")
+    sb_puts(sb, called_process_error(pm, argv, rc))
+    if str_len(err) > 0 {
+        sb_puts(sb, " ")
+        sb_puts(sb, DASH)
+        sb_puts(sb, " ")
+        sb_puts(sb, str_strip(err))
+    }
+    say_color(RED, sb_str(sb))
+    if str_len(staging) > 0 and path_exists(staging) {
+        rmtree(pm, staging)
+    }
+    return false
+}
+
+function install_git_dependency(pm: ptr<Pm>, name: string, spec: i32) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    pm[0].last_sha = ""
+    let git_url: string = normalize_git_url(jd_py_str_s(d, jd_get(d, spec, "git")))
+    let pdir: string = packages_dir(pm)
+    let dest: string = path_join(pdir, name)
+    let mut ref: i32 = jd_get(d, spec, "tag")
+    if jd_truthy(d, ref) == false {
+        ref = jd_get(d, spec, "rev")
+    }
+    if jd_truthy(d, ref) == false {
+        ref = jd_get(d, spec, "branch")
+    }
+    let subdir: i32 = jd_get(d, spec, "subdir")
+    let has_subdir: bool = jd_truthy(d, subdir)
+    let mut clone_dest: string = dest
+    let mut staging: string = ""
+    if has_subdir {
+        staging = path_join(pdir, str_cat(".git-staging-", name))
+        if path_exists(staging) {
+            rmtree(pm, staging)
+        }
+        clone_dest = staging
+    }
+    let errfile: string = temp_path(str_cat("flow-pkg-git-stderr-", name))
+
+    if path_exists(clone_dest) and path_exists(path_join(clone_dest, ".git")) {
+        let argv: i32 = git_argv(pm)
+        args_push(pm, argv, "-C")
+        args_push(pm, argv, clone_dest)
+        args_push(pm, argv, "fetch")
+        args_push(pm, argv, "--tags")
+        args_push(pm, argv, "--prune")
+        let rc: i32 = run_git(pm, argv, errfile)
+        if rc != 0 {
+            let ok: bool = git_failed(pm, name, argv, rc, errfile, staging)
+            rmtree(pm, errfile)
+            return ok
+        }
+    } else {
+        if path_exists(clone_dest) {
+            rmtree(pm, clone_dest)
+        }
+        let argv: i32 = git_argv(pm)
+        args_push(pm, argv, "clone")
+        if jd_truthy(d, ref) and is_hex_sha(d, ref) == false {
+            args_push(pm, argv, "--depth")
+            args_push(pm, argv, "1")
+            args_push(pm, argv, "--branch")
+            args_push(pm, argv, jd_py_str_s(d, ref))
+            ref = -1
+        }
+        args_push(pm, argv, git_url)
+        args_push(pm, argv, clone_dest)
+        let rc: i32 = run_git(pm, argv, errfile)
+        if rc != 0 {
+            let ok: bool = git_failed(pm, name, argv, rc, errfile, staging)
+            rmtree(pm, errfile)
+            return ok
+        }
+    }
+    if jd_truthy(d, ref) {
+        let fetch: i32 = git_argv(pm)
+        args_push(pm, fetch, "-C")
+        args_push(pm, fetch, clone_dest)
+        args_push(pm, fetch, "fetch")
+        args_push(pm, fetch, "--tags")
+        args_push(pm, fetch, "--prune")
+        let _rf: i32 = run_git(pm, fetch, errfile)
+        let argv: i32 = git_argv(pm)
+        args_push(pm, argv, "-C")
+        args_push(pm, argv, clone_dest)
+        args_push(pm, argv, "checkout")
+        args_push(pm, argv, jd_py_str_s(d, ref))
+        let rc: i32 = run_git(pm, argv, errfile)
+        if rc != 0 {
+            let ok: bool = git_failed(pm, name, argv, rc, errfile, staging)
+            rmtree(pm, errfile)
+            return ok
+        }
+    }
+    rmtree(pm, errfile)
+
+    pm[0].last_sha = git_head_sha(pm, clone_dest)
+
+    let mut label: string = git_url
+    if has_subdir {
+        let sub: string = jd_py_str_s(d, subdir)
+        let src: string = path_join(clone_dest, sub)
+        if path_exists(src) == false {
+            say_color(RED, str_cat3(str_cat3("Git dependency ", name, ": subdir '"), sub, "' not found in repo"))
+            return false
+        }
+        if path_exists(dest) {
+            rmtree(pm, dest)
+        }
+        copy_package_dir(pm, src, dest)
+        if path_exists(staging) {
+            rmtree(pm, staging)
+        }
+        label = str_cat3(git_url, "/", sub)
+    }
+    say_color(GREEN, str_cat3(str_cat3(CHECK, " Installed ", name), " from git (", str_cat(label, ")")))
+    return true
+}
+
+# A scratch file outside the project (TMPDIR, else /tmp).
+function temp_path(stem: string) -> string {
+    let mut dir: string = pkg_env("TMPDIR")
+    if str_len(dir) == 0 {
+        dir = "/tmp"
+    }
+    let sb: ptr<SBuf> = sb_new()
+    sb_puts(sb, stem)
+    sb_putc(sb, 45)
+    sb_put_int(sb, getpid() as i64)
+    return path_join(dir, sb_str(sb))
+}
+
+# pathlib's with_suffix(".flow") on flow_packages/<name>.
+function with_flow_suffix(p: string) -> string {
+    let name: string = path_name(p)
+    let dot: i32 = str_rfind_byte(name, 46)
+    if dot > 0 and dot < str_len(name) - 1 {
+        return str_cat(str_slice(p, 0, str_len(p) - str_len(name) + dot), ".flow")
+    }
+    return str_cat(p, ".flow")
+}
+
+# Install one package from stdlib, a local path, git or the registry.
+export function install_package(pm: ptr<Pm>, name: string, spec: i32) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    let pdir: string = packages_dir(pm)
+    if path_is_dir(pdir) == false {
+        let _m: i32 = flowc_io_mkdir(pdir)
+    }
+
+    let stdlib_path: string = stdlib_file(pm, name)
+    if path_exists(stdlib_path) {
+        let _c: i32 = shim3(pm, "copyfile", stdlib_path, path_join(pdir, str_cat(name, ".flow")))
+        say_color(GREEN, str_cat3(CHECK, " Installed ", str_cat(name, " from stdlib")))
+        return true
+    }
+
+    if jd_kind(d, spec) == JV_OBJ {
+        if jd_has(d, spec, "path") {
+            let raw: string = expand_user(jd_py_str_s(d, jd_get(d, spec, "path")))
+            let mut source: string = ""
+            if str_starts(raw, "/") {
+                source = path_resolve(raw)
+            } else {
+                source = path_resolve(path_join(pm[0].project_dir, raw))
+            }
+            if path_exists(source) == false {
+                say_color(RED, str_cat("Path dependency not found: ", source))
+                return false
+            }
+            let dest: string = path_join(pdir, name)
+            if path_is_dir(source) {
+                copy_package_dir(pm, source, dest)
+            } else {
+                let _c2: i32 = shim3(pm, "copyfile", source, with_flow_suffix(dest))
+            }
+            say_color(GREEN, str_cat3(str_cat3(CHECK, " Installed ", name), " from ", source))
+            return true
+        }
+        if jd_has(d, spec, "git") {
+            return install_git_dependency(pm, name, spec)
+        }
+        let sb: ptr<SBuf> = sb_new()
+        sb_puts(sb, "Unsupported dependency spec for ")
+        sb_puts(sb, name)
+        sb_puts(sb, ": ")
+        jd_py_repr(d, spec, sb)
+        say_color(RED, sb_str(sb))
+        return false
+    }
+
+    if path_exists(path_join(pm[0].project_dir, str_cat(name, ".flow"))) {
+        say_color(YELLOW, str_cat(name, " is a local file"))
+        return true
+    }
+
+    let k: i32 = jd_kind(d, spec)
+    if k == JV_STR or k < 0 or k == JV_NULL {
+        let mut req: string = "*"
+        if k == JV_STR {
+            req = jd_sval(d, spec)
+        }
+        let v: i32 = reg_resolve(pm, name, req)
+        if v >= 0 {
+            let resolved: i32 = to_dep_spec(pm, v)
+            say_color(BLUE, str_cat3(str_cat3(DOWN, " ", name), "@", str_cat(pv_version(pm, v), " from registry")))
+            return install_package(pm, name, resolved)
+        }
+    }
+
+    let sb2: ptr<SBuf> = sb_new()
+    sb_puts(sb2, "Unknown dependency '")
+    sb_puts(sb2, name)
+    sb_puts(sb2, "'. Not in registry, path, git, or stdlib. Try: flow search ")
+    sb_puts(sb2, name)
+    say_color(RED, sb_str(sb2))
+    return false
+}
+
+# Install every dependency and refresh flow.lock (FlowPackageManager.install).
+export function pm_install(pm: ptr<Pm>) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    say_color(BLUE, "Installing dependencies...")
+    let mut success: bool = true
+    let lock: i32 = read_lock(pm)
+    let lpk: i32 = lock_packages(pm, lock)
+    let deps: i32 = cfg_table(pm, cfg, "dependencies")
+    let mut m: i32 = jd_first(d, deps)
+    while m >= 0 {
+        let name: string = jd_mem_key(d, m)
+        let spec: i32 = jd_mem_val(d, m)
+        m = jd_next(d, m)
+        let mut locked: i32 = jd_get(d, lpk, name)
+        if jd_kind(d, locked) != JV_OBJ {
+            locked = -1
+        }
+        let mut install_spec: i32 = jd_get(d, locked, "resolved")
+        if jd_truthy(d, install_spec) == false {
+            install_spec = jd_get(d, locked, "version")
+        }
+        if jd_truthy(d, install_spec) == false {
+            install_spec = spec
+        }
+        let spec_is_dict: bool = jd_kind(d, spec) == JV_OBJ
+        if spec_is_dict {
+            install_spec = spec
+        }
+        if install_package(pm, name, install_spec) == false {
+            success = false
+            continue
+        }
+        let mut resolved: i32 = -1
+        let mut locked_ver: i32 = spec
+        let mut source: string = "registry"
+        if path_exists(stdlib_file(pm, name)) and spec_is_dict == false {
+            source = "stdlib"
+        } else {
+            if spec_is_dict and jd_has(d, spec, "path") {
+                source = "path"
+            } else {
+                if spec_is_dict and jd_has(d, spec, "git") {
+                    source = "git"
+                    if str_len(pm[0].last_sha) > 0 {
+                        resolved = jd_copy_obj(d, spec)
+                        jd_set(d, resolved, "rev", jd_str(d, pm[0].last_sha))
+                    }
+                } else {
+                    let mut req: string = "*"
+                    if jd_kind(d, spec) == JV_STR {
+                        req = jd_sval(d, spec)
+                    }
+                    let v: i32 = reg_resolve(pm, name, req)
+                    if v >= 0 {
+                        locked_ver = jd_str(d, pv_version(pm, v))
+                        resolved = to_dep_spec(pm, v)
+                    }
+                }
+            }
+        }
+        if jd_truthy(d, resolved) == false {
+            resolved = -1
+        }
+        jd_set(d, lpk, name, lock_entry(pm, locked_ver, source, resolved))
+    }
+    if success {
+        write_lock(pm, lock)
+        say(str_cat3("\n", GREEN, str_cat3(CHECK, " All dependencies installed (flow.lock updated)", RESET)))
+    }
+    return success
+}
+
+# find_flow_toml: walk up from the program (or directory) to a flow.toml.
+function find_flow_toml(start: string) -> string {
+    let mut cur: string = path_resolve(start)
+    if path_is_file(cur) {
+        cur = path_parent(cur)
+    }
+    while true {
+        let cand: string = path_join(cur, "flow.toml")
+        if path_is_file(cand) {
+            return cand
+        }
+        let parent: string = path_parent(cur)
+        if str_eq(parent, cur) {
+            return ""
+        }
+        cur = parent
+    }
+    return ""
+}
+
+# FlowPackageManager.sync_for_program: install only when something is missing.
+export function pm_sync_for_program(program: string) -> bool {
+    let toml: string = find_flow_toml(program)
+    if str_len(toml) == 0 {
+        return true
+    }
+    let pm: ptr<Pm> = pm_new(path_parent(toml))
+    let d: ptr<JDoc> = pm[0].d
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let deps: i32 = cfg_table(pm, cfg, "dependencies")
+    if jd_truthy(d, deps) == false {
+        return true
+    }
+    let mut installed: bool = true
+    let mut m: i32 = jd_first(d, deps)
+    while m >= 0 {
+        if path_exists(path_join(packages_dir(pm), jd_mem_key(d, m))) == false {
+            installed = false
+        }
+        m = jd_next(d, m)
+    }
+    if path_exists(lock_file(pm)) and installed {
+        return true
+    }
+    return pm_install(pm)
+}
+
+# ---------------------------------------------------------------------------
+# add
+# ---------------------------------------------------------------------------
+
+export struct AddOpts {
+    version: string,
+    git: string,
+    path: string,
+    tag: string,
+    rev: string,
+    branch: string,
+    subdir: string
+}
+
+function stdlib_exists(pm: ptr<Pm>, name: string) -> bool {
+    return path_exists(stdlib_file(pm, name))
+}
+
+# FlowPackageManager.add
+export function pm_add(pm: ptr<Pm>, package_name: string, o: ptr<AddOpts>) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let mut pkg_name: string = package_name
+    let mut git: string = o[0].git
+    let path: string = o[0].path
+    let mut version: string = o[0].version
+    if str_len(git) == 0 and str_len(path) == 0 and looks_like_git_url(pkg_name) {
+        git = pkg_name
+        pkg_name = infer_git_name(git)
+    }
+    # _parse_add_spec
+    let mut name: string = str_strip(pkg_name)
+    let mut ver_from_at: string = "*"
+    if str_contains(pkg_name, "@") and str_starts(pkg_name, "@") == false and str_starts(pkg_name, "git@") == false {
+        let at: i32 = str_find_byte(pkg_name, 64)
+        name = str_strip(str_slice(pkg_name, 0, at))
+        ver_from_at = str_strip(str_slice(pkg_name, at + 1, str_len(pkg_name)))
+        if str_len(ver_from_at) == 0 {
+            ver_from_at = "*"
+        }
+    }
+    if str_eq(version, "*") and str_eq(ver_from_at, "*") == false {
+        version = ver_from_at
+    }
+    if str_len(git) > 0 {
+        git = normalize_git_url(git)
+        if str_eq(name, "unnamed") or str_len(name) == 0 or looks_like_git_url(name) {
+            name = infer_git_name(git)
+        }
+    }
+    let deps: i32 = cfg_table(pm, cfg, "dependencies")
+    if jd_has(d, deps, name) {
+        say_color(YELLOW, str_cat(name, " already in dependencies"))
+        return false
+    }
+
+    let mut spec: i32 = -1
+    let mut source: string = ""
+    if str_len(path) > 0 {
+        spec = jd_obj(d)
+        jd_set(d, spec, "path", jd_str(d, path))
+        source = "path"
+    } else {
+        if str_len(git) > 0 {
+            spec = jd_obj(d)
+            jd_set(d, spec, "git", jd_str(d, git))
+            if str_len(o[0].tag) > 0 {
+                jd_set(d, spec, "tag", jd_str(d, o[0].tag))
+            } else {
+                if str_len(o[0].rev) > 0 {
+                    jd_set(d, spec, "rev", jd_str(d, o[0].rev))
+                } else {
+                    if str_len(o[0].branch) > 0 {
+                        jd_set(d, spec, "branch", jd_str(d, o[0].branch))
+                    }
+                }
+            }
+            if str_len(o[0].subdir) > 0 {
+                jd_set(d, spec, "subdir", jd_str(d, o[0].subdir))
+            }
+            source = "git"
+        } else {
+            let v: i32 = reg_resolve(pm, name, version)
+            if v < 0 {
+                if stdlib_exists(pm, name) {
+                    if str_eq(version, "*") {
+                        spec = jd_str(d, "0.0.0")
+                    } else {
+                        spec = jd_str(d, version)
+                    }
+                    source = "stdlib"
+                } else {
+                    registry(pm)
+                    say_color(RED, str_cat3(str_cat3("Package '", name, "' not found in registry ("), pm[0].reg_name, ")."))
+                    let sb: ptr<SBuf> = sb_new()
+                    sb_puts(sb, "  Try: ")
+                    sb_puts(sb, BLUE)
+                    sb_puts(sb, "flow search ")
+                    sb_puts(sb, name)
+                    sb_puts(sb, RESET)
+                    sb_puts(sb, "  or  ")
+                    sb_puts(sb, BLUE)
+                    sb_puts(sb, "flow add --git <url> --name ")
+                    sb_puts(sb, name)
+                    sb_puts(sb, RESET)
+                    say(sb_str(sb))
+                    return false
+                }
+            } else {
+                let pv: string = pv_version(pm, v)
+                if str_eq(version, "*") or str_eq(version, "latest") {
+                    spec = jd_str(d, pv)
+                } else {
+                    spec = jd_str(d, version)
+                }
+                if str_starts(version, "^") or str_starts(version, ">=") {
+                    spec = jd_str(d, version)
+                }
+                source = "registry"
+                say_color(BLUE, str_cat3(str_cat3("Resolved ", name, "@"), pv, str_cat(" from ", pm[0].reg_name)))
+            }
+        }
+    }
+
+    jd_set(d, deps, name, spec)
+    let _w: bool = write_text(config_file(pm), to_toml(pm, cfg))
+    let sb2: ptr<SBuf> = sb_new()
+    sb_puts(sb2, CHECK)
+    sb_puts(sb2, " Added ")
+    sb_puts(sb2, name)
+    sb_puts(sb2, " = ")
+    jd_toml_value(d, spec, sb2)
+    say_color(GREEN, sb_str(sb2))
+
+    let ok: bool = install_package(pm, name, spec)
+    if ok {
+        let mut locked_ver: i32 = spec
+        let mut resolved: i32 = -1
+        if str_eq(source, "registry") {
+            let mut req: string = "*"
+            if jd_kind(d, spec) == JV_STR {
+                req = jd_sval(d, spec)
+            }
+            let v2: i32 = reg_resolve(pm, name, req)
+            if v2 >= 0 {
+                locked_ver = jd_str(d, pv_version(pm, v2))
+                resolved = to_dep_spec(pm, v2)
+            }
+        } else {
+            if str_eq(source, "git") {
+                resolved = jd_copy_obj(d, spec)
+                let sha: string = pm[0].last_sha
+                if str_len(sha) > 0 {
+                    jd_set(d, resolved, "rev", jd_str(d, sha))
+                    say_color(BLUE, str_cat("  pinned rev ", str_slice(sha, 0, 12)))
+                }
+            }
+        }
+        let lock: i32 = read_lock(pm)
+        jd_set(d, lock_packages(pm, lock), name, lock_entry(pm, locked_ver, source, resolved))
+        write_lock(pm, lock)
+    }
+    return ok
+}
+
+# ---------------------------------------------------------------------------
+# search / info
+# ---------------------------------------------------------------------------
+
+function pkg_field(pm: ptr<Pm>, meta: i32, key: string, dflt: string) -> string {
+    return cfg_str(pm, meta, key, dflt)
+}
+
+export function pm_search(pm: ptr<Pm>, query: string) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    registry(pm)
+    let q: string = str_strip(str_lower(query))
+    let total: i32 = jd_count(d, pm[0].reg_pkgs)
+    let all: ptr<i32> = malloc(((total + 1) as i64) * 4) as ptr<i32>
+    let scores: ptr<i32> = malloc(((total + 1) as i64) * 4) as ptr<i32>
+    let mut n: i32 = 0
+    let mut c: i32 = jd_first(d, pm[0].reg_pkgs)
+    while c >= 0 {
+        let name: string = jd_mem_key(d, c)
+        if str_len(q) == 0 {
+            all[n] = c
+            scores[n] = 0
+            n = n + 1
+        } else {
+            let descr: string = pkg_field(pm, jd_mem_val(d, c), "description", "")
+            let hay: string = str_lower(str_cat3(name, " ", descr))
+            if str_contains(hay, q) {
+                let lname: string = str_lower(name)
+                let mut score: i32 = 2
+                if str_eq(lname, q) {
+                    score = 0
+                } else {
+                    if str_starts(lname, q) {
+                        score = 1
+                    }
+                }
+                all[n] = c
+                scores[n] = score
+                n = n + 1
+            }
+        }
+        c = jd_next(d, c)
+    }
+    if str_len(q) > 0 {
+        # Stable insertion sort by (score, name).
+        let mut i: i32 = 1
+        while i < n {
+            let cv: i32 = all[i]
+            let cs: i32 = scores[i]
+            let mut j: i32 = i - 1
+            while j >= 0 and (scores[j] > cs or (scores[j] == cs and strcmp_names(jd_mem_key(d, all[j]), jd_mem_key(d, cv)) > 0)) {
+                all[j + 1] = all[j]
+                scores[j + 1] = scores[j]
+                j = j - 1
+            }
+            all[j + 1] = cv
+            scores[j + 1] = cs
+            i = i + 1
+        }
+    }
+    if n > 20 {
+        n = 20
+    }
+    if n == 0 {
+        let sb: ptr<SBuf> = sb_new()
+        sb_puts(sb, "No packages matched ")
+        jd_py_repr(d, jd_str(d, query), sb)
+        say_color(YELLOW, sb_str(sb))
+        return false
+    }
+    let hb: ptr<SBuf> = sb_new()
+    sb_puts(hb, BOLD)
+    sb_puts(hb, pm[0].reg_name)
+    sb_puts(hb, RESET)
+    sb_puts(hb, " ")
+    sb_puts(hb, DASH)
+    sb_puts(hb, " ")
+    sb_put_int(hb, n as i64)
+    sb_puts(hb, " package(s)\n")
+    say(sb_str(hb))
+    let mut k: i32 = 0
+    while k < n {
+        let mem: i32 = all[k]
+        let meta: i32 = jd_mem_val(d, mem)
+        let latest: i32 = resolve_version(pm, meta, "*")
+        let mut ver: string = "?"
+        if latest >= 0 {
+            ver = pv_version(pm, latest)
+        }
+        say(str_cat3(str_cat3("  ", GREEN, jd_mem_key(d, mem)), RESET, str_cat("  ", ver)))
+        let descr: i32 = jd_get(d, meta, "description")
+        if jd_truthy(d, descr) {
+            say(str_cat("    ", jd_py_str_s(d, descr)))
+        }
+        k = k + 1
+    }
+    return true
+}
+
+function strcmp_names(a: string, b: string) -> i32 {
+    return strcmp(a, b)
+}
+
+export function pm_info(pm: ptr<Pm>, name: string) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    let meta: i32 = reg_get(pm, name)
+    if meta < 0 {
+        say_color(RED, str_cat("Unknown package: ", name))
+        return false
+    }
+    let latest: i32 = resolve_version(pm, meta, "*")
+    say(str_cat3(BOLD, name, RESET))
+    say(str_cat("  description: ", pkg_field(pm, meta, "description", "")))
+    say(str_cat("  license:     ", pkg_field(pm, meta, "license", "MIT")))
+    let hp: i32 = jd_get(d, meta, "homepage")
+    if jd_truthy(d, hp) {
+        say(str_cat("  homepage:    ", jd_py_str_s(d, hp)))
+    }
+    say("  versions:")
+    let versions: i32 = jd_get(d, meta, "versions")
+    if jd_kind(d, versions) == JV_ARR {
+        let mut c: i32 = jd_first(d, versions)
+        while c >= 0 {
+            let mut mark: string = ""
+            if pv_yanked(pm, c) {
+                mark = " (yanked)"
+            }
+            let mut src: string = "?"
+            let p: i32 = jd_get(d, c, "path")
+            let g: i32 = jd_get(d, c, "git")
+            if jd_truthy(d, p) {
+                src = jd_py_str_s(d, p)
+            } else {
+                if jd_truthy(d, g) {
+                    src = jd_py_str_s(d, g)
+                }
+            }
+            say(str_cat3(str_cat3("    ", pv_version(pm, c), mark), str_cat3("  ", ARROW, "  "), src))
+            c = jd_next(d, c)
+        }
+    }
+    if latest >= 0 {
+        say(str_cat("  latest:      ", pv_version(pm, latest)))
+    }
+    return true
 }
