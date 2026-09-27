@@ -11,15 +11,13 @@ other) lives in tests/lang/test_enum_match_arms.flow.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
-import textwrap
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+from tests.unit.compiler_helpers import to_c
+
 
 pytestmark = pytest.mark.skipif(
     not shutil.which("clang"), reason="needs clang for -Werror=return-type"
@@ -48,24 +46,16 @@ function main() -> i32 {
 
 
 @pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("match")
-    src = tmp / "m.flow"
-    src.write_text(textwrap.dedent(SOURCE))
-    run = subprocess.run(
-        ["./flow", "run", str(src)],
-        cwd=ROOT, capture_output=True, text=True,
-        env={**os.environ, "FLOW_HOST": "python"},
-    )
-    return run, (ROOT / "build" / "m.c").read_text()
+def generated():
+    return to_c(SOURCE)
 
 
-def test_clang_sees_the_chain_as_total(built, tmp_path):
-    _, generated = built
+def test_clang_sees_the_chain_as_total(generated, tmp_path):
     c_file = tmp_path / "m.c"
     c_file.write_text(generated)
     compiled = subprocess.run(
         ["clang", "-fsyntax-only", "-Werror=return-type", str(c_file)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert compiled.returncode == 0, compiled.stderr
