@@ -3,7 +3,7 @@
 ## A formal operating handbook for building, testing, and extending Flow programs
 
 **Edition:** 1.0  
-**Repository baseline:** Flow 0.11.1, August 2026  
+**Repository baseline:** live repository; verify the current version and CI before acting  
 **Language:** simplified technical English
 
 ---
@@ -27,6 +27,11 @@ The book is based on the present construction of Flow:
 
 Flow changes quickly. This book shows how to check the current repository. The
 repository is the final source for current behavior.
+
+The canonical repository-agent contract is `AGENTS.md` plus
+`docs/project/agentic-loop.md`. Repository placement rules are in
+`docs/project/repository-structure.md`. This handbook explains techniques; it
+must not override those live operating contracts.
 
 ### Intended reader
 
