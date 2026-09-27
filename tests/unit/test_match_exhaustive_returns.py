@@ -48,6 +48,10 @@ function main() -> i32 {
 """
 
 
+from flow.parser import parse_flow_code
+from flow.c_generator import flow_to_c
+
+
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("match")
@@ -58,7 +62,9 @@ def built(tmp_path_factory):
         cwd=ROOT, capture_output=True, text=True,
         env={**os.environ, "FLOW_HOST": "python"},
     )
-    return run, (ROOT / "build" / "m.c").read_text()
+    ast = parse_flow_code(textwrap.dedent(SOURCE))
+    c_code = flow_to_c(ast)
+    return run, c_code
 
 
 def test_every_arm_still_dispatches_to_its_own_variant(built):

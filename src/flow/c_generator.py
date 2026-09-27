@@ -952,7 +952,7 @@ class CGenerator:
         # definition, so this also transparently supports self- and
         # mutually-referential struct pointers.
         forward_declared = set()
-        for struct_name in sorted(self._structs.keys()):
+        for struct_name in sorted(self._structs):
             if struct_name in emitted:
                 continue
             if struct_name in self._enums or struct_name in type_alias_names or struct_name in distinct_type_names:
@@ -1029,7 +1029,7 @@ class CGenerator:
             lines.append("")
             emitted.add(name)
 
-        for struct_name in sorted(self._structs.keys()):
+        for struct_name in sorted(self._structs):
             if struct_name in getattr(self, '_c_import_types', ()):
                 continue
             emit_struct(struct_name)
