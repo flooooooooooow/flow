@@ -291,9 +291,11 @@ class FlowLanguageServer:
         uri = params['textDocument']['uri']
         text = params['textDocument']['text']
         self.documents[uri] = text
-        # Analyze immediately on open (no debounce needed for a single event)
-        self._analyze_document(uri)
-        self._publish_diagnostics(uri)
+        # Offload document analysis and diagnostic publishing to a background thread
+        # so the server thread stays responsive to incoming requests immediately.
+        threading.Thread(
+            target=self._analyze_and_publish, args=(uri,), daemon=True
+        ).start()
 
     def _handle_did_change(self, params: dict):
         """Handle textDocument/didChange."""
