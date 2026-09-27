@@ -59,7 +59,7 @@ flowc_expand() {
     rm -f "$out" "$err"
     local log
     set +e
-    log="$(FLOWC_EXPAND_ONLY=1 FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" 2>&1)"
+    log="$(FLOWC_EXPAND_ONLY=field FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" 2>&1)"
     local code=$?
     set -e
     if [[ "$code" -ne 0 ]]; then
