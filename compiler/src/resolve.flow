@@ -377,6 +377,353 @@ export function flowc_resolve_dotted_path(
     return 0 - 1
 }
 
+# ---------------------------------------------------------------------------
+# Registry package imports: `import json.lib` -> flow_packages/json/...
+#
+# Same rules as the Python host's module resolver: the project is the nearest
+# flow.toml above the entry file; a dotted import whose first segment is a key
+# of that manifest's [dependencies] (and not of [paths], and not `std`)
+# resolves under <project>/flow_packages/<name>/src, then
+# <project>/flow_packages/<name>, trying the longest module prefix first
+# (`import json.lib.parse` may name the symbol `parse` of lib.flow). A declared
+# package that is not installed is an error, not a fallback.
+# ---------------------------------------------------------------------------
+
+# Append bytes of s into out at o (cap includes NUL). Returns new o, or -1.
+function flowc_resolve_put(out: ptr<u8>, o: i32, cap: i32, s: string) -> i32 {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    if o + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        out[o + i] = p[i]
+        i = i + 1
+    }
+    out[o + n] = 0
+    return o + n
+}
+
+# Directory of the nearest flow.toml above entry_path, written into out.
+# Returns its length, or 0 when there is none. Relative entries walk up to
+# ".", then "..", "../..", as the working directory's parents.
+export function flowc_resolve_project_root(entry_path: string, out: ptr<u8>, cap: i32) -> i32 {
+    let dir: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let cand: ptr<u8> = malloc((FLOWC_RESOLVE_PATH_CAP + 16) as i64)
+    let mut dlen: i32 = flowc_resolve_dirname(entry_path, dir, FLOWC_RESOLVE_PATH_CAP)
+    out[0] = 0
+    let mut found: i32 = 0
+    let mut ups: i32 = 0
+    while dlen > 0 and ups < 64 {
+        let mut o: i32 = flowc_resolve_put(cand, 0, FLOWC_RESOLVE_PATH_CAP + 16, dir as string)
+        if o >= 0 {
+            o = flowc_resolve_put(cand, o, FLOWC_RESOLVE_PATH_CAP + 16, "/flow.toml")
+        }
+        if o >= 0 and flowc_io_exists(cand as string) == 1 {
+            found = flowc_resolve_copy_cstr(dir as string, out, cap)
+            if found < 0 {
+                found = 0
+            }
+            dlen = 0
+        } else {
+            # "/" is the top of an absolute path.
+            if dlen == 1 and dir[0] == 47 {
+                dlen = 0
+            } else {
+                let is_dot: i32 = flowc_resolve_cstr_eq(dir, "." as ptr<u8>)
+                let mut last_is_dotdot: i32 = 0
+                if dlen >= 2 and dir[dlen - 1] == 46 and dir[dlen - 2] == 46 {
+                    if dlen == 2 or dir[dlen - 3] == 47 {
+                        last_is_dotdot = 1
+                    }
+                }
+                if is_dot == 1 {
+                    dlen = flowc_resolve_copy_cstr("..", dir, FLOWC_RESOLVE_PATH_CAP)
+                    ups = ups + 1
+                } else {
+                    if last_is_dotdot == 1 {
+                        dlen = flowc_resolve_put(dir, dlen, FLOWC_RESOLVE_PATH_CAP, "/..")
+                        ups = ups + 1
+                    } else {
+                        let parent: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+                        dlen = flowc_resolve_dirname(dir as string, parent, FLOWC_RESOLVE_PATH_CAP)
+                        if dlen > 0 {
+                            dlen = flowc_resolve_copy_cstr(parent as string, dir, FLOWC_RESOLVE_PATH_CAP)
+                        }
+                        free(parent)
+                    }
+                }
+            }
+        }
+    }
+    free(cand)
+    free(dir)
+    return found
+}
+
+function flowc_resolve_is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_resolve_bare_key(c: i32) -> i32 {
+    if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 45 {
+        return 1
+    }
+    return 0
+}
+
+# True (1) when bytes [a, b) of x equal bytes [c, d) of y.
+function flowc_resolve_span_eq(x: ptr<u8>, a: i32, b: i32, y: ptr<u8>, c: i32, d: i32) -> i32 {
+    if b - a != d - c {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < b - a {
+        if x[a + i] != y[c + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Read one TOML key segment at p[i] (bare or "quoted"); writes its span into
+# span[0..1] and returns the index after it, or -1.
+function flowc_resolve_toml_key(p: ptr<u8>, i: i32, e: i32, span: ptr<i32>) -> i32 {
+    if i < e and (p[i] == 34 or p[i] == 39) {
+        let q: u8 = p[i]
+        let mut k: i32 = i + 1
+        while k < e and p[k] != q {
+            k = k + 1
+        }
+        if k >= e {
+            return 0 - 1
+        }
+        span[0] = i + 1
+        span[1] = k
+        return k + 1
+    }
+    let mut k: i32 = i
+    while k < e and flowc_resolve_bare_key(p[k] as i32) == 1 {
+        k = k + 1
+    }
+    if k == i {
+        return 0 - 1
+    }
+    span[0] = i
+    span[1] = k
+    return k
+}
+
+# 1 when the manifest text declares `name` (bytes [ns, ne) of nsrc) as a key
+# of table `table` (a [table] section key, a dotted `name.x = ...` key in it,
+# or a [table.name] header).
+export function flowc_resolve_toml_declares(toml: ptr<u8>, n: i32, table: string, nsrc: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let tp: ptr<u8> = table
+    let tn: i32 = strlen(table) as i32
+    let span: array<i32, 2> = [0, 0]
+    let mut in_table: i32 = 0
+    let mut pos: i32 = 0
+    while pos < n {
+        let mut eol: i32 = pos
+        while eol < n and toml[eol] != 10 {
+            eol = eol + 1
+        }
+        let mut s: i32 = pos
+        while s < eol and flowc_resolve_is_space(toml[s] as i32) == 1 {
+            s = s + 1
+        }
+        pos = eol + 1
+        if s >= eol or toml[s] == 35 {
+            continue
+        }
+        if toml[s] == 91 {
+            in_table = 0
+            let mut k: i32 = s + 1
+            if k < eol and toml[k] == 91 {
+                continue
+            }
+            while k < eol and flowc_resolve_is_space(toml[k] as i32) == 1 {
+                k = k + 1
+            }
+            let k2: i32 = flowc_resolve_toml_key(toml, k, eol, &span[0] as ptr<i32>)
+            if k2 < 0 {
+                continue
+            }
+            if flowc_resolve_span_eq(toml, span[0], span[1], tp, 0, tn) == 1 {
+                let mut k3: i32 = k2
+                while k3 < eol and flowc_resolve_is_space(toml[k3] as i32) == 1 {
+                    k3 = k3 + 1
+                }
+                if k3 < eol and toml[k3] == 93 {
+                    in_table = 1
+                } else {
+                    if k3 < eol and toml[k3] == 46 {
+                        k3 = k3 + 1
+                        while k3 < eol and flowc_resolve_is_space(toml[k3] as i32) == 1 {
+                            k3 = k3 + 1
+                        }
+                        let k4: i32 = flowc_resolve_toml_key(toml, k3, eol, &span[0] as ptr<i32>)
+                        if k4 >= 0 and flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1 {
+                            return 1
+                        }
+                    }
+                }
+            }
+            continue
+        }
+        if in_table == 1 {
+            let k5: i32 = flowc_resolve_toml_key(toml, s, eol, &span[0] as ptr<i32>)
+            if k5 >= 0 and flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1 {
+                let mut k6: i32 = k5
+                while k6 < eol and flowc_resolve_is_space(toml[k6] as i32) == 1 {
+                    k6 = k6 + 1
+                }
+                if k6 < eol and (toml[k6] == 61 or toml[k6] == 46) {
+                    return 1
+                }
+            }
+        }
+    }
+    return 0
+}
+
+# Try root/<segments [s, e) of src as a path>.flow. Returns length or -1.
+function flowc_resolve_try_under(root: string, src: ptr<u8>, s: i32, e: i32, out: ptr<u8>, cap: i32) -> i32 {
+    let mut o: i32 = flowc_resolve_put(out, 0, cap, root)
+    if o < 0 or o + (e - s) + 7 > cap {
+        return 0 - 1
+    }
+    out[o] = 47
+    o = o + 1
+    let mut i: i32 = s
+    while i < e {
+        if src[i] == 46 {
+            out[o] = 47
+        } else {
+            out[o] = src[i]
+        }
+        o = o + 1
+        i = i + 1
+    }
+    out[o] = 0
+    o = flowc_resolve_put(out, o, cap, ".flow")
+    if o < 0 {
+        return 0 - 1
+    }
+    if flowc_io_exists(out as string) == 1 {
+        return o
+    }
+    return 0 - 1
+}
+
+# Resolve a dotted import against the project's flow_packages/.
+# Returns the path length; -1 when the first segment is not a declared
+# dependency (the caller falls back to the other rules); -2 when it is one
+# but no file matches.
+export function flowc_resolve_package_path(
+    src: ptr<u8>,
+    name_start: i32,
+    name_end: i32,
+    project_root: string,
+    out_path: ptr<u8>,
+    out_path_cap: i32
+) -> i32 {
+    if strlen(project_root) == 0 or name_end <= name_start {
+        return 0 - 1
+    }
+    let mut first_end: i32 = name_start
+    while first_end < name_end and src[first_end] != 46 {
+        first_end = first_end + 1
+    }
+    if first_end - name_start == 3 and src[name_start] == 115 and src[name_start + 1] == 116 and src[name_start + 2] == 100 {
+        return 0 - 1
+    }
+    let tpath: ptr<u8> = malloc((FLOWC_RESOLVE_PATH_CAP + 16) as i64)
+    let mut o: i32 = flowc_resolve_put(tpath, 0, FLOWC_RESOLVE_PATH_CAP + 16, project_root)
+    if o >= 0 {
+        o = flowc_resolve_put(tpath, o, FLOWC_RESOLVE_PATH_CAP + 16, "/flow.toml")
+    }
+    if o < 0 {
+        free(tpath)
+        return 0 - 1
+    }
+    let toml: ptr<u8> = malloc(65536)
+    let n: i32 = flowc_read_file(tpath as string, toml, 65535)
+    free(tpath)
+    if n <= 0 {
+        free(toml)
+        return 0 - 1
+    }
+    toml[n] = 0
+    let declared: i32 = flowc_resolve_toml_declares(toml, n, "dependencies", src, name_start, first_end)
+    let is_path: i32 = flowc_resolve_toml_declares(toml, n, "paths", src, name_start, first_end)
+    free(toml)
+    if declared == 0 or is_path == 1 {
+        return 0 - 1
+    }
+    # Import of the package name alone names no module.
+    if first_end >= name_end {
+        puts("flowc: a package import needs a module, e.g. import name.lib")
+        return 0 - 2
+    }
+    let pkg_root: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let pkg_src: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let mut r: i32 = flowc_resolve_put(pkg_root, 0, FLOWC_RESOLVE_PATH_CAP, project_root)
+    if r >= 0 {
+        r = flowc_resolve_put(pkg_root, r, FLOWC_RESOLVE_PATH_CAP, "/flow_packages/")
+    }
+    let mut fi: i32 = name_start
+    while r >= 0 and fi < first_end and r + 2 < FLOWC_RESOLVE_PATH_CAP {
+        pkg_root[r] = src[fi]
+        r = r + 1
+        fi = fi + 1
+    }
+    if r >= 0 {
+        pkg_root[r] = 0
+    }
+    let mut r2: i32 = flowc_resolve_copy_cstr(pkg_root as string, pkg_src, FLOWC_RESOLVE_PATH_CAP)
+    if r2 >= 0 {
+        r2 = flowc_resolve_put(pkg_src, r2, FLOWC_RESOLVE_PATH_CAP, "/src")
+    }
+    let mut result: i32 = 0 - 2
+    if r >= 0 and r2 >= 0 {
+        let rest_start: i32 = first_end + 1
+        let mut pass: i32 = 0
+        while pass < 2 and result < 0 {
+            let mut root: string = pkg_src as string
+            if pass == 1 {
+                root = pkg_root as string
+            }
+            # Longest module prefix first: a.b.c, then a.b, then a.
+            let mut end: i32 = name_end
+            while end > rest_start and result < 0 {
+                let got: i32 = flowc_resolve_try_under(root, src, rest_start, end, out_path, out_path_cap)
+                if got >= 0 {
+                    result = got
+                } else {
+                    let mut k: i32 = end - 1
+                    while k > rest_start and src[k] != 46 {
+                        k = k - 1
+                    }
+                    end = k
+                }
+            }
+            pass = pass + 1
+        }
+    }
+    free(pkg_src)
+    free(pkg_root)
+    if result < 0 {
+        puts("flowc: package import not found under flow_packages/ (run `flow sync`)")
+    }
+    return result
+}
+
 # Directory of a path (strip last `/component`). Writes into out; returns len or -1.
 export function flowc_resolve_dirname(path: string, out: ptr<u8>, out_cap: i32) -> i32 {
     let p: ptr<u8> = path
@@ -442,6 +789,7 @@ function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 
 function flowc_resolve_gather(
     entry_path: string,
     search_dir: string,
+    project_root: string,
     path_store: ptr<u8>
 ) -> i32 {
     let mut n: i32 = flowc_resolve_append_path(path_store, 0, entry_path)
@@ -546,14 +894,24 @@ function flowc_resolve_gather(
                     n = n2
                 }
                 if form == 0 {
-                    let plen: i32 = flowc_resolve_dotted_path(
+                    let mut plen: i32 = flowc_resolve_package_path(
                         src,
                         p.arena.nodes[ii].name_start,
                         p.arena.nodes[ii].name_end,
-                        search_dir,
+                        project_root,
                         imp_path,
                         FLOWC_RESOLVE_PATH_CAP
                     )
+                    if plen == 0 - 1 {
+                        plen = flowc_resolve_dotted_path(
+                            src,
+                            p.arena.nodes[ii].name_start,
+                            p.arena.nodes[ii].name_end,
+                            search_dir,
+                            imp_path,
+                            FLOWC_RESOLVE_PATH_CAP
+                        )
+                    }
                     if plen < 0 {
                         flowc_parser_free(p)
                         free(mod_dir)
@@ -591,6 +949,7 @@ function flowc_resolve_gather(
 function flowc_resolve_deps_ready(
     path: string,
     search_dir: string,
+    project_root: string,
     all_store: ptr<u8>,
     all_n: i32,
     out_store: ptr<u8>,
@@ -658,14 +1017,24 @@ function flowc_resolve_deps_ready(
                 }
             }
             if form == 0 {
-                let plen: i32 = flowc_resolve_dotted_path(
+                let mut plen: i32 = flowc_resolve_package_path(
                     src,
                     p.arena.nodes[ii].name_start,
                     p.arena.nodes[ii].name_end,
-                    search_dir,
+                    project_root,
                     imp_path,
                     FLOWC_RESOLVE_PATH_CAP
                 )
+                if plen == 0 - 1 {
+                    plen = flowc_resolve_dotted_path(
+                        src,
+                        p.arena.nodes[ii].name_start,
+                        p.arena.nodes[ii].name_end,
+                        search_dir,
+                        imp_path,
+                        FLOWC_RESOLVE_PATH_CAP
+                    )
+                }
                 if plen < 0 {
                     flowc_parser_free(p)
                     return 0
@@ -690,6 +1059,7 @@ function flowc_resolve_topo(
     all_store: ptr<u8>,
     all_n: i32,
     search_dir: string,
+    project_root: string,
     out_store: ptr<u8>
 ) -> i32 {
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
@@ -721,7 +1091,7 @@ function flowc_resolve_topo(
                 let slot: ptr<u8> = all_store + (i * FLOWC_RESOLVE_PATH_CAP)
                 let mpath: string = slot
                 if flowc_resolve_deps_ready(
-                    mpath, search_dir, all_store, all_n, out_store, out_n, src, imp_path
+                    mpath, search_dir, project_root, all_store, all_n, out_store, out_n, src, imp_path
                 ) == 1 {
                     let n2: i32 = flowc_resolve_append_path(out_store, out_n, mpath)
                     if n2 < 0 {
@@ -993,7 +1363,11 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         zi = zi + 1
     }
 
-    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, path_store)
+    # Nearest flow.toml above the entry: where registry packages resolve.
+    let proj_buf: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
+    let project_root: string = proj_buf as string
+    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
     if nmods <= 0 {
         puts("flowc bundle tc: gather failed")
         free(path_store)
@@ -1010,7 +1384,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         order_store[zi] = 0
         zi = zi + 1
     }
-    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, order_store)
+    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store)
     if norder <= 0 {
         puts("flowc bundle tc: topo failed")
         free(order_store)
@@ -1117,7 +1491,11 @@ export function flowc_bundle_emit(
         zi = zi + 1
     }
 
-    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, path_store)
+    # Nearest flow.toml above the entry: where registry packages resolve.
+    let proj_buf: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
+    let project_root: string = proj_buf as string
+    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
     if nmods <= 0 {
         free(path_store)
         return 0 - 1
@@ -1133,7 +1511,7 @@ export function flowc_bundle_emit(
         order_store[zi] = 0
         zi = zi + 1
     }
-    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, order_store)
+    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store)
     if norder <= 0 {
         free(order_store)
         free(path_store)
