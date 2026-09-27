@@ -138,3 +138,44 @@ function main() -> i32 {
     assert "Box_i32" in c or "Box_N3_i32" in c
     # Must not cast the specialized variable from the bare generic type alone
     assert "(Box){" not in c or "Box_i32" in c
+
+
+def test_expr_type_non_numeric_string_literal_exception_path():
+    from flow.monomorphize import Monomorphizer
+    from flow.parser import Literal, Type
+
+    mono = Monomorphizer()
+
+    # Non-numeric string literal with no type specified triggers float(val) ValueError
+    lit_string = Literal(value="hello_world", type=None)
+    t = mono._expr_type(lit_string)
+    assert t == Type("string")
+
+    # Boolean string literals ("true", "false")
+    lit_true = Literal(value="true", type=None)
+    assert mono._expr_type(lit_true) == Type("bool")
+
+    # Numeric string literal
+    lit_num = Literal(value="123", type=None)
+    assert mono._expr_type(lit_num) == Type("i32")
+
+    lit_float = Literal(value="123.45", type=None)
+    assert mono._expr_type(lit_float) == Type("f32")
+
+
+def test_generic_function_type_inference_with_string_literal():
+    decls = monomorphize(
+        parse(
+            """
+function identity<T>(x: T) -> T {
+    return x
+}
+function main() -> i32 {
+    identity("hello")
+    return 0
+}
+"""
+        )
+    )
+    names = _names(decls)
+    assert "identity_string" in names
