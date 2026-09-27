@@ -26,6 +26,10 @@ if [ "$1 $2" = "issue list" ]; then
     printf '%s\n' "${FAKE_ISSUES_JSON:-[]}"
     exit 0
 fi
+if [ "$1 $2" = "run list" ]; then
+    printf '%s\n' "${FAKE_MAIN_CI_JSON:-[]}"
+    exit 0
+fi
 if [ "$1 $2" = "issue comment" ]; then
     printf '%s\n' "$*" >> "${FAKE_CLAIM_MARKER}"
     exit 0
@@ -68,6 +72,7 @@ def _run(tmp_path: Path, *, issues, prs, sessions="", extra_env=None):
         "FAKE_ISSUES_JSON": json.dumps(issues),
         "FAKE_PRS_JSON": json.dumps(prs),
         "FAKE_JULES_LIST": sessions,
+        "FAKE_MAIN_CI_JSON": "[]",
         "FAKE_NEW_MARKER": str(new_marker),
         "FAKE_CLAIM_MARKER": str(claim_marker),
         "JULES_DISPATCH_NO_SLEEP": "1",
@@ -172,3 +177,26 @@ def test_live_session_limit_stops_new_work(tmp_path):
     assert "Backpressure: active Jules session limit reached" in proc.stdout
     assert not new_marker.exists()
     assert '"decision":"backpressure"' in decisions
+
+
+def test_red_main_ci_pauses_cleanup_but_keeps_repair_work(tmp_path):
+    proc, new_marker, _, decisions = _run(
+        tmp_path,
+        issues=[
+            _issue(41, "Cleanup unused imports"),
+            _issue(42, "Fix CI regression in compiler"),
+        ],
+        prs=[],
+        extra_env={
+            "FAKE_MAIN_CI_JSON": json.dumps(
+                [{"status": "completed", "conclusion": "failure"}]
+            )
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Backpressure: main CI is red" in proc.stdout
+    assert new_marker.exists()
+    assert '"issue":41,"decision":"deferred"' in decisions
+    assert "main CI is red; low-priority work paused" in decisions
+    assert '"issue":42,"decision":"dispatched"' in decisions
