@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate internal links in the built wiki (run scripts/build_wiki.py first).
+# Validate internal links in the built wiki (run scripts/build_wiki.sh first).
 #
 # The checker is the Flow program in scripts/tools/wiki_links. Flow cannot
 # list directories, so find(1) runs here and leaves the tree listing in
