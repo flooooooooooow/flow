@@ -77,7 +77,7 @@ run_benchmark() {
     echo -e "${BLUE}────────────────────────────────────────${NC}"
     echo -e "${BLUE}  Python 3${NC}"
     echo -e "${BLUE}────────────────────────────────────────${NC}"
-    python3 "python/${num}_${name}.py"
+    python3 "$SCRIPT_DIR/../../../benchmarks/suite/python/${num}_${name}.py"
     echo ""
 }
 
