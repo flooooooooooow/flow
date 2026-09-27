@@ -1,17 +1,17 @@
 # Flow Module System
 
-> **Status:** Phase 1 implemented: dot-path imports, `[paths]`, `export` lists, `export import` re-export. String imports deprecated.  
+> **Status:** Phase 1 implemented: dot-path imports, `[paths]`, `export` lists, `export import` re-export. String imports are deprecated.  
 > **Problem today:** `import "../../../../lib/verify/nat.flow"` breaks when you move a file.  
 > `stdlib/` vs `lib/stdlib/` vs `../../`: three dialects, zero confidence.
 
 Flow already has `flow.toml`, domain-prefixed theorems (`nat_add_zero`), and an effect/capability system.
-The module system should extend those ideas instead of bolting on a second import dialect.
+The module system should extend those ideas. It should not bolt on a second import dialect.
 
 ---
 
 ## Core Rule
 
-**Imports name modules. They do not name files.**
+**Imports name modules. They never name files.**
 
 ```flow-pseudocode
 import verify.Nat/+ { zero-left, succ-right }
@@ -78,7 +78,7 @@ examples = "examples"          # import examples.basics.gcd → examples/basics/
 
 **Module path = dot-separated logical name.**  
 **File path = directory layout underneath a `[paths]` root.**  
-They stay in sync by convention instead of by counting `../`.
+They stay in sync by convention. Nobody counts `../`.
 
 ---
 
@@ -116,7 +116,7 @@ import verify.derived.nat_add_commutes as nat_add_commutes
 
 ## Export Syntax
 
-Private by default. One export line per file instead of `export` on every declaration.
+Private by default. One export line per file, instead of `export` on every declaration.
 
 ```flow-pseudocode
 # lib/verify/nat.flow
@@ -136,9 +136,30 @@ What this prevents:
 
 - Accidental re-export of internal helpers
 - Symbol creep (if it's not exported, it doesn't exist outside)
-- Naming debacles (the exported set *is* the public API; review it like a changelog)
+- Naming debacles (the exported set *is* the public API, so review it like a changelog)
 
 For theorems: **if it's not exported, no other package can `assume` it**. This forces intentional API surfaces.
+
+### What the compilers enforce today
+
+Both hosts compile a program and its imports as one bundle, and neither
+hides unexported functions or consts yet. The Python host puts every
+declaration of an imported module into the program
+(`src/flow/module_resolver.py`), and Stage-A flowc seeds every top-level
+function and const of a dependency into the bundle typecheck (#988). So
+a module can call a plain `function` of a module it imports, as
+`lib/stdlib/dynamics/core.flow` does with the helpers in `linalg.flow`.
+Treat that as a convenience inside a package. The exported set is still
+the API to review.
+
+A module's own `main` is its entry point and is never imported.
+
+When two modules define a private function with the same name, each
+module's calls reach its own definition: flowc renames the later
+definition in the C it emits (#950). A caller in a third module reaches
+the definition that keeps its name: the exported one if there is one,
+else the first in bundle order. Do not rely on that; export the function
+or give it a distinct name.
 
 ---
 
@@ -204,7 +225,7 @@ both source modules:
 
 ```
 Re-export collision in .../agg.flow: forwarding '.dup_b' brings in a name
-that is already exported elsewhere — Symbol 'dup_fn' collision between
+that is already exported elsewhere: Symbol 'dup_fn' collision between
 .../dup_b.flow and .../dup_a.flow
 ```
 
@@ -322,7 +343,7 @@ export nat_add_zero
 # examples/verify/math/derived/nat_add_commutes.flow
 
 import verify.nat { nat_zero_add, nat_add_succ }
-import .nat_add_zero { nat_add_zero }    # sibling — no path arithmetic
+import .nat_add_zero { nat_add_zero }    # sibling, no path arithmetic
 
 theorem nat_add_commutes(a: Nat, b: Nat) { ... }
 
@@ -349,7 +370,7 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 
 | Concern | How it's handled |
 |---------|------------------|
-| Move files around | Imports unchanged: logical names instead of paths |
+| Move files around | Imports unchanged: they use logical names |
 | Remote packages | `[dependencies]` in `flow.toml`, same `import foo.bar` syntax |
 | Version pinning | Lock file next to `flow.toml` (like Cargo/npm) |
 | Symbol collisions | Package name is first segment: `my_pkg.foo` vs `their_pkg.foo` |
@@ -364,7 +385,7 @@ Compiler accepts old syntax with deprecation warning during transition. CI fails
 
 | Existing innovation | Module system extends it |
 |--------------------|--------------------------|
-| `flow.toml` packages | Becomes the resolution root; already there, just wired up |
+| `flow.toml` packages | Becomes the resolution root. Already there, just wired up |
 | Effect / capability system | Imports deliver capabilities from named modules |
 | Domain-prefixed theorems (`nat_add_zero`) | Module path + symbol name = unique global identity |
 | Theorem headers (`means`, `from`, `tier`) | Module headers at file level |
