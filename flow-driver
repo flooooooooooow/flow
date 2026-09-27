@@ -2639,6 +2639,16 @@ run_lang_tests() {
     done
     mkdir -p "$build_dir"
 
+    # The Python strict transpile stays the default: on 2026-09-27 flowc
+    # passed 100 of the 126 programs and Python 123. FLOW_HOST=flowc, set
+    # explicitly, runs the suite through the Stage-A driver with no Python.
+    local lang_host="python" lang_flowc=""
+    if [ "${FLOW_HOST:-}" = "flowc" ]; then
+        lang_host="flowc"
+        lang_flowc="$(flow_resolve_flowc)" || exit 1
+        print_info "host=flowc via $lang_flowc"
+    fi
+
     if [ ! -d "$lang_dir" ]; then
         print_error "No language tests directory found at $lang_dir"
         exit 1
@@ -2684,7 +2694,17 @@ run_lang_tests() {
         # || true / status vars: set -e must not abort before we record failures
         local transpile_output
         local transpile_status=0
-        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
+        if [ "$lang_host" = "flowc" ]; then
+            # Bundle from the repository root, as flowc_emit_to_c does for
+            # programs with imports; FLOWC_TYPECHECK is flowc's strict mode.
+            local abs_lang_program
+            abs_lang_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+            transpile_output=$(cd "$SCRIPT_DIR" && FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
+                FLOWC_TYPECHECK=1 FLOWC_IN="$abs_lang_program" FLOWC_OUT="$c_file" \
+                "$lang_flowc" 2>&1) || transpile_status=$?
+        else
+            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
+        fi
         if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
             print_error "✗ $rel_path (strict transpile failed)"
             if [ -n "$transpile_output" ]; then
@@ -2711,7 +2731,7 @@ run_lang_tests() {
             lang_conc_ldflags=("${FLOW_CONC_LDFLAGS[@]}")
         fi
         flow_collect_cflags
-        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
+        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "-I$lang_dir" "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
             "$c_file" "${lang_conc_sources[@]+"${lang_conc_sources[@]}"}" \
             "${lang_conc_ldflags[@]+"${lang_conc_ldflags[@]}"}" \
             "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?

@@ -99,6 +99,10 @@ expect_exit 0 "run examples/basics/result_pipeline.flow (import stdlib/result)" 
 expect_exit 0 "run examples/dsp/pipeline.flow (import stdlib/dsp)" \
     ./flow run examples/dsp/pipeline.flow
 
+# The language suite on the flowc host (opt-in; Python strict is its default).
+expect_exit 0 "FLOW_HOST=flowc test-lang tests/lang/test_strings.flow" \
+    env FLOW_HOST=flowc ./flow test-lang tests/lang/test_strings.flow
+
 # A standalone project with its own manifest and no dependencies.
 proj="$work/empty_deps"
 mkdir -p "$proj/src"
