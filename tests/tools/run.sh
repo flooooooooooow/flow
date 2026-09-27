@@ -42,8 +42,13 @@ for input in tests/tools/repl/*.in; do
     [ -e "$input" ] || continue
     name="repl/$(basename "$input" .in)"
     out="$work/$(basename "$input" .in).out"
-    ./flow repl < "$input" > "$out" 2>&1
+    # stderr carries one-time build chatter (flowc, the tool itself), so
+    # only stdout is compared; stderr is shown when a case fails.
+    ./flow repl < "$input" > "$out" 2> "$out.err"
     check "$name" "${input%.in}.expected" "$out"
+    if [ "$UPDATE" -eq 0 ] && ! cmp -s "${input%.in}.expected" "$out"; then
+        cat "$out.err"
+    fi
 done
 
 echo "tool transcripts: $pass passed, $fail failed"
