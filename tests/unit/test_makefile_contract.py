@@ -13,7 +13,10 @@ def test_makefile_delegates_build_commands_to_flow_cli():
     assert "$(FLOW) run" in text
     assert "$(FLOW) compile" in text
     assert "$(FLOW) mlir" in text
+    assert "$(FLOW) gfx" in text
     assert "$(FLOW) test --compiler --strict --tier2" in text
+    assert "$(FLOW) setup" in text
+    assert "$(FLOW) clean" in text
 
 
 def test_makefile_does_not_restore_a_second_test_manifest():
