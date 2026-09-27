@@ -42,7 +42,7 @@ jobs:
       - name: Verify tag version matches the source tree
         shell: bash
         run: |
-          python3 scripts/sync_version.py --check
+          scripts/sync_version.sh --check
           python3 - <<'PY'
           import os
           from pathlib import Path
@@ -181,7 +181,7 @@ jobs:
           SHA="$(sha256sum "flow-${TAG}.tar.gz" | awk '{print $1}')"
           git fetch origin main
           git switch -C release-homebrew origin/main
-          python3 scripts/sync_version.py --homebrew --sha256 "$SHA"
+          scripts/sync_version.sh --homebrew --sha256 "$SHA"
           if git diff --quiet -- packaging/homebrew/Formula/flow.rb; then
             echo "Homebrew formula already matches $TAG"
             exit 0

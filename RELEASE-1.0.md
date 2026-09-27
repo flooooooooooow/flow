@@ -14,7 +14,7 @@ The required order is:
 4. Run strict documentation qualification with zero ordinary unverified/ignored Stable Flow examples.
 5. Qualify Linux x86-64 and macOS arm64 release artifacts by unpacking, rebuilding, compiling and executing an end-user program.
 6. Complete the final performance, fuzzing, security, formatter and developer-workflow gates.
-7. Bump the canonical version and all mirrors to `1.0.0` using `scripts/sync_version.py --set 1.0.0` or `.github/workflows/version-bump.yml` before tagging.
+7. Bump the canonical version and all mirrors to `1.0.0` using `scripts/sync_version.sh --set 1.0.0` or `.github/workflows/version-bump.yml` before tagging.
 8. Re-run the complete release qualification on that exact version-bump commit.
 9. Create `v1.0.0` at that exact qualified commit.
 10. Publish release artifacts, checksums/provenance and release notes; then rerun the version workflow with Homebrew enabled once the release tarball exists.
