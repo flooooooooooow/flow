@@ -34,6 +34,9 @@ const RETRY_SECONDS: i32 = 45
 const MAX_CONSECUTIVE_REFUSALS: i32 = 40
 # Sessions finish on their own schedule, so poll for a free slot slowly.
 const CAPACITY_WAIT_SECONDS: i32 = 300
+const DEFAULT_MAX_ACTIVE: i32 = 8
+const DEFAULT_MAX_AGENT_PRS: i32 = 12
+const DECISION_LOG_PATH: string = "jules_dispatch_decisions.jsonl"
 
 # ---------------------------------------------------------------------------
 # An ordered string map of already-serialised JSON values
@@ -312,6 +315,115 @@ function list_has(l: ptr<StrList>, s: string) -> bool {
     return false
 }
 
+function env_int(name: string, fallback: i32) -> i32 {
+    let raw: string = getenv(name)
+    if raw == null or ft_len(raw) == 0 {
+        return fallback
+    }
+    let p: ptr<u8> = raw as ptr<u8>
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        let c: i32 = p[i] as i32
+        if c < 48 or c > 57 {
+            return fallback
+        }
+        value = value * 10 + (c - 48)
+        i = i + 1
+    }
+    if value <= 0 {
+        return fallback
+    }
+    return value
+}
+
+function is_word_byte(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
+           (c >= 97 and c <= 122) or c == 95 or c == 46 or c == 47 or c == 45
+}
+
+function is_stopword(word: string) -> bool {
+    return ft_eq(word, "the") or ft_eq(word, "and") or ft_eq(word, "for") or
+           ft_eq(word, "with") or ft_eq(word, "from") or ft_eq(word, "into") or
+           ft_eq(word, "flow") or ft_eq(word, "test") or ft_eq(word, "tests") or
+           ft_eq(word, "issue") or ft_eq(word, "add") or ft_eq(word, "fix") or
+           ft_eq(word, "update") or ft_eq(word, "improve") or ft_eq(word, "code")
+}
+
+function has_word(text: string, word: string) -> bool {
+    let tp: ptr<u8> = text as ptr<u8>
+    let mut at: i32 = ft_find(text, word, 0)
+    while at >= 0 {
+        let before_ok: bool = at == 0 or is_word_byte(tp[at - 1] as i32) == false
+        let after: i32 = at + ft_len(word)
+        let after_ok: bool = tp[after] == 0 or is_word_byte(tp[after] as i32) == false
+        if before_ok and after_ok {
+            return true
+        }
+        at = ft_find(text, word, at + 1)
+    }
+    return false
+}
+
+function title_overlap(a: string, b: string) -> bool {
+    let aa: string = uc_lower_str(a)
+    let bb: string = uc_lower_str(b)
+    if ft_len(aa) >= 18 and ft_contains(bb, aa) {
+        return true
+    }
+    if ft_len(bb) >= 18 and ft_contains(aa, bb) {
+        return true
+    }
+
+    let p: ptr<u8> = aa as ptr<u8>
+    let mut start: i32 = -1
+    let mut i: i32 = 0
+    let mut shared: i32 = 0
+    let mut distinctive: bool = false
+    while true {
+        let c: i32 = p[i] as i32
+        if c != 0 and is_word_byte(c) {
+            if start < 0 {
+                start = i
+            }
+        } else {
+            if start >= 0 {
+                let word: string = ft_slice(aa, start, i)
+                if ft_len(word) >= 4 and is_stopword(word) == false and has_word(bb, word) {
+                    shared = shared + 1
+                    if ft_contains(word, "/") or ft_contains(word, ".") or ft_contains(word, "_") {
+                        distinctive = true
+                    }
+                }
+                start = -1
+            }
+            if c == 0 {
+                break
+            }
+        }
+        i = i + 1
+    }
+    return shared >= 4 or (shared >= 2 and distinctive)
+}
+
+function contains_issue_ref(text: string, number: string) -> bool {
+    if text == null {
+        return false
+    }
+    let needle: string = "#" + number
+    let p: ptr<u8> = text as ptr<u8>
+    let mut at: i32 = ft_find(text, needle, 0)
+    while at >= 0 {
+        let after: i32 = at + ft_len(needle)
+        let c: i32 = p[after] as i32
+        if c < 48 or c > 57 {
+            return true
+        }
+        at = ft_find(text, needle, at + 1)
+    }
+    return false
+}
+
 # ---------------------------------------------------------------------------
 # Issues
 # ---------------------------------------------------------------------------
@@ -433,6 +545,162 @@ function open_issues(count: ptr<i32>) -> ptr<Issue> {
 }
 
 # ---------------------------------------------------------------------------
+# Pull requests / backpressure
+# ---------------------------------------------------------------------------
+
+struct Pull {
+    number: i64
+    title: string
+    body: string
+    head: string
+    draft: bool
+}
+
+function open_pulls(count: ptr<i32>) -> ptr<Pull> {
+    let outp: string = tmp_path("prs")
+    let cmd: string = "gh pr list --repo " + REPO + " --state open --limit 200 --json number,title,body,headRefName,isDraft > " + pr_quote(outp)
+    let rc: i32 = pr_run(cmd)
+    let text: string = slurp_and_remove(outp)
+    if rc != 0 {
+        ft_errln("dispatch_uncovered_jules: gh pr list exited with status " + ft_itoa(rc))
+        return null
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln("dispatch_uncovered_jules: cannot parse gh pr output: " + json_error(j))
+        return null
+    }
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        n = n + 1
+        c = json_next(j, c)
+    }
+    let arr: ptr<Pull> = malloc(((n + 1) * 48) as i64) as ptr<Pull>
+    let mut i: i32 = 0
+    c = json_first(j, 0)
+    while c >= 0 {
+        arr[i].number = json_int(j, json_get(j, c, "number"))
+        arr[i].title = json_str(j, json_get(j, c, "title"))
+        let body_id: i32 = json_get(j, c, "body")
+        if body_id >= 0 and json_kind(j, body_id) == json_kind_string() {
+            arr[i].body = json_str(j, body_id)
+        } else {
+            arr[i].body = ""
+        }
+        let head_id: i32 = json_get(j, c, "headRefName")
+        if head_id >= 0 and json_kind(j, head_id) == json_kind_string() {
+            arr[i].head = json_str(j, head_id)
+        } else {
+            arr[i].head = ""
+        }
+        let draft_id: i32 = json_get(j, c, "isDraft")
+        arr[i].draft = draft_id >= 0 and json_kind(j, draft_id) == json_kind_true()
+        i = i + 1
+        c = json_next(j, c)
+    }
+    count[0] = n
+    return arr
+}
+
+function is_agent_pr(pulls: ptr<Pull>, i: i32) -> bool {
+    let body: string = uc_lower_str(pulls[i].body)
+    let head: string = uc_lower_str(pulls[i].head)
+    return ft_contains(body, "jules.google.com") or
+           ft_contains(body, "created automatically by jules") or
+           ft_contains(head, "jules/") or ft_contains(head, "jules-")
+}
+
+function agent_pr_count(pulls: ptr<Pull>, n: i32) -> i32 {
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if is_agent_pr(pulls, i) {
+            total = total + 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+function overlapping_pr(pulls: ptr<Pull>, n: i32, issue: ptr<Issue>) -> i64 {
+    let number: string = i64_str(issue[0].number)
+    let mut i: i32 = 0
+    while i < n {
+        if contains_issue_ref(pulls[i].body, number) or
+           contains_issue_ref(pulls[i].head, number) or
+           title_overlap(issue[0].title, pulls[i].title) {
+            return pulls[i].number
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function issue_priority(issue: ptr<Issue>) -> i32 {
+    let text: string = uc_lower_str(issue[0].title + " " + issue[0].labels)
+    let mut score: i32 = 0
+    if ft_contains(text, "security") {
+        score = score + 1000
+    }
+    if ft_contains(text, "regression") or ft_contains(text, "correctness") or ft_contains(text, "bug") {
+        score = score + 800
+    }
+    if ft_contains(text, "ci") or ft_contains(text, "build") {
+        score = score + 700
+    }
+    if ft_contains(text, "release") {
+        score = score + 600
+    }
+    if ft_contains(text, "compiler") or ft_contains(text, "self-host") {
+        score = score + 400
+    }
+    if ft_contains(text, "cleanup") or ft_contains(text, "refactor") or
+       ft_contains(text, "optimize") or ft_contains(text, "optimization") or
+       ft_contains(text, "unused import") or ft_contains(text, "coverage") {
+        score = score - 200
+    }
+    return score
+}
+
+function sort_queue(issues: ptr<Issue>, queue: ptr<i32>, n: i32) -> void {
+    let mut i: i32 = 1
+    while i < n {
+        let item: i32 = queue[i]
+        let score: i32 = issue_priority(&(issues[item]))
+        let num: i64 = issues[item].number
+        let mut j: i32 = i - 1
+        while j >= 0 {
+            let prev: i32 = queue[j]
+            let prev_score: i32 = issue_priority(&(issues[prev]))
+            if prev_score > score or (prev_score == score and issues[prev].number < num) {
+                break
+            }
+            queue[j + 1] = queue[j]
+            j = j - 1
+        }
+        queue[j + 1] = item
+        i = i + 1
+    }
+}
+
+function decision_line(number: i64, decision: string, reason: string) -> string {
+    return "{\"issue\":" + i64_str(number) +
+           ",\"decision\":" + json_quote(decision) +
+           ",\"reason\":" + json_quote(reason) + "}\n"
+}
+
+function publish_claim(number: string, session: string, url: string) -> void {
+    let body: string = "<!-- flow-agent-claim provider=jules -->\n" +
+        "Jules implementation claim for issue #" + number + ": session " + session +
+        ". Lease is valid while the session appears in jules remote list --session." +
+        "\n" + url
+    let cmd: string = "gh issue comment " + number + " --repo " + REPO +
+        " --body " + pr_quote(body) + " >/dev/null 2>&1"
+    let _rc: i32 = pr_run(cmd)
+}
+
+# ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
 
@@ -523,38 +791,104 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if covered == null {
         return 1
     }
+
+    let pr_count: ptr<i32> = malloc(4) as ptr<i32>
+    pr_count[0] = 0
+    let pulls: ptr<Pull> = open_pulls(pr_count)
+    if pulls == null {
+        return 1
+    }
+
     let count: ptr<i32> = malloc(4) as ptr<i32>
     count[0] = 0
     let issues: ptr<Issue> = open_issues(count)
     if issues == null {
         return 1
     }
-    let already: ptr<StrList> = ft_list_new()
-    let mut i: i32 = 0
-    while i < obj_len(st[0].dispatched) {
-        ft_list_push(already, strip_zeros(ft_list_get(st[0].dispatched[0].keys, i)))
-        i = i + 1
-    }
-    # The queue holds indices into `issues`.
+
+    let max_active: i32 = env_int("JULES_MAX_ACTIVE", DEFAULT_MAX_ACTIVE)
+    let max_agent_prs: i32 = env_int("JULES_MAX_AGENT_PRS", DEFAULT_MAX_AGENT_PRS)
+    let active: i32 = ft_list_len(covered)
+    let agent_prs: i32 = agent_pr_count(pulls, pr_count[0])
+    let mut decisions: string = ""
+
     let queue: ptr<i32> = malloc(((count[0] + 1) * 4) as i64) as ptr<i32>
     let mut qn: i32 = 0
-    i = 0
+    let mut i: i32 = 0
     while i < count[0] {
         let num: string = i64_str(issues[i].number)
-        if list_has(covered, num) == false and list_has(already, num) == false {
-            queue[qn] = i
-            qn = qn + 1
+        if list_has(covered, num) {
+            decisions = decisions + decision_line(issues[i].number, "covered", "live Jules session")
+        } else {
+            let overlap: i64 = overlapping_pr(pulls, pr_count[0], &(issues[i]))
+            if overlap > 0 {
+                decisions = decisions + decision_line(
+                    issues[i].number, "deferred",
+                    "overlaps open PR #" + i64_str(overlap)
+                )
+            } else {
+                queue[qn] = i
+                qn = qn + 1
+            }
         }
         i = i + 1
     }
 
-    ft_outln(ft_itoa(ft_list_len(covered)) + " issues already have a live session.")
-    ft_outln(ft_itoa(qn) + " to dispatch.")
+    sort_queue(issues, queue, qn)
+
+    ft_outln(ft_itoa(active) + " issues already have a live session.")
+    ft_outln(ft_itoa(agent_prs) + " open Jules PRs.")
+    ft_outln(ft_itoa(qn) + " eligible after overlap checks.")
+
+    if agent_prs >= max_agent_prs {
+        i = 0
+        while i < qn {
+            let k: i32 = queue[i]
+            decisions = decisions + decision_line(
+                issues[k].number, "backpressure",
+                "agent PR WIP limit " + ft_itoa(max_agent_prs) + " reached"
+            )
+            i = i + 1
+        }
+        let _w0: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+        ft_outln("Backpressure: agent PR WIP limit reached; dispatch paused.")
+        return 0
+    }
+
+    let slots: i32 = max_active - active
+    if slots <= 0 {
+        i = 0
+        while i < qn {
+            let k2: i32 = queue[i]
+            decisions = decisions + decision_line(
+                issues[k2].number, "backpressure",
+                "active session limit " + ft_itoa(max_active) + " reached"
+            )
+            i = i + 1
+        }
+        let _w1: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+        ft_outln("Backpressure: active Jules session limit reached; dispatch paused.")
+        return 0
+    }
+
+    let mut dispatch_n: i32 = qn
+    if dispatch_n > slots {
+        dispatch_n = slots
+    }
+    i = dispatch_n
+    while i < qn {
+        let deferred: i32 = queue[i]
+        decisions = decisions + decision_line(
+            issues[deferred].number, "backpressure",
+            "no active-session slot in this dispatch cycle"
+        )
+        i = i + 1
+    }
 
     let detail: ptr<string> = malloc(8) as ptr<string>
     let mut head: i32 = 0
     let mut refusals: i32 = 0
-    while head < qn {
+    while head < dispatch_n {
         let k: i32 = queue[head]
         let number: string = i64_str(issues[k].number)
         detail[0] = ""
@@ -567,27 +901,27 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             obj_set(entry, "url", json_quote(detail[0]))
             obj_set(st[0].dispatched, number, obj_dump(entry, 2))
             save_state(st)
+            publish_claim(number, session, detail[0])
+            decisions = decisions + decision_line(issues[k].number, "dispatched", "session " + session)
             head = head + 1
             refusals = 0
-            ft_outln("  #" + number + " -> session " + session + "  (" + ft_itoa(qn - head) + " left)")
+            ft_outln("  #" + number + " -> session " + session + "  (" + ft_itoa(dispatch_n - head) + " slots left)")
             nap(3)
             continue
         }
 
-        # A capacity refusal says nothing about this issue, so it must not
-        # count against it. Giving up here would walk the whole queue
-        # marking every issue failed against the same full account. Wait
-        # instead: a slot opens when a session finishes.
         if ft_contains(detail[0], "all sessions failed to create") or ft_contains(uc_lower_str(detail[0]), "quota") {
-            ft_outln("  at capacity, holding on #" + number + "; retry in " + ft_itoa(CAPACITY_WAIT_SECONDS) + "s")
-            nap(CAPACITY_WAIT_SECONDS)
-            continue
+            decisions = decisions + decision_line(issues[k].number, "backpressure", "provider capacity")
+            let _wc: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+            ft_outln("  provider at capacity; stopping dispatch instead of spinning")
+            return 0
         }
 
         refusals = refusals + 1
         if refusals >= MAX_CONSECUTIVE_REFUSALS {
             obj_set(st[0].failed, number, json_quote(detail[0]))
             save_state(st)
+            decisions = decisions + decision_line(issues[k].number, "failed", detail[0])
             ft_outln("  #" + number + " giving up after " + ft_itoa(refusals) + " refusals: " + detail[0])
             head = head + 1
             refusals = 0
@@ -597,6 +931,8 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         nap(RETRY_SECONDS)
     }
 
-    ft_outln("Done. " + ft_itoa(obj_len(st[0].dispatched)) + " dispatched, " + ft_itoa(obj_len(st[0].failed)) + " gave up.")
+    let _w: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+    ft_outln("Done. " + ft_itoa(head) + " dispatched this cycle, " +
+             ft_itoa(obj_len(st[0].failed)) + " total failures recorded.")
     return 0
 }
