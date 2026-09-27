@@ -358,7 +358,8 @@ def apply_aosoa_transform(declarations):
     transformed_vars = set()
 
     def rewrite_expr(expr):
-        if not is_dataclass(expr): return expr
+        if not is_dataclass(expr):
+            return expr
         
         # Rewrite ArrayAccess -> FieldAccess for SoA: arr[i].x -> arr.x[i]
         # Only rewrite if the array is a Variable that we know we transformed
@@ -382,7 +383,8 @@ def apply_aosoa_transform(declarations):
         return expr
 
     def rewrite_stmt(stmt):
-        if not is_dataclass(stmt): return stmt
+        if not is_dataclass(stmt):
+            return stmt
 
         if isinstance(stmt, VarDecl):
             if _is_target_array_type(stmt.type, target_struct_name):

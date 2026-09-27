@@ -404,7 +404,7 @@ class MLIRJIT:
         Native code never runs in the Python process (segfaults cannot be caught
         via try/except). On crash, automatically retries with an ASAN executable.
         """
-        del func_name, args  # entry point is always main() in the JIT executable
+        del args  # entry point is always main() in the JIT executable
         try:
             
             if shape_replacements:

@@ -13,7 +13,6 @@ from flow.conventions import check_file, load_conventions
 
 
 import json
-import argparse
 from flow.parser import Parser, Lexer
 from flow.idioms import IdiomAdvisor
 
@@ -97,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
                         if finding.replacement:
                             print(f"  Suggested fix: {finding.replacement}")
                     total_warnings += 1
-            except Exception as e:
+            except Exception:
                 pass
 
     if output_format == "json":
