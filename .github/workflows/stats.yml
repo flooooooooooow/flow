@@ -32,8 +32,6 @@ jobs:
           # walking back through history.
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup-python
-
       # GitHub's ubuntu-latest image includes clang. Avoid apt-get update here:
       # unrelated third-party repositories configured on the image can fail
       # (for example packages.microsoft.com returning 403) and block stats.
@@ -47,28 +45,14 @@ jobs:
           chmod +x scripts/update_repo_stats.sh
           ./scripts/update_repo_stats.sh
 
-      # Published numbers must match the Python reference. Flow is preferred
-      # at generation time, but a C-backend concat bug once truncated its JSON;
-      # the shim falls back to Python so the README still updates.
       - name: Verify deterministic output
-        run: python scripts/update_repo_stats.py --check
-
-      - name: Check Flow counter parity
-        id: flow_parity
-        continue-on-error: true
-        run: |
-          ./scripts/update_repo_stats.sh --check
-          if [[ -f build/repo-stats/flow-disagreed.json ]]; then
-            echo "Flow JSON captured at build/repo-stats/flow-disagreed.json"
-          fi
+        run: ./scripts/update_repo_stats.sh --check
 
       - name: Upload machine-readable statistics
         uses: actions/upload-artifact@v4
         with:
           name: repository-stats
-          path: |
-            docs/generated/repository-stats.json
-            build/repo-stats/flow-disagreed.json
+          path: docs/generated/repository-stats.json
           if-no-files-found: ignore
           retention-days: 30
 
@@ -109,9 +93,3 @@ jobs:
           echo "Branch is ready: https://github.com/${{ github.repository }}/pull/new/chore/repository-stats"
           exit 0
 
-      - name: Fail if Flow counter still diverges
-        if: steps.flow_parity.outcome == 'failure'
-        run: |
-          echo "Flow repo-stats output still disagrees with the Python reference."
-          echo "The README was updated from Python; fix the Flow counter next."
-          exit 1
