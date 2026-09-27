@@ -51,11 +51,15 @@ def test_stable_positive_fixture_matches_flowc(fixture: Path) -> None:
     with tempfile.TemporaryDirectory() as td:
         c_path = Path(td) / "fixture.c"
         bin_path = Path(td) / "fixture"
+        env = dict(os.environ)
+        env["FLOWC_IN"] = str(fixture)
+        env["FLOWC_OUT"] = str(c_path)
         lower = subprocess.run(
-            [str(driver), str(fixture), str(c_path)],
+            [str(driver)],
             cwd=REPO,
             capture_output=True,
             text=True,
+            env=env,
         )
         assert lower.returncode == 0, (
             f"flowc failed for {fixture.name}:\n{lower.stderr}\n{lower.stdout}"
