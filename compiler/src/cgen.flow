@@ -16,7 +16,7 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
     AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
-    AST_MATCH_ARM_EXT, flowc_ast_enum_of_const
+    AST_MATCH_ARM_EXT, AST_LAYOUT, flowc_ast_enum_of_const
 }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
@@ -2521,6 +2521,23 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_CALL {
+        # i32_to_f32(v) with no Flow definition in this module: the Python
+        # host's default helper, inlined so a later module may define it.
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "i32_to_f32") == 1 and arena.nodes[id].a != AST_NONE {
+            if flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 {
+                flowc_cgen_puts(w, "((float)(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, "))")
+                return
+            }
+        }
+        # ui_layout_bind(p) binds the implicit UI layout state pointer.
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "ui_layout_bind") == 1 and arena.nodes[id].a != AST_NONE {
+            flowc_cgen_puts(w, "(_ui_state = (void*)")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ")")
+            return
+        }
         # Intrinsics: println(x) → printf("%d\n", x); print(x) → printf("%d", x)
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "println") == 1 {
             flowc_cgen_emit_print_intrinsic(w, arena, src, id, 1)
@@ -3450,6 +3467,82 @@ function flowc_cgen_emit_match_general(w: ptr<CgenBuf>, arena: AstArena, src: pt
     flowc_cgen_puts(w, "  }\n")
 }
 
+# --- ui layout blocks ----------------------------------------------------
+# `ui_row(args) { body }` lowers as the Python host's _gen_layout does:
+# `ui_row_begin(args); { body } ui_row_end(first);`. Unless the first
+# argument is a pointer or array variable, the implicit `_ui_state` goes
+# first and is the `end` argument.
+
+function flowc_cgen_layout_explicit(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, arg: i32) -> i32 {
+    if arg == AST_NONE or arena.nodes[arg].kind != AST_IDENT {
+        return 0
+    }
+    let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, arg)
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr") == 1 {
+        return 1
+    }
+    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array") == 1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cgen_emit_layout(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let args: i32 = arena.nodes[id].a
+    let explicit: i32 = flowc_cgen_layout_explicit(w, arena, src, args)
+    flowc_cgen_puts(w, "  ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, "_begin(")
+    let mut first: i32 = 1
+    if explicit == 0 {
+        flowc_cgen_puts(w, "_ui_state")
+        first = 0
+    }
+    let mut arg: i32 = args
+    while arg != AST_NONE {
+        if first == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_cgen_emit_expr(w, arena, src, arg)
+        arg = arena.nodes[arg].next
+    }
+    flowc_cgen_puts(w, ");\n  ")
+    flowc_cgen_emit_block(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_puts(w, "  ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, "_end(")
+    if explicit == 0 {
+        flowc_cgen_puts(w, "_ui_state")
+    } else {
+        flowc_cgen_emit_expr(w, arena, src, args)
+    }
+    flowc_cgen_puts(w, ");\n")
+}
+
+# 1 when the module needs the implicit `_ui_state` global: a layout block,
+# a use of the name, or the ui_layout_bind intrinsic.
+function flowc_cgen_uses_ui_state(arena: AstArena, src: ptr<u8>) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        let k: i32 = arena.nodes[i].kind
+        if k == AST_LAYOUT {
+            return 1
+        }
+        if k == AST_IDENT and flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "_ui_state") == 1 {
+            return 1
+        }
+        if k == AST_CALL and flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "ui_layout_bind") == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -3796,6 +3889,10 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         w[0].loop_defer_base = w[0].defer_len
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
         w[0].loop_defer_base = saved_fbase
+        return
+    }
+    if kind == AST_LAYOUT {
+        flowc_cgen_emit_layout(w, arena, src, id)
         return
     }
     if kind == AST_MATCH {
@@ -5425,6 +5522,9 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } free(tmp); return 0; }\n")
         flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_putc(&w, 10)
+    }
+    if flowc_cgen_uses_ui_state(arena, src) == 1 {
+        flowc_cgen_puts(&w, "#ifndef FLOWC_UI_STATE\n#define FLOWC_UI_STATE\nvoid* _ui_state = NULL;\n#endif\n")
     }
 
     # Pass 0.4: scan lambda bodies for captured variables.

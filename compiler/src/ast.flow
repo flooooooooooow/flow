@@ -337,6 +337,7 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
 # 1 for a kind in the parse-only range that Stage-A now lowers (#996).
 export function flowc_ast_parse_only_lowered(k: i32) -> i32 {
     if k == AST_MATCH_ARM_EXT { return 1 }
+    if k == AST_LAYOUT { return 1 }
     return 0
 }
 

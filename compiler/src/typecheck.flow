@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT,
     flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
 }
 import .overload_table {
@@ -591,6 +591,8 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ne: i32 = arena.nodes[id].name_end
         # Sort DSL modifiers used as identifiers in pipe expressions.
         if arena.nodes[id].ival == AST_IDENT_SORT_MOD { return }
+        # The implicit UI layout state pointer is a builtin global.
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "_ui_state") == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown idents
             # (e.g. function pointers declared in extern blocks).
@@ -621,6 +623,9 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_size") == 1 { is_gpu_builtin = 1 }
             elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_sync") == 1 { is_gpu_builtin = 1 }
             elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_barrier") == 1 { is_gpu_builtin = 1 }
+            # UI layout intrinsics (Python c_generator lowers them inline).
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "ui_layout_bind") == 1 { is_gpu_builtin = 1 }
+            elif flowc_tc_span_is(ctx[0].src, ns, ne, "i32_to_f32") == 1 { is_gpu_builtin = 1 }
 
             # Check if it's a bound local variable (e.g. a lambda function pointer).
             if flowc_tc_lookup(ctx[0], ns, ne) == 0 and is_gpu_builtin == 0 {
@@ -803,6 +808,17 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
+        return
+    }
+    if kind == AST_LAYOUT {
+        # ui_row(args) { body }: args and body check as written; the
+        # begin/end calls are synthesized by cgen (Python _check_statement).
+        let mut arg: i32 = arena.nodes[id].a
+        while arg != AST_NONE {
+            flowc_tc_check_expr(ctx, arena, arg)
+            arg = arena.nodes[arg].next
+        }
+        flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         return
     }
     if kind == AST_WHILE {
