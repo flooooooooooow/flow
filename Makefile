@@ -3,9 +3,9 @@
 # The public CLI is ./flow. Keep this file as a thin wrapper so Make and the
 # documented CLI cannot become independent build systems.
 
-FLOW := ./flow
+FLOW ?= ./flow
 
-.PHONY: all help run compile mlir test test-stdlib repl install clean \
+.PHONY: all help run compile mlir gfx test test-stdlib repl setup install clean \
         sync-roadmap sync-roadmap-dry check-program
 
 all: help
@@ -25,6 +25,9 @@ compile: check-program
 mlir: check-program
 	$(FLOW) mlir "$(PROGRAM)"
 
+gfx: check-program
+	$(FLOW) gfx "$(PROGRAM)"
+
 # Use the repository compiler suite. --compiler selects the historical
 # repository-wide test runner rather than project-mode testing.
 test:
@@ -38,11 +41,14 @@ test-stdlib: test
 repl:
 	$(FLOW) repl
 
+setup:
+	$(FLOW) setup
+
 install:
 	$(FLOW) install
 
 clean:
-	rm -rf build/
+	$(FLOW) clean
 
 sync-roadmap:
 	python3 scripts/sync_roadmap.py
