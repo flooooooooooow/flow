@@ -1,21 +1,21 @@
-# GitHub Linguist — Flow language submission
+# GitHub Linguist: Flow language submission
 
 Goal: teach [github-linguist/linguist](https://github.com/github-linguist/linguist)
-about **Flow** (`.flow`, `source.flow`) so GitHub’s language bar / highlighting
-stop treating this repo as “mostly Python”.
+about **Flow** (`.flow`, `source.flow`) so GitHub's language bar / highlighting
+stop treating this repo as "mostly Python".
 
 ## Honest status (2026-08-05)
 
 | Check | Result |
 |-------|--------|
 | `.flow` free in `languages.yml`? | Yes (not listed) |
-| Grammar (MIT TextMate)? | Yes — publish as `flooooooooooow/flow-tmLanguage` |
+| Grammar (MIT TextMate)? | Yes: publish as `flooooooooooow/flow-tmLanguage` |
 | Real-world samples? | Ready under `docs/project/linguist/samples/Flow/` |
 | Popularity bar (~2000 non-fork files / year)? | **Not yet** for *this* Flow |
-| Collision with Facebook Flow? | Yes — many `*.js.flow` libdefs match extension `.flow` |
+| Collision with Facebook Flow? | Yes: many `*.js.flow` libdefs match extension `.flow` |
 
-`extension:flow` on GitHub is dominated by Facebook’s **Flow type checker**
-libdefs (`foo.js.flow`), not this language. Any Linguist PR **must** ship a
+`extension:flow` on GitHub is dominated by Facebook's **Flow type checker**
+libdefs (`foo.js.flow`) rather than this language. Any Linguist PR **must** ship a
 heuristic (and samples for both sides if they keep sharing `.flow`).
 
 ## Decision (2026-08-05): wait, prepare, then one PR
@@ -59,7 +59,7 @@ popularity). Keep this kit ready so `script/add-grammar` + samples are one
 afternoon of work when usage is real.
 
 **Opened:** [linguist#8101](https://github.com/github-linguist/linguist/discussions/8101)
-(Classification — popularity + naming check before PR).
+(Classification: popularity + naming check before PR).
 
 ## Grammar repo
 
@@ -87,13 +87,13 @@ Flow:
   - flow-lang
 ```
 
-Color rationale: blue used in Flow branding / docs accents (not Facebook’s pink).
+Color rationale: blue used in Flow branding / docs accents (not Facebook's pink).
 Confirm with community before arguing branding in the PR.
 
-> **Name clash:** Linguist language names must be unique. Facebook’s checker is
+> **Name clash:** Linguist language names must be unique. Facebook's checker is
 > not currently a separate Linguist language (files classify as JavaScript).
 > If maintainers prefer disambiguation, use **`Flow Lang`** or **`Flow (systems)`**
-> with alias `flow-lang` — decide in the Discussion before opening the PR.
+> with alias `flow-lang`. Decide in the Discussion before opening the PR.
 
 ## Heuristic draft (`heuristics.yml`)
 
@@ -109,7 +109,7 @@ Disambiguate `.flow` between this language and Facebook `*.js.flow` libdefs:
   # default: leave unclassified / classifier — do not steal JS libdefs
 ```
 
-(Exact YAML shape must match current `lib/linguist/heuristics.yml` — copy a
+(Exact YAML shape must match current `lib/linguist/heuristics.yml`. Copy a
 nearby multi-rule extension block when applying.)
 
 ## Samples
@@ -131,5 +131,5 @@ See [`PR_TEMPLATE.md`](linguist/PR_TEMPLATE.md).
 ## Local repo until upstream lands
 
 `.gitattributes` already has `*.flow linguist-detectable=true`. That only helps
-*after* Linguist knows the language name; it cannot invent “Flow” on GitHub.com
+*after* Linguist knows the language name; it cannot invent "Flow" on GitHub.com
 by itself.

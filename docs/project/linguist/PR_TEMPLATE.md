@@ -1,5 +1,5 @@
 <!--
-Paste into a github-linguist/linguist PR (use their official template —
+Paste into a github-linguist/linguist PR (use their official template;
 this file mirrors the checklist so we don't forget fields).
 Do NOT open until search evidence clears the popularity bar outside flooooooooooow.
 -->
@@ -27,11 +27,11 @@ Add the [Flow](https://github.com/flooooooooooow/flow) programming language
   - [x] I have included a syntax highlighting grammar: https://github.com/flooooooooooow/flow-tmLanguage
   - [x] I have added a color
     - Hex value: `#5B8DEF`
-    - Rationale: blue accent used in Flow documentation / branding; chosen to avoid collision with Facebook Flow’s pink branding and with nearby Linguist blues where possible.
+    - Rationale: blue accent used in Flow documentation / branding; chosen to avoid collision with Facebook Flow's pink branding and with nearby Linguist blues where possible.
   - [x] I have updated the heuristics to distinguish my language from others using the same extension.
     - `.flow` is also used by Facebook Flow libdefs (`*.js.flow`). Heuristic prefers this language on `function` / `let mut` / `effect` / `evolves as`, and JavaScript on `declare module` / `// @flow`.
 
 ## Notes for maintainers
 
-- Language name **Flow** may be confusing given Facebook’s type checker; happy to rename the Linguist entry to **Flow Lang** if preferred.
+- Language name **Flow** may be confusing given Facebook's type checker; happy to rename the Linguist entry to **Flow Lang** if preferred.
 - Popularity: please assess with queries that exclude `*.js.flow` / `declare module` noise and, if needed, `-org:flooooooooooow` to measure third-party adoption.
