@@ -3536,7 +3536,7 @@ for f in sys.argv[1:]:
                 exit 1
             fi
             print_info "Flow → C → WASM with a $wasm_fs filesystem (see docs/language/wasm-crossings.md)"
-            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_fs.py" "$1" --fs "$wasm_fs" \
+            if ! "$SCRIPT_DIR/wasm/crossings.sh" fs "$1" --fs "$wasm_fs" \
                     ${wasm_preload[@]+"${wasm_preload[@]}"}; then
                 print_error "Filesystem WASM build failed"
                 exit 1
@@ -3549,7 +3549,7 @@ for f in sys.argv[1:]:
                 exit 1
             fi
             print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
-            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
+            if ! "$SCRIPT_DIR/wasm/crossings.sh" threads "$1" --workers "$wasm_workers"; then
                 print_error "Threaded WASM build failed"
                 exit 1
             fi

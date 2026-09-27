@@ -2,10 +2,11 @@
 """Shared plumbing for the Flow WASM crossing builds.
 
 A "crossing" is one thing people assume cannot reach WebAssembly: OS threads,
-the GPU, sockets, an embedded CPython. Each crossing has its own build script
-(wasm/flow_wasm_threads.py and friends); this module holds the parts they all
-need: locating the tree, driving the Flow compiler, and setting up Homebrew's
-Emscripten so emcc actually finds a wasm backend.
+the GPU, sockets, an embedded CPython. wasm/crossings.sh (a Flow program)
+builds four of them. The GPU crossing, wasm/flow_wasm_gpu.py, stays in Python
+because its WGSL comes from src/flow's code generator, and this module holds
+what it needs: locating the tree, driving the Flow compiler, and setting up
+Homebrew's Emscripten so emcc actually finds a wasm backend.
 """
 
 from __future__ import annotations
