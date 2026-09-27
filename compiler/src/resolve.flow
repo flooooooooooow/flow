@@ -9,7 +9,7 @@
 # flowc_bundle_typecheck: deps-first check with growing seed of dep exports.
 
 import .ast {
-    AST_IMPORT
+    AST_IMPORT, AST_FN, AST_EXPORT
 }
 import .parser {
     flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser
@@ -35,6 +35,7 @@ const FLOWC_RESOLVE_PATH_CAP: i32 = 256
 const FLOWC_RESOLVE_SRC_CAP: i32 = 262144
 const FLOWC_RESOLVE_AST_CAP: i32 = 262144
 const FLOWC_RESOLVE_SIG_CAP: i32 = 65536
+const FLOWC_RESOLVE_FNS_CAP: i32 = 262144
 
 # Copy NUL-terminated `s` into `dst` (cap includes NUL). Returns length, or -1.
 function flowc_resolve_copy_cstr(s: string, dst: ptr<u8>, cap: i32) -> i32 {
@@ -751,6 +752,188 @@ function flowc_resolve_emit_one(
     return n
 }
 
+# --- private function collisions (#950) -----------------------------------
+# Two modules may each define a private function with the same name. In one
+# C TU that is a redefinition. Before emitting, every module's top-level
+# function definitions are listed as entries `[module][exported] name NUL`.
+# A private definition is renamed with a `#define name __flowc_m<i>_name`
+# around its module's C when the same name is exported by another module
+# or defined privately by an earlier one; so one definition always keeps
+# its name, and a bundle without collisions emits exactly as before.
+
+# Append top-level function definitions of the module at `path`. Returns
+# the new length, or -1 on a read or parse failure.
+function flowc_resolve_list_fns(path: string, mi: i32, buf: ptr<u8>, cap: i32, len: i32) -> i32 {
+    let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
+    if src == null {
+        return 0 - 1
+    }
+    let mut zi: i32 = 0
+    while zi < FLOWC_RESOLVE_SRC_CAP {
+        src[zi] = 0
+        zi = zi + 1
+    }
+    let nsrc: i32 = flowc_read_file(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    if nsrc <= 0 {
+        free(src)
+        return 0 - 1
+    }
+    src[nsrc] = 0
+    let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        flowc_parser_free(p)
+        free(src)
+        return 0 - 1
+    }
+    let mut n: i32 = len
+    let mut item: i32 = p.arena.nodes[root].a
+    while item != 0 - 1 {
+        let mut fn: i32 = 0 - 1
+        let mut exported: i32 = 0
+        if p.arena.nodes[item].kind == AST_FN {
+            fn = item
+        }
+        if p.arena.nodes[item].kind == AST_EXPORT {
+            let inner: i32 = p.arena.nodes[item].a
+            if inner != 0 - 1 and p.arena.nodes[inner].kind == AST_FN {
+                fn = inner
+                exported = 1
+            }
+        }
+        # Definitions only: a body, not generic (ival 0), a real name.
+        if fn != 0 - 1 and p.arena.nodes[fn].c != 0 - 1 and p.arena.nodes[fn].ival == 0 {
+            let ns: i32 = p.arena.nodes[fn].name_start
+            let ne: i32 = p.arena.nodes[fn].name_end
+            if ns >= 0 and ne > ns and n + (ne - ns) + 3 < cap {
+                buf[n] = mi
+                buf[n + 1] = exported
+                n = n + 2
+                let mut k: i32 = ns
+                while k < ne {
+                    buf[n] = src[k]
+                    n = n + 1
+                    k = k + 1
+                }
+                buf[n] = 0
+                n = n + 1
+            }
+        }
+        item = p.arena.nodes[item].next
+    }
+    flowc_parser_free(p)
+    free(src)
+    return n
+}
+
+# 1 if the NUL-terminated names at buf+a and buf+b are equal.
+function flowc_resolve_name_eq(buf: ptr<u8>, a: i32, b: i32) -> i32 {
+    let mut i: i32 = 0
+    while buf[a + i] != 0 and buf[b + i] != 0 {
+        if buf[a + i] != buf[b + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if buf[a + i] == buf[b + i] {
+        return 1
+    }
+    return 0
+}
+
+# Offset of the entry after the one at `e`.
+function flowc_resolve_next_entry(buf: ptr<u8>, e: i32) -> i32 {
+    let mut i: i32 = e + 2
+    while buf[i] != 0 {
+        i = i + 1
+    }
+    return i + 1
+}
+
+# 1 if the private entry at `e` must be renamed (see above).
+function flowc_resolve_needs_rename(buf: ptr<u8>, len: i32, e: i32) -> i32 {
+    if buf[e + 1] != 0 {
+        return 0
+    }
+    let mi: i32 = buf[e]
+    let mut o: i32 = 0
+    while o < len {
+        let om: i32 = buf[o]
+        if om != mi and flowc_resolve_name_eq(buf, o + 2, e + 2) == 1 {
+            if buf[o + 1] != 0 or om < mi {
+                return 1
+            }
+        }
+        o = flowc_resolve_next_entry(buf, o)
+    }
+    return 0
+}
+
+# Write `#define name __flowc_m<mi>_name` (undef == 0) or `#undef name`
+# (undef == 1) for each renamed private function of module `mi`. Returns
+# bytes written, or -1 if `out` is too small.
+function flowc_resolve_emit_renames(buf: ptr<u8>, len: i32, mi: i32, undef: i32, out: ptr<u8>, cap: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut e: i32 = 0
+    while e < len {
+        let em: i32 = buf[e]
+        if em == mi and flowc_resolve_needs_rename(buf, len, e) == 1 {
+            let mut nl: i32 = 0
+            while buf[e + 2 + nl] != 0 {
+                nl = nl + 1
+            }
+            if n + 2 * nl + 48 >= cap {
+                return 0 - 1
+            }
+            let mut head: string = "#define "
+            if undef == 1 {
+                head = "#undef "
+            }
+            let hp: ptr<u8> = head
+            let mut k: i32 = 0
+            while hp[k] != 0 {
+                out[n] = hp[k]
+                n = n + 1
+                k = k + 1
+            }
+            k = 0
+            while k < nl {
+                out[n] = buf[e + 2 + k]
+                n = n + 1
+                k = k + 1
+            }
+            if undef == 0 {
+                let mid: string = " __flowc_m"
+                let mp: ptr<u8> = mid
+                k = 0
+                while mp[k] != 0 {
+                    out[n] = mp[k]
+                    n = n + 1
+                    k = k + 1
+                }
+                if mi >= 10 {
+                    out[n] = 48 + mi / 10
+                    n = n + 1
+                }
+                out[n] = 48 + mi % 10
+                n = n + 1
+                out[n] = 95
+                n = n + 1
+                k = 0
+                while k < nl {
+                    out[n] = buf[e + 2 + k]
+                    n = n + 1
+                    k = k + 1
+                }
+            }
+            out[n] = 10
+            n = n + 1
+        }
+        e = flowc_resolve_next_entry(buf, e)
+    }
+    return n
+}
+
 # Cross-file Stage-A typecheck for a bundle.
 # Gather BFS (entry first); check deps-first with a growing seed of exports
 # from already-checked modules. Returns total error count (0 = ok), or 1 on I/O/parse fail.
@@ -926,6 +1109,26 @@ export function flowc_bundle_emit(
     }
     let mut siglen: i32 = 0
 
+    # Top-level function definitions of every module, for rename decisions.
+    let fns: ptr<u8> = malloc(FLOWC_RESOLVE_FNS_CAP as i64)
+    if fns == null {
+        free(sigs)
+        free(order_store)
+        free(path_store)
+        return 0 - 1
+    }
+    let mut fnlen: i32 = 0
+    let mut li: i32 = 0
+    while li < norder {
+        let lslot: ptr<u8> = order_store + (li * FLOWC_RESOLVE_PATH_CAP)
+        let lpath: string = lslot
+        let nl: i32 = flowc_resolve_list_fns(lpath, li, fns, FLOWC_RESOLVE_FNS_CAP, fnlen)
+        if nl >= 0 {
+            fnlen = nl
+        }
+        li = li + 1
+    }
+
     let mut written: i32 = 0
     let mut mi: i32 = 0
     let mut first: i32 = 1
@@ -937,9 +1140,19 @@ export function flowc_bundle_emit(
             flags = 1
         }
         first = 0
+        let ndef: i32 = flowc_resolve_emit_renames(fns, fnlen, mi, 0, out + written, out_cap - written)
+        if ndef < 0 {
+            free(fns)
+            free(sigs)
+            free(order_store)
+            free(path_store)
+            return 0 - 1
+        }
+        written = written + ndef
         let dest: ptr<u8> = out + written
         let rem: i32 = out_cap - written
         if rem <= 0 {
+            free(fns)
             free(sigs)
             free(order_store)
             free(path_store)
@@ -947,6 +1160,7 @@ export function flowc_bundle_emit(
         }
         let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen)
         if n <= 0 {
+            free(fns)
             free(sigs)
             free(order_store)
             free(path_store)
@@ -957,9 +1171,19 @@ export function flowc_bundle_emit(
             out[written] = 10
             written = written + 1
         }
+        let nundef: i32 = flowc_resolve_emit_renames(fns, fnlen, mi, 1, out + written, out_cap - written)
+        if nundef < 0 {
+            free(fns)
+            free(sigs)
+            free(order_store)
+            free(path_store)
+            return 0 - 1
+        }
+        written = written + nundef
         mi = mi + 1
     }
 
+    free(fns)
     free(sigs)
     free(order_store)
     free(path_store)
