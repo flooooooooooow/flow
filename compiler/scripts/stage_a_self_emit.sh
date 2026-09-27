@@ -58,6 +58,12 @@ self_emit_module fileio
 self_emit_module field_dsl
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_field_dsl.c compiler/build/self_field_dsl.h
+self_emit_module dynamics_dsl
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_dynamics_dsl.c compiler/build/self_dynamics_dsl.h
+self_emit_module flow_blocks
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_flow_blocks.c compiler/build/self_flow_blocks.h
 
 self_emit_module parser \
     compiler/build/self_token.h \
@@ -125,6 +131,8 @@ self_emit_module resolve \
     compiler/build/self_parser.h \
     compiler/build/self_fileio.h \
     compiler/build/self_field_dsl.h \
+    compiler/build/self_dynamics_dsl.h \
+    compiler/build/self_flow_blocks.h \
     compiler/build/self_cgen.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
@@ -138,6 +146,8 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_parser.o \
     compiler/build/self_fileio.o \
     compiler/build/self_field_dsl.o \
+    compiler/build/self_dynamics_dsl.o \
+    compiler/build/self_flow_blocks.o \
     compiler/build/self_cgen.o \
     compiler/build/self_overload.o \
     compiler/build/self_overload_table.o \
@@ -190,6 +200,8 @@ cc -O0 -c \
     -include compiler/build/self_parser.h \
     -include compiler/build/self_fileio.h \
     -include compiler/build/self_field_dsl.h \
+    -include compiler/build/self_dynamics_dsl.h \
+    -include compiler/build/self_flow_blocks.h \
     -include compiler/build/self_cgen.h \
     -include compiler/build/self_overload_table.h \
     -include compiler/build/self_overload_call.h \

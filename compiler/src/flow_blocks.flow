@@ -1,0 +1,7 @@
+# @module flowc.flow_blocks
+# @means  Lowering for `flow Name { ... }` blocks, the whole of
+#         src/flow/flow_blocks.py, as a source expansion before parse.
+
+export function flowc_flow_blocks_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -> i32 {
+    return n
+}

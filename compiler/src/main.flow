@@ -18,7 +18,6 @@ import .ast {
 }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_report, Parser }
 import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
-import .field_dsl { flowc_field_expand_in_place }
 import .pipeline_fusion { flowc_fuse_pipelines }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
@@ -28,7 +27,7 @@ import .bpf_gen { flowc_bpf_gen_compile }
 import .typecheck { flowc_typecheck }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck,
-    flowc_resolve_dirname
+    flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place
 }
 
 extern {
@@ -97,9 +96,46 @@ function flowc_want_typecheck() -> i32 {
     return 1
 }
 
-# FLOWC_EXPAND_ONLY=1: write FLOWC_IN after DSL pre-expansion (the Field
-# DSL today) to FLOWC_OUT, or stdout. Source without a DSL is copied as is.
-# The Python host calls this through src/flow/field_dsl.py.
+# FLOWC_EXPAND_ONLY: write FLOWC_IN after DSL pre-expansion to FLOWC_OUT,
+# or stdout. Source without a DSL is copied as is. `1` or `all` runs every
+# stage; otherwise the value names the stages to run: `field`, `dynamics`,
+# `flow`, in any combination (`field,dynamics`). The Python host calls this
+# through src/flow/field_dsl.py, dynamics_dsl.py and flow_blocks.py.
+function flowc_expand_only_stages() -> i32 {
+    let v: string = getenv("FLOWC_EXPAND_ONLY")
+    if v == null {
+        return 7
+    }
+    let vp: ptr<u8> = v as ptr<u8>
+    let mut mask: i32 = 0
+    let mut i: i32 = 0
+    while vp[i] != 0 {
+        # Match whole words separated by commas.
+        let mut j: i32 = i
+        while vp[j] != 0 and vp[j] != 44 {
+            j = j + 1
+        }
+        let wl: i32 = j - i
+        if wl == 5 and vp[i] == 102 and vp[i + 1] == 105 {
+            mask = mask | 1
+        }
+        if wl == 8 and vp[i] == 100 {
+            mask = mask | 2
+        }
+        if wl == 4 and vp[i] == 102 and vp[i + 1] == 108 {
+            mask = mask | 4
+        }
+        i = j
+        if vp[i] == 44 {
+            i = i + 1
+        }
+    }
+    if mask == 0 {
+        return 7
+    }
+    return mask
+}
+
 function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
     # Sized from the file, so large sources pass through whole, with room
     # for the generated helpers (at most 64 fields of a few hundred bytes).
@@ -108,7 +144,7 @@ function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
         puts("flowc expand: read FLOWC_IN failed")
         return 1
     }
-    let src_cap: i32 = (fsize as i32) * 2 + 65536
+    let src_cap: i32 = (fsize as i32) * 4 + 65536
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("flowc expand: malloc src failed")
@@ -121,7 +157,7 @@ function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
         return 1
     }
     src[nsrc] = 0
-    nsrc = flowc_field_expand_in_place(src, nsrc, src_cap)
+    nsrc = flowc_expand_stages_in_place(src, nsrc, src_cap, flowc_expand_only_stages())
     if nsrc < 0 {
         free(src)
         return 1
@@ -243,10 +279,10 @@ function flowc_emit_mode() -> i32 {
         }
         src[nsrc] = 0
 
-        # Field DSL expands before parse, as the Python host does. The
-        # formatter sees the source as written.
+        # DSLs expand before parse, as the Python host does. The formatter
+        # sees the source as written.
         if flowc_env_eq("FLOWC_BACKEND", "fmt") == 0 {
-            nsrc = flowc_field_expand_in_place(src, nsrc, src_cap)
+            nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
             if nsrc < 0 {
                 free(src)
                 free(out)

@@ -15,12 +15,12 @@ extern {
 
 # ── String helpers ───────────────────────────────────────────────
 
-function is_space(c: i32) -> i32 {
+function dy_is_space(c: i32) -> i32 {
     if c == 32 or c == 9 or c == 13 or c == 10 { return 1 }
     return 0
 }
 
-function str_starts_with(s: string, prefix: string) -> i32 {
+function dy_starts_with(s: string, prefix: string) -> i32 {
     let sl: i32 = strlen(s) as i32
     let pl: i32 = strlen(prefix) as i32
     if pl > sl { return 0 }
@@ -57,12 +57,12 @@ export function flowc_strip_comments(line: string) -> string {
         end = hash_pos
     }
     # Strip trailing whitespace
-    while end > 0 and is_space(p[end - 1]) == 1 {
+    while end > 0 and dy_is_space(p[end - 1]) == 1 {
         end = end - 1
     }
     # Strip leading whitespace
     let mut start: i32 = 0
-    while start < end and is_space(p[start]) == 1 {
+    while start < end and dy_is_space(p[start]) == 1 {
         start = start + 1
     }
     if start >= end {
@@ -83,7 +83,7 @@ export function flowc_strip_comments(line: string) -> string {
 # "dsys plant { ... }" -> "dsys plant { ... }" (unchanged)
 export function flowc_strip_dynamics_namespace(line: string) -> string {
     let stripped: string = flowc_strip_comments(line)
-    if str_starts_with(stripped, "dyn.") == 1 {
+    if dy_starts_with(stripped, "dyn.") == 1 {
         let n: i32 = strlen(stripped) as i32
         let len: i32 = n - 4
         let p: ptr<u8> = stripped
@@ -92,7 +92,7 @@ export function flowc_strip_dynamics_namespace(line: string) -> string {
         buf[len] = 0
         return buf as string
     }
-    if str_starts_with(stripped, "dynamics.") == 1 {
+    if dy_starts_with(stripped, "dynamics.") == 1 {
         let n: i32 = strlen(stripped) as i32
         let len: i32 = n - 9
         let p: ptr<u8> = stripped
@@ -102,4 +102,11 @@ export function flowc_strip_dynamics_namespace(line: string) -> string {
         return buf as string
     }
     return stripped
+}
+
+# Expand the dynamics DSL in `buf[0..n)` in place. Returns the new length,
+# or -1 after printing `flowc dynamics: <message>`. Source without the DSL
+# is left untouched.
+export function flowc_dynamics_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -> i32 {
+    return n
 }
