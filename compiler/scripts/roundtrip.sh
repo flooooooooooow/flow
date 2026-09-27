@@ -217,6 +217,11 @@ if ! grep -q 'static const int32_t FLOWC_IO_SEEK_SET' compiler/build/fileio_flow
 fi
 echo "PASS compile_module fileio greps"
 
+# Field DSL expander: a leaf module every source read goes through.
+compile_module field_dsl compiler/src/field_dsl.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/field_dsl_flowc.c compiler/build/field_dsl_flowc.h
+
 # Fifth module: parser.flow (imports token/ast/lexer — -include their headers).
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/ast_flowc.c compiler/build/ast_flowc.h
@@ -330,6 +335,7 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/lexer_flowc.h \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
+    compiler/build/field_dsl_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
@@ -634,6 +640,7 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/lexer_flowc.o \
     compiler/build/parser_flowc.o \
     compiler/build/fileio_flowc.o \
+    compiler/build/field_dsl_flowc.o \
     compiler/build/cgen_flowc.o \
     compiler/build/overload_flowc.o \
     compiler/build/overload_table_flowc.o \
@@ -692,6 +699,7 @@ compile_module driver compiler/src/driver.flow \
     compiler/build/lexer_flowc.h \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
+    compiler/build/field_dsl_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \

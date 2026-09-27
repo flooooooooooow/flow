@@ -10,6 +10,7 @@
 # Keeps the hand-written C host (host/stage_a_driver.c) as a CLI fallback.
 
 import .fileio { flowc_read_file, flowc_write_file }
+import .field_dsl { flowc_field_expand_in_place }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
 import .cgen { flowc_cgen_emit }
 import .typecheck { flowc_typecheck, flowc_typecheck_ex }
@@ -139,7 +140,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         src[zi] = 0
         zi = zi + 1
     }
-    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
     if nsrc <= 0 {
         puts("stage_a_driver_flow: read input failed")
         free(src)
@@ -147,6 +148,32 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 1
     }
     src[nsrc] = 0
+
+    # Field DSL expands before parse, as the Python host does.
+    nsrc = flowc_field_expand_in_place(src, nsrc, src_cap - 1)
+    if nsrc < 0 {
+        free(src)
+        free(out)
+        return 1
+    }
+
+    # FLOWC_EXPAND_ONLY=1: write the expanded source instead of C.
+    if flowc_driver_env_set("FLOWC_EXPAND_ONLY") == 1 {
+        let mut xrc: i32 = 0
+        if nsrc >= src_cap - 1 {
+            puts("stage_a_driver_flow: source too large for expand-only")
+            free(src)
+            free(out)
+            return 1
+        }
+        if flowc_write_file(out_path, src, nsrc) != 0 {
+            puts("stage_a_driver_flow: write output failed")
+            xrc = 1
+        }
+        free(src)
+        free(out)
+        return xrc
+    }
 
     let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
     let root: i32 = flowc_parse_program(&p)

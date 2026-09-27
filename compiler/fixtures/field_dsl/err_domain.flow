@@ -1,0 +1,2 @@
+field T : f64[8] on Square
+function main() -> i32 { return 0 }

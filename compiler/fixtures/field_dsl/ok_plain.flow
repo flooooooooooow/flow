@@ -1,0 +1,5 @@
+flow Ball {
+    state h : f64 = 1.0
+    h evolves as 0.0
+}
+function main() -> i32 { return 0 }

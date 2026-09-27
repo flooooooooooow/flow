@@ -1,0 +1,11 @@
+import "stdlib/dynamics/pde.flow"
+
+const AMBIENT: f64 = 20.0
+
+field T : f64[32] on Line
+T evolves as laplacian(T)
+boundary T { left = AMBIENT  right = AMBIENT }
+
+function main() -> i32 {
+    return 0
+}
