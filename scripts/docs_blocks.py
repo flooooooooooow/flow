@@ -263,7 +263,7 @@ def tracked_markdown(root: Path = ROOT) -> list[str]:
 
     Reading the index rather than the filesystem keeps generated output under
     `build/` from ever counting as documentation, which is the same reason
-    check_doc_links.py resolves against `git ls-files`.
+    check_doc_links.sh resolves against `git ls-files`.
     """
     out = subprocess.check_output(
         ["git", "-C", str(root), "ls-files", "*.md"], text=True
