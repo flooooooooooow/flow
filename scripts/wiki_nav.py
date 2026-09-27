@@ -56,7 +56,7 @@ SKIP_DIRS = {
 
 
 # Pages that exist only in build/wiki, written by build_wiki.py from sources
-# outside docs/. check_doc_links.py keeps an equivalent list for the same reason.
+# outside docs/. check_doc_links.sh keeps an equivalent list for the same reason.
 BUILD_GENERATED = {
     "releases.md",
     "project/language-roadmap.md",  # from ROADMAP.md

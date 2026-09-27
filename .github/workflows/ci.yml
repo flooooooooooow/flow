@@ -118,13 +118,14 @@ jobs:
   # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
   # Deliberately ungated — the drift-prone files (README.md, CITATION.cff,
   # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every paths-filter above.
-  # Stdlib-only script, so no toolchain setup is needed.
+  # The checker is a Flow program built from the bootstrap C with cc, so no
+  # toolchain setup is needed.
   version:
     name: Version consistency
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/sync_version.py --check
+      - run: scripts/sync_version.sh --check
 
   # New code is written in Flow. Fails when a new .py file appears or tracked
   # Python grows past tools/python_ratchet/baseline.txt. The checker is a Flow
@@ -138,24 +139,26 @@ jobs:
       - run: ./scripts/python_ratchet.sh
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
-  # check_wiki_links.py validates the built site instead; the two catch
-  # different breakage. Both stdlib-only, so no toolchain setup.
+  # check_wiki_links.sh validates the built site instead; the two catch
+  # different breakage. Both are Flow programs built with cc alone, so no
+  # toolchain setup.
   doc-links:
     name: Doc links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/check_doc_links.py
+      - run: scripts/check_doc_links.sh
 
   # Every part of the language needs a page. The feature list is read from the
   # compiler, so this fails when something is added and left undocumented.
-  # Stdlib-only, like the checkers above, so no toolchain setup.
+  # A Flow program built with cc, like the checkers above, so no toolchain
+  # setup.
   doc-coverage:
     name: Doc coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/check_doc_coverage.py
+      - run: scripts/check_doc_coverage.sh
 
   # Documented examples are compiled. A ratchet, not a wall: the examples that
   # do not build today are recorded in docs/generated/example-status.json and

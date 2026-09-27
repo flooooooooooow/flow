@@ -1,7 +1,7 @@
 {
   "_note": [
     "Maps every feature the compiler defines to the page that documents it.",
-    "The feature list is read from the compiler by scripts/check_doc_coverage.py,",
+    "The feature list is read from the compiler by scripts/check_doc_coverage.sh,",
     "so it cannot fall behind the implementation. A mapping is only accepted when",
     "the page exists and actually mentions the feature.",
     "Entries under \"exempt\" need a written reason."

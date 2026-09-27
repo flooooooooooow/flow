@@ -22,7 +22,15 @@ FLOWC="$OUT_DIR/flowc"
 BOOT_C="compiler/bootstrap/flowc_stage_a.c"
 C_OUT="$OUT_DIR/$NAME.c"
 BIN="$OUT_DIR/$NAME"
-CC="${CC:-cc}"
+# flowc output leans on clang pragmas to silence int-conversion and pointer
+# type diagnostics that GCC 14 turns into errors, so clang is preferred.
+if [[ -z "${CC:-}" ]]; then
+  if command -v clang >/dev/null 2>&1; then
+    CC=clang
+  else
+    CC=cc
+  fi
+fi
 
 if [[ ! -f "$SRC" ]]; then
   echo "build_tool: no such tool: $SRC" >&2

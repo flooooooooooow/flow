@@ -89,10 +89,10 @@ jobs:
           if [[ '${{ steps.brew.outputs.enabled }}' == 'true' ]]; then
             ARGS+=(--sha256-from-release)
           fi
-          python3 scripts/sync_version.py "${ARGS[@]}"
+          scripts/sync_version.sh "${ARGS[@]}"
 
       - name: Verify the result is self-consistent
-        run: python3 scripts/sync_version.py --check
+        run: scripts/sync_version.sh --check
 
       - name: Open or update the bump PR
         env:

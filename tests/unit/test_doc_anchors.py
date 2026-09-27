@@ -4,15 +4,33 @@ from __future__ import annotations
 
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "scripts"))
+CHECKER = ROOT / "scripts" / "check_doc_links.sh"
 
-from check_doc_links import heading_slug  # noqa: E402
+
+def _run(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(CHECKER), *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
+def heading_slug(text: str) -> str:
+    result = _run("--slug", text)
+    assert result.returncode == 0, result.stderr
+    return result.stdout[:-1]
+
+
+def anchors_in(path: Path) -> set[str]:
+    result = _run("--anchors", str(path))
+    assert result.returncode == 0, result.stderr
+    return set(result.stdout.splitlines())
 
 
 # --------------------------------------------------------------------------
@@ -68,36 +86,22 @@ def test_the_published_wiki_slugger_agrees_with_this_one():
 # anchors_in
 # --------------------------------------------------------------------------
 
-def test_anchors_come_from_headings(tmp_path, monkeypatch):
-    import check_doc_links
-
+def test_anchors_come_from_headings(tmp_path):
     page = tmp_path / "p.md"
     page.write_text("# Title\n\n## A Section\n\ntext\n\n### Deep One\n")
-    monkeypatch.setattr(check_doc_links, "ROOT", tmp_path)
-    check_doc_links._ANCHOR_CACHE.clear()
-    found = check_doc_links.anchors_in("p.md")
-    assert {"title", "a-section", "deep-one"} <= found
+    assert {"title", "a-section", "deep-one"} <= anchors_in(page)
 
 
-def test_repeated_headings_are_numbered(tmp_path, monkeypatch):
-    import check_doc_links
-
+def test_repeated_headings_are_numbered(tmp_path):
     page = tmp_path / "p.md"
     page.write_text("## Notes\n\n## Notes\n\n## Notes\n")
-    monkeypatch.setattr(check_doc_links, "ROOT", tmp_path)
-    check_doc_links._ANCHOR_CACHE.clear()
-    found = check_doc_links.anchors_in("p.md")
-    assert {"notes", "notes-1", "notes-2"} <= found
+    assert {"notes", "notes-1", "notes-2"} <= anchors_in(page)
 
 
-def test_explicit_html_ids_count_as_anchors(tmp_path, monkeypatch):
-    import check_doc_links
-
+def test_explicit_html_ids_count_as_anchors(tmp_path):
     page = tmp_path / "p.md"
     page.write_text('# T\n\n<a id="hand-written"></a>\n')
-    monkeypatch.setattr(check_doc_links, "ROOT", tmp_path)
-    check_doc_links._ANCHOR_CACHE.clear()
-    assert "hand-written" in check_doc_links.anchors_in("p.md")
+    assert "hand-written" in anchors_in(page)
 
 
 # --------------------------------------------------------------------------
@@ -106,23 +110,13 @@ def test_explicit_html_ids_count_as_anchors(tmp_path, monkeypatch):
 
 def test_every_documented_anchor_resolves():
     """The whole point: no link points at a heading that is not there."""
-    result = subprocess.run(
-        [sys.executable, "scripts/check_doc_links.py"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
+    result = _run()
     assert result.returncode == 0, result.stdout + result.stderr
     assert "all relative links and fragments resolve" in result.stdout
 
 
 def test_same_page_anchors_are_actually_checked():
     """`#` used to sit in the external-skip list, so 55 anchors went unchecked."""
-    result = subprocess.run(
-        [sys.executable, "scripts/check_doc_links.py"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
+    result = _run()
     match = re.search(r"checked (\d+) link fragment", result.stdout)
     assert match and int(match.group(1)) > 100, result.stdout

@@ -1,0 +1,693 @@
+# Check that relative links in tracked markdown resolve to real files.
+#
+# Complements scripts/check_wiki_links.sh, which validates the *built* wiki
+# under build/wiki. This one validates the repo as it sits on GitHub, where
+# most readers meet it. The two catch different things: a link can be fine on
+# the deployed site and dead in the tree, or the reverse.
+#
+# Some targets are generated into the site at build time by
+# scripts/build_wiki.py and never exist in the tree. Those are listed in
+# GENERATED (is_generated) and skipped, because they are correct for the audience that
+# follows them.
+#
+# Run through scripts/check_doc_links.sh, which leaves `git ls-files` output
+# in build/doc-links/ (Flow cannot spawn git):
+#
+#   check_doc_links.sh              report and exit 1 on breakage
+#   check_doc_links.sh --list-ok    also list what was skipped
+#   check_doc_links.sh --slug TEXT  print the heading id for TEXT
+#   check_doc_links.sh --anchors F  print every anchor page F offers, sorted
+#
+# Links are resolved against the git index rather than the filesystem. A
+# working tree accumulates untracked build output, and resolving against it
+# lets a link pass locally and fail in CI's fresh checkout.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_starts, ft_ends, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_normpath, ft_dirname, ft_basename, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_set_new, ft_set_add, ft_set_has, ft_map_new, ft_map_get, ft_map_put, StrList, StrSet, StrMap }
+import .unicode { uc_decode, uc_len, uc_is_word, uc_is_space, uc_lower_str, uc_strip, uc_put, uc_to_cps, uc_count }
+import .mdtext { md_sanitize, md_split_ws }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const PROG: string = "check_doc_links.sh"
+const TRACKED: string = "build/doc-links/tracked.txt"
+const MARKDOWN: string = "build/doc-links/markdown.txt"
+
+# GENERATED: basenames produced by scripts/build_wiki.py into the published site.
+function is_generated(name: string) -> bool {
+    return ft_eq(name, "index.html") or ft_eq(name, "proof-graph.html") or ft_eq(name, "manifest.json") or ft_eq(name, "flow-verify-catalog.md") or ft_eq(name, "language-roadmap.md") or ft_eq(name, "benchmark-results.md") or ft_eq(name, "example-status.md")
+}
+
+# A same-page anchor is not external, so `#` is deliberately absent here.
+function is_external(target: string) -> bool {
+    return ft_starts(target, "http://") or ft_starts(target, "https://") or ft_starts(target, "mailto:") or ft_starts(target, "<")
+}
+
+# Trees that are vendored, generated, or intentionally not link-clean.
+function is_skipped_source(path: string) -> bool {
+    return ft_starts(path, "docs/formal/") or ft_starts(path, "third_party/") or ft_starts(path, "node_modules/")
+}
+
+# ---------------------------------------------------------------------------
+# Tracked paths
+# ---------------------------------------------------------------------------
+
+struct Index {
+    files: ptr<StrSet>
+    dirs: ptr<StrSet>
+}
+
+function build_index(lines: ptr<StrList>) -> ptr<Index> {
+    let idx: ptr<Index> = malloc(16) as ptr<Index>
+    idx[0].files = ft_set_new()
+    idx[0].dirs = ft_set_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let path: string = uc_strip(ft_list_get(lines, i))
+        if ft_len(path) > 0 {
+            ft_set_add(idx[0].files, path)
+            # Every proper directory prefix, so a directory link resolves.
+            let p: ptr<u8> = path as ptr<u8>
+            let mut k: i32 = 0
+            while p[k] != 0 {
+                if p[k] == 47 {
+                    ft_set_add(idx[0].dirs, ft_slice(path, 0, k))
+                }
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+    return idx
+}
+
+# Does `target`, written inside `source`, point at something git tracks?
+function resolves(source: string, target: string, idx: ptr<Index>) -> bool {
+    let base: string = ft_dirname(source)
+    let mut joined: string = target
+    if ft_starts(target, "/") == false and ft_len(base) > 0 {
+        joined = base + "/" + target
+    }
+    let resolved: string = ft_normpath(joined)
+    if ft_starts(resolved, "..") {
+        # Escapes the repo; not ours to verify.
+        return true
+    }
+    if ft_set_has(idx[0].files, resolved) {
+        return true
+    }
+    let mut end: i32 = ft_len(resolved)
+    let rp: ptr<u8> = resolved as ptr<u8>
+    while end > 0 and rp[end - 1] == 47 {
+        end = end - 1
+    }
+    return ft_set_has(idx[0].dirs, ft_slice(resolved, 0, end))
+}
+
+# ---------------------------------------------------------------------------
+# Heading anchors
+# ---------------------------------------------------------------------------
+
+# GitHub/GFM heading id. Runs of dashes are deliberately not collapsed,
+# because GitHub does not collapse them: `10. Domain / DSL Surfaces` loses
+# the slash and keeps the spaces either side, giving `10-domain--dsl-surfaces`.
+function heading_slug(text: string) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let buf: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let cp: i32 = uc_decode(p, i)
+        let step: i32 = uc_len(p[i] as i32)
+        # Drop backticks, then everything that is not \w, \s or '-'.
+        if cp != 96 and (uc_is_word(cp) or uc_is_space(cp) or cp == 45) {
+            let mut k: i32 = 0
+            while k < step {
+                buf[o] = p[i + k]
+                o = o + 1
+                k = k + 1
+            }
+        }
+        i = i + step
+    }
+    buf[o] = 0
+    let kept: string = uc_lower_str(uc_strip(buf as string))
+    let kp: ptr<u8> = kept as ptr<u8>
+    let mut j: i32 = 0
+    while kp[j] != 0 {
+        if kp[j] == 32 {
+            kp[j] = 45
+        }
+        j = j + 1
+    }
+    return kept
+}
+
+# ^(#{1,6})\s+(.*)$ in MULTILINE mode: every heading title, in order.
+function heading_titles(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut pos: i32 = 0
+    while pos < n {
+        if pos == 0 or p[pos - 1] == 10 {
+            let mut k: i32 = 0
+            while pos + k < n and p[pos + k] == 35 {
+                k = k + 1
+            }
+            if k >= 1 and k <= 6 and pos + k < n and uc_is_space(uc_decode(p, pos + k)) {
+                let mut w: i32 = pos + k
+                while w < n and uc_is_space(uc_decode(p, w)) {
+                    w = w + uc_len(p[w] as i32)
+                }
+                let mut e: i32 = w
+                while e < n and p[e] != 10 {
+                    e = e + 1
+                }
+                ft_list_push(out, ft_slice(text, w, e))
+                pos = e
+                continue
+            }
+        }
+        pos = pos + 1
+    }
+    return out
+}
+
+# (?:id|name)="([^"]+)" : hand-written anchors.
+function html_ids(text: string, out: ptr<StrSet>) -> void {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut i: i32 = 0
+    while i < n {
+        let mut start: i32 = -1
+        if p[i] == 105 and p[i + 1] == 100 and p[i + 2] == 61 and p[i + 3] == 34 {
+            start = i + 4
+        } elif p[i] == 110 and p[i + 1] == 97 and p[i + 2] == 109 and p[i + 3] == 101 and p[i + 4] == 61 and p[i + 5] == 34 {
+            start = i + 6
+        }
+        if start >= 0 {
+            let close: i32 = ft_find_byte(text, 34, start)
+            if close < 0 {
+                return
+            }
+            if close > start {
+                ft_set_add(out, ft_slice(text, start, close))
+                i = close + 1
+                continue
+            }
+        }
+        i = i + 1
+    }
+}
+
+struct AnchorCache {
+    index: ptr<StrMap>
+    sets: ptr<ptr<StrSet>>
+    lists: ptr<ptr<StrList>>
+    count: i32
+    cap: i32
+}
+
+function cache_new() -> ptr<AnchorCache> {
+    let c: ptr<AnchorCache> = malloc(40) as ptr<AnchorCache>
+    c[0].index = ft_map_new()
+    c[0].cap = 256
+    c[0].count = 0
+    c[0].sets = malloc(256 * 8) as ptr<ptr<StrSet>>
+    c[0].lists = malloc(256 * 8) as ptr<ptr<StrList>>
+    return c
+}
+
+# Every anchor a page offers: heading ids (repeats numbered -1, -2 ... as
+# GitHub numbers them) and explicit id= / name= attributes. Returns the slot.
+function anchors_slot(c: ptr<AnchorCache>, rel: string) -> i32 {
+    let hit: i32 = ft_map_get(c[0].index, rel, -1)
+    if hit >= 0 {
+        return hit
+    }
+    let mut text: string = ft_read_file(rel)
+    if text == null {
+        text = ""
+    }
+    text = md_sanitize(text)
+    let slugs: ptr<StrSet> = ft_set_new()
+    let order: ptr<StrList> = ft_list_new()
+    let seen: ptr<StrMap> = ft_map_new()
+    let titles: ptr<StrList> = heading_titles(text)
+    let mut i: i32 = 0
+    while i < ft_list_len(titles) {
+        let slug: string = heading_slug(uc_strip(ft_list_get(titles, i)))
+        if ft_len(slug) > 0 {
+            let nseen: i32 = ft_map_get(seen, slug, 0)
+            ft_map_put(seen, slug, nseen + 1)
+            let mut id: string = slug
+            if nseen > 0 {
+                id = slug + "-" + ft_itoa(nseen)
+            }
+            if ft_set_has(slugs, id) == false {
+                ft_set_add(slugs, id)
+                ft_list_push(order, id)
+            }
+        }
+        i = i + 1
+    }
+    let ids: ptr<StrSet> = ft_set_new()
+    html_ids(text, ids)
+    let idkeys: ptr<string> = ids[0].keys
+    let mut k: i32 = 0
+    while k < ids[0].cap {
+        if idkeys[k] != null and ft_set_has(slugs, idkeys[k]) == false {
+            ft_set_add(slugs, idkeys[k])
+            ft_list_push(order, idkeys[k])
+        }
+        k = k + 1
+    }
+    if c[0].count == c[0].cap {
+        let nc: i32 = c[0].cap * 2
+        let ns: ptr<ptr<StrSet>> = malloc((nc as i64) * 8) as ptr<ptr<StrSet>>
+        let nl: ptr<ptr<StrList>> = malloc((nc as i64) * 8) as ptr<ptr<StrList>>
+        let os: ptr<ptr<StrSet>> = c[0].sets
+        let ol: ptr<ptr<StrList>> = c[0].lists
+        let mut m: i32 = 0
+        while m < c[0].count {
+            ns[m] = os[m]
+            nl[m] = ol[m]
+            m = m + 1
+        }
+        c[0].sets = ns
+        c[0].lists = nl
+        c[0].cap = nc
+    }
+    let slot: i32 = c[0].count
+    let sets: ptr<ptr<StrSet>> = c[0].sets
+    let lists: ptr<ptr<StrList>> = c[0].lists
+    sets[slot] = slugs
+    lists[slot] = order
+    c[0].count = slot + 1
+    ft_map_put(c[0].index, rel, slot)
+    return slot
+}
+
+function has_anchor(c: ptr<AnchorCache>, rel: string, fragment: string) -> bool {
+    let slot: i32 = anchors_slot(c, rel)
+    let sets: ptr<ptr<StrSet>> = c[0].sets
+    return ft_set_has(sets[slot], fragment)
+}
+
+function anchor_list(c: ptr<AnchorCache>, rel: string) -> ptr<StrList> {
+    let slot: i32 = anchors_slot(c, rel)
+    let lists: ptr<ptr<StrList>> = c[0].lists
+    let copy: ptr<StrList> = ft_list_new()
+    let src: ptr<StrList> = lists[slot]
+    let mut i: i32 = 0
+    while i < ft_list_len(src) {
+        ft_list_push(copy, ft_list_get(src, i))
+        i = i + 1
+    }
+    ft_list_sort(copy)
+    return copy
+}
+
+# ---------------------------------------------------------------------------
+# difflib.get_close_matches(word, possibilities, n=1, cutoff=0.6)
+# ---------------------------------------------------------------------------
+
+# Longest common block of a[alo:ahi] and b[blo:bhi], the earliest one on ties,
+# as SequenceMatcher.find_longest_match finds it with no junk. Writes
+# (i, j, size) to out.
+function longest_match(a: ptr<i32>, b: ptr<i32>, alo: i32, ahi: i32, blo: i32, bhi: i32, out: ptr<i32>) -> void {
+    let width: i32 = bhi - blo + 1
+    let prev: ptr<i32> = malloc((width as i64) * 4 + 4) as ptr<i32>
+    let cur: ptr<i32> = malloc((width as i64) * 4 + 4) as ptr<i32>
+    let mut z: i32 = 0
+    while z < width {
+        prev[z] = 0
+        z = z + 1
+    }
+    let mut besti: i32 = alo
+    let mut bestj: i32 = blo
+    let mut bestsize: i32 = 0
+    let mut i: i32 = alo
+    while i < ahi {
+        let mut j: i32 = blo
+        while j < bhi {
+            let slot: i32 = j - blo + 1
+            if a[i] == b[j] {
+                let k: i32 = prev[slot - 1] + 1
+                cur[slot] = k
+                if k > bestsize {
+                    besti = i - k + 1
+                    bestj = j - k + 1
+                    bestsize = k
+                }
+            } else {
+                cur[slot] = 0
+            }
+            j = j + 1
+        }
+        cur[0] = 0
+        let mut c2: i32 = 0
+        while c2 < width {
+            prev[c2] = cur[c2]
+            c2 = c2 + 1
+        }
+        i = i + 1
+    }
+    out[0] = besti
+    out[1] = bestj
+    out[2] = bestsize
+}
+
+# Total size of get_matching_blocks().
+function matching_total(a: ptr<i32>, b: ptr<i32>, alo: i32, ahi: i32, blo: i32, bhi: i32) -> i32 {
+    if alo >= ahi or blo >= bhi {
+        return 0
+    }
+    let m: ptr<i32> = malloc(12) as ptr<i32>
+    longest_match(a, b, alo, ahi, blo, bhi, m)
+    let i: i32 = m[0]
+    let j: i32 = m[1]
+    let k: i32 = m[2]
+    if k == 0 {
+        return 0
+    }
+    let mut total: i32 = k
+    if alo < i and blo < j {
+        total = total + matching_total(a, b, alo, i, blo, j)
+    }
+    if i + k < ahi and j + k < bhi {
+        total = total + matching_total(a, b, i + k, ahi, j + k, bhi)
+    }
+    return total
+}
+
+# Closest candidate by SequenceMatcher ratio >= 0.6, ties to the larger
+# string, or null.
+function closest(word: string, candidates: ptr<StrList>) -> string {
+    let bw: ptr<i32> = malloc(((ft_len(word) + 1) as i64) * 4) as ptr<i32>
+    let lb: i32 = uc_to_cps(word, bw)
+    let mut best: string = null
+    let mut best_m: i32 = 0
+    let mut best_t: i32 = 1
+    let mut i: i32 = 0
+    while i < ft_list_len(candidates) {
+        let x: string = ft_list_get(candidates, i)
+        let ax: ptr<i32> = malloc(((ft_len(x) + 1) as i64) * 4) as ptr<i32>
+        let la: i32 = uc_to_cps(x, ax)
+        let t: i32 = la + lb
+        let mut m2: i32 = 0
+        if t > 0 {
+            m2 = 2 * matching_total(ax, bw, 0, la, 0, lb)
+        }
+        # ratio = m2 / t, and 1.0 when both are empty.
+        let mut rm: i32 = m2
+        let mut rt: i32 = t
+        if t == 0 {
+            rm = 1
+            rt = 1
+        }
+        if rm * 10 >= rt * 6 {
+            let lhs: i64 = (rm as i64) * (best_t as i64)
+            let rhs: i64 = (best_m as i64) * (rt as i64)
+            if best == null or lhs > rhs or (lhs == rhs and ft_cmp_str(x, best) > 0) {
+                best = x
+                best_m = rm
+                best_t = rt
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function ft_cmp_str(a: string, b: string) -> i32 {
+    let pa: ptr<u8> = a as ptr<u8>
+    let pb: ptr<u8> = b as ptr<u8>
+    let mut i: i32 = 0
+    while pa[i] != 0 and pa[i] == pb[i] {
+        i = i + 1
+    }
+    return (pa[i] as i32) - (pb[i] as i32)
+}
+
+# ---------------------------------------------------------------------------
+# Link extraction
+# ---------------------------------------------------------------------------
+
+# \[[^\]]*\]\(\s*([^)\s]+?)\s*(?:"[^"]*")?\)  every non-overlapping match.
+# Returns targets; ends[] receives nothing: callers only need the targets.
+function find_links(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] != 91 {
+            i = i + 1
+            continue
+        }
+        let close: i32 = ft_find_byte(text, 93, i + 1)
+        if close < 0 {
+            break
+        }
+        if p[close + 1] != 40 {
+            i = i + 1
+            continue
+        }
+        # \s* before the target. The target cannot start with whitespace, so
+        # greedy skipping is the only way this part can match.
+        let mut t0: i32 = close + 2
+        while t0 < n and uc_is_space(uc_decode(p, t0)) {
+            t0 = t0 + uc_len(p[t0] as i32)
+        }
+        # Lazy target: the shortest run of non-space, non-')' characters after
+        # which \s*, an optional "title", and ')' follow.
+        let mut matched: i32 = -1
+        let mut t1: i32 = t0
+        while t1 < n {
+            let cp: i32 = uc_decode(p, t1)
+            if cp == 41 or uc_is_space(cp) {
+                break
+            }
+            t1 = t1 + uc_len(p[t1] as i32)
+            let mut r: i32 = t1
+            while r < n and uc_is_space(uc_decode(p, r)) {
+                r = r + uc_len(p[r] as i32)
+            }
+            if p[r] == 34 {
+                let q: i32 = ft_find_byte(text, 34, r + 1)
+                if q >= 0 and p[q + 1] == 41 {
+                    matched = q + 1
+                }
+            }
+            if matched < 0 and p[r] == 41 {
+                matched = r
+            }
+            if matched >= 0 {
+                break
+            }
+        }
+        if matched < 0 {
+            i = i + 1
+            continue
+        }
+        ft_list_push(out, ft_slice(text, t0, t1))
+        i = matched + 1
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+function usage() -> string {
+    return "usage: " + PROG + " [-h] [--list-ok]\n"
+}
+
+function help_text() -> string {
+    let mut h: string = usage() + "\nCheck that relative links in tracked markdown resolve to real files.\n\n"
+    h = h + "options:\n"
+    h = h + "  -h, --help     show this help message and exit\n"
+    h = h + "  --list-ok      also list links skipped as build-time generated\n"
+    h = h + "  --slug TEXT    print the heading id GitHub gives TEXT\n"
+    h = h + "  --anchors FILE print every anchor FILE offers, sorted\n"
+    return h
+}
+
+function run_check(list_ok: bool) -> i32 {
+    let tracked_text: string = ft_read_file(TRACKED)
+    let md_text: string = ft_read_file(MARKDOWN)
+    if tracked_text == null or md_text == null {
+        ft_errln(PROG + ": missing " + TRACKED + "; run scripts/check_doc_links.sh")
+        return 1
+    }
+    let idx: ptr<Index> = build_index(ft_split_lines(tracked_text))
+    let all_md: ptr<StrList> = md_split_ws(md_text)
+    let sources: ptr<StrList> = ft_list_new()
+    let mut s: i32 = 0
+    while s < ft_list_len(all_md) {
+        if is_skipped_source(ft_list_get(all_md, s)) == false {
+            ft_list_push(sources, ft_list_get(all_md, s))
+        }
+        s = s + 1
+    }
+
+    let cache: ptr<AnchorCache> = cache_new()
+    let broken: ptr<StrList> = ft_list_new()
+    let bad_src: ptr<StrList> = ft_list_new()
+    let bad_target: ptr<StrList> = ft_list_new()
+    let bad_rel: ptr<StrList> = ft_list_new()
+    let skipped: ptr<StrList> = ft_list_new()
+    let mut checked: i32 = 0
+    let mut anchors_checked: i32 = 0
+
+    let mut si: i32 = 0
+    while si < ft_list_len(sources) {
+        let rel: string = ft_list_get(sources, si)
+        let raw: string = ft_read_file(rel)
+        if raw == null {
+            si = si + 1
+            continue
+        }
+        let text: string = md_sanitize(raw)
+        let links: ptr<StrList> = find_links(text)
+        let mut li: i32 = 0
+        while li < ft_list_len(links) {
+            let target: string = ft_list_get(links, li)
+            if is_external(target) {
+                li = li + 1
+                continue
+            }
+            let hash: i32 = ft_find_byte(target, 35, 0)
+            let mut bare: string = target
+            let mut fragment: string = ""
+            if hash >= 0 {
+                bare = ft_slice(target, 0, hash)
+                fragment = ft_from(target, hash + 1)
+            }
+            if ft_len(bare) > 0 {
+                checked = checked + 1
+            }
+            if ft_len(bare) == 0 {
+                # Same-page anchor: check it against this file's own headings.
+                if ft_len(fragment) > 0 and ft_ends(rel, ".md") {
+                    anchors_checked = anchors_checked + 1
+                    if has_anchor(cache, rel, fragment) == false {
+                        ft_list_push(bad_src, rel)
+                        ft_list_push(bad_target, target)
+                        ft_list_push(bad_rel, rel)
+                    }
+                }
+                li = li + 1
+                continue
+            }
+            if resolves(rel, bare, idx) {
+                if ft_len(fragment) > 0 {
+                    let target_rel: string = ft_normpath(ft_join(ft_dirname(rel), bare))
+                    if ft_ends(target_rel, ".md") {
+                        anchors_checked = anchors_checked + 1
+                        if has_anchor(cache, target_rel, fragment) == false {
+                            ft_list_push(bad_src, rel)
+                            ft_list_push(bad_target, target)
+                            ft_list_push(bad_rel, target_rel)
+                        }
+                    }
+                }
+                li = li + 1
+                continue
+            }
+            if is_generated(ft_basename(bare)) {
+                ft_list_push(skipped, rel + ": " + target)
+                li = li + 1
+                continue
+            }
+            ft_list_push(broken, rel + ": " + target)
+            li = li + 1
+        }
+        si = si + 1
+    }
+
+    ft_outln("checked " + ft_itoa(checked) + " relative links across " + ft_itoa(ft_list_len(sources)) + " files")
+    ft_outln("checked " + ft_itoa(anchors_checked) + " link fragment(s) against page headings")
+    if ft_list_len(skipped) > 0 {
+        ft_outln("skipped " + ft_itoa(ft_list_len(skipped)) + " link(s) to build-time generated targets")
+        if list_ok {
+            let mut k: i32 = 0
+            while k < ft_list_len(skipped) {
+                ft_outln("    " + ft_list_get(skipped, k))
+                k = k + 1
+            }
+        }
+    }
+
+    let nbad: i32 = ft_list_len(bad_src)
+    if ft_list_len(broken) == 0 and nbad == 0 {
+        ft_outln("all relative links and fragments resolve")
+        return 0
+    }
+    if ft_list_len(broken) > 0 {
+        ft_outln("")
+        ft_outln(ft_itoa(ft_list_len(broken)) + " broken link(s):")
+        let mut b: i32 = 0
+        while b < ft_list_len(broken) {
+            ft_outln("    " + ft_list_get(broken, b))
+            b = b + 1
+        }
+        ft_outln("")
+        ft_outln("Fix the path, or add the basename to GENERATED if the site builds it.")
+    }
+    if nbad > 0 {
+        ft_outln("")
+        ft_outln(ft_itoa(nbad) + " link(s) to a heading that does not exist:")
+        let mut a: i32 = 0
+        while a < nbad {
+            let target2: string = ft_list_get(bad_target, a)
+            let fragment2: string = ft_from(target2, ft_find_byte(target2, 35, 0) + 1)
+            let near: string = closest(fragment2, anchor_list(cache, ft_list_get(bad_rel, a)))
+            let mut hint: string = ""
+            if near != null {
+                hint = "   (closest heading: #" + near + ")"
+            }
+            ft_outln("    " + ft_list_get(bad_src, a) + ": " + target2 + hint)
+            a = a + 1
+        }
+        ft_outln("")
+        ft_outln("Heading ids follow GitHub's rules; runs of dashes are not collapsed.")
+    }
+    return 1
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let mut list_ok: bool = false
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "--list-ok") or (ft_starts("--list-ok", arg) and ft_len(arg) > 2) {
+            list_ok = true
+        } elif ft_eq(arg, "-h") or ft_eq(arg, "--help") {
+            ft_out(help_text())
+            return 0
+        } elif ft_eq(arg, "--slug") and i + 1 < argc {
+            ft_outln(heading_slug(argv[i + 1]))
+            return 0
+        } elif ft_eq(arg, "--anchors") and i + 1 < argc {
+            let cache: ptr<AnchorCache> = cache_new()
+            let found: ptr<StrList> = anchor_list(cache, argv[i + 1])
+            let mut k: i32 = 0
+            while k < ft_list_len(found) {
+                ft_outln(ft_list_get(found, k))
+                k = k + 1
+            }
+            return 0
+        } else {
+            ft_err(usage() + PROG + ": error: unrecognized arguments: " + arg + "\n")
+            return 2
+        }
+        i = i + 1
+    }
+    return run_check(list_ok)
+}

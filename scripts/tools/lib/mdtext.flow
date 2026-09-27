@@ -1,0 +1,182 @@
+# @module tools.mdtext
+# @means  Reading text the way the Python tools did: UTF-8 decoding with
+#         errors="ignore", and str.split() on Unicode whitespace.
+
+import .text { ft_slice, ft_list_new, ft_list_push, StrList }
+import .unicode { uc_decode, uc_len, uc_is_space }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+# Length of the valid UTF-8 sequence at `i`, or 0 when the bytes there are
+# not one. Follows the Unicode "maximal subpart" rule Python's decoder uses:
+# `bad` receives how many bytes to drop when invalid.
+function seq_len(p: ptr<u8>, i: i32, bad: ptr<i32>) -> i32 {
+    let c: i32 = p[i] as i32
+    if c < 128 {
+        return 1
+    }
+    let mut need: i32 = 0
+    let mut lo: i32 = 128
+    let mut hi: i32 = 191
+    if c >= 194 and c <= 223 {
+        need = 1
+    } elif c == 224 {
+        need = 2
+        lo = 160
+    } elif c >= 225 and c <= 236 {
+        need = 2
+    } elif c == 237 {
+        need = 2
+        hi = 159
+    } elif c >= 238 and c <= 239 {
+        need = 2
+    } elif c == 240 {
+        need = 3
+        lo = 144
+    } elif c >= 241 and c <= 243 {
+        need = 3
+    } elif c == 244 {
+        need = 3
+        hi = 143
+    } else {
+        bad[0] = 1
+        return 0
+    }
+    let mut k: i32 = 1
+    while k <= need {
+        let d: i32 = p[i + k] as i32
+        let mut ok: bool = d >= 128 and d <= 191
+        if k == 1 {
+            ok = d >= lo and d <= hi
+        }
+        if ok == false {
+            bad[0] = k
+            return 0
+        }
+        k = k + 1
+    }
+    return need + 1
+}
+
+# bytes.decode("utf-8", errors="ignore"), re-encoded: invalid bytes dropped.
+export function md_sanitize(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let bad: ptr<i32> = malloc(4) as ptr<i32>
+    let mut i: i32 = 0
+    let mut clean: bool = true
+    while i < n {
+        let l: i32 = seq_len(p, i, bad)
+        if l == 0 {
+            clean = false
+            break
+        }
+        i = i + l
+    }
+    if clean {
+        return s
+    }
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    i = 0
+    while i < n {
+        let l2: i32 = seq_len(p, i, bad)
+        if l2 == 0 {
+            i = i + bad[0]
+        } else {
+            let mut k: i32 = 0
+            while k < l2 {
+                out[o] = p[i + k]
+                o = o + 1
+                k = k + 1
+            }
+            i = i + l2
+        }
+    }
+    out[o] = 0
+    return out as string
+}
+
+# str.splitlines(): \n, \r\n, \r, \v, \f, \x1c-\x1e, \x85, U+2028 and U+2029
+# all end a line, and a final line ending adds no empty line.
+export function md_splitlines(s: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let cp: i32 = uc_decode(p, i)
+        let step: i32 = uc_len(p[i] as i32)
+        let is_break: bool = cp == 10 or cp == 13 or cp == 11 or cp == 12 or (cp >= 28 and cp <= 30) or cp == 133 or cp == 8232 or cp == 8233
+        if is_break {
+            ft_list_push(out, ft_slice(s, start, i))
+            let mut next: i32 = i + step
+            if cp == 13 and p[next] == 10 {
+                next = next + 1
+            }
+            start = next
+            i = next
+        } else {
+            i = i + step
+        }
+    }
+    if start < n {
+        ft_list_push(out, ft_slice(s, start, n))
+    }
+    return out
+}
+
+# re.sub(r"\s+", " ", s): every run of Unicode whitespace becomes one space.
+export function md_collapse_ws(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if uc_is_space(uc_decode(p, i)) {
+            while i < n and uc_is_space(uc_decode(p, i)) {
+                i = i + uc_len(p[i] as i32)
+            }
+            buf[o] = 32
+            o = o + 1
+        } else {
+            let step: i32 = uc_len(p[i] as i32)
+            let mut k: i32 = 0
+            while k < step {
+                buf[o] = p[i + k]
+                o = o + 1
+                k = k + 1
+            }
+            i = i + step
+        }
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+# str.split() with no arguments: runs of Unicode whitespace separate fields.
+export function md_split_ws(s: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        while i < n and uc_is_space(uc_decode(p, i)) {
+            i = i + uc_len(p[i] as i32)
+        }
+        if i >= n {
+            break
+        }
+        let start: i32 = i
+        while i < n and uc_is_space(uc_decode(p, i)) == false {
+            i = i + uc_len(p[i] as i32)
+        }
+        ft_list_push(out, ft_slice(s, start, i))
+    }
+    return out
+}

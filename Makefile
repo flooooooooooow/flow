@@ -106,11 +106,11 @@ clean:
 
 # Sync open ROADMAP.md items to GitHub issues ([roadmap] label)
 sync-roadmap:
-	@python3 scripts/sync_roadmap.py
+	@scripts/sync_roadmap.sh
 
 # Preview what sync-roadmap would change
 sync-roadmap-dry:
-	@python3 scripts/sync_roadmap.py --dry-run
+	@scripts/sync_roadmap.sh --dry-run
 
 # Show help
 help:

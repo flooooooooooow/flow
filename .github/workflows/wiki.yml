@@ -7,7 +7,10 @@ on:
       - 'docs/**'
       - 'site/**'
       - 'scripts/build_wiki.py'
-      - 'scripts/check_wiki_links.py'
+      - 'scripts/check_wiki_links.sh'
+      - 'scripts/tools/wiki_links/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/tools/build_tool.sh'
       - 'scripts/deploy_wiki.py'
       - 'lib/verify/**'
       - 'examples/verify/**'
@@ -20,7 +23,10 @@ on:
       - 'docs/**'
       - 'site/**'
       - 'scripts/build_wiki.py'
-      - 'scripts/check_wiki_links.py'
+      - 'scripts/check_wiki_links.sh'
+      - 'scripts/tools/wiki_links/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/tools/build_tool.sh'
       - 'scripts/deploy_wiki.py'
       - 'lib/verify/**'
       - 'examples/verify/**'
@@ -61,7 +67,7 @@ jobs:
           echo "Wiki artifacts OK ($(du -sh build/wiki | cut -f1))"
 
       - name: Check internal links
-        run: python3 scripts/check_wiki_links.py
+        run: scripts/check_wiki_links.sh
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
