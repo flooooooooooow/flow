@@ -1,0 +1,33 @@
+# Input for scripts/tools/grad: one scalar function per supported feature.
+#
+#   scripts/tools/grad/grad.sh c scripts/tools/grad/demo.flow f > build/grad_demo.c
+#   clang -O2 build/grad_demo.c -lm -o build/grad_demo
+#   ./build/grad_demo 1.0 2.0
+
+function f(x: f32, y: f32) -> f32 {
+    let a: f32 = x * y + sin(x)
+    let b: f32 = a / (y - 0.5) - cos(y)
+    return exp(-a) + log(b * b) + sqrt(x * x + 1.0) + sigmoid(b)
+}
+
+# `unused` gets a zero gradient.
+function g(x: f32, unused: f32, z: f32) -> f32 {
+    let s: f32 = 2.0 * x - -z
+    let t: f32 = s * s / 3.0e1
+    return t - x * 1e-3
+}
+
+function square(v: f32) -> f32 {
+    return v * v
+}
+
+function blend(p: f32, q: f32, w: f32) -> f32 {
+    let mix: f32 = p * w + q * (1.0 - w)
+    return square(mix)
+}
+
+# Inlining (Flow mode only): helpers with several arguments.
+function h(a: f32, b: f32) -> f32 {
+    let m: f32 = blend(a, b, 0.25)
+    return m + square(a - b)
+}
