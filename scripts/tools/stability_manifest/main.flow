@@ -1,0 +1,212 @@
+# Validate Flow's machine-readable 1.0 stability surface manifest,
+# stability/surfaces.json.
+#
+# Run through scripts/check_stability_manifest.sh from the repository root.
+#
+#   --require-complete   fail if any surface is still classified "pending"
+#                        (the RC1 gate)
+#
+# A failure prints "stability manifest: <reason>" on stderr and exits 1.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_read_file, ft_exists, ft_starts, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_set_new, ft_set_add, ft_set_has, StrList, StrSet }
+import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_is_int, json_int, json_pyrepr, json_len, json_kind_string, json_kind_array, json_kind_object, json_kind_number, json_kind_true, json_kind_false, Json }
+
+const MANIFEST: string = "stability/surfaces.json"
+const PROG: string = "check_stability_manifest.sh"
+
+function fail(message: string) -> i32 {
+    ft_errln("stability manifest: " + message)
+    return 1
+}
+
+function allowed_class(s: string) -> bool {
+    return ft_eq(s, "stable") or ft_eq(s, "experimental") or ft_eq(s, "reserved-future") or ft_eq(s, "internal")
+}
+
+function allowed_kind(s: string) -> bool {
+    if ft_eq(s, "language") or ft_eq(s, "language-feature") or ft_eq(s, "language-domain") {
+        return true
+    }
+    if ft_eq(s, "standard-library") or ft_eq(s, "runtime") or ft_eq(s, "cli") {
+        return true
+    }
+    return ft_eq(s, "manifest") or ft_eq(s, "target")
+}
+
+# Python equality with the integer 1: 1, 1.0 and True all compare equal.
+function equals_one(j: ptr<Json>, id: i32) -> bool {
+    if id < 0 {
+        return false
+    }
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_true() {
+        return true
+    }
+    if k != json_kind_number() {
+        return false
+    }
+    let s: string = json_str(j, id)
+    return ft_eq(s, "1") or ft_eq(s, "1.0") or ft_eq(s, "1e0") or ft_eq(s, "1.0e0") or ft_eq(s, "1E0")
+}
+
+function is_string_kind(j: ptr<Json>, id: i32, want: string) -> bool {
+    return id >= 0 and json_kind(j, id) == json_kind_string() and ft_eq(json_str(j, id), want)
+}
+
+# The declared classes, as a set, equal exactly the allowed four.
+function classes_match(j: ptr<Json>, id: i32) -> bool {
+    if id < 0 {
+        return false
+    }
+    if json_kind(j, id) != json_kind_array() {
+        return false
+    }
+    let seen: ptr<StrSet> = ft_set_new()
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, id)
+    while c >= 0 {
+        if json_kind(j, c) != json_kind_string() or allowed_class(json_str(j, c)) == false {
+            return false
+        }
+        if ft_set_has(seen, json_str(j, c)) == false {
+            ft_set_add(seen, json_str(j, c))
+            n = n + 1
+        }
+        c = json_next(j, c)
+    }
+    return n == 4
+}
+
+function validate(require_complete: bool) -> i32 {
+    let text: string = ft_read_file(MANIFEST)
+    if text == null {
+        ft_errln("stability manifest: cannot read " + MANIFEST)
+        return 1
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln("stability manifest: invalid JSON in " + MANIFEST + ": " + json_error(j))
+        return 1
+    }
+    let root: i32 = 0
+    if json_kind(j, root) != json_kind_object() {
+        ft_errln("stability manifest: top level must be an object")
+        return 1
+    }
+
+    if equals_one(j, json_get(j, root, "schema_version")) == false {
+        return fail("schema_version must be 1")
+    }
+    if is_string_kind(j, json_get(j, root, "release"), "1.0.0") == false {
+        return fail("release must be 1.0.0")
+    }
+    if classes_match(j, json_get(j, root, "classes")) == false {
+        return fail("classes must be exactly: experimental, internal, reserved-future, stable")
+    }
+
+    let surfaces: i32 = json_get(j, root, "surfaces")
+    if surfaces < 0 or json_kind(j, surfaces) != json_kind_array() or json_len(j, surfaces) == 0 {
+        return fail("surfaces must be a non-empty list")
+    }
+
+    let seen: ptr<StrSet> = ft_set_new()
+    let pending: ptr<StrList> = ft_list_new()
+    let mut index: i32 = 0
+    let mut s: i32 = json_first(j, surfaces)
+    while s >= 0 {
+        if json_kind(j, s) != json_kind_object() {
+            return fail("surfaces[" + ft_itoa(index) + "] must be an object")
+        }
+
+        let id_node: i32 = json_get(j, s, "id")
+        if id_node < 0 or json_kind(j, id_node) != json_kind_string() or ft_len(json_str(j, id_node)) == 0 {
+            return fail("surfaces[" + ft_itoa(index) + "].id must be a non-empty string")
+        }
+        let surface_id: string = json_str(j, id_node)
+        if ft_set_has(seen, surface_id) {
+            return fail("duplicate surface id: " + surface_id)
+        }
+        ft_set_add(seen, surface_id)
+
+        let kind: i32 = json_get(j, s, "kind")
+        if kind < 0 or json_kind(j, kind) != json_kind_string() or allowed_kind(json_str(j, kind)) == false {
+            return fail(surface_id + ": unknown kind " + json_pyrepr(j, kind))
+        }
+
+        let cls: i32 = json_get(j, s, "classification")
+        if is_string_kind(j, cls, "pending") {
+            ft_list_push(pending, surface_id)
+        } elif cls < 0 or json_kind(j, cls) != json_kind_string() or allowed_class(json_str(j, cls)) == false {
+            return fail(surface_id + ": classification must be one of ['experimental', 'internal', 'reserved-future', 'stable'] or 'pending' during stabilisation")
+        }
+
+        let src: i32 = json_get(j, s, "source")
+        if src < 0 or json_kind(j, src) != json_kind_string() or ft_len(json_str(j, src)) == 0 {
+            return fail(surface_id + ": source must be a non-empty repository path")
+        }
+        let source: string = json_str(j, src)
+        if ft_exists(source) == false {
+            return fail(surface_id + ": source path does not exist: " + source)
+        }
+
+        let owner: i32 = json_get(j, s, "owner_issue")
+        let mut owner_ok: bool = false
+        if owner >= 0 {
+            if json_kind(j, owner) == json_kind_true() {
+                owner_ok = true
+            } elif json_is_int(j, owner) and json_int(j, owner) > 0 {
+                owner_ok = true
+            }
+        }
+        if owner_ok == false {
+            return fail(surface_id + ": owner_issue must be a positive issue number")
+        }
+
+        index = index + 1
+        s = json_next(j, s)
+    }
+
+    if require_complete and ft_list_len(pending) > 0 {
+        ft_list_sort(pending)
+        let mut joined: string = ""
+        let mut i: i32 = 0
+        while i < ft_list_len(pending) {
+            if i > 0 {
+                joined = joined + ", "
+            }
+            joined = joined + ft_list_get(pending, i)
+            i = i + 1
+        }
+        return fail("RC classification incomplete; pending surfaces: " + joined)
+    }
+
+    let mut state: string = "complete"
+    if ft_list_len(pending) > 0 {
+        state = ft_itoa(ft_list_len(pending)) + " pending"
+    }
+    ft_outln("stability manifest OK: " + ft_itoa(index) + " surfaces, " + state)
+    return 0
+}
+
+function usage() -> string {
+    return "usage: " + PROG + " [-h] [--require-complete]\n"
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let mut require_complete: bool = false
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "--require-complete") {
+            require_complete = true
+        } elif ft_eq(arg, "-h") or ft_eq(arg, "--help") {
+            ft_out(usage() + "\noptions:\n  -h, --help          show this help message and exit\n  --require-complete  fail if any surface is still classified as pending (RC1\n                      gate)\n")
+            return 0
+        } else {
+            ft_err(usage() + PROG + ": error: unrecognized arguments: " + arg + "\n")
+            return 2
+        }
+        i = i + 1
+    }
+    return validate(require_complete)
+}

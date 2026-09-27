@@ -60,7 +60,7 @@ jobs:
 
       - name: Require complete 1.x stability classification
         if: startsWith(steps.tag.outputs.name, 'v1.')
-        run: python3 scripts/check_stability_manifest.py --require-complete
+        run: scripts/check_stability_manifest.sh --require-complete
 
       - name: Require zero ordinary documentation debt for 1.x
         if: startsWith(steps.tag.outputs.name, 'v1.')

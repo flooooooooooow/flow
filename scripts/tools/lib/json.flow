@@ -1,0 +1,545 @@
+# @module tools.json
+# @means  A small JSON reader and writer for the repository tools.
+#
+# Values live in one arena of parallel arrays. Node 0 is the root after a
+# successful parse. Containers link their children through `first` / `next`;
+# object members carry their key in `key`. Strings are decoded to UTF-8.
+
+import .text { ft_slice, ft_itoa, ft_repr, ft_len }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+}
+
+const JSON_NULL: i32 = 0
+const JSON_FALSE: i32 = 1
+const JSON_TRUE: i32 = 2
+const JSON_NUMBER: i32 = 3
+const JSON_STRING: i32 = 4
+const JSON_ARRAY: i32 = 5
+const JSON_OBJECT: i32 = 6
+
+struct Json {
+    kind: ptr<i32>
+    sval: ptr<string>
+    key: ptr<string>
+    first: ptr<i32>
+    next: ptr<i32>
+    count: i32
+    cap: i32
+    src: ptr<u8>
+    pos: i32
+    err: string
+}
+
+export function json_kind_null() -> i32 { return JSON_NULL }
+export function json_kind_false() -> i32 { return JSON_FALSE }
+export function json_kind_true() -> i32 { return JSON_TRUE }
+export function json_kind_number() -> i32 { return JSON_NUMBER }
+export function json_kind_string() -> i32 { return JSON_STRING }
+export function json_kind_array() -> i32 { return JSON_ARRAY }
+export function json_kind_object() -> i32 { return JSON_OBJECT }
+
+function json_alloc(j: ptr<Json>, kind: i32) -> i32 {
+    if j[0].count == j[0].cap {
+        let nc: i32 = j[0].cap * 2
+        j[0].kind = realloc(j[0].kind as ptr<void>, (nc as i64) * 4) as ptr<i32>
+        j[0].first = realloc(j[0].first as ptr<void>, (nc as i64) * 4) as ptr<i32>
+        j[0].next = realloc(j[0].next as ptr<void>, (nc as i64) * 4) as ptr<i32>
+        j[0].sval = realloc(j[0].sval as ptr<void>, (nc as i64) * 8) as ptr<string>
+        j[0].key = realloc(j[0].key as ptr<void>, (nc as i64) * 8) as ptr<string>
+        j[0].cap = nc
+    }
+    let id: i32 = j[0].count
+    j[0].count = id + 1
+    let kinds: ptr<i32> = j[0].kind
+    let firsts: ptr<i32> = j[0].first
+    let nexts: ptr<i32> = j[0].next
+    let svals: ptr<string> = j[0].sval
+    let keys: ptr<string> = j[0].key
+    kinds[id] = kind
+    firsts[id] = -1
+    nexts[id] = -1
+    svals[id] = ""
+    keys[id] = ""
+    return id
+}
+
+function json_ws(j: ptr<Json>) -> void {
+    let p: ptr<u8> = j[0].src
+    let mut i: i32 = j[0].pos
+    while p[i] == 32 or p[i] == 9 or p[i] == 10 or p[i] == 13 {
+        i = i + 1
+    }
+    j[0].pos = i
+}
+
+function json_fail(j: ptr<Json>, msg: string) -> i32 {
+    if strlen(j[0].err) == 0 {
+        j[0].err = msg + " at byte " + ft_itoa(j[0].pos)
+    }
+    return -1
+}
+
+function json_hex(c: i32) -> i32 {
+    if c >= 48 and c <= 57 { return c - 48 }
+    if c >= 97 and c <= 102 { return c - 87 }
+    if c >= 65 and c <= 70 { return c - 55 }
+    return -1
+}
+
+# Append code point `cp` as UTF-8 to buf at `o`; returns the new offset.
+function json_put_utf8(buf: ptr<u8>, o: i32, cp: i32) -> i32 {
+    if cp < 128 {
+        buf[o] = cp as u8
+        return o + 1
+    }
+    if cp < 2048 {
+        buf[o] = (192 + cp / 64) as u8
+        buf[o + 1] = (128 + cp % 64) as u8
+        return o + 2
+    }
+    if cp < 65536 {
+        buf[o] = (224 + cp / 4096) as u8
+        buf[o + 1] = (128 + (cp / 64) % 64) as u8
+        buf[o + 2] = (128 + cp % 64) as u8
+        return o + 3
+    }
+    buf[o] = (240 + cp / 262144) as u8
+    buf[o + 1] = (128 + (cp / 4096) % 64) as u8
+    buf[o + 2] = (128 + (cp / 64) % 64) as u8
+    buf[o + 3] = (128 + cp % 64) as u8
+    return o + 4
+}
+
+function json_read_u4(j: ptr<Json>, at: i32) -> i32 {
+    let p: ptr<u8> = j[0].src
+    let mut v: i32 = 0
+    let mut k: i32 = 0
+    while k < 4 {
+        let h: i32 = json_hex(p[at + k] as i32)
+        if h < 0 {
+            return -1
+        }
+        v = v * 16 + h
+        k = k + 1
+    }
+    return v
+}
+
+# Parse a string starting at the opening quote. Returns the decoded text or
+# null on error.
+function json_parse_str(j: ptr<Json>) -> string {
+    let p: ptr<u8> = j[0].src
+    let mut i: i32 = j[0].pos + 1
+    let mut end: i32 = i
+    while p[end] != 34 {
+        if p[end] == 0 {
+            j[0].pos = end
+            let _f: i32 = json_fail(j, "unterminated string")
+            return null
+        }
+        if p[end] == 92 {
+            end = end + 1
+        }
+        end = end + 1
+    }
+    let buf: ptr<u8> = malloc((end - i + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    while i < end {
+        let c: i32 = p[i] as i32
+        if c != 92 {
+            buf[o] = c as u8
+            o = o + 1
+            i = i + 1
+        } else {
+            let e: i32 = p[i + 1] as i32
+            if e == 110 {
+                buf[o] = 10
+                o = o + 1
+            } elif e == 116 {
+                buf[o] = 9
+                o = o + 1
+            } elif e == 114 {
+                buf[o] = 13
+                o = o + 1
+            } elif e == 98 {
+                buf[o] = 8
+                o = o + 1
+            } elif e == 102 {
+                buf[o] = 12
+                o = o + 1
+            } elif e == 117 {
+                let mut cp: i32 = json_read_u4(j, i + 2)
+                if cp < 0 {
+                    j[0].pos = i
+                    let _f2: i32 = json_fail(j, "bad \\u escape")
+                    return null
+                }
+                i = i + 4
+                if cp >= 55296 and cp < 56320 and p[i + 2] == 92 and p[i + 3] == 117 {
+                    let lo: i32 = json_read_u4(j, i + 4)
+                    if lo >= 56320 and lo < 57344 {
+                        cp = 65536 + (cp - 55296) * 1024 + (lo - 56320)
+                        i = i + 6
+                    }
+                }
+                o = json_put_utf8(buf, o, cp)
+            } else {
+                buf[o] = e as u8
+                o = o + 1
+            }
+            i = i + 2
+        }
+    }
+    buf[o] = 0
+    j[0].pos = end + 1
+    return buf as string
+}
+
+function json_parse_value(j: ptr<Json>) -> i32 {
+    json_ws(j)
+    let p: ptr<u8> = j[0].src
+    let c: i32 = p[j[0].pos] as i32
+    if c == 123 {
+        let obj: i32 = json_alloc(j, JSON_OBJECT)
+        j[0].pos = j[0].pos + 1
+        json_ws(j)
+        let mut last: i32 = -1
+        if p[j[0].pos] == 125 {
+            j[0].pos = j[0].pos + 1
+            return obj
+        }
+        while true {
+            json_ws(j)
+            if p[j[0].pos] != 34 {
+                return json_fail(j, "expected object key")
+            }
+            let k: string = json_parse_str(j)
+            if k == null {
+                return -1
+            }
+            json_ws(j)
+            if p[j[0].pos] != 58 {
+                return json_fail(j, "expected ':'")
+            }
+            j[0].pos = j[0].pos + 1
+            let child: i32 = json_parse_value(j)
+            if child < 0 {
+                return -1
+            }
+            let keys: ptr<string> = j[0].key
+            keys[child] = k
+            if last < 0 {
+                let firsts: ptr<i32> = j[0].first
+                firsts[obj] = child
+            } else {
+                let nexts: ptr<i32> = j[0].next
+                nexts[last] = child
+            }
+            last = child
+            json_ws(j)
+            if p[j[0].pos] == 44 {
+                j[0].pos = j[0].pos + 1
+            } elif p[j[0].pos] == 125 {
+                j[0].pos = j[0].pos + 1
+                return obj
+            } else {
+                return json_fail(j, "expected ',' or '}'")
+            }
+        }
+    }
+    if c == 91 {
+        let arr: i32 = json_alloc(j, JSON_ARRAY)
+        j[0].pos = j[0].pos + 1
+        json_ws(j)
+        let mut prev: i32 = -1
+        if p[j[0].pos] == 93 {
+            j[0].pos = j[0].pos + 1
+            return arr
+        }
+        while true {
+            let item: i32 = json_parse_value(j)
+            if item < 0 {
+                return -1
+            }
+            if prev < 0 {
+                let firsts2: ptr<i32> = j[0].first
+                firsts2[arr] = item
+            } else {
+                let nexts2: ptr<i32> = j[0].next
+                nexts2[prev] = item
+            }
+            prev = item
+            json_ws(j)
+            if p[j[0].pos] == 44 {
+                j[0].pos = j[0].pos + 1
+            } elif p[j[0].pos] == 93 {
+                j[0].pos = j[0].pos + 1
+                return arr
+            } else {
+                return json_fail(j, "expected ',' or ']'")
+            }
+        }
+    }
+    if c == 34 {
+        let s: string = json_parse_str(j)
+        if s == null {
+            return -1
+        }
+        let sid: i32 = json_alloc(j, JSON_STRING)
+        let svals: ptr<string> = j[0].sval
+        svals[sid] = s
+        return sid
+    }
+    if c == 116 and p[j[0].pos + 1] == 114 and p[j[0].pos + 2] == 117 and p[j[0].pos + 3] == 101 {
+        j[0].pos = j[0].pos + 4
+        return json_alloc(j, JSON_TRUE)
+    }
+    if c == 102 and p[j[0].pos + 1] == 97 and p[j[0].pos + 2] == 108 and p[j[0].pos + 3] == 115 and p[j[0].pos + 4] == 101 {
+        j[0].pos = j[0].pos + 5
+        return json_alloc(j, JSON_FALSE)
+    }
+    if c == 110 and p[j[0].pos + 1] == 117 and p[j[0].pos + 2] == 108 and p[j[0].pos + 3] == 108 {
+        j[0].pos = j[0].pos + 4
+        return json_alloc(j, JSON_NULL)
+    }
+    if c == 45 or (c >= 48 and c <= 57) {
+        let start: i32 = j[0].pos
+        let mut e: i32 = start + 1
+        while true {
+            let d: i32 = p[e] as i32
+            if (d >= 48 and d <= 57) or d == 46 or d == 101 or d == 69 or d == 43 or d == 45 {
+                e = e + 1
+            } else {
+                break
+            }
+        }
+        j[0].pos = e
+        let nid: i32 = json_alloc(j, JSON_NUMBER)
+        let svals2: ptr<string> = j[0].sval
+        svals2[nid] = ft_slice(p as string, start, e)
+        return nid
+    }
+    return json_fail(j, "unexpected character")
+}
+
+# Parse `text`. Returns the arena; json_error() is non-empty on failure.
+export function json_parse(text: string) -> ptr<Json> {
+    let j: ptr<Json> = malloc(128) as ptr<Json>
+    j[0].cap = 64
+    j[0].count = 0
+    j[0].kind = malloc(64 * 4) as ptr<i32>
+    j[0].first = malloc(64 * 4) as ptr<i32>
+    j[0].next = malloc(64 * 4) as ptr<i32>
+    j[0].sval = malloc(64 * 8) as ptr<string>
+    j[0].key = malloc(64 * 8) as ptr<string>
+    j[0].src = text as ptr<u8>
+    j[0].pos = 0
+    j[0].err = ""
+    let root: i32 = json_parse_value(j)
+    if root >= 0 {
+        json_ws(j)
+        let p: ptr<u8> = j[0].src
+        if p[j[0].pos] != 0 {
+            let _f: i32 = json_fail(j, "extra data")
+        }
+    }
+    return j
+}
+
+export function json_error(j: ptr<Json>) -> string {
+    return j[0].err
+}
+
+export function json_kind(j: ptr<Json>, id: i32) -> i32 {
+    let kinds: ptr<i32> = j[0].kind
+    return kinds[id]
+}
+
+export function json_str(j: ptr<Json>, id: i32) -> string {
+    let svals: ptr<string> = j[0].sval
+    return svals[id]
+}
+
+export function json_key(j: ptr<Json>, id: i32) -> string {
+    let keys: ptr<string> = j[0].key
+    return keys[id]
+}
+
+export function json_first(j: ptr<Json>, id: i32) -> i32 {
+    let firsts: ptr<i32> = j[0].first
+    return firsts[id]
+}
+
+export function json_next(j: ptr<Json>, id: i32) -> i32 {
+    let nexts: ptr<i32> = j[0].next
+    return nexts[id]
+}
+
+export function json_len(j: ptr<Json>, id: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, id)
+    while c >= 0 {
+        n = n + 1
+        c = json_next(j, c)
+    }
+    return n
+}
+
+# Member `name` of object `id`, or -1. The last duplicate wins, as in Python.
+export function json_get(j: ptr<Json>, id: i32, name: string) -> i32 {
+    if id < 0 or json_kind(j, id) != JSON_OBJECT {
+        return -1
+    }
+    let mut found: i32 = -1
+    let mut c: i32 = json_first(j, id)
+    while c >= 0 {
+        if strcmp(json_key(j, c), name) == 0 {
+            found = c
+        }
+        c = json_next(j, c)
+    }
+    return found
+}
+
+# True for a number with no fraction or exponent (Python int after loads).
+export function json_is_int(j: ptr<Json>, id: i32) -> bool {
+    if json_kind(j, id) != JSON_NUMBER {
+        return false
+    }
+    let s: ptr<u8> = json_str(j, id) as ptr<u8>
+    let mut i: i32 = 0
+    while s[i] != 0 {
+        if s[i] == 46 or s[i] == 101 or s[i] == 69 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+export function json_int(j: ptr<Json>, id: i32) -> i64 {
+    return strtol(json_str(j, id), null, 10)
+}
+
+# Python repr() of the decoded value, as used in error messages.
+export function json_pyrepr(j: ptr<Json>, id: i32) -> string {
+    if id < 0 {
+        return "None"
+    }
+    let k: i32 = json_kind(j, id)
+    if k == JSON_NULL { return "None" }
+    if k == JSON_TRUE { return "True" }
+    if k == JSON_FALSE { return "False" }
+    if k == JSON_NUMBER { return json_str(j, id) }
+    if k == JSON_STRING { return ft_repr(json_str(j, id)) }
+    let mut out: string = "["
+    let mut close: string = "]"
+    if k == JSON_OBJECT {
+        out = "{"
+        close = "}"
+    }
+    let mut c: i32 = json_first(j, id)
+    let mut first: bool = true
+    while c >= 0 {
+        if first == false {
+            out = out + ", "
+        }
+        first = false
+        if k == JSON_OBJECT {
+            out = out + ft_repr(json_key(j, c)) + ": "
+        }
+        out = out + json_pyrepr(j, c)
+        c = json_next(j, c)
+    }
+    return out + close
+}
+
+# JSON string literal with ensure_ascii escaping, as json.dumps writes it.
+export function json_quote(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n * 12 + 3) as i64) as ptr<u8>
+    let hex: ptr<u8> = "0123456789abcdef" as ptr<u8>
+    let mut o: i32 = 0
+    buf[o] = 34
+    o = o + 1
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut cp: i32 = c
+        let mut adv: i32 = 1
+        if c >= 240 {
+            cp = (c % 8) * 262144 + ((p[i + 1] as i32) % 64) * 4096 + ((p[i + 2] as i32) % 64) * 64 + (p[i + 3] as i32) % 64
+            adv = 4
+        } elif c >= 224 {
+            cp = (c % 16) * 4096 + ((p[i + 1] as i32) % 64) * 64 + (p[i + 2] as i32) % 64
+            adv = 3
+        } elif c >= 192 {
+            cp = (c % 32) * 64 + (p[i + 1] as i32) % 64
+            adv = 2
+        }
+        if cp == 34 or cp == 92 {
+            buf[o] = 92
+            buf[o + 1] = cp as u8
+            o = o + 2
+        } elif cp == 10 {
+            buf[o] = 92
+            buf[o + 1] = 110
+            o = o + 2
+        } elif cp == 13 {
+            buf[o] = 92
+            buf[o + 1] = 114
+            o = o + 2
+        } elif cp == 9 {
+            buf[o] = 92
+            buf[o + 1] = 116
+            o = o + 2
+        } elif cp == 8 {
+            buf[o] = 92
+            buf[o + 1] = 98
+            o = o + 2
+        } elif cp == 12 {
+            buf[o] = 92
+            buf[o + 1] = 102
+            o = o + 2
+        } elif cp >= 32 and cp < 127 {
+            buf[o] = cp as u8
+            o = o + 1
+        } else {
+            let mut units: i32 = 1
+            let mut u0: i32 = cp
+            let mut u1: i32 = 0
+            if cp >= 65536 {
+                let v: i32 = cp - 65536
+                u0 = 55296 + v / 1024
+                u1 = 56320 + v % 1024
+                units = 2
+            }
+            let mut ui: i32 = 0
+            while ui < units {
+                let mut u: i32 = u0
+                if ui == 1 {
+                    u = u1
+                }
+                buf[o] = 92
+                buf[o + 1] = 117
+                buf[o + 2] = hex[(u / 4096) % 16]
+                buf[o + 3] = hex[(u / 256) % 16]
+                buf[o + 4] = hex[(u / 16) % 16]
+                buf[o + 5] = hex[u % 16]
+                o = o + 6
+                ui = ui + 1
+            }
+        }
+        i = i + adv
+    }
+    buf[o] = 34
+    buf[o + 1] = 0
+    return buf as string
+}
