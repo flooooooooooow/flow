@@ -170,7 +170,7 @@ export function flowc_claim_fingerprint(expr: string) -> string {
 }
 
 export function flowc_claim_fingerprint_key(carrier: string, structure: string, fp: string) -> string {
-    # carrier/structure#fp — fixed phrases for smoke tests
+    # carrier/structure#fp: fixed phrases for smoke tests
     if strcmp(carrier, "Nat") == 0 and strcmp(structure, "addition") == 0 {
         if strcmp(fp, "0+n=n") == 0 {
             return "Nat/addition#0+n=n"
@@ -258,21 +258,21 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
             s = str_append(s, addr.structure)
             s = str_append(s, " on ")
             s = str_append(s, addr.carrier)
-            s = str_append(s, ". This is a definition.")
+            s = str_append(s, ". This is a definition rather than a derived fact.")
             return s
         }
         let mut s: string = "We stipulate how "
         s = str_append(s, gloss)
         s = str_append(s, " behaves on ")
         s = str_append(s, path.domain)
-        s = str_append(s, ". This is a definition.")
+        s = str_append(s, ". This is a definition rather than a derived fact.")
         return s
     }
 
     if strcmp(t, "axiom") == 0 {
         let mut s: string = "We accept this axiom on "
         s = str_append(s, path.domain)
-        s = str_append(s, " without proof. It is an ontological commitment.")
+        s = str_append(s, " without proof. It is an ontological commitment rather than a lemma.")
         return s
     }
 
