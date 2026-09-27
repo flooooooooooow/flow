@@ -1,0 +1,2 @@
+Error: Duration '0.5 ns' in the 'every' period of flow 'Osc' is not a whole number of nanoseconds; time is not silently rounded at line 3, column 18
+use a finer unit, e.g. '500 us' instead of '0.5 ms'

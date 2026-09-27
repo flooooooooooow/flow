@@ -1,0 +1,7 @@
+flow Osc {
+    state x : f64 = 1.0
+    state v : f64 = 0.0
+    param k : f64 = 4.0
+    x evolves as v
+    v evolves as -k * x
+}

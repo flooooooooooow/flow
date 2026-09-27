@@ -1,0 +1,18 @@
+flow Gain {
+    input x : f64
+    param k : f64 = 2.0
+    output y : f64 = k * x
+}
+
+flow Clip {
+    input w : f64
+    state z : f64 = 0.0
+    output out : f64 = z
+    z evolves as w - z
+}
+
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain { k: 3.0 * 2.0, } |> Clip
+    output direct : f64 = signal |> fabs
+}

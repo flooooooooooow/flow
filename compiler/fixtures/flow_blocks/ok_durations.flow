@@ -1,0 +1,25 @@
+flow D1 {
+    state x : f64 = 0.0
+    solver { dt 1 ns }
+}
+flow D2 {
+    state x : f64 = 0.0
+    solver { dt 10 us }
+}
+flow D3 {
+    state x : f64 = 0.0
+    solver { dt 2 min }
+}
+flow D4 {
+    state x : f64 = 0.0
+    solver { dt 1e3 ms }
+}
+flow D5 {
+    state x : f64 = 0.0
+    solver { dt 0x10 ms }
+    every 250 ms { x becomes x + 1.0 }
+}
+flow D6 {
+    state x : f64 = 0.0
+    solver { dt 123456789 s }
+}

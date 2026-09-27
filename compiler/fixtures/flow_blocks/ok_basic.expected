@@ -1,0 +1,7 @@
+struct Osc { x: f64, v: f64, k: f64 }
+@flow_api function Osc_new() -> Osc { let mut __self: Osc = Osc { x: 0.0, v: 0.0, k: 0.0 }; Osc_init(&__self); return __self; }
+@flow_api function Osc_init(self: ptr<Osc>) -> void { self.k = 4.0; self.x = 1.0; self.v = 0.0; }
+@flow_api function Osc_derivs(self: ptr<Osc>, d_x: ptr<f64>, d_v: ptr<f64>) -> void { d_x[0] = self.v; d_v[0] = -self.k * self.x; }
+@flow_api function Osc_step(self: ptr<Osc>, dt: f64) -> void { let mut d_x: f64 = 0.0; let mut d_v: f64 = 0.0; Osc_derivs(self, &d_x, &d_v); self.x = self.x + d_x * dt; self.v = self.v + d_v * dt; }
+@flow_api function Osc_default_dt() -> f64 { return 0.001; }
+

@@ -1,0 +1,2 @@
+Error: state 'x' in flow 'Osc' has type 'i32'; a flow member is f64, f32, or a declared unit at line 2
+declare the dimension with 'unit Angle' first

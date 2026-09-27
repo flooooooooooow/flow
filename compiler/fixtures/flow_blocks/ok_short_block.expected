@@ -1,0 +1,6 @@
+struct Tiny { x: f64 } @flow_api function Tiny_new() -> Tiny { let mut __self: Tiny = Tiny { x: 0.0 }; Tiny_init(&__self); return __self; } @flow_api function Tiny_init(self: ptr<Tiny>) -> void { self.x = 1.0; } @flow_api function Tiny_derivs(self: ptr<Tiny>) -> void { } @flow_api function Tiny_step(self: ptr<Tiny>, dt: f64) -> void { } @flow_api function Tiny_default_dt() -> f64 { return 0.001; }
+
+function main() -> i32 {
+    let t: Tiny = Tiny_new()
+    return 0
+}

@@ -1,0 +1,1 @@
+Error: flow 'None0' used as a pipeline stage must have exactly one output (has 0); wire it with `connect` explicitly at line 7

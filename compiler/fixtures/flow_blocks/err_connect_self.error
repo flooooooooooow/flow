@@ -1,0 +1,1 @@
+Error: connection in flow 'B' wires 'a' to itself; Stage-1 connect is between sibling subflows only at line 10

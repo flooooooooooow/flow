@@ -1,0 +1,6 @@
+flow B {
+    state s : f64 = 0.0
+    connect {
+        s -> a.u
+    }
+}

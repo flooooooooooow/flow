@@ -1,0 +1,5 @@
+flow Osc {
+    state x : f64 = 1.0
+    x evolves as 1.0
+    x evolves as 2.0
+}

@@ -1,0 +1,14 @@
+struct P { a: f32, w: f32, g: f32, __guard_0_prev: f64 }
+@flow_api function P_new() -> P { let mut __self: P = P { a: 0.0, w: 0.0, g: 0.0, __guard_0_prev: 0.0 }; P_init(&__self); return __self; }
+@flow_api function P_init(self: ptr<P>) -> void { self.g = 9.81; self.a = 0.5; self.w = 0.0; self.__guard_0_prev = ((self.a - (0.0)) as f64); }
+@flow_api function P_derivs(self: ptr<P>, d_a: ptr<f32>, d_w: ptr<f32>) -> void { d_a[0] = self.w; d_w[0] = -self.g * sin(self.a); }
+@flow_api function P_step(self: ptr<P>, dt: f64) -> void { let y0_a: f32 = self.a; let y0_w: f32 = self.w; let mut k1_a: f32 = 0.0; let mut k1_w: f32 = 0.0; let mut k2_a: f32 = 0.0; let mut k2_w: f32 = 0.0; let mut k3_a: f32 = 0.0; let mut k3_w: f32 = 0.0; let mut k4_a: f32 = 0.0; let mut k4_w: f32 = 0.0; P_derivs(self, &k1_a, &k1_w); self.a = y0_a + k1_a * ((dt as f32) * 0.5); self.w = y0_w + k1_w * ((dt as f32) * 0.5); P_derivs(self, &k2_a, &k2_w); self.a = y0_a + k2_a * ((dt as f32) * 0.5); self.w = y0_w + k2_w * ((dt as f32) * 0.5); P_derivs(self, &k3_a, &k3_w); self.a = y0_a + k3_a * (dt as f32); self.w = y0_w + k3_w * (dt as f32); P_derivs(self, &k4_a, &k4_w); self.a = y0_a + (k1_a + k2_a * 2.0 + k3_a * 2.0 + k4_a) * ((dt as f32) / 6.0); self.w = y0_w + (k1_w + k2_w * 2.0 + k3_w * 2.0 + k4_w) * ((dt as f32) / 6.0); let __g_0: f64 = ((self.a - (0.0)) as f64); if (__g_0 < 0.0) != (self.__guard_0_prev < 0.0) || __g_0 == 0.0 { let __reset_0_w: f32 = -self.w * 0.9; self.w = __reset_0_w; } self.__guard_0_prev = ((self.a - (0.0)) as f64); }
+@flow_api function P_default_dt() -> f64 { return 0.0005; }
+
+
+
+
+
+
+
+

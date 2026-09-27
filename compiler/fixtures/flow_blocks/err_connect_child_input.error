@@ -1,0 +1,1 @@
+Error: 'a.u' in flow 'B' is a input; connection sources must be an output or state at line 11

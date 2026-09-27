@@ -1,0 +1,5 @@
+flow Osc {
+    state x : f64 = 1.0
+    recognize { numerical }
+    recognize { causal }
+}

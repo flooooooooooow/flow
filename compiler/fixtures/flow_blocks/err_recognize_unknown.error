@@ -1,0 +1,1 @@
+Error: unknown recognition domain 'vibes' in flow 'Osc'; valid domains: numerical, realtime, causal, safety, memory at line 3

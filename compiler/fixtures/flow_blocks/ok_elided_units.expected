@@ -1,0 +1,10 @@
+unit Angle
+type Real = f64
+
+struct Arm { angle: Angle, speed: f64, rest: Real }
+@flow_api function Arm_new() -> Arm { let mut __self: Arm = Arm { angle: (0.0 as Angle), speed: 0.0, rest: (0.0 as Real) }; Arm_init(&__self); return __self; }
+@flow_api function Arm_init(self: ptr<Arm>) -> void { self.angle = 0.0; self.speed = 0.0; self.rest = 0.0; }
+@flow_api function Arm_derivs(self: ptr<Arm>, d_angle: ptr<f64>, d_speed: ptr<f64>) -> void { d_angle[0] = self.speed; d_speed[0] = -1.0; }
+@flow_api function Arm_step(self: ptr<Arm>, dt: f64) -> void { let mut d_angle: f64 = 0.0; let mut d_speed: f64 = 0.0; Arm_derivs(self, &d_angle, &d_speed); self.angle = self.angle + ((d_angle * dt) as Angle); self.speed = self.speed + d_speed * dt; }
+@flow_api function Arm_default_dt() -> f64 { return 0.001; }
+

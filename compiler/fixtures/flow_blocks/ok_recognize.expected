@@ -1,0 +1,5 @@
+struct R { x: f64 }
+@flow_api function R_new() -> R { let mut __self: R = R { x: 0.0 }; R_init(&__self); return __self; }
+@flow_api function R_init(self: ptr<R>) -> void { self.x = 1.0; }
+@flow_api function R_derivs(self: ptr<R>, d_x: ptr<f64>) -> void { d_x[0] = -self.x; }
+@flow_api function R_step(self: ptr<R>, dt: f64) -> void { let mut d_x: f64 = 0.0; R_derivs(self, &d_x); self.x = self.x + d_x * dt; } @flow_api function R_default_dt() -> f64 { return 0.001; }

@@ -1,0 +1,2 @@
+Error: nested flow member 'a' in flow 'B' cannot have an initializer; children are constructed by A_new inside the parent at line 5, column 11
+remove the '= ...' part

@@ -1,0 +1,1 @@
+Error: output 'y' in flow 'Osc' needs an inline map ('output y : f32 = expr'); assigning outputs from 'every'/'when' blocks is a later card at line 3

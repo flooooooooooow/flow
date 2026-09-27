@@ -1,0 +1,2 @@
+Error: flow 'Osc' has two 'recognize' blocks at line 4, column 5
+merge the domains into one recognize block

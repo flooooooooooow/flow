@@ -1,0 +1,2 @@
+Error: 'y evolves as' in flow 'Osc' requires 'y' to be a declared state at line 3
+declare 'state y : f64 = 0.0' or fix the name

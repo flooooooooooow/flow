@@ -1,0 +1,15 @@
+function damp(a: f64, b: f64) -> f64 {
+    return a * b
+}
+
+flow M {
+    state x : f64 = 1.0
+    state v : f64 = 0.0
+    param c : f64 = 0.1
+    param k : f64 = c * 10.0
+    v evolves as damp(-c, v) - k * x + [x, v][0] * 0.0
+    x evolves as v
+    when x reaches -k / 2.0 {
+        v becomes -v
+    }
+}
