@@ -3809,6 +3809,12 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "gmtime") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "localtime") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "strftime") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "gmtime_r") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "localtime_r") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "clock_gettime") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "clock_getres") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "clock_gettime_nsec_np") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "nanosleep") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "popen") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "pclose") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "fscanf") == 1 { return 1 }
