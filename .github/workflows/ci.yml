@@ -125,13 +125,14 @@ jobs:
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
   # check_wiki_links.sh validates the built site instead; the two catch
-  # different breakage. Both stdlib-only, so no toolchain setup.
+  # different breakage. Both are Flow programs built with cc alone, so no
+  # toolchain setup.
   doc-links:
     name: Doc links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/check_doc_links.py
+      - run: scripts/check_doc_links.sh
 
   # Every part of the language needs a page. The feature list is read from the
   # compiler, so this fails when something is added and left undocumented.
