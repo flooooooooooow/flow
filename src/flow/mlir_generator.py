@@ -4614,160 +4614,152 @@ class MLIRGenerator:
 
         return None
 
-    def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
-        """Generate field access that loads values from struct memory"""
-        obj_result = self.generate_expression(field_access.object)
-        if obj_result is None:
-            # Fallback if object expression fails
-            ssa_name = f"%{self.function_counter}"
-            self.function_counter += 1
-            return ssa_name, [f"{self.indent()}// Failed to generate object expression for field access"]
-        
-        obj_ssa, obj_ops = obj_result
-        ops = list(obj_ops)
-
-        if isinstance(field_access.object, Variable):
-            var_info = self.symbol_table.get(field_access.object.name)
-            flow_type = var_info.get("flow_type") if var_info else None
-            obj_mlir = var_info.get("mlir_type") if var_info else None
-            if not obj_mlir and flow_type:
-                obj_mlir = self.flow_type_to_mlir(flow_type)
-            if (
-                var_info
-                and obj_mlir
-                and obj_mlir.startswith("!llvm.struct")
-                and not self._is_tensor_struct(obj_mlir)
-                and (
-                    obj_ssa in self._composite_call_results
-                    or obj_ssa.startswith("%arg")
-                )
-            ):
-                orig_ssa = obj_ssa
-                obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
-                ops.extend(mat_ops)
-                self._composite_call_results.discard(orig_ssa)
-                if not orig_ssa.startswith("%arg"):
-                    var_info["ssa_name"] = obj_ssa
-                self._ssa_types[obj_ssa] = obj_mlir
-
-        object_flow = self._flow_type_of_expr(field_access.object)
-        if self._is_span_flow_type(object_flow) and field_access.field == "len":
-            span_ty = self._span_mlir_type()
-            length = f"%{self.function_counter}"
-            self.function_counter += 1
-            ops.append(
-                f"{self.indent()}{length} = llvm.extractvalue {obj_ssa}[1] : {span_ty}"
+    def _materialize_struct_var_if_needed(self, var_node: Variable, obj_ssa: str, ops: List[str]) -> str:
+        """Materialize composite struct variable if required."""
+        var_info = self.symbol_table.get(var_node.name)
+        flow_type = var_info.get("flow_type") if var_info else None
+        obj_mlir = var_info.get("mlir_type") if var_info else None
+        if not obj_mlir and flow_type:
+            obj_mlir = self.flow_type_to_mlir(flow_type)
+        if (
+            var_info
+            and obj_mlir
+            and obj_mlir.startswith("!llvm.struct")
+            and not self._is_tensor_struct(obj_mlir)
+            and (
+                obj_ssa in self._composite_call_results
+                or obj_ssa.startswith("%arg")
             )
-            self._ssa_types[length] = "i64"
-            return length, ops
+        ):
+            orig_ssa = obj_ssa
+            obj_ssa, mat_ops = self._materialize_struct_value(obj_ssa, obj_mlir)
+            ops.extend(mat_ops)
+            self._composite_call_results.discard(orig_ssa)
+            if not orig_ssa.startswith("%arg"):
+                var_info["ssa_name"] = obj_ssa
+            self._ssa_types[obj_ssa] = obj_mlir
+        return obj_ssa
 
-        # Try to determine the field type by walking the struct hierarchy
-        field_type = self._determine_field_type(field_access)
-        
-        if not field_type:
-            # Default to i32 if we can't determine the type
-            ssa_name = f"%{self.function_counter}"
-            self.function_counter += 1
-            ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
-            return ssa_name, ops
-
-        # Addressable struct objects (ptr, ptr[i], nested fields): GEP to field.
-        # Array fields decay to a pointer to the embedded !llvm.array (C-like).
+    def _generate_field_access_gep(
+        self, field_access: FieldAccess, obj_ssa: str, field_type: Any, ops: List[str]
+    ) -> Optional[tuple[str, List[str]]]:
+        """Generate field access via GEP for addressable struct objects."""
         addr = self._address_of_struct_lvalue(field_access.object)
         if addr is None:
             ptr_base = self._field_pointer_base(field_access.object, obj_ssa)
             if ptr_base is not None:
                 base_ptr, struct_name = ptr_base
                 addr = (base_ptr, [], struct_name)
-        if addr is not None:
-            base_ptr, base_ops, struct_name = addr
-            ops.extend(base_ops)
-            llvm_struct = self._struct_llvm_type(struct_name)
-            decl = self._get_struct_decl(struct_name)
-            if llvm_struct and decl:
-                field_names = [f.name for f in decl.fields]
-                if field_access.field in field_names:
-                    idx = field_names.index(field_access.field)
-                    gep = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    ops.append(
-                        f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
-                        f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
-                    )
-                    self._ssa_types[gep] = '!llvm.ptr'
-                    if self._is_array_flow_type(field_type):
-                        arr_ty = self._llvm_array_type_from_flow(field_type)
-                        if arr_ty:
-                            self._llvm_array_types[gep] = arr_ty
-                        return gep, ops
-                    load = f"%{self.function_counter}"
-                    self.function_counter += 1
-                    field_ty = self.flow_type_to_mlir(field_type)
-                    ops.append(
-                        f"{self.indent()}{load} = llvm.load {gep} : !llvm.ptr -> {field_ty}"
-                    )
-                    self._ssa_types[load] = field_ty
-                    if getattr(field_type, "name", "").startswith("u"):
-                        self._ssa_unsigned.add(load)
-                    return load, ops
+        if addr is None:
+            return None
 
-        # Prefer LLVM struct extraction when available.
+        base_ptr, base_ops, struct_name = addr
+        ops.extend(base_ops)
+        llvm_struct = self._struct_llvm_type(struct_name)
+        decl = self._get_struct_decl(struct_name)
+        if not (llvm_struct and decl):
+            return None
+
+        field_names = [f.name for f in decl.fields]
+        if field_access.field not in field_names:
+            return None
+
+        idx = field_names.index(field_access.field)
+        gep = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(
+            f"{self.indent()}{gep} = llvm.getelementptr {base_ptr}[0, {idx}] "
+            f": (!llvm.ptr) -> !llvm.ptr, {llvm_struct}"
+        )
+        self._ssa_types[gep] = '!llvm.ptr'
+        if self._is_array_flow_type(field_type):
+            arr_ty = self._llvm_array_type_from_flow(field_type)
+            if arr_ty:
+                self._llvm_array_types[gep] = arr_ty
+            return gep, ops
+
+        load = f"%{self.function_counter}"
+        self.function_counter += 1
+        field_ty = self.flow_type_to_mlir(field_type)
+        ops.append(
+            f"{self.indent()}{load} = llvm.load {gep} : !llvm.ptr -> {field_ty}"
+        )
+        self._ssa_types[load] = field_ty
+        if getattr(field_type, "name", "").startswith("u"):
+            self._ssa_unsigned.add(load)
+        return load, ops
+
+    def _generate_field_access_extract(
+        self, field_access: FieldAccess, obj_ssa: str, field_type: Any, ops: List[str]
+    ) -> Optional[tuple[str, List[str]]]:
+        """Generate field access via LLVM extractvalue on struct SSA values."""
         obj_type = self._determine_struct_type(field_access.object)
-        if obj_type:
-            llvm_struct = self._struct_llvm_type(obj_type.name)
-            if llvm_struct:
-                decl = self._get_struct_decl(obj_type.name)
-                if decl:
-                    field_names = [f.name for f in decl.fields]
-                    if field_access.field in field_names:
-                        idx = field_names.index(field_access.field)
-                        extract_ssa = obj_ssa
-                        if obj_type.name == "Tensor" and idx >= 1:
-                            if isinstance(field_access.object, Variable):
-                                var_info = self.symbol_table.get(field_access.object.name) or {}
-                                root = var_info.get("ssa_name", obj_ssa)
-                                if root.startswith("%arg") or root in self._tensor_param_ssas:
-                                    extract_ssa = root
-                            elif (
-                                isinstance(field_access.object, FieldAccess)
-                                and obj_ssa in self._tensor_extract_origins
-                            ):
-                                origin_ssa, origin_idx = self._tensor_extract_origins[obj_ssa]
-                                origin_type = self._ssa_types.get(origin_ssa)
-                                if origin_type and origin_type.startswith("!llvm.struct"):
-                                    ssa_name = f"%{self.function_counter}"
-                                    self.function_counter += 1
-                                    ops.append(
-                                        f"{self.indent()}{ssa_name} = llvm.extractvalue "
-                                        f"{origin_ssa}[{origin_idx}] : {origin_type}"
-                                    )
-                                    inner = f"%{self.function_counter}"
-                                    self.function_counter += 1
-                                    inner_ty = self._ssa_types.get(ssa_name) or self.flow_type_to_mlir(
-                                        field_type
-                                    )
-                                    if inner_ty.startswith("!llvm.struct"):
-                                        ops.append(
-                                            f"{self.indent()}{inner} = llvm.extractvalue "
-                                            f"{ssa_name}[{idx}] : {inner_ty}"
-                                        )
-                                        field_ty = self.flow_type_to_mlir(field_type)
-                                        self._ssa_types[inner] = field_ty
-                                        return inner, ops
-                        ssa_name = f"%{self.function_counter}"
-                        self.function_counter += 1
-                        ops.append(f"{self.indent()}{ssa_name} = llvm.extractvalue {extract_ssa}[{idx}] : {llvm_struct}")
-                        field_ty = self.flow_type_to_mlir(field_type)
-                        self._ssa_types[ssa_name] = field_ty
-                        if self._is_tensor_struct(field_ty):
-                            self._tensor_field_extracts.add(ssa_name)
-                            self._tensor_extract_origins[ssa_name] = (obj_ssa, idx)
-                        return ssa_name, ops
+        if not obj_type:
+            return None
 
-        # Get the struct layout to find field offset
+        llvm_struct = self._struct_llvm_type(obj_type.name)
+        if not llvm_struct:
+            return None
+
+        decl = self._get_struct_decl(obj_type.name)
+        if not decl:
+            return None
+
+        field_names = [f.name for f in decl.fields]
+        if field_access.field not in field_names:
+            return None
+
+        idx = field_names.index(field_access.field)
+        extract_ssa = obj_ssa
+        if obj_type.name == "Tensor" and idx >= 1:
+            if isinstance(field_access.object, Variable):
+                var_info = self.symbol_table.get(field_access.object.name) or {}
+                root = var_info.get("ssa_name", obj_ssa)
+                if root.startswith("%arg") or root in self._tensor_param_ssas:
+                    extract_ssa = root
+            elif (
+                isinstance(field_access.object, FieldAccess)
+                and obj_ssa in self._tensor_extract_origins
+            ):
+                origin_ssa, origin_idx = self._tensor_extract_origins[obj_ssa]
+                origin_type = self._ssa_types.get(origin_ssa)
+                if origin_type and origin_type.startswith("!llvm.struct"):
+                    ssa_name = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    ops.append(
+                        f"{self.indent()}{ssa_name} = llvm.extractvalue "
+                        f"{origin_ssa}[{origin_idx}] : {origin_type}"
+                    )
+                    inner = f"%{self.function_counter}"
+                    self.function_counter += 1
+                    inner_ty = self._ssa_types.get(ssa_name) or self.flow_type_to_mlir(
+                        field_type
+                    )
+                    if inner_ty.startswith("!llvm.struct"):
+                        ops.append(
+                            f"{self.indent()}{inner} = llvm.extractvalue "
+                            f"{ssa_name}[{idx}] : {inner_ty}"
+                        )
+                        field_ty = self.flow_type_to_mlir(field_type)
+                        self._ssa_types[inner] = field_ty
+                        return inner, ops
+
+        ssa_name = f"%{self.function_counter}"
+        self.function_counter += 1
+        ops.append(f"{self.indent()}{ssa_name} = llvm.extractvalue {extract_ssa}[{idx}] : {llvm_struct}")
+        field_ty = self.flow_type_to_mlir(field_type)
+        self._ssa_types[ssa_name] = field_ty
+        if self._is_tensor_struct(field_ty):
+            self._tensor_field_extracts.add(ssa_name)
+            self._tensor_extract_origins[ssa_name] = (obj_ssa, idx)
+        return ssa_name, ops
+
+    def _generate_field_access_memref_fallback(
+        self, field_access: FieldAccess, obj_ssa: str, field_type: Any, ops: List[str]
+    ) -> tuple[str, List[str]]:
+        """Fallback field access using byte-level offset loads from memref memory."""
         obj_type = self._determine_struct_type(field_access.object)
         if not obj_type or obj_type.name not in self.struct_layouts:
-            # Fallback
             ssa_name = f"%{self.function_counter}"
             self.function_counter += 1
             if field_type.name == 'f32':
@@ -4775,11 +4767,10 @@ class MLIRGenerator:
             else:
                 ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
             return ssa_name, ops
-        
+
         layout = self.struct_layouts[obj_type.name]
         total_size = sum(field['size'] for field in layout.values())
         if field_access.field not in layout:
-            # Field not found
             ssa_name = f"%{self.function_counter}"
             self.function_counter += 1
             if field_type.name == 'f32':
@@ -4787,122 +4778,97 @@ class MLIRGenerator:
             else:
                 ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
             return ssa_name, ops
-        
+
         field_info = layout[field_access.field]
         offset = field_info['offset']
-        
-        # Load field from memory
-        ssa_name = f"%{self.function_counter}"
-        self.function_counter += 1
-        
+
         if field_type.name == 'f32':
-            # Load f32 from memory (4 bytes, little-endian)
             ops.append(f"{self.indent()}// Load {field_access.field} (f32) at offset {offset}")
-            
-            # Load 4 bytes and combine
             loaded_bytes = []
             for i in range(4):
                 byte_offset = offset + i
-                
                 offset_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{offset_ssa} = arith.constant {byte_offset} : index")
-                
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<{total_size}xi8>")
                 loaded_bytes.append(byte_name)
-            
-            # Extend each byte to i32
+
             extended_bytes = []
             for byte_name in loaded_bytes:
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
                 extended_bytes.append(ext_name)
-            
-            # Shift and combine bytes (little-endian)
+
             accumulator = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(self.indent() + accumulator + " = arith.constant 0 : i32")
-            
+
             for i, ext_name in enumerate(extended_bytes):
                 shift_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + shift_name + " = arith.constant " + str(i * 8) + " : i32")
-                
                 shifted_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + shifted_name + " = arith.shli " + ext_name + ", " + shift_name + " : i32")
-                
                 prev_accumulator = accumulator
                 accumulator = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + accumulator + " = arith.ori " + prev_accumulator + ", " + shifted_name + " : i32")
-            
+
             combined_name = accumulator
-            # Bitcast from i32 to f32
             final_name = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(self.indent() + final_name + " = arith.bitcast " + combined_name + " : i32 to f32")
             self._ssa_types[final_name] = "f32"
             return final_name, ops
-            
+
         elif field_type.name in ['i32', 'u32']:
-            # Load i32 from memory (4 bytes, little-endian)
             ops.append(self.indent() + "// Load " + field_access.field + " (i32) at offset " + str(offset))
-            
-            # Load 4 bytes and combine
             loaded_bytes = []
             for i in range(4):
                 byte_offset = offset + i
-                
                 offset_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{offset_ssa} = arith.constant {byte_offset} : index")
-                
                 byte_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset_ssa}] : memref<{total_size}xi8>")
                 loaded_bytes.append(byte_name)
-            
-            # Extend each byte to i32
+
             extended_bytes = []
             for byte_name in loaded_bytes:
                 ext_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(f"{self.indent()}{ext_name} = arith.extsi {byte_name} : i8 to i32")
                 extended_bytes.append(ext_name)
-            
-            # Shift and combine bytes (little-endian)
+
             accumulator = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(self.indent() + accumulator + " = arith.constant 0 : i32")
-            
+
             for i, ext_name in enumerate(extended_bytes):
                 shift_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + shift_name + " = arith.constant " + str(i * 8) + " : i32")
-                
                 shifted_name = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + shifted_name + " = arith.shli " + ext_name + ", " + shift_name + " : i32")
-                
                 prev_accumulator = accumulator
                 accumulator = f"%{self.function_counter}"
                 self.function_counter += 1
                 ops.append(self.indent() + accumulator + " = arith.ori " + prev_accumulator + ", " + shifted_name + " : i32")
             self._ssa_types[accumulator] = "i32"
             return accumulator, ops
-            
+
         elif field_type.name in ['i8', 'u8', 'bool']:
-            # Load single byte
             ops.append(f"{self.indent()}// Load {field_access.field} ({field_type.name}) at offset {offset}")
             byte_name = f"%{self.function_counter}"
             self.function_counter += 1
             ops.append(f"{self.indent()}{byte_name} = memref.load {obj_ssa}[{offset}] : memref<{total_size}xi8>")
 
-            # u8/bool: zero-extend; i8: sign-extend.
             ext_name = f"%{self.function_counter}"
             self.function_counter += 1
             ext_op = "arith.extui" if field_type.name in ['u8', 'bool'] else "arith.extsi"
@@ -4913,8 +4879,6 @@ class MLIRGenerator:
             return ext_name, ops
 
         else:
-            # Generic fallback for f64, i64, pointers, and other wide types.
-            # Pointer / string width follows the target ABI (#255).
             type_name = field_type.name
             is_pointer = (
                 getattr(field_type, 'is_pointer', False)
@@ -4926,11 +4890,8 @@ class MLIRGenerator:
                 int_type = 'i64'
             elif is_pointer:
                 num_bytes = self._pointer_bytes()
-                # Assemble into i64 so callers that ptrtoint/inttoptr stay consistent;
-                # only `num_bytes` are read from the memref (#255).
                 int_type = 'i64'
             else:
-                # Unknown type — treat as i32 fallback
                 num_bytes = 4
                 int_type = 'i32'
 
@@ -4979,6 +4940,55 @@ class MLIRGenerator:
             else:
                 self._ssa_types[accumulator] = int_type
                 return accumulator, ops
+
+    def generate_field_access(self, field_access: FieldAccess) -> tuple[str, List[str]]:
+        """Generate field access that loads values from struct memory"""
+        obj_result = self.generate_expression(field_access.object)
+        if obj_result is None:
+            # Fallback if object expression fails
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            return ssa_name, [f"{self.indent()}// Failed to generate object expression for field access"]
+
+        obj_ssa, obj_ops = obj_result
+        ops = list(obj_ops)
+
+        if isinstance(field_access.object, Variable):
+            obj_ssa = self._materialize_struct_var_if_needed(field_access.object, obj_ssa, ops)
+
+        object_flow = self._flow_type_of_expr(field_access.object)
+        if self._is_span_flow_type(object_flow) and field_access.field == "len":
+            span_ty = self._span_mlir_type()
+            length = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(
+                f"{self.indent()}{length} = llvm.extractvalue {obj_ssa}[1] : {span_ty}"
+            )
+            self._ssa_types[length] = "i64"
+            return length, ops
+
+        # Try to determine the field type by walking the struct hierarchy
+        field_type = self._determine_field_type(field_access)
+
+        if not field_type:
+            # Default to i32 if we can't determine the type
+            ssa_name = f"%{self.function_counter}"
+            self.function_counter += 1
+            ops.append(f"{self.indent()}{ssa_name} = arith.constant 0 : i32")
+            return ssa_name, ops
+
+        # Addressable struct objects (ptr, ptr[i], nested fields): GEP to field.
+        gep_res = self._generate_field_access_gep(field_access, obj_ssa, field_type, ops)
+        if gep_res is not None:
+            return gep_res
+
+        # Prefer LLVM struct extraction when available.
+        extract_res = self._generate_field_access_extract(field_access, obj_ssa, field_type, ops)
+        if extract_res is not None:
+            return extract_res
+
+        # Fallback to byte-level memref layout loading.
+        return self._generate_field_access_memref_fallback(field_access, obj_ssa, field_type, ops)
     
     def _get_ssa_type(self, ssa_name: str, ops: list = None) -> str:
         """Infer the MLIR type of an SSA value from its definition in ops."""
