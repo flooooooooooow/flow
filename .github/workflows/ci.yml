@@ -151,13 +151,14 @@ jobs:
 
   # Every part of the language needs a page. The feature list is read from the
   # compiler, so this fails when something is added and left undocumented.
-  # Stdlib-only, like the checkers above, so no toolchain setup.
+  # A Flow program built with cc, like the checkers above, so no toolchain
+  # setup.
   doc-coverage:
     name: Doc coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/check_doc_coverage.py
+      - run: scripts/check_doc_coverage.sh
 
   # Documented examples are compiled. A ratchet, not a wall: the examples that
   # do not build today are recorded in docs/generated/example-status.json and
