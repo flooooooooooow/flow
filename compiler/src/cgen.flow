@@ -68,11 +68,17 @@ export struct CgenBuf {
     mono_tp_concrete: ptr<i32>,
     mono_ntp: i32,
     # Current function being emitted (for scoped param lookups).
-    cur_fn: i32
+    cur_fn: i32,
+    # Pending `defer` statements of the enclosing scopes, innermost last.
+    # A return runs all of them; a block end or break/continue runs the
+    # ones its scope (or the loop body) pushed.
+    defer_ids: ptr<i32>,
+    defer_len: i32,
+    loop_defer_base: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -2415,45 +2421,54 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     flowc_cgen_puts(w, "0")
 }
 
+# Emit the pending defers from the innermost down to index `base` (LIFO).
+function flowc_cgen_emit_defers_to(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32) {
+    let mut d: i32 = w[0].defer_len - 1
+    while d >= base {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[w[0].defer_ids[d]].a)
+        flowc_cgen_puts(w, ";\n")
+        d = d - 1
+    }
+}
+
+# Emit a statement chain as one defer scope: `defer` statements are pushed
+# on the writer's stack, and the scope's own defers run LIFO at its end.
+function flowc_cgen_emit_scoped_stmts(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, first: i32) {
+    if w[0].defer_ids == null {
+        let raw: ptr<u8> = malloc(1024)
+        w[0].defer_ids = raw
+        w[0].defer_len = 0
+    }
+    let base: i32 = w[0].defer_len
+    let mut last_kind: i32 = 0
+    let mut st: i32 = first
+    while st != AST_NONE {
+        last_kind = arena.nodes[st].kind
+        if last_kind == AST_DEFER {
+            if w[0].defer_len < 256 {
+                w[0].defer_ids[w[0].defer_len] = st
+                w[0].defer_len = w[0].defer_len + 1
+            }
+        } else {
+            flowc_cgen_emit_stmt(w, arena, src, st)
+        }
+        st = arena.nodes[st].next
+    }
+    # Fall-through end of scope. After a trailing return, break or continue
+    # the defers already ran on that path.
+    if last_kind != AST_RETURN and last_kind != AST_BREAK and last_kind != AST_CONTINUE {
+        flowc_cgen_emit_defers_to(w, arena, src, base)
+    }
+    w[0].defer_len = base
+}
+
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
     }
     flowc_cgen_puts(w, "{\n")
-    # Collect deferred statements to emit at block end (LIFO order).
-    let mut defers: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    let mut n_defers: i32 = 0
-    let mut st: i32 = arena.nodes[id].a
-    while st != AST_NONE {
-        if arena.nodes[st].kind == AST_DEFER {
-            if n_defers < 64 {
-                defers[n_defers] = st
-                n_defers = n_defers + 1
-            }
-        } else {
-            # Before return: emit all pending defers in reverse order.
-            if arena.nodes[st].kind == AST_RETURN {
-                let mut d: i32 = n_defers - 1
-                while d >= 0 {
-                    flowc_cgen_puts(w, "  ")
-                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[defers[d]].a)
-                    flowc_cgen_puts(w, ";\n")
-                    d = d - 1
-                }
-            }
-            flowc_cgen_emit_stmt(w, arena, src, st)
-        }
-        st = arena.nodes[st].next
-    }
-    # Emit deferred statements in reverse order (LIFO) at block end
-    # (for fall-through, i.e. no trailing return).
-    let mut i: i32 = n_defers - 1
-    while i >= 0 {
-        flowc_cgen_puts(w, "  ")
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[defers[i]].a)
-        flowc_cgen_puts(w, ";\n")
-        i = i - 1
-    }
+    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[id].a)
     flowc_cgen_puts(w, "}\n")
 }
 
@@ -2616,6 +2631,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_RETURN {
         if arena.nodes[id].a == AST_NONE {
+            flowc_cgen_emit_defers_to(w, arena, src, 0)
             flowc_cgen_puts(w, "  return;\n")
             return
         }
@@ -2623,9 +2639,19 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         let ret_expr: i32 = arena.nodes[id].a
         if arena.nodes[ret_expr].kind == AST_IDENT {
             if flowc_cgen_span_is(src, arena.nodes[ret_expr].name_start, arena.nodes[ret_expr].name_end, "void") == 1 {
+                flowc_cgen_emit_defers_to(w, arena, src, 0)
                 flowc_cgen_puts(w, "  return;\n")
                 return
             }
+        }
+        # Pending defers run after the value is computed (#947).
+        if w[0].defer_len > 0 {
+            flowc_cgen_puts(w, "  { __auto_type __flowc_ret = ")
+            flowc_cgen_emit_expr(w, arena, src, ret_expr)
+            flowc_cgen_puts(w, ";\n")
+            flowc_cgen_emit_defers_to(w, arena, src, 0)
+            flowc_cgen_puts(w, "  return __flowc_ret; }\n")
+            return
         }
         flowc_cgen_puts(w, "  return ")
         flowc_cgen_emit_expr(w, arena, src, ret_expr)
@@ -2639,20 +2665,12 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_puts(w, ") {\n")
         let then_b: i32 = arena.nodes[id].b
         if then_b != AST_NONE {
-            let mut st: i32 = arena.nodes[then_b].a
-            while st != AST_NONE {
-                flowc_cgen_emit_stmt(w, arena, src, st)
-                st = arena.nodes[st].next
-            }
+            flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[then_b].a)
         }
         if arena.nodes[id].c != AST_NONE {
             flowc_cgen_puts(w, "} else {\n")
             let else_b: i32 = arena.nodes[id].c
-            let mut est: i32 = arena.nodes[else_b].a
-            while est != AST_NONE {
-                flowc_cgen_emit_stmt(w, arena, src, est)
-                est = arena.nodes[est].next
-            }
+            flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[else_b].a)
             flowc_cgen_puts(w, "}\n")
         } else {
             flowc_cgen_puts(w, "}\n")
@@ -2663,7 +2681,10 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_puts(w, "  while (")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_puts(w, ") ")
+        let saved_wbase: i32 = w[0].loop_defer_base
+        w[0].loop_defer_base = w[0].defer_len
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].b)
+        w[0].loop_defer_base = saved_wbase
         return
     }
     if kind == AST_FOR {
@@ -2695,7 +2716,10 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "1")
         }
         flowc_cgen_puts(w, ") ")
+        let saved_fbase: i32 = w[0].loop_defer_base
+        w[0].loop_defer_base = w[0].defer_len
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+        w[0].loop_defer_base = saved_fbase
         return
     }
     if kind == AST_MATCH {
@@ -2735,11 +2759,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2779,11 +2799,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2849,11 +2865,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2921,11 +2933,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2970,11 +2978,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
             let body: i32 = arena.nodes[arm].b
             if body != AST_NONE {
-                let mut st: i32 = arena.nodes[body].a
-                while st != AST_NONE {
-                    flowc_cgen_emit_stmt(w, arena, src, st)
-                    st = arena.nodes[st].next
-                }
+                flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
             }
             arm = arena.nodes[arm].next
         }
@@ -2985,15 +2989,18 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_BREAK {
+        flowc_cgen_emit_defers_to(w, arena, src, w[0].loop_defer_base)
         flowc_cgen_puts(w, "  break;\n")
         return
     }
     if kind == AST_CONTINUE {
+        flowc_cgen_emit_defers_to(w, arena, src, w[0].loop_defer_base)
         flowc_cgen_puts(w, "  continue;\n")
         return
     }
-    # defer: emit the expression as a statement inline.
-    # Full LIFO defer semantics are handled by the Python compiler.
+    # defer outside a statement chain (no enclosing scope to attach it to):
+    # emit the expression inline. Scoped defers go through
+    # flowc_cgen_emit_scoped_stmts.
     if kind == AST_DEFER {
         flowc_cgen_puts(w, "  ")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
