@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Transcript tests for the native host tools (flow repl, flow lsp).
+# Transcript tests for the native host tools written in Flow (flow repl).
 #
 # Each case is an input file fed to the tool on stdin and the exact bytes
 # the tool is expected to write back. Nothing here needs Python.
@@ -44,18 +44,6 @@ for input in tests/tools/repl/*.in; do
     out="$work/$(basename "$input" .in).out"
     ./flow repl < "$input" > "$out" 2>&1
     check "$name" "${input%.in}.expected" "$out"
-done
-
-# LSP sessions: tests/tools/lsp/<case>.jsonl -> <case>.expected.
-# Each input line is one JSON-RPC message; the framing script adds the
-# Content-Length headers and the expected file holds the framed replies
-# with one message per line.
-for input in tests/tools/lsp/*.jsonl; do
-    [ -e "$input" ] || continue
-    name="lsp/$(basename "$input" .jsonl)"
-    out="$work/$(basename "$input" .jsonl).out"
-    FLOW_LSP_ROOT_URI="file://$ROOT" bash tests/tools/lsp_session.sh "$input" > "$out" 2>/dev/null
-    check "$name" "${input%.jsonl}.expected" "$out"
 done
 
 echo "tool transcripts: $pass passed, $fail failed"

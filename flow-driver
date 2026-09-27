@@ -525,6 +525,7 @@ show_help() {
     echo "                    [--threads] [--fs memfs|idbfs] [--out DIR]"
     echo "                    Compile to WebAssembly + a runnable page"
     echo "  repl              Start interactive REPL"
+    echo "  lsp               Start the language server on stdio"
     echo "  examples          List project examples (or compiler examples outside a project)"
     echo "  examples run NAME Run a packaged project example from the current root"
     echo "  playground        Start native-local compile API + open playground docs"
@@ -3117,6 +3118,11 @@ case "${1:-help}" in
     "compile-audio")
         check_deps
         compile_audio_program "${2:-}" "${3:-}"
+        ;;
+    "lsp")
+        # Language server on stdio (same entry point as the flow-lsp launcher).
+        shift
+        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m flow.lsp_server "$@"
         ;;
     "dap")
         shift
