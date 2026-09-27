@@ -54,6 +54,7 @@ def test_stable_positive_fixture_matches_flowc(fixture: Path) -> None:
         lower = subprocess.run(
             [str(driver), str(fixture), str(c_path)],
             cwd=REPO,
+            env={**os.environ, "FLOWC_IN": str(fixture), "FLOWC_OUT": str(c_path)},
             capture_output=True,
             text=True,
         )
