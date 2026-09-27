@@ -3,6 +3,7 @@ build/
 *.o
 *.exe
 *.out
+!compiler/fixtures/flow_blocks/*.out
 *.mlir
 *.ll
 *.bc
