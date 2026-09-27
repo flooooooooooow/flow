@@ -3,8 +3,9 @@
 > Status: hybrid. See [self-hosting plan](self-hosting.md).
 > Default `./flow run|compile` is Stage-A **flowc** (`FLOW_HOST=flowc`), and
 > since #960 that default path runs with no Python on `PATH`.
-> Full language, DSL expansion and most of the test suite still use
-> `FLOW_HOST=python` (`src/flow/`).
+> Full language, most DSL expansion and most of the test suite still use
+> `FLOW_HOST=python` (`src/flow/`). The Field DSL is the exception: flowc
+> expands it itself (#956).
 > New code is written in Flow. `scripts/python_ratchet.sh` fails CI when a new
 > `.py` file appears or tracked Python grows (#981).
 
@@ -46,7 +47,7 @@ hatch until the Flow port for each one merges.
 
 | Plugin / module | Role | Flow port |
 |---|---|---|
-| `field_dsl.py` | Field DSL expand-before-parse | Lexical checks in [`field_dsl_core.flow`](../../compiler/src/field_dsl_core.flow). Full expansion in flowc: open PR #956 |
+| `field_dsl.py` | Thin bridge for the Python host: calls flowc with `FLOWC_EXPAND_ONLY=1` | Complete in [`field_dsl.flow`](../../compiler/src/field_dsl.flow) (#956) |
 | `dynamics_dsl.py` / `flow_blocks.py` | Dynamics DSL and `flow` block lowering | Line helpers in [`dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow). Full expansion in flowc: open PR #999 |
 | `shader_dsl.py` / `shader_codegen.py` / `shader_codegen_wgsl.py` | Shader DSL (FSL) and its Metal and WGSL backends | Parsing and validation in [`shader_dsl.flow`](../../compiler/src/shader_dsl.flow). Both backends in flowc: open PR #998 |
 | Verify / proof modules | `proof_*.py`, math prose host path | Helpers landed (see below); document assembly and PDF stay Python |
@@ -106,7 +107,6 @@ Python and ported those tests to `tests/lang/`. See
 |---|---|
 | #971 | The remaining `scripts/*.py`: changelog check, release prep, repo stats, stdlib docs, wiki build, wasm and shader galleries, and others |
 | #955 | Python run tests to `tests/lang`, batch 2 |
-| #956 | Field DSL expansion in flowc; `field_dsl.py` becomes a bridge |
 | #998 | Shader DSL and both backends in flowc; `shader_codegen*.py` deleted |
 | #999 | Dynamics DSL and `flow` block lowering in flowc |
 | #987 | REPL in Flow; `repl.py` and `test_runner.py` deleted; LSP stays Python |
@@ -137,7 +137,8 @@ Python and ported those tests to `tests/lang/`. See
 | Proof document formatting + **parsing** | [`compiler/src/proof_document.flow`](../../compiler/src/proof_document.flow): `flowc_circled` / `flowc_step_label_latex` / `flowc_fmt_refs` / `flowc_from_refs` / `flowc_under_refs` / `flowc_slug_label`, plus the text half of `parse_proof_file`: `flowc_proof_meta_key` / `flowc_proof_meta_value` / `flowc_extract_brace_body` / `flowc_extract_brace_end` / `flowc_proof_step_kind` / `flowc_proof_step_text` / `flowc_proof_step_detail` / `flowc_proof_claim_from_therefore` / `flowc_latex_escape` / `flowc_latex_escape_params`, and the per-item renderers `flowc_claim_path_phrase` / `flowc_natural_claim_sentence` / `flowc_facet_title` / `flowc_natural_let` / `flowc_theorem_ref_plain` / `flowc_theorem_ref_latex` / `flowc_render_math_cell_latex` / `flowc_trace_legend_row` / `flowc_diagram_markdown_embed` / `flowc_latex_preamble`. File reading, document assembly, the theorem catalogue, and PDF stay Python. Gated by [`parity_proof_parse.py`](../../compiler/scripts/parity_proof_parse.py) |
 | Dynamics DSL line helpers | [`compiler/src/dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow): `flowc_strip_comments` / `flowc_strip_dynamics_namespace` (full DSL parsing and expansion stay Python) |
 | LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow): `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` (full LSP protocol stays Python) |
-| DSL detection | [`compiler/src/dsl_detect.flow`](../../compiler/src/dsl_detect.flow): `flowc_has_field_dsl` / `flowc_has_dynamics_dsl` / `flowc_has_fill_shader_dsl` (full DSL parsing and expansion stay Python) |
+| Field DSL expansion (**complete**) | [`compiler/src/field_dsl.flow`](../../compiler/src/field_dsl.flow): the whole of the former `field_dsl.py`, covering detection, `field` / `boundary` / `evolves as laplacian` parsing, diagnostics, and `T_field_step` generation. flowc runs it on every source it reads (`main.flow`, `driver.flow`, all bundle passes in `resolve.flow`), so `./flow compile examples/evolution/heat_diffusion.flow` needs no Python. `src/flow/field_dsl.py` is now a bridge that shells out to flowc. Gated by [`parity_field_dsl.sh`](../../compiler/scripts/parity_field_dsl.sh): 21 fixtures against goldens recorded from the Python expander, 1995-file passthrough, an optional live diff against the Python at any revision, and heat_diffusion compiled and run on flowc |
+| DSL detection | [`compiler/src/dsl_detect.flow`](../../compiler/src/dsl_detect.flow): `flowc_has_field_dsl` / `flowc_has_dynamics_dsl` / `flowc_has_fill_shader_dsl` (dynamics and shader expansion stay Python) |
 | Claim lookup helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow): `flowc_normalize_query` / `flowc_package_prefix` / `flowc_qualify` (filesystem scanning and claim indexing stay Python) |
 | LSP ordering hover | [`compiler/src/lsp_ordering.flow`](../../compiler/src/lsp_ordering.flow): `flowc_ordering_hover` (completion items with snippets stay Python) |
 | LSP dynamics hover | [`compiler/src/lsp_dynamics.flow`](../../compiler/src/lsp_dynamics.flow): `flowc_dynamics_hover` (completion items stay Python) |
@@ -202,6 +203,7 @@ python3 compiler/scripts/parity_math_prose_expr.py
 python3 compiler/scripts/parity_proof_parse.py
 python3 compiler/scripts/parity_know_index.py
 ./compiler/scripts/smoke_know.sh
+./compiler/scripts/parity_field_dsl.sh
 FLOW_HOST=python ./flow run examples/compilers/claim_address_demo.flow
 FLOW_HOST=python ./flow run examples/compilers/math_prose_demo.flow
 FLOW_HOST=python ./flow run examples/compilers/math_prose_expr_demo.flow
