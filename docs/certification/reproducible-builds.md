@@ -13,8 +13,8 @@ FLOW_HOST=python ./flow transpile prog.flow --c -o b.c
 diff -u a.c b.c   # must be empty
 ```
 
-The unit test `tests/unit/test_reproducible_c.py` asserts this for a
-representative program.
+`test_reproducible_c_emit` in `tests/unit/test_misra_phase2.py` asserts
+this for a representative program.
 
 ## Sources of nondeterminism (mitigated)
 

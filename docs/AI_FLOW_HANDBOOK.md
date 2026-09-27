@@ -879,7 +879,7 @@ Use a focused path when supported:
 
 ```bash
 ./flow test-runtime tests/runtime/test_arithmetic.flow
-PYTHONPATH=src pytest tests/unit/test_specific_area.py -q
+PYTHONPATH=src pytest tests/unit/test_parser.py -q
 ```
 
 The AI MUST report what it actually ran. It MUST NOT say "all tests pass" when

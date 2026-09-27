@@ -284,7 +284,7 @@ lib/verify/Comb.flow
 | 1–14 | rectangles, gnomons, `a+b` squares | 14 theorems |
 
 **Files:** `examples/verify/euclid/book-ii/prop-*.flow`  
-**Generator:** `tools/generate_euclid_book_ii.py` (mirror Book I)
+**Generator:** none. The one-shot Euclid generators were removed in #965, so edit the `.flow` files directly.
 
 ### Book III: Circles
 
@@ -699,14 +699,12 @@ lib/verify/
 examples/verify/
   math/derived/          # stepped proofs importing lib/verify
   euclid/book-i/         # ✅ 48 props
-  euclid/book-ii/ … vi/  # generators + props
+  euclid/book-ii/ … vi/  # props
   analysis/              # calculus, special functions
   geometry/              # legacy + analytic bridge
 
-tools/
-  generate_euclid_book_i.py   # ✅
-  generate_euclid_book_ii.py  # planned
-  generate_book_manifest.py   # planned: BOOK_PARTS from YAML
+scripts/tools/
+  book_manifest/main.flow     # planned: BOOK_PARTS from YAML
 
 docs/language/
   mathlib-equivalence-toc.md  # this file
@@ -753,7 +751,7 @@ Every `Mathlib/*` root directory maps to a Flow volume:
 1. **Complete §1 to §5**: `Eq.flow`, `Bool.flow`, `Nat-mul.flow`, `Nat-order.flow` with stepped proofs.
 2. **Deepen Euclid I**: replace assume/therefore stubs in props 1–10 first (construction + SAS chain).
 3. **Regenerate book**: `./flow doc bundle` after each § lands; keep continuous numbering.
-4. **Add `tools/generate_book_manifest.py`**: drive `BOOK_PARTS` from `docs/language/mathlib-toc.yaml` (machine-readable slice of this TOC).
+4. **Add a book manifest tool** (a Flow program under `scripts/tools/`): drive `BOOK_PARTS` from `docs/language/mathlib-toc.yaml` (machine-readable slice of this TOC).
 5. **CI**: `flow know --lint-duplicates` + theorem count regression test per phase.
 
 ---

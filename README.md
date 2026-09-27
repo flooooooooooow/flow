@@ -338,7 +338,7 @@ FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
 ./flow test --strict --tier2   # + transpile / clang compile checks
 ./flow fmt <file>              # Format
 ./flow repl                    # Interactive mode
-./flow lsp                     # Language server
+./flow-lsp                     # Language server (Python, src/flow/lsp_server.py)
 ./flow gfx <file>              # Compile and run with graphics
 ./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
 ```
