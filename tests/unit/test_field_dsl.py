@@ -1,12 +1,8 @@
-"""Tests for field / boundary PDE surface (#163)."""
+"""Field / boundary PDE surface (#163) through the flowc expander."""
 
 import pytest
 
-from flow.field_dsl import (
-    expand_field_dsl,
-    has_field_dsl,
-    parse_field_dsl,
-)
+from flow.field_dsl import expand_field_dsl, has_field_dsl
 
 
 SAMPLE = """
@@ -29,23 +25,18 @@ class TestFieldDSL:
         assert has_field_dsl(SAMPLE)
         assert not has_field_dsl("function main() -> i32 { return 0 }\n")
 
-    def test_parse_strips_and_records(self):
-        fields, stripped = parse_field_dsl(SAMPLE)
-        assert "field T" not in stripped
-        assert "boundary T" not in stripped
-        assert "T evolves as" not in stripped
-        assert "T" in fields
-        assert fields["T"].n == 32
-        assert fields["T"].left_bc == "AMBIENT"
-        assert fields["T"].right_bc == "AMBIENT"
-        assert fields["T"].evolve_seen
+    def test_expand_strips_dsl_lines(self):
+        out = expand_field_dsl(SAMPLE)
+        assert "\nfield T :" not in out
+        assert "boundary T" not in out
+        assert "T evolves as" not in out
 
     def test_expand_emits_step(self):
         out = expand_field_dsl(SAMPLE)
         assert "T_field_step" in out
-        assert "T_field_n" in out
+        assert "const T_field_n: i32 = 32" in out
         assert "heat_euler_step_1d(u, next, 32, r, AMBIENT, AMBIENT)" in out
-        assert "    field T" not in out
+        assert out.index("T_field_step") < out.index("function main(")
 
     def test_boundary_before_field_errors(self):
         src = (
@@ -55,7 +46,7 @@ class TestFieldDSL:
             "function main() -> i32 { return 0 }\n"
         )
         with pytest.raises(SyntaxError, match="declare"):
-            parse_field_dsl(src)
+            expand_field_dsl(src)
 
     def test_missing_evolve_errors(self):
         src = (
@@ -64,7 +55,7 @@ class TestFieldDSL:
             "function main() -> i32 { return 0 }\n"
         )
         with pytest.raises(SyntaxError, match="missing"):
-            parse_field_dsl(src)
+            expand_field_dsl(src)
 
     def test_flow_evolves_untouched(self):
         src = (
