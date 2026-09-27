@@ -1,0 +1,62 @@
+
+<script src="__NAME__.js"></script>
+<script>
+(function () {
+  var startBtn = document.getElementById('start');
+  var clearBtn = document.getElementById('clear');
+  var status = document.getElementById('status');
+  var out = document.getElementById('out');
+
+  function log(text, isErr) {
+    var line = document.createElement('span');
+    if (isErr) { line.className = 'err'; }
+    line.textContent = text + '\n';
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  }
+
+  var isolated = self.crossOriginIsolated && typeof SharedArrayBuffer === 'function';
+
+  function showIsolation() {
+    status.textContent = 'needs cross-origin isolation';
+    startBtn.disabled = true;
+    log('The browser blocks SharedArrayBuffer unless the page is cross-origin isolated,');
+    log('and an iframe cannot become isolated on its own. Open this page in a tab:');
+    log('the service worker adds the isolation headers and reloads once.');
+  }
+
+  function run() {
+    startBtn.disabled = true;
+    status.textContent = 'spawning workers...';
+    var done = false;
+    function finish(code) {
+      if (done) { return; }
+      done = true;
+      log((out.textContent ? '\n' : '') + 'main returned ' + code);
+      status.textContent = 'exit ' + code;
+      startBtn.disabled = false;
+    }
+    // With PROXY_TO_PTHREAD the module factory resolves as soon as the
+    // runtime is initialised, before main() has run on its worker thread.
+    // Only onExit fires when main() really returns, so it alone finishes.
+    createFlowThreaded({
+      print: function (t) { log(t, false); },
+      printErr: function (t) { log(t, true); },
+      onExit: function (code) { finish(code === undefined ? 0 : code); }
+    }).then(function () {
+      if (!done) { status.textContent = 'running (pthreads)...'; }
+    }).catch(function (e) {
+      if (done) { return; }
+      done = true;
+      log('' + e, true);
+      status.textContent = 'failed to load';
+      startBtn.disabled = false;
+    });
+  }
+
+  if (!isolated) { showIsolation(); }
+  startBtn.addEventListener('click', run);
+  clearBtn.addEventListener('click', function () { out.textContent = ''; });
+  if (location.search.indexOf('autostart=1') >= 0 && isolated) { run(); }
+})();
+</script>

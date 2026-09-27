@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow in the browser @MDASH@ WebAssembly gallery</title>
+<style>@@css@@</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Flow in the browser</h1>
+  <p class="lede">@@total_ok@@ Flow examples compiled to WebAssembly and running
+  live on this page. Each one is the unedited source from the repository, put
+  through Flow &rarr; C &rarr; <code>emcc</code>. Graphics programs link
+  <code>runtime/gfx_wasm.c</code>, a canvas backend for the same gfx API that
+  drives the native window and the headless GIF recorder, so nothing in the
+  games or the field simulations had to change.</p>
+  <p class="lede">Click Run, then click inside the frame so it takes the
+  keyboard. Esc closes the frame.</p>
+
+@@sections@@
+
+  <h2>What runs, and what is still being crossed</h2>
+  <p class="blurb">Rows marked @LDQUO@runs@RDQUO@ are verified in a browser. The
+  threads row needs the card opened in a tab (an iframe cannot become
+  cross-origin isolated on its own). The rest name the mechanism and say
+  plainly that it is not built here yet.</p>
+  <table class="status">
+    <tr><th>Capability</th><th>State</th><th>Route</th></tr>
+@@status@@
+  </table>
+
+  <footer>
+    Built by <code>scripts/build_wasm_gallery.sh</code>.
+    Total payload @@total_kb@@ across @@total_ok@@ examples.
+    Machine-readable index: <a href="manifest.json">manifest.json</a>.
+  </footer>
+</div>
+
+<div id="modal">
+  <div class="bar">
+    <strong id="label"></strong>
+    <a id="open" href="#" target="_blank" style="color:#6b7ca8">open in a tab</a>
+    <button id="close">Close</button>
+  </div>
+  <iframe id="frame" src="about:blank" title="Flow example"></iframe>
+</div>
+
+<script>@@js@@</script>
+</body>
+</html>
