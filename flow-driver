@@ -213,6 +213,51 @@ flowc_emit_to_c() {
         "$driver"
 }
 
+# Host tools written in Flow (tools/<name>/main.flow: repl, lsp). Builds the
+# tool with the Stage-A driver on first use and whenever a Flow source it can
+# import is newer than the cached binary, then prints the binary path.
+# The cache lives in build/tools, or in the user cache dir when the install
+# tree is read-only (Homebrew).
+flow_native_tool() {
+    local name="$1"
+    local src="tools/$name/main.flow"
+    if [ ! -f "$SCRIPT_DIR/$src" ]; then
+        print_error "native tool source missing: $src"
+        return 1
+    fi
+    local cache="$SCRIPT_DIR/build/tools"
+    if ! mkdir -p "$cache" 2>/dev/null || [ ! -w "$cache" ]; then
+        cache="${XDG_CACHE_HOME:-$HOME/.cache}/flow/tools"
+        mkdir -p "$cache" || return 1
+    fi
+    local bin="$cache/flow-$name"
+    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" \
+            "$SCRIPT_DIR/compiler/src" -name '*.flow' -newer "$bin" -print -quit 2>/dev/null)" ]; then
+        printf '%s\n' "$bin"
+        return 0
+    fi
+    local driver
+    if ! driver="$(flow_resolve_flowc)"; then
+        return 1
+    fi
+    if ! (cd "$SCRIPT_DIR" && FLOWC_BUNDLE=1 FLOWC_DIR=. FLOWC_TYPECHECK=1 \
+            FLOWC_IN="$src" FLOWC_OUT="$bin.c" "$driver" >&2); then
+        print_error "flowc could not build $src" >&2
+        return 1
+    fi
+    if ! "${CC:-cc}" -O2 -w -o "$bin.tmp.$$" "$bin.c" -lm >&2; then
+        print_error "C compiler could not build flow-$name" >&2
+        return 1
+    fi
+    mv -f "$bin.tmp.$$" "$bin"
+    printf '%s\n' "$bin"
+}
+
+# Canonical version string (src/flow/version.py holds the single source).
+flow_canonical_version() {
+    sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$SCRIPT_DIR/src/flow/version.py" 2>/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # MISRA Phase 0 (#269 / #270): C compiler flags + sanitizers
 #   Default: -std=c11 -Wall -Wextra
@@ -3730,13 +3775,16 @@ raise SystemExit(0 if FlowPackageManager().install() else 1)
         python3 -m flow.package publish "$@"
         ;;
     "repl")
-        check_deps
-        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.repl import main
-main()
-"
+        if ! repl_bin="$(flow_native_tool repl)"; then
+            exit 1
+        fi
+        repl_driver="$(flow_resolve_flowc)" || exit 1
+        repl_dir="$(mktemp -d "${TMPDIR:-/tmp}/flow-repl.XXXXXX")"
+        trap 'rm -rf "$repl_dir"' EXIT
+        FLOW_ROOT="$SCRIPT_DIR" FLOW_REPL_DIR="$repl_dir" \
+            FLOWC_BIN="$(cd "$SCRIPT_DIR" && cd "$(dirname "$repl_driver")" && pwd)/$(basename "$repl_driver")" \
+            FLOW_VERSION="$(flow_canonical_version)" \
+            "$repl_bin"
         ;;
     "init")
         shift
