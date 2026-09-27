@@ -1,0 +1,26 @@
+# `[value; N]` holds N copies of the value at runtime (#585, #945).
+# Supersedes tests/integration/test_array_return.py
+# ::test_an_array_repeat_produces_the_values_at_runtime.
+
+function main() -> i32 {
+    let mut signal: array<f32, 8> = [0.0; 8]
+    let ones: array<i32, 5> = [1; 5]
+    let negs: array<i32, 3> = [-2; 3]
+    signal[3] = 1.5
+    if signal[0] != 0.0 or signal[7] != 0.0 {
+        return 1
+    }
+    if signal[3] != 1.5 {
+        return 2
+    }
+    if ones[0] != 1 or ones[4] != 1 {
+        return 3
+    }
+    if negs[1] != 0 - 2 {
+        return 4
+    }
+    if ones[0] + negs[2] != 0 - 1 {
+        return 5
+    }
+    return 0
+}

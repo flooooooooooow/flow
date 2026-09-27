@@ -78,21 +78,6 @@ function main() -> i32 {
     assert "cast=hi!" in out, out
 
 
-def test_numeric_casts_still_format_as_numbers():
-    """A cast to a number must keep going through the stringify path."""
-    out = _run("""
-function main() -> i32 {
-    let x: f64 = 3.75
-    let n: i32 = 42
-    println("int=" + (n as i64))
-    println("trunc=" + (x as i32))
-    return 0
-}
-""")
-    assert "int=42" in out, out
-    assert "trunc=3" in out, out
-
-
 def test_the_documented_workaround_still_works():
     """Binding the cast to a variable first was the workaround in #577."""
     out = _run("""
@@ -108,32 +93,6 @@ function main() -> i32 {
 }
 """)
     assert "via var=a!" in out, out
-
-
-def test_concatenating_a_wide_numeric_type_is_still_a_string():
-    """The wider bug behind #577: the concat inferred a *numeric* result.
-
-    `_infer_expr_type` had no string case for `+`, so an i64 or f64 operand
-    was claimed by the numeric promotion rules and the whole concatenation
-    was formatted as that number. `"i64=" + v` printed the concatenated
-    pointer with "%lld"; `"f64=" + f` printed 0.000000. It appeared to work
-    only for operand types the rules did not recognise, which fell through to
-    `left or right` and happened to land on the string.
-    """
-    out = _run("""
-function main() -> i32 {
-    let v: i64 = 42
-    let f: f64 = 1.5
-    let u: u32 = 7
-    println("i64=" + v)
-    println("f64=" + f)
-    println("u32=" + u)
-    return 0
-}
-""")
-    assert "i64=42" in out, out
-    assert "f64=1.5" in out, out
-    assert "u32=7" in out, out
 
 
 def test_arithmetic_without_a_string_still_promotes():

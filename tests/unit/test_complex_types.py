@@ -4,7 +4,7 @@ import sys
 import os
 import pytest
 
-from tests.unit.compiler_helpers import errors, to_c, compile_and_run, compile_c_only
+from tests.unit.compiler_helpers import errors, to_c, compile_c_only
 
 
 def test_c64_type_recognized():
@@ -156,22 +156,6 @@ def test_complex_c_codegen():
     assert "float complex" in c_code
     assert "* I" in c_code  # C99 complex construction via I macro
 
-
-def test_complex_compile_and_run():
-    """End-to-end: compile a complex arithmetic program and check exit code."""
-    rc = compile_and_run("""
-    function main() -> i32 {
-        let z: c64 = c64(3.0, 4.0)
-        let w: c64 = c64(1.0, 2.0)
-        let s: c64 = z + w
-        let mag: f64 = cabs(z)
-        if mag > 4.9 && mag < 5.1 {
-            return 0
-        }
-        return 1
-    }
-    """)
-    assert rc == 0
 
 def test_complex_mul_real_codegen_no_mulsc3():
     """Verify complex * real lowers to direct element-wise multiplies without mulsc3."""

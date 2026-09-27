@@ -1,0 +1,24 @@
+# Stage-A cgen: sizeof<T>() is the C size of T (#952) → exit 42.
+# Kept as a Stage-A fixture: the Python host's --strict checker does not
+# accept sizeof<T>(), so this cannot live in tests/lang yet.
+
+struct Pair {
+    a: i32,
+    b: i32
+}
+
+function main() -> i32 {
+    if sizeof<i64>() != 8 {
+        return 1
+    }
+    if sizeof<i32>() != 4 {
+        return 2
+    }
+    if sizeof<u8>() != 1 {
+        return 3
+    }
+    if sizeof<Pair>() != 8 {
+        return 4
+    }
+    return 42
+}

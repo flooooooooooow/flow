@@ -785,6 +785,9 @@ if ! grep -Fq 'or/struct/list patterns unsupported in Stage-A' compiler/build/ma
 fi
 echo "PASS stage_a_match fixtures"
 
+# sizeof<T>() lowers to the C sizeof of the type.
+run_case stage_a_sizeof 42
+
 # Mini self-host: prefer Flow driver CLI when present (built above); C driver
 # fallback. Ends with stage_a_driver_flow_self (Flow driver + self frontend).
 ./compiler/scripts/stage_a_self_emit.sh

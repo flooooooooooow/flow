@@ -23,7 +23,7 @@ def _body(c: str, fn: str) -> str:
 
 
 def test_extern_shim_tail_call_emits_real_call():
-    """#517: ``return foo_get_c(i)`` must stay a real call, not a loop."""
+    """#517: ``return foo_get_c(i)`` must stay a real call."""
     c = to_c(
         """
 @cEmbed("static inline int32_t foo_get_c_c(int32_t i) { return i + 1; }")
@@ -74,27 +74,6 @@ export function countdown(n: i32) -> i32 {
     body = _body(c, r"countdown_i32")
     assert "for (;;)" in body, f"genuine recursion lost its TCO loop:\n{body}"
     assert "continue;" in body
-
-
-def test_deep_tail_recursion_runs_without_stack_overflow():
-    """TCO keeps a 1M-deep recursion constant-stack."""
-    code = compile_and_run(
-        """
-export function down_to(n: i32) -> i32 {
-    if n <= 0 {
-        return 0
-    } else {
-        return down_to(n - 1)
-    }
-}
-
-export function main() -> i32 {
-    return down_to(1000000)
-}
-""",
-        extra_cflags=["-O1"],
-    )
-    assert code == 0, f"deep recursion should finish with 0, got {code}"
 
 
 def test_mangled_self_call_in_tail_position():

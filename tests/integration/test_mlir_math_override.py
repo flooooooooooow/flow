@@ -2,7 +2,12 @@ import pytest
 import subprocess
 import sys
 import os
+import shutil
 
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("mlir-opt", "mlir-translate", "clang")),
+    reason="requires LLVM/MLIR command-line tools",
+)
 def test_mlir_math_intrinsic_override(tmp_path):
     """
     Test that a user-defined function named identically to a math intrinsic

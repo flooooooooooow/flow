@@ -68,11 +68,20 @@ export struct CgenBuf {
     mono_tp_concrete: ptr<i32>,
     mono_ntp: i32,
     # Current function being emitted (for scoped param lookups).
-    cur_fn: i32
+    cur_fn: i32,
+    # Pending `defer` statements of the enclosing scopes, innermost last.
+    # A return runs all of them; a block end or break/continue runs the
+    # ones its scope (or the loop body) pushed.
+    defer_ids: ptr<i32>,
+    defer_len: i32,
+    loop_defer_base: i32,
+    # Function whose body carries the __flowc_tail label (self tail calls
+    # become parameter updates and a jump), else AST_NONE.
+    tail_fn: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -362,6 +371,11 @@ function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i3
         flowc_cgen_puts(w, "_flow_else")
         return
     }
+    # <complex.h> (always included) defines the macro I.
+    if flowc_cgen_span_is(src, start, end, "I") == 1 {
+        flowc_cgen_puts(w, "_flow_I")
+        return
+    }
     # Not a reserved word: emit as-is
     flowc_cgen_put_span(w, src, start, end)
 }
@@ -386,6 +400,200 @@ function flowc_cgen_is_struct_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
         i = i + 1
     }
     return 0
+}
+
+# --- sized arrays ---------------------------------------------------------
+# array<T, N> (ival = N > 0) is a C array T[N]; nested sized arrays are rows,
+# array<array<T, M>, N> → T[N][M] (#944). A function returning one returns a
+# struct wrapper { T v[N]...; } so the value outlives the call (#943).
+
+# 1 if `ty` is array<T, N> with a literal size.
+function flowc_cgen_is_sized_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[ty].a == AST_NONE or arena.nodes[ty].ival <= 0 {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+}
+
+# Innermost element type below every sized-array level.
+function flowc_cgen_array_base(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    let mut t: i32 = ty
+    while flowc_cgen_is_sized_array(arena, src, t) == 1 {
+        t = arena.nodes[t].a
+    }
+    return t
+}
+
+# `[N][M]...` for each sized-array level, outermost first.
+function flowc_cgen_emit_array_dims(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    let mut t: i32 = ty
+    while flowc_cgen_is_sized_array(arena, src, t) == 1 {
+        flowc_cgen_putc(w, 91)
+        flowc_cgen_put_i32(w, arena.nodes[t].ival)
+        flowc_cgen_putc(w, 93)
+        t = arena.nodes[t].a
+    }
+}
+
+# Identifier-safe spelling of a type for wrapper names: i32_3, i32_3_4.
+function flowc_cgen_put_type_mangle(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        flowc_cgen_puts(w, "i32")
+        return
+    }
+    if flowc_cgen_is_sized_array(arena, src, ty) == 1 {
+        flowc_cgen_put_type_mangle(w, arena, src, arena.nodes[ty].a)
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_i32(w, arena.nodes[ty].ival)
+        return
+    }
+    flowc_cgen_put_span(w, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
+    let mut ta: i32 = arena.nodes[ty].a
+    while ta != AST_NONE {
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_type_mangle(w, arena, src, ta)
+        ta = arena.nodes[ta].next
+    }
+}
+
+# Wrapper struct name for a returned sized array.
+function flowc_cgen_put_array_ret_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    flowc_cgen_puts(w, "__flowc_arr_")
+    flowc_cgen_put_type_mangle(w, arena, src, ty)
+}
+
+# Guarded typedef of the wrapper struct, emitted at file scope right before
+# the first prototype or definition that needs it.
+function flowc_cgen_emit_array_ret_typedef(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    flowc_cgen_puts(w, "#ifndef ")
+    flowc_cgen_put_array_ret_name(w, arena, src, ty)
+    flowc_cgen_puts(w, "_DEFINED\n#define ")
+    flowc_cgen_put_array_ret_name(w, arena, src, ty)
+    flowc_cgen_puts(w, "_DEFINED\ntypedef struct { ")
+    flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
+    flowc_cgen_puts(w, " v")
+    flowc_cgen_emit_array_dims(w, arena, src, ty)
+    flowc_cgen_puts(w, "; } ")
+    flowc_cgen_put_array_ret_name(w, arena, src, ty)
+    flowc_cgen_puts(w, ";\n#endif\n")
+}
+
+# 1 if the function node returns a sized array.
+function flowc_cgen_fn_returns_array(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE {
+        return 0
+    }
+    return flowc_cgen_is_sized_array(arena, src, arena.nodes[fn].b)
+}
+
+# 1 if a call to a function from another bundle module returns a sized
+# array: its signature-table C type is an __flowc_arr_ wrapper.
+function flowc_cgen_sig_returns_array(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, ns, ne)
+    if off < 0 {
+        return 0
+    }
+    let want: string = "__flowc_arr_"
+    let wp: ptr<u8> = want
+    let mut i: i32 = 0
+    while i < 12 {
+        if off + i >= w[0].sigs_len {
+            return 0
+        }
+        if w[0].sigs[off + i] != wp[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Destination of an array fill: mode 0 is the identifier span ns..ne,
+# mode 1 is the return wrapper's `__flowc_ret.v`.
+function flowc_cgen_put_array_dest(w: ptr<CgenBuf>, src: ptr<u8>, dest_mode: i32, ns: i32, ne: i32) {
+    if dest_mode == 1 {
+        flowc_cgen_puts(w, "__flowc_ret.v")
+        return
+    }
+    flowc_cgen_put_ident(w, src, ns, ne)
+}
+
+# Copy `init` into a sized-array destination. An array literal is copied
+# row by row ([a, b] where a and b are arrays); anything else is one memcpy.
+function flowc_cgen_emit_array_fill(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, dest_mode: i32, ns: i32, ne: i32, init: i32) {
+    if init != AST_NONE and arena.nodes[init].kind == AST_ARRAY_LIT and arena.nodes[init].b == AST_NONE {
+        let mut el: i32 = arena.nodes[init].a
+        let mut idx: i32 = 0
+        while el != AST_NONE {
+            flowc_cgen_puts(w, "  memcpy(")
+            flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+            flowc_cgen_putc(w, 91)
+            flowc_cgen_put_i32(w, idx)
+            flowc_cgen_puts(w, "], ")
+            flowc_cgen_emit_expr(w, arena, src, el)
+            flowc_cgen_puts(w, ", sizeof(")
+            flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+            flowc_cgen_putc(w, 91)
+            flowc_cgen_put_i32(w, idx)
+            flowc_cgen_puts(w, "]));\n")
+            idx = idx + 1
+            el = arena.nodes[el].next
+        }
+        return
+    }
+    flowc_cgen_puts(w, "  memcpy(")
+    flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+    flowc_cgen_puts(w, ", ")
+    flowc_cgen_emit_expr(w, arena, src, init)
+    flowc_cgen_puts(w, ", sizeof(")
+    flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+    flowc_cgen_puts(w, "));\n")
+}
+
+# 1 if `init` can be a C initializer for a `ty` array as written: an array
+# literal that is a repeat, has scalar elements, or has only literal rows.
+function flowc_cgen_array_lit_is_init(arena: AstArena, src: ptr<u8>, ty: i32, init: i32) -> i32 {
+    if init == AST_NONE or arena.nodes[init].kind != AST_ARRAY_LIT {
+        return 0
+    }
+    if arena.nodes[init].b != AST_NONE {
+        return 1
+    }
+    if flowc_cgen_is_sized_array(arena, src, arena.nodes[ty].a) == 0 {
+        return 1
+    }
+    let mut el: i32 = arena.nodes[init].a
+    while el != AST_NONE {
+        if arena.nodes[el].kind != AST_ARRAY_LIT {
+            return 0
+        }
+        el = arena.nodes[el].next
+    }
+    return 1
+}
+
+# Return type of a function: the array wrapper, void* for function
+# pointers, else the plain C type.
+function flowc_cgen_emit_ret_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ret_ty: i32) {
+    if ret_ty == AST_NONE {
+        flowc_cgen_puts(w, "void")
+        return
+    }
+    if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
+        flowc_cgen_put_array_ret_name(w, arena, src, ret_ty)
+        return
+    }
+    if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
+        flowc_cgen_puts(w, "void*")
+        return
+    }
+    flowc_cgen_emit_type(w, arena, src, ret_ty)
 }
 
 # Stage-A type → C: ptr<T> → T*, u8 → uint8_t, i64 → int64_t, structs by name.
@@ -971,6 +1179,275 @@ function flowc_cgen_is_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     return flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b)
 }
 
+# --- primitive kind of an expression ------------------------------------
+# print/println and string `+` need a printf conversion for the operand.
+# The classification is syntactic, like the string test above: literals,
+# casts, declared variables, calls with a known return type, and the
+# arithmetic that combines them. Anything else is FLOWC_PRIM_UNKNOWN and
+# keeps the historical "%d".
+const FLOWC_PRIM_UNKNOWN: i32 = 0
+const FLOWC_PRIM_STRING: i32 = 1
+const FLOWC_PRIM_F64: i32 = 2
+const FLOWC_PRIM_I64: i32 = 3
+const FLOWC_PRIM_U64: i32 = 4
+const FLOWC_PRIM_U32: i32 = 5
+const FLOWC_PRIM_I32: i32 = 6
+const FLOWC_PRIM_BOOL: i32 = 7
+
+function flowc_cgen_prim_of_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if arena.nodes[ty].a != AST_NONE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    let s: i32 = arena.nodes[ty].name_start
+    let e: i32 = arena.nodes[ty].name_end
+    if flowc_cgen_span_is(src, s, e, "string") == 1 {
+        return FLOWC_PRIM_STRING
+    }
+    if flowc_cgen_span_is(src, s, e, "f64") == 1 or flowc_cgen_span_is(src, s, e, "f32") == 1 {
+        return FLOWC_PRIM_F64
+    }
+    if flowc_cgen_span_is(src, s, e, "i64") == 1 or flowc_cgen_span_is(src, s, e, "isize") == 1 {
+        return FLOWC_PRIM_I64
+    }
+    if flowc_cgen_span_is(src, s, e, "u64") == 1 or flowc_cgen_span_is(src, s, e, "usize") == 1 {
+        return FLOWC_PRIM_U64
+    }
+    if flowc_cgen_span_is(src, s, e, "u32") == 1 {
+        return FLOWC_PRIM_U32
+    }
+    if flowc_cgen_span_is(src, s, e, "bool") == 1 {
+        return FLOWC_PRIM_BOOL
+    }
+    if flowc_cgen_span_is(src, s, e, "i32") == 1 or flowc_cgen_span_is(src, s, e, "i16") == 1 {
+        return FLOWC_PRIM_I32
+    }
+    if flowc_cgen_span_is(src, s, e, "i8") == 1 or flowc_cgen_span_is(src, s, e, "u8") == 1 {
+        return FLOWC_PRIM_I32
+    }
+    if flowc_cgen_span_is(src, s, e, "u16") == 1 {
+        return FLOWC_PRIM_I32
+    }
+    return FLOWC_PRIM_UNKNOWN
+}
+
+# 1 if the signature-table C type at `off` equals `lit`.
+function flowc_cgen_sig_ctype_is(w: ptr<CgenBuf>, off: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if off + i >= w[0].sigs_len {
+            return 0
+        }
+        if w[0].sigs[off + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if off + n >= w[0].sigs_len {
+        return 0
+    }
+    if w[0].sigs[off + n] != 0 {
+        return 0
+    }
+    return 1
+}
+
+# Kind of a variable: every PARAM/LET of that name must agree.
+function flowc_cgen_ident_prim(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut kind: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                let k: i32 = flowc_cgen_prim_of_type(arena, src, arena.nodes[i].a)
+                if kind < 0 {
+                    kind = k
+                } else {
+                    if kind != k {
+                        return FLOWC_PRIM_UNKNOWN
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if kind < 0 {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    return kind
+}
+
+function flowc_cgen_expr_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_STRING {
+        return FLOWC_PRIM_STRING
+    }
+    if kind == AST_FLOAT {
+        return FLOWC_PRIM_F64
+    }
+    if kind == AST_INT {
+        return FLOWC_PRIM_I32
+    }
+    if kind == AST_BOOL {
+        return FLOWC_PRIM_BOOL
+    }
+    if kind == AST_CAST {
+        return flowc_cgen_prim_of_type(arena, src, arena.nodes[id].b)
+    }
+    if kind == AST_IDENT {
+        return flowc_cgen_ident_prim(arena, src, id)
+    }
+    if kind == AST_UNARY {
+        if arena.nodes[id].ival == TOK_BANG {
+            return FLOWC_PRIM_BOOL
+        }
+        if arena.nodes[id].ival == TOK_MINUS {
+            return flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
+        }
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if kind == AST_CALL {
+        let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if fn != AST_NONE {
+            return flowc_cgen_prim_of_type(arena, src, arena.nodes[fn].b)
+        }
+        let off: i32 = flowc_cgen_sig_find(
+            w[0].sigs, w[0].sigs_len, src,
+            arena.nodes[id].name_start, arena.nodes[id].name_end
+        )
+        if off < 0 {
+            return FLOWC_PRIM_UNKNOWN
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "const char*") == 1 {
+            return FLOWC_PRIM_STRING
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "double") == 1 or flowc_cgen_sig_ctype_is(w, off, "float") == 1 {
+            return FLOWC_PRIM_F64
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "int64_t") == 1 {
+            return FLOWC_PRIM_I64
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "uint64_t") == 1 {
+            return FLOWC_PRIM_U64
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "uint32_t") == 1 {
+            return FLOWC_PRIM_U32
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "bool") == 1 {
+            return FLOWC_PRIM_BOOL
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "int32_t") == 1 {
+            return FLOWC_PRIM_I32
+        }
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if kind == AST_BINOP {
+        let op: i32 = arena.nodes[id].ival
+        if op == TOK_EQEQ or op == TOK_NE or op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE {
+            return FLOWC_PRIM_BOOL
+        }
+        if op == TOK_AMPAMP or op == TOK_BARBAR or op == TOK_IN {
+            return FLOWC_PRIM_BOOL
+        }
+        if op == TOK_PLUS {
+            if flowc_cgen_is_str_concat(w, arena, src, id) == 1 {
+                return FLOWC_PRIM_STRING
+            }
+        }
+        let l: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
+        let r: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].b)
+        if op == TOK_SHL or op == TOK_SHR {
+            return l
+        }
+        if l == FLOWC_PRIM_F64 or r == FLOWC_PRIM_F64 {
+            return FLOWC_PRIM_F64
+        }
+        if l == FLOWC_PRIM_UNKNOWN or r == FLOWC_PRIM_UNKNOWN {
+            return FLOWC_PRIM_UNKNOWN
+        }
+        if l == FLOWC_PRIM_U64 or r == FLOWC_PRIM_U64 {
+            return FLOWC_PRIM_U64
+        }
+        if l == FLOWC_PRIM_I64 or r == FLOWC_PRIM_I64 {
+            return FLOWC_PRIM_I64
+        }
+        if l == FLOWC_PRIM_U32 or r == FLOWC_PRIM_U32 {
+            return FLOWC_PRIM_U32
+        }
+        return FLOWC_PRIM_I32
+    }
+    return FLOWC_PRIM_UNKNOWN
+}
+
+# printf conversion for a primitive kind (no newline).
+function flowc_cgen_prim_fmt(k: i32) -> string {
+    if k == FLOWC_PRIM_STRING {
+        return "%s"
+    }
+    if k == FLOWC_PRIM_F64 {
+        return "%f"
+    }
+    if k == FLOWC_PRIM_I64 {
+        return "%lld"
+    }
+    if k == FLOWC_PRIM_U64 {
+        return "%llu"
+    }
+    if k == FLOWC_PRIM_U32 {
+        return "%u"
+    }
+    return "%d"
+}
+
+# Emit a string-concat operand. Strings pass through; numbers go through
+# the preamble's __flowc_str_of_* formatters; bools become "true"/"false".
+function flowc_cgen_emit_concat_operand(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if flowc_cgen_expr_is_string(w, arena, src, id) == 1 {
+        flowc_cgen_emit_expr(w, arena, src, id)
+        return
+    }
+    let k: i32 = flowc_cgen_expr_prim(w, arena, src, id)
+    if k == FLOWC_PRIM_BOOL {
+        flowc_cgen_puts(w, "((")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, ") ? \"true\" : \"false\")")
+        return
+    }
+    if k == FLOWC_PRIM_F64 {
+        flowc_cgen_puts(w, "__flowc_str_of_f64((double)(")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    if k == FLOWC_PRIM_U64 or k == FLOWC_PRIM_U32 {
+        flowc_cgen_puts(w, "__flowc_str_of_u64((uint64_t)(")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    if k == FLOWC_PRIM_I64 or k == FLOWC_PRIM_I32 {
+        flowc_cgen_puts(w, "__flowc_str_of_i64((int64_t)(")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    # Unknown: keep the historical pass-through (a string-typed value the
+    # classifier could not see, such as a field or an index).
+    flowc_cgen_emit_expr(w, arena, src, id)
+}
+
 # Append one `name\0ctype\0` entry. Returns the new length (unchanged if full).
 function flowc_cgen_sig_put(
     arena: AstArena,
@@ -1000,7 +1477,11 @@ function flowc_cgen_sig_put(
     n = n + 1
     let dest: ptr<u8> = buf + n
     let mut tw: CgenBuf = flowc_cgen_buf_init(dest, cap - n - 1)
-    flowc_cgen_emit_type(&tw, arena, src, rt)
+    if flowc_cgen_is_sized_array(arena, src, rt) == 1 {
+        flowc_cgen_put_array_ret_name(&tw, arena, src, rt)
+    } else {
+        flowc_cgen_emit_type(&tw, arena, src, rt)
+    }
     if tw.err != 0 {
         return len
     }
@@ -1133,17 +1614,7 @@ function flowc_cgen_emit_print_intrinsic(w: ptr<CgenBuf>, arena: AstArena, src: 
         }
         return
     }
-    let mut fmt: string = "%d"
-    let arg_kind: i32 = arena.nodes[arg].kind
-    if arg_kind == AST_STRING {
-        fmt = "%s"
-    }
-    if arg_kind == AST_FLOAT {
-        fmt = "%f"
-    }
-    if arg_kind == AST_BOOL {
-        fmt = "%d"
-    }
+    let fmt: string = flowc_cgen_prim_fmt(flowc_cgen_expr_prim(w, arena, src, arg))
     flowc_cgen_puts(w, "printf(\"")
     flowc_cgen_puts(w, fmt)
     if newline == 1 {
@@ -1603,9 +2074,9 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if op == TOK_PLUS {
             if flowc_cgen_is_str_concat(w, arena, src, id) == 1 {
                 flowc_cgen_puts(w, "__flowc_str_concat(")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].a)
                 flowc_cgen_puts(w, ", ")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].b)
                 flowc_cgen_putc(w, 41)
                 return
             }
@@ -1802,6 +2273,43 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_emit_print_intrinsic(w, arena, src, id, 0)
             return
         }
+        # sum(a..b step s), and the union / intersection of two ranges,
+        # lower to preamble helpers; each bound is an argument, so it is
+        # evaluated once (#949).
+        let rs_kind: i32 = arena.nodes[id].ival
+        if rs_kind >= 2 and rs_kind <= 4 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sum") == 1 {
+            flowc_cgen_puts(w, "((__typeof__((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") + 0))")
+            if rs_kind == 2 {
+                flowc_cgen_puts(w, "__flowc_range_sum(")
+            }
+            if rs_kind == 3 {
+                flowc_cgen_puts(w, "__flowc_range_sum_union(")
+            }
+            if rs_kind == 4 {
+                flowc_cgen_puts(w, "__flowc_range_sum_isect(")
+            }
+            let mut rarg: i32 = arena.nodes[id].a
+            let mut rfirst: i32 = 1
+            while rarg != AST_NONE {
+                if rfirst == 0 {
+                    flowc_cgen_puts(w, ", ")
+                }
+                rfirst = 0
+                flowc_cgen_puts(w, "(int64_t)(")
+                # A synthesized default step has no source span.
+                if arena.nodes[rarg].kind == AST_INT and arena.nodes[rarg].name_end == arena.nodes[rarg].name_start {
+                    flowc_cgen_put_i32(w, arena.nodes[rarg].ival)
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, rarg)
+                }
+                flowc_cgen_putc(w, 41)
+                rarg = arena.nodes[rarg].next
+            }
+            flowc_cgen_puts(w, "))")
+            return
+        }
         # len(span) → (span).len
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "len") == 1 {
             flowc_cgen_putc(w, 40)
@@ -1915,6 +2423,13 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             return
         }
         # Generic call: name<TypeArgs>(args) — emit mangled name name_type1_type2
+        # sizeof<T>() is ((int64_t)sizeof(T)) (#952).
+        if arena.nodes[id].b != AST_NONE and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sizeof") == 1 {
+            flowc_cgen_puts(w, "((int64_t)sizeof(")
+            flowc_cgen_emit_type(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, "))")
+            return
+        }
         if arena.nodes[id].b != AST_NONE {
             flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
             let mut ta: i32 = arena.nodes[id].b
@@ -2061,6 +2576,16 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             param_idx = param_idx + 1
         }
         flowc_cgen_putc(w, 41)
+        # A returned sized array arrives wrapped; expose the array.
+        if fn_id != AST_NONE {
+            if flowc_cgen_fn_returns_array(arena, src, fn_id) == 1 {
+                flowc_cgen_puts(w, ".v")
+            }
+        } else {
+            if flowc_cgen_sig_returns_array(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                flowc_cgen_puts(w, ".v")
+            }
+        }
         return
     }
     if kind == AST_FIELD_ACCESS {
@@ -2138,6 +2663,15 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_ARRAY_LIT {
+        # [v; N] → { [0 ... (N) - 1] = (v) } (GNU range designator).
+        if arena.nodes[id].b != AST_NONE {
+            flowc_cgen_puts(w, "{ [0 ... (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ") - 1] = (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") }")
+            return
+        }
         # { e1, e2, ... }
         flowc_cgen_puts(w, "{ ")
         let mut el: i32 = arena.nodes[id].a
@@ -2156,45 +2690,54 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     flowc_cgen_puts(w, "0")
 }
 
+# Emit the pending defers from the innermost down to index `base` (LIFO).
+function flowc_cgen_emit_defers_to(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32) {
+    let mut d: i32 = w[0].defer_len - 1
+    while d >= base {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[w[0].defer_ids[d]].a)
+        flowc_cgen_puts(w, ";\n")
+        d = d - 1
+    }
+}
+
+# Emit a statement chain as one defer scope: `defer` statements are pushed
+# on the writer's stack, and the scope's own defers run LIFO at its end.
+function flowc_cgen_emit_scoped_stmts(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, first: i32) {
+    if w[0].defer_ids == null {
+        let raw: ptr<u8> = malloc(1024)
+        w[0].defer_ids = raw
+        w[0].defer_len = 0
+    }
+    let base: i32 = w[0].defer_len
+    let mut last_kind: i32 = 0
+    let mut st: i32 = first
+    while st != AST_NONE {
+        last_kind = arena.nodes[st].kind
+        if last_kind == AST_DEFER {
+            if w[0].defer_len < 256 {
+                w[0].defer_ids[w[0].defer_len] = st
+                w[0].defer_len = w[0].defer_len + 1
+            }
+        } else {
+            flowc_cgen_emit_stmt(w, arena, src, st)
+        }
+        st = arena.nodes[st].next
+    }
+    # Fall-through end of scope. After a trailing return, break or continue
+    # the defers already ran on that path.
+    if last_kind != AST_RETURN and last_kind != AST_BREAK and last_kind != AST_CONTINUE {
+        flowc_cgen_emit_defers_to(w, arena, src, base)
+    }
+    w[0].defer_len = base
+}
+
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
     }
     flowc_cgen_puts(w, "{\n")
-    # Collect deferred statements to emit at block end (LIFO order).
-    let mut defers: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    let mut n_defers: i32 = 0
-    let mut st: i32 = arena.nodes[id].a
-    while st != AST_NONE {
-        if arena.nodes[st].kind == AST_DEFER {
-            if n_defers < 64 {
-                defers[n_defers] = st
-                n_defers = n_defers + 1
-            }
-        } else {
-            # Before return: emit all pending defers in reverse order.
-            if arena.nodes[st].kind == AST_RETURN {
-                let mut d: i32 = n_defers - 1
-                while d >= 0 {
-                    flowc_cgen_puts(w, "  ")
-                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[defers[d]].a)
-                    flowc_cgen_puts(w, ";\n")
-                    d = d - 1
-                }
-            }
-            flowc_cgen_emit_stmt(w, arena, src, st)
-        }
-        st = arena.nodes[st].next
-    }
-    # Emit deferred statements in reverse order (LIFO) at block end
-    # (for fall-through, i.e. no trailing return).
-    let mut i: i32 = n_defers - 1
-    while i >= 0 {
-        flowc_cgen_puts(w, "  ")
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[defers[i]].a)
-        flowc_cgen_puts(w, ";\n")
-        i = i - 1
-    }
+    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[id].a)
     flowc_cgen_puts(w, "}\n")
 }
 
@@ -2235,7 +2778,25 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         flowc_cgen_puts(w, "  ")
         if arr_n > 0 {
-            flowc_cgen_emit_type(w, arena, src, arr_inner)
+            flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
+            flowc_cgen_putc(w, 32)
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_emit_array_dims(w, arena, src, ty)
+            # A literal initializer is plain C. Anything else (a call that
+            # returns an array, another array, rows given by name) is copied.
+            if init == AST_NONE {
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+            if flowc_cgen_array_lit_is_init(arena, src, ty, init) == 1 {
+                flowc_cgen_puts(w, " = ")
+                flowc_cgen_emit_expr(w, arena, src, init)
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+            flowc_cgen_puts(w, ";\n")
+            flowc_cgen_emit_array_fill(w, arena, src, 0, arena.nodes[id].name_start, arena.nodes[id].name_end, init)
+            return
         } else {
             let mut wrote: i32 = 0
             if ty == AST_NONE {
@@ -2357,6 +2918,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_RETURN {
         if arena.nodes[id].a == AST_NONE {
+            flowc_cgen_emit_defers_to(w, arena, src, 0)
             flowc_cgen_puts(w, "  return;\n")
             return
         }
@@ -2364,9 +2926,70 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         let ret_expr: i32 = arena.nodes[id].a
         if arena.nodes[ret_expr].kind == AST_IDENT {
             if flowc_cgen_span_is(src, arena.nodes[ret_expr].name_start, arena.nodes[ret_expr].name_end, "void") == 1 {
+                flowc_cgen_emit_defers_to(w, arena, src, 0)
                 flowc_cgen_puts(w, "  return;\n")
                 return
             }
+        }
+        # Self tail call: evaluate every argument, then rebind the
+        # parameters and jump back to the top of the body (#951).
+        if w[0].tail_fn != AST_NONE and w[0].tail_fn == w[0].cur_fn and w[0].in_lambda == 0 and w[0].defer_len == 0 {
+            if flowc_cgen_is_self_call(arena, src, w[0].cur_fn, ret_expr) == 1 {
+                flowc_cgen_puts(w, "  {\n")
+                let mut targ: i32 = arena.nodes[ret_expr].a
+                let mut tk: i32 = 0
+                while targ != AST_NONE {
+                    flowc_cgen_puts(w, "  __auto_type __flowc_targ")
+                    flowc_cgen_put_i32(w, tk)
+                    flowc_cgen_puts(w, " = ")
+                    flowc_cgen_emit_expr(w, arena, src, targ)
+                    flowc_cgen_puts(w, ";\n")
+                    tk = tk + 1
+                    targ = arena.nodes[targ].next
+                }
+                let mut tparam: i32 = arena.nodes[w[0].cur_fn].a
+                tk = 0
+                while tparam != AST_NONE {
+                    flowc_cgen_puts(w, "  ")
+                    flowc_cgen_put_span(w, src, arena.nodes[tparam].name_start, arena.nodes[tparam].name_end)
+                    flowc_cgen_puts(w, " = __flowc_targ")
+                    flowc_cgen_put_i32(w, tk)
+                    flowc_cgen_puts(w, ";\n")
+                    tk = tk + 1
+                    tparam = arena.nodes[tparam].next
+                }
+                flowc_cgen_puts(w, "  goto __flowc_tail;\n  }\n")
+                return
+            }
+        }
+        # Returned sized array: build the wrapper struct (#943).
+        if w[0].cur_fn != AST_NONE and w[0].in_lambda == 0 {
+            let fn_ret: i32 = arena.nodes[w[0].cur_fn].b
+            if flowc_cgen_is_sized_array(arena, src, fn_ret) == 1 {
+                flowc_cgen_puts(w, "  { ")
+                flowc_cgen_put_array_ret_name(w, arena, src, fn_ret)
+                flowc_cgen_puts(w, " __flowc_ret")
+                if flowc_cgen_array_lit_is_init(arena, src, fn_ret, ret_expr) == 1 {
+                    flowc_cgen_puts(w, " = { ")
+                    flowc_cgen_emit_expr(w, arena, src, ret_expr)
+                    flowc_cgen_puts(w, " };\n")
+                } else {
+                    flowc_cgen_puts(w, ";\n")
+                    flowc_cgen_emit_array_fill(w, arena, src, 1, 0, 0, ret_expr)
+                }
+                flowc_cgen_emit_defers_to(w, arena, src, 0)
+                flowc_cgen_puts(w, "  return __flowc_ret; }\n")
+                return
+            }
+        }
+        # Pending defers run after the value is computed (#947).
+        if w[0].defer_len > 0 {
+            flowc_cgen_puts(w, "  { __auto_type __flowc_ret = ")
+            flowc_cgen_emit_expr(w, arena, src, ret_expr)
+            flowc_cgen_puts(w, ";\n")
+            flowc_cgen_emit_defers_to(w, arena, src, 0)
+            flowc_cgen_puts(w, "  return __flowc_ret; }\n")
+            return
         }
         flowc_cgen_puts(w, "  return ")
         flowc_cgen_emit_expr(w, arena, src, ret_expr)
@@ -2380,20 +3003,12 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_puts(w, ") {\n")
         let then_b: i32 = arena.nodes[id].b
         if then_b != AST_NONE {
-            let mut st: i32 = arena.nodes[then_b].a
-            while st != AST_NONE {
-                flowc_cgen_emit_stmt(w, arena, src, st)
-                st = arena.nodes[st].next
-            }
+            flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[then_b].a)
         }
         if arena.nodes[id].c != AST_NONE {
             flowc_cgen_puts(w, "} else {\n")
             let else_b: i32 = arena.nodes[id].c
-            let mut est: i32 = arena.nodes[else_b].a
-            while est != AST_NONE {
-                flowc_cgen_emit_stmt(w, arena, src, est)
-                est = arena.nodes[est].next
-            }
+            flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[else_b].a)
             flowc_cgen_puts(w, "}\n")
         } else {
             flowc_cgen_puts(w, "}\n")
@@ -2401,10 +3016,34 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_WHILE {
+        if arena.nodes[id].ival > 0 {
+            flowc_cgen_puts(w, "  { int32_t __flowc_iter_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " = 0;\n")
+        }
         flowc_cgen_puts(w, "  while (")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_puts(w, ") ")
+        let saved_wbase: i32 = w[0].loop_defer_base
+        w[0].loop_defer_base = w[0].defer_len
+        # @max_iterations(N): count iterations and abort past the bound (#940).
+        let bound: i32 = arena.nodes[id].ival
+        if bound > 0 {
+            flowc_cgen_puts(w, "{\n  if (__flowc_iter_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " >= ")
+            flowc_cgen_put_i32(w, bound)
+            flowc_cgen_puts(w, ") { fprintf(stderr, \"flow: while exceeded @max_iterations(")
+            flowc_cgen_put_i32(w, bound)
+            flowc_cgen_puts(w, ")\\n\"); abort(); }\n  __flowc_iter_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, "++;\n")
+        }
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].b)
+        if bound > 0 {
+            flowc_cgen_puts(w, "}\n  }\n")
+        }
+        w[0].loop_defer_base = saved_wbase
         return
     }
     if kind == AST_FOR {
@@ -2436,7 +3075,10 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "1")
         }
         flowc_cgen_puts(w, ") ")
+        let saved_fbase: i32 = w[0].loop_defer_base
+        w[0].loop_defer_base = w[0].defer_len
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+        w[0].loop_defer_base = saved_fbase
         return
     }
     if kind == AST_MATCH {
@@ -2476,11 +3118,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2520,11 +3158,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2590,11 +3224,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2662,11 +3292,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
                 let body: i32 = arena.nodes[arm].b
                 if body != AST_NONE {
-                    let mut st: i32 = arena.nodes[body].a
-                    while st != AST_NONE {
-                        flowc_cgen_emit_stmt(w, arena, src, st)
-                        st = arena.nodes[st].next
-                    }
+                    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
                 }
                 arm = arena.nodes[arm].next
             }
@@ -2711,11 +3337,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
             let body: i32 = arena.nodes[arm].b
             if body != AST_NONE {
-                let mut st: i32 = arena.nodes[body].a
-                while st != AST_NONE {
-                    flowc_cgen_emit_stmt(w, arena, src, st)
-                    st = arena.nodes[st].next
-                }
+                flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[body].a)
             }
             arm = arena.nodes[arm].next
         }
@@ -2726,15 +3348,18 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_BREAK {
+        flowc_cgen_emit_defers_to(w, arena, src, w[0].loop_defer_base)
         flowc_cgen_puts(w, "  break;\n")
         return
     }
     if kind == AST_CONTINUE {
+        flowc_cgen_emit_defers_to(w, arena, src, w[0].loop_defer_base)
         flowc_cgen_puts(w, "  continue;\n")
         return
     }
-    # defer: emit the expression as a statement inline.
-    # Full LIFO defer semantics are handled by the Python compiler.
+    # defer outside a statement chain (no enclosing scope to attach it to):
+    # emit the expression inline. Scoped defers go through
+    # flowc_cgen_emit_scoped_stmts.
     if kind == AST_DEFER {
         flowc_cgen_puts(w, "  ")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -2782,6 +3407,16 @@ function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
         }
         flowc_cgen_putc(w, 41)
         return
+    }
+    # Nested sized array param keeps its row shape: T name[N][M].
+    if flowc_cgen_is_sized_array(arena, src, ty) == 1 {
+        if flowc_cgen_is_sized_array(arena, src, arena.nodes[ty].a) == 1 {
+            flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
+            flowc_cgen_putc(w, 32)
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_emit_array_dims(w, arena, src, ty)
+            return
+        }
     }
     flowc_cgen_emit_type(w, arena, src, ty)
     flowc_cgen_putc(w, 32)
@@ -2956,15 +3591,10 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     # Stage-A: emit return type; omitted (AST_NONE) → void.
     # Function pointer return types are emitted as void* (simplification).
     let ret_ty: i32 = arena.nodes[id].b
-    if ret_ty == AST_NONE {
-        flowc_cgen_puts(w, "void")
-    } else {
-        if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
-            flowc_cgen_puts(w, "void*")
-        } else {
-            flowc_cgen_emit_type(w, arena, src, ret_ty)
-        }
+    if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
+        flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
+    flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
     # Monomorphization: emit mangled name when mono context is active.
     if w[0].mono_ntp > 0 and cli_main == 0 {
@@ -2997,8 +3627,58 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
         return
     }
     flowc_cgen_puts(w, ") ")
+    # A self tail call becomes a jump back to the top of the body (#951).
+    if w[0].mono_ntp == 0 and flowc_cgen_has_self_tail_call(arena, src, id) == 1 {
+        w[0].tail_fn = id
+        flowc_cgen_puts(w, "{\n  __flowc_tail: ;\n")
+        flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[arena.nodes[id].c].a)
+        flowc_cgen_puts(w, "}\n")
+        w[0].tail_fn = AST_NONE
+        flowc_cgen_putc(w, 10)
+        return
+    }
     flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
     flowc_cgen_putc(w, 10)
+}
+
+# 1 if `call` is a direct call of function `fn` by name with one argument
+# per parameter, and `fn` is the only definition of that name.
+function flowc_cgen_is_self_call(arena: AstArena, src: ptr<u8>, fn: i32, call: i32) -> i32 {
+    if call == AST_NONE or arena.nodes[call].kind != AST_CALL {
+        return 0
+    }
+    if arena.nodes[call].b != AST_NONE or arena.nodes[call].ival != 0 {
+        return 0
+    }
+    if flowc_cgen_span_eq(src, arena.nodes[call].name_start, arena.nodes[call].name_end, arena.nodes[fn].name_start, arena.nodes[fn].name_end) == 0 {
+        return 0
+    }
+    if flowc_ast_chain_len(arena, arena.nodes[call].a) != flowc_ast_chain_len(arena, arena.nodes[fn].a) {
+        return 0
+    }
+    if flowc_cgen_count_overloads(arena, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end) > 1 {
+        return 0
+    }
+    return 1
+}
+
+# 1 if some `return f(...)` inside fn's source range calls fn itself.
+function flowc_cgen_has_self_tail_call(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if arena.nodes[fn].name_start < 0 or arena.nodes[fn].ival != 0 {
+        return 0
+    }
+    let lo: i32 = arena.nodes[fn].start
+    let hi: i32 = arena.nodes[fn].end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_RETURN and arena.nodes[i].start >= lo and arena.nodes[i].start < hi {
+            if flowc_cgen_is_self_call(arena, src, fn, arena.nodes[i].a) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
 }
 
 # Emit just the function prototype (forward declaration) for functions with a body.
@@ -3015,15 +3695,10 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         return
     }
     let ret_ty: i32 = arena.nodes[id].b
-    if ret_ty == AST_NONE {
-        flowc_cgen_puts(w, "void")
-    } else {
-        if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
-            flowc_cgen_puts(w, "void*")
-        } else {
-            flowc_cgen_emit_type(w, arena, src, ret_ty)
-        }
+    if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
+        flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
+    flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
     # Monomorphization: emit mangled name when mono context is active.
     if w[0].mono_ntp > 0 and cli_main == 0 {
@@ -3834,6 +4509,59 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "  if (r == 0) { return \"\"; }\n")
         flowc_cgen_puts(&w, "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n")
         flowc_cgen_puts(&w, "  return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
+        # sum(a..b step s): the sum of a, a+s, ... short of b; 0 for an empty
+        # range or a zero step. 64-bit so n*a + s*n(n-1)/2 does not wrap.
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_count(int64_t s, int64_t e, int64_t d) {\n")
+        flowc_cgen_puts(&w, "  if (d > 0 && e > s) { return (e - s + d - 1) / d; }\n")
+        flowc_cgen_puts(&w, "  if (d < 0 && e < s) { return (s - e - d - 1) / (0 - d); }\n")
+        flowc_cgen_puts(&w, "  return 0;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_sum(int64_t s, int64_t e, int64_t d) {\n")
+        flowc_cgen_puts(&w, "  int64_t n = __flowc_range_count(s, e, d);\n")
+        flowc_cgen_puts(&w, "  return n * s + d * ((n * (n - 1)) / 2);\n")
+        flowc_cgen_puts(&w, "}\n")
+        # Intersection of two progressions: the common elements form one
+        # progression with step lcm(p1, p2), found by CRT.
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_floordiv(int64_t a, int64_t b) {\n")
+        flowc_cgen_puts(&w, "  int64_t q = a / b; if ((a % b != 0) && ((a < 0) != (b < 0))) { q = q - 1; } return q;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_sum_isect(int64_t s1, int64_t e1, int64_t d1, int64_t s2, int64_t e2, int64_t d2) {\n")
+        flowc_cgen_puts(&w, "  int64_t n1 = __flowc_range_count(s1, e1, d1); int64_t n2 = __flowc_range_count(s2, e2, d2);\n")
+        flowc_cgen_puts(&w, "  if (n1 == 0 || n2 == 0) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t p1 = d1 < 0 ? 0 - d1 : d1; int64_t p2 = d2 < 0 ? 0 - d2 : d2;\n")
+        flowc_cgen_puts(&w, "  int64_t lo1 = d1 > 0 ? s1 : s1 + d1 * (n1 - 1); int64_t lo2 = d2 > 0 ? s2 : s2 + d2 * (n2 - 1);\n")
+        flowc_cgen_puts(&w, "  int64_t hi1 = lo1 + p1 * (n1 - 1); int64_t hi2 = lo2 + p2 * (n2 - 1);\n")
+        flowc_cgen_puts(&w, "  int64_t a = p1; int64_t b = p2; int64_t x0 = 1; int64_t x1 = 0;\n")
+        flowc_cgen_puts(&w, "  while (b != 0) { int64_t q = a / b; int64_t t = a - q * b; a = b; b = t; t = x0 - q * x1; x0 = x1; x1 = t; }\n")
+        flowc_cgen_puts(&w, "  int64_t g = a; int64_t diff = lo2 - lo1;\n")
+        flowc_cgen_puts(&w, "  if (diff % g != 0) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t m = p2 / g; int64_t lcm = p1 * m;\n")
+        flowc_cgen_puts(&w, "  int64_t t = (int64_t)(((__int128)(diff / g) * (__int128)x0) % (__int128)m); if (t < 0) { t = t + m; }\n")
+        flowc_cgen_puts(&w, "  int64_t x = lo1 + p1 * t;\n")
+        flowc_cgen_puts(&w, "  int64_t lower = lo1 > lo2 ? lo1 : lo2; int64_t upper = hi1 < hi2 ? hi1 : hi2;\n")
+        flowc_cgen_puts(&w, "  if (lower > upper) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t first = x - __flowc_floordiv(x - lower, lcm) * lcm;\n")
+        flowc_cgen_puts(&w, "  if (first > upper) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t cnt = (upper - first) / lcm + 1;\n")
+        flowc_cgen_puts(&w, "  return cnt * first + lcm * ((cnt * (cnt - 1)) / 2);\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_sum_union(int64_t s1, int64_t e1, int64_t d1, int64_t s2, int64_t e2, int64_t d2) {\n")
+        flowc_cgen_puts(&w, "  return __flowc_range_sum(s1, e1, d1) + __flowc_range_sum(s2, e2, d2) - __flowc_range_sum_isect(s1, e1, d1, s2, e2, d2);\n")
+        flowc_cgen_puts(&w, "}\n")
+        # Number operands of string `+` (#946). Same conversions as println.
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_i64(int64_t v) {\n")
+        flowc_cgen_puts(&w, "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  snprintf(r, 32, \"%lld\", (long long)v); return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_u64(uint64_t v) {\n")
+        flowc_cgen_puts(&w, "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  snprintf(r, 32, \"%llu\", (unsigned long long)v); return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_f64(double v) {\n")
+        flowc_cgen_puts(&w, "  char* r = (char*)malloc(64); if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  snprintf(r, 64, \"%f\", v); return r;\n")
         flowc_cgen_puts(&w, "}\n")
         flowc_cgen_putc(&w, 10)
         # `in` operator helper: linear scan over an array<T,N>.
