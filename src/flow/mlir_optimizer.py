@@ -4,13 +4,70 @@ FLOW MLIR Optimizer
 Applies various MLIR optimization passes to improve performance
 """
 
+from dataclasses import dataclass, fields, asdict
 import shutil
 import subprocess
 import tempfile
 import re
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
+
+
+@dataclass
+class OptimizationConfig:
+    """Configuration options for MLIR optimization passes."""
+
+    enable_vectorization: bool = True
+    enable_loop_fusion: bool = False
+    enable_mem2reg: bool = True
+    enable_sccp: bool = True
+    enable_licm: bool = True
+    enable_gvn: bool = True
+    enable_dce: bool = True
+    enable_inline: bool = True
+    enable_loop_pipelining: bool = False
+    enable_multi_buffering: bool = False
+    optimization_level: str = "O2"
+
+    @classmethod
+    def from_kwargs(cls, kwargs: Dict[str, Any]) -> "OptimizationConfig":
+        """Construct OptimizationConfig from a dictionary, filtering out unexpected keys."""
+        valid_keys = {f.name for f in fields(cls)}
+        filtered = {k: v for k, v in kwargs.items() if k in valid_keys}
+        return cls(**filtered)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        return asdict(self)
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
+
+    def keys(self):
+        return [f.name for f in fields(self)]
+
+    def items(self):
+        return [(f.name, getattr(self, f.name)) for f in fields(self)]
+
+
+def resolve_config(
+    config: Optional[OptimizationConfig] = None, **kwargs
+) -> OptimizationConfig:
+    """Helper to resolve an OptimizationConfig from an optional instance and/or kwargs."""
+    if config is None:
+        if kwargs:
+            return OptimizationConfig.from_kwargs(kwargs)
+        return OptimizationConfig()
+    if kwargs:
+        d = config.to_dict()
+        valid_keys = {f.name for f in fields(OptimizationConfig)}
+        d.update({k: v for k, v in kwargs.items() if k in valid_keys})
+        return OptimizationConfig(**d)
+    return config
 
 
 class MLIROptimizer:
@@ -44,20 +101,11 @@ class MLIROptimizer:
 
     @staticmethod
     def build_pass_pipeline(
-        enable_vectorization: bool = True,
-        enable_loop_fusion: bool = False,
-        enable_mem2reg: bool = True,
-        enable_sccp: bool = True,
-        enable_licm: bool = True,
-        enable_gvn: bool = True,
-        enable_dce: bool = True,
-        enable_inline: bool = True,
-        enable_loop_pipelining: bool = False,
-        enable_multi_buffering: bool = False,
-        optimization_level: str = "O2",
+        config: Optional[OptimizationConfig] = None,
+        **kwargs,
     ) -> str:
         """
-        Build an mlir-opt --pass-pipeline string from flags and O-level.
+        Build an mlir-opt --pass-pipeline string from configuration and O-level.
 
         Inspectable without running mlir-opt (for unit tests).
 
@@ -72,7 +120,8 @@ class MLIROptimizer:
           affine dialect operations.
         - MLIR has no standalone ``gvn`` pass; ``enable_gvn`` maps to ``cse``.
         """
-        level = optimization_level
+        cfg = resolve_config(config, **kwargs)
+        level = cfg.optimization_level
         o1_plus = level in ("O1", "O2", "O3")
         o2_plus = level in ("O2", "O3")
         o3 = level == "O3"
@@ -84,35 +133,35 @@ class MLIROptimizer:
         if o1_plus:
             func_passes.append("canonicalize")
             # enable_gvn → cse (no dedicated MLIR GVN pass)
-            if enable_gvn:
+            if cfg.enable_gvn:
                 func_passes.append("cse")
             
             # Tensor bufferization (value semantics -> reference semantics)
             module_prefix.append("one-shot-bufferize{bufferize-function-boundaries=1}")
 
         if o2_plus:
-            if enable_inline:
+            if cfg.enable_inline:
                 module_prefix.append("inline")
-            if enable_sccp:
+            if cfg.enable_sccp:
                 func_passes.append("sccp")
-            if enable_mem2reg:
+            if cfg.enable_mem2reg:
                 func_passes.append("mem2reg")
-            if enable_licm:
+            if cfg.enable_licm:
                 func_passes.append("loop-invariant-code-motion")
-            if enable_loop_fusion:
+            if cfg.enable_loop_fusion:
                 func_passes.append("affine-loop-fusion")
                 func_passes.append("linalg-fuse-elementwise-ops")
-            if enable_multi_buffering:
+            if cfg.enable_multi_buffering:
                 func_passes.append("test-multi-buffering{multiplier=2}")
-            if enable_loop_pipelining:
+            if cfg.enable_loop_pipelining:
                 func_passes.append("test-scf-pipelining")
 
-        if o3 and enable_vectorization:
+        if o3 and cfg.enable_vectorization:
             # Best available mlir-opt vectorize pass. Needs affine/scf loops
             # from the generator; otherwise this pass has nothing to transform.
             func_passes.append("affine-super-vectorize")
 
-        if enable_dce and o1_plus:
+        if cfg.enable_dce and o1_plus:
             # symbol-dce is module-scoped; follow with a canonicalize round
             module_suffix.append("symbol-dce")
             module_suffix.append("canonicalize")
@@ -196,50 +245,21 @@ class MLIROptimizer:
         return self._opt_capable
 
     def optimize(self, input_mlir: str, output_mlir: str,
-                 enable_vectorization: bool = True,
-                 enable_loop_fusion: bool = False,
-                 enable_mem2reg: bool = True,
-                 enable_sccp: bool = True,
-                 enable_licm: bool = True,
-                 enable_gvn: bool = True,
-                 enable_dce: bool = True,
-                 enable_inline: bool = True,
-                 enable_loop_pipelining: bool = False,
-                 enable_multi_buffering: bool = False,
-                 optimization_level: str = "O2") -> int:
+                 config: Optional[OptimizationConfig] = None,
+                 **kwargs) -> int:
         """
         Apply MLIR optimization passes.
 
         Args:
             input_mlir: Path to input MLIR file
             output_mlir: Path to output MLIR file
-            enable_vectorization: Enable loop vectorization (O3; needs affine/scf)
-            enable_loop_fusion: Enable affine loop fusion (O2+; disabled by
-                default since the generator emits scf/cf, not affine. See flow#466.)
-            enable_mem2reg: Enable memory-to-register promotion (O2+)
-            enable_sccp: Enable sparse conditional constant propagation (O2+)
-            enable_licm: Enable loop invariant code motion (O2+)
-            enable_gvn: Enable CSE as GVN stand-in (O1+; no MLIR gvn pass)
-            enable_dce: Enable symbol-dce + canonicalize round (O1+)
-            enable_inline: Enable module inliner (O2+; default True)
-            optimization_level: O0, O1, O2, or O3
+            config: Optional OptimizationConfig instance. Individual pass flags or
+                optimization_level can also be passed as keyword arguments.
         
         Returns:
             Exit code of mlir-opt process
         """
-        pipeline = self.build_pass_pipeline(
-            enable_vectorization=enable_vectorization,
-            enable_loop_fusion=enable_loop_fusion,
-            enable_mem2reg=enable_mem2reg,
-            enable_sccp=enable_sccp,
-            enable_licm=enable_licm,
-            enable_gvn=enable_gvn,
-            enable_dce=enable_dce,
-            enable_inline=enable_inline,
-            enable_loop_pipelining=enable_loop_pipelining,
-            enable_multi_buffering=enable_multi_buffering,
-            optimization_level=optimization_level,
-        )
+        pipeline = self.build_pass_pipeline(config, **kwargs)
 
         if not self._toolchain_supports_flow_mlir():
             self._copy_if_different(input_mlir, output_mlir)
@@ -350,14 +370,16 @@ class MLIROptimizer:
         except Exception:
             return []
     
-    def get_optimization_report(self, mlir_file: str, **opt_kwargs) -> str:
+    def get_optimization_report(self, mlir_file: str,
+                                config: Optional[OptimizationConfig] = None,
+                                **opt_kwargs) -> str:
         """Generate optimization report using the same pipeline as optimize()."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mlir', delete=False) as tmp:
             tmp.write(Path(mlir_file).read_text())
             tmp_path = tmp.name
         
         try:
-            pipeline = self.build_pass_pipeline(**opt_kwargs)
+            pipeline = self.build_pass_pipeline(config, **opt_kwargs)
 
             cmd = [
                 self.mlir_opt,
@@ -389,10 +411,12 @@ class MLIROptimizer:
             Path(tmp_path).unlink(missing_ok=True)
 
 
-def optimize_mlir_file(input_file: str, output_file: str, **kwargs) -> int:
+def optimize_mlir_file(input_file: str, output_file: str,
+                       config: Optional[OptimizationConfig] = None,
+                       **kwargs) -> int:
     """Convenience function to optimize a single MLIR file."""
     optimizer = MLIROptimizer()
-    return optimizer.optimize(input_file, output_file, **kwargs)
+    return optimizer.optimize(input_file, output_file, config, **kwargs)
 
 
 if __name__ == "__main__":
@@ -428,7 +452,7 @@ if __name__ == "__main__":
         if arg.startswith("--O") and arg[3:].isdigit():
             optimization_level = arg[2:]
 
-    kwargs = dict(
+    config = OptimizationConfig(
         enable_vectorization=enable_vectorization,
         enable_loop_fusion=enable_loop_fusion,
         enable_mem2reg=enable_mem2reg,
@@ -443,11 +467,11 @@ if __name__ == "__main__":
     )
 
     if "--print-pass-pipeline" in argv:
-        print(MLIROptimizer.build_pass_pipeline(**kwargs))
+        print(MLIROptimizer.build_pass_pipeline(config))
         sys.exit(0)
 
     optimizer = MLIROptimizer()
-    result = optimizer.optimize(input_file, output_file, **kwargs)
+    result = optimizer.optimize(input_file, output_file, config)
     
     if result == 0:
         print(f"Optimized {input_file} -> {output_file}")
