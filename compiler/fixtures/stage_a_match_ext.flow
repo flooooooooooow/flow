@@ -1,0 +1,70 @@
+# Stage-A cgen round-trip: extended match arms → exit 42 (#996, #678).
+# Or-patterns, guards that see the arm's bindings, nested struct patterns
+# with literal fields, and variant patterns on an enum value.
+
+struct Inner {
+    x: i32
+}
+
+struct Outer {
+    inner: Inner,
+    tag: i32
+}
+
+enum Shade {
+    Dark,
+    Light
+}
+
+function small(v: i32) -> i32 {
+    match v {
+        1 | 2 => {
+            return 1
+        }
+        n if n > 100 => {
+            return 3
+        }
+        _ => {
+            return 2
+        }
+    }
+    return 0
+}
+
+function nested(o: Outer) -> i32 {
+    match o {
+        Outer(Inner(0), t) => {
+            return 10 + t
+        }
+        Outer(Inner(x), t) if x > t => {
+            return x - t
+        }
+        Outer(Inner(x), t) => {
+            return x + t
+        }
+    }
+    return 0
+}
+
+function shade(s: Shade) -> i32 {
+    match s {
+        Shade_Dark => {
+            return 5
+        }
+        Shade_Light => {
+            return 6
+        }
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let a: i32 = small(2) + small(7) + small(500)
+    let o1: Outer = Outer { inner: Inner { x: 0 }, tag: 4 }
+    let o2: Outer = Outer { inner: Inner { x: 9 }, tag: 4 }
+    let o3: Outer = Outer { inner: Inner { x: 1 }, tag: 4 }
+    let b: i32 = nested(o1) + nested(o2) + nested(o3)
+    let d: Shade = Shade { tag: Shade_Light }
+    # a = 1 + 2 + 3 = 6; b = 14 + 5 + 5 = 24; shade = 6; 6 + 24 + 6 + 6 = 42
+    return a + b + shade(d) + 6
+}

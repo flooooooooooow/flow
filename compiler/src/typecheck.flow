@@ -9,8 +9,8 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD,
-    flowc_ast_chain_len, flowc_ast_reject_unsupported
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT,
+    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
 }
 import .overload_table {
     FlowcOverloadTable,
@@ -537,6 +537,35 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32)
 function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32)
 function flowc_tc_check_block(ctx: ptr<TcCtx>, arena: AstArena, id: i32)
 
+# Bind the names a match pattern introduces: a bare name (unless `_` or an
+# enum variant constant at the top), the name arguments of a struct pattern
+# `P(a, Q(b), 0)`, and the name elements of a list pattern `[x, 1]`.
+function flowc_tc_bind_pattern(ctx: ptr<TcCtx>, arena: AstArena, pat: i32, top: i32) {
+    if pat == AST_NONE {
+        return
+    }
+    let k: i32 = arena.nodes[pat].kind
+    let ns: i32 = arena.nodes[pat].name_start
+    let ne: i32 = arena.nodes[pat].name_end
+    if k == AST_IDENT {
+        if ne - ns == 1 and ctx[0].src[ns] == 95 {
+            return
+        }
+        if top == 1 and flowc_ast_enum_of_const(arena, ctx[0].src, ns, ne) != AST_NONE {
+            return
+        }
+        flowc_tc_bind(ctx, ns, ne, 0, -1)
+        return
+    }
+    if k == AST_CALL or k == AST_ARRAY_LIT {
+        let mut arg: i32 = arena.nodes[pat].a
+        while arg != AST_NONE {
+            flowc_tc_bind_pattern(ctx, arena, arg, 0)
+            arg = arena.nodes[arg].next
+        }
+    }
+}
+
 function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if id == AST_NONE {
         return
@@ -801,6 +830,19 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         # The C generator handles the lowering based on the first arm's pattern kind.
         let mut arm: i32 = arena.nodes[id].b
         while arm != AST_NONE {
+            if arena.nodes[arm].kind == AST_MATCH_ARM_EXT {
+                # Or-pattern / guard / nested arm: the names the first
+                # alternative binds are in scope for the guard and the body.
+                flowc_tc_push_mark(ctx)
+                flowc_tc_bind_pattern(ctx, arena, arena.nodes[arm].a, 1)
+                if arena.nodes[arm].c != AST_NONE {
+                    flowc_tc_check_expr(ctx, arena, arena.nodes[arm].c)
+                }
+                flowc_tc_check_block(ctx, arena, arena.nodes[arm].b)
+                flowc_tc_pop_mark(ctx)
+                arm = arena.nodes[arm].next
+                continue
+            }
             # Wildcard / binding arm is a catch-all — must be the last arm.
             if (arena.nodes[arm].ival == 1 or arena.nodes[arm].ival == 2) and arena.nodes[arm].next != AST_NONE {
                 flowc_tc_note(ctx, "flowc tc: catch-all match arm must be last", arena.nodes[arm].start, arena.nodes[arm].end)

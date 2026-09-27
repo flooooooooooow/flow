@@ -790,24 +790,11 @@ if ! grep -Fq 'int32_t other = __flowc_match;' compiler/build/stage_a_match.c; t
     echo "FAIL stage_a_match: expected binding arm decl" >&2
     exit 1
 fi
-# Unsupported pattern forms (or-patterns) parse but must be rejected with a message.
-rm -f compiler/build/match_unsupported.c
-set +e
-FLOWC_FORCE_HOST=1 stage_a_emit \
-    compiler/fixtures/match_unsupported.flow \
-    compiler/build/match_unsupported.c \
-    >compiler/build/match_unsupported.log 2>&1
-match_bad_rc=$?
-set -e
-echo "match_unsupported emit rc=$match_bad_rc"
-test "$match_bad_rc" -ne 0
-if [[ -f compiler/build/match_unsupported.c ]]; then
-    echo "FAIL stage_a_match: unsupported-pattern fixture should not write C" >&2
-    exit 1
-fi
-if ! grep -Fq 'unsupported in Stage-A: match arm with an or-pattern' compiler/build/match_unsupported.log; then
-    echo "FAIL stage_a_match: expected unsupported-pattern diagnostic" >&2
-    cat compiler/build/match_unsupported.log >&2
+# Or-patterns, guards, nested struct patterns and enum-value matches lower
+# the way the Python host does (#996, #678).
+run_case stage_a_match_ext 42
+if ! grep -Fq '__typeof__(o) __flowc_match = o;' compiler/build/stage_a_match_ext.c; then
+    echo "FAIL stage_a_match_ext: expected typed scrutinee temp" >&2
     exit 1
 fi
 echo "PASS stage_a_match fixtures"
