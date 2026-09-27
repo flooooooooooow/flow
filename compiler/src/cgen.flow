@@ -3760,6 +3760,55 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "atof") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "strtol") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "strtod") == 1 { return 1 }
+    # Rest of stdlib.h, string.h, math.h and time.h (#958, #969): a
+    # prototype built from Flow types would clash with the header's.
+    if flowc_cgen_span_is(src, ns, ne, "strtoll") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtoul") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtoull") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtof") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtold") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atol") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atoll") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "labs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "llabs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "bsearch") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atexit") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "memchr") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strncat") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strspn") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strcspn") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strpbrk") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strtok") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strerror") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strdup") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strndup") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "getchar") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "perror") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "round") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "trunc") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fmin") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fmax") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "hypot") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cbrt") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "exp2") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log1p") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "expm1") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "copysign") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sinf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cosf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sqrtf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "powf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "expf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "logf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fabsf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "floorf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "ceilf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "roundf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "difftime") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "mktime") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "gmtime") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "localtime") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "strftime") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "popen") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "pclose") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "fscanf") == 1 { return 1 }
@@ -4731,8 +4780,15 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "#include <string.h>\n")
         flowc_cgen_puts(&w, "#include <math.h>\n")
         flowc_cgen_puts(&w, "#include <complex.h>\n")
+        flowc_cgen_puts(&w, "#include <time.h>\n")
         flowc_cgen_puts(&w, "#pragma clang diagnostic ignored \"-Wint-conversion\"\n")
         flowc_cgen_puts(&w, "#pragma clang diagnostic ignored \"-Wincompatible-pointer-types\"\n")
+        # GCC 14 makes both of these errors by default and ignores clang
+        # pragmas (#958).
+        flowc_cgen_puts(&w, "#if defined(__GNUC__) && !defined(__clang__)\n")
+        flowc_cgen_puts(&w, "#pragma GCC diagnostic ignored \"-Wint-conversion\"\n")
+        flowc_cgen_puts(&w, "#pragma GCC diagnostic ignored \"-Wincompatible-pointer-types\"\n")
+        flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_puts(&w, "typedef float complex c64;\n")
         flowc_cgen_puts(&w, "typedef double complex c128;\n")
         flowc_cgen_putc(&w, 10)
