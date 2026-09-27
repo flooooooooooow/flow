@@ -1,0 +1,3 @@
+shader fill u {
+    color = vec4(mystery(1.0))
+}
