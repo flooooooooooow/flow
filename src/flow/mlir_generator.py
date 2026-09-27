@@ -153,7 +153,7 @@ class MLIRGenerator:
 
     def _tensor_param_metadata_fields(self) -> List[int]:
         # Materialize every tensor metadata field at function entry. Partial
-        # copies (e.g. ptr/size/dim0 only) leave dim1–dim3 as undef and cause
+        # copies (e.g. ptr/size/dim0 only) leave dim1..dim3 as undef and cause
         # heap corruption in callees like tensor_scale that read all dims.
         return self._TENSOR_PARAM_METADATA_FIELDS
 
@@ -657,7 +657,7 @@ class MLIRGenerator:
         field_types = []
         for field in decl.fields:
             # Fixed-size arrays become !llvm.array (memref is not a valid LLVM
-            # struct field — doom-flow JoyState.buttons and similar).
+            # struct field, doom-flow JoyState.buttons and similar).
             if self._is_array_flow_type(field.type):
                 field_ty = self._llvm_array_type_from_flow(field.type)
                 if field_ty is None:
@@ -689,7 +689,7 @@ class MLIRGenerator:
             return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0.0 : {mlir_type}"]
         if mlir_type.startswith("i"):
             return ssa_name, [f"{self.indent()}{ssa_name} = arith.constant 0 : {mlir_type}"]
-        # ptr / struct / array — never leave aggregates as undef (#230).
+        # ptr / struct / array, never leave aggregates as undef (#230).
         if (
             mlir_type == "!llvm.ptr"
             or mlir_type.startswith("!llvm.struct")
@@ -900,7 +900,7 @@ class MLIRGenerator:
 
         # Module header with required dialects and debug info
         # For wasm32/ILP32, emit a datalayout so mlir-translate computes
-        # correct struct field offsets (ptr = 4 bytes, not 8).
+        # correct struct field offsets (ptr is 4 bytes there).
         module_attrs = []
         if self.size_t_bits == 32:
             module_attrs.append('llvm.data_layout = "e-m:e-p:32:32-i64:64-n32:64-S128"')
@@ -917,7 +917,7 @@ class MLIRGenerator:
         self._effects = {}
         self._capabilities = {}
         self._effect_handler_stack = [{}]
-        # Names with a real body in this module — skip emitting `func.func private`
+        # Names with a real body in this module, skip emitting `func.func private`
         # for matching extern decls (doom-flow Z_Malloc is extern'd widely + defined).
         self._defined_function_names: Set[str] = {
             decl.name
@@ -1057,7 +1057,7 @@ class MLIRGenerator:
                 "TraitDecl", "ImplDecl", "ImportDecl", "ModuleDecl",
                 "ExternBlock", "UseDecl",
             ):
-                # Type-system / module surface — methods are separate FunctionDecls.
+                # Type-system / module surface, methods are separate FunctionDecls.
                 continue
             else:
                 raise NotImplementedError(
@@ -1096,7 +1096,7 @@ class MLIRGenerator:
             # `\\` to one backslash (1 byte), matching LLVM's `\5C` (1 byte).
             byte_len = len(str_content.encode('utf-8').decode('unicode_escape')) + 1  # +1 for null terminator
             # Backslash pairs (Flow `\\` escape = one runtime backslash) must emit
-            # as `\5C` — LLVM's hex escape for the backslash code point — so the
+            # as `\5C`, LLVM's hex escape for the backslash code point, so the
             # emitted literal and byte_len agree. `\n`/`\t`/etc. stay as-is.
             str_content = str_content.replace("\\\\", "\\5C")
             mlir_code.append(f'{self.indent()}llvm.mlir.global internal constant @{global_name}("{str_content}\\00") {{addr_space = 0 : i32}} : !llvm.array<{byte_len} x i8>')
@@ -1261,7 +1261,7 @@ class MLIRGenerator:
         mlir_code = []
         # New lexical scope (shallow copy). Locals declared here stay local;
         # SSA updates to names that already existed in the parent must propagate
-        # back — otherwise nested while/for loop-carried values are lost when
+        # back, otherwise nested while/for loop-carried values are lost when
         # generate_while replaces symbol_table entries with new dicts.
         parent_symbols = self.symbol_table
         self._symbol_stack.append(parent_symbols)
@@ -1730,7 +1730,7 @@ class MLIRGenerator:
                     return "\n".join(ops)
 
                 # Match generate_array_access: !llvm.array globals/locals need
-                # gep[0, i], not flat ptr indexing (array<ptr>/array<string>).
+                # gep[0, i] (flat ptr indexing is wrong for array<ptr>/array<string>).
                 llvm_array_ty = self._llvm_array_type_for(access.array, array_ssa)
                 if llvm_array_ty is not None:
                     elem_flow = self._flow_type_of_expr(access)
@@ -1915,7 +1915,7 @@ class MLIRGenerator:
             else_assigned = self._assigned_locals(if_stmt.else_block) if if_stmt.else_block else []
             merged_vars = list(dict.fromkeys(then_assigned + else_assigned))
             # Only SSA-mergeable locals need scf.if yields. Module-global stores
-            # (joy_ptr = …) must not take this path — filtering to empty used to
+            # (joy_ptr = …) must not take this path, filtering to empty used to
             # drop the entire then-block and leave a dead compare.
             mergeable = self._filter_ssa_mergeable(merged_vars)
             if mergeable:
@@ -1971,7 +1971,7 @@ class MLIRGenerator:
         Module globals and alloca-backed slots have no ``ssa_name`` and must not
         participate in block-arg merges (doom-flow hit KeyError: ssa_name).
         Also skip bindings whose recorded mlir_type disagrees with ``_ssa_types``
-        for that SSA (stale cross-function leak of ``%argN`` — #232).
+        for that SSA (stale cross-function leak of ``%argN``, #232).
         """
         out: List[str] = []
         for name in names:
@@ -2308,7 +2308,7 @@ class MLIRGenerator:
         return "\n".join(mlir_code)
     
     def _cf_successor_operands(self, ssa_names: List[str], mlir_types: List[str]) -> str:
-        """CF dialect successor operands: (%a, %b : i32, i32) — types once after all values."""
+        """CF dialect successor operands: (%a, %b : i32, i32), types once after all values."""
         if not ssa_names:
             return ""
         return f"({', '.join(ssa_names)} : {', '.join(mlir_types)})"
@@ -2367,7 +2367,7 @@ class MLIRGenerator:
         if condition_ops:
             mlir_code.append("\n".join(condition_ops))
         
-        # Branch based on condition — both successors take the loop-carried args
+        # Branch based on condition, both successors take the loop-carried args
         # (the exit block needs them too, otherwise its block arguments have no
         # incoming values on the exit edge).
         header_ssas: List[str] = []
@@ -2680,37 +2680,26 @@ class MLIRGenerator:
         
         # We can use unrealized_conversion_cast to go from !llvm.ptr to memref
         memref_ty = f"memref<{N}x{elem}>"
-        ops = []
-        if out_ops: ops.extend(out_ops)
-        if in1_ops: ops.extend(in1_ops)
-        if in2_ops: ops.extend(in2_ops)
+        ops = [*(out_ops or []), *(in1_ops or []), *(in2_ops or [])]
         
-        out_m = f"%{self.function_counter}"; self.function_counter += 1
-        in1_m = f"%{self.function_counter}"; self.function_counter += 1
-        in2_m = f"%{self.function_counter}"; self.function_counter += 1
+        out_m, in1_m, in2_m = (f"%{self.function_counter + i}" for i in range(3))
+        self.function_counter += 3
         
         ops.append(f"{self.indent()}{out_m} = builtin.unrealized_conversion_cast {out_base_ssa} : !llvm.ptr to {memref_ty}")
         ops.append(f"{self.indent()}{in1_m} = builtin.unrealized_conversion_cast {in1_base_ssa} : !llvm.ptr to {memref_ty}")
         ops.append(f"{self.indent()}{in2_m} = builtin.unrealized_conversion_cast {in2_base_ssa} : !llvm.ptr to {memref_ty}")
         
         # Now linalg.generic
-        op_mlir = ""
-        if expr.operator == "+":
-            if elem == "f32": op_mlir = "arith.addf"
-            else: op_mlir = "arith.addi"
-        elif expr.operator == "-":
-            if elem == "f32": op_mlir = "arith.subf"
-            else: op_mlir = "arith.subi"
-        elif expr.operator == "*":
-            if elem == "f32": op_mlir = "arith.mulf"
-            else: op_mlir = "arith.muli"
-        else:
+        arith_ops = {"+": ("arith.addf", "arith.addi"), "-": ("arith.subf", "arith.subi"), "*": ("arith.mulf", "arith.muli")}
+        if expr.operator not in arith_ops:
             return None
+        op_mlir = arith_ops[expr.operator][0 if elem == "f32" else 1]
             
         ops.append(f"{self.indent()}linalg.generic {{indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = [\"parallel\"]}} ins({in1_m}, {in2_m} : {memref_ty}, {memref_ty}) outs({out_m} : {memref_ty}) {{")
         self.indent_level += 1
         ops.append(f"{self.indent()}^bb0(%in1: {elem}, %in2: {elem}, %out: {elem}):")
-        res = f"%{self.function_counter}"; self.function_counter += 1
+        res = f"%{self.function_counter}"
+        self.function_counter += 1
         ops.append(f"{self.indent()}  {res} = {op_mlir} %in1, %in2 : {elem}")
         ops.append(f"{self.indent()}  linalg.yield {res} : {elem}")
         self.indent_level -= 1
@@ -3302,7 +3291,7 @@ class MLIRGenerator:
         for var_name in assigned_vars:
             if var_name in self.symbol_table and var_name not in declared_vars and var_name not in carried:
                 # Module consts/statics and alloca-backed mut locals are
-                # memory-backed — not SSA values — so they cannot be threaded
+                # memory-backed, not SSA values, so they cannot be threaded
                 # through iter_args / cf block arguments.
                 if self.symbol_table[var_name].get("is_module_global"):
                     continue
@@ -3906,7 +3895,7 @@ class MLIRGenerator:
             self._ssa_types[cast_name] = to_type
             return cast_name, [f"{self.indent()}{cast_name} = arith.fptosi {value_ssa} : {from_type} to {to_type}"]
 
-        # Array / memref decay to a raw pointer. Must produce a *new* SSA —
+        # Array / memref decay to a raw pointer. Must produce a *new* SSA,
         # reusing the memref value and retagging it as !llvm.ptr breaks later
         # memref.load/store (snake_gfx: let p: ptr<i32> = snake_x).
         if to_type == "!llvm.ptr" and from_type.startswith("memref<"):
@@ -3964,7 +3953,7 @@ class MLIRGenerator:
             str(literal.value).lower() == 'null'
             or (mlir_type == '!llvm.ptr' and str(literal.value).lower() in ('null', '0'))
         ):
-            # MLIR has no `arith.constant null` — use llvm.mlir.zero (#223).
+            # MLIR has no `arith.constant null`, use llvm.mlir.zero (#223).
             mlir_type = '!llvm.ptr'
             line = f"{self.indent()}{ssa_name} = llvm.mlir.zero : !llvm.ptr"
         else:
@@ -4049,7 +4038,7 @@ class MLIRGenerator:
             if var_info.get("type") == "function":
                 return self._emit_function_as_ptr(variable.name, var_info)
             mlir_type = var_info.get("mlir_type")
-            # Enum tag discriminators are known constants — avoid a load.
+            # Enum tag discriminators are known constants, avoid a load.
             if var_info.get("is_enum_tag") and "enum_tag_value" in var_info:
                 ssa = f"%{self.function_counter}"
                 self.function_counter += 1
@@ -4182,7 +4171,7 @@ class MLIRGenerator:
                 cast_ops.extend(ops)
 
         # Flow uN lowers to iN; track unsigned SSA so / % >> and compares stay
-        # logical (Python has no u32 — this is free in a typed native IR).
+        # logical (Python has no u32, this is free in a typed native IR).
         # Also consult Flow AST types: call returns / global loads may not yet
         # be in `_ssa_unsigned` (doom-flow W_LumpNameHash % wnumlumps used
         # signed srem, wrote before the hash table, and corrupted FILE*).
@@ -4236,7 +4225,7 @@ class MLIRGenerator:
             if is_float:
                 op_text = f"arith.cmpf {pred}, {left_ssa}, {right_ssa} : {operand_type}"
             elif operand_type == '!llvm.ptr':
-                # arith.cmpi does not accept !llvm.ptr — use llvm.icmp (#223 companions).
+                # arith.cmpi does not accept !llvm.ptr, use llvm.icmp (#223 companions).
                 icmp = {
                     'eq': 'eq', 'ne': 'ne',
                     'slt': 'ult', 'sle': 'ule',
@@ -4248,7 +4237,7 @@ class MLIRGenerator:
             else:
                 op_text = f"arith.cmpi {pred}, {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '&':
-            # Bitwise (not boolean) — Doom-scale MLIR needs these (#221 follow-up).
+            # Bitwise (not boolean), Doom-scale MLIR needs these (#221 follow-up).
             op_text = f"arith.andi {left_ssa}, {right_ssa} : {operand_type}"
         elif bin_op.operator == '|':
             op_text = f"arith.ori {left_ssa}, {right_ssa} : {operand_type}"
@@ -4393,7 +4382,7 @@ class MLIRGenerator:
             self._ssa_types[ssa_name] = "i1"
             return ssa_name, ops
         elif un_op.operator == '~':
-            # Bitwise complement — Python ints are unbounded; Flow uses fixed width.
+            # Bitwise complement, Python ints are unbounded; Flow uses fixed width.
             ones = f"%{self.function_counter}"
             self.function_counter += 1
             ops = list(operand_ops)
@@ -4413,12 +4402,12 @@ class MLIRGenerator:
         the pointer stay visible to later reads (generate_variable and
         generate_assignment both prefer alloca_ptr once it is set).
 
-        Module globals must use ``llvm.mlir.addressof`` — never spill the
+        Module globals must use ``llvm.mlir.addressof``, never spill the
         global's address into a fresh alloca (that returns a pointer-to-pointer
         and breaks doom ``&thinkercap`` / thinker list linking).
 
         Field / array lvalues (``&j[0].buttons[0]``) use GEP into the real
-        object — never load+spill, which would give M_BindVariable a temp.
+        object, never load+spill, which would give M_BindVariable a temp.
         """
         if isinstance(operand, Variable) and operand.name in self.symbol_table:
             var_info = self.symbol_table[operand.name]
@@ -4930,7 +4919,7 @@ class MLIRGenerator:
                 # only `num_bytes` are read from the memref (#255).
                 int_type = 'i64'
             else:
-                # Unknown type — treat as i32 fallback
+                # Unknown type, treat as i32 fallback
                 num_bytes = 4
                 int_type = 'i32'
 
@@ -5248,7 +5237,7 @@ class MLIRGenerator:
         Returns (ptr_ssa, ops, struct_name) or None when the shape is not an
         addressable LLVM pointer-backed struct (e.g. pure SSA values).
         Supports Variable (ptr / alloca), ArrayAccess on ptr-to-struct, and
-        nested FieldAccess into struct fields — the shapes produced by
+        nested FieldAccess into struct fields, the shapes produced by
         unified postfix chaining such as bodies[0].pos.x = v.
         """
         if isinstance(expr, Variable):
@@ -5366,7 +5355,7 @@ class MLIRGenerator:
         # First check symbol table (fast, handles locals)
         if var_name in self.symbol_table:
             var_info = self.symbol_table[var_name]
-            # Functions are not variables — their .name colliding with Variable
+            # Functions are not variables, their .name colliding with Variable
             # lookup is why make().x used to resolve as i32.
             if var_info.get('type') == 'function':
                 return None
@@ -7068,7 +7057,8 @@ class MLIRGenerator:
             # Struct type: struct_MyStruct -> !flow.struct<MyStruct>
             return f"!flow.struct<{flow_type.name.replace('struct_', '')}>"
         elif flow_type.name.startswith('tensor_') or flow_type.name.startswith('tensor<'):
-            if flow_type.name.startswith('tensor<'): return flow_type.name
+            if flow_type.name.startswith('tensor<'):
+                return flow_type.name
             elem = flow_type.name.replace('tensor_', '')
             return f"tensor<?x{elem}>"
         elif flow_type.name.startswith('vec'):
@@ -7401,7 +7391,7 @@ class MLIRGenerator:
                 mlir_type == "!llvm.ptr"
                 or str(const.value.value).lower() == "null"
             ):
-                # Zero-init pointer global (no `null` attribute — #223).
+                # Zero-init pointer global (no `null` attribute, #223).
                 mlir_code.append(
                     f"{self.indent()}llvm.mlir.global internal constant "
                     f"@{const.name}() : !llvm.ptr"
@@ -7473,7 +7463,7 @@ class MLIRGenerator:
     ) -> List[str]:
         """Emit `llvm.mlir.global` with an init body for fixed array statics.
 
-        Pointer/string/struct element arrays must not stay undef — doom-flow
+        Pointer/string/struct element arrays must not stay undef, doom-flow
         tables (`iwads`, menus, `animdefs`, …) are searched at startup (#230).
         Init regions use the LLVM dialect only (`arith` is rejected there).
         """
@@ -7554,8 +7544,8 @@ class MLIRGenerator:
     def _emit_string_static_global(self, name: str, value: Literal) -> List[str]:
         """Emit a mutable ``!llvm.ptr`` global initialized to a string constant.
 
-        ``let mut x: string = "..."`` must start at the string's address,
-        not null. The string constant is interned and referenced via
+        ``let mut x: string = "..."`` must start at the string's address.
+        It must never be null. The string constant is interned and referenced via
         ``llvm.mlir.addressof`` (flow#471).
         """
         ind = self.indent()
@@ -7651,7 +7641,7 @@ class MLIRGenerator:
 
         # Scalar pointers must be null-initialized (not undef).
         # But string literals (which are !llvm.ptr) need their constant
-        # address as the initializer, not null. Without this, `let mut
+        # address as the initializer (never null). Without this, `let mut
         # x: string = "..."` globals start at 0 and string-returning
         # functions return null (flow#471).
         if (
@@ -7689,7 +7679,7 @@ class MLIRGenerator:
             }
             return "\n".join(mlir_code)
 
-        # Scalar structs: materialize literals / zero — never bare undef (#230).
+        # Scalar structs: materialize literals / zero, never bare undef (#230).
         if mlir_type.startswith("!llvm.struct"):
             mlir_code.extend(
                 self._emit_struct_static_global(
