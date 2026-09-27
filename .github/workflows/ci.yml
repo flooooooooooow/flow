@@ -15,6 +15,7 @@ on:
       - '.gitignore'
       - '.github/**'
       - 'pyproject.toml'
+      - 'Makefile'
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
@@ -40,6 +41,7 @@ on:
       - '.gitignore'
       - '.github/**'
       - 'pyproject.toml'
+      - 'Makefile'
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
@@ -98,6 +100,7 @@ jobs:
             workflow:
               - '.github/**'
               - 'flow'
+              - 'Makefile'
               - 'scripts/**'
             plugins:
               - 'plugins/**'
@@ -108,6 +111,7 @@ jobs:
               - 'requirements.lock'
               - 'requirements.txt'
               - 'pyproject.toml'
+      - 'Makefile'
 
   # Manifests, docs headers and the CLI banner all mirror src/flow/version.py.
   # They have drifted before: 0.11.0 nearly shipped with version.py still
