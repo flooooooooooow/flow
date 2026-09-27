@@ -100,6 +100,65 @@ export function md_sanitize(s: string) -> string {
     return out as string
 }
 
+# str.splitlines(): \n, \r\n, \r, \v, \f, \x1c-\x1e, \x85, U+2028 and U+2029
+# all end a line, and a final line ending adds no empty line.
+export function md_splitlines(s: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let cp: i32 = uc_decode(p, i)
+        let step: i32 = uc_len(p[i] as i32)
+        let is_break: bool = cp == 10 or cp == 13 or cp == 11 or cp == 12 or (cp >= 28 and cp <= 30) or cp == 133 or cp == 8232 or cp == 8233
+        if is_break {
+            ft_list_push(out, ft_slice(s, start, i))
+            let mut next: i32 = i + step
+            if cp == 13 and p[next] == 10 {
+                next = next + 1
+            }
+            start = next
+            i = next
+        } else {
+            i = i + step
+        }
+    }
+    if start < n {
+        ft_list_push(out, ft_slice(s, start, n))
+    }
+    return out
+}
+
+# re.sub(r"\s+", " ", s): every run of Unicode whitespace becomes one space.
+export function md_collapse_ws(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if uc_is_space(uc_decode(p, i)) {
+            while i < n and uc_is_space(uc_decode(p, i)) {
+                i = i + uc_len(p[i] as i32)
+            }
+            buf[o] = 32
+            o = o + 1
+        } else {
+            let step: i32 = uc_len(p[i] as i32)
+            let mut k: i32 = 0
+            while k < step {
+                buf[o] = p[i + k]
+                o = o + 1
+                k = k + 1
+            }
+            i = i + step
+        }
+    }
+    buf[o] = 0
+    return buf as string
+}
+
 # str.split() with no arguments: runs of Unicode whitespace separate fields.
 export function md_split_ws(s: string) -> ptr<StrList> {
     let out: ptr<StrList> = ft_list_new()
