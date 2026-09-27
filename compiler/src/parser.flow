@@ -438,10 +438,41 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
             flowc_parser_advance(p)
             let mut args: i32 = AST_NONE
+            let mut range_sum: i32 = 0
             if flowc_parser_check(p[0], TOK_RPAREN) == 0 {
                 let first: i32 = flowc_parse_expr(p)
                 args = flowc_ast_chain_push(&p[0].arena, args, first)
-                while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                # sum(a..b step s), optionally `| c..d step t` or `& c..d step t`:
+                # range sum (#949). Args are [a, b, s] or [a, b, s, c, d, t];
+                # ival is 2 (one range), 3 (union) or 4 (intersection).
+                if flowc_parser_check(p[0], TOK_DOTDOT) == 1 and flowc_parser_span_is(p[0], name_s, name_e, "sum") == 1 {
+                    args = flowc_parse_range_tail(p, args)
+                    if p[0].err != 0 {
+                        return AST_NONE
+                    }
+                    range_sum = 2
+                    if flowc_parser_check(p[0], TOK_BAR) == 1 or flowc_parser_check(p[0], TOK_AMP) == 1 {
+                        range_sum = 3
+                        if flowc_parser_check(p[0], TOK_AMP) == 1 {
+                            range_sum = 4
+                        }
+                        flowc_parser_advance(p)
+                        let lo2: i32 = flowc_parse_range_bound(p)
+                        if lo2 == AST_NONE {
+                            return AST_NONE
+                        }
+                        args = flowc_ast_chain_push(&p[0].arena, args, lo2)
+                        if flowc_parser_check(p[0], TOK_DOTDOT) == 0 {
+                            p[0].err = 1
+                            return AST_NONE
+                        }
+                        args = flowc_parse_range_tail(p, args)
+                        if p[0].err != 0 {
+                            return AST_NONE
+                        }
+                    }
+                }
+                while range_sum == 0 and flowc_parser_check(p[0], TOK_COMMA) == 1 {
                     flowc_parser_advance(p)
                     let arg: i32 = flowc_parse_expr(p)
                     args = flowc_ast_chain_push(&p[0].arena, args, arg)
@@ -458,6 +489,9 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
             p[0].arena.nodes[call].name_start = name_s
             p[0].arena.nodes[call].name_end = name_e
             p[0].arena.nodes[call].a = args
+            if range_sum > 0 {
+                p[0].arena.nodes[call].ival = range_sum
+            }
             return call
         }
         # Generic type args: Ident<TypeArgs> { ... } or Ident<TypeArgs>(args)
@@ -1156,6 +1190,49 @@ function flowc_parse_cast(p: ptr<Parser>) -> i32 {
         base = id
     }
     return base
+}
+
+# A range bound or step inside sum(...): binds tighter than the `|` and `&`
+# that combine ranges.
+function flowc_parse_range_bound(p: ptr<Parser>) -> i32 {
+    let lhs: i32 = flowc_parse_cast(p)
+    if lhs == AST_NONE {
+        return AST_NONE
+    }
+    return flowc_parse_binop_rhs(p, 4, lhs)
+}
+
+# At `..`: parse `..hi [step s]` and push hi and the step onto `args`. A
+# missing step is an AST_INT 1 with an empty source span.
+function flowc_parse_range_tail(p: ptr<Parser>, args: i32) -> i32 {
+    let mut out: i32 = args
+    flowc_parser_advance(p)
+    let hi: i32 = flowc_parse_range_bound(p)
+    if hi == AST_NONE {
+        p[0].err = 1
+        return out
+    }
+    out = flowc_ast_chain_push(&p[0].arena, out, hi)
+    if flowc_parser_check(p[0], TOK_IDENT) == 1 and flowc_parser_span_is(p[0], p[0].cur.start, p[0].cur.end, "step") == 1 {
+        flowc_parser_advance(p)
+        let st: i32 = flowc_parse_range_bound(p)
+        if st == AST_NONE {
+            p[0].err = 1
+            return out
+        }
+        out = flowc_ast_chain_push(&p[0].arena, out, st)
+        return out
+    }
+    let one: i32 = flowc_ast_alloc(&p[0].arena, AST_INT, 0, 0)
+    if one == AST_NONE {
+        p[0].err = 1
+        return out
+    }
+    p[0].arena.nodes[one].name_start = 0
+    p[0].arena.nodes[one].name_end = 0
+    p[0].arena.nodes[one].ival = 1
+    out = flowc_ast_chain_push(&p[0].arena, out, one)
+    return out
 }
 
 # Map current token to a binop token kind (&&/||/…); keyword and/or → AMPAMP/BARBAR.

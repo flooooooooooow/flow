@@ -339,6 +339,10 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "sortBy") == 1 {
         return 1
     }
+    # sum(a..b step s) range sum.
+    if flowc_tc_span_is(ctx.src, start, end, "sum") == 1 {
+        return 1
+    }
     if flowc_tc_span_is(ctx.src, start, end, "len") == 1 {
         return 1
     }

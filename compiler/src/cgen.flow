@@ -2270,6 +2270,43 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_emit_print_intrinsic(w, arena, src, id, 0)
             return
         }
+        # sum(a..b step s), and the union / intersection of two ranges,
+        # lower to preamble helpers; each bound is an argument, so it is
+        # evaluated once (#949).
+        let rs_kind: i32 = arena.nodes[id].ival
+        if rs_kind >= 2 and rs_kind <= 4 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sum") == 1 {
+            flowc_cgen_puts(w, "((__typeof__((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") + 0))")
+            if rs_kind == 2 {
+                flowc_cgen_puts(w, "__flowc_range_sum(")
+            }
+            if rs_kind == 3 {
+                flowc_cgen_puts(w, "__flowc_range_sum_union(")
+            }
+            if rs_kind == 4 {
+                flowc_cgen_puts(w, "__flowc_range_sum_isect(")
+            }
+            let mut rarg: i32 = arena.nodes[id].a
+            let mut rfirst: i32 = 1
+            while rarg != AST_NONE {
+                if rfirst == 0 {
+                    flowc_cgen_puts(w, ", ")
+                }
+                rfirst = 0
+                flowc_cgen_puts(w, "(int64_t)(")
+                # A synthesized default step has no source span.
+                if arena.nodes[rarg].kind == AST_INT and arena.nodes[rarg].name_end == arena.nodes[rarg].name_start {
+                    flowc_cgen_put_i32(w, arena.nodes[rarg].ival)
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, rarg)
+                }
+                flowc_cgen_putc(w, 41)
+                rarg = arena.nodes[rarg].next
+            }
+            flowc_cgen_puts(w, "))")
+            return
+        }
         # len(span) → (span).len
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "len") == 1 {
             flowc_cgen_putc(w, 40)
@@ -4362,6 +4399,45 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "  return r;\n")
         flowc_cgen_puts(&w, "}\n")
         flowc_cgen_putc(&w, 10)
+        # sum(a..b step s): the sum of a, a+s, ... short of b; 0 for an empty
+        # range or a zero step. 64-bit so n*a + s*n(n-1)/2 does not wrap.
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_count(int64_t s, int64_t e, int64_t d) {\n")
+        flowc_cgen_puts(&w, "  if (d > 0 && e > s) { return (e - s + d - 1) / d; }\n")
+        flowc_cgen_puts(&w, "  if (d < 0 && e < s) { return (s - e - d - 1) / (0 - d); }\n")
+        flowc_cgen_puts(&w, "  return 0;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_sum(int64_t s, int64_t e, int64_t d) {\n")
+        flowc_cgen_puts(&w, "  int64_t n = __flowc_range_count(s, e, d);\n")
+        flowc_cgen_puts(&w, "  return n * s + d * ((n * (n - 1)) / 2);\n")
+        flowc_cgen_puts(&w, "}\n")
+        # Intersection of two progressions: the common elements form one
+        # progression with step lcm(p1, p2), found by CRT.
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_floordiv(int64_t a, int64_t b) {\n")
+        flowc_cgen_puts(&w, "  int64_t q = a / b; if ((a % b != 0) && ((a < 0) != (b < 0))) { q = q - 1; } return q;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_sum_isect(int64_t s1, int64_t e1, int64_t d1, int64_t s2, int64_t e2, int64_t d2) {\n")
+        flowc_cgen_puts(&w, "  int64_t n1 = __flowc_range_count(s1, e1, d1); int64_t n2 = __flowc_range_count(s2, e2, d2);\n")
+        flowc_cgen_puts(&w, "  if (n1 == 0 || n2 == 0) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t p1 = d1 < 0 ? 0 - d1 : d1; int64_t p2 = d2 < 0 ? 0 - d2 : d2;\n")
+        flowc_cgen_puts(&w, "  int64_t lo1 = d1 > 0 ? s1 : s1 + d1 * (n1 - 1); int64_t lo2 = d2 > 0 ? s2 : s2 + d2 * (n2 - 1);\n")
+        flowc_cgen_puts(&w, "  int64_t hi1 = lo1 + p1 * (n1 - 1); int64_t hi2 = lo2 + p2 * (n2 - 1);\n")
+        flowc_cgen_puts(&w, "  int64_t a = p1; int64_t b = p2; int64_t x0 = 1; int64_t x1 = 0;\n")
+        flowc_cgen_puts(&w, "  while (b != 0) { int64_t q = a / b; int64_t t = a - q * b; a = b; b = t; t = x0 - q * x1; x0 = x1; x1 = t; }\n")
+        flowc_cgen_puts(&w, "  int64_t g = a; int64_t diff = lo2 - lo1;\n")
+        flowc_cgen_puts(&w, "  if (diff % g != 0) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t m = p2 / g; int64_t lcm = p1 * m;\n")
+        flowc_cgen_puts(&w, "  int64_t t = (int64_t)(((__int128)(diff / g) * (__int128)x0) % (__int128)m); if (t < 0) { t = t + m; }\n")
+        flowc_cgen_puts(&w, "  int64_t x = lo1 + p1 * t;\n")
+        flowc_cgen_puts(&w, "  int64_t lower = lo1 > lo2 ? lo1 : lo2; int64_t upper = hi1 < hi2 ? hi1 : hi2;\n")
+        flowc_cgen_puts(&w, "  if (lower > upper) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t first = x - __flowc_floordiv(x - lower, lcm) * lcm;\n")
+        flowc_cgen_puts(&w, "  if (first > upper) { return 0; }\n")
+        flowc_cgen_puts(&w, "  int64_t cnt = (upper - first) / lcm + 1;\n")
+        flowc_cgen_puts(&w, "  return cnt * first + lcm * ((cnt * (cnt - 1)) / 2);\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline int64_t __flowc_range_sum_union(int64_t s1, int64_t e1, int64_t d1, int64_t s2, int64_t e2, int64_t d2) {\n")
+        flowc_cgen_puts(&w, "  return __flowc_range_sum(s1, e1, d1) + __flowc_range_sum(s2, e2, d2) - __flowc_range_sum_isect(s1, e1, d1, s2, e2, d2);\n")
+        flowc_cgen_puts(&w, "}\n")
         # Number operands of string `+` (#946). Same conversions as println.
         flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_i64(int64_t v) {\n")
         flowc_cgen_puts(&w, "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n")
