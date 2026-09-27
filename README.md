@@ -426,7 +426,7 @@ Counted from tracked files by CI so the numbers match the tree.
 
 ## Contributing
 
-Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority and how to land changes.
+Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority, the [agentic loop](docs/project/agentic-loop.md) for how autonomous work moves through the repo, and the [repository structure contract](docs/project/repository-structure.md) for canonical ownership.
 
 Priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
 
