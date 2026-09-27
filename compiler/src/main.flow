@@ -24,6 +24,7 @@ import .jsgen { flowc_jsgen_emit }
 import .fmt { flowc_fmt_emit }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
+import .shader_emit { flowc_shader_mode }
 import .typecheck { flowc_typecheck }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck,
@@ -190,6 +191,11 @@ function flowc_emit_mode() -> i32 {
             return 1
         }
         return flowc_wasm_gen_compile(in_path, out_path, "2")
+    }
+
+    # FLOWC_SHADER=metal|wgsl|list|expand: fill-shader (FSL) programs.
+    if flowc_env_set("FLOWC_SHADER") == 1 {
+        return flowc_shader_mode(getenv("FLOWC_SHADER"), in_path, out_path, getenv("FLOWC_SHADER_NAME"))
     }
 
     if flowc_env_eq("FLOWC_BACKEND", "bpf") == 1 {
