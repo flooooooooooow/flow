@@ -609,3 +609,38 @@ class TestMLIRGeneratorUnit:
         # Clear symbol table
         mlir_generator.symbol_table.clear()
         assert len(mlir_generator.symbol_table) == 0
+
+    def test_constant_step_literal_error_paths(self, mlir_generator):
+        """Test _constant_step_literal for valid, non-literal, and error-handling paths."""
+        from flow.parser import Literal, Variable, Type, UnaryOperation, ForStatement, Block
+
+        # Non-Literal returns None
+        var_expr = Variable("x")
+        assert mlir_generator._constant_step_literal(var_expr) is None
+
+        # Literal that causes ValueError when converted to int returns None
+        invalid_val_literal = Literal("abc", Type("string"))
+        assert mlir_generator._constant_step_literal(invalid_val_literal) is None
+
+        # Literal that causes TypeError (e.g. None value) returns None
+        type_err_literal = Literal(None, Type("i32"))
+        assert mlir_generator._constant_step_literal(type_err_literal) is None
+
+        # Valid integer Literal returns int
+        valid_literal = Literal("5", Type("i32"))
+        assert mlir_generator._constant_step_literal(valid_literal) == 5
+
+        # Test _constant_step helper with step=None, positive, negative, and invalid step
+        for_stmt_none = ForStatement("i", Literal("0", Type("i32")), Literal("10", Type("i32")), None, Block([]), False)
+        assert mlir_generator._constant_step(for_stmt_none) is None
+
+        for_stmt_pos = ForStatement("i", Literal("0", Type("i32")), Literal("10", Type("i32")), Literal("2", Type("i32")), Block([]), False)
+        assert mlir_generator._constant_step(for_stmt_pos) == 2
+
+        neg_step_expr = UnaryOperation("-", Literal("3", Type("i32")))
+        for_stmt_neg = ForStatement("i", Literal("10", Type("i32")), Literal("0", Type("i32")), neg_step_expr, Block([]), False)
+        assert mlir_generator._constant_step(for_stmt_neg) == -3
+
+        invalid_neg_step = UnaryOperation("-", Variable("step_var"))
+        for_stmt_invalid_neg = ForStatement("i", Literal("10", Type("i32")), Literal("0", Type("i32")), invalid_neg_step, Block([]), False)
+        assert mlir_generator._constant_step(for_stmt_invalid_neg) is None
