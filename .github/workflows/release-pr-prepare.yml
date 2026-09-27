@@ -46,7 +46,7 @@ jobs:
             echo "::error::Missing $NOTES"
             exit 1
           }
-          python3 scripts/prepare_release.py \
+          scripts/prepare_release.sh \
             --version "$VERSION" \
             --release-date "$(date -u +%Y-%m-%d)" \
             --notes "$NOTES"

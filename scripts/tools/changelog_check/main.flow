@@ -1,0 +1,190 @@
+# Check that the current release is represented in Flow's canonical changelog.
+#
+# Run through scripts/check_changelog.sh from the repository root. The
+# version comes from src/flow/version.py; every `## [x]` heading in
+# docs/project/CHANGELOG.md is a section. The heading matcher follows the
+# Python pattern `^## \[([^]]+)\](?:\s+-\s+.*)?$` under re.MULTILINE, which
+# is what the script this replaces used.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_read_file, ft_slice, ft_at, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_itoa, StrList }
+import .unicode { uc_decode, uc_len, uc_is_space }
+
+const CHANGELOG: string = "docs/project/CHANGELOG.md"
+const VERSION: string = "src/flow/version.py"
+
+# Byte length of the whitespace character at `at`, or 0.
+function ws_at(p: ptr<u8>, at: i32) -> i32 {
+    let c: i32 = p[at] as i32
+    if c == 0 {
+        return 0
+    }
+    if uc_is_space(uc_decode(p, at)) {
+        return uc_len(c)
+    }
+    return 0
+}
+
+# End of a whitespace run starting at `at` (== at when there is none).
+function ws_run(p: ptr<u8>, at: i32) -> i32 {
+    let mut q: i32 = at
+    let mut n: i32 = ws_at(p, q)
+    while n > 0 {
+        q = q + n
+        n = ws_at(p, q)
+    }
+    return q
+}
+
+# re.search(r'__version__\s*=\s*["\']([^"\']+)["\']'), group 1, or null.
+function current_version(text: string) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut i: i32 = 0
+    while i < n {
+        if ft_at(text, i, "__version__") {
+            let mut q: i32 = ws_run(p, i + 11)
+            if p[q] == 61 {
+                q = ws_run(p, q + 1)
+                if p[q] == 34 or p[q] == 39 {
+                    let start: i32 = q + 1
+                    let mut e: i32 = start
+                    while p[e] != 0 and p[e] != 34 and p[e] != 39 {
+                        e = e + 1
+                    }
+                    if e > start and p[e] != 0 {
+                        return ft_slice(text, start, e)
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return null
+}
+
+# re.findall(r"^## \[([^]]+)\](?:\s+-\s+.*)?$", text, re.MULTILINE)
+function changelog_versions(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut pos: i32 = 0
+    while pos <= n {
+        let line_start: bool = pos == 0 or p[pos - 1] == 10
+        let mut matched: i32 = -1
+        if line_start and ft_at(text, pos, "## [") {
+            let cs: i32 = pos + 4
+            let mut ce: i32 = cs
+            while p[ce] != 0 and p[ce] != 93 {
+                ce = ce + 1
+            }
+            if ce > cs and p[ce] == 93 {
+                let after: i32 = ce + 1
+                # Optional group: \s+ - \s+ .* then $.
+                let w1: i32 = ws_run(p, after)
+                if w1 > after and p[w1] == 45 {
+                    let w2: i32 = ws_run(p, w1 + 1)
+                    if w2 > w1 + 1 {
+                        let mut e: i32 = w2
+                        while p[e] != 0 and p[e] != 10 {
+                            e = e + 1
+                        }
+                        matched = e
+                    }
+                }
+                if matched < 0 and (p[after] == 0 or p[after] == 10) {
+                    matched = after
+                }
+                if matched >= 0 {
+                    ft_list_push(out, ft_slice(text, cs, ce))
+                }
+            }
+        }
+        if matched >= 0 {
+            pos = matched
+            if pos == n {
+                break
+            }
+        } else {
+            pos = pos + 1
+        }
+    }
+    return out
+}
+
+function join_sorted(items: ptr<StrList>) -> string {
+    ft_list_sort(items)
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < ft_list_len(items) {
+        if i > 0 {
+            s = s + ", "
+        }
+        s = s + ft_list_get(items, i)
+        i = i + 1
+    }
+    return s
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let vtext: string = ft_read_file(VERSION)
+    if vtext == null {
+        ft_errln("check_changelog: cannot read " + VERSION)
+        return 1
+    }
+    let version: string = current_version(vtext)
+    if version == null {
+        ft_errln("could not read __version__ from src/flow/version.py")
+        return 1
+    }
+    let ctext: string = ft_read_file(CHANGELOG)
+    if ctext == null {
+        ft_errln("check_changelog: cannot read " + CHANGELOG)
+        return 1
+    }
+    let versions: ptr<StrList> = changelog_versions(ctext)
+    let total: i32 = ft_list_len(versions)
+
+    let mut present: bool = false
+    let dups: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < total {
+        let v: string = ft_list_get(versions, i)
+        if ft_eq(v, version) {
+            present = true
+        }
+        # A duplicate is recorded once, at its second occurrence.
+        let mut seen: i32 = 0
+        let mut j: i32 = 0
+        while j < i {
+            if ft_eq(ft_list_get(versions, j), v) {
+                seen = seen + 1
+            }
+            j = j + 1
+        }
+        if seen == 1 {
+            ft_list_push(dups, v)
+        }
+        i = i + 1
+    }
+    if present == false {
+        ft_errln("current version " + version + " has no section in " + CHANGELOG)
+        return 1
+    }
+    let unexpected: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < ft_list_len(dups) {
+        if ft_eq(ft_list_get(dups, i), "0.2.0") == false {
+            ft_list_push(unexpected, ft_list_get(dups, i))
+        }
+        i = i + 1
+    }
+    if ft_list_len(unexpected) > 0 {
+        ft_errln("duplicate version headings in canonical changelog: " + join_sorted(unexpected))
+        return 1
+    }
+    ft_outln("changelog: " + ft_itoa(total) + " historical sections; current " + version + " present")
+    if ft_list_len(dups) > 0 {
+        ft_outln("changelog: preserving documented legacy duplicate(s): " + join_sorted(dups))
+    }
+    return 0
+}

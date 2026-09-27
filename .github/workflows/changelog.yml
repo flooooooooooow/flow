@@ -7,7 +7,10 @@ on:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
       - 'src/flow/version.py'
-      - 'scripts/check_changelog.py'
+      - 'scripts/check_changelog.sh'
+      - 'scripts/tools/changelog_check/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/tools/build_tool.sh'
       - '.github/workflows/changelog.yml'
   pull_request:
     branches: [main, master]
@@ -15,7 +18,10 @@ on:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
       - 'src/flow/version.py'
-      - 'scripts/check_changelog.py'
+      - 'scripts/check_changelog.sh'
+      - 'scripts/tools/changelog_check/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/tools/build_tool.sh'
       - '.github/workflows/changelog.yml'
 
 permissions:
@@ -27,4 +33,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Require current version in canonical changelog
-        run: python3 scripts/check_changelog.py
+        run: scripts/check_changelog.sh
