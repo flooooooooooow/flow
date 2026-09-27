@@ -887,7 +887,7 @@ flow_packages/
         if not self.packages_dir.exists():
             return sources, frameworks, libs, cflags, ldflags
 
-        for dep_name in config.dependencies.keys():
+        for dep_name in config.dependencies:
             dep_dir = self.packages_dir / dep_name
             dep_toml = dep_dir / "flow.toml"
             if not dep_toml.exists():
