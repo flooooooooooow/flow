@@ -17,7 +17,7 @@ Also: `flow.toml` may set `profile = "safety"` once project config is wired; unt
 ## Temp arena (strcat / closures)
 
 String `+` and escaping closure envs allocate through `flow_temp_alloc` and are
-released by `flow_temp_free_all` at process exit (`atexit`) — closes the
+released by `flow_temp_free_all` at process exit (`atexit`). This closes the
 strcat/closure leaks for short-lived programs (#267 / #268). Long-running
 servers should prefer arenas or avoid heap concat.
 

@@ -1,6 +1,6 @@
 # FLOW Shader Language (FSL)
 
-A real (but focused) shading language for fullscreen fragment demos — lowers to Metal.
+A real (but focused) shading language for fullscreen fragment demos. It lowers to Metal.
 
 **Want to see it before reading the reference?** Open the
 [Photoreal FSL Gallery](../demos/shaders.md): 64 recorded shader entries with
@@ -10,7 +10,7 @@ source and run commands on every tile.
 ./flow shader examples/gpu/shader_showcase.flow
 ```
 
-**Gallery controls:** `←` / `→` / `Space` cycle · `1`–`9` jump · `Esc` quit
+**Gallery controls:** `←` / `→` / `Space` cycle · `1` to `9` jump · `Esc` quit
 
 ## Quick example
 
@@ -77,7 +77,7 @@ Swizzles: `.xyzw`, `.rgb`, …
 
 ### Classic showcase
 
-`examples/gpu/shader_showcase.flow` — 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
+`examples/gpu/shader_showcase.flow`: 12 demos (plasma, ripple, waves, checker, noise, Mandelbrot, Julia, stars, rings, fire, spiral, grid).
 
 ```bash
 ./flow shader examples/gpu/shader_showcase.flow
@@ -85,7 +85,7 @@ Swizzles: `.xyzw`, `.rgb`, …
 ./flow shader examples/gpu/shader_plasma.flow --name plasma
 ```
 
-### Photorealistic showcase — 64 examples
+### Photorealistic showcase: 64 examples
 
 The [visual gallery](../demos/shaders.md) contains **64 runnable FSL shaders**
 split across two launchable files. `examples/gpu/shader_photoreal.flow`
@@ -137,11 +137,11 @@ a GIF for every entry.
 
 ## Pipeline
 
-1. `src/flow/shader_dsl.py` — lex/parse FSL  
-2. `src/flow/shader_codegen.py` — emit MSL (+ hash/noise prelude)  
-3. `runtime/shader_view_metal.m` — Cocoa + `CAMetalLayer` live gallery viewer  
-4. `runtime/shader_record_metal.m` — deterministic offscreen Metal recorder for published GIFs  
-5. `scripts/build_shader_gallery.py` — source-derived visual gallery page + asset contract
+1. `src/flow/shader_dsl.py`: lex/parse FSL  
+2. `src/flow/shader_codegen.py`: emit MSL (+ hash/noise prelude)  
+3. `runtime/shader_view_metal.m`: Cocoa + `CAMetalLayer` live gallery viewer  
+4. `runtime/shader_record_metal.m`: deterministic offscreen Metal recorder for published GIFs  
+5. `scripts/build_shader_gallery.py`: source-derived visual gallery page + asset contract
 
 macOS for the live window and recorded Metal output; `--emit-only` works anywhere.
 
