@@ -109,6 +109,6 @@ decoration lives in `tests/unit/test_bpf_target.py`.
 
 ## Related
 
-- [WebAssembly](wasm.md) — the other freestanding target, with the same
+- [WebAssembly](wasm.md): the other freestanding target, with the same
   toolchain caveat
-- [MLIR opt flags](mlir-opt-flags.md) — the optimizer this path runs through
+- [MLIR opt flags](mlir-opt-flags.md): the optimizer this path runs through
