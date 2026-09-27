@@ -7,12 +7,11 @@ written in a clearer, safer, more Flow-native way.
 
 from __future__ import annotations
 
-import dataclasses
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Set
+from dataclasses import dataclass
+from typing import Any, List, Optional
 from .parser import (
-    Block, VarDecl, Assignment, ReturnStatement, StructLiteral, IfStatement, MatchStatement,
-    Expression, FunctionDecl, FieldAccess, Variable
+    Assignment, Block, FieldAccess, FunctionDecl, IfStatement, MatchStatement,
+    ReturnStatement, StructLiteral, VarDecl, Variable
 )
 
 @dataclass
