@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -52,13 +53,20 @@ function main() -> i32 {
 def built(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("match")
     src = tmp / "m.flow"
+    c_out = tmp / "m.c"
     src.write_text(textwrap.dedent(SOURCE))
-    run = subprocess.run(
-        ["./flow", "run", str(src)],
+    transpile = subprocess.run(
+        [sys.executable, "-m", "flow.transpiler", str(src), "--c", "-o", str(c_out)],
         cwd=ROOT, capture_output=True, text=True,
-        env={**os.environ, "FLOW_HOST": "python"},
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
     )
-    return run, (ROOT / "build" / "m.c").read_text()
+    assert transpile.returncode == 0, transpile.stderr
+    run = subprocess.run(
+        [sys.executable, "-m", "flow.run", str(src)],
+        cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+    return run, c_out.read_text()
 
 
 def test_every_arm_still_dispatches_to_its_own_variant(built):
