@@ -1,9 +1,9 @@
 {
   "_note": [
-    "Single source of truth for the wiki sidebar. scripts/build_wiki.py reads",
-    "this; page_category, llms.txt and the mkdocs nav are all derived from it.",
-    "JSON rather than YAML because the wiki CI job runs bare `python3` with no",
-    "setup-python and no pip install, so build_wiki.py must stay stdlib-only.",
+    "Single source of truth for the wiki sidebar. scripts/build_wiki.sh reads",
+    "this; the search categories, llms.txt and the mkdocs nav derive from it.",
+    "JSON rather than YAML because the wiki builder is a Flow program with a",
+    "small JSON reader (scripts/tools/lib/json.flow) and no YAML parser.",
     "Sections marked \"generated\" are filled in at build time from the proof corpus.",
     "Every page under docs/ must appear here or in \"unlisted\" below."
   ],

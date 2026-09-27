@@ -1,6 +1,6 @@
 # Validate internal links in the built wiki under build/wiki.
 #
-# Run through scripts/check_wiki_links.sh after scripts/build_wiki.py. The
+# Run through scripts/check_wiki_links.sh after scripts/build_wiki.sh. The
 # shim lists the tree with find(1), since Flow cannot read directories:
 #
 #   build/wiki-links/entries.txt   every path under build/wiki, find order
@@ -279,7 +279,7 @@ function main() -> i32 {
     let root: string = cwd()
     let wiki: string = root + "/" + WIKI_REL
     if ft_exists(wiki) == false {
-        ft_errln("Run scripts/build_wiki.py first")
+        ft_errln("Run scripts/build_wiki.sh first")
         return 1
     }
     let entries_text: string = ft_read_file(ENTRIES)

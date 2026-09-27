@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Flow wiki locally. VPS deploy is disabled — docs ship via GitHub Pages.
+"""Build the Flow wiki locally. VPS deploy is disabled; docs ship via GitHub Pages.
 
 CI: `.github/workflows/wiki.yml` → GitHub Pages
    https://flooooooooooow.github.io/flow/
@@ -23,7 +23,7 @@ PAGES_URL = "https://flooooooooooow.github.io/flow/"
 
 
 def main() -> int:
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "build_wiki.py")], check=True)
+    subprocess.run(["bash", str(ROOT / "scripts" / "build_wiki.sh")], check=True)
 
     if not BUILD.exists():
         print("Build directory missing", file=sys.stderr)
@@ -50,7 +50,7 @@ def main() -> int:
     )
 
     if not password:
-        print("No SSH password configured — set SSH_PASSWORD or .ssh_config", file=sys.stderr)
+        print("No SSH password configured. Set SSH_PASSWORD or .ssh_config", file=sys.stderr)
         return 1
 
     env = {**os.environ, "SSHPASS": password}
@@ -65,7 +65,7 @@ def main() -> int:
 
     tarball = ROOT / "build" / "flow-wiki-deploy.tgz"
     pf = BUILD / "pagefind" / "pagefind.js"
-    pf_note = " incl. Pagefind" if pf.exists() else " (no Pagefind — local search only)"
+    pf_note = " incl. Pagefind" if pf.exists() else " (no Pagefind, local search only)"
     print(f"Packaging wiki ({_dir_size(BUILD):.1f} MB{pf_note}) → {tarball}")
     with tarfile.open(tarball, "w:gz") as tar:
         tar.add(BUILD, arcname=".")
