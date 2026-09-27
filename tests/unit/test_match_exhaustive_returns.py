@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -48,17 +49,30 @@ function main() -> i32 {
 """
 
 
+def _run_source():
+    from flow.monomorphize import monomorphize
+    from flow.parser import parse_flow_code
+    from flow.c_generator import flow_to_c
+
+    decls = monomorphize(parse_flow_code(SOURCE))
+    c_code = flow_to_c(decls)
+    with tempfile.TemporaryDirectory() as td:
+        c_path = os.path.join(td, "m.c")
+        bin_path = os.path.join(td, "m")
+        with open(c_path, "w") as f:
+            f.write(c_code)
+        comp = subprocess.run(
+            ["clang", c_path, "-o", bin_path, "-lm"], capture_output=True, text=True
+        )
+        if comp.returncode != 0:
+            raise RuntimeError(f"Clang failed: {comp.stderr}")
+        run = subprocess.run([bin_path], capture_output=True, text=True)
+        return run, c_code
+
+
 @pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("match")
-    src = tmp / "m.flow"
-    src.write_text(textwrap.dedent(SOURCE))
-    run = subprocess.run(
-        ["./flow", "run", str(src)],
-        cwd=ROOT, capture_output=True, text=True,
-        env={**os.environ, "FLOW_HOST": "python"},
-    )
-    return run, (ROOT / "build" / "m.c").read_text()
+def built():
+    return _run_source()
 
 
 def test_every_arm_still_dispatches_to_its_own_variant(built):
