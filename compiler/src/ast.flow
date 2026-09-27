@@ -73,7 +73,8 @@ export const AST_TYPE_SPAN_MUTABLE: i32 = 1
 # AST_CONST: name_* = name, a = type (AST_TYPE), b = init expr, ival = 1 if export else 0.
 # AST_CAST: a = expr, b = target type (AST_TYPE).
 # AST_ASSIGN: a = lhs expr (IDENT / FIELD_ACCESS / INDEX), b = rhs expr.
-# AST_ARRAY_LIT: a = element expr chain (via next).
+# AST_ARRAY_LIT: a = element expr chain (via next); b = count expr for
+#   the repeat form [value; N] (a is then the single value), else AST_NONE.
 # AST_FLOAT: name_start/name_end = source span of the float literal (e.g. 1.5).
 # AST_MATCH: a = scrutinee expr, b = AST_MATCH_ARM chain (via next).
 # AST_EXTERN_TYPE: name_* = type name. Opaque C struct forward declaration.

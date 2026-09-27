@@ -688,6 +688,9 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             flowc_tc_check_expr(ctx, arena, el)
             el = arena.nodes[el].next
         }
+        if arena.nodes[id].b != AST_NONE {
+            flowc_tc_check_expr(ctx, arena, arena.nodes[id].b)
+        }
         return
     }
 }

@@ -714,10 +714,19 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         let start: i32 = tok.start
         flowc_parser_advance(p)
         let mut elems: i32 = AST_NONE
+        let mut repeat_n: i32 = AST_NONE
         if flowc_parser_check(p[0], TOK_RBRACK) == 0 {
             let first: i32 = flowc_parse_expr(p)
             elems = flowc_ast_chain_push(&p[0].arena, elems, first)
-            while flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            # [value; N] repeat literal (#585, #945).
+            if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+                flowc_parser_advance(p)
+                repeat_n = flowc_parse_expr(p)
+                if repeat_n == AST_NONE {
+                    return AST_NONE
+                }
+            }
+            while repeat_n == AST_NONE and flowc_parser_check(p[0], TOK_COMMA) == 1 {
                 flowc_parser_advance(p)
                 # Trailing comma: stop if next is ]
                 if flowc_parser_check(p[0], TOK_RBRACK) == 1 {
@@ -736,6 +745,7 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
             return AST_NONE
         }
         p[0].arena.nodes[id].a = elems
+        p[0].arena.nodes[id].b = repeat_n
         return id
     }
     p[0].err = 1

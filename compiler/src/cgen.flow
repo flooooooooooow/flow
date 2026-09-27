@@ -368,6 +368,11 @@ function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i3
         flowc_cgen_puts(w, "_flow_else")
         return
     }
+    # <complex.h> (always included) defines the macro I.
+    if flowc_cgen_span_is(src, start, end, "I") == 1 {
+        flowc_cgen_puts(w, "_flow_I")
+        return
+    }
     # Not a reserved word: emit as-is
     flowc_cgen_put_span(w, src, start, end)
 }
@@ -392,6 +397,200 @@ function flowc_cgen_is_struct_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
         i = i + 1
     }
     return 0
+}
+
+# --- sized arrays ---------------------------------------------------------
+# array<T, N> (ival = N > 0) is a C array T[N]; nested sized arrays are rows,
+# array<array<T, M>, N> → T[N][M] (#944). A function returning one returns a
+# struct wrapper { T v[N]...; } so the value outlives the call (#943).
+
+# 1 if `ty` is array<T, N> with a literal size.
+function flowc_cgen_is_sized_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[ty].a == AST_NONE or arena.nodes[ty].ival <= 0 {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+}
+
+# Innermost element type below every sized-array level.
+function flowc_cgen_array_base(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    let mut t: i32 = ty
+    while flowc_cgen_is_sized_array(arena, src, t) == 1 {
+        t = arena.nodes[t].a
+    }
+    return t
+}
+
+# `[N][M]...` for each sized-array level, outermost first.
+function flowc_cgen_emit_array_dims(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    let mut t: i32 = ty
+    while flowc_cgen_is_sized_array(arena, src, t) == 1 {
+        flowc_cgen_putc(w, 91)
+        flowc_cgen_put_i32(w, arena.nodes[t].ival)
+        flowc_cgen_putc(w, 93)
+        t = arena.nodes[t].a
+    }
+}
+
+# Identifier-safe spelling of a type for wrapper names: i32_3, i32_3_4.
+function flowc_cgen_put_type_mangle(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        flowc_cgen_puts(w, "i32")
+        return
+    }
+    if flowc_cgen_is_sized_array(arena, src, ty) == 1 {
+        flowc_cgen_put_type_mangle(w, arena, src, arena.nodes[ty].a)
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_i32(w, arena.nodes[ty].ival)
+        return
+    }
+    flowc_cgen_put_span(w, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
+    let mut ta: i32 = arena.nodes[ty].a
+    while ta != AST_NONE {
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_type_mangle(w, arena, src, ta)
+        ta = arena.nodes[ta].next
+    }
+}
+
+# Wrapper struct name for a returned sized array.
+function flowc_cgen_put_array_ret_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    flowc_cgen_puts(w, "__flowc_arr_")
+    flowc_cgen_put_type_mangle(w, arena, src, ty)
+}
+
+# Guarded typedef of the wrapper struct, emitted at file scope right before
+# the first prototype or definition that needs it.
+function flowc_cgen_emit_array_ret_typedef(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
+    flowc_cgen_puts(w, "#ifndef ")
+    flowc_cgen_put_array_ret_name(w, arena, src, ty)
+    flowc_cgen_puts(w, "_DEFINED\n#define ")
+    flowc_cgen_put_array_ret_name(w, arena, src, ty)
+    flowc_cgen_puts(w, "_DEFINED\ntypedef struct { ")
+    flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
+    flowc_cgen_puts(w, " v")
+    flowc_cgen_emit_array_dims(w, arena, src, ty)
+    flowc_cgen_puts(w, "; } ")
+    flowc_cgen_put_array_ret_name(w, arena, src, ty)
+    flowc_cgen_puts(w, ";\n#endif\n")
+}
+
+# 1 if the function node returns a sized array.
+function flowc_cgen_fn_returns_array(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE {
+        return 0
+    }
+    return flowc_cgen_is_sized_array(arena, src, arena.nodes[fn].b)
+}
+
+# 1 if a call to a function from another bundle module returns a sized
+# array: its signature-table C type is an __flowc_arr_ wrapper.
+function flowc_cgen_sig_returns_array(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, ns, ne)
+    if off < 0 {
+        return 0
+    }
+    let want: string = "__flowc_arr_"
+    let wp: ptr<u8> = want
+    let mut i: i32 = 0
+    while i < 12 {
+        if off + i >= w[0].sigs_len {
+            return 0
+        }
+        if w[0].sigs[off + i] != wp[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Destination of an array fill: mode 0 is the identifier span ns..ne,
+# mode 1 is the return wrapper's `__flowc_ret.v`.
+function flowc_cgen_put_array_dest(w: ptr<CgenBuf>, src: ptr<u8>, dest_mode: i32, ns: i32, ne: i32) {
+    if dest_mode == 1 {
+        flowc_cgen_puts(w, "__flowc_ret.v")
+        return
+    }
+    flowc_cgen_put_ident(w, src, ns, ne)
+}
+
+# Copy `init` into a sized-array destination. An array literal is copied
+# row by row ([a, b] where a and b are arrays); anything else is one memcpy.
+function flowc_cgen_emit_array_fill(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, dest_mode: i32, ns: i32, ne: i32, init: i32) {
+    if init != AST_NONE and arena.nodes[init].kind == AST_ARRAY_LIT and arena.nodes[init].b == AST_NONE {
+        let mut el: i32 = arena.nodes[init].a
+        let mut idx: i32 = 0
+        while el != AST_NONE {
+            flowc_cgen_puts(w, "  memcpy(")
+            flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+            flowc_cgen_putc(w, 91)
+            flowc_cgen_put_i32(w, idx)
+            flowc_cgen_puts(w, "], ")
+            flowc_cgen_emit_expr(w, arena, src, el)
+            flowc_cgen_puts(w, ", sizeof(")
+            flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+            flowc_cgen_putc(w, 91)
+            flowc_cgen_put_i32(w, idx)
+            flowc_cgen_puts(w, "]));\n")
+            idx = idx + 1
+            el = arena.nodes[el].next
+        }
+        return
+    }
+    flowc_cgen_puts(w, "  memcpy(")
+    flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+    flowc_cgen_puts(w, ", ")
+    flowc_cgen_emit_expr(w, arena, src, init)
+    flowc_cgen_puts(w, ", sizeof(")
+    flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne)
+    flowc_cgen_puts(w, "));\n")
+}
+
+# 1 if `init` can be a C initializer for a `ty` array as written: an array
+# literal that is a repeat, has scalar elements, or has only literal rows.
+function flowc_cgen_array_lit_is_init(arena: AstArena, src: ptr<u8>, ty: i32, init: i32) -> i32 {
+    if init == AST_NONE or arena.nodes[init].kind != AST_ARRAY_LIT {
+        return 0
+    }
+    if arena.nodes[init].b != AST_NONE {
+        return 1
+    }
+    if flowc_cgen_is_sized_array(arena, src, arena.nodes[ty].a) == 0 {
+        return 1
+    }
+    let mut el: i32 = arena.nodes[init].a
+    while el != AST_NONE {
+        if arena.nodes[el].kind != AST_ARRAY_LIT {
+            return 0
+        }
+        el = arena.nodes[el].next
+    }
+    return 1
+}
+
+# Return type of a function: the array wrapper, void* for function
+# pointers, else the plain C type.
+function flowc_cgen_emit_ret_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ret_ty: i32) {
+    if ret_ty == AST_NONE {
+        flowc_cgen_puts(w, "void")
+        return
+    }
+    if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
+        flowc_cgen_put_array_ret_name(w, arena, src, ret_ty)
+        return
+    }
+    if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
+        flowc_cgen_puts(w, "void*")
+        return
+    }
+    flowc_cgen_emit_type(w, arena, src, ret_ty)
 }
 
 # Stage-A type → C: ptr<T> → T*, u8 → uint8_t, i64 → int64_t, structs by name.
@@ -1275,7 +1474,11 @@ function flowc_cgen_sig_put(
     n = n + 1
     let dest: ptr<u8> = buf + n
     let mut tw: CgenBuf = flowc_cgen_buf_init(dest, cap - n - 1)
-    flowc_cgen_emit_type(&tw, arena, src, rt)
+    if flowc_cgen_is_sized_array(arena, src, rt) == 1 {
+        flowc_cgen_put_array_ret_name(&tw, arena, src, rt)
+    } else {
+        flowc_cgen_emit_type(&tw, arena, src, rt)
+    }
     if tw.err != 0 {
         return len
     }
@@ -2326,6 +2529,16 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             param_idx = param_idx + 1
         }
         flowc_cgen_putc(w, 41)
+        # A returned sized array arrives wrapped; expose the array.
+        if fn_id != AST_NONE {
+            if flowc_cgen_fn_returns_array(arena, src, fn_id) == 1 {
+                flowc_cgen_puts(w, ".v")
+            }
+        } else {
+            if flowc_cgen_sig_returns_array(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                flowc_cgen_puts(w, ".v")
+            }
+        }
         return
     }
     if kind == AST_FIELD_ACCESS {
@@ -2403,6 +2616,15 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_ARRAY_LIT {
+        # [v; N] → { [0 ... (N) - 1] = (v) } (GNU range designator).
+        if arena.nodes[id].b != AST_NONE {
+            flowc_cgen_puts(w, "{ [0 ... (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ") - 1] = (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") }")
+            return
+        }
         # { e1, e2, ... }
         flowc_cgen_puts(w, "{ ")
         let mut el: i32 = arena.nodes[id].a
@@ -2509,7 +2731,25 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         flowc_cgen_puts(w, "  ")
         if arr_n > 0 {
-            flowc_cgen_emit_type(w, arena, src, arr_inner)
+            flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
+            flowc_cgen_putc(w, 32)
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_emit_array_dims(w, arena, src, ty)
+            # A literal initializer is plain C. Anything else (a call that
+            # returns an array, another array, rows given by name) is copied.
+            if init == AST_NONE {
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+            if flowc_cgen_array_lit_is_init(arena, src, ty, init) == 1 {
+                flowc_cgen_puts(w, " = ")
+                flowc_cgen_emit_expr(w, arena, src, init)
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+            flowc_cgen_puts(w, ";\n")
+            flowc_cgen_emit_array_fill(w, arena, src, 0, arena.nodes[id].name_start, arena.nodes[id].name_end, init)
+            return
         } else {
             let mut wrote: i32 = 0
             if ty == AST_NONE {
@@ -2641,6 +2881,26 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             if flowc_cgen_span_is(src, arena.nodes[ret_expr].name_start, arena.nodes[ret_expr].name_end, "void") == 1 {
                 flowc_cgen_emit_defers_to(w, arena, src, 0)
                 flowc_cgen_puts(w, "  return;\n")
+                return
+            }
+        }
+        # Returned sized array: build the wrapper struct (#943).
+        if w[0].cur_fn != AST_NONE and w[0].in_lambda == 0 {
+            let fn_ret: i32 = arena.nodes[w[0].cur_fn].b
+            if flowc_cgen_is_sized_array(arena, src, fn_ret) == 1 {
+                flowc_cgen_puts(w, "  { ")
+                flowc_cgen_put_array_ret_name(w, arena, src, fn_ret)
+                flowc_cgen_puts(w, " __flowc_ret")
+                if flowc_cgen_array_lit_is_init(arena, src, fn_ret, ret_expr) == 1 {
+                    flowc_cgen_puts(w, " = { ")
+                    flowc_cgen_emit_expr(w, arena, src, ret_expr)
+                    flowc_cgen_puts(w, " };\n")
+                } else {
+                    flowc_cgen_puts(w, ";\n")
+                    flowc_cgen_emit_array_fill(w, arena, src, 1, 0, 0, ret_expr)
+                }
+                flowc_cgen_emit_defers_to(w, arena, src, 0)
+                flowc_cgen_puts(w, "  return __flowc_ret; }\n")
                 return
             }
         }
@@ -3049,6 +3309,16 @@ function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
         flowc_cgen_putc(w, 41)
         return
     }
+    # Nested sized array param keeps its row shape: T name[N][M].
+    if flowc_cgen_is_sized_array(arena, src, ty) == 1 {
+        if flowc_cgen_is_sized_array(arena, src, arena.nodes[ty].a) == 1 {
+            flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
+            flowc_cgen_putc(w, 32)
+            flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_emit_array_dims(w, arena, src, ty)
+            return
+        }
+    }
     flowc_cgen_emit_type(w, arena, src, ty)
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -3222,15 +3492,10 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     # Stage-A: emit return type; omitted (AST_NONE) → void.
     # Function pointer return types are emitted as void* (simplification).
     let ret_ty: i32 = arena.nodes[id].b
-    if ret_ty == AST_NONE {
-        flowc_cgen_puts(w, "void")
-    } else {
-        if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
-            flowc_cgen_puts(w, "void*")
-        } else {
-            flowc_cgen_emit_type(w, arena, src, ret_ty)
-        }
+    if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
+        flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
+    flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
     # Monomorphization: emit mangled name when mono context is active.
     if w[0].mono_ntp > 0 and cli_main == 0 {
@@ -3281,15 +3546,10 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         return
     }
     let ret_ty: i32 = arena.nodes[id].b
-    if ret_ty == AST_NONE {
-        flowc_cgen_puts(w, "void")
-    } else {
-        if arena.nodes[ret_ty].kind == AST_TYPE and (arena.nodes[ret_ty].ival == -1 or arena.nodes[ret_ty].ival == -2) {
-            flowc_cgen_puts(w, "void*")
-        } else {
-            flowc_cgen_emit_type(w, arena, src, ret_ty)
-        }
+    if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
+        flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
+    flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
     # Monomorphization: emit mangled name when mono context is active.
     if w[0].mono_ntp > 0 and cli_main == 0 {

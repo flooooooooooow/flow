@@ -309,6 +309,13 @@ function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
     }
     if kind == AST_ARRAY_LIT {
         flowc_fmt_putc(w, 91)
+        if arena.nodes[id].b != AST_NONE {
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_fmt_puts(w, "; ")
+            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_fmt_putc(w, 93)
+            return
+        }
         let mut el: i32 = arena.nodes[id].a
         let mut first: i32 = 1
         while el != AST_NONE {
