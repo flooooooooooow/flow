@@ -32,8 +32,8 @@ def read_notes(path: Path) -> tuple[str, str]:
 def sync_version(root: Path, version: str, release_date: str) -> None:
     subprocess.run(
         [
-            sys.executable,
-            str(root / "scripts" / "sync_version.py"),
+            "bash",
+            str(root / "scripts" / "sync_version.sh"),
             "--set",
             version,
             "--release-date",
@@ -89,7 +89,7 @@ def update_root_changelog(root: Path, version: str, release_date: str, headline:
 
 def verify(root: Path, version: str) -> None:
     subprocess.run(
-        [sys.executable, str(root / "scripts" / "sync_version.py"), "--check"],
+        ["bash", str(root / "scripts" / "sync_version.sh"), "--check"],
         cwd=root,
         check=True,
     )

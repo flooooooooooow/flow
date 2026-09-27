@@ -24,7 +24,7 @@ jobs:
       - name: Verify the 1.0.1 release tree
         shell: bash
         run: |
-          python3 scripts/sync_version.py --check
+          scripts/sync_version.sh --check
           python3 scripts/check_changelog.py
           test "$(PYTHONPATH=src python3 - <<'PY'
           from flow.version import __version__
