@@ -121,6 +121,36 @@ flowc_emit_to_c() {
         return 1
     fi
     print_info "flowc emit via $driver"
+    # A program that imports modules, or uses the Field DSL (which adds an
+    # import of stdlib/dynamics/pde.flow), is bundled into one C unit. flowc
+    # resolves `stdlib/...` against lib/stdlib from the working directory and
+    # path imports such as "compiler/src/fileio.flow" against FLOWC_DIR, so
+    # the bundle runs from the repository root with absolute paths. Relative
+    # `.sibling` imports still resolve next to the importing module.
+    if grep -Eq '^[[:space:]]*import[[:space:]]' "$program" || \
+        grep -Eq '^[[:space:]]*(field|boundary)[[:space:]]' "$program"; then
+        local abs_program abs_out abs_driver
+        abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+        abs_out="$(cd "$(dirname "$c_out")" && pwd)/$(basename "$c_out")"
+        case "$driver" in
+            /*) abs_driver="$driver" ;;
+            *)
+                if [ -x "$driver" ]; then
+                    abs_driver="$(cd "$(dirname "$driver")" && pwd)/$(basename "$driver")"
+                else
+                    abs_driver="$SCRIPT_DIR/$driver"
+                fi
+                ;;
+        esac
+        (
+            cd "$SCRIPT_DIR" &&
+            FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
+            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+            FLOWC_IN="$abs_program" FLOWC_OUT="$abs_out" \
+                "$abs_driver"
+        )
+        return $?
+    fi
     # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
     FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
     FLOWC_IN="$program" FLOWC_OUT="$c_out" \
