@@ -1,15 +1,15 @@
-"""Tests for the dsys dynamical-systems surface syntax preprocessor."""
+"""Tests for the dsys dynamical-systems surface syntax.
+
+The expander is flowc's (compiler/src/dynamics_dsl.flow); these go through
+the Python bridge. compiler/scripts/parity_dynamics_dsl.sh holds the full
+expansion byte for byte against the retired Python expander.
+"""
 
 import re
 
 import pytest
 
-from flow.dynamics_dsl import (
-    compile_dynamics_program,
-    expand_dynamics_dsl,
-    has_dynamics_dsl,
-    parse_dynamics_dsl,
-)
+from flow.dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
 
 
 SAMPLE = """
@@ -49,44 +49,35 @@ class TestDynamicsDSLDetection:
         assert not has_dynamics_dsl('println("hello")')
 
 
-class TestDynamicsDSLParser:
-    def test_parse_strips_dsl_blocks(self):
-        program, stripped = parse_dynamics_dsl(SAMPLE)
-        assert "dsys plant" not in stripped
-        assert "ga evolve" not in stripped
-        assert "function main" in stripped
-        assert "plant" in program.systems
-        assert program.systems["plant"].n == 2
-        assert program.horizons["rollout"].steps == 50
-        assert len(program.ga_evolutions) == 1
-        assert program.ga_evolutions[0].population == 8
+class TestDynamicsDSLExpansion:
+    def test_expand_strips_dsl_blocks(self):
+        out = expand_dynamics_dsl(SAMPLE)
+        assert "dsys plant {" not in out
+        assert "ga evolve" not in out
+        assert "function main" in out
+        assert "dsys_discrete(2, 1, 1, 0.10000000000000001," in out
+        assert "horizon_finite(50)" in out
+        assert "population: 8, generations: 20, horizon: 50, mutation: 0.25" in out
 
     def test_invalid_dsys_raises(self):
         with pytest.raises(SyntaxError):
-            parse_dynamics_dsl("dsys bad\n")
+            expand_dynamics_dsl("dsys bad\n")
 
+    def test_expand_emits_discrete_system(self):
+        out = expand_dynamics_dsl(SAMPLE)
+        assert "__dsys_plant" in out
+        assert "let plant: DynamicalSystem = __dsys_plant" in out
 
-class TestDynamicsDSLCompiler:
-    def test_compile_emits_discrete_system(self):
-        program, _ = parse_dynamics_dsl(SAMPLE)
-        code = compile_dynamics_program(program)
-        assert "dsys_discrete" in code
-        assert "__dsys_plant" in code
-        assert "let plant: DynamicalSystem = __dsys_plant" in code
-        assert "horizon_finite(50)" in code
+    def test_expand_emits_ga_evolve(self):
+        out = expand_dynamics_dsl(SAMPLE)
+        assert "ga_evolve_traced" in out
+        assert "array<f64, 8>" in out
+        assert "__ga_e0_k1" in out
 
-    def test_compile_emits_ga_evolve(self):
-        program, _ = parse_dynamics_dsl(SAMPLE)
-        code = compile_dynamics_program(program)
-        assert "ga_evolve_traced" in code
-        assert "array<f64, 8>" in code
-        assert "__ga_e0_k1" in code
-
-    def test_compile_sense_controllable_is_i32(self):
-        program, _ = parse_dynamics_dsl(SAMPLE)
-        code = compile_dynamics_program(program)
-        assert "let mut plant_ok: i32" in code
-        assert "is_controllable" in code
+    def test_expand_sense_controllable_is_i32(self):
+        out = expand_dynamics_dsl(SAMPLE)
+        assert "let mut plant_ok: i32" in out
+        assert "is_controllable" in out
 
 
 WFC_SAMPLE = SAMPLE + """
@@ -150,22 +141,22 @@ function main() -> i32 { return ok }
 
 
 class TestDynamicsNamespaces:
-    def test_dynamics_block_parses(self):
+    def test_dynamics_block_expands(self):
         assert has_dynamics_dsl(NAMESPACED_BLOCK)
-        program, stripped = parse_dynamics_dsl(NAMESPACED_BLOCK)
-        assert "dynamics {" not in stripped
-        assert "dsys plant" not in stripped
-        assert "plant" in program.systems
-        assert program.horizons["rollout"].steps == 50
-        assert len(program.senses) == 1
+        out = expand_dynamics_dsl(NAMESPACED_BLOCK)
+        assert "dynamics {" not in out
+        assert "dsys plant" not in out
+        assert "__dsys_plant" in out
+        assert "horizon_finite(50)" in out
+        assert out.count("is_controllable(") == 1
 
-    def test_dyn_dot_prefix_parses(self):
-        program, stripped = parse_dynamics_dsl(NAMESPACED_PREFIX)
-        assert "dyn.dsys" not in stripped
-        assert "dynamics.horizon" not in stripped
-        assert program.systems["plant"].n == 2
-        assert program.horizons["rollout"].steps == 40
-        assert expand_dynamics_dsl(NAMESPACED_PREFIX).startswith(
+    def test_dyn_dot_prefix_expands(self):
+        out = expand_dynamics_dsl(NAMESPACED_PREFIX)
+        assert "dyn.dsys" not in out
+        assert "dynamics.horizon" not in out
+        assert "dsys_discrete(2, 1, 1," in out
+        assert "horizon_finite(40)" in out
+        assert out.startswith(
             'import "stdlib/dynamics/ga_analysis.flow"'
         )
 
@@ -249,33 +240,26 @@ class TestRepresentLinear:
         assert has_dynamics_dsl("represent linear Foo { A 0.0 1.0 0.0 0.0 }\n")
 
     def test_strips_represent_from_flow_body(self):
-        program, stripped = parse_dynamics_dsl(REPRESENT_IN_FLOW)
-        assert "represent linear" not in stripped
-        assert "flow Pendulum" in stripped
-        assert "angle evolves as velocity" in stripped
-        assert "Pendulum_lin" in program.systems
-        sys = program.systems["Pendulum_lin"]
-        assert sys.mode == "continuous"
-        assert sys.n == 2
-        assert sys.m == 1
-        assert sys.A == [0.0, 1.0, -9.81, 0.0]
-        assert len(program.represents) == 1
-        assert program.represents[0].at_point == {"angle": 0.0, "velocity": 0.0}
+        out = expand_dynamics_dsl(REPRESENT_IN_FLOW)
+        assert "represent linear" not in out
+        assert "flow Pendulum" in out
+        assert "angle evolves as velocity" in out
+        assert "[0.0, 1.0, -9.8100000000000005, 0.0]" in out
+        assert "dsys_continuous(2, 1, 1," in out
 
     def test_top_level_represent_linear_name(self):
-        program, stripped = parse_dynamics_dsl(REPRESENT_TOP_LEVEL)
-        assert "represent linear" not in stripped
-        assert "Plant_lin" in program.systems
-        assert program.systems["Plant_lin"].mode == "discrete"
+        out = expand_dynamics_dsl(REPRESENT_TOP_LEVEL)
+        assert "represent linear" not in out
+        assert "let __dsys_Plant_lin: DynamicalSystem = dsys_discrete(" in out
 
     def test_at_without_A_errors(self):
         with pytest.raises(SyntaxError, match="linearization coefficients required"):
-            parse_dynamics_dsl(REPRESENT_AT_ONLY)
+            expand_dynamics_dsl(REPRESENT_AT_ONLY)
 
     def test_reserved_represent_kind_errors(self):
         src = "represent koopman {\n  observables 4\n}\nfunction main() -> i32 { return 0 }\n"
         with pytest.raises(SyntaxError, match="not yet implemented"):
-            parse_dynamics_dsl(src)
+            expand_dynamics_dsl(src)
 
     def test_nonlinear_represent_is_noop(self):
         src = (
@@ -286,10 +270,9 @@ class TestRepresentLinear:
             "}\n"
             "function main() -> i32 { return 0 }\n"
         )
-        program, stripped = parse_dynamics_dsl(src)
-        assert "represent nonlinear" not in stripped
-        assert program.systems == {}
-        assert program.represents == []
+        out = expand_dynamics_dsl(src)
+        assert "represent nonlinear" not in out
+        assert "dsys" not in out
 
     def test_expand_emits_continuous_dsys(self):
         out = expand_dynamics_dsl(REPRESENT_IN_FLOW)
@@ -324,18 +307,12 @@ function main() -> i32 {
 
 
 class TestRepresentPhasePortrait:
-    def test_strips_and_parses_portrait(self):
-        program, stripped = parse_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
-        assert "represent phase_portrait" not in stripped
-        assert len(program.portraits) == 1
-        p = program.portraits[0]
-        assert p.flow_name == "Lorenz"
-        assert p.axis0 == "x"
-        assert p.axis1 == "z"
-        assert p.trail == 320
-        assert p.win_w == 900
-        assert p.maps["x"] == (-25.0, 25.0, "col")
-        assert p.maps["z"] == (0.0, 55.0, "row")
+    def test_strips_and_lowers_portrait(self):
+        out = expand_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
+        assert "    represent phase_portrait(" not in out
+        assert "const Lorenz_portrait_trail: i32 = 320" in out
+        assert "const Lorenz_portrait_win_w: i32 = 900" in out
+        assert "project_axis(xs[idx], -25.0, 25.0, 900, 10)" in out
 
     def test_expand_emits_portrait_frame(self):
         out = expand_dynamics_dsl(REPRESENT_PHASE_PORTRAIT)
@@ -358,7 +335,7 @@ class TestRepresentPhasePortrait:
             "function main() -> i32 { return 0 }\n"
         )
         with pytest.raises(SyntaxError, match="inside"):
-            parse_dynamics_dsl(src)
+            expand_dynamics_dsl(src)
 
     def test_portrait_missing_map_errors(self):
         src = (
@@ -375,26 +352,18 @@ class TestRepresentPhasePortrait:
             "function main() -> i32 { return 0 }\n"
         )
         with pytest.raises(SyntaxError, match="need map for both"):
-            parse_dynamics_dsl(src)
+            expand_dynamics_dsl(src)
 
 
 class TestDynamicsDSLWFC:
-    def test_parse_wfc_and_couple(self):
-        program, stripped = parse_dynamics_dsl(WFC_SAMPLE)
-        assert "wfc field" not in stripped
-        assert "couple plant" not in stripped
-        assert "layout" in program.wfc_fields
-        assert program.wfc_fields["layout"].width == 4
-        assert len(program.couples) == 1
-        assert len(program.guides) == 1
-
-    def test_compile_wfc_coupling(self):
-        program, _ = parse_dynamics_dsl(WFC_SAMPLE)
-        code = compile_dynamics_program(program)
-        assert "wfc_run_guided" in code
-        assert "couple_ga_wfc_guidance" in code
-        assert "guide_state_evolution" in code
-        assert "__wfc_layout" in code
+    def test_expand_wfc_and_couple(self):
+        out = expand_dynamics_dsl(WFC_SAMPLE)
+        assert "wfc field" not in out
+        assert "couple plant" not in out
+        assert "let __wfc_layout_cells: array<i32, 16>" in out
+        assert "wfc_run_guided" in out
+        assert "couple_ga_wfc_guidance" in out
+        assert "guide_state_evolution" in out
 
     def test_expand_imports_coupling_module(self):
         out = expand_dynamics_dsl(WFC_SAMPLE)
@@ -425,15 +394,12 @@ function main() -> i32 {
 
 
 class TestAnalyzeLqr:
-    def test_parse_vision_analyze_lqr(self):
-        program, stripped = parse_dynamics_dsl(ANALYZE_LQR)
-        assert "analyze plant" not in stripped
-        assert len(program.analyze_lqrs) == 1
-        lqr = program.analyze_lqrs[0]
-        assert lqr.system == "plant"
-        assert lqr.q_diag == [1.0, 1.0]
-        assert lqr.r == 1.0
-        assert lqr.gain_vars == ["k1", "k2"]
+    def test_expand_vision_analyze_lqr(self):
+        out = expand_dynamics_dsl(ANALYZE_LQR)
+        assert "analyze plant" not in out
+        assert "let __lqr_0_q: array<f64, 2> = [1.0, 1.0]" in out
+        assert "__lqr_0_q, 1.0, 2, __lqr_0_k, 200)" in out
+        assert "let k2: f64 = __lqr_0_k[1]" in out
 
     def test_expand_emits_dlqr(self):
         out = expand_dynamics_dsl(ANALYZE_LQR)
@@ -450,6 +416,6 @@ class TestAnalyzeLqr:
             "analyze plant ga k1 k2 over h -> report { full }\n"
             "function main() -> i32 { return 0 }\n"
         )
-        program, _ = parse_dynamics_dsl(src)
-        assert len(program.analyzes) == 1
-        assert program.analyze_lqrs == []
+        out = expand_dynamics_dsl(src)
+        assert out.count("ga_analyze_control_search(") == 1
+        assert "dlqr_diag_q_scalar_u" not in out

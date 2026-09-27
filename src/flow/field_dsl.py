@@ -10,6 +10,9 @@ instead of keeping a second implementation:
 
 becomes `T_field_step(u, next, r)` calling `heat_euler_step_1d`. Parity with
 the retired Python expander is held by compiler/scripts/parity_field_dsl.sh.
+
+`run_flowc_expand` is shared with dynamics_dsl.py and flow_blocks.py, which
+bridge to the other two flowc source expansions the same way.
 """
 
 from __future__ import annotations
@@ -45,21 +48,33 @@ def _flowc() -> str:
     return str(binary)
 
 
-def expand_field_dsl(source: str) -> str:
-    if not has_field_dsl(source):
-        return source
+def run_flowc_expand(source: str, stage: str):
+    """Run one flowc expansion stage (field, dynamics or flow) on source.
+
+    Returns (expanded, None) or (None, flowc stdout) when flowc reports a
+    diagnostic.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "in.flow")
         out = os.path.join(tmp, "out.flow")
         with open(src, "w", encoding="utf-8", newline="") as f:
             f.write(source)
-        env = dict(os.environ, FLOWC_EXPAND_ONLY="1", FLOWC_IN=src, FLOWC_OUT=out)
+        env = dict(os.environ, FLOWC_EXPAND_ONLY=stage, FLOWC_IN=src, FLOWC_OUT=out)
         env.pop("FLOWC_BUNDLE", None)
         proc = subprocess.run([_flowc()], env=env, capture_output=True, text=True)
         if proc.returncode != 0:
-            for line in proc.stdout.splitlines():
-                if line.startswith(_DIAG):
-                    raise SyntaxError(line[len(_DIAG):])
-            raise SyntaxError("flowc field expansion failed: " + (proc.stdout + proc.stderr).strip())
+            return None, proc.stdout + proc.stderr
         with open(out, encoding="utf-8", newline="") as f:
-            return f.read()
+            return f.read(), None
+
+
+def expand_field_dsl(source: str) -> str:
+    if not has_field_dsl(source):
+        return source
+    text, log = run_flowc_expand(source, "field")
+    if log is not None:
+        for line in log.splitlines():
+            if line.startswith(_DIAG):
+                raise SyntaxError(line[len(_DIAG):])
+        raise SyntaxError("flowc field expansion failed: " + log.strip())
+    return text

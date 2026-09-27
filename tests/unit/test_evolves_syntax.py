@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 
 from flow.c_generator import flow_to_c
-from flow.flow_blocks import expand_flow_decls
 from flow.parser import (
     BinaryOperation,
     FlowDecl,

@@ -25,12 +25,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from flow.flow_blocks import expand_flow_decls  # noqa: E402
-from flow.parser import FlowSyntaxError, parse_flow_code  # noqa: E402
+from flow.parser import FlowSyntaxError, Lexer, Parser  # noqa: E402
 
 
 def lower(source: str):
-    return expand_flow_decls(parse_flow_code(source), source=source)
+    return Parser(Lexer(source), source=source).parse()
 
 
 def test_a_bare_unit_member_is_state():
