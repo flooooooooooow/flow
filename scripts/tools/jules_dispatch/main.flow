@@ -603,6 +603,37 @@ function open_pulls(count: ptr<i32>) -> ptr<Pull> {
     return arr
 }
 
+function main_ci_failed() -> bool {
+    let outp: string = tmp_path("main-ci")
+    let cmd: string = "gh run list --repo " + REPO +
+        " --branch main --workflow CI --limit 1 --json status,conclusion > " +
+        pr_quote(outp) + " 2>/dev/null"
+    let rc: i32 = pr_run(cmd)
+    let text: string = slurp_and_remove(outp)
+    if rc != 0 or text == null or ft_len(text) == 0 {
+        return false
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        return false
+    }
+    let first: i32 = json_first(j, 0)
+    if first < 0 {
+        return false
+    }
+    let status_id: i32 = json_get(j, first, "status")
+    let conclusion_id: i32 = json_get(j, first, "conclusion")
+    if status_id < 0 or conclusion_id < 0 {
+        return false
+    }
+    if json_kind(j, status_id) != json_kind_string() or
+       json_kind(j, conclusion_id) != json_kind_string() {
+        return false
+    }
+    return ft_eq(json_str(j, status_id), "completed") and
+           ft_eq(json_str(j, conclusion_id), "failure")
+}
+
 function is_agent_pr(pulls: ptr<Pull>, i: i32) -> bool {
     let body: string = uc_lower_str(pulls[i].body)
     let head: string = uc_lower_str(pulls[i].head)
@@ -835,6 +866,28 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     }
 
     sort_queue(issues, queue, qn)
+
+    # A red required main CI is repository-wide backpressure. Keep only
+    # correctness/security/CI/build work until the baseline is healthy.
+    if main_ci_failed() {
+        let mut keep: i32 = 0
+        i = 0
+        while i < qn {
+            let k0: i32 = queue[i]
+            if issue_priority(issues, k0) >= 700 {
+                queue[keep] = k0
+                keep = keep + 1
+            } else {
+                decisions = decisions + decision_line(
+                    issues[k0].number, "deferred",
+                    "main CI is red; low-priority work paused"
+                )
+            }
+            i = i + 1
+        }
+        qn = keep
+        ft_outln("Backpressure: main CI is red; only repair-class work is eligible.")
+    }
 
     ft_outln(ft_itoa(active) + " issues already have a live session.")
     ft_outln(ft_itoa(agent_prs) + " open Jules PRs.")
