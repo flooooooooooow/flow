@@ -4317,6 +4317,1099 @@ void flowc_parse_resolve_enum_arms(Parser* p) {
 static const int32_t FLOWC_IO_SEEK_SET = 0;
 static const int32_t FLOWC_IO_SEEK_END = 2;
 
+typedef struct FxBuf {
+  uint8_t* buf;
+  int32_t cap;
+  int32_t len;
+  int32_t err;
+} FxBuf;
+
+static const int32_t FX_MAX_FIELDS = 64;
+static const int32_t FX_REC = 9;
+static const int32_t FX_NAME_S = 0;
+static const int32_t FX_NAME_E = 1;
+static const int32_t FX_N_S = 2;
+static const int32_t FX_N_E = 3;
+static const int32_t FX_L_S = 4;
+static const int32_t FX_L_E = 5;
+static const int32_t FX_R_S = 6;
+static const int32_t FX_R_E = 7;
+static const int32_t FX_EVOLVED = 8;
+void fx_putc(FxBuf* w, uint8_t c);
+void fx_puts(FxBuf* w, const char* s);
+void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e);
+int32_t fx_is_space(uint8_t c);
+int32_t fx_is_word(uint8_t c);
+int32_t fx_is_digit(uint8_t c);
+int32_t fx_is_numch(uint8_t c);
+int32_t fx_skip_ws(uint8_t* p, int32_t i, int32_t e);
+int32_t fx_word_end(uint8_t* p, int32_t i, int32_t e);
+int32_t fx_numch_end(uint8_t* p, int32_t i, int32_t e);
+int32_t fx_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit);
+int32_t fx_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
+int32_t fx_span_has(uint8_t* p, int32_t s, int32_t e, uint8_t c);
+int32_t fx_span_count(uint8_t* p, int32_t s, int32_t e, uint8_t c);
+int32_t fx_span_find(uint8_t* p, int32_t s, int32_t e, uint8_t c);
+void fx_strip(uint8_t* p, int32_t* se);
+void fx_strip_comments(uint8_t* p, int32_t* se);
+int32_t fx_eol_len(uint8_t* p, int32_t i, int32_t n);
+int32_t fx_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le);
+int32_t fx_dsl_head_at(uint8_t* p, int32_t i, int32_t n);
+int32_t flowc_field_has_dsl(uint8_t* p, int32_t n);
+void fx_err_name(FxBuf* err, uint8_t* p, const char* pre, int32_t s, int32_t e, const char* post);
+int32_t fx_match_field(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_boundary_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_evolve(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_lap_tail(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_lap(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_assign(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_is_side_start(uint8_t* p, int32_t s, int32_t e, int32_t k);
+int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t start, int32_t* bs, int32_t* be, int32_t* cnt);
+void fx_emit_int_span(FxBuf* w, uint8_t* p, int32_t s, int32_t e);
+int32_t fx_int_le_one(uint8_t* p, int32_t s, int32_t e);
+int32_t fx_find_field(uint8_t* p, int32_t* rec, int32_t nf, int32_t s, int32_t e);
+void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf);
+int32_t fx_find_main(uint8_t* m, int32_t n);
+int32_t fx_contains(uint8_t* m, int32_t n, const char* lit);
+int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err);
+int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err);
+int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
+void fx_putc(FxBuf* w, uint8_t c) {
+  if ((w[0]).len >= (w[0]).cap) {
+  (w[0]).err = 1;
+  return;
+}
+  (w[0]).buf[(w[0]).len] = c;
+  (w[0]).len = ((w[0]).len + 1);
+}
+
+void fx_puts(FxBuf* w, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  int32_t i = 0;
+  while (i < n) {
+  fx_putc(w, p[i]);
+  i = (i + 1);
+}
+}
+
+void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  fx_putc(w, src[i]);
+  i = (i + 1);
+}
+}
+
+int32_t fx_is_space(uint8_t c) {
+  if (c == 32) {
+  return 1;
+}
+  if (c >= 9 && c <= 13) {
+  return 1;
+}
+  if (c >= 28 && c <= 31) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_is_word(uint8_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c == 95) {
+  return 1;
+}
+  if (c >= 128) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_is_digit(uint8_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_is_numch(uint8_t c) {
+  if (fx_is_digit(c) == 1) {
+  return 1;
+}
+  if (c == 43 || c == 45 || c == 46 || c == 101 || c == 69) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_skip_ws(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && fx_is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t fx_word_end(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && fx_is_word(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t fx_numch_end(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && fx_is_numch(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t fx_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit) {
+  uint8_t* lp = (uint8_t*)(lit);
+  int32_t n = (int32_t)(strlen(lit));
+  if ((i + n) > e) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < n) {
+  if (p[(i + k)] != lp[k]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t fx_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
+  if ((a1 - a0) != (b1 - b0)) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < (a1 - a0)) {
+  if (p[(a0 + k)] != p[(b0 + k)]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t fx_span_has(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == c) {
+  return 1;
+}
+  k = (k + 1);
+}
+  return 0;
+}
+
+int32_t fx_span_count(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
+  int32_t n = 0;
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == c) {
+  n = (n + 1);
+}
+  k = (k + 1);
+}
+  return n;
+}
+
+int32_t fx_span_find(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == c) {
+  return k;
+}
+  k = (k + 1);
+}
+  return (0 - 1);
+}
+
+void fx_strip(uint8_t* p, int32_t* se) {
+  int32_t s = se[0];
+  int32_t e = se[1];
+  while (s < e && fx_is_space(p[s]) == 1) {
+  s = (s + 1);
+}
+  while (e > s && fx_is_space(p[(e - 1)]) == 1) {
+  e = (e - 1);
+}
+  se[0] = s;
+  se[1] = e;
+}
+
+void fx_strip_comments(uint8_t* p, int32_t* se) {
+  int32_t hash = fx_span_find(p, se[0], se[1], 35);
+  if (hash >= 0) {
+  se[1] = hash;
+}
+  fx_strip(p, se);
+}
+
+int32_t fx_eol_len(uint8_t* p, int32_t i, int32_t n) {
+  uint8_t c = p[i];
+  if (c == 13) {
+  if ((i + 1) < n && p[(i + 1)] == 10) {
+  return 2;
+}
+  return 1;
+}
+  if (c == 10 || c == 11 || c == 12 || c == 28 || c == 29 || c == 30) {
+  return 1;
+}
+  if (c == 194 && (i + 1) < n && p[(i + 1)] == 133) {
+  return 2;
+}
+  if (c == 226 && (i + 2) < n && p[(i + 1)] == 128 && (p[(i + 2)] == 168 || p[(i + 2)] == 169)) {
+  return 3;
+}
+  return 0;
+}
+
+int32_t fx_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le) {
+  int32_t count = 0;
+  int32_t start = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t t = fx_eol_len(p, i, n);
+  if (t > 0) {
+  ls[count] = start;
+  le[count] = i;
+  count = (count + 1);
+  i = (i + t);
+  start = i;
+} else {
+  i = (i + 1);
+}
+}
+  if (start < n) {
+  ls[count] = start;
+  le[count] = n;
+  count = (count + 1);
+}
+  return count;
+}
+
+int32_t fx_dsl_head_at(uint8_t* p, int32_t i, int32_t n) {
+  int32_t k = fx_skip_ws(p, i, n);
+  int32_t j = (0 - 1);
+  uint8_t close = 58;
+  if (fx_lit_at(p, k, n, "field") == 1) {
+  j = (k + 5);
+} else {
+  if (fx_lit_at(p, k, n, "boundary") == 1) {
+  j = (k + 8);
+  close = 123;
+}
+}
+  if (j < 0) {
+  return 0;
+}
+  int32_t w = fx_skip_ws(p, j, n);
+  if (w == j) {
+  return 0;
+}
+  int32_t we = fx_word_end(p, w, n);
+  if (we == w) {
+  return 0;
+}
+  int32_t c = fx_skip_ws(p, we, n);
+  if (c < n && p[c] == close) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_field_has_dsl(uint8_t* p, int32_t n) {
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == 0 || p[(i - 1)] == 10) {
+  if (fx_dsl_head_at(p, i, n) == 1) {
+  return 1;
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void fx_err_name(FxBuf* err, uint8_t* p, const char* pre, int32_t s, int32_t e, const char* post) {
+  fx_puts(err, pre);
+  fx_put_span(err, p, s, e);
+  fx_puts(err, post);
+}
+
+int32_t fx_match_field(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  if (fx_lit_at(p, s, e, "field") == 0) {
+  return 0;
+}
+  int32_t i = (s + 5);
+  int32_t k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  int32_t ne = fx_word_end(p, k, e);
+  if (ne == k) {
+  return 0;
+}
+  caps[0] = k;
+  caps[1] = ne;
+  i = fx_skip_ws(p, ne, e);
+  if (i >= e || p[i] != 58) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 1), e);
+  if (fx_lit_at(p, i, e, "f64") == 0) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 3), e);
+  if (i >= e || p[i] != 91) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 1), e);
+  int32_t d = i;
+  while (d < e && fx_is_digit(p[d]) == 1) {
+  d = (d + 1);
+}
+  if (d == i) {
+  return 0;
+}
+  caps[2] = i;
+  caps[3] = d;
+  i = fx_skip_ws(p, d, e);
+  if (i >= e || p[i] != 93) {
+  return 0;
+}
+  i = (i + 1);
+  k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  if (fx_lit_at(p, k, e, "on") == 0) {
+  return 0;
+}
+  i = (k + 2);
+  k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  int32_t de = fx_word_end(p, k, e);
+  if (de == k) {
+  return 0;
+}
+  caps[4] = k;
+  caps[5] = de;
+  if (fx_skip_ws(p, de, e) != e) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t fx_match_boundary_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  if (fx_lit_at(p, s, e, "boundary") == 0) {
+  return 0;
+}
+  int32_t i = (s + 8);
+  int32_t k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  int32_t ne = fx_word_end(p, k, e);
+  if (ne == k) {
+  return 0;
+}
+  int32_t b = fx_skip_ws(p, ne, e);
+  if (b >= e || p[b] != 123) {
+  return 0;
+}
+  caps[0] = k;
+  caps[1] = ne;
+  return 1;
+}
+
+int32_t fx_match_evolve(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t ne = fx_word_end(p, s, e);
+  if (ne == s) {
+  return 0;
+}
+  int32_t k = fx_skip_ws(p, ne, e);
+  if (k == ne) {
+  return 0;
+}
+  if (fx_lit_at(p, k, e, "evolves") == 0) {
+  return 0;
+}
+  int32_t i = (k + 7);
+  k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  if (fx_lit_at(p, k, e, "as") == 0) {
+  return 0;
+}
+  i = (k + 2);
+  k = fx_skip_ws(p, i, e);
+  if (k == i || k >= e) {
+  return 0;
+}
+  caps[0] = s;
+  caps[1] = ne;
+  caps[2] = k;
+  caps[3] = e;
+  return 1;
+}
+
+int32_t fx_match_lap_tail(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  if (fx_lit_at(p, s, e, "laplacian") == 0) {
+  return 0;
+}
+  int32_t i = fx_skip_ws(p, (s + 9), e);
+  if (i >= e || p[i] != 40) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 1), e);
+  int32_t ne = fx_word_end(p, i, e);
+  if (ne == i) {
+  return 0;
+}
+  int32_t name_s = i;
+  i = fx_skip_ws(p, ne, e);
+  if (i >= e || p[i] != 41) {
+  return 0;
+}
+  i = (i + 1);
+  caps[0] = name_s;
+  caps[1] = ne;
+  caps[2] = (0 - 1);
+  caps[3] = (0 - 1);
+  int32_t st = fx_skip_ws(p, i, e);
+  if (st < e && p[st] == 42) {
+  int32_t q = fx_skip_ws(p, (st + 1), e);
+  int32_t n1 = fx_numch_end(p, q, e);
+  if (n1 > q && fx_skip_ws(p, n1, e) == e) {
+  caps[2] = q;
+  caps[3] = n1;
+  return 1;
+}
+  int32_t n2 = fx_word_end(p, q, e);
+  if (n2 > q && fx_skip_ws(p, n2, e) == e) {
+  caps[2] = q;
+  caps[3] = n2;
+  return 1;
+}
+}
+  if (fx_skip_ws(p, i, e) == e) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_match_lap(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t n1 = fx_numch_end(p, s, e);
+  if (n1 > s) {
+  int32_t st = fx_skip_ws(p, n1, e);
+  if (st < e && p[st] == 42) {
+  if (fx_match_lap_tail(p, fx_skip_ws(p, (st + 1), e), e, caps) == 1) {
+  caps[4] = s;
+  caps[5] = n1;
+  return 1;
+}
+}
+}
+  int32_t n2 = fx_word_end(p, s, e);
+  if (n2 > s) {
+  int32_t st2 = fx_skip_ws(p, n2, e);
+  if (st2 < e && p[st2] == 42) {
+  if (fx_match_lap_tail(p, fx_skip_ws(p, (st2 + 1), e), e, caps) == 1) {
+  caps[4] = s;
+  caps[5] = n2;
+  return 1;
+}
+}
+}
+  if (fx_match_lap_tail(p, s, e, caps) == 1) {
+  caps[4] = (0 - 1);
+  caps[5] = (0 - 1);
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_match_assign(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t side = 0;
+  int32_t i = s;
+  if (fx_lit_at(p, s, e, "left") == 1) {
+  side = 1;
+  i = (s + 4);
+} else {
+  if (fx_lit_at(p, s, e, "right") == 1) {
+  side = 2;
+  i = (s + 5);
+}
+}
+  if (side == 0) {
+  return 0;
+}
+  i = fx_skip_ws(p, i, e);
+  if (i >= e || p[i] != 61) {
+  return 0;
+}
+  i = (i + 1);
+  int32_t k = fx_skip_ws(p, i, e);
+  if (k < e) {
+  caps[0] = k;
+  caps[1] = e;
+  return side;
+}
+  if (k > i) {
+  caps[0] = (k - 1);
+  caps[1] = e;
+  return side;
+}
+  return 0;
+}
+
+int32_t fx_is_side_start(uint8_t* p, int32_t s, int32_t e, int32_t k) {
+  if (k > s && fx_is_word(p[(k - 1)]) == 1) {
+  return 0;
+}
+  int32_t j = (0 - 1);
+  if (fx_lit_at(p, k, e, "left") == 1) {
+  j = (k + 4);
+} else {
+  if (fx_lit_at(p, k, e, "right") == 1) {
+  j = (k + 5);
+}
+}
+  if (j < 0) {
+  return 0;
+}
+  int32_t q = fx_skip_ws(p, j, e);
+  if (q < e && p[q] == 61) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t start, int32_t* bs, int32_t* be, int32_t* cnt) {
+  int32_t depth = 0;
+  int32_t i = start;
+  int32_t nb = 0;
+  while (i < nlines) {
+  int32_t s = ls[i];
+  int32_t e = le[i];
+  depth = ((depth + fx_span_count(p, s, e, 123)) - fx_span_count(p, s, e, 125));
+  int32_t has_open = fx_span_has(p, s, e, 123);
+  if (i > start || has_open == 1) {
+  if (depth > 0 || i == start && has_open == 1) {
+  int32_t its = s;
+  if (i == start) {
+  its = (fx_span_find(p, s, e, 123) + 1);
+}
+  if (depth > 0) {
+  int32_t ite = e;
+  while (ite > its && p[(ite - 1)] == 125) {
+  ite = (ite - 1);
+}
+  bs[nb] = its;
+  be[nb] = ite;
+  nb = (nb + 1);
+} else {
+  if (fx_span_has(p, s, e, 125) == 1) {
+  int32_t ie2 = fx_span_find(p, its, e, 125);
+  if (ie2 < 0) {
+  ie2 = e;
+}
+  bs[nb] = its;
+  be[nb] = ie2;
+  nb = (nb + 1);
+}
+}
+}
+}
+  if (depth <= 0 && i > start) {
+  cnt[0] = nb;
+  return (i + 1);
+}
+  i = (i + 1);
+}
+  cnt[0] = nb;
+  return i;
+}
+
+void fx_emit_int_span(FxBuf* w, uint8_t* p, int32_t s, int32_t e) {
+  int32_t k = s;
+  while (k < (e - 1) && p[k] == 48) {
+  k = (k + 1);
+}
+  fx_put_span(w, p, k, e);
+}
+
+int32_t fx_int_le_one(uint8_t* p, int32_t s, int32_t e) {
+  int32_t k = s;
+  while (k < (e - 1) && p[k] == 48) {
+  k = (k + 1);
+}
+  if ((e - k) == 1 && (p[k] == 48 || p[k] == 49)) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_find_field(uint8_t* p, int32_t* rec, int32_t nf, int32_t s, int32_t e) {
+  int32_t f = 0;
+  while (f < nf) {
+  int32_t b = (f * FX_REC);
+  if (fx_span_eq(p, rec[(b + FX_NAME_S)], rec[(b + FX_NAME_E)], s, e) == 1) {
+  return f;
+}
+  f = (f + 1);
+}
+  return (0 - 1);
+}
+
+void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf) {
+  int32_t f = 0;
+  while (f < nf) {
+  int32_t b = (f * FX_REC);
+  int32_t ns = rec[(b + FX_NAME_S)];
+  int32_t ne = rec[(b + FX_NAME_E)];
+  if (f > 0) {
+  fx_puts(w, "\n");
+}
+  fx_puts(w, "# generated from field ");
+  fx_put_span(w, p, ns, ne);
+  fx_puts(w, " : f64[");
+  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
+  fx_puts(w, "] on Line\nconst ");
+  fx_put_span(w, p, ns, ne);
+  fx_puts(w, "_field_n: i32 = ");
+  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
+  fx_puts(w, "\n\nfunction ");
+  fx_put_span(w, p, ns, ne);
+  fx_puts(w, "_field_step(\n    u: ptr<f64>,\n    next: ptr<f64>,\n    r: f64\n) -> void {\n    heat_euler_step_1d(u, next, ");
+  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
+  fx_puts(w, ", r, ");
+  if (rec[(b + FX_L_S)] < 0) {
+  fx_puts(w, "0.0");
+} else {
+  fx_put_span(w, p, rec[(b + FX_L_S)], rec[(b + FX_L_E)]);
+}
+  fx_puts(w, ", ");
+  if (rec[(b + FX_R_S)] < 0) {
+  fx_puts(w, "0.0");
+} else {
+  fx_put_span(w, p, rec[(b + FX_R_S)], rec[(b + FX_R_E)]);
+}
+  fx_puts(w, ")\n}");
+  if ((f + 1) < nf) {
+  fx_puts(w, "\n");
+}
+  f = (f + 1);
+}
+}
+
+int32_t fx_find_main(uint8_t* m, int32_t n) {
+  int32_t i = 0;
+  while (i < n) {
+  if (m[i] == 10 && fx_lit_at(m, (i + 1), n, "function") == 1) {
+  int32_t j = (i + 9);
+  int32_t k = fx_skip_ws(m, j, n);
+  if (k > j && fx_lit_at(m, k, n, "main") == 1) {
+  int32_t q = fx_skip_ws(m, (k + 4), n);
+  if (q < n && m[q] == 40) {
+  return i;
+}
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fx_contains(uint8_t* m, int32_t n, const char* lit) {
+  int32_t i = 0;
+  while (i < n) {
+  if (fx_lit_at(m, i, n, lit) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err) {
+  int32_t* caps = (int32_t*)((int32_t*)(malloc(64)));
+  int32_t* se = (int32_t*)((int32_t*)(malloc(16)));
+  int32_t* cnt = (int32_t*)((int32_t*)(malloc(16)));
+  int32_t* bs = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* be = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* its = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* ite = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t nf = 0;
+  int32_t rc = 0;
+  int32_t i = 0;
+  while (i < nlines && rc == 0) {
+  keep[i] = 0;
+  se[0] = ls[i];
+  se[1] = le[i];
+  fx_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  int32_t handled = 0;
+  if (e > s && fx_match_field(p, s, e, caps) == 1) {
+  handled = 1;
+  if (fx_lit_at(p, caps[4], caps[5], "Line") == 0 || (caps[5] - caps[4]) != 4) {
+  fx_err_name(err, p, "field '", caps[0], caps[1], "': only `on Line` is supported in Stage-1 (got '");
+  fx_put_span(err, p, caps[4], caps[5]);
+  fx_puts(err, "')");
+  rc = (0 - 1);
+} else {
+  if (fx_int_le_one(p, caps[2], caps[3]) == 1) {
+  fx_err_name(err, p, "field '", caps[0], caps[1], "': size must be > 1");
+  rc = (0 - 1);
+} else {
+  if (fx_find_field(p, rec, nf, caps[0], caps[1]) >= 0) {
+  fx_err_name(err, p, "duplicate field '", caps[0], caps[1], "'");
+  rc = (0 - 1);
+} else {
+  if (nf >= FX_MAX_FIELDS) {
+  fx_puts(err, "too many fields (flowc limit 64)");
+  rc = (0 - 1);
+} else {
+  int32_t b = (nf * FX_REC);
+  rec[(b + FX_NAME_S)] = caps[0];
+  rec[(b + FX_NAME_E)] = caps[1];
+  rec[(b + FX_N_S)] = caps[2];
+  rec[(b + FX_N_E)] = caps[3];
+  rec[(b + FX_L_S)] = (0 - 1);
+  rec[(b + FX_L_E)] = (0 - 1);
+  rec[(b + FX_R_S)] = (0 - 1);
+  rec[(b + FX_R_E)] = (0 - 1);
+  rec[(b + FX_EVOLVED)] = 0;
+  nf = (nf + 1);
+}
+}
+}
+}
+  i = (i + 1);
+}
+  if (handled == 0 && e > s && fx_match_boundary_head(p, s, e, caps) == 1) {
+  handled = 1;
+  int32_t bn_s = caps[0];
+  int32_t bn_e = caps[1];
+  int32_t fi = fx_find_field(p, rec, nf, bn_s, bn_e);
+  if (fi < 0) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': declare `field ");
+  fx_put_span(err, p, bn_s, bn_e);
+  fx_puts(err, " : …` first");
+  rc = (0 - 1);
+} else {
+  int32_t next_i = fx_extract_block(p, ls, le, nlines, i, bs, be, cnt);
+  int32_t ni = 0;
+  int32_t bi = 0;
+  while (bi < cnt[0]) {
+  se[0] = bs[bi];
+  se[1] = be[bi];
+  fx_strip(p, se);
+  fx_strip_comments(p, se);
+  int32_t b0 = se[0];
+  int32_t b1 = se[1];
+  if (b1 > b0) {
+  int32_t ps = b0;
+  int32_t k = (b0 + 1);
+  while (k <= b1) {
+  int32_t cut = 0;
+  if (k == b1) {
+  cut = 1;
+} else {
+  if (fx_is_side_start(p, b0, b1, k) == 1) {
+  cut = 1;
+}
+}
+  if (cut == 1) {
+  se[0] = ps;
+  se[1] = k;
+  fx_strip(p, se);
+  if (se[1] > se[0]) {
+  its[ni] = se[0];
+  ite[ni] = se[1];
+  ni = (ni + 1);
+}
+  ps = k;
+}
+  k = (k + 1);
+}
+}
+  bi = (bi + 1);
+}
+  int32_t l_s = (0 - 1);
+  int32_t l_e = (0 - 1);
+  int32_t r_s = (0 - 1);
+  int32_t r_e = (0 - 1);
+  int32_t ii = 0;
+  while (ii < ni && rc == 0) {
+  int32_t side = fx_match_assign(p, its[ii], ite[ii], caps);
+  if (side == 0) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': expected `left = …` / `right = …`, got '");
+  fx_put_span(err, p, its[ii], ite[ii]);
+  fx_puts(err, "'");
+  rc = (0 - 1);
+} else {
+  se[0] = caps[0];
+  se[1] = caps[1];
+  fx_strip(p, se);
+  if (se[1] <= se[0]) {
+  if (side == 1) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty left value");
+} else {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty right value");
+}
+  rc = (0 - 1);
+} else {
+  if (side == 1) {
+  l_s = se[0];
+  l_e = se[1];
+} else {
+  r_s = se[0];
+  r_e = se[1];
+}
+}
+}
+  ii = (ii + 1);
+}
+  if (rc == 0) {
+  if (l_s < 0 || r_s < 0) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': need both left and right");
+  rc = (0 - 1);
+} else {
+  int32_t fb = (fi * FX_REC);
+  rec[(fb + FX_L_S)] = l_s;
+  rec[(fb + FX_L_E)] = l_e;
+  rec[(fb + FX_R_S)] = r_s;
+  rec[(fb + FX_R_E)] = r_e;
+}
+}
+  int32_t z = (i + 1);
+  while (z < next_i && z < nlines) {
+  keep[z] = 0;
+  z = (z + 1);
+}
+  i = next_i;
+}
+}
+  if (handled == 0 && e > s && fx_match_evolve(p, s, e, caps) == 1) {
+  int32_t ev = fx_find_field(p, rec, nf, caps[0], caps[1]);
+  if (ev >= 0) {
+  handled = 1;
+  int32_t en_s = caps[0];
+  int32_t en_e = caps[1];
+  se[0] = caps[2];
+  se[1] = caps[3];
+  fx_strip(p, se);
+  int32_t ok = fx_match_lap(p, se[0], se[1], caps);
+  if (ok == 0 || fx_span_eq(p, caps[0], caps[1], en_s, en_e) == 0) {
+  fx_err_name(err, p, "field '", en_s, en_e, "' evolves: Stage-1 expects `");
+  fx_put_span(err, p, en_s, en_e);
+  fx_puts(err, " evolves as laplacian(");
+  fx_put_span(err, p, en_s, en_e);
+  fx_puts(err, ")` or `c * laplacian(");
+  fx_put_span(err, p, en_s, en_e);
+  fx_puts(err, ")`");
+  rc = (0 - 1);
+} else {
+  if (caps[4] >= 0 && caps[2] >= 0) {
+  fx_err_name(err, p, "field '", en_s, en_e, "' evolves: use at most one multiplier");
+  rc = (0 - 1);
+} else {
+  rec[((ev * FX_REC) + FX_EVOLVED)] = 1;
+}
+}
+  i = (i + 1);
+}
+}
+  if (handled == 0) {
+  keep[i] = 1;
+  i = (i + 1);
+}
+}
+  if (rc == 0) {
+  int32_t f = 0;
+  while (f < nf && rc == 0) {
+  int32_t b = (f * FX_REC);
+  if (rec[(b + FX_EVOLVED)] == 0) {
+  int32_t ms = rec[(b + FX_NAME_S)];
+  int32_t me = rec[(b + FX_NAME_E)];
+  fx_err_name(err, p, "field '", ms, me, "': missing `");
+  fx_put_span(err, p, ms, me);
+  fx_puts(err, " evolves as laplacian(");
+  fx_put_span(err, p, ms, me);
+  fx_puts(err, ")`");
+  rc = (0 - 1);
+}
+  f = (f + 1);
+}
+}
+  free((uint8_t*)(caps));
+  free((uint8_t*)(se));
+  free((uint8_t*)(cnt));
+  free((uint8_t*)(bs));
+  free((uint8_t*)(be));
+  free((uint8_t*)(its));
+  free((uint8_t*)(ite));
+  if (rc != 0) {
+  return (0 - 1);
+}
+  return nf;
+}
+
+int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
+  if (flowc_field_has_dsl(p, n) == 0) {
+  fx_put_span(out, p, 0, n);
+  if ((out[0]).err != 0) {
+  return (0 - 2);
+}
+  return (out[0]).len;
+}
+  int32_t* ls = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* le = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* keep = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* rec = (int32_t*)((int32_t*)(malloc(((int64_t)((FX_MAX_FIELDS * FX_REC)) * 4))));
+  int32_t nlines = fx_split_lines(p, n, ls, le);
+  int32_t nf = fx_parse(p, ls, le, nlines, keep, rec, err);
+  int32_t rc = 0;
+  if (nf < 0) {
+  rc = (0 - 1);
+} else {
+  int32_t mcap = (n + 64);
+  FxBuf mw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
+  if (nf > 0) {
+  FxBuf sw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
+  int32_t first0 = 1;
+  int32_t j0 = 0;
+  while (j0 < nlines) {
+  if (keep[j0] == 1) {
+  if (first0 == 0) {
+  fx_putc((&sw), 10);
+}
+  fx_put_span((&sw), p, ls[j0], le[j0]);
+  first0 = 0;
+}
+  j0 = (j0 + 1);
+}
+  if (fx_contains((sw).buf, (sw).len, "import \"stdlib/dynamics/pde.flow\"") == 0) {
+  fx_puts((&mw), "import \"stdlib/dynamics/pde.flow\"\n");
+}
+  fx_put_span((&mw), (sw).buf, 0, (sw).len);
+  free((sw).buf);
+} else {
+  int32_t first = 1;
+  int32_t j = 0;
+  while (j < nlines) {
+  if (keep[j] == 1) {
+  if (first == 0) {
+  fx_putc((&mw), 10);
+}
+  fx_put_span((&mw), p, ls[j], le[j]);
+  first = 0;
+}
+  j = (j + 1);
+}
+}
+  if (nf == 0) {
+  fx_put_span(out, (mw).buf, 0, (mw).len);
+} else {
+  int32_t at = fx_find_main((mw).buf, (mw).len);
+  if (at < 0) {
+  int32_t te = (mw).len;
+  while (te > 0 && fx_is_space((mw).buf[(te - 1)]) == 1) {
+  te = (te - 1);
+}
+  fx_put_span(out, (mw).buf, 0, te);
+  fx_puts(out, "\n\n");
+  fx_emit_helpers(out, p, rec, nf);
+  fx_puts(out, "\n");
+} else {
+  fx_put_span(out, (mw).buf, 0, at);
+  fx_puts(out, "\n\n");
+  fx_emit_helpers(out, p, rec, nf);
+  fx_puts(out, "\n");
+  fx_put_span(out, (mw).buf, at, (mw).len);
+}
+}
+  free((mw).buf);
+  if ((out[0]).err != 0) {
+  rc = (0 - 2);
+} else {
+  rc = (out[0]).len;
+}
+}
+  free((uint8_t*)(ls));
+  free((uint8_t*)(le));
+  free((uint8_t*)(keep));
+  free((uint8_t*)(rec));
+  return rc;
+}
+
+int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
+  if (n < 0) {
+  return n;
+}
+  if (flowc_field_has_dsl(buf, n) == 0) {
+  return n;
+}
+  int32_t ocap = ((n * 2) + 65536);
+  FxBuf ow = (FxBuf){ .buf = malloc((int64_t)((ocap + 1))), .cap = ocap, .len = 0, .err = 0 };
+  FxBuf ew = (FxBuf){ .buf = malloc(1024), .cap = 1023, .len = 0, .err = 0 };
+  int32_t rc = flowc_field_expand(buf, n, (&ow), (&ew));
+  if (rc < 0) {
+  if (rc == (0 - 2)) {
+  puts("flowc field: expanded source too large");
+} else {
+  const char* head = "flowc field: ";
+  uint8_t* hp = (uint8_t*)(head);
+  FxBuf line = (FxBuf){ .buf = malloc(1100), .cap = 1099, .len = 0, .err = 0 };
+  fx_put_span((&line), hp, 0, 13);
+  fx_put_span((&line), (ew).buf, 0, (ew).len);
+  (line).buf[(line).len] = 0;
+  puts((const char*)((line).buf));
+  free((line).buf);
+}
+  free((ow).buf);
+  free((ew).buf);
+  return (0 - 1);
+}
+  if (rc >= cap) {
+  puts("flowc field: expanded source exceeds the source buffer");
+  free((ow).buf);
+  free((ew).buf);
+  return (0 - 1);
+}
+  int32_t k = 0;
+  while (k < rc) {
+  buf[k] = (ow).buf[k];
+  k = (k + 1);
+}
+  buf[rc] = 0;
+  free((ow).buf);
+  free((ew).buf);
+  return rc;
+}
+
+
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src);
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   int32_t id = 0;
@@ -13384,6 +14477,7 @@ static const int32_t FLOWC_RESOLVE_FNS_CAP = 262144;
 int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap);
 int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
+int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap);
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap);
@@ -13440,6 +14534,14 @@ int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint
   i = (i + 1);
 }
   return (0 - 1);
+}
+
+int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap) {
+  int32_t n = flowc_read_file(path, src, cap);
+  if (n <= 0) {
+  return n;
+}
+  return flowc_field_expand_in_place(src, n, cap);
 }
 
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
@@ -13749,7 +14851,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   src[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t nsrc = flowc_read_file(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
+  int32_t nsrc = flowc_resolve_read_source(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   puts("flowc gather: read failed");
   free(mod_dir);
@@ -13839,7 +14941,7 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8
   src[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t nsrc = flowc_read_file(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
+  int32_t nsrc = flowc_resolve_read_source(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   return 0;
 }
@@ -13963,7 +15065,7 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   src[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t nsrc = flowc_read_file(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
+  int32_t nsrc = flowc_resolve_read_source(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   free(src);
   return (0 - 1);
@@ -14208,7 +15310,7 @@ int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
   src[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t nsrc = flowc_read_file(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
+  int32_t nsrc = flowc_resolve_read_source(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   puts("flowc bundle tc: read failed");
   free(src);
@@ -14377,6 +15479,7 @@ int32_t flowc_env_set(const char* name);
 int32_t flowc_env_eq(const char* name, const char* want);
 int32_t flowc_env_is_zero(const char* name);
 int32_t flowc_want_typecheck();
+int32_t flowc_expand_only_mode(const char* in_path, const char* out_path);
 int32_t flowc_emit_mode();
 int32_t flowc_bytes_contains(uint8_t* hay, int32_t hay_len, const char* needle);
 int32_t expect_kind(int32_t kind, int32_t want);
@@ -14472,6 +15575,44 @@ int32_t flowc_want_typecheck() {
   return 1;
 }
 
+int32_t flowc_expand_only_mode(const char* in_path, const char* out_path) {
+  int64_t fsize = flowc_io_file_size(in_path);
+  if (fsize < 0) {
+  puts("flowc expand: read FLOWC_IN failed");
+  return 1;
+}
+  int32_t src_cap = (((int32_t)(fsize) * 2) + 65536);
+  uint8_t* src = (uint8_t*)(malloc((int64_t)(src_cap)));
+  if (src == NULL) {
+  puts("flowc expand: malloc src failed");
+  return 1;
+}
+  int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
+  if (nsrc < 0) {
+  puts("flowc expand: read FLOWC_IN failed");
+  free(src);
+  return 1;
+}
+  src[nsrc] = 0;
+  nsrc = flowc_field_expand_in_place(src, nsrc, src_cap);
+  if (nsrc < 0) {
+  free(src);
+  return 1;
+}
+  int32_t rc = 0;
+  if (flowc_env_set("FLOWC_OUT") == 1) {
+  if (flowc_write_file(out_path, src, nsrc) != 0) {
+  puts("flowc expand: write FLOWC_OUT failed");
+  rc = 1;
+}
+} else {
+  src[nsrc] = 0;
+  puts((const char*)(src));
+}
+  free(src);
+  return rc;
+}
+
 int32_t flowc_emit_mode() {
   const char* in_path = getenv("FLOWC_IN");
   const char* out_path = getenv("FLOWC_OUT");
@@ -14488,6 +15629,9 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   return flowc_bpf_gen_compile(in_path, out_path, "2");
+}
+  if (flowc_env_set("FLOWC_EXPAND_ONLY") == 1) {
+  return flowc_expand_only_mode(in_path, out_path);
 }
   int32_t out_cap = 1048576;
   uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
@@ -14560,6 +15704,14 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   src[nsrc] = 0;
+  if (flowc_env_eq("FLOWC_BACKEND", "fmt") == 0) {
+  nsrc = flowc_field_expand_in_place(src, nsrc, src_cap);
+  if (nsrc < 0) {
+  free(src);
+  free(out);
+  return 1;
+}
+}
   Parser p = flowc_parser_new(src, nsrc, 262144);
   int32_t root = flowc_parse_program((&p));
   if (root < 0 || (p).err != 0) {
