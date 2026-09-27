@@ -1,4 +1,4 @@
-# flowc — Flow compiler written in Flow
+# flowc: Flow compiler written in Flow
 
 `flowc` is the **self-hosting bootstrap** for Flow: a compiler front-end
 implemented in Flow itself, run today by the production Python→C host under
@@ -57,7 +57,7 @@ FLOW_HOST=python ./flow run compiler/src/main.flow
 ```
 
 Expected exit: `flowc: PASS` (lexer smoke + in-memory parse tests + disk
-fixture parse). **cwd must be the repository root** — the fixture test opens
+fixture parse). **cwd must be the repository root**. The fixture test opens
 `compiler/fixtures/hello_subset.flow` relative to cwd (same as `./flow run`).
 
 ### Stage-A emit mode (`FLOWC_IN` / `FLOWC_OUT`)
@@ -115,7 +115,7 @@ FLOWC_OUT=compiler/build/stage_a_sum.c \
   ./flow run compiler/src/main.flow
 ```
 
-Round-trip (emit → `cc` → run; `stage_a_sum` / `stage_a_for_sum` exit `45`, `stage_a_const` exit `12`, `stage_a_struct` exit `42`, `stage_a_token_consts` dogfood exit `29`, `stage_a_ptr` / `stage_a_cast` / `stage_a_index_assign` / `stage_a_array_else` / `stage_a_float` / `stage_a_match` exit `42`; `match_unsupported` must be rejected with a struct-pattern diagnostic). Also compile-object dogfood for real modules [`src/token.flow`](src/token.flow), [`src/ast.flow`](src/ast.flow), [`src/lexer.flow`](src/lexer.flow), [`src/fileio.flow`](src/fileio.flow), [`src/parser.flow`](src/parser.flow), [`src/cgen.flow`](src/cgen.flow), [`src/typecheck.flow`](src/typecheck.flow), and [`src/resolve.flow`](src/resolve.flow) plus separate [`src/jsgen.flow`](src/jsgen.flow) / [`src/fmt.flow`](src/fmt.flow) dogfood (`compile_module` + `flowc_jsgen_fmt.o`; `FLOWC_BACKEND=js|fmt` fixture smokes — kept out of `flowc_frontend.o` fixed-point); plus two-file link smoke [`fixtures/pkg_add/`](fixtures/pkg_add/) (`import .math` skipped at emit → link `math.o`+`main.o` → exit `42`); plus `FLOWC_BUNDLE=1` smoke [`fixtures/bundle_main.flow`](fixtures/bundle_main.flow) + [`bundle_lib.flow`](fixtures/bundle_lib.flow) → exit `42` (default bundle typecheck); [`bundle_tc_ok.flow`](fixtures/bundle_tc_ok.flow) / [`bundle_tc_bad.flow`](fixtures/bundle_tc_bad.flow); plus typecheck fixtures (`typecheck_ok` → exit `42`, `typecheck_undef` rejected without opt-out):
+Round-trip (emit → `cc` → run; `stage_a_sum` / `stage_a_for_sum` exit `45`, `stage_a_const` exit `12`, `stage_a_struct` exit `42`, `stage_a_token_consts` dogfood exit `29`, `stage_a_ptr` / `stage_a_cast` / `stage_a_index_assign` / `stage_a_array_else` / `stage_a_float` / `stage_a_match` exit `42`; `match_unsupported` must be rejected with a struct-pattern diagnostic). Also compile-object dogfood for real modules [`src/token.flow`](src/token.flow), [`src/ast.flow`](src/ast.flow), [`src/lexer.flow`](src/lexer.flow), [`src/fileio.flow`](src/fileio.flow), [`src/parser.flow`](src/parser.flow), [`src/cgen.flow`](src/cgen.flow), [`src/typecheck.flow`](src/typecheck.flow), and [`src/resolve.flow`](src/resolve.flow) plus separate [`src/jsgen.flow`](src/jsgen.flow) / [`src/fmt.flow`](src/fmt.flow) dogfood (`compile_module` + `flowc_jsgen_fmt.o`; `FLOWC_BACKEND=js|fmt` fixture smokes, kept out of `flowc_frontend.o` fixed-point); plus two-file link smoke [`fixtures/pkg_add/`](fixtures/pkg_add/) (`import .math` skipped at emit → link `math.o`+`main.o` → exit `42`); plus `FLOWC_BUNDLE=1` smoke [`fixtures/bundle_main.flow`](fixtures/bundle_main.flow) + [`bundle_lib.flow`](fixtures/bundle_lib.flow) → exit `42` (default bundle typecheck); [`bundle_tc_ok.flow`](fixtures/bundle_tc_ok.flow) / [`bundle_tc_bad.flow`](fixtures/bundle_tc_bad.flow); plus typecheck fixtures (`typecheck_ok` → exit `42`, `typecheck_undef` rejected without opt-out):
 
 ```bash
 ./compiler/scripts/roundtrip.sh
@@ -134,7 +134,7 @@ FLOWC_RESOLVE_IMPORTS=1 ./compiler/scripts/stage_a_link_two.sh
 
 Expect `pkg_add exit=42` (`add(40, 2)`). Fixture: [`fixtures/pkg_add/math.flow`](fixtures/pkg_add/math.flow) + [`fixtures/pkg_add/main.flow`](fixtures/pkg_add/main.flow).
 
-Stage-A dogfoods `token` + `ast` + `lexer` + `fileio` + `parser` + `cgen` + `typecheck` + `resolve` as C objects (`lexer`/`parser`/`cgen`/`typecheck`/`resolve` compile with headers derived via `scripts/flowc_c_to_hdr.py`; `extern` blocks get `#include <stdio.h>` + `#include <string.h>`). Ends with a relocatable link smoke (`cc -r` → `compiler/build/flowc_frontend.o`) so cross-module symbols resolve, then builds both Stage-A drivers (C host + Flow-written `driver.flow` with CLI argv) and smokes `stage_a_sum` → exit `45`. Roundtrip finishes with a mini self-host (`scripts/stage_a_self_emit.sh`): prefers Flow `stage_a_driver_flow` CLI (C driver fallback) to re-emit those eight frontend sources → `cc -c` → `flowc_frontend_self.o`, then emits `driver.flow` → `self_driver.o` and links **Stage-A Flow driver + self frontend** (`stage_a_driver_flow_self`) — smoke `stage_a_sum` → exit `45`. Gen2 (`scripts/stage_a_self_emit_g2.sh`): `self.o` drives another emit → `flowc_frontend_g2.o`, then `cmp` fixed-point (`self.o` == `g2.o`), C `stage_a_driver_g2` + Flow `stage_a_driver_flow_g2` smokes (`stage_a_sum` → exit `45`), and a gen3 token emit that must match `self_token.c` / `g2_token.c`.
+Stage-A dogfoods `token` + `ast` + `lexer` + `fileio` + `parser` + `cgen` + `typecheck` + `resolve` as C objects (`lexer`/`parser`/`cgen`/`typecheck`/`resolve` compile with headers derived via `scripts/flowc_c_to_hdr.py`; `extern` blocks get `#include <stdio.h>` + `#include <string.h>`). Ends with a relocatable link smoke (`cc -r` → `compiler/build/flowc_frontend.o`) so cross-module symbols resolve, then builds both Stage-A drivers (C host + Flow-written `driver.flow` with CLI argv) and smokes `stage_a_sum` → exit `45`. Roundtrip finishes with a mini self-host (`scripts/stage_a_self_emit.sh`): prefers Flow `stage_a_driver_flow` CLI (C driver fallback) to re-emit those eight frontend sources → `cc -c` → `flowc_frontend_self.o`, then emits `driver.flow` → `self_driver.o` and links **Stage-A Flow driver + self frontend** (`stage_a_driver_flow_self`): smoke `stage_a_sum` → exit `45`. Gen2 (`scripts/stage_a_self_emit_g2.sh`): `self.o` drives another emit → `flowc_frontend_g2.o`, then `cmp` fixed-point (`self.o` == `g2.o`), C `stage_a_driver_g2` + Flow `stage_a_driver_flow_g2` smokes (`stage_a_sum` → exit `45`), and a gen3 token emit that must match `self_token.c` / `g2_token.c`.
 
 ### Stage-A driver (`flowc` frontend `.o` + tiny C main)
 
@@ -183,7 +183,7 @@ Package metadata: [`flow.toml`](flow.toml) (`name = "flowc"`, entry
 
 ## Python ports
 
-- [`src/claim_address.flow`](src/claim_address.flow) — Claim Coordinates (`flowc_claim_*`); demo: `./flow run examples/compilers/claim_address_demo.flow`
+- [`src/claim_address.flow`](src/claim_address.flow): Claim Coordinates (`flowc_claim_*`); demo: `./flow run examples/compilers/claim_address_demo.flow`
 
 ## Module map
 
@@ -217,15 +217,15 @@ What `flowc_parse_program` actually accepts:
 **Top-level**
 - [x] `function name(params) -> Type { ... }` / omit `-> Type` for void
 - [x] `struct Name { field: Type, ... }` (Stage-A emit: `typedef struct Name { int32_t … } Name;`)
-- [x] `extern { ... }` — **brace-matched skip only** (body not typed/parsed; Stage-A preamble always includes `<stdio.h>` + `<string.h>` so bundle TUs with later-module externs compile; no libc prototypes — would clash with headers)
+- [x] `extern { ... }`: **brace-matched skip only** (body not typed/parsed; Stage-A preamble always includes `<stdio.h>` + `<string.h>` so bundle TUs with later-module externs compile; no libc prototypes, which would clash with headers)
 - [x] `import .sibling { a, b }` / `import pkg.mod { … }` / `import "path.flow"`
 - [x] `export function` / `export struct` / bare `export a, b`
 - [x] `const Name: Type = expr` / `export const Name: Type = expr` (Stage-A: non-export → `static const int32_t`; export → linkable `const int32_t`)
-- [x] forward `function name(...) -> T` (no body) — Stage-A emits `ret name(...);` prototypes
+- [x] forward `function name(...) -> T` (no body): Stage-A emits `ret name(...);` prototypes
 
 **Statements**
-- [x] `let name: Type = expr` / `let mut name: Type = expr` (Stage-A: typed emit — `int32_t` / `uint8_t` / `int64_t` / `float`/`double` / `T*` / struct name)
-- [x] `let name = expr` — no annotation; the type is inferred from the
+- [x] `let name: Type = expr` / `let mut name: Type = expr` (Stage-A: typed emit: `int32_t` / `uint8_t` / `int64_t` / `float`/`double` / `T*` / struct name)
+- [x] `let name = expr`: no annotation; the type is inferred from the
   initialiser: `expr as T` and calls to functions declared in this module use
   the declared type node; string / float / struct literals and string `+`
   chains write the type directly; calls into other bundle modules read the
@@ -251,7 +251,7 @@ What `flowc_parse_program` actually accepts:
   compiler's arenas). An operand counts as a string when it is a literal, a `+`
   chain already containing one, a cast to `string`, or a call to a function
   declared `-> string`. Two string values with neither a literal nor a call
-  between them still emit `+` and are rejected by `cc` — loud, never wrong
+  between them still emit `+` and are rejected by `cc`: loud, never wrong
   output. Fixture: [`fixtures/stage_a_strcat.flow`](fixtures/stage_a_strcat.flow) (exit 42).
 - [x] postfix `expr.field` / `expr[i]` (Stage-A emit: `(expr).field` / `base[index]`)
 - [x] `expr as Type` cast (AST_CAST=32; Stage-A emit: `(ctype)(expr)`)
@@ -268,7 +268,7 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
 
 ## NOT YET
 
-- Full type checking / semantic analysis — **partial:** lightweight name-resolution
+- Full type checking / semantic analysis: **partial:** lightweight name-resolution
   typecheck (subset) in [`src/typecheck.flow`](src/typecheck.flow) (`flowc_typecheck`:
   duplicate fns / `const` / `let` in same block, undef idents, assign to unknown
   name, unknown calls, call arity vs declared params, void vs value returns,
@@ -277,7 +277,7 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   self / g2. On by default on emit; opt out with `FLOWC_TYPECHECK=0` or
   `FLOWC_NO_TYPECHECK=1` for intentional emit of known-bad fixtures. Diagnostics
   include `flowc tc: file` + path and `flowc tc: at line:col`.)
-- Multi-file package resolve beyond Stage-A MVP — **partial:**
+- Multi-file package resolve beyond Stage-A MVP: **partial:**
   [`src/resolve.flow`](src/resolve.flow) loads `import .sibling` / `import "path"`
   under `FLOWC_DIR` and `flowc_bundle_emit` concatenates C (deps then entry);
   dotted `pkg.mod` still skipped; `flowc_bundle_typecheck` seeds dep exports
@@ -378,23 +378,23 @@ check generated C string constants.
 modules of `compiler/src` emitting C with zero `cc` diagnostics, and
 `self_host_full.sh` closes three generations byte-identically. What is *not*
 covered is the rest of the language: flowc compiles the subset flowc is
-written in, not all of Flow.
+written in. It does not yet compile all of Flow.
 
 **Self-host loop (frontend modules):** exists via roundtrip +
-`scripts/stage_a_self_emit.sh` / `stage_a_self_emit_g2.sh` — driver
+`scripts/stage_a_self_emit.sh` / `stage_a_self_emit_g2.sh`: driver
 re-emits `token`/`ast`/`lexer`/`fileio`/`parser`/`cgen`/`typecheck`/`resolve` →
 `flowc_frontend_self.o` → `flowc_frontend_g2.o` (byte-identical fixed
 point). Stage-A Flow driver + self frontend (`stage_a_driver_flow_self`)
 and gen2 (`stage_a_driver_flow_g2`) close the driver+frontend emit path
 (C host kept as fallback). `stage_a_driver_g2` + gen3 token cmp close
-another turn of the loop. Not yet “`flowc` compiles all of Flow.”
+another turn of the loop. Not yet "`flowc` compiles all of Flow."
 
 ## Related
 
 - Python→Flow satellites: [docs/project/python-in-flow.md](../docs/project/python-in-flow.md)
   (`claim_address`, `claim_path`, `jsgen`, `fmt`, LSP ordering demo)
 - Design open question: [docs/project/Questions.md](../docs/project/Questions.md)
-  (“Self-hosting bootstrap strategy”)
+  ("Self-hosting bootstrap strategy")
 - Historical lexer seeds: `examples/compilers/flow_lexer.flow`,
   `flow_identifier_lexer.flow`
 - Roadmap status: [ROADMAP.md](../ROADMAP.md)

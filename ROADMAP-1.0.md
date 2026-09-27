@@ -211,11 +211,11 @@ The final tag requires:
 
 The following may land if ready but do not automatically hold 1.0 unless promoted into the Stable surface:
 
-- [#564](https://github.com/flooooooooooow/flow/issues/564) — abort/retry/multi-shot continuations
-- [#592](https://github.com/flooooooooooow/flow/issues/592) — Python export override behaviour
-- [#616](https://github.com/flooooooooooow/flow/issues/616) — expanded complex linear algebra/autodiff coverage
-- [#525](https://github.com/flooooooooooow/flow/issues/525) — CUTLASS evaluation
-- [#172](https://github.com/flooooooooooow/flow/issues/172) — GitHub Linguist registration
+- [#564](https://github.com/flooooooooooow/flow/issues/564): abort/retry/multi-shot continuations
+- [#592](https://github.com/flooooooooooow/flow/issues/592): Python export override behaviour
+- [#616](https://github.com/flooooooooooow/flow/issues/616): expanded complex linear algebra/autodiff coverage
+- [#525](https://github.com/flooooooooooow/flow/issues/525): CUTLASS evaluation
+- [#172](https://github.com/flooooooooooow/flow/issues/172): GitHub Linguist registration
 - W2–W6 long-term physical-system/hardware/RTL work in `ROADMAP.md`
 
 ## Tracking

@@ -396,7 +396,7 @@ Counted from tracked files by CI so the numbers match the tree.
 | **Verify corpus** | 1,078 | 18,715 |
 | **Tests (`.py` + `.flow`)** | 455 | 48,539 |
 | **Application programs** | 8 | 1,537 |
-| **Registry packages** | 19 | n/a |
+| **Registry packages** | 19 | - |
 | **Documentation pages** | 173 | 39,462 |
 
 <details>
