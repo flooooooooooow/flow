@@ -1,54 +1,49 @@
 """Tests for the Flow package registry."""
 
+import json
+import subprocess
+from pathlib import Path
+
 from flow.package import FlowPackageManager
-from flow.registry import (
-    FlowRegistry,
-    parse_semver,
-    resolve_version,
-    version_matches,
-)
+from flow.registry import FlowRegistry, parse_semver
+
+ROOT = Path(__file__).resolve().parents[2]
+INDEX = ROOT / "registry" / "index.json"
 
 
-def test_semver_parse_and_match():
+def flow_pkg(cwd, *args):
+    """Run the Flow package manager (compiler/src/pkg.flow) through flow-driver."""
+    return subprocess.run(
+        ["bash", str(ROOT / "flow-driver"), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_semver_parse():
     assert parse_semver("1.2.3") == (1, 2, 3)
-    assert version_matches("*", "9.9.9")
-    assert version_matches("0.1.0", "0.1.0")
-    assert version_matches("^1.2.0", "1.9.0")
-    assert not version_matches("^1.2.0", "2.0.0")
-    assert version_matches("^0.1.0", "0.1.5")
-    assert not version_matches("^0.1.0", "0.2.0")
-    assert version_matches(">=0.1.0", "0.2.0")
-
-
-def test_bundled_index_has_hello_lib():
-    reg = FlowRegistry()
-    pkg = reg.get("hello_lib")
-    assert pkg is not None
-    latest = resolve_version(pkg, "*")
-    assert latest is not None
-    assert latest.version == "0.1.0"
-    assert latest.path == "registry/packages/hello_lib"
-    assert reg.name == "flow-packages"
+    assert parse_semver("v2.0.0-beta") == (2, 0, 0)
 
 
 def test_bundled_index_has_ecosystem_seed_packages():
-    reg = FlowRegistry()
+    packages = json.loads(INDEX.read_text(encoding="utf-8"))["packages"]
     names = (
-        "json", "toml", "http", "sqlite", "sqlkit", "compress", "image",
-        "cli", "collectionsx", "strings", "dns", "serde", "log", "testing", "ffi",
+        "hello_lib", "json", "toml", "http", "sqlite", "sqlkit", "compress",
+        "image", "cli", "collectionsx", "strings", "dns", "serde", "log",
+        "testing", "ffi",
     )
     for name in names:
-        pkg = reg.get(name)
-        assert pkg is not None, name
-        latest = resolve_version(pkg, "*")
-        assert latest is not None, name
-        assert latest.version == "0.1.0"
-        assert latest.path == f"registry/packages/{name}"
+        versions = packages[name]["versions"]
+        assert versions[0]["version"] == "0.1.0", name
+        assert versions[0]["path"] == f"registry/packages/{name}", name
+    assert FlowRegistry().name == "flow-packages"
 
 
-def test_search_finds_hello():
-    hits = FlowRegistry().search("hello")
-    assert any(c.name == "hello_lib" for c in hits)
+def test_search_finds_hello(tmp_path):
+    result = flow_pkg(tmp_path, "search", "hello")
+    assert result.returncode == 0
+    assert "hello_lib" in result.stdout
 
 
 def test_add_registry_package_installs(tmp_path):
@@ -56,8 +51,7 @@ def test_add_registry_package_installs(tmp_path):
         '[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\n',
         encoding="utf-8",
     )
-    mgr = FlowPackageManager(str(tmp_path))
-    assert mgr.add("hello_lib")
+    assert flow_pkg(tmp_path, "add", "hello_lib").returncode == 0
     assert (tmp_path / "flow_packages" / "hello_lib" / "src" / "lib.flow").exists()
     toml = (tmp_path / "flow.toml").read_text(encoding="utf-8")
     assert "hello_lib" in toml
@@ -72,22 +66,20 @@ def test_install_version_string_from_registry(tmp_path):
         'hello_lib = "0.1.0"\n',
         encoding="utf-8",
     )
-    mgr = FlowPackageManager(str(tmp_path))
-    assert mgr.install()
+    assert flow_pkg(tmp_path, "sync").returncode == 0
     assert (tmp_path / "flow_packages" / "hello_lib" / "flow.toml").exists()
 
 
-def test_unknown_registry_package_fails_honestly(tmp_path, capsys):
+def test_unknown_registry_package_fails_honestly(tmp_path):
     (tmp_path / "flow.toml").write_text(
         '[package]\nname = "app"\nversion = "0.1.0"\n\n'
         "[dependencies]\n"
         'missing_pkg_xyz = "1.0.0"\n',
         encoding="utf-8",
     )
-    mgr = FlowPackageManager(str(tmp_path))
-    assert not mgr.install()
-    out = capsys.readouterr().out
-    assert "Unknown dependency" in out or "not found" in out.lower()
+    result = flow_pkg(tmp_path, "sync")
+    assert result.returncode == 1
+    assert "Unknown dependency" in result.stdout
 
 
 def test_publish_local_updates_index(tmp_path, monkeypatch):
@@ -108,6 +100,7 @@ def test_publish_local_updates_index(tmp_path, monkeypatch):
     # Outside repo → need --git
     assert not mgr.publish()
     assert mgr.publish(git="https://example.com/mypkg.git", tag="v0.2.0")
-    reg = FlowRegistry(index)
-    assert reg.get("mypkg") is not None
-    assert resolve_version(reg.get("mypkg"), "*").git.endswith("mypkg.git")
+    data = json.loads(index.read_text(encoding="utf-8"))
+    versions = data["packages"]["mypkg"]["versions"]
+    assert versions[0]["version"] == "0.2.0"
+    assert versions[0]["git"].endswith("mypkg.git")

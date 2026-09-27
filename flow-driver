@@ -3140,10 +3140,6 @@ case "${1:-help}" in
         shift
         flow_pkg_native sync "$@"
         ;;
-    "__pkg-tool-path")
-        # Build the package manager and print its path (used by scripts).
-        flow_pkg_tool
-        ;;
     "patch")
         check_deps
         shift
