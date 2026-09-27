@@ -1,0 +1,319 @@
+# @module tools.bench
+# @means  Timing, statistics and number formatting for the benchmark tools.
+#
+# Wall time comes from clock_gettime(CLOCK_REALTIME). Formatting goes through
+# snprintf, which rounds the same way Python's format() does, and
+# bn_py_repr() reproduces Python's shortest round-trip float repr for JSON.
+
+import .text { ft_len, ft_eq, ft_starts, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_list_len, ft_list_get, StrList }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function clock_gettime(clk: i32, ts: ptr<i64>) -> i32
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: f64) -> i32
+    function strtod(s: string, end: ptr<void>) -> f64
+    function pipe(fds: ptr<i32>) -> i32
+    function fork() -> i32
+    function dup2(a: i32, b: i32) -> i32
+    function open(path: string, flags: i32) -> i32
+    function close(fd: i32) -> i32
+    function read(fd: i32, buf: ptr<u8>, n: i64) -> i64
+    function execvp(file: string, argv: ptr<string>) -> i32
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function _exit(code: i32) -> void
+}
+
+# One timed run of a command: its exit code, stdout, wall seconds, and the
+# "result <value>" / "seconds <t>" lines the benchmark programs print.
+struct BenchRun {
+    code: i32
+    out: string
+    wall: f64
+    result: string
+    seconds: f64
+    has_seconds: bool
+}
+
+export function bn_now() -> f64 {
+    let ts: ptr<i64> = malloc(16) as ptr<i64>
+    let _r: i32 = clock_gettime(0, ts)
+    return (ts[0] as f64) + (ts[1] as f64) / 1000000000.0
+}
+
+export function bn_parse_float(s: string) -> f64 {
+    return strtod(s, null)
+}
+
+# Python f"{x:.{decimals}f}"
+export function bn_fixed(x: f64, decimals: i32) -> string {
+    let buf: ptr<i8> = malloc(512) as ptr<i8>
+    let mut fmt: string = "%.4f"
+    if decimals == 2 {
+        fmt = "%.2f"
+    } elif decimals == 6 {
+        fmt = "%.6f"
+    } elif decimals == 0 {
+        fmt = "%.0f"
+    }
+    let _n: i32 = snprintf(buf, 512, fmt, x)
+    return buf as string
+}
+
+function precision_fmt(p: i32) -> string {
+    let digits: string = "0123456789"
+    if p < 10 {
+        return "%." + ft_slice(digits, p, p + 1) + "e"
+    }
+    return "%.1" + ft_slice(digits, p - 10, p - 9) + "e"
+}
+
+# repr(float): the shortest digits that round-trip, laid out the way
+# Python lays them out (fixed for exponents -4..15, else d.ddde+XX).
+export function bn_py_repr(x: f64) -> string {
+    if x == 0.0 {
+        return "0.0"
+    }
+    let mut sign: string = ""
+    let mut v: f64 = x
+    if v < 0.0 {
+        sign = "-"
+        v = 0.0 - v
+    }
+    let buf: ptr<i8> = malloc(64) as ptr<i8>
+    let mut p: i32 = 0
+    while p < 17 {
+        let _n: i32 = snprintf(buf, 64, precision_fmt(p), v)
+        if strtod(buf as string, null) == v {
+            break
+        }
+        p = p + 1
+    }
+    let _n2: i32 = snprintf(buf, 64, precision_fmt(p), v)
+    let e_str: string = buf as string
+    let epos: i32 = ft_find_byte(e_str, 101, 0)
+    let mant: string = ft_slice(e_str, 0, epos)
+    let exp: i32 = bn_atoi(ft_from(e_str, epos + 1))
+    # digits without the point, trailing zeros removed
+    let mut digits: string = ft_slice(mant, 0, 1)
+    if ft_len(mant) > 2 {
+        digits = digits + ft_from(mant, 2)
+    }
+    let mut dn: i32 = ft_len(digits)
+    while dn > 1 and ft_eq(ft_slice(digits, dn - 1, dn), "0") {
+        dn = dn - 1
+    }
+    digits = ft_slice(digits, 0, dn)
+    if exp >= -4 and exp < 16 {
+        if exp >= 0 {
+            let mut int_part: string = ""
+            let mut frac: string = ""
+            if dn > exp + 1 {
+                int_part = ft_slice(digits, 0, exp + 1)
+                frac = ft_from(digits, exp + 1)
+            } else {
+                int_part = digits
+                let mut z: i32 = dn
+                while z < exp + 1 {
+                    int_part = int_part + "0"
+                    z = z + 1
+                }
+                frac = "0"
+            }
+            return sign + int_part + "." + frac
+        }
+        let mut lead: string = "0."
+        let mut k: i32 = 0
+        while k < (0 - exp) - 1 {
+            lead = lead + "0"
+            k = k + 1
+        }
+        return sign + lead + digits
+    }
+    let mut m: string = ft_slice(digits, 0, 1)
+    if dn > 1 {
+        m = m + "." + ft_from(digits, 1)
+    }
+    let mut es: string = "+"
+    let mut ae: i32 = exp
+    if exp < 0 {
+        es = "-"
+        ae = 0 - exp
+    }
+    let mut ed: string = bn_itoa(ae)
+    if ae < 10 {
+        ed = "0" + ed
+    }
+    return sign + m + "e" + es + ed
+}
+
+export function bn_itoa(n: i32) -> string {
+    let buf: ptr<i8> = malloc(32) as ptr<i8>
+    let _n: i32 = snprintf(buf, 32, "%.0f", n as f64)
+    return buf as string
+}
+
+export function bn_atoi(s: string) -> i32 {
+    return strtod(s, null) as i32
+}
+
+# statistics.median
+export function bn_median(xs: ptr<f64>, n: i32) -> f64 {
+    let s: ptr<f64> = malloc(((n + 1) as i64) * 8) as ptr<f64>
+    let mut i: i32 = 0
+    while i < n {
+        s[i] = xs[i]
+        i = i + 1
+    }
+    # insertion sort: n is a handful of repetitions
+    i = 1
+    while i < n {
+        let v: f64 = s[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and s[j] > v {
+            s[j + 1] = s[j]
+            j = j - 1
+        }
+        s[j + 1] = v
+        i = i + 1
+    }
+    if n % 2 == 1 {
+        return s[n / 2]
+    }
+    return (s[n / 2 - 1] + s[n / 2]) / 2.0
+}
+
+export function bn_min(xs: ptr<f64>, n: i32) -> f64 {
+    let mut m: f64 = xs[0]
+    let mut i: i32 = 1
+    while i < n {
+        if xs[i] < m {
+            m = xs[i]
+        }
+        i = i + 1
+    }
+    return m
+}
+
+export function bn_max(xs: ptr<f64>, n: i32) -> f64 {
+    let mut m: f64 = xs[0]
+    let mut i: i32 = 1
+    while i < n {
+        if xs[i] > m {
+            m = xs[i]
+        }
+        i = i + 1
+    }
+    return m
+}
+
+# str.strip() for ASCII whitespace.
+export function bn_strip(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut a: i32 = 0
+    while a < n and (p[a] == 32 or p[a] == 9 or p[a] == 10 or p[a] == 13) {
+        a = a + 1
+    }
+    let mut b: i32 = n
+    while b > a and (p[b - 1] == 32 or p[b - 1] == 9 or p[b - 1] == 10 or p[b - 1] == 13) {
+        b = b - 1
+    }
+    return ft_slice(s, a, b)
+}
+
+# Run argv directly (fork + execvp, no shell) with stdout captured and
+# stderr discarded, and time it from fork to reap, as subprocess.run does.
+# Parses the benchmark programs' result and seconds lines.
+export function bn_run(argv: ptr<StrList>) -> ptr<BenchRun> {
+    let r: ptr<BenchRun> = malloc(64) as ptr<BenchRun>
+    let n: i32 = ft_list_len(argv)
+    let args: ptr<string> = malloc(((n + 1) as i64) * 8) as ptr<string>
+    let mut a: i32 = 0
+    while a < n {
+        args[a] = ft_list_get(argv, a)
+        a = a + 1
+    }
+    args[n] = null
+    let fds: ptr<i32> = malloc(8) as ptr<i32>
+    let _p: i32 = pipe(fds)
+    let cap: i32 = 4194304
+    let buf: ptr<u8> = malloc((cap + 1) as i64) as ptr<u8>
+    let chunk: ptr<u8> = malloc(65536) as ptr<u8>
+    let t0: f64 = bn_now()
+    let pid: i32 = fork()
+    if pid == 0 {
+        let _d1: i32 = dup2(fds[1], 1)
+        let nul: i32 = open("/dev/null", 1)
+        let _d2: i32 = dup2(nul, 2)
+        let _c0: i32 = close(fds[0])
+        let _x: i32 = execvp(args[0], args)
+        _exit(127)
+    }
+    let _c1: i32 = close(fds[1])
+    let mut len: i32 = 0
+    while len < cap - 65536 {
+        let got: i64 = read(fds[0], chunk, 65536)
+        if got <= 0 {
+            break
+        }
+        let mut i: i32 = 0
+        while i < (got as i32) {
+            buf[len + i] = chunk[i]
+            i = i + 1
+        }
+        len = len + (got as i32)
+    }
+    buf[len] = 0
+    let _c2: i32 = close(fds[0])
+    let status: ptr<i32> = malloc(4) as ptr<i32>
+    status[0] = 127 * 256
+    let _w: i32 = waitpid(pid, status, 0)
+    r[0].wall = bn_now() - t0
+    let st: i32 = status[0]
+    if (st & 127) != 0 {
+        r[0].code = 0 - (st & 127)
+    } else {
+        r[0].code = (st >> 8) & 255
+    }
+    r[0].out = buf as string
+    r[0].result = null
+    r[0].seconds = 0.0
+    r[0].has_seconds = false
+    let lines: ptr<StrList> = ft_split_lines(r[0].out)
+    let mut k: i32 = 0
+    while k < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, k)
+        if ft_starts(line, "result ") {
+            r[0].result = bn_strip(ft_from(line, 7))
+        } elif ft_starts(line, "seconds ") {
+            r[0].seconds = strtod(bn_strip(ft_from(line, 8)), null)
+            r[0].has_seconds = true
+        }
+        k = k + 1
+    }
+    return r
+}
+
+export function bn_code(r: ptr<BenchRun>) -> i32 {
+    return r[0].code
+}
+
+export function bn_out(r: ptr<BenchRun>) -> string {
+    return r[0].out
+}
+
+export function bn_wall(r: ptr<BenchRun>) -> f64 {
+    return r[0].wall
+}
+
+export function bn_result(r: ptr<BenchRun>) -> string {
+    return r[0].result
+}
+
+export function bn_seconds(r: ptr<BenchRun>) -> f64 {
+    return r[0].seconds
+}
+
+export function bn_has_seconds(r: ptr<BenchRun>) -> bool {
+    return r[0].has_seconds
+}

@@ -1,6 +1,6 @@
 # XOR MLP via grad codegen (pattern-adoption #170).
 # No hand-written dense_backward — gradients come from
-# scripts/tools/grad/flow_grad_flow.py → nn_xor_loss_clean_grad.flow
+# scripts/tools/grad/grad.sh flow → nn_xor_loss_clean_grad.flow
 # wrapped by lib/stdlib/nn_autogen.flow.
 #
 # Hand backprop walkthrough:
@@ -21,7 +21,7 @@ function main() -> i32 {
     println("XOR Neural Network (grad codegen)")
     println("=================================")
     println("Architecture: 2 -> 2 (sigmoid) -> 1 (sigmoid)")
-    println("Grads: net2x2x1_grads_xor_autogen (flow_grad_flow.py)")
+    println("Grads: net2x2x1_grads_xor_autogen (grad.sh flow)")
     println("")
 
     let mut net: Net2x2x1 = Net2x2x1 {

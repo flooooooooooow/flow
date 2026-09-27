@@ -55,7 +55,7 @@ Start the relay first:
 #
 #   python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506 &amp;
 #   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
-#   python3 wasm/flow_wasm_sockets.py               # browser, over WebSocket
+#   wasm/crossings.sh sockets                       # browser, over WebSocket
 #
 # This calls Flow&#x27;s ordinary socket API: flow_rt_tcp_connect / send / recv /
 # close in runtime/flow_tcp.c, which are BSD sockets and nothing else. The
@@ -276,7 +276,7 @@ def recv_exactly(conn: socket.socket, count: int) -&gt; bytes:
         chunks.append(ch</pre>
 
 <footer>
-Built by <code>wasm/flow_wasm_sockets.py</code>. Mechanism:
+Built by <code>wasm/crossings.sh sockets</code>. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
 </main>

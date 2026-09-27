@@ -1,0 +1,173 @@
+# @module tools.proc
+# @means  Processes and paths for the repository tools.
+#
+# Flow has no process API yet, so this wraps libc: system(3) for commands
+# whose output can pass through, popen(3) to read a command's stdout, and
+# getcwd/chdir to resolve paths the way Python's Path.resolve() does.
+# Every command goes through /bin/sh, so arguments are single-quoted with
+# pr_quote.
+
+import .text { ft_len, ft_eq, ft_starts, ft_replace, ft_exists, ft_rfind_byte, ft_slice, ft_from, ft_normpath, ft_list_len, ft_list_get, StrList }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function system(cmd: string) -> i32
+    function popen(cmd: string, mode: string) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function getcwd(buf: ptr<u8>, size: i64) -> ptr<u8>
+    function chdir(path: string) -> i32
+    function opendir(path: string) -> ptr<void>
+    function closedir(d: ptr<void>) -> i32
+}
+
+# Single-quote `s` for /bin/sh.
+export function pr_quote(s: string) -> string {
+    return "'" + ft_replace(s, "'", "'\\''") + "'"
+}
+
+# Quote and join a command line.
+export function pr_join_quoted(argv: ptr<StrList>) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < ft_list_len(argv) {
+        if i > 0 {
+            out = out + " "
+        }
+        out = out + pr_quote(ft_list_get(argv, i))
+        i = i + 1
+    }
+    return out
+}
+
+# Join with single spaces and no quoting, as Python's " ".join(cmd).
+export function pr_join_plain(argv: ptr<StrList>) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < ft_list_len(argv) {
+        if i > 0 {
+            out = out + " "
+        }
+        out = out + ft_list_get(argv, i)
+        i = i + 1
+    }
+    return out
+}
+
+# Run a shell command; returns its exit code (128 + signal when killed).
+export function pr_run(cmd: string) -> i32 {
+    let st: i32 = system(cmd)
+    if st == -1 {
+        return 127
+    }
+    if (st & 127) != 0 {
+        return 128 + (st & 127)
+    }
+    return (st >> 8) & 255
+}
+
+# Whole stdout of a shell command, up to 16 MiB.
+export function pr_capture(cmd: string) -> string {
+    let fp: ptr<void> = popen(cmd, "r")
+    if fp == null {
+        return ""
+    }
+    let cap: i64 = 16777216
+    let buf: ptr<u8> = malloc(cap + 1) as ptr<u8>
+    let chunk: ptr<u8> = malloc(65536) as ptr<u8>
+    let mut len: i32 = 0
+    while (len as i64) < cap - 65536 {
+        let got: i64 = fread(chunk, 1, 65536, fp)
+        if got <= 0 {
+            break
+        }
+        let mut i: i32 = 0
+        while i < (got as i32) {
+            buf[len + i] = chunk[i]
+            i = i + 1
+        }
+        len = len + (got as i32)
+    }
+    buf[len] = 0
+    let _p: i32 = pclose(fp)
+    return buf as string
+}
+
+# `s` without trailing newlines or spaces.
+export function pr_chomp(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = ft_len(s)
+    while n > 0 and (p[n - 1] == 10 or p[n - 1] == 13 or p[n - 1] == 32) {
+        n = n - 1
+    }
+    return ft_slice(s, 0, n)
+}
+
+export function pr_cwd() -> string {
+    let buf: ptr<u8> = malloc(4096) as ptr<u8>
+    let _g: ptr<u8> = getcwd(buf, 4096)
+    return buf as string
+}
+
+# Path.resolve() for a path that may not exist: absolute and normalised,
+# with the parent directory's symlinks resolved when it exists. getcwd()
+# reports the physical directory, so the parent is resolved by visiting it.
+export function pr_resolve(arg: string) -> string {
+    let mut abs: string = arg
+    if ft_starts(arg, "/") == false {
+        abs = pr_cwd() + "/" + arg
+    }
+    abs = ft_normpath(abs)
+    if ft_eq(abs, "/") {
+        return abs
+    }
+    if pr_is_dir(abs) {
+        let here0: string = pr_cwd()
+        if chdir(abs) == 0 {
+            let phys: string = pr_cwd()
+            let _b0: i32 = chdir(here0)
+            return phys
+        }
+    }
+    let slash: i32 = ft_rfind_byte(abs, 47)
+    let parent: string = ft_slice(abs, 0, slash)
+    let name: string = ft_from(abs, slash + 1)
+    let here: string = pr_cwd()
+    if ft_len(parent) > 0 and chdir(parent) == 0 {
+        let physical: string = pr_cwd()
+        let _back: i32 = chdir(here)
+        if ft_eq(physical, "/") {
+            return "/" + name
+        }
+        return physical + "/" + name
+    }
+    return abs
+}
+
+export function pr_is_dir(path: string) -> bool {
+    let d: ptr<void> = opendir(path)
+    if d == null {
+        return false
+    }
+    let _c: i32 = closedir(d)
+    return true
+}
+
+export function pr_is_file(path: string) -> bool {
+    return ft_exists(path) and pr_is_dir(path) == false
+}
+
+export function pr_mkdir_p(path: string) -> bool {
+    return pr_run("mkdir -p " + pr_quote(path)) == 0
+}
+
+# Path.relative_to(root) when `path` is inside `root`, else `path`.
+export function pr_relative(path: string, root: string) -> string {
+    if ft_eq(path, root) {
+        return "."
+    }
+    if ft_starts(path, root + "/") {
+        return ft_from(path, ft_len(root) + 1)
+    }
+    return path
+}

@@ -62,9 +62,9 @@ python3 scripts/ws_echo_relay.py --port 9505
 ./flow wasm examples/wasm/parallel_sum.flow --threads --workers 8
 ./flow gpu examples/wasm/gpu_vector_add.flow --wgsl
 ./flow wasm examples/wasm/fs_counter.flow --fs idbfs
-python3 wasm/flow_wasm_sockets.py
-python3 wasm/flow_wasm_python.py
-python3 wasm/flow_wasm_fs.py</pre>
+wasm/crossings.sh sockets
+wasm/crossings.sh python
+wasm/crossings.sh fs</pre>
 </div>
 
 <h2>Notes that apply to all of them</h2>
@@ -83,7 +83,7 @@ python3 wasm/flow_wasm_fs.py</pre>
 
 <footer>
 Mechanism and full measurements: <code>docs/language/wasm-crossings.md</code>.
-Builders: <code>wasm/flow_wasm_*.py</code>.
+Builders: <code>wasm/crossings.sh</code> and <code>wasm/flow_wasm_gpu.py</code>.
 </footer>
 
 </main>

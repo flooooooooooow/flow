@@ -1,0 +1,835 @@
+# Build the WASM crossing demos and their pages under site/wasm-crossings.
+#
+# A "crossing" is one thing people assume cannot reach WebAssembly. Run
+# through wasm/crossings.sh:
+#
+#   crossings.sh all                     every crossing, then the index
+#   crossings.sh index [--out DIR]       index page only
+#   crossings.sh threads [program.flow] [--workers N] [--out DIR] [--no-build]
+#   crossings.sh sockets [program.flow] [--port N] [--out DIR] [--no-build]
+#   crossings.sh python  [program.flow] [--out DIR] [--no-build]
+#   crossings.sh fs [program.flow] [--fs memfs|idbfs] [--preload DIR@/MOUNT]
+#                   [--export-name NAME] [--out DIR] [--no-build]
+#
+# The GPU crossing stays in wasm/flow_wasm_gpu.py because its WGSL comes
+# from src/flow's code generator; `all` runs it through python3.
+#
+# Flow sources go to C through the Python-hosted compiler (flow.transpiler),
+# the same compiler the pages were built with. Page text lives in
+# wasm/crossing_assets/pages/*.html with @@field@@ slots.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_find, ft_slice, ft_from, ft_basename, ft_stem, ft_dirname, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .proc { pr_quote, pr_join_quoted, pr_join_plain, pr_run, pr_capture, pr_chomp, pr_resolve, pr_is_file, pr_mkdir_p, pr_relative }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function exit(code: i32) -> void
+    function atoi(s: string) -> i32
+}
+
+const PYODIDE_VERSION: string = "0.27.2"
+const IDBFS_MOUNT: string = "/persist"
+const NATIVE_GIF_SHA256: string = "9bbb1327b8f74b69dd87e50f65adafe7da7d2eaca963c646604ab2596844f59b"
+const SERVE: string = "\nServe it:  python3 -m http.server -d site 8000"
+
+struct Opts {
+    program: string
+    out: string
+    no_build: bool
+    workers: i32
+    port: i32
+    fs: string
+    preload: ptr<StrList>
+    export_name: string
+}
+
+# ---------------------------------------------------------------------------
+# Tree layout
+# ---------------------------------------------------------------------------
+
+function root() -> string {
+    let r: string = getenv("FLOW_REPO_ROOT")
+    if r == null or ft_len(r) == 0 {
+        return pr_resolve(".")
+    }
+    return r
+}
+
+function path_in(rel: string) -> string {
+    return ft_join(root(), rel)
+}
+
+function build_dir() -> string {
+    return path_in("build/wasm-crossings")
+}
+
+function site_dir() -> string {
+    return path_in("site/wasm-crossings")
+}
+
+function asset(name: string) -> string {
+    return path_in("wasm/crossing_assets/" + name)
+}
+
+function rel(path: string) -> string {
+    return pr_relative(path, root())
+}
+
+# sys.exit(message)
+function die(msg: string) -> void {
+    ft_errln(msg)
+    exit(1)
+}
+
+function read_or_die(path: string) -> string {
+    let text: string = ft_read_file(path)
+    if text == null {
+        die("cannot read " + path)
+    }
+    return text
+}
+
+function read_asset(name: string) -> string {
+    return read_or_die(asset(name))
+}
+
+function write_out(path: string, text: string) -> void {
+    let _m: bool = pr_mkdir_p(ft_dirname(path))
+    if ft_write_file(path, text) == false {
+        die("cannot write " + path)
+    }
+    ft_outln("  wrote " + rel(path))
+}
+
+# ---------------------------------------------------------------------------
+# Text
+# ---------------------------------------------------------------------------
+
+# html.escape(s, quote=True)
+function html_escape(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let out: ptr<u8> = malloc(((n * 6) + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut rep: string = null
+        if c == 38 {
+            rep = "&amp;"
+        } elif c == 60 {
+            rep = "&lt;"
+        } elif c == 62 {
+            rep = "&gt;"
+        } elif c == 34 {
+            rep = "&quot;"
+        } elif c == 39 {
+            rep = "&#x27;"
+        }
+        if rep == null {
+            out[o] = c as u8
+            o = o + 1
+        } else {
+            let rp: ptr<u8> = rep as ptr<u8>
+            let mut k: i32 = 0
+            while rp[k] != 0 {
+                out[o] = rp[k]
+                o = o + 1
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+    out[o] = 0
+    return out as string
+}
+
+# The first `limit` code points of `s`, as Python's s[:limit].
+function head_chars(s: string, limit: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if ((p[i] as i32) & 192) != 128 {
+            if count == limit {
+                return ft_slice(s, 0, i)
+            }
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return s
+}
+
+# Replace each @@key@@ in `template` with its value from the parallel lists.
+function fill(template: string, keys: ptr<StrList>, vals: ptr<StrList>) -> string {
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    while true {
+        let open: i32 = ft_find(template, "@@", pos)
+        if open < 0 {
+            break
+        }
+        let close: i32 = ft_find(template, "@@", open + 2)
+        if close < 0 {
+            break
+        }
+        let key: string = ft_slice(template, open + 2, close)
+        let mut hit: i32 = -1
+        let mut k: i32 = 0
+        while k < ft_list_len(keys) {
+            if ft_eq(ft_list_get(keys, k), key) {
+                hit = k
+            }
+            k = k + 1
+        }
+        if hit < 0 {
+            out = out + ft_slice(template, pos, close)
+            pos = close
+        } else {
+            out = out + ft_slice(template, pos, open) + ft_list_get(vals, hit)
+            pos = close + 2
+        }
+    }
+    return out + ft_from(template, pos)
+}
+
+# json.dumps of a list of plain ASCII strings.
+function json_list(items: ptr<StrList>) -> string {
+    let mut out: string = "["
+    let mut i: i32 = 0
+    while i < ft_list_len(items) {
+        if i > 0 {
+            out = out + ", "
+        }
+        out = out + "\"" + ft_list_get(items, i) + "\""
+        i = i + 1
+    }
+    return out + "]"
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+# Run argv, echoing it unless quiet. On failure print its output and stop.
+function run(argv: ptr<StrList>, quiet: bool, env_prefix: string) -> void {
+    if quiet == false {
+        ft_outln("  $ " + pr_join_plain(argv))
+    }
+    let bd: string = build_dir()
+    let _m: bool = pr_mkdir_p(bd)
+    let out_f: string = bd + "/.cmd.out"
+    let err_f: string = bd + "/.cmd.err"
+    let rc: i32 = pr_run(env_prefix + pr_join_quoted(argv) + " >" + pr_quote(out_f) + " 2>" + pr_quote(err_f))
+    if rc != 0 {
+        let o: string = ft_read_file(out_f)
+        let e: string = ft_read_file(err_f)
+        if o != null {
+            ft_out(o)
+        }
+        if e != null {
+            ft_err(e)
+        }
+        die("command failed (" + ft_itoa(rc) + "): " + ft_list_get(argv, 0))
+    }
+}
+
+function flow_to_c_available() -> bool {
+    return ft_exists(path_in("src/flow/transpiler.py"))
+}
+
+# Compile a .flow source to C with the Python-hosted Flow compiler.
+function flow_to_c(flow_file: string, out_c: string, library: bool) -> string {
+    let _m: bool = pr_mkdir_p(ft_dirname(out_c))
+    let mut pp: string = getenv("PYTHONPATH")
+    if pp == null {
+        pp = ""
+    }
+    let argv: ptr<StrList> = ft_list_new()
+    ft_list_push(argv, "python3")
+    ft_list_push(argv, "-m")
+    ft_list_push(argv, "flow.transpiler")
+    ft_list_push(argv, flow_file)
+    ft_list_push(argv, "--c")
+    if library {
+        ft_list_push(argv, "--library")
+        ft_list_push(argv, "--lenient")
+    } else {
+        ft_list_push(argv, "--strict")
+    }
+    ft_list_push(argv, "-o")
+    ft_list_push(argv, out_c)
+    run(argv, true, "PYTHONPATH=" + pr_quote(path_in("src") + ":" + pp) + " ")
+    if ft_exists(out_c) == false {
+        die("Flow compiler produced no C for " + flow_file)
+    }
+    return out_c
+}
+
+function require_emcc() -> string {
+    let found: string = pr_chomp(pr_capture("command -v emcc"))
+    if ft_len(found) == 0 {
+        die("emcc not on PATH. Install emscripten (brew install emscripten).")
+    }
+    return found
+}
+
+# Homebrew's emscripten ships a config pointing LLVM_ROOT at /usr/bin (Xcode
+# clang, which has no wasm backend). Point emcc at emscripten's own copies
+# unless the caller already has.
+function default_env(name: string, value: string) -> void {
+    let cur: string = getenv(name)
+    if (cur == null or ft_len(cur) == 0) and ft_exists(value) {
+        let _s: i32 = setenv(name, value, 1)
+    }
+}
+
+function emscripten_env() -> void {
+    default_env("EMSDK_PYTHON", "/opt/homebrew/bin/python3.14")
+    default_env("EM_LLVM_ROOT", "/opt/homebrew/opt/emscripten/libexec/llvm/bin")
+    default_env("EM_BINARYEN_ROOT", "/opt/homebrew/opt/emscripten/libexec/binaryen")
+}
+
+function emcc_run(argv: ptr<StrList>) -> void {
+    emscripten_env()
+    run(argv, false, "")
+}
+
+function resolve_program(arg: string) -> string {
+    let program: string = pr_resolve(arg)
+    if ft_exists(program) == false {
+        die("no such program: " + program)
+    }
+    return program
+}
+
+function list_of(a: string, b: string) -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, a)
+    ft_list_push(l, b)
+    return l
+}
+
+function push2(keys: ptr<StrList>, vals: ptr<StrList>, k: string, v: string) -> void {
+    ft_list_push(keys, k)
+    ft_list_push(vals, v)
+}
+
+# ---------------------------------------------------------------------------
+# Crossing 1: OS threads
+# ---------------------------------------------------------------------------
+
+function threads_page(stem: string, program: string, workers: i32) -> string {
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "source", html_escape(read_or_die(program)))
+    push2(keys, vals, "stem", stem)
+    push2(keys, vals, "workers", ft_itoa(workers))
+    return fill(read_asset("pages/threads.html"), keys, vals)
+}
+
+function cmd_threads(o: ptr<Opts>) -> i32 {
+    let mut arg: string = o[0].program
+    if arg == null {
+        arg = path_in("examples/wasm/parallel_sum.flow")
+    }
+    let program: string = resolve_program(arg)
+    if flow_to_c_available() == false {
+        die("Flow compiler not importable; run from the project root.")
+    }
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir() + "/threads"
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let workers: i32 = o[0].workers
+    let stem: string = ft_stem(program)
+    let work: string = build_dir() + "/threads"
+    let _m: bool = pr_mkdir_p(work)
+
+    ft_outln("Flow -> C: " + rel(program))
+    let sources: ptr<StrList> = ft_list_new()
+    ft_list_push(sources, flow_to_c(program, work + "/" + stem + ".c", false))
+    let module: string = path_in("lib/runtime/concurrency_parallel.flow")
+    ft_list_push(sources, flow_to_c(module, work + "/" + ft_stem(module) + ".c", true))
+    ft_list_push(sources, path_in("runtime/flow_rt_parallel.c"))
+    ft_list_push(sources, path_in("runtime/flow_rt_support.c"))
+
+    let _m2: bool = pr_mkdir_p(out_dir)
+
+    if o[0].no_build == false {
+        let emcc: string = require_emcc()
+        emscripten_env()
+        ft_outln("C -> WASM (threaded, " + ft_itoa(workers) + " workers)")
+        let t: ptr<StrList> = threads_common(emcc, workers, sources)
+        ft_list_push(t, "-pthread")
+        ft_list_push(t, "-sPTHREAD_POOL_SIZE=" + ft_itoa(workers + 1))
+        ft_list_push(t, "-sPROXY_TO_PTHREAD")
+        ft_list_push(t, "-sEXPORT_NAME=createFlowThreaded")
+        ft_list_push(t, "-o")
+        ft_list_push(t, out_dir + "/" + stem + "_threaded.js")
+        emcc_run(t)
+
+        ft_outln("C -> WASM (single-thread control)")
+        let s: ptr<StrList> = threads_common(emcc, workers, sources)
+        ft_list_push(s, "-sEXPORT_NAME=createFlowSingle")
+        ft_list_push(s, "-o")
+        ft_list_push(s, out_dir + "/" + stem + "_single.js")
+        emcc_run(s)
+    }
+
+    write_out(out_dir + "/coi-serviceworker.js", read_asset("coi-serviceworker.js"))
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", threads_page(stem, program, workers))
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/threads/")
+    return 0
+}
+
+function threads_common(emcc: string, workers: i32, sources: ptr<StrList>) -> ptr<StrList> {
+    let a: ptr<StrList> = ft_list_new()
+    ft_list_push(a, emcc)
+    ft_list_push(a, "-O2")
+    ft_list_push(a, "-Wno-everything")
+    ft_list_push(a, "-I" + path_in("runtime"))
+    ft_list_push(a, "-DFLOW_PAR_WORKERS=" + ft_itoa(workers))
+    let mut i: i32 = 0
+    while i < ft_list_len(sources) {
+        ft_list_push(a, ft_list_get(sources, i))
+        i = i + 1
+    }
+    ft_list_push(a, "-sMODULARIZE=1")
+    ft_list_push(a, "-sEXIT_RUNTIME=1")
+    ft_list_push(a, "-sINITIAL_MEMORY=134217728")
+    ft_list_push(a, "-sENVIRONMENT=web,worker")
+    return a
+}
+
+# ---------------------------------------------------------------------------
+# Crossing 3: sockets
+# ---------------------------------------------------------------------------
+
+function sockets_page(stem: string, program: string, port: i32) -> string {
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "source", html_escape(read_or_die(program)))
+    push2(keys, vals, "relay", html_escape(head_chars(read_or_die(path_in("scripts/ws_echo_relay.py")), 1400)))
+    push2(keys, vals, "stem", stem)
+    push2(keys, vals, "port", ft_itoa(port))
+    return fill(read_asset("pages/sockets.html"), keys, vals)
+}
+
+function cmd_sockets(o: ptr<Opts>) -> i32 {
+    let mut arg: string = o[0].program
+    if arg == null {
+        arg = path_in("examples/wasm/tcp_echo.flow")
+    }
+    let program: string = resolve_program(arg)
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir() + "/sockets"
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let port: i32 = o[0].port
+    let stem: string = ft_stem(program)
+    let work: string = build_dir() + "/sockets"
+    let _m: bool = pr_mkdir_p(work)
+    let _m2: bool = pr_mkdir_p(out_dir)
+
+    ft_outln("Flow -> C: " + rel(program))
+    let c_file: string = flow_to_c(program, work + "/" + stem + ".c", false)
+
+    if o[0].no_build == false {
+        let a: ptr<StrList> = ft_list_new()
+        ft_list_push(a, require_emcc())
+        ft_list_push(a, "-O2")
+        ft_list_push(a, "-Wno-everything")
+        ft_list_push(a, "-I" + path_in("runtime"))
+        ft_list_push(a, "-DFLOW_DEMO_PORT=" + ft_itoa(port))
+        ft_list_push(a, c_file)
+        ft_list_push(a, path_in("runtime/flow_tcp.c"))
+        ft_list_push(a, path_in("runtime/flow_rt_support.c"))
+        ft_list_push(a, asset("net_yield_shim.c"))
+        # Emscripten's socket bridge is event-loop driven, so the program
+        # must be able to yield mid-call.
+        ft_list_push(a, "-sASYNCIFY")
+        ft_list_push(a, "-sASYNCIFY_STACK_SIZE=16384")
+        ft_list_push(a, "-sMODULARIZE=1")
+        ft_list_push(a, "-sEXIT_RUNTIME=1")
+        ft_list_push(a, "-sALLOW_MEMORY_GROWTH=1")
+        ft_list_push(a, "-sEXPORT_NAME=createFlowSockets")
+        ft_list_push(a, "-sENVIRONMENT=web")
+        ft_list_push(a, "-o")
+        ft_list_push(a, out_dir + "/" + stem + ".js")
+        emcc_run(a)
+    }
+
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", sockets_page(stem, program, port))
+    ft_outln("\nStart the relay: python3 scripts/ws_echo_relay.py --port " + ft_itoa(port))
+    ft_outln("Serve it:        python3 -m http.server -d site 8000")
+    ft_outln("Then open:       http://127.0.0.1:8000/wasm-crossings/sockets/")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Crossing 4: embedded CPython, routed to Pyodide
+# ---------------------------------------------------------------------------
+
+function python_page(stem: string, program: string) -> string {
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "flow_src", html_escape(read_or_die(program)))
+    push2(keys, vals, "py_src", html_escape(read_or_die(path_in("examples/wasm/python/flow_demo.py"))))
+    push2(keys, vals, "bridge_src", html_escape(head_chars(read_asset("pyodide_bridge.js"), 2600)))
+    push2(keys, vals, "stem", stem)
+    push2(keys, vals, "PYODIDE_VERSION", PYODIDE_VERSION)
+    push2(keys, vals, "PYODIDE_CDN", "https://cdn.jsdelivr.net/pyodide/v" + PYODIDE_VERSION + "/full/")
+    return fill(read_asset("pages/python.html"), keys, vals)
+}
+
+function cmd_python(o: ptr<Opts>) -> i32 {
+    let mut arg: string = o[0].program
+    if arg == null {
+        arg = path_in("examples/wasm/python_embed.flow")
+    }
+    let program: string = resolve_program(arg)
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir() + "/python"
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let stem: string = ft_stem(program)
+    let work: string = build_dir() + "/python"
+    let _m: bool = pr_mkdir_p(work)
+    let _m2: bool = pr_mkdir_p(out_dir)
+
+    ft_outln("Flow -> C: " + rel(program))
+    let c_file: string = flow_to_c(program, work + "/" + stem + ".c", false)
+
+    if o[0].no_build == false {
+        # Symbols the bridge defines in JS. Naming them keeps the linker from
+        # dead-stripping the library and makes a typo a link error.
+        let syms: ptr<StrList> = ft_list_new()
+        ft_list_push(syms, "_python_init")
+        ft_list_push(syms, "_python_destroy")
+        ft_list_push(syms, "_python_add_to_path")
+        ft_list_push(syms, "_python_import_module")
+        ft_list_push(syms, "_python_call0")
+        ft_list_push(syms, "_python_call1_str")
+        ft_list_push(syms, "_python_call1_i32")
+        ft_list_push(syms, "_python_call1_f32")
+        ft_list_push(syms, "_python_call1_bool")
+        ft_list_push(syms, "_python_call3_i32_f64")
+        ft_list_push(syms, "_python_last_error")
+        ft_list_push(syms, "_print_line")
+        ft_list_push(syms, "_main")
+        ft_list_push(syms, "_malloc")
+        ft_list_push(syms, "_free")
+        let methods: ptr<StrList> = ft_list_new()
+        ft_list_push(methods, "callMain")
+
+        let a: ptr<StrList> = ft_list_new()
+        ft_list_push(a, require_emcc())
+        ft_list_push(a, "-O2")
+        ft_list_push(a, "-Wno-everything")
+        ft_list_push(a, c_file)
+        # flow_python_embed.c is deliberately absent; the JS library below
+        # provides the same symbols.
+        ft_list_push(a, "--js-library")
+        ft_list_push(a, asset("pyodide_bridge.js"))
+        ft_list_push(a, "-sMODULARIZE=1")
+        ft_list_push(a, "-sEXPORT_NAME=createFlowPython")
+        ft_list_push(a, "-sEXIT_RUNTIME=0")
+        ft_list_push(a, "-sINVOKE_RUN=0")
+        ft_list_push(a, "-sALLOW_MEMORY_GROWTH=1")
+        ft_list_push(a, "-sEXPORTED_FUNCTIONS=" + json_list(syms))
+        ft_list_push(a, "-sEXPORTED_RUNTIME_METHODS=" + json_list(methods))
+        ft_list_push(a, "-sENVIRONMENT=web")
+        ft_list_push(a, "-o")
+        ft_list_push(a, out_dir + "/" + stem + ".js")
+        emcc_run(a)
+    }
+
+    write_out(out_dir + "/flow_demo.py", read_or_die(path_in("examples/wasm/python/flow_demo.py")))
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", python_page(stem, program))
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/python/")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Crossing 5: the filesystem
+# ---------------------------------------------------------------------------
+
+# Compile one Flow program to a filesystem-enabled WASM module.
+function fs_module(program: string, out_dir: string, export_name: string, fs: string, preload: ptr<StrList>) -> string {
+    let stem: string = ft_stem(program)
+    let work: string = build_dir() + "/fs"
+    let _m: bool = pr_mkdir_p(work)
+    let _m2: bool = pr_mkdir_p(out_dir)
+    let c_file: string = flow_to_c(program, work + "/" + stem + ".c", false)
+
+    # IDBFS lives inside the module closure, so the page can only mount it
+    # if it is exported alongside FS.
+    let methods: ptr<StrList> = ft_list_new()
+    ft_list_push(methods, "FS")
+    ft_list_push(methods, "callMain")
+    ft_list_push(methods, "addRunDependency")
+    ft_list_push(methods, "removeRunDependency")
+    if ft_eq(fs, "idbfs") {
+        ft_list_push(methods, "IDBFS")
+    }
+
+    let a: ptr<StrList> = ft_list_new()
+    ft_list_push(a, require_emcc())
+    ft_list_push(a, "-O2")
+    ft_list_push(a, "-Wno-everything")
+    ft_list_push(a, c_file)
+    ft_list_push(a, "-sMODULARIZE=1")
+    ft_list_push(a, "-sEXPORT_NAME=" + export_name)
+    ft_list_push(a, "-sALLOW_MEMORY_GROWTH=1")
+    ft_list_push(a, "-sFORCE_FILESYSTEM=1")
+    ft_list_push(a, "-sEXPORTED_RUNTIME_METHODS=" + json_list(methods))
+    ft_list_push(a, "-sINVOKE_RUN=0")
+    ft_list_push(a, "-sEXIT_RUNTIME=0")
+    ft_list_push(a, "-sENVIRONMENT=web")
+    if ft_eq(fs, "idbfs") {
+        ft_list_push(a, "-lidbfs.js")
+    }
+    let mut i: i32 = 0
+    while i < ft_list_len(preload) {
+        ft_list_push(a, "--preload-file")
+        ft_list_push(a, ft_list_get(preload, i))
+        i = i + 1
+    }
+    ft_list_push(a, "-o")
+    ft_list_push(a, out_dir + "/" + stem + ".js")
+    emcc_run(a)
+    return stem
+}
+
+function fs_page() -> string {
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "gif", "gif_writer")
+    push2(keys, vals, "counter", "fs_counter")
+    push2(keys, vals, "preload", "fs_preload")
+    push2(keys, vals, "IDBFS_MOUNT", IDBFS_MOUNT)
+    push2(keys, vals, "NATIVE_GIF_SHA256", NATIVE_GIF_SHA256)
+    push2(keys, vals, "gif_src", html_escape(head_chars(read_or_die(path_in("examples/graphics/gif_writer.flow")), 100000)))
+    push2(keys, vals, "counter_src", html_escape(head_chars(read_or_die(path_in("examples/wasm/fs_counter.flow")), 100000)))
+    return fill(read_asset("pages/fs.html"), keys, vals)
+}
+
+function cmd_fs(o: ptr<Opts>) -> i32 {
+    if o[0].program != null {
+        let mut out_s: string = build_dir() + "/fs-out"
+        if o[0].out != null {
+            out_s = pr_resolve(o[0].out)
+        }
+        let program: string = resolve_program(o[0].program)
+        ft_outln("Flow -> C -> WASM (" + o[0].fs + "): " + ft_basename(program))
+        let stem: string = fs_module(program, out_s, o[0].export_name, o[0].fs, o[0].preload)
+        ft_outln("\nWrote " + out_s + "/" + stem + ".js")
+        return 0
+    }
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir() + "/fs"
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    if o[0].no_build == false {
+        let none: ptr<StrList> = ft_list_new()
+        ft_outln("gif_writer -> MEMFS build")
+        let _g: string = fs_module(path_in("examples/graphics/gif_writer.flow"), out_dir, "createFlowGif", "memfs", none)
+        ft_outln("fs_counter -> IDBFS build")
+        let _c: string = fs_module(path_in("examples/wasm/fs_counter.flow"), out_dir, "createFlowCounter", "idbfs", none)
+        ft_outln("fs_preload -> MEMFS build with --preload-file")
+        let data: ptr<StrList> = ft_list_new()
+        ft_list_push(data, path_in("examples/wasm/data") + "@/data")
+        let _p: string = fs_module(path_in("examples/wasm/fs_preload.flow"), out_dir, "createFlowPreload", "memfs", data)
+    }
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", fs_page())
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/fs/")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Index and the whole set
+# ---------------------------------------------------------------------------
+
+function write_index(out_dir: string) -> void {
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "body", read_asset("index_template.html"))
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", fill(read_asset("pages/index.html"), keys, vals))
+}
+
+function fresh_opts() -> ptr<Opts> {
+    let o: ptr<Opts> = malloc(128) as ptr<Opts>
+    o[0].program = null
+    o[0].out = null
+    o[0].no_build = false
+    o[0].workers = 8
+    o[0].port = 9505
+    o[0].fs = "memfs"
+    o[0].preload = ft_list_new()
+    o[0].export_name = "createFlowFs"
+    return o
+}
+
+function cmd_all(o: ptr<Opts>) -> i32 {
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir()
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let _m: bool = pr_mkdir_p(out_dir)
+    ft_outln("=== threads ===")
+    let _t: i32 = cmd_threads(fresh_opts())
+    ft_outln("=== gpu ===")
+    let gpu_rc: i32 = pr_run("python3 " + pr_quote(path_in("wasm/flow_wasm_gpu.py")))
+    if gpu_rc != 0 {
+        die("flow_wasm_gpu.py failed (" + ft_itoa(gpu_rc) + ")")
+    }
+    ft_outln("=== sockets ===")
+    let _s: i32 = cmd_sockets(fresh_opts())
+    ft_outln("=== python ===")
+    let _p: i32 = cmd_python(fresh_opts())
+    ft_outln("=== fs ===")
+    let _f: i32 = cmd_fs(fresh_opts())
+    write_index(out_dir)
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/")
+    return 0
+}
+
+function cmd_index(o: ptr<Opts>) -> i32 {
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir()
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let _m: bool = pr_mkdir_p(out_dir)
+    write_index(out_dir)
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+
+function usage() -> i32 {
+    ft_errln("usage: crossings.sh {all,index,threads,sockets,python,fs} [program.flow] [options]")
+    return 2
+}
+
+function is_int(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    if p[0] == 0 {
+        return false
+    }
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function option_value(argc: i32, argv: ptr<ptr<u8>>, i: i32, name: string) -> string {
+    if i + 1 >= argc {
+        ft_errln("crossings.sh: error: argument " + name + ": expected one argument")
+        exit(2)
+    }
+    return argv[i + 1] as string
+}
+
+function int_value(v: string, name: string) -> i32 {
+    if is_int(v) == false {
+        ft_errln("crossings.sh: error: argument " + name + ": invalid int value: '" + v + "'")
+        exit(2)
+    }
+    return atoi(v)
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    if argc < 2 {
+        return usage()
+    }
+    let cmd: string = argv[1] as string
+    let o: ptr<Opts> = fresh_opts()
+    let mut i: i32 = 2
+    while i < argc {
+        let a: string = argv[i] as string
+        if ft_eq(a, "--no-build") {
+            o[0].no_build = true
+        } elif ft_eq(a, "--out") {
+            o[0].out = option_value(argc, argv, i, a)
+            i = i + 1
+        } elif ft_eq(a, "--workers") {
+            o[0].workers = int_value(option_value(argc, argv, i, a), a)
+            i = i + 1
+        } elif ft_eq(a, "--port") {
+            o[0].port = int_value(option_value(argc, argv, i, a), a)
+            i = i + 1
+        } elif ft_eq(a, "--fs") {
+            let v: string = option_value(argc, argv, i, a)
+            if (ft_eq(v, "memfs") or ft_eq(v, "idbfs")) == false {
+                ft_errln("crossings.sh: error: argument --fs: invalid choice: '" + v + "' (choose from 'memfs', 'idbfs')")
+                return 2
+            }
+            o[0].fs = v
+            i = i + 1
+        } elif ft_eq(a, "--preload") {
+            ft_list_push(o[0].preload, option_value(argc, argv, i, a))
+            i = i + 1
+        } elif ft_eq(a, "--export-name") {
+            o[0].export_name = option_value(argc, argv, i, a)
+            i = i + 1
+        } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
+            ft_outln("usage: crossings.sh {all,index,threads,sockets,python,fs} [program.flow] [options]")
+            return 0
+        } elif ft_starts(a, "-") {
+            ft_errln("crossings.sh: error: unrecognized arguments: " + a)
+            return 2
+        } elif o[0].program == null {
+            o[0].program = a
+        } else {
+            ft_errln("crossings.sh: error: unrecognized arguments: " + a)
+            return 2
+        }
+        i = i + 1
+    }
+    if ft_eq(cmd, "threads") {
+        return cmd_threads(o)
+    }
+    if ft_eq(cmd, "sockets") {
+        return cmd_sockets(o)
+    }
+    if ft_eq(cmd, "python") {
+        return cmd_python(o)
+    }
+    if ft_eq(cmd, "fs") {
+        return cmd_fs(o)
+    }
+    if ft_eq(cmd, "index") {
+        return cmd_index(o)
+    }
+    if ft_eq(cmd, "all") {
+        return cmd_all(o)
+    }
+    return usage()
+}

@@ -1,11 +1,11 @@
-# Schur Phase — JUCE VST3/AU
+# Schur Phase: JUCE VST3/AU
 
 Many-pole spectral all-pass phaser using Schur-lattice cascade with per-sample reflection modulation.
 
 ## Features
 
-- **Rate / Depth / Width / Mix** — core phaser controls
-- **Stages / Tone / Spread** — spectral character
+- **Rate / Depth / Width / Mix**: core phaser controls
+- **Stages / Tone / Spread**: spectral character
 - VST3, AU, Standalone
 
 ## Build
@@ -25,4 +25,4 @@ Plugins install to:
 
 Each section: \(H_i(z)=(k_i+z^{-1})/(1+k_i z^{-1})\). Design via Schur step-down on pole product; runtime modulates \(k_i\) with clip \(|k_i|<1\).
 
-Matches `lib/stdlib/audio/lattice_allpass.flow` / `scripts/tools/lattice_allpass_audio_demo.py`.
+Matches `lib/stdlib/audio/lattice_allpass.flow` / `tools/audio/lattice_allpass_audio_demo.py`.

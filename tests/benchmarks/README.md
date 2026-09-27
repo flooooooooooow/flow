@@ -24,8 +24,7 @@ tests/benchmarks/
 │   ├── c/                   # Hand-written C equivalents
 │   ├── rust/                # Rust equivalents
 │   └── python/              # Plain CPython equivalents
-├── run_publish.py           # Harness that writes RESULTS.md
-├── run_publish.sh           # Wrapper for the harness
+├── run_publish.sh           # Runs the harness (scripts/tools/bench_publish)
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
 │   ├── mandelbrot_benchmark.flow  # Fractal computation
