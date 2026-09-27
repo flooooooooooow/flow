@@ -104,13 +104,69 @@ flow_resolve_flowc() {
     if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
         driver="$FLOWC_BIN"
     else
-        driver="$(FLOW_HOST=python bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh")" || true
+        driver="$(bash "$SCRIPT_DIR/compiler/scripts/ensure_flowc.sh")" || true
+        # ensure_flowc prints a path relative to the repository root.
+        if [[ -n "$driver" && "$driver" != /* ]]; then
+            driver="$SCRIPT_DIR/$driver"
+        fi
     fi
     if [[ -z "$driver" || ! -x "$driver" ]]; then
-        print_error "No Stage-A flowc driver (set FLOWC_BIN or run compiler/scripts/roundtrip.sh)"
+        print_error "No Stage-A flowc driver (set FLOWC_BIN or run compiler/scripts/bootstrap_from_c.sh)"
         return 1
     fi
     printf '%s\n' "$driver"
+}
+
+# Build the dependency-sync check (scripts/tools/pkg_sync, a Flow program) with
+# the Stage-A flowc driver and print the binary's path. Rebuilt when its source
+# or the driver changes; written under a temporary name so concurrent runs
+# never execute a half-written binary.
+flow_pkg_sync_tool() {
+    local src="$SCRIPT_DIR/scripts/tools/pkg_sync/main.flow"
+    local dir="$SCRIPT_DIR/build/tools/pkg_sync"
+    local bin="$dir/pkg_sync"
+    local driver
+    driver="$(flow_resolve_flowc 2>/dev/null)" || return 1
+    if [[ -x "$bin" && ! "$src" -nt "$bin" && ! "$driver" -nt "$bin" ]]; then
+        printf '%s\n' "$bin"
+        return 0
+    fi
+    mkdir -p "$dir"
+    local tmp="$dir/pkg_sync.tmp.$$"
+    if ! FLOWC_TYPECHECK=1 FLOWC_IN="$src" FLOWC_OUT="$tmp.c" "$driver" >/dev/null 2>&1 \
+        || ! "${CC:-cc}" -std=c11 -D_DEFAULT_SOURCE -O2 -o "$tmp" "$tmp.c" >/dev/null 2>&1; then
+        rm -f "$tmp" "$tmp.c"
+        return 1
+    fi
+    rm -f "$tmp.c"
+    mv -f "$tmp" "$bin"
+    printf '%s\n' "$bin"
+}
+
+# Install the dependencies of the project containing a program, if it needs
+# any. The Flow check answers the common cases (no flow.toml, no dependencies,
+# everything already installed and locked) without Python. Only a project that
+# must actually fetch something goes to the package manager in
+# src/flow/package.py, exactly as before.
+flow_sync_program() {
+    local program="$1"
+    local abs_program
+    abs_program="$(cd "$(dirname "$program")" && pwd -P)/$(basename "$program")"
+    local tool rc=0
+    if tool="$(flow_pkg_sync_tool)"; then
+        "$tool" "$abs_program" || rc=$?
+        case "$rc" in
+            0) return 0 ;;
+            3) ;;
+            *) return "$rc" ;;
+        esac
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        print_error "$program belongs to a project whose dependencies are not installed."
+        print_info "Installing them needs python3 (python3 -m flow.package sync)."
+        return 1
+    fi
+    python3 -m flow.package sync --program "$program"
 }
 
 flowc_emit_to_c() {
@@ -121,6 +177,36 @@ flowc_emit_to_c() {
         return 1
     fi
     print_info "flowc emit via $driver"
+    # A program that imports modules, or uses the Field DSL (which adds an
+    # import of stdlib/dynamics/pde.flow), is bundled into one C unit. flowc
+    # resolves `stdlib/...` against lib/stdlib from the working directory and
+    # path imports such as "compiler/src/fileio.flow" against FLOWC_DIR, so
+    # the bundle runs from the repository root with absolute paths. Relative
+    # `.sibling` imports still resolve next to the importing module.
+    if grep -Eq '^[[:space:]]*import[[:space:]]' "$program" || \
+        grep -Eq '^[[:space:]]*(field|boundary)[[:space:]]' "$program"; then
+        local abs_program abs_out abs_driver
+        abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+        abs_out="$(cd "$(dirname "$c_out")" && pwd)/$(basename "$c_out")"
+        case "$driver" in
+            /*) abs_driver="$driver" ;;
+            *)
+                if [ -x "$driver" ]; then
+                    abs_driver="$(cd "$(dirname "$driver")" && pwd)/$(basename "$driver")"
+                else
+                    abs_driver="$SCRIPT_DIR/$driver"
+                fi
+                ;;
+        esac
+        (
+            cd "$SCRIPT_DIR" &&
+            FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
+            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+            FLOWC_IN="$abs_program" FLOWC_OUT="$abs_out" \
+                "$abs_driver"
+        )
+        return $?
+    fi
     # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
     FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
     FLOWC_IN="$program" FLOWC_OUT="$c_out" \
@@ -1043,7 +1129,7 @@ run_program() {
         print_info "If it is a library or patch, use: flow patch $program"
         return 2
     fi
-    python3 -m flow.package sync --program "$program"
+    flow_sync_program "$program"
     local basename
     basename=$(basename "$program" .flow)
 
@@ -1211,7 +1297,7 @@ compile_audio_program() {
 run_audio_program() {
     local program="$1"
     require_flow_file "$program"
-    python3 -m flow.package sync --program "$program"
+    flow_sync_program "$program"
     local basename
     basename=$(basename "$program" .flow)
     local executable="$SCRIPT_DIR/build/$basename"
@@ -2553,6 +2639,16 @@ run_lang_tests() {
     done
     mkdir -p "$build_dir"
 
+    # The Python strict transpile stays the default: on 2026-09-27 flowc
+    # passed 100 of the 126 programs and Python 123. FLOW_HOST=flowc, set
+    # explicitly, runs the suite through the Stage-A driver with no Python.
+    local lang_host="python" lang_flowc=""
+    if [ "${FLOW_HOST:-}" = "flowc" ]; then
+        lang_host="flowc"
+        lang_flowc="$(flow_resolve_flowc)" || exit 1
+        print_info "host=flowc via $lang_flowc"
+    fi
+
     if [ ! -d "$lang_dir" ]; then
         print_error "No language tests directory found at $lang_dir"
         exit 1
@@ -2598,7 +2694,17 @@ run_lang_tests() {
         # || true / status vars: set -e must not abort before we record failures
         local transpile_output
         local transpile_status=0
-        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
+        if [ "$lang_host" = "flowc" ]; then
+            # Bundle from the repository root, as flowc_emit_to_c does for
+            # programs with imports; FLOWC_TYPECHECK is flowc's strict mode.
+            local abs_lang_program
+            abs_lang_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+            transpile_output=$(cd "$SCRIPT_DIR" && FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
+                FLOWC_TYPECHECK=1 FLOWC_IN="$abs_lang_program" FLOWC_OUT="$c_file" \
+                "$lang_flowc" 2>&1) || transpile_status=$?
+        else
+            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
+        fi
         if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
             print_error "✗ $rel_path (strict transpile failed)"
             if [ -n "$transpile_output" ]; then
@@ -2625,7 +2731,7 @@ run_lang_tests() {
             lang_conc_ldflags=("${FLOW_CONC_LDFLAGS[@]}")
         fi
         flow_collect_cflags
-        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
+        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "-I$lang_dir" "${lang_conc_cflags[@]+"${lang_conc_cflags[@]}"}" \
             "$c_file" "${lang_conc_sources[@]+"${lang_conc_sources[@]}"}" \
             "${lang_conc_ldflags[@]+"${lang_conc_ldflags[@]}"}" \
             "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
