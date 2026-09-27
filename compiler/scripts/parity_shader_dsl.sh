@@ -29,8 +29,8 @@
 # The last Python revision is 0b6d6ac4 (origin/main before the port).
 #
 # One deliberate difference: flowc stubs a module only when a fill head
-# starts a line. The Python matched one anywhere, so it stubbed
-# tests/lang/test_dsl_detect.flow, which names the syntax in a string.
+# starts a line. The Python matched one anywhere, so it stubbed the two
+# tests/lang programs that name the syntax in a string literal.
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
@@ -40,7 +40,7 @@ cd "$ROOT"
 
 FIX=compiler/fixtures/shader_dsl
 WORK=compiler/build/parity_shader_dsl
-DEVIATION=tests/lang/test_dsl_detect.flow
+DEVIATION=" tests/lang/test_dsl_detect.flow tests/lang/test_shader_dsl_port.flow "
 STUB=$'function main() -> i32 {\n    return 0\n}'
 mode="${1:-}"
 rev="${2:-}"
@@ -331,7 +331,7 @@ if [[ "$mode" == "--python" ]]; then
         done
         live_n=$((live_n + 1))
         [[ -f "$WORK/flowc/$k.expand" ]] || flowc_expand "$f" "$WORK/flowc/$k.expand"
-        if [[ "$f" == "$DEVIATION" ]]; then
+        if [[ "$DEVIATION" == *" $f "* ]]; then
             if [[ "$(cat "$WORK/python/$k.expand")" != stub || "$(cat "$WORK/flowc/$k.expand")" != pass ]]; then
                 live_fail=$((live_fail + 1))
                 echo "FAIL live $f: expected the documented deviation (python stub, flowc pass)" >&2
@@ -341,7 +341,7 @@ if [[ "$mode" == "--python" ]]; then
             echo "FAIL live $f: host stub python=$(cat "$WORK/python/$k.expand") flowc=$(cat "$WORK/flowc/$k.expand")" >&2
         fi
     done < "$WORK/corpus.txt"
-    echo "live python@${rev}: files=$(wc -l < "$WORK/corpus.txt" | tr -d ' ') checks=${live_n} fail=${live_fail} (deviation: ${DEVIATION})"
+    echo "live python@${rev}: files=$(wc -l < "$WORK/corpus.txt" | tr -d ' ') checks=${live_n} fail=${live_fail} (deviation:${DEVIATION% })"
     fail=$((fail + live_fail))
 fi
 
