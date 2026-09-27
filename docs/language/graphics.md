@@ -118,4 +118,4 @@ headless smoke for Linux CI.
 - [runtime/README.md](../../runtime/README.md) — native backends map
 - [Effects Showcase](../effects-showcase.md) — unrelated, but shows how Flow prefers
   explicit capabilities over hidden runtimes
-- [docs/NEXT.md](../NEXT.md) — Priority 5 cross-platform graphics bullets
+- [ROADMAP.md](../../ROADMAP.md) — current platform and graphics priorities
