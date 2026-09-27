@@ -12,4 +12,4 @@ Release artifacts and Homebrew metadata are qualified and synchronized locally;
 do not rely on hosted workflow execution for release validation or publication.
 """
 
-__version__ = "1.0.2"
+__version__ = "2.0.0"

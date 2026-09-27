@@ -1,7 +1,7 @@
 <div class="wiki-hero">
 
 <h1 class="wiki-hero-brand">Flow</h1>
-<p class="wiki-hero-eyebrow">v1.0.2 · systems through time</p>
+<p class="wiki-hero-eyebrow">v2.0.0 · systems through time</p>
 
 <p class="wiki-hero-title">Write with effects.<br>Compile like C.</p>
 
@@ -279,8 +279,8 @@ Everyday commands:
 
 | | |
 |---|---|
-| Version | 1.0.2 · [changelog](project/CHANGELOG.md) |
-| License | MIT |
+| Version | 2.0.0 · [changelog](project/CHANGELOG.md) |
+| License | Proprietary (MIT through 1.0.2) |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |
 | Optional proofs | [flow-verify](third-party/flow-verify.md) (third-party, not required to use Flow) |

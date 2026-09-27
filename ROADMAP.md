@@ -1,7 +1,7 @@
 # FLOW Roadmap
 
 > Last updated: 2026-08-13  
-> Current version: 0.11.0  
+> Current version: 2.0.0  
 > Source: ~391,000 physical lines tracked (see README project statistics)
 
 This document tracks what we're building next and why.

@@ -4,6 +4,24 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+## [2.0.0] - 2026-09-27
+
+Flow 2.0.0 changes the license and marks a new major version.
+
+### License
+
+- Version 2.0.0 and later are proprietary. All rights reserved. See `LICENSE`.
+- Version 1.0.2 and all earlier versions remain available under the MIT License, preserved as `LICENSE-1.x-MIT`. Rights already granted under MIT for the 1.x line are unaffected.
+- The repository stays public.
+
+### Version
+
+- Canonical version and every mirror bumped to 2.0.0. The `flow-driver` CLI banner now reports 2.0.0, and `scripts/sync_version.py` tracks it so the banner stays in sync with the canonical version.
+
+### Documentation
+
+- README license badge, facts table, and License section updated for the relicense. Self-hosting status condensed with a link to the full breakdown. Version-pinned framing removed from the intro.
+
 ## [1.0.2] - 2026-08-24
 
 Flow 1.0.2 is a patch release over the Flow 1.x compatibility contract. It does not promote, remove, or incompatibly change any Stable 1.x syntax or API, and the runtime ABI remains version 1.

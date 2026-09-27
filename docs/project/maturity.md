@@ -58,7 +58,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Domain / site | DONE | GitHub Pages site at `flooooooooooow.github.io/flow/`; no custom domain yet. |
 | Repository | DONE | Public canonical repo on GitHub. |
 | Branding / file extension | DONE | `.flow` extension, editor themes, naming conventions. |
-| License | DONE | MIT; `LICENSE`, `CITATION.cff`. |
+| License | DONE | Proprietary from 2.0.0; MIT through 1.0.2. `LICENSE`, `LICENSE-1.x-MIT`, `CITATION.cff`. |
 
 ### 2. Language definition
 | Item | Status | Note |
