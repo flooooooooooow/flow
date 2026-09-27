@@ -43,7 +43,7 @@ is equivalent to:
 let result: i32 = double(increment(5))
 ```
 
-A pipeline changes the notation, not the order of evaluation. It reads well
+A pipeline changes the notation. The order of evaluation stays the same. It reads well
 when a value passes through several functions in sequence.
 
 ## 6.2 Argument placement

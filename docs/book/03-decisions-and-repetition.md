@@ -61,7 +61,7 @@ function sum_below_4() -> i32 {
 }
 ```
 
-The range is half-open: `0 to 4` contains `0`, `1`, `2`, and `3`, not `4`.
+The range is half-open: `0 to 4` contains `0`, `1`, `2`, and `3`. It excludes `4`.
 
 A step may be stated explicitly:
 

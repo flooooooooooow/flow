@@ -2,7 +2,7 @@
 
 This document provides detailed information for FLOW language developers.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ### Compiler Pipeline
 
@@ -39,7 +39,7 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 - Documented in [WebAssembly](language/wasm.md); exercised by
   `.github/workflows/wasm32.yml`
 
-## 🔧 Language Implementation
+## Language Implementation
 
 ### Adding New Language Features
 
@@ -121,7 +121,7 @@ raise SyntaxError(f"Unexpected token: {self.current_token.type}")
 raise NotImplementedError(f"Unsupported expression: {type(expr)}")
 ```
 
-## 🧪 Testing Strategy
+## Testing Strategy
 
 ### Test Categories
 
@@ -148,7 +148,7 @@ Verify program execution:
 - **`examples/`**: Standard programs, algorithms, OOP patterns
 - **`tests/`**: Compiler features, language demos, edge cases
 
-## 📁 File Organization
+## File Organization
 
 ### Source Layout
 ```
@@ -169,7 +169,7 @@ build/
 └── *                    # Executables
 ```
 
-## 🔄 Development Workflow
+## Development Workflow
 
 ### Making Changes
 1. Identify component to modify
@@ -210,7 +210,7 @@ exit code is non-zero when a file matches, which makes it usable as a gate.
 - Use debugger on C code
 - Check exit codes
 
-## 🚀 Performance Considerations
+## Performance Considerations
 
 ### Parser Performance
 - Regex compilation is cached
@@ -222,7 +222,7 @@ exit code is non-zero when a file matches, which makes it usable as a gate.
 - Minimal type inference overhead
 - Linear traversal of AST
 
-## 🔮 Future Extensions
+## Future Extensions
 
 ### Language Features
 - Arrays and pointers
@@ -242,7 +242,7 @@ exit code is non-zero when a file matches, which makes it usable as a gate.
 
 ## Compiler torture suite (C-grade)
 
-Aim: regression coverage comparable to a C compiler suite — sema rejection,
+Aim: regression coverage comparable to a C compiler suite: sema rejection,
 middle-end specialization, C ABI contracts, backend parity, executable pins.
 
 | Layer | Where | How to run |
@@ -261,7 +261,7 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 Shared helpers: `tests/unit/compiler_helpers.py`.
 
 Pytest only collects **git-tracked** files under `tests/` unless
-`FLOW_PYTEST_ALL=1` — `git add` new modules so CI sees them.
+`FLOW_PYTEST_ALL=1`. `git add` new modules so CI sees them.
 
 ### Strict vs lenient (wired 2026-08-04)
 
@@ -321,7 +321,7 @@ corpus keeps compiling while unit tests pin strict behavior.
   `tests/integration/test_counted_loop_rotation.py` compiles each loop shape
   before and after rotation through the C backend and compares what it returns.
 
-## 📚 References
+## References
 
 - [MLIR Documentation](https://mlir.llvm.org/)
 - [LLVM IR Reference](https://llvm.org/docs/LangRef.html)

@@ -78,7 +78,7 @@ The formal terms have these meanings:
 ## 1. Give the AI a work contract
 
 An AI works best when the request states the outcome, the reason, the limits,
-and the proof of completion. A request such as “add support for X” is incomplete.
+and the proof of completion. A request such as "add support for X" is incomplete.
 It does not say which compiler host, which backend, which syntax limits, or which
 tests define success.
 
@@ -124,7 +124,7 @@ language meaning, syntax, public API, architecture, or project scope.
 | Documentation | Judge clarity and truth | Draft, link, and keep examples runnable |
 | Scope | Approve expansion | Prevent accidental expansion |
 
-### 1.2 Define “done” before code changes
+### 1.2 Define "done" before code changes
 
 A Flow task is done only when all required layers agree. For a normal program,
 this often means:
@@ -145,7 +145,7 @@ For a compiler feature, add these conditions:
 11. The self-hosted and Python hosts have an explicit parity decision.
 12. A regression test fixes the behavior in place.
 
-Do not let “the patch is written” mean “the task is done.”
+Do not let "the patch is written" mean "the task is done."
 
 ---
 
@@ -353,7 +353,7 @@ If the task overlaps an already modified file, instruct the AI to:
 3. make the smallest compatible edit;
 4. report the overlap in the handoff.
 
-### 4.2 Recover the project’s current direction
+### 4.2 Recover the project's current direction
 
 Use these files for different questions:
 
@@ -473,7 +473,7 @@ Examples:
 - two compiler generations produce identical output;
 - a backend parity test returns the same result on C and MLIR.
 
-The repository’s evolution demonstrations use this practice: they print a
+The repository's evolution demonstrations use this practice: they print a
 measured quantity, compare it with theory, and return a failure code if the
 relationship is broken.
 
@@ -522,7 +522,7 @@ Run:
 ./flow run program.flow
 ```
 
-### 7.2 Use the Python host for Flow’s broader forms
+### 7.2 Use the Python host for Flow's broader forms
 
 Select the Python host for algebraic effects, generics beyond Stage-A,
 declarative dynamics, specialised DSLs, broad module behavior, MLIR, GPU, or
@@ -538,7 +538,7 @@ or project script when users need it.
 ### 7.3 Keep the route repeatable
 
 The AI SHOULD return the exact command it used. Environment variables are part
-of the command’s meaning. “It works with Flow” is less useful than:
+of the command's meaning. "It works with Flow" is less useful than:
 
 ```bash
 FLOW_HOST=python FLOW_PROFILE=safety ./flow compile program.flow
@@ -548,7 +548,7 @@ FLOW_HOST=python FLOW_PROFILE=safety ./flow compile program.flow
 
 ## 8. Build ordinary Flow code first
 
-Flow’s core surface is deliberately readable. Ask the AI to prefer explicit
+Flow's core surface is deliberately readable. Ask the AI to prefer explicit
 types and direct control flow until a higher-level form clearly improves the
 model.
 
@@ -598,7 +598,7 @@ Ask the AI to:
 
 ### 8.4 Use C interoperability deliberately
 
-Flow’s C target makes native integration practical. Declare only the native
+Flow's C target makes native integration practical. Declare only the native
 surface that is needed.
 
 ```flow
@@ -614,8 +614,8 @@ MUST NOT assume that a parser-accepted extern is correctly linked.
 
 ## 9. Express evolution as evolution
 
-Flow’s main distinction is that a changing system can be stated directly. The
-project’s successful adoption rule is: use the declarative Flow form in the
+Flow's main distinction is that a changing system can be stated directly. The
+project's successful adoption rule is: use the declarative Flow form in the
 canonical example, and keep hand-written numerical code only when it teaches
 the lowering or a specialised numerical method.
 
@@ -759,7 +759,7 @@ production handlers, test handlers, nested replacement, and composed handlers.
 
 ## 11. Organise modules and packages by logical name
 
-The module rule is simple: imports name modules, not file-system traversal.
+The module rule is simple: imports name modules rather than file-system traversal.
 
 Preferred forms include:
 
@@ -882,7 +882,7 @@ Use a focused path when supported:
 PYTHONPATH=src pytest tests/unit/test_specific_area.py -q
 ```
 
-The AI MUST report what it actually ran. It MUST NOT say “all tests pass” when
+The AI MUST report what it actually ran. It MUST NOT say "all tests pass" when
 it ran only a focused test.
 
 ### 13.4 Runtime test contract
@@ -918,8 +918,8 @@ source
   -> runtime state and output
 ```
 
-For each stage, ask one question: “Is the representation correct here?” Stop at
-the first “no.” The defect normally belongs at that boundary or immediately
+For each stage, ask one question: "Is the representation correct here?" Stop at
+the first "no." The defect normally belongs at that boundary or immediately
 before it.
 
 ### 14.1 Classify failures before editing
@@ -988,7 +988,7 @@ function bounded_iteration(limit: i32) -> i32 {
 ```
 
 Counted `for` loops are already bounded. The AI SHOULD choose a bound that
-comes from the system contract, not a large arbitrary number.
+comes from the system contract rather than a large arbitrary number.
 
 ### 15.2 Sanitizers
 
@@ -1096,7 +1096,7 @@ ordinary identifier where allowed.
 
 ### 16.2 Lower to existing, well-tested constructs
 
-Flow’s successful additions often lower to ordinary structs, functions, loops,
+Flow's successful additions often lower to ordinary structs, functions, loops,
 and calls. This has several benefits:
 
 - every backend can share more behavior;
@@ -1185,7 +1185,7 @@ name checking as a complete semantic type system.
 
 Use C as the semantic reference for portable CPU work, but do not make C
 syntax leak into the Flow surface without need. Test generated C with the
-project’s normal C standard and warnings. Preserve ABI behavior and runtime
+project's normal C standard and warnings. Preserve ABI behavior and runtime
 link lists.
 
 ### 18.2 MLIR backend
@@ -1204,7 +1204,7 @@ Flow has several GPU-related routes with different maturity:
 - MLIR GPU to SPIR-V provides an emit route;
 - some SPIR-V execution support depends on external loaders or platform work.
 
-The AI MUST name the exact route. “GPU support” is too broad to be a useful
+The AI MUST name the exact route. "GPU support" is too broad to be a useful
 verification claim.
 
 ### 18.4 WebAssembly
@@ -1244,8 +1244,8 @@ only evidence.
 
 ## 19. Use adoption before invention
 
-One of the clearest lessons in the repository is “adoption first; new sugar
-second.” When a good feature already exists but examples bypass it, the first
+One of the clearest lessons in the repository is "adoption first; new sugar
+second." When a good feature already exists but examples bypass it, the first
 task is to route canonical examples through it.
 
 The method works for these reasons:
@@ -1314,7 +1314,7 @@ The AI MUST prefer:
 
 - a parser diagnostic over ambiguous recovery;
 - a type error over an invented default type;
-- a backend “not supported” message over silently dropped behavior;
+- a backend "not supported" message over silently dropped behavior;
 - a runtime failure code over a plausible but unchecked printout;
 - a failed fixed-point comparison over updating the expected artifact without
   investigation.
@@ -1354,7 +1354,7 @@ be rediscovered and may be reversed accidentally.
 ## 25. Use explainability as a feature
 
 Declarative source lets the compiler choose an implementation. That choice
-must remain inspectable. Flow’s plan selector records each candidate, its
+must remain inspectable. Flow's plan selector records each candidate, its
 constraints, estimated cost, scratch use, rejection reason, and winner.
 
 Use the same principle for new adaptive systems:
@@ -1382,7 +1382,7 @@ A Flow example SHOULD have five parts:
 
 For a visual example, add recorded frames. For a numerical example, print a
 small table. For a performance example, add a reproducible benchmark. The
-program should still be able to say “wrong” without a person judging the
+program should still be able to say "wrong" without a person judging the
 picture.
 
 ---
@@ -1450,7 +1450,7 @@ separate task with behavior-preserving evidence.
 ## 34. Do not use AI consensus as design authority
 
 Multiple AI views can reveal risks and dependencies. They cannot decide human
-product intent. Weighted votes are input to a decision, not the decision.
+product intent. Weighted votes are input to a decision. They are not the decision.
 Use human authority for syntax, public meaning, priorities, and acceptable
 trade-offs.
 
@@ -1556,7 +1556,7 @@ Recommended next action, if any:
 ```
 
 The final report MUST be accurate even if some checks could not run. A blocked
-tool is a reported limit, not a passing result.
+tool is a reported limit rather than a passing result.
 
 ---
 
@@ -1671,7 +1671,7 @@ Run the documentation link or example checks relevant to the edited files.
 | Build project | `./flow build` |
 
 Always confirm the current form with `./flow help`. This table is a starting
-point, not a replacement for the executable help.
+point. It does not replace the executable help.
 
 ## 48. Repository map
 
@@ -1720,9 +1720,9 @@ Before accepting AI work, check:
 
 ## 50. How completeness is defined
 
-This part is the coverage ledger for the handbook. “Every feature” means every
+This part is the coverage ledger for the handbook. "Every feature" means every
 user-facing feature family that can be found in these sources
-at this edition’s repository baseline:
+at this edition's repository baseline:
 
 - executable `./flow help` and the command dispatch in `flow`;
 - the language specification and its implementation matrix;
@@ -1749,8 +1749,8 @@ Use these status words throughout this part:
 | **Planned** | Named as future work; details may still require human authority |
 | **External** | Requires a native tool, library, platform, or third-party package |
 
-The AI MUST attach a route to a status. For example, “closures are shipped on
-the C backend and unsupported by MLIR” is useful. “Closures are supported” is
+The AI MUST attach a route to a status. For example, "closures are shipped on
+the C backend and unsupported by MLIR" is useful. "Closures are supported" is
 not complete enough.
 
 ### 50.1 Coverage rule for future versions
@@ -1819,7 +1819,7 @@ The list covers the keyword families in the specification.
 | Interfaces | `trait`, `impl` | Limited backend surface. Confirm method resolution and codegen. |
 | Type naming | `type`, `distinct` | Transparent alias versus nominal boundary. |
 | FFI | `extern` and optional ABI string | Shipped on C. Linkage is a separate required check. |
-| Modules | `import`, `export`, `module` | Imports/exports ship; `module` blocks are flattened, not namespaces. |
+| Modules | `import`, `export`, `module` | Imports/exports ship; `module` blocks are flattened rather than namespaced. |
 | Branching | `if`, `elif`, `else` | Statements and shipped if-expressions. |
 | Loops | `while`, `for`, `in`, `to`, `step`, `parallel` | Parallel uses OpenMP when available and serial fallback otherwise. |
 | Loop control | `break`, `continue` | Shipped, with a known C mismatch for `break` inside a match inside a loop. |
@@ -2067,7 +2067,7 @@ Use the capability that matches the evidence goal:
 
 Resumable continuation semantics and full cross-platform epoll/kqueue/IOCP
 coverage remain limited. Never infer non-blocking behavior from the word
-“async”; inspect the installed handler.
+"async"; inspect the installed handler.
 
 ---
 
@@ -2300,7 +2300,7 @@ families in the current driver.
 | `repl` | Start the interactive read/evaluate loop. |
 | `examples` | List example programs. |
 | `playground` | Start the local compile API and open the playground. |
-| `know` | Query or maintain Flow’s knowledge/claim tooling where supported. |
+| `know` | Query or maintain Flow's knowledge/claim tooling where supported. |
 | `doc proof` | Generate one proof document or recursively process a directory. |
 | `doc bundle` | Build the combined proof book. |
 | `doc kernel` | Emit a parameterized proof kernel and optional plot. |
@@ -2346,7 +2346,7 @@ Correctness and profitability are separate:
 
 ### 57.2 C and native compiler optimisation
 
-Flow’s C route can use ordinary native optimisation levels and platform
+Flow's C route can use ordinary native optimisation levels and platform
 libraries. Function attributes provide `@inline`, `@noinline`,
 `@always_inline`, and `@target("features")`. `@always_inline` may fail when
 the caller cannot legally absorb a target-specific body. Exported symbols and
@@ -2522,7 +2522,7 @@ fault/radiation handling, formal certification, and target-measured WCET.
 
 For exact signatures, use `docs/library/stdlib-api.md`, generated from the
 current module sources. These groups name the full module surface
-visible in `lib/stdlib` at this edition’s audit.
+visible in `lib/stdlib` at this edition's audit.
 
 ### 59.1 Core data, math, and system modules
 
@@ -2795,20 +2795,20 @@ Every change workflow follows this sequence:
 - The AI may choose ordinary local implementation details established by
   precedent.
 - The AI must ask when an unresolved choice changes user-visible semantics.
-- The AI must not expand authority from “diagnose” to “fix,” or from “write” to
-  “publish,” without the request supporting that action.
+- The AI must not expand authority from "diagnose" to "fix," or from "write" to
+  "publish," without the request supporting that action.
 - Read-only inspection is preferred for uncertainty.
 - Reversible, narrow changes are preferred for implementation.
 - Destructive changes require exact target resolution and explicit authority.
 - A dirty worktree is protected human work.
 - Passing focused tests must never be reported as a full-suite pass.
-- An unavailable dependency or backend is reported as unverified, not assumed.
+- An unavailable dependency or backend is reported as unverified rather than assumed.
 
 ### 61.3 AI communication rules
 
 During work, the AI SHOULD provide short updates when the work changes stage:
 inventory complete, cause found, implementation complete, verification result,
-or blocker. Updates state evidence and next action, not generic reassurance.
+or blocker. Updates state evidence and next action rather than generic reassurance.
 
 The final response is self-contained and includes:
 
@@ -2828,7 +2828,7 @@ integration pass.
 
 Agent voting may reveal consensus, disagreement, dependencies, and blind spots.
 It does not replace human design authority or executable evidence. Random,
-persona, and “chaos” opinions are exploratory inputs only.
+persona, and "chaos" opinions are exploratory inputs only.
 
 ---
 
@@ -3093,9 +3093,9 @@ Many Flow programs can satisfy one request. Control the choices by stating:
 - evidence needed for acceptance;
 - freedom the AI may use.
 
-For example: “You may choose loops, pipelines, or an existing library operation.
+For example: "You may choose loops, pipelines, or an existing library operation.
 The result must be deterministic. Do not allocate memory in the audio callback.
-Process each block within the measured deadline.” The AI can choose the code,
+Process each block within the measured deadline." The AI can choose the code,
 but it cannot change these requirements.
 
 Do not require familiar syntax without a technical reason. Require a specific
@@ -3115,8 +3115,8 @@ Use more delegation when the evidence supports it:
 
 Move to a lower level when the AI finds ambiguity, new language behavior, weak
 coverage, backend disagreement, unexplained performance, or a failed invariant.
-Move to a higher level after repeated successful checks. Judge the evidence,
-not the confidence of the response.
+Move to a higher level after repeated successful checks. Judge the evidence
+rather than the confidence of the response.
 
 ### 63.9 Rule
 
@@ -3140,7 +3140,7 @@ the language, program, or model toward the human goal. A large amount of code
 is not a useful target by itself.
 
 Direct the AI with clear intent. Make it study the current construction. Keep
-the execution route explicit. Prefer the language’s existing patterns. Make
+the execution route explicit. Prefer the language's existing patterns. Make
 each important claim inspectable. Test the model and the syntax. Record
 decisions in the repository. Then repeat in narrow, complete increments.
 
@@ -3151,7 +3151,7 @@ executable evidence in one loop.
 
 ## Source notes
 
-This handbook was derived from the repository’s current executable help,
+This handbook was derived from the repository's current executable help,
 compiler and runtime structure, contribution protocol, architecture and
 self-hosting documents, pattern-adoption record, language documents, tests,
 canonical examples, and generated repository statistics. Important companion

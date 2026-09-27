@@ -112,9 +112,9 @@ runner's coloured status lines and retain only program output.
 - `T` denotes a type.
 - `x: T` means that `x` has type `T`.
 - `[a, b)` denotes a half-open interval: it contains `a` and excludes `b`.
-- “Lowering” means translating a higher-level Flow construct into a simpler
+- "Lowering" means translating a higher-level Flow construct into a simpler
   intermediate form before code generation.
-- “State” means a value retained from one update to the next.
+- "State" means a value retained from one update to the next.
 
 The language reference defines the grammar and edge cases. The book explains
 the language in order and provides working programs.
