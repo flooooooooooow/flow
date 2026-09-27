@@ -11,8 +11,8 @@ and gates its exit code on a self-check (exit 0 = PASS).
 - `hash_table.flow` - open addressing hash table
 - `system_info.flow` - OS/CPU info via stdlib
 - `tiny_pointers.flow` - o(log n)-bit pointers (arXiv:2111.12800), from the
-  fixed-size two-level dereference table to the optimal internal-memory stash
-  — every phase self-verifies against a registry model, and the benchmarks are
+  fixed-size two-level dereference table to the optimal internal-memory stash.
+  Every phase self-verifies against a registry model, and the benchmarks are
   in `scripts/bench_tiny_pointers.sh`
 
 ## tiny_pointers.flow
@@ -28,7 +28,7 @@ is mirrored as a collapsible card on the example's page in the WebAssembly
 gallery (`site/wasm/tiny_pointers/`) and is printed after the table by
 `scripts/bench_tiny_pointers.sh`.
 
-The map mirrors the coverage tables in the docs — the theorem table in
+The map mirrors the coverage tables in the docs: the theorem table in
 [docs/library/tiny-pointers.md](../../docs/library/tiny-pointers.md) and the
 application-④ deep dive in
 [docs/library/tiny-pointers-variable-values.md](../../docs/library/tiny-pointers-variable-values.md#abstract-claim-coverage).

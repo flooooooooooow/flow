@@ -1,6 +1,6 @@
 # Cmajor patch corpus
 
-These files are patch libraries, not standalone programs. Run a compile smoke
+These files are patch libraries rather than standalone programs. Run a compile smoke
 harness from this directory with:
 
 ```bash

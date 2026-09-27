@@ -4,7 +4,7 @@ Twenty-five graphics programs about how populations change. Each one starts
 from a known initial state (allele frequencies, a mixed strategy field, an
 epidemic seed) and ends somewhere the theory predicts, with a measured
 quantity gated against a closed form or a published number. They are
-regression tests that happen to draw pictures — the same evidence standard as
+regression tests that happen to draw pictures, with the same evidence standard as
 [`morphogenesis/`](../morphogenesis/README.md) and [`neuro/`](../neuro/README.md).
 
 This is the biology half of Flow's founding claim in [VISION.md](../../VISION.md):
