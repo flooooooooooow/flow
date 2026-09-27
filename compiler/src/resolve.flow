@@ -18,6 +18,7 @@ import .fileio { flowc_read_file, flowc_io_exists }
 import .field_dsl { flowc_field_expand_in_place }
 import .dynamics_dsl { flowc_dynamics_expand_in_place }
 import .flow_blocks { flowc_flow_blocks_expand_in_place }
+import .shader_dsl { flowc_shader_expand_in_place }
 import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
 import .typecheck {
     TcCtx,
@@ -87,12 +88,16 @@ function flowc_resolve_find_path(store: ptr<u8>, n: i32, row_cap: i32, path: ptr
 }
 
 # The source expansions flowc runs before parse, in the Python host's
-# order: the Field DSL, then the dynamics DSL (module_resolver.py), then
-# `flow` blocks (parser.py). `stages` is a mask: 1 field, 2 dynamics,
-# 4 flow blocks. Returns the new length, or -1 after printing the
+# order: a fill-shader (FSL) module becomes its host stub, then the Field
+# DSL, then the dynamics DSL (module_resolver.py), then `flow` blocks
+# (parser.py). `stages` is a mask: 1 field, 2 dynamics, 4 flow blocks,
+# 8 shader stub. Returns the new length, or -1 after printing the
 # diagnostic.
 export function flowc_expand_stages_in_place(src: ptr<u8>, n: i32, cap: i32, stages: i32) -> i32 {
     let mut m: i32 = n
+    if m >= 0 and (stages & 8) != 0 {
+        m = flowc_shader_expand_in_place(src, m, cap)
+    }
     if m >= 0 and (stages & 1) != 0 {
         m = flowc_field_expand_in_place(src, m, cap)
     }
@@ -107,7 +112,7 @@ export function flowc_expand_stages_in_place(src: ptr<u8>, n: i32, cap: i32, sta
 
 # Every source expansion, for the compile paths.
 export function flowc_expand_all_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
-    return flowc_expand_stages_in_place(src, n, cap, 7)
+    return flowc_expand_stages_in_place(src, n, cap, 15)
 }
 
 # Read a bundle module and expand its DSLs before it is parsed, so every
