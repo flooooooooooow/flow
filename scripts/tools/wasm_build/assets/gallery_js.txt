@@ -1,0 +1,27 @@
+
+(function () {
+  var modal = document.getElementById('modal');
+  var frame = document.getElementById('frame');
+  var label = document.getElementById('label');
+  var link = document.getElementById('open');
+
+  function run(page, title) {
+    label.textContent = title;
+    link.href = page;
+    frame.src = page + '?autostart=1';
+    modal.classList.add('open');
+    setTimeout(function () { frame.focus(); }, 60);
+  }
+  function close() {
+    modal.classList.remove('open');
+    frame.src = 'about:blank';
+  }
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-run]');
+    if (btn) { run(btn.getAttribute('data-run'), btn.getAttribute('data-title')); }
+    if (ev.target.id === 'close' || ev.target === modal) { close(); }
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && modal.classList.contains('open')) { close(); }
+  });
+})();
