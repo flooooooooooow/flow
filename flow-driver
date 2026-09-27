@@ -169,6 +169,25 @@ flow_sync_program() {
     python3 -m flow.package sync --program "$program"
 }
 
+# A main.flow flowc for the FLOWC_* modes the driver.flow binaries lack
+# (FLOWC_SHADER): FLOWC_BIN, else the checked-in bootstrap C built with cc.
+flow_flowc_main() {
+    if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
+        printf '%s\n' "$FLOWC_BIN"
+        return 0
+    fi
+    local boot_c="$SCRIPT_DIR/compiler/bootstrap/flowc_stage_a.c"
+    local bin="$SCRIPT_DIR/compiler/build/flowc_bootstrap"
+    if [[ ! -x "$bin" || "$boot_c" -nt "$bin" ]]; then
+        mkdir -p "$SCRIPT_DIR/compiler/build"
+        if ! "${CC:-cc}" -O2 -o "$bin" "$boot_c" 2>/dev/null; then
+            print_error "Cannot build flowc from $boot_c"
+            return 1
+        fi
+    fi
+    printf '%s\n' "$bin"
+}
+
 flowc_emit_to_c() {
     local program="$1"
     local c_out="$2"
@@ -468,7 +487,7 @@ show_help() {
     echo "  record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]] [--keys SPEC] [--mouse SPEC]"
     echo "                   [--fps N] [--stride N] [--width PX]"
     echo "                    Run a gfx program headless; write PPM frames, or a GIF with --gif"
-    echo "  shader <program>  Run fill-shader demo (Metal window on macOS; see docs/language/shaders.md)"
+    echo "  shader <program>  Run fill-shader demo (Metal window on macOS; --emit-only, --wgsl; see docs/language/shaders.md)"
     echo "  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)"
     echo "  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]"
     echo "  demo ui-layout[|-window]  UI layout demos (SDL2 for -window)"
@@ -1082,9 +1101,15 @@ run_fill_shader() {
     local width=1280
     local height=720
     local emit_only=0
+    local target=metal
     local layout="--grid"
     while [ $# -gt 0 ]; do
         case "$1" in
+            --wgsl)
+                target=wgsl
+                emit_only=1
+                shift
+                ;;
             --name)
                 shader_name="${2:-}"
                 shift 2
@@ -1120,19 +1145,20 @@ run_fill_shader() {
     print_info "Compiling fill-shader from $program..."
     local shader_out="$SCRIPT_DIR/build/shaders"
     mkdir -p "$shader_out"
+    local flowc
+    flowc="$(flow_flowc_main)" || exit 1
     local metal_path
-    metal_path=$(python3 - "$SCRIPT_DIR" "$program" "$shader_out" "$shader_name" <<'PY'
-import sys
-script_dir, program, out_dir, name = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-sys.path.insert(0, f"{script_dir}/src")
-from flow.shader_codegen import compile_shader_file
-path = compile_shader_file(program, out_dir, shader_name=name or None)
-print(path)
-PY
-) || {
+    if ! metal_path=$(FLOWC_SHADER="$target" FLOWC_IN="$program" FLOWC_OUT="$shader_out" \
+            FLOWC_SHADER_NAME="$shader_name" "$flowc"); then
+        printf '%s\n' "$metal_path" >&2
         print_error "Shader compilation failed"
         exit 1
-    }
+    fi
+    metal_path="$(printf '%s\n' "$metal_path" | tail -n 1)"
+    if [ "$target" = wgsl ]; then
+        print_success "FLOW → WGSL: $metal_path"
+        return 0
+    fi
     print_success "FLOW → Metal: $(basename "$metal_path")"
     local entries_path="${metal_path%.metal}.entries"
     if [ -f "$entries_path" ]; then
@@ -1149,8 +1175,8 @@ PY
     local shader_exe="$SCRIPT_DIR/build/flow_shader_host"
     local shader_flow_c="$SCRIPT_DIR/build/runtime_flow/shader_host.c"
     mkdir -p "$SCRIPT_DIR/build/runtime_flow"
-    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/shader_host.flow" \
-        --c --library --lenient -o "$shader_flow_c" 2>"$SCRIPT_DIR/build/.flowc_err"; then
+    if ! FLOWC_IN="$SCRIPT_DIR/lib/runtime/shader_host.flow" FLOWC_OUT="$shader_flow_c" \
+        "$flowc" >"$SCRIPT_DIR/build/.flowc_err" 2>&1; then
         print_error "Failed to transpile shader_host.flow"
         cat "$SCRIPT_DIR/build/.flowc_err" >&2
         exit 1

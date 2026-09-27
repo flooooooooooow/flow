@@ -33,7 +33,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from flow.shader_codegen import compile_shader_file  # noqa: E402
+from flow.shader_dsl import compile_shader_file  # noqa: E402
 
 
 GROUPS = {

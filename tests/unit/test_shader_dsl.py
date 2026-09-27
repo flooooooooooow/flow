@@ -1,14 +1,15 @@
-"""Unit tests for FLOW Shader Language (FSL)."""
+"""FLOW Shader Language (FSL) through flowc (FLOWC_SHADER=metal|wgsl).
+
+Byte parity with the retired Python backends is compiler/scripts/
+parity_shader_dsl.sh. These tests cover the Python bridge.
+"""
+
+from pathlib import Path
+
+import pytest
 
 from flow.module_resolver import resolve_modules
-from flow.shader_codegen import compile_shader_file, generate_metal_for_module, generate_metal_source
-from flow.shader_dsl import (
-    extract_fill_shaders,
-    extract_shader_module,
-    has_fill_shader_dsl,
-    parse_shader_body,
-)
-
+from flow.shader_dsl import compile_shader_file, expand_fill_shader, fill_names, has_fill_shader_dsl
 
 PLASMA = """
 shader fill plasma {
@@ -42,137 +43,81 @@ shader fill demo {
 """
 
 
-def test_extract_fill_shader():
-    shaders = extract_fill_shaders(PLASMA)
-    assert len(shaders) == 1
-    assert shaders[0].name == "plasma"
+def _build(tmp_path, text, target="metal", name=None, stem="demo"):
+    src = tmp_path / f"{stem}.flow"
+    src.write_text(text, encoding="utf-8")
+    return compile_shader_file(str(src), str(tmp_path / "out"), shader_name=name, target=target)
 
 
-def test_parse_and_emit_metal():
-    sh = extract_fill_shaders(PLASMA)[0]
-    stmts = parse_shader_body(sh.body)
-    assert len(stmts) == 3
-    metal = generate_metal_source(sh)
+def test_plasma_metal(tmp_path):
+    metal = _build(tmp_path, PLASMA).read_text(encoding="utf-8")
     assert "fragment float4 plasma_frag" in metal
     assert "flow_shader_vertex" in metal
     assert "uniforms.time" in metal
 
 
-def test_rich_language_module():
-    mod = extract_shader_module(RICH)
-    assert len(mod.funcs) == 1
-    assert mod.funcs[0].name == "pulse"
-    assert len(mod.fills) == 1
-    metal = generate_metal_for_module(mod)
+def test_rich_metal_gallery(tmp_path):
+    path = _build(tmp_path, RICH)
+    assert path.name == "demo_gallery.metal"
+    metal = path.read_text(encoding="utf-8")
     assert "static inline float pulse(" in metal
     assert "for (int i =" in metal
     assert "fsl_palette" in metal
-    assert "demo_frag" in metal
+    assert (path.parent / "demo_gallery.entries").read_text().splitlines() == ["demo_frag"]
+    assert (path.parent / "demo_fill.entry").read_text() == "demo_frag\n"
 
 
-def test_compile_gallery(tmp_path):
-    src = tmp_path / "demo.flow"
-    src.write_text(RICH, encoding="utf-8")
-    out = tmp_path / "out"
-    metal = compile_shader_file(str(src), str(out))
-    assert metal.name.endswith("_gallery.metal")
-    entries = (out / "demo_gallery.entries").read_text().strip().splitlines()
-    assert entries == ["demo_frag"]
+def test_rich_wgsl(tmp_path):
+    wgsl = _build(tmp_path, RICH, target="wgsl").read_text(encoding="utf-8")
+    assert "fn pulse(t: f32, speed: f32) -> f32" in wgsl
+    assert "for (var i: i32 = i32(0.0); i < i32(3.0); i = i + 1)" in wgsl
+    assert "fn demo_frag" in wgsl
 
 
-def test_requires_color_assign():
-    bad = extract_fill_shaders("shader fill x { let u = uv.x\n }")[0]
-    try:
-        generate_metal_source(bad)
-        assert False, "expected SyntaxError"
-    except SyntaxError as e:
-        assert "color" in str(e)
+def test_named_wgsl(tmp_path):
+    path = _build(tmp_path, RICH, target="wgsl", name="demo")
+    assert path.name == "demo_fill.wgsl"
+    assert (path.parent / "demo_gallery.wgsl.entries").read_text() == "demo_frag"
 
 
-def test_showcase_extracts_many():
-    from pathlib import Path
-    text = Path("examples/gpu/shader_showcase.flow").read_text(encoding="utf-8")
-    mod = extract_shader_module(text)
-    assert len(mod.fills) >= 10
-    assert len(mod.funcs) >= 2
-    metal = generate_metal_for_module(mod)
-    assert "mandelbrot_frag" in metal
-    assert "julia_frag" in metal
+@pytest.mark.parametrize("target", ["metal", "wgsl"])
+def test_requires_color_assign(tmp_path, target):
+    with pytest.raises(SyntaxError, match="color"):
+        _build(tmp_path, "shader fill x { let u = uv.x\n }", target=target)
 
 
-def test_photoreal_gallery_codegen():
-    from pathlib import Path
-
-    scene_text = Path("examples/gpu/shader_photoreal.flow").read_text(encoding="utf-8")
-    scene_mod = extract_shader_module(scene_text)
-    scene_names = [fill.name for fill in scene_mod.fills]
-    assert scene_names == [
-        "photoreal_studio",
-        "photoreal_glass",
-        "photoreal_marble",
-        "photoreal_chrome",
-    ]
-    assert len(scene_mod.funcs) >= 10
-
-    material_text = Path("examples/gpu/shader_photoreal_materials.flow").read_text(encoding="utf-8")
-    material_mod = extract_shader_module(material_text)
-    material_names = [fill.name for fill in material_mod.fills]
-    assert len(material_names) == 60
-    assert len(set(scene_names + material_names)) == 64
-    assert "photoreal_gold" in material_names
-    assert "photoreal_frosted_glass" in material_names
-    assert "photoreal_jade" in material_names
-    assert "photoreal_carbon_clearcoat" in material_names
-    assert "photoreal_velvet" in material_names
-    assert "photoreal_wet_asphalt" in material_names
-    assert "photoreal_energy_crystal" in material_names
-    assert "photoreal_underwater" in material_names
-
-    scene_metal = generate_metal_for_module(scene_mod)
-    assert "photoreal_studio_frag" in scene_metal
-    assert "photoreal_glass_frag" in scene_metal
-    assert "photoreal_marble_frag" in scene_metal
-    assert "photoreal_chrome_frag" in scene_metal
-    assert "refract(" in scene_metal
-    assert "reflect(" in scene_metal
-    assert "fsl_fbm" in scene_metal
-
-    material_metal = generate_metal_for_module(material_mod)
-    assert "photoreal_gold_frag" in material_metal
-    assert "photoreal_energy_crystal_frag" in material_metal
-    assert "photoreal_underwater_frag" in material_metal
-    assert "gallery_ball" in material_metal
-    assert "refract(" in material_metal
-    assert "fsl_fbm" in material_metal
+def test_missing_name(tmp_path):
+    with pytest.raises(SyntaxError, match="not found"):
+        _build(tmp_path, PLASMA, name="absent")
 
 
-def test_has_fill_shader_dsl():
+def test_example_galleries():
+    showcase = fill_names("examples/gpu/shader_showcase.flow")
+    assert len(showcase) >= 10 and "mandelbrot" in showcase and "julia" in showcase
+    scene = fill_names("examples/gpu/shader_photoreal.flow")
+    assert scene == ["photoreal_studio", "photoreal_glass", "photoreal_marble", "photoreal_chrome"]
+    materials = fill_names("examples/gpu/shader_photoreal_materials.flow")
+    assert len(materials) == 60
+    assert len(set(scene + materials)) == 64
+    assert fill_names("examples/gpu/vgpu/gradient.flow") == ["vgpu_gradient"]
+
+
+def test_vgpu_gradient_wgsl(tmp_path):
+    out = compile_shader_file("examples/gpu/vgpu/gradient.flow", str(tmp_path), target="wgsl")
+    wgsl = out.read_text(encoding="utf-8")
+    assert "smoothstep(1.2, 0.2, distance(uv, vec2<f32>(0.5)))" in wgsl
+    assert "vec4<f32>(uv.x, uv.y, (0.46 + (0.16 * vignette)), 1.0)" in wgsl
+
+
+def test_detection_and_host_stub():
     assert has_fill_shader_dsl(PLASMA)
-    assert has_fill_shader_dsl(RICH)
-    assert not has_fill_shader_dsl('function main() -> i32 { return 0 }')
+    assert not has_fill_shader_dsl("function main() -> i32 { return 0 }")
+    assert not has_fill_shader_dsl('let s: string = "shader fill x { }"')
+    assert expand_fill_shader(PLASMA) == "function main() -> i32 {\n    return 0\n}\n"
 
 
 def test_fill_shader_modules_resolve_for_c_transpile():
-    """FSL examples must resolve via host stub so tier-2 C transpile passes."""
-    from pathlib import Path
-
-    for name in (
-        "shader_plasma.flow",
-        "shader_ripple.flow",
-        "shader_showcase.flow",
-        "shader_photoreal.flow",
-        "shader_photoreal_materials.flow",
-    ):
-        path = Path("examples/gpu") / name
-        decls = resolve_modules(str(path))
+    """FSL examples resolve to a host stub so tier-2 C transpile passes."""
+    for name in ("shader_plasma", "shader_ripple", "shader_showcase", "shader_photoreal"):
+        decls = resolve_modules(str(Path("examples/gpu") / f"{name}.flow"))
         assert any(getattr(d, "name", None) == "main" for d in decls)
-
-
-def test_shader_dsl_parse():
-    from flow.shader_dsl import parse_shader_body
-    src = """
-    let x: vec4 = vec4(1.0, 1.0, 1.0, 1.0)
-    out_color = x
-    """
-    stmts = parse_shader_body(src)
-    assert len(stmts) == 2

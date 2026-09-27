@@ -36,7 +36,6 @@
     "backend:mlir_generator": "language/modules-namespacing.md",
     "backend:mlir_gpu_codegen": "coverage_plan.md",
     "backend:python_generator": "language/modules-namespacing.md",
-    "backend:shader_codegen": "language/shaders.md",
     "backend:wasm_compiler": "language/wasm.md",
     "backend:wgsl_codegen": "language/wasm-crossings.md",
     "cli:add": "AI_FLOW_HANDBOOK.md",

@@ -1,7 +1,7 @@
 // Generic WebGPU host for Flow GPU kernels and fullscreen FSL shaders.
 //
 // Compute kernels use the reflection emitted by src/flow/wgsl_codegen.py.
-// Fullscreen shaders use the fixed ABI emitted by src/flow/shader_codegen_wgsl.py:
+// Fullscreen shaders use the fixed ABI emitted by compiler/src/shader_dsl.flow:
 //   vertex entry   flow_shader_vertex
 //   fragment entry <fill-name>_frag
 //   group 0 binding 0 FlowShaderUniforms { time, width, height, pad }
