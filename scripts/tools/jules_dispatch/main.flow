@@ -623,13 +623,13 @@ function agent_pr_count(pulls: ptr<Pull>, n: i32) -> i32 {
     return total
 }
 
-function overlapping_pr(pulls: ptr<Pull>, n: i32, issue: ptr<Issue>) -> i64 {
-    let number: string = i64_str(issue[0].number)
+function overlapping_pr(pulls: ptr<Pull>, n: i32, issues: ptr<Issue>, k: i32) -> i64 {
+    let number: string = i64_str(issues[k].number)
     let mut i: i32 = 0
     while i < n {
         if contains_issue_ref(pulls[i].body, number) or
            contains_issue_ref(pulls[i].head, number) or
-           title_overlap(issue[0].title, pulls[i].title) {
+           title_overlap(issues[k].title, pulls[i].title) {
             return pulls[i].number
         }
         i = i + 1
@@ -637,8 +637,8 @@ function overlapping_pr(pulls: ptr<Pull>, n: i32, issue: ptr<Issue>) -> i64 {
     return 0
 }
 
-function issue_priority(issue: ptr<Issue>) -> i32 {
-    let text: string = uc_lower_str(issue[0].title + " " + issue[0].labels)
+function issue_priority(issues: ptr<Issue>, k: i32) -> i32 {
+    let text: string = uc_lower_str(issues[k].title + " " + issues[k].labels)
     let mut score: i32 = 0
     if ft_contains(text, "security") {
         score = score + 1000
@@ -667,12 +667,12 @@ function sort_queue(issues: ptr<Issue>, queue: ptr<i32>, n: i32) -> void {
     let mut i: i32 = 1
     while i < n {
         let item: i32 = queue[i]
-        let score: i32 = issue_priority(&(issues[item]))
+        let score: i32 = issue_priority(issues, item)
         let num: i64 = issues[item].number
         let mut j: i32 = i - 1
         while j >= 0 {
             let prev: i32 = queue[j]
-            let prev_score: i32 = issue_priority(&(issues[prev]))
+            let prev_score: i32 = issue_priority(issues, prev)
             if prev_score > score or (prev_score == score and issues[prev].number < num) {
                 break
             }
@@ -820,7 +820,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         if list_has(covered, num) {
             decisions = decisions + decision_line(issues[i].number, "covered", "live Jules session")
         } else {
-            let overlap: i64 = overlapping_pr(pulls, pr_count[0], &(issues[i]))
+            let overlap: i64 = overlapping_pr(pulls, pr_count[0], issues, i)
             if overlap > 0 {
                 decisions = decisions + decision_line(
                     issues[i].number, "deferred",
