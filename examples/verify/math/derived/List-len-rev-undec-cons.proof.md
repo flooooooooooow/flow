@@ -2,9 +2,9 @@
 
 *Reverse preserves length of an undecuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(undecuple cons ending in nil)) = 11
+## Derived fact 1: len(rev(undecuple cons ending in nil)) = 11
 
 **Coordinate.** List · length · reverse of undecuple cons has length eleven · **Derived fact**
 

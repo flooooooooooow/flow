@@ -2,9 +2,9 @@
 
 *Reverse of cons preserves the tail length increment.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(cons(x, xs))) = len(cons(x, xs))
+## Derived fact 1: len(rev(cons(x, xs))) = len(cons(x, xs))
 
 **Coordinate.** List · length · reverse preserves cons length derived · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Multiplying zero by a ring element stays in an ideal.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  If 0 in I then r * 0 in I.

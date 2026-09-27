@@ -2,9 +2,9 @@
 
 *Seven plus zero is seven in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 7 + 0 = 7 in an ideal
+## Derived fact 1: 7 + 0 = 7 in an ideal
 
 **Coordinate.** Ideal · addition · seven plus zero in ideal · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Zero on the left is an additive identity for rationals.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — 0 + q = q
+## Derived fact 1: 0 + q = q
 
 **Coordinate.** Rat · addition · zero on the left gives the value · **Derived fact**
 

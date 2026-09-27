@@ -2,9 +2,9 @@
 
 *Right cancellation holds in a group.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — b * a = c * a implies b = c
+## Derived fact 1: b * a = c * a implies b = c
 
 **Coordinate.** Group · multiplication · right cancellation holds · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that right cancellation holds for multiplication on Group. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose b * a  equals  c * a. |  |  |
 | ④ | We invoke the definitional clause governing inverse on Group: left inverse recovers the identity, for inverse on Group (instantiated for a). |  |  |
 | ⑤ | We invoke the definitional clause governing multiplication on Group: parentheses do not matter, for multiplication on Group (instantiated for b, a, inv(a)). |  |  |

@@ -2,13 +2,13 @@
 
 *In a right-angled triangle, the square on the hypotenuse equals the sum of squares on the legs.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — In a right-angled triangle, the square on the hypotenuse equals the sum of squares on the legs
+## Derived fact 1: In a right-angled triangle, the square on the hypotenuse equals the sum of squares on the legs
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 47: square on hypotenuse equals sum of squares on legs · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 47*
+*Source: euclid: Elements, Book I, Proposition 47*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 31: interior angles on one side sum to two right angles, for Book I of the Elements in on the Euclidean plane, proposition 46: describe a square on a given straight line, for Book I of the Elements in on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Three times one is three for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 3 * 1 = 3
+## Derived fact 1: 3 * 1 = 3
 
 **Coordinate.** the natural numbers · multiplication · three times one is three · **Derived fact**
 

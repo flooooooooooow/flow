@@ -2,9 +2,9 @@
 
 *Both non-right angles in a right triangle are acute.*
 
-**Source.** euclid — Elements, Book I, Proposition 32
+**Source.** euclid: Elements, Book I, Proposition 32
 
-## Derived fact 1 — angle A is less than one right angle
+## Derived fact 1: angle A is less than one right angle
 
 **Coordinate.** the Euclidean plane · right triangle · both non-right angles are acute · **Derived fact**
 

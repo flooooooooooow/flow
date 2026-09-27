@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An inscribed angle on a semicircle is a right angle witness.
-# @from   euclid — Elements, Book III, Proposition 31
+# @from   euclid: Elements, Book III, Proposition 31
 # @tier   derived
 
 # @means  angle AQB equals one right angle on semicircle AB.

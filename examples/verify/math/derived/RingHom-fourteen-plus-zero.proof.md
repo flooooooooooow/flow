@@ -2,9 +2,9 @@
 
 *Fourteen plus zero maps to fourteen under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(14 + 0) = 14
+## Derived fact 1: f(14 + 0) = 14
 
 **Coordinate.** RingHom · preservation · fourteen plus zero maps to fourteen · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Union cardinality bounds intersection cardinality from below.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card(s ∩ t) <= card(s ∪ t)
+## Derived fact 1: card(s ∩ t) <= card(s ∪ t)
 
 **Coordinate.** Finset · cardinality · union bounds intersection card derived · **Derived fact**
 

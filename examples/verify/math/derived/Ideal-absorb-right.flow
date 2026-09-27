@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Ideals absorb multiplication on the right.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  If a in I then a * r in I.

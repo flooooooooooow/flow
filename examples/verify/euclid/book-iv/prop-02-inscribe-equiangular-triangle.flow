@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iv
 # @means  In a given circle to inscribe a triangle equiangular to a given triangle.
-# @from   euclid — Elements, Book IV, Proposition 2
+# @from   euclid: Elements, Book IV, Proposition 2
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 23: copy a given angle onto a line at a point», «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»
 

@@ -2,13 +2,13 @@
 
 *Similar rectilineal figures are to one another as the duplicate ratio of their homologous sides.*
 
-**Source.** euclid — Elements, Book VI, Proposition 21
+**Source.** euclid: Elements, Book VI, Proposition 21
 
-## Derived fact 1 — Similar rectilineal figures are to one another as the duplicate ratio of their homologous sides
+## Derived fact 1: Similar rectilineal figures are to one another as the duplicate ratio of their homologous sides
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 21: similar figures have ratio duplicate of homologous sides · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 21*
+*Source: euclid: Elements, Book VI, Proposition 21*
 
 *Built on: proposition 20: similar polygons are divided into the same number of similar triangles, for Euclid Book VI on the Euclidean plane*
 

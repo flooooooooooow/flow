@@ -2,9 +2,9 @@
 
 *Binomial coefficients are symmetric in k and n-k.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(n, k) = choose(n, n - k)
+## Derived fact 1: choose(n, k) = choose(n, n - k)
 
 **Coordinate.** Comb · choose · symmetry in k and n minus k · **Derived fact**
 

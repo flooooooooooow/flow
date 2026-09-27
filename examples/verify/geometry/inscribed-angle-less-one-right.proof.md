@@ -2,9 +2,9 @@
 
 *An inscribed angle not on a diameter is less than one right angle.*
 
-**Source.** euclid — Elements, Book III, Proposition 20
+**Source.** euclid: Elements, Book III, Proposition 20
 
-## Derived fact 1 — angle APB is less than one right angle when arc AB is less than a semicircle
+## Derived fact 1: angle APB is less than one right angle when arc AB is less than a semicircle
 
 **Coordinate.** the Euclidean plane · circle · inscribed angle less than one right · **Derived fact**
 

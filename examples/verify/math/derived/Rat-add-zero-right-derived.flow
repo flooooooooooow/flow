@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Zero on the right is an additive identity for rationals.
-# @from   landau — *Foundations of Analysis*
+# @from   landau: *Foundations of Analysis*
 # @tier   derived
 
 # @means  q + 0 = q.

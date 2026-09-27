@@ -2,9 +2,9 @@
 
 *Subgroup multiplication closure follows from subgroup axioms.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §2.2
+**Source.** dummit-foote: *Abstract Algebra*, §2.2
 
-## Derived fact 1 — If a in H and b in H then a * b in H when H is a subgroup
+## Derived fact 1: If a in H and b in H then a * b in H when H is a subgroup
 
 **Coordinate.** Subgroup · multiplication · subgroup products stay in the subgroup · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that subgroup products stay in the subgroup for multiplication on Subgroup. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a in H. |  |  |
 | ④ | Case 2 (see step 2): suppose b in H. |  |  |
 | ⑤ | We invoke the definitional clause governing multiplication on Subgroup: closed under multiplication, for multiplication on Subgroup (instantiated for H, a, b). |  |  |

@@ -2,9 +2,9 @@
 
 *Twelve plus zero maps to twelve under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(12 + 0) = 12
+## Derived fact 1: f(12 + 0) = 12
 
 **Coordinate.** RingHom · preservation · twelve plus zero maps to twelve · **Derived fact**
 

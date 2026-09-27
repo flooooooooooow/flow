@@ -1,6 +1,6 @@
 # @module verify.Pair
 # @means  Product type projections and pairing laws.
-# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @from   church: https://en.wikipedia.org/wiki/Product_type
 # @tier   definitions-only
 
 # @means  The first projection returns the first component of a pair.

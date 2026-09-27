@@ -2,9 +2,9 @@
 
 *Double reverse preserves length.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(rev(xs))) = len(xs)
+## Derived fact 1: len(rev(rev(xs))) = len(xs)
 
 **Coordinate.** List · length · double reverse preserves length · **Derived fact**
 

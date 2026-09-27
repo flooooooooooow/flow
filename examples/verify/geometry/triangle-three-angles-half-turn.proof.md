@@ -2,9 +2,9 @@
 
 *Three positive angles sum to half a turn.*
 
-**Source.** euclid — Elements, Book I, Proposition 32
+**Source.** euclid: Elements, Book I, Proposition 32
 
-## Derived fact 1 — positive angles A, B, C sum to two right angles
+## Derived fact 1: positive angles A, B, C sum to two right angles
 
 **Coordinate.** the Euclidean plane · triangle · three positive angles half turn · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Tredecuple cons ending in nil has length thirteen.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of thirteen cons ending in nil equals 13
+## Derived fact 1: len of thirteen cons ending in nil equals 13
 
 **Coordinate.** List · length · tredecuple cons nil has length thirteen · **Derived fact**
 

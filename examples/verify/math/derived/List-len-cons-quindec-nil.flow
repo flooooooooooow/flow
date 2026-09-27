@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Quindecuple cons ending in nil has length fifteen.
-# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @from   church: https://en.wikipedia.org/wiki/Length_of_a_list
 # @tier   derived
 
 # @means  len of fifteen cons ending in nil equals 15.

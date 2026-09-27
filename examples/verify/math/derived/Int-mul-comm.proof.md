@@ -2,9 +2,9 @@
 
 *Integer multiplication commutes.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — a * b = b * a
+## Derived fact 1: a * b = b * a
 
 **Coordinate.** the integers · multiplication · order does not matter · **Derived fact**
 

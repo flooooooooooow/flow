@@ -2,13 +2,13 @@
 
 *To bisect a given finite straight line.*
 
-**Source.** euclid — Elements, Book I, Proposition 10
+**Source.** euclid: Elements, Book I, Proposition 10
 
-## Derived fact 1 — To bisect a given finite straight line
+## Derived fact 1: To bisect a given finite straight line
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 10: bisect a given segment · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 10*
+*Source: euclid: Elements, Book I, Proposition 10*
 
 *Built on: proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane, proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane*
 

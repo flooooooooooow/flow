@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Union cardinality bounds intersection cardinality from below.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  card(s ∩ t) <= card(s ∪ t).

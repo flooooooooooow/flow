@@ -2,9 +2,9 @@
 
 *Duodecuple cons ending in nil has length twelve.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of twelve cons ending in nil equals 12
+## Derived fact 1: len of twelve cons ending in nil equals 12
 
 **Coordinate.** List · length · duodecuple cons nil has length twelve · **Derived fact**
 

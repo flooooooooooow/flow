@@ -2,9 +2,9 @@
 
 *A positive central angle gives a positive inscribed angle.*
 
-**Source.** euclid — Elements, Book III, Proposition 20
+**Source.** euclid: Elements, Book III, Proposition 20
 
-## Derived fact 1 — angle APB is positive when angle AOB is positive
+## Derived fact 1: angle APB is positive when angle AOB is positive
 
 **Coordinate.** the Euclidean plane · circle · positive central gives positive inscribed · **Derived fact**
 

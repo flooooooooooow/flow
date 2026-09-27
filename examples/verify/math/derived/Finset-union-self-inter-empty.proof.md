@@ -2,9 +2,9 @@
 
 *Self-union intersected with empty vanishes.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — (s ∪ s) ∩ empty = empty
+## Derived fact 1: (s ∪ s) ∩ empty = empty
 
 **Coordinate.** Finset · intersection · self union intersect empty derived · **Derived fact**
 

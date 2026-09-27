@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Five plus zero maps to five under a ring homomorphism.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  f(5 + 0) = 5.

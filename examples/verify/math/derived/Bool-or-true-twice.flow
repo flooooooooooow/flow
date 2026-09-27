@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  True disjoined with itself is true.
-# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @from   boole: https://en.wikipedia.org/wiki/Boolean_algebra
 # @tier   derived
 
 # @means  true or true = true.

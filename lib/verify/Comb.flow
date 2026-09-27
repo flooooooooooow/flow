@@ -1,6 +1,6 @@
 # @module verify.Comb
 # @means  Basic combinatorial identities on binomial coefficients.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   definitions-only
 
 # @means  Choosing zero items always gives one way.

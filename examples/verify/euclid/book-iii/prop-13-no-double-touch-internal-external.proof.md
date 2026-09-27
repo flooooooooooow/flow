@@ -2,13 +2,13 @@
 
 *A circle does not touch another internally or externally at more than one point.*
 
-**Source.** euclid — Elements, Book III, Proposition 13
+**Source.** euclid: Elements, Book III, Proposition 13
 
-## Derived fact 1 — A circle does not touch another internally or externally at more than one point
+## Derived fact 1: A circle does not touch another internally or externally at more than one point
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 13: circles cannot touch at more than one point internally or externally · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 13*
+*Source: euclid: Elements, Book III, Proposition 13*
 
 *Built on: proposition 10: one circle cannot touch another at more than one point, for Euclid Book III on the Euclidean plane, proposition 11: internally touching circles have collinear centers through the contact, for Euclid Book III on the Euclidean plane*
 

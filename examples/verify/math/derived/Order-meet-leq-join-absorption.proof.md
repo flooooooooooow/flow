@@ -2,9 +2,9 @@
 
 *Meet is below join via absorption.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — meet(a, b) <= join(a, b)
+## Derived fact 1: meet(a, b) <= join(a, b)
 
 **Coordinate.** Order · lattice · meet is below join via absorption · **Derived fact**
 

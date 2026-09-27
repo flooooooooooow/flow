@@ -2,9 +2,9 @@
 
 *Zero on the right is an additive identity for integers.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — m + 0 = m
+## Derived fact 1: m + 0 = m
 
 **Coordinate.** the integers · addition · zero on the right gives the value · **Derived fact**
 

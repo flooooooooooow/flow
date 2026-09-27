@@ -2,9 +2,9 @@
 
 *Quindecuple cons ending in nil has length fifteen.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of fifteen cons ending in nil equals 15
+## Derived fact 1: len of fifteen cons ending in nil equals 15
 
 **Coordinate.** List · length · quindecuple cons nil has length fifteen · **Derived fact**
 

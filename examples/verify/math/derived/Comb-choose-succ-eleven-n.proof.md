@@ -2,9 +2,9 @@
 
 *Choosing eleven from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 11) = choose(n, 10) + choose(n, 11)
+## Derived fact 1: choose(succ(n), 11) = choose(n, 10) + choose(n, 11)
 
 **Coordinate.** Comb · choose · choosing eleven from a successor derived · **Derived fact**
 

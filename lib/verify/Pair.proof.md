@@ -2,9 +2,9 @@
 
 *Product type projections and pairing laws.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Definition 1 — The first projection returns the first component of a pair
+## Definition 1: The first projection returns the first component of a pair
 
 **Coordinate.** Pair · first projection · first component is retrieved · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate first component is retrieved for first projection on Pair — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate first component is retrieved for first projection on Pair. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: fst(pair(a, b)) equals a. Hence proven. | ② | $fst(pair(a, b)) = a$ |
 
 `Pair · first projection · first component is retrieved`
 
-## Definition 2 — The second projection returns the second component of a pair
+## Definition 2: The second projection returns the second component of a pair
 
 **Coordinate.** Pair · second projection · second component is retrieved · **Definition**
 
@@ -33,12 +33,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate second component is retrieved for second projection on Pair — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate second component is retrieved for second projection on Pair. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: snd(pair(a, b)) equals b. Hence proven. | ② | $snd(pair(a, b)) = b$ |
 
 `Pair · second projection · second component is retrieved`
 
-## Derived fact 3 — Pairing and projecting round-trip to the same pair
+## Derived fact 3: Pairing and projecting round-trip to the same pair
 
 **Coordinate.** Pair · pairing · components determine the pair · **Derived fact**
 

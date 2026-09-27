@@ -2,9 +2,9 @@
 
 *Thirteen times one is thirteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 13 * 1 = 13
+## Derived fact 1: 13 * 1 = 13
 
 **Coordinate.** the natural numbers · multiplication · thirteen times one is thirteen · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Squaring three is self-multiplication.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1 — sq(3) = 3 * 3
+## Derived fact 1: sq(3) = 3 * 3
 
 **Coordinate.** the natural numbers · square · squaring three is self multiplication · **Derived fact**
 

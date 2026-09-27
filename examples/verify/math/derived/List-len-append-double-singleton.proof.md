@@ -2,9 +2,9 @@
 
 *Appending two singletons increases length by two.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, nil) ++ cons(b, nil)) = 2
+## Derived fact 1: len(cons(a, nil) ++ cons(b, nil)) = 2
 
 **Coordinate.** List · length · append of two singletons has length two · **Derived fact**
 

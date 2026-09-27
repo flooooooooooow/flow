@@ -1,6 +1,6 @@
 # matmul_vectorize
 
-## Derived fact 10 — Matmul_vectorized_correct
+## Derived fact 10: Matmul_vectorized_correct
 
 > **Goal.** We're showing that matrices_equal(C_naive, C_fast, m, n).
 >
@@ -22,7 +22,7 @@
 
 `matmul_vectorized_correct`
 
-## Derived fact 11 — Loop_fusion_correct
+## Derived fact 11: Loop_fusion_correct
 
 > **Goal.** We're showing that memory_equal(σ_separate, σ_fused).
 >

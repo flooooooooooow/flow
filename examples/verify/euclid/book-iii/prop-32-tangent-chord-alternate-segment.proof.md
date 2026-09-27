@@ -2,13 +2,13 @@
 
 *If a straight line touches a circle and a chord is drawn from the point of contact, the angles with the tangent equal the angles in the alternate segments.*
 
-**Source.** euclid — Elements, Book III, Proposition 32
+**Source.** euclid: Elements, Book III, Proposition 32
 
-## Derived fact 1 — If a straight line touches a circle and a chord is drawn from the point of contact, the angles with the tangent equal the angles in the alternate segments
+## Derived fact 1: If a straight line touches a circle and a chord is drawn from the point of contact, the angles with the tangent equal the angles in the alternate segments
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 32: the angle between tangent and chord equals the angle in the alternate segment · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 32*
+*Source: euclid: Elements, Book III, Proposition 32*
 
 *Built on: proposition 19: the tangent is perpendicular to the diameter at the point of contact, for Euclid Book III on the Euclidean plane, proposition 21: angles in the same segment are equal, for Euclid Book III on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Five plus zero maps to five under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(5 + 0) = 5
+## Derived fact 1: f(5 + 0) = 5
 
 **Coordinate.** RingHom · preservation · five plus zero maps to five · **Derived fact**
 

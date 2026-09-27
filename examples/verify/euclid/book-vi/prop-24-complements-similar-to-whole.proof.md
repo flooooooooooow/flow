@@ -2,13 +2,13 @@
 
 *In any parallelogram the complements of the parallelograms about the diameter are similar both to the whole and to one another.*
 
-**Source.** euclid — Elements, Book VI, Proposition 24
+**Source.** euclid: Elements, Book VI, Proposition 24
 
-## Derived fact 1 — In any parallelogram the complements of the parallelograms about the diameter are similar both to the whole and to one another
+## Derived fact 1: In any parallelogram the complements of the parallelograms about the diameter are similar both to the whole and to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 24: parallelograms about a diameter are similar to the whole and to one another · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 24*
+*Source: euclid: Elements, Book VI, Proposition 24*
 
 *Built on: proposition 34: complements of parallelograms about the diameter are equal, for Book I of the Elements in on the Euclidean plane, proposition 4: equiangular triangles have proportional corresponding sides, for Euclid Book VI on the Euclidean plane*
 

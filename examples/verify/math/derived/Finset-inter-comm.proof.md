@@ -2,9 +2,9 @@
 
 *Finite set intersection commutes.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — a ∩ b = b ∩ a
+## Derived fact 1: a ∩ b = b ∩ a
 
 **Coordinate.** Finset · intersection · order does not matter · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If two circles cut one another, the straight line joining their centers passes through the point of intersection.
-# @from   euclid — Elements, Book III, Proposition 5
+# @from   euclid: Elements, Book III, Proposition 5
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 4: chords not through the center do not bisect each other»
 

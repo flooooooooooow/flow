@@ -2,9 +2,9 @@
 
 *Septuple cons ending in nil has length seven.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, nil))))))) = 7
+## Derived fact 1: len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, nil))))))) = 7
 
 **Coordinate.** List · length · septuple cons nil has length seven · **Derived fact**
 

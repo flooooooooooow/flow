@@ -2,9 +2,9 @@
 
 *The difference of two triangle angles is less than two right angles.*
 
-**Source.** euclid — Elements, Book I, Proposition 17
+**Source.** euclid: Elements, Book I, Proposition 17
 
-## Derived fact 1 — angle A minus angle B is less than two right angles
+## Derived fact 1: angle A minus angle B is less than two right angles
 
 **Coordinate.** the Euclidean plane · triangle · angle difference less than two right · **Derived fact**
 

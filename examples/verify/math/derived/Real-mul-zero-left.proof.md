@@ -2,9 +2,9 @@
 
 *Zero on the left annihilates real multiplication.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — 0 * x = 0
+## Derived fact 1: 0 * x = 0
 
 **Coordinate.** the real numbers · multiplication · zero on the left gives zero · **Derived fact**
 

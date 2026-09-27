@@ -2,13 +2,13 @@
 
 *In a circle angles in the same segment are equal to one another.*
 
-**Source.** euclid — Elements, Book III, Proposition 21
+**Source.** euclid: Elements, Book III, Proposition 21
 
-## Derived fact 1 — In a circle angles in the same segment are equal to one another
+## Derived fact 1: In a circle angles in the same segment are equal to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 21: angles in the same segment are equal · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 21*
+*Source: euclid: Elements, Book III, Proposition 21*
 
 *Built on: proposition 20: the central angle is double the inscribed angle on the same arc, for Euclid Book III on the Euclidean plane*
 

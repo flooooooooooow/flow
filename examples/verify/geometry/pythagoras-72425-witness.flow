@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The 7-24-25 triangle satisfies the Pythagorean relation.
-# @from   euclid — Elements, Book I, Proposition 47
+# @from   euclid: Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  25 squared equals 7 squared plus 24 squared.

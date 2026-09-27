@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  Disjunction associates: regrouping ors does not change the result.
-# @from   boole — https://en.wikipedia.org/wiki/Associative_property
+# @from   boole: https://en.wikipedia.org/wiki/Associative_property
 # @tier   derived
 
 # @means  (a ∨ b) ∨ c = a ∨ (b ∨ c).
-# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @from   boole: https://en.wikipedia.org/wiki/Boolean_algebra
 # @tier   derived
 # @needs  «Bool» «disjunction» «order does not matter»
 

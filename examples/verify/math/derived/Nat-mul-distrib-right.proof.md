@@ -2,13 +2,13 @@
 
 *Multiplication distributes over addition on the left.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Distributive_property
+**Source.** peano: https://en.wikipedia.org/wiki/Distributive_property
 
-## Derived fact 1 — (a + b) * c = a * c + b * c
+## Derived fact 1: (a + b) * c = a * c + b * c
 
 **Coordinate.** the natural numbers · multiplication · distributes over addition on the left · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: distributes over addition on the right, for multiplication on the natural numbers, order does not matter, for multiplication on the natural numbers*
 

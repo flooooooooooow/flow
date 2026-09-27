@@ -2,9 +2,9 @@
 
 *Half-turn interior sum witness for triangles.*
 
-**Source.** euclid — Elements, Book I, Proposition 32
+**Source.** euclid: Elements, Book I, Proposition 32
 
-## Derived fact 1 — two right angles equals angle A plus angle B plus angle C
+## Derived fact 1: two right angles equals angle A plus angle B plus angle C
 
 **Coordinate.** the Euclidean plane · triangle · half turn interior sum witness · **Derived fact**
 

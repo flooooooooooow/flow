@@ -2,9 +2,9 @@
 
 *Seventeen plus zero is seventeen in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 17 + 0 = 17
+## Derived fact 1: 17 + 0 = 17
 
 **Coordinate.** Monoid · addition · seventeen plus zero is seventeen · **Derived fact**
 

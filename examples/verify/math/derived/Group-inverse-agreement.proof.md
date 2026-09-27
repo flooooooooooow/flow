@@ -2,9 +2,9 @@
 
 *Left and right inverses coincide in a group.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — If h * g = 1 and g * inv(g) = 1 then h = inv(g)
+## Derived fact 1: If h * g = 1 and g * inv(g) = 1 then h = inv(g)
 
 **Coordinate.** Group · inverse · left and right inverses agree · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that left and right inverses agree for inverse on Group. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose h * g  equals  1. |  |  |
 | ④ | Case 2 (see step 2): suppose g * inv(g)  equals  1. |  |  |
 | ⑤ | We invoke the derived fact governing inverse on Group: inverses are unique, for inverse on Group (instantiated for g, h, inv(g)). |  |  |

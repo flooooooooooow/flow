@@ -2,9 +2,9 @@
 
 *Four plus one is five for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 4 + 1 = 5
+## Derived fact 1: 4 + 1 = 5
 
 **Coordinate.** the natural numbers · addition · four plus one is five · **Derived fact**
 

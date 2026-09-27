@@ -1,6 +1,6 @@
 # @module verify.Ring
 # @means  Ring axioms extending commutative addition and associative multiplication.
-# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @from   dummit-foote: *Abstract Algebra*, §7.1
 # @tier   definitions-only
 
 # @means  Ring addition commutes.

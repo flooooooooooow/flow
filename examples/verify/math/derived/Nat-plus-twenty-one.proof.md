@@ -2,9 +2,9 @@
 
 *Twenty plus one is twenty-one.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 20 + 1 = 21
+## Derived fact 1: 20 + 1 = 21
 
 **Coordinate.** the natural numbers · addition · twenty plus one is twenty one · **Derived fact**
 

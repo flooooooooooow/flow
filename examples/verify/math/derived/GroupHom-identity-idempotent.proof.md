@@ -2,9 +2,9 @@
 
 *The image of the identity is idempotent under a homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.6
+**Source.** dummit-foote: *Abstract Algebra*, §1.6
 
-## Derived fact 1 — f(1) * f(1) = f(1)
+## Derived fact 1: f(1) * f(1) = f(1)
 
 **Coordinate.** GroupHom · identity · the identity image is idempotent · **Derived fact**
 

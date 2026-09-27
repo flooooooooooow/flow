@@ -2,9 +2,9 @@
 
 *Proportional magnitudes satisfy alternando.*
 
-**Source.** euclid — Elements, Book V, Proposition 7
+**Source.** euclid: Elements, Book V, Proposition 7
 
-## Derived fact 1 — a:b = c:d implies a:c = b:d
+## Derived fact 1: a:b = c:d implies a:c = b:d
 
 **Coordinate.** Ratio · proportion · alternando holds · **Derived fact**
 

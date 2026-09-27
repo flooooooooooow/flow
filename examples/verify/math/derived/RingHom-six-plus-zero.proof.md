@@ -2,9 +2,9 @@
 
 *Six plus zero maps to six under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(6 + 0) = 6
+## Derived fact 1: f(6 + 0) = 6
 
 **Coordinate.** RingHom · preservation · six plus zero maps to six · **Derived fact**
 

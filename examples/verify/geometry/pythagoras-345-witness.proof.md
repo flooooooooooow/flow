@@ -2,9 +2,9 @@
 
 *The 3-4-5 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — 5 squared equals 3 squared plus 4 squared
+## Derived fact 1: 5 squared equals 3 squared plus 4 squared
 
 **Coordinate.** the Euclidean plane · right triangle · three four five satisfies Pythagoras · **Derived fact**
 

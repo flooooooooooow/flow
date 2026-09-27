@@ -2,13 +2,13 @@
 
 *In a given rectilineal figure to inscribe a circle.*
 
-**Source.** euclid — Elements, Book IV, Proposition 12
+**Source.** euclid: Elements, Book IV, Proposition 12
 
-## Derived fact 1 — In a given rectilineal figure to inscribe a circle
+## Derived fact 1: In a given rectilineal figure to inscribe a circle
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 12: in a given triangle to inscribe a circle · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 12*
+*Source: euclid: Elements, Book IV, Proposition 12*
 
 *Built on: proposition 9: bisect a given angle, for Book I of the Elements in on the Euclidean plane, proposition 16: the perpendicular from the center to a chord bisects it, for Euclid Book III on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Twenty-one plus zero is twenty-one in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 21 + 0 = 21 in an ideal
+## Derived fact 1: 21 + 0 = 21 in an ideal
 
 **Coordinate.** Ideal · addition · twenty one plus zero in ideal · **Derived fact**
 

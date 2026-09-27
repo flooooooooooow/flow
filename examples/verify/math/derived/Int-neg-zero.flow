@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Negating zero yields zero.
-# @from   landau — *Foundations of Analysis*, Ch. 1
+# @from   landau: *Foundations of Analysis*, Ch. 1
 # @tier   derived
 
 # @means  -0 = 0.

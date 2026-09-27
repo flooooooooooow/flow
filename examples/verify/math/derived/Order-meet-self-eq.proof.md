@@ -2,9 +2,9 @@
 
 *Meet with itself returns the argument.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — meet(a, a) = a
+## Derived fact 1: meet(a, a) = a
 
 **Coordinate.** Order · meet · meet with itself equals the argument · **Derived fact**
 

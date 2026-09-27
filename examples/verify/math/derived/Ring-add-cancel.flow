@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Equal ring elements can be subtracted from both sides.
-# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @from   dummit-foote: *Abstract Algebra*, §7.1
 # @tier   derived
 
 # @means  a + c = b + c implies a = b.

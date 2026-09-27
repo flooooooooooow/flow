@@ -2,9 +2,9 @@
 
 *Eleven plus one is twelve.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 11 + 1 = 12
+## Derived fact 1: 11 + 1 = 12
 
 **Coordinate.** the natural numbers · addition · eleven plus one is twelve · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Reversing an octuple cons list.
-# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @from   church: https://en.wikipedia.org/wiki/Reverse_(list)
 # @tier   derived
 
 # @means  rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))) = cons(h, cons(g, cons(f, cons(e, cons(d, cons(c, cons(b, cons(a, nil)))))))).

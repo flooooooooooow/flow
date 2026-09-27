@@ -2,9 +2,9 @@
 
 *Self-intersection cardinality is at most self cardinality.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card(s ∩ s) <= card(s)
+## Derived fact 1: card(s ∩ s) <= card(s)
 
 **Coordinate.** Finset · cardinality · self intersection card bound derived · **Derived fact**
 

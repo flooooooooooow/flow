@@ -2,9 +2,9 @@
 
 *Three plus zero maps to three under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(3 + 0) = 3
+## Derived fact 1: f(3 + 0) = 3
 
 **Coordinate.** RingHom · preservation · three plus zero maps to three · **Derived fact**
 

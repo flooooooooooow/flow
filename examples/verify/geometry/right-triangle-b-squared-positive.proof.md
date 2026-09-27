@@ -2,9 +2,9 @@
 
 *The square on the second leg is positive.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — b squared is greater than zero
+## Derived fact 1: b squared is greater than zero
 
 **Coordinate.** the Euclidean plane · right triangle · second leg square is positive · **Derived fact**
 

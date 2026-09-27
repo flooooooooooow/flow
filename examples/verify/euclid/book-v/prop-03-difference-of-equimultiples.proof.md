@@ -2,13 +2,13 @@
 
 *If a first magnitude is the same multiple of a second that a third is of a fourth, the difference of the first and third is the same multiple of the difference of the second and fourth.*
 
-**Source.** euclid — Elements, Book V, Proposition 3
+**Source.** euclid: Elements, Book V, Proposition 3
 
-## Derived fact 1 — If a first magnitude is the same multiple of a second that a third is of a fourth, the difference of the first and third is the same multiple of the difference of the second and fourth
+## Derived fact 1: If a first magnitude is the same multiple of a second that a third is of a fourth, the difference of the first and third is the same multiple of the difference of the second and fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 3: the difference of equimultiples is an equimultiple of the difference · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 3*
+*Source: euclid: Elements, Book V, Proposition 3*
 
 *Built on: proposition 2: the sum of equimultiples is an equimultiple of the sum, for Euclid Book V on the Euclidean plane*
 

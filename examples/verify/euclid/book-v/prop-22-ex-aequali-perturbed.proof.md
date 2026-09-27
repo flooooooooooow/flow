@@ -2,13 +2,13 @@
 
 *If a first is to a second as a third is to a fourth, and a fifth is to a second as a sixth is to a fourth, the sum of the first and fifth is to the third as the sum of the second and sixth is to the fourth.*
 
-**Source.** euclid — Elements, Book V, Proposition 22
+**Source.** euclid: Elements, Book V, Proposition 22
 
-## Derived fact 1 — If a first is to a second as a third is to a fourth, and a fifth is to a second as a sixth is to a fourth, the sum of the first and fifth is to the third as the sum of the second and sixth is to the fourth
+## Derived fact 1: If a first is to a second as a third is to a fourth, and a fifth is to a second as a sixth is to a fourth, the sum of the first and fifth is to the third as the sum of the second and sixth is to the fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 22: ex aequali from perturbed proportion · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 22*
+*Source: euclid: Elements, Book V, Proposition 22*
 
 *Built on: proposition 20: perturbed proportion implies ex aequali, for Euclid Book V on the Euclidean plane*
 

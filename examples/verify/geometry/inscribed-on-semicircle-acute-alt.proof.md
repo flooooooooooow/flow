@@ -2,9 +2,9 @@
 
 *An inscribed angle on a semicircle is acute, alternate witness.*
 
-**Source.** euclid — Elements, Book III, Proposition 20
+**Source.** euclid: Elements, Book III, Proposition 20
 
-## Derived fact 1 — inscribed angle on minor arc is acute
+## Derived fact 1: inscribed angle on minor arc is acute
 
 **Coordinate.** the Euclidean plane · circle · semicircle inscribed acute alt · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module verify.Ratio
 # @means  Eudoxus proportion definitions on comparable magnitudes.
-# @from   euclid — Elements, Book V, Definition 5
+# @from   euclid: Elements, Book V, Definition 5
 # @tier   definitions-only
 
 # @means  A magnitude is in the same ratio to a second as a third to a fourth when equimultiples match.

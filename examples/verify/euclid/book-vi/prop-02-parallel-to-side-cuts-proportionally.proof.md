@@ -2,13 +2,13 @@
 
 *If a straight line is drawn parallel to one side of a triangle, it cuts the other sides proportionally.*
 
-**Source.** euclid — Elements, Book VI, Proposition 2
+**Source.** euclid: Elements, Book VI, Proposition 2
 
-## Derived fact 1 — If a straight line is drawn parallel to one side of a triangle, it cuts the other sides proportionally
+## Derived fact 1: If a straight line is drawn parallel to one side of a triangle, it cuts the other sides proportionally
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 2: a line parallel to a triangle side cuts the other sides proportionally · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 2*
+*Source: euclid: Elements, Book VI, Proposition 2*
 
 *Built on: proposition 1: triangles and parallelograms of the same height are as their bases, for Euclid Book VI on the Euclidean plane, proposition 37: triangles on the same base and between the same parallels are equal, for Book I of the Elements in on the Euclidean plane*
 

@@ -2,13 +2,13 @@
 
 *In equal circles equal straight lines cut off equal circumferences, the greater equal to the greater and the less to the less.*
 
-**Source.** euclid — Elements, Book III, Proposition 28
+**Source.** euclid: Elements, Book III, Proposition 28
 
-## Derived fact 1 — In equal circles equal straight lines cut off equal circumferences, the greater equal to the greater and the less to the less
+## Derived fact 1: In equal circles equal straight lines cut off equal circumferences, the greater equal to the greater and the less to the less
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 28: in equal circles equal chords cut off equal arcs · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 28*
+*Source: euclid: Elements, Book III, Proposition 28*
 
 *Built on: proposition 1: equal chords subtend equal angles at the center, for Euclid Book III on the Euclidean plane*
 

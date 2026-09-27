@@ -2,9 +2,9 @@
 
 *Thirty-two times one is thirty-two.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 32 * 1 = 32
+## Derived fact 1: 32 * 1 = 32
 
 **Coordinate.** the natural numbers · multiplication · thirty two times one is thirty two · **Derived fact**
 

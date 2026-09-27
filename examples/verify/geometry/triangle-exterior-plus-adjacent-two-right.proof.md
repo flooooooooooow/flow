@@ -2,9 +2,9 @@
 
 *An exterior angle and its adjacent interior angle sum to two right angles.*
 
-**Source.** euclid — Elements, Book I, Proposition 13
+**Source.** euclid: Elements, Book I, Proposition 13
 
-## Derived fact 1 — exterior at C plus angle C equals two right angles
+## Derived fact 1: exterior at C plus angle C equals two right angles
 
 **Coordinate.** the Euclidean plane · triangle · exterior plus adjacent interior is two right · **Derived fact**
 

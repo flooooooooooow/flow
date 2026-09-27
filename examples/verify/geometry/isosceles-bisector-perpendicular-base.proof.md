@@ -2,9 +2,9 @@
 
 *The apex angle bisector is perpendicular to the base.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — apex bisector is perpendicular to base
+## Derived fact 1: apex bisector is perpendicular to base
 
 **Coordinate.** the Euclidean plane · isosceles triangle · bisector perpendicular to base · **Derived fact**
 

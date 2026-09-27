@@ -2,9 +2,9 @@
 
 *Union commutes as a derived consequence.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — a ∪ b = b ∪ a
+## Derived fact 1: a ∪ b = b ∪ a
 
 **Coordinate.** Finset · union · union commutes derived · **Derived fact**
 

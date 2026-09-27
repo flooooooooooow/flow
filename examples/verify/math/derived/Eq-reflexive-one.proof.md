@@ -2,9 +2,9 @@
 
 *One equals itself.*
 
-**Source.** leibniz — https://en.wikipedia.org/wiki/Law_of_identity
+**Source.** leibniz: https://en.wikipedia.org/wiki/Law_of_identity
 
-## Derived fact 1 — 1 = 1
+## Derived fact 1: 1 = 1
 
 **Coordinate.** equality · equality · one equals itself · **Derived fact**
 

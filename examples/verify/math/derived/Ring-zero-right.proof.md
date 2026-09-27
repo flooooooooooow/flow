@@ -2,9 +2,9 @@
 
 *Zero is the right additive identity in a ring.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — r + 0 = r
+## Derived fact 1: r + 0 = r
 
 **Coordinate.** Ring · addition · zero is the right identity · **Derived fact**
 

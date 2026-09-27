@@ -2,13 +2,13 @@
 
 *Equal summands stay equal when the same term is added on the right.*
 
-**Source.** leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
+**Source.** leibniz: https://en.wikipedia.org/wiki/Substitution_(logic)
 
-## Derived fact 1 — From a = b we deduce a + c = b + c, by induction on c
+## Derived fact 1: From a = b we deduce a + c = b + c, by induction on c
 
 **Coordinate.** equality · equality · equal terms add the same on the right · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: adding zero on the right does not change the number, adding one more on the right bumps the sum by one*
 

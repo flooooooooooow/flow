@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iv
 # @means  In a given rectilineal figure to inscribe a circle.
-# @from   euclid — Elements, Book IV, Proposition 12
+# @from   euclid: Elements, Book IV, Proposition 12
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle», «Geometry» «Euclid Book III» «Proposition 16: the perpendicular from the center to a chord bisects it»
 

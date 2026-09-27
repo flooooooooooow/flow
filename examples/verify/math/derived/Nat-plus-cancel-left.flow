@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  Equal left summands can be cancelled from both sides of an equation.
-# @from   peano — https://en.wikipedia.org/wiki/Cancellation_property
+# @from   peano: https://en.wikipedia.org/wiki/Cancellation_property
 # @tier   derived
 
 # @means  From a + b = a + c we deduce b = c.
-# @from   peano/induction — Gries & Schneider, Ch. 3
+# @from   peano/induction: Gries & Schneider, Ch. 3
 # @tier   derived
 # @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the left steps the sum», «Nat» «successor» «successor is injective»
 

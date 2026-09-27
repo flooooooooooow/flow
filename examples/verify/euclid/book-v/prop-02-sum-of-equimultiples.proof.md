@@ -2,13 +2,13 @@
 
 *If a first magnitude is the same multiple of a second that a third is of a fourth, the sum of the first and third is the same multiple of the sum of the second and fourth.*
 
-**Source.** euclid — Elements, Book V, Proposition 2
+**Source.** euclid: Elements, Book V, Proposition 2
 
-## Derived fact 1 — If a first magnitude is the same multiple of a second that a third is of a fourth, the sum of the first and third is the same multiple of the sum of the second and fourth
+## Derived fact 1: If a first magnitude is the same multiple of a second that a third is of a fourth, the sum of the first and third is the same multiple of the sum of the second and fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 2: the sum of equimultiples is an equimultiple of the sum · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 2*
+*Source: euclid: Elements, Book V, Proposition 2*
 
 *Built on: proposition 1: equimultiples of equimultiples are equimultiple of the originals, for Euclid Book V on the Euclidean plane*
 

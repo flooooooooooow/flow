@@ -2,13 +2,13 @@
 
 *An angle inscribed in a semicircle is a right angle.*
 
-**Source.** euclid — Elements, Book III, Proposition 31; Thales of Miletus
+**Source.** euclid: Elements, Book III, Proposition 31; Thales of Miletus
 
-## Derived fact 1 — An angle inscribed in a semicircle is a right angle
+## Derived fact 1: An angle inscribed in a semicircle is a right angle
 
 **Coordinate.** the Euclidean plane · circle · Thales right angle in semicircle · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 31; Thales of Miletus*
+*Source: euclid: Elements, Book III, Proposition 31; Thales of Miletus*
 
 *Built on: the three interior angles of a triangle sum to two right angles*
 

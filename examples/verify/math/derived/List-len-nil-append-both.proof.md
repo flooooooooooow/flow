@@ -2,9 +2,9 @@
 
 *Empty append on both sides preserves zero length.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(nil ++ nil) = 0
+## Derived fact 1: len(nil ++ nil) = 0
 
 **Coordinate.** List · length · double empty append has length zero · **Derived fact**
 

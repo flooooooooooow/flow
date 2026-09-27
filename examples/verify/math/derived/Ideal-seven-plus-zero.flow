@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Seven plus zero is seven in an ideal witness.
-# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @from   dummit-foote: *Abstract Algebra*, §7.1
 # @tier   derived
 
 # @means  7 + 0 = 7 in an ideal.

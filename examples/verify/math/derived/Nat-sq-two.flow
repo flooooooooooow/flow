@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Squaring two is four-fold self-multiplication.
-# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @from   peano: https://en.wikipedia.org/wiki/Square_(algebra)
 # @tier   derived
 
 # @means  sq(2) = 2 * 2.

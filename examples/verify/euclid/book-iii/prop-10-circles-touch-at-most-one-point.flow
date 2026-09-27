@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  One circle cannot touch another at more than one point.
-# @from   euclid — Elements, Book III, Proposition 10
+# @from   euclid: Elements, Book III, Proposition 10
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»
 

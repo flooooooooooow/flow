@@ -1,6 +1,6 @@
 # @module verify.Int
 # @means  Integer arithmetic definitions extending the natural numbers.
-# @from   landau — *Foundations of Analysis*, Ch. 1
+# @from   landau: *Foundations of Analysis*, Ch. 1
 # @tier   definitions-only
 
 # @means  Adding zero on the left leaves an integer unchanged.

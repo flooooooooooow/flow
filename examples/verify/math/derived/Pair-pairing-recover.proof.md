@@ -2,9 +2,9 @@
 
 *Pairing projections recovers the original pair.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — pair(a, b) = pair(fst(pair(a, b)), snd(pair(a, b)))
+## Derived fact 1: pair(a, b) = pair(fst(pair(a, b)), snd(pair(a, b)))
 
 **Coordinate.** Pair · pairing · pairing recovers projections · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Subgroup multiplication closure follows from subgroup axioms.
-# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @from   dummit-foote: *Abstract Algebra*, §2.2
 # @tier   derived
 
 # @means  If a in H and b in H then a * b in H when H is a subgroup.

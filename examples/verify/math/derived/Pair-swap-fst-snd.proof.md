@@ -2,9 +2,9 @@
 
 *Swapping recovers both components of a pair.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — fst(swap(pair(a, b))) = b and snd(swap(pair(a, b))) = a
+## Derived fact 1: fst(swap(pair(a, b))) = b and snd(swap(pair(a, b))) = a
 
 **Coordinate.** Pair · swap · swap recovers both components · **Derived fact**
 

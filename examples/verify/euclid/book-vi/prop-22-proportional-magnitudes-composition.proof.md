@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, they are also proportional by composition as in Book V.*
 
-**Source.** euclid — Elements, Book VI, Proposition 22
+**Source.** euclid: Elements, Book VI, Proposition 22
 
-## Derived fact 1 — If four magnitudes are proportional, they are also proportional by composition as in Book V
+## Derived fact 1: If four magnitudes are proportional, they are also proportional by composition as in Book V
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 22: proportional magnitudes satisfy composition of ratios · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 22*
+*Source: euclid: Elements, Book VI, Proposition 22*
 
 *Built on: proposition 11: proportional magnitudes satisfy componendo, for Euclid Book V on the Euclidean plane, proposition 16: four proportional lines give equal rectangles on extremes and means, for Euclid Book VI on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *The square on a leg is less than the square on the hypotenuse.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — a squared is less than c squared
+## Derived fact 1: a squared is less than c squared
 
 **Coordinate.** the Euclidean plane · right triangle · leg square is less than hypotenuse square · **Derived fact**
 

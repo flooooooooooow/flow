@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Adjacent vertical pairs are supplementary.
-# @from   euclid — Elements, Book I, Proposition 13
+# @from   euclid: Elements, Book I, Proposition 13
 # @tier   derived
 
 # @means  angle alpha plus angle beta prime equals two right angles.

@@ -2,9 +2,9 @@
 
 *Reversing a pair cons list has length two.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(cons(x, cons(y, nil)))) = succ(succ(0))
+## Derived fact 1: len(rev(cons(x, cons(y, nil)))) = succ(succ(0))
 
 **Coordinate.** List · length · reverse of pair cons has length two · **Derived fact**
 

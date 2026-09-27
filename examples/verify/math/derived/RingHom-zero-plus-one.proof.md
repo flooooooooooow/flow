@@ -2,9 +2,9 @@
 
 *Zero plus one maps to one under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(0 + 1) = 1
+## Derived fact 1: f(0 + 1) = 1
 
 **Coordinate.** RingHom · preservation · zero plus one maps to one · **Derived fact**
 

@@ -2,13 +2,13 @@
 
 *To bisect a given rectilineal angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 9
+**Source.** euclid: Elements, Book I, Proposition 9
 
-## Derived fact 1 — To bisect a given rectilineal angle
+## Derived fact 1: To bisect a given rectilineal angle
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 9: bisect a given angle · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 9*
+*Source: euclid: Elements, Book I, Proposition 9*
 
 *Built on: proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane, proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 8: side-side-side angle equality, for Book I of the Elements in on the Euclidean plane*
 

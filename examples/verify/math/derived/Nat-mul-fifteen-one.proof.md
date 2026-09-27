@@ -2,9 +2,9 @@
 
 *Fifteen times one is fifteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 15 * 1 = 15
+## Derived fact 1: 15 * 1 = 15
 
 **Coordinate.** the natural numbers · multiplication · fifteen times one is fifteen · **Derived fact**
 

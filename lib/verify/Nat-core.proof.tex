@@ -15,7 +15,7 @@
 \begin{document}
 \maketitle
 Peano predecessor and successor structural laws.\\[0.5em]
-\textbf{Source.} peano — https://en.wikipedia.org/wiki/Peano\_axioms\\[0.5em]
+\textbf{Source.} peano: https://en.wikipedia.org/wiki/Peano\_axioms\\[0.5em]
 \bigskip
 \noindent{\large \textbf{Definition 1.} \textit{Taking predecessor after successor returns the same number} \hfill the natural numbers \cdot predecessor \cdot predecessor undoes successor}\par
 \smallskip\noindent\textit{Coordinate: the natural numbers \cdot predecessor \cdot predecessor undoes successor}\par
@@ -28,7 +28,7 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \begin{tabular}{@{} >{\raggedright\arraybackslash}p{0.06\textwidth} >{\raggedright\arraybackslash}p{0.47\textwidth} >{\raggedleft\arraybackslash}p{0.41\textwidth} @{}}
 \textbf{\#} & \textbf{Proof} & \textbf{Mathematics} \\
 \midrule
-\textbf{1.} & We stipulate predecessor undoes successor for predecessor on the natural numbers — this is a definition, not a derived fact. & \\[0.45em]
+\textbf{1.} & We stipulate predecessor undoes successor for predecessor on the natural numbers. This is a definition rather than a derived fact. & \\[0.45em]
 \textbf{2.} & This follows directly from the definition: pred(the successor of n) equals n. Hence proven. & $\displaystyle pred(\mathrm{succ}(n)) = n$ \\[0.45em]
 \bottomrule
 \end{tabular}
@@ -46,8 +46,8 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \begin{tabular}{@{} >{\raggedright\arraybackslash}p{0.06\textwidth} >{\raggedright\arraybackslash}p{0.47\textwidth} >{\raggedleft\arraybackslash}p{0.41\textwidth} @{}}
 \textbf{\#} & \textbf{Proof} & \textbf{Mathematics} \\
 \midrule
-\textbf{1.} & We stipulate successor undoes predecessor away from zero for successor on the natural numbers — this is a definition, not a derived fact. & \\[0.45em]
-\textbf{2.} & We split into exhaustive cases — the claim must hold in each one. & \\[0.45em]
+\textbf{1.} & We stipulate successor undoes predecessor away from zero for successor on the natural numbers. This is a definition rather than a derived fact. & \\[0.45em]
+\textbf{2.} & We split into exhaustive cases. The claim must hold in each one. & \\[0.45em]
 \textbf{3.} & Case 1 (see step 2): suppose n is zero. & \\[0.45em]
 \textbf{4.} & From step 3, this implies the successor of pred(n) equals n in this case. & $\displaystyle \mathrm{succ}(pred(n)) = n$ \\[0.45em]
 \textbf{5.} & Case 2 (see step 2): neither disjunct holds. & \\[0.45em]
@@ -61,7 +61,7 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \bigskip
 \noindent{\large \textbf{Derived fact 3.} \textit{If two successors match, the originals match} \hfill the natural numbers \cdot successor \cdot successor is injective}\par
 \smallskip\noindent\textit{Coordinate: the natural numbers \cdot successor \cdot successor is injective}\par
-\smallskip\noindent\textit{Source: peano — https://en.wikipedia.org/wiki/Injective\_function}\par
+\smallskip\noindent\textit{Source: peano: https://en.wikipedia.org/wiki/Injective\_function}\par
 \smallskip\noindent\textit{Built on: \hyperref[thm:Nat-predecessor-predecessor_undoes_successor]{Definition 1}}\par
 \medskip
 \noindent\textbf{Goal.} If two successors match, the originals match.  succ(m) = succ(n) → m = n\par
@@ -72,7 +72,7 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \textbf{\#} & \textbf{Proof} & \textbf{Mathematics} \\
 \midrule
 \textbf{1.} & We prove that successor is injective for successor on the natural numbers. & \\[0.45em]
-\textbf{2.} & We split into exhaustive cases — the claim must hold in each one. & \\[0.45em]
+\textbf{2.} & We split into exhaustive cases. The claim must hold in each one. & \\[0.45em]
 \textbf{3.} & Case 1 (see step 2): suppose succ(m)  equals  succ(n). & \\[0.45em]
 \textbf{4.} & We invoke Definition 1 (predecessor undoes successor, for predecessor on the natural numbers, instantiated for m). & \\[0.45em]
 \textbf{5.} & We invoke Definition 1 (predecessor undoes successor, for predecessor on the natural numbers, instantiated for n). & \\[0.45em]
@@ -95,7 +95,7 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \textbf{\#} & \textbf{Proof} & \textbf{Mathematics} \\
 \midrule
 \textbf{1.} & We prove that zero is not a successor for zero on the natural numbers. & \\[0.45em]
-\textbf{2.} & We split into exhaustive cases — the claim must hold in each one. & \\[0.45em]
+\textbf{2.} & We split into exhaustive cases. The claim must hold in each one. & \\[0.45em]
 \textbf{3.} & Case 1 (see step 2): suppose 0  equals  succ(n). & \\[0.45em]
 \textbf{4.} & We invoke Definition 1 (predecessor undoes successor, for predecessor on the natural numbers, instantiated for n). & \\[0.45em]
 \textbf{5.} & From step 3 and Definition 1, this implies pred(0) equals n. Together with the other cases (step 3), the goal is discharged. Hence proven. & $\displaystyle pred(0) = n$ \\[0.45em]
@@ -117,7 +117,7 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \textbf{\#} & \textbf{Proof} & \textbf{Mathematics} \\
 \midrule
 \textbf{1.} & We prove that successor never yields zero for successor on the natural numbers. & \\[0.45em]
-\textbf{2.} & We split into exhaustive cases — the claim must hold in each one. & \\[0.45em]
+\textbf{2.} & We split into exhaustive cases. The claim must hold in each one. & \\[0.45em]
 \textbf{3.} & Case 1 (see step 2): suppose succ(n)  equals  0. & \\[0.45em]
 \textbf{4.} & We invoke Derived fact 4 (zero is not a successor, for zero on the natural numbers, instantiated for n). & \\[0.45em]
 \textbf{5.} & From step 3 and Derived fact 4, this implies the successor of n ! equals 0 in this case. & $\displaystyle \mathrm{succ}(n) != 0$ \\[0.45em]
@@ -141,7 +141,7 @@ Peano predecessor and successor structural laws.\\[0.5em]
 \textbf{\#} & \textbf{Proof} & \textbf{Mathematics} \\
 \midrule
 \textbf{1.} & We prove that every number is zero or a successor for cases on the natural numbers. & \\[0.45em]
-\textbf{2.} & We split into exhaustive cases — the claim must hold in each one. & \\[0.45em]
+\textbf{2.} & We split into exhaustive cases. The claim must hold in each one. & \\[0.45em]
 \textbf{3.} & Case 1 (see step 2): suppose n is zero. & \\[0.45em]
 \textbf{4.} & From step 3, this implies n equals 0 in this case. & $\displaystyle n = 0$ \\[0.45em]
 \textbf{5.} & Case 2 (see step 2): neither disjunct holds. & \\[0.45em]

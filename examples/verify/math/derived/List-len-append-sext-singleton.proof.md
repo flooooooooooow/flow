@@ -2,9 +2,9 @@
 
 *Appending six singletons gives length six.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of six appended singletons equals 6
+## Derived fact 1: len of six appended singletons equals 6
 
 **Coordinate.** List · length · append of six singletons has length six · **Derived fact**
 

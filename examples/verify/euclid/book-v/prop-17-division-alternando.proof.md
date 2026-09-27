@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, the difference of the first and third is to the third as the difference of the second and fourth is to the fourth.*
 
-**Source.** euclid — Elements, Book V, Proposition 17
+**Source.** euclid: Elements, Book V, Proposition 17
 
-## Derived fact 1 — If four magnitudes are proportional, the difference of the first and third is to the third as the difference of the second and fourth is to the fourth
+## Derived fact 1: If four magnitudes are proportional, the difference of the first and third is to the third as the difference of the second and fourth is to the fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 17: division holds with alternando · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 17*
+*Source: euclid: Elements, Book V, Proposition 17*
 
 *Built on: proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane, proposition 12: proportional magnitudes satisfy dividendo, for Euclid Book V on the Euclidean plane*
 

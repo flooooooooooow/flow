@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Nineteen plus one is twenty.
-# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  19 + 1 = 20.

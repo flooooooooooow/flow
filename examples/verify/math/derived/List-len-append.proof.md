@@ -2,9 +2,9 @@
 
 *Length is a homomorphism for append.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(xs ++ ys) = len(xs) + len(ys)
+## Derived fact 1: len(xs ++ ys) = len(xs) + len(ys)
 
 **Coordinate.** List · length · length adds under append · **Derived fact**
 

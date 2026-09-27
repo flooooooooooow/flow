@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  Similar rectilineal figures are to one another in the duplicate ratio of the corresponding sides.
-# @from   euclid — Elements, Book VI, Proposition 19
+# @from   euclid: Elements, Book VI, Proposition 19
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides», «Geometry» «Euclid Book V» «Proposition 18: ex aequali proportion from three magnitudes»
 

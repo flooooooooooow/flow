@@ -2,9 +2,9 @@
 
 *A right inscribed angle implies the subtending chord is a diameter.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — chord AB is a diameter when angle ACB is right
+## Derived fact 1: chord AB is a diameter when angle ACB is right
 
 **Coordinate.** the Euclidean plane · circle · right inscribed implies diameter chord · **Derived fact**
 

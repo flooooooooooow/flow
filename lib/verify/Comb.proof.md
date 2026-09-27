@@ -2,9 +2,9 @@
 
 *Basic combinatorial identities on binomial coefficients.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Definition 1 — Choosing zero items always gives one way
+## Definition 1: Choosing zero items always gives one way
 
 **Coordinate.** Comb · choose · choosing none gives one · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate choosing none gives one for choose on Comb — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate choosing none gives one for choose on Comb. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: choose(n, 0) equals 1. Hence proven. | ② | $choose(n, 0) = 1$ |
 
 `Comb · choose · choosing none gives one`
 
-## Definition 2 — Pascal recurrence for binomial coefficients
+## Definition 2: Pascal recurrence for binomial coefficients
 
 **Coordinate.** Comb · choose · Pascal recurrence holds · **Definition**
 
@@ -33,8 +33,8 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate pascal recurrence holds for choose on Comb — this is a definition, not a derived fact. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ① | We stipulate pascal recurrence holds for choose on Comb. This is a definition rather than a derived fact. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose k is zero. |  |  |
 | ④ | From step 3, this implies choose(n, k) equals 1 in this case. | ④ | $choose(n, k) = 1$ |
 | ⑤ | Case 2 (see step 2): neither disjunct holds. |  |  |

@@ -2,9 +2,9 @@
 
 *Octuple cons ending in nil has length eight.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))) = 8
+## Derived fact 1: len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))) = 8
 
 **Coordinate.** List · length · octuple cons nil has length eight · **Derived fact**
 

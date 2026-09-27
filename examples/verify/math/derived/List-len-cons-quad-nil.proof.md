@@ -2,9 +2,9 @@
 
 *Quadruple cons ending in nil has length four.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, cons(b, cons(c, cons(d, nil))))) = 4
+## Derived fact 1: len(cons(a, cons(b, cons(c, cons(d, nil))))) = 4
 
 **Coordinate.** List · length · quadruple cons nil has length four · **Derived fact**
 

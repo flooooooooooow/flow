@@ -1,6 +1,6 @@
 # ring_buffer_fifo
 
-## Derived fact 8 — Rb_matches_queue
+## Derived fact 8: Rb_matches_queue
 
 > **Goal.** We're showing that queue_order(rb) equals q.items.
 >
@@ -13,7 +13,7 @@
 
 `rb_matches_queue`
 
-## Derived fact 9 — Push_preserves_fifo
+## Derived fact 9: Push_preserves_fifo
 
 > **Goal.** We're showing that rb_matches_queue(rb2, q2).
 >

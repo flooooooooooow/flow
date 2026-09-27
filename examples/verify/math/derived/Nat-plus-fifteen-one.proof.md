@@ -2,9 +2,9 @@
 
 *Fifteen plus one is sixteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 15 + 1 = 16
+## Derived fact 1: 15 + 1 = 16
 
 **Coordinate.** the natural numbers · addition · fifteen plus one is sixteen · **Derived fact**
 

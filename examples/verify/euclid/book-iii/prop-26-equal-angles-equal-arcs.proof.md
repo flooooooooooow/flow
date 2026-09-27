@@ -2,13 +2,13 @@
 
 *In equal circles equal angles at the centers or circumferences stand on equal circumferences.*
 
-**Source.** euclid — Elements, Book III, Proposition 26
+**Source.** euclid: Elements, Book III, Proposition 26
 
-## Derived fact 1 — In equal circles equal angles at the centers or circumferences stand on equal circumferences
+## Derived fact 1: In equal circles equal angles at the centers or circumferences stand on equal circumferences
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 26: in equal circles equal angles stand on equal arcs · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 26*
+*Source: euclid: Elements, Book III, Proposition 26*
 
 *Built on: proposition 20: the central angle is double the inscribed angle on the same arc, for Euclid Book III on the Euclidean plane*
 

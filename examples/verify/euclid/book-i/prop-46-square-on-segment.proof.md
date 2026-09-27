@@ -2,13 +2,13 @@
 
 *On a given straight line to describe a square.*
 
-**Source.** euclid — Elements, Book I, Proposition 46
+**Source.** euclid: Elements, Book I, Proposition 46
 
-## Derived fact 1 — On a given straight line to describe a square
+## Derived fact 1: On a given straight line to describe a square
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 46: describe a square on a given straight line · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 46*
+*Source: euclid: Elements, Book I, Proposition 46*
 
 *Built on: proposition 11: erect a perpendicular at a point on a line, for Book I of the Elements in on the Euclidean plane, proposition 3: cut a segment equal to a smaller segment, for Book I of the Elements in on the Euclidean plane*
 

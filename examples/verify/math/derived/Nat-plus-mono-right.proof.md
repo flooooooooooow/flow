@@ -2,13 +2,13 @@
 
 *Adding the same term on the right preserves less-or-equal.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Monotonic_function
+**Source.** peano: https://en.wikipedia.org/wiki/Monotonic_function
 
-## Derived fact 1 — If b ≤ c then a + b ≤ a + c
+## Derived fact 1: If b ≤ c then a + b ≤ a + c
 
 **Coordinate.** the natural numbers · addition · adding on the right preserves order · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: less-or-equal is reflexive, for order on the natural numbers, less-or-equal is transitive, for order on the natural numbers, adding zero on the left does not change the number*
 

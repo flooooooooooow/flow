@@ -2,9 +2,9 @@
 
 *One is less than or equal to itself.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Total_order
+**Source.** peano: https://en.wikipedia.org/wiki/Total_order
 
-## Derived fact 1 — 1 <= 1
+## Derived fact 1: 1 <= 1
 
 **Coordinate.** the natural numbers · order · one is below itself · **Derived fact**
 

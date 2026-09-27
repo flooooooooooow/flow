@@ -2,9 +2,9 @@
 
 *Choosing five from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 5) = choose(n, 4) + choose(n, 5)
+## Derived fact 1: choose(succ(n), 5) = choose(n, 4) + choose(n, 5)
 
 **Coordinate.** Comb · choose · choosing five from a successor · **Derived fact**
 

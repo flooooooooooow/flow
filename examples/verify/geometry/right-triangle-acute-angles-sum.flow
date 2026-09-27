@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The two acute angles in a right triangle sum to one right angle.
-# @from   euclid — Elements, Book I, Proposition 32
+# @from   euclid: Elements, Book I, Proposition 32
 # @tier   derived
 
 # @means  angle A plus angle B equals one right angle when angle C is right.

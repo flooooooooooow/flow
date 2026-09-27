@@ -2,13 +2,13 @@
 
 *On a given straight line to describe a square.*
 
-**Source.** euclid — Elements, Book IV, Proposition 6
+**Source.** euclid: Elements, Book IV, Proposition 6
 
-## Derived fact 1 — On a given straight line to describe a square
+## Derived fact 1: On a given straight line to describe a square
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 6: on a given straight line to describe a square · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 6*
+*Source: euclid: Elements, Book IV, Proposition 6*
 
 *Built on: proposition 46: describe a square on a given straight line, for Book I of the Elements in on the Euclidean plane, proposition 4: in a circle to inscribe a square, for Euclid Book IV on the Euclidean plane*
 

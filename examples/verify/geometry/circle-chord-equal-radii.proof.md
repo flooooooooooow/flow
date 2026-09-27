@@ -2,9 +2,9 @@
 
 *A chord through the centre has endpoints equidistant from the centre.*
 
-**Source.** euclid — Elements, Book III, Proposition 1
+**Source.** euclid: Elements, Book III, Proposition 1
 
-## Derived fact 1 — chord endpoints are radii from centre
+## Derived fact 1: chord endpoints are radii from centre
 
 **Coordinate.** the Euclidean plane · circle · chord endpoints equal radii · **Derived fact**
 

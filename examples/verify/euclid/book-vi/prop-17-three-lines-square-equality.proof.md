@@ -2,13 +2,13 @@
 
 *If three straight lines are proportional, the rectangle contained by the extremes equals the square on the mean.*
 
-**Source.** euclid — Elements, Book VI, Proposition 17
+**Source.** euclid: Elements, Book VI, Proposition 17
 
-## Derived fact 1 — If three straight lines are proportional, the rectangle contained by the extremes equals the square on the mean
+## Derived fact 1: If three straight lines are proportional, the rectangle contained by the extremes equals the square on the mean
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 17: three proportional lines give rectangle on extremes equal to square on mean · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 17*
+*Source: euclid: Elements, Book VI, Proposition 17*
 
 *Built on: proposition 16: four proportional lines give equal rectangles on extremes and means, for Euclid Book VI on the Euclidean plane*
 

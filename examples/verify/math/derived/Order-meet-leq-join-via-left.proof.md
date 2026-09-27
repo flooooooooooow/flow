@@ -2,9 +2,9 @@
 
 *Meet is below join through the left-hand bound.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — meet(a, b) <= join(a, b)
+## Derived fact 1: meet(a, b) <= join(a, b)
 
 **Coordinate.** Order · lattice · meet is below join through the left bound · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that meet is below join through the left bound for lattice on Order. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose meet(a, b) <= a. |  |  |
 | ④ | Case 2 (see step 2): suppose a <= join(a, b). |  |  |
 | ⑤ | We invoke the derived fact governing meet on Order: meet is below the left argument, for meet on Order (instantiated for a, b). |  |  |

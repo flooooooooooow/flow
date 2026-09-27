@@ -2,9 +2,9 @@
 
 *An inscribed angle on a semicircle is a right angle witness.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — angle AQB equals one right angle on semicircle AB
+## Derived fact 1: angle AQB equals one right angle on semicircle AB
 
 **Coordinate.** the Euclidean plane · circle · semicircle inscribed angle is right witness · **Derived fact**
 

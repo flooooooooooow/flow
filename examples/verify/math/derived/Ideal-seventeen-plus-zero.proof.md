@@ -2,9 +2,9 @@
 
 *Seventeen plus zero is seventeen in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 17 + 0 = 17 in an ideal
+## Derived fact 1: 17 + 0 = 17 in an ideal
 
 **Coordinate.** Ideal · addition · seventeen plus zero in ideal · **Derived fact**
 

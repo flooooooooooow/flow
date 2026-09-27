@@ -2,9 +2,9 @@
 
 *Twenty-five times one is twenty-five.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 25 * 1 = 25
+## Derived fact 1: 25 * 1 = 25
 
 **Coordinate.** the natural numbers · multiplication · twenty five times one is twenty five · **Derived fact**
 

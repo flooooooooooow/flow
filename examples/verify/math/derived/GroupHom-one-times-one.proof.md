@@ -2,9 +2,9 @@
 
 *One times one maps to one under a group homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §3.1
+**Source.** dummit-foote: *Abstract Algebra*, §3.1
 
-## Derived fact 1 — f(1 * 1) = 1
+## Derived fact 1: f(1 * 1) = 1
 
 **Coordinate.** GroupHom · preservation · one times one maps to identity · **Derived fact**
 

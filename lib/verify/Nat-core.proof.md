@@ -2,9 +2,9 @@
 
 *Peano predecessor and successor structural laws.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Definition 1 — Taking predecessor after successor returns the same number
+## Definition 1: Taking predecessor after successor returns the same number
 
 **Coordinate.** the natural numbers · predecessor · predecessor undoes successor · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate predecessor undoes successor for predecessor on the natural numbers — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate predecessor undoes successor for predecessor on the natural numbers. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: pred(the successor of n) equals n. Hence proven. | ② | $pred(\mathrm{succ}(n)) = n$ |
 
 `the natural numbers · predecessor · predecessor undoes successor`
 
-## Definition 2 — For a nonzero natural, successor after predecessor recovers the number
+## Definition 2: For a nonzero natural, successor after predecessor recovers the number
 
 **Coordinate.** the natural numbers · successor · successor undoes predecessor away from zero · **Definition**
 
@@ -33,8 +33,8 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate successor undoes predecessor away from zero for successor on the natural numbers — this is a definition, not a derived fact. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ① | We stipulate successor undoes predecessor away from zero for successor on the natural numbers. This is a definition rather than a derived fact. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose n is zero. |  |  |
 | ④ | From step 3, this implies the successor of pred(n) equals n in this case. | ④ | $\mathrm{succ}(pred(n)) = n$ |
 | ⑤ | Case 2 (see step 2): neither disjunct holds. |  |  |
@@ -53,11 +53,11 @@
 
 `the natural numbers · successor · successor undoes predecessor away from zero`
 
-## Derived fact 3 — If two successors match, the originals match
+## Derived fact 3: If two successors match, the originals match
 
 **Coordinate.** the natural numbers · successor · successor is injective · **Derived fact**
 
-*Source: peano — https://en.wikipedia.org/wiki/Injective_function*
+*Source: peano: https://en.wikipedia.org/wiki/Injective_function*
 
 *Built on: predecessor undoes successor, for predecessor on the natural numbers*
 
@@ -68,7 +68,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that successor is injective for successor on the natural numbers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose succ(m)  equals  succ(n). |  |  |
 | ④ | We invoke the definitional clause governing predecessor on the natural numbers: predecessor undoes successor, for predecessor on the natural numbers (instantiated for m). |  |  |
 | ⑤ | We invoke the definitional clause governing predecessor on the natural numbers: predecessor undoes successor, for predecessor on the natural numbers (instantiated for n). |  |  |
@@ -83,7 +83,7 @@
 
 `the natural numbers · successor · successor is injective`
 
-## Derived fact 4 — Zero is never the successor of any natural number
+## Derived fact 4: Zero is never the successor of any natural number
 
 **Coordinate.** the natural numbers · zero · zero is not a successor · **Derived fact**
 
@@ -98,7 +98,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that zero is not a successor for zero on the natural numbers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose 0  equals  succ(n). |  |  |
 | ④ | We invoke the definitional clause governing predecessor on the natural numbers: predecessor undoes successor, for predecessor on the natural numbers (instantiated for n). |  |  |
 | ⑤ | From step 3 and step 4, this implies pred(0) equals n. Together with the other cases (step 3), the goal is discharged. Hence proven. | ⑤ | $pred(0) = n$ |
@@ -112,7 +112,7 @@
 
 `the natural numbers · zero · zero is not a successor`
 
-## Derived fact 5 — Successor never produces zero
+## Derived fact 5: Successor never produces zero
 
 **Coordinate.** the natural numbers · successor · successor never yields zero · **Derived fact**
 
@@ -127,7 +127,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that successor never yields zero for successor on the natural numbers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose succ(n)  equals  0. |  |  |
 | ④ | We invoke the derived fact governing zero on the natural numbers: zero is not a successor, for zero on the natural numbers (instantiated for n). |  |  |
 | ⑤ | From step 3 and step 4, this implies the successor of n ! equals 0 in this case. | ⑤ | $\mathrm{succ}(n) != 0$ |
@@ -145,7 +145,7 @@
 
 `the natural numbers · successor · successor never yields zero`
 
-## Derived fact 6 — Every natural is either zero or the successor of some natural
+## Derived fact 6: Every natural is either zero or the successor of some natural
 
 **Coordinate.** the natural numbers · cases · every number is zero or a successor · **Derived fact**
 
@@ -160,7 +160,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that every number is zero or a successor for cases on the natural numbers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose n is zero. |  |  |
 | ④ | From step 3, this implies n equals 0 in this case. | ④ | $n = 0$ |
 | ⑤ | Case 2 (see step 2): neither disjunct holds. |  |  |

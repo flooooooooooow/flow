@@ -2,9 +2,9 @@
 
 *Meet below join is reflexive on equal arguments.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — meet(a, a) <= join(a, a)
+## Derived fact 1: meet(a, a) <= join(a, a)
 
 **Coordinate.** Order · lattice · meet below join reflexive · **Derived fact**
 

@@ -2,13 +2,13 @@
 
 *In a given circle to inscribe a regular pentagon.*
 
-**Source.** euclid — Elements, Book IV, Proposition 9
+**Source.** euclid: Elements, Book IV, Proposition 9
 
-## Derived fact 1 — In a given circle to inscribe a regular pentagon
+## Derived fact 1: In a given circle to inscribe a regular pentagon
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 9: in a circle to inscribe a regular pentagon · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 9*
+*Source: euclid: Elements, Book IV, Proposition 9*
 
 *Built on: proposition 10: to construct an isosceles triangle with base angles double the vertex, for Euclid Book IV on the Euclidean plane, proposition 20: the central angle is double the inscribed angle on the same arc, for Euclid Book III on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Self-union cardinality equals self cardinality.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card(s ∪ s) = card(s)
+## Derived fact 1: card(s ∪ s) = card(s)
 
 **Coordinate.** Finset · cardinality · union with self card derived · **Derived fact**
 

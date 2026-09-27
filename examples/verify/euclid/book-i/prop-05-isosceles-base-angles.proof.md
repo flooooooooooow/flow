@@ -2,13 +2,13 @@
 
 *In an isosceles triangle, the angles at the base equal one another.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — In an isosceles triangle, the angles at the base equal one another
+## Derived fact 1: In an isosceles triangle, the angles at the base equal one another
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 5: base angles of an isosceles triangle are equal · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 5*
+*Source: euclid: Elements, Book I, Proposition 5*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane*
 

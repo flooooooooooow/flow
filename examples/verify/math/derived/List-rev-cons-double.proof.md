@@ -2,9 +2,9 @@
 
 *Reversing a double cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev(cons(a, cons(b, nil))) = cons(b, cons(a, nil))
+## Derived fact 1: rev(cons(a, cons(b, nil))) = cons(b, cons(a, nil))
 
 **Coordinate.** List · reverse · reverse of double cons · **Derived fact**
 

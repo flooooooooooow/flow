@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Ideals absorb multiplication by ring elements.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  If a in I and r in R then r * a in I.

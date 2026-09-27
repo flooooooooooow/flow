@@ -2,9 +2,9 @@
 
 *An inscribed angle is less than the central angle on the same arc.*
 
-**Source.** euclid — Elements, Book III, Proposition 20
+**Source.** euclid: Elements, Book III, Proposition 20
 
-## Derived fact 1 — angle APB is less than angle AOB when arc AB is less than a full turn
+## Derived fact 1: angle APB is less than angle AOB when arc AB is less than a full turn
 
 **Coordinate.** the Euclidean plane · circle · inscribed less than central on same arc · **Derived fact**
 

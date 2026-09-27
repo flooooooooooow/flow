@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  If the square on one side equals the sum of squares on the other two, the angle between them is right.
-# @from   euclid — Elements, Book I, Proposition 48
+# @from   euclid: Elements, Book I, Proposition 48
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 47: square on hypotenuse equals sum of squares on legs», «Geometry» «Euclid Book I» «Proposition 8: side-side-side angle equality»
 

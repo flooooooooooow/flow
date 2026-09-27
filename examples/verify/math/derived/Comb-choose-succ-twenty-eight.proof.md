@@ -2,9 +2,9 @@
 
 *Choosing twenty-eight from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 28) = choose(n, 27) + choose(n, 28)
+## Derived fact 1: choose(succ(n), 28) = choose(n, 27) + choose(n, 28)
 
 **Coordinate.** Comb · choose · choosing twenty eight from a successor · **Derived fact**
 

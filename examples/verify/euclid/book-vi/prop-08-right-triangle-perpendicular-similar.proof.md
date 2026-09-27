@@ -2,13 +2,13 @@
 
 *If in a right-angled triangle a perpendicular is drawn from the right angle to the base, the triangles on each side are similar to the whole and to one another.*
 
-**Source.** euclid — Elements, Book VI, Proposition 8
+**Source.** euclid: Elements, Book VI, Proposition 8
 
-## Derived fact 1 — If in a right-angled triangle a perpendicular is drawn from the right angle to the base, the triangles on each side are similar to the whole and to one another
+## Derived fact 1: If in a right-angled triangle a perpendicular is drawn from the right angle to the base, the triangles on each side are similar to the whole and to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 8: in a right triangle the altitude to the hypotenuse gives similar subtriangles · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 8*
+*Source: euclid: Elements, Book VI, Proposition 8*
 
 *Built on: proposition 47: square on hypotenuse equals sum of squares on legs, for Book I of the Elements in on the Euclidean plane, proposition 4: equiangular triangles have proportional corresponding sides, for Euclid Book VI on the Euclidean plane*
 

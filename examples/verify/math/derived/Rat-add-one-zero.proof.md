@@ -2,9 +2,9 @@
 
 *One plus zero is one for rationals.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — 1 + 0 = 1
+## Derived fact 1: 1 + 0 = 1
 
 **Coordinate.** Rat · addition · one plus zero is one · **Derived fact**
 

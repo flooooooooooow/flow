@@ -2,9 +2,9 @@
 
 *Zero times four is zero for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 0 * 4 = 0
+## Derived fact 1: 0 * 4 = 0
 
 **Coordinate.** the natural numbers · multiplication · zero times four is zero · **Derived fact**
 

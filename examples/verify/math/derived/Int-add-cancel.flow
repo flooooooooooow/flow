@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Equal integers can be subtracted from both sides of an equation.
-# @from   landau — *Foundations of Analysis*, Ch. 1
+# @from   landau: *Foundations of Analysis*, Ch. 1
 # @tier   derived
 
 # @means  a + c = b + c implies a = b.

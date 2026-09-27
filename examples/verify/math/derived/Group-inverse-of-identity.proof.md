@@ -2,9 +2,9 @@
 
 *The identity element is its own inverse.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — inv(1) = 1
+## Derived fact 1: inv(1) = 1
 
 **Coordinate.** Group · inverse · the identity is its own inverse · **Derived fact**
 

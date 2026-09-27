@@ -2,9 +2,9 @@
 
 *The identity image is a right unit under a homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.6
+**Source.** dummit-foote: *Abstract Algebra*, §1.6
 
-## Derived fact 1 — f(1) * f(1) = f(1)
+## Derived fact 1: f(1) * f(1) = f(1)
 
 **Coordinate.** GroupHom · identity · the identity image is a right unit · **Derived fact**
 

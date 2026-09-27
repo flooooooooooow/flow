@@ -2,9 +2,9 @@
 
 *Rational multiplication commutes.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — p * q = q * p
+## Derived fact 1: p * q = q * p
 
 **Coordinate.** Rat · multiplication · order does not matter · **Derived fact**
 

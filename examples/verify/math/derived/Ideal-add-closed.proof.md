@@ -2,9 +2,9 @@
 
 *Ideal addition closure follows from ideal axioms.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — If a in I and b in I then a + b in I when I is an ideal
+## Derived fact 1: If a in I and b in I then a + b in I when I is an ideal
 
 **Coordinate.** Ideal · addition · ideal sums stay in the ideal · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that ideal sums stay in the ideal for addition on Ideal. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a in I. |  |  |
 | ④ | Case 2 (see step 2): suppose b in I. |  |  |
 | ⑤ | We invoke the definitional clause governing addition on Ideal: closed under addition, for addition on Ideal (instantiated for I, a, b). |  |  |

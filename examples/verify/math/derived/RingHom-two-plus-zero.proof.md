@@ -2,9 +2,9 @@
 
 *Two plus zero maps to two under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(2 + 0) = 2
+## Derived fact 1: f(2 + 0) = 2
 
 **Coordinate.** RingHom · preservation · two plus zero maps to two · **Derived fact**
 

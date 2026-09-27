@@ -2,13 +2,13 @@
 
 *If two circles touch externally, the straight line joining their centers passes through the point of contact.*
 
-**Source.** euclid — Elements, Book III, Proposition 12
+**Source.** euclid: Elements, Book III, Proposition 12
 
-## Derived fact 1 — If two circles touch externally, the straight line joining their centers passes through the point of contact
+## Derived fact 1: If two circles touch externally, the straight line joining their centers passes through the point of contact
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 12: externally touching circles have collinear centers through the contact · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 12*
+*Source: euclid: Elements, Book III, Proposition 12*
 
 *Built on: proposition 6: the line joining centers passes through the point of contact, for Euclid Book III on the Euclidean plane*
 

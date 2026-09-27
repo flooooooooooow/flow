@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Cardinality is monotone under union on the left.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  card(a) <= card(a ∪ b).

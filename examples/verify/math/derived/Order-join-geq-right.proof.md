@@ -2,9 +2,9 @@
 
 *Join is bounded below by its right argument.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — b <= join(a, b)
+## Derived fact 1: b <= join(a, b)
 
 **Coordinate.** Order · join · join is above the right argument · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Twenty-eight plus one is twenty-nine.
-# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  28 + 1 = 29.

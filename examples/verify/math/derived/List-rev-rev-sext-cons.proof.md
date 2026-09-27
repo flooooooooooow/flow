@@ -2,9 +2,9 @@
 
 *Double reverse restores a sextuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, xs))))))) = cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, xs))))))
+## Derived fact 1: rev(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, xs))))))) = cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, xs))))))
 
 **Coordinate.** List · reverse · double reverse of sextuple cons · **Derived fact**
 
