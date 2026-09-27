@@ -1,5 +1,36 @@
 # Agent Coordination Notes
 
+## Flow first
+
+New code in this repository is written in Flow. This covers features,
+tools, scripts, CI checks, parity gates and tests. Python is legacy that
+is being ported away.
+
+- Do not add a `.py` file. Write the program in Flow. When Flow needs an
+  external command (git, find, clang), use a thin bash shim that runs the
+  command and leaves its output in `build/` for the Flow program to read.
+  `scripts/tools/repo_stats/` and `tools/python_ratchet/` show the pattern.
+- Do not grow existing Python. A bug fix in `src/flow/` is fine when it is
+  small. A new feature belongs in the Flow compiler under `compiler/src/`.
+- New tests are `.flow` programs under `tests/lang/`. `main()` returns 0 on
+  success and a nonzero check number on failure. Do not add pytest tests.
+- When porting Python, delete it in the same PR once parity is shown, then
+  run `./scripts/python_ratchet.sh --update` to lower the baseline.
+- When Flow cannot express something, work around it and open an issue
+  naming the gap. That is how the language gets the feature.
+
+Enforcement. CI runs `./scripts/python_ratchet.sh`, a Flow program that
+fails when a new `.py` file appears or total tracked Python exceeds
+`tools/python_ratchet/baseline.txt`. Claude Code sessions in this repo
+also load `.claude/settings.json`, whose hook refuses to create a `.py`
+file. Vendored trees (`third_party/`, `.lake/`) are exempt.
+
+The baseline only moves down. `--update` drops deleted files and lowers
+the line limit. It never adds a file.
+
+The ratchet program is built from `compiler/bootstrap/flowc_stage_a.c`, so
+it needs a C compiler and no Python.
+
 ## Bootstrap C regeneration workflow
 
 The checked-in `compiler/bootstrap/flowc_stage_a.c` must stay byte-identical to

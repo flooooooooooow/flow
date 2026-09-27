@@ -26,6 +26,8 @@ on:
       - 'mkdocs.yml'
       - 'CITATION.cff'
       - '**.md'
+      - '**.py'
+      - 'tools/python_ratchet/**'
   pull_request:
     branches: [main, master]
     paths:
@@ -51,6 +53,8 @@ on:
       - 'mkdocs.yml'
       - 'CITATION.cff'
       - '**.md'
+      - '**.py'
+      - 'tools/python_ratchet/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -121,6 +125,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 scripts/sync_version.py --check
+
+  # New code is written in Flow. Fails when a new .py file appears or tracked
+  # Python grows past tools/python_ratchet/baseline.txt. The checker is a Flow
+  # program built from the checked-in C bootstrap, so no Python is installed.
+  # Deliberately ungated, like the version check above.
+  python-ratchet:
+    name: Python ratchet (Flow first)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./scripts/python_ratchet.sh
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
   # check_wiki_links.py validates the built site instead; the two catch

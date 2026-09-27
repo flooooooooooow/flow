@@ -99,7 +99,8 @@ lake-packages/
 docs/research/**/*.out
 
 # Claude Code workspace (agent worktrees, local settings)
-.claude/
+.claude/*
+!.claude/settings.json
 
 # Local tool caches
 .ruff_cache/
