@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; this is its main CI.
 name: CI
 
 on:
@@ -11,6 +12,7 @@ on:
       - 'lib/**'
       - 'runtime/**'
       - 'flow'
+      - 'flow-driver'
       - 'flow.toml'
       - '.gitignore'
       - '.github/**'
@@ -38,6 +40,7 @@ on:
       - 'lib/**'
       - 'runtime/**'
       - 'flow'
+      - 'flow-driver'
       - 'flow.toml'
       - '.gitignore'
       - '.github/**'
@@ -102,6 +105,7 @@ jobs:
             workflow:
               - '.github/**'
               - 'flow'
+              - 'flow-driver'
               - 'scripts/**'
             plugins:
               - 'plugins/**'
@@ -116,7 +120,7 @@ jobs:
   # Manifests, docs headers and the CLI banner all mirror src/flow/version.py.
   # They have drifted before: 0.11.0 nearly shipped with version.py still
   # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
-  # Deliberately ungated — the drift-prone files (README.md, CITATION.cff,
+  # Deliberately ungated: the drift-prone files (README.md, CITATION.cff,
   # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every paths-filter above.
   # The checker is a Flow program built from the bootstrap C with cc, so no
   # toolchain setup is needed.
@@ -350,7 +354,7 @@ jobs:
 
   # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
   # three consecutive generations of flowc must agree byte for byte.
-  # Deliberately no setup-python step — that is the point of this job.
+  # Deliberately no setup-python step. That is the point of this job.
   flowc-selfhost:
     name: flowc self-host (no Python)
     runs-on: ubuntu-latest
@@ -400,6 +404,13 @@ jobs:
           set -e
           test "$ec" -eq 55
 
+      # The default `flow run` / `flow compile` path from a clean compiler/build
+      # and build/: flowc comes from ensure_flowc (bootstrap C with cc), and the
+      # dependency sync check is scripts/tools/pkg_sync. The script stubs python
+      # and python3 to log and exit 127, and fails if either is called.
+      - name: flow run with python and python3 stubbed to exit 127
+        run: ./scripts/check_run_without_python.sh
+
       - name: Package the distributable compiler
         run: ./compiler/scripts/package_flowc.sh
 
@@ -442,7 +453,7 @@ jobs:
           chmod +x "$FLOWC_BIN"
           export FLOWC_BIN
           echo "Using flowc: $FLOWC_BIN"
-          # No ensure_flowc / Gen0 bootstrap here — that would need Python.
+          # FLOWC_BIN is the downloaded driver, so ensure_flowc does not run here.
           ./flow run examples/basics/hello_world.flow
           ./flow compile examples/basics/fibonacci.flow
           # fibonacci.flow main returns fib(10) == 55 as process exit status
@@ -695,7 +706,7 @@ jobs:
           color: ${{ steps.summarize.outputs.failed == 'true' && '15158332' || '3066993' }}
           title: CI ${{ steps.summarize.outputs.failed == 'true' && 'failed' || 'passed' }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          description: "${{ github.repository }} on ${{ github.event_name }} by ${{ github.actor }} — ${{ steps.summarize.outputs.subject }}"
+          description: "${{ github.repository }} on ${{ github.event_name }} by ${{ github.actor }}: ${{ steps.summarize.outputs.subject }}"
           author_name: Flow CI
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
           fields: ${{ steps.summarize.outputs.fields }}
