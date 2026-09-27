@@ -1,0 +1,602 @@
+# Open a Jules session for every open issue that does not already have one.
+#
+# Run through scripts/dispatch_uncovered_jules.sh. Older dispatchers read
+# `jules_sessions.json`, which drifts: sessions get deleted server side and
+# the file still lists them, so issues get skipped that have no live
+# session. This asks Jules what actually exists instead, and only
+# dispatches the difference.
+#
+# Capacity is finite. A refused create is retried rather than dropped, and
+# the issue stays in the queue until it lands.
+#
+# State lives in jules_dispatch_state.json in the working directory:
+# {"dispatched": {"<n>": {...}}, "failed": {"<n>": "<detail>"}}, written with
+# sorted keys and two-space indents as Python's json.dump wrote it.
+#
+# JULES_DISPATCH_NO_SLEEP=1 skips the waits (for testing with fake CLIs).
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_at, ft_find, ft_contains, ft_slice, ft_from, ft_read_file, ft_write_file, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, StrList }
+import .json { json_parse, json_error, json_kind, json_str, json_key, json_first, json_next, json_get, json_is_int, json_int, json_quote, json_kind_null, json_kind_true, json_kind_false, json_kind_number, json_kind_string, json_kind_array, json_kind_object, Json }
+import .unicode { uc_strip, uc_lower_str, uc_decode, uc_len, uc_is_space }
+import .proc { pr_quote, pr_run }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function getpid() -> i32
+    function sleep(secs: u32) -> u32
+    function unlink(path: string) -> i32
+}
+
+const REPO: string = "flooooooooooow/flow"
+const STATE_PATH: string = "jules_dispatch_state.json"
+const RETRY_SECONDS: i32 = 45
+const MAX_CONSECUTIVE_REFUSALS: i32 = 40
+# Sessions finish on their own schedule, so poll for a free slot slowly.
+const CAPACITY_WAIT_SECONDS: i32 = 300
+
+# ---------------------------------------------------------------------------
+# An ordered string map of already-serialised JSON values
+# ---------------------------------------------------------------------------
+
+struct Obj {
+    keys: ptr<StrList>
+    vals: ptr<StrList>
+}
+
+function obj_new() -> ptr<Obj> {
+    let o: ptr<Obj> = malloc(16) as ptr<Obj>
+    o[0].keys = ft_list_new()
+    o[0].vals = ft_list_new()
+    return o
+}
+
+function obj_find(o: ptr<Obj>, key: string) -> i32 {
+    let mut i: i32 = 0
+    while i < ft_list_len(o[0].keys) {
+        if ft_eq(ft_list_get(o[0].keys, i), key) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+function obj_set(o: ptr<Obj>, key: string, val: string) -> void {
+    let at: i32 = obj_find(o, key)
+    if at >= 0 {
+        let vals: ptr<StrList> = o[0].vals
+        let items: ptr<string> = vals[0].items
+        items[at] = val
+        return
+    }
+    ft_list_push(o[0].keys, key)
+    ft_list_push(o[0].vals, val)
+}
+
+function obj_len(o: ptr<Obj>) -> i32 {
+    return ft_list_len(o[0].keys)
+}
+
+function spaces(n: i32) -> string {
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        s = s + " "
+        i = i + 1
+    }
+    return s
+}
+
+# json.dumps(obj, indent=2, sort_keys=True) at nesting `depth`, with each
+# value already serialised for depth + 1.
+function obj_dump(o: ptr<Obj>, depth: i32) -> string {
+    let n: i32 = obj_len(o)
+    if n == 0 {
+        return "{}"
+    }
+    let sorted: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < n {
+        ft_list_push(sorted, ft_list_get(o[0].keys, i))
+        i = i + 1
+    }
+    ft_list_sort(sorted)
+    let pad: string = spaces((depth + 1) * 2)
+    let mut out: string = "{\n"
+    i = 0
+    while i < n {
+        let k: string = ft_list_get(sorted, i)
+        if i > 0 {
+            out = out + ",\n"
+        }
+        out = out + pad + json_quote(k) + ": " + ft_list_get(o[0].vals, obj_find(o, k))
+        i = i + 1
+    }
+    return out + "\n" + spaces(depth * 2) + "}"
+}
+
+# Re-serialise a parsed value as json.dump(indent=2, sort_keys=True) would.
+function dump_value(j: ptr<Json>, id: i32, depth: i32) -> string {
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() {
+        return "null"
+    }
+    if k == json_kind_true() {
+        return "true"
+    }
+    if k == json_kind_false() {
+        return "false"
+    }
+    if k == json_kind_number() {
+        return json_str(j, id)
+    }
+    if k == json_kind_string() {
+        return json_quote(json_str(j, id))
+    }
+    if k == json_kind_array() {
+        let mut c: i32 = json_first(j, id)
+        if c < 0 {
+            return "[]"
+        }
+        let pad: string = spaces((depth + 1) * 2)
+        let mut out: string = "[\n"
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                out = out + ",\n"
+            }
+            first = false
+            out = out + pad + dump_value(j, c, depth + 1)
+            c = json_next(j, c)
+        }
+        return out + "\n" + spaces(depth * 2) + "]"
+    }
+    return obj_dump(obj_from(j, id, depth), depth)
+}
+
+function obj_from(j: ptr<Json>, id: i32, depth: i32) -> ptr<Obj> {
+    let o: ptr<Obj> = obj_new()
+    let mut c: i32 = json_first(j, id)
+    while c >= 0 {
+        obj_set(o, json_key(j, c), dump_value(j, c, depth + 1))
+        c = json_next(j, c)
+    }
+    return o
+}
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+struct State {
+    top: ptr<Obj>
+    dispatched: ptr<Obj>
+    failed: ptr<Obj>
+}
+
+function load_state() -> ptr<State> {
+    let st: ptr<State> = malloc(24) as ptr<State>
+    st[0].top = obj_new()
+    st[0].dispatched = obj_new()
+    st[0].failed = obj_new()
+    let text: string = ft_read_file(STATE_PATH)
+    let mut j: ptr<Json> = null
+    if text != null {
+        j = json_parse(text)
+    }
+    if text == null or ft_len(json_error(j)) > 0 or json_kind(j, 0) != json_kind_object() {
+        obj_set(st[0].top, "dispatched", "")
+        obj_set(st[0].top, "failed", "")
+        return st
+    }
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        let key: string = json_key(j, c)
+        if ft_eq(key, "dispatched") and json_kind(j, c) == json_kind_object() {
+            st[0].dispatched = obj_from(j, c, 1)
+            obj_set(st[0].top, key, "")
+        } elif ft_eq(key, "failed") and json_kind(j, c) == json_kind_object() {
+            st[0].failed = obj_from(j, c, 1)
+            obj_set(st[0].top, key, "")
+        } else {
+            obj_set(st[0].top, key, dump_value(j, c, 1))
+        }
+        c = json_next(j, c)
+    }
+    return st
+}
+
+# Only the keys the state had are written back, as json.dump(state) would.
+function save_state(st: ptr<State>) -> void {
+    if obj_find(st[0].top, "dispatched") >= 0 {
+        obj_set(st[0].top, "dispatched", obj_dump(st[0].dispatched, 1))
+    }
+    if obj_find(st[0].top, "failed") >= 0 {
+        obj_set(st[0].top, "failed", obj_dump(st[0].failed, 1))
+    }
+    let _w: bool = ft_write_file(STATE_PATH, obj_dump(st[0].top, 0))
+}
+
+# ---------------------------------------------------------------------------
+# Processes
+# ---------------------------------------------------------------------------
+
+function tmp_path(tag: string) -> string {
+    return "/tmp/jules_dispatch." + ft_itoa(getpid()) + "." + tag
+}
+
+function slurp_and_remove(path: string) -> string {
+    let s: string = ft_read_file(path)
+    let _u: i32 = unlink(path)
+    if s == null {
+        return ""
+    }
+    return s
+}
+
+function nap(secs: i32) -> void {
+    let skip: string = getenv("JULES_DISPATCH_NO_SLEEP")
+    if skip != null and ft_eq(skip, "1") {
+        return
+    }
+    let _s: u32 = sleep(secs as u32)
+}
+
+# Run `cmd` under a 180 s limit when coreutils timeout exists.
+function limited(cmd: string) -> string {
+    return "if command -v timeout >/dev/null 2>&1; then timeout -k 5 180 " + cmd + "; else " + cmd + "; fi"
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# Issue numbers that already have a live Jules session for this repo.
+function covered_issue_numbers() -> ptr<StrList> {
+    let outp: string = tmp_path("list")
+    let rc: i32 = pr_run(limited("jules remote list --session") + " > " + pr_quote(outp) + " 2>/dev/null")
+    let text: string = slurp_and_remove(outp)
+    if rc == 127 {
+        ft_errln("dispatch_uncovered_jules: jules: command not found")
+        return null
+    }
+    let covered: ptr<StrList> = ft_list_new()
+    let lines: ptr<StrList> = ft_split_lines(text)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_contains(line, REPO) {
+            # re.search(r"issue #(\d+)")
+            let p: ptr<u8> = line as ptr<u8>
+            let mut at: i32 = ft_find(line, "issue #", 0)
+            while at >= 0 {
+                let s: i32 = at + 7
+                let mut e: i32 = s
+                while is_digit(p[e] as i32) {
+                    e = e + 1
+                }
+                if e > s {
+                    let num: string = strip_zeros(ft_slice(line, s, e))
+                    if list_has(covered, num) == false {
+                        ft_list_push(covered, num)
+                    }
+                    at = -1
+                } else {
+                    at = ft_find(line, "issue #", at + 1)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return covered
+}
+
+# int(str) then str() again: drop leading zeros.
+function strip_zeros(s: string) -> string {
+    let mut i: i32 = 0
+    while i < ft_len(s) - 1 and ft_at(s, i, "0") {
+        i = i + 1
+    }
+    return ft_from(s, i)
+}
+
+function list_has(l: ptr<StrList>, s: string) -> bool {
+    let mut i: i32 = 0
+    while i < ft_list_len(l) {
+        if ft_eq(ft_list_get(l, i), s) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# ---------------------------------------------------------------------------
+# Issues
+# ---------------------------------------------------------------------------
+
+struct Issue {
+    number: i64
+    title: string
+    body: string
+    labels: string
+}
+
+function task_text(arr: ptr<Issue>, k: i32) -> string {
+    let mut body: string = arr[k].body
+    if body == null or ft_len(body) == 0 {
+        body = "(no description)"
+    }
+    return "Work on issue #" + i64_str(arr[k].number) + ": " + arr[k].title + "\n\nLabels: " + arr[k].labels + "\n\n## Issue\n" + body + "\n\n## How this repository expects work to be done\n- Follow Flow's own idioms. Read neighbouring code before adding a pattern.\n- Anything under compiler/src changes the self-hosted compiler. The generated\n  bootstrap C must be regenerated so it matches, and the three self-host\n  scripts have to stay green: bootstrap_from_c.sh, selfcompile_audit.sh and\n  roundtrip.sh.\n- Run the suites that cover what you touched. `python3 -m pytest tests/unit`\n  for the Python host, `./flow test --tier2 --strict` for the language.\n- A test that cannot fail proves nothing. Where you add one, check it fails\n  without your change.\n- If the issue turns out to be already fixed, say so and show what proves it\n  rather than inventing a change.\n"
+}
+
+function i64_str(n: i64) -> string {
+    if n == 0 {
+        return "0"
+    }
+    let digits: string = "0123456789"
+    let mut v: i64 = n
+    let mut neg: bool = false
+    if v < 0 {
+        neg = true
+        v = 0 - v
+    }
+    let mut s: string = ""
+    while v > 0 {
+        let d: i32 = (v % 10) as i32
+        s = ft_slice(digits, d, d + 1) + s
+        v = v / 10
+    }
+    if neg {
+        return "-" + s
+    }
+    return s
+}
+
+# `gh issue list` as a sorted issue array; null when gh failed.
+function open_issues(count: ptr<i32>) -> ptr<Issue> {
+    let outp: string = tmp_path("issues")
+    let rc: i32 = pr_run("gh issue list --repo " + REPO + " --state open --limit 300 --json number,title,body,labels > " + pr_quote(outp))
+    let text: string = slurp_and_remove(outp)
+    if rc != 0 {
+        ft_errln("dispatch_uncovered_jules: gh issue list exited with status " + ft_itoa(rc))
+        return null
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln("dispatch_uncovered_jules: cannot parse gh output: " + json_error(j))
+        return null
+    }
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        n = n + 1
+        c = json_next(j, c)
+    }
+    let arr: ptr<Issue> = malloc(((n + 1) * 32) as i64) as ptr<Issue>
+    let mut i: i32 = 0
+    c = json_first(j, 0)
+    while c >= 0 {
+        arr[i].number = json_int(j, json_get(j, c, "number"))
+        arr[i].title = json_str(j, json_get(j, c, "title"))
+        let b: i32 = json_get(j, c, "body")
+        if b >= 0 and json_kind(j, b) == json_kind_string() {
+            arr[i].body = json_str(j, b)
+        } else {
+            arr[i].body = null
+        }
+        let mut labels: string = ""
+        let ls: i32 = json_get(j, c, "labels")
+        if ls >= 0 {
+            let mut l: i32 = json_first(j, ls)
+            let mut first: bool = true
+            while l >= 0 {
+                if first == false {
+                    labels = labels + ", "
+                }
+                first = false
+                labels = labels + json_str(j, json_get(j, l, "name"))
+                l = json_next(j, l)
+            }
+        }
+        if ft_len(labels) == 0 {
+            labels = "None"
+        }
+        arr[i].labels = labels
+        i = i + 1
+        c = json_next(j, c)
+    }
+    # Stable insertion sort by number, as list.sort(key=number).
+    let mut a: i32 = 1
+    while a < n {
+        let num: i64 = arr[a].number
+        let t: string = arr[a].title
+        let bd: string = arr[a].body
+        let lb: string = arr[a].labels
+        let mut b2: i32 = a - 1
+        while b2 >= 0 and arr[b2].number > num {
+            arr[b2 + 1].number = arr[b2].number
+            arr[b2 + 1].title = arr[b2].title
+            arr[b2 + 1].body = arr[b2].body
+            arr[b2 + 1].labels = arr[b2].labels
+            b2 = b2 - 1
+        }
+        arr[b2 + 1].number = num
+        arr[b2 + 1].title = t
+        arr[b2 + 1].body = bd
+        arr[b2 + 1].labels = lb
+        a = a + 1
+    }
+    count[0] = n
+    return arr
+}
+
+# ---------------------------------------------------------------------------
+# Sessions
+# ---------------------------------------------------------------------------
+
+# Code point prefix of `s`, as s[:n].
+function cp_prefix(s: string, n: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while p[i] != 0 and k < n {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    return ft_slice(s, 0, i)
+}
+
+# End of a run of Unicode whitespace at `at`.
+function ws_end(p: ptr<u8>, at: i32) -> i32 {
+    let mut q: i32 = at
+    while p[q] != 0 and uc_is_space(uc_decode(p, q)) {
+        q = q + uc_len(p[q] as i32)
+    }
+    return q
+}
+
+# re.search(label + r"\s*" + rest); `digits` picks (\d+) over (https://\S+).
+function find_field(s: string, label: string, digits: bool) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut at: i32 = ft_find(s, label, 0)
+    while at >= 0 {
+        let v: i32 = ws_end(p, at + ft_len(label))
+        if digits {
+            let mut e: i32 = v
+            while is_digit(p[e] as i32) {
+                e = e + 1
+            }
+            if e > v {
+                return ft_slice(s, v, e)
+            }
+        } elif ft_at(s, v, "https://") {
+            let mut e2: i32 = v + 8
+            while p[e2] != 0 and uc_is_space(uc_decode(p, e2)) == false {
+                e2 = e2 + uc_len(p[e2] as i32)
+            }
+            if e2 > v + 8 {
+                return ft_slice(s, v, e2)
+            }
+        }
+        at = ft_find(s, label, at + 1)
+    }
+    return null
+}
+
+# Returns the session id (detail in out[0]) or null with the reason in out[0].
+function create_session(arr: ptr<Issue>, k: i32, out: ptr<string>) -> string {
+    let inp: string = tmp_path("in")
+    let outp: string = tmp_path("out")
+    let errp: string = tmp_path("err")
+    let _w: bool = ft_write_file(inp, task_text(arr, k))
+    let rc: i32 = pr_run(limited("jules remote new --repo " + REPO) + " < " + pr_quote(inp) + " > " + pr_quote(outp) + " 2> " + pr_quote(errp))
+    let _u: i32 = unlink(inp)
+    let stdout: string = slurp_and_remove(outp)
+    let stderr: string = slurp_and_remove(errp)
+    if rc == 124 or rc == 137 {
+        out[0] = "timeout"
+        return null
+    }
+    let session: string = find_field(stdout, "ID:", true)
+    if session != null {
+        let url: string = find_field(stdout, "URL:", false)
+        if url == null {
+            out[0] = ""
+        } else {
+            out[0] = url
+        }
+        return session
+    }
+    let mut src: string = stderr
+    if ft_len(src) == 0 {
+        src = stdout
+    }
+    out[0] = cp_prefix(uc_strip(src), 200)
+    return null
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let st: ptr<State> = load_state()
+    let covered: ptr<StrList> = covered_issue_numbers()
+    if covered == null {
+        return 1
+    }
+    let count: ptr<i32> = malloc(4) as ptr<i32>
+    count[0] = 0
+    let issues: ptr<Issue> = open_issues(count)
+    if issues == null {
+        return 1
+    }
+    let already: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < obj_len(st[0].dispatched) {
+        ft_list_push(already, strip_zeros(ft_list_get(st[0].dispatched[0].keys, i)))
+        i = i + 1
+    }
+    # The queue holds indices into `issues`.
+    let queue: ptr<i32> = malloc(((count[0] + 1) * 4) as i64) as ptr<i32>
+    let mut qn: i32 = 0
+    i = 0
+    while i < count[0] {
+        let num: string = i64_str(issues[i].number)
+        if list_has(covered, num) == false and list_has(already, num) == false {
+            queue[qn] = i
+            qn = qn + 1
+        }
+        i = i + 1
+    }
+
+    ft_outln(ft_itoa(ft_list_len(covered)) + " issues already have a live session.")
+    ft_outln(ft_itoa(qn) + " to dispatch.")
+
+    let detail: ptr<string> = malloc(8) as ptr<string>
+    let mut head: i32 = 0
+    let mut refusals: i32 = 0
+    while head < qn {
+        let k: i32 = queue[head]
+        let number: string = i64_str(issues[k].number)
+        detail[0] = ""
+        let session: string = create_session(issues, k, detail)
+        if session != null {
+            let entry: ptr<Obj> = obj_new()
+            obj_set(entry, "issue", number)
+            obj_set(entry, "title", json_quote(issues[k].title))
+            obj_set(entry, "session", json_quote(session))
+            obj_set(entry, "url", json_quote(detail[0]))
+            obj_set(st[0].dispatched, number, obj_dump(entry, 2))
+            save_state(st)
+            head = head + 1
+            refusals = 0
+            ft_outln("  #" + number + " -> session " + session + "  (" + ft_itoa(qn - head) + " left)")
+            nap(3)
+            continue
+        }
+
+        # A capacity refusal says nothing about this issue, so it must not
+        # count against it. Giving up here would walk the whole queue
+        # marking every issue failed against the same full account. Wait
+        # instead: a slot opens when a session finishes.
+        if ft_contains(detail[0], "all sessions failed to create") or ft_contains(uc_lower_str(detail[0]), "quota") {
+            ft_outln("  at capacity, holding on #" + number + "; retry in " + ft_itoa(CAPACITY_WAIT_SECONDS) + "s")
+            nap(CAPACITY_WAIT_SECONDS)
+            continue
+        }
+
+        refusals = refusals + 1
+        if refusals >= MAX_CONSECUTIVE_REFUSALS {
+            obj_set(st[0].failed, number, json_quote(detail[0]))
+            save_state(st)
+            ft_outln("  #" + number + " giving up after " + ft_itoa(refusals) + " refusals: " + detail[0])
+            head = head + 1
+            refusals = 0
+            continue
+        }
+        ft_outln("  #" + number + " refused (" + detail[0] + "); retry " + ft_itoa(refusals) + " in " + ft_itoa(RETRY_SECONDS) + "s")
+        nap(RETRY_SECONDS)
+    }
+
+    ft_outln("Done. " + ft_itoa(obj_len(st[0].dispatched)) + " dispatched, " + ft_itoa(obj_len(st[0].failed)) + " gave up.")
+    return 0
+}
