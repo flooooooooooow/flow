@@ -1,0 +1,104 @@
+# Stage-A takes a name's type from the declaration in scope (#957, #993,
+# #967, #992, #984, #990). It used to look the name up across the whole module,
+# so a same-named parameter or local in another function could turn string
+# `+` into pointer addition or pick the wrong printf format.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const OPEN: string = "<"
+const CLOSE: string = ">"
+
+struct Reading {
+    value: f64,
+    scale: f32,
+    label: string
+}
+
+struct Cell {
+    x: i32,
+    next_x: i32
+}
+
+# #957: a and b are strings here and integers in count_up.
+function count_up(n: i32) -> i32 {
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    while a < n {
+        a = a + 1
+        b = b + a
+    }
+    return b
+}
+
+function join(a: string, b: string) -> string {
+    let joined: string = a + b
+    return joined
+}
+
+# #993: tag is a string here and an integer in bump.
+function show(tag: string) {
+    print(tag)
+    println("")
+}
+
+function bump(tag: i32) -> i32 {
+    return tag + 1
+}
+
+# A local that shadows nothing but shares a name with a string elsewhere.
+function numeric_total() -> i32 {
+    let joined: i32 = 40
+    return joined + 2
+}
+
+function main() -> i32 {
+    if strcmp(join("x", "y"), "xy") != 0 {
+        return 1
+    }
+    if count_up(3) != 6 {
+        return 2
+    }
+    show("hello")
+    if bump(0) != 1 {
+        return 3
+    }
+    if numeric_total() != 42 {
+        return 4
+    }
+    # #967: string consts concatenate.
+    let wrapped: string = OPEN + "x" + CLOSE
+    if strcmp(wrapped, "<x>") != 0 {
+        return 5
+    }
+    let pair: string = OPEN + CLOSE
+    if strcmp(pair, "<>") != 0 {
+        return 6
+    }
+    let mut out: string = "a"
+    out = out + CLOSE
+    if strcmp(out, "a>") != 0 {
+        return 7
+    }
+    # #992: f64 and f32 struct fields print as floats; string fields concat.
+    let r: Reading = Reading { value: 1.5, scale: 2.5, label: "v" }
+    println(r.value)
+    println(r.scale)
+    let text: string = r.label + "=" + OPEN
+    if strcmp(text, "v=<") != 0 {
+        return 8
+    }
+    # #984: field access through a local ptr<Struct>.
+    let p: ptr<Cell> = malloc(64) as ptr<Cell>
+    p.x = 3
+    p.next_x = p.x + 1
+    let got: i32 = p.x + p.next_x
+    free(p as ptr<void>)
+    if got != 7 {
+        return 9
+    }
+    return 0
+}

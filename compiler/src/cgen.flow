@@ -15,7 +15,7 @@ import .ast {
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
-    AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD
+    AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD
 }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
@@ -201,7 +201,7 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
-function flowc_cgen_ident_is_string(arena: AstArena, src: ptr<u8>, id: i32) -> i32
+function flowc_cgen_ident_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
 # Compare two source spans for equal content.
 function flowc_cgen_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -1106,6 +1106,219 @@ function flowc_cgen_sig_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     return 1
 }
 
+# --- scoped declaration lookup -------------------------------------------
+# Types of names come from the function being emitted, so a local or a
+# parameter in one function never decides the type of a same-named variable
+# in another (#957, #993).
+
+# Latest `let` named like `use_id` in the subtree at `node` that ends
+# before the use, plus lambda parameters whose lambda contains the use.
+# Blocks that do not contain the use are skipped.
+function flowc_cgen_find_let(arena: AstArena, src: ptr<u8>, node: i32, use_id: i32, best: i32, depth: i32) -> i32 {
+    let mut b: i32 = best
+    let mut cur: i32 = node
+    let use_pos: i32 = arena.nodes[use_id].name_start
+    let ns: i32 = arena.nodes[use_id].name_start
+    let ne: i32 = arena.nodes[use_id].name_end
+    while cur != AST_NONE {
+        if cur < 0 or cur >= arena.len or depth > 400 {
+            return b
+        }
+        let k: i32 = arena.nodes[cur].kind
+        let mut descend: i32 = 1
+        if k == AST_TYPE {
+            descend = 0
+        }
+        if k == AST_BLOCK and arena.nodes[cur].end > arena.nodes[cur].start {
+            if use_pos < arena.nodes[cur].start or use_pos >= arena.nodes[cur].end {
+                descend = 0
+            }
+        }
+        if k == AST_LET and arena.nodes[cur].end <= use_pos {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[cur].name_start, arena.nodes[cur].name_end) == 1 {
+                if b == AST_NONE or arena.nodes[cur].start > arena.nodes[b].start {
+                    b = cur
+                }
+            }
+        }
+        if k == AST_FN and use_pos >= arena.nodes[cur].start and use_pos < arena.nodes[cur].end {
+            let mut prm: i32 = arena.nodes[cur].a
+            while prm != AST_NONE and prm >= 0 and prm < arena.len {
+                if arena.nodes[prm].kind == AST_PARAM {
+                    if flowc_cgen_span_eq(src, ns, ne, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                        if b == AST_NONE or arena.nodes[prm].start > arena.nodes[b].start {
+                            b = prm
+                        }
+                    }
+                }
+                prm = arena.nodes[prm].next
+            }
+        }
+        if descend == 1 {
+            b = flowc_cgen_find_let(arena, src, arena.nodes[cur].a, use_id, b, depth + 1)
+            b = flowc_cgen_find_let(arena, src, arena.nodes[cur].b, use_id, b, depth + 1)
+            b = flowc_cgen_find_let(arena, src, arena.nodes[cur].c, use_id, b, depth + 1)
+        }
+        cur = arena.nodes[cur].next
+    }
+    return b
+}
+
+# The AST_LET or AST_PARAM an identifier refers to inside the function being
+# emitted, or AST_NONE when the use lies outside it or nothing matches.
+function flowc_cgen_scoped_decl(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let fn: i32 = w[0].cur_fn
+    if fn == AST_NONE or id == AST_NONE {
+        return AST_NONE
+    }
+    if arena.nodes[id].kind != AST_IDENT {
+        return AST_NONE
+    }
+    let use_pos: i32 = arena.nodes[id].name_start
+    if use_pos < arena.nodes[fn].start or use_pos >= arena.nodes[fn].end {
+        return AST_NONE
+    }
+    let found: i32 = flowc_cgen_find_let(arena, src, arena.nodes[fn].c, id, AST_NONE, 0)
+    if found != AST_NONE {
+        return found
+    }
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if arena.nodes[prm].kind == AST_PARAM {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                return prm
+            }
+        }
+        prm = arena.nodes[prm].next
+    }
+    return AST_NONE
+}
+
+# Module-level `const` with this identifier's name, else AST_NONE.
+function flowc_cgen_find_const(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_CONST {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# Type node of a declaration: the annotation, else what a `let` initialiser
+# names (a cast target or a struct literal, whose name span is the type).
+function flowc_cgen_decl_type(arena: AstArena, decl: i32) -> i32 {
+    if decl == AST_NONE {
+        return AST_NONE
+    }
+    let ty: i32 = arena.nodes[decl].a
+    if ty != AST_NONE {
+        return ty
+    }
+    if arena.nodes[decl].kind != AST_LET {
+        return AST_NONE
+    }
+    let init: i32 = arena.nodes[decl].b
+    if init == AST_NONE {
+        return AST_NONE
+    }
+    if arena.nodes[init].kind == AST_CAST {
+        return arena.nodes[init].b
+    }
+    if arena.nodes[init].kind == AST_STRUCT_LIT {
+        return init
+    }
+    return AST_NONE
+}
+
+# Top-level struct declaration named by the span, else AST_NONE.
+function flowc_cgen_find_struct(arena: AstArena, src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if end <= start {
+        return AST_NONE
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_STRUCT {
+            if flowc_cgen_span_eq(src, start, end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# Type node of an identifier or a field access, resolved through the
+# current function's declarations, module consts and struct fields.
+# AST_NONE when unknown.
+function flowc_cgen_expr_type_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return AST_NONE
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_IDENT {
+        let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
+        if decl != AST_NONE {
+            return flowc_cgen_decl_type(arena, decl)
+        }
+        let c: i32 = flowc_cgen_find_const(arena, src, id)
+        if c != AST_NONE {
+            return arena.nodes[c].a
+        }
+        return AST_NONE
+    }
+    if kind == AST_FIELD_ACCESS {
+        let mut bt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
+        if bt == AST_NONE {
+            return AST_NONE
+        }
+        # Field access through ptr<Struct> reads the pointee's field.
+        if arena.nodes[bt].kind == AST_TYPE and arena.nodes[bt].a != AST_NONE {
+            if flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "ptr") == 1 {
+                bt = arena.nodes[bt].a
+            }
+        }
+        let st: i32 = flowc_cgen_find_struct(arena, src, arena.nodes[bt].name_start, arena.nodes[bt].name_end)
+        if st == AST_NONE {
+            return AST_NONE
+        }
+        if arena.nodes[st].b != AST_NONE {
+            # Generic struct: field types name type parameters.
+            return AST_NONE
+        }
+        let mut f: i32 = arena.nodes[st].a
+        while f != AST_NONE {
+            if arena.nodes[f].kind == AST_FIELD {
+                if flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
+                    return arena.nodes[f].a
+                }
+            }
+            f = arena.nodes[f].next
+        }
+        return AST_NONE
+    }
+    return AST_NONE
+}
+
+# 1 if the expression's resolved type is ptr<...>.
+function flowc_cgen_expr_is_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, id)
+    if ty == AST_NONE {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr")
+}
+
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if id == AST_NONE {
         return 0
@@ -1134,16 +1347,33 @@ function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return flowc_cgen_sig_is_string(w, arena, src, id)
     }
     if kind == AST_IDENT {
-        return flowc_cgen_ident_is_string(arena, src, id)
+        return flowc_cgen_ident_is_string(w, arena, src, id)
+    }
+    if kind == AST_FIELD_ACCESS {
+        return flowc_cgen_type_is_string(arena, src, flowc_cgen_expr_type_node(w, arena, src, id))
     }
     return 0
 }
 
-# Check if an AST_IDENT refers to a string-typed variable.
-# Scans all AST_PARAM and AST_LET nodes for matching name. Only returns 1
-# if ALL matches have type string, avoiding false positives when a name
-# is used as both string and non-string in different scopes.
-function flowc_cgen_ident_is_string(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+# Check if an AST_IDENT refers to a string-typed variable. The declaration
+# in scope decides: a `let` or parameter of the current function, then a
+# module const. With neither (code outside a function body), every
+# AST_PARAM and AST_LET of that name must have type string.
+function flowc_cgen_ident_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
+    if decl != AST_NONE {
+        if arena.nodes[decl].a != AST_NONE {
+            return flowc_cgen_type_is_string(arena, src, arena.nodes[decl].a)
+        }
+        if arena.nodes[decl].kind == AST_LET {
+            return flowc_cgen_expr_is_string(w, arena, src, arena.nodes[decl].b)
+        }
+        return 0
+    }
+    let cdecl: i32 = flowc_cgen_find_const(arena, src, id)
+    if cdecl != AST_NONE {
+        return flowc_cgen_type_is_string(arena, src, arena.nodes[cdecl].a)
+    }
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
     let mut found: i32 = 0
@@ -1259,8 +1489,25 @@ function flowc_cgen_sig_ctype_is(w: ptr<CgenBuf>, off: i32, lit: string) -> i32 
     return 1
 }
 
-# Kind of a variable: every PARAM/LET of that name must agree.
-function flowc_cgen_ident_prim(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+function flowc_cgen_expr_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
+
+# Kind of a variable: the declaration in scope (see flowc_cgen_scoped_decl),
+# then a module const; otherwise every PARAM/LET of that name must agree.
+function flowc_cgen_ident_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
+    if decl != AST_NONE {
+        if arena.nodes[decl].a != AST_NONE {
+            return flowc_cgen_prim_of_type(arena, src, arena.nodes[decl].a)
+        }
+        if arena.nodes[decl].kind == AST_LET {
+            return flowc_cgen_expr_prim(w, arena, src, arena.nodes[decl].b)
+        }
+        return FLOWC_PRIM_UNKNOWN
+    }
+    let cdecl: i32 = flowc_cgen_find_const(arena, src, id)
+    if cdecl != AST_NONE {
+        return flowc_cgen_prim_of_type(arena, src, arena.nodes[cdecl].a)
+    }
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
     let mut kind: i32 = 0 - 1
@@ -1307,7 +1554,10 @@ function flowc_cgen_expr_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return flowc_cgen_prim_of_type(arena, src, arena.nodes[id].b)
     }
     if kind == AST_IDENT {
-        return flowc_cgen_ident_prim(arena, src, id)
+        return flowc_cgen_ident_prim(w, arena, src, id)
+    }
+    if kind == AST_FIELD_ACCESS {
+        return flowc_cgen_prim_of_type(arena, src, flowc_cgen_expr_type_node(w, arena, src, id))
     }
     if kind == AST_UNARY {
         if arena.nodes[id].ival == TOK_BANG {
@@ -2589,24 +2839,9 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     if kind == AST_FIELD_ACCESS {
         # (base).field or base->field if base is a pointer.
         let base: i32 = arena.nodes[id].a
-        let mut is_ptr: i32 = 0
-        if base != AST_NONE and arena.nodes[base].kind == AST_IDENT and w[0].cur_fn != AST_NONE {
-            # Look up variable type only in the current function's params.
-            let mut param: i32 = arena.nodes[w[0].cur_fn].a
-            while param != AST_NONE {
-                if arena.nodes[param].kind == AST_PARAM {
-                    if flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, arena.nodes[param].name_start, arena.nodes[param].name_end) == 1 {
-                        let ty: i32 = arena.nodes[param].a
-                        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
-                            if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr") == 1 {
-                                is_ptr = 1
-                            }
-                        }
-                    }
-                }
-                param = arena.nodes[param].next
-            }
-        }
+        # Resolved through the current function's parameters and locals
+        # and through struct fields, so `p.x` on a local ptr<P> is p->x.
+        let is_ptr: i32 = flowc_cgen_expr_is_ptr(w, arena, src, base)
         if is_ptr == 1 {
             flowc_cgen_emit_expr(w, arena, src, base)
             flowc_cgen_puts(w, "->")
@@ -3736,10 +3971,16 @@ function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
     }
     # Use the declared type if available, otherwise default to int32_t.
     let ty: i32 = arena.nodes[id].a
-    if ty != AST_NONE {
-        flowc_cgen_emit_type(w, arena, src, ty)
+    if flowc_cgen_type_is_string(arena, src, ty) == 1 {
+        # `string` is already `const char*`: the binding's const goes on
+        # the pointer, not on the chars a second time (#990).
+        flowc_cgen_puts(w, "char* const")
     } else {
-        flowc_cgen_puts(w, "int32_t")
+        if ty != AST_NONE {
+            flowc_cgen_emit_type(w, arena, src, ty)
+        } else {
+            flowc_cgen_puts(w, "int32_t")
+        }
     }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
