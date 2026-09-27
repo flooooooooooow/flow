@@ -971,6 +971,275 @@ function flowc_cgen_is_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     return flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b)
 }
 
+# --- primitive kind of an expression ------------------------------------
+# print/println and string `+` need a printf conversion for the operand.
+# The classification is syntactic, like the string test above: literals,
+# casts, declared variables, calls with a known return type, and the
+# arithmetic that combines them. Anything else is FLOWC_PRIM_UNKNOWN and
+# keeps the historical "%d".
+const FLOWC_PRIM_UNKNOWN: i32 = 0
+const FLOWC_PRIM_STRING: i32 = 1
+const FLOWC_PRIM_F64: i32 = 2
+const FLOWC_PRIM_I64: i32 = 3
+const FLOWC_PRIM_U64: i32 = 4
+const FLOWC_PRIM_U32: i32 = 5
+const FLOWC_PRIM_I32: i32 = 6
+const FLOWC_PRIM_BOOL: i32 = 7
+
+function flowc_cgen_prim_of_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if arena.nodes[ty].a != AST_NONE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    let s: i32 = arena.nodes[ty].name_start
+    let e: i32 = arena.nodes[ty].name_end
+    if flowc_cgen_span_is(src, s, e, "string") == 1 {
+        return FLOWC_PRIM_STRING
+    }
+    if flowc_cgen_span_is(src, s, e, "f64") == 1 or flowc_cgen_span_is(src, s, e, "f32") == 1 {
+        return FLOWC_PRIM_F64
+    }
+    if flowc_cgen_span_is(src, s, e, "i64") == 1 or flowc_cgen_span_is(src, s, e, "isize") == 1 {
+        return FLOWC_PRIM_I64
+    }
+    if flowc_cgen_span_is(src, s, e, "u64") == 1 or flowc_cgen_span_is(src, s, e, "usize") == 1 {
+        return FLOWC_PRIM_U64
+    }
+    if flowc_cgen_span_is(src, s, e, "u32") == 1 {
+        return FLOWC_PRIM_U32
+    }
+    if flowc_cgen_span_is(src, s, e, "bool") == 1 {
+        return FLOWC_PRIM_BOOL
+    }
+    if flowc_cgen_span_is(src, s, e, "i32") == 1 or flowc_cgen_span_is(src, s, e, "i16") == 1 {
+        return FLOWC_PRIM_I32
+    }
+    if flowc_cgen_span_is(src, s, e, "i8") == 1 or flowc_cgen_span_is(src, s, e, "u8") == 1 {
+        return FLOWC_PRIM_I32
+    }
+    if flowc_cgen_span_is(src, s, e, "u16") == 1 {
+        return FLOWC_PRIM_I32
+    }
+    return FLOWC_PRIM_UNKNOWN
+}
+
+# 1 if the signature-table C type at `off` equals `lit`.
+function flowc_cgen_sig_ctype_is(w: ptr<CgenBuf>, off: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if off + i >= w[0].sigs_len {
+            return 0
+        }
+        if w[0].sigs[off + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if off + n >= w[0].sigs_len {
+        return 0
+    }
+    if w[0].sigs[off + n] != 0 {
+        return 0
+    }
+    return 1
+}
+
+# Kind of a variable: every PARAM/LET of that name must agree.
+function flowc_cgen_ident_prim(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut kind: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                let k: i32 = flowc_cgen_prim_of_type(arena, src, arena.nodes[i].a)
+                if kind < 0 {
+                    kind = k
+                } else {
+                    if kind != k {
+                        return FLOWC_PRIM_UNKNOWN
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if kind < 0 {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    return kind
+}
+
+function flowc_cgen_expr_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return FLOWC_PRIM_UNKNOWN
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_STRING {
+        return FLOWC_PRIM_STRING
+    }
+    if kind == AST_FLOAT {
+        return FLOWC_PRIM_F64
+    }
+    if kind == AST_INT {
+        return FLOWC_PRIM_I32
+    }
+    if kind == AST_BOOL {
+        return FLOWC_PRIM_BOOL
+    }
+    if kind == AST_CAST {
+        return flowc_cgen_prim_of_type(arena, src, arena.nodes[id].b)
+    }
+    if kind == AST_IDENT {
+        return flowc_cgen_ident_prim(arena, src, id)
+    }
+    if kind == AST_UNARY {
+        if arena.nodes[id].ival == TOK_BANG {
+            return FLOWC_PRIM_BOOL
+        }
+        if arena.nodes[id].ival == TOK_MINUS {
+            return flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
+        }
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if kind == AST_CALL {
+        let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if fn != AST_NONE {
+            return flowc_cgen_prim_of_type(arena, src, arena.nodes[fn].b)
+        }
+        let off: i32 = flowc_cgen_sig_find(
+            w[0].sigs, w[0].sigs_len, src,
+            arena.nodes[id].name_start, arena.nodes[id].name_end
+        )
+        if off < 0 {
+            return FLOWC_PRIM_UNKNOWN
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "const char*") == 1 {
+            return FLOWC_PRIM_STRING
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "double") == 1 or flowc_cgen_sig_ctype_is(w, off, "float") == 1 {
+            return FLOWC_PRIM_F64
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "int64_t") == 1 {
+            return FLOWC_PRIM_I64
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "uint64_t") == 1 {
+            return FLOWC_PRIM_U64
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "uint32_t") == 1 {
+            return FLOWC_PRIM_U32
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "bool") == 1 {
+            return FLOWC_PRIM_BOOL
+        }
+        if flowc_cgen_sig_ctype_is(w, off, "int32_t") == 1 {
+            return FLOWC_PRIM_I32
+        }
+        return FLOWC_PRIM_UNKNOWN
+    }
+    if kind == AST_BINOP {
+        let op: i32 = arena.nodes[id].ival
+        if op == TOK_EQEQ or op == TOK_NE or op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE {
+            return FLOWC_PRIM_BOOL
+        }
+        if op == TOK_AMPAMP or op == TOK_BARBAR or op == TOK_IN {
+            return FLOWC_PRIM_BOOL
+        }
+        if op == TOK_PLUS {
+            if flowc_cgen_is_str_concat(w, arena, src, id) == 1 {
+                return FLOWC_PRIM_STRING
+            }
+        }
+        let l: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
+        let r: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].b)
+        if op == TOK_SHL or op == TOK_SHR {
+            return l
+        }
+        if l == FLOWC_PRIM_F64 or r == FLOWC_PRIM_F64 {
+            return FLOWC_PRIM_F64
+        }
+        if l == FLOWC_PRIM_UNKNOWN or r == FLOWC_PRIM_UNKNOWN {
+            return FLOWC_PRIM_UNKNOWN
+        }
+        if l == FLOWC_PRIM_U64 or r == FLOWC_PRIM_U64 {
+            return FLOWC_PRIM_U64
+        }
+        if l == FLOWC_PRIM_I64 or r == FLOWC_PRIM_I64 {
+            return FLOWC_PRIM_I64
+        }
+        if l == FLOWC_PRIM_U32 or r == FLOWC_PRIM_U32 {
+            return FLOWC_PRIM_U32
+        }
+        return FLOWC_PRIM_I32
+    }
+    return FLOWC_PRIM_UNKNOWN
+}
+
+# printf conversion for a primitive kind (no newline).
+function flowc_cgen_prim_fmt(k: i32) -> string {
+    if k == FLOWC_PRIM_STRING {
+        return "%s"
+    }
+    if k == FLOWC_PRIM_F64 {
+        return "%f"
+    }
+    if k == FLOWC_PRIM_I64 {
+        return "%lld"
+    }
+    if k == FLOWC_PRIM_U64 {
+        return "%llu"
+    }
+    if k == FLOWC_PRIM_U32 {
+        return "%u"
+    }
+    return "%d"
+}
+
+# Emit a string-concat operand. Strings pass through; numbers go through
+# the preamble's __flowc_str_of_* formatters; bools become "true"/"false".
+function flowc_cgen_emit_concat_operand(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if flowc_cgen_expr_is_string(w, arena, src, id) == 1 {
+        flowc_cgen_emit_expr(w, arena, src, id)
+        return
+    }
+    let k: i32 = flowc_cgen_expr_prim(w, arena, src, id)
+    if k == FLOWC_PRIM_BOOL {
+        flowc_cgen_puts(w, "((")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, ") ? \"true\" : \"false\")")
+        return
+    }
+    if k == FLOWC_PRIM_F64 {
+        flowc_cgen_puts(w, "__flowc_str_of_f64((double)(")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    if k == FLOWC_PRIM_U64 or k == FLOWC_PRIM_U32 {
+        flowc_cgen_puts(w, "__flowc_str_of_u64((uint64_t)(")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    if k == FLOWC_PRIM_I64 or k == FLOWC_PRIM_I32 {
+        flowc_cgen_puts(w, "__flowc_str_of_i64((int64_t)(")
+        flowc_cgen_emit_expr(w, arena, src, id)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    # Unknown: keep the historical pass-through (a string-typed value the
+    # classifier could not see, such as a field or an index).
+    flowc_cgen_emit_expr(w, arena, src, id)
+}
+
 # Append one `name\0ctype\0` entry. Returns the new length (unchanged if full).
 function flowc_cgen_sig_put(
     arena: AstArena,
@@ -1133,17 +1402,7 @@ function flowc_cgen_emit_print_intrinsic(w: ptr<CgenBuf>, arena: AstArena, src: 
         }
         return
     }
-    let mut fmt: string = "%d"
-    let arg_kind: i32 = arena.nodes[arg].kind
-    if arg_kind == AST_STRING {
-        fmt = "%s"
-    }
-    if arg_kind == AST_FLOAT {
-        fmt = "%f"
-    }
-    if arg_kind == AST_BOOL {
-        fmt = "%d"
-    }
+    let fmt: string = flowc_cgen_prim_fmt(flowc_cgen_expr_prim(w, arena, src, arg))
     flowc_cgen_puts(w, "printf(\"")
     flowc_cgen_puts(w, fmt)
     if newline == 1 {
@@ -1603,9 +1862,9 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if op == TOK_PLUS {
             if flowc_cgen_is_str_concat(w, arena, src, id) == 1 {
                 flowc_cgen_puts(w, "__flowc_str_concat(")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].a)
                 flowc_cgen_puts(w, ", ")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].b)
                 flowc_cgen_putc(w, 41)
                 return
             }
@@ -3834,6 +4093,20 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "  if (r == 0) { return \"\"; }\n")
         flowc_cgen_puts(&w, "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n")
         flowc_cgen_puts(&w, "  return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
+        # Number operands of string `+` (#946). Same conversions as println.
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_i64(int64_t v) {\n")
+        flowc_cgen_puts(&w, "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  snprintf(r, 32, \"%lld\", (long long)v); return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_u64(uint64_t v) {\n")
+        flowc_cgen_puts(&w, "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  snprintf(r, 32, \"%llu\", (unsigned long long)v); return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_puts(&w, "static inline const char* __flowc_str_of_f64(double v) {\n")
+        flowc_cgen_puts(&w, "  char* r = (char*)malloc(64); if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  snprintf(r, 64, \"%f\", v); return r;\n")
         flowc_cgen_puts(&w, "}\n")
         flowc_cgen_putc(&w, 10)
         # `in` operator helper: linear scan over an array<T,N>.
