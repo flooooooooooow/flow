@@ -1,0 +1,308 @@
+# @module tools.demogen
+# @means  Helpers for the Wiki demo generators: html.escape, argparse-style
+#         store_true flags, and json.dumps(indent=2, ensure_ascii=False).
+#
+# Shared by scripts/tools/demo_overview, shader_gallery and demo_nav.
+
+import .text { ft_out, ft_err, ft_eq, ft_len, ft_starts, ft_find, ft_slice, ft_from, ft_repr, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .json { json_kind, json_str, json_key, json_first, json_next, json_kind_null, json_kind_true, json_kind_false, json_kind_number, json_kind_string, json_kind_array, json_kind_object, Json }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+# html.escape(s) with quote=True: & < > " ' become entities.
+export function dg_html_escape(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n * 6 + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut rep: string = null
+        if c == 38 {
+            rep = "&amp;"
+        } elif c == 60 {
+            rep = "&lt;"
+        } elif c == 62 {
+            rep = "&gt;"
+        } elif c == 34 {
+            rep = "&quot;"
+        } elif c == 39 {
+            rep = "&#x27;"
+        }
+        if rep == null {
+            buf[o] = c as u8
+            o = o + 1
+        } else {
+            let rp: ptr<u8> = rep as ptr<u8>
+            let mut k: i32 = 0
+            while rp[k] != 0 {
+                buf[o] = rp[k]
+                o = o + 1
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+# Parse store_true flags the way argparse does, prefixes included.
+#
+# `names` lists the long options (without --help). `on[i]` is set to 1 for
+# each flag given. Returns -1 to carry on, or the exit status after printing
+# help (0) or a usage error (2).
+export function dg_flags(argc: i32, argv: ptr<string>, names: ptr<StrList>, on: ptr<i32>, prog: string, usage: string, help: string) -> i32 {
+    let extras: ptr<StrList> = ft_list_new()
+    let mut ai: i32 = 1
+    while ai < argc {
+        let arg: string = argv[ai]
+        if ft_eq(arg, "-h") {
+            ft_out(help)
+            return 0
+        }
+        if ft_starts(arg, "--") and ft_len(arg) > 2 {
+            let eqat: i32 = ft_find(arg, "=", 0)
+            let mut opt: string = arg
+            let mut explicit: string = null
+            if eqat >= 0 {
+                opt = ft_slice(arg, 0, eqat)
+                explicit = ft_from(arg, eqat + 1)
+            }
+            let mut exact: i32 = -2
+            if ft_eq(opt, "--help") {
+                exact = -1
+            }
+            let mut ni: i32 = 0
+            while ni < ft_list_len(names) {
+                if ft_eq(ft_list_get(names, ni), opt) {
+                    exact = ni
+                }
+                ni = ni + 1
+            }
+            if exact == -2 {
+                let hits: ptr<StrList> = ft_list_new()
+                let idx: ptr<i32> = malloc(256) as ptr<i32>
+                if ft_starts("--help", opt) {
+                    ft_list_push(hits, "--help")
+                    idx[0] = -1
+                }
+                ni = 0
+                while ni < ft_list_len(names) {
+                    if ft_starts(ft_list_get(names, ni), opt) {
+                        idx[ft_list_len(hits)] = ni
+                        ft_list_push(hits, ft_list_get(names, ni))
+                    }
+                    ni = ni + 1
+                }
+                if ft_list_len(hits) > 1 {
+                    let mut msg: string = "ambiguous option: " + opt + " could match "
+                    let mut hi: i32 = 0
+                    while hi < ft_list_len(hits) {
+                        if hi > 0 {
+                            msg = msg + ", "
+                        }
+                        msg = msg + ft_list_get(hits, hi)
+                        hi = hi + 1
+                    }
+                    ft_err(usage + prog + ": error: " + msg + "\n")
+                    return 2
+                }
+                if ft_list_len(hits) == 1 {
+                    exact = idx[0]
+                }
+            }
+            if exact == -2 {
+                ft_list_push(extras, arg)
+            } else {
+                let mut full: string = "--help"
+                if exact >= 0 {
+                    full = ft_list_get(names, exact)
+                }
+                if explicit != null {
+                    ft_err(usage + prog + ": error: argument " + dg_flag_label(full) + ": ignored explicit argument " + ft_repr(explicit) + "\n")
+                    return 2
+                }
+                if exact == -1 {
+                    ft_out(help)
+                    return 0
+                }
+                on[exact] = 1
+            }
+        } else {
+            ft_list_push(extras, arg)
+        }
+        ai = ai + 1
+    }
+    if ft_list_len(extras) > 0 {
+        let mut umsg: string = "unrecognized arguments:"
+        let mut ei: i32 = 0
+        while ei < ft_list_len(extras) {
+            umsg = umsg + " " + ft_list_get(extras, ei)
+            ei = ei + 1
+        }
+        ft_err(usage + prog + ": error: " + umsg + "\n")
+        return 2
+    }
+    return -1
+}
+
+function dg_flag_label(full: string) -> string {
+    if ft_eq(full, "--help") {
+        return "-h/--help"
+    }
+    return full
+}
+
+# JSON string literal with ensure_ascii=False.
+export function dg_json_quote(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n * 6 + 3) as i64) as ptr<u8>
+    let hexd: ptr<u8> = "0123456789abcdef" as ptr<u8>
+    let mut o: i32 = 0
+    buf[o] = 34
+    o = o + 1
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 34 or c == 92 {
+            buf[o] = 92
+            buf[o + 1] = c as u8
+            o = o + 2
+        } elif c == 10 {
+            buf[o] = 92
+            buf[o + 1] = 110
+            o = o + 2
+        } elif c == 13 {
+            buf[o] = 92
+            buf[o + 1] = 114
+            o = o + 2
+        } elif c == 9 {
+            buf[o] = 92
+            buf[o + 1] = 116
+            o = o + 2
+        } elif c == 8 {
+            buf[o] = 92
+            buf[o + 1] = 98
+            o = o + 2
+        } elif c == 12 {
+            buf[o] = 92
+            buf[o + 1] = 102
+            o = o + 2
+        } elif c < 32 {
+            buf[o] = 92
+            buf[o + 1] = 117
+            buf[o + 2] = 48
+            buf[o + 3] = 48
+            buf[o + 4] = hexd[c / 16]
+            buf[o + 5] = hexd[c % 16]
+            o = o + 6
+        } else {
+            buf[o] = c as u8
+            o = o + 1
+        }
+        i = i + 1
+    }
+    buf[o] = 34
+    buf[o + 1] = 0
+    return buf as string
+}
+
+# Two spaces per level, as json.dumps(indent=2).
+export function dg_indent(level: i32) -> string {
+    let n: i32 = level * 2
+    let buf: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut k: i32 = 0
+    while k < n {
+        buf[k] = 32
+        k = k + 1
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+# json.dumps(value, indent=2, ensure_ascii=False) of node `id`, whose first
+# line is already positioned at nesting `level`. Numbers keep their source
+# text.
+export function dg_json_dump(j: ptr<Json>, id: i32, level: i32) -> string {
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() {
+        return "null"
+    }
+    if k == json_kind_true() {
+        return "true"
+    }
+    if k == json_kind_false() {
+        return "false"
+    }
+    if k == json_kind_number() {
+        return json_str(j, id)
+    }
+    if k == json_kind_string() {
+        return dg_json_quote(json_str(j, id))
+    }
+    let mut c: i32 = json_first(j, id)
+    let mut open: string = "["
+    let mut close: string = "]"
+    if k == json_kind_object() {
+        open = "{"
+        close = "}"
+    }
+    if c < 0 {
+        return open + close
+    }
+    let inner: string = dg_indent(level + 1)
+    let mut out: string = open + "\n"
+    let mut first: bool = true
+    while c >= 0 {
+        if first == false {
+            out = out + ",\n"
+        }
+        first = false
+        out = out + inner
+        if k == json_kind_object() {
+            out = out + dg_json_quote(json_key(j, c)) + ": "
+        }
+        out = out + dg_json_dump(j, c, level + 1)
+        c = json_next(j, c)
+    }
+    return out + "\n" + dg_indent(level) + close
+}
+
+# Python truthiness of a parsed JSON value (-1 for a missing key is falsy).
+export function dg_truthy(j: ptr<Json>, id: i32) -> bool {
+    if id < 0 {
+        return false
+    }
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() or k == json_kind_false() {
+        return false
+    }
+    if k == json_kind_true() {
+        return true
+    }
+    if k == json_kind_string() {
+        return ft_len(json_str(j, id)) > 0
+    }
+    if k == json_kind_number() {
+        let p: ptr<u8> = json_str(j, id) as ptr<u8>
+        let mut i: i32 = 0
+        while p[i] != 0 {
+            let c: i32 = p[i] as i32
+            if c == 101 or c == 69 {
+                return false
+            }
+            if c >= 49 and c <= 57 {
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+    return json_first(j, id) >= 0
+}
