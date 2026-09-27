@@ -85,7 +85,17 @@ If multiple agents are editing `compiler/src/` simultaneously:
 
 ### Current in-flight work
 
-No active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
+Field DSL expansion on flowc (branch `port/selfhost-next`, 2026-09-27):
+porting all of `src/flow/field_dsl.py` (`field` / `boundary` /
+`evolves as laplacian` expand-before-parse) to `compiler/src/field_dsl.flow`,
+wiring it into every flowc source read (`main.flow`, `driver.flow`,
+`resolve.flow`) and bundling programs with imports on the flowc host, so
+`./flow run examples/evolution/heat_diffusion.flow` needs no Python. Gate:
+`compiler/scripts/parity_field_dsl.sh`. Files: new `field_dsl.flow`,
+`source_load.flow`, edits to `main.flow`, `driver.flow`, `resolve.flow`,
+`flow-driver`. Bootstrap C regenerated last in its own commit.
+
+Previously: no active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
 env vars (not positional args, which trigger the self-test). The Python unit
 suite is at 1424 passed, 0 failed, 6 skipped (all clean).
 
