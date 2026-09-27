@@ -95,6 +95,16 @@ wiring it into every flowc source read (`main.flow`, `driver.flow`,
 `source_load.flow`, edits to `main.flow`, `driver.flow`, `resolve.flow`,
 `flow-driver`. Bootstrap C regenerated last in its own commit.
 
+Dynamics DSL and `flow` blocks on flowc (branch `port/dynamics-dsl-flowc`,
+#681, 2026-09-27): `compiler/src/dynamics_dsl.flow` (the whole dynamics
+DSL) and `compiler/src/flow_blocks.flow` (flow-block lowering to Flow
+source) run after the Field DSL on every flowc source read, through
+`flowc_expand_stages_in_place` in `resolve.flow`. `FLOWC_EXPAND_ONLY` takes
+`field`, `dynamics`, `flow` or `1` for all. Gates:
+`compiler/scripts/parity_dynamics_dsl.sh`, `parity_flow_blocks.sh`.
+Other edits: `cgen.flow` (parenthesised unary operands, `flow_panic`),
+`typecheck.flow`, `main.flow`, `driver.flow`, the self-emit scripts.
+
 Previously: no active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
 env vars (not positional args, which trigger the self-test). The Python unit
 suite is at 1424 passed, 0 failed, 6 skipped (all clean).
