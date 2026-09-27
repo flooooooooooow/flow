@@ -139,7 +139,7 @@ jobs:
       - run: ./scripts/python_ratchet.sh
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
-  # check_wiki_links.py validates the built site instead; the two catch
+  # check_wiki_links.sh validates the built site instead; the two catch
   # different breakage. Both stdlib-only, so no toolchain setup.
   doc-links:
     name: Doc links

@@ -547,6 +547,79 @@ export function ft_set_add(st: ptr<StrSet>, s: string) -> void {
 }
 
 # ---------------------------------------------------------------------------
+# StrMap: string keys to i32 values, on top of StrSet's probing.
+# ---------------------------------------------------------------------------
+
+struct StrMap {
+    keys: ptr<string>
+    vals: ptr<i32>
+    cap: i32
+    count: i32
+}
+
+export function ft_map_new() -> ptr<StrMap> {
+    let mp: ptr<StrMap> = malloc(32) as ptr<StrMap>
+    mp[0].cap = 1024
+    mp[0].count = 0
+    let keys: ptr<string> = malloc(8 * 1024) as ptr<string>
+    let mut i: i32 = 0
+    while i < 1024 {
+        keys[i] = null
+        i = i + 1
+    }
+    mp[0].keys = keys
+    mp[0].vals = malloc(4 * 1024) as ptr<i32>
+    return mp
+}
+
+# Value for `s`, or `missing` when absent.
+export function ft_map_get(mp: ptr<StrMap>, s: string, missing: i32) -> i32 {
+    let keys: ptr<string> = mp[0].keys
+    let idx: i32 = ft_set_slot(keys, mp[0].cap, s)
+    if keys[idx] == null {
+        return missing
+    }
+    let vals: ptr<i32> = mp[0].vals
+    return vals[idx]
+}
+
+export function ft_map_put(mp: ptr<StrMap>, s: string, v: i32) -> void {
+    if (mp[0].count + 1) * 2 > mp[0].cap {
+        let old: ptr<string> = mp[0].keys
+        let oldv: ptr<i32> = mp[0].vals
+        let oldcap: i32 = mp[0].cap
+        let nc: i32 = oldcap * 2
+        let nk: ptr<string> = malloc((nc as i64) * 8) as ptr<string>
+        let nv: ptr<i32> = malloc((nc as i64) * 4) as ptr<i32>
+        let mut i: i32 = 0
+        while i < nc {
+            nk[i] = null
+            i = i + 1
+        }
+        i = 0
+        while i < oldcap {
+            if old[i] != null {
+                let slot: i32 = ft_set_slot(nk, nc, old[i])
+                nk[slot] = old[i]
+                nv[slot] = oldv[i]
+            }
+            i = i + 1
+        }
+        mp[0].keys = nk
+        mp[0].vals = nv
+        mp[0].cap = nc
+    }
+    let keys: ptr<string> = mp[0].keys
+    let vals: ptr<i32> = mp[0].vals
+    let idx: i32 = ft_set_slot(keys, mp[0].cap, s)
+    if keys[idx] == null {
+        keys[idx] = s
+        mp[0].count = mp[0].count + 1
+    }
+    vals[idx] = v
+}
+
+# ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
