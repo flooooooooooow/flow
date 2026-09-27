@@ -28,7 +28,7 @@ function usage_text() -> string {
     return "usage: prepare_release.sh [-h] --version VERSION --release-date RELEASE_DATE\n                          --notes NOTES [--root ROOT]\n"
 }
 
-# Const strings joined with + compile to pointer addition; see the PR notes.
+# Const strings joined with + compile to pointer addition (#967).
 function help_body() -> string {
     return "\nPrepare a Flow release branch from one small release-notes file.\n\noptions:\n  -h, --help            show this help message and exit\n  --version VERSION\n  --release-date RELEASE_DATE\n  --notes NOTES\n  --root ROOT\n"
 }
