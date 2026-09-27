@@ -89,7 +89,7 @@ logic.
 | test_effect_rows.py | c | effect-row typechecking diagnostics |
 | test_escaping_closures.py | a | three e2e run tests plus parse and typecheck checks |
 | test_evolves_syntax.py | c | AST and validation of evolves; one reference-Euler run check |
-| test_field_dsl.py | c | field DSL internals |
+| test_field_dsl.py | c | field DSL through the flowc expander; parity lives in `compiler/scripts/parity_field_dsl.sh` |
 | test_fuzz_crash_pins.py | c | parser crash regression pins |
 | test_geometry_diagram.py | c | proof diagram tooling |
 | test_geometry_proof.py | c | proof tooling |

@@ -17,7 +17,8 @@ import .ast {
     flowc_ast_count_kind, flowc_ast_chain_len
 }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
-import .fileio { flowc_read_file, flowc_write_file }
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
+import .field_dsl { flowc_field_expand_in_place }
 import .pipeline_fusion { flowc_fuse_pipelines }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
@@ -96,6 +97,49 @@ function flowc_want_typecheck() -> i32 {
     return 1
 }
 
+# FLOWC_EXPAND_ONLY=1: write FLOWC_IN after DSL pre-expansion (the Field
+# DSL today) to FLOWC_OUT, or stdout. Source without a DSL is copied as is.
+# The Python host calls this through src/flow/field_dsl.py.
+function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
+    # Sized from the file, so large sources pass through whole, with room
+    # for the generated helpers (at most 64 fields of a few hundred bytes).
+    let fsize: i64 = flowc_io_file_size(in_path)
+    if fsize < 0 {
+        puts("flowc expand: read FLOWC_IN failed")
+        return 1
+    }
+    let src_cap: i32 = (fsize as i32) * 2 + 65536
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc expand: malloc src failed")
+        return 1
+    }
+    let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc < 0 {
+        puts("flowc expand: read FLOWC_IN failed")
+        free(src)
+        return 1
+    }
+    src[nsrc] = 0
+    nsrc = flowc_field_expand_in_place(src, nsrc, src_cap)
+    if nsrc < 0 {
+        free(src)
+        return 1
+    }
+    let mut rc: i32 = 0
+    if flowc_env_set("FLOWC_OUT") == 1 {
+        if flowc_write_file(out_path, src, nsrc) != 0 {
+            puts("flowc expand: write FLOWC_OUT failed")
+            rc = 1
+        }
+    } else {
+        src[nsrc] = 0
+        puts(src as string)
+    }
+    free(src)
+    return rc
+}
+
 # FLOWC_IN / FLOWC_OUT emit path: read .flow, Stage-A emit, write (or stdout).
 # FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt → flowc_fmt_emit; else cgen (C).
 # FLOWC_BUNDLE=1 → flowc_bundle_emit (entry + relative imports, one C TU).
@@ -118,6 +162,10 @@ function flowc_emit_mode() -> i32 {
             return 1
         }
         return flowc_bpf_gen_compile(in_path, out_path, "2")
+    }
+
+    if flowc_env_set("FLOWC_EXPAND_ONLY") == 1 {
+        return flowc_expand_only_mode(in_path, out_path)
     }
 
     # 1MB: parser bundle (token+ast+lexer+parser) needs headroom beyond 512K.
@@ -194,6 +242,17 @@ function flowc_emit_mode() -> i32 {
             return 1
         }
         src[nsrc] = 0
+
+        # Field DSL expands before parse, as the Python host does. The
+        # formatter sees the source as written.
+        if flowc_env_eq("FLOWC_BACKEND", "fmt") == 0 {
+            nsrc = flowc_field_expand_in_place(src, nsrc, src_cap)
+            if nsrc < 0 {
+                free(src)
+                free(out)
+                return 1
+            }
+        }
 
         # Modules like ast.flow need a large arena (nested index/field assigns).
         let mut p: Parser = flowc_parser_new(src, nsrc, 262144)

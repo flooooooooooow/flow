@@ -55,6 +55,9 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_lexer.c compiler/build/self_lexer.h
 
 self_emit_module fileio
+self_emit_module field_dsl
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_field_dsl.c compiler/build/self_field_dsl.h
 
 self_emit_module parser \
     compiler/build/self_token.h \
@@ -121,6 +124,7 @@ self_emit_module resolve \
     compiler/build/self_lexer.h \
     compiler/build/self_parser.h \
     compiler/build/self_fileio.h \
+    compiler/build/self_field_dsl.h \
     compiler/build/self_cgen.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
@@ -133,6 +137,7 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_lexer.o \
     compiler/build/self_parser.o \
     compiler/build/self_fileio.o \
+    compiler/build/self_field_dsl.o \
     compiler/build/self_cgen.o \
     compiler/build/self_overload.o \
     compiler/build/self_overload_table.o \
@@ -184,6 +189,7 @@ cc -O0 -c \
     -include compiler/build/self_lexer.h \
     -include compiler/build/self_parser.h \
     -include compiler/build/self_fileio.h \
+    -include compiler/build/self_field_dsl.h \
     -include compiler/build/self_cgen.h \
     -include compiler/build/self_overload_table.h \
     -include compiler/build/self_overload_call.h \

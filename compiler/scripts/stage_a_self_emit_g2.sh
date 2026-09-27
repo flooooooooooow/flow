@@ -84,6 +84,9 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/g2_lexer.c compiler/build/g2_lexer.h
 
 g2_emit_module fileio
+g2_emit_module field_dsl
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/g2_field_dsl.c compiler/build/g2_field_dsl.h
 
 g2_emit_module parser \
     compiler/build/g2_token.h \
@@ -150,6 +153,7 @@ g2_emit_module resolve \
     compiler/build/g2_lexer.h \
     compiler/build/g2_parser.h \
     compiler/build/g2_fileio.h \
+    compiler/build/g2_field_dsl.h \
     compiler/build/g2_cgen.h \
     compiler/build/g2_overload_table.h \
     compiler/build/g2_overload_call.h \
@@ -162,6 +166,7 @@ cc -r -o compiler/build/flowc_frontend_g2.o \
     compiler/build/g2_lexer.o \
     compiler/build/g2_parser.o \
     compiler/build/g2_fileio.o \
+    compiler/build/g2_field_dsl.o \
     compiler/build/g2_cgen.o \
     compiler/build/g2_overload.o \
     compiler/build/g2_overload_table.o \
@@ -187,7 +192,7 @@ wc -c compiler/build/flowc_frontend_self.o compiler/build/flowc_frontend_g2.o
 # objects can differ from include-path / toolchain metadata while C matches.
 echo "=== fixed-point cmp self_*.c vs g2_*.c ==="
 fp_fail=0
-for mod in token ast lexer fileio parser cgen typecheck resolve; do
+for mod in token ast lexer fileio field_dsl parser cgen typecheck resolve; do
     if ! cmp -s "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c"; then
         echo "FAIL C drift: ${mod}" >&2
         diff -u "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c" | head -80 >&2 || true

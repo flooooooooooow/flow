@@ -15,6 +15,7 @@ import .parser {
     flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser
 }
 import .fileio { flowc_read_file, flowc_io_exists }
+import .field_dsl { flowc_field_expand_in_place }
 import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
 import .typecheck {
     TcCtx,
@@ -81,6 +82,17 @@ function flowc_resolve_find_path(store: ptr<u8>, n: i32, row_cap: i32, path: ptr
         i = i + 1
     }
     return 0 - 1
+}
+
+# Read a bundle module and expand any Field DSL before it is parsed, so
+# every pass over the module (gather, topo, typecheck, emit) sees the same
+# source. Returns the byte count, or -1 on I/O or DSL error.
+function flowc_resolve_read_source(path: string, src: ptr<u8>, cap: i32) -> i32 {
+    let n: i32 = flowc_read_file(path, src, cap)
+    if n <= 0 {
+        return n
+    }
+    return flowc_field_expand_in_place(src, n, cap)
 }
 
 # Map import span to a filesystem path under search_dir.
@@ -432,7 +444,7 @@ function flowc_resolve_gather(
             src[zi] = 0
             zi = zi + 1
         }
-        let nsrc: i32 = flowc_read_file(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
+        let nsrc: i32 = flowc_resolve_read_source(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
         if nsrc <= 0 {
             puts("flowc gather: read failed")
             free(mod_dir)
@@ -559,7 +571,7 @@ function flowc_resolve_deps_ready(
         src[zi] = 0
         zi = zi + 1
     }
-    let nsrc: i32 = flowc_read_file(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    let nsrc: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
     if nsrc <= 0 {
         return 0
     }
@@ -728,7 +740,7 @@ function flowc_resolve_emit_one(
         src[zi] = 0
         zi = zi + 1
     }
-    let nsrc: i32 = flowc_read_file(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    let nsrc: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
     if nsrc <= 0 {
         free(src)
         return 0 - 1
@@ -1004,7 +1016,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
             src[zi] = 0
             zi = zi + 1
         }
-        let nsrc: i32 = flowc_read_file(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
+        let nsrc: i32 = flowc_resolve_read_source(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
         if nsrc <= 0 {
             puts("flowc bundle tc: read failed")
             free(src)

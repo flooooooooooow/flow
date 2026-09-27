@@ -1184,7 +1184,7 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 ### 10.3 `field` / `boundary` / Laplacian PDE
 
-**Status:** ✅ (Stage-1 expander in `field_dsl.py`)
+**Status:** ✅ (Stage-1 expander in [`compiler/src/field_dsl.flow`](../compiler/src/field_dsl.flow), run by flowc before parse)
 
 `field` / `boundary` / `evolves as laplacian` → `T_field_step` helpers. Heat demo and pattern-adoption #163.
 

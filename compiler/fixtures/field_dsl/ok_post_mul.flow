@@ -1,0 +1,10 @@
+const alpha: f64 = 0.3
+
+field V: f64[ 008 ] on Line
+V evolves as laplacian( V ) * alpha
+boundary V {
+    left=0.5 right=1.5
+}
+function main() -> i32 {
+    return V_field_n
+}
