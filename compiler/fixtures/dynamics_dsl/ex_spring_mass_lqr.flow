@@ -1,0 +1,75 @@
+# SPRING-MASS LQR — `analyze plant { lqr { … } }` (#162).
+# Same continuous plant as spring_mass_control.flow; gains from discrete LQR
+# on the Euler-discretized model instead of GA search.
+#
+# Run: ./flow run examples/evolution/spring_mass_lqr.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+dsys plant {
+    continuous
+    dt 0.1
+    n 2 m 1 p 1
+    A 0.0 1.0 -1.0 -0.2
+    B 0.0 1.0
+    C 1.0 0.0
+}
+
+analyze plant {
+    lqr {
+        Q 10.0 1.0
+        R 0.1
+        -> k1 k2
+    }
+}
+
+function main() -> i32 {
+    println("")
+    println("  SPRING-MASS LQR  --  analyze { lqr } on continuous dsys")
+    println("  ========================================================")
+    println("")
+    print("    LQR gains                 : k1 = ")
+    printf("%.4f", k1)
+    print(",  k2 = ")
+    printf("%.4f", k2)
+    println("")
+
+    let mut x: array<f64, 2> = [1.0, 0.0]
+    let mut xn: array<f64, 2> = [0.0, 0.0]
+    let mut u: array<f64, 1> = [0.0]
+    let mut energy: f64 = 0.0
+
+    for t in 0 to 60 {
+        u[0] = 0.0 - (k1 * x[0] + k2 * x[1])
+        plant_step(plant, x, u, xn)
+        x[0] = xn[0]
+        x[1] = xn[1]
+        energy = energy + x[0] * x[0] + x[1] * x[1]
+    }
+
+    print("    closed-loop energy (60)   : ")
+    printf("%.4f", energy)
+    println("")
+    print("    final |x|                 : ")
+    printf("%.4f", fabs(x[0]) + fabs(x[1]))
+    println("")
+    println("")
+
+    if fabs(k1) < 0.01 {
+        println("    FAIL: LQR k1 near zero")
+        return 1
+    }
+    if energy > 40.0 {
+        println("    FAIL: closed-loop energy too high")
+        return 2
+    }
+    if fabs(x[0]) + fabs(x[1]) > 0.5 {
+        println("    FAIL: state did not settle")
+        return 3
+    }
+    println("    OK: analyze { lqr } gains stabilize the plant")
+    return 0
+}

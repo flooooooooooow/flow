@@ -1,0 +1,170 @@
+import "stdlib/dynamics/ga_analysis.flow"
+
+# SPRING-MASS CONTROL — model, analyze, and control in ONE file (VISION.md).
+# The plant is declared once as continuous physics (`dsys ... continuous`);
+# the compiler discretizes it, `sense` proves it controllable and measures the
+# open-loop spectral radius, `ga evolve` searches feedback gains, and `closed`
+# certifies the closed loop. main() then steps the *same* discretized plant
+# via the public `plant` binding (#160) + `state_step` — no Ad/Bd rebuild.
+#
+# Run: ./flow run examples/evolution/spring_mass_control.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+# --- MODEL: mass-spring-damper, m = 1 kg, k = 1 N/m, c = 0.2 N s/m ---------
+
+
+
+
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let h_rollout: Horizon = horizon_finite(60)
+    let __dsys_plant_A: array<f64, 4> = [0.0, 1.0, -1.0, -0.20000000000000001]
+    let __dsys_plant_B: array<f64, 2> = [0.0, 1.0]
+    let __dsys_plant_C: array<f64, 2> = [1.0, 0.0]
+    let __dsys_plant_cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.10000000000000001, Matrix { data: __dsys_plant_A, rows: 2, cols: 2 }, Matrix { data: __dsys_plant_B, rows: 2, cols: 1 }, Matrix { data: __dsys_plant_C, rows: 1, cols: 2 })
+    let __dsys_b0: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b1: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b2: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b3: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b4: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_plant: DynamicalSystem = dsys_euler_discretize(__dsys_plant_cont, __dsys_b0, __dsys_b1, __dsys_b2, __dsys_b3)
+    let plant: DynamicalSystem = __dsys_plant
+    let __dsys_b5: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b6: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b7: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b8: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b9: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut plant_ok: i32 = 0
+    plant_ok = is_controllable(__dsys_plant, __dsys_b5, __dsys_b6, __dsys_b7, __dsys_b8, __dsys_b9)
+    let mut rho_open: f64 = 0.0
+    rho_open = matrix_spectral_radius_2x2(__dsys_plant.A)
+    let __dsys_b10: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b11: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b12: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b13: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut reach_energy: f64 = 0.0
+    let __W_reach_energy: Matrix = gramian_finite_horizon(__dsys_plant, h_rollout, __dsys_b10, __dsys_b11, __dsys_b12, __dsys_b13)
+    reach_energy = matrix_trace(__W_reach_energy)
+    let mut k1: f64 = 0.0
+    let mut k2: f64 = 0.0
+    let __ga_e0_k1: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_k2: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_fit: array<f64, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_bk1: array<f64, 1> = [0.0]
+    let __ga_e0_bk2: array<f64, 1> = [0.0]
+    let __ga_e0_hist: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_cfg: GAConfig = GAConfig { population: 16, generations: 40, horizon: 60, mutation: 0.29999999999999999 }
+    ga_evolve_traced(__dsys_plant, 60, __ga_e0_cfg, __ga_e0_k1, __ga_e0_k2, __ga_e0_fit, __ga_e0_bk1, __ga_e0_bk2, __ga_e0_hist)
+    k1 = __ga_e0_bk1[0]
+    k2 = __ga_e0_bk2[0]
+    let __dsys_b14: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b15: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __cl_plant: DynamicalSystem = ga_closed_loop_matrix(__dsys_plant, k1, k2, __dsys_b14, __dsys_b15)
+    let mut rho_cl: f64 = matrix_spectral_radius_2x2(__cl_plant.A)
+    let mut E_cl: f64 = ga_closed_loop_energy(__cl_plant, 60)
+    let mut stable_cl: i32 = 0
+    if matrix_spectral_radius_2x2(__cl_plant.A) < 1.0 { stable_cl = 1 }
+    # --- end dsys DSL expansion ---
+
+    println("")
+    println("  SPRING-MASS CONTROL  --  model -> analyze -> control, one file")
+    println("  ==============================================================")
+    println("")
+    println("  --- Analysis (sense block) ---")
+    print("    controllable          : ")
+    if plant_ok == 1 { println("yes") } else { println("NO") }
+    print("    open-loop  rho(A)     : ")
+    printf("%.4f", rho_open)
+    println("   (lightly damped ringing)")
+    print("    reachability energy   : ")
+    printf("%.4f", reach_energy)
+    println("")
+    println("")
+    println("  --- Synthesis (ga evolve block) ---")
+    print("    evolved gains         : k1 = ")
+    printf("%.4f", k1)
+    print(",  k2 = ")
+    printf("%.4f", k2)
+    println("")
+    println("")
+    println("  --- Certification (closed block) ---")
+    print("    closed-loop rho(A-BK) : ")
+    printf("%.4f", rho_cl)
+    println("")
+    print("    closed-loop energy    : ")
+    printf("%.4f", E_cl)
+    print("    stable: ")
+    if stable_cl == 1 { println("yes") } else { println("NO") }
+    println("")
+
+    # `plant` is the DSL-discretized DynamicalSystem (injected alias).
+    let mut xo: array<f64, 2> = [1.0, 0.0]
+    let mut xc: array<f64, 2> = [1.0, 0.0]
+    let mut xn: array<f64, 2> = [0.0, 0.0]
+    let u0: array<f64, 1> = [0.0]
+    let mut u: array<f64, 1> = [0.0]
+    let mut open_acc: f64 = 0.0
+    let mut closed_acc: f64 = 0.0
+
+    println("  --- Step comparison: release from x = 1 m (plant + state_step) ---")
+    println("      t [s]    open x [m]   closed x [m]")
+    println("    -------   -----------   ------------")
+    for k in 0 to 61 {
+        if k % 6 == 0 {
+            print("    ")
+            printf("%7.1f", k as f64 * 0.1)
+            printf("   %11.4f", xo[0])
+            printf("   %12.4f", xc[0])
+            println("")
+        }
+        u0[0] = 0.0
+        plant_step(plant, xo, u0, xn)
+        xo[0] = xn[0]
+        xo[1] = xn[1]
+
+        u[0] = 0.0 - k1 * xc[0] - k2 * xc[1]
+        plant_step(plant, xc, u, xn)
+        xc[0] = xn[0]
+        xc[1] = xn[1]
+
+        open_acc = open_acc + xo[0] * xo[0]
+        closed_acc = closed_acc + xc[0] * xc[0]
+    }
+
+    println("")
+    print("    sum x^2 open   : ")
+    printf("%.4f", open_acc)
+    println("")
+    print("    sum x^2 closed : ")
+    printf("%.4f", closed_acc)
+    println("")
+    println("")
+
+    if plant_ok != 1 {
+        println("    FAIL: plant not controllable")
+        return 1
+    }
+    if stable_cl != 1 {
+        println("    FAIL: evolved closed loop is unstable")
+        return 2
+    }
+    if rho_cl >= rho_open {
+        println("    FAIL: feedback did not improve the spectral radius")
+        return 3
+    }
+    if closed_acc >= open_acc {
+        println("    FAIL: closed loop did not outperform open loop")
+        return 4
+    }
+    if fabs(xc[0]) > 0.1 {
+        println("    FAIL: closed loop did not settle within 6 s")
+        return 5
+    }
+    println("    OK: shared plant binding + state_step closed loop")
+    return 0
+}

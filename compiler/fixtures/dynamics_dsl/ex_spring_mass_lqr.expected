@@ -1,0 +1,82 @@
+import "stdlib/dynamics/lqr.flow"
+import "stdlib/dynamics/ga_analysis.flow"
+
+# SPRING-MASS LQR — `analyze plant { lqr { … } }` (#162).
+# Same continuous plant as spring_mass_control.flow; gains from discrete LQR
+# on the Euler-discretized model instead of GA search.
+#
+# Run: ./flow run examples/evolution/spring_mass_lqr.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let __dsys_plant_A: array<f64, 4> = [0.0, 1.0, -1.0, -0.20000000000000001]
+    let __dsys_plant_B: array<f64, 2> = [0.0, 1.0]
+    let __dsys_plant_C: array<f64, 2> = [1.0, 0.0]
+    let __dsys_plant_cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.10000000000000001, Matrix { data: __dsys_plant_A, rows: 2, cols: 2 }, Matrix { data: __dsys_plant_B, rows: 2, cols: 1 }, Matrix { data: __dsys_plant_C, rows: 1, cols: 2 })
+    let __dsys_b0: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b1: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b2: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b3: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b4: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_plant: DynamicalSystem = dsys_euler_discretize(__dsys_plant_cont, __dsys_b0, __dsys_b1, __dsys_b2, __dsys_b3)
+    let plant: DynamicalSystem = __dsys_plant
+    let __lqr_0_q: array<f64, 2> = [10.0, 1.0]
+    let mut __lqr_0_k: array<f64, 2> = [0.0, 0.0]
+    let __lqr_0_iters: i32 = dlqr_diag_q_scalar_u(__dsys_plant.A.data, __dsys_plant.B.data, __lqr_0_q, 0.10000000000000001, 2, __lqr_0_k, 200)
+    let k1: f64 = __lqr_0_k[0]
+    let k2: f64 = __lqr_0_k[1]
+    # --- end dsys DSL expansion ---
+
+    println("")
+    println("  SPRING-MASS LQR  --  analyze { lqr } on continuous dsys")
+    println("  ========================================================")
+    println("")
+    print("    LQR gains                 : k1 = ")
+    printf("%.4f", k1)
+    print(",  k2 = ")
+    printf("%.4f", k2)
+    println("")
+
+    let mut x: array<f64, 2> = [1.0, 0.0]
+    let mut xn: array<f64, 2> = [0.0, 0.0]
+    let mut u: array<f64, 1> = [0.0]
+    let mut energy: f64 = 0.0
+
+    for t in 0 to 60 {
+        u[0] = 0.0 - (k1 * x[0] + k2 * x[1])
+        plant_step(plant, x, u, xn)
+        x[0] = xn[0]
+        x[1] = xn[1]
+        energy = energy + x[0] * x[0] + x[1] * x[1]
+    }
+
+    print("    closed-loop energy (60)   : ")
+    printf("%.4f", energy)
+    println("")
+    print("    final |x|                 : ")
+    printf("%.4f", fabs(x[0]) + fabs(x[1]))
+    println("")
+    println("")
+
+    if fabs(k1) < 0.01 {
+        println("    FAIL: LQR k1 near zero")
+        return 1
+    }
+    if energy > 40.0 {
+        println("    FAIL: closed-loop energy too high")
+        return 2
+    }
+    if fabs(x[0]) + fabs(x[1]) > 0.5 {
+        println("    FAIL: state did not settle")
+        return 3
+    }
+    println("    OK: analyze { lqr } gains stabilize the plant")
+    return 0
+}

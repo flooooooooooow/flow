@@ -1,0 +1,66 @@
+# Same GA + sense pipeline as ga_dsys_syntax.flow, using the dynamics namespace.
+# Prefer this style when you want dsys/horizon/sense/ga out of the global soup.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+dynamics {
+    dsys plant {
+        discrete
+        dt 0.1
+        n 2 m 1 p 1
+        A 1.0 0.1 0.0 1.0
+        B 0.0 0.1
+        C 1.0 0.0
+    }
+
+    horizon rollout finite 50
+    horizon asymptotic infinite gamma 0.99
+
+    sense on plant {
+        controllable -> plant_ok
+        spectral -> rho_open
+        gramian finite rollout trace -> wc_fin
+        gramian infinite asymptotic trace -> wc_inf
+    }
+
+    ga evolve on plant over rollout -> k1 k2 {
+        population 12
+        generations 30
+        mutation 0.3
+    }
+
+    closed plant with k1 k2 {
+        spectral -> rho_cl
+        energy over rollout -> E_cl
+        stable -> stable_cl
+    }
+}
+
+# Line-prefixed one-shot report (outside the block — also valid)
+dynamics.analyze plant ga k1b k2b over rollout -> report {
+    full
+}
+
+function main() -> i32 {
+    println("=== namespaced dynamics DSL ===")
+    print("  plant_ok = ")
+    print(plant_ok)
+    println("")
+    print("  rho_open = ")
+    printf("%.4f", rho_open)
+    println("")
+    print("  k1,k2 = ")
+    printf("%.4f", k1)
+    print(", ")
+    printf("%.4f", k2)
+    println("")
+    print("  closed stable = ")
+    print(stable_cl)
+    println("")
+    print("  report.closed_spectral_radius = ")
+    printf("%.4f", report.closed_spectral_radius)
+    println("")
+    return 0
+}

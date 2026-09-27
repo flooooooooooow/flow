@@ -1,0 +1,10 @@
+dsys pend {
+    continuous   # comment
+    dt 0.001
+    n 2 m 1 p 1
+    A 0.0 1.0 -9.81 -0.3
+    B 0.0 1.0
+    C 1.0 0.0
+}
+dsys 2bad { discrete }
+function main() -> i32 { return 0 }

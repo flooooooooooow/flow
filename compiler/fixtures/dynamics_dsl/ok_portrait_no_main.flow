@@ -1,0 +1,8 @@
+flow Osc {
+    state a : f64 = 1.0
+    state b : f64 = 0.0
+    represent phase_portrait(a, b) {
+        map a in [0.1, 0.3] -> row
+        map b in [-2, 2e20] -> col
+    }
+}

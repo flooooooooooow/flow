@@ -1,0 +1,19 @@
+dsys p {
+    n 1 m 1 p 1
+    A 1.0
+    B 1.0
+    C 1.0
+}
+dynamics {
+    dsys p {
+        n 1 m 1 p 1
+        A 2.0
+        B 2.0
+        C 2.0
+    }
+    horizon h finite 5
+}
+horizon h finite 9
+function main() -> i32 {
+    return 0
+}

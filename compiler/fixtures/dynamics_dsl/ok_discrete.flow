@@ -1,0 +1,24 @@
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+
+horizon rollout finite 50
+horizon forever infinite gamma 0.95
+
+sense on plant {
+    controllable -> plant_ok
+    spectral -> rho_open
+    gramian finite rollout -> W_fin
+    gramian infinite forever -> W_inf
+    ignored line
+}
+
+function main() -> i32 {
+    println(plant_ok)
+    return 0
+}

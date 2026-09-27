@@ -1,0 +1,12 @@
+import "stdlib/dynamics/ga_analysis.flow"
+function main(argc: i32) -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let __dsys_p_A: array<f64, 1> = [1.0]
+    let __dsys_p_B: array<f64, 1> = [1.0]
+    let __dsys_p_C: array<f64, 1> = [1.0]
+    let __dsys_p: DynamicalSystem = dsys_discrete(1, 1, 1, 0.10000000000000001, Matrix { data: __dsys_p_A, rows: 1, cols: 1 }, Matrix { data: __dsys_p_B, rows: 1, cols: 1 }, Matrix { data: __dsys_p_C, rows: 1, cols: 1 })
+    let p: DynamicalSystem = __dsys_p
+    # --- end dsys DSL expansion ---
+
+    return 0
+}

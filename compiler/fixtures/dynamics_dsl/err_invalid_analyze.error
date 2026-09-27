@@ -1,0 +1,1 @@
+Invalid analyze block: analyze p ga (expected `analyze Name ga k1 k2 over H -> r {{…}}` or `analyze Name {{ lqr {{ … }} }}`)
