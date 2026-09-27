@@ -414,7 +414,7 @@ def plot_novel_demo(k: np.ndarray, a: np.ndarray) -> Path:
         ax6.axhline(y, color="white", lw=0.4, alpha=0.5)
     ax6.set_xlabel("Time (ms)")
     ax6.set_ylabel("Section i")
-    ax6.set_title("60 Hz retune of all kᵢ — every sample", fontweight="bold")
+    ax6.set_title("60 Hz retune of all kᵢ, every sample", fontweight="bold")
     cb2 = fig.colorbar(im2, ax=ax6, fraction=0.046, pad=0.04)
     cb2.set_label("kᵢ(t)")
 
@@ -485,7 +485,7 @@ def copy_figures() -> None:
 
 
 def run_audio_demo() -> None:
-    audio_script = ROOT / "tools" / "lattice_allpass_audio_demo.py"
+    audio_script = ROOT / "tools" / "audio" / "lattice_allpass_audio_demo.py"
     if audio_script.exists():
         subprocess.run(["python3.12", str(audio_script)], check=False)
 

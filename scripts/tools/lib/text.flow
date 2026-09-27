@@ -1,0 +1,651 @@
+# @module tools.text
+# @means  Byte-string helpers shared by the repository tools in scripts/tools.
+#
+# Strings are NUL-terminated UTF-8. Every helper works on bytes, and callers
+# that need Unicode semantics decode with tools.unicode. All allocations are
+# left to the process exit: these are short-lived command-line programs.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fwrite(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
+    function ftell(fp: ptr<void>) -> i64
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
+    function stat(path: string, buf: ptr<u8>) -> i32
+    function write(fd: i32, buf: string, n: i64) -> i64
+}
+
+# A growable list of strings.
+struct StrList {
+    items: ptr<string>
+    len: i32
+    cap: i32
+}
+
+# An open-addressing set of strings.
+struct StrSet {
+    keys: ptr<string>
+    cap: i32
+    count: i32
+}
+
+# ---------------------------------------------------------------------------
+# Output. write(2) keeps stdout and stderr unbuffered and in program order.
+# ---------------------------------------------------------------------------
+
+export function ft_out(s: string) -> void {
+    let _w: i64 = write(1, s, strlen(s))
+}
+
+export function ft_outln(s: string) -> void {
+    ft_out(s + "\n")
+}
+
+export function ft_err(s: string) -> void {
+    let _w: i64 = write(2, s, strlen(s))
+}
+
+export function ft_errln(s: string) -> void {
+    ft_err(s + "\n")
+}
+
+# ---------------------------------------------------------------------------
+# Basic string operations
+# ---------------------------------------------------------------------------
+
+export function ft_len(s: string) -> i32 {
+    return strlen(s) as i32
+}
+
+export function ft_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+export function ft_cmp(a: string, b: string) -> i32 {
+    return strcmp(a, b)
+}
+
+export function ft_byte(s: string, i: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    return p[i] as i32
+}
+
+export function ft_starts(s: string, prefix: string) -> bool {
+    return strncmp(s, prefix, strlen(prefix)) == 0
+}
+
+export function ft_ends(s: string, suffix: string) -> bool {
+    let sl: i64 = strlen(s)
+    let ul: i64 = strlen(suffix)
+    if sl < ul {
+        return false
+    }
+    let sp: ptr<u8> = s as ptr<u8>
+    let up: ptr<u8> = suffix as ptr<u8>
+    let mut i: i64 = 0
+    while i < ul {
+        if sp[(sl - ul + i) as i32] != up[i as i32] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# True when `s` has `lit` at byte offset `at`.
+export function ft_at(s: string, at: i32, lit: string) -> bool {
+    let n: i32 = strlen(lit) as i32
+    let sl: i32 = strlen(s) as i32
+    if at < 0 or at + n > sl {
+        return false
+    }
+    let sp: ptr<u8> = s as ptr<u8>
+    let lp: ptr<u8> = lit as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        if sp[at + i] != lp[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Byte offset of the first `needle` at or after `from`, or -1.
+export function ft_find(hay: string, needle: string, from: i32) -> i32 {
+    let hlen: i32 = strlen(hay) as i32
+    let nlen: i32 = strlen(needle) as i32
+    let h: ptr<u8> = hay as ptr<u8>
+    let n: ptr<u8> = needle as ptr<u8>
+    if nlen == 0 {
+        return from
+    }
+    let mut i: i32 = from
+    while i <= hlen - nlen {
+        if h[i] == n[0] {
+            let mut j: i32 = 1
+            while j < nlen and h[i + j] == n[j] {
+                j = j + 1
+            }
+            if j == nlen {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+export function ft_contains(hay: string, needle: string) -> bool {
+    return ft_find(hay, needle, 0) >= 0
+}
+
+# Byte offset of the first byte `ch` at or after `from`, or -1.
+export function ft_find_byte(s: string, ch: i32, from: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = from
+    while p[i] != 0 {
+        if p[i] as i32 == ch {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+export function ft_rfind_byte(s: string, ch: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = (strlen(s) as i32) - 1
+    while i >= 0 {
+        if p[i] as i32 == ch {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+export function ft_slice(s: string, start: i32, end: i32) -> string {
+    let mut n: i32 = end - start
+    if n < 0 {
+        n = 0
+    }
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let sp: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = sp[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+export function ft_from(s: string, start: i32) -> string {
+    return ft_slice(s, start, strlen(s) as i32)
+}
+
+export function ft_itoa(n: i32) -> string {
+    let buf: ptr<i8> = malloc(32) as ptr<i8>
+    let _n: i32 = snprintf(buf, 32, "%d", n)
+    return buf as string
+}
+
+# Left-pad or right-pad with spaces to `width` bytes (Python's :>N / :<N).
+export function ft_rjust(s: string, width: i32) -> string {
+    let mut out: string = s
+    let mut n: i32 = strlen(s) as i32
+    while n < width {
+        out = " " + out
+        n = n + 1
+    }
+    return out
+}
+
+export function ft_ljust(s: string, width: i32) -> string {
+    let mut out: string = s
+    let mut n: i32 = strlen(s) as i32
+    while n < width {
+        out = out + " "
+        n = n + 1
+    }
+    return out
+}
+
+export function ft_is_ascii_space(c: i32) -> bool {
+    return c == 32 or (c >= 9 and c <= 13) or (c >= 28 and c <= 31)
+}
+
+export function ft_is_ascii_alnum(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+}
+
+export function ft_ascii_lower(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let sp: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = sp[i] as i32
+        if c >= 65 and c <= 90 {
+            out[i] = (c + 32) as u8
+        } else {
+            out[i] = c as u8
+        }
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+# Replace every occurrence of `old` with `new`.
+export function ft_replace(s: string, old: string, new: string) -> string {
+    let olen: i32 = strlen(old) as i32
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut hit: i32 = ft_find(s, old, 0)
+    while hit >= 0 {
+        out = out + ft_slice(s, pos, hit) + new
+        pos = hit + olen
+        hit = ft_find(s, old, pos)
+    }
+    return out + ft_from(s, pos)
+}
+
+# Python repr() of a str that holds no control characters.
+export function ft_repr(s: string) -> string {
+    let mut quote: i32 = 39
+    if ft_find_byte(s, 39, 0) >= 0 and ft_find_byte(s, 34, 0) < 0 {
+        quote = 34
+    }
+    let n: i32 = strlen(s) as i32
+    let out: ptr<u8> = malloc((2 * n + 3) as i64) as ptr<u8>
+    let sp: ptr<u8> = s as ptr<u8>
+    let mut o: i32 = 0
+    out[o] = quote as u8
+    o = o + 1
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = sp[i] as i32
+        if c == 92 or c == quote {
+            out[o] = 92
+            o = o + 1
+        }
+        out[o] = c as u8
+        o = o + 1
+        i = i + 1
+    }
+    out[o] = quote as u8
+    out[o + 1] = 0
+    return out as string
+}
+
+# ---------------------------------------------------------------------------
+# Files
+# ---------------------------------------------------------------------------
+
+# Whole file as a string, or null when it cannot be opened.
+export function ft_read_file(path: string) -> string {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return null
+    }
+    let _s: i32 = fseek(fp, 0, 2)
+    let size: i64 = ftell(fp)
+    let _r: i32 = fseek(fp, 0, 0)
+    if size < 0 {
+        let _c0: i32 = fclose(fp)
+        return null
+    }
+    let buf: ptr<u8> = malloc(size + 1) as ptr<u8>
+    let got: i64 = fread(buf, 1, size, fp)
+    let _c: i32 = fclose(fp)
+    if got < 0 {
+        return null
+    }
+    buf[got as i32] = 0
+    return buf as string
+}
+
+export function ft_write_file(path: string, text: string) -> bool {
+    let fp: ptr<void> = fopen(path, "wb")
+    if fp == null {
+        return false
+    }
+    let n: i64 = strlen(text)
+    let wrote: i64 = fwrite(text as ptr<u8>, 1, n, fp)
+    let _c: i32 = fclose(fp)
+    return wrote == n
+}
+
+# stat(2) succeeds: the path exists as a file or directory.
+export function ft_exists(path: string) -> bool {
+    let buf: ptr<u8> = malloc(1024) as ptr<u8>
+    let rc: i32 = stat(path, buf)
+    free(buf as ptr<void>)
+    return rc == 0
+}
+
+# ---------------------------------------------------------------------------
+# Lines
+# ---------------------------------------------------------------------------
+
+# Split on '\n', dropping one trailing empty line. A '\r' before the newline
+# is kept, as Python's str.split("\n") would.
+export function ft_split_lines(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let n: i32 = strlen(text) as i32
+    let p: ptr<u8> = text as ptr<u8>
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 {
+            ft_list_push(out, ft_slice(text, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        ft_list_push(out, ft_slice(text, start, n))
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# StrList
+# ---------------------------------------------------------------------------
+
+export function ft_list_new() -> ptr<StrList> {
+    let l: ptr<StrList> = malloc(24) as ptr<StrList>
+    l[0].items = malloc(8 * 16) as ptr<string>
+    l[0].len = 0
+    l[0].cap = 16
+    return l
+}
+
+export function ft_list_push(l: ptr<StrList>, s: string) -> void {
+    if l[0].len == l[0].cap {
+        let nc: i32 = l[0].cap * 2
+        l[0].items = realloc(l[0].items as ptr<void>, (nc as i64) * 8) as ptr<string>
+        l[0].cap = nc
+    }
+    let items: ptr<string> = l[0].items
+    items[l[0].len] = s
+    l[0].len = l[0].len + 1
+}
+
+export function ft_list_len(l: ptr<StrList>) -> i32 {
+    return l[0].len
+}
+
+export function ft_list_get(l: ptr<StrList>, i: i32) -> string {
+    let items: ptr<string> = l[0].items
+    return items[i]
+}
+
+export function ft_list_has(l: ptr<StrList>, s: string) -> bool {
+    let mut i: i32 = 0
+    while i < l[0].len {
+        if strcmp(ft_list_get(l, i), s) == 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Bottom-up merge sort by strcmp. For UTF-8 this is code point order, which
+# is what Python's sorted() gives for str.
+export function ft_list_sort(l: ptr<StrList>) -> void {
+    let n: i32 = l[0].len
+    if n < 2 {
+        return
+    }
+    let mut src: ptr<string> = l[0].items
+    let mut dst: ptr<string> = malloc((n as i64) * 8) as ptr<string>
+    let mut width: i32 = 1
+    while width < n {
+        let mut lo: i32 = 0
+        while lo < n {
+            let mut mid: i32 = lo + width
+            if mid > n {
+                mid = n
+            }
+            let mut hi: i32 = lo + 2 * width
+            if hi > n {
+                hi = n
+            }
+            let mut ia: i32 = lo
+            let mut ib: i32 = mid
+            let mut k: i32 = lo
+            while k < hi {
+                if ia < mid and (ib >= hi or strcmp(src[ia], src[ib]) <= 0) {
+                    dst[k] = src[ia]
+                    ia = ia + 1
+                } else {
+                    dst[k] = src[ib]
+                    ib = ib + 1
+                }
+                k = k + 1
+            }
+            lo = hi
+        }
+        let tmp: ptr<string> = src
+        src = dst
+        dst = tmp
+        width = width * 2
+    }
+    l[0].items = src
+}
+
+# Sorted copy with duplicates removed.
+export function ft_list_sorted_unique(l: ptr<StrList>) -> ptr<StrList> {
+    let tmp: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < l[0].len {
+        ft_list_push(tmp, ft_list_get(l, i))
+        i = i + 1
+    }
+    ft_list_sort(tmp)
+    let out: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < tmp[0].len {
+        let s: string = ft_list_get(tmp, i)
+        if out[0].len == 0 or strcmp(ft_list_get(out, out[0].len - 1), s) != 0 {
+            ft_list_push(out, s)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# StrSet
+# ---------------------------------------------------------------------------
+
+function ft_hash(s: string) -> i64 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut h: i64 = 1469598103
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        h = (h * 31 + (p[i] as i64)) % 1000000007
+        i = i + 1
+    }
+    return h
+}
+
+export function ft_set_new() -> ptr<StrSet> {
+    let st: ptr<StrSet> = malloc(24) as ptr<StrSet>
+    st[0].cap = 1024
+    st[0].count = 0
+    let keys: ptr<string> = malloc(8 * 1024) as ptr<string>
+    let mut i: i32 = 0
+    while i < 1024 {
+        keys[i] = null
+        i = i + 1
+    }
+    st[0].keys = keys
+    return st
+}
+
+function ft_set_slot(keys: ptr<string>, cap: i32, s: string) -> i32 {
+    let mut idx: i32 = (ft_hash(s) % (cap as i64)) as i32
+    while keys[idx] != null {
+        if strcmp(keys[idx], s) == 0 {
+            return idx
+        }
+        idx = idx + 1
+        if idx == cap {
+            idx = 0
+        }
+    }
+    return idx
+}
+
+export function ft_set_has(st: ptr<StrSet>, s: string) -> bool {
+    let keys: ptr<string> = st[0].keys
+    let idx: i32 = ft_set_slot(keys, st[0].cap, s)
+    return keys[idx] != null
+}
+
+export function ft_set_add(st: ptr<StrSet>, s: string) -> void {
+    if (st[0].count + 1) * 2 > st[0].cap {
+        let old: ptr<string> = st[0].keys
+        let oldcap: i32 = st[0].cap
+        let nc: i32 = oldcap * 2
+        let nk: ptr<string> = malloc((nc as i64) * 8) as ptr<string>
+        let mut i: i32 = 0
+        while i < nc {
+            nk[i] = null
+            i = i + 1
+        }
+        i = 0
+        while i < oldcap {
+            if old[i] != null {
+                nk[ft_set_slot(nk, nc, old[i])] = old[i]
+            }
+            i = i + 1
+        }
+        st[0].keys = nk
+        st[0].cap = nc
+    }
+    let keys: ptr<string> = st[0].keys
+    let idx: i32 = ft_set_slot(keys, st[0].cap, s)
+    if keys[idx] == null {
+        keys[idx] = s
+        st[0].count = st[0].count + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+# os.path.normpath for POSIX paths.
+export function ft_normpath(path: string) -> string {
+    if strlen(path) == 0 {
+        return "."
+    }
+    let p: ptr<u8> = path as ptr<u8>
+    let mut initial: i32 = 0
+    if p[0] == 47 {
+        initial = 1
+        if p[1] == 47 and p[2] != 47 {
+            initial = 2
+        }
+    }
+    let parts: ptr<StrList> = ft_list_new()
+    let n: i32 = strlen(path) as i32
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 47 {
+            let comp: string = ft_slice(path, start, i)
+            if strlen(comp) == 0 or strcmp(comp, ".") == 0 {
+                # skip
+            } elif strcmp(comp, "..") != 0 or (initial == 0 and parts[0].len == 0) or (parts[0].len > 0 and strcmp(ft_list_get(parts, parts[0].len - 1), "..") == 0) {
+                ft_list_push(parts, comp)
+            } elif parts[0].len > 0 {
+                parts[0].len = parts[0].len - 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    let mut out: string = ""
+    if initial == 1 {
+        out = "/"
+    }
+    if initial == 2 {
+        out = "//"
+    }
+    let mut k: i32 = 0
+    while k < parts[0].len {
+        if k > 0 {
+            out = out + "/"
+        }
+        out = out + ft_list_get(parts, k)
+        k = k + 1
+    }
+    if strlen(out) == 0 {
+        return "."
+    }
+    return out
+}
+
+# Directory part of a POSIX path, as os.path.dirname.
+export function ft_dirname(path: string) -> string {
+    let i: i32 = ft_rfind_byte(path, 47)
+    if i < 0 {
+        return ""
+    }
+    let mut head: string = ft_slice(path, 0, i + 1)
+    # Strip trailing slashes unless the head is all slashes.
+    let hp: ptr<u8> = head as ptr<u8>
+    let mut e: i32 = i + 1
+    while e > 0 and hp[e - 1] == 47 {
+        e = e - 1
+    }
+    if e == 0 {
+        return head
+    }
+    return ft_slice(head, 0, e)
+}
+
+export function ft_basename(path: string) -> string {
+    let i: i32 = ft_rfind_byte(path, 47)
+    return ft_from(path, i + 1)
+}
+
+# Path.stem: final component without its last suffix.
+export function ft_stem(path: string) -> string {
+    let name: string = ft_basename(path)
+    let dot: i32 = ft_rfind_byte(name, 46)
+    if dot <= 0 or dot == (strlen(name) as i32) - 1 {
+        return name
+    }
+    return ft_slice(name, 0, dot)
+}
+
+# os.path.join(a, b) for POSIX.
+export function ft_join(a: string, b: string) -> string {
+    if strlen(a) == 0 or ft_starts(b, "/") {
+        return b
+    }
+    # Bound to a typed local first: flowc emits `return a + b` on two string
+    # parameters as pointer arithmetic instead of concatenation.
+    if ft_ends(a, "/") {
+        let joined: string = a + b
+        return joined
+    }
+    return a + "/" + b
+}

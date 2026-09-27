@@ -1,0 +1,1094 @@
+# @module tools.regex
+# @means  A backtracking regular-expression matcher for the repository tools.
+#
+# Covers the subset of Python's `re` syntax the tools use: literals and
+# escapes, `.`, classes with ranges and negation, \s \S \w \W \d \D, \b \B,
+# ^ and $, groups `( )` and `(?: )`, alternation, and the quantifiers
+# * + ? {m} {m,} {,n} {m,n}, each optionally lazy with a trailing `?`.
+# Backreferences and lookaround are rejected with an error.
+#
+# Matching runs on code points, so `.` and bounded repeats count characters
+# the way Python does. \w and \d follow Python's Unicode rules for ASCII and
+# the common Latin, Greek, Cyrillic and mathematical ranges.
+#
+# Flags follow Python: RX_MULTILINE makes ^ and $ match at line breaks,
+# RX_DOTALL lets `.` match a newline.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+const RX_MULTILINE: i32 = 8
+const RX_DOTALL: i32 = 16
+
+const N_CHAR: i32 = 1
+const N_ANY: i32 = 2
+const N_CLASS: i32 = 3
+const N_BOL: i32 = 4
+const N_EOL: i32 = 5
+const N_WORDB: i32 = 6
+const N_NWORDB: i32 = 7
+const N_GROUP: i32 = 8
+const N_REPEAT: i32 = 9
+const N_BOS: i32 = 10
+const N_EOS: i32 = 11
+
+const F_SEQ: i32 = 1
+const F_REP: i32 = 2
+
+# Class flag bits for \s \S \w \W \d \D inside a class.
+const C_SPACE: i32 = 1
+const C_NSPACE: i32 = 2
+const C_WORD: i32 = 4
+const C_NWORD: i32 = 8
+const C_DIGIT: i32 = 16
+const C_NDIGIT: i32 = 32
+
+struct Regex {
+    # nodes
+    kind: ptr<i32>
+    na: ptr<i32>
+    nb: ptr<i32>
+    nc: ptr<i32>
+    nd: ptr<i32>
+    next: ptr<i32>
+    nn: i32
+    ncap: i32
+    # group alternatives: start node of each alternative (-1 = empty)
+    alts: ptr<i32>
+    nalts: i32
+    altcap: i32
+    # classes: ranges [lo, hi], plus per-class range slice, flags, negation
+    rlo: ptr<i32>
+    rhi: ptr<i32>
+    nr: i32
+    rcap: i32
+    cstart: ptr<i32>
+    ccount: ptr<i32>
+    cflags: ptr<i32>
+    cneg: ptr<i32>
+    ncls: i32
+    ccap: i32
+    start: i32
+    flags: i32
+    error: string
+    # parse state
+    pat: ptr<i32>
+    plen: i32
+    pp: i32
+    # match state
+    text: ptr<i32>
+    tlen: i32
+    fkind: ptr<i32>
+    fnode: ptr<i32>
+    fcount: ptr<i32>
+    fpos: ptr<i32>
+    fparent: ptr<i32>
+    fn: i32
+    fcap: i32
+}
+
+# ---------------------------------------------------------------------------
+# UTF-8 decoding
+# ---------------------------------------------------------------------------
+
+# Decode `s` into a fresh code point array; the length goes to out_len[0].
+export function rx_decode(s: string, out_len: ptr<i32>) -> ptr<i32> {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s as ptr<u8>
+    let out: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let mut i: i32 = 0
+    let mut o: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut cp: i32 = c
+        let mut extra: i32 = 0
+        if c >= 240 and c < 248 {
+            cp = c & 7
+            extra = 3
+        } elif c >= 224 and c < 240 {
+            cp = c & 15
+            extra = 2
+        } elif c >= 192 and c < 224 {
+            cp = c & 31
+            extra = 1
+        }
+        if extra > 0 and i + extra < n + 1 {
+            let mut k: i32 = 1
+            let mut ok: bool = true
+            while k <= extra {
+                if i + k >= n {
+                    ok = false
+                } elif ((p[i + k] as i32) & 192) != 128 {
+                    ok = false
+                }
+                k = k + 1
+            }
+            if ok {
+                k = 1
+                while k <= extra {
+                    cp = (cp << 6) | ((p[i + k] as i32) & 63)
+                    k = k + 1
+                }
+                i = i + extra + 1
+            } else {
+                cp = c
+                i = i + 1
+            }
+        } else {
+            i = i + 1
+        }
+        out[o] = cp
+        o = o + 1
+    }
+    out[o] = 0
+    out_len[0] = o
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# Character predicates (Python str semantics)
+# ---------------------------------------------------------------------------
+
+function rx_in(cp: i32, lo: i32, hi: i32) -> bool {
+    return cp >= lo and cp <= hi
+}
+
+export function rx_is_space(cp: i32) -> bool {
+    if cp == 32 or rx_in(cp, 9, 13) or rx_in(cp, 28, 31) {
+        return true
+    }
+    if cp == 133 or cp == 160 or cp == 5760 or rx_in(cp, 8192, 8202) {
+        return true
+    }
+    return cp == 8232 or cp == 8233 or cp == 8239 or cp == 8287 or cp == 12288
+}
+
+export function rx_is_digit(cp: i32) -> bool {
+    if rx_in(cp, 48, 57) {
+        return true
+    }
+    if rx_in(cp, 1632, 1641) or rx_in(cp, 1776, 1785) or rx_in(cp, 2406, 2415) {
+        return true
+    }
+    return rx_in(cp, 65296, 65305)
+}
+
+function rx_letterlike_word(cp: i32) -> bool {
+    # U+2100..U+214F: letters such as the double-struck R, N, Z, Q, C.
+    if cp == 8450 or cp == 8455 or rx_in(cp, 8458, 8467) or cp == 8469 {
+        return true
+    }
+    if rx_in(cp, 8473, 8477) or cp == 8484 or cp == 8486 or cp == 8488 {
+        return true
+    }
+    if rx_in(cp, 8490, 8493) or rx_in(cp, 8495, 8505) or rx_in(cp, 8508, 8511) {
+        return true
+    }
+    return rx_in(cp, 8517, 8521) or cp == 8526
+}
+
+export function rx_is_word(cp: i32) -> bool {
+    if cp < 128 {
+        return rx_in(cp, 48, 57) or rx_in(cp, 65, 90) or rx_in(cp, 97, 122) or cp == 95
+    }
+    if cp < 192 {
+        return cp == 170 or cp == 178 or cp == 179 or cp == 181 or cp == 185 or cp == 186 or rx_in(cp, 188, 190)
+    }
+    if cp == 215 or cp == 247 {
+        return false
+    }
+    if cp < 688 {
+        return true
+    }
+    if cp < 880 {
+        return rx_in(cp, 688, 705)
+    }
+    if cp < 1280 {
+        let greek_punct: bool = cp == 885 or cp == 894 or cp == 900 or cp == 901 or cp == 903 or cp == 1014 or rx_in(cp, 1154, 1161)
+        return greek_punct == false
+    }
+    if cp < 8192 {
+        return true
+    }
+    if cp < 8304 {
+        return false
+    }
+    if cp < 8352 {
+        let signs: bool = rx_in(cp, 8314, 8318) or rx_in(cp, 8330, 8334)
+        return signs == false
+    }
+    if cp < 8448 {
+        return false
+    }
+    if cp < 8528 {
+        return rx_letterlike_word(cp)
+    }
+    if cp < 8592 {
+        return true
+    }
+    if cp < 11264 {
+        return rx_in(cp, 9312, 9371) or rx_in(cp, 9450, 9471) or rx_in(cp, 10102, 10131)
+    }
+    if cp < 11776 {
+        return true
+    }
+    if cp < 11904 {
+        return false
+    }
+    if rx_in(cp, 12288, 12351) {
+        return rx_in(cp, 12293, 12295) or rx_in(cp, 12321, 12329) or rx_in(cp, 12337, 12341) or rx_in(cp, 12344, 12348)
+    }
+    if rx_in(cp, 57344, 63743) or rx_in(cp, 65024, 65135) {
+        return false
+    }
+    if rx_in(cp, 65280, 65519) {
+        return rx_in(cp, 65296, 65305) or rx_in(cp, 65313, 65338) or rx_in(cp, 65345, 65370) or rx_in(cp, 65382, 65500)
+    }
+    if rx_in(cp, 126976, 129791) {
+        return false
+    }
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+function rx_grow(p: ptr<i32>, cap: i32) -> ptr<i32> {
+    return realloc(p as ptr<void>, (cap as i64) * 4) as ptr<i32>
+}
+
+function rx_node(r: ptr<Regex>, kind: i32, a: i32, b: i32, c: i32, d: i32) -> i32 {
+    if r[0].nn == r[0].ncap {
+        let nc: i32 = r[0].ncap * 2
+        r[0].kind = rx_grow(r[0].kind, nc)
+        r[0].na = rx_grow(r[0].na, nc)
+        r[0].nb = rx_grow(r[0].nb, nc)
+        r[0].nc = rx_grow(r[0].nc, nc)
+        r[0].nd = rx_grow(r[0].nd, nc)
+        r[0].next = rx_grow(r[0].next, nc)
+        r[0].ncap = nc
+    }
+    let i: i32 = r[0].nn
+    let kk: ptr<i32> = r[0].kind
+    let aa: ptr<i32> = r[0].na
+    let bb: ptr<i32> = r[0].nb
+    let cc: ptr<i32> = r[0].nc
+    let dd: ptr<i32> = r[0].nd
+    let nx: ptr<i32> = r[0].next
+    kk[i] = kind
+    aa[i] = a
+    bb[i] = b
+    cc[i] = c
+    dd[i] = d
+    nx[i] = -1
+    r[0].nn = i + 1
+    return i
+}
+
+function rx_add_alt(r: ptr<Regex>, start: i32) -> void {
+    if r[0].nalts == r[0].altcap {
+        r[0].altcap = r[0].altcap * 2
+        r[0].alts = rx_grow(r[0].alts, r[0].altcap)
+    }
+    let al: ptr<i32> = r[0].alts
+    al[r[0].nalts] = start
+    r[0].nalts = r[0].nalts + 1
+}
+
+function rx_add_range(r: ptr<Regex>, lo: i32, hi: i32) -> void {
+    if r[0].nr == r[0].rcap {
+        r[0].rcap = r[0].rcap * 2
+        r[0].rlo = rx_grow(r[0].rlo, r[0].rcap)
+        r[0].rhi = rx_grow(r[0].rhi, r[0].rcap)
+    }
+    let lo_p: ptr<i32> = r[0].rlo
+    let hi_p: ptr<i32> = r[0].rhi
+    lo_p[r[0].nr] = lo
+    hi_p[r[0].nr] = hi
+    r[0].nr = r[0].nr + 1
+}
+
+function rx_new_class(r: ptr<Regex>, neg: bool) -> i32 {
+    if r[0].ncls == r[0].ccap {
+        r[0].ccap = r[0].ccap * 2
+        r[0].cstart = rx_grow(r[0].cstart, r[0].ccap)
+        r[0].ccount = rx_grow(r[0].ccount, r[0].ccap)
+        r[0].cflags = rx_grow(r[0].cflags, r[0].ccap)
+        r[0].cneg = rx_grow(r[0].cneg, r[0].ccap)
+    }
+    let id: i32 = r[0].ncls
+    let cs: ptr<i32> = r[0].cstart
+    let cn: ptr<i32> = r[0].ccount
+    let cf: ptr<i32> = r[0].cflags
+    let cg: ptr<i32> = r[0].cneg
+    cs[id] = r[0].nr
+    cn[id] = 0
+    cf[id] = 0
+    if neg {
+        cg[id] = 1
+    } else {
+        cg[id] = 0
+    }
+    r[0].ncls = id + 1
+    return id
+}
+
+function rx_class_range(r: ptr<Regex>, id: i32, lo: i32, hi: i32) -> void {
+    rx_add_range(r, lo, hi)
+    let cn: ptr<i32> = r[0].ccount
+    cn[id] = cn[id] + 1
+}
+
+function rx_class_flag(r: ptr<Regex>, id: i32, flag: i32) -> void {
+    let cf: ptr<i32> = r[0].cflags
+    cf[id] = cf[id] | flag
+}
+
+# A one-flag class for \s \S \w \W \d \D outside brackets.
+function rx_flag_class(r: ptr<Regex>, flag: i32) -> i32 {
+    let id: i32 = rx_new_class(r, false)
+    rx_class_flag(r, id, flag)
+    return id
+}
+
+function rx_alloc(cap: i32) -> ptr<i32> {
+    return malloc((cap as i64) * 4) as ptr<i32>
+}
+
+# ---------------------------------------------------------------------------
+# Parser
+# ---------------------------------------------------------------------------
+
+function rx_peek(r: ptr<Regex>) -> i32 {
+    if r[0].pp >= r[0].plen {
+        return -1
+    }
+    let p: ptr<i32> = r[0].pat
+    return p[r[0].pp]
+}
+
+function rx_peek_at(r: ptr<Regex>, k: i32) -> i32 {
+    if r[0].pp + k >= r[0].plen {
+        return -1
+    }
+    let p: ptr<i32> = r[0].pat
+    return p[r[0].pp + k]
+}
+
+function rx_fail(r: ptr<Regex>, msg: string) -> i32 {
+    if strlen(r[0].error) == 0 {
+        r[0].error = msg
+    }
+    return -2
+}
+
+# Literal value of a simple escape letter, or -1 when it is a class/anchor.
+function rx_escape_literal(c: i32) -> i32 {
+    if c == 110 {
+        return 10
+    }
+    if c == 116 {
+        return 9
+    }
+    if c == 114 {
+        return 13
+    }
+    if c == 102 {
+        return 12
+    }
+    if c == 118 {
+        return 11
+    }
+    if c == 97 {
+        return 7
+    }
+    if c == 48 {
+        return 0
+    }
+    return c
+}
+
+function rx_class_escape_flag(c: i32) -> i32 {
+    if c == 115 {
+        return C_SPACE
+    }
+    if c == 83 {
+        return C_NSPACE
+    }
+    if c == 119 {
+        return C_WORD
+    }
+    if c == 87 {
+        return C_NWORD
+    }
+    if c == 100 {
+        return C_DIGIT
+    }
+    if c == 68 {
+        return C_NDIGIT
+    }
+    return 0
+}
+
+function rx_is_ascii_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# Parse "[...]" with the opening bracket already consumed.
+function rx_parse_class(r: ptr<Regex>) -> i32 {
+    let mut neg: bool = false
+    if rx_peek(r) == 94 {
+        neg = true
+        r[0].pp = r[0].pp + 1
+    }
+    let id: i32 = rx_new_class(r, neg)
+    let mut first: bool = true
+    while true {
+        let c: i32 = rx_peek(r)
+        if c < 0 {
+            return rx_fail(r, "unterminated character set")
+        }
+        if c == 93 and not first {
+            r[0].pp = r[0].pp + 1
+            break
+        }
+        first = false
+        r[0].pp = r[0].pp + 1
+        let mut lo: i32 = c
+        if c == 92 {
+            let e: i32 = rx_peek(r)
+            if e < 0 {
+                return rx_fail(r, "bad escape (end of pattern)")
+            }
+            r[0].pp = r[0].pp + 1
+            let fl: i32 = rx_class_escape_flag(e)
+            if fl != 0 {
+                rx_class_flag(r, id, fl)
+                continue
+            }
+            if rx_is_ascii_digit(e) and e != 48 {
+                return rx_fail(r, "backreference in class")
+            }
+            if e == 98 {
+                lo = 8
+            } else {
+                lo = rx_escape_literal(e)
+            }
+        }
+        let mut hi: i32 = lo
+        if rx_peek(r) == 45 and rx_peek_at(r, 1) != 93 and rx_peek_at(r, 1) >= 0 {
+            r[0].pp = r[0].pp + 1
+            let h: i32 = rx_peek(r)
+            r[0].pp = r[0].pp + 1
+            hi = h
+            if h == 92 {
+                let e2: i32 = rx_peek(r)
+                r[0].pp = r[0].pp + 1
+                if rx_class_escape_flag(e2) != 0 {
+                    return rx_fail(r, "bad character range")
+                }
+                hi = rx_escape_literal(e2)
+            }
+            if hi < lo {
+                return rx_fail(r, "bad character range")
+            }
+        }
+        rx_class_range(r, id, lo, hi)
+    }
+    return rx_node(r, N_CLASS, id, 0, 0, 0)
+}
+
+# Parse a decimal number at the cursor; -1 if none.
+function rx_parse_int(r: ptr<Regex>) -> i32 {
+    let mut v: i32 = -1
+    while rx_is_ascii_digit(rx_peek(r)) {
+        if v < 0 {
+            v = 0
+        }
+        v = v * 10 + (rx_peek(r) - 48)
+        r[0].pp = r[0].pp + 1
+    }
+    return v
+}
+
+# One atom as a single node with next = -1, or -1 at a sequence end, or -2
+# on error.
+function rx_parse_atom(r: ptr<Regex>) -> i32 {
+    let c: i32 = rx_peek(r)
+    if c < 0 or c == 124 or c == 41 {
+        return -1
+    }
+    r[0].pp = r[0].pp + 1
+    if c == 40 {
+        if rx_peek(r) == 63 {
+            if rx_peek_at(r, 1) == 58 {
+                r[0].pp = r[0].pp + 2
+            } else {
+                return rx_fail(r, "unsupported group extension")
+            }
+        }
+        let first_alt: i32 = rx_parse_alternation(r)
+        if first_alt == -2 {
+            return -2
+        }
+        if rx_peek(r) != 41 {
+            return rx_fail(r, "missing ), unterminated subpattern")
+        }
+        r[0].pp = r[0].pp + 1
+        return first_alt
+    }
+    if c == 46 {
+        return rx_node(r, N_ANY, 0, 0, 0, 0)
+    }
+    if c == 94 {
+        return rx_node(r, N_BOL, 0, 0, 0, 0)
+    }
+    if c == 36 {
+        return rx_node(r, N_EOL, 0, 0, 0, 0)
+    }
+    if c == 91 {
+        return rx_parse_class(r)
+    }
+    if c == 42 or c == 43 or c == 63 {
+        return rx_fail(r, "nothing to repeat")
+    }
+    if c == 92 {
+        let e: i32 = rx_peek(r)
+        if e < 0 {
+            return rx_fail(r, "bad escape (end of pattern)")
+        }
+        r[0].pp = r[0].pp + 1
+        let fl: i32 = rx_class_escape_flag(e)
+        if fl != 0 {
+            return rx_node(r, N_CLASS, rx_flag_class(r, fl), 0, 0, 0)
+        }
+        if e == 98 {
+            return rx_node(r, N_WORDB, 0, 0, 0, 0)
+        }
+        if e == 66 {
+            return rx_node(r, N_NWORDB, 0, 0, 0, 0)
+        }
+        if e == 65 {
+            return rx_node(r, N_BOS, 0, 0, 0, 0)
+        }
+        if e == 90 {
+            return rx_node(r, N_EOS, 0, 0, 0, 0)
+        }
+        if rx_is_ascii_digit(e) and e != 48 {
+            return rx_fail(r, "backreferences are not supported")
+        }
+        return rx_node(r, N_CHAR, rx_escape_literal(e), 0, 0, 0)
+    }
+    return rx_node(r, N_CHAR, c, 0, 0, 0)
+}
+
+# Try to read a {m,n} quantifier at the cursor. Returns true and fills
+# mm[0], mm[1] when one is present; otherwise leaves the cursor alone.
+function rx_parse_braces(r: ptr<Regex>, mm: ptr<i32>) -> bool {
+    if rx_peek(r) != 123 {
+        return false
+    }
+    let save: i32 = r[0].pp
+    r[0].pp = r[0].pp + 1
+    let lo: i32 = rx_parse_int(r)
+    let mut hi: i32 = lo
+    if rx_peek(r) == 44 {
+        r[0].pp = r[0].pp + 1
+        hi = rx_parse_int(r)
+    } elif lo < 0 {
+        r[0].pp = save
+        return false
+    }
+    if rx_peek(r) != 125 {
+        r[0].pp = save
+        return false
+    }
+    r[0].pp = r[0].pp + 1
+    if lo < 0 {
+        mm[0] = 0
+    } else {
+        mm[0] = lo
+    }
+    mm[1] = hi
+    return true
+}
+
+# Parse a concatenation. Returns its first node, -1 when empty, -2 on error.
+function rx_parse_seq(r: ptr<Regex>) -> i32 {
+    let mut head: i32 = -1
+    let mut tail: i32 = -1
+    let mm: ptr<i32> = rx_alloc(2)
+    while true {
+        let atom: i32 = rx_parse_atom(r)
+        if atom == -2 {
+            return -2
+        }
+        if atom == -1 {
+            break
+        }
+        let mut node: i32 = atom
+        let q: i32 = rx_peek(r)
+        let mut lo: i32 = -1
+        let mut hi: i32 = -1
+        if q == 42 {
+            lo = 0
+            hi = -1
+            r[0].pp = r[0].pp + 1
+        } elif q == 43 {
+            lo = 1
+            hi = -1
+            r[0].pp = r[0].pp + 1
+        } elif q == 63 {
+            lo = 0
+            hi = 1
+            r[0].pp = r[0].pp + 1
+        } elif rx_parse_braces(r, mm) {
+            lo = mm[0]
+            hi = mm[1]
+            if hi >= 0 and hi < lo {
+                return rx_fail(r, "min repeat greater than max repeat")
+            }
+        }
+        if lo >= 0 {
+            let mut greedy: i32 = 1
+            if rx_peek(r) == 63 {
+                greedy = 0
+                r[0].pp = r[0].pp + 1
+            }
+            let nxq: i32 = rx_peek(r)
+            if nxq == 42 or nxq == 43 or nxq == 63 {
+                return rx_fail(r, "multiple repeat")
+            }
+            node = rx_node(r, N_REPEAT, atom, lo, hi, greedy)
+        }
+        if head < 0 {
+            head = node
+        } else {
+            let nx: ptr<i32> = r[0].next
+            nx[tail] = node
+        }
+        tail = node
+    }
+    return head
+}
+
+# Parse alternatives separated by '|'. Always returns one GROUP node (or -2).
+function rx_parse_alternation(r: ptr<Regex>) -> i32 {
+    let firsts: ptr<i32> = rx_alloc(64)
+    let mut cap: i32 = 64
+    let mut n: i32 = 0
+    let mut work: ptr<i32> = firsts
+    while true {
+        let s: i32 = rx_parse_seq(r)
+        if s == -2 {
+            return -2
+        }
+        if n == cap {
+            cap = cap * 2
+            work = rx_grow(work, cap)
+        }
+        work[n] = s
+        n = n + 1
+        if rx_peek(r) == 124 {
+            r[0].pp = r[0].pp + 1
+        } else {
+            break
+        }
+    }
+    let first: i32 = r[0].nalts
+    let mut i: i32 = 0
+    while i < n {
+        rx_add_alt(r, work[i])
+        i = i + 1
+    }
+    return rx_node(r, N_GROUP, first, n, 0, 0)
+}
+
+# Compile `pattern` with Python-style `flags`. Check rx_error() afterwards.
+export function rx_compile(pattern: string, flags: i32) -> ptr<Regex> {
+    let r: ptr<Regex> = malloc(512) as ptr<Regex>
+    r[0].ncap = 64
+    r[0].nn = 0
+    r[0].kind = rx_alloc(64)
+    r[0].na = rx_alloc(64)
+    r[0].nb = rx_alloc(64)
+    r[0].nc = rx_alloc(64)
+    r[0].nd = rx_alloc(64)
+    r[0].next = rx_alloc(64)
+    r[0].altcap = 16
+    r[0].nalts = 0
+    r[0].alts = rx_alloc(16)
+    r[0].rcap = 16
+    r[0].nr = 0
+    r[0].rlo = rx_alloc(16)
+    r[0].rhi = rx_alloc(16)
+    r[0].ccap = 8
+    r[0].ncls = 0
+    r[0].cstart = rx_alloc(8)
+    r[0].ccount = rx_alloc(8)
+    r[0].cflags = rx_alloc(8)
+    r[0].cneg = rx_alloc(8)
+    r[0].flags = flags
+    r[0].error = ""
+    r[0].fcap = 256
+    r[0].fn = 0
+    r[0].fkind = rx_alloc(256)
+    r[0].fnode = rx_alloc(256)
+    r[0].fcount = rx_alloc(256)
+    r[0].fpos = rx_alloc(256)
+    r[0].fparent = rx_alloc(256)
+    let lenp: ptr<i32> = rx_alloc(1)
+    r[0].pat = rx_decode(pattern, lenp)
+    r[0].plen = lenp[0]
+    r[0].pp = 0
+    let top: i32 = rx_parse_alternation(r)
+    if top == -2 {
+        return r
+    }
+    if r[0].pp < r[0].plen {
+        let _e: i32 = rx_fail(r, "unbalanced parenthesis")
+        return r
+    }
+    r[0].start = top
+    return r
+}
+
+# re.MULTILINE | re.DOTALL, the flag set the repository tools use.
+export function rx_py_flags() -> i32 {
+    return RX_MULTILINE | RX_DOTALL
+}
+
+export function rx_error(r: ptr<Regex>) -> string {
+    return r[0].error
+}
+
+# ---------------------------------------------------------------------------
+# Matcher
+# ---------------------------------------------------------------------------
+
+function rx_class_match(r: ptr<Regex>, id: i32, cp: i32) -> bool {
+    let cs: ptr<i32> = r[0].cstart
+    let cn: ptr<i32> = r[0].ccount
+    let cf: ptr<i32> = r[0].cflags
+    let cg: ptr<i32> = r[0].cneg
+    let lo: ptr<i32> = r[0].rlo
+    let hi: ptr<i32> = r[0].rhi
+    let mut hit: bool = false
+    let fl: i32 = cf[id]
+    if fl != 0 {
+        if (fl & C_SPACE) != 0 and rx_is_space(cp) {
+            hit = true
+        } elif (fl & C_NSPACE) != 0 and not rx_is_space(cp) {
+            hit = true
+        } elif (fl & C_WORD) != 0 and rx_is_word(cp) {
+            hit = true
+        } elif (fl & C_NWORD) != 0 and not rx_is_word(cp) {
+            hit = true
+        } elif (fl & C_DIGIT) != 0 and rx_is_digit(cp) {
+            hit = true
+        } elif (fl & C_NDIGIT) != 0 and not rx_is_digit(cp) {
+            hit = true
+        }
+    }
+    if not hit {
+        let s: i32 = cs[id]
+        let e: i32 = s + cn[id]
+        let mut i: i32 = s
+        while i < e {
+            if cp >= lo[i] and cp <= hi[i] {
+                hit = true
+                break
+            }
+            i = i + 1
+        }
+    }
+    if cg[id] != 0 {
+        return hit == false
+    }
+    return hit
+}
+
+# Does single-character node n match the character at pos?
+function rx_char_at(r: ptr<Regex>, n: i32, pos: i32) -> bool {
+    if pos >= r[0].tlen {
+        return false
+    }
+    let t: ptr<i32> = r[0].text
+    let cp: i32 = t[pos]
+    let kinds: ptr<i32> = r[0].kind
+    let aa: ptr<i32> = r[0].na
+    let k: i32 = kinds[n]
+    if k == N_CHAR {
+        return cp == aa[n]
+    }
+    if k == N_ANY {
+        return cp != 10 or (r[0].flags & RX_DOTALL) != 0
+    }
+    return rx_class_match(r, aa[n], cp)
+}
+
+function rx_word_at(r: ptr<Regex>, pos: i32) -> bool {
+    if pos < 0 or pos >= r[0].tlen {
+        return false
+    }
+    let t: ptr<i32> = r[0].text
+    return rx_is_word(t[pos])
+}
+
+function rx_push(r: ptr<Regex>, kind: i32, node: i32, count: i32, pos: i32, parent: i32) -> i32 {
+    if r[0].fn == r[0].fcap {
+        let nc: i32 = r[0].fcap * 2
+        r[0].fkind = rx_grow(r[0].fkind, nc)
+        r[0].fnode = rx_grow(r[0].fnode, nc)
+        r[0].fcount = rx_grow(r[0].fcount, nc)
+        r[0].fpos = rx_grow(r[0].fpos, nc)
+        r[0].fparent = rx_grow(r[0].fparent, nc)
+        r[0].fcap = nc
+    }
+    let i: i32 = r[0].fn
+    let fk: ptr<i32> = r[0].fkind
+    let fnd: ptr<i32> = r[0].fnode
+    let fc: ptr<i32> = r[0].fcount
+    let fp: ptr<i32> = r[0].fpos
+    let fpar: ptr<i32> = r[0].fparent
+    fk[i] = kind
+    fnd[i] = node
+    fc[i] = count
+    fp[i] = pos
+    fpar[i] = parent
+    r[0].fn = i + 1
+    return i
+}
+
+# Resume continuation k at pos. Returns the match end or -1.
+function rx_cont(r: ptr<Regex>, pos: i32, k: i32) -> i32 {
+    if k < 0 {
+        return pos
+    }
+    let fk: ptr<i32> = r[0].fkind
+    let fnd: ptr<i32> = r[0].fnode
+    let fc: ptr<i32> = r[0].fcount
+    let fp: ptr<i32> = r[0].fpos
+    let fpar: ptr<i32> = r[0].fparent
+    if fk[k] == F_SEQ {
+        return rx_match(r, fnd[k], pos, fpar[k])
+    }
+    return rx_rep(r, fnd[k], fc[k], pos, fp[k], fpar[k])
+}
+
+function rx_is_single(r: ptr<Regex>, n: i32) -> bool {
+    let kinds: ptr<i32> = r[0].kind
+    let k: i32 = kinds[n]
+    return k == N_CHAR or k == N_ANY or k == N_CLASS
+}
+
+# Repeat node n after `count` iterations, the last one starting at lastpos.
+# kafter continues past the repeat.
+function rx_rep(r: ptr<Regex>, n: i32, count: i32, pos: i32, lastpos: i32, kafter: i32) -> i32 {
+    let aa: ptr<i32> = r[0].na
+    let bb: ptr<i32> = r[0].nb
+    let cc: ptr<i32> = r[0].nc
+    let dd: ptr<i32> = r[0].nd
+    let child: i32 = aa[n]
+    let lo: i32 = bb[n]
+    let hi: i32 = cc[n]
+    let greedy: bool = dd[n] != 0
+    let mark: i32 = r[0].fn
+    if count < lo {
+        if count > 0 and pos == lastpos {
+            return rx_cont(r, pos, kafter)
+        }
+        let f: i32 = rx_push(r, F_REP, n, count + 1, pos, kafter)
+        let got: i32 = rx_match(r, child, pos, f)
+        r[0].fn = mark
+        return got
+    }
+    let can_more: bool = (hi < 0 or count < hi) and pos != lastpos
+    if greedy {
+        if can_more {
+            let f2: i32 = rx_push(r, F_REP, n, count + 1, pos, kafter)
+            let got2: i32 = rx_match(r, child, pos, f2)
+            r[0].fn = mark
+            if got2 >= 0 {
+                return got2
+            }
+        }
+        return rx_cont(r, pos, kafter)
+    }
+    let got3: i32 = rx_cont(r, pos, kafter)
+    if got3 >= 0 {
+        return got3
+    }
+    if can_more {
+        let f3: i32 = rx_push(r, F_REP, n, count + 1, pos, kafter)
+        let got4: i32 = rx_match(r, child, pos, f3)
+        r[0].fn = mark
+        return got4
+    }
+    return -1
+}
+
+# Match the sequence starting at node n from pos, then continuation k.
+function rx_match(r: ptr<Regex>, start: i32, start_pos: i32, k: i32) -> i32 {
+    let kinds: ptr<i32> = r[0].kind
+    let aa: ptr<i32> = r[0].na
+    let bb: ptr<i32> = r[0].nb
+    let cc: ptr<i32> = r[0].nc
+    let dd: ptr<i32> = r[0].nd
+    let nx: ptr<i32> = r[0].next
+    let t: ptr<i32> = r[0].text
+    let multiline: bool = (r[0].flags & RX_MULTILINE) != 0
+    let mut n: i32 = start
+    let mut pos: i32 = start_pos
+    while n >= 0 {
+        let kind: i32 = kinds[n]
+        if kind == N_CHAR or kind == N_ANY or kind == N_CLASS {
+            if not rx_char_at(r, n, pos) {
+                return -1
+            }
+            pos = pos + 1
+        } elif kind == N_BOL {
+            let at_line_start: bool = pos == 0 or (multiline and t[pos - 1] == 10)
+            if at_line_start == false {
+                return -1
+            }
+        } elif kind == N_EOL {
+            let at_end: bool = pos == r[0].tlen
+            let before_final_nl: bool = pos == r[0].tlen - 1 and t[pos] == 10
+            let at_line_end: bool = at_end or before_final_nl or (multiline and pos < r[0].tlen and t[pos] == 10)
+            if at_line_end == false {
+                return -1
+            }
+        } elif kind == N_BOS {
+            if pos != 0 {
+                return -1
+            }
+        } elif kind == N_EOS {
+            if pos != r[0].tlen {
+                return -1
+            }
+        } elif kind == N_WORDB or kind == N_NWORDB {
+            let edge: bool = rx_word_at(r, pos - 1) != rx_word_at(r, pos)
+            if kind == N_WORDB and not edge {
+                return -1
+            }
+            if kind == N_NWORDB and edge {
+                return -1
+            }
+        } elif kind == N_GROUP {
+            let mark: i32 = r[0].fn
+            let mut after: i32 = k
+            if nx[n] >= 0 {
+                after = rx_push(r, F_SEQ, nx[n], 0, 0, k)
+            }
+            let al: ptr<i32> = r[0].alts
+            let first: i32 = aa[n]
+            let count: i32 = bb[n]
+            let mut i: i32 = 0
+            while i < count {
+                let got: i32 = rx_match(r, al[first + i], pos, after)
+                if got >= 0 {
+                    r[0].fn = mark
+                    return got
+                }
+                i = i + 1
+            }
+            r[0].fn = mark
+            return -1
+        } else {
+            # N_REPEAT
+            let mark2: i32 = r[0].fn
+            let mut after2: i32 = k
+            if nx[n] >= 0 {
+                after2 = rx_push(r, F_SEQ, nx[n], 0, 0, k)
+            }
+            let child: i32 = aa[n]
+            let lo: i32 = bb[n]
+            let hi: i32 = cc[n]
+            if rx_is_single(r, child) {
+                let mut j: i32 = pos
+                let mut got_n: i32 = 0
+                while (hi < 0 or got_n < hi) and rx_char_at(r, child, j) {
+                    j = j + 1
+                    got_n = got_n + 1
+                }
+                if got_n < lo {
+                    r[0].fn = mark2
+                    return -1
+                }
+                if dd[n] != 0 {
+                    let mut c: i32 = got_n
+                    while c >= lo {
+                        let res: i32 = rx_cont(r, pos + c, after2)
+                        if res >= 0 {
+                            r[0].fn = mark2
+                            return res
+                        }
+                        c = c - 1
+                    }
+                } else {
+                    let mut c2: i32 = lo
+                    while c2 <= got_n {
+                        let res2: i32 = rx_cont(r, pos + c2, after2)
+                        if res2 >= 0 {
+                            r[0].fn = mark2
+                            return res2
+                        }
+                        c2 = c2 + 1
+                    }
+                }
+                r[0].fn = mark2
+                return -1
+            }
+            let res3: i32 = rx_rep(r, n, 0, pos, -1, after2)
+            r[0].fn = mark2
+            return res3
+        }
+        n = nx[n]
+    }
+    return rx_cont(r, pos, k)
+}
+
+# re.search on already-decoded text: true when the pattern matches anywhere.
+export function rx_search_cps(r: ptr<Regex>, text: ptr<i32>, tlen: i32) -> bool {
+    if strlen(r[0].error) > 0 {
+        return false
+    }
+    r[0].text = text
+    r[0].tlen = tlen
+    let kinds: ptr<i32> = r[0].kind
+    let aa: ptr<i32> = r[0].na
+    let bb: ptr<i32> = r[0].nb
+    let al: ptr<i32> = r[0].alts
+    # A top group with one alternative that starts with a literal lets the
+    # scan skip positions that cannot start a match.
+    let mut lead: i32 = -1
+    let top: i32 = r[0].start
+    if bb[top] == 1 {
+        let s0: i32 = al[aa[top]]
+        if s0 >= 0 and kinds[s0] == N_CHAR {
+            lead = aa[s0]
+        }
+    }
+    let mut s: i32 = 0
+    while s <= tlen {
+        if lead < 0 or (s < tlen and text[s] == lead) {
+            r[0].fn = 0
+            if rx_match(r, top, s, -1) >= 0 {
+                return true
+            }
+        }
+        s = s + 1
+    }
+    return false
+}
+
+export function rx_search(r: ptr<Regex>, text: string) -> bool {
+    let lenp: ptr<i32> = rx_alloc(1)
+    let cps: ptr<i32> = rx_decode(text, lenp)
+    return rx_search_cps(r, cps, lenp[0])
+}

@@ -1,0 +1,186 @@
+# Binary size report for compiled Flow programs.
+#
+# Run through scripts/tools/measure_size/measure_size.sh from anywhere:
+#
+#   measure_size.sh [--out report.md] [program.flow ...]
+#
+# Each program is compiled with ./flow compile (host from FLOW_HOST, default
+# flowc), measured with size(1), stripped, and measured again. The table
+# compares the stripped binary with a 25 MB Python deployment.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_starts, ft_basename, ft_replace, ft_write_file, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_is_ascii_space, StrList }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function system(cmd: string) -> i32
+    function popen(cmd: string, mode: string) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
+    function ftell(fp: ptr<void>) -> i64
+    function sprintf(buf: ptr<i8>, fmt: string, value: f64) -> i32
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+}
+
+const PYTHON_DEPLOYMENT_SIZE: i64 = 26214400
+
+# Single-quote `s` for sh.
+function shell_quote(s: string) -> string {
+    return "'" + ft_replace(s, "'", "'\\''") + "'"
+}
+
+function file_size(path: string) -> i64 {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return -1
+    }
+    let _s: i32 = fseek(fp, 0, 2)
+    let n: i64 = ftell(fp)
+    let _c: i32 = fclose(fp)
+    return n
+}
+
+# Whole stdout of a shell command.
+function capture(cmd: string) -> string {
+    let fp: ptr<void> = popen(cmd, "r")
+    if fp == null {
+        return ""
+    }
+    # size(1) prints two short lines; 64 KiB is ample.
+    let buf: ptr<u8> = malloc(65536) as ptr<u8>
+    let got: i64 = fread(buf, 1, 65535, fp)
+    let mut len: i64 = 0
+    if got > 0 {
+        len = got
+    }
+    buf[len as i32] = 0
+    let _p: i32 = pclose(fp)
+    return buf as string
+}
+
+# Whitespace-separated fields of the second line, as Python's split().
+function second_line_fields(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 and p[i] != 10 {
+        i = i + 1
+    }
+    if p[i] == 0 {
+        return out
+    }
+    i = i + 1
+    while p[i] != 0 and p[i] != 10 {
+        while p[i] != 0 and p[i] != 10 and ft_is_ascii_space(p[i] as i32) {
+            i = i + 1
+        }
+        let start: i32 = i
+        while p[i] != 0 and ft_is_ascii_space(p[i] as i32) == false {
+            i = i + 1
+        }
+        if i > start {
+            let n: i32 = i - start
+            let w: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+            let mut k: i32 = 0
+            while k < n {
+                w[k] = p[start + k]
+                k = k + 1
+            }
+            w[n] = 0
+            ft_list_push(out, w as string)
+        }
+    }
+    return out
+}
+
+function i64_str(v: i64) -> string {
+    let buf: ptr<i8> = malloc(32) as ptr<i8>
+    let _n: i32 = sprintf(buf, "%.0f", v as f64)
+    return buf as string
+}
+
+function pct_str(stripped: i64) -> string {
+    let ratio: f64 = ((stripped as f64) / (PYTHON_DEPLOYMENT_SIZE as f64)) * 100.0
+    let buf: ptr<i8> = malloc(64) as ptr<i8>
+    let _n: i32 = sprintf(buf, "%.2f", ratio)
+    return (buf as string) + "%"
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut out_file: string = null
+    let programs: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i] as string
+        if ft_eq(a, "-h") or ft_eq(a, "--help") {
+            ft_outln("usage: measure_size.sh [-h] [--out OUT] [programs ...]")
+            return 0
+        }
+        if ft_eq(a, "--out") {
+            if i + 1 >= argc {
+                ft_errln("measure_size.sh: error: argument --out: expected one argument")
+                return 2
+            }
+            i = i + 1
+            out_file = argv[i] as string
+        } elif ft_starts(a, "--out=") {
+            out_file = ft_replace(a, "--out=", "")
+        } else {
+            ft_list_push(programs, a)
+        }
+        i = i + 1
+    }
+    if ft_list_len(programs) == 0 {
+        ft_list_push(programs, "examples/basics/hello_world.flow")
+        ft_list_push(programs, "examples/basics/fibonacci.flow")
+        ft_list_push(programs, "examples/basics/loops.flow")
+    }
+
+    let mut host: string = getenv("FLOW_HOST")
+    if host == null or ft_len(host) == 0 {
+        host = "flowc"
+    }
+
+    let mut rows: string = ""
+    let mut p: i32 = 0
+    while p < ft_list_len(programs) {
+        let prog: string = ft_list_get(programs, p)
+        let name: string = ft_basename(prog)
+        let bin_path: string = "build/" + ft_replace(name, ".flow", "")
+        let rc: i32 = system("FLOW_HOST=" + shell_quote(host) + " ./flow compile " + shell_quote(prog) + " >/dev/null 2>&1")
+        if rc != 0 {
+            ft_errln("measure_size: ./flow compile " + prog + " failed")
+            return 1
+        }
+        let fields: ptr<StrList> = second_line_fields(capture("size " + shell_quote(bin_path)))
+        if ft_list_len(fields) < 3 {
+            ft_errln("measure_size: could not read size(1) output for " + bin_path)
+            return 1
+        }
+        let text_sz: i64 = strtol(ft_list_get(fields, 0), null, 10)
+        let data_sz: i64 = strtol(ft_list_get(fields, 1), null, 10)
+        let bss_sz: i64 = strtol(ft_list_get(fields, 2), null, 10)
+        let unstripped: i64 = file_size(bin_path)
+        let _s: i32 = system("strip " + shell_quote(bin_path))
+        let stripped: i64 = file_size(bin_path)
+        rows = rows + "| `" + name + "` | " + i64_str(text_sz) + " | " + i64_str(data_sz) + " | " + i64_str(bss_sz) + " | " + i64_str(unstripped) + " | " + i64_str(stripped) + " | " + pct_str(stripped) + " |\n"
+        p = p + 1
+    }
+
+    let mut report: string = "# Binary Size Report\n\n"
+    report = report + "Comparison baseline: Python minimum footprint (~25MB)\n\n"
+    report = report + "| Program | `.text` | `.data` | `.bss` | Unstripped | Stripped | % of Python |\n"
+    report = report + "|---------|---------|---------|--------|------------|----------|-------------|\n"
+    report = report + rows
+    ft_out(report + "\n")
+    if out_file != null {
+        if ft_write_file(out_file, report) == false {
+            ft_errln("measure_size: cannot write " + out_file)
+            return 1
+        }
+    }
+    return 0
+}

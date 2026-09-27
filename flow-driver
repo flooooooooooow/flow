@@ -3536,7 +3536,7 @@ for f in sys.argv[1:]:
                 exit 1
             fi
             print_info "Flow → C → WASM with a $wasm_fs filesystem (see docs/language/wasm-crossings.md)"
-            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_fs.py" "$1" --fs "$wasm_fs" \
+            if ! "$SCRIPT_DIR/wasm/crossings.sh" fs "$1" --fs "$wasm_fs" \
                     ${wasm_preload[@]+"${wasm_preload[@]}"}; then
                 print_error "Filesystem WASM build failed"
                 exit 1
@@ -3549,7 +3549,7 @@ for f in sys.argv[1:]:
                 exit 1
             fi
             print_info "Flow → C → threaded WASM (see docs/language/wasm-crossings.md)"
-            if ! python3 "$SCRIPT_DIR/wasm/flow_wasm_threads.py" "$1" --workers "$wasm_workers"; then
+            if ! "$SCRIPT_DIR/wasm/crossings.sh" threads "$1" --workers "$wasm_workers"; then
                 print_error "Threaded WASM build failed"
                 exit 1
             fi
@@ -3695,7 +3695,7 @@ pm.clean()
         ;;
     know)
         shift
-        python3 "$SCRIPT_DIR/tools/flow_know.py" "$@"
+        python3 "$SCRIPT_DIR/tools/doc/flow_know.py" "$@"
         ;;
     "doc")
         shift
@@ -3707,17 +3707,17 @@ pm.clean()
                     print_error "Usage: flow doc proof <file.flow|directory> [-r]"
                     exit 1
                 fi
-                python3 "$SCRIPT_DIR/tools/flow_doc.py" proof "$@"
+                python3 "$SCRIPT_DIR/tools/doc/flow_doc.py" proof "$@"
                 ;;
             bundle)
-                python3 "$SCRIPT_DIR/tools/flow_doc.py" bundle "$@"
+                python3 "$SCRIPT_DIR/tools/doc/flow_doc.py" bundle "$@"
                 ;;
             kernel)
                 if [ -z "${1:-}" ]; then
                     print_error "Usage: flow doc kernel <file.flow> [--param n=0] [--plot out.dot]"
                     exit 1
                 fi
-                python3 "$SCRIPT_DIR/tools/flow_doc.py" kernel "$@"
+                python3 "$SCRIPT_DIR/tools/doc/flow_doc.py" kernel "$@"
                 ;;
             *)
                 print_error "Usage: flow doc proof <file|dir> [-r]  |  flow doc bundle  |  flow doc kernel <file.flow> [--param n=0] [--plot out.png]"

@@ -47,7 +47,7 @@ Pyodide.
 <pre class="source"># Flow calling Python, in a browser.
 #
 #   ./flow run examples/wasm/python_embed.flow      # native, libpython
-#   python3 wasm/flow_wasm_python.py                # browser, Pyodide
+#   wasm/crossings.sh python                        # browser, Pyodide
 #
 # Nothing below is browser-aware. It is the ordinary embedding surface from
 # lib/stdlib/python_embed.flow: init, extend sys.path, import a module, call
@@ -286,7 +286,7 @@ addToLibrary({
         // Every</pre>
 
 <footer>
-Built by <code>wasm/flow_wasm_python.py</code>. Pyodide 0.27.2 from
+Built by <code>wasm/crossings.sh python</code>. Pyodide 0.27.2 from
 jsDelivr, so this page needs network. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
