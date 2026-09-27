@@ -75,7 +75,7 @@ MIRRORS: tuple[Mirror, ...] = (
         ),
     ),
     Mirror(
-        "flow",
+        "flow-driver",
         (
             r'^    echo "Flow Programming Language v(?P<version>[^"]+)"$',
             r'^    echo "  version           Print Flow version \((?P<version>[^)]+)\)"$',
