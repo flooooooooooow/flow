@@ -1434,17 +1434,44 @@ function flowc_parse_if_chain(p: ptr<Parser>, start: i32) -> i32 {
     return elif_id
 }
 
+# Statement-level attributes: @name, @name(args). @max_iterations(N) on a
+# `while` is kept as the loop node's ival (#940); the rest are skipped.
 function flowc_parse_stmt(p: ptr<Parser>) -> i32 {
-    # Skip statement-level attributes: @name, @name(args)
+    let mut max_iter: i32 = 0
     while flowc_parser_check(p[0], TOK_AT) == 1 {
         flowc_parser_advance(p)
+        let mut is_bound: i32 = 0
         if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+            if flowc_parser_span_is(p[0], p[0].cur.start, p[0].cur.end, "max_iterations") == 1 {
+                is_bound = 1
+            }
             flowc_parser_advance(p)
         }
         if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
-            flowc_parser_skip_paren_block(p)
+            if is_bound == 1 {
+                flowc_parser_advance(p)
+                if flowc_parser_check(p[0], TOK_INT) == 1 {
+                    max_iter = flowc_parse_int_span(p[0].lex.input, p[0].cur.start, p[0].cur.end)
+                    flowc_parser_advance(p)
+                }
+                if flowc_parser_eat(p, TOK_RPAREN) == 0 {
+                    return AST_NONE
+                }
+            } else {
+                flowc_parser_skip_paren_block(p)
+            }
         }
     }
+    let st: i32 = flowc_parse_stmt_inner(p)
+    if st != AST_NONE and max_iter > 0 {
+        if p[0].arena.nodes[st].kind == AST_WHILE {
+            p[0].arena.nodes[st].ival = max_iter
+        }
+    }
+    return st
+}
+
+function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
     if flowc_parser_check_kw(p[0], KW_LET) == 1 {
         let start: i32 = p[0].cur.start
         flowc_parser_advance(p)

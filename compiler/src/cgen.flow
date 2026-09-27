@@ -2975,12 +2975,33 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_WHILE {
+        if arena.nodes[id].ival > 0 {
+            flowc_cgen_puts(w, "  { int32_t __flowc_iter_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " = 0;\n")
+        }
         flowc_cgen_puts(w, "  while (")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_puts(w, ") ")
         let saved_wbase: i32 = w[0].loop_defer_base
         w[0].loop_defer_base = w[0].defer_len
+        # @max_iterations(N): count iterations and abort past the bound (#940).
+        let bound: i32 = arena.nodes[id].ival
+        if bound > 0 {
+            flowc_cgen_puts(w, "{\n  if (__flowc_iter_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " >= ")
+            flowc_cgen_put_i32(w, bound)
+            flowc_cgen_puts(w, ") { fprintf(stderr, \"flow: while exceeded @max_iterations(")
+            flowc_cgen_put_i32(w, bound)
+            flowc_cgen_puts(w, ")\\n\"); abort(); }\n  __flowc_iter_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, "++;\n")
+        }
         flowc_cgen_emit_block(w, arena, src, arena.nodes[id].b)
+        if bound > 0 {
+            flowc_cgen_puts(w, "}\n  }\n")
+        }
         w[0].loop_defer_base = saved_wbase
         return
     }
