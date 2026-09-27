@@ -211,7 +211,9 @@ analyze plant {
 `laplacian_1d_at`, `heat_euler_step_1d`). Tourist
 `examples/evolution/heat_diffusion.flow` steps via the helper.
 
-**Also shipped:** Stage-1 grammar expander (`field_dsl.py`):
+**Also shipped:** Stage-1 grammar expander, written in Flow
+([`compiler/src/field_dsl.flow`](../../compiler/src/field_dsl.flow)) and run by flowc
+before parse:
 ```flow-pseudocode
 field T : f64[32] on Line
 T evolves as laplacian(T)
