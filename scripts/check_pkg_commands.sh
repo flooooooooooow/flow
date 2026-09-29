@@ -170,7 +170,7 @@ run() {
     (
         cd "$dir" || exit 1
         for e in ${envs[@]+"${envs[@]}"}; do
-            export "$e"
+            export "${e?}"
         done
         flowcmd "$@"
     ) > "$so" 2>/dev/null || rc=$?

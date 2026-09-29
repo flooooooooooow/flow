@@ -26,6 +26,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# Build flowc up front: on a clean checkout the first case would otherwise
+# catch ensure_flowc's build notice in its stderr.
+bash compiler/scripts/ensure_flowc.sh >/dev/null 2>&1 || true
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/flow-doc-examples-tests.XXXXXX")"
 trap 'rm -rf "$work"' EXIT

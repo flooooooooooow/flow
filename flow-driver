@@ -2389,7 +2389,9 @@ run_tests() {
     mkdir -p "$test_build_dir"
 
     # Only run git-tracked .flow files so local WIP verify corpora do not break tier tests.
-    # tests/cgen/ holds C-emission goldens, some rejected on purpose, and
+    # tests/cgen/ and the tool gate directories (fir, gpu, pywheel, targets and
+    # the rest) hold inputs that are rejected on purpose; their own run.sh or
+    # parity script checks them. tests/cgen/ holds C-emission goldens, and
     # tests/cgen/run.sh checks them.
     # tests/tools/<tool>/fixtures/ are inputs to tool transcripts (some are
     # broken on purpose, to test diagnostics); the transcripts check them.
@@ -2405,14 +2407,14 @@ run_tests() {
                 | grep -v '^examples/verify/' \
                 | grep -v '^tests/fuzz/crashes/' \
                 | grep -v '^tests/tools/[^/]*/fixtures/' \
-                | grep -v '^tests/cgen/' \
+                | grep -vE '^tests/(cgen|c_to_hdr|check|dap|doc_examples|fir|flow_run|gpu|pkg_commands|project_test|pywheel|targets)/' \
                 | grep -v '^examples/ecosystem/' \
                 | grep -v '^examples/demos/' \
                 | while read -r rel; do
                     echo "$SCRIPT_DIR/$rel"
                 done
         else
-            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/tests/tools/*/fixtures/*" -not -path "*/tests/cgen/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/tests/tools/*/fixtures/*" -not -path "*/tests/cgen/*" -not -path "*/tests/c_to_hdr/*" -not -path "*/tests/check/*" -not -path "*/tests/dap/*" -not -path "*/tests/doc_examples/*" -not -path "*/tests/fir/*" -not -path "*/tests/flow_run/*" -not -path "*/tests/gpu/*" -not -path "*/tests/pkg_commands/*" -not -path "*/tests/project_test/*" -not -path "*/tests/pywheel/*" -not -path "*/tests/targets/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
         fi
     }
 
