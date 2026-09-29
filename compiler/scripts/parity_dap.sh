@@ -145,6 +145,15 @@ normalise() {
     sed -e "s#$WORK#<WORK>#g" -e "s#$ROOT#<ROOT>#g"
 }
 
+# What the comparison ignores: Content-Length values (they count the real
+# paths, so they depend on where the checkout lives) and the build log a
+# failed `flow debug` launch carries (flow-driver's messages, which differ
+# by host and by flowc version). The message itself must still be there.
+canon() {
+    sed -E -e 's/Content-Length: [0-9]+/Content-Length: N/g' \
+        -e 's/(flow debug --no-launch failed:)[^"]*"/\1 <BUILD LOG>"/g'
+}
+
 run_session() {
     local name="$1" lldb="$2" script="$3"
     local out="$WORK/out/$name"
@@ -195,12 +204,12 @@ for spec in "fallback:none:session_fallback" "eof:none:session_eof" "lldb:fake:s
     if [[ -n "$pysrc" ]]; then
         cp "$WORK/out/$name/result" "$GOLD/$name.txt"
         echo "wrote $name"
-    elif cmp -s "$WORK/out/$name/result" "$GOLD/$name.txt"; then
+    elif cmp -s <(canon < "$WORK/out/$name/result") <(canon < "$GOLD/$name.txt"); then
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
         echo "FAIL $name"
-        diff -u "$GOLD/$name.txt" "$WORK/out/$name/result" | head -60 || true
+        diff -u <(canon < "$GOLD/$name.txt") <(canon < "$WORK/out/$name/result") | head -60 || true
     fi
 done
 
