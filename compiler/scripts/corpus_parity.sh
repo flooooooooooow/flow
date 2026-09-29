@@ -7,6 +7,9 @@
 # with a timeout from the repository root with stdin closed. A file is at
 # parity when both hosts reject it, or when both build it and the runs agree
 # on exit code and stdout.
+# A file whose Python-generated C does not compile but whose flowc build
+# succeeds is counted apart as "flowc better"; the floor gates on parity plus
+# better, the files where flowc is not behind Python.
 #
 #   ./compiler/scripts/corpus_parity.sh
 #       flowc live, Python from the recorded goldens in
@@ -264,16 +267,25 @@ main() {
         ref="$GOLDEN"
     fi
 
+    # nondet.txt lists files whose output changes with the clock or the
+    # machine even when two back-to-back Python runs agree; their stdout is
+    # not compared.
+    touch "$work/nondet"
+    if [[ -f "$DATA/nondet.txt" ]]; then
+        grep -v -e '^#' -e '^$' "$DATA/nondet.txt" > "$work/nondet" || true
+    fi
     # Join: path, py build/exit/sum/nondet/cause, flowc build/exit/sum/-/cause.
     # Files without a recorded Python result are counted as "no golden".
     awk -F'\t' -v OFS='\t' '
-        NR == FNR { py[$1] = $2 OFS $3 OFS $4 OFS $5 OFS $6; next }
+        FILENAME == ARGV[1] { nd[$1] = 1; next }
+        FILENAME == ARGV[2] { py[$1] = $2 OFS $3 OFS $4 OFS ($1 in nd ? "nondet" : $5) OFS $6; next }
         {
             if (!($1 in py)) { print $1, "nogolden", "-", "-", "-", "-", "no Python golden for this file"; next }
             split(py[$1], p, "\t")
             pb = p[1]; pe = p[2]; ps = p[3]; pn = p[4]
             fb = $2; fe = $3; fs = $4; fc = $6
             if (pb != "ok" && fb != "ok") { st = "match"; why = "both reject" }
+            else if (pb == "ccfail" && fb == "ok") { st = "flowc-better"; why = "Python C does not compile: " p[5] }
             else if (pb != "ok" && fb == "ok") { st = "flowc-accepts"; why = "Python " pb ": " p[5] }
             else if (fb == "reject") { st = "flowc-reject"; why = fc }
             else if (fb == "ccfail") { st = "flowc-ccfail"; why = fc }
@@ -282,7 +294,7 @@ main() {
             else if (pn != "nondet" && fs != ps) { st = "run-stdout"; why = "stdout differs" }
             else { st = "match"; why = (pb == "ok") ? "same run" : "both reject" }
             print $1, st, pb, pe, fb, fe, why
-        }' "$ref" "$work/flowc.tsv" > "$work/joined"
+        }' "$work/nondet" "$ref" "$work/flowc.tsv" > "$work/joined"
 
     group_of() {
         awk -F'\t' -v OFS='\t' '{
@@ -295,6 +307,9 @@ main() {
     }
 
     pass=$(awk -F'\t' '$2 == "match"' "$work/joined" | wc -l | tr -d ' ')
+    better=$(awk -F'\t' '$2 == "flowc-better"' "$work/joined" | wc -l | tr -d ' ')
+    # The gate counts files where flowc is not behind Python.
+    gate=$(( pass + better ))
     both_reject=$(awk -F'\t' '$2 == "match" && $3 != "ok"' "$work/joined" | wc -l | tr -d ' ')
     py_ok=$(awk -F'\t' '$3 == "ok"' "$work/joined" | wc -l | tr -d ' ')
     py_ok_match=$(awk -F'\t' '$3 == "ok" && $2 == "match"' "$work/joined" | wc -l | tr -d ' ')
@@ -307,6 +322,7 @@ main() {
         echo "at parity:         $pass ($(pct "$pass" "$total")%)"
         echo "  same run:        $py_ok_match of $py_ok that Python builds ($(pct "$py_ok_match" "$py_ok")%)"
         echo "  both reject:     $both_reject"
+        echo "flowc better:      $better (Python's C does not compile, flowc's does)"
         echo
         echo "by status:"
         cut -f2 "$work/joined" | sort | uniq -c | sort -rn | awk '{ printf "  %-15s %5d\n", $2, $1 }'
@@ -342,11 +358,11 @@ main() {
             if [[ -f "$FLOOR_FILE" ]]; then
                 grep -v -E "^(#|$os )" "$FLOOR_FILE" || true
             fi
-            echo "$os $pass"
+            echo "$os $gate"
         } > "$work/floor"
         mv "$work/floor" "$FLOOR_FILE"
         echo
-        echo "wrote $REPORT and floor $os $pass"
+        echo "wrote $REPORT and floor $os $gate"
     fi
 
     if (( check )); then
@@ -356,14 +372,14 @@ main() {
         fi
         echo
         if [[ -z "$floor" ]]; then
-            echo "corpus parity: no floor recorded for $os; $pass at parity (not gated)"
-        elif (( pass < floor )); then
-            echo "corpus parity regressed: $pass < floor $floor on $os" >&2
+            echo "corpus parity: no floor recorded for $os; $gate at parity or better (not gated)"
+        elif (( gate < floor )); then
+            echo "corpus parity regressed: $gate < floor $floor on $os" >&2
             awk -F'\t' '$2 != "match" { printf "  %-14s %s  (%s)\n", $2, $1, $7 }' "$work/joined" >&2
             exit 1
         else
-            echo "corpus parity OK: $pass >= floor $floor on $os"
-            if (( pass > floor )); then
+            echo "corpus parity OK: $gate >= floor $floor on $os"
+            if (( gate > floor )); then
                 echo "(run ./compiler/scripts/corpus_parity.sh --update to raise the floor)"
             fi
         fi

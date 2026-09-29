@@ -1,0 +1,4 @@
+# Files whose stdout depends on the clock or the machine, although two
+# back-to-back Python runs printed the same. corpus_parity.sh compares their
+# build and exit code only. One path per line.
+tests/lang/test_c_import_string_time.flow
