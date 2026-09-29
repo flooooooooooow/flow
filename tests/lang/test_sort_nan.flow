@@ -15,8 +15,14 @@
 #
 # Exit 0 on success; a nonzero exit identifies the failing check.
 
+extern {
+    function copysign(x: f64, y: f64) -> f64
+}
+
+# 0.0 / 0.0 is a NaN whose sign depends on the CPU: positive on arm64,
+# negative on x86-64. Force the sign so totalOrder puts it last everywhere.
 function nan_of(z: f64) -> f64 {
-    return z / z
+    return copysign(z / z, 1.0)
 }
 
 function inf_of(z: f64) -> f64 {
