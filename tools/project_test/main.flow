@@ -22,6 +22,17 @@
 import "tools/hostlib/text.flow"
 import "tools/hostlib/sys.flow"
 
+# mkstemps and mkdtemp take char* in glibc's stdlib.h and live in unistd.h
+# on macOS. A prototype from Flow types clashes with the first, so the tool
+# calls them through these wrappers.
+@cEmbed("#ifdef __APPLE__
+int mkstemps(char *, int);
+char *mkdtemp(char *);
+#endif
+static inline int32_t flow_mkstemps(uint8_t *t, int32_t n) { return mkstemps((char *)t, n); }
+static inline uint8_t *flow_mkdtemp(uint8_t *t) { return (uint8_t *)mkdtemp((char *)t); }
+")
+
 extern {
     function printf(fmt: string, ...) -> i32
     function fflush(fp: ptr<void>) -> i32
@@ -35,8 +46,8 @@ extern {
     function opendir(path: string) -> ptr<void>
     function closedir(d: ptr<void>) -> i32
     function remove(path: string) -> i32
-    function mkstemps(template: ptr<u8>, suffixlen: i32) -> i32
-    function mkdtemp(template: ptr<u8>) -> ptr<u8>
+    function flow_mkstemps(template: ptr<u8>, suffixlen: i32) -> i32
+    function flow_mkdtemp(template: ptr<u8>) -> ptr<u8>
     function close(fd: i32) -> i32
     function fork() -> i32
     function execvp(file: string, argv: ptr<string>) -> i32
@@ -1004,7 +1015,7 @@ function run_case_inner(ctx: ptr<Ctx>, o: ptr<Opts>, source: string, backend: st
         let rewritten: string = rewrite_native(text, nt, native)
         let tmpl: string = dirname(source) + "/.flow_test_" + stem(source) + "_" + t_int(native) + "_XXXXXXXX.flow"
         let buf: ptr<u8> = t_dup(tmpl) as ptr<u8>
-        let fd: i32 = mkstemps(buf, 5)
+        let fd: i32 = flow_mkstemps(buf, 5)
         if fd < 0 {
             return Result { passed: false, duration: 0.0, phase: "runner", message: "cannot create a test wrapper in " + dirname(source), stdout: "", stderr: "" }
         }
@@ -1479,7 +1490,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
 
     let scratch_tmpl: string = t_env("TMPDIR", "/tmp")
     let sbuf: ptr<u8> = t_dup(scratch_tmpl + "/flow-test.XXXXXX") as ptr<u8>
-    if mkdtemp(sbuf) == null {
+    if flow_mkdtemp(sbuf) == null {
         return fatal("cannot create a scratch directory")
     }
     let mut ctx: Ctx = Ctx { driver: resolve(t_env("FLOW_TEST_DRIVER", "flow-driver")), build_dir: resolve(t_env("FLOW_TEST_BUILD_DIR", "build")), scratch: sbuf as string }
