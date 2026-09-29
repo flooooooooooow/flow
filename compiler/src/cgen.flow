@@ -288,6 +288,54 @@ function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
     return 0
 }
 
+# 1 when `init` is a plain function: a function of this module, a
+# parameter of function type, a local bound to a lambda that captures
+# nothing (those are emitted as plain C function pointers), or a cast to a
+# function type.
+function flowc_cgen_ident_is_plain_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
+    # A cast to a function type (a dlsym result) is a plain pointer too.
+    if init != AST_NONE and arena.nodes[init].kind == AST_CAST {
+        let cty: i32 = arena.nodes[init].b
+        if cty != AST_NONE and arena.nodes[cty].kind == AST_TYPE and (arena.nodes[cty].ival == -1 or arena.nodes[cty].ival == -2) {
+            return 1
+        }
+        return 0
+    }
+    if init == AST_NONE or arena.nodes[init].kind != AST_IDENT {
+        return 0
+    }
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, init)
+    if decl != AST_NONE {
+        if arena.nodes[decl].kind == AST_PARAM {
+            let pty: i32 = arena.nodes[decl].a
+            if pty != AST_NONE and arena.nodes[pty].kind == AST_TYPE and arena.nodes[pty].ival == -1 {
+                return 1
+            }
+            return 0
+        }
+        if arena.nodes[decl].kind == AST_LET {
+            let li: i32 = arena.nodes[decl].b
+            if li == AST_NONE or arena.nodes[li].kind != AST_FN {
+                return 0
+            }
+            let lam_id: i32 = 0 - arena.nodes[li].name_start
+            let mut ci: i32 = 0
+            while ci < w[0].lambda_cap_count {
+                if w[0].lambda_cap_lambda[ci] == lam_id {
+                    return 0
+                }
+                ci = ci + 1
+            }
+            return 1
+        }
+        return 0
+    }
+    if flowc_cgen_find_fn(arena, src, arena.nodes[init].name_start, arena.nodes[init].name_end) != AST_NONE {
+        return 1
+    }
+    return 0
+}
+
 # Number of functions with a body named `lit` in this module.
 function flowc_cgen_count_fn_named(arena: AstArena, src: ptr<u8>, lit: string) -> i32 {
     let mut n: i32 = 0
@@ -1103,7 +1151,15 @@ function flowc_cgen_resolve_overload(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
                 while arg != AST_NONE and param != AST_NONE {
                     let arg_ty: i32 = flowc_cgen_infer_arg_type(w, arena, src, arg)
                     let param_ty: i32 = arena.nodes[param].a
-                    if arg_ty != AST_NONE and param_ty != AST_NONE {
+                    if arena.nodes[arg].kind == AST_FLOAT and param_ty != AST_NONE {
+                        # A float literal matches f32 or f64, never an integer.
+                        if flowc_cgen_ty_is_float_name(arena, src, param_ty) == 1 {
+                            score = score + 10
+                        } else {
+                            score = score + 1
+                            exact = 0
+                        }
+                    } elif arg_ty != AST_NONE and param_ty != AST_NONE {
                         if flowc_cgen_span_eq(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end) == 1 {
                             score = score + 10
                         } else {
@@ -3378,7 +3434,15 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 return
             }
         }
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        # `(p as ptr<T>)[i]`: the cast needs its own parentheses, or C
+        # indexes before it casts.
+        if arena.nodes[arena.nodes[id].a].kind == AST_CAST {
+            flowc_cgen_putc(w, 40)
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_putc(w, 41)
+        } else {
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        }
         flowc_cgen_putc(w, 91)
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
         flowc_cgen_putc(w, 93)
@@ -3472,6 +3536,17 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         # len(span) → (span).len
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "len") == 1 {
+            # len(sized array) is its element count, as on the Python host.
+            let larg: i32 = arena.nodes[id].a
+            if larg != AST_NONE {
+                let lty: i32 = flowc_cgen_expr_type_node(w, arena, src, larg)
+                if lty != AST_NONE and lty >= 0 and flowc_cgen_is_sized_array(arena, src, lty) == 1 {
+                    flowc_cgen_puts(w, "((int32_t)")
+                    flowc_cgen_put_i32(w, arena.nodes[lty].ival)
+                    flowc_cgen_putc(w, 41)
+                    return
+                }
+            }
             flowc_cgen_putc(w, 40)
             let mut arg: i32 = arena.nodes[id].a
             if arg != AST_NONE {
@@ -4621,6 +4696,35 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                     }
                     flowc_cgen_puts(w, " = ")
                     flowc_cgen_emit_expr(w, arena, src, init)
+                    flowc_cgen_puts(w, ";\n")
+                    return
+                }
+                # A function type bound to a plain function (a named function,
+                # a non-capturing lambda variable or a function parameter) is
+                # a plain C function pointer, as function parameters are.
+                if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and (arena.nodes[ty].ival == -2 or (arena.nodes[ty].ival == -1 and flowc_cgen_ident_is_plain_fn(w, arena, src, init) == 1)) and (init == AST_NONE or arena.nodes[init].kind != AST_FN) {
+                    flowc_cgen_emit_type(w, arena, src, arena.nodes[ty].b)
+                    flowc_cgen_puts(w, " (*")
+                    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                    flowc_cgen_puts(w, ")(")
+                    let mut pf_param: i32 = arena.nodes[ty].a
+                    if pf_param == AST_NONE {
+                        flowc_cgen_puts(w, "void")
+                    }
+                    let mut pf_first: i32 = 1
+                    while pf_param != AST_NONE {
+                        if pf_first == 0 {
+                            flowc_cgen_puts(w, ", ")
+                        }
+                        pf_first = 0
+                        flowc_cgen_emit_type(w, arena, src, pf_param)
+                        pf_param = arena.nodes[pf_param].next
+                    }
+                    flowc_cgen_putc(w, 41)
+                    if init != AST_NONE {
+                        flowc_cgen_puts(w, " = ")
+                        flowc_cgen_emit_expr(w, arena, src, init)
+                    }
                     flowc_cgen_puts(w, ";\n")
                     return
                 }
