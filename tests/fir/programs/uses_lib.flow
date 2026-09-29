@@ -1,0 +1,11 @@
+# fir-g parity fixture: a relative import whose module has a generic
+# function, a helper that is never called, and a `main` of its own that
+# the importing program must not see.
+
+import .lib_mod { wrap, total }
+
+function main() -> i32 {
+    let a = wrap(7)
+    let b = wrap(1.5)
+    return total(a) + 1
+}

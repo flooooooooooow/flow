@@ -1,0 +1,57 @@
+# flow fir-g parity cases: name, stderr check, arguments.
+# stderr check: full (whole stderr, argparse errors), last (last line: the
+# message a Python traceback ended with), none (stdout and exit code only).
+# Goldens in tests/fir/golden were captured from src/flow/fir_cli.py with
+# NumPy and MLX unavailable, before that module was deleted.
+basics_fib_text	none	examples/basics/fibonacci.flow
+basics_fib_json	none	examples/basics/fibonacci.flow --json
+basics_fib_opts	none	examples/basics/fibonacci.flow --json --opts
+hello_opts	none	examples/basics/hello_world.flow --opts
+forms_text	none	tests/fir/programs/forms.flow --opts
+forms_json	none	tests/fir/programs/forms.flow --json --opts
+uses_lib	none	tests/fir/programs/uses_lib.flow --json --opts
+generics	none	tests/lang/test_generics.flow --json --opts
+generic_explicit	none	tests/lang/test_generic_explicit_call.flow --opts
+generic_channel	none	examples/concurrency/generic_channel.flow --json --opts
+generics_demo	none	examples/generics_traits/generics_demo.flow --opts
+types_patterns	none	examples/book/08_types_patterns.flow --json --opts
+range_algebra	none	tests/lang/test_range_algebra.flow --json --opts
+range_sum_step	none	tests/lang/test_range_sum_step.flow --opts
+pipeline_choose	none	examples/basics/pipeline_choose.flow --json --opts
+lowered_forms	none	tests/lang/test_lowered_forms.flow --json --opts
+sort_plans	none	tests/lang/test_sort_plans.flow --opts
+check_duplicates	none	tests/lang/test_check_duplicates.flow --json
+verify_claims	none	examples/verify/math/derived/Nat-mul-assoc.flow --json --opts
+simd_loop	none	examples/gpu/simd_loop.flow --opts
+libc_return_void	none	tests/lang/test_libc_names_return_void.flow --json --opts
+arena_frame	none	examples/systems/arena_frame.flow --opts
+sdr_receiver	none	examples/rf/sdr_receiver.flow --opts
+gpu_attr	none	examples/gpu/vector_add_gpu.flow --json --opts
+channels	none	examples/concurrency/channels.flow --opts
+calculator	none	examples/compilers/calculator.flow --opts
+pendulum	none	examples/evolution/pendulum.flow --json --opts
+declarative_sort	none	examples/basics/declarative_sort.flow --opts
+no_args	full
+help	none	-h
+missing_file	last	nosuch.flow
+parse_error	none	examples/verify/euclid/book-i/prop-01-equilateral-triangle.flow
+bad_import	none	examples/ecosystem/cli_demo/src/main.flow
+device_numpy	last	examples/basics/fibonacci.flow --device numpy
+device_mlx	last	examples/basics/fibonacci.flow --device mlx
+device_bad	full	examples/basics/fibonacci.flow --device gpu
+device_missing	full	examples/basics/fibonacci.flow --device
+unknown_opt	full	examples/basics/fibonacci.flow --bogus
+extra_arg	full	examples/basics/fibonacci.flow extra
+explicit_arg	full	examples/basics/fibonacci.flow --json=1
+abbrev	none	examples/basics/fibonacci.flow --js --op
+auto_uncalibrated	none	examples/basics/fibonacci.flow --device auto --thresholds tests/fir/thresholds/missing.json
+auto_numpy	none	examples/basics/fibonacci.flow --device auto --json --thresholds tests/fir/thresholds/low_numpy.json
+auto_cpu	none	examples/basics/fibonacci.flow --device auto --thresholds tests/fir/thresholds/low_cpu.json
+auto_unknown	last	examples/basics/fibonacci.flow --device auto --thresholds tests/fir/thresholds/unknown_backend.json
+auto_not_json	none	examples/basics/fibonacci.flow --device auto --thresholds tests/fir/thresholds/not_json.json
+auto_strings	none	examples/basics/fibonacci.flow --device auto --thresholds tests/fir/thresholds/string_counts.json
+auto_never	none	examples/basics/fibonacci.flow --device=auto --thresholds tests/fir/thresholds/never_bulk.json
+calibrate_text	none	--calibrate --thresholds build/fir-gate/calibrate_text.json
+calibrate_json	none	--calibrate --json --thresholds build/fir-gate/calibrate_json.json examples/basics/fibonacci.flow
+bench_text	none	examples/basics/fibonacci.flow --bench
+bench_json	none	examples/basics/fibonacci.flow --bench --json --opts
