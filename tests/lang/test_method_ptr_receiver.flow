@@ -1,0 +1,46 @@
+# Flow-native language test: a method call on a by-value struct whose
+# function takes ptr<Struct> passes the receiver's address.
+#
+# lib/stdlib/audio/notation.flow calls `reader.load_file(path)` on a local
+# NotationReader, and load_file takes ptr<NotationReader>. The Python host
+# takes the address (_gen_method_call); flowc passed the struct itself and
+# cc refused the C (#1007).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Counter {
+    count: i32,
+    step: i32
+}
+
+function bump(c: ptr<Counter>, times: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < times {
+        c.count = c.count + c.step
+        i = i + 1
+    }
+    return c.count
+}
+
+function peek(c: Counter) -> i32 {
+    return c.count
+}
+
+function main() -> i32 {
+    let mut c: Counter = Counter { count: 0, step: 3 }
+    let got: i32 = c.bump(4)
+    if got != 12 {
+        return 1
+    }
+    if c.count != 12 {
+        return 2
+    }
+    # A by-value parameter still receives the struct itself.
+    if c.peek() != 12 {
+        return 3
+    }
+    # The plain call spelling is unchanged.
+    if bump(&c, 1) != 15 {
+        return 4
+    }
+    return 0
+}
