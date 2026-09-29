@@ -73,18 +73,18 @@ compiler/fixtures/choose_uninferrable.flow	reject	-	-	-	Error resolving modules:
 compiler/fixtures/dynamics_dsl/err_key_sense.flow	reject	-	-	-	Error resolving modules: 'X'
 compiler/fixtures/dynamics_dsl/err_lqr_unknown_dsys.flow	reject	-	-	-	Error resolving modules: analyze c lqr: unknown dsys 'X'
 compiler/fixtures/dynamics_dsl/ex_chain4_lqr.flow	ok	0	2325723701-189	det	-
-compiler/fixtures/dynamics_dsl/ex_ga_dsys_namespaced.flow	ok	0	1013928779-153	det	-
-compiler/fixtures/dynamics_dsl/ex_ga_dsys_syntax.flow	ok	0	2526099867-466	det	-
-compiler/fixtures/dynamics_dsl/ex_ga_wfc_coupled.flow	ok	0	2653177447-415	det	-
+compiler/fixtures/dynamics_dsl/ex_ga_dsys_namespaced.flow	ok	0	221463335-153	det	-
+compiler/fixtures/dynamics_dsl/ex_ga_dsys_syntax.flow	ok	0	2121605630-466	det	-
+compiler/fixtures/dynamics_dsl/ex_ga_wfc_coupled.flow	ok	0	843727162-415	det	-
 compiler/fixtures/dynamics_dsl/ex_lorenz_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
 compiler/fixtures/dynamics_dsl/ex_pendulum_represent_linear.flow	ok	0	4137957933-287	det	-
-compiler/fixtures/dynamics_dsl/ex_spring_mass_control.flow	ok	0	1257006866-1229	det	-
+compiler/fixtures/dynamics_dsl/ex_spring_mass_control.flow	ok	0	2156245102-1229	det	-
 compiler/fixtures/dynamics_dsl/ex_spring_mass_lqr.flow	ok	0	463952410-307	det	-
 compiler/fixtures/dynamics_dsl/ok_continuous.flow	ok	0	4294967295-0	det	-
 compiler/fixtures/dynamics_dsl/ok_discrete.flow	ok	0	4219530715-2	det	-
 compiler/fixtures/dynamics_dsl/ok_dynamics_block.flow	ok	0	4294967295-0	det	-
 compiler/fixtures/dynamics_dsl/ok_empty_program.flow	ok	0	4294967295-0	det	-
-compiler/fixtures/dynamics_dsl/ok_existing_import.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/dynamics_dsl/ok_existing_import.flow	ccfail	-	-	-	link: undefined symbol main
 compiler/fixtures/dynamics_dsl/ok_floats.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.NUMBER at line 8, column 42
 compiler/fixtures/dynamics_dsl/ok_ga_closed_analyze.flow	ok	0	4294967295-0	det	-
 compiler/fixtures/dynamics_dsl/ok_lqr.flow	ok	0	4294967295-0	det	-
@@ -324,10 +324,10 @@ examples/demos/wasm/examples/particles/particles.flow	ok	0	4294967295-0	det	-
 examples/dsp/pipeline.flow	ok	0	1627444889-178	det	-
 examples/dynamics/controllability_demo.flow	ok	0	4294967295-0	det	-
 examples/dynamics/ga_control.flow	ok	0	4294967295-0	det	-
-examples/dynamics/ga_dsys_namespaced.flow	ok	0	1013928779-153	det	-
-examples/dynamics/ga_dsys_syntax.flow	ok	0	2526099867-466	det	-
-examples/dynamics/ga_full_analysis.flow	ok	0	2206992254-1107	det	-
-examples/dynamics/ga_wfc_coupled.flow	ok	0	2653177447-415	det	-
+examples/dynamics/ga_dsys_namespaced.flow	ok	0	221463335-153	det	-
+examples/dynamics/ga_dsys_syntax.flow	ok	0	2121605630-466	det	-
+examples/dynamics/ga_full_analysis.flow	ok	0	746414397-1107	det	-
+examples/dynamics/ga_wfc_coupled.flow	ok	0	843727162-415	det	-
 examples/dynamics/gramian_demo.flow	ok	0	4294967295-0	det	-
 examples/dynamics/lorenz_attractor.flow	ok	0	4294967295-0	det	-
 examples/dynamics/wfc_demo.flow	ok	0	4294967295-0	det	-
@@ -404,7 +404,7 @@ examples/evolution/robot_connect.flow	ok	1	695261680-475	det	-
 examples/evolution/rossler.flow	ok	0	3551974656-5638	det	-
 examples/evolution/sir_epidemic.flow	ok	0	377729354-2732	det	-
 examples/evolution/spring_chain.flow	ok	0	189816753-4687	det	-
-examples/evolution/spring_mass_control.flow	ok	0	1257006866-1229	det	-
+examples/evolution/spring_mass_control.flow	ok	0	2156245102-1229	det	-
 examples/evolution/spring_mass_lqr.flow	ok	0	463952410-307	det	-
 examples/evolution/thermostat_evolves.flow	ok	0	1195233341-744	det	-
 examples/evolution/thermostat_hysteresis.flow	ok	0	1251390677-2937	det	-
@@ -745,7 +745,7 @@ tests/lang/test_c_embed.flow	ok	0	3273482523-25	det	-
 tests/lang/test_c_gen_externs.flow	ok	0	1036788073-709	det	-
 tests/lang/test_c_import.flow	ok	0	3063813517-26	det	-
 tests/lang/test_c_import_auto.flow	ok	0	3981808265-83	det	-
-tests/lang/test_c_import_dirs.flow	ok	6	2273154632-88	det	-
+tests/lang/test_c_import_dirs.flow	ok	0	2097988603-228	det	-
 tests/lang/test_c_import_julia.flow	ok	0	3456767998-32	det	-
 tests/lang/test_c_import_math.flow	ok	0	1786766655-31	det	-
 tests/lang/test_c_import_python.flow	ccfail	-	-	-	error: expected ')'
@@ -759,6 +759,7 @@ tests/lang/test_check_duplicates.flow	ok	0	965631990-36	det	-
 tests/lang/test_claim_address_phrase.flow	ok	0	1276990362-38	det	-
 tests/lang/test_claim_path_latex.flow	ok	0	3683972964-34	det	-
 tests/lang/test_claim_path_tier.flow	ok	0	3884404096-33	det	-
+tests/lang/test_closure_abi.flow	ccfail	-	-	-	error: returning 'int32_t (int32_t)' (aka 'int (int)') from a function with incompatible result type 'X'
 tests/lang/test_closures.flow	ok	0	4294967295-0	det	-
 tests/lang/test_complex_builtins.flow	ok	0	4294967295-0	det	-
 tests/lang/test_concurrent_link.flow	ok	0	4294967295-0	det	-
@@ -875,11 +876,13 @@ tests/lang/test_proof_kernel.flow	ok	0	2825007997-30	det	-
 tests/lang/test_proof_sub_gen.flow	ok	0	610269630-35	det	-
 tests/lang/test_pthread.flow	ok	0	2782490010-54	det	-
 tests/lang/test_qsort.flow	ok	0	3439991395-89	det	-
+tests/lang/test_quantity_literal.flow	ok	0	4294967295-0	det	-
 tests/lang/test_range_algebra.flow	ok	0	4294967295-0	det	-
 tests/lang/test_range_sum_step.flow	ok	0	4294967295-0	det	-
 tests/lang/test_range_sums_port.flow	ok	0	328087314-38	det	-
 tests/lang/test_reexport.flow	ok	0	1400323826-51	det	-
 tests/lang/test_return_not.flow	ok	0	4294967295-0	det	-
+tests/lang/test_runtime_checks.flow	ok	0	4294967295-0	det	-
 tests/lang/test_scoped_name_types.flow	ok	0	2477235817-24	det	-
 tests/lang/test_selective_import.flow	ok	0	4294967295-0	det	-
 tests/lang/test_shader_dsl_port.flow	ok	0	876149250-33	det	-
@@ -902,16 +905,20 @@ tests/lang/test_struct_order_shadow_array_assign.flow	ok	0	4294967295-0	det	-
 tests/lang/test_structs.flow	ok	0	4294967295-0	det	-
 tests/lang/test_strutil.flow	ok	0	2271034837-141	det	-
 tests/lang/test_tco_shim.flow	ok	0	4294967295-0	det	-
+tests/lang/test_tensor_sugar.flow	ok	0	4294967295-0	det	-
 tests/lang/test_time_blocks.flow	ok	0	4294967295-0	det	-
 tests/lang/test_torture.flow	ok	0	4294967295-0	det	-
 tests/lang/test_trait.flow	ok	0	1327096542-79	det	-
+tests/lang/test_trait_impl.flow	ok	0	4294967295-0	det	-
 tests/lang/test_type_name_port.flow	ok	0	1625340269-47	det	-
 tests/lang/test_typecheck_overload_integration.flow	ok	0	868678861-163	det	-
+tests/lang/test_unary_parens.flow	ok	0	4294967295-0	det	-
 tests/lang/test_units_dimensions.flow	ok	0	4294967295-0	det	-
 tests/lang/test_unsigned_ints.flow	ok	0	4294967295-0	det	-
 tests/lang/test_variadic_externs.flow	ok	0	4294967295-0	det	-
 tests/lang/test_wcet.flow	ok	0	2662814280-22	det	-
 tests/lang/test_wide_ints.flow	ok	0	3427029761-38	det	-
+tests/lang/toml_paths/test_toml_paths.flow	ok	0	4294967295-0	det	-
 tests/memory/test_int_memref.flow	ok	0	4294967295-0	det	-
 tests/memory/test_struct_layout.flow	ok	32	1885383304-32	det	-
 tests/memory/test_struct_memory.flow	ok	5	1780399286-49	det	-
