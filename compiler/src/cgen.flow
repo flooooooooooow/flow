@@ -2247,6 +2247,44 @@ function flowc_cgen_sig_put_spans(
     return n
 }
 
+# Parameter count of a fixed-arity C library function flowc_cgen_is_libc_fn
+# knows, or -1 for one this table leaves out.
+function flowc_cgen_libc_arity(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if flowc_cgen_span_is(src, s, e, "bsearch") == 1 { return 5 }
+    if flowc_cgen_span_is(src, s, e, "qsort") == 1 { return 4 }
+    if flowc_cgen_span_is(src, s, e, "strlen") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "strcmp") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strncmp") == 1 { return 3 }
+    if flowc_cgen_span_is(src, s, e, "strcpy") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strncpy") == 1 { return 3 }
+    if flowc_cgen_span_is(src, s, e, "strcat") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strchr") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strstr") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "memchr") == 1 { return 3 }
+    if flowc_cgen_span_is(src, s, e, "pow") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "atan2") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "fmod") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "fmin") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "fmax") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "hypot") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "abs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "labs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "atoi") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "atol") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "atof") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "rand") == 1 { return 0 }
+    if flowc_cgen_span_is(src, s, e, "srand") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "exit") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "clock") == 1 { return 0 }
+    if flowc_cgen_span_is(src, s, e, "getenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "puts") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "putchar") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "getchar") == 1 { return 0 }
+    if flowc_cgen_span_is(src, s, e, "remove") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "rename") == 1 { return 2 }
+    return 0 - 1
+}
+
 # A Flow function named like a libc function that is not that function:
 # its first parameter is a struct (`log(x: Dual)`), or it is an allocator
 # whose Flow signature returns a non-pointer (`malloc(size: i32) -> i32`).
@@ -2271,6 +2309,12 @@ function flowc_cgen_user_libc_kind(arena: AstArena, src: ptr<u8>, fn: i32) -> i3
     }
     let ns: i32 = arena.nodes[fn].name_start
     let ne: i32 = arena.nodes[fn].name_end
+    # A parameter count the C function does not take: a Flow function of
+    # its own, such as a tutorial's 3-argument `bsearch` (#1045).
+    let libc_arity: i32 = flowc_cgen_libc_arity(src, ns, ne)
+    if libc_arity >= 0 and libc_arity != flowc_ast_chain_len(arena, arena.nodes[fn].a) {
+        return fn
+    }
     if flowc_cgen_span_is(src, ns, ne, "malloc") == 1 or flowc_cgen_span_is(src, ns, ne, "calloc") == 1 or flowc_cgen_span_is(src, ns, ne, "realloc") == 1 or flowc_cgen_span_is(src, ns, ne, "free") == 1 or flowc_cgen_span_is(src, ns, ne, "aligned_alloc") == 1 {
         let r: i32 = arena.nodes[fn].b
         if r != AST_NONE and arena.nodes[r].kind == AST_TYPE and arena.nodes[r].a == AST_NONE and flowc_cgen_span_is(src, arena.nodes[r].name_start, arena.nodes[r].name_end, "void") == 0 {
@@ -4651,8 +4695,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "), 0)")
             return
         }
-        # find(xs, target) → flowc_find_i32(xs, n, target)
-        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 {
+        # find(xs, target) → flowc_find_i32(xs, n, target). A user function
+        # named find, of this module or an imported one, wins (#1045).
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 and flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == AST_NONE and flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end) < 0 {
             flowc_cgen_puts(w, "flowc_find_i32(")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_puts(w, ", (int32_t)(sizeof(")
