@@ -4507,6 +4507,18 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "))")
             return
         }
+        # array<T>(N) with no Flow `array` is calloc(N, sizeof(T)), as on the
+        # Python host (#270).
+        if arena.nodes[id].b != AST_NONE and arena.nodes[id].a != AST_NONE and arena.nodes[arena.nodes[id].a].next == AST_NONE and arena.nodes[arena.nodes[id].b].next == AST_NONE and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "array") == 1 and flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == AST_NONE {
+            flowc_cgen_puts(w, "((")
+            flowc_cgen_emit_type(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, "*)calloc(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ", sizeof(")
+            flowc_cgen_emit_type(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ")))")
+            return
+        }
         if arena.nodes[id].b != AST_NONE {
             flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
             let mut ta: i32 = arena.nodes[id].b

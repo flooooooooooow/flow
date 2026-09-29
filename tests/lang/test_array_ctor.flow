@@ -1,0 +1,28 @@
+# Flow-native language test: the `array<T>(N)` constructor.
+# With no Flow function named `array`, `array<T>(N)` allocates N zeroed
+# elements of T (calloc), as on the Python host, and the result can be
+# returned from a function.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function make(n: i32) -> array<f32> {
+    let arr: array<f32> = array<f32>(n)
+    return arr
+}
+
+function main() -> i32 {
+    let xs: array<f32> = make(8)
+    if xs[7] != 0.0 {
+        return 1
+    }
+    xs[3] = 2.5
+    if xs[3] != 2.5 {
+        return 2
+    }
+    let ns: array<i64> = array<i64>(4)
+    ns[0] = 40
+    ns[3] = 2
+    if ns[0] + ns[3] + ns[1] != 42 {
+        return 3
+    }
+    return 0
+}
