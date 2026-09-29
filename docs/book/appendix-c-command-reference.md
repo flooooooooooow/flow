@@ -63,6 +63,7 @@ Historical Vulkan and UI command aliases remain accepted.
 |---|---|
 | `flow fmt FILES...` | format source |
 | `flow repl` | interactive core-language session |
+| `flow lsp` | language server on stdio, for editors |
 | `flow debug FILE` | debug build and LLDB/GDB launch |
 | `flow dap FILE` | Debug Adapter Protocol server |
 | `flow explain FILE` | show declarative candidate plans and selection |
