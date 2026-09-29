@@ -5,8 +5,9 @@
 > `test-lang` and the other C commands all use it, and since #960 they run
 > with no Python on `PATH`. The Python C backend (`c_generator.py`) is
 > retired and `FLOW_HOST=python` stops with an error. Python still runs the
-> MLIR generator fallback, `flow check`, `flow python`, the package publish
-> and build commands and the scripts not yet ported.
+> MLIR backend (generator fallback, JIT, GPU lowering), the setuptools wheel
+> build of `flow python`, and the scripts listed in
+> [self-hosting.md](self-hosting.md).
 > New code is written in Flow. `scripts/python_ratchet.sh` fails CI when a new
 > `.py` file appears or tracked Python grows (#981).
 
@@ -21,7 +22,7 @@ in progress and are not counted as landed.
 | Claim | Reality |
 |---|---|
 | Default `./flow compile` / `./flow run` | **flowc**, the only C compiler. `FLOW_HOST=python` is retired and stops with an error |
-| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency still calls `package.py`. `scripts/check_run_without_python.sh` checks it |
+| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency runs the Flow package manager (`compiler/src/pkg_main.flow`). `scripts/check_run_without_python.sh` checks it |
 | Stage-A lexer / parser / cgen / typecheck / resolve | Landed in `compiler/src/*.flow`; fixtures + module dogfood |
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |
@@ -54,7 +55,7 @@ the Flow port of each one. The table records where each port stands.
 | Verify / proof modules | `proof_*.py`, math prose host path | Helpers landed (see below); document assembly and PDF stay Python |
 | `repl.py` | `flow repl` | A REPL written in Flow (`tools/repl/main.flow`): open PR #987 |
 | `test_runner.py` | No callers | Deleted in open PR #987 |
-| `package.py` | `flow add`, `install`, `sync`, `search`, `info`, and fetching for `flow run` | Sync decision in Flow since #960. Full package manager in Flow (`compiler/src/pkg.flow`): open PR #989 |
+| `package.py`, `registry.py` | Every package command | Ported to `compiler/src/pkg.flow` and `pkg_main.flow`; both Python files are deleted |
 | `mlir_*.py`, GPU runtimes | MLIR / Metal / numpy | Core-language MLIR text in flowc ([`mlirgen.flow`](../../compiler/src/mlirgen.flow), `FLOWC_EMIT=mlir`); lowering in [`mlir_lower.sh`](../../compiler/scripts/mlir_lower.sh). Plan and slice order: [MLIR in Flow](../design/mlir-in-flow.md) |
 
 ## Boundary
@@ -63,11 +64,9 @@ the Flow port of each one. The table records where each port stands.
 |---|---|
 | `./flow` bash | orchestrates flowc. The bootstrap needs no Python: flowc is built from `compiler/bootstrap/flowc_stage_a.c` with `cc` |
 | `mlir_generator.py` | fallback when the Flow MLIR emitter cannot handle a program (`--backend=mlir`) |
-| `flow check`, wcet and MISRA scanners, fir tools, the DAP server, the project test runner | not ported yet |
 | `mlir_jit.py` loading half, GPU/Metal **runtimes** | ctypes, numpy; planned to move to C (see [MLIR in Flow](../design/mlir-in-flow.md)) |
-| `package.py` (publish, build, fetch) | git and network |
-| `python_generator.py` (wheel) | setuptools/pip. It takes its C from flowc |
-| `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | `flow_to_wasm.py` takes its C from `compiler/scripts/flowc_emit.sh`; the other two call the Python WGSL and shader generators in process |
+| `pip wheel` in `flow python` | building the wheel needs setuptools. The generator is the Flow tool `tools/pywheel` |
+| `wasm/flow_to_wasm.py` | takes its C from `compiler/scripts/flowc_emit.sh`. The GPU crossing and the WebGPU shader page moved to `wasm/crossings.sh gpu` and `wasm/crossings.sh shader` |
 | `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
 
 ## Scripts and tools ported to Flow
@@ -125,12 +124,14 @@ Python and ported those tests to `tests/lang/`. See
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
 | Require/prefer constraints | [`compiler/src/constraints.flow`](../../compiler/src/constraints.flow): `flowc_parse_require` / `flowc_parse_prefer` / tighter-value picker |
 | Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow): `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
-| MISRA/CERT C scanner | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow): `flowc_scan_c_source` flags heap/stdio/abort calls |
+| MISRA/CERT C scanner (**complete**) | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow): `flowc_scan_c_source` flags heap/stdio/abort calls; `flowc_misra_report` is the whole `misra_scan.py` report. `flow analyze` runs it from [`tools/analyze/main.flow`](../../tools/analyze/main.flow) |
+| WCET and stack depth (**complete**) | [`tools/analyze/main.flow`](../../tools/analyze/main.flow) over the flowc parser, with the tables in [`compiler/src/wcet.flow`](../../compiler/src/wcet.flow). Replaces `wcet_analysis.py`; gated by [`tests/tools/analyze/run.sh`](../../tests/tools/analyze/run.sh) |
 | Function attribute vocabulary | [`compiler/src/attributes.flow`](../../compiler/src/attributes.flow): `flowc_parse_attribute` / `flowc_validate_target_spec` / `flowc_domain_rank` |
 | Matmul/reduce cost models | [`compiler/src/general_plans.flow`](../../compiler/src/general_plans.flow): `flowc_select_matmul` / `flowc_select_reduce` (pure cost/applicability, registry stays Python) |
 | FIR-G effect propagation | [`compiler/src/fir_analysis.flow`](../../compiler/src/fir_analysis.flow): `flowc_propagate_effects` / `flowc_reachable_functions` / `flowc_is_pure` (CSR graph, fixpoint OR) |
 | FIR-G opt candidate scoring | [`compiler/src/fir_opts.flow`](../../compiler/src/fir_opts.flow): `flowc_score_inline` / `flowc_score_dead_elim` / `flowc_compare_candidates` |
-| FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow): `flowc_choose_analysis_backend` (calibration and timing stay Python) |
+| FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow): `flowc_choose_analysis_backend` |
+| FIR-G tool (**complete**) | [`tools/fir/main.flow`](../../tools/fir/main.flow): `flow fir-g`, graphify on the flowc front end, monomorphization, analyses, candidates, routing and calibration. Gated by [`tests/fir/run.sh`](../../tests/fir/run.sh) against goldens from the retired Python tool |
 | Language server (**complete**) | [`tools/lsp/main.flow`](../../tools/lsp/main.flow): JSON-RPC over stdio, diagnostics from the flowc parser and Stage-A checker in process, hover, completion, definition, references, highlight, rename, document symbols, formatting through [`fmt.flow`](../../compiler/src/fmt.flow) and idiom code actions. `./flow lsp` and `./flow-lsp` run it. Gated by [`tests/tools/lsp/run.sh`](../../tests/tools/lsp/run.sh): recorded sessions diffed against the retired Python server, with the accepted differences listed in [`ACCEPTED.md`](../../tests/tools/lsp/ACCEPTED.md) |
 | LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow): `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` |
 | LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow): `flowc_receiver_before_dot` / `flowc_field_access_at` |

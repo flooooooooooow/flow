@@ -1,4 +1,8 @@
-"""Phase 2 MISRA: @safe/@unsafe, extern, analyze, reproducible C."""
+"""Phase 2 MISRA: @safe/@unsafe, extern, reproducible C.
+
+The MISRA scan behind `flow analyze` is tools/analyze/main.flow, checked by
+tests/tools/analyze/run.sh.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +16,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from flow.parser import parse_flow_code
 from flow.type_checker import TypeChecker
-from flow.misra_scan import scan_c_source
 
 
 # test_reproducible_c_emit is gone with the Python C backend. flowc emit is
@@ -75,11 +78,6 @@ def test_safe_cannot_call_unsafe():
     tc.strict = True
     result = tc.check(parse_flow_code(code))
     assert any("Safety boundary" in e for e in result.errors)
-
-
-def test_misra_scan_flags_malloc():
-    findings = scan_c_source("void* p = malloc(16);\n")
-    assert any(f.rule == "MISRA 21.3" for f in findings)
 
 
 # test_checked_arith_smoke_runs -> tests/lang/test_basics_smokes.flow.

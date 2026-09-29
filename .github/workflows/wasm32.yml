@@ -3,7 +3,15 @@ name: wasm32 direct backend
 on:
   push:
     paths:
-      - 'src/flow/wasm_compiler.py'
+      - 'scripts/tools/llvm_target/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/wasm32_target.sh'
+      - 'compiler/scripts/flow_to_llvm.sh'
+      - 'compiler/scripts/mlir_lower.sh'
+      - 'compiler/scripts/parity_targets.sh'
+      - 'compiler/src/mlirgen.flow'
+      - 'compiler/bootstrap/flowc_stage_a.c'
+      - 'tests/targets/**'
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
       - 'runtime/wasm/**'
@@ -13,7 +21,15 @@ on:
       - '.github/workflows/wasm32.yml'
   pull_request:
     paths:
-      - 'src/flow/wasm_compiler.py'
+      - 'scripts/tools/llvm_target/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/wasm32_target.sh'
+      - 'compiler/scripts/flow_to_llvm.sh'
+      - 'compiler/scripts/mlir_lower.sh'
+      - 'compiler/scripts/parity_targets.sh'
+      - 'compiler/src/mlirgen.flow'
+      - 'compiler/bootstrap/flowc_stage_a.c'
+      - 'tests/targets/**'
       - 'src/flow/mlir_generator.py'
       - 'src/flow/transpiler.py'
       - 'runtime/wasm/**'
@@ -28,36 +44,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # alloc_sum.flow uses an unsized array, which the flowc MLIR emitter does
+      # not cover yet: flow_to_llvm.sh lowers it with the Python MLIR generator.
       - uses: ./.github/actions/setup-python
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
       - name: Compile Flow through MLIR and LLVM IR to WebAssembly
-        env:
-          PYTHONPATH: src
         run: |
-          python -m flow.wasm_compiler tests/fixtures/wasm/main_42.flow \
+          scripts/wasm32_target.sh tests/fixtures/wasm/main_42.flow \
             -o /tmp/main_42.wasm \
             --export answer \
             -O O2
-          python -m flow.wasm_compiler tests/fixtures/wasm/sum_pair.flow \
+          scripts/wasm32_target.sh tests/fixtures/wasm/sum_pair.flow \
             -o /tmp/sum_pair.wasm \
             --export sum_pair \
             -O O2
-          python -m flow.wasm_compiler tests/fixtures/wasm/alloc_sum.flow \
+          scripts/wasm32_target.sh tests/fixtures/wasm/alloc_sum.flow \
             -o /tmp/alloc_sum.wasm \
             --export alloc_sum \
             -O O2
           test -s /tmp/main_42.wasm
           test -s /tmp/sum_pair.wasm
           test -s /tmp/alloc_sum.wasm
-          python - <<'PY'
-          from pathlib import Path
-          for path in ('/tmp/main_42.wasm', '/tmp/sum_pair.wasm', '/tmp/alloc_sum.wasm'):
-              data = Path(path).read_bytes()
-              assert data[:4] == b'\x00asm', (path, data[:4])
-              print(f'{path}: {len(data)} wasm bytes')
-          PY
+          for path in /tmp/main_42.wasm /tmp/sum_pair.wasm /tmp/alloc_sum.wasm; do
+            magic="$(head -c 4 "$path" | od -An -tx1 | tr -d ' \n')"
+            if [ "$magic" != 0061736d ]; then
+              echo "$path: not a wasm module (magic $magic)" >&2
+              exit 1
+            fi
+            echo "$path: $(wc -c < "$path" | tr -d ' ') wasm bytes"
+          done
       - name: Instantiate and execute scalar WebAssembly export under Node
         run: |
           node - <<'JS'
@@ -139,6 +156,8 @@ jobs:
           console.log(`alloc_sum() x32=3.75; memory ${initialBytes} -> ${memory.buffer.byteLength}; imports=${JSON.stringify(imports)}`);
           JS
       - name: Compare native MLIR and wasm32 numerical results
-        env:
-          PYTHONPATH: src
-        run: python tests/wasm/compare_native_wasm.py
+        run: tests/wasm/compare_native_wasm.sh
+      # The goldens hold Homebrew LLVM 22 module bytes; this runner's LLVM
+      # differs, so the gate checks exit statuses and messages only.
+      - name: Run the wasm32 target parity cases
+        run: compiler/scripts/parity_targets.sh wasm32 --portable

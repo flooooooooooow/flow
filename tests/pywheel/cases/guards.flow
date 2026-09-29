@@ -1,0 +1,44 @@
+# @only guards and mode attributes decide which functions exist on the
+# compile path; doc strings with commas split as the Python parser did.
+
+@only(compile)
+function compiled_only(x: i32) -> i32 {
+    return x
+}
+
+@only(interp)
+function interp_only(x: i32) -> i32 {
+    return x
+}
+
+@jit
+function jit_only(x: i32) -> i32 {
+    return x
+}
+
+@inline
+@python(doc="Adds a, and b", name="plus")
+function add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+@python(name="single_quoted") function sq(x: f64) -> f64 { return x }
+
+@python(exclude)
+function hidden_by_flag() -> i32 {
+    return 1
+}
+
+function pick<T>(a: T, b: T) -> T {
+    return a
+}
+
+function use_generics(x: i32) -> i32 {
+    let y: f64 = pick<f64>(1.0, 2.0)
+    let z: i64 = pick<i64>(3, 4)
+    return pick<i32>(x, 0)
+}
+
+function main() -> i32 {
+    return add(1, 2) - 3
+}

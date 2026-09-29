@@ -1,0 +1,8 @@
+Resolving modules...
+flowc tc: returns a non-i32 value from an i32 function
+flowc tc: file
+@WORK@/typeerr.flow
+flowc tc: at 4:5
+flowc emit: typecheck failed
+flowc emit: tc_errs=1
+Python generation error: flowc could not compile typeerr.flow

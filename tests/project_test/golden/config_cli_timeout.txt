@@ -1,0 +1,8 @@
+exit=1
+--- stdout
+running 1 tests (backend=c)
+test checks/slow.flow ... FAILED (run, N.NNNs)
+  test timed out after 2.5s
+
+test result: FAILED. 0 passed; 1 failed; 0 not run; finished in N.NNNs
+--- stderr

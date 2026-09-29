@@ -1,0 +1,1 @@
+error: WGSL has no i64; use f32/i32/u32 in @gpu kernels

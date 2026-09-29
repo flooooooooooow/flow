@@ -1,0 +1,14 @@
+Stack depth analysis: tests/lang/test_dbg_expect.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           72 bytes  main → __flow_dbg
+double                                          0 bytes  double
+
+WCET analysis: tests/lang/test_dbg_expect.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          144 inst  main → __flow_dbg (extern)
+double                                          2 inst  double
+

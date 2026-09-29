@@ -231,8 +231,8 @@ The compiler sources are under `compiler/src/`:
 | MLIR output | `mlirgen.flow` | MLIR text (`FLOWC_EMIT=mlir`) |
 
 The Python modules under `src/flow/` still hold the MLIR generator fallback
-(`mlir_generator.py`), `flow check` (`type_checker.py`), wheel generation
-(`python_generator.py`) and the GPU and WGSL generators.
+(`mlir_generator.py`), `flow check` (`type_checker.py`) and the GPU and WGSL
+generators. `flow python` is the Flow tool `tools/pywheel`.
 
 ### 2.5 Higher-level forms use two implementation channels
 
@@ -805,11 +805,11 @@ answer:
 - Is the native declaration or link command incomplete?
 - Is the runtime contract being violated?
 
-Use compilation and preservation options that keep the artifact. For the
-Python runner, structured execution can keep intermediates:
+Use compilation and preservation options that keep the artifact. The
+one-process runner can keep intermediates:
 
 ```bash
-python3 -m flow.run program.flow --json --keep build/investigation
+./flow run program.flow --json --keep build/investigation
 ```
 
 For ordinary debugging:
@@ -2310,7 +2310,7 @@ Important environment families include:
 - `FLOW_PROFILE=default|safety|flight`;
 - `FLOW_SANITIZE` and individual UBSan/ASan/TSan switches;
 - `FLOW_STRICT_EFFECTS`;
-- `FLOW_RUN_PYTHON` for the shell-independent runner;
+- `FLOW_RUN_DIRECT` for the one-process runner;
 - `FLOW_LDFLAGS` and relevant native compiler flags;
 - `FLOW_REGISTRY_PATH`, `FLOW_REGISTRY_URL`, and `FLOW_HOME`;
 - flowc `FLOWC_*` controls for input, output, bundle, backend, and checking;

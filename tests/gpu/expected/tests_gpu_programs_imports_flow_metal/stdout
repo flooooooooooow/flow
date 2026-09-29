@@ -1,0 +1,4 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/imports.flow (metal)...[0m
+✅ Generated Metal shader: @ROOT@/build/gpu/lib_scale.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/local_add.metal
+Generated 2 GPU shader(s)

@@ -1,0 +1,3 @@
+calibrated routing → build/fir-gate/calibrate_text.json
+  bulk_backend=cpu min_funcs=1000000000 min_edges=1000000000
+  (bulk never beat CPU in sweep; auto stays on cpu)

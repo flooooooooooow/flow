@@ -1,6 +1,5 @@
 import pytest
 import subprocess
-import sys
 import os
 import shutil
 
@@ -31,12 +30,12 @@ function main() -> i32 {
     file_path.write_text(code)
     
     env = os.environ.copy()
-    env["PYTHONPATH"] = "src"
+    flow = os.path.join(os.path.dirname(__file__), "..", "..", "flow")
 
     # Test C backend
-    c_res = subprocess.run([sys.executable, "-m", "flow.run", str(file_path), "--backend=c"], cwd=".", env=env, capture_output=True, text=True)
+    c_res = subprocess.run([flow, "run", str(file_path), "--backend=c", "--json"], cwd=".", env=env, capture_output=True, text=True)
     assert c_res.returncode == 0, f"C backend failed math override test\\nstdout: {c_res.stdout}\\nstderr: {c_res.stderr}"
     
     # Test MLIR backend
-    mlir_res = subprocess.run([sys.executable, "-m", "flow.run", str(file_path), "--backend=mlir"], cwd=".", env=env, capture_output=True, text=True)
+    mlir_res = subprocess.run([flow, "run", str(file_path), "--backend=mlir", "--json"], cwd=".", env=env, capture_output=True, text=True)
     assert mlir_res.returncode == 0, f"MLIR backend failed math override test\\nstdout: {mlir_res.stdout}\\nstderr: {mlir_res.stderr}"

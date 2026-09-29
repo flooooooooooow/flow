@@ -1,0 +1,14 @@
+Stack depth analysis: examples/basics/fibonacci.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                            4 bytes  main
+fibonacci                                       0 bytes  fibonacci
+
+WCET analysis: examples/basics/fibonacci.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                           40 inst  main → fibonacci
+fibonacci                                      27 inst  fibonacci
+

@@ -31,6 +31,11 @@ C_BACKEND_RETIRED = (
     "  compiler/scripts/flowc_emit.sh <in.flow> <out.c>  (C only)"
 )
 
+PYTHON_TARGET_RETIRED = (
+    "flow.transpiler: --python is retired. Generate the package with\n"
+    "  ./flow python <file.flow> [--name NAME] [--version VER] [--source]"
+)
+
 
 def _parse_decorator(attr: str) -> tuple[str, list[str]]:
     if "(" in attr and attr.endswith(")"):
@@ -227,18 +232,9 @@ def main():
         "--lenient", action="store_true", help="Lenient type checking (warnings only)"
     )
     parser.add_argument(
-        "--python", action="store_true", help="Generate Python package (wheel)"
-    )
-    parser.add_argument(
-        "--python-name", help="Python module name (default: input filename)"
-    )
-    parser.add_argument(
-        "--python-version", default="0.1.0", help="Python package version"
-    )
-    parser.add_argument(
-        "--python-source-only",
+        "--python",
         action="store_true",
-        help="Generate C extension source without building wheel",
+        help="Retired: Python packages come from `flow python` (tools/pywheel)",
     )
     parser.add_argument(
         "--mode",
@@ -256,6 +252,10 @@ def main():
 
     if args.c:
         print(C_BACKEND_RETIRED, file=sys.stderr)
+        sys.exit(2)
+
+    if args.python:
+        print(PYTHON_TARGET_RETIRED, file=sys.stderr)
         sys.exit(2)
 
     if not args.input:
@@ -426,69 +426,6 @@ def main():
                 print("GPU not available", file=sys.stderr)
         except Exception as e:
             print(f"GPU integration error: {e}", file=sys.stderr)
-
-    # Handle Python target separately
-    if args.python:
-        try:
-            from .python_generator import PythonTarget
-            from pathlib import Path as PyPath
-
-            # Determine module name
-            module_name = args.python_name
-            if not module_name:
-                module_name = (
-                    PyPath(args.input).stem.replace("-", "_").replace(".", "_")
-                )
-
-            # Create Python target
-            target = PythonTarget(
-                declarations,
-                module_name=module_name,
-                version=args.python_version,
-                verbose=True,
-                source_path=args.input,
-            )
-
-            # Print export analysis
-            target.print_diagnostics()
-
-            # Compile
-            target.compile()
-
-            # Output
-            if args.output:
-                output_dir = PyPath(args.output)
-            else:
-                output_dir = PyPath("dist")
-
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            if args.python_source_only:
-                # Just generate C extension source
-                ext_path = output_dir / f"{module_name}_ext.c"
-                target.write_extension_source(ext_path)
-                print(f"✅ Generated: {ext_path}")
-            else:
-                # Build wheel
-                try:
-                    wheel_path = target.build_wheel(output_dir)
-                    print(f"✅ Built wheel: {wheel_path}")
-                    print(f"   Install with: pip install {wheel_path}")
-                except Exception as e:
-                    print(f"⚠️  Wheel build failed: {e}")
-                    print("   Falling back to source-only output...")
-                    ext_path = output_dir / f"{module_name}_ext.c"
-                    target.write_extension_source(ext_path)
-                    print(f"   Generated: {ext_path}")
-
-            sys.exit(0)
-
-        except Exception as e:
-            print(f"Python generation error: {e}", file=sys.stderr)
-            import traceback
-
-            traceback.print_exc()
-            sys.exit(1)
 
     # Generate MLIR
     try:

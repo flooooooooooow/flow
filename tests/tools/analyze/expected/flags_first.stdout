@@ -1,0 +1,14 @@
+Stack depth analysis: examples/basics/gcd.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           24 bytes  main → gcd
+gcd                                            12 bytes  gcd
+
+WCET analysis: examples/basics/gcd.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                         5024 inst  main → gcd
+gcd                                          5009 inst  gcd
+

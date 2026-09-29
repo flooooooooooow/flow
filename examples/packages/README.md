@@ -15,9 +15,9 @@ A matching copy lives at `registry/crates/hello_lib/` for registry-shaped layout
 
 ```bash
 cd examples/packages/use_hello_lib
-PYTHONPATH=../../../src python3 -m flow.package install
+../../../flow sync
 cd ../../..
 ./flow run examples/packages/use_hello_lib/src/main.flow
 ```
 
-`./flow install` at the repo root installs Python tooling. It does not install Flow packages. Use `python3 -m flow.package install` inside the project directory.
+`./flow install` at the repo root installs compiler tools. Inside a project with a `flow.toml`, `flow sync` (or `flow install`) installs its packages. `flow run` also installs missing packages before it compiles.

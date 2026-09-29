@@ -1,0 +1,13 @@
+$ flow clean
+[92m✓ Cleaned build/[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "cleaner"
+  | version = "0.3.1"
+  | description = "Test package cleaner"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 

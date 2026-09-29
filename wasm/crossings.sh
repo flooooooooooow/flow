@@ -7,7 +7,7 @@
 #   wasm/crossings.sh sockets [program.flow] [--port 9505] [--no-build]
 #   wasm/crossings.sh python  [program.flow] [--no-build]
 #   wasm/crossings.sh fs [program.flow] [--fs memfs|idbfs] [--preload DIR@/MOUNT]
-#   python3 wasm/flow_wasm_gpu.py         the GPU crossing
+#   wasm/crossings.sh gpu [program.flow] [-n COUNT] [--no-build]   the GPU crossing
 #
 # The builder is the Flow program in scripts/tools/wasm_crossings, built with
 # the Stage-A compiler on first use. See docs/language/wasm-crossings.md.

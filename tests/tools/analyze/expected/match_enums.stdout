@@ -1,0 +1,14 @@
+Stack depth analysis: examples/basics/match_enums.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           96 bytes  main → printf
+wait_seconds                                    0 bytes  wait_seconds
+
+WCET analysis: examples/basics/match_enums.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          144 inst  main → printf (extern)
+wait_seconds                                    8 inst  wait_seconds
+

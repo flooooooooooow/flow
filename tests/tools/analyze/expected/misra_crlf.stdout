@@ -1,0 +1,9 @@
+Flow analyze (misra-c-2024)
+Source: tests/tools/analyze/fixtures/crlf.c
+------------------------------------------------------------
+[VIOLATION] MISRA 21.3:2  dynamic allocation: char *p = malloc(4);
+[VIOLATION] MISRA 21.3:3  dynamic allocation: free(p);
+[NOTE] MISRA 21.6:5  stdio I/O: printf("x");
+------------------------------------------------------------
+Summary: 2 violation(s), 1 note(s)
+See docs/certification/ for the full compliance matrix.

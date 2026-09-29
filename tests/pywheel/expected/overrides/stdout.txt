@@ -1,0 +1,17 @@
+[0;34mℹ️  Generating Python package from overrides.flow...[0m
+
+============================================================
+Python Export Analysis: overrides
+============================================================
+
+✅ Exported (3 symbols):
+   flow_func_name: Public function with ABI-compatible signature
+   sqrt_like: Public function with ABI-compatible signature
+   plain_func: Public function with ABI-compatible signature
+
+⚠️  Excluded (3 symbols):
+   dont_export: Excluded by @python(exclude=true)
+   _hidden: Private symbol (starts with underscore)
+   main: Entry point 'main' not exported
+
+✅ Generated: dist/overrides_ext.c

@@ -1,0 +1,11 @@
+Flow @gpu -> WGSL: examples/wasm/gpu_vector_add.flow
+  wrote site/wasm-crossings/gpu-gate/gpu_vector_add.wgsl
+  wrote site/wasm-crossings/gpu-gate/gpu_elementwise_mul.wgsl
+  wrote site/wasm-crossings/gpu-gate/gpu_saxpy.wgsl
+  wrote site/wasm-crossings/gpu-gate/gpu_heavy_mix.wgsl
+  wrote site/wasm-crossings/gpu-gate/webgpu-host.js
+  wrote site/wasm-crossings/gpu-gate/crossing.css
+  wrote site/wasm-crossings/gpu-gate/index.html
+
+Serve it:  python3 -m http.server -d site 8000
+Then open: http://127.0.0.1:8000/wasm-crossings/gpu/

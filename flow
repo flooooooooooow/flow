@@ -47,7 +47,8 @@ if [ "${1:-}" = "test" ]; then
 
     export FLOW_TEST_DRIVER="$DRIVER"
     export FLOW_TEST_BUILD_DIR="$SCRIPT_DIR/build"
-    exec python3 -m flow.project_test_runner "$@"
+    # The project test runner is a Flow program (tools/project_test).
+    exec "$DRIVER" __project-test "$@"
 fi
 
 exec "$DRIVER" "$@"

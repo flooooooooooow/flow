@@ -124,7 +124,7 @@ tests of a Python pass that the transpiler does not call
 (test_pipeline_fusion.py fusion correctness, the rotation-equivalence tests
 in test_counted_loop_rotation.py), comparisons against a Python reference
 (test_time_blocks.py rk4), and tool tests (test_gfx_recorder.py,
-test_gif_flow_encoder.py, test_flow_run.py).
+test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 
 ## Inventory: tests/unit/ (165 test files)
 
@@ -156,7 +156,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_const_folding.py | b | MLIR constant folding text |
 | test_constraints.py | c | TypeChecker diagnostics |
 | test_conventions.py | c | project convention checks |
-| test_cost_model.py | c | cost model internals |
 | test_coverage_effects.py | c | effect typechecking diagnostics |
 | test_coverage_flow_blocks.py | c | flow-block validation diagnostics; one run-based check migratable later |
 | test_coverage_hybrid_events.py | c | hybrid-event validation diagnostics; one run-based check migratable later |
@@ -169,8 +168,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_demo_gallery_docs.py | c | docs tooling |
 | test_doc_anchors.py | c | docs tooling |
 | test_doc_coverage.py | c | docs tooling |
-| test_doc_example_run_stage.py | c | docs tooling |
-| test_docs_blocks.py | c | docs tooling |
 | test_dsp_pipeline.py | c | DSP pipeline lowering internals |
 | test_dual_ops.py | b | operator rewrite asserted on generated text |
 | test_dynamics_dsl.py | c | dynamics DSL parse and lowering internals |
@@ -181,12 +178,7 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_evolves_syntax.py | a | AST and validation of evolves; reference-Euler run blocked on flow blocks in Stage-A (#681) |
 | test_export_abi.py | b | --export ABI shape in generated C |
 | test_field_dsl.py | c | field DSL through the flowc expander; parity lives in `compiler/scripts/parity_field_dsl.sh` |
-| test_fir_analysis.py | c | FIR analysis internals |
-| test_fir_g.py | c | FIR-G internals |
-| test_fir_mlx_oracle.py | c | FIR-G MLX oracle internals |
-| test_fir_route_opts.py | c | FIR-G routing internals |
 | test_flow_dimensioned_state.py | a | parse and validation; one integration run blocked on flow blocks in Stage-A (#681) |
-| test_flow_run.py | c | `flow run` CLI runner |
 | test_frontend_cache.py | c | frontend cache internals |
 | test_fuzz_crash_pins.py | c | parser crash regression pins |
 | test_general_plans.py | c | plan selection internals |
@@ -244,7 +236,7 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_plan_selector.py | c | plan selector internals |
 | test_pointer_string_casts.py | b | generated-C text |
 | test_postfix_chaining.py | c | runnable programs moved to tests/lang; AST and C-text asserts stay |
-| test_project_test_runner.py | c | `flow test` runner tooling |
+| test_project_test_runner.py | c | removed with the Python runner; its cases are in compiler/scripts/parity_project_test.sh |
 | test_proof_bundle.py | c | proof tooling |
 | test_proof_document.py | c | proof tooling |
 | test_proof_kernel.py | c | proof kernel internals |
@@ -287,7 +279,7 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_vectorization_audit.py | b | vectorization report on generated code |
 | test_version.py | c | version string |
 | test_wasm_compiler.py | c | WASM toolchain probes |
-| test_wcet_analysis.py | c | WCET analysis internals |
+| test_wcet_analysis.py | c | WCET analysis internals; deleted with wcet_analysis.py, see tests/tools/analyze/run.sh |
 | test_wiki_nav.py | c | docs tooling |
 | test_working_mlir.py | b | MLIR text goldens |
 | test_working_parser.py | c | parser AST internals |

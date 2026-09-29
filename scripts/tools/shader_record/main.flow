@@ -1,0 +1,327 @@
+# Record FSL shaders to GIFs through the real Metal backend.
+#
+# Run through scripts/record_shader_gallery.sh from the repository root:
+#
+#   record_shader_gallery.sh --group photoreal
+#   record_shader_gallery.sh --name photoreal_gold
+#   record_shader_gallery.sh --group classic --frames 30 --fps 15
+#
+# The pipeline is .flow -> FSL -> MSL (flowc FLOWC_SHADER=metal) -> Metal GPU
+# -> BGRA texture -> PPM frames (runtime/shader_record_metal.m) -> GIF. The
+# GIF encoder is scripts/frames_to_gif.py, which stays in Python for Pillow's
+# quantiser (median cut, Floyd-Steinberg, Lanczos); byte-identical GIFs need
+# it. Everything else here is the logic of the Python script this replaces,
+# with the same options, messages and exit codes.
+#
+# Needs macOS with a Metal device and the Xcode command-line tools.
+
+import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_slice, ft_from, ft_ends, ft_starts, ft_read_file, ft_exists, ft_basename, ft_stem, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, StrList }
+import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_resolve, pr_mkdir_p }
+
+extern {
+    function getenv(name: string) -> string
+    function exit(code: i32) -> void
+    function atoi(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+const PROG: string = "record_shader_gallery.sh"
+const USAGE: string = "usage: record_shader_gallery.sh [-h] [--group {photoreal,classic,all}] [--name NAME] [--out OUT] [--build-dir BUILD_DIR] [--width WIDTH] [--height HEIGHT] [--frames FRAMES] [--fps FPS] [--gif-width GIF_WIDTH]"
+
+function root() -> string {
+    let r: string = getenv("FLOW_REPO_ROOT")
+    if r == null or ft_len(r) == 0 {
+        return pr_resolve(".")
+    }
+    return r
+}
+
+function path_in(rel: string) -> string {
+    return root() + "/" + rel
+}
+
+function arg_error(msg: string) -> void {
+    ft_errln(USAGE)
+    ft_errln(PROG + ": error: " + msg)
+    exit(2)
+}
+
+function die(msg: string) -> void {
+    ft_errln(msg)
+    exit(1)
+}
+
+# Run a command whose output passes through; stop like check=True did.
+function run_checked(cmd: string, what: string) -> void {
+    let rc: i32 = pr_run(cmd)
+    if rc != 0 {
+        die("error: command failed (" + ft_itoa(rc) + "): " + what)
+    }
+}
+
+function is_int(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    if p[0] == 45 or p[0] == 43 {
+        i = 1
+    }
+    if p[i] == 0 {
+        return false
+    }
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function int_arg(v: string, name: string) -> i32 {
+    if is_int(v) == false {
+        arg_error("argument " + name + ": invalid int value: " + ft_repr(v))
+    }
+    return atoi(v)
+}
+
+# Path(arg) as argparse printed it back: a relative path stays relative.
+function path_arg(v: string) -> string {
+    let mut s: string = v
+    while ft_len(s) > 1 and ft_ends(s, "/") {
+        s = ft_slice(s, 0, ft_len(s) - 1)
+    }
+    while ft_starts(s, "./") and ft_len(s) > 2 {
+        s = ft_from(s, 2)
+    }
+    return s
+}
+
+function abs_path(p: string) -> string {
+    if ft_starts(p, "/") {
+        return p
+    }
+    return pr_resolve(".") + "/" + p
+}
+
+function pad2(n: i32) -> string {
+    if n < 10 and n >= 0 {
+        return "0" + ft_itoa(n)
+    }
+    return ft_itoa(n)
+}
+
+function public_name(entry: string) -> string {
+    if ft_ends(entry, "_frag") {
+        return ft_slice(entry, 0, ft_len(entry) - 5)
+    }
+    return entry
+}
+
+function sorted_copy(l: ptr<StrList>) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let n: i32 = ft_list_len(l)
+    let mut used: ptr<StrList> = ft_list_new()
+    let mut k: i32 = 0
+    while k < n {
+        let mut best: string = null
+        let mut i: i32 = 0
+        while i < n {
+            let s: string = ft_list_get(l, i)
+            if ft_list_has(used, ft_itoa(i)) == false {
+                if best == null or strcmp(s, best) < 0 {
+                    best = s
+                }
+            }
+            i = i + 1
+        }
+        let mut j: i32 = 0
+        while j < n {
+            if ft_list_has(used, ft_itoa(j)) == false and ft_eq(ft_list_get(l, j), best) {
+                ft_list_push(used, ft_itoa(j))
+                break
+            }
+            j = j + 1
+        }
+        ft_list_push(out, best)
+        k = k + 1
+    }
+    return out
+}
+
+function flowc() -> string {
+    let f: string = pr_chomp(pr_capture("bash " + pr_quote(path_in("compiler/scripts/ensure_flowc.sh")) + " --cc-only 2>/dev/null"))
+    if ft_starts(f, "/") {
+        return f
+    }
+    return path_in(f)
+}
+
+# compile_shader_file(source, out_dir): the gallery .metal path.
+function compile_gallery(fc: string, source: string, build_dir: string, entries: ptr<StrList>) -> string {
+    let emitted: string = build_dir + "/msl/" + ft_stem(source)
+    let _m: bool = pr_mkdir_p(emitted)
+    let out_f: string = build_dir + "/.flowc_shader.out"
+    let rc: i32 = pr_run("env -u FLOWC_BUNDLE -u FLOWC_SHADER_NAME FLOWC_SHADER=metal FLOWC_IN=" + pr_quote(source) + " FLOWC_OUT=" + pr_quote(emitted) + " " + pr_quote(fc) + " >" + pr_quote(out_f) + " 2>&1")
+    let text: string = ft_read_file(out_f)
+    if rc != 0 {
+        die("SyntaxError: flowc shader failed: " + pr_chomp(text))
+    }
+    let lines: ptr<StrList> = ft_split_lines(pr_chomp(text))
+    let metal: string = ft_list_get(lines, ft_list_len(lines) - 1)
+    let entries_path: string = ft_slice(metal, 0, ft_len(metal) - 6) + ".entries"
+    if ft_exists(entries_path) == false {
+        die("RuntimeError: missing generated entries file: " + entries_path)
+    }
+    let el: ptr<StrList> = ft_split_lines(ft_read_file(entries_path))
+    let mut i: i32 = 0
+    while i < ft_list_len(el) {
+        let e: string = pr_chomp(ft_list_get(el, i))
+        if ft_len(e) > 0 {
+            ft_list_push(entries, e)
+        }
+        i = i + 1
+    }
+    if ft_list_len(entries) == 0 {
+        die("RuntimeError: no shader entries generated for " + source)
+    }
+    return metal
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut group: string = "photoreal"
+    let mut name: string = null
+    let mut out_arg: string = path_in("docs/demos/shaders")
+    let mut build_arg: string = path_in("build/shader-gallery")
+    let mut width: i32 = 640
+    let mut height: i32 = 360
+    let mut frames: i32 = 24
+    let mut fps: i32 = 12
+    let mut gif_width: i32 = 360
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i] as string
+        if ft_eq(a, "-h") or ft_eq(a, "--help") {
+            ft_outln(USAGE)
+            return 0
+        }
+        if ft_starts(a, "--") == false {
+            arg_error("unrecognized arguments: " + a)
+        }
+        if i + 1 >= argc {
+            arg_error("argument " + a + ": expected one argument")
+        }
+        let v: string = argv[i + 1] as string
+        if ft_eq(a, "--group") {
+            if (ft_eq(v, "photoreal") or ft_eq(v, "classic") or ft_eq(v, "all")) == false {
+                arg_error("argument --group: invalid choice: " + ft_repr(v) + " (choose from photoreal, classic, all)")
+            }
+            group = v
+        } elif ft_eq(a, "--name") {
+            name = v
+        } elif ft_eq(a, "--out") {
+            out_arg = path_arg(v)
+        } elif ft_eq(a, "--build-dir") {
+            build_arg = path_arg(v)
+        } elif ft_eq(a, "--width") {
+            width = int_arg(v, a)
+        } elif ft_eq(a, "--height") {
+            height = int_arg(v, a)
+        } elif ft_eq(a, "--frames") {
+            frames = int_arg(v, a)
+        } elif ft_eq(a, "--fps") {
+            fps = int_arg(v, a)
+        } elif ft_eq(a, "--gif-width") {
+            gif_width = int_arg(v, a)
+        } else {
+            arg_error("unrecognized arguments: " + a)
+        }
+        i = i + 2
+    }
+    if width <= 0 or height <= 0 or frames <= 0 or fps <= 0 or gif_width <= 0 {
+        arg_error("dimensions, frame count and fps must be positive")
+    }
+
+    let sources: ptr<StrList> = ft_list_new()
+    if ft_eq(group, "photoreal") or ft_eq(group, "all") {
+        ft_list_push(sources, path_in("examples/gpu/shader_photoreal.flow"))
+        ft_list_push(sources, path_in("examples/gpu/shader_photoreal_materials.flow"))
+    }
+    if ft_eq(group, "classic") or ft_eq(group, "all") {
+        ft_list_push(sources, path_in("examples/gpu/shader_showcase.flow"))
+    }
+
+    # compile_recorder
+    let uname: string = pr_chomp(pr_capture("uname -s"))
+    if ft_eq(uname, "Darwin") == false {
+        die("record_shader_gallery: macOS with Metal is required")
+    }
+    if ft_len(pr_chomp(pr_capture("command -v xcrun"))) == 0 {
+        die("record_shader_gallery: xcrun is required")
+    }
+    let build_dir: string = build_arg
+    let _m: bool = pr_mkdir_p(build_dir)
+    let recorder: string = build_dir + "/shader_record_metal"
+    run_checked("cd " + pr_quote(root()) + " && xcrun clang -O2 -fobjc-arc " + pr_quote(path_in("runtime/shader_record_metal.m")) + " -framework Metal -framework Foundation -o " + pr_quote(recorder), "xcrun")
+
+    let fc: string = flowc()
+    let sel_src: ptr<StrList> = ft_list_new()
+    let sel_metal: ptr<StrList> = ft_list_new()
+    let sel_entry: ptr<StrList> = ft_list_new()
+    let all_names: ptr<StrList> = ft_list_new()
+    let mut s: i32 = 0
+    while s < ft_list_len(sources) {
+        let src: string = ft_list_get(sources, s)
+        let entries: ptr<StrList> = ft_list_new()
+        let metal: string = compile_gallery(fc, src, build_dir, entries)
+        let mut e: i32 = 0
+        while e < ft_list_len(entries) {
+            let entry: string = ft_list_get(entries, e)
+            let pn: string = public_name(entry)
+            if ft_list_has(all_names, pn) {
+                die("RuntimeError: duplicate FSL entry: " + pn)
+            }
+            ft_list_push(all_names, pn)
+            if name == null or ft_eq(pn, name) {
+                ft_list_push(sel_src, src)
+                ft_list_push(sel_metal, metal)
+                ft_list_push(sel_entry, entry)
+            }
+            e = e + 1
+        }
+        s = s + 1
+    }
+    if name != null and ft_list_len(sel_entry) == 0 {
+        let sorted: ptr<StrList> = sorted_copy(all_names)
+        let mut choices: string = ""
+        let mut k: i32 = 0
+        while k < ft_list_len(sorted) {
+            if k > 0 {
+                choices = choices + ", "
+            }
+            choices = choices + ft_list_get(sorted, k)
+            k = k + 1
+        }
+        die("unknown shader " + ft_repr(name) + "; available: " + choices)
+    }
+
+    let n: i32 = ft_list_len(sel_entry)
+    let out_abs: string = out_arg
+    ft_outln("Recording " + ft_itoa(n) + " FSL shader(s) through Metal...")
+    let mut idx: i32 = 0
+    while idx < n {
+        let entry: string = ft_list_get(sel_entry, idx)
+        let pn: string = public_name(entry)
+        ft_outln("[" + pad2(idx + 1) + "/" + pad2(n) + "] " + pn + " (" + ft_basename(ft_list_get(sel_src, idx)) + ")")
+        let frame_dir: string = build_dir + "/frames/" + pn
+        let _r: i32 = pr_run("rm -rf " + pr_quote(frame_dir))
+        let _m2: bool = pr_mkdir_p(frame_dir)
+        run_checked("cd " + pr_quote(root()) + " && " + pr_quote(recorder) + " " + pr_quote(ft_list_get(sel_metal, idx)) + " " + pr_quote(entry) + " " + pr_quote(frame_dir) + " " + ft_itoa(width) + " " + ft_itoa(height) + " " + ft_itoa(frames) + " " + ft_itoa(fps), recorder)
+        let _m3: bool = pr_mkdir_p(out_abs)
+        let gif: string = out_abs + "/" + pn + ".gif"
+        # The GIF encoder is Pillow's (scripts/frames_to_gif.py).
+        run_checked("cd " + pr_quote(root()) + " && python3 " + pr_quote(path_in("scripts/frames_to_gif.py")) + " " + pr_quote(frame_dir) + " " + pr_quote(gif) + " --fps " + ft_itoa(fps) + " --stride 1 --width " + ft_itoa(gif_width), "python3")
+        idx = idx + 1
+    }
+    ft_outln("Recorded " + ft_itoa(n) + " GIF(s) into " + out_arg)
+    return 0
+}

@@ -1,0 +1,8 @@
+struct P {
+    x: f32
+}
+
+@gpu
+function k(a: ptr<f32>, p: P) -> void {
+    a[0] = p.x
+}

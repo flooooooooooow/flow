@@ -1,0 +1,10 @@
+exit=2
+--- to client
+Content-Length: 132
+
+{"type": "response", "request_seq": 7, "success": true, "command": "initialize", "body": {"supportsConfigurationDoneRequest": true}}Content-Length: 53
+
+{"type": "event", "event": "initialized", "body": {}}Content-Length: 96
+
+{"type": "response", "request_seq": 0, "success": true, "command": "setBreakpoints", "body": {}}
+--- to lldb-dap

@@ -7,6 +7,9 @@ mkdir -p compiler/build
 # flowc built from the current compiler/src by the checked-in bootstrap
 # (compiler/scripts/flowc_host.sh). It stands in for the retired Python host.
 FLOWC_SRC_BIN="$(./compiler/scripts/flowc_host.sh)"
+# Header derivation for the per-module objects (scripts/tools/c_to_hdr, a
+# Flow tool built once here from the checked-in bootstrap C).
+export C_TO_HDR="$ROOT/$(./scripts/tools/build_tool.sh c_to_hdr)"
 
 # Emit Flow to C. Prefer the Stage-A Flow driver when built (fast, low mem);
 # else the flowc built from the current compiler/src. Force the latter with
@@ -177,7 +180,7 @@ done
 echo "PASS compile_module ast greps"
 
 # Third module: lexer.flow (imports .token: skipped at emit; -include token header).
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/token_flowc.c compiler/build/token_flowc.h
 compile_module lexer compiler/src/lexer.flow compiler/build/token_flowc.h
 # 'NULL' covers the null literal lowering, which fileio.flow no longer
@@ -220,46 +223,46 @@ echo "PASS compile_module fileio greps"
 
 # Field DSL expander: a leaf module every source read goes through.
 compile_module field_dsl compiler/src/field_dsl.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/field_dsl_flowc.c compiler/build/field_dsl_flowc.h
 compile_module dynamics_dsl compiler/src/dynamics_dsl.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/dynamics_dsl_flowc.c compiler/build/dynamics_dsl_flowc.h
 compile_module flow_blocks compiler/src/flow_blocks.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/flow_blocks_flowc.c compiler/build/flow_blocks_flowc.h
 # Shader DSL: a leaf module every source read goes through (host stub).
 compile_module shader_dsl compiler/src/shader_dsl.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/shader_dsl_flowc.c compiler/build/shader_dsl_flowc.h
 
 # Fifth module: parser.flow (imports token/ast/lexer: -include their headers).
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/ast_flowc.c compiler/build/ast_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/lexer_flowc.c compiler/build/lexer_flowc.h
 # Effect table shared by cgen, typecheck and resolve (#675).
 compile_module effects compiler/src/effects.flow \
     compiler/build/ast_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/effects_flowc.c compiler/build/effects_flowc.h
 # Function attribute vocabulary: parser guards, typecheck checks, cgen
 # lowering (#1028, #1029).
 compile_module attributes compiler/src/attributes.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/attributes_flowc.c compiler/build/attributes_flowc.h
 # Sort and find plan selection used by cgen (#1054).
 compile_module ordering_hints compiler/src/ordering_hints.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/ordering_hints_flowc.c compiler/build/ordering_hints_flowc.h
 compile_module sort_plans compiler/src/sort_plans.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/sort_plans_flowc.c compiler/build/sort_plans_flowc.h
 compile_module sort_sites compiler/src/sort_sites.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
     compiler/build/ordering_hints_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/sort_sites_flowc.c compiler/build/sort_sites_flowc.h
 compile_module parser compiler/src/parser.flow \
     compiler/build/token_flowc.h \
@@ -283,7 +286,7 @@ echo "PASS compile_module parser greps"
 # cgen, jsgen and the typecheck before they read the tree (#996).
 compile_module proof_lower compiler/src/proof_lower.flow \
     compiler/build/ast_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/proof_lower_flowc.c compiler/build/proof_lower_flowc.h
 
 # Sixth module: cgen.flow (imports token/ast: -include their headers; extern → string.h).
@@ -316,13 +319,13 @@ compile_module type_name compiler/src/type_name.flow \
     compiler/build/ast_flowc.h
 compile_module expr_type compiler/src/expr_type.flow \
     compiler/build/ast_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/overload_flowc.c compiler/build/overload_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/overload_table_flowc.c compiler/build/overload_table_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/type_name_flowc.c compiler/build/type_name_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/expr_type_flowc.c compiler/build/expr_type_flowc.h
 compile_module overload_args compiler/src/overload_args.flow \
     compiler/build/ast_flowc.h \
@@ -336,11 +339,11 @@ compile_module overload_select compiler/src/overload_select.flow \
 compile_module overload_registry compiler/src/overload_registry.flow \
     compiler/build/ast_flowc.h \
     compiler/build/overload_table_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/overload_args_flowc.c compiler/build/overload_args_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/overload_select_flowc.c compiler/build/overload_select_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/overload_registry_flowc.c compiler/build/overload_registry_flowc.h
 # Header order matters: -include applies in sequence, and the select header
 # names FlowcOverloadTable, so the table header comes first.
@@ -349,7 +352,7 @@ compile_module overload_call compiler/src/overload_call.flow \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_args_flowc.h \
     compiler/build/overload_select_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/overload_call_flowc.c compiler/build/overload_call_flowc.h
 
 # Seventh module: typecheck.flow (imports ast and the overload modules).
@@ -371,13 +374,13 @@ done
 echo "PASS compile_module typecheck greps"
 
 # Eighth module: resolve.flow (imports ast/parser/fileio/cgen/typecheck).
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/parser_flowc.c compiler/build/parser_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/fileio_flowc.c compiler/build/fileio_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/cgen_flowc.c compiler/build/cgen_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/typecheck_flowc.c compiler/build/typecheck_flowc.h
 compile_module resolve compiler/src/resolve.flow \
     compiler/build/token_flowc.h \
@@ -573,7 +576,7 @@ test "$bundle_infer_code" -eq 42
 echo "PASS FLOWC_BUNDLE fixtures"
 
 # Real frontend pair: FLOWC_BUNDLE=1 emits token.flow then lexer.flow in one TU
-# (deps first). No flowc_c_to_hdr.py / cc -include: Token/TOK_* live in the same file.
+# (deps first). No c_to_hdr / cc -include: Token/TOK_* live in the same file.
 echo "=== FLOWC_BUNDLE lexer (token+lexer one TU) ==="
 FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
     stage_a_emit compiler/src/lexer.flow compiler/build/bundle_lexer.c
@@ -602,7 +605,7 @@ fi
 echo "PASS FLOWC_BUNDLE lexer (token+lexer one TU)"
 
 # Frontend parser bundle: FLOWC_BUNDLE=1 emits token+ast+lexer+parser in one TU
-# (deps first). Needs 1MB out_cap in main/driver. No flowc_c_to_hdr.py / -include.
+# (deps first). Needs 1MB out_cap in main/driver. No c_to_hdr / -include.
 echo "=== FLOWC_BUNDLE parser (token+ast+lexer+parser one TU) ==="
 FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
     stage_a_emit compiler/src/parser.flow compiler/build/bundle_parser.c
@@ -728,15 +731,15 @@ done
 echo "PASS link smoke flowc_frontend.o"
 
 # Headers for the tiny C host (Parser / AstArena layouts from Stage-A emit).
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/parser_flowc.c compiler/build/parser_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/cgen_flowc.c compiler/build/cgen_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/fileio_flowc.c compiler/build/fileio_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/typecheck_flowc.c compiler/build/typecheck_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/resolve_flowc.c compiler/build/resolve_flowc.h
 
 # Stage-A driver: C main + flowc_frontend.o → parse/cgen fixture → exit 45.

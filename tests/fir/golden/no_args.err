@@ -1,0 +1,4 @@
+usage: flow fir-g [-h] [--json] [--device {cpu,numpy,mlx,auto}] [--bench]
+                  [--calibrate] [--thresholds THRESHOLDS] [--opts]
+                  [program]
+flow fir-g: error: program is required unless using --calibrate alone

@@ -1,0 +1,334 @@
+# @module tools.hostlib.sys
+# @means  Paths, processes and time for the native host tools (flow test,
+#         flow dap): pathlib-style path helpers (resolve follows symlinks
+#         the way os.path.realpath does), a fork/exec runner with output
+#         in files and an optional timeout, and text read the way Python's
+#         text mode reads it.
+
+import "tools/hostlib/text.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function readlink(path: string, buf: ptr<u8>, size: i64) -> i64
+    function getcwd(buf: ptr<u8>, size: i64) -> ptr<u8>
+    function opendir(path: string) -> ptr<void>
+    function closedir(d: ptr<void>) -> i32
+    function fflush(fp: ptr<void>) -> i32
+    function fork() -> i32
+    function execvp(file: string, argv: ptr<string>) -> i32
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function kill(pid: i32, sig: i32) -> i32
+    function usleep(us: i32) -> i32
+    function _exit(code: i32) -> void
+    function chdir(path: string) -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function open(path: string, flags: i32) -> i32
+    function dup2(a: i32, b: i32) -> i32
+    function clock_gettime(clk: i32, ts: ptr<i64>) -> i32
+}
+
+export function now() -> f64 {
+    let ts: ptr<i64> = malloc(16) as ptr<i64>
+    clock_gettime(0, ts)
+    return (ts[0] as f64) + (ts[1] as f64) / 1000000000.0
+}
+
+
+# Universal newlines, as Python's text mode reads: \r\n and \r become \n.
+export function universal(s: string) -> string {
+    if t_find_char(s, 13) < 0 {
+        return s
+    }
+    let mut tb: TBuf = tb_new()
+    let n: i32 = t_len(s)
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = t_at(s, i)
+        if c == 13 {
+            tb_putc(&tb, 10)
+            if i + 1 < n and t_at(s, i + 1) == 10 {
+                i = i + 1
+            }
+        } else {
+            tb_putc(&tb, c)
+        }
+        i = i + 1
+    }
+    return tb_str(&tb)
+}
+
+# Code points in UTF-8 text (Python's len on str).
+export function char_len(s: string) -> i32 {
+    let n: i32 = t_len(s)
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = t_at(s, i)
+        if c < 128 or c >= 192 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+
+export function is_dir(path: string) -> bool {
+    let d: ptr<void> = opendir(path)
+    if d == null {
+        return false
+    }
+    closedir(d)
+    return true
+}
+
+export function is_file(path: string) -> bool {
+    if is_dir(path) {
+        return false
+    }
+    return t_file_exists(path)
+}
+
+# pathlib's lexical normalisation: drop empty and "." segments.
+export function norm_path(p: string) -> string {
+    let parts: TList = split_on(p, 47)
+    let mut tb: TBuf = tb_new()
+    if t_starts_with(p, "/") {
+        tb_putc(&tb, 47)
+    }
+    let mut first: bool = true
+    let mut i: i32 = 0
+    while i < parts.len {
+        let seg: string = tl_get(&parts, i)
+        if t_len(seg) > 0 and not t_eq(seg, ".") {
+            if not first {
+                tb_putc(&tb, 47)
+            }
+            tb_puts(&tb, seg)
+            first = false
+        }
+        i = i + 1
+    }
+    let r: string = tb_str(&tb)
+    if t_len(r) == 0 {
+        return "."
+    }
+    return r
+}
+
+export function split_on(s: string, sep: i32) -> TList {
+    let mut l: TList = tl_new()
+    let n: i32 = t_len(s)
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if t_at(s, i) == sep {
+            tl_push(&l, t_sub(s, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    tl_push(&l, t_sub(s, start, n))
+    return l
+}
+
+export function join_path(a: string, b: string) -> string {
+    if t_starts_with(b, "/") {
+        return norm_path(b)
+    }
+    return norm_path(a + "/" + b)
+}
+
+export function dirname(p: string) -> string {
+    let mut i: i32 = t_len(p) - 1
+    while i >= 0 and t_at(p, i) != 47 {
+        i = i - 1
+    }
+    if i < 0 {
+        return "."
+    }
+    if i == 0 {
+        return "/"
+    }
+    return t_sub(p, 0, i)
+}
+
+export function basename(p: string) -> string {
+    let mut i: i32 = t_len(p) - 1
+    while i >= 0 and t_at(p, i) != 47 {
+        i = i - 1
+    }
+    return t_from(p, i + 1)
+}
+
+# Path.stem: the name without its last suffix; a leading dot is not one.
+export function stem(p: string) -> string {
+    let name: string = basename(p)
+    let mut i: i32 = t_len(name) - 1
+    while i > 0 and t_at(name, i) != 46 {
+        i = i - 1
+    }
+    if i <= 0 {
+        return name
+    }
+    return t_sub(name, 0, i)
+}
+
+# Path.with_suffix(""): the path without the name's last suffix.
+export function strip_suffix(p: string) -> string {
+    let d: string = dirname(p)
+    let s: string = stem(p)
+    if t_eq(d, ".") and not t_starts_with(p, "./") {
+        return s
+    }
+    if t_eq(d, "/") {
+        return "/" + s
+    }
+    return d + "/" + s
+}
+
+# Path.resolve(): symlinks resolved where the path exists; otherwise the
+# longest existing prefix is resolved and the rest appended.
+export function resolve(p: string) -> string {
+    let mut abs: string = p
+    if not t_starts_with(p, "/") {
+        abs = cwd() + "/" + p
+    }
+    # os.path.realpath: walk one component at a time, following symlinks,
+    # applying ".." to what is resolved so far, keeping missing parts.
+    let mut rest: string = abs
+    let mut cur: string = "/"
+    let mut links: i32 = 0
+    while t_len(rest) > 0 {
+        let n: i32 = t_len(rest)
+        let mut i: i32 = 0
+        while i < n and t_at(rest, i) == 47 {
+            i = i + 1
+        }
+        let s: i32 = i
+        while i < n and t_at(rest, i) != 47 {
+            i = i + 1
+        }
+        let comp: string = t_sub(rest, s, i)
+        rest = t_sub(rest, i, n)
+        if t_len(comp) == 0 or t_eq(comp, ".") {
+            continue
+        }
+        if t_eq(comp, "..") {
+            cur = dirname(cur)
+            continue
+        }
+        let cand: string = join_path(cur, comp)
+        let target: string = read_link(cand)
+        if t_len(target) == 0 or links > 40 {
+            cur = cand
+            continue
+        }
+        links = links + 1
+        if t_starts_with(target, "/") {
+            cur = "/"
+        }
+        rest = target + "/" + rest
+    }
+    return cur
+}
+
+export function read_link(p: string) -> string {
+    let buf: ptr<u8> = malloc(4097) as ptr<u8>
+    let n: i64 = readlink(p, buf, 4096)
+    if n <= 0 {
+        return ""
+    }
+    buf[n as i32] = 0
+    return buf as string
+}
+
+export function cwd() -> string {
+    let buf: ptr<u8> = malloc(4096) as ptr<u8>
+    if getcwd(buf, 4096) == null {
+        return "."
+    }
+    return buf as string
+}
+
+# Path.relative_to as text: the path under root, else unchanged.
+export function relative(path: string, root: string) -> string {
+    if t_eq(path, root) {
+        return "."
+    }
+    if t_eq(root, "/") and t_starts_with(path, "/") {
+        return t_from(path, 1)
+    }
+    if t_starts_with(path, root + "/") {
+        return t_from(path, t_len(root) + 1)
+    }
+    return path
+}
+
+
+export struct Proc {
+    code: i32,
+    timed_out: bool
+}
+
+# Run argv with stdout and stderr in files, in dir when not empty, with
+# FLOW_HOST=host when not empty. Kills it after timeout seconds (none
+# when timeout is 0).
+export function spawn(argv: ptr<TList>, dir: string, host: string, out_path: string, err_path: string, timeout: f64) -> Proc {
+    let n: i32 = argv.len
+    let args: ptr<string> = malloc(((n + 1) as i64) * 8) as ptr<string>
+    let mut a: i32 = 0
+    while a < n {
+        args[a] = tl_get(argv, a)
+        a = a + 1
+    }
+    args[n] = null
+    # Create (and truncate) both files here so the child opens them with
+    # O_WRONLY alone, whose value is the same on every libc.
+    t_write_file(out_path, "")
+    t_write_file(err_path, "")
+    fflush(null)
+    let started: f64 = now()
+    let pid: i32 = fork()
+    if pid == 0 {
+        if t_len(dir) > 0 {
+            chdir(dir)
+        }
+        if t_len(host) > 0 {
+            setenv("FLOW_HOST", host, 1)
+        }
+        dup2(open(out_path, 1), 1)
+        dup2(open(err_path, 1), 2)
+        execvp(args[0], args)
+        _exit(127)
+    }
+    let status: ptr<i32> = malloc(4) as ptr<i32>
+    status[0] = 0
+    let mut timed_out: bool = false
+    while true {
+        let w: i32 = waitpid(pid, status, 1)
+        if w == pid {
+            break
+        }
+        if w < 0 {
+            break
+        }
+        if timeout > 0.0 and now() - started >= timeout {
+            kill(pid, 9)
+            waitpid(pid, status, 0)
+            timed_out = true
+            break
+        }
+        usleep(1000)
+    }
+    let st: i32 = status[0]
+    let mut code: i32 = 0
+    if (st & 127) != 0 {
+        code = 0 - (st & 127)
+    } else {
+        code = (st >> 8) & 255
+    }
+    return Proc { code: code, timed_out: timed_out }
+}
+
+# ── Cases ───────────────────────────────────────────────────────

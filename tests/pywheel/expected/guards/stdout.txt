@@ -1,0 +1,20 @@
+[0;34mℹ️  Generating Python package from guards.flow...[0m
+
+============================================================
+Python Export Analysis: guards
+============================================================
+
+✅ Exported (7 symbols):
+   pick_i32: Public function with ABI-compatible signature
+   pick_i64: Public function with ABI-compatible signature
+   pick_f64: Public function with ABI-compatible signature
+   compiled_only: Public function with ABI-compatible signature
+   add: Public function with ABI-compatible signature
+   sq: Public function with ABI-compatible signature
+   use_generics: Public function with ABI-compatible signature
+
+⚠️  Excluded (2 symbols):
+   hidden_by_flag: Excluded by @python(exclude=true)
+   main: Entry point 'main' not exported
+
+✅ Generated: dist/guards_ext.c

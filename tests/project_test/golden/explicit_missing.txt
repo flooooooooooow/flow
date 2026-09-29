@@ -1,0 +1,4 @@
+exit=2
+--- stdout
+--- stderr
+flow test: no runnable tests found (nowhere)

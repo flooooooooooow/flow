@@ -183,7 +183,8 @@ flow_pkg_tool() {
         compiler/src/semver.flow compiler/src/fileio.flow
 }
 
-# Run the Flow package manager: add, install, sync, search, info.
+# Run the Flow package manager: add, install, sync, search, info, init,
+# publish, build, build-native, run, run-native, clean.
 flow_pkg_native() {
     local tool
     if ! tool="$(flow_pkg_tool)"; then
@@ -277,7 +278,7 @@ flow_native_tool() {
         mkdir -p "$cache" || return 1
     fi
     local bin="$cache/flow-$name"
-    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" \
+    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" "$SCRIPT_DIR/tools/fir" "$SCRIPT_DIR/scripts/tools/lib" \
             "$SCRIPT_DIR/compiler/src" -name '*.flow' -newer "$bin" -print -quit 2>/dev/null)" ]; then
         printf '%s\n' "$bin"
         return 0
@@ -844,6 +845,10 @@ show_help() {
     echo "  wasm <program> [--backend=c|mlir] [--preload DIR@/MOUNT] [--link PATH]"
     echo "                    [--threads] [--fs memfs|idbfs] [--out DIR]"
     echo "                    Compile to WebAssembly + a runnable page"
+    echo "  wasm32 <in.flow|in.ll> -o OUT.wasm [--export NAME] [-O O0..Oz]"
+    echo "                    Freestanding wasm32 module through MLIR (no libc)"
+    echo "  bpf <in.flow|in.ll> -o OUT.o [--entry NAME --section SEC] [-O 0..3]"
+    echo "                    eBPF ELF object (bpfel) through MLIR"
     echo "  repl              Start interactive REPL"
     echo "  lsp               Start the language server on stdio"
     echo "  examples          List project examples (or compiler examples outside a project)"
@@ -2250,84 +2255,43 @@ run_vulkan_demo_advanced() {
     "$demo_dir/run.sh"
 }
 
+# Build and run a demo project with its native sources (flow run-native in
+# demos/NAME, entry src/main.flow).
+flow_demo_run_native() {
+    local demo="$SCRIPT_DIR/demos/$1"
+    (cd "$demo" && flow_pkg_native run-native -- "$demo/src/main.flow")
+}
+
 run_vulkan_2048() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_2048_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_2048_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_2048_flow
 }
 
 run_vulkan_tetris() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_tetris_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_tetris_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_tetris_flow
 }
 
 run_vulkan_snake() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_snake_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_snake_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_snake_flow
 }
 
 run_vulkan_pong() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_pong_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_pong_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_pong_flow
 }
 
 run_vulkan_breakout() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_breakout_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_breakout_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_breakout_flow
 }
 
 run_vulkan_layout() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_layout_flow
 }
 
 run_vulkan_layout_dsl() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_layout_dsl_flow
 }
 
 run_ui_layout() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/ui_layout_flow')
-pm.run_native('$SCRIPT_DIR/demos/ui_layout_flow/src/main.flow')
-"
+    flow_demo_run_native ui_layout_flow
 }
 
 run_ui_layout_window() {
@@ -2425,7 +2389,9 @@ run_tests() {
     mkdir -p "$test_build_dir"
 
     # Only run git-tracked .flow files so local WIP verify corpora do not break tier tests.
-    # tests/cgen/ holds C-emission goldens, some rejected on purpose, and
+    # tests/cgen/ and the tool gate directories (fir, gpu, pywheel, targets and
+    # the rest) hold inputs that are rejected on purpose; their own run.sh or
+    # parity script checks them. tests/cgen/ holds C-emission goldens, and
     # tests/cgen/run.sh checks them.
     # tests/tools/<tool>/fixtures/ are inputs to tool transcripts (some are
     # broken on purpose, to test diagnostics); the transcripts check them.
@@ -2441,14 +2407,14 @@ run_tests() {
                 | grep -v '^examples/verify/' \
                 | grep -v '^tests/fuzz/crashes/' \
                 | grep -v '^tests/tools/[^/]*/fixtures/' \
-                | grep -v '^tests/cgen/' \
+                | grep -vE '^tests/(cgen|c_to_hdr|check|dap|doc_examples|fir|flow_run|gpu|pkg_commands|project_test|pywheel|targets)/' \
                 | grep -v '^examples/ecosystem/' \
                 | grep -v '^examples/demos/' \
                 | while read -r rel; do
                     echo "$SCRIPT_DIR/$rel"
                 done
         else
-            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/tests/tools/*/fixtures/*" -not -path "*/tests/cgen/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/tests/tools/*/fixtures/*" -not -path "*/tests/cgen/*" -not -path "*/tests/c_to_hdr/*" -not -path "*/tests/check/*" -not -path "*/tests/dap/*" -not -path "*/tests/doc_examples/*" -not -path "*/tests/fir/*" -not -path "*/tests/flow_run/*" -not -path "*/tests/gpu/*" -not -path "*/tests/pkg_commands/*" -not -path "*/tests/project_test/*" -not -path "*/tests/pywheel/*" -not -path "*/tests/targets/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
         fi
     }
 
@@ -3328,16 +3294,34 @@ case "${1:-help}" in
         echo "host: $(flow_host_mode)"
         ;;
     "check")
+        # Conventions and idiom lint (tools/check/main.flow, built on first
+        # use). `--build` builds it and prints the binary's path.
         shift
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.check "$@"
+        if ! check_bin="$(flow_native_tool check)"; then
+            exit 1
+        fi
+        if [ "${1:-}" = "--build" ]; then
+            printf '%s\n' "$check_bin"
+            exit 0
+        fi
+        exec "$check_bin" "$@"
         ;;
     "run")
         check_deps
         shift
-        # FLOW_RUN_PYTHON=1 uses the shell-independent Python runner (#400).
-        if [ "${FLOW_RUN_PYTHON:-0}" = "1" ]; then
+        # The one-process runner (tools/run, #400): --json, --keep,
+        # --extra-cflags, --predict, or FLOW_RUN_DIRECT=1 (FLOW_RUN_PYTHON=1
+        # is the old name for it).
+        direct="${FLOW_RUN_DIRECT:-${FLOW_RUN_PYTHON:-0}}"
+        for arg in "$@"; do
+            case "$arg" in
+                --json|--keep|--keep=*|--extra-cflags|--extra-cflags=*|--predict) direct=1 ;;
+            esac
+        done
+        if [ "$direct" = "1" ]; then
             flow_sync_program "${1:-}" || exit $?
-            PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.run "$@"
+            run_bin="$(flow_native_tool run)" || exit 1
+            FLOW_ROOT="$SCRIPT_DIR" exec "$run_bin" "$@"
         else
             run_program "$@"
         fi
@@ -3381,17 +3365,18 @@ case "${1:-help}" in
             print_info "                  [--wcet] [--stack-depth] [--budget N] [--fail-on-violation]"
             exit 1
         fi
-        # Route .flow files to WCET/stack analysis, .c files to MISRA scan.
+        # tools/analyze/main.flow, built on first use. .flow files (or the
+        # --wcet / --stack-depth flags first) go to WCET and stack-depth
+        # analysis, anything else to the MISRA/CERT scan over C.
+        if ! analyze_bin="$(flow_native_tool analyze)"; then
+            exit 1
+        fi
         case "${1:-}" in
-            *.flow)
-                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
-                ;;
-            --wcet|--stack-depth)
-                # Flags before the file: still WCET analysis on a .flow file.
-                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
+            *.flow|--wcet|--stack-depth)
+                exec "$analyze_bin" wcet "$@"
                 ;;
             *)
-                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
+                exec "$analyze_bin" misra "$@"
                 ;;
         esac
         ;;
@@ -3413,6 +3398,15 @@ case "${1:-help}" in
         fi
         FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$lsp_bin" "$@"
         ;;
+    "__project-test")
+        # `flow test` inside a project (the `flow` launcher routes here):
+        # tools/project_test/main.flow, built on first use.
+        shift
+        if ! pt_bin="$(flow_native_tool project_test)"; then
+            exit 2
+        fi
+        exec "$pt_bin" "$@"
+        ;;
     "dap")
         shift
         if [ -z "${1:-}" ]; then
@@ -3421,7 +3415,15 @@ case "${1:-help}" in
             exit 1
         fi
         require_flow_file "${1:-}"
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.dap_server "$@"
+        # From a terminal: interactive LLDB. From an IDE (stdin is a pipe):
+        # the DAP server in tools/dap/main.flow, built on first use.
+        if [ -t 0 ]; then
+            exec "$SCRIPT_DIR/flow" debug "$1"
+        fi
+        if ! dap_bin="$(flow_native_tool dap)"; then
+            exit 1
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$dap_bin"
         ;;
     "debug")
         shift
@@ -3496,22 +3498,10 @@ case "${1:-help}" in
             "vulkan-flow")
                 case "${3:-basic}" in
                     "basic")
-                        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_basic')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_basic/src/main.flow')
-"
+                        flow_demo_run_native vulkan_flow_basic
                         ;;
                     "advanced")
-                        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_advanced')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
-"
+                        flow_demo_run_native vulkan_flow_advanced
                         ;;
                     "2048")
                         run_vulkan_2048
@@ -3608,8 +3598,11 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
             exit 1
         fi
         check_deps
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
-            python3 -m flow.fir_cli "$@"
+        # tools/fir/main.flow, built on first use.
+        if ! fir_bin="$(flow_native_tool fir)"; then
+            exit 1
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$fir_bin" "$@"
         ;;
     "shader")
         shift
@@ -3624,6 +3617,11 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
     "gpu")
         shift
         # --wgsl emits WebGPU shaders instead of Metal, from the same AST.
+        # `--build` builds tools/gpu and prints the binary's path.
+        if [ "${1:-}" = "--build" ]; then
+            flow_native_tool gpu
+            exit $?
+        fi
         gpu_lang="metal"
         gpu_args=()
         while [ $# -gt 0 ]; do
@@ -3642,49 +3640,15 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         require_flow_file "${1:-}"
         check_deps
         print_info "Generating GPU shaders from ${1:-} ($gpu_lang)..."
-        python3 - "$SCRIPT_DIR" "${1:-}" "$gpu_lang" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-program = sys.argv[2]
-lang = sys.argv[3] if len(sys.argv) > 3 else "metal"
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.module_resolver import ModuleResolver
-from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
-from flow.wgsl_codegen import generate_wgsl_shaders
-
-# Resolve modules
-resolver = ModuleResolver(program)
-try:
-    declarations = resolver.resolve()
-except Exception as e:
-    print(f"Error: {e}")
-    sys.exit(1)
-
-# Check for @gpu functions
-gpu_funcs = extract_gpu_functions(declarations)
-if not gpu_funcs:
-    print("No @gpu functions found in the program.")
-    print("Mark GPU functions with @gpu decorator:")
-    print()
-    print("@gpu")
-    print("function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {")
-    print("    let i = gpu_thread_id()")
-    print("    if i < n {")
-    print("        out[i] = a[i] + b[i]")
-    print("    }")
-    print("}")
-    sys.exit(0)
-
-if lang == "wgsl":
-    results = generate_wgsl_shaders(declarations, f"{script_dir}/build/wgsl")
-    for name, path, _layout in results:
-        print(f"Generated WGSL shader: {path}")
-else:
-    results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
-print(f"Generated {len(results)} GPU shader(s)")
-PY
+        # tools/gpu/main.flow, built on first use, writes the shaders.
+        if ! gpu_bin="$(flow_native_tool gpu)"; then
+            exit 1
+        fi
+        gpu_out="$SCRIPT_DIR/build/gpu"
+        if [ "$gpu_lang" = "wgsl" ]; then
+            gpu_out="$SCRIPT_DIR/build/wgsl"
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$gpu_bin" --lang "$gpu_lang" --out "$gpu_out" "${1:-}"
         ;;
     "jit")
         shift
@@ -3930,16 +3894,60 @@ PY
         done
         
         print_info "Generating Python package from $program..."
-        
-        py_args=(--python --python-version "$py_version")
-        if [ "$py_source_only" -eq 1 ]; then
-            py_args+=(--python-source-only)
-        fi
-        if [ -n "$py_name" ]; then
-            py_args+=(--python-name "$py_name")
-        fi
 
-        python3 -m "$FLOWC_MODULE" "$program" "${py_args[@]}"
+        # The generator is the Flow tool tools/pywheel: export inference,
+        # diagnostics and the CPython extension source, with the program's C
+        # from flowc. Only the wheel build itself runs Python: `pip wheel`
+        # on the generated package, which needs setuptools. That step builds
+        # a Python artifact; it does not run Flow's compiler in Python.
+        # --source never runs Python.
+        if ! pywheel_bin="$(flow_native_tool pywheel)"; then
+            exit 1
+        fi
+        py_out="dist"
+        py_work="$(mktemp -d "${TMPDIR:-/tmp}/flow-pywheel.XXXXXX")"
+        trap 'rm -rf "$py_work"' EXIT
+        py_mode="package"
+        if [ "$py_source_only" -eq 1 ]; then
+            py_mode="source"
+        fi
+        "$pywheel_bin" "$program" "$py_name" "$py_version" "$py_mode" \
+            "$py_out" "$py_work" "$SCRIPT_DIR" || exit $?
+        if [ "$py_mode" = "source" ]; then
+            exit 0
+        fi
+        py_ext="$(cd "$py_work/pkg" && ls -- *_ext.c)"
+        py_module="${py_ext%_ext.c}"
+        mkdir -p "$py_out"
+        py_out_abs="$(cd "$py_out" && pwd)"
+        py_wheel=""
+        if (cd "$py_work/pkg" && "${FLOW_PYTHON:-python3}" -m pip wheel . -w "$py_out_abs" \
+                >/dev/null 2>"$py_work/pip.log"); then
+            py_wheel="$(ls -- "$py_out/$py_module"*.whl 2>/dev/null | head -1)"
+            if [ -n "$py_wheel" ]; then
+                echo "✅ Built wheel: $py_wheel"
+                echo "   Install with: pip install $py_wheel"
+                exit 0
+            fi
+            echo "⚠️  Wheel build failed: No wheel file produced"
+        else
+            echo "⚠️  Wheel build failed: Wheel build failed:"
+            cat "$py_work/pip.log"
+            echo
+        fi
+        echo "   Falling back to source-only output..."
+        cp "$py_work/pkg/$py_ext" "$py_out/$py_ext"
+        echo "   Generated: $py_out/$py_ext"
+        ;;
+    "bpf")
+        # scripts/tools/llvm_target (Flow): Flow or LLVM IR to an eBPF object.
+        shift
+        exec "$SCRIPT_DIR/scripts/bpf_target.sh" "$@"
+        ;;
+    "wasm32")
+        # scripts/tools/llvm_target (Flow): Flow or LLVM IR to a wasm32 module.
+        shift
+        exec "$SCRIPT_DIR/scripts/wasm32_target.sh" "$@"
         ;;
     "wasm")
         shift
@@ -4081,10 +4089,7 @@ PY
             print_error "Usage: flow pkg <install|add|search|info|publish|init|…>"
             exit 1
         fi
-        case "$1" in
-            add|install|sync|search|info) flow_pkg_native "$@" ;;
-            *) python3 -m flow.package "$@" ;;
-        esac
+        flow_pkg_native "$@"
         ;;
     "search")
         shift
@@ -4100,7 +4105,7 @@ PY
         ;;
     "publish")
         shift
-        python3 -m flow.package publish "$@"
+        flow_pkg_native publish "$@"
         ;;
     "repl")
         if ! repl_bin="$(flow_native_tool repl)"; then
@@ -4116,7 +4121,7 @@ PY
         ;;
     "init")
         shift
-        python3 -m flow.package init "$@"
+        flow_pkg_native init "$@"
         ;;
     "add")
         shift
@@ -4127,46 +4132,27 @@ PY
         flow_pkg_native add "$@"
         ;;
     "build")
-        python3 -m flow.package build
+        flow_pkg_native build
         ;;
     "build-native")
+        # One optional entry file, taken literally (after --).
         shift
-        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.package import FlowPackageManager
-
-pm = FlowPackageManager()
-pm.build_native(arg)
-PY
+        if [ -n "${1-}" ]; then
+            flow_pkg_native build-native -- "$1"
+        else
+            flow_pkg_native build-native
+        fi
         ;;
     "run-native")
         shift
-        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.package import FlowPackageManager
-
-pm = FlowPackageManager()
-pm.run_native(arg)
-PY
+        if [ -n "${1-}" ]; then
+            flow_pkg_native run-native -- "$1"
+        else
+            flow_pkg_native run-native
+        fi
         ;;
     "clean")
-        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager()
-pm.clean()
-"
+        flow_pkg_native clean
         ;;
     "examples")
         if [ "${2:-}" = "run" ]; then

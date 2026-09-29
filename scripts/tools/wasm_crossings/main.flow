@@ -6,19 +6,20 @@
 #   crossings.sh all                     every crossing, then the index
 #   crossings.sh index [--out DIR]       index page only
 #   crossings.sh threads [program.flow] [--workers N] [--out DIR] [--no-build]
+#   crossings.sh gpu [program.flow] [-n COUNT] [--out DIR] [--no-build]
 #   crossings.sh sockets [program.flow] [--port N] [--out DIR] [--no-build]
 #   crossings.sh python  [program.flow] [--out DIR] [--no-build]
 #   crossings.sh fs [program.flow] [--fs memfs|idbfs] [--preload DIR@/MOUNT]
 #                   [--export-name NAME] [--out DIR] [--no-build]
 #
-# The GPU crossing stays in wasm/flow_wasm_gpu.py because its WGSL comes
-# from src/flow's code generator; `all` runs it through python3.
+# The GPU crossing takes its WGSL and kernel manifest from tools/gpu
+# (`flow gpu --build`), the Flow shader generator behind `flow gpu --wgsl`.
 #
 # Flow sources go to C through flowc (compiler/scripts/flowc_emit.sh), the
 # compiler `flow compile` runs. Page text lives in
 # wasm/crossing_assets/pages/*.html with @@field@@ slots.
 
-import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_find, ft_slice, ft_from, ft_basename, ft_stem, ft_dirname, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_rfind_byte, ft_ascii_lower, ft_list_has, ft_repr, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_find, ft_slice, ft_from, ft_basename, ft_stem, ft_dirname, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 import .proc { pr_quote, pr_join_quoted, pr_join_plain, pr_run, pr_capture, pr_chomp, pr_resolve, pr_is_file, pr_mkdir_p, pr_relative }
 
 extern {
@@ -27,6 +28,8 @@ extern {
     function setenv(name: string, value: string, overwrite: i32) -> i32
     function exit(code: i32) -> void
     function atoi(s: string) -> i32
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strtod(s: string, end: ptr<ptr<u8>>) -> f64
 }
 
 const PYODIDE_VERSION: string = "0.27.2"
@@ -43,6 +46,10 @@ struct Opts {
     fs: string
     preload: ptr<StrList>
     export_name: string
+    count: i32
+    shader_name: string
+    size: string
+    time: string
 }
 
 # ---------------------------------------------------------------------------
@@ -658,6 +665,356 @@ function cmd_fs(o: ptr<Opts>) -> i32 {
 # Index and the whole set
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Crossing 2: an @gpu kernel on WebGPU
+# ---------------------------------------------------------------------------
+
+# 1048576 -> "1,048,576" (Python's {count:,}).
+function with_commas(n: i32) -> string {
+    let digits: string = ft_itoa(n)
+    let p: ptr<u8> = digits as ptr<u8>
+    let len: i32 = ft_len(digits)
+    let mut start: i32 = 0
+    let mut out: string = ""
+    if len > 0 and p[0] == 45 {
+        out = "-"
+        start = 1
+    }
+    let mut i: i32 = start
+    while i < len {
+        out = out + ft_slice(digits, i, i + 1)
+        let left: i32 = len - i - 1
+        if left > 0 and left % 3 == 0 {
+            out = out + ","
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# The values of `"key": "value"` lines in the kernel manifest, in order.
+function manifest_values(manifest: string, key: string) -> ptr<StrList> {
+    let vals: ptr<StrList> = ft_list_new()
+    let needle: string = "\"" + key + "\": \""
+    let mut pos: i32 = 0
+    while true {
+        let at: i32 = ft_find(manifest, needle, pos)
+        if at < 0 {
+            break
+        }
+        let s: i32 = at + ft_len(needle)
+        let e: i32 = ft_find(manifest, "\"", s)
+        ft_list_push(vals, ft_slice(manifest, s, e))
+        pos = e
+    }
+    return vals
+}
+
+function gpu_page(program: string, manifest: string, count: i32, out_dir: string) -> string {
+    let files: ptr<StrList> = manifest_values(manifest, "file")
+    let mut preview: string = ""
+    let first: string = out_dir + "/" + ft_list_get(files, 0)
+    if ft_exists(first) {
+        preview = read_or_die(first)
+    }
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "source", html_escape(read_or_die(program)))
+    push2(keys, vals, "wgsl_preview", html_escape(preview))
+    push2(keys, vals, "count_commas", with_commas(count))
+    push2(keys, vals, "nkernels", ft_itoa(ft_list_len(files)))
+    push2(keys, vals, "manifest", manifest)
+    push2(keys, vals, "count", ft_itoa(count))
+    push2(keys, vals, "stem", ft_stem(program))
+    return fill(read_asset("pages/gpu.html"), keys, vals)
+}
+
+# WGSL per @gpu function from tools/gpu (built by `flow gpu --build`), and
+# the same file through flowc to C to WASM, where the kernel bodies run one
+# element at a time as the CPU reference.
+function cmd_gpu(o: ptr<Opts>) -> i32 {
+    let mut arg: string = o[0].program
+    if arg == null {
+        arg = path_in("examples/wasm/gpu_vector_add.flow")
+    }
+    let program: string = resolve_program(arg)
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir() + "/gpu"
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let _m: bool = pr_mkdir_p(out_dir)
+
+    ft_outln("Flow @gpu -> WGSL: " + rel(program))
+    let tool: string = pr_chomp(pr_capture(pr_quote(path_in("flow")) + " gpu --build"))
+    if ft_len(tool) == 0 {
+        die("could not build the flow gpu tool (tools/gpu/main.flow)")
+    }
+    let bd: string = build_dir()
+    let _m2: bool = pr_mkdir_p(bd)
+    let mani_f: string = bd + "/.gpu-manifest.json"
+    let err_f: string = bd + "/.gpu-manifest.err"
+    let rc: i32 = pr_run("FLOW_ROOT=" + pr_quote(root()) + " " + pr_quote(tool) + " --crossing-manifest --out " + pr_quote(out_dir) + " " + pr_quote(program) + " >" + pr_quote(mani_f) + " 2>" + pr_quote(err_f))
+    if rc != 0 {
+        # On a failing kernel the tool lists the shaders it wrote before it.
+        let done: string = ft_read_file(mani_f)
+        if done != null {
+            let mut pos: i32 = 0
+            while pos < ft_len(done) {
+                let nl: i32 = ft_find(done, "\n", pos)
+                if nl < 0 {
+                    break
+                }
+                ft_outln("  wrote " + rel(out_dir + "/" + ft_slice(done, pos, nl)))
+                pos = nl + 1
+            }
+        }
+        let e: string = ft_read_file(err_f)
+        if e != null {
+            ft_err(e)
+        }
+        exit(1)
+    }
+    let manifest_text: string = read_or_die(mani_f)
+    # The tool prints the JSON with a final newline; the page embeds it bare.
+    let manifest: string = ft_slice(manifest_text, 0, ft_len(manifest_text) - 1)
+    let files: ptr<StrList> = manifest_values(manifest, "file")
+    let mut k: i32 = 0
+    while k < ft_list_len(files) {
+        ft_outln("  wrote " + rel(out_dir + "/" + ft_list_get(files, k)))
+        k = k + 1
+    }
+
+    if o[0].no_build == false {
+        ft_outln("Flow -> C -> WASM (CPU reference)")
+        let work: string = build_dir() + "/gpu"
+        let _m3: bool = pr_mkdir_p(work)
+        let c_file: string = flow_to_c(program, work + "/" + ft_stem(program) + ".c", false)
+        let exported: ptr<StrList> = ft_list_new()
+        ft_list_push(exported, "_malloc")
+        ft_list_push(exported, "_free")
+        ft_list_push(exported, "_fill_pattern")
+        let cpu: ptr<StrList> = manifest_values(manifest, "cpuEntry")
+        let mut c: i32 = 0
+        while c < ft_list_len(cpu) {
+            ft_list_push(exported, "_" + ft_list_get(cpu, c))
+            c = c + 1
+        }
+        let emcc: string = require_emcc()
+        let argv: ptr<StrList> = ft_list_new()
+        ft_list_push(argv, emcc)
+        ft_list_push(argv, "-O2")
+        ft_list_push(argv, "-Wno-everything")
+        ft_list_push(argv, c_file)
+        ft_list_push(argv, path_in("wasm/crossing_assets/gpu_thread_id_shim.c"))
+        ft_list_push(argv, "-sMODULARIZE=1")
+        ft_list_push(argv, "-sEXPORT_ES6=0")
+        ft_list_push(argv, "-sEXPORT_NAME=createFlowCpu")
+        ft_list_push(argv, "-sALLOW_MEMORY_GROWTH=1")
+        ft_list_push(argv, "-sEXPORTED_FUNCTIONS=" + json_list(exported))
+        let methods: ptr<StrList> = list_of("HEAPF32", "HEAP32")
+        ft_list_push(methods, "cwrap")
+        ft_list_push(argv, "-sEXPORTED_RUNTIME_METHODS=" + json_list(methods))
+        ft_list_push(argv, "-sENVIRONMENT=web")
+        ft_list_push(argv, "-o")
+        ft_list_push(argv, out_dir + "/" + ft_stem(program) + "_cpu.js")
+        emcc_run(argv)
+    }
+
+    write_out(out_dir + "/webgpu-host.js", read_asset("webgpu-host.js"))
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", gpu_page(program, manifest, o[0].count, out_dir))
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/gpu/")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# A `shader fill` program on WebGPU (the page wasm/flow_webgpu_shader.py built)
+# ---------------------------------------------------------------------------
+
+function arg_error(msg: string) -> void {
+    ft_errln("crossings.sh: error: " + msg)
+    exit(2)
+}
+
+# repr(float): the shortest digits that read back as the same double, in
+# Python's layout (fixed for exponents -4..15, else d.ddde+XX).
+function py_float_repr(v: f64) -> string {
+    let buf: ptr<u8> = malloc(64) as ptr<u8>
+    let mut p: i32 = 1
+    while p <= 17 {
+        let _n: i32 = snprintf(buf, 64, "%.*e", p - 1, v)
+        if strtod(buf as string, null) == v {
+            break
+        }
+        p = p + 1
+    }
+    let s: string = pr_chomp(buf as string)
+    let e_at: i32 = ft_find(s, "e", 0)
+    let mant: string = ft_slice(s, 0, e_at)
+    let ex: i32 = atoi(ft_from(s, e_at + 1))
+    let mut neg: string = ""
+    let mut m: string = mant
+    if ft_starts(m, "-") {
+        neg = "-"
+        m = ft_from(m, 1)
+    }
+    # Digits without the point.
+    let mut digits: string = ft_slice(m, 0, 1)
+    if ft_len(m) > 2 {
+        digits = digits + ft_from(m, 2)
+    }
+    if ex >= -4 and ex < 16 {
+        let mut out: string = ""
+        if ex < 0 {
+            out = "0."
+            let mut z: i32 = -1
+            while z > ex {
+                out = out + "0"
+                z = z - 1
+            }
+            return neg + out + digits
+        }
+        let intlen: i32 = ex + 1
+        if ft_len(digits) <= intlen {
+            out = digits
+            let mut k: i32 = ft_len(digits)
+            while k < intlen {
+                out = out + "0"
+                k = k + 1
+            }
+            return neg + out + ".0"
+        }
+        return neg + ft_slice(digits, 0, intlen) + "." + ft_from(digits, intlen)
+    }
+    let mut out2: string = ft_slice(digits, 0, 1)
+    if ft_len(digits) > 1 {
+        out2 = out2 + "." + ft_from(digits, 1)
+    }
+    let mut sign: string = "+"
+    let mut ae: i32 = ex
+    if ex < 0 {
+        sign = "-"
+        ae = 0 - ex
+    }
+    let mut es: string = ft_itoa(ae)
+    if ae < 10 {
+        es = "0" + es
+    }
+    return neg + out2 + "e" + sign + es
+}
+
+# Run flowc in a FLOWC_SHADER mode; stdout, or the diagnostic and exit 1.
+function flowc_shader(mode: string, source: string, out_dir: string, name: string) -> string {
+    let flowc: string = pr_chomp(pr_capture("bash " + pr_quote(path_in("compiler/scripts/ensure_flowc.sh")) + " --cc-only 2>/dev/null"))
+    let mut exe: string = flowc
+    if ft_starts(flowc, "/") == false {
+        exe = path_in(flowc)
+    }
+    let bd: string = build_dir()
+    let _m: bool = pr_mkdir_p(bd)
+    let out_f: string = bd + "/.shader.out"
+    let mut cmd: string = "env -u FLOWC_BUNDLE -u FLOWC_OUT -u FLOWC_SHADER_NAME FLOWC_SHADER=" + mode + " FLOWC_IN=" + pr_quote(source)
+    if out_dir != null {
+        cmd = cmd + " FLOWC_OUT=" + pr_quote(out_dir)
+    }
+    if name != null {
+        cmd = cmd + " FLOWC_SHADER_NAME=" + pr_quote(name)
+    }
+    let rc: i32 = pr_run(cmd + " " + pr_quote(exe) + " >" + pr_quote(out_f) + " 2>&1")
+    let text: string = ft_read_file(out_f)
+    if rc != 0 {
+        let at: i32 = ft_find(text, "flowc shader: ", 0)
+        if at >= 0 {
+            ft_err("SyntaxError: " + ft_from(text, at + 14))
+        } else {
+            ft_errln("SyntaxError: flowc shader failed: " + pr_chomp(text))
+        }
+        exit(1)
+    }
+    return text
+}
+
+function cmd_shader(o: ptr<Opts>) -> i32 {
+    if o[0].program == null {
+        arg_error("the following arguments are required: source")
+    }
+    # --size WxH, both positive.
+    let size: string = o[0].size
+    let lower: string = ft_ascii_lower(size)
+    let x_at: i32 = ft_find(lower, "x", 0)
+    if x_at < 0 or is_int(ft_slice(lower, 0, x_at)) == false or is_int(ft_from(lower, x_at + 1)) == false {
+        arg_error("argument --size: size must look like 640x360")
+    }
+    let width: i32 = atoi(ft_slice(lower, 0, x_at))
+    let height: i32 = atoi(ft_from(lower, x_at + 1))
+    if width <= 0 or height <= 0 {
+        arg_error("argument --size: size dimensions must be positive")
+    }
+    let tp: ptr<u8> = malloc(8) as ptr<u8>
+    let tpp: ptr<ptr<u8>> = tp as ptr<ptr<u8>>
+    let t: f64 = strtod(o[0].time, tpp)
+    let rest: ptr<u8> = tpp[0]
+    if ft_len(o[0].time) == 0 or rest[0] != 0 {
+        arg_error("argument --time: invalid float value: '" + o[0].time + "'")
+    }
+    let source: string = pr_resolve(o[0].program)
+    if ft_exists(source) == false {
+        arg_error("source does not exist: " + source)
+    }
+    let names_text: string = flowc_shader("list", source, null, null)
+    let names: ptr<StrList> = ft_list_new()
+    let mut pos: i32 = 0
+    while pos < ft_len(names_text) {
+        let mut nl: i32 = ft_find(names_text, "\n", pos)
+        if nl < 0 {
+            nl = ft_len(names_text)
+        }
+        let one: string = ft_slice(names_text, pos, nl)
+        if ft_len(one) > 0 {
+            ft_list_push(names, one)
+        }
+        pos = nl + 1
+    }
+    if ft_list_len(names) == 0 {
+        arg_error("source has no shader fill blocks")
+    }
+    let mut name: string = ft_list_get(names, 0)
+    if o[0].shader_name != null {
+        name = o[0].shader_name
+    }
+    if ft_list_has(names, name) == false {
+        arg_error("shader fill '" + name + "' not found")
+    }
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = path_in("build/webgpu-shader")
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let _m: bool = pr_mkdir_p(out_dir)
+    let made: string = pr_chomp(flowc_shader("wgsl", source, out_dir, name))
+    let last_nl: i32 = ft_rfind_byte(made, 10)
+    let generated: string = ft_from(made, last_nl + 1)
+    let shader_path: string = out_dir + "/shader.wgsl"
+    if ft_eq(generated, shader_path) == false {
+        let _c: bool = ft_write_file(shader_path, read_or_die(generated))
+    }
+    let _h: bool = ft_write_file(out_dir + "/webgpu-host.js", read_asset("webgpu-host.js"))
+    let tv: string = py_float_repr(t)
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "name_html", html_escape(name))
+    push2(keys, vals, "width", ft_itoa(width))
+    push2(keys, vals, "height", ft_itoa(height))
+    push2(keys, vals, "time", tv)
+    push2(keys, vals, "source", html_escape(read_or_die(source)))
+    push2(keys, vals, "name_repr", ft_repr(name))
+    let _p: bool = ft_write_file(out_dir + "/index.html", fill(read_asset("pages/shader.html"), keys, vals))
+    ft_outln(out_dir)
+    return 0
+}
+
 function write_index(out_dir: string) -> void {
     let keys: ptr<StrList> = ft_list_new()
     let vals: ptr<StrList> = ft_list_new()
@@ -676,6 +1033,10 @@ function fresh_opts() -> ptr<Opts> {
     o[0].fs = "memfs"
     o[0].preload = ft_list_new()
     o[0].export_name = "createFlowFs"
+    o[0].count = 1048576
+    o[0].shader_name = null
+    o[0].size = "640x360"
+    o[0].time = "0.0"
     return o
 }
 
@@ -689,10 +1050,7 @@ function cmd_all(o: ptr<Opts>) -> i32 {
     ft_outln("=== threads ===")
     let _t: i32 = cmd_threads(fresh_opts())
     ft_outln("=== gpu ===")
-    let gpu_rc: i32 = pr_run("python3 " + pr_quote(path_in("wasm/flow_wasm_gpu.py")))
-    if gpu_rc != 0 {
-        die("flow_wasm_gpu.py failed (" + ft_itoa(gpu_rc) + ")")
-    }
+    let _g: i32 = cmd_gpu(fresh_opts())
     ft_outln("=== sockets ===")
     let _s: i32 = cmd_sockets(fresh_opts())
     ft_outln("=== python ===")
@@ -723,7 +1081,7 @@ function cmd_index(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> i32 {
-    ft_errln("usage: crossings.sh {all,index,threads,sockets,python,fs} [program.flow] [options]")
+    ft_errln("usage: crossings.sh {all,index,threads,gpu,sockets,python,fs,shader} [program.flow] [options]")
     return 2
 }
 
@@ -789,11 +1147,23 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--preload") {
             ft_list_push(o[0].preload, option_value(argc, argv, i, a))
             i = i + 1
+        } elif ft_eq(a, "-n") or ft_eq(a, "--count") {
+            o[0].count = int_value(option_value(argc, argv, i, a), a)
+            i = i + 1
+        } elif ft_eq(a, "--name") {
+            o[0].shader_name = option_value(argc, argv, i, a)
+            i = i + 1
+        } elif ft_eq(a, "--size") {
+            o[0].size = option_value(argc, argv, i, a)
+            i = i + 1
+        } elif ft_eq(a, "--time") {
+            o[0].time = option_value(argc, argv, i, a)
+            i = i + 1
         } elif ft_eq(a, "--export-name") {
             o[0].export_name = option_value(argc, argv, i, a)
             i = i + 1
         } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
-            ft_outln("usage: crossings.sh {all,index,threads,sockets,python,fs} [program.flow] [options]")
+            ft_outln("usage: crossings.sh {all,index,threads,gpu,sockets,python,fs,shader} [program.flow] [options]")
             return 0
         } elif ft_starts(a, "-") {
             ft_errln("crossings.sh: error: unrecognized arguments: " + a)
@@ -811,6 +1181,12 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     }
     if ft_eq(cmd, "sockets") {
         return cmd_sockets(o)
+    }
+    if ft_eq(cmd, "gpu") {
+        return cmd_gpu(o)
+    }
+    if ft_eq(cmd, "shader") {
+        return cmd_shader(o)
     }
     if ft_eq(cmd, "python") {
         return cmd_python(o)

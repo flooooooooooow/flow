@@ -139,8 +139,9 @@ export function flowc_reachable_functions(
         i = i + 1
     }
 
-    # Stack for DFS (allocate enough for all funcs)
-    let stack: ptr<i32> = malloc((num_funcs + 1) * 4) as ptr<i32>
+    # Stack for DFS. A function is pushed once per call edge into it (and
+    # once per root) before it is visited, so the edges bound the depth.
+    let stack: ptr<i32> = malloc((num_roots + row_offsets[num_funcs] + 1) * 4) as ptr<i32>
     let mut sp: i32 = 0
 
     # Push roots

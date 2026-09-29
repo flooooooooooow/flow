@@ -1,0 +1,4 @@
+exit=2
+--- stdout
+--- stderr
+flow test: unknown backend 'x'; expected c, mlir, or all

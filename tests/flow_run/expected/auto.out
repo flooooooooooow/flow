@@ -1,0 +1,11 @@
+{
+  "stdout": "hello from flow\n",
+  "stderr": "",
+  "exit_code": 0,
+  "timing": {
+    "transpile_s": 0.0539,
+    "compile_s": 0.0465,
+    "run_s": 0.1266,
+    "total_s": 0.2271
+  }
+}

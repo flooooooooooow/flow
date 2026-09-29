@@ -97,6 +97,9 @@ jobs:
             compiler:
               - 'compiler/**'
               - 'tests/cgen/**'
+              - 'tests/check/**'
+              - 'tests/c_to_hdr/**'
+              - 'tools/check/**'
             tests:
               - 'tests/**'
             examples:
@@ -115,6 +118,8 @@ jobs:
             tools:
               - 'tools/**'
               - 'tests/tools/**'
+              - 'compiler/src/wcet.flow'
+              - 'compiler/src/misra_scan.flow'
               - 'flow-driver'
             docs:
               - 'docs/**'
@@ -187,11 +192,8 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-python
       - name: Compile every ```flow block in the documentation
-        env:
-          PYTHONPATH: src
-        run: python3 scripts/check_doc_examples.py --check-ledger
+        run: scripts/check_doc_examples.sh --check-ledger
 
   doc-examples-run:
     name: Doc examples (run)
@@ -202,15 +204,12 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-python
       # Separate from the compile gate because it takes about two minutes,
       # and because it answers a different question: compiling proves an
       # example is well-formed, running proves it works. A `defer` freeing
       # memory before the return value was read compiled cleanly (#594).
       - name: Run every complete program in the documentation
-        env:
-          PYTHONPATH: src
-        run: python3 scripts/check_doc_examples.py --run --check-ledger
+        run: scripts/check_doc_examples.sh --run --check-ledger
 
   lint:
     name: Lint
@@ -297,10 +296,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # roundtrip.sh still uses compiler/scripts/flowc_c_to_hdr.py for the
-      # per-module headers. The compiler host is flowc built from compiler/src
-      # by the bootstrap binary (compiler/scripts/flowc_host.sh).
-      - uses: ./.github/actions/setup-python
+      # No Python: the compiler host is flowc built from compiler/src by the
+      # bootstrap binary (compiler/scripts/flowc_host.sh), and the per-module
+      # headers come from the Flow tool scripts/tools/c_to_hdr.
+      - name: c_to_hdr goldens
+        run: |
+          chmod +x tests/c_to_hdr/run.sh scripts/tools/build_tool.sh
+          ./tests/c_to_hdr/run.sh
 
       - name: Stage-A/B self-host roundtrip
         run: |
@@ -372,6 +374,35 @@ jobs:
 
       - name: C output goldens (tests/cgen)
         run: ./tests/cgen/run.sh
+
+      - name: flow check goldens (tests/check)
+        run: |
+          chmod +x ./flow-driver tests/check/run.sh
+          ./tests/check/run.sh
+
+      - name: flow python generator goldens (tests/pywheel)
+        run: ./tests/pywheel/run.sh
+
+      - name: Project test runner parity (flow test)
+        run: ./compiler/scripts/parity_project_test.sh
+
+      - name: Debug adapter parity (flow dap)
+        run: ./compiler/scripts/parity_dap.sh
+
+      - name: FIR-G goldens (flow fir-g)
+        run: ./tests/fir/run.sh
+
+      - name: flow run --json goldens (tools/run)
+        run: ./tests/flow_run/run.sh
+
+      - name: Package command goldens (init, publish, build, clean)
+        run: ./scripts/check_pkg_commands.sh
+
+      - name: GPU shader goldens (flow gpu)
+        run: ./tests/gpu/run.sh
+
+      - name: GPU and shader crossing pages
+        run: ./tests/gpu/crossing.sh
 
       - uses: ./.github/actions/install-toolchain
         with:
@@ -594,7 +625,7 @@ jobs:
       - name: Arithmetic safety tests
         env:
           PYTHONPATH: src
-        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_wcet_analysis.py -v
+        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py -v
 
   fuzz:
     name: Fuzz (parser/pipeline)

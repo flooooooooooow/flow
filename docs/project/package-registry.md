@@ -70,13 +70,16 @@ Installed packages land in `flow_packages/<name>/` and are pinned in `flow.lock`
 
 `./flow pkg <subcommand>` takes the same subcommands.
 
-`add`, `sync` (and its alias `install`), `search`, `info` and the install step
-of `flow run` are written in Flow: [`compiler/src/pkg.flow`](../../compiler/src/pkg.flow),
-built by `flow-driver` with the Stage-A compiler. They need no Python. git and
-curl run through [`scripts/tools/pkg_fetch.sh`](../../scripts/tools/pkg_fetch.sh).
-`init`, `publish`, `build`, `build-native` and `run-native` are still
-`python -m flow.package`. `scripts/check_pkg_parity.sh` compares `flow.lock` and
-`flow_packages/` with the Python package manager this replaced.
+Every package command is written in Flow: `add`, `sync` (and its alias
+`install`), `search`, `info`, `init`, `publish`, `build`, `build-native`,
+`run-native`, `clean` and the install step of `flow run`. The code is
+[`compiler/src/pkg.flow`](../../compiler/src/pkg.flow), built by `flow-driver`
+with the Stage-A compiler. They need no Python. git and curl run through
+[`scripts/tools/pkg_fetch.sh`](../../scripts/tools/pkg_fetch.sh); builds run
+flowc and clang. `scripts/check_pkg_parity.sh` compares `flow.lock` and
+`flow_packages/` with the Python package manager this replaced, and
+`scripts/check_pkg_commands.sh` checks the other commands against goldens
+recorded from it.
 
 flowc resolves `import name.module` for a package listed in `[dependencies]`
 from `flow_packages/name/src/module.flow`, then `flow_packages/name/module.flow`,

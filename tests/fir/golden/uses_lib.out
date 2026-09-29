@@ -1,0 +1,103 @@
+{
+  "summary": "FIR-G: funcs=6 blocks=6 ops=32 values=24 operands=20 types=4",
+  "call_edges": [
+    {
+      "caller": "total",
+      "callee": "helper",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "total",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "wrap_f32": 0,
+    "wrap_i32": 0,
+    "total": 0,
+    "helper": 0,
+    "unused": 0,
+    "main": 32768
+  },
+  "pure": {
+    "wrap_f32": true,
+    "wrap_i32": true,
+    "total": true,
+    "helper": true,
+    "unused": true,
+    "main": false
+  },
+  "reachable": [
+    "helper",
+    "main",
+    "total"
+  ],
+  "dead": [
+    "wrap_f32",
+    "wrap_i32",
+    "unused"
+  ],
+  "num_call_ops": 4,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 5,
+    "by_kind": {
+      "inline": 2,
+      "dead_elim": 3
+    },
+    "top": [
+      {
+        "kind": "inline",
+        "target": "helper",
+        "score": 36.0,
+        "reason": "callee_ops=5 sites=1 pure=True",
+        "caller": "total",
+        "callsite_op": 8,
+        "callee_ops": 5,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "total",
+        "score": 33.0,
+        "reason": "callee_ops=6 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 28,
+        "callee_ops": 6,
+        "call_sites": 1
+      },
+      {
+        "kind": "dead_elim",
+        "target": "wrap_f32",
+        "score": 13.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 3,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "wrap_i32",
+        "score": 13.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 3,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "unused",
+        "score": 12.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 2,
+        "call_sites": null
+      }
+    ]
+  }
+}

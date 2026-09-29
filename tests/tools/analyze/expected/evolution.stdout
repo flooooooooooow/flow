@@ -1,0 +1,32 @@
+Stack depth analysis: examples/evolution/pendulum_rk4.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          232 bytes  main → Pendulum_step → Pendulum_derivs → sin
+Pendulum_step                                 144 bytes  Pendulum_step → Pendulum_derivs → sin
+pendulum_energy                               104 bytes  pendulum_energy → cos
+printf                                         64 bytes  printf
+sin                                            64 bytes  sin
+cos                                            64 bytes  cos
+fabs                                           64 bytes  fabs
+Pendulum_derivs                                64 bytes  Pendulum_derivs → sin
+Pendulum_new                                   16 bytes  Pendulum_new
+Pendulum_init                                   0 bytes  Pendulum_init
+Pendulum_default_dt                             0 bytes  Pendulum_default_dt
+
+WCET analysis: examples/evolution/pendulum_rk4.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          574 inst  main → Pendulum_step → Pendulum_derivs → sin (extern)
+Pendulum_step                                 180 inst  Pendulum_step → Pendulum_derivs → sin (extern)
+pendulum_energy                               117 inst  pendulum_energy → cos (extern)
+Pendulum_derivs                               114 inst  Pendulum_derivs → sin (extern)
+printf                                        100 inst  printf (extern)
+sin                                           100 inst  sin (extern)
+cos                                           100 inst  cos (extern)
+fabs                                          100 inst  fabs (extern)
+Pendulum_new                                   23 inst  Pendulum_new → Pendulum_init
+Pendulum_init                                  10 inst  Pendulum_init
+Pendulum_default_dt                             2 inst  Pendulum_default_dt
+

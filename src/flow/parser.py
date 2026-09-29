@@ -599,7 +599,7 @@ class SortExpr:
     entropy: Optional[str] = None  # None | "default" | "system" | "fast" | "secure" | "record" | seed int as str
     general: bool = False  # `general`: pin the general plan, ignore hints
     line: int = 0
-    # Written by the ordering-hints pass (src/flow/ordering_hints.py).
+    # Ordering hints; the retired C backend read them, nothing sets them now.
     hint_input_order: str = "unknown"
     hint_key_range: Optional[List[int]] = None
 

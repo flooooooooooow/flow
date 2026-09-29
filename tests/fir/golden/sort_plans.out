@@ -1,0 +1,30 @@
+FIR-G: funcs=6 blocks=34 ops=282 values=212 operands=164 types=9
+call ops: 11
+reachable: ascending_i32, ascending_u8, fill_bytes, fill_descending, fill_sawtooth, main
+dead: (none)
+call graph:
+  main -> ascending_i32  (op 5)
+  main -> fill_bytes  (op 1)
+  main -> ascending_u8  (op 1)
+  main -> fill_descending  (op 2)
+  main -> fill_sawtooth  (op 2)
+effects / pure:
+  fill_descending: effects=0x0000 pure=True
+  fill_sawtooth: effects=0x0000 pure=True
+  fill_bytes: effects=0x0000 pure=True
+  ascending_i32: effects=0x0000 pure=True
+  ascending_u8: effects=0x0000 pure=True
+  main: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu
+opt candidates: total=11 by_kind={'inline': 11}
+  [inline] fill_bytes score=30.0 (callee_ops=7 sites=1 pure=True) caller=main
+  [inline] ascending_u8 score=18.0 (callee_ops=11 sites=1 pure=True) caller=main
+  [inline] fill_descending score=6.0 (callee_ops=9 sites=2 pure=True) caller=main
+  [inline] fill_descending score=6.0 (callee_ops=9 sites=2 pure=True) caller=main
+  [inline] fill_sawtooth score=4.5 (callee_ops=11 sites=2 pure=True) caller=main
+  [inline] fill_sawtooth score=4.5 (callee_ops=11 sites=2 pure=True) caller=main
+  [inline] ascending_i32 score=1.8 (callee_ops=11 sites=5 pure=True) caller=main
+  [inline] ascending_i32 score=1.8 (callee_ops=11 sites=5 pure=True) caller=main
+  [inline] ascending_i32 score=1.8 (callee_ops=11 sites=5 pure=True) caller=main
+  [inline] ascending_i32 score=1.8 (callee_ops=11 sites=5 pure=True) caller=main
+  [inline] ascending_i32 score=1.8 (callee_ops=11 sites=5 pure=True) caller=main

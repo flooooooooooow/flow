@@ -1,0 +1,3 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/fir/programs/forms.flow (metal)...[0m
+✅ Generated Metal shader: @ROOT@/build/gpu/kernel.metal
+Generated 1 GPU shader(s)

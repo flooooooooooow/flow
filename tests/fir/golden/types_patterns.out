@@ -1,0 +1,48 @@
+{
+  "summary": "FIR-G: funcs=3 blocks=4 ops=56 values=44 operands=40 types=7",
+  "call_edges": [
+    {
+      "caller": "main",
+      "callee": "printf",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "identity_i32": 0,
+    "printf": 24,
+    "main": 32792
+  },
+  "pure": {
+    "identity_i32": true,
+    "printf": false,
+    "main": false
+  },
+  "reachable": [
+    "main",
+    "printf"
+  ],
+  "dead": [
+    "identity_i32"
+  ],
+  "num_call_ops": 3,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 1,
+    "by_kind": {
+      "dead_elim": 1
+    },
+    "top": [
+      {
+        "kind": "dead_elim",
+        "target": "identity_i32",
+        "score": 13.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 3,
+        "call_sites": null
+      }
+    ]
+  }
+}

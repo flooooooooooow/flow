@@ -1,0 +1,42 @@
+FIR-G: funcs=11 blocks=31 ops=276 values=219 operands=184 types=3
+call ops: 20
+reachable: __flow_sum_range, calloc, counted, loop_sum, main, sum_default, sum_descending, sum_empty_direction, sum_offset, sum_runtime, sum_step
+dead: (none)
+call graph:
+  sum_runtime -> __flow_sum_range  (op 1)
+  main -> sum_default  (op 1)
+  main -> sum_step  (op 1)
+  main -> sum_offset  (op 1)
+  main -> sum_descending  (op 1)
+  main -> sum_empty_direction  (op 1)
+  main -> sum_runtime  (op 8)
+  main -> loop_sum  (op 1)
+  main -> calloc  (op 1)
+  main -> counted  (op 3)
+  main -> __flow_sum_range  (op 1)
+effects / pure:
+  sum_default: effects=0x0000 pure=True
+  sum_step: effects=0x0000 pure=True
+  sum_offset: effects=0x0000 pure=True
+  sum_descending: effects=0x0000 pure=True
+  sum_empty_direction: effects=0x0000 pure=True
+  sum_runtime: effects=0x0000 pure=True
+  loop_sum: effects=0x0000 pure=True
+  counted: effects=0x0000 pure=True
+  calloc: effects=0x0016 pure=False
+  main: effects=0x0016 pure=False
+  __flow_sum_range: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu
+opt candidates: total=16 by_kind={'inline': 16}
+  [inline] sum_default score=45.0 (callee_ops=2 sites=1 pure=True) caller=main
+  [inline] sum_descending score=45.0 (callee_ops=2 sites=1 pure=True) caller=main
+  [inline] sum_empty_direction score=45.0 (callee_ops=2 sites=1 pure=True) caller=main
+  [inline] sum_offset score=45.0 (callee_ops=2 sites=1 pure=True) caller=main
+  [inline] sum_step score=45.0 (callee_ops=2 sites=1 pure=True) caller=main
+  [inline] counted score=4.0 (callee_ops=9 sites=3 pure=True) caller=main
+  [inline] counted score=4.0 (callee_ops=9 sites=3 pure=True) caller=main
+  [inline] counted score=4.0 (callee_ops=9 sites=3 pure=True) caller=main
+  [inline] sum_runtime score=1.6875 (callee_ops=8 sites=8 pure=True) caller=main
+  [inline] sum_runtime score=1.6875 (callee_ops=8 sites=8 pure=True) caller=main
+  [inline] sum_runtime score=1.6875 (callee_ops=8 sites=8 pure=True) caller=main
+  [inline] sum_runtime score=1.6875 (callee_ops=8 sites=8 pure=True) caller=main

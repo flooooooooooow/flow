@@ -7,6 +7,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# Header derivation (scripts/tools/c_to_hdr). roundtrip.sh builds it once and
+# exports the path; run alone, this script builds it (cached).
+C_TO_HDR="${C_TO_HDR:-$ROOT/$(./scripts/tools/build_tool.sh c_to_hdr)}"
 mkdir -p compiler/build
 
 STAGE_A_DRIVER=""
@@ -43,33 +46,33 @@ self_emit_module() {
 
 # Order mirrors compile_module in roundtrip.sh (token → … → typecheck → resolve).
 self_emit_module token
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_token.c compiler/build/self_token.h
 
 self_emit_module ast
 
 self_emit_module lexer compiler/build/self_token.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_ast.c compiler/build/self_ast.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_lexer.c compiler/build/self_lexer.h
 
 self_emit_module fileio
 self_emit_module field_dsl
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_field_dsl.c compiler/build/self_field_dsl.h
 self_emit_module dynamics_dsl
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_dynamics_dsl.c compiler/build/self_dynamics_dsl.h
 self_emit_module flow_blocks
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_flow_blocks.c compiler/build/self_flow_blocks.h
 self_emit_module shader_dsl
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_shader_dsl.c compiler/build/self_shader_dsl.h
 # Effect table shared by cgen, typecheck and resolve (#675).
 self_emit_module effects compiler/build/self_ast.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_effects.c compiler/build/self_effects.h
 
 # Function attribute vocabulary (#1028, #1029) and sort plan selection
@@ -78,14 +81,14 @@ self_emit_module attributes
 self_emit_module ordering_hints
 self_emit_module sort_plans
 for m in attributes ordering_hints sort_plans; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
 done
 self_emit_module sort_sites \
     compiler/build/self_token.h \
     compiler/build/self_ast.h \
     compiler/build/self_ordering_hints.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_sort_sites.c compiler/build/self_sort_sites.h
 
 self_emit_module parser \
@@ -96,7 +99,7 @@ self_emit_module parser \
 
 # Proof-layer erasure, called from cgen and the typecheck (#996).
 self_emit_module proof_lower compiler/build/self_ast.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_proof_lower.c compiler/build/self_proof_lower.h
 
 self_emit_module cgen \
@@ -115,7 +118,7 @@ self_emit_module overload_table
 self_emit_module type_name compiler/build/self_ast.h
 self_emit_module expr_type compiler/build/self_ast.h
 for m in overload overload_table type_name expr_type; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
 done
 self_emit_module overload_args \
@@ -131,7 +134,7 @@ self_emit_module overload_registry \
     compiler/build/self_ast.h \
     compiler/build/self_overload_table.h
 for m in overload_args overload_select overload_registry; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
 done
 self_emit_module overload_call \
@@ -139,7 +142,7 @@ self_emit_module overload_call \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_args.h \
     compiler/build/self_overload_select.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_overload_call.c compiler/build/self_overload_call.h
 
 self_emit_module typecheck \
@@ -152,13 +155,13 @@ self_emit_module typecheck \
     compiler/build/self_overload_registry.h \
     compiler/build/self_overload_select.h
 
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_parser.c compiler/build/self_parser.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_fileio.c compiler/build/self_fileio.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_cgen.c compiler/build/self_cgen.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_typecheck.c compiler/build/self_typecheck.h
 
 self_emit_module resolve \
@@ -223,9 +226,9 @@ echo "PASS stage_a_self_emit flowc_frontend_self.o"
 # compile with self_* headers (Parser / fileio / cgen types), link against
 # flowc_frontend_self.o. Only libc + cc remain outside the Flow emit path.
 echo "=== stage_a_driver_flow_self build ==="
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_typecheck.c compiler/build/self_typecheck.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_resolve.c compiler/build/self_resolve.h
 
 "./${STAGE_A_DRIVER}" \

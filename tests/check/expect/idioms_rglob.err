@@ -1,0 +1,7 @@
+
+33 warning(s)/suggestion(s) in 9 files.
+ROOT/link.flow: avoid 'Grüße' - non-ASCII text
+ROOT/link.flow: avoid 'TODO' - track work in issues
+ROOT/src/idioms_basic.flow: avoid 'Grüße' - non-ASCII text
+ROOT/src/idioms_basic.flow: avoid 'TODO' - track work in issues
+ROOT/src/nested/idioms_match.flow: avoid 'reverse for loop' - generates incorrect step direction (#410) (workaround: use while with explicit decrement)

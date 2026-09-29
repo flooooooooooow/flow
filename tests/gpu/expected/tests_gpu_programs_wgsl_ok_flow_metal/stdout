@@ -1,0 +1,8 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/wgsl_ok.flow (metal)...[0m
+✅ Generated Metal shader: @ROOT@/build/gpu/control.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/five_scalars.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/reserved_names.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/nested_write.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/no_scalars.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/four_scalars.metal
+Generated 6 GPU shader(s)

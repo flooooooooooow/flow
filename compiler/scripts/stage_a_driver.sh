@@ -5,6 +5,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# Header derivation (scripts/tools/c_to_hdr). roundtrip.sh builds it once and
+# exports the path; run alone, this script builds it (cached).
+C_TO_HDR="${C_TO_HDR:-$ROOT/$(./scripts/tools/build_tool.sh c_to_hdr)}"
 mkdir -p compiler/build
 
 if [[ ! -f compiler/build/flowc_frontend.o ]]; then
@@ -19,7 +22,7 @@ for mod in token ast lexer parser cgen typecheck resolve; do
             echo "FAIL stage_a_driver: missing compiler/build/${mod}_flowc.c" >&2
             exit 1
         fi
-        python3 compiler/scripts/flowc_c_to_hdr.py \
+        "$C_TO_HDR" \
             "compiler/build/${mod}_flowc.c" "compiler/build/${mod}_flowc.h"
     fi
 done

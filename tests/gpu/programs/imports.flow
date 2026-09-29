@@ -1,0 +1,11 @@
+import .lib.kernels { lib_scale, lib_helper }
+
+@gpu
+function local_add(a: ptr<f32>, b: ptr<f32>) -> void {
+    let i: i32 = gpu_thread_id()
+    a[i] = a[i] + b[i]
+}
+
+function main() -> i32 {
+    return lib_helper()
+}

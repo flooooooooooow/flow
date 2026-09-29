@@ -29,7 +29,7 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 - **Type Mapping**: Converts FLOW types to MLIR types
 - **SSA Form**: Generates proper MLIR SSA values
 
-#### WebAssembly Target (`src/flow/wasm_compiler.py`)
+#### WebAssembly Target (`flow wasm32`, `scripts/tools/llvm_target`)
 - **Freestanding wasm32**: Lowers MLIR to LLVM IR and links it with
   `clang --target=wasm32-unknown-unknown`, skipping the C backend and Emscripten
 - **Export Validation**: Checks requested exports against the symbols defined in
@@ -192,6 +192,11 @@ source line that matches one of those patterns.
 Files under `build/` and `.freebuff/` are skipped. With no `avoid` patterns
 declared it prints that and exits 0, so it is safe to run in any project. The
 exit code is non-zero when a file matches, which makes it usable as a gate.
+
+`--idioms` adds the idiom hints (FIDIOM001, a `let mut` never reassigned;
+FIDIOM002, a return that rebuilds one value field by field), and
+`--format=json` prints them as JSON. The command is the Flow program
+`tools/check/main.flow`; `tests/check/run.sh` holds its goldens.
 
 ### Debugging Tips
 

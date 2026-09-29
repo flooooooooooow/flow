@@ -8,10 +8,10 @@ on:
       - '**.md'
       - 'src/**'
       - 'lib/**'
-      - 'scripts/check_doc_examples.py'
-      - 'scripts/check_doc_examples_strict.py'
-      - 'scripts/check_doc_flow_snippets.py'
-      - 'scripts/docs_blocks.py'
+      - 'scripts/check_doc_examples.sh'
+      - 'tools/doc_examples/**'
+      - 'tests/doc_examples/**'
+      - 'compiler/**'
       - '.github/workflows/doc-examples-strict.yml'
   push:
     branches: ['agent/compile-all-doc-examples']
@@ -28,19 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-python
+      - name: Checker goldens
+        run: tests/doc_examples/run.sh
       - name: Reject Flow hidden in text fences
-        env:
-          PYTHONPATH: src:scripts
-        run: python3 scripts/check_doc_flow_snippets.py
+        run: scripts/check_doc_examples.sh snippets
       - name: Compile documented Flow and enforce the debt ratchet
-        env:
-          PYTHONPATH: src
-        run: python3 scripts/check_doc_examples.py --check-ledger
+        run: scripts/check_doc_examples.sh --check-ledger
       - name: Require zero documentation debt for Flow 1.0 qualification
         if: >-
           startsWith(github.ref, 'refs/tags/v1.0.0-rc.') ||
           github.ref == 'refs/tags/v1.0.0'
-        env:
-          PYTHONPATH: src
-        run: python3 scripts/check_doc_examples_strict.py
+        run: scripts/check_doc_examples.sh strict

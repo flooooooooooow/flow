@@ -9,6 +9,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# Header derivation (scripts/tools/c_to_hdr). roundtrip.sh builds it once and
+# exports the path; run alone, this script builds it (cached).
+C_TO_HDR="${C_TO_HDR:-$ROOT/$(./scripts/tools/build_tool.sh c_to_hdr)}"
 mkdir -p compiler/build
 
 if [[ ! -f compiler/build/flowc_frontend_self.o ]]; then
@@ -23,7 +26,7 @@ for mod in token ast lexer parser sort_plans cgen typecheck resolve; do
             echo "FAIL stage_a_self_emit_g2: missing compiler/build/${mod}_flowc.c" >&2
             exit 1
         fi
-        python3 compiler/scripts/flowc_c_to_hdr.py \
+        "$C_TO_HDR" \
             "compiler/build/${mod}_flowc.c" "compiler/build/${mod}_flowc.h"
     fi
 done
@@ -72,33 +75,33 @@ g2_emit_module() {
 # Order mirrors stage_a_self_emit.sh (token → … → typecheck → resolve).
 # Headers: g2_* siblings (same role as self_* in gen1).
 g2_emit_module token
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_token.c compiler/build/g2_token.h
 
 g2_emit_module ast
 
 g2_emit_module lexer compiler/build/g2_token.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_ast.c compiler/build/g2_ast.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_lexer.c compiler/build/g2_lexer.h
 
 g2_emit_module fileio
 g2_emit_module field_dsl
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_field_dsl.c compiler/build/g2_field_dsl.h
 g2_emit_module dynamics_dsl
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_dynamics_dsl.c compiler/build/g2_dynamics_dsl.h
 g2_emit_module flow_blocks
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_flow_blocks.c compiler/build/g2_flow_blocks.h
 g2_emit_module shader_dsl
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_shader_dsl.c compiler/build/g2_shader_dsl.h
 # Effect table shared by cgen, typecheck and resolve (#675).
 g2_emit_module effects compiler/build/g2_ast.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_effects.c compiler/build/g2_effects.h
 
 # Function attribute vocabulary (#1028, #1029) and sort plan selection
@@ -107,14 +110,14 @@ g2_emit_module attributes
 g2_emit_module ordering_hints
 g2_emit_module sort_plans
 for m in attributes ordering_hints sort_plans; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
 done
 g2_emit_module sort_sites \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h \
     compiler/build/g2_ordering_hints.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_sort_sites.c compiler/build/g2_sort_sites.h
 
 g2_emit_module parser \
@@ -125,7 +128,7 @@ g2_emit_module parser \
 
 # Proof-layer erasure, called from cgen and the typecheck (#996).
 g2_emit_module proof_lower compiler/build/g2_ast.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_proof_lower.c compiler/build/g2_proof_lower.h
 
 g2_emit_module cgen \
@@ -144,7 +147,7 @@ g2_emit_module overload_table
 g2_emit_module type_name compiler/build/g2_ast.h
 g2_emit_module expr_type compiler/build/g2_ast.h
 for m in overload overload_table type_name expr_type; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
 done
 g2_emit_module overload_args \
@@ -160,7 +163,7 @@ g2_emit_module overload_registry \
     compiler/build/g2_ast.h \
     compiler/build/g2_overload_table.h
 for m in overload_args overload_select overload_registry; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
 done
 g2_emit_module overload_call \
@@ -168,7 +171,7 @@ g2_emit_module overload_call \
     compiler/build/g2_overload_table.h \
     compiler/build/g2_overload_args.h \
     compiler/build/g2_overload_select.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_overload_call.c compiler/build/g2_overload_call.h
 
 g2_emit_module typecheck \
@@ -181,13 +184,13 @@ g2_emit_module typecheck \
     compiler/build/g2_overload_registry.h \
     compiler/build/g2_overload_select.h
 
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_parser.c compiler/build/g2_parser.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_fileio.c compiler/build/g2_fileio.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_cgen.c compiler/build/g2_cgen.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_typecheck.c compiler/build/g2_typecheck.h
 
 g2_emit_module resolve \

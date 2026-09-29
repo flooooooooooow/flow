@@ -1,0 +1,6 @@
+function crlf() -> i32 {
+    let mut a: i32 = 1
+
+    let mut b: i32 = 2
+    return a + b
+}

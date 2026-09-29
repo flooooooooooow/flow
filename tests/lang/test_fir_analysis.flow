@@ -277,6 +277,34 @@ function main() -> i32 {
         return 34
     }
 
+    # Fan-in: function 0 calls 1..3, and each of them calls 0..3 again.
+    # The DFS pushes a function once per incoming edge before visiting it,
+    # which is more pushes than there are functions.
+    let fan_rows: ptr<i32> = malloc(5 * 4) as ptr<i32>
+    fan_rows[0] = 0
+    fan_rows[1] = 3
+    fan_rows[2] = 7
+    fan_rows[3] = 11
+    fan_rows[4] = 15
+    let fan_cols: ptr<i32> = malloc(15 * 4) as ptr<i32>
+    let mut fi: i32 = 0
+    while fi < 3 {
+        fan_cols[fi] = fi + 1
+        fi = fi + 1
+    }
+    while fi < 15 {
+        fan_cols[fi] = (fi - 3) % 4
+        fi = fi + 1
+    }
+    let fan_root: ptr<i32> = malloc(4) as ptr<i32>
+    fan_root[0] = 0
+    let fan_seen: ptr<i32> = malloc(4 * 4) as ptr<i32>
+    let fan_n: i32 = flowc_reachable_functions(fan_rows, fan_cols, fan_root, 1, 4, fan_seen)
+    if fan_n != 4 {
+        printf("FAIL: fan-in graph should reach 4 functions, got %d\n", fan_n)
+        return 35
+    }
+
     puts("All fir_analysis tests passed")
     return 0
 }

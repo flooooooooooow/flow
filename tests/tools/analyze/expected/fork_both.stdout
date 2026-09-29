@@ -1,0 +1,20 @@
+Stack depth analysis: examples/basics/pipeline_fork.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           84 bytes  main → printf
+printf                                         64 bytes  printf
+twice                                           0 bytes  twice
+square                                          0 bytes  square
+add                                             0 bytes  add
+
+WCET analysis: examples/basics/pipeline_fork.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          164 inst  main → printf (extern)
+printf                                        100 inst  printf (extern)
+twice                                           2 inst  twice
+square                                          2 inst  square
+add                                             2 inst  add
+

@@ -1,0 +1,9 @@
+# Bad info
+
+```flow
+function main() -> i32 { return 0 }
+```
+
+```flow ignore=
+function main() -> i32 { return 0 }
+```

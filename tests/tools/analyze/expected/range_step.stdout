@@ -1,0 +1,32 @@
+Stack depth analysis: tests/lang/test_range_sum_step.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           76 bytes  main → calloc
+calloc                                         64 bytes  calloc
+sum_runtime                                     8 bytes  sum_runtime → __flow_sum_range
+loop_sum                                        8 bytes  loop_sum
+__flow_sum_range                                8 bytes  __flow_sum_range
+sum_default                                     0 bytes  sum_default
+sum_step                                        0 bytes  sum_step
+sum_offset                                      0 bytes  sum_offset
+sum_descending                                  0 bytes  sum_descending
+sum_empty_direction                             0 bytes  sum_empty_direction
+counted                                         0 bytes  counted
+
+WCET analysis: tests/lang/test_range_sum_step.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                         5267 inst  main → loop_sum
+loop_sum                                     5008 inst  loop_sum
+calloc                                        100 inst  calloc (extern)
+sum_runtime                                    43 inst  sum_runtime → __flow_sum_range
+__flow_sum_range                               31 inst  __flow_sum_range
+counted                                         4 inst  counted
+sum_default                                     2 inst  sum_default
+sum_step                                        2 inst  sum_step
+sum_offset                                      2 inst  sum_offset
+sum_descending                                  2 inst  sum_descending
+sum_empty_direction                             2 inst  sum_empty_direction
+

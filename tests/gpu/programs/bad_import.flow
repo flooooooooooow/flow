@@ -1,0 +1,6 @@
+import .lib.does_not_exist { nothing }
+
+@gpu
+function k(a: ptr<f32>) -> void {
+    a[0] = 1.0
+}

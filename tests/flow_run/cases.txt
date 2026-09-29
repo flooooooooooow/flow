@@ -1,0 +1,19 @@
+# name|arguments to `./flow run` (paths are relative to the repository root)
+hello|tests/flow_run/progs/hello.flow
+exit42|tests/flow_run/progs/exit42.flow
+hello_json|tests/flow_run/progs/hello.flow --json
+exit42_json|tests/flow_run/progs/exit42.flow --json
+transpile_fail|tests/flow_run/progs/bad.flow --json
+transpile_fail_text|tests/flow_run/progs/bad.flow --keep build/flow-run-tests/keep0
+compile_fail|tests/flow_run/progs/cfail.flow --json
+segv|tests/flow_run/progs/segv.flow --json
+missing|/nonexistent.flow --json
+auto|tests/flow_run/progs/hello.flow --backend=auto --json
+lenient|tests/flow_run/progs/hello.flow --lenient --json
+cflags|tests/flow_run/progs/hello.flow --extra-cflags=-DX=1 --json
+keep|tests/flow_run/progs/hello.flow --keep build/flow-run-tests/keep1
+predict_heavy|benchmarks/crossover/heavy_numeric.flow --predict
+predict_nested|benchmarks/crossover/nested_loops.flow --predict
+predict_small|benchmarks/crossover/small_loop.flow --predict
+predict_trivial|benchmarks/crossover/trivial.flow --predict
+predict_match|tests/flow_run/progs/match.flow --predict

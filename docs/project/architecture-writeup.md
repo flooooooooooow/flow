@@ -13,8 +13,7 @@ Flow is a classic front end with multiple back ends:
 3. **Lowering** chooses a backend:
    - **C generator**: flowc (`compiler/src/cgen.flow`), the only C compiler and the default CPU path (`./flow run`, portable Clang/GCC). The Python `c_generator.py` is retired.
    - **MLIR generator** (`src/flow/mlir_generator.py`): co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
-   - **Metal codegen** (`src/flow/metal_codegen.py`): primary macOS `@gpu` / fill-shader path.
-   - **WGSL codegen** (`src/flow/wgsl_codegen.py`): WebGPU emit.
+   - **Metal and WGSL codegen** (`tools/gpu/main.flow`, `flow gpu [--wgsl]`): the `@gpu` kernel path; fill shaders go through flowc (`compiler/src/shader_dsl.flow`).
    - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`): parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
 
 The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.

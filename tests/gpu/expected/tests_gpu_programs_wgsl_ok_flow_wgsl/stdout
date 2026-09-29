@@ -1,0 +1,8 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/wgsl_ok.flow (wgsl)...[0m
+Generated WGSL shader: @ROOT@/build/wgsl/control.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/five_scalars.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/reserved_names.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/nested_write.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/no_scalars.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/four_scalars.wgsl
+Generated 6 GPU shader(s)

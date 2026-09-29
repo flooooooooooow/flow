@@ -1,0 +1,36 @@
+$ flow pkg publish --git https://example.com/notag.git
+[94mPublishing notag@0.3.1…[0m
+  source: https://example.com/notag.git
+[92m✓ Registered in @OUT@/notag_index.json[0m
+
+Next: commit the index change (or open a PR) so others can [94mflow add notag[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "notag"
+  | version = "0.3.1"
+  | description = "Test package notag"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 
+== notag_index.json
+{
+  "version": 1,
+  "name": "flow-packages",
+  "packages": {
+    "notag": {
+      "description": "Test package notag",
+      "homepage": "",
+      "license": "Apache-2.0",
+      "versions": [
+        {
+          "version": "0.3.1",
+          "yanked": false,
+          "git": "https://example.com/notag.git"
+        }
+      ]
+    }
+  }
+}

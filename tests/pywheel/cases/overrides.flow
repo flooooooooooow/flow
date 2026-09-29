@@ -1,0 +1,18 @@
+# @python attribute overrides: rename, docstring, exclusion.
+
+@python(name="py_func_name")
+function flow_func_name() -> void { }
+
+@python(doc="Computes the square root")
+function sqrt_like(x: f64) -> f64 { return x }
+
+@python(exclude=true)
+function dont_export() -> void { }
+
+function plain_func() -> void { }
+
+function _hidden(x: i32) -> i32 { return x + 1 }
+
+function main() -> i32 {
+    return 0
+}

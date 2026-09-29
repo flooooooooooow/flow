@@ -1,0 +1,4 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/imports.flow (wgsl)...[0m
+Generated WGSL shader: @ROOT@/build/wgsl/lib_scale.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/local_add.wgsl
+Generated 2 GPU shader(s)

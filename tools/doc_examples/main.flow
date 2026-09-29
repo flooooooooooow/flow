@@ -1,0 +1,1109 @@
+# @module tools.doc_examples
+# @means  Verify the Flow code examples embedded in the documentation.
+#
+# Run through scripts/check_doc_examples.sh, which builds this program,
+# leaves the `git ls-files '*.md'` listing in build/doc-examples/ and passes
+# the flowc and clang it found. See tools/doc_examples/verify.flow for what
+# a block has to survive.
+#
+# Commands (the first argument; `check` when absent):
+#
+#   check [--report] [--verbose] [--run] [--no-clang] [--write-ledger]
+#         [--fail-on-unverified] [--check-ledger]
+#       Verify every ```flow block. --check-ledger fails only on blocks that
+#       regressed against docs/generated/example-status.json; --write-ledger
+#       rewrites it. --run also builds and runs every complete program: a
+#       crash or a hang is a failure, an ordinary non-zero exit is not.
+#   strict
+#       Every ```flow block must be verified or an expected error.
+#   snippets
+#       Reject Flow-looking code hidden in `text` or untagged fences.
+#   blocks FILE...
+#       Print the fenced blocks of FILEs as JSON (for other tools).
+#   lessons
+#       Print the tutorial lessons (docs/tutorials/*.md except README, flow
+#       blocks with a `function main`) as JSON.
+#
+# Options for every command: --root DIR checks the markdown under DIR
+# instead of the repository (tests), --ledger PATH reads and writes that
+# ledger.
+
+import "scripts/tools/lib/text.flow"
+import "scripts/tools/lib/unicode.flow"
+import "scripts/tools/lib/proc.flow"
+import "scripts/tools/lib/json.flow"
+import "scripts/tools/lib/regex.flow"
+import "tools/doc_examples/blocks.flow"
+import "tools/doc_examples/verify.flow"
+import "tools/doc_examples/browser.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function time(t: ptr<i64>) -> i64
+    function localtime(t: ptr<i64>) -> ptr<void>
+    function strftime(buf: ptr<u8>, size: i64, fmt: string, tm: ptr<void>) -> i64
+}
+
+# ---------------------------------------------------------------------------
+# Counting and formatting
+# ---------------------------------------------------------------------------
+
+# An insertion-ordered counter, as collections.Counter.
+struct Tally {
+    keys: ptr<StrList>,
+    counts: ptr<i32>,
+    cap: i32
+}
+
+function tally_new() -> ptr<Tally> {
+    let t: ptr<Tally> = calloc(1, 24) as ptr<Tally>
+    t.keys = ft_list_new()
+    t.cap = 4096
+    t.counts = calloc(4096, 4) as ptr<i32>
+    return t
+}
+
+function tally_add(t: ptr<Tally>, key: string) {
+    let mut i: i32 = 0
+    while i < ft_list_len(t.keys) {
+        if ft_eq(ft_list_get(t.keys, i), key) {
+            t.counts[i] = t.counts[i] + 1
+            return
+        }
+        i = i + 1
+    }
+    ft_list_push(t.keys, key)
+    t.counts[ft_list_len(t.keys) - 1] = 1
+}
+
+function tally_get(t: ptr<Tally>, key: string) -> i32 {
+    let mut i: i32 = 0
+    while i < ft_list_len(t.keys) {
+        if ft_eq(ft_list_get(t.keys, i), key) {
+            return t.counts[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Indices of the keys by count, highest first; ties keep insertion order
+# (Counter.most_common).
+function tally_order(t: ptr<Tally>) -> ptr<i32> {
+    let n: i32 = ft_list_len(t.keys)
+    let idx: ptr<i32> = calloc((n + 1) as i64, 4) as ptr<i32>
+    let mut i: i32 = 0
+    while i < n {
+        idx[i] = i
+        i = i + 1
+    }
+    # insertion sort: stable
+    i = 1
+    while i < n {
+        let cur: i32 = idx[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and t.counts[idx[j]] < t.counts[cur] {
+            idx[j + 1] = idx[j]
+            j = j - 1
+        }
+        idx[j + 1] = cur
+        i = i + 1
+    }
+    return idx
+}
+
+# f"{100 * n / total:4.1f}", rounding half to even on the exact ratio.
+function pct(n: i32, total: i32) -> string {
+    if total == 0 {
+        return " 0.0"
+    }
+    let num: i64 = (n as i64) * 1000
+    let den: i64 = total as i64
+    let mut q: i64 = num / den
+    let r: i64 = num % den
+    if r * 2 > den or (r * 2 == den and q % 2 == 1) {
+        q = q + 1
+    }
+    let s: string = ft_itoa((q / 10) as i32) + "." + ft_itoa((q % 10) as i32)
+    return ft_rjust(s, 4)
+}
+
+function head_line(detail: string) -> string {
+    if detail == null {
+        return ""
+    }
+    let lines: ptr<StrList> = py_splitlines(detail)
+    if ft_list_len(lines) == 0 {
+        return ""
+    }
+    return ft_list_get(lines, 0)
+}
+
+# Field reads through a local: flowc emits `.` rather than `->` for a field
+# of a pointer returned by a call (`rl_get(l, i).status`).
+function r_status(r: ptr<Res>) -> string {
+    return r.status
+}
+
+function r_stage(r: ptr<Res>) -> string {
+    return r.stage
+}
+
+function r_csource(r: ptr<Res>) -> string {
+    return r.csource
+}
+
+function r_path(r: ptr<Res>) -> string {
+    let b: ptr<Blk> = r.blk
+    return b.path
+}
+
+function r_key(r: ptr<Res>) -> string {
+    let b: ptr<Blk> = r.blk
+    return b.key
+}
+
+function r_line(r: ptr<Res>) -> i32 {
+    let b: ptr<Blk> = r.blk
+    return b.line
+}
+
+# Sort order of ledger rows: (path, line).
+function row_after(a: ptr<Res>, b: ptr<Res>) -> bool {
+    let c: i32 = ft_cmp(r_path(a), r_path(b))
+    return c > 0 or (c == 0 and r_line(a) > r_line(b))
+}
+
+function or_empty(s: string) -> string {
+    if s == null {
+        return ""
+    }
+    return s
+}
+
+# ---------------------------------------------------------------------------
+# clang
+# ---------------------------------------------------------------------------
+
+function have_clang() -> bool {
+    return pr_run("command -v clang >/dev/null 2>&1") == 0
+}
+
+function pad4(n: i32) -> string {
+    let s: string = ft_itoa(n)
+    let mut out: string = s
+    while ft_len(out) < 4 {
+        out = "0" + out
+    }
+    return out
+}
+
+# Run clang over every candidate, 150 translation units per call. One clang
+# process per block costs several times the whole rest of the run.
+function batch_clang(env: ptr<Env>, results: ptr<ResList>) {
+    if have_clang() == false {
+        ft_errln("note: clang not found, skipping the clang stage")
+        return
+    }
+    let pending: ptr<ResList> = rl_new()
+    let mut i: i32 = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        if ft_eq(r.status, "verified") and r.csource != null and ft_len(r.csource) > 0 {
+            rl_push(pending, r)
+        }
+        i = i + 1
+    }
+    if pending.len == 0 {
+        return
+    }
+    let dir: string = env.work + "/clang"
+    let _m: bool = pr_mkdir_p(dir)
+    let names: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < pending.len {
+        let name: string = "b" + pad4(i) + ".c"
+        let _w: bool = ft_write_file(dir + "/" + name, r_csource(rl_get(pending, i)))
+        ft_list_push(names, name)
+        i = i + 1
+    }
+    let mut start: i32 = 0
+    while start < pending.len {
+        let mut stop: i32 = start + 150
+        if stop > pending.len {
+            stop = pending.len
+        }
+        let mut cmd: string = "clang -fsyntax-only -w -Wreturn-type -D_DEFAULT_SOURCE " + pr_quote("-I" + env.repo + "/runtime")
+        let mut k: i32 = start
+        while k < stop {
+            cmd = cmd + " " + pr_quote(dir + "/" + ft_list_get(names, k))
+            k = k + 1
+        }
+        let errfile: string = dir + "/stderr"
+        let rc: i32 = pr_run(cmd + " >/dev/null 2>" + pr_quote(errfile))
+        if rc != 0 {
+            let lines: ptr<StrList> = py_splitlines(or_empty(ft_read_file(errfile)))
+            let mut li: i32 = 0
+            while li < ft_list_len(lines) {
+                let line: string = ft_list_get(lines, li)
+                let at: i32 = ft_find(line, ": error:", 0)
+                if at >= 0 {
+                    let colon: i32 = ft_find_byte(line, 58, 0)
+                    let fname: string = ft_basename(ft_slice(line, 0, colon))
+                    let mut k2: i32 = start
+                    while k2 < stop {
+                        if ft_eq(ft_list_get(names, k2), fname) {
+                            let r2: ptr<Res> = rl_get(pending, k2)
+                            if ft_eq(r2.status, "verified") {
+                                r2.status = "unverified"
+                                r2.stage = "clang"
+                                r2.detail = py_prefix(uc_strip(ft_from(line, at + 8)), 200)
+                            }
+                        }
+                        k2 = k2 + 1
+                    }
+                }
+                li = li + 1
+            }
+        }
+        start = stop
+    }
+}
+
+function signal_name(sig: i32) -> string {
+    if sig == 11 { return "SIGSEGV" }
+    if sig == 6 { return "SIGABRT" }
+    if sig == 10 { return "SIGBUS" }
+    if sig == 8 { return "SIGFPE" }
+    if sig == 4 { return "SIGILL" }
+    return "signal " + ft_itoa(sig)
+}
+
+# Build and run every complete program, failing on a crash or a hang.
+# Compiling proves an example is well-formed; running found a `defer` that
+# freed memory before the return value was read (#594) and a fixed-size
+# array returned as a pointer into a dead frame (#573).
+function batch_execute(env: ptr<Env>, results: ptr<ResList>) -> i32 {
+    if have_clang() == false {
+        return 0
+    }
+    let dir: string = env.work + "/run"
+    let _m: bool = pr_mkdir_p(dir)
+    let mut ran: i32 = 0
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        if ft_eq(r.status, "verified") and r.csource != null and ft_contains(r.csource, "int32_t main(") {
+            let base: string = dir + "/r" + pad4(n)
+            n = n + 1
+            let _w: bool = ft_write_file(base + ".c", r.csource)
+            let build: string = "clang -w -O0 -D_DEFAULT_SOURCE " + pr_quote("-I" + env.repo + "/runtime") + " -o " + pr_quote(base) + " " + pr_quote(base + ".c") + " -lm >/dev/null 2>&1"
+            if pr_run(build) == 0 {
+                let marker: string = base + ".timeout"
+                let script: string = pr_quote(base) + " >/dev/null 2>&1 </dev/null & pid=$!; ( trap 'kill $s 2>/dev/null; exit 0' TERM; sleep 10 & s=$!; wait $s; kill -9 $pid 2>/dev/null && : > " + pr_quote(marker) + " ) & w=$!; wait $pid; rc=$?; kill $w 2>/dev/null; wait $w 2>/dev/null; exit $rc"
+                let rc: i32 = pr_run("bash -c " + pr_quote(script) + " 2>/dev/null")
+                if ft_exists(marker) {
+                    r.status = "unverified"
+                    r.stage = "run"
+                    r.detail = "did not finish within 10s"
+                } else {
+                    ran = ran + 1
+                    if rc > 128 {
+                        r.status = "unverified"
+                        r.stage = "run"
+                        r.detail = "crashed with " + signal_name(rc - 128)
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return ran
+}
+
+# ---------------------------------------------------------------------------
+# Runs
+# ---------------------------------------------------------------------------
+
+struct Opts {
+    root: string,
+    ledger: string,
+    ledger_rel: string,
+    listing: string
+}
+
+function load_blocks(o: ptr<Opts>, lang: string) -> ptr<BlkList> {
+    let err: ptr<InfoErr> = calloc(1, 8) as ptr<InfoErr>
+    err.msg = ""
+    let listing: string = or_empty(ft_read_file(o.listing))
+    let bl: ptr<BlkList> = collect(tracked_markdown(listing), o.root, lang, err)
+    if bl == null {
+        ft_errln("error: " + err.msg)
+        return null
+    }
+    return bl
+}
+
+function run_all(env: ptr<Env>, blocks: ptr<BlkList>, use_clang: bool, execute: bool) -> ptr<ResList> {
+    let results: ptr<ResList> = rl_new()
+    let paths: ptr<StrList> = ft_list_new()
+    let ctxs: ptr<ptr<PageCtx>> = malloc(8 * 8192) as ptr<ptr<PageCtx>>
+    let mut i: i32 = 0
+    while i < blocks.len {
+        let b: ptr<Blk> = bl_get(blocks, i)
+        let mut pi: i32 = -1
+        let mut k: i32 = ft_list_len(paths) - 1
+        while k >= 0 {
+            if ft_eq(ft_list_get(paths, k), b.path) {
+                pi = k
+                break
+            }
+            k = k - 1
+        }
+        if pi < 0 {
+            ft_list_push(paths, b.path)
+            pi = ft_list_len(paths) - 1
+            ctxs[pi] = ctx_new()
+        }
+        rl_push(results, verify(env, b, ctxs[pi]))
+        let bid: string = blk_opt(b, "id")
+        if bid != null {
+            ctx_put(ctxs[pi], bid, b.code)
+        }
+        i = i + 1
+    }
+    if use_clang {
+        batch_clang(env, results)
+        if execute {
+            let _ran: i32 = batch_execute(env, results)
+        }
+    }
+    return results
+}
+
+function count_status(results: ptr<ResList>, status: string) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < results.len {
+        if ft_eq(r_status(rl_get(results, i)), status) {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function report(results: ptr<ResList>, verbose: bool) {
+    let total: i32 = results.len
+    ft_outln("Flow examples in documentation: " + ft_itoa(total) + "\n")
+    let statuses: ptr<StrList> = ft_list_new()
+    ft_list_push(statuses, "verified")
+    ft_list_push(statuses, "expected-error")
+    ft_list_push(statuses, "ignored")
+    ft_list_push(statuses, "unverified")
+    let mut s: i32 = 0
+    while s < 4 {
+        let st: string = ft_list_get(statuses, s)
+        let n: i32 = count_status(results, st)
+        ft_outln("  " + ft_ljust(st, 16) + " " + ft_rjust(ft_itoa(n), 4) + "  (" + pct(n, total) + "%)")
+        s = s + 1
+    }
+    ft_outln("\n  verified by harness rung:")
+    let modes: ptr<Tally> = tally_new()
+    let mut i: i32 = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        if ft_eq(r.status, "verified") {
+            tally_add(modes, or_empty(r.mode))
+        }
+        i = i + 1
+    }
+    let mut m: i32 = 0
+    while m < 3 {
+        let name: string = mode_name(m)
+        let c: i32 = tally_get(modes, name)
+        if c > 0 {
+            ft_outln("    " + ft_ljust(name, 14) + " " + ft_rjust(ft_itoa(c), 4))
+        }
+        m = m + 1
+    }
+    let unverified: ptr<ResList> = rl_new()
+    i = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        if ft_eq(r.status, "unverified") {
+            rl_push(unverified, r)
+        }
+        i = i + 1
+    }
+    if unverified.len > 0 {
+        ft_outln("\n  unverified stops at:")
+        let stages: ptr<Tally> = tally_new()
+        i = 0
+        while i < unverified.len {
+            tally_add(stages, or_empty(r_stage(rl_get(unverified, i))))
+            i = i + 1
+        }
+        let order: ptr<i32> = tally_order(stages)
+        i = 0
+        while i < ft_list_len(stages.keys) {
+            let mut name: string = ft_list_get(stages.keys, order[i])
+            if ft_len(name) == 0 {
+                name = "unknown"
+            }
+            ft_outln("    " + ft_ljust(name, 14) + " " + ft_rjust(ft_itoa(stages.counts[order[i]]), 4))
+            i = i + 1
+        }
+        ft_outln("\n  unverified concentrates in:")
+        let paths: ptr<Tally> = tally_new()
+        i = 0
+        while i < unverified.len {
+            tally_add(paths, r_path(rl_get(unverified, i)))
+            i = i + 1
+        }
+        let porder: ptr<i32> = tally_order(paths)
+        i = 0
+        while i < ft_list_len(paths.keys) and i < 12 {
+            ft_outln("    " + ft_rjust(ft_itoa(paths.counts[porder[i]]), 4) + "  " + ft_list_get(paths.keys, porder[i]))
+            i = i + 1
+        }
+    }
+    if verbose {
+        ft_outln("")
+        i = 0
+        while i < unverified.len {
+            let r: ptr<Res> = rl_get(unverified, i)
+            ft_outln("  " + blk_ident(r.blk) + " [" + or_empty(r.stage) + "] " + py_prefix(head_line(r.detail), 110))
+            i = i + 1
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Ledger
+# ---------------------------------------------------------------------------
+
+function today() -> string {
+    let t: ptr<i64> = calloc(1, 8) as ptr<i64>
+    let _n: i64 = time(t)
+    let tm: ptr<void> = localtime(t)
+    let buf: ptr<u8> = calloc(32, 1) as ptr<u8>
+    let _k: i64 = strftime(buf, 32, "%Y-%m-%d", tm)
+    return buf as string
+}
+
+function row_json(r: ptr<Res>) -> string {
+    let b: ptr<Blk> = r.blk
+    let mut out: string = "    {\n"
+    out = out + "      \"key\": " + json_quote(b.key) + ",\n"
+    out = out + "      \"path\": " + json_quote(b.path) + ",\n"
+    out = out + "      \"line\": " + ft_itoa(b.line) + ",\n"
+    out = out + "      \"status\": " + json_quote(r.status)
+    if r.mode != null and ft_len(r.mode) > 0 {
+        out = out + ",\n      \"mode\": " + json_quote(r.mode)
+    }
+    if r.stage != null and ft_len(r.stage) > 0 {
+        out = out + ",\n      \"stage\": " + json_quote(r.stage)
+    }
+    if r.detail != null and ft_len(r.detail) > 0 {
+        out = out + ",\n      \"detail\": " + json_quote(py_prefix(r.detail, 300))
+    }
+    let ign: string = blk_opt(b, "ignore")
+    if ign != null and ft_len(ign) > 0 {
+        out = out + ",\n      \"reason\": " + json_quote(ign)
+    }
+    return out + "\n    }"
+}
+
+# Rows are keyed by content hash rather than line number, so a ledger row
+# changes exactly when its block does. Identical text repeated in one page
+# shares one row.
+function write_ledger(o: ptr<Opts>, results: ptr<ResList>) {
+    let rows: ptr<ResList> = rl_new()
+    let seen: ptr<StrSet> = ft_set_new()
+    let mut i: i32 = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        if ft_set_has(seen, r_key(r)) == false {
+            ft_set_add(seen, r_key(r))
+            rl_push(rows, r)
+        }
+        i = i + 1
+    }
+    # stable insertion sort by (path, line)
+    let items: ptr<ptr<Res>> = rows.items
+    i = 1
+    while i < rows.len {
+        let cur: ptr<Res> = items[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and row_after(items[j], cur) {
+            items[j + 1] = items[j]
+            j = j - 1
+        }
+        items[j + 1] = cur
+        i = i + 1
+    }
+    let totals: ptr<Tally> = tally_new()
+    i = 0
+    while i < results.len {
+        tally_add(totals, r_status(rl_get(results, i)))
+        i = i + 1
+    }
+    let mut out: string = "{\n  \"generated\": " + json_quote(today()) + ",\n  \"totals\": {"
+    i = 0
+    while i < ft_list_len(totals.keys) {
+        if i > 0 {
+            out = out + ","
+        }
+        out = out + "\n    " + json_quote(ft_list_get(totals.keys, i)) + ": " + ft_itoa(totals.counts[i])
+        i = i + 1
+    }
+    if ft_list_len(totals.keys) > 0 {
+        out = out + "\n  "
+    }
+    out = out + "},\n  \"blocks\": ["
+    let parts: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < rows.len {
+        ft_list_push(parts, row_json(rl_get(rows, i)))
+        i = i + 1
+    }
+    if rows.len > 0 {
+        out = out + "\n" + join_with(parts, ",\n") + "\n  "
+    }
+    out = out + "]\n}\n"
+    let _m: bool = pr_mkdir_p(ft_dirname(o.ledger))
+    let _w: bool = ft_write_file(o.ledger, out)
+    ft_outln("\nledger written to " + o.ledger_rel)
+}
+
+function join_with(l: ptr<StrList>, sep: string) -> string {
+    let mut n: i64 = 1
+    let mut i: i32 = 0
+    while i < ft_list_len(l) {
+        n = n + (ft_len(ft_list_get(l, i)) + ft_len(sep)) as i64
+        i = i + 1
+    }
+    let buf: ptr<u8> = malloc(n) as ptr<u8>
+    let mut o: i32 = 0
+    i = 0
+    while i < ft_list_len(l) {
+        if i > 0 {
+            let sp: ptr<u8> = sep as ptr<u8>
+            let mut k: i32 = 0
+            while sp[k] != 0 {
+                buf[o] = sp[k]
+                o = o + 1
+                k = k + 1
+            }
+        }
+        let s: ptr<u8> = ft_list_get(l, i) as ptr<u8>
+        let mut k2: i32 = 0
+        while s[k2] != 0 {
+            buf[o] = s[k2]
+            o = o + 1
+            k2 = k2 + 1
+        }
+        i = i + 1
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+# Fail on regressions only; report progress without demanding a rewrite.
+# A block may be unverified only if the ledger already says so, keyed by the
+# hash of its own text: edit the block and the exemption evaporates.
+function check_ledger(o: ptr<Opts>, results: ptr<ResList>) -> i32 {
+    let text: string = ft_read_file(o.ledger)
+    if text == null {
+        ft_errln("no ledger at " + o.ledger_rel + "; run --write-ledger")
+        return 1
+    }
+    let j: ptr<Json> = json_parse(text)
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    let blocks: i32 = json_get(j, 0, "blocks")
+    let mut c: i32 = -1
+    if blocks >= 0 {
+        c = json_first(j, blocks)
+    }
+    let known: ptr<StrMap> = ft_map_new()
+    while c >= 0 {
+        let k: string = json_str(j, json_get(j, c, "key"))
+        let v: string = json_str(j, json_get(j, c, "status"))
+        let at: i32 = ft_map_get(known, k, -1)
+        if at >= 0 {
+            ft_list_push(vals, v)
+            ft_map_put(known, k, ft_list_len(vals) - 1)
+        } else {
+            ft_list_push(keys, k)
+            ft_list_push(vals, v)
+            ft_map_put(known, k, ft_list_len(vals) - 1)
+        }
+        c = json_next(j, c)
+    }
+    let mut ledger_debt: i32 = 0
+    let mut ki: i32 = 0
+    while ki < ft_list_len(keys) {
+        let vi: i32 = ft_map_get(known, ft_list_get(keys, ki), -1)
+        if ft_eq(ft_list_get(vals, vi), "unverified") {
+            ledger_debt = ledger_debt + 1
+        }
+        ki = ki + 1
+    }
+    let regressions: ptr<ResList> = rl_new()
+    let mut resolved: i32 = 0
+    let mut i: i32 = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        let vi: i32 = ft_map_get(known, r_key(r), -1)
+        let mut was: string = ""
+        if vi >= 0 {
+            was = ft_list_get(vals, vi)
+        }
+        if ft_eq(r.status, "unverified") {
+            if ft_eq(was, "unverified") == false {
+                rl_push(regressions, r)
+            }
+        } elif ft_eq(was, "unverified") {
+            resolved = resolved + 1
+        }
+        i = i + 1
+    }
+    let debt: i32 = count_status(results, "unverified")
+    ft_outln("\nexamples: " + ft_itoa(results.len) + "   unverified: " + ft_itoa(debt) + "   ledger: " + ft_itoa(ledger_debt))
+    if resolved > 0 {
+        ft_outln("\n" + ft_itoa(resolved) + " example(s) now compile that the ledger lists as failing. Refresh it with:")
+        ft_outln("    ./scripts/check_doc_examples.sh --write-ledger")
+    }
+    if regressions.len == 0 {
+        ft_outln("\nno new unverified examples")
+        return 0
+    }
+    ft_outln("\n" + ft_itoa(regressions.len) + " example(s) do not compile and are not in the ledger:")
+    i = 0
+    while i < regressions.len {
+        let r: ptr<Res> = rl_get(regressions, i)
+        ft_outln("    " + blk_ident(r.blk) + " [" + or_empty(r.stage) + "] " + py_prefix(head_line(r.detail), 100))
+        i = i + 1
+    }
+    ft_outln("")
+    ft_outln("A new or edited example has to compile. Tag it `expect-error` if it is meant to fail,")
+    ft_outln("or ignore=\"reason\" if it cannot be checked.")
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# Hidden snippets
+# ---------------------------------------------------------------------------
+
+# Syntax-shaped signals rather than keyword-shaped ones: compiler output
+# such as `array<u8, 1024>` or `flow ~21,000 us` must not count as source.
+function strong_pattern() -> string {
+    let mut p: string = "(?:"
+    p = p + "^\\s*(?:export\\s+)?function\\s+[A-Za-z_]\\w*(?:<[^\\n>]+>)?\\s*\\([^\\n]*\\)\\s*->|"
+    p = p + "^\\s*(?:struct|enum|trait|impl|effect|capability)\\s+[A-Za-z_]\\w*[^\\n]*\\{|"
+    p = p + "^\\s*flow\\s+[A-Za-z_]\\w*[^\\n]*\\{|"
+    p = p + "^\\s*(?:state|input|output|param)\\s+[A-Za-z_]\\w*\\s*(?::|=)|"
+    p = p + "^\\s*let(?:\\s+mut)?\\s+[A-Za-z_]\\w*\\s*(?::|=)|"
+    p = p + "^\\s*(?:const|type|unit)\\s+[A-Za-z_]\\w*\\s*(?::|=)|"
+    p = p + "^\\s*distinct\\s+type\\s+|"
+    p = p + "^\\s*extern\\s*\\{|"
+    p = p + "^\\s*import\\s+[\"']|"
+    p = p + "^\\s*module\\s+[A-Za-z_]\\w*\\s*\\{|"
+    p = p + "^\\s*handle\\s+[A-Za-z_]\\w*\\s+with\\s+[A-Za-z_]\\w*\\s*\\{|"
+    p = p + "^\\s*(?:theorem|assume|therefore)\\b|"
+    p = p + "^\\s*(?:solver|always|guarantee|deploy)\\s*\\{|"
+    p = p + "^\\s*every\\s+[^\\n]+\\{|"
+    p = p + "^\\s*when\\s+[^\\n]+\\{|"
+    p = p + "^\\s*dsys\\s+[A-Za-z_]\\w*\\s*\\{|"
+    p = p + "^\\s*horizon\\s+[A-Za-z_]\\w*\\s+(?:finite|infinite)\\b|"
+    p = p + "^\\s*sense\\s+on\\s+[A-Za-z_]\\w*\\s*\\{|"
+    p = p + "^\\s*ga\\s+evolve\\s+on\\s+|"
+    p = p + "^\\s*closed\\s+[A-Za-z_]\\w*\\s+with\\s+|"
+    p = p + "^\\s*analyze\\s+[A-Za-z_]\\w*\\s+|"
+    p = p + "^\\s*represent\\s+(?:linear|koopman)\\b|"
+    p = p + "^\\s*field\\s+[A-Za-z_]\\w*\\s*:|"
+    p = p + "^\\s*shader\\s+fill\\b|"
+    p = p + "^\\s*@[A-Za-z_]\\w*|"
+    p = p + "\\bevolves\\s+as\\b|"
+    p = p + "\\bbecomes\\b|"
+    p = p + "\\|>"
+    return p + ")"
+}
+
+struct Looks {
+    strong: ptr<Regex>,
+    control: ptr<Regex>,
+    ret: ptr<Regex>,
+    types: ptr<Regex>
+}
+
+function looks_new() -> ptr<Looks> {
+    let l: ptr<Looks> = calloc(1, 32) as ptr<Looks>
+    l.strong = rx_compile(strong_pattern(), 8)
+    l.control = rx_compile("^\\s*(?:if|elif|while|match|(?:parallel\\s+)?for)\\b[^\\n]*\\{", 8)
+    l.ret = rx_compile("^\\s*return(?:\\s+[^#\\n]+)?\\s*(?:#.*)?$", 8)
+    l.types = rx_compile("\\b(?:i32|i64|f32|f64|bool|string|void)\\b", 0)
+    return l
+}
+
+function looks_like_flow(l: ptr<Looks>, code: string) -> bool {
+    if rx_search(l.strong, code) or rx_search(l.control, code) {
+        return true
+    }
+    if rx_search(l.ret, code) and rx_search(l.types, code) {
+        return true
+    }
+    return false
+}
+
+function snippets(env: ptr<Env>, o: ptr<Opts>) -> i32 {
+    let all: ptr<BlkList> = load_blocks(o, null)
+    if all == null {
+        # The Python check stopped with an uncaught error here (exit 1).
+        return 1
+    }
+    let l: ptr<Looks> = looks_new()
+    let suspicious: ptr<BlkList> = bl_new()
+    let mut i: i32 = 0
+    while i < all.len {
+        let b: ptr<Blk> = bl_get(all, i)
+        if (ft_len(b.lang) == 0 or ft_eq(b.lang, "text")) and looks_like_flow(l, b.code) {
+            bl_push(suspicious, b)
+        }
+        i = i + 1
+    }
+    if suspicious.len == 0 {
+        ft_outln("no Flow-looking snippets are hidden in text or untyped fences")
+        return 0
+    }
+    let results: ptr<ResList> = rl_new()
+    i = 0
+    while i < suspicious.len {
+        rl_push(results, verify(env, bl_get(suspicious, i), null))
+        i = i + 1
+    }
+    batch_clang(env, results)
+    let counts: ptr<Tally> = tally_new()
+    i = 0
+    while i < results.len {
+        tally_add(counts, r_status(rl_get(results, i)))
+        i = i + 1
+    }
+    let mut d: string = "{"
+    i = 0
+    while i < ft_list_len(counts.keys) {
+        if i > 0 {
+            d = d + ", "
+        }
+        d = d + ft_repr(ft_list_get(counts.keys, i)) + ": " + ft_itoa(counts.counts[i])
+        i = i + 1
+    }
+    d = d + "}"
+    ft_outln("Flow-looking snippets hidden from the canonical checker: " + ft_itoa(results.len) + " (" + d + ")\n")
+    ft_outln("Current Flow must use a `flow` fence and compile. Future or schematic syntax must use `flow-future` or `flow-pseudocode` explicitly.\n")
+    i = 0
+    while i < results.len {
+        let r: ptr<Res> = rl_get(results, i)
+        let mut detail: string = "compiles; relabel this fence as `flow`"
+        if ft_eq(r.status, "verified") == false {
+            let mut reason: string = head_line(r.detail)
+            if ft_len(reason) == 0 {
+                reason = or_empty(r.stage)
+                if ft_len(reason) == 0 {
+                    reason = r.status
+                }
+            }
+            detail = "does not compile: " + reason
+        }
+        ft_outln("  " + blk_ident(r.blk) + ": " + detail)
+        i = i + 1
+    }
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# Block listings for other tools
+# ---------------------------------------------------------------------------
+
+function null_or_quote(s: string) -> string {
+    if s == null {
+        return "null"
+    }
+    return json_quote(s)
+}
+
+function block_json(b: ptr<Blk>) -> string {
+    let mut out: string = "{\"path\": " + json_quote(b.path) + ", \"line\": " + ft_itoa(b.line)
+    out = out + ", \"info\": " + json_quote(b.info) + ", \"lang\": " + json_quote(b.lang)
+    out = out + ", \"section\": " + null_or_quote(b.section) + ", \"title\": " + null_or_quote(b.title)
+    out = out + ", \"key\": " + json_quote(b.key) + ", \"code\": " + json_quote(b.code) + "}"
+    return out
+}
+
+function print_blocks(bl: ptr<BlkList>) {
+    ft_out("[")
+    let mut i: i32 = 0
+    while i < bl.len {
+        if i > 0 {
+            ft_out(",\n ")
+        }
+        ft_out(block_json(bl_get(bl, i)))
+        i = i + 1
+    }
+    ft_outln("]")
+}
+
+# The tutorial lessons: docs/tutorials/*.md except README, flow blocks with
+# a `main`. The interactive app and the browser verifier both use this rule.
+function lesson_blocks(o: ptr<Opts>) -> ptr<BlkList> {
+    let listing: string = or_empty(ft_read_file(o.listing))
+    let all: ptr<StrList> = tracked_markdown(listing)
+    let rels: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(all) {
+        let p: string = ft_list_get(all, i)
+        if ft_starts(p, "docs/tutorials/") and ft_find_byte(ft_from(p, 15), 47, 0) < 0 and ft_ends(p, ".md") and ft_eq(p, "docs/tutorials/README.md") == false {
+            ft_list_push(rels, p)
+        }
+        i = i + 1
+    }
+    ft_list_sort(rels)
+    let err: ptr<InfoErr> = calloc(1, 8) as ptr<InfoErr>
+    err.msg = ""
+    let bl: ptr<BlkList> = collect(rels, o.root, "flow", err)
+    if bl == null {
+        ft_errln("error: " + err.msg)
+        return null
+    }
+    let keep: ptr<BlkList> = bl_new()
+    i = 0
+    while i < bl.len {
+        if blk_has_main(bl_get(bl, i)) {
+            bl_push(keep, bl_get(bl, i))
+        }
+        i = i + 1
+    }
+    return keep
+}
+
+function lessons(o: ptr<Opts>) -> i32 {
+    let keep: ptr<BlkList> = lesson_blocks(o)
+    if keep == null {
+        return 2
+    }
+    print_blocks(keep)
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+
+function usage() -> string {
+    return "usage: check_doc_examples.sh [check|strict|snippets|blocks FILE...|lessons|browser] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
+}
+
+# A long option, or an unambiguous prefix of one, as argparse allows.
+function long_flags() -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, "--report")
+    ft_list_push(l, "--verbose")
+    ft_list_push(l, "--run")
+    ft_list_push(l, "--no-clang")
+    ft_list_push(l, "--write-ledger")
+    ft_list_push(l, "--fail-on-unverified")
+    ft_list_push(l, "--check-ledger")
+    return l
+}
+
+# The flag `arg` names: itself, or the one flag it is a prefix of. An
+# ambiguous prefix matches nothing.
+function flag_is(arg: string, name: string) -> bool {
+    if ft_eq(arg, name) {
+        return true
+    }
+    if ft_len(arg) < 3 or ft_starts(name, arg) == false {
+        return false
+    }
+    let all: ptr<StrList> = long_flags()
+    let mut hits: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(all) {
+        if ft_starts(ft_list_get(all, i), arg) {
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    return hits == 1
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let o: ptr<Opts> = calloc(1, 32) as ptr<Opts>
+    let env: ptr<Env> = calloc(1, 48) as ptr<Env>
+    env.repo = or_empty(getenv("FLOW_DOC_REPO"))
+    env.flowc = or_empty(getenv("FLOW_DOC_FLOWC"))
+    env.work = or_empty(getenv("FLOW_DOC_WORK"))
+    env.serial = 0
+    o.root = env.repo
+    o.listing = or_empty(getenv("FLOW_DOC_LISTING"))
+    let mut cmd: string = "check"
+    let mut report_f: bool = false
+    let mut verbose: bool = false
+    let mut run_f: bool = false
+    let mut no_clang: bool = false
+    let mut write_f: bool = false
+    let mut fail_f: bool = false
+    let mut check_f: bool = false
+    let mut ledger_arg: string = null
+    let mut filter: string = null
+    let mut json_out: string = null
+    let mut keep_f: bool = false
+    let files: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i]
+        if i == 1 and (ft_eq(a, "check") or ft_eq(a, "strict") or ft_eq(a, "snippets") or ft_eq(a, "blocks") or ft_eq(a, "lessons") or ft_eq(a, "verdicts") or ft_eq(a, "browser")) {
+            cmd = a
+        } elif ft_eq(a, "--root") and i + 1 < argc {
+            o.root = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--filter") and i + 1 < argc {
+            filter = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--timeout") and i + 1 < argc {
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--json") and i + 1 < argc {
+            json_out = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--keep") {
+            keep_f = true
+        } elif ft_eq(a, "--ledger") and i + 1 < argc {
+            ledger_arg = argv[i + 1]
+            i = i + 1
+        } elif flag_is(a, "--report") {
+            report_f = true
+        } elif flag_is(a, "--verbose") {
+            verbose = true
+        } elif flag_is(a, "--run") {
+            run_f = true
+        } elif flag_is(a, "--no-clang") {
+            no_clang = true
+        } elif flag_is(a, "--write-ledger") {
+            write_f = true
+        } elif flag_is(a, "--fail-on-unverified") {
+            fail_f = true
+        } elif flag_is(a, "--check-ledger") {
+            check_f = true
+        } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
+            ft_outln(usage())
+            return 0
+        } elif ft_eq(cmd, "blocks") and ft_starts(a, "-") == false {
+            ft_list_push(files, a)
+        } else {
+            ft_errln(usage())
+            ft_errln("check_doc_examples.sh: error: unrecognized arguments: " + a)
+            return 2
+        }
+        i = i + 1
+    }
+    env.docs = o.root
+    if ledger_arg != null {
+        o.ledger = ledger_arg
+        o.ledger_rel = pr_relative(ledger_arg, o.root)
+    } else {
+        o.ledger = o.root + "/docs/generated/example-status.json"
+        o.ledger_rel = "docs/generated/example-status.json"
+    }
+    if ft_eq(cmd, "blocks") {
+        let all: ptr<BlkList> = bl_new()
+        let err: ptr<InfoErr> = calloc(1, 8) as ptr<InfoErr>
+        err.msg = ""
+        let mut k: i32 = 0
+        while k < ft_list_len(files) {
+            let path: string = ft_list_get(files, k)
+            let text: string = ft_read_file(path)
+            if text == null {
+                ft_errln("error: cannot read " + path)
+                return 2
+            }
+            if iter_blocks(text, path, all, err) == false {
+                ft_errln("error: " + err.msg)
+                return 2
+            }
+            k = k + 1
+        }
+        print_blocks(all)
+        return 0
+    }
+    if ft_eq(cmd, "lessons") {
+        return lessons(o)
+    }
+    if ft_eq(cmd, "browser") {
+        let lb: ptr<BlkList> = lesson_blocks(o)
+        if lb == null {
+            return 2
+        }
+        return browser_main(env, lb, filter, verbose, keep_f, json_out)
+    }
+    if ft_eq(cmd, "snippets") {
+        return snippets(env, o)
+    }
+    let blocks: ptr<BlkList> = load_blocks(o, "flow")
+    if blocks == null {
+        return 2
+    }
+    if ft_eq(cmd, "verdicts") {
+        let vr: ptr<ResList> = run_all(env, blocks, no_clang == false, run_f)
+        let mut k: i32 = 0
+        while k < vr.len {
+            let r: ptr<Res> = rl_get(vr, k)
+            let b: ptr<Blk> = r.blk
+            let det: string = ft_replace(ft_replace(py_prefix(or_empty(r.detail), 300), "\n", "\\n"), "\t", "\\t")
+            ft_outln(b.key + "\t" + blk_ident(b) + "\t" + r.status + "\t" + or_empty(r.mode) + "\t" + or_empty(r.stage) + "\t" + det)
+            k = k + 1
+        }
+        return 0
+    }
+    if ft_eq(cmd, "strict") {
+        let res: ptr<ResList> = run_all(env, blocks, true, false)
+        report(res, true)
+        let mut bad: i32 = 0
+        let mut k: i32 = 0
+        while k < res.len {
+            let st: string = r_status(rl_get(res, k))
+            if ft_eq(st, "verified") == false and ft_eq(st, "expected-error") == false {
+                bad = bad + 1
+            }
+            k = k + 1
+        }
+        if bad == 0 {
+            ft_outln("\nall documented Flow blocks are compiler-checked")
+            return 0
+        }
+        ft_outln("\n" + ft_itoa(bad) + " documented Flow block(s) are not compiler-checked")
+        return 1
+    }
+    let results: ptr<ResList> = run_all(env, blocks, no_clang == false, run_f)
+    if check_f {
+        return check_ledger(o, results)
+    }
+    if report_f or write_f == false {
+        report(results, verbose)
+    }
+    if write_f {
+        write_ledger(o, results)
+    }
+    if fail_f {
+        let n: i32 = count_status(results, "unverified")
+        if n > 0 {
+            ft_errln("\n" + ft_itoa(n) + " unverified example(s)")
+            return 1
+        }
+    }
+    return 0
+}
