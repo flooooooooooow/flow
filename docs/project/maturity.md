@@ -118,7 +118,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 7. Toolchain
 | Feature | Status | Note |
 | --- | --- | --- |
-| Package manager | DONE | `flow add`, `flow pkg`, `src/flow/package.py`, registry. |
+| Package manager | DONE | `flow add`, `flow pkg`, `compiler/src/pkg.flow`, registry. |
 | Build system | DONE | `flow build`, `build-native`. |
 | Runner | DONE | `flow run`. |
 | Tests | DONE | `flow test --tier1/--tier2`. |

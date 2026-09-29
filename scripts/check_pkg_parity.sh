@@ -105,7 +105,10 @@ case_run() {
     # Paths inside the output name each copy's own directory.
     sed "s#$a#<proj>#g" "$a.out" > "$a.out.n"
     sed "s#$b#<proj>#g" "$b.out" > "$b.out.n"
-    snapshot "$a" | sed "s#$a#<proj>#g" > "$a.snap"
+    # The Python version wrote the retired Python host into the [build]
+    # table that `flow add` rewrites; flowc writes host = "flowc".
+    snapshot "$a" | sed -e "s#$a#<proj>#g" -e 's/^host = "python"$/host = "flowc"/' \
+        -e 's/^# test_command = "FLOW_HOST=python flow run/# test_command = "flow run/' > "$a.snap"
     snapshot "$b" | sed "s#$b#<proj>#g" > "$b.snap"
     local ok=1
     if [ "$ra" != "$rb" ]; then

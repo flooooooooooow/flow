@@ -63,7 +63,7 @@ examples/
 | UI layout | `examples/ui/layout_hello.flow` | `./flow run examples/ui/layout_hello.flow` |
 | UI (windowed) | `demos/ui_layout_flow` | `./flow demo ui-layout` |
 | HTTP slice | `examples/net/http_hello.flow` | `./flow run examples/net/http_hello.flow` |
-| Packages | `examples/packages/use_hello_lib/` | `python3 -m flow.package install` then `./flow run …/src/main.flow` |
+| Packages | `examples/packages/use_hello_lib/` | `./flow sync` in the project, then `./flow run …/src/main.flow` |
 | WASM | `examples/wasm/hello_wasm.flow` | `./flow run` / `./flow wasm examples/wasm/hello_wasm.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 | Morphogenesis | `examples/morphogenesis/gray_scott.flow` | `./flow gfx examples/morphogenesis/gray_scott.flow` |

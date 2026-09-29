@@ -17,6 +17,8 @@
 #     install it, write flow.lock and resolve the import; then the same
 #     project again, already installed;
 #   - `flow sync`, `flow add`, `flow pkg install`, `flow search`, `flow info`;
+#   - `flow init`, `flow build`, `flow build-native`, `flow run-native`,
+#     `flow publish --dry-run` and `flow clean` in a new project;
 #   - a project with an unknown dependency, which must fail with the package
 #     manager's message.
 #
@@ -201,6 +203,34 @@ if [[ -d "$proj2/flow_packages/toml" ]] && grep -q '"toml"' "$proj2/flow.lock"; 
     pass=$((pass + 1))
 else
     echo "FAIL flow add did not install and lock toml"
+    fail=$((fail + 1))
+fi
+
+# The project commands: init, build, build-native, run-native, publish
+# --dry-run and clean (scripts/check_pkg_commands.sh checks their output).
+proj4="$work/newproj"
+mkdir -p "$proj4"
+cd "$proj4" || exit 1
+expect_exit 0 "flow init" "$ROOT/flow" init
+expect_exit 0 "flow build" "$ROOT/flow" build
+expect_exit 0 "flow build-native" "$ROOT/flow" build-native
+expect_exit 0 "flow run-native" "$ROOT/flow" run-native
+run_native_out="$(cat "$work/out.txt")"
+expect_exit 0 "flow publish --git URL --dry-run" \
+    "$ROOT/flow" publish --git https://example.com/newproj.git --dry-run
+publish_out="$(cat "$work/out.txt")"
+had_binary=0
+[[ -x "$proj4/build/newproj" ]] && had_binary=1
+expect_exit 0 "flow clean" "$ROOT/flow" clean
+cd "$ROOT" || exit 1
+if [[ -f "$proj4/flow.toml" && -f "$proj4/src/main.flow" && "$had_binary" -eq 1 \
+        && ! -e "$proj4/build" ]] \
+        && grep -q "Hello from newproj!" <<< "$run_native_out" \
+        && grep -q "dry-run: index not written" <<< "$publish_out"; then
+    echo "PASS init scaffold, native build and run, publish dry run, clean"
+    pass=$((pass + 1))
+else
+    echo "FAIL project commands did not produce the expected files or output"
     fail=$((fail + 1))
 fi
 
