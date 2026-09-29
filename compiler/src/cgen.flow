@@ -336,6 +336,19 @@ function flowc_cgen_ident_is_plain_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr
     return 0
 }
 
+# 1-based source line of byte offset `pos`.
+function flowc_cgen_line_of(src: ptr<u8>, pos: i32) -> i32 {
+    let mut line: i32 = 1
+    let mut i: i32 = 0
+    while i < pos and src[i] != 0 {
+        if src[i] == 10 {
+            line = line + 1
+        }
+        i = i + 1
+    }
+    return line
+}
+
 # Number of functions with a body named `lit` in this module.
 function flowc_cgen_count_fn_named(arena: AstArena, src: ptr<u8>, lit: string) -> i32 {
     let mut n: i32 = 0
@@ -3276,17 +3289,39 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     if kind == AST_UNARY {
         # `dbg expr` → __flow_dbg(expr)
+        # Prints `dbg: <value>` to stderr and yields the value, with the
+        # Python host's conversion for the operand's type.
         if arena.nodes[id].ival == KW_DBG {
-            flowc_cgen_puts(w, "__flow_dbg(")
+            let dk: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, "(__extension__ ({ __typeof__(")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-            flowc_cgen_putc(w, 41)
+            flowc_cgen_puts(w, ") __flowc_dbg_v = (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, "); ")
+            if dk == FLOWC_PRIM_STRING {
+                flowc_cgen_puts(w, "fprintf(stderr, \"dbg: %s\\n\", __flowc_dbg_v);")
+            } elif dk == FLOWC_PRIM_BOOL {
+                flowc_cgen_puts(w, "fprintf(stderr, \"dbg: %s\\n\", __flowc_dbg_v ? \"true\" : \"false\");")
+            } else {
+                flowc_cgen_puts(w, "fprintf(stderr, \"dbg: ")
+                if dk == FLOWC_PRIM_UNKNOWN {
+                    flowc_cgen_puts(w, "%g")
+                } else {
+                    flowc_cgen_puts(w, flowc_cgen_prim_fmt(dk))
+                }
+                flowc_cgen_puts(w, "\\n\", __flowc_dbg_v);")
+            }
+            flowc_cgen_puts(w, " __flowc_dbg_v; }))")
             return
         }
-        # `expect cond` → if (!(cond)) { fprintf(stderr, ...); abort(); }
+        # `expect cond` → print `expect failed (line N)` and exit(1), as the
+        # Python host does.
         if arena.nodes[id].ival == KW_EXPECT {
             flowc_cgen_puts(w, "do { if (!(")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-            flowc_cgen_puts(w, ")) { fprintf(stderr, \"expectation failed\\n\"); abort(); } } while(0)")
+            flowc_cgen_puts(w, ")) { fprintf(stderr, \"expect failed (line ")
+            flowc_cgen_put_i32(w, flowc_cgen_line_of(src, arena.nodes[id].start))
+            flowc_cgen_puts(w, ")\\n\"); exit(1); } } while(0)")
             return
         }
         # -x on a Dual is neg(x), the Python host's operator sugar (#161).
@@ -5308,6 +5343,13 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     if kind == AST_EXPR_STMT {
         flowc_cgen_puts(w, "  ")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_puts(w, ";\n")
+        return
+    }
+    # `expect cond` parses to a bare AST_UNARY statement; it was dropped.
+    if kind == AST_UNARY {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_emit_expr(w, arena, src, id)
         flowc_cgen_puts(w, ";\n")
         return
     }
