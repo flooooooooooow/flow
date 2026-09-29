@@ -881,7 +881,7 @@ function test_cgen_for() -> i32 {
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "for (") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "int32_t i") == 0 { ok = 0 }
-    if flowc_bytes_contains(bp, n, "i = i + 1") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "i += __flowc_up_") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "i < ") == 0 { ok = 0 }
 
     free(bp)
