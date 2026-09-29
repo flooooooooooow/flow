@@ -35,8 +35,8 @@
 # unevenly; neither changes the program. Everything else must be equal byte
 # for byte, including string globals and their order.
 #
-# Goldens were recorded from eec7463f (origin/main when the slice landed;
-# the Python MLIR generator is unchanged there).
+# Goldens were recorded from 84806b0d (origin/main after #1020 and #1018;
+# the Python MLIR generator is unchanged since eec7463f).
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.

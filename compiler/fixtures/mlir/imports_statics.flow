@@ -1,0 +1,31 @@
+# MLIR parity fixture: a program with imports (Python's module order, the
+# imported module's own `main` left out) and module statics.
+
+import .mlir_dep { dep_scale, dep_total }
+
+let mut counter: i32 = 0
+let mut table: array<i32, 4> = [3, 1, 4, 1]
+let mut scale: f64 = 2.5
+let mut label: string = "statics"
+
+function next_id() -> i32 {
+    counter = counter + 1
+    return counter
+}
+
+function main() -> i32 {
+    next_id()
+    next_id()
+    println(counter)
+    table[2] = 9
+    let mut s: i32 = 0
+    for i in 0 to 4 {
+        s = s + table[i]
+    }
+    println(s)
+    println(scale)
+    println(label)
+    println(dep_scale(7))
+    println(dep_total())
+    return 0
+}

@@ -1,0 +1,18 @@
+# MLIR parity fixture: a module imported by imports_statics.flow. Its own
+# `main` runs only when it is the program; an importer drops it.
+
+let mut dep_calls: i32 = 0
+
+export function dep_scale(x: i32) -> i32 {
+    dep_calls = dep_calls + 1
+    return x * 3
+}
+
+export function dep_total() -> i32 {
+    return dep_calls
+}
+
+function main() -> i32 {
+    println(dep_scale(2))
+    return 0
+}
