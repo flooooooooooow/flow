@@ -23,5 +23,5 @@ Compilation plan for tests/cgen/explain_elif_facts.flow
 
       chose binary_search: cheapest applicable plan: 2.32 vs 2.50 for linear_scan (7% less work)
 
-Costs are estimated element operations from a static model, not measurements.
+Costs are estimated element operations from a static model. They are not measurements.
 

@@ -825,5 +825,5 @@ export function flowc_plan_report_footer(t: ptr<PlanText>, sites: i32) {
         flowc_plan_puts(t, "construct with more than one implementation.\n\n")
         return
     }
-    flowc_plan_puts(t, "Costs are estimated element operations from a static model, not measurements.\n\n")
+    flowc_plan_puts(t, "Costs are estimated element operations from a static model. They are not measurements.\n\n")
 }

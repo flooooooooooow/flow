@@ -130,5 +130,5 @@ Compilation plan for tests/cgen/explain_sort_plans.flow
       possible resolutions
         - binary_search: sort the array immediately before searching it; a call taking the array in between drops the ordering fact
 
-Costs are estimated element operations from a static model, not measurements.
+Costs are estimated element operations from a static model. They are not measurements.
 

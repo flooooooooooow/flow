@@ -49,7 +49,7 @@ Compilation plan for tests/lang/test_sort_plans.flow
 
       chose counting: cheapest applicable plan: 2560 vs 10240 for natural_merge (75% less work)
 
-Costs are estimated element operations from a static model, not measurements.
+Costs are estimated element operations from a static model. They are not measurements.
 ```
 
 Reading it top to bottom:

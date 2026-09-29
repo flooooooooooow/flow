@@ -1,3 +1,4 @@
-# The explain report equals the Python host's --explain text (#1055).
+# The explain report equals the Python host's --explain text (#1055), except
+# the closing cost note, which is split into two sentences.
 explain explain_sort_plans.explain
 exit 0
