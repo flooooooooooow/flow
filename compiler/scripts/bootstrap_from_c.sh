@@ -70,11 +70,11 @@ if [[ "$mode" == "--regen" ]]; then
             echo "FIXED POINT at gen${gen}"
             echo "REGEN ${BOOT_C} ($(wc -c <"$BOOT_C") bytes)"
             # The checked-in binary beside it, and the local build.
-            $CC $CFLAGS -o compiler/bootstrap/flowc_stage_a "$BOOT_C" -lm
-            $CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C" -lm
+            $CC $CFLAGS -w -o compiler/bootstrap/flowc_stage_a "$BOOT_C" -lm
+            $CC $CFLAGS -w -o "$BOOT_BIN" "$BOOT_C" -lm
             exit 0
         fi
-        $CC $CFLAGS -o "compiler/build/bootstrap_regen_gen${gen}" "$out" -lm
+        $CC $CFLAGS -w -o "compiler/build/bootstrap_regen_gen${gen}" "$out" -lm
         emitter="compiler/build/bootstrap_regen_gen${gen}"
         prev="$out"
         gen=$(( gen + 1 ))
