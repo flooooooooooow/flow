@@ -15,7 +15,7 @@ import .ast {
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
-    AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD
+    AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported
 }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
@@ -3119,6 +3119,8 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                         flowc_cgen_puts(w, " = { .fn = (void*)&__flowc_lambda_")
                         flowc_cgen_put_i32(w, lam_id)
                         flowc_cgen_puts(w, ", .env = NULL };\n")
+                    } elif init == AST_NONE {
+                        flowc_cgen_puts(w, " = {0};\n")
                     } else {
                         flowc_cgen_puts(w, " = ")
                         flowc_cgen_emit_expr(w, arena, src, init)
@@ -3135,6 +3137,12 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_putc(w, 91)
             flowc_cgen_put_i32(w, arr_n)
             flowc_cgen_putc(w, 93)
+        }
+        # `let x: T` with no initializer: an uninitialized C local, as the
+        # Python host emits.
+        if init == AST_NONE {
+            flowc_cgen_puts(w, ";\n")
+            return
         }
         flowc_cgen_puts(w, " = ")
         let mut cast_ptr: i32 = 0
@@ -4762,6 +4770,9 @@ export function flowc_cgen_emit_sigs(
         return 0 - 1
     }
     if arena.nodes[root].kind != AST_PROGRAM {
+        return 0 - 1
+    }
+    if flowc_ast_reject_unsupported(arena, src, "flowc cgen") != 0 {
         return 0 - 1
     }
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)

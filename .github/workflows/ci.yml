@@ -458,6 +458,28 @@ jobs:
           ./compiler/scripts/bootstrap_from_c.sh
           ./tests/tools/run.sh
 
+  # flowc must keep parsing every .flow file the Python parser accepts. The
+  # count of files that parse may not fall below compiler/parse_coverage/
+  # floor.txt. Needs only cc: the reference list of files the Python parser
+  # rejects is checked in.
+  flowc-parse-coverage:
+    name: flowc parse coverage
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.examples == 'true' ||
+      needs.changes.outputs.libs == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse every tracked .flow file with flowc
+        run: |
+          chmod +x compiler/scripts/parse_coverage.sh
+          ./compiler/scripts/parse_coverage.sh --check
+
   # Phase D: user-facing compile must not pip-install the Python compiler.
   flowc-compile:
     name: flowc compile (no pip)

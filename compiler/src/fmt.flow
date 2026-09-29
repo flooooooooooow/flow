@@ -14,7 +14,7 @@ import .ast {
     AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
     AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
     AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT,
-    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS, AST_IF_EXPR
+    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS, AST_IF_EXPR, flowc_ast_reject_unsupported
 }
 
 extern {
@@ -561,6 +561,9 @@ export function flowc_fmt_emit(arena: AstArena, root: i32, src: ptr<u8>, out: pt
         return 0 - 1
     }
     if arena.nodes[root].kind != AST_PROGRAM {
+        return 0 - 1
+    }
+    if flowc_ast_reject_unsupported(arena, src, "flowc fmt") != 0 {
         return 0 - 1
     }
     let mut w: FmtBuf = flowc_fmt_buf_init(out, out_cap)

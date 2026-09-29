@@ -3,7 +3,8 @@
 #
 # This fixture used to use a struct pattern. Struct patterns now lower for
 # real (`Point(a, b)` destructures to field reads), so the negative case moved
-# to an or-pattern, which the parser still rejects.
+# to an or-pattern. The parser accepts it (Python grammar) and the backends
+# refuse it with "unsupported in Stage-A".
 
 function main() -> i32 {
     let v: i32 = 1
