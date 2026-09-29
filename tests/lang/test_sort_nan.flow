@@ -17,6 +17,7 @@
 
 extern {
     function copysign(x: f64, y: f64) -> f64
+    function copysignf(x: f32, y: f32) -> f32
 }
 
 # 0.0 / 0.0 is a NaN whose sign depends on the CPU: positive on arm64,
@@ -138,7 +139,7 @@ function main() -> i32 {
 
     # f32 gets the same treatment on its own bit width.
     let fzero: f32 = 0.0
-    let fnan: f32 = fzero / fzero
+    let fnan: f32 = copysignf(fzero / fzero, 1.0)
     let mut fs: array<f32, 4> = [2.0, fnan, 0.5, 1.0]
     fs |> sort
     if fs[0] != 0.5 {
