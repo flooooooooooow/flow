@@ -80,7 +80,7 @@ curl run through [`scripts/tools/pkg_fetch.sh`](../../scripts/tools/pkg_fetch.sh
 
 flowc resolves `import name.module` for a package listed in `[dependencies]`
 from `flow_packages/name/src/module.flow`, then `flow_packages/name/module.flow`,
-the same rule the Python host uses.
+the same rule the Python module resolver uses.
 
 `./flow sync` installs **project dependencies** when `flow.toml` exists.
 `flow run` performs the same synchronization automatically when a project has

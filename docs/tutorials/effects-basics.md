@@ -221,7 +221,7 @@ function greet(name: string) -> void with Logger {
 Compile with effect coverage checking:
 
 ```bash
-./flow transpile program.flow --c --strict-effects -o build/program.c
+FLOWC_STRICT_EFFECTS=1 compiler/scripts/flowc_emit.sh program.flow build/program.c
 ```
 
 A caller must then handle `Logger` or declare the requirement on its own signature.

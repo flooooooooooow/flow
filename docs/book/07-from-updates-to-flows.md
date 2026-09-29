@@ -48,7 +48,7 @@ function main() -> i32 {
 Source: [`examples/book/07_decay.flow`](../../examples/book/07_decay.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/07_decay.flow
+./flow run examples/book/07_decay.flow
 ```
 
 ## 7.3 Declaring evolution
@@ -88,7 +88,7 @@ flow PendulumBook {
 All derivatives are evaluated from a consistent pre-step state. Run the complete repository example with:
 
 ```bash
-FLOW_HOST=python ./flow run examples/evolution/pendulum_evolves.flow
+./flow run examples/evolution/pendulum_evolves.flow
 ```
 
 ## 7.5 Solver choice

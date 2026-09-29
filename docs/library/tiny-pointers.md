@@ -10,17 +10,17 @@ Conway, Farach-Colton, Kuszmaul & Tagliavini) lives in
 > *and* the pointer are both known at dereference time, the pointer only needs
 > to encode the slot within a hash-derived bucket: **`o(log n)` bits total**.
 
-The example rebuilds every construction in the paper's Sections 3–6 from
+The example rebuilds every construction in the paper's Sections 3-6 from
 scratch in Flow and verifies each one empirically:
 
 | Theorem | Paper result (exact section) | Flow phase | Status |
 |---------|------------------------------|------------|--------|
-| **1** | Fixed-size tiny pointers: `Θ(log log log n + log k)` bits at load `1 − 1/k` (§3: *Upper Bound for Fixed-Size Pointers*) | Phases 1–4 | ✅ 6 bits vs 16 |
-| **2** | Variable-size tiny pointers: `Θ(log k)` expected bits (`O(1 + log δ⁻¹)`), doubly-exponential tail (§4: *Upper Bounds for Variable-Sized Pointers*) | Phases 5–6 | ✅ ~3 bits, tail confirmed |
-| **3–5** | Lower bounds: `Ω(log log log n + log k)` fixed / `Ω(log k)` variable, via the fullest-bin floor `Ω((log log m)/2^s)` (§5: *Lower Bounds*) | Phase 13 | ✅ floor holds at every budget; < 6 bits collides |
-| **6** | Relaxed retrieval: tiny retrievers of expected size O(1): `nv + O(n log⁽ʳ⁾ n)` bits total for n v-bit values, beating the `Ω(log log n)` lower bound; the tradeoff: **O(r) insert/delete vs `O(n log⁽ʳ⁾ n)` space** (§6.2: *Overcoming the Ω(log log n)-Bit Lower Bound for Data Retrieval*) | Phases 7–8, 8b | ✅ mean 3.04 bits; `H` = `nv + O(n)`; retriever term shrinks 15 → 4 → 2 → 1 bits/key for r = 1..4 |
-| **7** | Succinct rotation-based BSTs: `nk + O(n log⁽ʳ⁾ n)` bits, rotations stay constant-time (§6.3: *Succinct Binary Search Trees*) | Phases 9–10 | ✅ ~3 bits/child pointer |
-| **8** | Stable dictionaries: values never move, `O(log v)` extra bits/value, `1 + o(1)` space overhead (§6.4: *Space-Efficient Stable Dictionaries*) | Phases 3–4 | ✅ rehash-proof |
+| **1** | Fixed-size tiny pointers: `Θ(log log log n + log k)` bits at load `1 − 1/k` (§3: *Upper Bound for Fixed-Size Pointers*) | Phases 1-4 | ✅ 6 bits vs 16 |
+| **2** | Variable-size tiny pointers: `Θ(log k)` expected bits (`O(1 + log δ⁻¹)`), doubly-exponential tail (§4: *Upper Bounds for Variable-Sized Pointers*) | Phases 5-6 | ✅ ~3 bits, tail confirmed |
+| **3-5** | Lower bounds: `Ω(log log log n + log k)` fixed / `Ω(log k)` variable, via the fullest-bin floor `Ω((log log m)/2^s)` (§5: *Lower Bounds*) | Phase 13 | ✅ floor holds at every budget; < 6 bits collides |
+| **6** | Relaxed retrieval: tiny retrievers of expected size O(1): `nv + O(n log⁽ʳ⁾ n)` bits total for n v-bit values, beating the `Ω(log log n)` lower bound; the tradeoff: **O(r) insert/delete vs `O(n log⁽ʳ⁾ n)` space** (§6.2: *Overcoming the Ω(log log n)-Bit Lower Bound for Data Retrieval*) | Phases 7-8, 8b | ✅ mean 3.04 bits; `H` = `nv + O(n)`; retriever term shrinks 15 → 4 → 2 → 1 bits/key for r = 1..4 |
+| **7** | Succinct rotation-based BSTs: `nk + O(n log⁽ʳ⁾ n)` bits, rotations stay constant-time (§6.3: *Succinct Binary Search Trees*) | Phases 9-10 | ✅ ~3 bits/child pointer |
+| **8** | Stable dictionaries: values never move, `O(log v)` extra bits/value, `1 + o(1)` space overhead (§6.4: *Space-Efficient Stable Dictionaries*) | Phases 3-4 | ✅ rehash-proof |
 | **9** | Variable-size value dictionaries: `O(m log⁽ʳ⁾ m) + Σᵢ(vᵢ + O(log vᵢ))` bits (Eq. 4) for arbitrary-length values (§6.5: *Space-Efficient Dictionaries with Variable-Size Values*) | Phase 11 | ✅ 19.3 bits/value vs 64 |
 | **9** (deamortized) | Theorem-9's zone-aggregated resizing: class storage grows/shrinks incrementally, so no single op copies O(m) values (§6.1: *Some General-Purpose Techniques*) | Phase 14 | ✅ worst op 143,363 → 81 work units |
 | **9** (r-levels) | Theorem-9's r-levels-of-indirection chain: values to 256 bits behind a 5-bit p₁ = O(log k); the base pointer stays 8 bits, constant in value size and in r (§6.5; caveats in the body) | Phase 15 | ✅ 84.97% saved (r=2); r=3 lifts the cap to 2^32 bits, pointers 8 → 6 → 5 |
@@ -32,15 +32,15 @@ results and five applications; each has a measured row above:
 
 | Abstract claim | Row |
 |---|---|
-| Fixed-size pointers of `Θ(log log log n + log k)` bits | Theorem 1 (Phases 1–4) |
-| Variable-size pointers of `Θ(log k)` expected bits | Theorem 2 (Phases 5–6) |
-| `nv + O(n log⁽ʳ⁾ n)`-bit store with an O(1)-expected pointer per key, O(r) insert/delete | Theorem 6 (Phases 7–8, 8b) |
-| Succinct BSTs, rotations included | Theorem 7 (Phases 9–10) |
-| Stable fixed-capacity dictionaries, `1 + o(1)` overhead | Theorem 8 (Phases 3–4) |
+| Fixed-size pointers of `Θ(log log log n + log k)` bits | Theorem 1 (Phases 1-4) |
+| Variable-size pointers of `Θ(log k)` expected bits | Theorem 2 (Phases 5-6) |
+| `nv + O(n log⁽ʳ⁾ n)`-bit store with an O(1)-expected pointer per key, O(r) insert/delete | Theorem 6 (Phases 7-8, 8b) |
+| Succinct BSTs, rotations included | Theorem 7 (Phases 9-10) |
+| Stable fixed-capacity dictionaries, `1 + o(1)` overhead | Theorem 8 (Phases 3-4) |
 | Arbitrary-size values at `log⁽ʳ⁾ n + O(log j)` bits per j-bit value | Theorem 9 (Phases 11/12/14/15) |
 | `O(n log ε⁻¹)`-bit internal-memory stash, no IOs | Theorem 10 (Phase 16) |
 
-(Theorems 3–5 are *lower bounds* / intermediate steps rather than constructions;
+(Theorems 3-5 are *lower bounds* / intermediate steps rather than constructions;
 e.g. Theorem 3 proves `Ω(log log log n + log k)` is optimal for fixed-size
 tiny pointers. The demo implements the matching constructions.)
 
@@ -48,7 +48,7 @@ tiny pointers. The demo implements the matching constructions.)
 check is self-verified, exit code 0 = PASS, 1 = FAIL):
 
 ```bash
-FLOW_HOST=python ./flow run examples/systems/tiny_pointers.flow
+./flow run examples/systems/tiny_pointers.flow
 ```
 
 The adversarial keys, churn phases and rotation storm are deterministic per
@@ -70,7 +70,7 @@ hashes to*: the key supplies the bucket, the pointer supplies the position.
 
 ---
 
-## Theorem 1: fixed-size tiny pointers (§3, Phases 1–4)
+## Theorem 1: fixed-size tiny pointers (§3, Phases 1-4)
 
 **Paper.** With load factor `1 − δ`, there is a two-level construction with
 pointers of size `O(log log log n + log δ⁻¹)` bits: a *primary* load-balancing
@@ -90,7 +90,7 @@ pointer   = 1 table bit + 5 slot bits = 6 bits
 theory    = Θ(log log log 65536 + log 4) = Θ(2 + 2) = 4 bits → achieved 6
 ```
 
-**Empirical results (Phase 1–4):**
+**Empirical results (Phase 1-4):**
 
 | Measurement | Result | Theory |
 |-------------|--------|--------|
@@ -102,7 +102,7 @@ theory    = Θ(log log log 65536 + log 4) = Θ(2 + 2) = 4 bits → achieved 6
 
 ---
 
-## Theorem 2: variable-size tiny pointers (§4, Phases 5–6)
+## Theorem 2: variable-size tiny pointers (§4, Phases 5-6)
 
 **Paper (Prop. 1).** Dropping the fixed-size requirement removes the
 `log log log n` term entirely: pointers have **`O(1 + log δ⁻¹)` expected bits**
@@ -124,7 +124,7 @@ size(table slot @i)   = Elias-γ(i+1) + 1 + ⌈log₂b⌉     = O(log i) bits
 size(overflow slot @i)= Elias-γ(5−i) + 1 + ⌈log₂sᵢ⌉    = O(log sᵢ) bits
 ```
 
-**Empirical results (Phases 5–6):**
+**Empirical results (Phases 5-6):**
 
 - **Natural load** (49,152 uniform keys): `L0:48177  L1:975` → **~98% get a
   3-bit pointer**; the tail is invisible at this scale (that is the point).
@@ -145,7 +145,7 @@ size(overflow slot @i)= Elias-γ(5−i) + 1 + ⌈log₂sᵢ⌉    = O(log sᵢ) 
 
 ---
 
-## Theorem 6: relaxed retrieval, tiny retrievers (§6.2, Phases 7–8)
+## Theorem 6: relaxed retrieval, tiny retrievers (§6.2, Phases 7-8)
 
 **Paper.** Classic dynamic retrieval provably costs `Ω(log log n)` metadata
 bits per value (even for `v = 1`). Relax the contract: `Insert(x, y)` returns
@@ -158,7 +158,7 @@ that slot. Because `H`'s keys come from the tiny universe `[2n]`,
 Key demo detail: the dereference table's **store is never read** ("we need not
 even allocate space for it"). Only the uniqueness of the slot matters.
 
-**Empirical results (Phases 7–8):**
+**Empirical results (Phases 7-8):**
 
 | Measurement | Result |
 |-------------|--------|
@@ -209,7 +209,7 @@ Phase 15's; the descent counts and wall-clock are measured.)
 
 ---
 
-## Theorem 7: succinct rotation-based BSTs (§6.3, Phases 9–10)
+## Theorem 7: succinct rotation-based BSTs (§6.3, Phases 9-10)
 
 **Paper.** There are at most `4ⁿ` ordered binary trees on `n` nodes, so a
 tree's pointer structure fits in `O(n)` bits, but classic succinct trees
@@ -217,14 +217,14 @@ cannot do **rotations**, which AVL / red-black / splay trees live on.
 Theorem 7: store each child pointer as a tiny retriever (`r₁` for the left
 child keyed on `x◦0`, `r₂` for the right child keyed on `x◦1`), with the
 dereference table's store as the node array. Navigating parent → child is one
-O(1) query; a **rotation rewrites only 2–3 edge slots**, so nodes never move
+O(1) query; a **rotation rewrites only 2-3 edge slots**, so nodes never move
 and retrievers never change. The child-pointer structure is `na + nb + O(n)`
 bits (distinct keys give `na = Ω(n log n)`, so the tree is succinct); the
 paper's full theorem carries an auxiliary term `O(n log^(r) n)` where `r` is
 the modification-time parameter. The demo measures the O(n) pointer part
 (2n retrievers, ~3 bits each) directly.
 
-**Empirical results (Phases 9–10):**
+**Empirical results (Phases 9-10):**
 
 | Measurement | Result |
 |-------------|--------|
@@ -236,7 +236,7 @@ the modification-time parameter. The demo measures the O(n) pointer part
 
 ---
 
-## Theorem 8: stable dictionaries (§6.4, Phases 3–4)
+## Theorem 8: stable dictionaries (§6.4, Phases 3-4)
 
 **Paper.** Replace a dictionary's value array with an array of tiny pointers
 into a dereference table holding the values. Values **never move** after
@@ -273,7 +273,7 @@ holder slot  = 8-bit base slot (class 3) holding p₁
 value        = 128 or 256 bits, in the level-1 arena (compact, keyed on the key)
 ```
 
-Values ≤ 64 bits store directly (Phase-11 classes); values of 65–256 bits go
+Values ≤ 64 bits store directly (Phase-11 classes); values of 65-256 bits go
 through the chain. The flag bit (the paper's "points at a pointer vs a value"
 metadata) marks the chained pointers, and the 5-bit p₁ (O(log k)) lives in an
 8-bit base slot, so the **base pointer stays 8 bits for every value size**, the
@@ -299,10 +299,10 @@ O(log⁽³⁾ n) bits"), and the value store becomes a *word pool* that an arena
 slot points at, so a value can be **any width**:
 
 ```text
-base pointer = 8 bits, UNCHANGED (flag + class + choice + slot) — the class-3
+base pointer = 8 bits, UNCHANGED (flag + class + choice + slot): the class-3
                slot now holds p₂ instead of p₁
-p₂           = 6 bits = class(1) + choice(1) + slot(4) — into the level-2 table
-p₁           = 5 bits = class(1) + choice(1) + slot(3) — into the level-1 arena
+p₂           = 6 bits = class(1) + choice(1) + slot(4): into the level-2 table
+p₁           = 5 bits = class(1) + choice(1) + slot(3): into the level-1 arena
 value        = up to 2^32 bits in the design (the demo stores up to 2^18), the
                words live in a shared pool behind the 5-bit p₁
 ```
@@ -353,7 +353,7 @@ bits for every value size (a uniform store sized to a 32 KB value would pay
 The paper's final application revisits the oldest problem in external-memory
 data structures: a small *internal* stash X that tells you where each
 key/value pair of a large *external* structure resides, so queries cost a
-single access to external memory. The classic result (Gonnet–Larson) is a
+single access to external memory. The classic result (Gonnet-Larson) is a
 **stable** stash of `O(n log ε⁻¹)` bits with *expected-time* `Θ(ε⁻¹)` ops and
 guarantees only for *random* insertion/deletion sequences. Theorem 10: tiny
 pointers + the adaptive filter of Bender et al. give a stable stash of
@@ -371,10 +371,10 @@ external    = 4096 buckets × 8 slots = 4m slots    load 1/4 (1 − ε, ε = 3/4
 tiny pointer = 1 choice bit + 3 slot bits = 4 bits = Θ(log ε⁻¹)
 naive stash  = m · log₂(4m) = 15 bits/key (a full address per key)
 stash bins   = 2048 quotient bins (avg 4 keys/bin); the bin index IS the
-               quotient — stored nowhere, the filter's implicit-quotient trick
-fingerprint  = prefix-free, grows only to separate bin-mates — the paper's
+               quotient: stored nowhere, the filter's implicit-quotient trick
+fingerprint  = prefix-free, grows only to separate bin-mates: the paper's
                adaptivity bits, O(m) total (Bender et al.'s adaptive filter)
-paper bound  = O(m log ε⁻¹) = O(m) bits — never grows with the external size
+paper bound  = O(m log ε⁻¹) = O(m) bits: never grows with the external size
 theory       = Θ(log ε⁻¹) ≈ 2 bits (b = 1/(1−ε) = 4) → achieved 4 with b = 8
                two-choice slack (1 choice + 3 slot)
 ```
@@ -407,7 +407,7 @@ bits where a naive full-address stash is `O(m log m)`.
 The demo is parameterized by n (every table geometry, load and op count is a
 constant proportional to n), so the same source builds at any size. The table
 below re-derives the constants at `n = 2^14, 2^15, 2^16`, compiles each
-variant to a **native binary** (`FLOW_HOST=python FLOW_CFLAGS=-O2 ./flow
+variant to a **native binary** (`FLOW_CFLAGS=-O2 ./flow
 compile`), and runs that binary directly: the timings are the program's own
 `CLOCK_MONOTONIC` report, best of 3 runs, every run exit 0 (PASS). Reproduce
 with `scripts/bench_tiny_pointers.sh`.
@@ -427,7 +427,7 @@ with `scripts/bench_tiny_pointers.sh`.
 | 10 rotation storm (attempts ∝ n) | 1.20 ms | 2.74 ms | 6.83 ms | linear: ≈ 0.34 µs/attempt |
 | 11 variable-value dict (0.75·n keys, skewed sizes) | 0.90 ms | 1.91 ms | 4.63 ms | linear: ≈ 94 ns/value |
 | 12 variable-key+value dict (0.75·n pairs, skewed both; keys to 256 bits via the Phase-15 chain) | 2.32 ms | 4.27 ms | 9.37 ms | linear: ≈ 191 ns/pair (two tables, key arena, two verifies) |
-| 13 lower bounds (Thm 3–5: m·2^s probes + collision masks) | 2.30 ms | 4.63 ms | 10.28 ms | linear: the s-sweep probes scale as m·Σ2^s |
+| 13 lower bounds (Thm 3-5: m·2^s probes + collision masks) | 2.30 ms | 4.63 ms | 10.28 ms | linear: the s-sweep probes scale as m·Σ2^s |
 | 14 deamortized resize (naive + deamortized workloads, §6.1) | 3.88 ms | 8.97 ms | 19.86 ms | linear: two full workloads; worst-op 143,363 → 81 units |
 | 15 r-levels chain + r=3 extension (values to 2^18 bits through base → p₂ → p₁, §6.5) | 0.82 ms | 1.58 ms | 3.74 ms | linear: the word pool + three-level deref dominate; ≈ 0.3 µs/key |
 | 16 optimal stash (external deref table + prefix-free filter, §6.6) | 0.79 ms | 1.61 ms | 4.01 ms | ≈ linear: ≈ 0.49 µs/key; full verify + table check at each phase boundary |
@@ -441,7 +441,7 @@ What the numbers show:
 
 - **O(1) operations stay O(1) as n grows.** Bulk load, retrieval and the
   rotation phases double their total cost when n doubles, with flat per-key /
-  per-op cost (Phase 1 ≈ 16–18 ns/key across the 4× range; Phase 9 ≈ 0.37–0.41
+  per-op cost (Phase 1 ≈ 16-18 ns/key across the 4× range; Phase 9 ≈ 0.37-0.41
   µs per AVL insert including rebalancing; Phase 10 ≈ 0.3 µs per rotation
   attempt; Phase 11 ≈ 88 ns/value; Phase 12 ≈ 191 ns/pair). Phase 12 does two
   table allocations + two verifies per pair, and its ~10% chained keys add an

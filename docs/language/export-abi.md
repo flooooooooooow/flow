@@ -3,6 +3,11 @@
 Flow provides a stable export path so WASM and FFI consumers do not need to
 know the compiler's overload-mangling scheme.
 
+> **Status:** this page describes the retired Python C backend.
+> `flow transpile --c` now exits with an error, and flowc has no `--export`
+> mode yet. flowc emits an exported function that is not overloaded under
+> its plain name, so a consumer can link against that name today.
+
 ## CLI flags
 
 ```

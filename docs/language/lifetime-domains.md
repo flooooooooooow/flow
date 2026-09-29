@@ -323,7 +323,7 @@ frees. The frame column pays 200 stores of zero, one per `frame_begin`, and
 the cost of releasing a frame does not grow with the number of allocations in
 it. Bounded reset time is the reason the domain exists.
 
-Run it with `FLOW_HOST=python ./flow run benchmarks/micro/frame_arena_benchmark.flow`.
+Run it with `./flow run benchmarks/micro/frame_arena_benchmark.flow`.
 The benchmark inlines its own copy of `FrameArena` so it stays one
 translation unit.
 

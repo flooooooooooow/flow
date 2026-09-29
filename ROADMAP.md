@@ -104,7 +104,7 @@ a proof corpus rather than the showcase.
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
 | Digital twin lite | Small plant + observer narrative | 🔲 |
-| Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0–W3) |
+| Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0-W3) |
 | RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
 
@@ -186,7 +186,7 @@ a proof corpus rather than the showcase.
 | Live plugin ABI registry | ✅ | Extensible DSP |
 | Live graph hot-swap handle | ✅ | Live coding |
 | RT-safety policy (no-alloc audio thread) | ✅ partial: [docs/library/rt-safety.md](docs/library/rt-safety.md) | Policy + checklist documented; `@rt_safe` attribute now compile-time enforces no direct/transitive `malloc`/`calloc`/`realloc`/`free`/`arena_create`/`arena_destroy` calls (#134); device/file/GPU/lock policy still unchecked |
-| FIR-G program graph (Phases 1–4) | ✅ partial: [docs/project/fir-g.md](docs/project/fir-g.md) | SoA store, CPU oracles, MLX/NumPy bulk + diffs, measured `--calibrate` routing, deterministic `--opts` candidates (no IR rewrite yet) |
+| FIR-G program graph (Phases 1-4) | ✅ partial: [docs/project/fir-g.md](docs/project/fir-g.md) | SoA store, CPU oracles, MLX/NumPy bulk + diffs, measured `--calibrate` routing, deterministic `--opts` candidates (no IR rewrite yet) |
 
 ### ✨ Pattern adoption (less code, cooler surfaces)
 
@@ -751,8 +751,8 @@ Replace `src/flow/*.py` as the production compiler with **`flowc`** (Flow→C wr
 |-------|------|--------|
 | **A** | Land `compiler/` + Stage-A roundtrip/self-emit on `main` + CI | ✅ |
 | **B** | Close Stage-A gaps so `flowc` sources compile under `flowc` | ✅ |
-| **C** | `./flow` defaults to `flowc`; Python via `FLOW_HOST=python` | ✅ |
-| **D** | Retire Python from the compile critical path | 🔨 in progress: `flowc` surface catch-up (0.11.0) |
+| **C** | `./flow` uses `flowc` for every C command; `FLOW_HOST=python` retired | ✅ |
+| **D** | Retire Python from the compile critical path | ✅ Python C backend deleted; flowc matches it on 1037 of 1053 corpus programs |
 | **E** | Packaging, optional MLIR/GPU as separate tracks | 🔨 landing |
 
 Bootstrap already exists locally in many worktrees (`compiler/src/{lexer,parser,cgen,…}.flow`, fixed-point scripts). This roadmap item tracks **merge + cutover** rather than a greenfield rewrite.
@@ -800,7 +800,7 @@ These are explicitly out of scope:
 | **0.10.0** | tagged | MLIR/WASM epic #221, `flowc` three-generation self-compile, lifetime domains, safety profiles |
 | **0.11.0** | **current** | Zero-bridge C interop (`@cImport`/`@cInclude`/`@cEmbed`/`extern type`/`cfn`), BLAS bindings, RF W0 + DSP W1, `flowc` surface catch-up |
 | **0.12.0** | next | `flowc` covers the full surface; Python off the compile critical path (self-hosting Phase E) |
-| **1.0.0** | when earned | "Boring" stability + physical-systems phases W2–W4 |
+| **1.0.0** | when earned | "Boring" stability + physical-systems phases W2-W4 |
 
 ---
 

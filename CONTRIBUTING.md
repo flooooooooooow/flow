@@ -101,6 +101,8 @@ Should compile to C switch statements where possible."
 
 - [ ] Compile without errors (`./flow compile`)
 - [ ] Pass existing tests (`./flow test`)
+- [ ] After editing `compiler/src/`, regenerate the bootstrap C with
+  `./compiler/scripts/bootstrap_from_c.sh --regen` (needs only `cc`; see AGENTS.md)
 - [ ] Include new tests for new features
 - [ ] Follow existing code style
 - [ ] Update documentation if behavior changes
@@ -121,7 +123,7 @@ Should compile to C switch statements where possible."
 
 ### Code Blocks in Documentation
 
-CI compiles every ` ```flow ` block in every tracked markdown file
+CI compiles every ` ```flow ` block in every tracked markdown file with flowc
 (`scripts/check_doc_examples.py`). A block that neither compiles nor carries a
 reason is a build failure, and the unverified count can only go down.
 

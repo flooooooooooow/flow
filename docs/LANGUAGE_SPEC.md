@@ -17,7 +17,7 @@ FLOW is a statically-typed, systems programming language with first-class suppor
 
 ### Commands
 ```bash
-flow run <file.flow>      # Compile and run (default host: flowc; escape: FLOW_HOST=python)
+flow run <file.flow>      # Compile and run with flowc
 flow compile <file.flow>  # Compile to executable
 flow fmt <file.flow>      # Format source code
 flow test                 # Run all tests
@@ -627,19 +627,20 @@ let zs = xs |> sortBy [asc .key, desc .tie]
 let i  = xs |> find(target)     # index of the first match, or -1
 ```
 
-These name an intent. The compiler picks the implementation from a registry
-of lowerings with cost models and applicability predicates.
+These name an intent. The retired Python C backend picked the implementation
+from a registry of lowerings with cost models. flowc has no plan selector yet:
+it lowers every sort to a stable insertion sort.
 
 | Surface | Meaning | Status |
 |---------|---------|--------|
 | `\|> sort`, `sort by`, `sortBy`, `descending`, `unique` | Order, in place, on `array<T, N>` | ✅ |
 | `\|> find(t)` | First index equal to `t` under the same total order, else `-1` | ✅ |
-| Plan selection (6 sort plans, 2 search plans) | Cheapest applicable, with a scratch budget | ✅ |
-| Ordering hints (sortedness, integer range) through straight-line code | Skip-sort, reverse-only, counting sort, binary search | ✅ |
-| `adaptive`, `general` | Shift the run estimate; pin the general plan | ✅ |
-| `stable` / `unstable` | Parsed; every plan is stable today, so `unstable` buys nothing | ⚠️ |
+| Plan selection (6 sort plans, 2 search plans) | Cheapest applicable, with a scratch budget | Planned (flowc: insertion sort) |
+| Ordering hints (sortedness, integer range) through straight-line code | Skip-sort, reverse-only, counting sort, binary search | Planned |
+| `adaptive`, `general` | Shift the run estimate; pin the general plan | ⚠️ parsed |
+| `stable` / `unstable` | Parsed; the one plan is stable, so `unstable` buys nothing | ⚠️ |
 | `with entropy`, `parallel`, `gpu`, `simd`, `compact`, … | Parsed, no specialization | ⚠️ |
-| `--explain` / `flow explain` | Print the plan, the costs, and every failed constraint | ✅ |
+| `--explain` / `flow explain` | Print the plan, the costs, and every failed constraint | Retired with the Python C backend |
 
 ### 4.6 If-expressions
 
@@ -963,7 +964,7 @@ export greet
 reexport_decl := 'export' 'import' module_path ('{' symbols '}')?
 ```
 
-**Status:** ✅ Implemented (Python host)
+**Status:** ✅ Implemented (`tests/lang/test_reexport.flow`)
 
 `export import M` makes every symbol `M` exports an export of the current file
 as well. `export import M { a, b }` forwards only the named symbols, which must
@@ -1161,7 +1162,7 @@ memory; domains on parameters or in types.
 
 ## 10. Domain / DSL Surfaces
 
-These are first-class language / pre-parse surfaces shipped alongside the core grammar. Status is relative to the Python host (`FLOW_HOST=python`) unless noted. Stage-A `flowc` covers a subset (see [self-hosting.md](project/self-hosting.md)).
+These are first-class language / pre-parse surfaces shipped alongside the core grammar. Status is for `flowc`, the only C compiler, unless noted (see [self-hosting.md](project/self-hosting.md)).
 
 ### 10.1 `flow` / `evolves as` / representation
 

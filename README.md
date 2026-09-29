@@ -280,7 +280,7 @@ extern {
 | [Vision](VISION.md) | Why Flow exists |
 | [Roadmap](ROADMAP.md) | Near-term work |
 | [Changelog](docs/project/CHANGELOG.md) | Version history |
-| [Self-hosting](docs/project/self-hosting.md) | Stage-A `flowc` in [`compiler/`](compiler/) |
+| [Self-hosting](docs/project/self-hosting.md) | `flowc` in [`compiler/`](compiler/) |
 | [Security](SECURITY.md) · [Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) | Project policy |
 
 Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
@@ -292,8 +292,8 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 | Path | Contents |
 |------|----------|
 | [`flow`](flow) | CLI entry point |
-| [`src/flow/`](src/flow/) | Python-host compiler (parser, type checker, C/MLIR/Metal backends) |
-| [`compiler/`](compiler/) | Self-hosted Stage-A `flowc` |
+| [`src/flow/`](src/flow/) | Python tooling: MLIR generator fallback, `flow check`, wheels, Metal and WGSL generators |
+| [`compiler/`](compiler/) | `flowc`, the self-hosted compiler |
 | [`lib/stdlib/`](lib/stdlib/) | Standard library |
 | [`runtime/`](runtime/) | Native runtime (graphics, audio, recording) |
 | [`examples/`](examples/) | Domain demos and verify corpus |
@@ -308,32 +308,27 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 
 ## Self-hosting status
 
-The self-hosted compiler (`compiler/src/`, written in Flow) is the default host
-for `./flow run` and `./flow compile`. It compiles itself end to end: three
+The self-hosted compiler (`compiler/src/`, written in Flow) is the only C
+compiler. `./flow run`, `compile`, `test`, `gfx` and the other C commands all
+use it. It compiles itself end to end: three
 consecutive generation fixed-points are byte-identical, and a clean checkout
 needs no Python to build a working compiler.
 
-Against the bootstrap language suite (`tests/lang/`, 90 `.flow` files) the
-self-hosted compiler passes 79. The remaining 11 cover features it does not yet
-implement: DSL keywords (`effect`, `flow`, `state`, `evolves`), generic
-monomorphization, overload resolution, closure snapshots, two stdlib codegen
-cases, and external C headers unavailable in the test environment. The full
-breakdown is in [docs/project/self-hosting.md](docs/project/self-hosting.md).
-
-The Python-host compiler (`src/flow/`) remains the complete language surface:
-generics, effects, MLIR, GPU, DSLs, and all advanced type checking. The
-self-hosted compiler covers the subset needed to compile itself plus a growing
-set of language features. See [compiler/README.md](compiler/README.md) for the
-supported syntax list.
+The Python C backend is retired. On the repository corpus flowc matches it on
+1037 of 1053 programs with `main()` and builds 6 that it could not
+([report](compiler/corpus_parity/report.txt)). `FLOW_HOST=python` now stops
+with an error. Python remains for the MLIR generator fallback, `flow check`,
+`flow python`, package publishing and some scripts. See
+[docs/project/self-hosting.md](docs/project/self-hosting.md) and
+[compiler/README.md](compiler/README.md).
 
 ---
 
 ## Build and develop
 
 ```bash
-./flow run <file>              # Compile and run (default host: flowc)
+./flow run <file>              # Compile and run with flowc
 ./flow compile <file>          # Compile only → build/
-FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
 ./flow test                    # Test suite (strict by default)
 ./flow test --strict --tier2   # + transpile / clang compile checks
 ./flow fmt <file>              # Format
@@ -343,7 +338,7 @@ FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
 ./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
 ```
 
-Host switch: `FLOW_HOST=flowc|python|auto` (default `flowc` for `run` / `compile`).
+`FLOWC_BIN=<path>` picks a flowc binary. `compiler/scripts/flowc_emit.sh IN.flow OUT.c` writes C only.
 
 ```bash
 # Fuzz the compiler

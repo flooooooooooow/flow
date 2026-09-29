@@ -264,10 +264,10 @@ With strict effects enabled, the call is valid because the enclosing handler cov
 ### 13. Turn unhandled effects into compile-time errors
 
 ```sh
-./flow transpile program.flow --c --strict-effects -o build/program.c
+FLOWC_STRICT_EFFECTS=1 compiler/scripts/flowc_emit.sh program.flow build/program.c
 ```
 
-`--strict-effects` checks bare performs and function effect rows. The default language mode
+`FLOWC_STRICT_EFFECTS=1` checks bare performs and function effect rows. The default language mode
 remains backwards-compatible with soft defaults.
 
 ### 14. Turn unhandled effects into runtime failures

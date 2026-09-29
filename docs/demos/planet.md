@@ -11,13 +11,13 @@ Domain README: [examples/planet](../../examples/planet/README.md).
 Run any example natively:
 
 ```bash
-FLOW_HOST=python ./flow gfx examples/planet/planet_evidence.flow
+./flow gfx examples/planet/planet_evidence.flow
 ```
 
 Record one headlessly, no display needed:
 
 ```bash
-FLOW_HOST=python ./flow record examples/planet/planet_evidence.flow \
+./flow record examples/planet/planet_evidence.flow \
   --frames 4 --out /tmp/pl
 ```
 

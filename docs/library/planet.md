@@ -130,8 +130,8 @@ Staged gfx demos that gate these measurements live under
 [demos/planet.md](../demos/planet.md).
 
 ```bash
-FLOW_HOST=python ./flow gfx examples/planet/planet_evidence.flow
-FLOW_HOST=python ./flow record examples/planet/planet_evidence.flow --frames 4 --out /tmp/pl
+./flow gfx examples/planet/planet_evidence.flow
+./flow record examples/planet/planet_evidence.flow --frames 4 --out /tmp/pl
 python3 scripts/record_demos.py --group planet
 ```
 

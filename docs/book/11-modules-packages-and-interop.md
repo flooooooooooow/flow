@@ -77,12 +77,12 @@ An extern declaration gives Flow a signature for a symbol supplied by C or the p
 
 ## 11.6 C headers and embedded C
 
-The Python compiler host supports `@cImport(...)`, `@cInclude(...)`, `extern type`, and `@cEmbed(...)`. These features require real header/native context, so their authoritative executable examples are the tests rather than isolated fragments:
+flowc supports `@cImport(...)`, `@cInclude(...)`, `extern type`, and `@cEmbed(...)`. These features require real header/native context, so their authoritative executable examples are the tests rather than isolated fragments:
 
 ```bash
-FLOW_HOST=python ./flow run tests/lang/test_c_import_auto.flow
-FLOW_HOST=python ./flow run tests/lang/test_extern_type.flow
-FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
+./flow run tests/lang/test_c_import_auto.flow
+./flow run tests/lang/test_extern_type.flow
+./flow run tests/lang/test_c_embed.flow
 ```
 
 `@cEmbed` is an explicit unsafe escape hatch and should remain small and separately reviewed.
@@ -92,8 +92,8 @@ FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
 Flow closures use ordinary function types such as `(i32) -> i32`. Raw C callbacks use `cfn(...) -> ...`. The dynamic-loading and `qsort` examples exercise the complete ABI context:
 
 ```bash
-FLOW_HOST=python ./flow run tests/lang/test_dlopen.flow
-FLOW_HOST=python ./flow run tests/lang/test_qsort.flow
+./flow run tests/lang/test_dlopen.flow
+./flow run tests/lang/test_qsort.flow
 ```
 
 ## 11.8 Stable exports
@@ -107,11 +107,9 @@ function add_api(a: i32, b: i32) -> i32 {
 }
 ```
 
-The CLI can also emit ABI aliases when transpiling a library:
-
-```bash
-./flow transpile library.flow --c --export add scale --module-name signal -o build/library.c
-```
+flowc emits every exported function under its plain name. The versioned
+`flow_export_` aliases came from the library mode of the retired Python C
+backend, and flowc has no equivalent yet.
 
 ## 11.9 Native project sources
 

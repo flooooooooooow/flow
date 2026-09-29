@@ -131,7 +131,7 @@ function main() -> i32 {
 Source: [`examples/book/03_control.flow`](../../examples/book/03_control.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/03_control.flow
+./flow run examples/book/03_control.flow
 ```
 
 ## 3.5 Choosing a loop

@@ -12,16 +12,14 @@ the Flow repository.
 
 ## Compiler convention
 
-Flow v0.11.1 has two compiler hosts:
+Every example in this book runs on one compiler, `flowc`, the self-hosted
+compiler written in Flow:
 
-| Host | Invocation | Use in this book |
+| Compiler | Invocation | Use in this book |
 |---|---|---|
-| Self-hosted Stage A | `./flow run file.flow` | Core syntax, functions, control flow, arrays, and structs |
-| Python host | `FLOW_HOST=python ./flow run file.flow` | The full language, including pipelines and evolution blocks |
+| flowc | `./flow run file.flow` | The full language, including pipelines and evolution blocks |
 
-The host requirement is printed beside each example. A program that requires
-the Python host is still a Flow program. Only the compiler implementation is
-different. The Python host accepts more of the language.
+Earlier editions had a second, Python-hosted C compiler. It is retired.
 
 ## Coverage contract
 

@@ -124,14 +124,13 @@ These belong in a later behaviour fix made on both generators at once.
 
 ### `--backend=mlir` on the flowc host
 
-`compile_program_mlir` in `flow-driver` now tries flowc first (the default
-`FLOW_HOST=flowc`): `FLOWC_EMIT=mlir`, then `compiler/scripts/mlir_lower.sh`,
+`compile_program_mlir` in `flow-driver` tries flowc first: `FLOWC_EMIT=mlir`, then `compiler/scripts/mlir_lower.sh`,
 then clang on the `.ll`. No Python runs. When flowc refuses the program the
 driver prints
 
     flowc MLIR emitter does not cover this program yet (flowc mlir: unsupported: ...); using the Python MLIR generator
 
-and takes the old path. `FLOW_HOST=python` always takes the old path.
+and takes the old path. `FLOW_HOST=python` is retired and no longer selects it.
 
 ### Parity gate
 

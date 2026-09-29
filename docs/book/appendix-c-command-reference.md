@@ -66,7 +66,7 @@ Historical Vulkan and UI command aliases remain accepted.
 | `flow lsp` | language server on stdio, for editors |
 | `flow debug FILE` | debug build and LLDB/GDB launch |
 | `flow dap FILE` | Debug Adapter Protocol server |
-| `flow explain FILE` | show declarative candidate plans and selection |
+| `flow explain FILE` | unavailable: flowc has no plan selector yet |
 | `flow fir-g FILE` | dump FIR-G and analyses |
 | `flow show-flags` | print C flags for profile/sanitizer settings |
 | `flow analyze FILE.c` | scan C for MISRA or CERT patterns |
@@ -153,7 +153,8 @@ flow wasm FILE \
 
 | Variable | Meaning |
 |---|---|
-| <code>FLOW_HOST=flowc&#124;python&#124;auto</code> | choose compiler host |
+| `FLOW_HOST=flowc` | the only compiler host; `python` is retired and stops with an error, `auto` means flowc |
+| `FLOWC_BIN=PATH` | use this flowc binary |
 | <code>FLOW_CPU_BACKEND=c&#124;mlir</code> | choose CPU backend |
 | `FLOW_STRICT_EFFECTS=1` | reject uncovered effect operations |
 | `FLOW_PROFILE=safety` | select safety C flags |

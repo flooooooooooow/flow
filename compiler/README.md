@@ -1,13 +1,15 @@
 # flowc: Flow compiler written in Flow
 
-`flowc` is the **self-hosting bootstrap** for Flow: a compiler front-end
-implemented in Flow itself, run today by the production Python→C host under
-[`src/flow/`](../src/flow/).
+`flowc` is the Flow compiler, written in Flow. It is the only C compiler:
+`./flow run`, `compile`, `test`, `test-lang`, `gfx`, `debug` and the other C
+commands all use it. The Python C backend is retired, and `FLOW_HOST=python`
+stops with an error. `FLOWC_BIN=<path>` picks a flowc binary.
 
-Stage-A `flowc` is the **default host** for `./flow run` and `./flow compile`
-(`FLOW_HOST=flowc`). Use `FLOW_HOST=python` for the full Python language surface
-(tests, MLIR, gfx, DSLs). Drivers live under `compiler/build/`; if none exist,
-`compiler/scripts/ensure_flowc.sh` bootstraps Gen0 via Phase-A roundtrip.
+Drivers live under `compiler/build/`; if none exist,
+`compiler/scripts/ensure_flowc.sh` builds one from the checked-in bootstrap C.
+`compiler/scripts/flowc_host.sh` prints a flowc built from the current
+`compiler/src`. For scripts and tools that want C only, use
+`compiler/scripts/flowc_emit.sh [--strict|--lenient] [--no-checks] IN.flow OUT.c`.
 
 ## Get a compiler with nothing but `cc`
 
@@ -49,11 +51,11 @@ with `cc`, a LICENSE, and two examples. Released on `flowc-v*` tags by
 
 ## How to run
 
-From the repo root (default host = flowc for Stage-A programs):
+From the repo root:
 
 ```bash
 ./flow run examples/basics/hello_world.flow
-FLOW_HOST=python ./flow run compiler/src/main.flow
+env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
 ```
 
 Expected exit: `flowc: PASS` (lexer smoke + in-memory parse tests + disk
@@ -235,7 +237,7 @@ What `flowc_parse_program` actually accepts:
 - [x] `if cond { ... }` / `if ... else { ... }` (Stage-A: clean `} else {` brace chain)
 - [x] `while cond { ... }`
 - [x] `for name in lo to hi { ... }`
-- [x] `match expr { pattern => block, ... }` statement (AST_MATCH=35 / AST_MATCH_ARM=36; commas between arms optional). Patterns: int literals (incl. negative), `_` wildcard, or a binding ident as catch-all (Python-host semantics for non-enum idents). Guards, or-patterns, struct patterns, and list patterns are rejected with a diagnostic. Stage-A emit: scrutinee temp `__flowc_match` + if/else-if chain; binding arm declares `int32_t name = __flowc_match;`. Typecheck: obvious non-integer scrutinees rejected; catch-all arm must be last.
+- [x] `match expr { pattern => block, ... }` statement (AST_MATCH=35 / AST_MATCH_ARM=36; commas between arms optional). Patterns: int literals (incl. negative), `_` wildcard, or a binding ident as catch-all (the semantics of the retired Python backend for non-enum idents). Guards, or-patterns, struct patterns, and list patterns are rejected with a diagnostic. Stage-A emit: scrutinee temp `__flowc_match` + if/else-if chain; binding arm declares `int32_t name = __flowc_match;`. Typecheck: obvious non-integer scrutinees rejected; catch-all arm must be last.
 - [x] `name = expr` / `name.field = expr` / `name[i] = expr` / `name[i].field = expr` (AST_ASSIGN: a=lhs, b=rhs)
 - [x] expression statements (e.g. calls)
 - [x] `break` / `continue`
@@ -282,48 +284,18 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   under `FLOWC_DIR` and `flowc_bundle_emit` concatenates C (deps then entry);
   dotted `pkg.mod` still skipped; `flowc_bundle_typecheck` seeds dep exports
   across modules (Stage-A; not full cross-file typing)
-- Full language surface (effects, generics, and most of what production
-  `src/flow/` uses); Stage-A `cgen` remains a subset buffer emitter
-- Flow driver as the sole host (today: Python host still bootstraps the
-  first emit; after self-emit, `stage_a_driver_flow_self` is fully
-  Stage-A Flow driver + self frontend; C `stage_a_driver` remains a
-  fallback)
-- Compiling production `src/flow` with `flowc` (the Python sources use the full
-  language, far beyond Stage-A)
-- Generics, effects, DSLs; `jsgen` / `fmt` do not lower `AST_MATCH`
+- A plan selector for `|> sort`: flowc lowers every `sort` to a stable
+  insertion sort, so `flow explain` has no report to print
+- `jsgen` does not lower `AST_MATCH`
 - Note: Stage-A already round-trips `examples/basics/fibonacci.flow` twin
   (`compiler/fixtures/stage_a_fib.flow` -> exit 55) via `./compiler/scripts/roundtrip.sh`
 
-### Bootstrap language suite: 79 pass, 11 fail
+### Language suite
 
-The 90 `.flow` files in `tests/lang/` are the parity target. Run them with
-`FLOWC_IN`/`FLOWC_OUT` (positional args trigger the self-test instead of
-compilation):
-
-```bash
-BOOT=compiler/build/flowc_bootstrap
-pass=0; fail=0
-for f in $(find tests/lang -name "*.flow" | sort); do
-  if FLOWC_BUNDLE=1 FLOWC_DIR=. "$BOOT" "$f" "/tmp/out.c" \
-     && cc -O0 -o /tmp/out "/tmp/out.c" && /tmp/out; then
-    pass=$((pass + 1))
-  else
-    fail=$((fail + 1)); echo "  FAIL $f"
-  fi
-done
-echo "pass=$pass fail=$fail"
-```
-
-Current: `pass=79 fail=11`. The 11 failures by root cause:
-
-| Category | Tests | What is missing |
-|----------|-------|-----------------|
-| DSL keywords | `test_effects`, `test_hybrid_events`, `test_time_blocks` | Parser does not recognize `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` |
-| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts generic syntax but the monomorphizer that replaces `T` with concrete types is not ported |
-| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names |
-| Closure snapshots | `test_closures` | Captured variables are hoisted to globals without snapshotting at creation time |
-| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder codegen bug; FIR inline-pure bonus constant truncates float to int |
-| External C headers | `test_c_import_julia`, `test_c_import_python` | Julia and Python embedding headers not in the test environment |
+The `.flow` files in `tests/lang/` are the language regression target:
+`./flow test-lang` runs them on flowc. The C output goldens are
+`tests/cgen/run.sh`. The bare bootstrap loop over `tests/lang/`, with its
+current count and remaining failures, is in [`AGENTS.md`](../AGENTS.md#bootstrap-suite).
 
 Recently landed features that closed earlier gaps:
 
