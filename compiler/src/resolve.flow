@@ -1174,8 +1174,11 @@ export function flowc_resolve_package_path(
             }
         }
         free(proot)
+        # Not found under the [paths] directory: the other rules still try
+        # (a claim path such as `verify.Nat/+` resolves to its domain
+        # module there).
         if presult < 0 {
-            puts("flowc: import not found under its flow.toml [paths] directory")
+            return 0 - 1
         }
         return presult
     }
