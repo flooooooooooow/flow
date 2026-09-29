@@ -336,6 +336,36 @@ function flowc_cgen_ident_is_plain_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr
     return 0
 }
 
+# For a parameter typed array<T, N>, ptr<T> or memref_T, write the compound
+# literal prefix `(T[])` and return 1; otherwise write nothing and return 0.
+function flowc_cgen_emit_elem_compound(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, pt: i32) -> i32 {
+    if pt == AST_NONE or pt < 0 or arena.nodes[pt].kind != AST_TYPE {
+        return 0
+    }
+    let s: i32 = arena.nodes[pt].name_start
+    let e: i32 = arena.nodes[pt].name_end
+    if arena.nodes[pt].a == AST_NONE and e - s > 7 and flowc_cgen_span_is(src, s, s + 7, "memref_") == 1 {
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_emit_prim_span(w, src, s + 7, e)
+        flowc_cgen_puts(w, "[])")
+        return 1
+    }
+    let inner: i32 = arena.nodes[pt].a
+    if inner == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_span_is(src, s, e, "ptr") == 1 or flowc_cgen_span_is(src, s, e, "array") == 1 {
+        if arena.nodes[inner].kind != AST_TYPE or arena.nodes[inner].a != AST_NONE {
+            return 0
+        }
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_emit_type(w, arena, src, inner)
+        flowc_cgen_puts(w, "[])")
+        return 1
+    }
+    return 0
+}
+
 # 1-based source line of byte offset `pos`.
 function flowc_cgen_line_of(src: ptr<u8>, pos: i32) -> i32 {
     let mut line: i32 = 1
@@ -3839,6 +3869,17 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                     flowc_cgen_puts(w, ", ")
                     flowc_cgen_put_i32(w, arr_size)
                     flowc_cgen_puts(w, " })")
+                    arg = arena.nodes[arg].next
+                    param_idx = param_idx + 1
+                    continue
+                }
+            }
+            # An array literal argument for an array, ptr or memref
+            # parameter is a compound literal of the element type.
+            if fn_id != AST_NONE and arena.nodes[arg].kind == AST_ARRAY_LIT and arena.nodes[arg].b == AST_NONE {
+                let apt: i32 = flowc_cgen_fn_param_type(arena, fn_id, param_idx)
+                if flowc_cgen_emit_elem_compound(w, arena, src, apt) == 1 {
+                    flowc_cgen_emit_expr(w, arena, src, arg)
                     arg = arena.nodes[arg].next
                     param_idx = param_idx + 1
                     continue
