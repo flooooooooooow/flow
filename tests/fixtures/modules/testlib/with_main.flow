@@ -1,0 +1,11 @@
+# A library module with its own demo main(), for
+# tests/lang/test_import_module_with_main.flow.
+
+export function answer() -> i32 {
+    return 42
+}
+
+function main() -> i32 {
+    println("library demo main")
+    return 7
+}

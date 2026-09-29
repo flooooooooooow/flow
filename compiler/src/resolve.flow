@@ -1429,6 +1429,19 @@ function flowc_resolve_needs_rename(buf: ptr<u8>, len: i32, e: i32) -> i32 {
         return 0
     }
     let mi: i32 = buf[e]
+    # `main`: the entry module comes last (deps first), and its main is the
+    # program's. An imported module's own main steps aside, as on the Python
+    # host, which drops it.
+    if buf[e + 2] == 109 and buf[e + 3] == 97 and buf[e + 4] == 105 and buf[e + 5] == 110 and buf[e + 6] == 0 {
+        let mut m: i32 = 0
+        while m < len {
+            if buf[m] > mi and flowc_resolve_name_eq(buf, m + 2, e + 2) == 1 {
+                return 1
+            }
+            m = flowc_resolve_next_entry(buf, m)
+        }
+        return 0
+    }
     let mut o: i32 = 0
     while o < len {
         let om: i32 = buf[o]

@@ -266,6 +266,36 @@ function flowc_cgen_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
     return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
 }
 
+# 1 when the expression tree at `id` calls a function named src[ns..ne].
+function flowc_cgen_calls_name(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_CALL {
+        if flowc_cgen_span_eq(src, ns, ne, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+            return 1
+        }
+        let mut arg: i32 = arena.nodes[id].a
+        while arg != AST_NONE {
+            if flowc_cgen_calls_name(arena, src, arg, ns, ne) == 1 {
+                return 1
+            }
+            arg = arena.nodes[arg].next
+        }
+        return 0
+    }
+    # Only expression links: a type or a statement body is not searched.
+    if k == AST_BINOP or k == AST_INDEX {
+        if flowc_cgen_calls_name(arena, src, arena.nodes[id].a, ns, ne) == 1 { return 1 }
+        return flowc_cgen_calls_name(arena, src, arena.nodes[id].b, ns, ne)
+    }
+    if k == AST_UNARY or k == AST_CAST or k == AST_FIELD_ACCESS {
+        return flowc_cgen_calls_name(arena, src, arena.nodes[id].a, ns, ne)
+    }
+    return 0
+}
+
 # 1 when struct literal field value `v` is a named array (a variable, field
 # or element whose type is array<T, N>): C cannot initialize an array member
 # from it, so the literal copies it in with memcpy.
@@ -3244,6 +3274,14 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 return
             }
         }
+        # gpu_thread_id() with no Flow definition: the Python host's host
+        # stub for @gpu kernels, thread 0.
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "gpu_thread_id") == 1 and arena.nodes[id].a == AST_NONE {
+            if flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 and flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end) < 0 {
+                flowc_cgen_puts(w, "((int32_t)0)")
+                return
+            }
+        }
         # ui_layout_bind(p) binds the implicit UI layout state pointer.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "ui_layout_bind") == 1 and arena.nodes[id].a != AST_NONE {
             flowc_cgen_puts(w, "(_ui_state = (void*)")
@@ -4373,6 +4411,19 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
             }
         }
+        # `let f = f(x)` where f is also a function: C would see the new
+        # local inside its own initializer, so evaluate the initializer first.
+        let mut pre: i32 = 0
+        if arr_n == 0 and init != AST_NONE and arena.nodes[init].kind != AST_FN {
+            if flowc_cgen_calls_name(arena, src, init, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                pre = 1
+                flowc_cgen_puts(w, "  __auto_type __flowc_pre")
+                flowc_cgen_put_i32(w, id)
+                flowc_cgen_puts(w, " = ")
+                flowc_cgen_emit_expr(w, arena, src, init)
+                flowc_cgen_puts(w, ";\n")
+            }
+        }
         flowc_cgen_puts(w, "  ")
         if arr_n > 0 {
             flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
@@ -4505,8 +4556,16 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_putc(w, 40)
             flowc_cgen_emit_type(w, arena, src, ty)
             flowc_cgen_puts(w, ")(")
-            flowc_cgen_emit_expr(w, arena, src, init)
+            if pre == 1 {
+                flowc_cgen_puts(w, "__flowc_pre")
+                flowc_cgen_put_i32(w, id)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, init)
+            }
             flowc_cgen_putc(w, 41)
+        } elif pre == 1 {
+            flowc_cgen_puts(w, "__flowc_pre")
+            flowc_cgen_put_i32(w, id)
         } else {
             flowc_cgen_emit_expr(w, arena, src, init)
             # f32 float literal → `1.5f`; f64 / other contexts keep bare `1.5`.
@@ -4982,6 +5041,29 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     if kind == AST_ASSIGN {
         # a = lhs expr, b = rhs expr
         flowc_cgen_puts(w, "  ")
+        # A local sized array takes the value by copy: C arrays are not
+        # assignable.
+        let lhs: i32 = arena.nodes[id].a
+        if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT {
+            let ldecl: i32 = flowc_cgen_scoped_decl(w, arena, src, lhs)
+            if ldecl != AST_NONE and arena.nodes[ldecl].kind == AST_LET and flowc_cgen_is_sized_array(arena, src, arena.nodes[ldecl].a) == 1 {
+                flowc_cgen_puts(w, "memcpy(")
+                flowc_cgen_emit_expr(w, arena, src, lhs)
+                flowc_cgen_puts(w, ", ")
+                # An array literal becomes a compound literal of the same type.
+                let rhs: i32 = arena.nodes[id].b
+                if rhs != AST_NONE and arena.nodes[rhs].kind == AST_ARRAY_LIT {
+                    flowc_cgen_puts(w, "(__typeof__(")
+                    flowc_cgen_emit_expr(w, arena, src, lhs)
+                    flowc_cgen_puts(w, "))")
+                }
+                flowc_cgen_emit_expr(w, arena, src, rhs)
+                flowc_cgen_puts(w, ", sizeof(")
+                flowc_cgen_emit_expr(w, arena, src, lhs)
+                flowc_cgen_puts(w, "));\n")
+                return
+            }
+        }
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_puts(w, " = ")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
@@ -5624,6 +5706,32 @@ function flowc_cgen_emit_struct_mono(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
         i = i + 1
     }
     flowc_cgen_puts(w, ";\n\n")
+}
+
+# 1 when every struct of this module that `st` holds by value (directly or
+# as an array element) is already emitted (done[id] == 1).
+function flowc_cgen_struct_deps_done(arena: AstArena, src: ptr<u8>, root: i32, st: i32, done: ptr<u8>) -> i32 {
+    let mut field: i32 = arena.nodes[st].a
+    while field != AST_NONE {
+        let mut t: i32 = arena.nodes[field].a
+        while t != AST_NONE and arena.nodes[t].kind == AST_TYPE and arena.nodes[t].a != AST_NONE and arena.nodes[t].ival > 0 and flowc_cgen_ty_is_array(arena, src, t) == 1 {
+            t = arena.nodes[t].a
+        }
+        if t != AST_NONE and arena.nodes[t].kind == AST_TYPE and arena.nodes[t].a == AST_NONE {
+            let mut item: i32 = arena.nodes[root].a
+            while item != AST_NONE {
+                let other: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
+                if other != AST_NONE and other != st and arena.nodes[other].b == AST_NONE and done[other] == 0 {
+                    if flowc_cgen_span_eq(src, arena.nodes[t].name_start, arena.nodes[t].name_end, arena.nodes[other].name_start, arena.nodes[other].name_end) == 1 {
+                        return 0
+                    }
+                }
+                item = arena.nodes[item].next
+            }
+        }
+        field = arena.nodes[field].next
+    }
+    return 1
 }
 
 function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
@@ -6930,14 +7038,47 @@ export function flowc_cgen_emit_sigs(
 
     # Pass 1: struct typedefs (including export struct)
     # Skip generic structs (b != AST_NONE means type params present).
-    item = arena.nodes[root].a
-    while item != AST_NONE {
-        let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
-        if st != AST_NONE and arena.nodes[st].b == AST_NONE {
-            flowc_cgen_emit_struct(&w, arena, src, st)
-        }
-        item = arena.nodes[item].next
+    # A struct comes after the structs its fields hold by value, as on the
+    # Python host; source order decides among the rest.
+    let st_done: ptr<u8> = malloc(arena.len + 1)
+    let mut sdi: i32 = 0
+    while sdi < arena.len {
+        st_done[sdi] = 0
+        sdi = sdi + 1
     }
+    let mut st_progress: i32 = 1
+    while st_progress == 1 {
+        st_progress = 0
+        let mut st_blocked: i32 = 0
+        item = arena.nodes[root].a
+        while item != AST_NONE {
+            let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
+            if st != AST_NONE and arena.nodes[st].b == AST_NONE and st_done[st] == 0 {
+                if flowc_cgen_struct_deps_done(arena, src, root, st, st_done) == 1 {
+                    flowc_cgen_emit_struct(&w, arena, src, st)
+                    st_done[st] = 1
+                    st_progress = 1
+                } else {
+                    st_blocked = 1
+                }
+            }
+            item = arena.nodes[item].next
+        }
+        # A cycle (only possible through invalid by-value recursion): emit
+        # the rest in source order and let the C compiler report it.
+        if st_progress == 0 and st_blocked == 1 {
+            item = arena.nodes[root].a
+            while item != AST_NONE {
+                let st2: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
+                if st2 != AST_NONE and arena.nodes[st2].b == AST_NONE and st_done[st2] == 0 {
+                    flowc_cgen_emit_struct(&w, arena, src, st2)
+                    st_done[st2] = 1
+                }
+                item = arena.nodes[item].next
+            }
+        }
+    }
+    free(st_done)
 
     # Pass 1.5a: enum typedefs.
     # Emits: typedef enum { Name_V0, Name_V1, ... } Name_Tag;
