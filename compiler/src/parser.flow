@@ -116,6 +116,10 @@ export function flowc_parser_print_error(p: Parser, prefix: string) {
     }
     let text: ptr<u8> = p.lex.input + t.start
     printf("%s:%d:%d: parse error: unexpected %s '%.*s' (byte %d)\n", prefix, t.line, t.col, flowc_parser_tok_kind_name(t.kind), n, text, t.start)
+    # A keyword here is often a reserved word used as a name (#970).
+    if t.kind == TOK_KEYWORD {
+        printf("%s:%d:%d: note: '%.*s' is a reserved word and cannot be used as a name\n", prefix, t.line, t.col, n, text)
+    }
 }
 
 export function flowc_parser_free(p: Parser) -> void {

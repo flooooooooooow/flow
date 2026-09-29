@@ -819,7 +819,7 @@ stage_a_emit compiler/fixtures/keyword_param.flow compiler/build/keyword_param.c
 kw_rc=$?
 set -e
 test "$kw_rc" -ne 0
-if ! grep -Fq "keyword_param.flow:3:27: parse error at 'to'" compiler/build/keyword_param.log \
+if ! grep -Fq "keyword_param.flow:3:27: parse error: unexpected keyword 'to'" compiler/build/keyword_param.log \
     || ! grep -Fq "'to' is a reserved word" compiler/build/keyword_param.log; then
     echo "FAIL keyword_param: expected a located parse diagnostic" >&2
     cat compiler/build/keyword_param.log >&2
