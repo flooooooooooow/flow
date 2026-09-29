@@ -287,7 +287,7 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_vectorization_audit.py | b | vectorization report on generated code |
 | test_version.py | c | version string |
 | test_wasm_compiler.py | c | WASM toolchain probes |
-| test_wcet_analysis.py | c | WCET analysis internals |
+| test_wcet_analysis.py | c | WCET analysis internals; deleted with wcet_analysis.py, see tests/tools/analyze/run.sh |
 | test_wiki_nav.py | c | docs tooling |
 | test_working_mlir.py | b | MLIR text goldens |
 | test_working_parser.py | c | parser AST internals |

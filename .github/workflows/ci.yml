@@ -118,6 +118,8 @@ jobs:
             tools:
               - 'tools/**'
               - 'tests/tools/**'
+              - 'compiler/src/wcet.flow'
+              - 'compiler/src/misra_scan.flow'
               - 'flow-driver'
             docs:
               - 'docs/**'
@@ -605,7 +607,7 @@ jobs:
       - name: Arithmetic safety tests
         env:
           PYTHONPATH: src
-        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_wcet_analysis.py -v
+        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py -v
 
   fuzz:
     name: Fuzz (parser/pipeline)

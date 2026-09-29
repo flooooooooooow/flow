@@ -125,7 +125,8 @@ Python and ported those tests to `tests/lang/`. See
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
 | Require/prefer constraints | [`compiler/src/constraints.flow`](../../compiler/src/constraints.flow): `flowc_parse_require` / `flowc_parse_prefer` / tighter-value picker |
 | Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow): `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
-| MISRA/CERT C scanner | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow): `flowc_scan_c_source` flags heap/stdio/abort calls |
+| MISRA/CERT C scanner (**complete**) | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow): `flowc_scan_c_source` flags heap/stdio/abort calls; `flowc_misra_report` is the whole `misra_scan.py` report. `flow analyze` runs it from [`tools/analyze/main.flow`](../../tools/analyze/main.flow) |
+| WCET and stack depth (**complete**) | [`tools/analyze/main.flow`](../../tools/analyze/main.flow) over the flowc parser, with the tables in [`compiler/src/wcet.flow`](../../compiler/src/wcet.flow). Replaces `wcet_analysis.py`; gated by [`tests/tools/analyze/run.sh`](../../tests/tools/analyze/run.sh) |
 | Function attribute vocabulary | [`compiler/src/attributes.flow`](../../compiler/src/attributes.flow): `flowc_parse_attribute` / `flowc_validate_target_spec` / `flowc_domain_rank` |
 | Matmul/reduce cost models | [`compiler/src/general_plans.flow`](../../compiler/src/general_plans.flow): `flowc_select_matmul` / `flowc_select_reduce` (pure cost/applicability, registry stays Python) |
 | FIR-G effect propagation | [`compiler/src/fir_analysis.flow`](../../compiler/src/fir_analysis.flow): `flowc_propagate_effects` / `flowc_reachable_functions` / `flowc_is_pure` (CSR graph, fixpoint OR) |
