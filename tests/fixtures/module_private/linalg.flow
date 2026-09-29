@@ -1,0 +1,6 @@
+# No exports: every declaration is still visible to importers (#988).
+const LINALG_ONE: i32 = 1
+
+function scale2(x: i32) -> i32 {
+    return x * 2
+}

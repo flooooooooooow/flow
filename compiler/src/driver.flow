@@ -11,7 +11,7 @@
 
 import .fileio { flowc_read_file, flowc_write_file }
 import .field_dsl { flowc_field_expand_in_place }
-import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_report, Parser }
 import .cgen { flowc_cgen_emit }
 import .typecheck { flowc_typecheck, flowc_typecheck_ex }
 import .resolve { flowc_bundle_emit, flowc_bundle_typecheck, flowc_resolve_dirname }
@@ -179,6 +179,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
     let root: i32 = flowc_parse_program(&p)
     if root < 0 or p.err != 0 {
         puts("stage_a_driver_flow: parse failed")
+        flowc_parser_report(p, in_path)
         printf("stage_a_driver_flow: at %d\n", p.cur.start)
         printf("stage_a_driver_flow: arena_len=%d\n", p.arena.len)
         flowc_parser_free(p)

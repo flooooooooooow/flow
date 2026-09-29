@@ -68,7 +68,7 @@ export function flowc_on_structure_carrier(structure: string, carrier: string) -
     let sname: string = flowc_structure_mathematical(structure)
     let car: string = flowc_carrier_mathematical(carrier)
     if strcmp(carrier, "Geometry") == 0 {
-        # "triangles in the Euclidean plane" — sname already ends with "in"
+        # "triangles in the Euclidean plane": sname already ends with "in"
         if strcmp(structure, "triangle") == 0 {
             return "triangles in the Euclidean plane"
         }
@@ -104,7 +104,7 @@ export function flowc_law_phrase(law: string) -> string {
     if strlen(law) == 0 {
         return "the stated law"
     }
-    # Lowercase first character when ASCII upper — return known laws as-is lowercased
+    # Lowercase first character when ASCII upper; return known laws as-is lowercased
     if strcmp(law, "zero is the left identity") == 0 {
         return "zero is the left identity"
     }
@@ -166,15 +166,15 @@ export function flowc_tier_opening_mathematical(tier: string, addr: FlowcClaimAd
     let law: string = flowc_law_phrase(addr.law)
     if strcmp(t, "definition") == 0 {
         if strcmp(law, "zero is the left identity") == 0 and strcmp(ctx, "addition on the natural numbers") == 0 {
-            return "We stipulate zero is the left identity for addition on the natural numbers — this is a definition, not a derived fact."
+            return "We stipulate zero is the left identity for addition on the natural numbers. This is a definition rather than a derived fact."
         }
-        return "We stipulate the law for this structure — this is a definition, not a derived fact."
+        return "We stipulate the law for this structure. This is a definition rather than a derived fact."
     }
     if strcmp(t, "axiom") == 0 {
         if strcmp(law, "everything equals itself") == 0 {
-            return "We accept everything equals itself for equality on equality without proof — an ontological commitment, not a lemma."
+            return "We accept everything equals itself for equality on equality without proof. This is an ontological commitment rather than a lemma."
         }
-        return "We accept this law without proof — an ontological commitment, not a lemma."
+        return "We accept this law without proof. This is an ontological commitment rather than a lemma."
     }
     if strcmp(law, "order does not matter") == 0 and strcmp(ctx, "addition on the natural numbers") == 0 {
         return "We prove that order does not matter for addition on the natural numbers."

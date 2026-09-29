@@ -714,11 +714,8 @@ export function ft_join(a: string, b: string) -> string {
     if strlen(a) == 0 or ft_starts(b, "/") {
         return b
     }
-    # Bound to a typed local first: flowc emits `return a + b` on two string
-    # parameters as pointer arithmetic instead of concatenation.
     if ft_ends(a, "/") {
-        let joined: string = a + b
-        return joined
+        return a + b
     }
     return a + "/" + b
 }

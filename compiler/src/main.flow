@@ -16,7 +16,7 @@ import .ast {
     AST_CALL, AST_BINOP, AST_INT, AST_IDENT, AST_MATCH, AST_MATCH_ARM,
     flowc_ast_count_kind, flowc_ast_chain_len
 }
-import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_report, Parser }
 import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
 import .field_dsl { flowc_field_expand_in_place }
 import .pipeline_fusion { flowc_fuse_pipelines }
@@ -259,6 +259,7 @@ function flowc_emit_mode() -> i32 {
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
             puts("flowc emit: parse failed")
+            flowc_parser_report(p, in_path)
             printf("flowc emit: at %d\n", p.cur.start)
             printf("flowc emit: arena_len=%d\n", p.arena.len)
             flowc_parser_free(p)

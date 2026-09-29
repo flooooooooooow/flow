@@ -793,6 +793,21 @@ if ! grep -Fq 'or/struct/list patterns unsupported in Stage-A' compiler/build/ma
 fi
 echo "PASS stage_a_match fixtures"
 
+# A parse error names the file, line, column and token (#970).
+set +e
+stage_a_emit compiler/fixtures/keyword_param.flow compiler/build/keyword_param.c \
+    >compiler/build/keyword_param.log 2>&1
+kw_rc=$?
+set -e
+test "$kw_rc" -ne 0
+if ! grep -Fq "keyword_param.flow:3:27: parse error at 'to'" compiler/build/keyword_param.log \
+    || ! grep -Fq "'to' is a reserved word" compiler/build/keyword_param.log; then
+    echo "FAIL keyword_param: expected a located parse diagnostic" >&2
+    cat compiler/build/keyword_param.log >&2
+    exit 1
+fi
+echo "PASS keyword_param diagnostic"
+
 # sizeof<T>() lowers to the C sizeof of the type.
 run_case stage_a_sizeof 42
 

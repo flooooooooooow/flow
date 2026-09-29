@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD,
     flowc_ast_chain_len
 }
 import .overload_table {
@@ -557,13 +557,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         # Sort DSL modifiers used as identifiers in pipe expressions.
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "descending") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "ascending") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "unique") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "adaptive") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "general") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "asc") == 1 { return }
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "desc") == 1 { return }
+        if arena.nodes[id].ival == AST_IDENT_SORT_MOD { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
             # extern { ... } bodies are brace-skipped — allow unknown idents
             # (e.g. function pointers declared in extern blocks).
@@ -1056,8 +1050,13 @@ function flowc_tc_seed_bind_enum_variant(ctx: ptr<TcCtx>, src: ptr<u8>, ens: i32
     ctx[0].seed_nlen = ctx[0].nlen
 }
 
-# Register export symbols from a dependency PROGRAM into ctx seed table.
-# export const (ival==1) → value; export function → fn+arity.
+# Register a dependency PROGRAM's top-level symbols into ctx seed table.
+# Visibility matches the Python host (module_resolver.py puts every
+# declaration of an imported module into the program): every const is a
+# value and every function, exported or not, is fn+arity. `export` marks a
+# module's public API; it does not hide the rest from a bundle. When two
+# modules define a private function with the same name, each module's own
+# calls reach its own definition (#950 renames the later one in C).
 # export struct: not seeded yet — Stage-A does not validate annotation type names
 # (let t: Token), and field/struct-lit checks only scan the local arena for
 # AST_STRUCT. Seeding nk=0 would not wire find_struct across modules.
@@ -1072,16 +1071,24 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
     while item != AST_NONE {
         let kind: i32 = dep_arena.nodes[item].kind
         if kind == AST_CONST {
-            if dep_arena.nodes[item].ival == 1 {
-                # Value binding; type node id not portable across arenas → -1.
-                flowc_tc_seed_bind(
-                    ctx,
-                    dep_src,
-                    dep_arena.nodes[item].name_start,
-                    dep_arena.nodes[item].name_end,
-                    0,
-                    -1
-                )
+            # Value binding; type node id not portable across arenas → -1.
+            flowc_tc_seed_bind(
+                ctx,
+                dep_src,
+                dep_arena.nodes[item].name_start,
+                dep_arena.nodes[item].name_end,
+                0,
+                -1
+            )
+        }
+        # A plain `function` is visible to importers too, as on the Python
+        # host (#988). An imported module's `main` is its own entry point.
+        if kind == AST_FN {
+            let fns: i32 = dep_arena.nodes[item].name_start
+            let fne: i32 = dep_arena.nodes[item].name_end
+            if fne > fns and flowc_tc_span_is(dep_src, fns, fne, "main") == 0 {
+                let farity: i32 = flowc_ast_chain_len(dep_arena, dep_arena.nodes[item].a)
+                flowc_tc_seed_bind(ctx, dep_src, fns, fne, 1, farity)
             }
         }
         if kind == AST_LET {
@@ -1112,9 +1119,9 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
 export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     # Bundle-checking `main.flow` seeds every frontend export then binds
     # main's own symbols — 512 was too small (silent tc_errs=1).
-    let ncap: i32 = 4096
+    let ncap: i32 = 8192
     let mcap: i32 = 128
-    let seed_cap: i32 = 32768
+    let seed_cap: i32 = 131072
     let overload_arg_cap: i32 = 128
     let mut overloads: FlowcOverloadTable = flowc_overload_table_init(src, ncap)
     let mut overload_scratch: FlowcOverloadCallScratch = flowc_overload_call_scratch_init(overload_arg_cap)

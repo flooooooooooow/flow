@@ -837,7 +837,7 @@ export function flowc_natural_claim_sentence(means: string, claim_expr: string) 
             return "Anything is always equal to itself."
         }
         if strcmp(key, "a or b = b or a") == 0 {
-            return "Order doesn't matter for or — either way you get the same truth."
+            return "Order doesn't matter for or. Either way you get the same truth."
         }
         if strcmp(key, "sq >= 0") == 0 {
             return "Squaring never gives you a negative number."

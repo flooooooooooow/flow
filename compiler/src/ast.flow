@@ -64,6 +64,11 @@ export const AST_EFFECT_OP: i32 = 50
 # c = AST_NONE as initialized by flowc_ast_alloc.
 export const AST_TYPE_SPAN_MUTABLE: i32 = 1
 
+# AST_IDENT.ival marker for a sort DSL modifier (`xs |> sort descending`).
+# Only the pipeline lowering sets it, so `descending`, `desc`, `unique` and
+# the other modifier words stay ordinary names everywhere else (#968, #994).
+export const AST_IDENT_SORT_MOD: i32 = 1
+
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
 # AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array size

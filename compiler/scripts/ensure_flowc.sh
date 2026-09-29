@@ -80,7 +80,11 @@ roundtrip_python() {
     echo "ensure_flowc: bootstrapping Gen0 (Python host)..." >&2
     chmod +x ./flow compiler/scripts/*.sh
     # Bootstrap must use the Python host (Gen0); avoid recurse via FLOW_HOST=flowc.
-    FLOW_HOST=python ./compiler/scripts/roundtrip.sh >/dev/null
+    # Every `./flow run` inside the roundtrip asks for a flowc again (the
+    # dependency check is a flowc-built tool), so mark the roundtrip as
+    # running: nested calls take the checked-in bootstrap C instead of
+    # starting another roundtrip, which recursed without bound.
+    FLOWC_ENSURE_ROUNDTRIP=1 FLOW_HOST=python ./compiler/scripts/roundtrip.sh >/dev/null
     if ! pick_selfhosted >/dev/null; then
         echo "ensure_flowc: bootstrap finished but no fresh stage_a_driver* binary found" >&2
         exit 1
@@ -92,6 +96,16 @@ roundtrip_python() {
 if pick_selfhosted >/dev/null; then
     pick_selfhosted
     exit 0
+fi
+
+# Called from inside roundtrip_python: never start a second roundtrip.
+if [[ -n "${FLOWC_ENSURE_ROUNDTRIP:-}" && -f "$BOOT_C" ]]; then
+    if build_bootstrap; then
+        printf '%s\n' "$BOOT_BIN"
+        exit 0
+    fi
+    echo "ensure_flowc: bootstrap C did not build" >&2
+    exit 1
 fi
 
 have_python=0

@@ -19,7 +19,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 START = "<!-- repo-stats:start -->"
 END = "<!-- repo-stats:end -->"
-NO_LINES = "n/a"
+NO_LINES = "-"
 
 
 @pytest.fixture(scope="module")

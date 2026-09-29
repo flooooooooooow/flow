@@ -1,0 +1,25 @@
+# `return not <expr>` parses on Stage-A (#963).
+
+function neither(a: bool, b: bool) -> bool {
+    return not (a or b)
+}
+
+function flip(a: bool) -> bool {
+    return not a
+}
+
+function main() -> i32 {
+    if neither(false, false) == false {
+        return 1
+    }
+    if neither(true, false) {
+        return 2
+    }
+    if flip(true) {
+        return 3
+    }
+    if flip(false) == false {
+        return 4
+    }
+    return 0
+}

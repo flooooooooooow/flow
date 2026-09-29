@@ -1,0 +1,354 @@
+# Binary operator precedence matches the Python host (#995).
+# Loosest to tightest: or, and, |, ^, &, == !=, < <= > >= in, << >>, + -,
+# * / %. Every pair of integer operators is checked as `a op1 b op2 c`,
+# and the comparison levels are checked against shifts and bitwise ops.
+# Before #995 flowc put | ^ & << >> on one level below comparisons.
+
+function int_pairs(a: i32, b: i32, c: i32) -> i32 {
+    if (a | b | c) != 15 {
+        return 1
+    }
+    if (a | b ^ c) != 13 {
+        return 2
+    }
+    if (a | b & c) != 15 {
+        return 3
+    }
+    if (a | b << c) != 61 {
+        return 4
+    }
+    if (a | b >> c) != 13 {
+        return 5
+    }
+    if (a | b + c) != 13 {
+        return 6
+    }
+    if (a | b - c) != 15 {
+        return 7
+    }
+    if (a | b * c) != 31 {
+        return 8
+    }
+    if (a | b / c) != 15 {
+        return 9
+    }
+    if (a | b % c) != 13 {
+        return 10
+    }
+    if (a ^ b | c) != 11 {
+        return 11
+    }
+    if (a ^ b ^ c) != 8 {
+        return 12
+    }
+    if (a ^ b & c) != 15 {
+        return 13
+    }
+    if (a ^ b << c) != 61 {
+        return 14
+    }
+    if (a ^ b >> c) != 13 {
+        return 15
+    }
+    if (a ^ b + c) != 4 {
+        return 16
+    }
+    if (a ^ b - c) != 14 {
+        return 17
+    }
+    if (a ^ b * c) != 31 {
+        return 18
+    }
+    if (a ^ b / c) != 15 {
+        return 19
+    }
+    if (a ^ b % c) != 13 {
+        return 20
+    }
+    if (a & b | c) != 7 {
+        return 21
+    }
+    if (a & b ^ c) != 7 {
+        return 22
+    }
+    if (a & b & c) != 0 {
+        return 23
+    }
+    if (a & b << c) != 0 {
+        return 24
+    }
+    if (a & b >> c) != 0 {
+        return 25
+    }
+    if (a & b + c) != 9 {
+        return 26
+    }
+    if (a & b - c) != 1 {
+        return 27
+    }
+    if (a & b * c) != 0 {
+        return 28
+    }
+    if (a & b / c) != 0 {
+        return 29
+    }
+    if (a & b % c) != 0 {
+        return 30
+    }
+    if (a << b | c) != 835 {
+        return 31
+    }
+    if (a << b ^ c) != 835 {
+        return 32
+    }
+    if (a << b & c) != 0 {
+        return 33
+    }
+    if (a << b << c) != 6656 {
+        return 34
+    }
+    if (a << b >> c) != 104 {
+        return 35
+    }
+    if (a << b + c) != 6656 {
+        return 36
+    }
+    if (a << b - c) != 104 {
+        return 37
+    }
+    if (a << b * c) != 3407872 {
+        return 38
+    }
+    if (a << b / c) != 52 {
+        return 39
+    }
+    if (a << b % c) != 13 {
+        return 40
+    }
+    if (a >> b | c) != 3 {
+        return 41
+    }
+    if (a >> b ^ c) != 3 {
+        return 42
+    }
+    if (a >> b & c) != 0 {
+        return 43
+    }
+    if (a >> b << c) != 0 {
+        return 44
+    }
+    if (a >> b >> c) != 0 {
+        return 45
+    }
+    if (a >> b + c) != 0 {
+        return 46
+    }
+    if (a >> b - c) != 1 {
+        return 47
+    }
+    if (a >> b * c) != 0 {
+        return 48
+    }
+    if (a >> b / c) != 3 {
+        return 49
+    }
+    if (a >> b % c) != 13 {
+        return 50
+    }
+    if (a + b | c) != 19 {
+        return 51
+    }
+    if (a + b ^ c) != 16 {
+        return 52
+    }
+    if (a + b & c) != 3 {
+        return 53
+    }
+    if (a + b << c) != 152 {
+        return 54
+    }
+    if (a + b >> c) != 2 {
+        return 55
+    }
+    if (a + b + c) != 22 {
+        return 56
+    }
+    if (a + b - c) != 16 {
+        return 57
+    }
+    if (a + b * c) != 31 {
+        return 58
+    }
+    if (a + b / c) != 15 {
+        return 59
+    }
+    if (a + b % c) != 13 {
+        return 60
+    }
+    if (a - b | c) != 7 {
+        return 61
+    }
+    if (a - b ^ c) != 4 {
+        return 62
+    }
+    if (a - b & c) != 3 {
+        return 63
+    }
+    if (a - b << c) != 56 {
+        return 64
+    }
+    if (a - b >> c) != 0 {
+        return 65
+    }
+    if (a - b + c) != 10 {
+        return 66
+    }
+    if (a - b - c) != 4 {
+        return 67
+    }
+    if (a - b * c) != -5 {
+        return 68
+    }
+    if (a - b / c) != 11 {
+        return 69
+    }
+    if (a - b % c) != 13 {
+        return 70
+    }
+    if (a * b | c) != 79 {
+        return 71
+    }
+    if (a * b ^ c) != 77 {
+        return 72
+    }
+    if (a * b & c) != 2 {
+        return 73
+    }
+    if (a * b << c) != 624 {
+        return 74
+    }
+    if (a * b >> c) != 9 {
+        return 75
+    }
+    if (a * b + c) != 81 {
+        return 76
+    }
+    if (a * b - c) != 75 {
+        return 77
+    }
+    if (a * b * c) != 234 {
+        return 78
+    }
+    if (a * b / c) != 26 {
+        return 79
+    }
+    if (a * b % c) != 0 {
+        return 80
+    }
+    if (a / b | c) != 3 {
+        return 81
+    }
+    if (a / b ^ c) != 1 {
+        return 82
+    }
+    if (a / b & c) != 2 {
+        return 83
+    }
+    if (a / b << c) != 16 {
+        return 84
+    }
+    if (a / b >> c) != 0 {
+        return 85
+    }
+    if (a / b + c) != 5 {
+        return 86
+    }
+    if (a / b - c) != -1 {
+        return 87
+    }
+    if (a / b * c) != 6 {
+        return 88
+    }
+    if (a / b / c) != 0 {
+        return 89
+    }
+    if (a / b % c) != 2 {
+        return 90
+    }
+    if (a % b | c) != 3 {
+        return 91
+    }
+    if (a % b ^ c) != 2 {
+        return 92
+    }
+    if (a % b & c) != 1 {
+        return 93
+    }
+    if (a % b << c) != 8 {
+        return 94
+    }
+    if (a % b >> c) != 0 {
+        return 95
+    }
+    if (a % b + c) != 4 {
+        return 96
+    }
+    if (a % b - c) != -2 {
+        return 97
+    }
+    if (a % b * c) != 3 {
+        return 98
+    }
+    if (a % b / c) != 0 {
+        return 99
+    }
+    if (a % b % c) != 1 {
+        return 100
+    }
+    return 0
+}
+
+function cmp_levels(a: i32, b: i32) -> i32 {
+    # Shifts bind tighter than comparisons: (a << 1) < b.
+    if a << 1 < b {
+        return 1
+    }
+    if b > a >> 2 == false {
+        return 2
+    }
+    # Comparisons bind tighter than equality: (a < b) == (b < a) is false.
+    if a < b == b < a {
+        return 3
+    }
+    # Equality binds tighter than &: t & (f == f).
+    let t: bool = true
+    let f: bool = false
+    if (t & f == f) == false {
+        return 4
+    }
+    # Equality binds tighter than |: t | (f == f).
+    if (t | f == f) == false {
+        return 5
+    }
+    # & binds tighter than ^, ^ tighter than |: 1 | (2 ^ (3 & 1)).
+    if (1 | 2 ^ 3 & 1) != 3 {
+        return 6
+    }
+    # and binds tighter than or.
+    if (t or f and f) == false {
+        return 7
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let r: i32 = int_pairs(13, 6, 3)
+    if r != 0 {
+        return r
+    }
+    let q: i32 = cmp_levels(13, 6)
+    if q != 0 {
+        return 200 + q
+    }
+    return 0
+}
