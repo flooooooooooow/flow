@@ -3973,9 +3973,11 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 }
             }
         }
-        # `!(a < b)`: comparison children print without parentheses, so a
-        # binary operand needs its own or C reads `!a < b`.
-        if arena.nodes[arena.nodes[id].a].kind == AST_BINOP {
+        # `!(a < b)`: comparison children print without parentheses, so any
+        # operand that is not a primary gets its own, or C reads `!a < b`
+        # (#1017). `-(-x)` would otherwise also read as `--x`.
+        let uk: i32 = arena.nodes[arena.nodes[id].a].kind
+        if uk != AST_IDENT and uk != AST_INT and uk != AST_FLOAT and uk != AST_BOOL and uk != AST_STRING and uk != AST_CALL and uk != AST_INDEX and uk != AST_FIELD_ACCESS {
             flowc_cgen_putc(w, 40)
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_putc(w, 41)
