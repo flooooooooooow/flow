@@ -915,7 +915,7 @@ function wgsl_kernel(g: ptr<Gen>, f: i32, name: string) -> string {
     let mut tb: TBuf = tb_new()
     tb_puts(&tb, "// Generated from Flow @gpu function `")
     tb_puts(&tb, name)
-    tb_puts(&tb, "` by src/flow/wgsl_codegen.py\nconst WORKGROUP_SIZE: i32 = 64;\n\n")
+    tb_puts(&tb, "` by tools/gpu/main.flow\nconst WORKGROUP_SIZE: i32 = 64;\n\n")
     let mut binding: i32 = 0
     p = fn_params(g, f)
     while p != AST_NONE {

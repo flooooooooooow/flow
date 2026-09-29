@@ -1,4 +1,4 @@
-// Generated from Flow @gpu function `four_scalars` by src/flow/wgsl_codegen.py
+// Generated from Flow @gpu function `four_scalars` by tools/gpu/main.flow
 const WORKGROUP_SIZE: i32 = 64;
 
 @group(0) @binding(0) var<storage, read_write> a: array<f32>;

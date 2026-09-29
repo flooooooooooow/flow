@@ -53,7 +53,8 @@ fi
 
 normalise() {
     # Absolute paths of this checkout (or the recording tree) become @ROOT@.
-    sed -e "s|$driver_root|@ROOT@|g" -e "s|$ROOT|@ROOT@|g"
+    # The shaders credit tools/gpu/main.flow where they credited the Python file.
+    sed -e "s|$driver_root|@ROOT@|g" -e "s|$ROOT|@ROOT@|g" -e "s|by src/flow/wgsl_codegen.py|by tools/gpu/main.flow|g"
 }
 
 pass=0

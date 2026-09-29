@@ -1,4 +1,4 @@
-// Generated from Flow @gpu function `estimator` by src/flow/wgsl_codegen.py
+// Generated from Flow @gpu function `estimator` by tools/gpu/main.flow
 const WORKGROUP_SIZE: i32 = 64;
 
 @group(0) @binding(0) var<storage, read> input: array<f32>;

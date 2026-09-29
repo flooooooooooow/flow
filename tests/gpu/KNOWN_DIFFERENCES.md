@@ -14,6 +14,8 @@ golden holds the Flow tool's output.
   line, `error: <message>`, with the same exit status 1. The shaders written
   before the failing kernel stay written, as before. The goldens for these
   cases were recorded from Python with the traceback reduced to that line.
+- The first line of every WGSL shader credits `tools/gpu/main.flow` where it
+  credited `src/flow/wgsl_codegen.py`. The recording applies that rename.
 - The Python module resolver wrote a `.flow_cache/` directory of pickled
   syntax trees next to the program. The Flow tool writes no cache.
 

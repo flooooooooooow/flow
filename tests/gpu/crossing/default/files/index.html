@@ -45,7 +45,7 @@ inside WASM, so the two columns are the same arithmetic on two machines.
 <pre id="out">click run</pre>
 
 <h2>Generated WGSL (first kernel)</h2>
-<pre class="source">// Generated from Flow @gpu function `gpu_vector_add` by src/flow/wgsl_codegen.py
+<pre class="source">// Generated from Flow @gpu function `gpu_vector_add` by tools/gpu/main.flow
 const WORKGROUP_SIZE: i32 = 64;
 
 @group(0) @binding(0) var&lt;storage, read&gt; a: array&lt;f32&gt;;
