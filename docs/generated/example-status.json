@@ -1,9 +1,8 @@
 {
   "generated": "2026-09-29",
   "totals": {
-    "verified": 618,
-    "expected-error": 9,
-    "unverified": 6,
+    "verified": 623,
+    "expected-error": 10,
     "ignored": 2
   },
   "blocks": [
@@ -162,7 +161,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0ab0dffe953c",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 356,
+      "line": 360,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -170,7 +169,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#fcedd2b3013d",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 373,
+      "line": 377,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -178,7 +177,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0b59ab2e6047",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 424,
+      "line": 428,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -186,7 +185,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#100cfe4eeb26",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 448,
+      "line": 452,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -194,7 +193,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#8b941731e66d",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 607,
+      "line": 614,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -202,7 +201,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#e3d945b4e92e",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 714,
+      "line": 721,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -210,7 +209,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#4bd6f3746d63",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 793,
+      "line": 800,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -218,7 +217,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#f5fec4e3617b",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 820,
+      "line": 827,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -226,7 +225,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0a1aaa9252df",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 853,
+      "line": 860,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -234,7 +233,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 945,
+      "line": 952,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -242,7 +241,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1038,
+      "line": 1045,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -842,7 +841,7 @@
     {
       "key": "docs/book/09-expressions-and-matching.md#745e13ba5903",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 241,
+      "line": 247,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -850,7 +849,7 @@
     {
       "key": "docs/book/09-expressions-and-matching.md#6b49c0dd6ec2",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 260,
+      "line": 266,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -858,7 +857,7 @@
     {
       "key": "docs/book/09-expressions-and-matching.md#5f51b5b0f742",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 271,
+      "line": 277,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -1090,7 +1089,7 @@
     {
       "key": "docs/book/17-engineering-and-verification.md#c1641da9bd25",
       "path": "docs/book/17-engineering-and-verification.md",
-      "line": 178,
+      "line": 177,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1899,7 +1898,7 @@
       "key": "docs/language/modules-namespacing.md#7336d9635cd6",
       "path": "docs/language/modules-namespacing.md",
       "line": 120,
-      "status": "unverified",
+      "status": "expected-error",
       "stage": "types",
       "detail": "flowc: flowc gather: block.flow: cannot resolve import .alpha"
     },
@@ -2000,18 +1999,17 @@
       "stage": "shader"
     },
     {
-      "key": "docs/language/spans.md#3ae148c11ab1",
+      "key": "docs/language/spans.md#47009bd825c0",
       "path": "docs/language/spans.md",
       "line": 19,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "unknown type name 'Vec'"
+      "stage": "codegen"
     },
     {
       "key": "docs/language/spans.md#ad33eb3de2cd",
       "path": "docs/language/spans.md",
-      "line": 32,
+      "line": 37,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2019,7 +2017,7 @@
     {
       "key": "docs/language/spans.md#518e6950c187",
       "path": "docs/language/spans.md",
-      "line": 56,
+      "line": 61,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2027,7 +2025,7 @@
     {
       "key": "docs/language/spans.md#0e64ed1280d5",
       "path": "docs/language/spans.md",
-      "line": 70,
+      "line": 75,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2035,7 +2033,7 @@
     {
       "key": "docs/language/spans.md#ab7bd3a2db8d",
       "path": "docs/language/spans.md",
-      "line": 99,
+      "line": 104,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2043,7 +2041,7 @@
     {
       "key": "docs/language/spans.md#f20af5f97f03",
       "path": "docs/language/spans.md",
-      "line": 165,
+      "line": 170,
       "status": "expected-error",
       "stage": "types",
       "detail": "span outlives borrowed storage `local` at line 3, column 5"
@@ -2051,7 +2049,7 @@
     {
       "key": "docs/language/spans.md#82181f61c982",
       "path": "docs/language/spans.md",
-      "line": 233,
+      "line": 238,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2073,18 +2071,17 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/language/syntax.md#262453d93453",
+      "key": "docs/language/syntax.md#cbea162176fe",
       "path": "docs/language/syntax.md",
       "line": 156,
-      "status": "unverified",
-      "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "use of undeclared identifier 'Point'"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/language/syntax.md#0c049903ce23",
       "path": "docs/language/syntax.md",
-      "line": 161,
+      "line": 166,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -2604,7 +2601,7 @@
     {
       "key": "docs/project/CHANGELOG.md#d40e0f3ed5e8",
       "path": "docs/project/CHANGELOG.md",
-      "line": 132,
+      "line": 135,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -2741,10 +2738,9 @@
       "key": "docs/tutorials/algorithms.md#fa113546a761",
       "path": "docs/tutorials/algorithms.md",
       "line": 10,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "too few arguments to function call, expected 5, have 3"
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/algorithms.md#15e4a88571bc",
@@ -3854,19 +3850,17 @@
       "key": "docs/tutorials/intermediate.md#8a0c10805627",
       "path": "docs/tutorials/intermediate.md",
       "line": 9,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "use of undeclared identifier 'T'"
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/intermediate.md#3e2a4de1f9a3",
       "path": "docs/tutorials/intermediate.md",
       "line": 32,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "use of undeclared identifier 'Box'"
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/intermediate.md#e016a40dd513",
