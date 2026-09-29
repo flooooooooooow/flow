@@ -73,6 +73,7 @@ compiler/fixtures/choose_uninferrable.flow	reject	-	-	-	Error resolving modules:
 compiler/fixtures/dynamics_dsl/err_key_sense.flow	reject	-	-	-	Error resolving modules: 'X'
 compiler/fixtures/dynamics_dsl/err_lqr_unknown_dsys.flow	reject	-	-	-	Error resolving modules: analyze c lqr: unknown dsys 'X'
 compiler/fixtures/dynamics_dsl/ex_chain4_lqr.flow	ok	0	2325723701-189	det	-
+compiler/fixtures/dynamics_dsl/ex_dsl.flow	ccfail	-	-	-	error: member reference base type 'X' (aka 'X') is not a structure or union
 compiler/fixtures/dynamics_dsl/ex_ga_dsys_namespaced.flow	ok	0	221463335-153	det	-
 compiler/fixtures/dynamics_dsl/ex_ga_dsys_syntax.flow	ok	0	2121605630-466	det	-
 compiler/fixtures/dynamics_dsl/ex_ga_wfc_coupled.flow	ok	0	843727162-415	det	-
@@ -133,9 +134,17 @@ compiler/fixtures/field_dsl/ok_unknown_evolve.flow	reject	-	-	-	Error resolving 
 compiler/fixtures/flow_blocks/ok_short_block.flow	ok	0	4294967295-0	det	-
 compiler/fixtures/flow_blocks/run_features.flow	ok	0	1102327010-129	det	-
 compiler/fixtures/flow_blocks/run_invariant.flow	ok	1	1862501881-137	det	-
+compiler/fixtures/fmt/messy.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.alpha' from compiler/fixtures/fmt
 compiler/fixtures/fork_uninferrable.flow	reject	-	-	-	Error resolving modules: Error: cannot infer the type of fork field 'X' (line 7): an anonymous fork record's fields must end in a function whose return type is 
 compiler/fixtures/hello_subset.flow	ok	42	4294967295-0	det	-
 compiler/fixtures/keyword_param.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.TO at line 3, column 27
+compiler/fixtures/mlir/arith.flow	ok	0	1008032064-104	det	-
+compiler/fixtures/mlir/arrays.flow	ok	0	2337226869-35	det	-
+compiler/fixtures/mlir/consts_calls.flow	ok	0	2974607529-45	det	-
+compiler/fixtures/mlir/control.flow	ok	0	751294313-31	det	-
+compiler/fixtures/mlir/loops.flow	ok	0	540106921-28	det	-
+compiler/fixtures/mlir/print_logic.flow	ok	0	614828401-144	det	-
+compiler/fixtures/mlir/structs.flow	ok	0	599027124-68	det	-
 compiler/fixtures/pkg_add/main.flow	ok	42	4294967295-0	det	-
 compiler/fixtures/shader_dsl/err_plain.flow	ok	0	4294967295-0	det	-
 compiler/fixtures/shader_dsl/ok_host_flow.flow	ok	0	4294967295-0	det	-
@@ -169,7 +178,7 @@ compiler/fixtures/units_sin_length.flow	ok	0	4294967295-0	det	-
 compiler/fixtures/units_unknown_factor.flow	ok	0	4294967295-0	det	-
 compiler/src/driver.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
 compiler/src/dynamics_dsl.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
-compiler/src/main.flow	ok	0	19129927-11290	det	-
+compiler/src/main.flow	ok	0	949181729-12593	det	-
 compiler/src/pkg_main.flow	reject	-	-	-	Error resolving modules: Invalid escape sequence: \x
 compiler/src/shader_dsl.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
 compiler/src/test_parser.flow	ok	0	3546224504-114	det	-
@@ -730,6 +739,7 @@ tests/fixtures/modules/consumer_sibling.flow	ok	42	4294967295-0	det	-
 tests/fixtures/modules/testlib/with_main.flow	ok	7	567710023-18	det	-
 tests/fixtures/time_header_externs.flow	ok	0	4294967295-0	det	-
 tests/lang/test_arithmetic.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_ctor.flow	ok	0	4294967295-0	det	-
 tests/lang/test_array_literal_argument.flow	ok	0	4294967295-0	det	-
 tests/lang/test_array_repeat.flow	ok	0	4294967295-0	det	-
 tests/lang/test_array_return_values.flow	ok	0	4294967295-0	det	-
@@ -756,6 +766,7 @@ tests/lang/test_c_parser.flow	ok	0	3377777364-129	det	-
 tests/lang/test_c_type_map.flow	ok	0	1203933046-174	det	-
 tests/lang/test_cast_in_string_concat.flow	ok	0	4294967295-0	det	-
 tests/lang/test_check_duplicates.flow	ok	0	965631990-36	det	-
+tests/lang/test_cimport_system.flow	ok	0	4294967295-0	det	-
 tests/lang/test_claim_address_phrase.flow	ok	0	1276990362-38	det	-
 tests/lang/test_claim_path_latex.flow	ok	0	3683972964-34	det	-
 tests/lang/test_claim_path_tier.flow	ok	0	3884404096-33	det	-
@@ -790,10 +801,12 @@ tests/lang/test_fir_opts.flow	ok	0	4284065851-26	det	-
 tests/lang/test_fir_route.flow	ok	0	445430385-27	det	-
 tests/lang/test_flowlm.flow	ok	0	209375144-50	det	-
 tests/lang/test_fn_ptr.flow	ok	0	597997046-24	det	-
+tests/lang/test_for_direction.flow	ok	0	4294967295-0	det	-
 tests/lang/test_for_step.flow	ok	0	362090265-113	det	-
 tests/lang/test_function_as_value.flow	ok	0	2889611929-52	det	-
 tests/lang/test_function_attributes.flow	ok	0	4294967295-0	det	-
 tests/lang/test_functions.flow	ok	0	4294967295-0	det	-
+tests/lang/test_ga_hash.flow	ok	0	4294967295-0	det	-
 tests/lang/test_general_plans.flow	ok	0	1657905216-31	det	-
 tests/lang/test_generic_channels.flow	ok	0	4294967295-0	det	-
 tests/lang/test_generic_explicit_call.flow	ok	0	4294967295-0	det	-
@@ -813,6 +826,7 @@ tests/lang/test_know.flow	ok	0	857402579-22	det	-
 tests/lang/test_len_sized_array.flow	ok	0	4294967295-0	det	-
 tests/lang/test_libc_builtins.flow	ok	0	3528022634-17	det	-
 tests/lang/test_libc_externs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_libc_named_user.flow	ok	0	4294967295-0	det	-
 tests/lang/test_libc_names_return_void.flow	ok	0	4294967295-0	det	-
 tests/lang/test_lifetime_domains.flow	ok	0	4294967295-0	det	-
 tests/lang/test_loops.flow	ok	0	4294967295-0	det	-
@@ -831,6 +845,7 @@ tests/lang/test_max_iterations_abort.flow	ok	134	4294967295-0	det	-
 tests/lang/test_max_iterations_bound.flow	ok	134	4294967295-0	det	-
 tests/lang/test_memref_param.flow	ok	0	4294967295-0	det	-
 tests/lang/test_method_ptr_receiver.flow	ok	0	4294967295-0	det	-
+tests/lang/test_method_recv_import.flow	ok	0	4294967295-0	det	-
 tests/lang/test_misra_scan.flow	ok	0	2954167854-28	det	-
 tests/lang/test_mod_int_by_float.flow	ok	0	4294967295-0	det	-
 tests/lang/test_module_statics.flow	ok	0	4294967295-0	det	-
@@ -1015,6 +1030,23 @@ tests/stdlib/test_tensor.flow	ok	0	4294967295-0	det	-
 tests/stdlib/test_wfc_collapse_index.flow	ok	0	4294967295-0	det	-
 tests/stdlib/test_wfc_ga_coupling.flow	ok	0	4294967295-0	det	-
 tests/test_synth_dummy.flow	ok	0	4294967295-0	det	-
+tests/tools/lsp/fixtures/clean.flow	ok	0	4294967295-0	det	-
+tests/tools/lsp/fixtures/clean_commented.flow	ok	0	4294967295-0	det	-
+tests/tools/lsp/fixtures/compl_ad.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/compl_an.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/const_effect.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/docfn.flow	ok	42	4294967295-0	det	-
+tests/tools/lsp/fixtures/dsl.flow	ccfail	-	-	-	error: member reference base type 'X' (aka 'X') is not a structure or union
+tests/tools/lsp/fixtures/field.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/field_dot.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.RBRACE at line 6, column 1
+tests/tools/lsp/fixtures/idiom.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/idiom_allow.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/match.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.LBRACE, got TokenType.FAT_ARROW at line 3, column 17
+tests/tools/lsp/fixtures/messy.flow	ok	1	4294967295-0	det	-
+tests/tools/lsp/fixtures/sin_call.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/stdlib_add.flow	ccfail	-	-	-	error: 'X' must return 'X'
+tests/tools/lsp/fixtures/typed_local.flow	ok	3	4294967295-0	det	-
+tools/lsp/main.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.HANDLE at line 2051, column 10
 tools/python_ratchet/main.flow	ok	138	4294967295-0	det	-
 tools/repl/main.flow	reject	-	-	-	Error resolving modules: Invalid escape sequence: \x
 tools/test_reverb.flow	ok	0	1969865335-36	det	-
