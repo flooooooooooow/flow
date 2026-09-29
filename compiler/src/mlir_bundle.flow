@@ -33,7 +33,6 @@ extern {
     function puts(s: string) -> i32
     function printf(fmt: string, ...) -> i32
     function getenv(name: string) -> string
-    function getcwd(buf: ptr<u8>, size: i64) -> ptr<u8>
 }
 
 const MB_MAX_MODS: i32 = 256
@@ -147,12 +146,16 @@ function mb_realpath(p: string, out: ptr<u8>) -> i32 {
     let pp: ptr<u8> = p
     let mut o: i32 = 0
     if pp[0] != 47 {
-        let cwd: ptr<u8> = getcwd(raw, MB_PATH as i64)
-        if cwd == null {
+        # The shell's working directory. getcwd() would pull unistd.h into
+        # the C the Python host builds for flowc, whose `write` extern
+        # (proof_doc.flow) then clashes with it.
+        let cwd: string = getenv("PWD")
+        let cp: ptr<u8> = cwd
+        if cp == null or cp[0] != 47 {
             free(raw)
             return 0
         }
-        o = mb_cstr_len(raw)
+        o = mb_put(raw, 0, MB_PATH * 2, cp, mb_cstr_len(cp))
         o = mb_puts(raw, o, MB_PATH * 2, "/")
     }
     o = mb_put(raw, o, MB_PATH * 2, pp, mb_cstr_len(pp))
