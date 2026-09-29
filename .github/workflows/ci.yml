@@ -297,10 +297,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # roundtrip.sh still uses compiler/scripts/flowc_c_to_hdr.py for the
-      # per-module headers. The compiler host is flowc built from compiler/src
-      # by the bootstrap binary (compiler/scripts/flowc_host.sh).
-      - uses: ./.github/actions/setup-python
+      # No Python: the compiler host is flowc built from compiler/src by the
+      # bootstrap binary (compiler/scripts/flowc_host.sh), and the per-module
+      # headers come from the Flow tool scripts/tools/c_to_hdr.
+      - name: c_to_hdr goldens
+        run: |
+          chmod +x tests/c_to_hdr/run.sh scripts/tools/build_tool.sh
+          ./tests/c_to_hdr/run.sh
 
       - name: Stage-A/B self-host roundtrip
         run: |

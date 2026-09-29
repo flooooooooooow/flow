@@ -12,6 +12,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# Header derivation (scripts/tools/c_to_hdr). roundtrip.sh builds it once and
+# exports the path; run alone, this script builds it (cached).
+C_TO_HDR="${C_TO_HDR:-$ROOT/$(./scripts/tools/build_tool.sh c_to_hdr)}"
 mkdir -p compiler/build/pkg_add
 # flowc built from the current compiler/src by the checked-in bootstrap
 # (compiler/scripts/flowc_host.sh). It stands in for the retired Python host.
@@ -80,7 +83,7 @@ fi
 
 cc -O0 -c "$BUILD/math.c" -o "$BUILD/math.o"
 # Prototype for imported `add` (imports skipped at emit: supply via sibling header).
-python3 compiler/scripts/flowc_c_to_hdr.py "$BUILD/math.c" "$BUILD/math.h"
+"$C_TO_HDR" "$BUILD/math.c" "$BUILD/math.h"
 cc -O0 -c -include "$BUILD/math.h" "$BUILD/main.c" -o "$BUILD/main.o"
 cc -O0 -o "$BUILD/pkg_add" "$BUILD/main.o" "$BUILD/math.o"
 

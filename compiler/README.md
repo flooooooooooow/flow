@@ -92,7 +92,7 @@ deps-first with a growing seed of dependency exports (`FLOWC_TYPECHECK=0` opts o
 `flowc_cgen_emit_ex(..., flags)` with `flags&1` skips duplicate `#include`
 preambles after the first module. Dotted `import pkg.mod` is skipped for now.
 Bundle can also emit a real frontend pair (`lexer.flow` → `token.flow` +
-`lexer.flow` in one TU) so `cc -c` needs no `flowc_c_to_hdr.py` `-include`.
+`lexer.flow` in one TU) so `cc -c` needs no `scripts/tools/c_to_hdr` `-include`.
 **`FLOWC_BUNDLE=1` + typecheck also covers `compiler/src/main.flow`** (inferred
 `let` + larger src/AST caps; Stage-A gap slice for self-hosting Phase B).
 
@@ -136,7 +136,7 @@ FLOWC_RESOLVE_IMPORTS=1 ./compiler/scripts/stage_a_link_two.sh
 
 Expect `pkg_add exit=42` (`add(40, 2)`). Fixture: [`fixtures/pkg_add/math.flow`](fixtures/pkg_add/math.flow) + [`fixtures/pkg_add/main.flow`](fixtures/pkg_add/main.flow).
 
-Stage-A dogfoods `token` + `ast` + `lexer` + `fileio` + `parser` + `cgen` + `typecheck` + `resolve` as C objects (`lexer`/`parser`/`cgen`/`typecheck`/`resolve` compile with headers derived via `scripts/flowc_c_to_hdr.py`; `extern` blocks get `#include <stdio.h>` + `#include <string.h>`). Ends with a relocatable link smoke (`cc -r` → `compiler/build/flowc_frontend.o`) so cross-module symbols resolve, then builds both Stage-A drivers (C host + Flow-written `driver.flow` with CLI argv) and smokes `stage_a_sum` → exit `45`. Roundtrip finishes with a mini self-host (`scripts/stage_a_self_emit.sh`): prefers Flow `stage_a_driver_flow` CLI (C driver fallback) to re-emit those eight frontend sources → `cc -c` → `flowc_frontend_self.o`, then emits `driver.flow` → `self_driver.o` and links **Stage-A Flow driver + self frontend** (`stage_a_driver_flow_self`): smoke `stage_a_sum` → exit `45`. Gen2 (`scripts/stage_a_self_emit_g2.sh`): `self.o` drives another emit → `flowc_frontend_g2.o`, then `cmp` fixed-point (`self.o` == `g2.o`), C `stage_a_driver_g2` + Flow `stage_a_driver_flow_g2` smokes (`stage_a_sum` → exit `45`), and a gen3 token emit that must match `self_token.c` / `g2_token.c`.
+Stage-A dogfoods `token` + `ast` + `lexer` + `fileio` + `parser` + `cgen` + `typecheck` + `resolve` as C objects (`lexer`/`parser`/`cgen`/`typecheck`/`resolve` compile with headers derived via the Flow tool `scripts/tools/c_to_hdr`; `extern` blocks get `#include <stdio.h>` + `#include <string.h>`). Ends with a relocatable link smoke (`cc -r` → `compiler/build/flowc_frontend.o`) so cross-module symbols resolve, then builds both Stage-A drivers (C host + Flow-written `driver.flow` with CLI argv) and smokes `stage_a_sum` → exit `45`. Roundtrip finishes with a mini self-host (`scripts/stage_a_self_emit.sh`): prefers Flow `stage_a_driver_flow` CLI (C driver fallback) to re-emit those eight frontend sources → `cc -c` → `flowc_frontend_self.o`, then emits `driver.flow` → `self_driver.o` and links **Stage-A Flow driver + self frontend** (`stage_a_driver_flow_self`): smoke `stage_a_sum` → exit `45`. Gen2 (`scripts/stage_a_self_emit_g2.sh`): `self.o` drives another emit → `flowc_frontend_g2.o`, then `cmp` fixed-point (`self.o` == `g2.o`), C `stage_a_driver_g2` + Flow `stage_a_driver_flow_g2` smokes (`stage_a_sum` → exit `45`), and a gen3 token emit that must match `self_token.c` / `g2_token.c`.
 
 ### Stage-A driver (`flowc` frontend `.o` + tiny C main)
 

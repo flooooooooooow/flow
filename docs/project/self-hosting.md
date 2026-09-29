@@ -201,7 +201,6 @@ flow blocks and the shader DSL, and it is now the only C compiler.
 | MLIR generator fallback (`--backend=mlir`) | the Flow MLIR emitter runs first; the Python generator covers what it cannot |
 | `flow check`, `flow python`, package publish and build, wcet and MISRA scanners, fir tools, DAP server, project test runner | tooling with no Flow port yet |
 | Scripts under `scripts/` not yet ported | tooling outside the compile path |
-| `compiler/scripts/flowc_c_to_hdr.py` | roundtrip's per-module `.o` dogfood only; the bundle path needs no headers |
 
 ### Phase E: Packaging & polish  *(in progress)*
 

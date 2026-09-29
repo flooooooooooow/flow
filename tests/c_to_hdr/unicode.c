@@ -1,0 +1,5 @@
+typedef struct U {
+  int x;
+} U;
+int g(void) {
+ int h(int a) {
