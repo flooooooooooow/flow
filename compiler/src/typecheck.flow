@@ -535,6 +535,20 @@ function flowc_tc_lookup_fn_arity(ctx: TcCtx, start: i32, end: i32) -> i32 {
     return -1
 }
 
+# 1 when some function entry named [start, end) takes n parameters.
+function flowc_tc_fn_has_arity(ctx: TcCtx, start: i32, end: i32, n: i32) -> i32 {
+    let mut i: i32 = ctx.nlen
+    while i > 0 {
+        i = i - 1
+        if ctx.nk[i] == 1 and ctx.na[i] == n {
+            if flowc_tc_name_eq(ctx, start, end, i) == 1 {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
 function flowc_tc_unwrap_fn(arena: AstArena, item: i32) -> i32 {
     if item == AST_NONE {
         return AST_NONE
@@ -1390,7 +1404,9 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
                 if arity >= 0 {
                     if nargs < arity and flowc_tc_eff_implicit_ok(ctx, arena, id, nargs) == 1 {
                         let unused_implicit: i32 = 0
-                    } elif nargs != arity {
+                    } elif nargs != arity and flowc_tc_fn_has_arity(ctx[0], ns, ne, nargs) == 0 {
+                        # An imported overload set seeds one entry per
+                        # overload; any of them may take nargs (#1044).
                         flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
                         flowc_tc_err(ctx)
                     }

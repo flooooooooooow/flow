@@ -1,0 +1,36 @@
+# Flow-native language test: overloaded functions imported from another
+# module (#1044). The module defines area_f64, area_i32_i32, show_i32,
+# show_f64 and show_string; each call here must reach the overload its
+# arguments fit. flowc used to call the unmangled name, which has no
+# definition.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "tests/fixtures/overload_import/shapes.flow"
+
+function main() -> i32 {
+    let a: f64 = area(2.0)
+    if a != 12.0 {
+        return 1
+    }
+    if area(3, 4) != 12 {
+        return 2
+    }
+    if show(5) != 6 {
+        return 3
+    }
+    if show(1.5) != 100 {
+        return 4
+    }
+    let n: i32 = 41
+    if show(n) != 42 {
+        return 5
+    }
+    let r: f64 = 0.5
+    if show(r) != 100 {
+        return 6
+    }
+    if show("hi") != 200 {
+        return 7
+    }
+    return 0
+}

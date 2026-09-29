@@ -1359,6 +1359,235 @@ function flowc_cgen_find_type_by_name(arena: AstArena, src: ptr<u8>, name: ptr<u
     return AST_NONE
 }
 
+# For one of several same-named functions with a body, add
+# `!name\0T0,T1,...\0`, the parameter type names its mangled C name joins
+# (flowc_cgen_put_mangled_fn). A call from a later module of the bundle picks
+# one with flowc_cgen_put_imported_overload (#1044).
+function flowc_cgen_sig_put_overload(
+    arena: AstArena,
+    src: ptr<u8>,
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32,
+    fn: i32
+) -> i32 {
+    if arena.nodes[fn].c == AST_NONE or arena.nodes[fn].ival != 0 {
+        return len
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    if ne <= ns or flowc_cgen_count_overloads(arena, src, ns, ne) < 2 {
+        return len
+    }
+    let mut need: i32 = (ne - ns) + 4
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        let ty: i32 = arena.nodes[prm].a
+        if ty != AST_NONE {
+            need = need + (arena.nodes[ty].name_end - arena.nodes[ty].name_start) + 1
+        }
+        prm = arena.nodes[prm].next
+    }
+    if len + need > cap {
+        return len
+    }
+    let mut n: i32 = len
+    buf[n] = 33
+    n = n + 1
+    let mut i: i32 = ns
+    while i < ne {
+        buf[n] = src[i]
+        n = n + 1
+        i = i + 1
+    }
+    buf[n] = 0
+    n = n + 1
+    let mut first: i32 = 1
+    prm = arena.nodes[fn].a
+    while prm != AST_NONE {
+        let ty: i32 = arena.nodes[prm].a
+        if ty != AST_NONE {
+            if first == 0 {
+                buf[n] = 44
+                n = n + 1
+            }
+            first = 0
+            i = arena.nodes[ty].name_start
+            while i < arena.nodes[ty].name_end {
+                buf[n] = src[i]
+                n = n + 1
+                i = i + 1
+            }
+        }
+        prm = arena.nodes[prm].next
+    }
+    buf[n] = 0
+    return n + 1
+}
+
+# 1 when the recorded type name buf[s, e) spells `lit`.
+function flowc_cgen_bufspan_is(buf: ptr<u8>, s: i32, e: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit as ptr<u8>
+    let mut i: i32 = 0
+    while s + i < e {
+        if lp[i] == 0 or lp[i] != buf[s + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if lp[i] != 0 {
+        return 0
+    }
+    return 1
+}
+
+# How well argument `arg` fits the recorded parameter type buf[s, e):
+# 10 exact, 9 or 5 for a literal that converts, 1 unknown, 0 a mismatch.
+function flowc_cgen_overload_arg_score(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, arg: i32, buf: ptr<u8>, s: i32, e: i32) -> i32 {
+    let k: i32 = arena.nodes[arg].kind
+    if k == AST_INT {
+        if flowc_cgen_bufspan_is(buf, s, e, "i32") == 1 { return 10 }
+        if flowc_cgen_bufspan_is(buf, s, e, "i64") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u32") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u64") == 1 or flowc_cgen_bufspan_is(buf, s, e, "i16") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u16") == 1 or flowc_cgen_bufspan_is(buf, s, e, "i8") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u8") == 1 { return 5 }
+        return 0
+    }
+    if k == AST_FLOAT {
+        if flowc_cgen_bufspan_is(buf, s, e, "f64") == 1 { return 10 }
+        if flowc_cgen_bufspan_is(buf, s, e, "f32") == 1 { return 9 }
+        return 0
+    }
+    if k == AST_STRING {
+        if flowc_cgen_bufspan_is(buf, s, e, "string") == 1 { return 10 }
+        return 0
+    }
+    if k == AST_BOOL {
+        if flowc_cgen_bufspan_is(buf, s, e, "bool") == 1 { return 10 }
+        return 0
+    }
+    let ty: i32 = flowc_cgen_infer_arg_type(w, arena, src, arg)
+    if ty == AST_NONE {
+        return 1
+    }
+    let ts: i32 = arena.nodes[ty].name_start
+    let te: i32 = arena.nodes[ty].name_end
+    if te - ts != e - s {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < e - s {
+        if src[ts + i] != buf[s + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 10
+}
+
+# A call to a function no module of this unit defines under its plain name
+# but an earlier module of the bundle defines as overloads: write the mangled
+# name of the overload the arguments fit best (an exact fit first, then the
+# first of the best score) and return 1. Return 0 when nothing is recorded or
+# no overload takes this many arguments (#1044).
+function flowc_cgen_put_imported_overload(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let cs: i32 = arena.nodes[call].name_start
+    let nlen: i32 = arena.nodes[call].name_end - cs
+    let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[call].a)
+    let mut best: i32 = 0 - 1
+    let mut best_score: i32 = 0 - 1
+    let mut best_exact: i32 = 0
+    let mut p: i32 = 0
+    while p < blen {
+        let mut k: i32 = 0
+        while p + k < blen and buf[p + k] != 0 {
+            k = k + 1
+        }
+        let vpos: i32 = p + k + 1
+        if vpos > blen {
+            p = blen
+        } else {
+            let mut v: i32 = vpos
+            while v < blen and buf[v] != 0 {
+                v = v + 1
+            }
+            let mut hit: i32 = 0
+            if k == nlen + 1 and buf[p] == 33 {
+                hit = 1
+                let mut j: i32 = 0
+                while j < nlen {
+                    if buf[p + 1 + j] != src[cs + j] {
+                        hit = 0
+                    }
+                    j = j + 1
+                }
+            }
+            if hit == 1 {
+                # Score the parameter list buf[vpos, v) against the arguments.
+                let mut score: i32 = 0
+                let mut exact: i32 = 1
+                let mut ok: i32 = 1
+                let mut arg: i32 = arena.nodes[call].a
+                let mut nparams: i32 = 0
+                let mut ps: i32 = vpos
+                if v > vpos {
+                    while ps <= v {
+                        let mut pe: i32 = ps
+                        while pe < v and buf[pe] != 44 {
+                            pe = pe + 1
+                        }
+                        nparams = nparams + 1
+                        if arg == AST_NONE {
+                            ok = 0
+                        } else {
+                            let s1: i32 = flowc_cgen_overload_arg_score(w, arena, src, arg, buf, ps, pe)
+                            if s1 == 0 {
+                                ok = 0
+                            }
+                            if s1 < 10 {
+                                exact = 0
+                            }
+                            score = score + s1
+                            arg = arena.nodes[arg].next
+                        }
+                        ps = pe + 1
+                    }
+                }
+                if nparams != nargs {
+                    ok = 0
+                }
+                if ok == 1 {
+                    if (exact == 1 and best_exact == 0) or (exact == best_exact and score > best_score) {
+                        best = vpos
+                        best_score = score
+                        best_exact = exact
+                    }
+                }
+            }
+            p = v + 1
+        }
+    }
+    if best < 0 {
+        return 0
+    }
+    flowc_cgen_put_span(w, src, cs, cs + nlen)
+    let mut q: i32 = best
+    if buf[q] != 0 {
+        flowc_cgen_putc(w, 95)
+    }
+    while q < blen and buf[q] != 0 {
+        if buf[q] == 44 {
+            flowc_cgen_putc(w, 95)
+        } else {
+            flowc_cgen_putc(w, buf[q])
+        }
+        q = q + 1
+    }
+    return 1
+}
+
 # AST_TYPE node describing `init`, or AST_NONE when no node applies.
 function flowc_cgen_infer_type_node(arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
     if init == AST_NONE {
@@ -4813,6 +5042,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     flowc_cgen_puts(w, "__flowc_libc_")
                 }
                 flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
+                # An overload of an imported function: its mangled name (#1044).
+                fn_id = AST_NONE
             } else {
                 # Assume it's a closure if not found. (Not perfect, but works for the subset. In reality we should check if it's a known closure variable).
                 # Actually, check if it's declared locally as a closure.
@@ -9116,6 +9348,7 @@ export function flowc_cgen_collect_sigs(
                 n = flowc_cgen_sig_put(arena, src, buf, cap, n, fn, rt)
             }
             n = flowc_cgen_sig_put_spans(arena, src, buf, cap, n, fn)
+            n = flowc_cgen_sig_put_overload(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_recv(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_user_libc(arena, src, buf, cap, n, fn)
         }
