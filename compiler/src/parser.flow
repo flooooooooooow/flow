@@ -1498,6 +1498,10 @@ function flowc_parse_binop_rhs(p: ptr<Parser>, min_prec: i32, lhs: i32) -> i32 {
         if prec < min_prec {
             return left
         }
+        # The node spans the operator token, so a diagnostic can name its
+        # line as the Python checker does (op.line).
+        let op_s: i32 = p[0].cur.start
+        let op_e: i32 = p[0].cur.end
         flowc_parser_advance(p)
         let mut right: i32 = flowc_parse_cast(p)
         while 1 == 1 {
@@ -1508,7 +1512,7 @@ function flowc_parse_binop_rhs(p: ptr<Parser>, min_prec: i32, lhs: i32) -> i32 {
             }
             right = flowc_parse_binop_rhs(p, prec + 1, right)
         }
-        let node: i32 = flowc_ast_alloc(&p[0].arena, AST_BINOP, 0, 0)
+        let node: i32 = flowc_ast_alloc(&p[0].arena, AST_BINOP, op_s, op_e)
         if node == AST_NONE {
             flowc_parser_fail(p)
             return AST_NONE

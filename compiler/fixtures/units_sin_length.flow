@@ -1,0 +1,8 @@
+# Negative fixture (#1008): sin() takes a dimensionless or Radian argument.
+unit Meter
+
+function main() -> i32 {
+    let d: Meter = 1.0 as Meter
+    let s: f64 = sin(d)
+    return 0
+}

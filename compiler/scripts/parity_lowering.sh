@@ -28,7 +28,9 @@
 #       rewrite the goldens from the Python host at <rev>.
 #
 # The goldens were written from ff99639e (origin/main when the lowering
-# landed; the Python host still carried all of these paths).
+# landed; the Python host still carried all of these paths). The unit
+# fixtures (compiler/fixtures/units_*.flow, #1008) were added from 5f36fc60.
+# A Python type error is recorded as its first `✗` line, whole.
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
@@ -92,7 +94,11 @@ result() {
         fi
     else
         if [[ "$host" == python ]]; then
-            diag="$(grep -m1 -E 'Error|error' "$log" | sed -e 's/^.*Error: //' -e 's/^.*error: //' | cut -c1-200 || true)"
+            # A type error prints as `  ✗ message`; take the first one whole.
+            diag="$(grep -m1 '✗ ' "$log" | sed -e 's/^.*✗ //' | cut -c1-200 || true)"
+            if [[ -z "$diag" ]]; then
+                diag="$(grep -m1 -E 'Error|error' "$log" | sed -e 's/^.*Error: //' -e 's/^.*error: //' | cut -c1-200 || true)"
+            fi
             [[ -n "$diag" ]] || diag=-
         fi
     fi

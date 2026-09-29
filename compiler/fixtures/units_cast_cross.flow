@@ -1,0 +1,9 @@
+# Negative fixture (#1008): a cast between units must keep the dimension.
+unit Meter
+unit Second
+
+function main() -> i32 {
+    let d: Meter = 1.0 as Meter
+    let t: Second = d as Second
+    return 0
+}
