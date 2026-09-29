@@ -1,0 +1,13 @@
+# #1028: the lines the Python host emitted for each attribute.
++ static inline int32_t add(int32_t a, int32_t b);
++ static inline int32_t add(int32_t a, int32_t b) {
++ __attribute__((noinline)) int32_t sub(int32_t a, int32_t b);
++ __attribute__((noinline)) int32_t sub(int32_t a, int32_t b) {
++ __attribute__((always_inline)) static inline int32_t mul(int32_t a, int32_t b);
++ __attribute__((always_inline)) static inline int32_t mul(int32_t a, int32_t b) {
++ extern inline int32_t exported_add(int32_t a, int32_t b);
++ extern inline int32_t exported_add(int32_t a, int32_t b) {
++ __attribute__((always_inline)) extern inline int32_t api_mul(int32_t a, int32_t b);
++ __attribute__((always_inline)) extern inline int32_t api_mul(int32_t a, int32_t b) {
+- inline int32_t main
+exit 0

@@ -70,6 +70,15 @@ export const AST_EFFECT_OP: i32 = 50
 # AST_HANDLE: `handle E1, E2 with H1, H2 { body }`. a = body block,
 #   b = effect name chain, c = handler name chain (AST_IDENT).
 export const AST_CAP_METHOD: i32 = 70
+# AST_ATTR: one `@name` or `@name(args)` in front of a top-level function
+#   (#1028). name_* = attribute name, start/end = the text between the
+#   parentheses, b = the AST_FN it belongs to (not linked from it; AST_NONE
+#   when the attribute sits on anything else). ival = AST_ATTR_* bits.
+#   Never chained into the program. Readers scan the arena for it, as they
+#   do for AST_EFFECT_ROW.
+export const AST_ATTR: i32 = 69
+export const AST_ATTR_EXPORTED: i32 = 1
+export const AST_ATTR_HAS_ARGS: i32 = 2
 
 # Parse-only kinds, numbered from 80 to stay clear of concurrent additions.
 # The parser accepts them so tools can read every file the Python parser

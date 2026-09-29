@@ -1,0 +1,7 @@
+# #1028: the lines the Python host emitted for @target.
++ __attribute__((target("avx2"))) int32_t bump(int32_t a);
++ __attribute__((target("avx2"))) int32_t bump(int32_t a) {
++ __attribute__((noinline)) __attribute__((target("arch=x86-64+avx2,tune=native"))) int32_t scale(int32_t a);
++ __attribute__((noinline)) __attribute__((target("arch=x86-64+avx2,tune=native"))) int32_t scale(int32_t a) {
++ __attribute__((target("+sse4.2"))) static inline int32_t both(int32_t a);
++ __attribute__((target("+sse4.2"))) static inline int32_t both(int32_t a) {

@@ -1,0 +1,10 @@
+# A @target spec that fails validation is an error under --strict, and never
+# reaches the C in any mode (#1028). See also attributes_not_spliced.
+@target("avx2; int x")
+function f() -> i32 {
+    return 0
+}
+
+function main() -> i32 {
+    return f()
+}
