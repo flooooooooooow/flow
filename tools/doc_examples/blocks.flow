@@ -1,0 +1,528 @@
+# @module tools.doc_examples.blocks
+# @means  Fenced code blocks in the documentation, extracted once for
+#         everybody: the doc example checker, the hidden-snippet check and
+#         the browser interpreter verifier all read blocks through here.
+#
+# Lines are walked with the CommonMark rule: a fence opened with N backticks
+# (or tildes) closes on the next line of N or more of the same character with
+# no info string. A regex over the whole text mispairs fences, starting at the
+# closing fence of one block and running to the opening fence of the next.
+#
+# Per-block metadata lives in the info string:
+#
+#   ```flow                        verify as written
+#   ```flow expect-error           must FAIL to compile
+#   ```flow ignore="reason"        excluded, reason required
+#   ```flow no-harness             verify as written or not at all
+#   ```flow preamble=<path>        compile after that file's contents
+#   ```flow from=<path>            the block must still appear in that file
+#   ```flow id=<name>              name the block for a later uses=
+#   ```flow uses=<a,b>             compile after the named earlier blocks
+#
+# `run` and `interactive` are legacy flags, still accepted. Any other word
+# is an error, so a typo such as `expect_error` fails loudly instead of the
+# block being verified as ordinary code.
+
+import "scripts/tools/lib/text.flow"
+import "scripts/tools/lib/unicode.flow"
+import "tools/doc_examples/sha256.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+export struct Blk {
+    path: string,
+    line: i32,
+    info: string,
+    lang: string,
+    code: string,
+    flags: ptr<StrList>,
+    okeys: ptr<StrList>,
+    ovals: ptr<StrList>,
+    section: string,
+    title: string,
+    occurrence: i32,
+    key: string
+}
+
+export struct BlkList {
+    items: ptr<ptr<Blk>>,
+    len: i32,
+    cap: i32
+}
+
+export function bl_new() -> ptr<BlkList> {
+    let l: ptr<BlkList> = calloc(1, 24) as ptr<BlkList>
+    l.items = malloc(8 * 64) as ptr<ptr<Blk>>
+    l.len = 0
+    l.cap = 64
+    return l
+}
+
+export function bl_push(l: ptr<BlkList>, b: ptr<Blk>) {
+    if l.len == l.cap {
+        l.cap = l.cap * 2
+        l.items = realloc(l.items as ptr<void>, (l.cap as i64) * 8) as ptr<ptr<Blk>>
+    }
+    let items: ptr<ptr<Blk>> = l.items
+    items[l.len] = b
+    l.len = l.len + 1
+}
+
+export function bl_get(l: ptr<BlkList>, i: i32) -> ptr<Blk> {
+    let items: ptr<ptr<Blk>> = l.items
+    return items[i]
+}
+
+# ---------------------------------------------------------------------------
+# Block properties
+# ---------------------------------------------------------------------------
+
+# Option value, or null when the info string does not set it.
+export function blk_opt(b: ptr<Blk>, name: string) -> string {
+    let mut i: i32 = ft_list_len(b.okeys) - 1
+    while i >= 0 {
+        if ft_eq(ft_list_get(b.okeys, i), name) {
+            return ft_list_get(b.ovals, i)
+        }
+        i = i - 1
+    }
+    return null
+}
+
+export function blk_flag(b: ptr<Blk>, name: string) -> bool {
+    return ft_list_has(b.flags, name)
+}
+
+export function blk_ident(b: ptr<Blk>) -> string {
+    return b.path + ":" + ft_itoa(b.line)
+}
+
+export function blk_has_main(b: ptr<Blk>) -> bool {
+    return ft_contains(b.code, "function main")
+}
+
+# The ledger key: the path plus the first 12 hex digits of the code's
+# SHA-256. Line numbers move whenever anything above a block is edited; the
+# hash changes exactly when the block does. A second byte-identical block in
+# one file gets `#<n>` so each block keeps its own row.
+function blk_make_key(b: ptr<Blk>) -> string {
+    let digest: string = ft_slice(sha256_hex(b.code), 0, 12)
+    if b.occurrence > 1 {
+        return b.path + "#" + digest + "#" + ft_itoa(b.occurrence)
+    }
+    return b.path + "#" + digest
+}
+
+# ---------------------------------------------------------------------------
+# Python str.splitlines
+# ---------------------------------------------------------------------------
+
+# Byte length of the line break starting at byte i, or 0. The set is the
+# one Python's str.splitlines uses.
+function line_break_len(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let c: i32 = p[i] as i32
+    if c == 13 {
+        if i + 1 < n and (p[i + 1] as i32) == 10 {
+            return 2
+        }
+        return 1
+    }
+    if c == 10 or c == 11 or c == 12 or c == 28 or c == 29 or c == 30 {
+        return 1
+    }
+    if c == 194 and i + 1 < n and (p[i + 1] as i32) == 133 {
+        return 2
+    }
+    if c == 226 and i + 2 < n and (p[i + 1] as i32) == 128 and ((p[i + 2] as i32) == 168 or (p[i + 2] as i32) == 169) {
+        return 3
+    }
+    return 0
+}
+
+export function py_splitlines(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = strlen(text) as i32
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let k: i32 = line_break_len(p, i, n)
+        if k > 0 {
+            ft_list_push(out, ft_slice(text, start, i))
+            i = i + k
+            start = i
+        } else {
+            i = i + 1
+        }
+    }
+    if start < n {
+        ft_list_push(out, ft_slice(text, start, n))
+    }
+    return out
+}
+
+export function join_lines(l: ptr<StrList>, lo: i32, hi: i32) -> string {
+    let mut total: i64 = 1
+    let mut i: i32 = lo
+    while i < hi {
+        total = total + strlen(ft_list_get(l, i)) + 1
+        i = i + 1
+    }
+    let buf: ptr<u8> = malloc(total) as ptr<u8>
+    let mut o: i64 = 0
+    i = lo
+    while i < hi {
+        if i > lo {
+            buf[o] = 10
+            o = o + 1
+        }
+        let s: string = ft_list_get(l, i)
+        let sp: ptr<u8> = s as ptr<u8>
+        let m: i64 = strlen(s)
+        let mut k: i64 = 0
+        while k < m {
+            buf[o + k] = sp[k]
+            k = k + 1
+        }
+        o = o + m
+        i = i + 1
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+# s.strip("\n")
+export function strip_newlines(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let mut a: i32 = 0
+    while a < n and (p[a] as i32) == 10 {
+        a = a + 1
+    }
+    let mut b: i32 = n
+    while b > a and (p[b - 1] as i32) == 10 {
+        b = b - 1
+    }
+    return ft_slice(s, a, b)
+}
+
+# s.rstrip() (whitespace)
+export function py_rstrip(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut b: i32 = strlen(s) as i32
+    while b > 0 {
+        let q: i32 = uc_prev(p, b)
+        if uc_is_space(uc_decode(p, q)) == false {
+            break
+        }
+        b = q
+    }
+    return ft_slice(s, 0, b)
+}
+
+# The first `n` code points of s, as Python's s[:n].
+export function py_prefix(s: string, n: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while p[i] != 0 and k < n {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    return ft_slice(s, 0, i)
+}
+
+# ---------------------------------------------------------------------------
+# Info strings: shlex.split in POSIX mode, then flags and key=value options.
+# ---------------------------------------------------------------------------
+
+# Set by parse_info on failure; empty when the info string is valid.
+export struct InfoErr {
+    msg: string
+}
+
+function is_known_flag(w: string) -> bool {
+    return ft_eq(w, "run") or ft_eq(w, "interactive") or ft_eq(w, "expect-error") or ft_eq(w, "no-harness")
+}
+
+function is_known_key(k: string) -> bool {
+    return ft_eq(k, "ignore") or ft_eq(k, "preamble") or ft_eq(k, "from") or ft_eq(k, "id") or ft_eq(k, "uses")
+}
+
+# shlex.split(s). On error the message goes to err.msg and null is returned.
+function shlex_split(s: string, err: ptr<InfoErr>) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let buf: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut have: bool = false
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 32 or c == 9 or c == 10 or c == 13 {
+            if have {
+                buf[o] = 0
+                ft_list_push(out, ft_slice(buf as string, 0, o))
+                o = 0
+                have = false
+            }
+            i = i + 1
+        } elif c == 92 {
+            if i + 1 >= n {
+                err.msg = "No escaped character"
+                return null
+            }
+            if (p[i + 1] as i32) != 10 {
+                buf[o] = p[i + 1]
+                o = o + 1
+            }
+            have = true
+            i = i + 2
+        } elif c == 39 {
+            let mut j: i32 = i + 1
+            while j < n and (p[j] as i32) != 39 {
+                buf[o] = p[j]
+                o = o + 1
+                j = j + 1
+            }
+            if j >= n {
+                err.msg = "No closing quotation"
+                return null
+            }
+            have = true
+            i = j + 1
+        } elif c == 34 {
+            let mut j: i32 = i + 1
+            while j < n and (p[j] as i32) != 34 {
+                if (p[j] as i32) == 92 and j + 1 < n and ((p[j + 1] as i32) == 92 or (p[j + 1] as i32) == 34) {
+                    buf[o] = p[j + 1]
+                    o = o + 1
+                    j = j + 2
+                } elif (p[j] as i32) == 92 and j + 1 >= n {
+                    err.msg = "No closing quotation"
+                    return null
+                } else {
+                    buf[o] = p[j]
+                    o = o + 1
+                    j = j + 1
+                }
+            }
+            if j >= n {
+                err.msg = "No closing quotation"
+                return null
+            }
+            have = true
+            i = j + 1
+        } else {
+            buf[o] = c as u8
+            o = o + 1
+            have = true
+            i = i + 1
+        }
+    }
+    if have {
+        buf[o] = 0
+        ft_list_push(out, ft_slice(buf as string, 0, o))
+    }
+    return out
+}
+
+# Fill lang, flags and options of `b` from b.info. Returns false with
+# err.msg set when the info string names something this repository does
+# not define.
+function parse_info(b: ptr<Blk>, err: ptr<InfoErr>) -> bool {
+    let info: string = b.info
+    b.lang = ""
+    b.flags = ft_list_new()
+    b.okeys = ft_list_new()
+    b.ovals = ft_list_new()
+    let words: ptr<StrList> = shlex_split(info, err)
+    if words == null {
+        err.msg = "cannot parse info string " + ft_repr(info) + ": " + err.msg
+        return false
+    }
+    if ft_list_len(words) == 0 {
+        return true
+    }
+    b.lang = uc_lower_str(ft_list_get(words, 0))
+    let mut i: i32 = 1
+    while i < ft_list_len(words) {
+        let word: string = ft_list_get(words, i)
+        let eq: i32 = ft_find_byte(word, 61, 0)
+        if eq >= 0 {
+            let key: string = uc_lower_str(ft_slice(word, 0, eq))
+            let value: string = ft_from(word, eq + 1)
+            if is_known_key(key) == false {
+                err.msg = "unknown option " + ft_repr(key) + " in " + ft_repr(info)
+                return false
+            }
+            if ft_len(value) == 0 {
+                err.msg = "option " + ft_repr(key) + " needs a value in " + ft_repr(info)
+                return false
+            }
+            ft_list_push(b.okeys, key)
+            ft_list_push(b.ovals, value)
+        } else {
+            let lw: string = uc_lower_str(word)
+            if is_known_flag(lw) == false {
+                err.msg = "unknown flag " + ft_repr(word) + " in " + ft_repr(info)
+                return false
+            }
+            if ft_list_has(b.flags, lw) == false {
+                ft_list_push(b.flags, lw)
+            }
+        }
+        i = i + 1
+    }
+    let ign: string = blk_opt(b, "ignore")
+    if ign != null and ft_len(uc_strip(ign)) == 0 {
+        err.msg = "ignore= needs a written reason in " + ft_repr(info)
+        return false
+    }
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Fences
+# ---------------------------------------------------------------------------
+
+struct Fence {
+    ch: i32,
+    width: i32,
+    info: string
+}
+
+# Match ^\s{0,3}(`{3,}|~{3,})(.*)$ against one line.
+function match_fence(line: string, f: ptr<Fence>) -> bool {
+    let p: ptr<u8> = line as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while k < 3 and p[i] != 0 and uc_is_space(uc_decode(p, i)) {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    let c: i32 = p[i] as i32
+    if c != 96 and c != 126 {
+        return false
+    }
+    let mut w: i32 = 0
+    while (p[i + w] as i32) == c {
+        w = w + 1
+    }
+    if w < 3 {
+        return false
+    }
+    f.ch = c
+    f.width = w
+    f.info = ft_from(line, i + w)
+    return true
+}
+
+# Every fenced block in `text`, in document order, appended to `out`.
+export function iter_blocks(text: string, path: string, out: ptr<BlkList>, err: ptr<InfoErr>) -> bool {
+    let lines: ptr<StrList> = py_splitlines(text)
+    let n: i32 = ft_list_len(lines)
+    let mut section: string = null
+    let mut title: string = null
+    let seen: ptr<StrMap> = ft_map_new()
+    let f: ptr<Fence> = calloc(1, 24) as ptr<Fence>
+    let g: ptr<Fence> = calloc(1, 24) as ptr<Fence>
+    let mut i: i32 = 0
+    while i < n {
+        let line: string = ft_list_get(lines, i)
+        if match_fence(line, f) == false {
+            if ft_starts(line, "## ") {
+                section = uc_strip(ft_from(line, 3))
+                title = null
+            } elif ft_starts(line, "### ") {
+                title = uc_strip(ft_from(line, 4))
+            }
+            i = i + 1
+        } else {
+            let info: string = uc_strip(f.info)
+            if f.ch == 96 and ft_find_byte(info, 96, 0) >= 0 {
+                i = i + 1
+            } else {
+                let start: i32 = i + 1
+                i = i + 1
+                let body_from: i32 = i
+                while i < n {
+                    let cl: string = ft_list_get(lines, i)
+                    if match_fence(cl, g) and g.ch == f.ch and g.width >= f.width and ft_len(uc_strip(g.info)) == 0 {
+                        break
+                    }
+                    i = i + 1
+                }
+                let body_to: i32 = i
+                i = i + 1
+                let b: ptr<Blk> = calloc(1, 128) as ptr<Blk>
+                b.path = path
+                b.line = start
+                b.info = info
+                b.section = section
+                b.title = title
+                if parse_info(b, err) == false {
+                    return false
+                }
+                b.code = strip_newlines(join_lines(lines, body_from, body_to))
+                let prev: i32 = ft_map_get(seen, b.code, 0)
+                ft_map_put(seen, b.code, prev + 1)
+                b.occurrence = prev + 1
+                b.key = blk_make_key(b)
+                bl_push(out, b)
+            }
+        }
+    }
+    return true
+}
+
+# Blocks of every path in `paths` (repository-relative, read under root).
+# Blocks with an empty body are dropped. lang filters to one tag when not
+# null. Returns null with err.msg set on a bad info string.
+export function collect(paths: ptr<StrList>, root: string, lang: string, err: ptr<InfoErr>) -> ptr<BlkList> {
+    let all: ptr<BlkList> = bl_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(paths) {
+        let rel: string = ft_list_get(paths, i)
+        let mut text: string = ft_read_file(root + "/" + rel)
+        if text == null {
+            text = ""
+        }
+        let file_blocks: ptr<BlkList> = bl_new()
+        if iter_blocks(text, rel, file_blocks, err) == false {
+            return null
+        }
+        let mut k: i32 = 0
+        while k < file_blocks.len {
+            let b: ptr<Blk> = bl_get(file_blocks, k)
+            if ft_len(uc_strip(b.code)) > 0 and (lang == null or ft_eq(b.lang, lang)) {
+                bl_push(all, b)
+            }
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return all
+}
+
+# Tracked markdown paths from `git ls-files '*.md'` output, minus vendored
+# and generated trees.
+export function tracked_markdown(listing: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let lines: ptr<StrList> = py_splitlines(listing)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let l: string = ft_list_get(lines, i)
+        if ft_len(l) > 0 and ft_starts(l, "third_party/") == false and ft_starts(l, "docs/formal/") == false and ft_starts(l, "build/") == false and ft_starts(l, "site/vendor/") == false {
+            ft_list_push(out, l)
+        }
+        i = i + 1
+    }
+    return out
+}

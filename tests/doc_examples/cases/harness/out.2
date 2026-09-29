@@ -1,0 +1,40 @@
+Flow examples in documentation: 39
+
+  verified           20  (51.3%)
+  expected-error      2  ( 5.1%)
+  ignored             1  ( 2.6%)
+  unverified         16  (41.0%)
+
+  verified by harness rung:
+    standalone       11
+    stmt-wrap         7
+    split-wrap        2
+
+  unverified stops at:
+    parse             7
+    clang             2
+    from              2
+    uses              2
+    vacuous           1
+    types             1
+    preamble          1
+
+  unverified concentrates in:
+      16  docs.md
+
+  docs.md:35 [parse] no-op Variable statement; the text is not statements
+  docs.md:39 [parse] no-op Variable statement; the text is not statements
+  docs.md:44 [parse] no-op Variable statement; the text is not statements
+  docs.md:49 [parse] no-op BinaryOperation statement; the text is not statements
+  docs.md:53 [parse] no-op Variable statement; the text is not statements
+  docs.md:60 [vacuous] declares nothing; the block is only comments
+  docs.md:64 [clang] use of undeclared identifier 'undefined_thing'
+  docs.md:90 [types] tagged expect-error but compiles under standalone
+  docs.md:100 [parse] block.flow:2:1: parse error: unexpected identifier 'n' (byte 19)
+  docs.md:141 [parse] block.flow:1:13: parse error: unexpected token '->' (byte 12)
+  docs.md:153 [from] block no longer appears in prog.flow; the page and the file have drifted, so update whichever is wrong
+  docs.md:159 [from] from='nope.flow' does not exist
+  docs.md:175 [preamble] preamble 'nope.flow' does not exist
+  docs.md:183 [uses] uses='later' names no earlier block on this page; add id=later to the block it depends on
+  docs.md:211 [clang] unknown type name 'A'
+  docs.md:220 [uses] uses='gone' names no earlier block on this page; add id=gone to the block it depends on

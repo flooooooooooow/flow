@@ -1,0 +1,9 @@
+# Bad info
+
+```flow
+function main() -> i32 { return 0 }
+```
+
+```flow mode=fast
+function main() -> i32 { return 0 }
+```
