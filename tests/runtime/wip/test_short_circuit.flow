@@ -1,17 +1,26 @@
-# Compiler-suite runtime: && / || short-circuit semantics via side effects
+# Compiler-suite runtime: && / || short-circuit semantics via side effects.
+#
+# The right operand counts its evaluations through a pointer, so a skipped
+# operand leaves the count unchanged. (This file used block expressions,
+# `{ hits = hits + 1; true }`, which neither parser accepts; #997.)
+
+function bump(hits: ptr<i32>, value: bool) -> bool {
+    hits[0] = hits[0] + 1
+    return value
+}
 
 function main() -> i32 {
     let mut hits: i32 = 0
     # false && <side> must not evaluate the right side
-    if false && { hits = hits + 1; true } {
+    if false && bump(&hits, true) {
         return 1
     }
     if hits != 0 {
         return 2
     }
     # true || <side> must not evaluate the right side
-    if true || { hits = hits + 1; false } {
-        # ok
+    if true || bump(&hits, false) {
+        hits = hits + 0
     } else {
         return 3
     }
@@ -19,8 +28,8 @@ function main() -> i32 {
         return 4
     }
     # true && <side> does evaluate
-    if true && { hits = hits + 1; true } {
-        # ok
+    if true && bump(&hits, true) {
+        hits = hits + 0
     } else {
         return 5
     }

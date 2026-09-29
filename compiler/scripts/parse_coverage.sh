@@ -15,14 +15,16 @@
 # compiled to compiler/build/flowc_bootstrap, so the gate needs only a C
 # compiler.
 #
-# The reference list is recorded once with the Python parser and checked in.
-# To refresh it after adding files, run from the repo root:
+# The reference list is recorded with the Python parser and checked in, with
+# each entry filed under a comment that says why it does not parse (#997).
+# To find new entries after adding files, run from the repo root and file
+# each new path under its reason:
 #
 #   git ls-files '*.flow' | PYTHONPATH=src python3 -c 'import sys
 #   from flow.parser import parse_flow_code
 #   for f in sys.stdin.read().split():
 #       try: parse_flow_code(open(f, encoding="utf-8").read())
-#       except BaseException: print(f)' > compiler/parse_coverage/python_rejects.txt
+#       except BaseException: print(f)'
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -46,7 +48,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 git ls-files '*.flow' | sort > "$tmp/all"
 if [[ -f "$REJECTS" ]]; then
-    grep -v '^#' "$REJECTS" | sort > "$tmp/rejects"
+    grep -v -e '^#' -e '^$' "$REJECTS" | sort > "$tmp/rejects"
 else
     : > "$tmp/rejects"
 fi
