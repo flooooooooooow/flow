@@ -11,7 +11,8 @@ import .semantic_facts {
     FlowcSemanticFact,
     FLOWC_FACT_SOURCE_STATIC, FLOWC_FACT_STATUS_PROVEN,
     flowc_fact_none, flowc_fact_constant, flowc_fact_range,
-    flowc_fact_unary, flowc_fact_relation
+    flowc_fact_unary, flowc_fact_relation,
+    flowc_fact_congruence, flowc_fact_alignment
 }
 
 export function flowc_static_constant_fact(
@@ -36,6 +37,36 @@ export function flowc_static_range_fact(
 ) -> FlowcSemanticFact {
     return flowc_fact_range(
         value_id, lo, hi,
+        FLOWC_FACT_SOURCE_STATIC,
+        FLOWC_FACT_STATUS_PROVEN,
+        domain_mask,
+        0
+    )
+}
+
+
+export function flowc_static_congruence_fact(
+    value_id: i32,
+    residue: i64,
+    modulus: u64,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    return flowc_fact_congruence(
+        value_id, residue, modulus,
+        FLOWC_FACT_SOURCE_STATIC,
+        FLOWC_FACT_STATUS_PROVEN,
+        domain_mask,
+        0
+    )
+}
+
+export function flowc_static_alignment_fact(
+    value_id: i32,
+    alignment: u64,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    return flowc_fact_alignment(
+        value_id, alignment,
         FLOWC_FACT_SOURCE_STATIC,
         FLOWC_FACT_STATUS_PROVEN,
         domain_mask,
