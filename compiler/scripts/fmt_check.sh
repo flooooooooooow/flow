@@ -100,7 +100,7 @@ if [[ -z "$FLOWC" ]]; then
     mkdir -p compiler/build
     FLOWC=compiler/build/flowc_bootstrap
     if [[ ! -x "$FLOWC" || compiler/bootstrap/flowc_stage_a.c -nt "$FLOWC" ]]; then
-        ${CC:-cc} -O2 -w -o "$FLOWC" compiler/bootstrap/flowc_stage_a.c
+        ${CC:-cc} -O2 -w -o "$FLOWC" compiler/bootstrap/flowc_stage_a.c -lm
     fi
 fi
 case "$FLOWC" in
