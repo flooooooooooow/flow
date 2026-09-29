@@ -1,4 +1,4 @@
-total 89302
+total 79712
 benchmarks/cross_harness/cold/cli_oneshot/oneshot.py
 benchmarks/cross_harness/cold/file_transform/transform.py
 benchmarks/cross_harness/cold/hello/hello.py
@@ -37,9 +37,6 @@ benchmarks/suite/python/03_matmul_numpy.py
 benchmarks/suite/python/04_spectral.py
 benchmarks/suite/python/04_spectral_numpy.py
 compiler/scripts/flowc_c_to_hdr.py
-compiler/scripts/parity_know_index.py
-compiler/scripts/parity_math_prose_expr.py
-compiler/scripts/parity_proof_parse.py
 examples/bench/pymatmul.py
 examples/interop/simple_interop.py
 examples/wasm/python/flow_demo.py
@@ -49,7 +46,6 @@ scripts/check_doc_flow_snippets.py
 scripts/compile_spirv_metal.py
 scripts/deploy_wiki.py
 scripts/docs_blocks.py
-scripts/emit_fsl_wgsl.py
 scripts/frames_to_gif.py
 scripts/playground_compile_server.py
 scripts/record_demos.py
@@ -66,8 +62,6 @@ src/flow/bpf_target.py
 src/flow/c_generator.py
 src/flow/c_header_parser.py
 src/flow/check.py
-src/flow/claim_address.py
-src/flow/claim_path.py
 src/flow/constraints.py
 src/flow/conventions.py
 src/flow/cost_model.py
@@ -84,15 +78,11 @@ src/flow/fir_route.py
 src/flow/flow_blocks.py
 src/flow/fork_records.py
 src/flow/general_plans.py
-src/flow/geometry_diagram.py
-src/flow/geometry_script.py
 src/flow/gpu_integration.py
 src/flow/gpu_runtime.py
 src/flow/idioms.py
 src/flow/jit_runner.py
 src/flow/js_generator.py
-src/flow/know.py
-src/flow/math_prose.py
 src/flow/metal_codegen.py
 src/flow/metal_runtime.py
 src/flow/misra_scan.py
@@ -118,16 +108,11 @@ src/flow/pipeline_fusion.py
 src/flow/plan_selector.py
 src/flow/project_config.py
 src/flow/project_test_runner.py
-src/flow/proof_document.py
-src/flow/proof_kernel.py
-src/flow/proof_substitution.py
 src/flow/python_generator.py
 src/flow/range_sums.py
 src/flow/recognition.py
 src/flow/registry.py
 src/flow/run.py
-src/flow/shader_codegen.py
-src/flow/shader_codegen_wgsl.py
 src/flow/shader_dsl.py
 src/flow/toml_compat.py
 src/flow/transpiler.py
@@ -180,10 +165,6 @@ tests/unit/test_c_generator_assignments.py
 tests/unit/test_c_import_glibc_forms.py
 tests/unit/test_c_import_macros.py
 tests/unit/test_c_import_no_redeclare.py
-tests/unit/test_capability_method_params.py
-tests/unit/test_capability_not_a_value.py
-tests/unit/test_claim_address.py
-tests/unit/test_claim_path.py
 tests/unit/test_closure_capture.py
 tests/unit/test_compiler_pipeline.py
 tests/unit/test_complex_types.py
@@ -211,7 +192,6 @@ tests/unit/test_dsp_pipeline.py
 tests/unit/test_dual_ops.py
 tests/unit/test_dynamics_dsl.py
 tests/unit/test_dynamics_dsl_regressions.py
-tests/unit/test_effect_rows.py
 tests/unit/test_ensure_flowc_staleness.py
 tests/unit/test_escaped_strings.py
 tests/unit/test_escaping_closures.py
@@ -227,9 +207,6 @@ tests/unit/test_flow_run.py
 tests/unit/test_frontend_cache.py
 tests/unit/test_fuzz_crash_pins.py
 tests/unit/test_general_plans.py
-tests/unit/test_geometry_diagram.py
-tests/unit/test_geometry_proof.py
-tests/unit/test_geometry_script.py
 tests/unit/test_gif_flow_encoder.py
 tests/unit/test_gpu_runtime.py
 tests/unit/test_grow_helpers.py
@@ -238,11 +215,9 @@ tests/unit/test_idioms.py
 tests/unit/test_if_expression.py
 tests/unit/test_imported_main.py
 tests/unit/test_inline_exp_nested.py
-tests/unit/test_know.py
 tests/unit/test_lifetime_domains.py
 tests/unit/test_match_exhaustive_returns.py
 tests/unit/test_match_exhaustiveness.py
-tests/unit/test_math_prose.py
 tests/unit/test_metal_codegen.py
 tests/unit/test_misra_phase2.py
 tests/unit/test_mlir_array_constructor.py
@@ -282,10 +257,6 @@ tests/unit/test_plan_selector.py
 tests/unit/test_pointer_string_casts.py
 tests/unit/test_postfix_chaining.py
 tests/unit/test_project_test_runner.py
-tests/unit/test_proof_bundle.py
-tests/unit/test_proof_document.py
-tests/unit/test_proof_kernel.py
-tests/unit/test_proof_substitution.py
 tests/unit/test_pthread_binding.py
 tests/unit/test_ptr_address.py
 tests/unit/test_python_export_overrides.py
@@ -299,7 +270,6 @@ tests/unit/test_rt_safety.py
 tests/unit/test_safety_profile_enforcement.py
 tests/unit/test_security_invariants.py
 tests/unit/test_sema_lenient_escape.py
-tests/unit/test_shader_codegen_wgsl.py
 tests/unit/test_shader_dsl.py
 tests/unit/test_shape_specialization.py
 tests/unit/test_size_regression.py
@@ -320,7 +290,6 @@ tests/unit/test_transitive_const.py
 tests/unit/test_type_checker.py
 tests/unit/test_units.py
 tests/unit/test_unknown_type_diagnostic.py
-tests/unit/test_unqualified_effect_op.py
 tests/unit/test_variadic_externs.py
 tests/unit/test_vectorization_audit.py
 tests/unit/test_version.py
@@ -336,8 +305,6 @@ tools/audio/plot_lattice_allpass.py
 tools/discord-welcome/bot.py
 tools/discord-welcome/test_bot.py
 tools/discord-welcome/welcome.py
-tools/doc/flow_doc.py
-tools/doc/flow_know.py
 wasm/crossing_common.py
 wasm/flow_to_wasm.py
 wasm/flow_wasm_gpu.py
