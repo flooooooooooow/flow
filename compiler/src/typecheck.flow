@@ -7,7 +7,7 @@ import .ast {
     AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT,
     AST_INT, AST_BOOL, AST_STRING, AST_FLOAT, AST_ASSIGN, AST_EXPR_STMT,
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
-    AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
+    AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_C_IMPORT, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
@@ -1665,7 +1665,10 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
     let mut item: i32 = arena.nodes[root].a
     while item != AST_NONE {
         let kind: i32 = arena.nodes[item].kind
-        if kind == AST_EXTERN {
+        # An @cImport header declares functions the checker does not parse
+        # (the Python host reads them from the header): allow them as an
+        # extern block's are allowed.
+        if kind == AST_EXTERN or kind == AST_C_IMPORT {
             ctx[0].has_extern = 1
         }
         if kind == AST_CONST {
