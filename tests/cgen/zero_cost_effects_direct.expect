@@ -1,13 +1,17 @@
 # A handle block installs the capability vtable and restores the previous
-# handler on exit. A function called from inside the block dispatches
-# through the runtime handler. Nested blocks override and then restore.
-# flowc does not yet substitute direct capability calls inside a handle
-# block (the Python backend emitted Console_info("outer") here).
+# handler on exit. An effect operation written in the block calls the
+# handler's method directly (#1056), as the Python backend did. A function
+# called from inside the block dispatches through the runtime handler.
+# Nested blocks override and then restore.
 + _current_Log_handler = &_Console_Log_vtable;
 + _current_Log_handler = &_Quiet_Log_vtable;
 + _current_Log_handler = _prev_Log_handler;
++ Console_info("outer");
++ Quiet_info("inner");
++ Console_info("restored");
 + Log_info("from helper");
 - Console_info("from helper")
+- Log_info("outer")
 exit 0
 stdout [console] outer
 stdout [console] from helper

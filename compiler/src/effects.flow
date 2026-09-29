@@ -453,6 +453,16 @@ export function flowc_eff_is_cap(buf: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e
     return 0
 }
 
+# 1 if capability src[cs..ce] defines a method named src[ms..me]. A handle
+# block uses it to call that method directly (#1056).
+export function flowc_eff_cap_has_method(buf: ptr<u8>, len: i32, src: ptr<u8>, cs: i32, ce: i32, ms: i32, me: i32) -> i32 {
+    let off: i32 = flowc_eff_find(buf, len, FLOWC_EFF_CAP, src, cs, ce, 0 - 1, 0 - 1)
+    if off < 0 {
+        return 0
+    }
+    return flowc_eff_list_has(buf, off, 1, src, ms, me)
+}
+
 # Local AST_EFFECT declaration named src[s..e], else AST_NONE.
 export function flowc_eff_local_effect(arena: AstArena, src: ptr<u8>, s: i32, e: i32) -> i32 {
     let mut i: i32 = 0

@@ -1,0 +1,52 @@
+effect Log {
+    info(msg: string) -> void,
+}
+
+effect Meter {
+    tick(n: i32) -> i32,
+}
+
+capability Loud {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[loud] %s\n", msg)
+    },
+}
+
+capability Soft {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[soft] %s\n", msg)
+    },
+}
+
+capability Counter {
+    effect Meter,
+    function tick(n: i32) -> i32 {
+        printf("[tick] %d\n", n)
+        return n + 1
+    },
+}
+
+function main() -> i32 {
+    let mut total: i32 = 0
+    handle Log with Loud {
+        Log.info("a")
+        handle Log, Meter with Soft, Counter {
+            Log.info("b")
+            total = total + Meter.tick(1)
+            handle Log with Loud {
+                Log.info("c")
+            }
+            Log.info("d")
+        }
+        let later = |msg: string| -> void { Log.info(msg) }
+        later("e")
+        Log.info("f")
+    }
+    Log.info("g")
+    if total != 2 {
+        return 1
+    }
+    return 0
+}
