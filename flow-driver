@@ -485,6 +485,173 @@ compile_program_flowc() {
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# Proof tooling on flowc: flow doc proof|bundle|basic-bundle|geometry-bundle|
+# kernel and flow know (compiler/src/proof_doc.flow). No Python.
+# ---------------------------------------------------------------------------
+
+# flow_proof_flowc VAR=VALUE...: run the flowc proof tools with these
+# environment settings, rooted at the repository.
+flow_proof_flowc() {
+    local driver
+    driver="$(flow_resolve_flowc)" || return 1
+    env FLOWC_PROOF_DOC=1 FLOWC_PROOF_ROOT="$SCRIPT_DIR" "$@" "$driver"
+}
+
+# The .flow files under a directory in pathlib's sorted(rglob) order.
+flow_proof_list_dir() {
+    local dir="$1" recursive="$2"
+    if [ "$recursive" = "1" ]; then
+        find "$dir" -name '*.flow' -type f
+    else
+        find "$dir" -maxdepth 1 -name '*.flow' -type f
+    fi | tr '/' '\001' | LC_ALL=C sort | tr '\001' '/'
+}
+
+flow_doc_proof() {
+    local path="" recursive=0 out=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -r|--recursive) recursive=1 ;;
+            -o|--output-dir) shift; out="${1:-}" ;;
+            --output-dir=*) out="${1#--output-dir=}" ;;
+            *) path="$1" ;;
+        esac
+        shift
+    done
+    if [ -z "$path" ]; then
+        print_error "Usage: flow doc proof <file.flow|directory> [-r] [-o DIR]"
+        return 1
+    fi
+    if [ ! -e "$path" ]; then
+        echo "Error: path not found: $path" >&2
+        return 1
+    fi
+    if [ -f "$path" ]; then
+        flow_proof_flowc FLOWC_IN="$path" FLOWC_PROOF_OUT="$out"
+        return $?
+    fi
+    while [ "${#path}" -gt 1 ] && [ "${path%/}" != "$path" ]; do
+        path="${path%/}"
+    done
+    local list rc
+    list="$(mktemp)"
+    flow_proof_list_dir "$path" "$recursive" > "$list"
+    flow_proof_flowc FLOWC_PROOF_LIST="$list" FLOWC_PROOF_TREE=1
+    rc=$?
+    rm -f "$list"
+    return $rc
+}
+
+# A LaTeX engine by name, on PATH or in /Library/TeX/texbin.
+flow_latex_engine() {
+    local name="$1"
+    if command -v "$name" >/dev/null 2>&1; then
+        command -v "$name"
+        return 0
+    fi
+    if [ -x "/Library/TeX/texbin/$name" ]; then
+        echo "/Library/TeX/texbin/$name"
+        return 0
+    fi
+    return 1
+}
+
+# flow doc bundle|basic-bundle|geometry-bundle [-o DIR]
+flow_doc_bundle() {
+    local which="$1"
+    shift
+    local out="$SCRIPT_DIR/build/proofs"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -o|--output-dir) shift; out="${1:-}" ;;
+            --output-dir=*) out="${1#--output-dir=}" ;;
+        esac
+        shift
+    done
+    local stem
+    case "$which" in
+        book) stem="flow-proof-book" ;;
+        basic) stem="basic-proofs-side-by-side" ;;
+        geometry) stem="geometry-proofs-side-by-side" ;;
+    esac
+    flow_proof_flowc FLOWC_PROOF_BOOK="$which" FLOWC_PROOF_OUT="$out" || return 1
+    # Try each engine in turn, as the Python tool did.
+    local name engine abs
+    abs="$(cd "$out" && pwd)"
+    rm -f "$out/$stem.pdf"
+    for name in pdflatex xelatex tectonic; do
+        engine="$(flow_latex_engine "$name")" || continue
+        if [ "$name" = "tectonic" ]; then
+            (cd "$abs" && "$engine" --outdir "$abs" "$abs/$stem.tex") >/dev/null 2>&1
+        else
+            (cd "$abs" && "$engine" -interaction=nonstopmode "$stem.tex"; \
+                "$engine" -interaction=nonstopmode "$stem.tex") >/dev/null 2>&1
+        fi
+        if [ -f "$out/$stem.pdf" ]; then
+            echo "Wrote $out/$stem.pdf"
+            return 0
+        fi
+    done
+    echo "Could not compile PDF. Install pdflatex, xelatex, or tectonic." >&2
+    return 1
+}
+
+# flow doc kernel <file.flow> [-p NAME=VALUE]... [--plot FILE] [-o FILE]
+flow_doc_kernel() {
+    local path="" out="" plot="" params=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -p|--param) shift; params="$params${1:-}"$'\n' ;;
+            --param=*) params="$params${1#--param=}"$'\n' ;;
+            --plot) shift; plot="${1:-}" ;;
+            --plot=*) plot="${1#--plot=}" ;;
+            -o|--output) shift; out="${1:-}" ;;
+            --output=*) out="${1#--output=}" ;;
+            *) path="$1" ;;
+        esac
+        shift
+    done
+    if [ -z "$path" ]; then
+        print_error "Usage: flow doc kernel <file.flow> [--param n=0] [--plot out.dot]"
+        return 1
+    fi
+    flow_proof_flowc FLOWC_PROOF_KERNEL=1 FLOWC_IN="$path" FLOWC_KERNEL_OUT="$out" \
+        FLOWC_KERNEL_PARAMS="$params" FLOWC_KERNEL_PLOT="$plot" || return 1
+    # The plot is Graphviz DOT; render the requested image when dot exists.
+    case "$plot" in
+        *.png|*.pdf|*.svg)
+            if command -v dot >/dev/null 2>&1; then
+                dot "-T${plot##*.}" -o "$plot" "${plot%.*}.dot" && echo "Wrote $plot"
+            fi
+            ;;
+    esac
+}
+
+# flow know <claim> | flow know --lint-duplicates
+flow_know() {
+    local query="" lint=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --lint-duplicates) lint=1 ;;
+            -h|--help) query="" ; lint=2 ;;
+            *) query="$1" ;;
+        esac
+        shift
+    done
+    if [ "$lint" = "1" ]; then
+        flow_proof_flowc FLOWC_KNOW_LINT=1
+        return $?
+    fi
+    if [ -z "$query" ]; then
+        echo "usage: flow know [-h] [--lint-duplicates] [path]"
+        echo ""
+        echo "Look up a Flow Claim Path, e.g. Nat/+.zero-right or verify.Nat/+.zero-right"
+        return 1
+    fi
+    flow_proof_flowc FLOWC_KNOW="$query"
+}
+
 require_flow_file() {
     local program="${1:-}"
     if [ -z "$program" ]; then
@@ -3927,32 +4094,20 @@ pm.clean()
         ;;
     know)
         shift
-        python3 "$SCRIPT_DIR/tools/doc/flow_know.py" "$@"
+        flow_know "$@"
         ;;
     "doc")
         shift
         sub="${1:-}"
         shift || true
         case "$sub" in
-            proof)
-                if [ -z "${1:-}" ]; then
-                    print_error "Usage: flow doc proof <file.flow|directory> [-r]"
-                    exit 1
-                fi
-                python3 "$SCRIPT_DIR/tools/doc/flow_doc.py" proof "$@"
-                ;;
-            bundle)
-                python3 "$SCRIPT_DIR/tools/doc/flow_doc.py" bundle "$@"
-                ;;
-            kernel)
-                if [ -z "${1:-}" ]; then
-                    print_error "Usage: flow doc kernel <file.flow> [--param n=0] [--plot out.dot]"
-                    exit 1
-                fi
-                python3 "$SCRIPT_DIR/tools/doc/flow_doc.py" kernel "$@"
-                ;;
+            proof) flow_doc_proof "$@" ;;
+            bundle) flow_doc_bundle book "$@" ;;
+            basic-bundle) flow_doc_bundle basic "$@" ;;
+            geometry-bundle) flow_doc_bundle geometry "$@" ;;
+            kernel) flow_doc_kernel "$@" ;;
             *)
-                print_error "Usage: flow doc proof <file|dir> [-r]  |  flow doc bundle  |  flow doc kernel <file.flow> [--param n=0] [--plot out.png]"
+                print_error "Usage: flow doc proof <file|dir> [-r]  |  flow doc bundle|basic-bundle|geometry-bundle  |  flow doc kernel <file.flow> [--param n=0] [--plot out.dot]"
                 exit 1
                 ;;
         esac

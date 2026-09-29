@@ -2276,6 +2276,19 @@ function pdg_mkdir_p(dir: string) -> void {
     }
 }
 
+# Path(dir) / name, as pathlib prints it: no "./" prefix, no doubled "/".
+function pdg_join(dir: string, name: string) -> string {
+    let mut d: string = dir
+    let dp: ptr<u8> = d
+    let mut n: i32 = pdg_len(d)
+    while n > 1 and dp[n - 1] == 47 { n = n - 1 }
+    d = pdg_sub(d, 0, n)
+    while pdg_starts(d, "./") == 1 { d = pdg_sub(d, 2, pdg_len(d)) }
+    if pdg_len(d) == 0 or pdg_eq(d, ".") == 1 { return name }
+    if pdg_eq(d, "/") == 1 { return "/" + name }
+    return d + "/" + name
+}
+
 function pdg_dirname(path: string) -> string {
     let s: i32 = pdg_rfind_char(path, 47)
     if s < 0 { return "." }
@@ -2293,9 +2306,10 @@ function pdg_stem(path: string) -> string {
 }
 
 # write_proof_artifacts for one file, numbering from `start`. Figures are
-# written beside the documents. Prints each path written. Returns the number
-# of theorems, or -1 on an error.
-export function flowc_proof_write_artifacts(path: string, out_dir: string, start: i32, global: ptr<PdgMap>, root: string) -> i32 {
+# written beside the documents. verbose 0 prints nothing, 1 prints what
+# flow doc proof prints for a file, 2 what it prints per file of a tree.
+# Returns the number of theorems, or -1 on an error.
+export function flowc_proof_write_artifacts(path: string, out_dir: string, start: i32, global: ptr<PdgMap>, root: string, verbose: i32) -> i32 {
     let text: string = flowc_proof_read(path)
     let mut d: PdgDoc = flowc_proof_parse_text(text)
     let mut k: i32 = 0
@@ -2308,6 +2322,7 @@ export function flowc_proof_write_artifacts(path: string, out_dir: string, start
     let src_dir: string = pdg_dirname(path)
 
     # _attach_geometry_diagrams
+    let mut diagrams: string = ""
     k = 0
     while k < d.nthm {
         let t: PdgThm = d.thms[k]
@@ -2316,13 +2331,12 @@ export function flowc_proof_write_artifacts(path: string, out_dir: string, start
             let mut suffix: string = ""
             if d.nthm != 1 { suffix = "-" + pdg_itoa(k + 1) }
             let svg_name: string = stem + suffix + ".proof.svg"
-            let svg_path: string = out_dir + "/" + svg_name
-            let tex_path: string = out_dir + "/" + stem + suffix + ".proof-diagram.tex"
+            let svg_path: string = pdg_join(out_dir, svg_name)
+            let tex_path: string = pdg_join(out_dir, stem + suffix + ".proof-diagram.tex")
             if pdg_write(svg_path, flowc_geom_render_svg(&g)) != 0 { return 0 - 1 }
             if pdg_write(tex_path, flowc_geom_render_tikz(&g) + "\n") != 0 { return 0 - 1 }
             d.thms[k].diagram_svg = svg_name
-            printf("Wrote %s\n", svg_path)
-            printf("Wrote %s\n", tex_path)
+            diagrams = diagrams + "Wrote " + svg_path + "\nWrote " + tex_path + "\n"
         } else {
             if g.ok < 0 {
                 printf("flowc proof: %s: bad diagram script\n", path)
@@ -2333,12 +2347,35 @@ export function flowc_proof_write_artifacts(path: string, out_dir: string, start
     }
 
     let mut tiers: PdgMap = pdg_merged_tiers(global, &d)
-    let md_path: string = out_dir + "/" + stem + ".proof.md"
-    let tex_path: string = out_dir + "/" + stem + ".proof.tex"
+    let md_path: string = pdg_join(out_dir, stem + ".proof.md")
+    let tex_path: string = pdg_join(out_dir, stem + ".proof.tex")
     if pdg_write(md_path, flowc_proof_render_md(&d, stem, &tiers)) != 0 { return 0 - 1 }
     if pdg_write(tex_path, flowc_proof_render_tex(&d, stem, &tiers)) != 0 { return 0 - 1 }
-    printf("Wrote %s\n", md_path)
-    printf("Wrote %s\n", tex_path)
+    if verbose == 1 {
+        printf("Wrote %s\nWrote %s\n%s", md_path, tex_path, diagrams)
+    }
+    if verbose == 2 {
+        printf("%s\n  -> %s\n  -> %s\n", path, md_path, tex_path)
+        # Python globs `{stem}*.proof.svg` then `{stem}*.proof-diagram.tex`.
+        let cmd: string = "cd '" + out_dir + "' 2>/dev/null && { ls -1 -- '" + stem + "'*.proof.svg 2>/dev/null | LC_ALL=C sort; ls -1 -- '" + stem + "'*.proof-diagram.tex 2>/dev/null | LC_ALL=C sort; }"
+        let buf: ptr<u8> = malloc(1048576)
+        let got: i32 = flowc_io_popen_read(cmd, buf, 1048575)
+        if got > 0 {
+            buf[got] = 0
+            let listing: string = buf as string
+            let cap: i32 = pdg_count_lines(listing)
+            let ls: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+            let le: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+            let nl: i32 = pdg_split_lines(listing, ls, le, cap)
+            let mut j: i32 = 0
+            while j < nl {
+                if le[j] > ls[j] {
+                    printf("  -> %s\n", pdg_join(out_dir, pdg_sub(listing, ls[j], le[j])))
+                }
+                j = j + 1
+            }
+        }
+    }
     return d.nthm
 }
 
@@ -2422,7 +2459,10 @@ export function flowc_proof_doc_mode() -> i32 {
             }
             let mut start: i32 = 1
             if tree > 0 { start = counter }
-            let n: i32 = flowc_proof_write_artifacts(f, dir, start, &global, root)
+            let mut verbose: i32 = 1
+            if tree > 0 { verbose = 2 }
+            if pdg_len(pdg_env("FLOWC_PROOF_QUIET")) > 0 { verbose = 0 }
+            let n: i32 = flowc_proof_write_artifacts(f, dir, start, &global, root, verbose)
             if n < 0 {
                 failed = failed + 1
             } else {
@@ -2432,7 +2472,11 @@ export function flowc_proof_doc_mode() -> i32 {
         }
         i = i + 1
     }
-    if tree > 0 {
+    if tree > 0 and pdg_len(pdg_env("FLOWC_PROOF_QUIET")) == 0 {
+        if written == 0 and failed == 0 {
+            pdg_err("No theorem files found.")
+            return 1
+        }
         printf("\nGenerated %d proof artifact pair(s).\n", written)
     }
     if failed > 0 { return 1 }
@@ -2692,7 +2736,7 @@ export function flowc_proof_book_mode() -> i32 {
         i = 0
         while i < nf {
             let path: string = root + "/" + pdg_sidx(files[i])
-            let n: i32 = flowc_proof_write_artifacts(path, pdg_dirname(path), 1, &global, root)
+            let n: i32 = flowc_proof_write_artifacts(path, pdg_dirname(path), 1, &global, root, 0)
             if n < 0 { return 1 }
             i = i + 1
         }
