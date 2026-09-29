@@ -35,7 +35,8 @@
 # unevenly; neither changes the program. Everything else must be equal byte
 # for byte, including string globals and their order.
 #
-# The last revision with the full Python MLIR generator is e74c99a4.
+# Goldens were recorded from eec7463f (origin/main when the slice landed;
+# the Python MLIR generator is unchanged there).
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
