@@ -15,5 +15,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=scripts/tools/wasm_build/env.sh
+# shellcheck disable=SC1091 # shared env, checked on its own
 source "$ROOT/scripts/tools/wasm_build/env.sh"
 exec "$WASM_BUILD_BIN" gallery "$@"
