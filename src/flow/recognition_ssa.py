@@ -89,3 +89,26 @@ def assert_recognition_refinement(before: object, after: object, *, discrete_ref
         failures.append("discrete SSA refinement")
     failures.extend(f"{w.domain} ({w.distance:g} > {w.epsilon:g})" for w in certificate.witnesses if not w.preserved)
     raise RecognitionRefinementError("recognition-indexed refinement violated: " + ", ".join(failures))
+
+
+def contracts_from_flow(
+    flow: object,
+    *,
+    epsilon: float = 0.0,
+    epsilon_by_domain: Optional[dict] = None,
+) -> Tuple[RecognitionContract, ...]:
+    """Lower a source-level recognize declaration into RSSA obligations."""
+    from .recognition import declared_domains, validate_recognition_contract
+
+    validate_recognition_contract(flow)
+    overrides = epsilon_by_domain or {}
+    domains = declared_domains(flow)
+    unknown = set(overrides) - set(domains)
+    if unknown:
+        raise RecognitionRefinementError(
+            "epsilon supplied for undeclared recognition domain(s): " + ", ".join(sorted(unknown))
+        )
+    return tuple(
+        RecognitionContract(domain, float(overrides.get(domain, epsilon)))
+        for domain in domains
+    )
