@@ -1599,7 +1599,9 @@ function flowc_cgen_infer_type_node(arena: AstArena, src: ptr<u8>, init: i32) ->
     }
     if kind == AST_CALL {
         let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
-        if fn != AST_NONE {
+        # A generic function's return type names its type parameters;
+        # flowc_cgen_write_lit_type substitutes them (#1042).
+        if fn != AST_NONE and (arena.nodes[fn].ival == 0 or arena.nodes[init].b == AST_NONE) {
             return arena.nodes[fn].b
         }
     }
@@ -1668,6 +1670,27 @@ function flowc_cgen_write_sig_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return 1
 }
 
+# The C name of a struct literal's type: Name, or Name_T0_T1 for a generic
+# struct's literal, with type parameters replaced inside an instantiation.
+function flowc_cgen_put_struct_lit_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    let mut ta: i32 = arena.nodes[id].b
+    while ta != AST_NONE {
+        if arena.nodes[ta].kind == AST_TYPE {
+            flowc_cgen_putc(w, 95)
+            let mut cty: i32 = ta
+            if w[0].mono_ntp > 0 {
+                let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+                if idx >= 0 {
+                    cty = w[0].mono_tp_concrete[idx]
+                }
+            }
+            flowc_cgen_put_span(w, src, arena.nodes[cty].name_start, arena.nodes[cty].name_end)
+        }
+        ta = arena.nodes[ta].next
+    }
+}
+
 # Write a C type for initialisers with no AST_TYPE node. 1 if written, else 0.
 function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
     if init == AST_NONE {
@@ -1683,7 +1706,8 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return 1
     }
     if kind == AST_STRUCT_LIT {
-        flowc_cgen_put_span(w, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
+        # A generic literal's type is its specialization (#1042).
+        flowc_cgen_put_struct_lit_name(w, arena, src, init)
         return 1
     }
     if kind == AST_PIPE_BLOCK {
@@ -1705,6 +1729,9 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return 0
     }
     if kind == AST_CALL {
+        if arena.nodes[init].b != AST_NONE and flowc_cgen_write_generic_ret(w, arena, src, init) == 1 {
+            return 1
+        }
         return flowc_cgen_write_sig_type(w, arena, src, init)
     }
     return 0
@@ -5446,24 +5473,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, " = ")
         }
         flowc_cgen_putc(w, 40)
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        let mut ta: i32 = arena.nodes[id].b
-        while ta != AST_NONE {
-            if arena.nodes[ta].kind == AST_TYPE {
-                flowc_cgen_putc(w, 95)
-                if w[0].mono_ntp > 0 {
-                    let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
-                    if idx >= 0 {
-                        flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[idx]].name_start, arena.nodes[w[0].mono_tp_concrete[idx]].name_end)
-                    } else {
-                        flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
-                    }
-                } else {
-                    flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
-                }
-            }
-            ta = arena.nodes[ta].next
-        }
+        flowc_cgen_put_struct_lit_name(w, arena, src, id)
         flowc_cgen_puts(w, "){ ")
         let mut field: i32 = arena.nodes[id].a
         let mut first: i32 = 1
@@ -9189,6 +9199,100 @@ function flowc_cgen_mono_guard(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, k
     }
 }
 
+# Type parameter names of generic function `fn_id`, read from the source
+# between its name and `(` (`<T, U: Trait>`), into starts/ends (at most 8).
+function flowc_cgen_fn_tp_names(src: ptr<u8>, fn_id: i32, arena: AstArena, starts: ptr<i32>, ends: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    let mut pos: i32 = arena.nodes[fn_id].name_end
+    let lim: i32 = arena.nodes[fn_id].end
+    while pos < lim and src[pos] != 60 and src[pos] != 40 {
+        pos = pos + 1
+    }
+    if pos < lim and src[pos] == 60 {
+        pos = pos + 1
+        while pos < lim and src[pos] != 62 {
+            while pos < lim and (src[pos] == 32 or src[pos] == 10 or src[pos] == 9) {
+                pos = pos + 1
+            }
+            if src[pos] == 62 {
+                break
+            }
+            if src[pos] == 44 {
+                pos = pos + 1
+            } else {
+                let id_start: i32 = pos
+                while pos < lim and ((src[pos] >= 65 and src[pos] <= 90) or (src[pos] >= 97 and src[pos] <= 122) or (src[pos] >= 48 and src[pos] <= 57) or src[pos] == 95) {
+                    pos = pos + 1
+                }
+                if n < 8 {
+                    starts[n] = id_start
+                    ends[n] = pos
+                    n = n + 1
+                }
+                # Skip `: Trait` if present.
+                while pos < lim and src[pos] != 44 and src[pos] != 62 {
+                    pos = pos + 1
+                }
+            }
+        }
+    }
+    return n
+}
+
+# `let x = f<A, B>(...)` with no annotation: write f's return type with its
+# type parameters replaced by A and B (resolved through an enclosing
+# instantiation first). 1 if written, else 0.
+function flowc_cgen_write_generic_ret(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let mut fn_id: i32 = AST_NONE
+    let mut j: i32 = 0
+    while j < arena.len {
+        if arena.nodes[j].kind == AST_FN and arena.nodes[j].ival > 0 {
+            if flowc_cgen_span_eq(src, arena.nodes[call].name_start, arena.nodes[call].name_end, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+                fn_id = j
+            }
+        }
+        j = j + 1
+    }
+    if fn_id == AST_NONE or arena.nodes[fn_id].b == AST_NONE {
+        return 0
+    }
+    let mut starts: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut ends: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut conc: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let ntp: i32 = flowc_cgen_fn_tp_names(src, fn_id, arena, &starts[0], &ends[0])
+    let mut nconc: i32 = 0
+    let mut ta: i32 = arena.nodes[call].b
+    while ta != AST_NONE and nconc < 8 {
+        let mut c: i32 = ta
+        if w[0].mono_ntp > 0 {
+            let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+            if idx >= 0 {
+                c = w[0].mono_tp_concrete[idx]
+            }
+        }
+        conc[nconc] = c
+        nconc = nconc + 1
+        ta = arena.nodes[ta].next
+    }
+    if ntp == 0 or ntp != nconc {
+        return 0
+    }
+    let save_ntp: i32 = w[0].mono_ntp
+    let save_s: ptr<i32> = w[0].mono_tp_starts
+    let save_e: ptr<i32> = w[0].mono_tp_ends
+    let save_c: ptr<i32> = w[0].mono_tp_concrete
+    w[0].mono_tp_starts = &starts[0]
+    w[0].mono_tp_ends = &ends[0]
+    w[0].mono_tp_concrete = &conc[0]
+    w[0].mono_ntp = ntp
+    flowc_cgen_emit_type(w, arena, src, arena.nodes[fn_id].b)
+    w[0].mono_ntp = save_ntp
+    w[0].mono_tp_starts = save_s
+    w[0].mono_tp_ends = save_e
+    w[0].mono_tp_concrete = save_c
+    return 1
+}
+
 # Instantiate the generic function named [ns, ne) at the concrete types
 # conc[0..nconc) (type nodes), once per bundle (hash table `hashes`, and the
 # #ifndef guard across modules). Generic calls inside its body whose type
@@ -9238,40 +9342,7 @@ function flowc_cgen_mono_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ns: 
     let mut tp_starts: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
     let mut tp_ends: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
     let mut tp_concrete: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
-    let mut ntp_names: i32 = 0
-    let mut pos: i32 = arena.nodes[fn_id].name_end
-    let lim: i32 = arena.nodes[fn_id].end
-    while pos < lim and src[pos] != 60 and src[pos] != 40 {
-        pos = pos + 1
-    }
-    if pos < lim and src[pos] == 60 {
-        pos = pos + 1
-        while pos < lim and src[pos] != 62 {
-            while pos < lim and (src[pos] == 32 or src[pos] == 10 or src[pos] == 9) {
-                pos = pos + 1
-            }
-            if src[pos] == 62 {
-                break
-            }
-            if src[pos] == 44 {
-                pos = pos + 1
-            } else {
-                let id_start: i32 = pos
-                while pos < lim and ((src[pos] >= 65 and src[pos] <= 90) or (src[pos] >= 97 and src[pos] <= 122) or (src[pos] >= 48 and src[pos] <= 57) or src[pos] == 95) {
-                    pos = pos + 1
-                }
-                if ntp_names < 8 {
-                    tp_starts[ntp_names] = id_start
-                    tp_ends[ntp_names] = pos
-                    ntp_names = ntp_names + 1
-                }
-                # Skip `: Trait` if present.
-                while pos < lim and src[pos] != 44 and src[pos] != 62 {
-                    pos = pos + 1
-                }
-            }
-        }
-    }
+    let ntp_names: i32 = flowc_cgen_fn_tp_names(src, fn_id, arena, &tp_starts[0], &tp_ends[0])
     if ntp_names != nconc {
         return
     }
