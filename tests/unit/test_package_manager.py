@@ -1,11 +1,25 @@
 """Tests for Flow package install behavior."""
 
+import shutil
+import subprocess
 from pathlib import Path
 
 from flow.module_resolver import get_module_resolver
 from flow.package import FlowPackage, FlowPackageManager
 from flow.project_config import load_project_config
 from flow.toml_compat import _fallback_loads
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def flow_pkg(cwd, *args):
+    """Run the Flow package manager (compiler/src/pkg.flow) through flow-driver."""
+    return subprocess.run(
+        ["bash", str(ROOT / "flow-driver"), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_toml_fallback_reads_inline_path_dependencies():
@@ -52,9 +66,7 @@ def test_install_path_dependency_copies_package_and_updates_lock(tmp_path):
         encoding="utf-8",
     )
 
-    manager = FlowPackageManager(str(app))
-
-    assert manager.install()
+    assert flow_pkg(app, "sync").returncode == 0
     assert (app / "flow_packages" / "mathkit" / "src" / "ops.flow").exists()
     assert '"source": "path"' in (app / "flow.lock").read_text(encoding="utf-8")
 
@@ -80,7 +92,7 @@ def test_sync_for_program_discovers_nearest_project(tmp_path):
     main = app / "src" / "main.flow"
     main.write_text("function main() -> i32 { return 0 }\n", encoding="utf-8")
 
-    assert FlowPackageManager.sync_for_program(str(main))
+    assert flow_pkg(tmp_path, "sync", "--program", str(main)).returncode == 0
     assert (app / "flow_packages" / "mathkit" / "src" / "ops.flow").exists()
 
 
@@ -116,7 +128,7 @@ def test_dot_import_resolves_installed_path_dependency(tmp_path):
     assert "add_one" in resolver.symbol_table
 
 
-def test_unknown_registry_dependency_fails_honestly(tmp_path, capsys):
+def test_unknown_registry_dependency_fails_honestly(tmp_path):
     (tmp_path / "flow.toml").write_text(
         '[package]\nname = "app"\nversion = "0.1.0"\n\n'
         "[dependencies]\n"
@@ -124,24 +136,10 @@ def test_unknown_registry_dependency_fails_honestly(tmp_path, capsys):
         encoding="utf-8",
     )
 
-    manager = FlowPackageManager(str(tmp_path))
-
-    assert not manager.install()
-    out = capsys.readouterr().out
+    result = flow_pkg(tmp_path, "sync")
+    assert result.returncode == 1
+    out = result.stdout
     assert "Unknown dependency" in out or "not found" in out.lower()
-
-
-def test_git_url_helpers():
-    assert FlowPackageManager._looks_like_git_url(
-        "https://github.com/org/mylib.git"
-    )
-    assert FlowPackageManager._looks_like_git_url("git@github.com:org/mylib.git")
-    assert FlowPackageManager._infer_git_name(
-        "https://github.com/org/mylib.git"
-    ) == "mylib"
-    assert FlowPackageManager._normalize_git_url(
-        "git+https://github.com/org/mylib.git"
-    ) == "https://github.com/org/mylib.git"
 
 
 def test_add_git_url_shorthand_and_lock_rev(tmp_path):
@@ -193,8 +191,7 @@ def test_add_git_url_shorthand_and_lock_rev(tmp_path):
         encoding="utf-8",
     )
 
-    manager = FlowPackageManager(str(app))
-    assert manager.add(f"file://{repo}")
+    assert flow_pkg(app, "add", f"file://{repo}").returncode == 0
     assert (app / "flow_packages" / "mylib" / "src" / "lib.flow").exists()
     lock = (app / "flow.lock").read_text(encoding="utf-8")
     assert '"source": "git"' in lock
@@ -252,12 +249,10 @@ def test_git_subdir_install(tmp_path):
         '[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\n',
         encoding="utf-8",
     )
-    manager = FlowPackageManager(str(app))
-    assert manager.add(
-        "ring",
-        git=f"file://{bare}",
-        subdir="packages/ring",
+    result = flow_pkg(
+        app, "add", "ring", "--git", f"file://{bare}", "--subdir", "packages/ring"
     )
+    assert result.returncode == 0
     assert (app / "flow_packages" / "ring" / "src" / "lib.flow").exists()
     assert not (app / "flow_packages" / "ring" / "README.md").exists()
 
@@ -284,8 +279,8 @@ def test_collect_dependency_native_from_installed_package(tmp_path):
         'httpish = { path = "../httpish" }\n',
         encoding="utf-8",
     )
+    shutil.copytree(dep, app / "flow_packages" / "httpish")
     mgr = FlowPackageManager(str(app))
-    assert mgr.install()
     config = mgr.load_config()
     sources, frameworks, libs, cflags, ldflags = mgr._collect_dependency_native(config)
     assert any(s.endswith("bridge.c") for s in sources)

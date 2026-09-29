@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-FLOW Package Manager
-Manages FLOW projects and dependencies.
+FLOW Package Manager: init, publish, build, clean and native builds.
+
+Installing dependencies (add, install, sync) and registry queries (search,
+info) are the Flow package manager in compiler/src/pkg.flow.
 """
 
 import os
@@ -160,7 +162,6 @@ class FlowPackageManager:
         self.packages_dir = self.project_dir / "flow_packages"
         self.lock_file = self.project_dir / "flow.lock"
         self._registry = None
-        self._last_install_git_sha: Optional[str] = None
 
     def registry(self):
         """Lazy-load the Flow package registry index."""
@@ -242,266 +243,6 @@ flow_packages/
             print(f"{self.RED}Error parsing flow.toml: {e}{self.RESET}")
             return None
     
-    def save_config(self, package: FlowPackage):
-        """Save project configuration."""
-        self.config_file.write_text(package.to_toml())
-    
-    def _read_lock(self) -> dict:
-        """Load flow.lock or return empty dict."""
-        if not self.lock_file.exists():
-            return {"version": 1, "packages": {}}
-        try:
-            import json
-            return json.loads(self.lock_file.read_text())
-        except Exception:
-            return {"version": 1, "packages": {}}
-
-    def _write_lock(self, lock_data: dict) -> None:
-        """Persist flow.lock with pinned dependency versions."""
-        import json
-        self.lock_file.write_text(json.dumps(lock_data, indent=2) + "\n")
-
-    def _update_lock_entry(
-        self,
-        package_name: str,
-        version: Any,
-        source: str,
-        resolved: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        lock = self._read_lock()
-        entry: Dict[str, Any] = {
-            "version": version if not isinstance(version, dict) else version,
-            "source": source,
-        }
-        if resolved is not None:
-            entry["resolved"] = resolved
-        lock.setdefault("packages", {})[package_name] = entry
-        self._write_lock(lock)
-
-    @staticmethod
-    def _looks_like_git_url(value: str) -> bool:
-        """True for https/git SSH/file URLs commonly used as git remotes."""
-        v = value.strip()
-        if v.startswith("git+"):
-            return True
-        if v.startswith("git@"):
-            return True
-        if v.startswith("ssh://git@"):
-            return True
-        if v.startswith("file://"):
-            return True
-        if v.startswith("http://") or v.startswith("https://"):
-            # Prefer explicit .git, but also accept github/gitlab-style paths
-            lower = v.lower()
-            if lower.endswith(".git") or ".git#" in lower:
-                return True
-            for host in ("github.com/", "gitlab.com/", "bitbucket.org/", "codeberg.org/"):
-                if host in lower:
-                    return True
-        return False
-
-    @staticmethod
-    def _normalize_git_url(url: str) -> str:
-        """Strip git+ prefix and fragment (Cargo-style git+https://…#rev)."""
-        u = url.strip()
-        if u.startswith("git+"):
-            u = u[4:]
-        if "#" in u and not u.startswith("file://"):
-            # Keep file:// paths intact; for http(s) fragment may be a rev hint
-            # handled separately — drop fragment from the clone URL.
-            base, _frag = u.split("#", 1)
-            u = base
-        return u.rstrip("/")
-
-    @staticmethod
-    def _infer_git_name(url: str) -> str:
-        """Infer package name from a git URL basename (strip .git)."""
-        u = FlowPackageManager._normalize_git_url(url)
-        if u.startswith("git@") and ":" in u:
-            # git@host:org/repo.git
-            path = u.split(":", 1)[1]
-        else:
-            path = u
-        name = Path(path).name
-        if name.endswith(".git"):
-            name = name[: -len(".git")]
-        return name or "unnamed"
-
-    @staticmethod
-    def _git_head_sha(repo: Path) -> Optional[str]:
-        try:
-            out = subprocess.run(
-                ["git", "-C", str(repo), "rev-parse", "HEAD"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            sha = out.stdout.strip()
-            return sha or None
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return None
-
-    @staticmethod
-    def _parse_add_spec(package_spec: str) -> tuple:
-        """Parse `name`, `name@version`, or `name@^1.2`."""
-        if "@" in package_spec and not package_spec.startswith("@"):
-            # Avoid treating git@host:… as name@version
-            if package_spec.startswith("git@"):
-                return package_spec.strip(), "*"
-            name, ver = package_spec.split("@", 1)
-            return name.strip(), ver.strip() or "*"
-        return package_spec.strip(), "*"
-
-    def add(
-        self,
-        package_name: str,
-        version: str = "*",
-        *,
-        git: Optional[str] = None,
-        path: Optional[str] = None,
-        tag: Optional[str] = None,
-        rev: Optional[str] = None,
-        branch: Optional[str] = None,
-        subdir: Optional[str] = None,
-    ) -> bool:
-        """Add a dependency (registry name, path, or git) — package registry style."""
-        config = self.load_config()
-        if not config:
-            return False
-
-        # URL shorthand: `flow add https://github.com/org/repo.git [--tag …]`
-        if not git and not path and self._looks_like_git_url(package_name):
-            git = package_name
-            package_name = self._infer_git_name(git)
-
-        name, ver_from_at = self._parse_add_spec(package_name)
-        if version == "*" and ver_from_at != "*":
-            version = ver_from_at
-
-        if git:
-            git = self._normalize_git_url(git)
-            if name in ("unnamed", "") or self._looks_like_git_url(name):
-                name = self._infer_git_name(git)
-
-        if name in config.dependencies:
-            print(f"{self.YELLOW}{name} already in dependencies{self.RESET}")
-            return False
-
-        # Build dependency spec for flow.toml
-        if path:
-            spec: Any = {"path": path}
-            source = "path"
-        elif git:
-            spec = {"git": git}
-            if tag:
-                spec["tag"] = tag
-            elif rev:
-                spec["rev"] = rev
-            elif branch:
-                spec["branch"] = branch
-            if subdir:
-                spec["subdir"] = subdir
-            source = "git"
-        else:
-            # Registry resolution
-            pkg_ver = self.registry().resolve(name, version)
-            if pkg_ver is None:
-                # Fall back: stdlib single-file module
-                stdlib_path = (
-                    Path(__file__).parent.parent.parent
-                    / "lib"
-                    / "stdlib"
-                    / f"{name}.flow"
-                )
-                if stdlib_path.exists():
-                    spec = version if version != "*" else "0.0.0"
-                    source = "stdlib"
-                else:
-                    print(
-                        f"{self.RED}Package '{name}' not found in registry "
-                        f"({self.registry().name}).{self.RESET}"
-                    )
-                    print(
-                        f"  Try: {self.BLUE}flow search {name}{self.RESET}  "
-                        f"or  {self.BLUE}flow add --git <url> --name {name}{self.RESET}"
-                    )
-                    return False
-            else:
-                # Store a version requirement string in flow.toml;
-                # install resolves via registry each time (lock pins the pick).
-                spec = pkg_ver.version if version in ("*", "latest") else version
-                if version.startswith("^") or version.startswith(">="):
-                    spec = version
-                source = "registry"
-                print(
-                    f"{self.BLUE}Resolved {name}@{pkg_ver.version} "
-                    f"from {self.registry().name}{self.RESET}"
-                )
-
-        config.dependencies[name] = spec
-        self.save_config(config)
-        print(f"{self.GREEN}✓ Added {name} = {FlowPackage._toml_value(spec)}{self.RESET}")
-
-        ok = self.install_package(name, config.dependencies[name])
-        if ok:
-            locked_ver = spec
-            resolved = None
-            if source == "registry":
-                pkg_ver = self.registry().resolve(
-                    name, spec if isinstance(spec, str) else "*"
-                )
-                if pkg_ver:
-                    locked_ver = pkg_ver.version
-                    resolved = pkg_ver.to_dep_spec()
-            elif source == "git":
-                resolved = dict(spec)
-                sha = self._last_install_git_sha
-                if sha:
-                    resolved["rev"] = sha
-                    print(f"{self.BLUE}  pinned rev {sha[:12]}{self.RESET}")
-            self._update_lock_entry(name, locked_ver, source, resolved=resolved)
-        return ok
-
-    def search(self, query: str = "") -> bool:
-        """Search the package registry."""
-        from .registry import resolve_version
-
-        results = self.registry().search(query)
-        if not results:
-            print(f"{self.YELLOW}No packages matched {query!r}{self.RESET}")
-            return False
-        print(f"{self.BOLD}{self.registry().name}{self.RESET} — {len(results)} package(s)\n")
-        for pkg in results:
-            latest = resolve_version(pkg, "*")
-            ver = latest.version if latest else "?"
-            print(f"  {self.GREEN}{pkg.name}{self.RESET}  {ver}")
-            if pkg.description:
-                print(f"    {pkg.description}")
-        return True
-
-    def info(self, package_name: str) -> bool:
-        """Show package metadata."""
-        from .registry import resolve_version
-
-        pkg = self.registry().get(package_name)
-        if not pkg:
-            print(f"{self.RED}Unknown package: {package_name}{self.RESET}")
-            return False
-        latest = resolve_version(pkg, "*")
-        print(f"{self.BOLD}{pkg.name}{self.RESET}")
-        print(f"  description: {pkg.description}")
-        print(f"  license:     {pkg.license}")
-        if pkg.homepage:
-            print(f"  homepage:    {pkg.homepage}")
-        print("  versions:")
-        for v in pkg.versions:
-            mark = " (yanked)" if v.yanked else ""
-            src = v.path or v.git or "?"
-            print(f"    {v.version}{mark}  →  {src}")
-        if latest:
-            print(f"  latest:      {latest.version}")
-        return True
-
     def publish(
         self,
         *,
@@ -539,7 +280,7 @@ flow_packages/
         print(f"{self.BLUE}Publishing {config.name}@{config.version}…{self.RESET}")
         print(f"  source: {pub_path or pub_git}")
         if dry_run:
-            print(f"{self.YELLOW}dry-run — index not written{self.RESET}")
+            print(f"{self.YELLOW}dry-run: index not written{self.RESET}")
             return True
 
         index_path = self.registry().publish_local(
@@ -557,246 +298,6 @@ flow_packages/
             f"{self.BLUE}flow add {config.name}{self.RESET}"
         )
         return True
-    
-    def _copy_package_dir(self, source: Path, dest: Path) -> None:
-        """Copy a package directory without carrying build artifacts."""
-        ignore = shutil.ignore_patterns(
-            ".git", "build", "flow_packages", "__pycache__", "*.pyc"
-        )
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(source, dest, ignore=ignore)
-
-    def install_package(self, package_name: str, spec: Any = "*") -> bool:
-        """Install a package from stdlib, a local path, or a git URL."""
-        self.packages_dir.mkdir(exist_ok=True)
-        
-        # Check if it's a stdlib package
-        stdlib_path = Path(__file__).parent.parent.parent / "lib" / "stdlib" / f"{package_name}.flow"
-        if stdlib_path.exists():
-            # Copy from stdlib
-            dest = self.packages_dir / f"{package_name}.flow"
-            shutil.copy(stdlib_path, dest)
-            print(f"{self.GREEN}✓ Installed {package_name} from stdlib{self.RESET}")
-            return True
-
-        if isinstance(spec, dict):
-            if "path" in spec:
-                raw_path = Path(str(spec["path"])).expanduser()
-                source = (
-                    raw_path.resolve()
-                    if raw_path.is_absolute()
-                    else (self.project_dir / raw_path).resolve()
-                )
-                if not source.exists():
-                    print(f"{self.RED}Path dependency not found: {source}{self.RESET}")
-                    return False
-                dest = self.packages_dir / package_name
-                if source.is_dir():
-                    self._copy_package_dir(source, dest)
-                else:
-                    dest.parent.mkdir(exist_ok=True)
-                    shutil.copy(source, dest.with_suffix(".flow"))
-                print(f"{self.GREEN}✓ Installed {package_name} from {source}{self.RESET}")
-                return True
-
-            if "git" in spec:
-                return self._install_git_dependency(package_name, spec)
-
-            print(f"{self.RED}Unsupported dependency spec for {package_name}: {spec}{self.RESET}")
-            return False
-        
-        # Check if it's a local file
-        local_path = self.project_dir / f"{package_name}.flow"
-        if local_path.exists():
-            print(f"{self.YELLOW}{package_name} is a local file{self.RESET}")
-            return True
-
-        # Package registry: bare name / version requirement string
-        if isinstance(spec, str) or spec is None:
-            req = spec if isinstance(spec, str) else "*"
-            pkg_ver = self.registry().resolve(package_name, req)
-            if pkg_ver is not None:
-                resolved = pkg_ver.to_dep_spec()
-                print(
-                    f"{self.BLUE}↓ {package_name}@{pkg_ver.version} "
-                    f"from registry{self.RESET}"
-                )
-                return self.install_package(package_name, resolved)
-
-        print(
-            f"{self.RED}Unknown dependency '{package_name}'. "
-            f"Not in registry, path, git, or stdlib. "
-            f"Try: flow search {package_name}{self.RESET}"
-        )
-        return False
-
-    def _install_git_dependency(self, package_name: str, spec: Dict[str, Any]) -> bool:
-        """Clone a git dep into flow_packages/, optionally extracting `subdir`."""
-        self._last_install_git_sha = None
-        git_url = self._normalize_git_url(str(spec["git"]))
-        dest = self.packages_dir / package_name
-        ref = spec.get("tag") or spec.get("rev") or spec.get("branch")
-        subdir = spec.get("subdir")
-        # Clone into a staging dir when we need a subdirectory extract
-        clone_dest = dest
-        staging: Optional[Path] = None
-        if subdir:
-            staging = self.packages_dir / f".git-staging-{package_name}"
-            if staging.exists():
-                shutil.rmtree(staging)
-            clone_dest = staging
-
-        try:
-            if clone_dest.exists() and (clone_dest / ".git").exists():
-                subprocess.run(
-                    ["git", "-C", str(clone_dest), "fetch", "--tags", "--prune"],
-                    check=True,
-                    capture_output=True,
-                )
-            else:
-                if clone_dest.exists():
-                    shutil.rmtree(clone_dest)
-                clone_cmd = ["git", "clone"]
-                # Shallow clone when pinning a branch/tag (not a full SHA)
-                is_sha = (
-                    isinstance(ref, str)
-                    and len(ref) >= 7
-                    and all(c in "0123456789abcdef" for c in ref.lower())
-                )
-                if ref and not is_sha:
-                    clone_cmd.extend(["--depth", "1", "--branch", str(ref)])
-                    ref = None  # already on the right branch/tag
-                clone_cmd.extend([git_url, str(clone_dest)])
-                subprocess.run(clone_cmd, check=True, capture_output=True)
-            if ref:
-                subprocess.run(
-                    ["git", "-C", str(clone_dest), "fetch", "--tags", "--prune"],
-                    check=False,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "-C", str(clone_dest), "checkout", str(ref)],
-                    check=True,
-                    capture_output=True,
-                )
-
-            sha = self._git_head_sha(clone_dest)
-            self._last_install_git_sha = sha
-
-            if subdir:
-                src = clone_dest / str(subdir)
-                if not src.exists():
-                    print(
-                        f"{self.RED}Git dependency {package_name}: "
-                        f"subdir '{subdir}' not found in repo{self.RESET}"
-                    )
-                    return False
-                if dest.exists():
-                    shutil.rmtree(dest)
-                self._copy_package_dir(src, dest)
-                if staging and staging.exists():
-                    shutil.rmtree(staging)
-            # else: dest is the clone itself
-
-            label = f"{git_url}" + (f"/{subdir}" if subdir else "")
-            print(f"{self.GREEN}✓ Installed {package_name} from git ({label}){self.RESET}")
-            return True
-        except subprocess.CalledProcessError as e:
-            err = e.stderr or ""
-            if isinstance(err, bytes):
-                err = err.decode("utf-8", errors="replace")
-            print(
-                f"{self.RED}Git dependency install failed for {package_name}: {e}"
-                f"{(' — ' + err.strip()) if err else ''}{self.RESET}"
-            )
-            if staging and staging.exists():
-                shutil.rmtree(staging)
-            return False
-        except FileNotFoundError:
-            print(f"{self.RED}git not found on PATH{self.RESET}")
-            return False
-    
-    def install(self) -> bool:
-        """Install all dependencies and refresh flow.lock."""
-        config = self.load_config()
-        if not config:
-            return False
-        
-        print(f"{self.BLUE}Installing dependencies...{self.RESET}")
-        
-        success = True
-        lock = self._read_lock()
-        lock.setdefault("packages", {})
-        for name, spec in config.dependencies.items():
-            locked_entry = lock.get("packages", {}).get(name, {})
-            # Prefer locked resolved source when present
-            install_spec = locked_entry.get("resolved") or locked_entry.get("version") or spec
-            # If flow.toml has a richer dict (path/git), prefer that over a stale string lock
-            if isinstance(spec, dict):
-                install_spec = spec
-            if not self.install_package(name, install_spec):
-                success = False
-                continue
-
-            stdlib_path = (
-                Path(__file__).parent.parent.parent / "lib" / "stdlib" / f"{name}.flow"
-            )
-            resolved = None
-            locked_ver: Any = spec
-            if stdlib_path.exists() and not isinstance(spec, dict):
-                source = "stdlib"
-            elif isinstance(spec, dict) and "path" in spec:
-                source = "path"
-            elif isinstance(spec, dict) and "git" in spec:
-                source = "git"
-                if self._last_install_git_sha:
-                    resolved = dict(spec)
-                    resolved["rev"] = self._last_install_git_sha
-            else:
-                source = "registry"
-                pkg_ver = self.registry().resolve(
-                    name, spec if isinstance(spec, str) else "*"
-                )
-                if pkg_ver:
-                    locked_ver = pkg_ver.version
-                    resolved = pkg_ver.to_dep_spec()
-            entry: Dict[str, Any] = {"version": locked_ver, "source": source}
-            if resolved:
-                entry["resolved"] = resolved
-            lock["packages"][name] = entry
-        
-        if success:
-            self._write_lock(lock)
-            print(f"\n{self.GREEN}✓ All dependencies installed (flow.lock updated){self.RESET}")
-        
-        return success
-
-    @classmethod
-    def sync_for_program(cls, program: str) -> bool:
-        """Synchronize the project containing ``program`` if it has deps.
-
-        This is intentionally conservative: an existing lockfile and package
-        directory are treated as synchronized. Explicit ``flow sync`` remains
-        available when the manifest or lockfile has changed.
-        """
-        from .project_config import find_flow_toml
-
-        toml_path = find_flow_toml(program)
-        if not toml_path:
-            return True
-        project_dir = Path(toml_path).parent
-        manager = cls(str(project_dir))
-        config = manager.load_config()
-        if config is None or not config.dependencies:
-            return config is not None
-        installed = all(
-            (manager.packages_dir / name).exists()
-            for name in config.dependencies
-        )
-        if manager.lock_file.exists() and installed:
-            return True
-        return manager.install()
     
     def build(self, release: bool = False) -> bool:
         """Build the project."""
@@ -1102,51 +603,21 @@ flow_packages/
             return False
 
 
+
 def main():
-    """CLI entry point for package manager."""
+    """CLI entry point for the commands still implemented in Python.
+
+    add, install, sync, search and info are the Flow package manager
+    (compiler/src/pkg.flow); flow-driver runs it for those commands.
+    """
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="FLOW Package Manager")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
-    
+
     # init
     init_parser = subparsers.add_parser("init", help="Initialize a new project")
     init_parser.add_argument("name", nargs="?", help="Project name")
-    
-    # add
-    add_parser = subparsers.add_parser("add", help="Add a dependency (name, name@version, --git, --path)")
-    add_parser.add_argument("package", nargs="?", help="Package name or name@version")
-    add_parser.add_argument("--version", "-v", default="*", help="Version req (*, ^1.0, exact)")
-    add_parser.add_argument("--git", help="Git repository URL")
-    add_parser.add_argument("--path", help="Local path to package")
-    add_parser.add_argument("--tag", help="Git tag")
-    add_parser.add_argument("--rev", help="Git commit SHA")
-    add_parser.add_argument("--branch", help="Git branch")
-    add_parser.add_argument(
-        "--subdir",
-        help="Subdirectory inside a git repo (monorepo packages)",
-    )
-    add_parser.add_argument(
-        "--name",
-        dest="dep_name",
-        help="Dependency name (with --git/--path; inferred from URL if omitted)",
-    )
-    
-    # install/sync
-    subparsers.add_parser("install", help="Install all dependencies from flow.toml")
-    sync_parser = subparsers.add_parser(
-        "sync", help="Synchronize dependencies for a project or Flow program"
-    )
-    sync_parser.add_argument(
-        "--program", help="Flow source file whose project should be synchronized"
-    )
-
-    # search / info / publish
-    search_parser = subparsers.add_parser("search", help="Search the package registry")
-    search_parser.add_argument("query", nargs="?", default="", help="Search query")
-
-    info_parser = subparsers.add_parser("info", help="Show package info")
-    info_parser.add_argument("package", help="Package name")
 
     publish_parser = subparsers.add_parser(
         "publish", help="Register this package in the local package index"
@@ -1155,74 +626,32 @@ def main():
     publish_parser.add_argument("--tag", help="Git tag")
     publish_parser.add_argument("--path", help="Repo-relative path override")
     publish_parser.add_argument("--dry-run", action="store_true", help="Validate only")
-    
+
     # build
     build_parser = subparsers.add_parser("build", help="Build the project")
     build_parser.add_argument("--release", "-r", action="store_true", help="Release build")
-    
+
     # build-native
     build_native_parser = subparsers.add_parser("build-native", help="Build with native source support")
     build_native_parser.add_argument("file", nargs="?", help="Entry file (optional)")
     build_native_parser.add_argument("--release", "-r", action="store_true", help="Release build")
-    
+
     # run
     subparsers.add_parser("run", help="Build and run the project")
-    
+
     # run-native
     run_native_parser = subparsers.add_parser("run-native", help="Build and run with native support")
     run_native_parser.add_argument("file", nargs="?", help="Entry file (optional)")
-    
+
     # clean
     subparsers.add_parser("clean", help="Clean build artifacts")
-    
+
     args = parser.parse_args()
-    
+
     pm = FlowPackageManager()
-    
+
     if args.command == "init":
         pm.init(args.name)
-    elif args.command == "add":
-        pkg = args.package or args.dep_name
-        git_url = args.git
-        # Positional URL shorthand: `flow add https://…/repo.git`
-        if (
-            pkg
-            and not git_url
-            and not args.path
-            and FlowPackageManager._looks_like_git_url(pkg)
-        ):
-            git_url = pkg
-            pkg = args.dep_name or FlowPackageManager._infer_git_name(git_url)
-        if not pkg and not git_url and not args.path:
-            add_parser.error(
-                "package name or git URL required "
-                "(or --git/--path; --name optional for git URLs)"
-            )
-        if git_url and not pkg and not args.dep_name:
-            pkg = FlowPackageManager._infer_git_name(git_url)
-        name = args.dep_name or pkg or "unnamed"
-        if args.path and not args.dep_name and not args.package:
-            add_parser.error("--name required with --path")
-        pm.add(
-            name,
-            args.version,
-            git=git_url,
-            path=args.path,
-            tag=args.tag,
-            rev=args.rev,
-            branch=args.branch,
-            subdir=args.subdir,
-        )
-    elif args.command == "install":
-        pm.install()
-    elif args.command == "sync":
-        if args.program:
-            raise SystemExit(0 if FlowPackageManager.sync_for_program(args.program) else 1)
-        raise SystemExit(0 if pm.install() else 1)
-    elif args.command == "search":
-        pm.search(args.query)
-    elif args.command == "info":
-        pm.info(args.package)
     elif args.command == "publish":
         pm.publish(git=args.git, tag=args.tag, path=args.path, dry_run=args.dry_run)
     elif args.command == "build":

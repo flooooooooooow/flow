@@ -68,7 +68,19 @@ Installed packages land in `flow_packages/<name>/` and are pinned in `flow.lock`
 | `./flow publish` | Register this package in the local index |
 | `./flow build` | Build the project |
 
-Also: `./flow pkg <subcommand>` → `python -m flow.package …`.
+`./flow pkg <subcommand>` takes the same subcommands.
+
+`add`, `sync` (and its alias `install`), `search`, `info` and the install step
+of `flow run` are written in Flow: [`compiler/src/pkg.flow`](../../compiler/src/pkg.flow),
+built by `flow-driver` with the Stage-A compiler. They need no Python. git and
+curl run through [`scripts/tools/pkg_fetch.sh`](../../scripts/tools/pkg_fetch.sh).
+`init`, `publish`, `build`, `build-native` and `run-native` are still
+`python -m flow.package`. `scripts/check_pkg_parity.sh` compares `flow.lock` and
+`flow_packages/` with the Python package manager this replaced.
+
+flowc resolves `import name.module` for a package listed in `[dependencies]`
+from `flow_packages/name/src/module.flow`, then `flow_packages/name/module.flow`,
+the same rule the Python host uses.
 
 `./flow sync` installs **project dependencies** when `flow.toml` exists.
 `flow run` performs the same synchronization automatically when a project has
@@ -99,7 +111,7 @@ Bundled index: [`registry/index.json`](../../registry/index.json)
 
 A version entry is either:
 
-- **`path`**: repo-relative (or absolute) directory with its own `flow.toml`
+- **`path`**: a repo-relative (or absolute) directory with its own `flow.toml`
 - **`git`** (+ optional `tag` / `rev` / `branch`): cloned into `flow_packages/`
 
 ### Overrides

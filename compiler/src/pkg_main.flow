@@ -1,20 +1,243 @@
 # @module flowc.pkg_main
-import .pkg { flowc_pkg_init, flowc_pkg_install, flowc_pkg_build, flowc_pkg_dispatch_fallback }
-extern {
-    function strcmp(a: string, b: string) -> i32
-    function puts(s: string) -> i32
+# @means  `flow pkg` command line: add, install, sync, search, info.
+#
+# Built by flow-driver with the Stage-A compiler and run with FLOW_REPO_ROOT
+# set to the repository root (registry/index.json, lib/stdlib and the fetch
+# shim live there). Arguments follow the argparse interface the Python
+# package manager had, and so do the exit codes: install, add, search and
+# info exit 0, sync exits 1 when an install failed, usage errors exit 2.
+
+import .pkg {
+    Pm, AddOpts,
+    pm_new, pm_install, pm_sync_for_program, pm_add, pm_search, pm_info,
+    looks_like_git_url, infer_git_name
 }
-function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
-    if argc < 2 { return 1 }
-    let cmd: string = argv[1] as string
-    if strcmp(cmd, "init") == 0 {
-        let mut name: string = ""
-        if argc >= 3 {
-            name = argv[2] as string
-        }
-        return flowc_pkg_init(name)
+import .pkg_json { str_eq, str_len, str_starts, str_slice, str_find_byte, str_cat }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function puts(s: string) -> i32
+    function write(fd: i32, buf: ptr<u8>, n: i64) -> i64
+    function fflush(fp: ptr<void>) -> i32
+}
+
+const USAGE: string = "usage: flow pkg {add,install,sync,search,info} ..."
+const ADD_USAGE: string = "usage: flow add [-h] [--version VERSION] [--git GIT] [--path PATH] [--tag TAG] [--rev REV] [--branch BRANCH] [--subdir SUBDIR] [--name DEP_NAME] [package]"
+
+function usage_error(usage: string, msg: string) -> i32 {
+    let _f: i32 = fflush(null)
+    let text: string = str_cat(str_cat(usage, "\nerror: "), str_cat(msg, "\n"))
+    let _w: i64 = write(2, text as ptr<u8>, str_len(text) as i64)
+    return 2
+}
+
+# Match an argparse long option, allowing a unique prefix ("--ver").
+function opt_is(arg: string, full: string, min_len: i32) -> bool {
+    let n: i32 = str_len(arg)
+    if n < min_len {
+        return false
     }
-    if strcmp(cmd, "install") == 0 { return flowc_pkg_install() }
-    if strcmp(cmd, "build") == 0 { return flowc_pkg_build() }
-    return flowc_pkg_dispatch_fallback(argc, argv)
+    return str_starts(full, arg)
+}
+
+function cmd_add(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let o: ptr<AddOpts> = malloc(64) as ptr<AddOpts>
+    o[0].version = "*"
+    o[0].git = ""
+    o[0].path = ""
+    o[0].tag = ""
+    o[0].rev = ""
+    o[0].branch = ""
+    o[0].subdir = ""
+    let mut package: string = ""
+    let mut dep_name: string = ""
+    let mut have_package: bool = false
+    let mut i: i32 = 2
+    while i < argc {
+        let a: string = argv[i] as string
+        let mut key: string = a
+        let mut val: string = ""
+        let mut has_val: bool = false
+        if str_starts(a, "--") {
+            let eq: i32 = str_find_byte(a, 61)
+            if eq > 0 {
+                key = str_slice(a, 0, eq)
+                val = str_slice(a, eq + 1, str_len(a))
+                has_val = true
+            }
+        }
+        let mut target: i32 = 0
+        if str_eq(key, "-v") or opt_is(key, "--version", 3) {
+            target = 1
+        } else {
+            if opt_is(key, "--git", 3) {
+                target = 2
+            } else {
+                if opt_is(key, "--path", 4) {
+                    target = 3
+                } else {
+                    if opt_is(key, "--tag", 3) {
+                        target = 4
+                    } else {
+                        if opt_is(key, "--rev", 4) {
+                            target = 5
+                        } else {
+                            if opt_is(key, "--branch", 3) {
+                                target = 6
+                            } else {
+                                if opt_is(key, "--subdir", 3) {
+                                    target = 7
+                                } else {
+                                    if opt_is(key, "--name", 3) {
+                                        target = 8
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if str_eq(a, "-h") or str_eq(a, "--help") {
+            puts(ADD_USAGE)
+            return 0
+        }
+        if target == 0 {
+            if str_starts(a, "-") and str_len(a) > 1 {
+                return usage_error(ADD_USAGE, str_cat("unrecognized arguments: ", a))
+            }
+            if have_package {
+                return usage_error(ADD_USAGE, str_cat("unrecognized arguments: ", a))
+            }
+            package = a
+            have_package = true
+        } else {
+            if has_val == false {
+                if i + 1 >= argc {
+                    return usage_error(ADD_USAGE, str_cat(key, ": expected one argument"))
+                }
+                i = i + 1
+                val = argv[i] as string
+            }
+            if target == 1 {
+                o[0].version = val
+            }
+            if target == 2 {
+                o[0].git = val
+            }
+            if target == 3 {
+                o[0].path = val
+            }
+            if target == 4 {
+                o[0].tag = val
+            }
+            if target == 5 {
+                o[0].rev = val
+            }
+            if target == 6 {
+                o[0].branch = val
+            }
+            if target == 7 {
+                o[0].subdir = val
+            }
+            if target == 8 {
+                dep_name = val
+            }
+        }
+        i = i + 1
+    }
+
+    let mut pkg: string = package
+    if str_len(pkg) == 0 {
+        pkg = dep_name
+    }
+    if str_len(pkg) > 0 and str_len(o[0].git) == 0 and str_len(o[0].path) == 0 and looks_like_git_url(pkg) {
+        o[0].git = pkg
+        if str_len(dep_name) > 0 {
+            pkg = dep_name
+        } else {
+            pkg = infer_git_name(o[0].git)
+        }
+    }
+    if str_len(pkg) == 0 and str_len(o[0].git) == 0 and str_len(o[0].path) == 0 {
+        return usage_error(ADD_USAGE, "package name or git URL required (or --git/--path; --name optional for git URLs)")
+    }
+    if str_len(o[0].git) > 0 and str_len(pkg) == 0 and str_len(dep_name) == 0 {
+        pkg = infer_git_name(o[0].git)
+    }
+    let mut name: string = dep_name
+    if str_len(name) == 0 {
+        name = pkg
+    }
+    if str_len(name) == 0 {
+        name = "unnamed"
+    }
+    if str_len(o[0].path) > 0 and str_len(dep_name) == 0 and str_len(package) == 0 {
+        return usage_error(ADD_USAGE, "--name required with --path")
+    }
+    let pm: ptr<Pm> = pm_new(".")
+    let _ok: bool = pm_add(pm, name, o)
+    return 0
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    if argc < 2 {
+        puts(USAGE)
+        return 0
+    }
+    let cmd: string = argv[1] as string
+    if str_eq(cmd, "add") {
+        return cmd_add(argc, argv)
+    }
+    if str_eq(cmd, "install") {
+        let _ok: bool = pm_install(pm_new("."))
+        return 0
+    }
+    if str_eq(cmd, "sync") {
+        let mut program: string = ""
+        let mut i: i32 = 2
+        while i < argc {
+            let a: string = argv[i] as string
+            if str_starts(a, "--program=") {
+                program = str_slice(a, 10, str_len(a))
+            } else {
+                if opt_is(a, "--program", 3) {
+                    if i + 1 >= argc {
+                        return usage_error("usage: flow sync [-h] [--program PROGRAM]", "argument --program: expected one argument")
+                    }
+                    i = i + 1
+                    program = argv[i] as string
+                } else {
+                    return usage_error("usage: flow sync [-h] [--program PROGRAM]", str_cat("unrecognized arguments: ", a))
+                }
+            }
+            i = i + 1
+        }
+        let mut ok: bool = false
+        if str_len(program) > 0 {
+            ok = pm_sync_for_program(program)
+        } else {
+            ok = pm_install(pm_new("."))
+        }
+        if ok {
+            return 0
+        }
+        return 1
+    }
+    if str_eq(cmd, "search") {
+        let mut query: string = ""
+        if argc >= 3 {
+            query = argv[2] as string
+        }
+        let _ok: bool = pm_search(pm_new("."), query)
+        return 0
+    }
+    if str_eq(cmd, "info") {
+        if argc < 3 {
+            return usage_error("usage: flow info [-h] package", "the following arguments are required: package")
+        }
+        let _ok: bool = pm_info(pm_new("."), argv[2] as string)
+        return 0
+    }
+    return usage_error(USAGE, str_cat("unknown command: ", cmd))
 }

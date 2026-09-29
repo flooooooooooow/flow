@@ -29104,11 +29104,20 @@ int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap);
 int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap);
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
+int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s);
+int32_t flowc_resolve_project_root(const char* entry_path, uint8_t* out, int32_t cap);
+int32_t flowc_resolve_is_space(int32_t c);
+int32_t flowc_resolve_bare_key(int32_t c);
+int32_t flowc_resolve_span_eq(uint8_t* x, int32_t a, int32_t b, uint8_t* y, int32_t c, int32_t d);
+int32_t flowc_resolve_toml_key(uint8_t* p, int32_t i, int32_t e, int32_t* span);
+int32_t flowc_resolve_toml_declares(uint8_t* toml, int32_t n, const char* table, uint8_t* nsrc, int32_t ns, int32_t ne);
+int32_t flowc_resolve_try_under(const char* root, uint8_t* src, int32_t s, int32_t e, uint8_t* out, int32_t cap);
+int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t name_end, const char* project_root, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap);
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
-int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uint8_t* path_store);
-int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path);
-int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search_dir, uint8_t* out_store);
+int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, const char* project_root, uint8_t* path_store);
+int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const char* project_root, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path);
+int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search_dir, const char* project_root, uint8_t* out_store);
 int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigcap, int32_t* siglen);
 int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32_t cap, int32_t len);
 int32_t flowc_resolve_name_eq(uint8_t* buf, int32_t a, int32_t b);
@@ -29409,6 +29418,316 @@ int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, 
   return (0 - 1);
 }
 
+int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  if (((o + n) + 1) > cap) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < n) {
+  out[(o + i)] = p[i];
+  i = (i + 1);
+}
+  out[(o + n)] = 0;
+  return (o + n);
+}
+
+int32_t flowc_resolve_project_root(const char* entry_path, uint8_t* out, int32_t cap) {
+  uint8_t* dir = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* cand = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_PATH_CAP + 16))));
+  int32_t dlen = flowc_resolve_dirname(entry_path, dir, FLOWC_RESOLVE_PATH_CAP);
+  out[0] = 0;
+  int32_t found = 0;
+  int32_t ups = 0;
+  while (dlen > 0 && ups < 64) {
+  int32_t o = flowc_resolve_put(cand, 0, (FLOWC_RESOLVE_PATH_CAP + 16), (const char*)(dir));
+  if (o >= 0) {
+  o = flowc_resolve_put(cand, o, (FLOWC_RESOLVE_PATH_CAP + 16), "/flow.toml");
+}
+  if (o >= 0 && flowc_io_exists((const char*)(cand)) == 1) {
+  found = flowc_resolve_copy_cstr((const char*)(dir), out, cap);
+  if (found < 0) {
+  found = 0;
+}
+  dlen = 0;
+} else {
+  if (dlen == 1 && dir[0] == 47) {
+  dlen = 0;
+} else {
+  int32_t is_dot = flowc_resolve_cstr_eq(dir, (uint8_t*)("."));
+  int32_t last_is_dotdot = 0;
+  if (dlen >= 2 && dir[(dlen - 1)] == 46 && dir[(dlen - 2)] == 46) {
+  if (dlen == 2 || dir[(dlen - 3)] == 47) {
+  last_is_dotdot = 1;
+}
+}
+  if (is_dot == 1) {
+  dlen = flowc_resolve_copy_cstr("..", dir, FLOWC_RESOLVE_PATH_CAP);
+  ups = (ups + 1);
+} else {
+  if (last_is_dotdot == 1) {
+  dlen = flowc_resolve_put(dir, dlen, FLOWC_RESOLVE_PATH_CAP, "/..");
+  ups = (ups + 1);
+} else {
+  uint8_t* parent = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  dlen = flowc_resolve_dirname((const char*)(dir), parent, FLOWC_RESOLVE_PATH_CAP);
+  if (dlen > 0) {
+  dlen = flowc_resolve_copy_cstr((const char*)(parent), dir, FLOWC_RESOLVE_PATH_CAP);
+}
+  free(parent);
+}
+}
+}
+}
+}
+  free(cand);
+  free(dir);
+  return found;
+}
+
+int32_t flowc_resolve_is_space(int32_t c) {
+  if (c == 32 || c == 9 || c == 13) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_resolve_bare_key(int32_t c) {
+  if (c >= 97 && c <= 122 || c >= 65 && c <= 90 || c >= 48 && c <= 57 || c == 95 || c == 45) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_resolve_span_eq(uint8_t* x, int32_t a, int32_t b, uint8_t* y, int32_t c, int32_t d) {
+  if ((b - a) != (d - c)) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < (b - a)) {
+  if (x[(a + i)] != y[(c + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t flowc_resolve_toml_key(uint8_t* p, int32_t i, int32_t e, int32_t* span) {
+  if (i < e && (p[i] == 34 || p[i] == 39)) {
+  uint8_t q = p[i];
+  int32_t k = (i + 1);
+  while (k < e && p[k] != q) {
+  k = (k + 1);
+}
+  if (k >= e) {
+  return (0 - 1);
+}
+  span[0] = (i + 1);
+  span[1] = k;
+  return (k + 1);
+}
+  int32_t k = i;
+  while (k < e && flowc_resolve_bare_key((int32_t)(p[k])) == 1) {
+  k = (k + 1);
+}
+  if (k == i) {
+  return (0 - 1);
+}
+  span[0] = i;
+  span[1] = k;
+  return k;
+}
+
+int32_t flowc_resolve_toml_declares(uint8_t* toml, int32_t n, const char* table, uint8_t* nsrc, int32_t ns, int32_t ne) {
+  uint8_t* tp = (uint8_t*)(table);
+  int32_t tn = (int32_t)(strlen(table));
+  int32_t span[2] = { 0, 0 };
+  int32_t in_table = 0;
+  int32_t pos = 0;
+  while (pos < n) {
+  int32_t eol = pos;
+  while (eol < n && toml[eol] != 10) {
+  eol = (eol + 1);
+}
+  int32_t s = pos;
+  while (s < eol && flowc_resolve_is_space((int32_t)(toml[s])) == 1) {
+  s = (s + 1);
+}
+  pos = (eol + 1);
+  if (s >= eol || toml[s] == 35) {
+  continue;
+}
+  if (toml[s] == 91) {
+  in_table = 0;
+  int32_t k = (s + 1);
+  if (k < eol && toml[k] == 91) {
+  continue;
+}
+  while (k < eol && flowc_resolve_is_space((int32_t)(toml[k])) == 1) {
+  k = (k + 1);
+}
+  int32_t k2 = flowc_resolve_toml_key(toml, k, eol, (int32_t*)((&span[0])));
+  if (k2 < 0) {
+  continue;
+}
+  if (flowc_resolve_span_eq(toml, span[0], span[1], tp, 0, tn) == 1) {
+  int32_t k3 = k2;
+  while (k3 < eol && flowc_resolve_is_space((int32_t)(toml[k3])) == 1) {
+  k3 = (k3 + 1);
+}
+  if (k3 < eol && toml[k3] == 93) {
+  in_table = 1;
+} else {
+  if (k3 < eol && toml[k3] == 46) {
+  k3 = (k3 + 1);
+  while (k3 < eol && flowc_resolve_is_space((int32_t)(toml[k3])) == 1) {
+  k3 = (k3 + 1);
+}
+  int32_t k4 = flowc_resolve_toml_key(toml, k3, eol, (int32_t*)((&span[0])));
+  if (k4 >= 0 && flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1) {
+  return 1;
+}
+}
+}
+}
+  continue;
+}
+  if (in_table == 1) {
+  int32_t k5 = flowc_resolve_toml_key(toml, s, eol, (int32_t*)((&span[0])));
+  if (k5 >= 0 && flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1) {
+  int32_t k6 = k5;
+  while (k6 < eol && flowc_resolve_is_space((int32_t)(toml[k6])) == 1) {
+  k6 = (k6 + 1);
+}
+  if (k6 < eol && (toml[k6] == 61 || toml[k6] == 46)) {
+  return 1;
+}
+}
+}
+}
+  return 0;
+}
+
+int32_t flowc_resolve_try_under(const char* root, uint8_t* src, int32_t s, int32_t e, uint8_t* out, int32_t cap) {
+  int32_t o = flowc_resolve_put(out, 0, cap, root);
+  if (o < 0 || ((o + (e - s)) + 7) > cap) {
+  return (0 - 1);
+}
+  out[o] = 47;
+  o = (o + 1);
+  int32_t i = s;
+  while (i < e) {
+  if (src[i] == 46) {
+  out[o] = 47;
+} else {
+  out[o] = src[i];
+}
+  o = (o + 1);
+  i = (i + 1);
+}
+  out[o] = 0;
+  o = flowc_resolve_put(out, o, cap, ".flow");
+  if (o < 0) {
+  return (0 - 1);
+}
+  if (flowc_io_exists((const char*)(out)) == 1) {
+  return o;
+}
+  return (0 - 1);
+}
+
+int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t name_end, const char* project_root, uint8_t* out_path, int32_t out_path_cap) {
+  if (strlen(project_root) == 0 || name_end <= name_start) {
+  return (0 - 1);
+}
+  int32_t first_end = name_start;
+  while (first_end < name_end && src[first_end] != 46) {
+  first_end = (first_end + 1);
+}
+  if ((first_end - name_start) == 3 && src[name_start] == 115 && src[(name_start + 1)] == 116 && src[(name_start + 2)] == 100) {
+  return (0 - 1);
+}
+  uint8_t* tpath = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_PATH_CAP + 16))));
+  int32_t o = flowc_resolve_put(tpath, 0, (FLOWC_RESOLVE_PATH_CAP + 16), project_root);
+  if (o >= 0) {
+  o = flowc_resolve_put(tpath, o, (FLOWC_RESOLVE_PATH_CAP + 16), "/flow.toml");
+}
+  if (o < 0) {
+  free(tpath);
+  return (0 - 1);
+}
+  uint8_t* toml = (uint8_t*)(malloc(65536));
+  int32_t n = flowc_read_file((const char*)(tpath), toml, 65535);
+  free(tpath);
+  if (n <= 0) {
+  free(toml);
+  return (0 - 1);
+}
+  toml[n] = 0;
+  int32_t declared = flowc_resolve_toml_declares(toml, n, "dependencies", src, name_start, first_end);
+  int32_t is_path = flowc_resolve_toml_declares(toml, n, "paths", src, name_start, first_end);
+  free(toml);
+  if (declared == 0 || is_path == 1) {
+  return (0 - 1);
+}
+  if (first_end >= name_end) {
+  puts("flowc: a package import needs a module, e.g. import name.lib");
+  return (0 - 2);
+}
+  uint8_t* pkg_root = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* pkg_src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  int32_t r = flowc_resolve_put(pkg_root, 0, FLOWC_RESOLVE_PATH_CAP, project_root);
+  if (r >= 0) {
+  r = flowc_resolve_put(pkg_root, r, FLOWC_RESOLVE_PATH_CAP, "/flow_packages/");
+}
+  int32_t fi = name_start;
+  while (r >= 0 && fi < first_end && (r + 2) < FLOWC_RESOLVE_PATH_CAP) {
+  pkg_root[r] = src[fi];
+  r = (r + 1);
+  fi = (fi + 1);
+}
+  if (r >= 0) {
+  pkg_root[r] = 0;
+}
+  int32_t r2 = flowc_resolve_copy_cstr((const char*)(pkg_root), pkg_src, FLOWC_RESOLVE_PATH_CAP);
+  if (r2 >= 0) {
+  r2 = flowc_resolve_put(pkg_src, r2, FLOWC_RESOLVE_PATH_CAP, "/src");
+}
+  int32_t result = (0 - 2);
+  if (r >= 0 && r2 >= 0) {
+  int32_t rest_start = (first_end + 1);
+  int32_t pass = 0;
+  while (pass < 2 && result < 0) {
+  const char* root = (const char*)(pkg_src);
+  if (pass == 1) {
+  root = (const char*)(pkg_root);
+}
+  int32_t end = name_end;
+  while (end > rest_start && result < 0) {
+  int32_t got = flowc_resolve_try_under(root, src, rest_start, end, out_path, out_path_cap);
+  if (got >= 0) {
+  result = got;
+} else {
+  int32_t k = (end - 1);
+  while (k > rest_start && src[k] != 46) {
+  k = (k - 1);
+}
+  end = k;
+}
+}
+  pass = (pass + 1);
+}
+}
+  free(pkg_src);
+  free(pkg_root);
+  if (result < 0) {
+  puts("flowc: package import not found under flow_packages/ (run `flow sync`)");
+}
+  return result;
+}
+
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap) {
   uint8_t* p = (uint8_t*)(path);
   int32_t n = (int32_t)(strlen(path));
@@ -29467,7 +29786,7 @@ int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path) {
   return (n + 1);
 }
 
-int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uint8_t* path_store) {
+int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, const char* project_root, uint8_t* path_store) {
   int32_t n = flowc_resolve_append_path(path_store, 0, entry_path);
   if (n < 0) {
   return (0 - 1);
@@ -29550,7 +29869,10 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   n = n2;
 }
   if (form == 0) {
-  int32_t plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  int32_t plen = flowc_resolve_package_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen == (0 - 1)) {
+  plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
   if (plen < 0) {
   flowc_parser_free(p);
   free(mod_dir);
@@ -29581,7 +29903,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, uin
   return n;
 }
 
-int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path) {
+int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const char* project_root, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path) {
   int32_t zi = 0;
   while (zi < FLOWC_RESOLVE_SRC_CAP) {
   src[zi] = 0;
@@ -29625,7 +29947,10 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8
 }
 }
   if (form == 0) {
-  int32_t plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  int32_t plen = flowc_resolve_package_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen == (0 - 1)) {
+  plen = flowc_resolve_dotted_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
   if (plen < 0) {
   flowc_parser_free(p);
   return 0;
@@ -29644,7 +29969,7 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, uint8
   return 1;
 }
 
-int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search_dir, uint8_t* out_store) {
+int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search_dir, const char* project_root, uint8_t* out_store) {
   uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
   uint8_t* imp_path = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   uint8_t* placed = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_MAX_MODS)));
@@ -29673,7 +29998,7 @@ int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search
   if (placed[i] == 0) {
   uint8_t* slot = (uint8_t*)((all_store + (i * FLOWC_RESOLVE_PATH_CAP)));
   const char* mpath = slot;
-  if (flowc_resolve_deps_ready(mpath, search_dir, all_store, all_n, out_store, out_n, src, imp_path) == 1) {
+  if (flowc_resolve_deps_ready(mpath, search_dir, project_root, all_store, all_n, out_store, out_n, src, imp_path) == 1) {
   int32_t n2 = flowc_resolve_append_path(out_store, out_n, mpath);
   if (n2 < 0) {
   free(placed);
@@ -29908,7 +30233,10 @@ int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
   path_store[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t nmods = flowc_resolve_gather(entry_path, search_dir, path_store);
+  uint8_t* proj_buf = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
+  const char* project_root = (const char*)(proj_buf);
+  int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
   if (nmods <= 0) {
   puts("flowc bundle tc: gather failed");
   free(path_store);
@@ -29924,7 +30252,7 @@ int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
   order_store[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, order_store);
+  int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store);
   if (norder <= 0) {
   puts("flowc bundle tc: topo failed");
   free(order_store);
@@ -30010,7 +30338,10 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   path_store[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t nmods = flowc_resolve_gather(entry_path, search_dir, path_store);
+  uint8_t* proj_buf = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
+  const char* project_root = (const char*)(proj_buf);
+  int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
   if (nmods <= 0) {
   free(path_store);
   return (0 - 1);
@@ -30025,7 +30356,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   order_store[zi] = 0;
   zi = (zi + 1);
 }
-  int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, order_store);
+  int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store);
   if (norder <= 0) {
   free(order_store);
   free(path_store);

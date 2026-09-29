@@ -12,12 +12,13 @@
 #     `flow run` and `flow compile`;
 #   - programs that import stdlib modules;
 #   - a project with its own flow.toml and an empty [dependencies] table;
-#   - a project that declares a registry package, already installed and
-#     locked, so `flow run` has to decide on its own that nothing needs
-#     syncing.
-#
-# A final control removes that project's installed package and checks that
-# `flow run` still hands it to the package manager (the stub logs the call).
+#   - a project that declares a registry package, imports it
+#     (`import json.lib`) and has nothing installed yet, so `flow run` must
+#     install it, write flow.lock and resolve the import; then the same
+#     project again, already installed;
+#   - `flow sync`, `flow add`, `flow pkg install`, `flow search`, `flow info`;
+#   - a project with an unknown dependency, which must fail with the package
+#     manager's message.
 #
 # Passes only when every program behaves as expected and no stub was called.
 #
@@ -124,12 +125,12 @@ EOF
 expect_exit 7 "run project with empty [dependencies]" \
     ./flow run "$proj/src/main.flow"
 
-# A project that declares a registry package which is already installed and
-# locked. Installing it is what `flow sync` does; this checks that `flow run`
-# recognises there is nothing left to do. The program does not import the
-# package: flowc cannot yet resolve package imports such as `json.lib`.
+# A project that declares a registry package and imports it. Nothing is
+# installed yet: `flow run` has to install the package (the Flow package
+# manager, compiler/src/pkg.flow), write flow.lock, resolve `import json.lib`
+# from flow_packages/ in flowc, and run the program.
 proj="$work/registry_dep"
-mkdir -p "$proj/src" "$proj/flow_packages"
+mkdir -p "$proj/src"
 cat > "$proj/flow.toml" <<'EOF'
 [package]
 name = "registry_dep"
@@ -141,7 +142,22 @@ json = "0.1.0"
 
 [dev-dependencies]
 EOF
-cat > "$proj/flow.lock" <<EOF
+cat > "$proj/src/main.flow" <<'EOF'
+import json.lib { json_get_i32, json_validate }
+
+function main() -> i32 {
+    let doc: string = "{\"answer\": 3}"
+    if json_validate(doc) != 1 {
+        return 1
+    }
+    return json_get_i32(doc, "answer")
+}
+EOF
+expect_exit 3 "run project importing a registry package that is not installed (json)" \
+    ./flow run "$proj/src/main.flow"
+
+expected_lock="$work/expected.lock"
+cat > "$expected_lock" <<EOF
 {
   "version": 1,
   "packages": {
@@ -149,36 +165,59 @@ cat > "$proj/flow.lock" <<EOF
       "version": "0.1.0",
       "source": "registry",
       "resolved": {
-        "path": "$ROOT/registry/packages/json"
+        "path": "$(cd "$ROOT" && pwd -P)/registry/packages/json"
       }
     }
   }
 }
 EOF
-cp -R registry/packages/json "$proj/flow_packages/json"
-cat > "$proj/src/main.flow" <<'EOF'
-function main() -> i32 {
-    return 3
-}
-EOF
-expect_exit 3 "run project with installed registry dependency (json)" \
-    ./flow run "$proj/src/main.flow"
-
-# Control: a project whose dependency is not installed still goes to the full
-# package manager, as before (exit 127 is the stub's). That call must show up in the
-# log, which also shows the stubs catch what they are meant to catch.
-cp "$log" "$work/before-control.log"
-rm -rf "$proj/flow_packages"
-expect_exit 127 "control: missing dependency is handed to the package manager" \
-    ./flow run "$proj/src/main.flow"
-if grep -q "^python3 -m flow.package sync --program" "$log"; then
-    echo "PASS control: stub logged the package manager call"
+if cmp -s "$expected_lock" "$proj/flow.lock" && \
+        diff -r "$ROOT/registry/packages/json" "$proj/flow_packages/json" >/dev/null; then
+    echo "PASS flow.lock and flow_packages/json written"
     pass=$((pass + 1))
 else
-    echo "FAIL control: expected a logged python3 -m flow.package sync call"
+    echo "FAIL flow.lock or flow_packages/json not as expected"
+    diff "$expected_lock" "$proj/flow.lock" | sed 's/^/     /' || true
     fail=$((fail + 1))
 fi
-cp "$work/before-control.log" "$log"
+
+# Second run: everything is installed and locked, so nothing is fetched.
+expect_exit 3 "run the same project again (already installed)" \
+    ./flow run "$proj/src/main.flow"
+
+# The package commands themselves.
+proj2="$work/pkg_cmds"
+mkdir -p "$proj2/src"
+cp "$proj/flow.toml" "$proj2/flow.toml"
+cd "$proj2" || exit 1
+expect_exit 0 "flow sync" "$ROOT/flow" sync
+expect_exit 0 "flow add toml" "$ROOT/flow" add toml
+expect_exit 0 "flow pkg install" "$ROOT/flow" pkg install
+expect_exit 0 "flow search json" "$ROOT/flow" search json
+expect_exit 0 "flow info json" "$ROOT/flow" info json
+cd "$ROOT" || exit 1
+if [[ -d "$proj2/flow_packages/toml" ]] && grep -q '"toml"' "$proj2/flow.lock"; then
+    echo "PASS flow add installed and locked toml"
+    pass=$((pass + 1))
+else
+    echo "FAIL flow add did not install and lock toml"
+    fail=$((fail + 1))
+fi
+
+# A dependency that does not exist fails with the package manager's message.
+proj3="$work/unknown_dep"
+mkdir -p "$proj3/src"
+sed 's/^json = "0.1.0"$/no_such_package = "1.0.0"/' "$proj/flow.toml" > "$proj3/flow.toml"
+printf 'function main() -> i32 {\n    return 0\n}\n' > "$proj3/src/main.flow"
+expect_exit 1 "run project with an unknown dependency fails" \
+    ./flow run "$proj3/src/main.flow"
+if grep -q "Unknown dependency 'no_such_package'" "$work/out.txt"; then
+    echo "PASS unknown dependency is reported"
+    pass=$((pass + 1))
+else
+    echo "FAIL unknown dependency message missing"
+    fail=$((fail + 1))
+fi
 
 echo
 echo "programs: pass=$pass fail=$fail"
