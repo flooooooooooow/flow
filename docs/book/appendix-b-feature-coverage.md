@@ -62,7 +62,7 @@ means that the syntax or design is not implemented.
 | Feature | Status | Book location |
 |---|---|---|
 | functions and typed parameters/results | Full | Chapter 4 |
-| build guards `@only`, `@guard`, `@compile` | Partial: flowc parses them, and the C path keeps every guarded function | Chapters 8, 16 |
+| build guards `@only`, `@guard`, `@compile` | Full with C backend: flowc drops a function whose modes are all off (`FLOWC_MODE` adds one) | Chapters 8, 16 |
 | local `let`, inference, `let mut` | Full | Chapter 2 |
 | `const` | Full | Chapter 8 |
 | top-level mutable statics | C target; MLIR gap | Chapter 8 |
