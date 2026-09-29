@@ -65,3 +65,12 @@ tests/simd/test_simple_simd.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
 compiler/fixtures/choose_uninferrable.flow	reject	-	-	cannot infer the result type of the `choose` at line 9: its arms must end in a function whose return type is known
 compiler/fixtures/fork_uninferrable.flow	reject	-	-	cannot infer the type of fork field 'a' (line 7): an anonymous fork record's fields must end in a function whose return type is known. Name the record instead: `source |> RecordName { ... }`
 tests/lang/test_lowered_forms.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+# #1008 unit fixtures, recorded from the Python host at 5f36fc60 (origin/main)
+compiler/fixtures/units_add_mismatch.flow	reject	-	-	line 9: dimensional error: Meter + Second (operands of '+' must have the same dimension)
+compiler/fixtures/units_annotation.flow	reject	-	-	Variable 'x' initialized with Meter/Second^3 but annotated as Meter
+compiler/fixtures/units_call_arg.flow	reject	-	-	No matching overload for function 'travel' with arguments (Meter, Second)
+compiler/fixtures/units_cast_cross.flow	reject	-	-	Cannot cast Meter to Second
+compiler/fixtures/units_compare_scalar.flow	reject	-	-	line 7: dimensional error: Meter < f32 (comparison requires both operands to have the same dimension)
+compiler/fixtures/units_sin_length.flow	reject	-	-	dimensional error: sin() requires a dimensionless or Radian argument, got Meter
+compiler/fixtures/units_unknown_factor.flow	reject	-	-	line 3: unknown unit 'Second' in declaration of 'Velocity' (units must be declared before use)
+tests/lang/test_units_dimensions.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-

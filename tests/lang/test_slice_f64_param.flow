@@ -1,0 +1,33 @@
+# Flow-native language test: a `&[f64]` parameter declares its span type.
+#
+# lib/stdlib/sorting/core.flow takes `xs: &[f64]`. flowc named the type
+# flowc_span_double but only declared span typedefs for the `span<T>`
+# spelling, so cc saw an unknown type (#1007).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function total(xs: &[f64]) -> f64 {
+    let mut s: f64 = 0.0
+    let mut i: i64 = 0
+    while i < xs.len {
+        s = s + xs[i]
+        i = i + 1
+    }
+    return s
+}
+
+function count_i32(xs: &[i32]) -> i64 {
+    return xs.len
+}
+
+function main() -> i32 {
+    let a: array<f64, 3> = [1.5, 2.5, 4.0]
+    let s: f64 = total(a)
+    if s < 7.99 or s > 8.01 {
+        return 1
+    }
+    let b: array<i32, 4> = [1, 2, 3, 4]
+    if count_i32(b) != 4 {
+        return 2
+    }
+    return 0
+}

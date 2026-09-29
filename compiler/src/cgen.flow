@@ -2229,6 +2229,67 @@ function flowc_cgen_var_elem_type(arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
 # Check if the nth parameter of a function is span-typed.
 # fn_id is the AST_FN node. Returns 1 if the nth param is span, 0 otherwise.
+# `recv.method(args)` desugars to `method(recv, args)` in the parser. When the
+# receiver is a by-value struct variable and the method's first parameter is
+# ptr<ThatStruct>, pass its address, as the Python host's _gen_method_call
+# does (#1007). A method call is told apart from `f(x)` by the receiver's
+# source position: it comes before the callee name.
+function flowc_cgen_method_recv_needs_addr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32, fn_id: i32) -> i32 {
+    if fn_id == AST_NONE {
+        return 0
+    }
+    let recv: i32 = arena.nodes[call].a
+    if recv == AST_NONE or arena.nodes[recv].kind != AST_IDENT {
+        return 0
+    }
+    if arena.nodes[recv].name_end > arena.nodes[call].name_start {
+        return 0
+    }
+    let param: i32 = arena.nodes[fn_id].a
+    if param == AST_NONE {
+        return 0
+    }
+    let pt: i32 = arena.nodes[param].a
+    if pt == AST_NONE or arena.nodes[pt].kind != AST_TYPE {
+        return 0
+    }
+    if flowc_cgen_span_is(src, arena.nodes[pt].name_start, arena.nodes[pt].name_end, "ptr") == 0 {
+        return 0
+    }
+    let inner: i32 = arena.nodes[pt].a
+    if inner == AST_NONE or arena.nodes[inner].kind != AST_TYPE {
+        return 0
+    }
+    let rt: i32 = flowc_cgen_expr_type_node(w, arena, src, recv)
+    if rt == AST_NONE or arena.nodes[rt].kind != AST_TYPE or arena.nodes[rt].a != AST_NONE {
+        return 0
+    }
+    if flowc_cgen_span_eq(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, arena.nodes[inner].name_start, arena.nodes[inner].name_end) == 0 {
+        return 0
+    }
+    if flowc_cgen_find_struct(arena, src, arena.nodes[rt].name_start, arena.nodes[rt].name_end) == AST_NONE {
+        return 0
+    }
+    return 1
+}
+
+# Type node of parameter `param_idx` of `fn_id`, or AST_NONE.
+function flowc_cgen_fn_param_type(arena: AstArena, fn_id: i32, param_idx: i32) -> i32 {
+    if fn_id == AST_NONE {
+        return AST_NONE
+    }
+    let mut param: i32 = arena.nodes[fn_id].a
+    let mut idx: i32 = 0
+    while param != AST_NONE {
+        if idx == param_idx {
+            return arena.nodes[param].a
+        }
+        idx = idx + 1
+        param = arena.nodes[param].next
+    }
+    return AST_NONE
+}
+
 function flowc_cgen_fn_param_is_span(arena: AstArena, src: ptr<u8>, fn_id: i32, param_idx: i32) -> i32 {
     if fn_id == AST_NONE {
         return 0
@@ -3262,7 +3323,10 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             if fn_id != AST_NONE and flowc_cgen_fn_param_is_span(arena, src, fn_id, param_idx) == 1 {
                 if arena.nodes[arg].kind == AST_IDENT and flowc_cgen_is_array_var(arena, src, arg) == 1 {
                     let arr_size: i32 = flowc_cgen_array_var_size(arena, src, arg)
-                    flowc_cgen_puts(w, "((flowc_span_int32_t){ ")
+                    # The parameter's own span type: &[f64] is flowc_span_double.
+                    flowc_cgen_puts(w, "((")
+                    flowc_cgen_emit_type(w, arena, src, flowc_cgen_fn_param_type(arena, fn_id, param_idx))
+                    flowc_cgen_puts(w, "){ ")
                     flowc_cgen_emit_expr(w, arena, src, arg)
                     flowc_cgen_puts(w, ", ")
                     flowc_cgen_put_i32(w, arr_size)
@@ -3271,6 +3335,9 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                     param_idx = param_idx + 1
                     continue
                 }
+            }
+            if param_idx == 0 and flowc_cgen_method_recv_needs_addr(w, arena, src, id, fn_id) == 1 {
+                flowc_cgen_putc(w, 38)
             }
             flowc_cgen_emit_expr(w, arena, src, arg)
             arg = arena.nodes[arg].next
@@ -6176,6 +6243,18 @@ function flowc_cgen_emit_handle(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     flowc_cgen_puts(w, "  }\n")
 }
 
+# 1 when lambda `lam_id` captures at least one variable.
+function flowc_cgen_lambda_has_caps(w: ptr<CgenBuf>, lam_id: i32) -> i32 {
+    let mut ci: i32 = 0
+    while ci < w[0].lambda_cap_count {
+        if w[0].lambda_cap_lambda[ci] == lam_id {
+            return 1
+        }
+        ci = ci + 1
+    }
+    return 0
+}
+
 export function flowc_cgen_emit_sigs(
     arena: AstArena,
     root: i32,
@@ -6564,7 +6643,16 @@ export function flowc_cgen_emit_sigs(
         if arena.nodes[ti].kind == AST_TYPE {
             let tns: i32 = arena.nodes[ti].name_start
             let tne: i32 = arena.nodes[ti].name_end
-            if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
+            # span<T>, and the borrowed-slice spellings &[T] / &mut [T]
+            # that flowc_cgen_emit_type also names flowc_span_T (#1007).
+            let mut is_span_ty: i32 = flowc_cgen_span_is(src, tns, tne, "span")
+            let sl_inner: i32 = arena.nodes[ti].a
+            if is_span_ty == 0 and sl_inner != AST_NONE and tns == 0 and tne == 0 and arena.nodes[ti].ival == 0 {
+                if arena.nodes[sl_inner].kind == AST_TYPE and arena.nodes[sl_inner].name_start > 0 {
+                    is_span_ty = 1
+                }
+            }
+            if is_span_ty == 1 {
                 let inner: i32 = arena.nodes[ti].a
                 if inner != AST_NONE {
                     # Emit with guard macro: #ifndef FLOWC_SPAN_int32_t
@@ -6795,6 +6883,14 @@ export function flowc_cgen_emit_sigs(
                 flowc_cgen_putc(&w, 40)
                 let mut param: i32 = arena.nodes[i].a
                 let mut first: i32 = 1
+                # A capturing lambda reads its captures through the
+                # environment the closure passes first (fn(&c.env, ...)).
+                if flowc_cgen_lambda_has_caps(&w, lam_id) == 1 {
+                    flowc_cgen_puts(&w, "lambda_")
+                    flowc_cgen_put_i32(&w, lam_id)
+                    flowc_cgen_puts(&w, "_env* _env")
+                    first = 0
+                }
                 while param != AST_NONE {
                     if first == 0 {
                         flowc_cgen_puts(&w, ", ")
@@ -6876,6 +6972,12 @@ export function flowc_cgen_emit_sigs(
                 # Parameters
                 let mut param: i32 = arena.nodes[i].a
                 let mut first: i32 = 1
+                if flowc_cgen_lambda_has_caps(&w, lam_id) == 1 {
+                    flowc_cgen_puts(&w, "lambda_")
+                    flowc_cgen_put_i32(&w, lam_id)
+                    flowc_cgen_puts(&w, "_env* _env")
+                    first = 0
+                }
                 while param != AST_NONE {
                     if first == 0 {
                         flowc_cgen_puts(&w, ", ")
@@ -7224,6 +7326,17 @@ export function flowc_cgen_collect_sigs(
             let rt: i32 = arena.nodes[fn].b
             if rt != AST_NONE {
                 n = flowc_cgen_sig_put(arena, src, buf, cap, n, fn, rt)
+            }
+        }
+        # C functions an extern block declares: an importer's inferred
+        # `let` takes their return type too.
+        if arena.nodes[item].kind == AST_EXTERN {
+            let mut ext: i32 = arena.nodes[item].a
+            while ext != AST_NONE {
+                if arena.nodes[ext].kind == AST_FN and arena.nodes[ext].b != AST_NONE {
+                    n = flowc_cgen_sig_put(arena, src, buf, cap, n, ext, arena.nodes[ext].b)
+                }
+                ext = arena.nodes[ext].next
             }
         }
         item = arena.nodes[item].next

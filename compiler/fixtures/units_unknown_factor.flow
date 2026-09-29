@@ -1,0 +1,7 @@
+# Negative fixture (#1008): a derived unit names only units declared above it.
+unit Meter
+unit Velocity = Meter / Second
+
+function main() -> i32 {
+    return 0
+}
