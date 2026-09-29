@@ -35,8 +35,8 @@
 # unevenly; neither changes the program. Everything else must be equal byte
 # for byte, including string globals and their order.
 #
-# Goldens were recorded from eec7463f (origin/main when the slice landed;
-# the Python MLIR generator is unchanged there).
+# Goldens were recorded from 84806b0d (origin/main after #1020 and #1018;
+# the Python MLIR generator is unchanged since eec7463f).
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
@@ -134,7 +134,13 @@ build_run() {
 PYREF="$WORK/pyref"
 python_setup() {
     mkdir -p "$PYREF"
-    git archive "$1" src/flow | tar -x -C "$PYREF"
+    # The Python host expands flow blocks with flowc built from the
+    # bootstrap C of the same revision.
+    git archive "$1" src/flow compiler/bootstrap/flowc_stage_a.c | tar -x -C "$PYREF"
+    # The resolver's fallback stdlib and packages sit next to src/flow; point
+    # them at this checkout's, as flowc (FLOWC_ROOT) uses.
+    ln -sfn "$ROOT/lib" "$PYREF/lib"
+    ln -sfn "$ROOT/packages" "$PYREF/packages"
 }
 
 # python_emit <in.flow> <out.mlir> [--llvm]
