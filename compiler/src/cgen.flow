@@ -2799,6 +2799,11 @@ function flowc_cgen_emit_print_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     flowc_cgen_putc(w, 41)
 }
 
+# Names a lambda binds itself (parameters, nested lambda parameters, `let`
+# and `for` variables) that the capture scans track; the buffer in pass 0.4
+# holds this many spans.
+const FLOWC_CGEN_LAMBDA_LOCALS: i32 = 64
+
 # Scan an AST subtree for AST_IDENT nodes that aren't in the param_spans list.
 # Add them to the captured variables buffer on the writer.
 function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, param_spans: ptr<i32>, nparams: i32) {
@@ -2813,13 +2818,35 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     if kind == AST_FN {
         let mut nparams2: i32 = nparams
         let mut param: i32 = arena.nodes[id].a
-        while param != AST_NONE and nparams2 < 16 {
+        while param != AST_NONE and nparams2 < FLOWC_CGEN_LAMBDA_LOCALS {
             param_spans[nparams2 * 2] = arena.nodes[param].name_start
             param_spans[nparams2 * 2 + 1] = arena.nodes[param].name_end
             nparams2 = nparams2 + 1
             param = arena.nodes[param].next
         }
         flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams2)
+        return
+    }
+    # A `let` inside the lambda binds a local for the statements after it,
+    # and a `for` binds its variable in its body: neither is a capture
+    # (#1040).
+    if kind == AST_LET and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams + 1)
+        return
+    }
+    if kind == AST_FOR and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].a, param_spans, nparams)
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
+        if arena.nodes[id].ival > 0 {
+            flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].ival, param_spans, nparams)
+        }
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams + 1)
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams)
         return
     }
     if kind == AST_IDENT {
@@ -2876,13 +2903,32 @@ function flowc_cgen_scan_lambda_caps(
         # Nested lambda: add its params and recurse into its body.
         let mut nparams2: i32 = nparams
         let mut param: i32 = arena.nodes[id].a
-        while param != AST_NONE and nparams2 < 16 {
+        while param != AST_NONE and nparams2 < FLOWC_CGEN_LAMBDA_LOCALS {
             param_spans[nparams2 * 2] = arena.nodes[param].name_start
             param_spans[nparams2 * 2 + 1] = arena.nodes[param].name_end
             nparams2 = nparams2 + 1
             param = arena.nodes[param].next
         }
         return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, count, param_spans, nparams2)
+    }
+    # Lambda-local `let` and `for` names are not captures (#1040); see
+    # flowc_cgen_scan_captures.
+    if kind == AST_LET and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        let c1: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, count, param_spans, nparams)
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c1, param_spans, nparams + 1)
+    }
+    if kind == AST_FOR and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        let mut c2: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, count, param_spans, nparams)
+        c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, c2, param_spans, nparams)
+        if arena.nodes[id].ival > 0 {
+            c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].ival, buf, c2, param_spans, nparams)
+        }
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, c2, param_spans, nparams + 1)
+        return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c2, param_spans, nparams)
     }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
@@ -3940,6 +3986,19 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_emit_sort_by(w, arena, src, id)
         return
     }
+    # The inner link of a chained assignment `a = b = 1` (#1036): a C
+    # assignment expression, as the Python host emitted `a = (b = 1)`.
+    if kind == AST_ASSIGN {
+        flowc_cgen_putc(w, 40)
+        let lv0: i32 = w[0].lval
+        w[0].lval = 1
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        w[0].lval = lv0
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_putc(w, 41)
+        return
+    }
     # expr? on a Result struct: return it from the function unless is_ok,
     # else yield .value (c_generator TryExpr). Pending defers run first.
     if kind == AST_TRY {
@@ -4095,6 +4154,21 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 flowc_cgen_puts(w, ", ")
                 flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].b)
                 flowc_cgen_putc(w, 41)
+                return
+            }
+        }
+        # `a == b` / `a != b` on two strings compare contents (#1037).
+        if op == TOK_EQEQ or op == TOK_NE {
+            if flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].a) == 1 and flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b) == 1 {
+                if op == TOK_NE {
+                    flowc_cgen_puts(w, "(!__flowc_str_eq(")
+                } else {
+                    flowc_cgen_puts(w, "(__flowc_str_eq(")
+                }
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ", ")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_puts(w, "))")
                 return
             }
         }
@@ -4556,6 +4630,14 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     flowc_cgen_putc(w, 41)
                     return
                 }
+            }
+            # len(string) is its byte length; a null string has length 0
+            # (#1037).
+            if larg != AST_NONE and flowc_cgen_expr_is_string(w, arena, src, larg) == 1 {
+                flowc_cgen_puts(w, "(__extension__ ({ const char* __flowc_ls = (")
+                flowc_cgen_emit_expr(w, arena, src, larg)
+                flowc_cgen_puts(w, "); __flowc_ls ? (int32_t)strlen(__flowc_ls) : 0; }))")
+                return
             }
             flowc_cgen_putc(w, 40)
             let mut arg: i32 = arena.nodes[id].a
@@ -8327,6 +8409,14 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "  return r;\n")
         flowc_cgen_puts(&w, "}\n")
         flowc_cgen_putc(&w, 10)
+        # String `==` / `!=` compare contents (#1037). The same pointer, or
+        # two null strings, are equal; null never equals a non-null string.
+        flowc_cgen_puts(&w, "static inline int __flowc_str_eq(const char* a, const char* b) {\n")
+        flowc_cgen_puts(&w, "  if (a == b) { return 1; }\n")
+        flowc_cgen_puts(&w, "  if (a == 0 || b == 0) { return 0; }\n")
+        flowc_cgen_puts(&w, "  return strcmp(a, b) == 0;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
         # sum(a..b step s): the sum of a, a+s, ... short of b; 0 for an empty
         # range or a zero step. 64-bit so n*a + s*n(n-1)/2 does not wrap.
         flowc_cgen_puts(&w, "static inline int64_t __flowc_range_count(int64_t s, int64_t e, int64_t d) {\n")
@@ -8482,7 +8572,7 @@ export function flowc_cgen_emit_sigs(
     # For each lambda FN (negative name_start), collect identifiers in the
     # body that aren't parameters. These will be hoisted to static globals.
     # Also record per-lambda captures for snapshot emission.
-    let param_span_buf: array<i32, 32> = []
+    let param_span_buf: array<i32, 128> = []
     let per_lam_buf: array<i32, 32> = []
     let mut li: i32 = 0
     while li < arena.len {

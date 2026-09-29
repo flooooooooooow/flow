@@ -719,6 +719,17 @@ function flowc_resolve_dotted_any(
         if r2 >= 0 {
             return r2
         }
+        # A bare stdlib module name (`import concurrent`) and the `std.`
+        # prefix (`import std.concurrent`) resolve in lib/stdlib, as in the
+        # Python resolver (#1038).
+        let mut ss: i32 = s
+        if end - s > 4 and src[s] == 115 and src[s + 1] == 116 and src[s + 2] == 100 and src[s + 3] == 46 {
+            ss = s + 4
+        }
+        let r3: i32 = flowc_resolve_dotted_path(src, ss, end, "lib/stdlib", out_path, out_path_cap)
+        if r3 >= 0 {
+            return r3
+        }
         # Drop the last `.segment` and try once more.
         let mut k: i32 = end - 1
         while k > s and src[k] != 46 {

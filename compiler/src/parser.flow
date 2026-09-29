@@ -54,7 +54,10 @@ export struct Parser {
     cur: Token,
     arena: AstArena,
     err: i32,
-    err_tok: Token
+    err_tok: Token,
+    # `import M as name` aliases seen so far: a chain of AST_IDENT nodes
+    # (linked by next) naming each alias. `name.f` then parses as `f`.
+    aliases: i32
 }
 
 # Say where parsing stopped, as `path:line:col: parse error at 'tok'`. A
@@ -76,7 +79,7 @@ export function flowc_parser_new(input: ptr<u8>, len: i32, ast_cap: i32) -> Pars
     let mut lex: Lexer = flowc_lexer_new(input, len)
     let cur: Token = flowc_lexer_next(&lex)
     let arena: AstArena = flowc_ast_new(ast_cap)
-    return Parser { lex: lex, cur: cur, arena: arena, err: 0, err_tok: cur }
+    return Parser { lex: lex, cur: cur, arena: arena, err: 0, err_tok: cur, aliases: AST_NONE }
 }
 
 # Flag a parse error. The first one wins, so the report points at the token
@@ -155,6 +158,26 @@ function flowc_parser_span_is(p: Parser, start: i32, end: i32, lit: string) -> i
         i = i + 1
     }
     return 1
+}
+
+# 1 if [start, end) names an `import M as name` alias seen so far.
+function flowc_parser_is_alias(p: Parser, start: i32, end: i32) -> i32 {
+    let mut al: i32 = p.aliases
+    while al != AST_NONE {
+        let s: i32 = p.arena.nodes[al].name_start
+        let e: i32 = p.arena.nodes[al].name_end
+        if e - s == end - start {
+            let mut i: i32 = 0
+            while i < e - s and p.lex.input[s + i] == p.lex.input[start + i] {
+                i = i + 1
+            }
+            if i == e - s {
+                return 1
+            }
+        }
+        al = p.arena.nodes[al].next
+    }
+    return 0
 }
 
 # Identifier, or a soft keyword the Python parser accepts as a name
@@ -1044,6 +1067,12 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
             let fs: i32 = p[0].cur.start
             let fe: i32 = p[0].cur.end
             flowc_parser_advance(p)
+            # `alias.f` for `import M as alias` names `f` itself (#1039).
+            if p[0].arena.nodes[base].kind == AST_IDENT and flowc_parser_is_alias(p[0], p[0].arena.nodes[base].name_start, p[0].arena.nodes[base].name_end) == 1 {
+                p[0].arena.nodes[base].name_start = fs
+                p[0].arena.nodes[base].name_end = fe
+                continue
+            }
             let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FIELD_ACCESS, 0, 0)
             if id == AST_NONE {
                 flowc_parser_fail(p)
@@ -2513,7 +2542,7 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         let lk: i32 = p[0].arena.nodes[expr].kind
         if flowc_parser_check(p[0], TOK_EQ) == 1 and (lk == AST_IDENT or lk == AST_FIELD_ACCESS or lk == AST_INDEX) {
             flowc_parser_advance(p)
-            let rhs: i32 = flowc_parse_expr(p)
+            let rhs: i32 = flowc_parse_assign_rhs(p)
             let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ASSIGN, saved_start, p[0].cur.start)
             if id == AST_NONE {
                 flowc_parser_fail(p)
@@ -2560,6 +2589,31 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
     }
     flowc_parser_fail(p)
     return AST_NONE
+}
+
+# Right side of `lhs = ...`. A chained assignment `a = b = 1` nests: the
+# rhs is itself an AST_ASSIGN (b = 1), right-associative as in the Python
+# parser, so both targets receive the value (#1036).
+function flowc_parse_assign_rhs(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    let rhs: i32 = flowc_parse_expr(p)
+    if rhs == AST_NONE {
+        return AST_NONE
+    }
+    let rk: i32 = p[0].arena.nodes[rhs].kind
+    if flowc_parser_check(p[0], TOK_EQ) == 0 or (rk != AST_IDENT and rk != AST_FIELD_ACCESS and rk != AST_INDEX) {
+        return rhs
+    }
+    flowc_parser_advance(p)
+    let inner: i32 = flowc_parse_assign_rhs(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ASSIGN, start, p[0].cur.start)
+    if id == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = rhs
+    p[0].arena.nodes[id].b = inner
+    return id
 }
 
 function flowc_parse_block(p: ptr<Parser>) -> i32 {
@@ -3157,6 +3211,25 @@ function flowc_parse_import(p: ptr<Parser>) -> i32 {
     let names: i32 = flowc_parse_brace_idents(p)
     if p[0].err != 0 {
         return AST_NONE
+    }
+    # `import M as name`: the module's symbols stay in scope under their own
+    # names, and `name.f` also reaches them (#1039).
+    if names == AST_NONE and flowc_parser_check_kw(p[0], KW_AS) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        let al: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, p[0].cur.start, p[0].cur.end)
+        if al == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[al].name_start = p[0].cur.start
+        p[0].arena.nodes[al].name_end = p[0].cur.end
+        p[0].arena.nodes[al].next = p[0].aliases
+        p[0].aliases = al
+        flowc_parser_advance(p)
     }
     let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IMPORT, start, p[0].cur.start)
     if id == AST_NONE {

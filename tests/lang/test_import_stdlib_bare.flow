@@ -1,0 +1,22 @@
+# Flow-native language test: a bare stdlib module name (#1038).
+# `import concurrent` resolves to lib/stdlib/concurrent.flow, as in the
+# Python resolver, and so does `import std.vec`.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import concurrent
+import std.vec
+
+function main() -> i32 {
+    let mut m: Mutex = mutex_new()
+    mutex_lock(&m)
+    if !mutex_is_locked(m) {
+        return 1
+    }
+    mutex_unlock(&m)
+    mutex_destroy(&m)
+    let v: Vec2 = vec2_add(vec2(1.0, 2.0), vec2(3.0, 4.0))
+    if v.x != 4.0 or v.y != 6.0 {
+        return 2
+    }
+    return 0
+}

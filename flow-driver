@@ -3026,7 +3026,9 @@ run_lang_tests() {
         local lang_conc_sources=()
         local lang_conc_cflags=()
         local lang_conc_ldflags=()
-        if grep -q 'stdlib/concurrent.flow' "$program" 2>/dev/null; then
+        # `import concurrent` and `import std.concurrent` name the same
+        # module as `import "stdlib/concurrent.flow"` (#1038).
+        if grep -qE 'stdlib/concurrent\.flow|^import +(std\.|stdlib\.)?concurrent( |$)' "$program" 2>/dev/null; then
             flow_concurrency_flags
             flow_runtime_flow_sources
             lang_conc_sources=("${FLOW_CONC_SOURCES[@]}" "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}")
