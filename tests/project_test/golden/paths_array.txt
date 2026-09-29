@@ -1,0 +1,8 @@
+exit=0
+--- stdout
+running 2 tests (backend=c)
+test integration/i.flow ... ok (N.NNNs)
+test unit/u.flow::unit ok ... ok (N.NNNs)
+
+test result: ok. 2 passed; 0 failed; 0 not run; finished in N.NNNs
+--- stderr

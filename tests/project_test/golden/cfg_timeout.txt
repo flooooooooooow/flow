@@ -1,0 +1,4 @@
+exit=2
+--- stdout
+--- stderr
+flow test: could not convert string to float: 'abc'

@@ -3377,6 +3377,15 @@ case "${1:-help}" in
         fi
         FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$lsp_bin" "$@"
         ;;
+    "__project-test")
+        # `flow test` inside a project (the `flow` launcher routes here):
+        # tools/project_test/main.flow, built on first use.
+        shift
+        if ! pt_bin="$(flow_native_tool project_test)"; then
+            exit 2
+        fi
+        exec "$pt_bin" "$@"
+        ;;
     "dap")
         shift
         if [ -z "${1:-}" ]; then

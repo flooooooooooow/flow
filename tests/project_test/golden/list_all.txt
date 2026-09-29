@@ -1,0 +1,29 @@
+exit=0
+--- stdout
+tests/bad.flow [c]
+tests/bad.flow [mlir]
+tests/badexit.flow [c]
+tests/badexit.flow [mlir]
+tests/exits.flow [c]
+tests/exits.flow [mlir]
+tests/mismatch.flow [c]
+tests/mismatch.flow [mlir]
+tests/native.flow::answer is right [c]
+tests/native.flow::answer is wrong [c]
+tests/native.flow::Delay: "quoted" name! [c]
+tests/native.flow::answer is right [c]
+tests/native.flow::answer is right [mlir]
+tests/native.flow::answer is wrong [mlir]
+tests/native.flow::Delay: "quoted" name! [mlir]
+tests/native.flow::answer is right [mlir]
+tests/native_golden.flow::prints things [c]
+tests/native_golden.flow::prints things [mlir]
+tests/prog.flow [c]
+tests/prog.flow [mlir]
+tests/sub/deeper.flow [c]
+tests/sub/deeper.flow [mlir]
+tests/wrong_exit.flow [c]
+tests/wrong_exit.flow [mlir]
+
+24 test case(s)
+--- stderr
