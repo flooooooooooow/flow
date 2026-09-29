@@ -1,0 +1,9 @@
+
+<main>
+  <div class="bar">
+    <button id="start">Run</button>
+    <button id="clear">Clear</button>
+    <span id="status">idle</span>
+  </div>
+  <pre id="out"></pre>
+</main>

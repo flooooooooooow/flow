@@ -1,5 +1,5 @@
 {
-  "generated_by": "scripts/build_wasm_gallery.py",
+  "generated_by": "scripts/build_wasm_gallery.sh",
   "examples": 161,
   "built": 161,
   "failed": 0,

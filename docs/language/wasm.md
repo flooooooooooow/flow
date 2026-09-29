@@ -19,7 +19,7 @@ target can do today.
 
 ```bash
 ./flow wasm examples/games/snake_gfx.flow --out build/wasm/snake
-python3 scripts/build_wasm_gallery.py        # all of them, into site/wasm/
+scripts/build_wasm_gallery.sh               # all of them, into site/wasm/
 ```
 
 `./flow wasm` writes a `.wasm`, its `.js` loader and a runnable `index.html`.

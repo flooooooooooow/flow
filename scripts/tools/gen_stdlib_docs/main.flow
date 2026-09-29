@@ -1,0 +1,11 @@
+# Generate docs/library/stdlib-api.md from lib/stdlib/*.flow export
+# signatures. Run through scripts/gen_stdlib_docs.sh from the repository
+# root; the work is in scripts/tools/lib/wiki_stdlib.flow, which the wiki
+# build shares.
+
+import .proc { pr_cwd }
+import .wiki_stdlib { wsd_generate }
+
+function main() -> i32 {
+    return wsd_generate(pr_cwd())
+}

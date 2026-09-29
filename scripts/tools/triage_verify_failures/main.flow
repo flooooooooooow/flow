@@ -1,0 +1,857 @@
+# Triage parser failures under the `flow-verify` proof corpus
+# (examples/verify/).
+#
+# Re-runs the transpile stage against the corpus, buckets each failure by
+# its raw parser error and by a heuristic guess at which not-yet-implemented
+# (or corpus-bug) feature is responsible, and prints a summary. It changes
+# no source files; it is purely diagnostic.
+#
+# Run through scripts/triage_verify_failures.sh from anywhere:
+#
+#   triage_verify_failures.sh
+#   triage_verify_failures.sh --roots examples/verify --sample 5
+#   triage_verify_failures.sh --json triage.json
+#
+# docs/third-party/flow-verify-parser-status.md is the write-up this
+# output was used to produce. Files are checked in parallel by re-running
+# this program as `--worker` under xargs -P; the report is built from the
+# per-file results in path order.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_repr, ft_itoa, ft_read_file, ft_write_file, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_map_new, ft_map_get, ft_map_put, StrList, StrMap }
+import .unicode { uc_strip }
+import .json { json_quote }
+import .regex { rx_compile, rx_search_cps, rx_decode, rx_is_word, rx_is_space, Regex }
+import .proc { pr_quote, pr_run, pr_capture, pr_resolve }
+import .verify_run { vr_env, vr_parse_int, vr_cpu_count, vr_discover, vr_shorten, vr_pick_line, vr_run_stage, vr_transpile_cmd, vr_c_name, vr_fan_out, vr_usage_error, vr_resolve_opt, vr_is_optlike }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function chdir(path: string) -> i32
+}
+
+const PROG: string = "triage_verify_failures.sh"
+const N_CHECKS: i32 = 14
+
+function usage_text() -> string {
+    return "usage: triage_verify_failures.sh [-h] [--roots ROOTS [ROOTS ...]]\n                                 [--timeout TIMEOUT] [--jobs JOBS]\n                                 [--sample SAMPLE] [--json PATH]\n"
+}
+
+function help_text() -> string {
+    return "\nTriage parser failures under the `flow-verify` proof corpus\n(examples/verify/).\n\noptions:\n  -h, --help            show this help message and exit\n  --roots ROOTS [ROOTS ...]\n  --timeout TIMEOUT\n  --jobs JOBS\n  --sample SAMPLE       example file paths to print per bucket\n  --json PATH           dump raw results as JSON\n"
+}
+
+# ---------------------------------------------------------------------------
+# Feature checks: (name, predicate, explanation), in report order.
+# ---------------------------------------------------------------------------
+
+function check_name(k: i32) -> string {
+    if k == 0 { return "unicode set operators (`\\`, `∩`, `∪`)" }
+    if k == 1 { return "list append operator `++`" }
+    if k == 2 { return "hyphenated import path/symbols" }
+    if k == 3 { return "operator-suffixed module path (e.g. `Nat/+`)" }
+    if k == 4 { return "non-triple guillemet claim coordinate" }
+    if k == 5 { return "`in` as a membership expression" }
+    if k == 6 { return "`:` as a ratio/proportion operator" }
+    if k == 7 { return "keyword `and`/`or` in expressions" }
+    if k == 8 { return "`by <tactic>` proof-automation suffix" }
+    if k == 9 { return "`has property` contract clauses" }
+    if k == 10 { return "`ghost type` declarations" }
+    if k == 11 { return "`assume` of a bare fact, not a claim-path call" }
+    if k == 12 { return "`mod` keyword operator" }
+    return "non-ASCII identifier (e.g. Greek letters)"
+}
+
+function check_expl(k: i32) -> string {
+    if k == 0 {
+        return "Finset lemmas write `s \\ t` for difference and `a ∩ b` / `a ∪ b` for intersection/union. None of `\\`, `∩`, `∪` are lexable tokens in Flow today (new binary operators + non-ASCII lexer support)."
+    }
+    if k == 1 {
+        return "List lemmas write `xs ++ ys` for append. `++` is not a recognized operator (new binary operator, tokenizes as two `+`s)."
+    }
+    if k == 2 {
+        return "`import .Group-inv-unique { inv-unique }`: **now parsed** (dashed identifiers in import paths/symbol lists). Residual tags here usually mean the file still fails for another reason while also containing a hyphenated import."
+    }
+    if k == 3 {
+        return "`import verify.Nat/+ { zero-left }`: **now parsed + resolved** to `Domain.flow` under `[paths].verify`. Residual tags usually overlap with another failure class."
+    }
+    if k == 4 {
+        return "The lexer only recognizes exactly-3-group `«A» «B» «C»` runs (CLAIM_COORDINATE). Some files reuse the notation with 2 groups as a pseudo-type (`x : «Ring» «Nat»`) or a 2-group call (`«Ring» «mul»(x, 1)`); a bare `«` outside a valid triple isn't a token at all, so the lexer fails immediately."
+    }
+    if k == 5 {
+        return "`if a in I { ... }` / `therefore 0 in I` use `in` as a general membership test. Today `in` is only valid in `for x in ... to ...` loop syntax."
+    }
+    if k == 6 {
+        return "`therefore area(ABC) : area(DEF) == base_BC : base_EF` uses Euclid's classical `A : B` ratio notation inside an expression. `:` is only meaningful today as a type annotation / struct-field separator."
+    }
+    if k == 7 {
+        return "`result.Sum == expected.sum and result.Cout == ...` uses English `and`/`or` as boolean connectives instead of `&&`/`||`."
+    }
+    if k == 8 {
+        return "`therefore x == y by exhaustive`: automation-suffix syntax from the verification.md design spec, not implemented in the parser."
+    }
+    if k == 9 {
+        return "`has property ... before/after` on functions, or as a struct-body field constraint. Spec'd in verification.md Phase 1 but not implemented (also needs `old(...)` ghost references)."
+    }
+    if k == 10 {
+        return "`ghost type Queue<T> { ... }`: model/ghost-state declarations, not part of the current grammar."
+    }
+    if k == 11 {
+        return "`assume segment_AB == segment_DE` and `assume Common Notion 4: things coinciding ...` both give `assume` a bare boolean/prose fact instead of a `Claim/Path(args)` call. The parser's `assume` only knows `assume <claim-path>` or `assume <claim-path>(args)`. It consumes the leading identifier as the claim path, leaves the comparison operator/colon dangling, and the next statement parse chokes on it."
+    }
+    if k == 12 {
+        return "`(write_idx - read_idx) mod capacity`: `mod` as an infix keyword operator; Flow uses `%`."
+    }
+    return "`let σ = arbitrary_memory()`: uses a Greek letter as a plain identifier. The lexer's IDENTIFIER pattern is ASCII-only (`[a-zA-Z_][a-zA-Z0-9_]*`)."
+}
+
+function unbalanced_tag() -> string {
+    return "unbalanced parentheses (likely corpus typo, not a parser gap)"
+}
+
+# The regex for a check, or "" for the hand-written ones. flags[0] gets
+# the Python flags (8 = re.MULTILINE).
+function check_pattern(k: i32, flags: ptr<i32>) -> string {
+    flags[0] = 0
+    if k == 0 { return "[A-Za-z0-9_)\\]]\\s*\\\\\\s*[A-Za-z0-9_(]|[∩∪]" }
+    if k == 1 { return "\\+\\+" }
+    if k == 2 {
+        flags[0] = 8
+        return "^\\s*import\\s+\\S*[A-Za-z]-[A-Za-z]"
+    }
+    if k == 3 {
+        flags[0] = 8
+        return "^\\s*import\\s+\\S*/[+\\-*/]"
+    }
+    if k == 6 { return "\\btherefore\\b[^\\n]*[A-Za-z0-9_)\\]]\\s*:\\s*[A-Za-z0-9_(]" }
+    if k == 7 { return "==\\s*\\S+\\s+(and|or)\\s+\\S" }
+    if k == 8 { return "\\btherefore\\b.*\\bby\\s+(exhaustive|smt|symbolic)\\b" }
+    if k == 9 { return "\\bhas\\s+property\\b" }
+    if k == 10 { return "\\bghost\\s+type\\b" }
+    if k == 11 { return "\\bassume\\s+(?:[A-Z][a-z]+(?:\\s+[A-Za-z]+)*\\s*\\d*\\s*:|[A-Za-z_]\\w*\\s*(?:==|!=|<=|>=|<|>)\\s)" }
+    if k == 12 { return "\\bmod\\b" }
+    return ""
+}
+
+function word_at(cps: ptr<i32>, n: i32, i: i32) -> bool {
+    if i < 0 or i >= n {
+        return false
+    }
+    return rx_is_word(cps[i])
+}
+
+function lit_at(cps: ptr<i32>, n: i32, i: i32, lit: string) -> bool {
+    let lp: ptr<u8> = lit as ptr<u8>
+    let mut k: i32 = 0
+    while lp[k] != 0 {
+        if i + k >= n or cps[i + k] != (lp[k] as i32) {
+            return false
+        }
+        k = k + 1
+    }
+    return true
+}
+
+# End of a whitespace run starting at i.
+function ws_end(cps: ptr<i32>, n: i32, i: i32) -> i32 {
+    let mut j: i32 = i
+    while j < n and rx_is_space(cps[j]) {
+        j = j + 1
+    }
+    return j
+}
+
+# (?:«[^»]+»\s*)+ runs whose group count is not exactly 3.
+function has_non_triple_guillemets(cps: ptr<i32>, n: i32) -> bool {
+    let mut i: i32 = 0
+    while i < n {
+        if cps[i] == 171 {
+            let mut pos: i32 = i
+            let mut count: i32 = 0
+            let mut going: bool = true
+            while going {
+                going = false
+                if pos < n and cps[pos] == 171 {
+                    let mut k: i32 = pos + 1
+                    while k < n and cps[k] != 187 {
+                        k = k + 1
+                    }
+                    if k < n and k > pos + 1 {
+                        count = count + 1
+                        pos = ws_end(cps, n, k + 1)
+                        going = true
+                    }
+                }
+            }
+            if count > 0 {
+                if count != 3 {
+                    return true
+                }
+                i = pos
+            } else {
+                i = i + 1
+            }
+        } else {
+            i = i + 1
+        }
+    }
+    return false
+}
+
+# \b(?:if|therefore)\b.*\bin\s+[A-Za-z_]\w*\b(?!\s+to\b)
+function has_in_membership(cps: ptr<i32>, n: i32) -> bool {
+    let mut ls: i32 = 0
+    while ls <= n {
+        let mut le: i32 = ls
+        while le < n and cps[le] != 10 {
+            le = le + 1
+        }
+        # Earliest if/therefore word on this line.
+        let mut e0: i32 = -1
+        let mut i: i32 = ls
+        while i < le and e0 < 0 {
+            if word_at(cps, n, i - 1) == false {
+                if lit_at(cps, n, i, "if") and word_at(cps, n, i + 2) == false {
+                    e0 = i + 2
+                } elif lit_at(cps, n, i, "therefore") and word_at(cps, n, i + 9) == false {
+                    e0 = i + 9
+                }
+            }
+            i = i + 1
+        }
+        if e0 >= 0 {
+            let mut q: i32 = e0
+            while q + 1 < le {
+                if cps[q] == 105 and cps[q + 1] == 110 and word_at(cps, n, q - 1) == false {
+                    let w: i32 = ws_end(cps, n, q + 2)
+                    if w > q + 2 and w < n {
+                        let c: i32 = cps[w]
+                        if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 {
+                            let mut e: i32 = w + 1
+                            while e < n and rx_is_word(cps[e]) {
+                                e = e + 1
+                            }
+                            # Negative lookahead: \s+to\b
+                            let w2: i32 = ws_end(cps, n, e)
+                            let ahead: bool = w2 > e and lit_at(cps, n, w2, "to") and word_at(cps, n, w2 + 2) == false
+                            if ahead == false {
+                                return true
+                            }
+                        }
+                    }
+                }
+                q = q + 1
+            }
+        }
+        ls = le + 1
+    }
+    return false
+}
+
+# \s+ then a non-ASCII character, where \s+ may give back whitespace.
+function ws_then_nonascii(cps: ptr<i32>, n: i32, at: i32) -> bool {
+    let e: i32 = ws_end(cps, n, at)
+    if e == at {
+        return false
+    }
+    let mut j: i32 = at + 1
+    while j <= e {
+        if j < n and cps[j] >= 128 {
+            return true
+        }
+        j = j + 1
+    }
+    return false
+}
+
+# (?:let|function)\s+(?:mut\s+)?[^\x00-\x7F]
+function has_nonascii_ident(cps: ptr<i32>, n: i32) -> bool {
+    let mut i: i32 = 0
+    while i < n {
+        let mut after: i32 = -1
+        if lit_at(cps, n, i, "let") {
+            after = i + 3
+        } elif lit_at(cps, n, i, "function") {
+            after = i + 8
+        }
+        if after >= 0 {
+            if ws_then_nonascii(cps, n, after) {
+                return true
+            }
+            let e: i32 = ws_end(cps, n, after)
+            if e > after and lit_at(cps, n, e, "mut") and ws_then_nonascii(cps, n, e + 3) {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function has_unbalanced_parens(cps: ptr<i32>, n: i32) -> bool {
+    let mut depth: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if cps[i] == 40 {
+            depth = depth + 1
+        } elif cps[i] == 41 {
+            depth = depth - 1
+            if depth < 0 {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    return depth != 0
+}
+
+# Path.read_text(errors="replace"): universal newlines. Tags, one per line.
+function tag_features(path: string) -> string {
+    let raw: string = ft_read_file(path)
+    if raw == null {
+        return ""
+    }
+    let text: string = ft_replace(ft_replace(raw, "\r\n", "\n"), "\r", "\n")
+    let lenp: ptr<i32> = malloc(4) as ptr<i32>
+    let cps: ptr<i32> = rx_decode(text, lenp)
+    let n: i32 = lenp[0]
+    let flags: ptr<i32> = malloc(4) as ptr<i32>
+    let mut tags: string = ""
+    let mut k: i32 = 0
+    while k < N_CHECKS {
+        let mut hit: bool = false
+        if k == 4 {
+            hit = has_non_triple_guillemets(cps, n)
+        } elif k == 5 {
+            hit = has_in_membership(cps, n)
+        } elif k == 13 {
+            hit = has_nonascii_ident(cps, n)
+        } else {
+            let rx: ptr<Regex> = rx_compile(check_pattern(k, flags), flags[0])
+            hit = rx_search_cps(rx, cps, n)
+        }
+        if hit {
+            tags = tags + check_name(k) + "\n"
+        }
+        k = k + 1
+    }
+    if has_unbalanced_parens(cps, n) {
+        tags = tags + unbalanced_tag() + "\n"
+    }
+    return tags
+}
+
+# ---------------------------------------------------------------------------
+# Worker
+# ---------------------------------------------------------------------------
+
+function check_one(root: string, tmp: string, rel: string, timeout: i32) -> string {
+    let c_file: string = vr_c_name(tmp, rel)
+    let out_path: string = c_file + ".out"
+    let err_path: string = c_file + ".err"
+    let flow_file: string = root + "/" + rel
+    let rc: i32 = vr_run_stage(root, vr_transpile_cmd(root, flow_file, c_file), timeout, out_path, err_path)
+    if rc == -1 {
+        return "fail\ntranspile exceeded " + ft_itoa(timeout) + "s\n"
+    }
+    if rc != 0 or ft_exists_c(c_file) == false {
+        let mut so: string = ft_read_file(out_path)
+        let mut se: string = ft_read_file(err_path)
+        if so == null {
+            so = ""
+        }
+        if se == null {
+            se = ""
+        }
+        let tb: ptr<i32> = malloc(4) as ptr<i32>
+        let reason: string = vr_shorten(vr_pick_line(se + "\n" + so, tb), 140, false)
+        return "fail\n" + reason + "\n" + tag_features(flow_file)
+    }
+    return "pass\n\n"
+}
+
+extern {
+    function access(path: string, mode: i32) -> i32
+}
+
+function ft_exists_c(path: string) -> bool {
+    return access(path, 0) == 0
+}
+
+function worker(argc: i32, argv: ptr<string>) -> i32 {
+    # --worker <tmp> <timeout> <index>
+    let tmp: string = argv[2]
+    let ok: ptr<i32> = malloc(4) as ptr<i32>
+    let timeout: i32 = vr_parse_int(argv[3], ok)
+    let idx: i32 = vr_parse_int(argv[4], ok)
+    let root: string = vr_env("VERIFY_ROOT")
+    let files: ptr<StrList> = ft_split_lines(ft_read_file(tmp + "/files.txt"))
+    let res: string = check_one(root, tmp, ft_list_get(files, idx), timeout)
+    let _w: bool = ft_write_file(tmp + "/res." + ft_itoa(idx), res)
+    return 0
+}
+
+# Debug aid: print the tags for each file argument, one block per file.
+function tags_only(argc: i32, argv: ptr<string>) -> i32 {
+    let mut i: i32 = 2
+    while i < argc {
+        ft_out("== " + argv[i] + "\n" + tag_features(argv[i]))
+        i = i + 1
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+# reason.replace("Error resolving modules: ", "") with every
+# "at line N, column M" removed, then strip().
+function norm_reason(reason: string) -> string {
+    let r: string = ft_replace(reason, "Error resolving modules: ", "")
+    let p: ptr<u8> = r as ptr<u8>
+    let n: i32 = ft_len(r)
+    let mut out: string = ""
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let mut e: i32 = -1
+        if ft_starts(ft_from(r, i), "at line ") {
+            let mut q: i32 = i + 8
+            let d0: i32 = q
+            while q < n and p[q] >= 48 and p[q] <= 57 {
+                q = q + 1
+            }
+            if q > d0 and ft_starts(ft_from(r, q), ", column ") {
+                q = q + 9
+                let d1: i32 = q
+                while q < n and p[q] >= 48 and p[q] <= 57 {
+                    q = q + 1
+                }
+                if q > d1 {
+                    e = q
+                }
+            }
+        }
+        if e >= 0 {
+            out = out + ft_slice(r, start, i)
+            start = e
+            i = e
+        } else {
+            i = i + 1
+        }
+    }
+    out = out + ft_from(r, start)
+    return uc_strip(out)
+}
+
+# Python's fs[:sample] length.
+function shown(count: i32, sample: i32) -> i32 {
+    if sample >= 0 {
+        if sample < count {
+            return sample
+        }
+        return count
+    }
+    let s: i32 = count + sample
+    if s < 0 {
+        return 0
+    }
+    return s
+}
+
+function rule() -> string {
+    return "=============================================================================="
+}
+
+# Stable order of bucket indices by count, descending.
+function order_by_count(counts: ptr<i32>, nb: i32) -> ptr<i32> {
+    let order: ptr<i32> = malloc(((nb + 1) as i64) * 4) as ptr<i32>
+    let mut i: i32 = 0
+    while i < nb {
+        order[i] = i
+        i = i + 1
+    }
+    i = 1
+    while i < nb {
+        let cur: i32 = order[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and counts[order[j]] < counts[cur] {
+            order[j + 1] = order[j]
+            j = j - 1
+        }
+        order[j + 1] = cur
+        i = i + 1
+    }
+    return order
+}
+
+# Print the files of one bucket: `members` lists result indices.
+function print_members(files: ptr<StrList>, members: ptr<StrList>, sample: i32) -> void {
+    let count: i32 = ft_list_len(members)
+    let show: i32 = shown(count, sample)
+    let ok: ptr<i32> = malloc(4) as ptr<i32>
+    let mut i: i32 = 0
+    while i < show {
+        ft_outln("    " + ft_list_get(files, vr_parse_int(ft_list_get(members, i), ok)))
+        i = i + 1
+    }
+    if count > sample {
+        ft_outln("    ... +" + ft_itoa(count - sample) + " more")
+    }
+}
+
+function json_results(files: ptr<StrList>, status: ptr<StrList>, reasons: ptr<StrList>, tagsets: ptr<StrList>) -> string {
+    let n: i32 = ft_list_len(files)
+    if n == 0 {
+        return "[]"
+    }
+    let mut js: string = "[\n"
+    let mut i: i32 = 0
+    while i < n {
+        js = js + "  {\n    \"file\": " + json_quote(ft_list_get(files, i)) + ",\n    \"status\": " + json_quote(ft_list_get(status, i)) + ",\n    \"reason\": " + json_quote(ft_list_get(reasons, i)) + ",\n    \"tags\": "
+        let tl: ptr<StrList> = ft_split_lines(ft_list_get(tagsets, i))
+        if ft_list_len(tl) == 0 {
+            js = js + "[]"
+        } else {
+            js = js + "[\n"
+            let mut k: i32 = 0
+            while k < ft_list_len(tl) {
+                js = js + "      " + json_quote(ft_list_get(tl, k))
+                if k + 1 < ft_list_len(tl) {
+                    js = js + ","
+                }
+                js = js + "\n"
+                k = k + 1
+            }
+            js = js + "    ]"
+        }
+        js = js + "\n  }"
+        if i + 1 < n {
+            js = js + ","
+        }
+        js = js + "\n"
+        i = i + 1
+    }
+    return js + "]"
+}
+
+function summary_text(nfail: i32) -> string {
+    return ft_itoa(nfail) + " failures. None require checker/proof-semantics work to *categorize*: every bucket above traces to either (a) an operator/keyword genuinely absent from the parser (`\\`, `++`, `in`, `and`/`or`, `mod`, `by <tactic>`, `has property`, `ghost type`, freeform `assume`), or (b) a corpus typo (unbalanced parens in generated derived/ files). See docs/third-party/flow-verify-parser-status.md for the recommendation on each."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc >= 5 and ft_eq(argv[1], "--worker") {
+        return worker(argc, argv)
+    }
+    if argc >= 2 and ft_eq(argv[1], "--tags-only") {
+        return tags_only(argc, argv)
+    }
+    let opts: ptr<StrList> = ft_list_new()
+    ft_list_push(opts, "--help")
+    ft_list_push(opts, "--roots")
+    ft_list_push(opts, "--timeout")
+    ft_list_push(opts, "--jobs")
+    ft_list_push(opts, "--sample")
+    ft_list_push(opts, "--json")
+
+    let mut roots: ptr<StrList> = ft_list_new()
+    ft_list_push(roots, "examples/verify")
+    let mut timeout: i32 = 20
+    let mut jobs: i32 = vr_cpu_count()
+    let mut sample: i32 = 3
+    let mut json_arg: string = null
+    let extras: ptr<StrList> = ft_list_new()
+    let ok: ptr<i32> = malloc(4) as ptr<i32>
+
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "-h") {
+            ft_out(usage_text() + help_text())
+            return 0
+        }
+        if ft_starts(arg, "--") and ft_len(arg) > 2 {
+            let eq: i32 = ft_find(arg, "=", 0)
+            let mut name: string = arg
+            let mut value: string = null
+            if eq >= 0 {
+                name = ft_slice(arg, 0, eq)
+                value = ft_from(arg, eq + 1)
+            }
+            let full: string = vr_resolve_opt(opts, name)
+            if ft_starts(full, "?") {
+                return vr_usage_error(usage_text(), PROG, ft_from(full, 1))
+            }
+            if ft_eq(full, "") {
+                ft_list_push(extras, arg)
+                i = i + 1
+                continue
+            }
+            if ft_eq(full, "--help") {
+                if value != null {
+                    return vr_usage_error(usage_text(), PROG, "argument --help: ignored explicit argument " + ft_repr(value))
+                }
+                ft_out(usage_text() + help_text())
+                return 0
+            }
+            if ft_eq(full, "--roots") {
+                let got: ptr<StrList> = ft_list_new()
+                if value != null {
+                    ft_list_push(got, value)
+                } else {
+                    while i + 1 < argc and vr_is_optlike(argv[i + 1]) == false {
+                        ft_list_push(got, argv[i + 1])
+                        i = i + 1
+                    }
+                }
+                if ft_list_len(got) == 0 {
+                    return vr_usage_error(usage_text(), PROG, "argument --roots: expected at least one argument")
+                }
+                roots = got
+                i = i + 1
+                continue
+            }
+            if value == null {
+                if i + 1 >= argc or vr_is_optlike(argv[i + 1]) {
+                    return vr_usage_error(usage_text(), PROG, "argument " + full + ": expected one argument")
+                }
+                value = argv[i + 1]
+                i = i + 1
+            }
+            if ft_eq(full, "--json") {
+                json_arg = value
+            } else {
+                let num: i32 = vr_parse_int(value, ok)
+                if ok[0] == 0 {
+                    return vr_usage_error(usage_text(), PROG, "argument " + full + ": invalid int value: " + ft_repr(value))
+                }
+                if ft_eq(full, "--timeout") {
+                    timeout = num
+                } elif ft_eq(full, "--jobs") {
+                    jobs = num
+                } else {
+                    sample = num
+                }
+            }
+        } else {
+            ft_list_push(extras, arg)
+        }
+        i = i + 1
+    }
+    if ft_list_len(extras) > 0 {
+        let mut msg: string = "unrecognized arguments:"
+        let mut k: i32 = 0
+        while k < ft_list_len(extras) {
+            msg = msg + " " + ft_list_get(extras, k)
+            k = k + 1
+        }
+        return vr_usage_error(usage_text(), PROG, msg)
+    }
+
+    let mut json_path: string = null
+    if json_arg != null {
+        json_path = pr_resolve(json_arg)
+    }
+    let root: string = vr_env("VERIFY_ROOT")
+    let _cd: i32 = chdir(root)
+
+    let files: ptr<StrList> = vr_discover(roots, true, false)
+    let total: i32 = ft_list_len(files)
+    if total == 0 {
+        ft_errln("No .flow files found")
+        return 1
+    }
+    let mut joined: string = ""
+    i = 0
+    while i < ft_list_len(roots) {
+        if i > 0 {
+            joined = joined + ", "
+        }
+        joined = joined + ft_list_get(roots, i)
+        i = i + 1
+    }
+    ft_outln("Checking " + ft_itoa(total) + " .flow files under " + joined + " with " + ft_itoa(jobs) + " workers (transpile stage only)...\n")
+    if jobs <= 0 {
+        ft_errln("ValueError: max_workers must be greater than 0")
+        return 1
+    }
+
+    let tmpbase: string = vr_env("TMPDIR")
+    let mut tdir: string = "/tmp"
+    if ft_len(tmpbase) > 0 {
+        tdir = tmpbase
+    }
+    let tmp: string = uc_strip(pr_capture("mktemp -d " + pr_quote(tdir + "/flow-verify-triage-XXXXXXXX")))
+    let mut listing: string = ""
+    i = 0
+    while i < total {
+        listing = listing + ft_list_get(files, i) + "\n"
+        i = i + 1
+    }
+    let _wl: bool = ft_write_file(tmp + "/files.txt", listing)
+    let _fan: i32 = vr_fan_out(argv[0], pr_quote(tmp) + " " + ft_itoa(timeout), total, jobs)
+
+    let status: ptr<StrList> = ft_list_new()
+    let reasons: ptr<StrList> = ft_list_new()
+    let tagsets: ptr<StrList> = ft_list_new()
+    let mut nfail: i32 = 0
+    i = 0
+    while i < total {
+        let res: string = ft_read_file(tmp + "/res." + ft_itoa(i))
+        let mut st: string = "fail"
+        let mut why: string = "worker produced no result"
+        let mut tags: string = ""
+        if res != null {
+            let nl1: i32 = ft_find(res, "\n", 0)
+            let nl2: i32 = ft_find(res, "\n", nl1 + 1)
+            st = ft_slice(res, 0, nl1)
+            why = ft_slice(res, nl1 + 1, nl2)
+            tags = ft_from(res, nl2 + 1)
+        }
+        if ft_eq(st, "fail") {
+            nfail = nfail + 1
+        }
+        ft_list_push(status, st)
+        ft_list_push(reasons, why)
+        ft_list_push(tagsets, tags)
+        i = i + 1
+    }
+    let _rm: i32 = pr_run("rm -rf " + pr_quote(tmp))
+    ft_outln(ft_itoa(total - nfail) + " pass / " + ft_itoa(nfail) + " fail out of " + ft_itoa(total) + "\n")
+
+    # By raw parser error.
+    let rkeys: ptr<StrList> = ft_list_new()
+    let rindex: ptr<StrMap> = ft_map_new()
+    let rmembers: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < total {
+        if ft_eq(ft_list_get(status, i), "fail") {
+            let key: string = norm_reason(ft_list_get(reasons, i))
+            let b: i32 = ft_map_get(rindex, key, -1)
+            if b < 0 {
+                ft_map_put(rindex, key, ft_list_len(rkeys))
+                ft_list_push(rkeys, key)
+            }
+        }
+        i = i + 1
+    }
+    let nr: i32 = ft_list_len(rkeys)
+    let rcounts: ptr<i32> = malloc(((nr + 1) as i64) * 4) as ptr<i32>
+    let mut b2: i32 = 0
+    while b2 < nr {
+        rcounts[b2] = 0
+        b2 = b2 + 1
+    }
+    i = 0
+    while i < total {
+        if ft_eq(ft_list_get(status, i), "fail") {
+            let bi: i32 = ft_map_get(rindex, norm_reason(ft_list_get(reasons, i)), 0)
+            rcounts[bi] = rcounts[bi] + 1
+        }
+        i = i + 1
+    }
+    ft_outln(rule())
+    ft_outln("By raw parser error")
+    ft_outln(rule())
+    let rorder: ptr<i32> = order_by_count(rcounts, nr)
+    i = 0
+    while i < nr {
+        let bk: i32 = rorder[i]
+        let rkey: string = ft_list_get(rkeys, bk)
+        ft_outln("\n[" + ft_itoa(rcounts[bk]) + "] " + rkey)
+        let members: ptr<StrList> = ft_list_new()
+        let mut j: i32 = 0
+        while j < total {
+            if ft_eq(ft_list_get(status, j), "fail") and ft_eq(norm_reason(ft_list_get(reasons, j)), rkey) {
+                ft_list_push(members, ft_itoa(j))
+            }
+            j = j + 1
+        }
+        print_members(files, members, sample)
+        i = i + 1
+    }
+
+    # By suspected root cause.
+    let fkeys: ptr<StrList> = ft_list_new()
+    let findex: ptr<StrMap> = ft_map_new()
+    let untagged: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < total {
+        if ft_eq(ft_list_get(status, i), "fail") {
+            let tl: ptr<StrList> = ft_split_lines(ft_list_get(tagsets, i))
+            if ft_list_len(tl) == 0 {
+                ft_list_push(untagged, ft_itoa(i))
+            }
+            let mut t: i32 = 0
+            while t < ft_list_len(tl) {
+                let tag: string = ft_list_get(tl, t)
+                if ft_map_get(findex, tag, -1) < 0 {
+                    ft_map_put(findex, tag, ft_list_len(fkeys))
+                    ft_list_push(fkeys, tag)
+                }
+                t = t + 1
+            }
+        }
+        i = i + 1
+    }
+    let nf: i32 = ft_list_len(fkeys)
+    let fcounts: ptr<i32> = malloc(((nf + 1) as i64) * 4) as ptr<i32>
+    let fmembers_all: ptr<StrList> = ft_list_new()
+    let mut f2: i32 = 0
+    while f2 < nf {
+        let fkey: string = ft_list_get(fkeys, f2)
+        let mut cnt: i32 = 0
+        let mut mem: string = ""
+        let mut j2: i32 = 0
+        while j2 < total {
+            if ft_eq(ft_list_get(status, j2), "fail") and ft_contains("\n" + ft_list_get(tagsets, j2), "\n" + fkey + "\n") {
+                cnt = cnt + 1
+                mem = mem + ft_itoa(j2) + "\n"
+            }
+            j2 = j2 + 1
+        }
+        fcounts[f2] = cnt
+        ft_list_push(fmembers_all, mem)
+        f2 = f2 + 1
+    }
+    ft_outln("")
+    ft_outln(rule())
+    ft_outln("By suspected root cause (heuristic; a file may match several)")
+    ft_outln(rule())
+    let forder: ptr<i32> = order_by_count(fcounts, nf)
+    i = 0
+    while i < nf {
+        let fk: i32 = forder[i]
+        let ftag: string = ft_list_get(fkeys, fk)
+        ft_outln("\n[" + ft_itoa(fcounts[fk]) + "] " + ftag)
+        let mut c: i32 = 0
+        while c < N_CHECKS {
+            if ft_eq(check_name(c), ftag) {
+                ft_outln("    " + check_expl(c))
+            }
+            c = c + 1
+        }
+        print_members(files, ft_split_lines(ft_list_get(fmembers_all, fk)), sample)
+        i = i + 1
+    }
+    if ft_list_len(untagged) > 0 {
+        ft_outln("\n[" + ft_itoa(ft_list_len(untagged)) + "] (no heuristic tag matched)")
+        print_members(files, untagged, sample)
+    }
+
+    ft_outln("")
+    ft_outln(rule())
+    ft_outln("Summary")
+    ft_outln(rule())
+    ft_outln(summary_text(nfail))
+
+    if json_path != null {
+        let _wj: bool = ft_write_file(json_path, json_results(files, status, reasons, tagsets))
+        ft_outln("\nJSON written to " + json_arg)
+    }
+    return 0
+}

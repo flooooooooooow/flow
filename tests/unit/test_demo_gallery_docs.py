@@ -1,33 +1,46 @@
-"""Contracts for the data-driven Wiki demo/gallery system."""
+"""Contracts for the data-driven Wiki demo/gallery system.
+
+The generators are Flow programs behind scripts/build_shader_gallery.sh and
+scripts/build_demo_overview.sh. Their --check mode regenerates the page and
+compares it with the checked-in copy, so the checked-in pages stand for the
+generated output here.
+"""
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
+import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def load_script(name: str):
-    path = ROOT / "scripts" / name
-    spec = importlib.util.spec_from_file_location(name.removesuffix(".py"), path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+def run_shim(name: str, *args: str) -> subprocess.CompletedProcess:
+    if shutil.which("cc") is None and shutil.which("clang") is None:
+        pytest.skip("no C compiler")
+    return subprocess.run(
+        [str(ROOT / "scripts" / name), *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_photoreal_gallery_generator_tracks_all_fsl_entries():
-    gallery = load_script("build_shader_gallery.py")
-    demos = gallery.parse_scenes() + gallery.parse_materials()
-    names = [demo.name for demo in demos]
+    result = run_shim("build_shader_gallery.sh", "--check")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "shader gallery page is current\n"
 
-    assert len(demos) == 64
+    page = (ROOT / "docs/demos/shaders.md").read_text(encoding="utf-8")
+    names = re.findall(r'<img src="./shaders/(photoreal_[A-Za-z0-9_]+)\.gif"', page)
+    assert len(names) == 64
     assert len(set(names)) == 64
-    assert [demo.name for demo in gallery.parse_scenes()] == [
+    featured = page.split('<div class="demo-feature-grid">', 1)[1].split("</div>\n\n", 1)[0]
+    assert re.findall(r"--name (photoreal_[A-Za-z0-9_]+)", featured) == [
         "photoreal_studio",
         "photoreal_glass",
         "photoreal_marble",
@@ -36,8 +49,6 @@ def test_photoreal_gallery_generator_tracks_all_fsl_entries():
     assert "photoreal_gold" in names
     assert "photoreal_energy_crystal" in names
     assert "photoreal_underwater" in names
-
-    page = gallery.build_page(demos)
     assert page.count('<figure class="demo-tile') == 64
     assert "record_shader_gallery.py --group photoreal" in page
 
@@ -61,15 +72,22 @@ def test_demo_catalog_is_unique_and_covers_expected_collections():
 
 
 def test_demo_overview_is_derived_from_catalog():
-    overview = load_script("build_demo_overview.py")
+    result = run_shim("build_demo_overview.sh", "--check", "--check-previews")
+    assert result.returncode == 0, result.stderr
     data = json.loads((ROOT / "docs/demos/catalog.json").read_text(encoding="utf-8"))
-    page = overview.build(data)
+    page = (ROOT / "docs/demos/overview.md").read_text(encoding="utf-8")
 
     assert "# Demo Showcase" in page
     assert page.count('class="demo-collection-card') >= len(data["collections"])
     assert "Photoreal FSL" in page
     assert "Systems through time" in page
     assert "Live WebAssembly" in page
+
+
+def test_demo_navigation_is_synced_with_catalog():
+    result = run_shim("sync_demo_nav.sh", "--check")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "demo navigation is current\n"
 
 
 def test_wiki_shell_loads_gallery_presentation_assets():

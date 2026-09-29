@@ -116,7 +116,7 @@ dist/
 # Regenerable WASM binaries (HTML/.flow sources stay tracked)
 **/*.wasm
 # ...except the published gallery, which is the deployed artifact itself.
-# Rebuild with: python3 scripts/build_wasm_gallery.py
+# Rebuild with: scripts/build_wasm_gallery.sh
 !site/wasm/**/*.wasm
 
 # JUCE plugins — local build outputs and compiled test binaries
