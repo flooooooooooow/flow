@@ -40,9 +40,12 @@ committing, or the `bootstrap_from_c.sh --verify` fixed-point check will fail.
 
 ### Regeneration steps
 
+Link with `-lm`: the proof layer puts math calls into flowc, and Linux does
+not link libm by default.
+
 ```bash
 # 1. Build a temporary bootstrap binary from the CURRENT checked-in C
-cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c
+cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c -lm
 
 # 2. Emit main.flow in bundle mode using the Python host (picks up your edits)
 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
@@ -51,7 +54,7 @@ FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
 
 # 3. Verify fixed point: the new binary emits the same C
 cp compiler/build/bootstrap_regen.c compiler/bootstrap/flowc_stage_a.c
-cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c
+cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c -lm
 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
   FLOWC_IN=compiler/src/main.flow FLOWC_OUT=/tmp/verify.c \
   ./compiler/build/flowc_bootstrap
@@ -59,12 +62,19 @@ cmp -s compiler/bootstrap/flowc_stage_a.c /tmp/verify.c \
   && echo "FIXED POINT OK" || echo "DRIFT"
 
 # 4. Rebuild the checked-in binary
-cc -O2 -o compiler/bootstrap/flowc_stage_a compiler/bootstrap/flowc_stage_a.c
+cc -O2 -o compiler/bootstrap/flowc_stage_a compiler/bootstrap/flowc_stage_a.c -lm
 
 # 5. Run the full verification
 ./compiler/scripts/bootstrap_from_c.sh --verify
 ./compiler/scripts/self_host_full.sh
 ```
+
+Then run the parity gates for what you touched. All of them work without
+Python in golden mode: `parity_lowering.sh`, `parity_effects.sh`,
+`parity_proofs.sh`, `parity_mlir.sh`, `parity_field_dsl.sh`,
+`parity_dynamics_dsl.sh`, `parity_flow_blocks.sh`, `parity_shader_dsl.sh`,
+`parse_coverage.sh --check`, `fmt_check.sh --check` and
+`corpus_parity.sh --check`, all under `compiler/scripts/`.
 
 ### Coordination protocol
 
@@ -85,44 +95,46 @@ If multiple agents are editing `compiler/src/` simultaneously:
 
 ### Current in-flight work
 
-Field DSL expansion on flowc (branch `port/selfhost-next`, 2026-09-27):
-porting all of `src/flow/field_dsl.py` (`field` / `boundary` /
-`evolves as laplacian` expand-before-parse) to `compiler/src/field_dsl.flow`,
-wiring it into every flowc source read (`main.flow`, `driver.flow`,
-`resolve.flow`) and bundling programs with imports on the flowc host, so
-`./flow run examples/evolution/heat_diffusion.flow` needs no Python. Gate:
-`compiler/scripts/parity_field_dsl.sh`. Files: new `field_dsl.flow`,
-`source_load.flow`, edits to `main.flow`, `driver.flow`, `resolve.flow`,
-`flow-driver`. Bootstrap C regenerated last in its own commit.
+Merge train of 2026-09-27 to 2026-09-29, all squash-merged to main: #980
+(ruff), #966 (Stage-A test blockers), #981 (Python ratchet), #965, #959,
+#960, #1000, #956 (Field DSL), #955, #971, #987 (REPL), #1002 (prose),
+#1003 (Stage-A batch 2), #999 (dynamics DSL and flow blocks), #998 (Shader
+DSL), #989 (package manager), #1001 (parse coverage), #1012 (pattern, ui,
+fork, sort and unit lowering), #1014 (algebraic effects), #1013 (proof
+layer), #1015 (Stage-A batch 3), #1016 (native LSP), #1019 (lossless
+formatter), #1020 (MLIR emitter) and #1018 (corpus parity). Open from it:
+#1021 (CI jobs for the parity gates) and #1022 (ratchet baseline).
 
-Dynamics DSL and `flow` blocks on flowc (branch `port/dynamics-dsl-flowc`,
-#681, 2026-09-27): `compiler/src/dynamics_dsl.flow` (the whole dynamics
-DSL) and `compiler/src/flow_blocks.flow` (flow-block lowering to Flow
-source) run after the Field DSL on every flowc source read, through
-`flowc_expand_stages_in_place` in `resolve.flow`. `FLOWC_EXPAND_ONLY` takes
-`field`, `dynamics`, `flow` or `1` for all. Gates:
-`compiler/scripts/parity_dynamics_dsl.sh`, `parity_flow_blocks.sh`.
-Other edits: `cgen.flow` (parenthesised unary operands, `flow_panic`),
-`typecheck.flow`, `main.flow`, `driver.flow`, the self-emit scripts.
+Every source read in flowc goes through `flowc_expand_stages_in_place` in
+`resolve.flow`: the fill-shader stub (mask 8), then the Field DSL (1), the
+dynamics DSL (2) and flow blocks (4). The bundle takes up to 128 modules and
+4 MiB of C.
 
-Previously: no active agents. The bootstrap suite is at 79/11 using FLOWC_IN/FLOWC_OUT
-env vars (not positional args, which trigger the self-test). The Python unit
-suite is at 1424 passed, 0 failed, 6 skipped (all clean).
+Denotational MLIR lane (2026-09-22): a `flow.*` dialect that keeps the
+vector-field structure of `flow` evolution blocks for the MLIR passes (#664,
+#665, #667, #671). Not merged: `src/flow/denotational_mlir.py`, the
+`denotational_blocks` kwarg of `flow_to_mlir` and the `FLOW_DENOTATIONAL=1`
+path in `transpiler.py` are not on main.
 
-Bootstrap C was regenerated on 2026-08-14 to pick up span subscript, span
-slicing, and array-to-span conversion at call sites. Fixed point verified.
+As of 2026-09-29 the Python suite on CI is at 1656 passed, 0 failed, 103
+skipped, and the tracked Python is 310 files and 79712 lines.
 
 ### Bootstrap suite
 
-The "Bootstrap suite" is the 90 `.flow` files in `tests/lang/` run through
-the Stage-A compiler in bundle mode:
+The bootstrap suite is every `.flow` file under `tests/lang/` (183 files)
+compiled by the Stage-A compiler in bundle mode, then by cc. flowc reads its
+input and output paths from `FLOWC_IN` and `FLOWC_OUT`. Paths given as
+arguments are ignored and flowc runs its self-test instead, which is how an
+older version of this loop reported every file as passing.
 
 ```bash
+cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c -lm
 BOOT=compiler/build/flowc_bootstrap
 pass=0; fail=0
 for f in $(find tests/lang -name "*.flow" | sort); do
-  if FLOWC_BUNDLE=1 FLOWC_DIR=. "$BOOT" "$f" "/tmp/out.c" >/dev/null 2>&1 \
-     && cc -O0 -o /tmp/out "/tmp/out.c" >/dev/null 2>&1; then
+  rm -f /tmp/out.c
+  if FLOWC_BUNDLE=1 FLOWC_DIR=. FLOWC_IN="$f" FLOWC_OUT=/tmp/out.c "$BOOT" >/dev/null 2>&1 \
+     && cc -O0 -Itests/lang -o /tmp/out /tmp/out.c -lm >/dev/null 2>&1; then
     pass=$((pass + 1))
   else
     fail=$((fail + 1)); echo "  FAIL $f"
@@ -131,18 +143,17 @@ done
 echo "pass=$pass fail=$fail"
 ```
 
-Current: 84/6 (with `-Itests/lang`). The 6 failures by category:
+Current on main (2026-09-29): 179 pass, 4 fail.
 
-- DSL keywords (3): test_effects, test_hybrid_events, test_time_blocks
-- Cross-module generics (1): test_generic_channels
-- External C headers (2): test_c_import_julia, test_c_import_python
+- Closures passed where a function pointer is expected (2): test_closures,
+  test_fn_ptr. The C gets a closure struct where it wants `int32_t (*)(int32_t)`.
+- Cross-module generics (1): test_generic_channels (`Chan` and
+  `channel_send_i32` undeclared).
+- Runtime link (1): test_concurrent_link needs the concurrency runtime,
+  which this loop does not link.
 
-Note: test_c_import and test_extern_type pass with `-Itests/lang` (the helper
-header lives in tests/lang/). The suite runner needs that include path.
-test_generics now passes after adding generic monomorphization.
-
-Recently landed: enum tagged unions, enum variant references, span indexing
-with .data, span slicing with .data, array-to-span conversion at call sites.
+The include path `-Itests/lang` is needed for test_c_import and
+test_extern_type, whose helper header lives in `tests/lang/`.
 
 ## Meta-Agents and Repositories
 
