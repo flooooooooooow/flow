@@ -1,0 +1,66 @@
+# MLIR parity fixture: counted loops. A positive literal step with a simple
+# body becomes scf.for (with scf.if inside); every other loop takes the cf
+# lowering with the runtime direction test.
+
+function sum_to(n: i32) -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to n {
+        s = s + i
+    }
+    return s
+}
+
+function main() -> i32 {
+    println(sum_to(10))
+
+    for i in 0 to 12 step 3 {
+        if i > 4 {
+            println(i)
+        } else {
+            println(0 - i)
+        }
+    }
+
+    let mut down: i32 = 0
+    for j in 10 to 0 step -2 {
+        down = down + j
+    }
+    println(down)
+
+    let stride: i32 = 4
+    let mut strided: i32 = 0
+    for k in 0 to 20 step stride {
+        strided = strided + k
+    }
+    println(strided)
+
+    let mut rev: i32 = 0
+    for r in 5 to 0 {
+        rev = rev * 10 + r
+    }
+    println(rev)
+
+    let mut pairs: i32 = 0
+    for x in 0..4 {
+        for y in 0..4 {
+            if y > x {
+                break
+            }
+            if y == 1 {
+                continue
+            }
+            pairs = pairs + 1
+        }
+    }
+    println(pairs)
+
+    let mut found: i32 = 0 - 1
+    for z in 0 to 100 {
+        if z * z > 50 {
+            found = z
+            break
+        }
+    }
+    println(found)
+    return 0
+}
