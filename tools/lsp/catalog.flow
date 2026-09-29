@@ -1,0 +1,965 @@
+# @module tools.lsp.catalog
+# @means  Hover and completion catalogs for the language server:
+#         syntax, operators, attributes and types, the dynamics DSL,
+#         declarative ordering, keywords and built-in functions.
+#         Generated once from the retired Python modules
+#         (lsp_syntax.py, lsp_dynamics.py, lsp_ordering.py and the
+#         tables in lsp_server.py); edit this file directly now.
+
+import "tools/hostlib/text.flow"
+
+# SYNTAX_HOVER: operator, keyword, attribute and type prose.
+export function syntax_hover_text(key: string) -> string {
+    if t_eq(key, "|>") {
+        return "**`|>`** - pipe / pipeline operator.\n\nFeeds the left-hand value into the right-hand call or declarative form.\n\n```flow\nxs |> sort\nxs |> sortBy [desc .score, asc .name]\nvalue |> abs\n```\nSee docs/language/syntax.md (and docs/language/ordering.md when present)."
+    }
+    if t_eq(key, "->") {
+        return "**`->`** - function return type or effect/sense binding arrow.\n\n```flow\nfunction add(a: i32, b: i32) -> i32 { return a + b }\ncontrollable -> plant_ok\n```\nSee docs/language/functions.md."
+    }
+    if t_eq(key, "=>") {
+        return "**`=>`** - match-arm / closure arrow.\n\n```flow\nmatch x {\n    0 => print(\"zero\")\n    default => print(\"other\")\n}\n```\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "..") {
+        return "**`..`** - range / record-update rest.\n\n```flow\n# Record update (copy base, override fields)\nPoint { ..p, x: 1.0 }\n```\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "as") {
+        return "**`as`** - cast or unit conversion.\n\nConverts a value to another type (or unit with matching dimensions).\n\n```flow\nlet n: i32 = 3\nlet f: f64 = n as f64\nlet v: Velocity = (10.0 as Meter) / (2.0 as Second)\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "==") {
+        return "**`==`** - equality comparison.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "!=") {
+        return "**`!=`** - inequality comparison.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "<=") {
+        return "**`<=`** - less-than-or-equal.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, ">=") {
+        return "**`>=`** - greater-than-or-equal.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "&&") {
+        return "**`&&`** - short-circuit logical AND (also spelled `and`).\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "||") {
+        return "**`||`** - short-circuit logical OR (also spelled `or`).\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "<<") {
+        return "**`<<`** - bitwise left shift.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, ">>") {
+        return "**`>>`** - bitwise right shift.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "match") {
+        return "**`match`** - pattern matching on a value.\n\n```flow\nmatch day {\n    1 => print(\"Mon\")\n    default => print(\"other\")\n}\n```\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "default") {
+        return "**`default`** - catch-all arm in a `match`.\n\n```flow\nmatch x {\n    0 => 1\n    default => x\n}\n```"
+    }
+    if t_eq(key, "effect") {
+        return "**`effect`** - declare an algebraic effect (operations without a default body).\n\n```flow\neffect Async {\n    delay(ms: i32) -> void\n    spawn(task_id: i32) -> i32\n}\n```\nSee docs/language/async-effects.md."
+    }
+    if t_eq(key, "capability") {
+        return "**`capability`** - implement an effect (handler / backend).\n\n```flow\ncapability SimulatedAsync for Async {\n    delay(ms: i32) -> void { }\n}\n```\nSee docs/language/async-effects.md."
+    }
+    if t_eq(key, "handle") {
+        return "**`handle`** - install an effect handler for a block.\n\n```flow\nhandle Async with SimulatedAsync {\n    result = fetch_user(1)\n}\n```\nSee docs/language/async-effects.md."
+    }
+    if t_eq(key, "with") {
+        return "**`with`** - pairs with `handle` (`handle E with Cap { ... }`) or qualifies declarative options (`with entropy`).\n\nSee docs/language/async-effects.md."
+    }
+    if t_eq(key, "parallel") {
+        return "**`parallel`** - parallel `for` loop (work may run concurrently).\n\n```flow\nparallel for i in 0 to n {\n    out[i] = in[i] * 2\n}\n```\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "for") {
+        return "**`for`** - counted loop (`for i in lo to hi` / `step`).\n\n```flow\nfor i in 0 to 10 {\n    print(i)\n}\nfor i in 0 to 10 step 2 { }\n```\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "to") {
+        return "**`to`** - upper bound of a `for` range (`for i in 0 to n`).\n\nEnd is exclusive in the usual Flow loop lowering.\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "step") {
+        return "**`step`** - stride for a `for` loop.\n\n```flow\nfor i in 0 to 10 step 2 { }\n```"
+    }
+    if t_eq(key, "while") {
+        return "**`while`** - conditional loop.\n\n```flow\nwhile n > 0 {\n    n = n - 1\n}\n```\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "if") {
+        return "**`if`** - conditional branch.\n\n```flow\nif x > 0 {\n    return x\n} elif x == 0 {\n    return 0\n} else {\n    return -x\n}\n```"
+    }
+    if t_eq(key, "elif") {
+        return "**`elif`** - else-if branch after `if`.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "else") {
+        return "**`else`** - final branch of an `if` / `elif` chain.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "return") {
+        return "**`return`** - exit the current function with a value (or void).\n\n```flow\nreturn a + b\n```\nSee docs/language/functions.md."
+    }
+    if t_eq(key, "let") {
+        return "**`let`** - bind a local (immutable unless `mut`).\n\n```flow\nlet x: i32 = 42\nlet mut counter: i32 = 0\n```\nSee docs/language/variables.md."
+    }
+    if t_eq(key, "mut") {
+        return "**`mut`** - marks a `let` binding as mutable.\n\n```flow\nlet mut n: i32 = 0\nn = n + 1\n```\nSee docs/language/variables.md."
+    }
+    if t_eq(key, "const") {
+        return "**`const`** - compile-time constant binding.\n\n```flow\nexport const PI: f32 = 3.14159265\n```\nSee docs/language/variables.md."
+    }
+    if t_eq(key, "struct") {
+        return "**`struct`** - product type with named fields.\n\n```flow\nstruct Point { x: f32, y: f32 }\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "enum") {
+        return "**`enum`** - sum type with named variants.\n\n```flow\nenum Option<T> { Some(T), None }\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "trait") {
+        return "**`trait`** - interface of method signatures.\n\n```flow\ntrait Printable {\n    function to_string(self) -> string\n}\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "impl") {
+        return "**`impl`** - implement a trait for a type (or inherent methods).\n\n```flow\nimpl Printable for Point {\n    function to_string(self) -> string { ... }\n}\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "function") {
+        return "**`function`** - declare a function.\n\n```flow\nfunction add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n```\nSee docs/language/functions.md."
+    }
+    if t_eq(key, "import") {
+        return "**`import`** - bring a module or selected symbols into scope.\n\n```flow\nimport \"stdlib/math.flow\"\nimport my_pkg { foo, bar }\n```\nSee docs/language/modules.md."
+    }
+    if t_eq(key, "export") {
+        return "**`export`** - make a declaration (or list of names) visible to importers.\n\n```flow\nexport function add(a: f32, b: f32) -> f32 { return a + b }\nexport foo, bar\n```\nSee docs/language/modules.md."
+    }
+    if t_eq(key, "extern") {
+        return "**`extern`** - FFI declarations implemented outside Flow.\n\n```flow\nextern {\n    function malloc(size: i64) -> ptr<void>\n}\n```\nSee docs/language/functions.md."
+    }
+    if t_eq(key, "inline") {
+        return "**`inline`** - hint that a function should be inlined. Written as the `@inline` attribute.\n\n```flow\n@inline\nfunction fast_add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n```\nSee docs/LANGUAGE_SPEC.md \302\2473.6."
+    }
+    if t_eq(key, "in") {
+        return "**`in`** - separator in `for i in lo to hi`.\n\nSee docs/language/syntax.md."
+    }
+    if t_eq(key, "module") {
+        return "**`module`** - declare a named module / namespace block.\n\nSee docs/language/modules.md."
+    }
+    if t_eq(key, "shader") {
+        return "**`shader`** - GPU shader / FSL entry (graphics pipeline).\n\n```flow\nshader main(uv: vec2) -> vec4 { ... }\n```\nSee docs/language/graphics.md."
+    }
+    if t_eq(key, "unit") {
+        return "**`unit`** - declare a unit of measure (dimensional type).\n\n```flow\nunit Meter\nunit Second\nunit Velocity = Meter / Second\n```\nDimensions are checked at compile time and erase to `f64`.\nSee docs/language/types.md."
+    }
+    if t_eq(key, "theorem") {
+        return "**`theorem`** - verified claim at a Claim Path (proof-as-program).\n\n```flow\n# @means Adding zero on the right is identity.\n# @tier derived\ntheorem Nat/+.zero-right(n: Nat) { ... }\n```\nSee docs/language/verification.md."
+    }
+    if t_eq(key, "assume") {
+        return "**`assume`** - bring a prior claim into scope inside a proof.\n\n```flow\nassume Nat/+.zero-right(n)\n```\nSee docs/language/verification.md."
+    }
+    if t_eq(key, "therefore") {
+        return "**`therefore`** - conclusion the checker must verify.\n\n```flow\ntherefore n + 0 == n\n```\nSee docs/language/verification.md."
+    }
+    if t_eq(key, "claim") {
+        return "**`claim`** - claim-path vocabulary for verified facts (see theorem headers / epistemology).\n\nSee docs/language/claim-coordinates.md and docs/language/epistemology.md."
+    }
+    if t_eq(key, "@gpu") {
+        return "**`@gpu`** - mark a function as a GPU kernel / offload candidate.\n\n```flow\n@gpu\nfunction saxpy(n: i32, a: f32, x: ptr<f32>, y: ptr<f32>) -> void { ... }\n```\nSee docs/tutorials/advanced.md."
+    }
+    if t_eq(key, "@rt_safe") {
+        return "**`@rt_safe`** - real-time safety attribute (no unbounded alloc / locks).\n\n```flow\n@rt_safe\nfunction process_block(buf: ptr<f32>, n: i32) -> void { ... }\n```"
+    }
+    if t_eq(key, "@lifetime") {
+        return "**`@lifetime(D)`** - lifetime domain: `callback`, `frame`, `session` or `application`, shortest-lived first. Goes on a function (the domain its frame runs in) or a module static (the domain of that storage, default `application`).\n\n```flow\n@lifetime(callback)\nfunction process(input: span<f32>) -> f32 { ... }\n```\n`callback` implies `@rt_safe`; `frame` forbids heap create/destroy but allows bumping an arena. A longer-lived domain may not hold a reference to a shorter-lived one.\n\nSee docs/language/lifetime-domains.md."
+    }
+    if t_eq(key, "@inline") {
+        return "**`@inline`** - inline hint. Emits `static inline` in the generated C (`extern inline` when the symbol must stay externally visible).\n\n```flow\n@inline\nfunction tick() -> void { ... }\n```\nSee docs/LANGUAGE_SPEC.md \302\2473.6."
+    }
+    if t_eq(key, "@noinline") {
+        return "**`@noinline`** - inline barrier. Emits `__attribute__((noinline))` in the generated C.\n\n```flow\n@noinline\nfunction cold_path() -> void { ... }\n```\nSee docs/LANGUAGE_SPEC.md \302\2473.6."
+    }
+    if t_eq(key, "@always_inline") {
+        return "**`@always_inline`** - forced inline. Emits `__attribute__((always_inline))` plus the inline specifier, and is honored even at `-O0`.\n\n```flow\n@always_inline\nfunction lerp(a: f32, b: f32, t: f32) -> f32 { ... }\n```\nSee docs/LANGUAGE_SPEC.md \302\2473.6."
+    }
+    if t_eq(key, "@target") {
+        return "**`@target(\"\342\200\246\")`** - per-function C target features. Emits `__attribute__((target(\"\342\200\246\")))`. Flow checks the string's shape; the host C compiler decides whether the features exist.\n\n```flow\n@target(\"avx2\")\nfunction dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }\n```\nSee docs/LANGUAGE_SPEC.md \302\2473.6."
+    }
+    if t_eq(key, "array") {
+        return "**`array<T, N>`** - fixed-size array type.\n\n```flow\nlet xs: array<i32, 4> = [1, 2, 3, 4]\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "ptr") {
+        return "**`ptr<T>`** - raw pointer (FFI / low-level buffers).\n\n```flow\nextern {\n    function malloc(size: i64) -> ptr<void>\n}\n```\nSee docs/language/types.md."
+    }
+    if t_eq(key, "bit") {
+        return "**`bit`** - single-bit / boolean-like hardware or verify type.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "vec") {
+        return "**`vec`** - short vector type (SIMD / graphics).\n\nSee docs/language/types.md and docs/language/graphics.md."
+    }
+    if t_eq(key, "i8") {
+        return "**`i8`** - signed 8-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "i16") {
+        return "**`i16`** - signed 16-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "i32") {
+        return "**`i32`** - signed 32-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "i64") {
+        return "**`i64`** - signed 64-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "i128") {
+        return "**`i128`** - signed 128-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "u8") {
+        return "**`u8`** - unsigned 8-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "u16") {
+        return "**`u16`** - unsigned 16-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "u32") {
+        return "**`u32`** - unsigned 32-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "u64") {
+        return "**`u64`** - unsigned 64-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "u128") {
+        return "**`u128`** - unsigned 128-bit integer.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "f32") {
+        return "**`f32`** - IEEE-754 single-precision floating point.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "f64") {
+        return "**`f64`** - IEEE-754 double-precision floating point.\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "bool") {
+        return "**`bool`** - boolean (`true` / `false`).\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "void") {
+        return "**`void`** - no value (typical for side-effecting functions).\n\nSee docs/language/types.md."
+    }
+    if t_eq(key, "string") {
+        return "**`string`** - UTF-8 string.\n\nSee docs/language/types.md."
+    }
+    return ""
+}
+
+# DYNAMICS_HOVER: dynamics DSL vocabulary.
+export function dynamics_hover_text(key: string) -> string {
+    if t_eq(key, "dsys") {
+        return "**`dsys`** - declare a linear plant (dynamics DSL).\n\n```flow\ndyn.dsys plant {\n    discrete   # or continuous\n    dt 0.1\n    n 2 m 1 p 1\n    A 1.0 0.1 0.0 1.0\n    B 0.0 0.1\n    C 1.0 0.0\n}\n```\nPrefixed form: `dyn.dsys` / `dynamics.dsys`. See docs/language/dynamics-dsl.md."
+    }
+    if t_eq(key, "horizon") {
+        return "**`horizon`** - name a finite or infinite analysis horizon.\n\n```flow\ndyn.horizon rollout finite 50\ndyn.horizon asymptotic infinite gamma 0.99\n```"
+    }
+    if t_eq(key, "sense") {
+        return "**`sense on`** - open-loop analysis bindings.\n\n```flow\ndyn.sense on plant {\n    controllable -> plant_ok\n    spectral -> rho_open\n    gramian finite rollout trace -> wc_fin\n}\n```"
+    }
+    if t_eq(key, "ga") {
+        return "**`ga evolve`** - genetic search for state-feedback gains.\n\n```flow\ndyn.ga evolve on plant over rollout -> k1 k2 {\n    population 12\n    generations 30\n    mutation 0.3\n}\n```"
+    }
+    if t_eq(key, "closed") {
+        return "**`closed`** - certify closed-loop `A - B K`.\n\n```flow\ndyn.closed plant with k1 k2 {\n    spectral -> rho_cl\n    energy over rollout -> E_cl\n    stable -> stable_cl\n}\n```"
+    }
+    if t_eq(key, "analyze") {
+        return "**`analyze`** - one-shot GA + controllability + Gramian report.\n\n```flow\ndyn.analyze plant ga k1 k2 over rollout -> report { full }\n```\nBinds a `GAAnalysisReport` and assigns `k1`/`k2`."
+    }
+    if t_eq(key, "wfc") {
+        return "**`wfc field`** - Wave Function Collapse field (experimental coupling).\n\n```flow\ndyn.wfc field layout { size 4 4  tiles 3  seed 7 }\n```"
+    }
+    if t_eq(key, "dynamics") {
+        return "**`dynamics { ... }`** - namespace block for the dynamics DSL.\n\nBody uses bare `dsys` / `horizon` / `sense` / `ga evolve` / \342\200\246 lines.\nLine prefix alternative: `dyn.horizon \342\200\246` / `dynamics.sense on \342\200\246`."
+    }
+    if t_eq(key, "dyn") {
+        return "**`dyn.`** - short namespace prefix for dynamics DSL constructs (`dyn.dsys`, `dyn.horizon`, `dyn.sense`, `dyn.ga`, `dyn.closed`, `dyn.analyze`, `dyn.wfc`)."
+    }
+    if t_eq(key, "controllable") {
+        return "`controllable -> name` - bind `i32` 1 if rank(ctrb)==n (sense block)."
+    }
+    if t_eq(key, "spectral") {
+        return "`spectral -> name` - bind spectral radius `f64` (sense/closed)."
+    }
+    if t_eq(key, "gramian") {
+        return "`gramian finite HZ trace -> name` / `gramian infinite HZ trace -> name` - bind controllability Gramian trace (sense block)."
+    }
+    if t_eq(key, "stable") {
+        return "`stable -> name` - bind `i32` 1 if closed-loop |\316\273|_max < 1."
+    }
+    if t_eq(key, "energy") {
+        return "`energy over HZ -> name` - bind trajectory energy over a horizon (closed)."
+    }
+    if t_eq(key, "population") {
+        return "GA population size (default 8)."
+    }
+    if t_eq(key, "generations") {
+        return "GA generations (default 20, max 32)."
+    }
+    if t_eq(key, "mutation") {
+        return "GA mutation rate (default 0.3)."
+    }
+    if t_eq(key, "discrete") {
+        return "Plant is discrete-time: `x[k+1] = A x[k] + B u[k]`."
+    }
+    if t_eq(key, "continuous") {
+        return "Plant is continuous-time; Euler-discretized at `dt` before analysis."
+    }
+    return ""
+}
+
+# ORDERING_HOVER: declarative ordering vocabulary.
+export function ordering_hover_text(key: string) -> string {
+    if t_eq(key, "sort") {
+        return "**`sort`** - declarative ordering (Phase 1).\n\n```flow\nxs |> sort\nxs |> sort descending\nxs |> sort by .score\nxs |> sortBy [desc .score, asc .name]\n```\nIn-place on `array<T, N>`. See docs/language/ordering.md."
+    }
+    if t_eq(key, "sortBy") {
+        return "**`sortBy`** - multi-key ordering alias for `sort by [...]`.\n\n```flow\nxs |> sortBy [asc .score, asc .name]\n```"
+    }
+    if t_eq(key, "asc") {
+        return "`asc .field` - ascending key in a sort key list."
+    }
+    if t_eq(key, "desc") {
+        return "`desc .field` - descending key in a sort key list."
+    }
+    if t_eq(key, "unique") {
+        return "`sort unique` - sort then compact adjacent duplicates (prefix; N unchanged)."
+    }
+    if t_eq(key, "entropy") {
+        return "`with entropy` / `with entropy(seed: N)` - allow randomized strategies (parsed; Phase 2)."
+    }
+    if t_eq(key, "order") {
+        return "`order` - declarative ordering head (same family as `sort`)."
+    }
+    return ""
+}
+
+# Core keywords offered by completion.
+export function keyword_list(out: ptr<TList>) {
+    tl_push(out, "function")
+    tl_push(out, "let")
+    tl_push(out, "mut")
+    tl_push(out, "return")
+    tl_push(out, "if")
+    tl_push(out, "else")
+    tl_push(out, "elif")
+    tl_push(out, "while")
+    tl_push(out, "for")
+    tl_push(out, "break")
+    tl_push(out, "continue")
+    tl_push(out, "parallel")
+    tl_push(out, "in")
+    tl_push(out, "step")
+    tl_push(out, "to")
+    tl_push(out, "struct")
+    tl_push(out, "enum")
+    tl_push(out, "trait")
+    tl_push(out, "impl")
+    tl_push(out, "effect")
+    tl_push(out, "capability")
+    tl_push(out, "handle")
+    tl_push(out, "with")
+    tl_push(out, "match")
+    tl_push(out, "default")
+    tl_push(out, "import")
+    tl_push(out, "export")
+    tl_push(out, "extern")
+    tl_push(out, "const")
+    tl_push(out, "module")
+    tl_push(out, "test")
+    tl_push(out, "self")
+    tl_push(out, "array")
+    tl_push(out, "ptr")
+    tl_push(out, "vec")
+    tl_push(out, "true")
+    tl_push(out, "false")
+    tl_push(out, "inline")
+    tl_push(out, "theorem")
+    tl_push(out, "assume")
+    tl_push(out, "therefore")
+    tl_push(out, "shader")
+    tl_push(out, "unit")
+    tl_push(out, "type")
+    tl_push(out, "as")
+    tl_push(out, "defer")
+    tl_push(out, "try")
+    tl_push(out, "or")
+    tl_push(out, "and")
+    tl_push(out, "not")
+}
+
+# Built-in type names.
+export function builtin_type_list(out: ptr<TList>) {
+    tl_push(out, "i8")
+    tl_push(out, "i16")
+    tl_push(out, "i32")
+    tl_push(out, "i64")
+    tl_push(out, "i128")
+    tl_push(out, "u8")
+    tl_push(out, "u16")
+    tl_push(out, "u32")
+    tl_push(out, "u64")
+    tl_push(out, "u128")
+    tl_push(out, "f32")
+    tl_push(out, "f64")
+    tl_push(out, "bool")
+    tl_push(out, "void")
+    tl_push(out, "string")
+    tl_push(out, "array")
+    tl_push(out, "ptr")
+    tl_push(out, "vec")
+    tl_push(out, "bit")
+}
+
+# Built-in functions, in completion order.
+export function builtin_function_names(out: ptr<TList>) {
+    tl_push(out, "print")
+    tl_push(out, "printf")
+    tl_push(out, "sqrt")
+    tl_push(out, "sin")
+    tl_push(out, "cos")
+    tl_push(out, "tan")
+    tl_push(out, "asin")
+    tl_push(out, "acos")
+    tl_push(out, "atan")
+    tl_push(out, "atan2")
+    tl_push(out, "exp")
+    tl_push(out, "log")
+    tl_push(out, "log10")
+    tl_push(out, "log2")
+    tl_push(out, "pow")
+    tl_push(out, "abs")
+    tl_push(out, "fabs")
+    tl_push(out, "floor")
+    tl_push(out, "ceil")
+    tl_push(out, "round")
+    tl_push(out, "trunc")
+    tl_push(out, "fmod")
+    tl_push(out, "min")
+    tl_push(out, "max")
+    tl_push(out, "sinh")
+    tl_push(out, "cosh")
+    tl_push(out, "tanh")
+    tl_push(out, "hypot")
+}
+
+export function builtin_function_params(name: string) -> string {
+    if t_eq(name, "print") {
+        return "value: any"
+    }
+    if t_eq(name, "printf") {
+        return "format: string, ..."
+    }
+    if t_eq(name, "sqrt") {
+        return "x: f64"
+    }
+    if t_eq(name, "sin") {
+        return "x: f64"
+    }
+    if t_eq(name, "cos") {
+        return "x: f64"
+    }
+    if t_eq(name, "tan") {
+        return "x: f64"
+    }
+    if t_eq(name, "asin") {
+        return "x: f64"
+    }
+    if t_eq(name, "acos") {
+        return "x: f64"
+    }
+    if t_eq(name, "atan") {
+        return "x: f64"
+    }
+    if t_eq(name, "atan2") {
+        return "y: f64, x: f64"
+    }
+    if t_eq(name, "exp") {
+        return "x: f64"
+    }
+    if t_eq(name, "log") {
+        return "x: f64"
+    }
+    if t_eq(name, "log10") {
+        return "x: f64"
+    }
+    if t_eq(name, "log2") {
+        return "x: f64"
+    }
+    if t_eq(name, "pow") {
+        return "x: f64, y: f64"
+    }
+    if t_eq(name, "abs") {
+        return "x: i32"
+    }
+    if t_eq(name, "fabs") {
+        return "x: f64"
+    }
+    if t_eq(name, "floor") {
+        return "x: f64"
+    }
+    if t_eq(name, "ceil") {
+        return "x: f64"
+    }
+    if t_eq(name, "round") {
+        return "x: f64"
+    }
+    if t_eq(name, "trunc") {
+        return "x: f64"
+    }
+    if t_eq(name, "fmod") {
+        return "x: f64, y: f64"
+    }
+    if t_eq(name, "min") {
+        return "a: f64, b: f64"
+    }
+    if t_eq(name, "max") {
+        return "a: f64, b: f64"
+    }
+    if t_eq(name, "sinh") {
+        return "x: f64"
+    }
+    if t_eq(name, "cosh") {
+        return "x: f64"
+    }
+    if t_eq(name, "tanh") {
+        return "x: f64"
+    }
+    if t_eq(name, "hypot") {
+        return "x: f64, y: f64"
+    }
+    return ""
+}
+
+export function builtin_function_return(name: string) -> string {
+    if t_eq(name, "print") {
+        return "void"
+    }
+    if t_eq(name, "printf") {
+        return "void"
+    }
+    if t_eq(name, "sqrt") {
+        return "f64"
+    }
+    if t_eq(name, "sin") {
+        return "f64"
+    }
+    if t_eq(name, "cos") {
+        return "f64"
+    }
+    if t_eq(name, "tan") {
+        return "f64"
+    }
+    if t_eq(name, "asin") {
+        return "f64"
+    }
+    if t_eq(name, "acos") {
+        return "f64"
+    }
+    if t_eq(name, "atan") {
+        return "f64"
+    }
+    if t_eq(name, "atan2") {
+        return "f64"
+    }
+    if t_eq(name, "exp") {
+        return "f64"
+    }
+    if t_eq(name, "log") {
+        return "f64"
+    }
+    if t_eq(name, "log10") {
+        return "f64"
+    }
+    if t_eq(name, "log2") {
+        return "f64"
+    }
+    if t_eq(name, "pow") {
+        return "f64"
+    }
+    if t_eq(name, "abs") {
+        return "i32"
+    }
+    if t_eq(name, "fabs") {
+        return "f64"
+    }
+    if t_eq(name, "floor") {
+        return "f64"
+    }
+    if t_eq(name, "ceil") {
+        return "f64"
+    }
+    if t_eq(name, "round") {
+        return "f64"
+    }
+    if t_eq(name, "trunc") {
+        return "f64"
+    }
+    if t_eq(name, "fmod") {
+        return "f64"
+    }
+    if t_eq(name, "min") {
+        return "f64"
+    }
+    if t_eq(name, "max") {
+        return "f64"
+    }
+    if t_eq(name, "sinh") {
+        return "f64"
+    }
+    if t_eq(name, "cosh") {
+        return "f64"
+    }
+    if t_eq(name, "tanh") {
+        return "f64"
+    }
+    if t_eq(name, "hypot") {
+        return "f64"
+    }
+    return ""
+}
+
+export function builtin_function_doc(name: string) -> string {
+    if t_eq(name, "print") {
+        return "Print a value to stdout."
+    }
+    if t_eq(name, "printf") {
+        return "Print formatted output (C-style format string)."
+    }
+    if t_eq(name, "sqrt") {
+        return "Square root of x (\342\210\232x)."
+    }
+    if t_eq(name, "sin") {
+        return "Sine of x (radians)."
+    }
+    if t_eq(name, "cos") {
+        return "Cosine of x (radians)."
+    }
+    if t_eq(name, "tan") {
+        return "Tangent of x (radians)."
+    }
+    if t_eq(name, "asin") {
+        return "Arcsine of x; result in radians."
+    }
+    if t_eq(name, "acos") {
+        return "Arccosine of x; result in radians."
+    }
+    if t_eq(name, "atan") {
+        return "Arctangent of x; result in radians."
+    }
+    if t_eq(name, "atan2") {
+        return "Arctangent of y/x using both signs for the quadrant."
+    }
+    if t_eq(name, "exp") {
+        return "Exponential e^x."
+    }
+    if t_eq(name, "log") {
+        return "Natural logarithm (ln x)."
+    }
+    if t_eq(name, "log10") {
+        return "Base-10 logarithm of x."
+    }
+    if t_eq(name, "log2") {
+        return "Base-2 logarithm of x."
+    }
+    if t_eq(name, "pow") {
+        return "Raise x to the power y (x^y)."
+    }
+    if t_eq(name, "abs") {
+        return "Absolute value |x| for integers."
+    }
+    if t_eq(name, "fabs") {
+        return "Absolute value |x| for floating-point."
+    }
+    if t_eq(name, "floor") {
+        return "Greatest integer \342\211\244 x (as f64)."
+    }
+    if t_eq(name, "ceil") {
+        return "Smallest integer \342\211\245 x (as f64)."
+    }
+    if t_eq(name, "round") {
+        return "Nearest integer to x (as f64)."
+    }
+    if t_eq(name, "trunc") {
+        return "Truncate fractional part toward zero."
+    }
+    if t_eq(name, "fmod") {
+        return "Floating-point remainder of x/y."
+    }
+    if t_eq(name, "min") {
+        return "Return the smaller of a and b."
+    }
+    if t_eq(name, "max") {
+        return "Return the larger of a and b."
+    }
+    if t_eq(name, "sinh") {
+        return "Hyperbolic sine of x."
+    }
+    if t_eq(name, "cosh") {
+        return "Hyperbolic cosine of x."
+    }
+    if t_eq(name, "tanh") {
+        return "Hyperbolic tangent of x."
+    }
+    if t_eq(name, "hypot") {
+        return "Euclidean norm \342\210\232(x\302\262 + y\302\262) without overflow."
+    }
+    return ""
+}
+
+# Reserved words (the Python lexer keyword map); rename refuses them.
+export function reserved_name_list(out: ptr<TList>) {
+    tl_push(out, "and")
+    tl_push(out, "array")
+    tl_push(out, "as")
+    tl_push(out, "assume")
+    tl_push(out, "bool")
+    tl_push(out, "break")
+    tl_push(out, "c128")
+    tl_push(out, "c64")
+    tl_push(out, "capability")
+    tl_push(out, "const")
+    tl_push(out, "continue")
+    tl_push(out, "dbg")
+    tl_push(out, "default")
+    tl_push(out, "defer")
+    tl_push(out, "distinct")
+    tl_push(out, "effect")
+    tl_push(out, "elif")
+    tl_push(out, "else")
+    tl_push(out, "enum")
+    tl_push(out, "expect")
+    tl_push(out, "export")
+    tl_push(out, "extern")
+    tl_push(out, "f32")
+    tl_push(out, "f64")
+    tl_push(out, "false")
+    tl_push(out, "for")
+    tl_push(out, "function")
+    tl_push(out, "handle")
+    tl_push(out, "i128")
+    tl_push(out, "i16")
+    tl_push(out, "i32")
+    tl_push(out, "i64")
+    tl_push(out, "i8")
+    tl_push(out, "if")
+    tl_push(out, "impl")
+    tl_push(out, "import")
+    tl_push(out, "in")
+    tl_push(out, "let")
+    tl_push(out, "match")
+    tl_push(out, "module")
+    tl_push(out, "mut")
+    tl_push(out, "not")
+    tl_push(out, "null")
+    tl_push(out, "or")
+    tl_push(out, "parallel")
+    tl_push(out, "ptr")
+    tl_push(out, "return")
+    tl_push(out, "self")
+    tl_push(out, "string")
+    tl_push(out, "struct")
+    tl_push(out, "test")
+    tl_push(out, "theorem")
+    tl_push(out, "therefore")
+    tl_push(out, "to")
+    tl_push(out, "trait")
+    tl_push(out, "true")
+    tl_push(out, "type")
+    tl_push(out, "u128")
+    tl_push(out, "u16")
+    tl_push(out, "u32")
+    tl_push(out, "u64")
+    tl_push(out, "u8")
+    tl_push(out, "ui_column")
+    tl_push(out, "ui_grid")
+    tl_push(out, "ui_layout")
+    tl_push(out, "ui_row")
+    tl_push(out, "ui_stack")
+    tl_push(out, "vec")
+    tl_push(out, "void")
+    tl_push(out, "while")
+    tl_push(out, "with")
+}
+
+# dynamics_completion_items(""): every dynamics snippet and keyword.
+# Five strings per item: label, kind, detail, insertText ("\001" when
+# the item has none) and documentation.
+export function dynamics_completion_table(out: ptr<TList>) {
+    tl_push(out, "dynamics")
+    tl_push(out, "9")
+    tl_push(out, "dynamics namespace block")
+    tl_push(out, "dynamics {\n    $0\n}")
+    tl_push(out, "**`dynamics { ... }`** - namespace block for the dynamics DSL.\n\nBody uses bare `dsys` / `horizon` / `sense` / `ga evolve` / \342\200\246 lines.\nLine prefix alternative: `dyn.horizon \342\200\246` / `dynamics.sense on \342\200\246`.")
+    tl_push(out, "dyn.")
+    tl_push(out, "9")
+    tl_push(out, "dynamics prefix")
+    tl_push(out, "dyn.")
+    tl_push(out, "**`dyn.`** - short namespace prefix for dynamics DSL constructs (`dyn.dsys`, `dyn.horizon`, `dyn.sense`, `dyn.ga`, `dyn.closed`, `dyn.analyze`, `dyn.wfc`).")
+    tl_push(out, "dyn.dsys")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.dsys ${1:plant} {\n    ${2|discrete,continuous|}\n    dt ${3:0.1}\n    n ${4:2} m ${5:1} p ${6:1}\n    A ${7:1.0 0.1 0.0 1.0}\n    B ${8:0.0 0.1}\n    C ${9:1.0 0.0}\n}")
+    tl_push(out, "**`dsys`** - declare a linear plant (dynamics DSL).\n\n```flow\ndyn.dsys plant {\n    discrete   # or continuous\n    dt 0.1\n    n 2 m 1 p 1\n    A 1.0 0.1 0.0 1.0\n    B 0.0 0.1\n    C 1.0 0.0\n}\n```\nPrefixed form: `dyn.dsys` / `dynamics.dsys`. See docs/language/dynamics-dsl.md.")
+    tl_push(out, "dyn.horizon")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.horizon ${1:rollout} finite ${2:50}")
+    tl_push(out, "**`horizon`** - name a finite or infinite analysis horizon.\n\n```flow\ndyn.horizon rollout finite 50\ndyn.horizon asymptotic infinite gamma 0.99\n```")
+    tl_push(out, "dyn.sense")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.sense on ${1:plant} {\n    controllable -> ${2:plant_ok}\n    spectral -> ${3:rho_open}\n    $0\n}")
+    tl_push(out, "**`sense on`** - open-loop analysis bindings.\n\n```flow\ndyn.sense on plant {\n    controllable -> plant_ok\n    spectral -> rho_open\n    gramian finite rollout trace -> wc_fin\n}\n```")
+    tl_push(out, "dyn.ga evolve")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.ga evolve on ${1:plant} over ${2:rollout} -> ${3:k1} ${4:k2} {\n    population ${5:12}\n    generations ${6:30}\n    mutation ${7:0.3}\n}")
+    tl_push(out, "**`ga evolve`** - genetic search for state-feedback gains.\n\n```flow\ndyn.ga evolve on plant over rollout -> k1 k2 {\n    population 12\n    generations 30\n    mutation 0.3\n}\n```")
+    tl_push(out, "dyn.closed")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.closed ${1:plant} with ${2:k1} ${3:k2} {\n    spectral -> ${4:rho_cl}\n    energy over ${5:rollout} -> ${6:E_cl}\n    stable -> ${7:stable_cl}\n}")
+    tl_push(out, "**`closed`** - certify closed-loop `A - B K`.\n\n```flow\ndyn.closed plant with k1 k2 {\n    spectral -> rho_cl\n    energy over rollout -> E_cl\n    stable -> stable_cl\n}\n```")
+    tl_push(out, "dyn.analyze")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.analyze ${1:plant} ga ${2:k1} ${3:k2} over ${4:rollout} -> ${5:report} {\n    full\n}")
+    tl_push(out, "**`analyze`** - one-shot GA + controllability + Gramian report.\n\n```flow\ndyn.analyze plant ga k1 k2 over rollout -> report { full }\n```\nBinds a `GAAnalysisReport` and assigns `k1`/`k2`.")
+    tl_push(out, "dyn.wfc field")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dyn.wfc field ${1:layout} {\n    size ${2:4} ${3:4}\n    tiles ${4:3}\n    seed ${5:7}\n}")
+    tl_push(out, "**`wfc field`** - Wave Function Collapse field (experimental coupling).\n\n```flow\ndyn.wfc field layout { size 4 4  tiles 3  seed 7 }\n```")
+    tl_push(out, "dsys")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "dsys ${1:plant} {\n    discrete\n    dt 0.1\n    n 2 m 1 p 1\n    A 1.0 0.1 0.0 1.0\n    B 0.0 0.1\n    C 1.0 0.0\n}")
+    tl_push(out, "**`dsys`** - declare a linear plant (dynamics DSL).\n\n```flow\ndyn.dsys plant {\n    discrete   # or continuous\n    dt 0.1\n    n 2 m 1 p 1\n    A 1.0 0.1 0.0 1.0\n    B 0.0 0.1\n    C 1.0 0.0\n}\n```\nPrefixed form: `dyn.dsys` / `dynamics.dsys`. See docs/language/dynamics-dsl.md.")
+    tl_push(out, "horizon")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "horizon ${1:rollout} finite ${2:50}")
+    tl_push(out, "**`horizon`** - name a finite or infinite analysis horizon.\n\n```flow\ndyn.horizon rollout finite 50\ndyn.horizon asymptotic infinite gamma 0.99\n```")
+    tl_push(out, "sense on")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "sense on ${1:plant} {\n    controllable -> ${2:plant_ok}\n    spectral -> ${3:rho_open}\n}")
+    tl_push(out, "**`sense on`** - open-loop analysis bindings.\n\n```flow\ndyn.sense on plant {\n    controllable -> plant_ok\n    spectral -> rho_open\n    gramian finite rollout trace -> wc_fin\n}\n```")
+    tl_push(out, "ga evolve")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "ga evolve on ${1:plant} over ${2:rollout} -> ${3:k1} ${4:k2} {\n    population 12\n    generations 30\n    mutation 0.3\n}")
+    tl_push(out, "**`ga evolve`** - genetic search for state-feedback gains.\n\n```flow\ndyn.ga evolve on plant over rollout -> k1 k2 {\n    population 12\n    generations 30\n    mutation 0.3\n}\n```")
+    tl_push(out, "closed")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "closed ${1:plant} with ${2:k1} ${3:k2} {\n    spectral -> ${4:rho_cl}\n    stable -> ${5:stable_cl}\n}")
+    tl_push(out, "**`closed`** - certify closed-loop `A - B K`.\n\n```flow\ndyn.closed plant with k1 k2 {\n    spectral -> rho_cl\n    energy over rollout -> E_cl\n    stable -> stable_cl\n}\n```")
+    tl_push(out, "analyze")
+    tl_push(out, "15")
+    tl_push(out, "dynamics DSL")
+    tl_push(out, "analyze ${1:plant} ga ${2:k1} ${3:k2} over ${4:rollout} -> ${5:report} {\n    full\n}")
+    tl_push(out, "**`analyze`** - one-shot GA + controllability + Gramian report.\n\n```flow\ndyn.analyze plant ga k1 k2 over rollout -> report { full }\n```\nBinds a `GAAnalysisReport` and assigns `k1`/`k2`.")
+    tl_push(out, "controllable")
+    tl_push(out, "14")
+    tl_push(out, "sense binding")
+    tl_push(out, "\001")
+    tl_push(out, "`controllable -> name` - bind `i32` 1 if rank(ctrb)==n (sense block).")
+    tl_push(out, "spectral")
+    tl_push(out, "14")
+    tl_push(out, "sense/closed binding")
+    tl_push(out, "\001")
+    tl_push(out, "`spectral -> name` - bind spectral radius `f64` (sense/closed).")
+    tl_push(out, "gramian finite")
+    tl_push(out, "14")
+    tl_push(out, "sense Gramian binding")
+    tl_push(out, "\001")
+    tl_push(out, "`gramian finite HZ trace -> name` / `gramian infinite HZ trace -> name` - bind controllability Gramian trace (sense block).")
+    tl_push(out, "gramian infinite")
+    tl_push(out, "14")
+    tl_push(out, "sense Gramian binding")
+    tl_push(out, "\001")
+    tl_push(out, "`gramian finite HZ trace -> name` / `gramian infinite HZ trace -> name` - bind controllability Gramian trace (sense block).")
+    tl_push(out, "stable")
+    tl_push(out, "14")
+    tl_push(out, "closed-loop stability binding")
+    tl_push(out, "\001")
+    tl_push(out, "`stable -> name` - bind `i32` 1 if closed-loop |\316\273|_max < 1.")
+    tl_push(out, "energy over")
+    tl_push(out, "14")
+    tl_push(out, "closed-loop energy binding")
+    tl_push(out, "\001")
+    tl_push(out, "`energy over HZ -> name` - bind trajectory energy over a horizon (closed).")
+    tl_push(out, "population")
+    tl_push(out, "14")
+    tl_push(out, "GA setting")
+    tl_push(out, "\001")
+    tl_push(out, "GA population size (default 8).")
+    tl_push(out, "generations")
+    tl_push(out, "14")
+    tl_push(out, "GA setting")
+    tl_push(out, "\001")
+    tl_push(out, "GA generations (default 20, max 32).")
+    tl_push(out, "mutation")
+    tl_push(out, "14")
+    tl_push(out, "GA setting")
+    tl_push(out, "\001")
+    tl_push(out, "GA mutation rate (default 0.3).")
+    tl_push(out, "discrete")
+    tl_push(out, "14")
+    tl_push(out, "dsys mode")
+    tl_push(out, "\001")
+    tl_push(out, "Plant is discrete-time: `x[k+1] = A x[k] + B u[k]`.")
+    tl_push(out, "continuous")
+    tl_push(out, "14")
+    tl_push(out, "dsys mode")
+    tl_push(out, "\001")
+    tl_push(out, "Plant is continuous-time; Euler-discretized at `dt` before analysis.")
+    tl_push(out, "full")
+    tl_push(out, "14")
+    tl_push(out, "analyze report mode")
+    tl_push(out, "\001")
+    tl_push(out, "")
+}
+
+# ordering_completion_items(""): every ordering snippet and keyword.
+# Five strings per item: label, kind, detail, insertText ("\001" when
+# the item has none) and documentation.
+export function ordering_completion_table(out: ptr<TList>) {
+    tl_push(out, "sort")
+    tl_push(out, "15")
+    tl_push(out, "Declarative ascending sort")
+    tl_push(out, "${1:xs} |> sort")
+    tl_push(out, "**`sort`** - declarative ordering (Phase 1).\n\n```flow\nxs |> sort\nxs |> sort descending\nxs |> sort by .score\nxs |> sortBy [desc .score, asc .name]\n```\nIn-place on `array<T, N>`. See docs/language/ordering.md.")
+    tl_push(out, "sortBy")
+    tl_push(out, "15")
+    tl_push(out, "Multi-key declarative sort")
+    tl_push(out, "${1:xs} |> sortBy [${2|asc,desc|} .${3:score}, ${4|asc,desc|} .${5:name}]")
+    tl_push(out, "**`sortBy`** - multi-key ordering alias for `sort by [...]`.\n\n```flow\nxs |> sortBy [asc .score, asc .name]\n```")
+    tl_push(out, "sort by")
+    tl_push(out, "15")
+    tl_push(out, "Sort by one field")
+    tl_push(out, "${1:xs} |> sort by .${2:field}")
+    tl_push(out, "**`sort`** - declarative ordering (Phase 1).\n\n```flow\nxs |> sort\nxs |> sort descending\nxs |> sort by .score\nxs |> sortBy [desc .score, asc .name]\n```\nIn-place on `array<T, N>`. See docs/language/ordering.md.")
+    tl_push(out, "sort descending")
+    tl_push(out, "15")
+    tl_push(out, "Declarative descending sort")
+    tl_push(out, "${1:xs} |> sort descending")
+    tl_push(out, "**`sort`** - declarative ordering (Phase 1).\n\n```flow\nxs |> sort\nxs |> sort descending\nxs |> sort by .score\nxs |> sortBy [desc .score, asc .name]\n```\nIn-place on `array<T, N>`. See docs/language/ordering.md.")
+    tl_push(out, "asc")
+    tl_push(out, "15")
+    tl_push(out, "Ascending sort key")
+    tl_push(out, "asc .${1:field}")
+    tl_push(out, "`asc .field` - ascending key in a sort key list.")
+    tl_push(out, "desc")
+    tl_push(out, "15")
+    tl_push(out, "Descending sort key")
+    tl_push(out, "desc .${1:field}")
+    tl_push(out, "`desc .field` - descending key in a sort key list.")
+    tl_push(out, "unique")
+    tl_push(out, "14")
+    tl_push(out, "ordering")
+    tl_push(out, "\001")
+    tl_push(out, "`sort unique` - sort then compact adjacent duplicates (prefix; N unchanged).")
+    tl_push(out, "entropy")
+    tl_push(out, "14")
+    tl_push(out, "ordering")
+    tl_push(out, "\001")
+    tl_push(out, "`with entropy` / `with entropy(seed: N)` - allow randomized strategies (parsed; Phase 2).")
+    tl_push(out, "order")
+    tl_push(out, "14")
+    tl_push(out, "ordering")
+    tl_push(out, "\001")
+    tl_push(out, "`order` - declarative ordering head (same family as `sort`).")
+}
+

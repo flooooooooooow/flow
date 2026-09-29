@@ -1,0 +1,14 @@
+struct Point {
+    x: f64
+    y: f64
+}
+
+function norm(p: Point) -> f64 {
+    return sqrt(p.x * p.x + p.y * p.y)
+}
+
+function main() -> i32 {
+    let p = Point { x: 3.0, y: 4.0 }
+    let n = norm(p)
+    return 0
+}

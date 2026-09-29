@@ -1,0 +1,4 @@
+function use_norm() -> f64 {
+    let q = Point { x: 1.0, y: 2.0 }
+    return norm(q)
+}

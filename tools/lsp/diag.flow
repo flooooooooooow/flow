@@ -1,0 +1,469 @@
+# @module tools.lsp.diag
+# @means  Diagnostics for the language server: flowc parse errors, the
+#         Stage-A type checker (compiler/src/typecheck.flow) run in
+#         process with the exports of imported modules seeded, and the
+#         FIDIOM001 / FIDIOM002 idiom hints of src/flow/idioms.py.
+#
+# The type checker prints its findings on stdout. The server's own
+# stdout is the JSON-RPC channel, so check_types points fd 1 at a
+# temporary file while the checker runs and parses what it wrote.
+
+import "tools/hostlib/text.flow"
+import "tools/lsp/text.flow"
+import "tools/lsp/analyze.flow"
+import "tools/lsp/imports.flow"
+import "compiler/src/ast.flow"
+import "compiler/src/typecheck.flow"
+
+extern {
+    function dup(fd: i32) -> i32
+    function dup2(a: i32, b: i32) -> i32
+    function close(fd: i32) -> i32
+    function open(path: string, flags: i32, ...) -> i32
+    function getpid() -> i32
+    function remove(path: string) -> i32
+    function fflush(fp: ptr<void>) -> i32
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+# One finding. line/col are 0-based code point positions; end_col < 0
+# means "cover the word at col" (Python _word_range).
+export struct Diag {
+    line: i32,
+    col: i32,
+    end_line: i32,
+    end_col: i32,
+    severity: i32,
+    source: string,
+    code: string,
+    message: string,
+    replacement: string
+}
+
+export function diag_at(l: ptr<PList>, i: i32) -> ptr<Diag> {
+    return pl_get(l, i) as ptr<Diag>
+}
+
+function diag_new(severity: i32, source: string, message: string) -> ptr<Diag> {
+    let d: ptr<Diag> = calloc(1, 128) as ptr<Diag>
+    d.severity = severity
+    d.source = source
+    d.message = message
+    d.code = ""
+    d.replacement = ""
+    d.end_col = -1
+    return d
+}
+
+# Python _word_range: the word at (line, column), at least one character.
+export function word_range(rows: ptr<TList>, line_in: i32, col_in: i32, d: ptr<Diag>) {
+    let mut line: i32 = line_in
+    if line >= rows.len {
+        line = rows.len - 1
+    }
+    if line < 0 {
+        line = 0
+    }
+    let row: string = row_at(rows, line)
+    let len: i32 = ulen(row)
+    let mut column: i32 = col_in
+    if column > len {
+        column = len - 1
+        if column < 0 {
+            column = 0
+        }
+    }
+    let b: i32 = ubyte(row, column)
+    let e: i32 = ident_run_after(row, b)
+    let mut end: i32 = ucol(row, e)
+    if end == column {
+        end = column + 1
+        let lim: i32 = len
+        if end > lim and lim >= column + 1 {
+            end = lim
+        }
+    }
+    d.line = line
+    d.col = column
+    d.end_line = line
+    d.end_col = end
+}
+
+# Python _range_for_type_error: the first occurrence of the first quoted
+# identifier in the message, else all of line 0.
+function range_for_message(rows: ptr<TList>, msg: string, d: ptr<Diag>) {
+    let n: i32 = t_len(msg)
+    let mut i: i32 = 0
+    while i < n {
+        if t_at(msg, i) == 39 and i + 1 < n and t_is_ident_start(t_at(msg, i + 1)) {
+            let e: i32 = ident_run_after(msg, i + 1)
+            if e < n and t_at(msg, e) == 39 {
+                let name: string = t_sub(msg, i + 1, e)
+                let mut ln: i32 = 0
+                while ln < rows.len {
+                    let row: string = tl_get(rows, ln)
+                    let at: i32 = find_word(row, name)
+                    if at >= 0 {
+                        d.line = ln
+                        d.col = ucol(row, at)
+                        d.end_line = ln
+                        d.end_col = ucol(row, at + t_len(name))
+                        return
+                    }
+                    ln = ln + 1
+                }
+                break
+            }
+        }
+        i = i + 1
+    }
+    d.line = 0
+    d.col = 0
+    d.end_line = 0
+    d.end_col = ulen(row_at(rows, 0))
+}
+
+# ── Type checker capture ────────────────────────────────────────
+
+function parse_int_at(s: string, i: i32) -> i32 {
+    let mut v: i32 = 0
+    let mut k: i32 = i
+    while k < t_len(s) and t_is_digit(t_at(s, k)) {
+        v = v * 10 + (t_at(s, k) - 48)
+        k = k + 1
+    }
+    return v
+}
+
+function add_unique(out: ptr<PList>, d: ptr<Diag>) {
+    let mut i: i32 = 0
+    while i < out.len {
+        let cur: ptr<Diag> = diag_at(out, i)
+        if t_eq(cur.message, d.message) {
+            return
+        }
+        i = i + 1
+    }
+    pl_push(out, d as ptr<u8>)
+}
+
+# Turn the checker's stdout into diagnostics (severity 2).
+function parse_checker_output(text: string, rows: ptr<TList>, out: ptr<PList>) {
+    let lines: TList = t_split_lines(text)
+    let mut label: string = ""
+    let mut i: i32 = 0
+    while i < lines.len {
+        let ln: string = tl_get(&lines, i)
+        if t_starts_with(ln, "flowc tc: at ") and t_len(label) > 0 {
+            let rest: string = t_from(ln, 13)
+            let line: i32 = parse_int_at(rest, 0) - 1
+            let colon: i32 = t_find_char(rest, 58)
+            let mut col: i32 = 0
+            if colon >= 0 {
+                col = parse_int_at(rest, colon + 1) - 1
+            }
+            let mut span: string = ""
+            if i + 1 < lines.len {
+                span = tl_get(&lines, i + 1)
+                i = i + 1
+            }
+            let mut msg: string = label
+            if t_len(span) > 0 {
+                msg = t_cat(t_cat3(label, " '", span), "'")
+            }
+            let d: ptr<Diag> = diag_new(2, "flow-typecheck", msg)
+            let row: string = row_at(rows, line)
+            word_range(rows, line, ucol(row, col), d)
+            if t_len(span) > 0 and t_starts_with(t_from(row, col), span) {
+                d.end_col = ucol(row, col + t_len(span))
+            }
+            add_unique(out, d)
+            label = ""
+        } elif t_eq(ln, "flowc tc: file") {
+            i = i + 1
+        } elif t_starts_with(ln, "flowc tc: line ") {
+            let line: i32 = parse_int_at(ln, 15) - 1
+            let m: i32 = t_find(ln, ": unsupported")
+            let mut msg: string = t_from(ln, 10)
+            if m >= 0 {
+                msg = t_from(ln, m + 2)
+            }
+            let d: ptr<Diag> = diag_new(2, "flow-typecheck", msg)
+            word_range(rows, line, 0, d)
+            add_unique(out, d)
+        } elif t_starts_with(ln, "flowc tc: ") {
+            if t_len(label) > 0 {
+                let d0: ptr<Diag> = diag_new(2, "flow-typecheck", label)
+                range_for_message(rows, label, d0)
+                add_unique(out, d0)
+            }
+            label = t_from(ln, 10)
+        } elif t_starts_with(ln, "line ") and t_find(ln, ": ") > 0 {
+            let line: i32 = parse_int_at(ln, 5) - 1
+            let msg: string = t_from(ln, t_find(ln, ": ") + 2)
+            let d: ptr<Diag> = diag_new(2, "flow-typecheck", msg)
+            range_for_message(rows, msg, d)
+            if d.line != line and line >= 0 and line < rows.len {
+                let row: string = tl_get(rows, line)
+                word_range(rows, line, ucol(row, skip_ws(row, 0)), d)
+            }
+            add_unique(out, d)
+        } elif t_len(t_strip(ln)) > 0 {
+            let d: ptr<Diag> = diag_new(2, "flow-typecheck", ln)
+            range_for_message(rows, ln, d)
+            add_unique(out, d)
+        }
+        i = i + 1
+    }
+    if t_len(label) > 0 {
+        let d: ptr<Diag> = diag_new(2, "flow-typecheck", label)
+        range_for_message(rows, label, d)
+        add_unique(out, d)
+    }
+}
+
+# Run the Stage-A checker on a parsed document. Imports resolved from
+# file_path seed their exports first, as the bundle checker does.
+export function check_types(a: ptr<Analysis>, file_path: string, pr: ptr<Project>, rows: ptr<TList>, out: ptr<PList>) {
+    if not a.parsed {
+        return
+    }
+    # Theorems, flow blocks and the other parse-only forms have no Stage-A
+    # meaning to check.
+    if flowc_ast_first_unsupported(a.arena) != AST_NONE {
+        return
+    }
+    let no_src: ptr<u8> = null
+    let mut ctx: TcCtx = flowc_tc_init(no_src)
+    if ctx.ns == null {
+        return
+    }
+    fflush(null)
+    # A scratch file created with fopen (via t_write_file) and reopened
+    # O_RDWR (2 on every platform) becomes fd 1 while the checker runs.
+    let tmp: string = t_cat3(t_env("TMPDIR", "/tmp"), "/flow-lsp-check-", t_cat(t_int(getpid()), ".out"))
+    if not t_write_file(tmp, "") {
+        flowc_tc_free(&ctx)
+        return
+    }
+    let fd: i32 = open(tmp, 2)
+    if fd < 0 {
+        flowc_tc_free(&ctx)
+        return
+    }
+    let saved: i32 = dup(1)
+    dup2(fd, 1)
+
+    let base: string = dirname(file_path)
+    let mut deps: PList = pl_new()
+    let mut di: i32 = 0
+    while di < a.imports.len {
+        let id: i32 = atoi_s(tl_get(&a.imports, di))
+        let dep_path: string = resolve_import(a, id, base, pr)
+        if t_len(dep_path) > 0 {
+            let dep: ptr<Analysis> = analyze_text(t_read_file(dep_path), true)
+            if dep.parsed {
+                flowc_tc_seed_export(&ctx, dep.arena, dep.root, dep.src)
+                pl_push(&deps, dep as ptr<u8>)
+            }
+        }
+        di = di + 1
+    }
+    flowc_tc_reset_module(&ctx, a.src)
+    flowc_tc_set_path(&ctx, "")
+    flowc_tc_check_program(&ctx, a.arena, a.root)
+    flowc_tc_free(&ctx)
+
+    fflush(null)
+    dup2(saved, 1)
+    close(saved)
+    close(fd)
+    let captured: string = t_read_file(tmp)
+    remove(tmp)
+    parse_checker_output(captured, rows, out)
+}
+
+# ── Idioms ──────────────────────────────────────────────────────
+
+struct Idiom {
+    mut_names: TList,
+    mut_ids: TList,
+    mutated: TList,
+    returns: TList
+}
+
+function idiom_visit(a: ptr<Analysis>, id: i32, st: ptr<Idiom>) {
+    if id == AST_NONE {
+        return
+    }
+    let k: i32 = a.arena.nodes[id].kind
+    if k == AST_BLOCK {
+        let mut c: i32 = a.arena.nodes[id].a
+        while c != AST_NONE {
+            idiom_visit(a, c, st)
+            c = a.arena.nodes[c].next
+        }
+    } elif k == AST_LET {
+        if a.arena.nodes[id].ival == 1 {
+            let name: string = name_of(a, id)
+            let at: i32 = tl_index(&st.mut_names, name)
+            if at >= 0 {
+                tl_set(&st.mut_ids, at, t_int(id))
+            } else {
+                tl_push(&st.mut_names, name)
+                tl_push(&st.mut_ids, t_int(id))
+            }
+        }
+    } elif k == AST_ASSIGN {
+        let lhs: i32 = a.arena.nodes[id].a
+        if lhs != AST_NONE and a.arena.nodes[lhs].kind == AST_IDENT {
+            tl_push(&st.mutated, name_of(a, lhs))
+        }
+    } elif k == AST_RETURN {
+        tl_push(&st.returns, t_int(id))
+    } elif k == AST_IF {
+        idiom_visit(a, a.arena.nodes[id].b, st)
+        idiom_visit(a, a.arena.nodes[id].c, st)
+    } elif k == AST_WHILE {
+        idiom_visit(a, a.arena.nodes[id].b, st)
+    } elif k == AST_FOR {
+        idiom_visit(a, a.arena.nodes[id].c, st)
+    } elif k == AST_MATCH {
+        let mut arm: i32 = a.arena.nodes[id].b
+        while arm != AST_NONE {
+            idiom_visit(a, a.arena.nodes[arm].b, st)
+            arm = a.arena.nodes[arm].next
+        }
+    }
+}
+
+function suppressed(rows: ptr<TList>, line: i32, rule: string) -> bool {
+    let tag: string = t_cat("# flow-idiom: allow ", rule)
+    if line - 1 >= 0 and t_contains(row_at(rows, line - 1), tag) {
+        return true
+    }
+    return t_contains(row_at(rows, line), tag)
+}
+
+# 0-based (line, byte column) of a statement node in the parsed source.
+function stmt_pos(a: ptr<Analysis>, id: i32) -> i32 {
+    return a.arena.nodes[id].start
+}
+
+function col_of(src: ptr<u8>, pos: i32) -> i32 {
+    let mut i: i32 = pos
+    while i > 0 and (src[i - 1] as i32) != 10 {
+        i = i - 1
+    }
+    return pos - i
+}
+
+function idiom_fn(a: ptr<Analysis>, fnid: i32, rows: ptr<TList>, out: ptr<PList>) {
+    let body: i32 = a.arena.nodes[fnid].c
+    if body == AST_NONE {
+        return
+    }
+    let mut st: Idiom = Idiom { mut_names: tl_new(), mut_ids: tl_new(), mutated: tl_new(), returns: tl_new() }
+    idiom_visit(a, body, &st)
+    let mut i: i32 = 0
+    while i < st.mut_names.len {
+        let name: string = tl_get(&st.mut_names, i)
+        if tl_index(&st.mutated, name) < 0 {
+            let id: i32 = atoi_s(tl_get(&st.mut_ids, i))
+            let pos: i32 = stmt_pos(a, id)
+            let line: i32 = line_of(a.src, pos)
+            if not suppressed(rows, line, "FIDIOM001") {
+                let row: string = row_at(rows, line)
+                let d: ptr<Diag> = diag_new(4, "flow-idiom", t_cat3("Unnecessary 'mut' declaration\nVariable '", name, "' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable."))
+                let col: i32 = ucol(row, col_of(a.src, pos))
+                d.line = line
+                d.col = col
+                d.end_line = line
+                d.end_col = col + 7
+                d.code = "FIDIOM001"
+                d.replacement = t_cat("let ", name)
+                pl_push(out, d as ptr<u8>)
+            }
+        }
+        i = i + 1
+    }
+    let mut r: i32 = 0
+    while r < st.returns.len {
+        let id: i32 = atoi_s(tl_get(&st.returns, r))
+        let v: i32 = a.arena.nodes[id].a
+        if v != AST_NONE and a.arena.nodes[v].kind == AST_STRUCT_LIT and a.arena.nodes[v].a != AST_NONE {
+            let mut base: string = ""
+            let mut ok: bool = true
+            let mut f: i32 = a.arena.nodes[v].a
+            while f != AST_NONE and ok {
+                let fv: i32 = a.arena.nodes[f].a
+                if fv != AST_NONE and a.arena.nodes[fv].kind == AST_FIELD_ACCESS {
+                    let obj: i32 = a.arena.nodes[fv].a
+                    if obj != AST_NONE and a.arena.nodes[obj].kind == AST_IDENT and t_eq(name_of(a, fv), name_of(a, f)) {
+                        let on: string = name_of(a, obj)
+                        if t_len(base) == 0 {
+                            base = on
+                        } elif not t_eq(base, on) {
+                            ok = false
+                        }
+                    } else {
+                        ok = false
+                    }
+                } else {
+                    ok = false
+                }
+                f = a.arena.nodes[f].next
+            }
+            if ok and t_len(base) > 0 {
+                let pos: i32 = stmt_pos(a, id)
+                let line: i32 = line_of(a.src, pos)
+                if not suppressed(rows, line, "FIDIOM002") {
+                    let row: string = row_at(rows, line)
+                    let d: ptr<Diag> = diag_new(4, "flow-idiom", t_cat(t_cat3("Redundant return shape\nReturning a struct literal identical to `", base, "`. Return `"), t_cat(base, "` directly.")))
+                    let col: i32 = ucol(row, col_of(a.src, pos))
+                    d.line = line
+                    d.col = col
+                    d.end_line = line
+                    d.end_col = col + 6
+                    d.code = "FIDIOM002"
+                    d.replacement = t_cat3("return ", base, ";")
+                    pl_push(out, d as ptr<u8>)
+                }
+            }
+        }
+        r = r + 1
+    }
+}
+
+export function check_idioms(a: ptr<Analysis>, rows: ptr<TList>, out: ptr<PList>) {
+    if not a.parsed {
+        return
+    }
+    let mut item: i32 = a.arena.nodes[a.root].a
+    while item != AST_NONE {
+        let mut it: i32 = item
+        if a.arena.nodes[it].kind == AST_EXPORT and a.arena.nodes[it].ival == 0 and a.arena.nodes[it].a != AST_NONE {
+            it = a.arena.nodes[it].a
+        }
+        if a.arena.nodes[it].kind == AST_FN {
+            idiom_fn(a, it, rows, out)
+        }
+        item = a.arena.nodes[item].next
+    }
+}
+
+# Parse error first (and alone), else type findings, then idiom hints.
+export function compute_diagnostics(a: ptr<Analysis>, text: string, file_path: string, pr: ptr<Project>) -> PList {
+    let mut out: PList = pl_new()
+    let mut rows: TList = t_split_lines(text)
+    if not a.parsed {
+        let d: ptr<Diag> = diag_new(1, "flow-parser", a.err_msg)
+        let row: string = row_at(&rows, a.err_line)
+        word_range(&rows, a.err_line, ucol(row, a.err_col), d)
+        pl_push(&out, d as ptr<u8>)
+        return out
+    }
+    check_types(a, file_path, pr, &rows, &out)
+    check_idioms(a, &rows, &out)
+    return out
+}

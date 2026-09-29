@@ -3361,9 +3361,18 @@ case "${1:-help}" in
         compile_audio_program "${2:-}" "${3:-}"
         ;;
     "lsp")
-        # Language server on stdio (same entry point as the flow-lsp launcher).
+        # Language server on stdio (tools/lsp/main.flow, built on first use;
+        # the flow-lsp launcher runs the same binary). `--build` builds it
+        # and prints the binary's path without starting it.
         shift
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m flow.lsp_server "$@"
+        if ! lsp_bin="$(flow_native_tool lsp)"; then
+            exit 1
+        fi
+        if [ "${1:-}" = "--build" ]; then
+            printf '%s\n' "$lsp_bin"
+            exit 0
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$lsp_bin" "$@"
         ;;
     "dap")
         shift

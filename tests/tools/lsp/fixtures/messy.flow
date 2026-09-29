@@ -1,0 +1,11 @@
+function   add(a:i32,b:i32)->i32{
+return a+b
+}
+struct P {x: f64, y: f64}
+function main() -> i32 {
+  let mut s: i32 = 0
+  for i in 0 to 3 {
+      s = s + add(i, 1)
+  }
+  if s > 2 { return 1 } else { return 0 }
+}
