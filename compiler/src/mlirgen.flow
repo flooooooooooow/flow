@@ -241,7 +241,11 @@ export struct Mlg {
     ndropf: i32,
     gpuf: ptr<i32>,
     ngpuf: i32,
-    gpu_ssa: i32
+    gpu_ssa: i32,
+    # type aliases and units (AST_TYPE_ALIAS)
+    al_node: ptr<i32>,
+    nal: i32,
+    al_depth: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -1217,6 +1221,27 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     if mlg_span_prefix(m, ns, ne, "vec") == 1 or mlg_span_prefix(m, ns, ne, "tensor") == 1 or mlg_span_prefix(m, ns, ne, "memref_") == 1 or mlg_span_prefix(m, ns, ne, "struct_") == 1 or mlg_span_prefix(m, ns, ne, "array") == 1 or mlg_span_prefix(m, ns, ne, "ptr_") == 1 {
         mlg_refuse(m, at, "tensor, vector or memref type")
         return MT_NONE
+    }
+    # Python _resolve_type_alias: an alias lowers as its base type, and a
+    # unit (an alias with no base) as f64.
+    let mut ai: i32 = 0
+    while ai < m[0].nal {
+        let al: i32 = m[0].al_node[ai]
+        if mlg_span_eq(m, ns, ne, mlg_ns(m, al), mlg_ne(m, al)) == 1 and m[0].arena.nodes[ft].a == AST_NONE {
+            let base: i32 = m[0].arena.nodes[al].a
+            if base == AST_NONE {
+                return MT_F64
+            }
+            if m[0].al_depth > 16 {
+                mlg_refuse(m, at, "cyclic type alias")
+                return MT_NONE
+            }
+            m[0].al_depth = m[0].al_depth + 1
+            let r: i32 = mlg_ft_to_mt(m, base, at)
+            m[0].al_depth = m[0].al_depth - 1
+            return r
+        }
+        ai = ai + 1
     }
     let k: i32 = mlg_struct_index(m, ns, ne)
     if k < 0 {
@@ -11042,7 +11067,12 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                             if k == AST_LET {
                                 mlg_add_static(m, d)
                             } else {
-                                if k == AST_EFFECT {
+                                if k == AST_TYPE_ALIAS {
+                                    if m[0].nal < MLG_MAX_FNS {
+                                        m[0].al_node[m[0].nal] = d
+                                        m[0].nal = m[0].nal + 1
+                                    }
+                                } elif k == AST_EFFECT {
                                     mlg_add_effect(m, d)
                                 } else {
                                     if k == AST_CAPABILITY {
@@ -12031,7 +12061,8 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         hs_ef: mlg_alloc_i32(MLG_MAX_DEFERS), hs_cap: mlg_alloc_i32(MLG_MAX_DEFERS), nhs: 0,
         mc_e: mlg_alloc_i32(MLG_MAX_LOCALS), mc_t: mlg_alloc_i32(MLG_MAX_LOCALS), nmc: 0,
         dropf: mlg_alloc_i32(MLG_MAX_FNS), ndropf: 0,
-        gpuf: mlg_alloc_i32(MLG_MAX_FNS), ngpuf: 0, gpu_ssa: 0
+        gpuf: mlg_alloc_i32(MLG_MAX_FNS), ngpuf: 0, gpu_ssa: 0,
+        al_node: mlg_alloc_i32(MLG_MAX_FNS), nal: 0, al_depth: 0
     }
     let m: ptr<Mlg> = &mg
     mlg_collect(m, root)
