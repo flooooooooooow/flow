@@ -241,15 +241,14 @@ function flow_to_c_available() -> bool {
     return ft_exists(path_in("compiler/scripts/flowc_emit.sh"))
 }
 
-# Compile a .flow source to C with flowc. flowc has no --library flag: a
-# runtime module without main compiles to its own C unit as is, with its
-# helpers static, so it links next to the program's C. Library modules
-# compile lenient and programs strict, as before.
+# Compile a .flow source to C with flowc. A runtime module is a library
+# unit (--library, #1030) and compiles lenient; programs compile strict.
 function flow_to_c(flow_file: string, out_c: string, library: bool) -> string {
     let _m: bool = pr_mkdir_p(ft_dirname(out_c))
     let argv: ptr<StrList> = ft_list_new()
     ft_list_push(argv, path_in("compiler/scripts/flowc_emit.sh"))
     if library {
+        ft_list_push(argv, "--library")
         ft_list_push(argv, "--lenient")
     } else {
         ft_list_push(argv, "--strict")
