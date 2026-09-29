@@ -10851,10 +10851,6 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                     mlg_refuse(m, d, "generic function")
                     return
                 }
-                if m[0].arena.nodes[d].c == AST_NONE {
-                    mlg_refuse(m, d, "forward declaration")
-                    return
-                }
                 mlg_add_fn(m, d, 0)
             } else {
                 if k == AST_EXTERN {
@@ -10948,7 +10944,7 @@ function mlg_emit_decls(m: ptr<Mlg>, root: i32) {
         }
         if k == AST_FN {
             let fk: i32 = mlg_find_fn(m, mlg_ns(m, d), mlg_ne(m, d))
-            if fk >= 0 and m[0].arena.nodes[d].c != AST_NONE and mlg_item_dropped(m, item) == 0 {
+            if fk >= 0 and mlg_item_dropped(m, item) == 0 {
                 mlg_emit_function(m, d)
             }
         }
