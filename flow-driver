@@ -795,6 +795,10 @@ show_help() {
     echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
     echo "  gpu <program>      Generate @gpu compute kernels as Metal sources"
     echo "  shader <program>   Run fill-shader demo (Metal; macOS)"
+    echo "  explain <program>  Print the compilation plan for every declarative"
+    echo "                    construct: implementations considered, their costs,"
+    echo "                    the choice, and what each rejected candidate failed"
+    echo "                    (flowc with FLOWC_EXPLAIN=1)"
     echo "  transpile <program> [args...]  Run the Python MLIR transpiler (advanced flags)"
     echo "  fmt [--check] <files...>  Format FLOW source files in place"
     echo "                    (--check: list files that would change, exit 1)"
@@ -3781,12 +3785,21 @@ PY
         program="${1:-}"
         require_flow_file "$program"
         shift
-        # The plan report came from the Python C backend's plan selector,
-        # which is retired. flowc lowers every declarative sort to a stable
-        # insertion sort and has no alternative plans to report yet.
-        print_error "flow explain is not available: flowc has no plan selector yet."
-        print_info "flowc lowers every |> sort to a stable insertion sort."
-        exit 1
+        # flowc's plan selector (compiler/src/sort_plans.flow) writes the
+        # report to stderr under FLOWC_EXPLAIN=1; the C is a byproduct here.
+        # Extra arguments are flowc_emit.sh flags (--strict, --no-checks).
+        explain_flowc="$(flow_flowc_main)" || exit 1
+        explain_dir="$(mktemp -d 2>/dev/null || mktemp -d -t flow_explain)"
+        explain_rc=0
+        FLOWC_BIN="$explain_flowc" FLOWC_EXPLAIN=1 FLOWC_EXPLAIN_SOURCE="$program" \
+            "$SCRIPT_DIR/compiler/scripts/flowc_emit.sh" "$@" "$program" "$explain_dir/out.c" \
+            2>"$explain_dir/report" >"$explain_dir/log" || explain_rc=$?
+        cat "$explain_dir/report"
+        if [[ "$explain_rc" -ne 0 ]]; then
+            cat "$explain_dir/log" >&2
+        fi
+        rm -rf "$explain_dir"
+        exit "$explain_rc"
         ;;
     "fmt")
         # flowc's formatter (compiler/src/fmt.flow). It only changes

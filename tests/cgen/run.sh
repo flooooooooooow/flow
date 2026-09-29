@@ -13,6 +13,8 @@
 #   reject T   flowc refuses the program and its output contains T
 #   flags F    pass F to flowc_emit.sh (--strict, --no-checks)
 #   env K=V    set K=V for flowc (FLOWC_DEBUG_INFO=1)
+#   explain F  the `flow explain` report (FLOWC_EXPLAIN=1, on stderr)
+#              equals tests/cgen/F byte for byte
 #   # ...      comment
 #
 # Usage: tests/cgen/run.sh [name...]
@@ -88,6 +90,15 @@ for src in "${cases[@]}"; do
                         "$work/$name" >"$work/$name.out" 2>&1 || run_rc=$?
                     fi
                     [[ "$run_rc" == "$want" ]] || bad+=("exit ${run_rc:-none}, want $want")
+                    ;;
+                "explain "*)
+                    want_file="tests/cgen/${line#explain }"
+                    env "${envs[@]+"${envs[@]}"}" FLOWC_EXPLAIN=1 FLOWC_EXPLAIN_SOURCE="$src" \
+                        compiler/scripts/flowc_emit.sh "${flags[@]+"${flags[@]}"}" "$src" "$work/$name.x.c" \
+                        2>"$work/$name.explain" >/dev/null || true
+                    if ! cmp -s "$want_file" "$work/$name.explain"; then
+                        bad+=("explain report differs from $want_file: $({ diff "$want_file" "$work/$name.explain" || true; } | head -4 | tr '\n' ' ')")
+                    fi
                     ;;
                 "stdout "*)
                     if [[ -f "$work/$name.out" ]]; then
