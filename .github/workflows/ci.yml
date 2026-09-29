@@ -389,6 +389,21 @@ jobs:
       - name: Debug adapter parity (flow dap)
         run: ./compiler/scripts/parity_dap.sh
 
+      - name: FIR-G goldens (flow fir-g)
+        run: ./tests/fir/run.sh
+
+      - name: flow run --json goldens (tools/run)
+        run: ./tests/flow_run/run.sh
+
+      - name: Package command goldens (init, publish, build, clean)
+        run: ./scripts/check_pkg_commands.sh
+
+      - name: GPU shader goldens (flow gpu)
+        run: ./tests/gpu/run.sh
+
+      - name: GPU and shader crossing pages
+        run: ./tests/gpu/crossing.sh
+
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
