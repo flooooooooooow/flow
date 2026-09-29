@@ -58,6 +58,10 @@ if [[ -z "$flowc" || ! -x "$flowc" ]]; then
     fi
 fi
 
+# FLOWC_BACKEND=bpf|wasm (compiler/src/bpf_gen.flow, wasm_gen.flow) run this
+# script; the inner flowc must not inherit that mode.
+unset FLOWC_BACKEND
+
 refusal=""
 if FLOWC_EMIT=mlir FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
     FLOWC_IN="$in" FLOWC_OUT="$work/program.mlir" \
