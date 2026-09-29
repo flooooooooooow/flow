@@ -1,4 +1,4 @@
-total 67005
+total 67002
 benchmarks/cross_harness/cold/cli_oneshot/oneshot.py
 benchmarks/cross_harness/cold/file_transform/transform.py
 benchmarks/cross_harness/cold/hello/hello.py
