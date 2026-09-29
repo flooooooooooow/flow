@@ -52717,7 +52717,7 @@ int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t nam
 }
   free(proot);
   if (presult < 0) {
-  puts("flowc: import not found under its flow.toml [paths] directory");
+  return (0 - 1);
 }
   return presult;
 }
