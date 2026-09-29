@@ -1,0 +1,9 @@
+# Negative parity fixture (#996): an anonymous fork field must end in a call
+# with a known return type, or the program is rejected with the Python
+# host's message.
+
+function main() -> i32 {
+    let n: i32 = 3
+    let s = n |> { a = n_abs }
+    return 0
+}

@@ -1,0 +1,67 @@
+# file	status	exit	stdout-md5	diagnostic (Python host at ff99639e)
+benchmarks/aosoa.flow	accept	-	-	-
+benchmarks/cross_harness/runtime/arrays/arrays.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+benchmarks/ordering/adaptive_sort_bench.flow	accept	-	-	-
+compiler/fixtures/stage_a_match_ext.flow	accept	42	d41d8cd98f00b204e9800998ecf8427e	-
+compiler/fixtures/stage_a_match.flow	reject	-	-	-
+demos/ui_layout_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/ui_layout.flow'
+demos/ui_layout_window_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/ui_layout.flow'
+demos/vulkan_2048_flow/src/main.flow	reject	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_layout_dsl_flow/src/main.flow	reject	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_tetris_flow/src/main.flow	reject	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+examples/basics/declarative_sort.flow	accept	0	3538d349dadb1b156139979e2e3d86b4	-
+examples/basics/match_enums.flow	accept	0	339129e9caf1ea8faa92f7403cfa8ba2	-
+examples/basics/pipeline_choose.flow	accept	0	c0f45f8ca62cb4df975bb27de64fcfd7	-
+examples/basics/pipeline_fork_inferred.flow	accept	0	6b1f1057697d5d21c0d025bc0adc8a7a	-
+examples/basics/pipeline_fork.flow	accept	0	6b1f1057697d5d21c0d025bc0adc8a7a	-
+examples/basics/pipeline_placeholder.flow	accept	0	1f3efdfd05daaeb57ee32ee03e3e79cb	-
+examples/basics/type_safety_demo.flow	accept	0	4a92d3a5352861771960035399bc80a7	-
+examples/book/06_pipeline_result.flow	accept	0	b5ac1a86343e138160aa9ed70781bceb	-
+examples/book/08_types_patterns.flow	accept	0	53c7d3e3133941028a9e0fe70d595ac1	-
+examples/compilers/lsp_ordering_port.flow	accept	0	5d3accfc6c4f232f08742f99966334ff	-
+examples/demos/ui_layout_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/ui_layout.flow'
+examples/demos/ui_layout_window_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/ui_layout.flow'
+examples/demos/vulkan_2048_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/vulkan_abi_renderer.flow'
+examples/demos/vulkan_layout_dsl_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/vulkan_abi_renderer.flow'
+examples/demos/vulkan_tetris_flow/src/main.flow	reject	-	-	Error resolving modules: Could not resolve import 'stdlib/vulkan_abi_renderer.flow'
+examples/evolution/units_kinematics.flow	accept	0	df9cbbd771be451a4dbc824785d8fb2c	-
+examples/flow_way/sensor_calibration.flow	accept	0	786a56d8771553f02d4b7e5975b8a933	-
+examples/generics_traits/enum_match_exhaustive.flow	accept	0	e14470c432e179203d3aea903222182b	-
+examples/ui/layout_hello.flow	accept	0	a5efd8d45062edb78b2abd02bb451a90	-
+lib/stdlib/audio/notation.flow	accept	-	-	-
+lib/stdlib/rf.flow	accept	-	-	-
+lib/stdlib/sorting/core.flow	accept	-	-	-
+lib/stdlib/units_si.flow	accept	-	-	-
+tests/core/test_coverage_match_deep.flow	accept	0	3227bf6fc967807779e0e8e3ece5ed33	-
+tests/core/test_coverage_units.flow	accept	0	001321f8425c615e96d9c63a95c5532c	-
+tests/core/test_distinct_types.flow	accept	0	f79c8e356ac5c6f345ea2cca3ea3b592	-
+tests/core/test_match_advanced.flow	accept	0	82d83c7732effe65aabc1e82927bed33	-
+tests/core/test_match_enum_exhaustive.flow	accept	0	65313e0a8062f8d048a9e5334fa2a866	-
+tests/core/test_match_nested.flow	accept	0	646f5e163ccb04a92e0cbea210d902bb	-
+tests/core/test_match_struct.flow	accept	-	-	-
+tests/core/test_match.flow	accept	-	-	-
+tests/core/test_production_features.flow	accept	0	f11637f08cde63e7d9e7b0e8d2c7ba97	-
+tests/core/test_ui_layout_positions.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/core/test_ui_layout_snapshot.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/core/test_ui_layout_std.flow	accept	139	d41d8cd98f00b204e9800998ecf8427e	-
+tests/core/test_ui_layout.flow	accept	139	d41d8cd98f00b204e9800998ecf8427e	-
+tests/core/test_units_basic.flow	accept	0	7ba8d2264ef3e3440d00489f2a5d0b95	-
+tests/fixtures/doc_preambles/vision-units.flow	accept	-	-	-
+tests/lang/test_enum_match_arms.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/lang/test_lsp_syntax.flow	accept	0	26754452f23676d14623f3260b61d4f3	-
+tests/lang/test_match_break.flow	accept	0	388b7b0ebb118a733c0159cf7e9f3d8e	-
+tests/lang/test_match_patterns.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/lang/test_match.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/lang/test_parser_python_forms.flow	accept	7	794f0b89a6f21d1029eb7dbbf99d2688	-
+tests/lang/test_sort_modifier_names.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/lang/test_sort_nan.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/lang/test_sort_plans.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/lang/test_sort.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/runtime/test_match_bool.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+tests/runtime/test_match_i32.flow	accept	0	ba2541b6cd9a82293970f4d9179c9000	-
+tests/runtime/test_match.flow	accept	0	a0a3d4b6693b1f739e19f6065c029fdb	-
+tests/simd/test_simd_vector.flow	accept	0	796bf3b95d64fbd83ec9015a6b070e50	-
+tests/simd/test_simple_simd.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
+compiler/fixtures/choose_uninferrable.flow	reject	-	-	cannot infer the result type of the `choose` at line 9: its arms must end in a function whose return type is known
+compiler/fixtures/fork_uninferrable.flow	reject	-	-	cannot infer the type of fork field 'a' (line 7): an anonymous fork record's fields must end in a function whose return type is known. Name the record instead: `source |> RecordName { ... }`
+tests/lang/test_lowered_forms.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
