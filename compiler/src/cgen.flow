@@ -7328,6 +7328,17 @@ export function flowc_cgen_collect_sigs(
                 n = flowc_cgen_sig_put(arena, src, buf, cap, n, fn, rt)
             }
         }
+        # C functions an extern block declares: an importer's inferred
+        # `let` takes their return type too.
+        if arena.nodes[item].kind == AST_EXTERN {
+            let mut ext: i32 = arena.nodes[item].a
+            while ext != AST_NONE {
+                if arena.nodes[ext].kind == AST_FN and arena.nodes[ext].b != AST_NONE {
+                    n = flowc_cgen_sig_put(arena, src, buf, cap, n, ext, arena.nodes[ext].b)
+                }
+                ext = arena.nodes[ext].next
+            }
+        }
         item = arena.nodes[item].next
     }
     return n
