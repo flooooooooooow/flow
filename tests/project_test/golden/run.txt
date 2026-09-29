@@ -6,19 +6,10 @@ test tests/bad.flow ... FAILED (compile, N.NNNs)
   stdout:
     [0;34mℹ️  Compiling <WORK>/p_main/tests/bad.flow (host=flowc)...[0m
     [0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
-    flowc tc: unbound ident
-    flowc tc: file
-    <WORK>/p_main/tests/bad.flow
-    flowc tc: at 2:18
-    undefined_name
-    flowc: 1 type warning(s) (lenient mode)
-    [0;32m✅ FLOW → C: bad.c[0m
-    [0;31m❌ C compilation/linking failed (flowc host)[0m
-  stderr:
-    <ROOT>/build/bad.c:194:15: error: use of undeclared identifier 'undefined_name'
-      194 |   int32_t x = undefined_name;
-          |               ^
-    1 error generated.
+    flowc emit: parse failed
+    <WORK>/p_main/tests/bad.flow:1:16: parse error: unexpected token '->' (byte 15)
+    flowc emit: arena_len=0
+    [0;31m❌ flowc could not compile <WORK>/p_main/tests/bad.flow[0m
 test tests/badexit.flow ... FAILED (runner, N.NNNs)
   invalid exit code in <WORK>/p_main/tests/badexit.exitcode: 'abc'
 test tests/exits.flow ... ok (N.NNNs)

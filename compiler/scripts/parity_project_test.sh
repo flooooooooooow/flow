@@ -91,10 +91,11 @@ function main() -> i32 {
     return 7
 }
 EOF
+# flowc rejects it, so the output holds no C compiler text (clang and gcc
+# word their errors differently).
 mk "$P/tests/bad.flow" <<'EOF'
-function main() -> i32 {
-    let x: i32 = undefined_name
-    return x
+function main( -> i32 {
+    return 0
 }
 EOF
 mk "$P/tests/native_golden.flow" <<'EOF'
