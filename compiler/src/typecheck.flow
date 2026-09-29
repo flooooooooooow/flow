@@ -1262,6 +1262,8 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         if arena.nodes[id].ival == AST_IDENT_SORT_MOD { return }
         # The implicit UI layout state pointer is a builtin global.
         if flowc_tc_span_is(ctx[0].src, ns, ne, "_ui_state") == 1 { return }
+        # `return void` in a void function (cgen emits a bare return).
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "void") == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
             # A capability is a handler, not a value (fatal on the Python
             # host too, lenient or not).
@@ -1493,19 +1495,29 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_RETURN {
         let val: i32 = arena.nodes[id].a
         let is_void: i32 = flowc_tc_is_void_ret(arena, ctx[0].src, ctx[0].cur_ret)
+        # `return void` is a bare return, as on the Python host.
+        let mut bare: i32 = 0
         if val == AST_NONE {
+            bare = 1
+        } elif arena.nodes[val].kind == AST_IDENT and flowc_tc_span_is(ctx[0].src, arena.nodes[val].name_start, arena.nodes[val].name_end, "void") == 1 {
+            bare = 1
+        }
+        if bare == 1 {
             # Bare `return` only ok in void / omitted-return functions.
             if is_void == 0 {
+                flowc_tc_note(ctx, "flowc tc: return without a value in a function that returns one", arena.nodes[id].start, arena.nodes[id].start)
                 flowc_tc_err(ctx)
             }
         } else {
             # Value return illegal in void functions.
             if is_void == 1 {
+                flowc_tc_note(ctx, "flowc tc: return with a value in a void function", arena.nodes[id].start, arena.nodes[id].start)
                 flowc_tc_err(ctx)
             }
             flowc_tc_check_expr(ctx, arena, val)
             if flowc_tc_is_i32_type(arena, ctx[0].src, ctx[0].cur_ret) == 1 {
                 if flowc_tc_obvious_non_i32(arena, val) == 1 {
+                    flowc_tc_note(ctx, "flowc tc: returns a non-i32 value from an i32 function", arena.nodes[id].start, arena.nodes[id].start)
                     flowc_tc_err(ctx)
                 }
             }

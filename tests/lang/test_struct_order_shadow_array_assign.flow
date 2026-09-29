@@ -1,0 +1,42 @@
+# Three C-emission gaps found by corpus parity (examples/audio/livecode_demo):
+#   - a struct that holds a later-declared struct by value must come after it
+#     in C (flowc kept source order);
+#   - `let f = f(x)` where f is also a function: the C local shadowed the
+#     function inside its own initializer;
+#   - assigning to a local sized array (from a call or a literal) is a copy;
+#     C arrays are not assignable.
+
+struct Voice {
+    env: Envelope,
+    gain: f32
+}
+
+struct Envelope {
+    level: f32
+}
+
+function level(v: Voice) -> f32 {
+    return v.env.level * v.gain
+}
+
+function triad(root: i32) -> array<i32, 3> {
+    return [root, root + 4, root + 7]
+}
+
+function main() -> i32 {
+    let v: Voice = Voice { env: Envelope { level: 0.5 }, gain: 2.0 }
+    let level: f32 = level(v)
+    if level != 1.0 {
+        return 1
+    }
+    let mut notes: array<i32, 3> = [0, 0, 0]
+    notes = triad(60)
+    if notes[2] != 67 {
+        return 2
+    }
+    notes = [1, 2, 3]
+    if notes[0] + notes[1] + notes[2] != 6 {
+        return 3
+    }
+    return 0
+}

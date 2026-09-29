@@ -1,0 +1,1014 @@
+apps/cartpole/cartpole_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+apps/cartpole/main.flow	ok	0	500481542-1282	det	-
+apps/flow-http/http.flow	ok	134	4264488036-302	det	-
+apps/flowdb/flowdb.flow	ok	0	135386103-861	det	-
+apps/http_json_cache/src/live_http.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+apps/http_json_cache/src/main.flow	ok	0	3573062967-242	det	-
+benchmarks/aosoa.flow	ok	139	4294967295-0	det	-
+benchmarks/baselines/numeric.flow	ok	0	654843513-18	det	-
+benchmarks/baselines/rbf_elementwise.flow	ok	0	4294967295-0	det	-
+benchmarks/baselines/startup.flow	ok	0	1389897999-9	det	-
+benchmarks/baselines/string_io.flow	ok	0	1404319302-13	det	-
+benchmarks/blas_vs_naive.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+benchmarks/concurrency/chan_pingpong.flow	ok	0	3476875482-46	nondet	-
+benchmarks/concurrency/chan_pingpong_fiber.flow	ok	0	356243362-52	nondet	-
+benchmarks/concurrency/channel_throughput.flow	ok	0	2989073064-91	nondet	-
+benchmarks/concurrency/fiber_fanout.flow	ok	0	562177790-109	nondet	-
+benchmarks/concurrency/http_server.flow	ok	0	3248035188-43	nondet	-
+benchmarks/concurrency/parallel_sum.flow	ok	0	3262894494-81	nondet	-
+benchmarks/cross_harness/cold/cli_oneshot/oneshot.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/cold/file_transform/transform.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/cold/hello/hello.flow	ok	0	1403953672-13	det	-
+benchmarks/cross_harness/cold/json_parse/json_parse.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/cold/tiny_arithmetic/arith.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/compiler/c_compile/c_compile.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/compiler/codegen/codegen.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/compiler/end_to_end/end_to_end.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/compiler/parse/parse.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/compiler/typecheck/typecheck.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/memory/allocation_copy/allocation_copy.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/memory/peak_rss/peak_rss.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/allocation/allocation.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/arrays/arrays.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/calls/calls.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/loops/loop.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/numerical/numerical.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/sorting/sorting.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/strings/strings.flow	ok	0	4294967295-0	det	-
+benchmarks/cross_harness/runtime/structs/structs.flow	ok	0	4294967295-0	det	-
+benchmarks/crossover/heavy_numeric.flow	ok	0	4294967295-0	det	-
+benchmarks/crossover/nested_loops.flow	ok	0	4294967295-0	det	-
+benchmarks/crossover/small_loop.flow	ok	0	4294967295-0	det	-
+benchmarks/crossover/trivial.flow	ok	0	4294967295-0	det	-
+benchmarks/micro/complex_vectorization.flow	ok	0	2376169011-103	det	-
+benchmarks/micro/fft_benchmark.flow	ok	0	1631756267-1263	det	-
+benchmarks/micro/frame_arena_benchmark.flow	ok	0	4190033077-213	nondet	-
+benchmarks/micro/mandelbrot_benchmark.flow	ok	0	2638680430-1311	det	-
+benchmarks/micro/matmul_benchmark.flow	ok	139	4294967295-0	det	-
+benchmarks/micro/nbody_benchmark.flow	ok	0	4358781-1209	det	-
+benchmarks/micro/sort_benchmark.flow	ok	0	1092377014-423	det	-
+benchmarks/micro/tensor_bufferize_benchmark.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+benchmarks/ordering/adaptive_sort_bench.flow	ok	0	3861419168-403	nondet	-
+benchmarks/perf_738.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+benchmarks/publish/flow/fib.flow	ok	0	192229584-35	nondet	-
+benchmarks/publish/flow/mandelbrot.flow	ok	0	2621567215-33	nondet	-
+benchmarks/publish/flow/matmul.flow	ok	0	1981350560-41	nondet	-
+benchmarks/publish/flow/nbody.flow	ok	0	3067289266-40	nondet	-
+benchmarks/publish/flow/spectral.flow	ok	0	3181369687-39	nondet	-
+benchmarks/runner.flow	ok	0	1681976817-1541	nondet	-
+benchmarks/standardized/json/json.flow	ok	0	2073229025-37	nondet	-
+benchmarks/standardized/minimal/minimal.flow	ok	0	4294967295-0	det	-
+benchmarks/standardized/record/record.flow	ok	0	1335016639-40	nondet	-
+benchmarks/suite/flow/01_fibonacci.flow	ok	0	3002979371-375	nondet	-
+benchmarks/suite/flow/02_nbody.flow	ok	0	82312428-454	nondet	-
+benchmarks/suite/flow/03_matmul.flow	ok	0	2227911959-654	nondet	-
+benchmarks/suite/flow/04_spectral.flow	ok	0	3903640754-310	nondet	-
+benchmarks/suite/flow/05_spmv.flow	ok	0	4138816260-947	nondet	-
+benchmarks/suite/flow/06_audio_rt.flow	ok	0	2656380250-681	nondet	-
+compiler/fixtures/bundle_infer_main.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/bundle_main.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/bundle_tc_bad.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/bundle_tc_ok.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/choose_uninferrable.flow	reject	-	-	-	Error resolving modules: Error: cannot infer the result type of the `choose` at line 9: its arms must end in a function whose return type is known
+compiler/fixtures/dynamics_dsl/err_key_sense.flow	reject	-	-	-	Error resolving modules: 'X'
+compiler/fixtures/dynamics_dsl/err_lqr_unknown_dsys.flow	reject	-	-	-	Error resolving modules: analyze c lqr: unknown dsys 'X'
+compiler/fixtures/dynamics_dsl/ex_chain4_lqr.flow	ok	0	2325723701-189	det	-
+compiler/fixtures/dynamics_dsl/ex_ga_dsys_namespaced.flow	ok	0	1013928779-153	det	-
+compiler/fixtures/dynamics_dsl/ex_ga_dsys_syntax.flow	ok	0	2526099867-466	det	-
+compiler/fixtures/dynamics_dsl/ex_ga_wfc_coupled.flow	ok	0	2653177447-415	det	-
+compiler/fixtures/dynamics_dsl/ex_lorenz_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/dynamics_dsl/ex_pendulum_represent_linear.flow	ok	0	4137957933-287	det	-
+compiler/fixtures/dynamics_dsl/ex_spring_mass_control.flow	ok	0	1257006866-1229	det	-
+compiler/fixtures/dynamics_dsl/ex_spring_mass_lqr.flow	ok	0	463952410-307	det	-
+compiler/fixtures/dynamics_dsl/ok_continuous.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_discrete.flow	ok	0	4219530715-2	det	-
+compiler/fixtures/dynamics_dsl/ok_dynamics_block.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_empty_program.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_existing_import.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/dynamics_dsl/ok_floats.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.NUMBER at line 8, column 42
+compiler/fixtures/dynamics_dsl/ok_ga_closed_analyze.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_lqr.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_namespaced.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_one_line_main.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_one_line_swallow.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_plain_marker.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_portrait.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/dynamics_dsl/ok_redeclare_merge.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_represent_linear.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_represent_toplevel.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/dynamics_dsl/ok_wfc_couple_guide.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/effects/arg_type.flow	ok	139	4294967295-0	det	-
+compiler/fixtures/effects/arity.flow	ccfail	-	-	-	error: too few arguments to function call, single argument 'X' was not specified
+compiler/fixtures/effects/cap_method_print.flow	ok	0	1641795173-28	det	-
+compiler/fixtures/effects/cap_not_value.flow	reject	-	-	-	Type errors (not downgraded by --lenient):
+compiler/fixtures/effects/handle_unknown_effect.flow	ccfail	-	-	-	error: unknown type name 'X'; did you mean 'X'?
+compiler/fixtures/effects/multi_handle.flow	ok	0	3735139570-24	det	-
+compiler/fixtures/effects/row_unknown_effect.flow	ok	0	430738555-13	det	-
+compiler/fixtures/effects/runtime_default.flow	ok	0	4096449967-51	det	-
+compiler/fixtures/effects/runtime_strict_abort.flow	ok	0	1270924188-13	det	-
+compiler/fixtures/effects/strict_ok.flow	ok	0	1184621956-37	det	-
+compiler/fixtures/effects/strict_row_call.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/effects/strict_unhandled.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/effects/unknown_op.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/effects/unqualified_op.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/fixtures/field_dsl/err_bad_item.flow	reject	-	-	-	Error resolving modules: boundary 'X': expected `left = …` / `right = …`, got 'top = 1.0'
+compiler/fixtures/field_dsl/err_boundary_first.flow	reject	-	-	-	Error resolving modules: boundary 'X': declare `field T : …` first
+compiler/fixtures/field_dsl/err_domain.flow	reject	-	-	-	Error resolving modules: field 'X': only `on Line` is supported in Stage-1 (got 'X')
+compiler/fixtures/field_dsl/err_duplicate.flow	reject	-	-	-	Error resolving modules: duplicate field 'X'
+compiler/fixtures/field_dsl/err_half_boundary.flow	reject	-	-	-	Error resolving modules: boundary 'X': need both left and right
+compiler/fixtures/field_dsl/err_missing_evolve.flow	reject	-	-	-	Error resolving modules: field 'X': missing `T evolves as laplacian(T)`
+compiler/fixtures/field_dsl/err_size.flow	reject	-	-	-	Error resolving modules: field 'X': size must be > 1
+compiler/fixtures/field_dsl/err_swallow_main.flow	reject	-	-	-	Error resolving modules: boundary 'X': expected `left = …` / `right = …`, got 'function main() -> i32 {'
+compiler/fixtures/field_dsl/err_two_mul.flow	reject	-	-	-	Error resolving modules: field 'X' evolves: use at most one multiplier
+compiler/fixtures/field_dsl/err_wrong_name.flow	reject	-	-	-	Error resolving modules: field 'X' evolves: Stage-1 expects `T evolves as laplacian(T)` or `c * laplacian(T)`
+compiler/fixtures/field_dsl/ok_basic.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_block_boundary.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_boundary_swallow.flow	ok	2	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_crlf.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_export_main.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_no_fields.flow	reject	-	-	-	Error resolving modules: Unexpected declaration: TokenType.IDENTIFIER
+compiler/fixtures/field_dsl/ok_plain.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_post_mul.flow	ok	8	4294967295-0	det	-
+compiler/fixtures/field_dsl/ok_unknown_evolve.flow	reject	-	-	-	Error resolving modules: Unexpected declaration: TokenType.IDENTIFIER
+compiler/fixtures/flow_blocks/ok_short_block.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/flow_blocks/run_features.flow	ok	0	1102327010-129	det	-
+compiler/fixtures/flow_blocks/run_invariant.flow	ok	1	1862501881-137	det	-
+compiler/fixtures/fork_uninferrable.flow	reject	-	-	-	Error resolving modules: Error: cannot infer the type of fork field 'X' (line 7): an anonymous fork record's fields must end in a function whose return type is 
+compiler/fixtures/hello_subset.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/keyword_param.flow	reject	-	-	-	Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.TO at line 3, column 27
+compiler/fixtures/pkg_add/main.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/shader_dsl/err_plain.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/shader_dsl/ok_host_flow.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/stage_a_array_else.flow	ok	42	1191613487-3	det	-
+compiler/fixtures/stage_a_cast.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_const.flow	ok	12	4294967295-0	det	-
+compiler/fixtures/stage_a_fib.flow	ok	55	4294967295-0	det	-
+compiler/fixtures/stage_a_float.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_for_dotdot.flow	ok	45	4294967295-0	det	-
+compiler/fixtures/stage_a_for_sum.flow	ok	45	4294967295-0	det	-
+compiler/fixtures/stage_a_index_assign.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_infer_let.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_infer_struct.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_match.flow	ccfail	-	-	-	error: use of undeclared identifier 'X'
+compiler/fixtures/stage_a_match_ext.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_ptr.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_sizeof.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_strcat.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_struct.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/stage_a_sum.flow	ok	45	4294967295-0	det	-
+compiler/fixtures/stage_a_token_consts.flow	ok	29	4294967295-0	det	-
+compiler/fixtures/stage_a_token_struct.flow	ok	26	4294967295-0	det	-
+compiler/fixtures/typecheck_ok.flow	ok	42	4294967295-0	det	-
+compiler/fixtures/typecheck_undef.flow	ccfail	-	-	-	error: use of undeclared identifier 'X'
+compiler/fixtures/units_add_mismatch.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/units_annotation.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/units_call_arg.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/units_cast_cross.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/units_compare_scalar.flow	ok	1	4294967295-0	det	-
+compiler/fixtures/units_sin_length.flow	ok	0	4294967295-0	det	-
+compiler/fixtures/units_unknown_factor.flow	ok	0	4294967295-0	det	-
+compiler/src/driver.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/src/dynamics_dsl.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/src/main.flow	ok	0	19129927-11290	det	-
+compiler/src/pkg_main.flow	reject	-	-	-	Error resolving modules: Invalid escape sequence: \x
+compiler/src/shader_dsl.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+compiler/src/test_parser.flow	ok	0	3546224504-114	det	-
+demos/ui_layout_flow/src/main.flow	ok	7	2706282835-87	det	-
+demos/ui_layout_window_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+demos/vulkan_2048_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_breakout_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_flow_advanced/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+demos/vulkan_flow_basic/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+demos/vulkan_layout_dsl_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_layout_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_pong_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_snake_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+demos/vulkan_tetris_flow/src/main.flow	reject	-	-	-	Error resolving modules: Unsafe import path: ../../vulkan_abi/renderer.flow
+docs/project/linguist/samples/Flow/channels.flow	ok	0	3853008178-71	det	-
+docs/project/linguist/samples/Flow/effects_showcase.flow	ok	0	1418869739-2151	det	-
+docs/project/linguist/samples/Flow/lu_decomposition.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/ai/flowlm_charlm.flow	ok	timeout	4294967295-0	det	-
+examples/ai/ga_flappy.flow	ok	0	3044608384-1267	det	-
+examples/ai/policy_pong.flow	ok	0	3751062505-893	det	-
+examples/ai/q_snake.flow	ok	0	654716984-1145	det	-
+examples/audio/adsr_vs_click.flow	ok	0	792934548-790	det	-
+examples/audio/audio_probe.flow	ok	0	2078401717-62	det	-
+examples/audio/bus_graph_demo.flow	ok	0	1361196471-44	det	-
+examples/audio/delay_feedback_guard.flow	ok	0	3030150137-1217	det	-
+examples/audio/drum_machine.flow	ok	0	2389239877-656	det	-
+examples/audio/evening_piece.flow	ok	0	1275830699-801	det	-
+examples/audio/filter_sweep.flow	ok	0	762207606-641	det	-
+examples/audio/fm_voice.flow	ok	0	831690366-741	det	-
+examples/audio/gpu_gain_demo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/audio/hot_cross_buns.flow	ok	0	3395595368-1786	det	-
+examples/audio/hot_cross_buns_play.flow	ok	1	105540134-207	det	-
+examples/audio/hot_cross_buns_simple.flow	ok	0	3594702458-1020	det	-
+examples/audio/hot_cross_buns_working.flow	ok	0	1837914499-1186	det	-
+examples/audio/karplus_strong.flow	ok	0	1455922599-753	det	-
+examples/audio/lattice_allpass_demo.flow	ok	0	677190996-11335	det	-
+examples/audio/lattice_allpass_phase_engine.flow	ok	0	260078214-95	det	-
+examples/audio/lifetime_domains.flow	ok	0	1629138223-96	det	-
+examples/audio/livecode_demo.flow	ok	0	4225242991-1145	det	-
+examples/audio/loopback_effects.flow	ok	1	2078401717-62	det	-
+examples/audio/notation_player.flow	ok	1	3262158681-218	det	-
+examples/audio/offline_graph_demo.flow	ok	0	933572754-48	det	-
+examples/audio/rt_safe_callback.flow	ok	0	634016091-30	det	-
+examples/audio/sine_playback.flow	ok	1	2078401717-62	det	-
+examples/audio/stereo_width.flow	ok	0	982419555-772	det	-
+examples/basics/bigint_smoke.flow	ok	7	4294967295-0	det	-
+examples/basics/bubble_sort.flow	ok	2	4294967295-0	det	-
+examples/basics/checked_arith_smoke.flow	ok	0	4294967295-0	det	-
+examples/basics/declarative_sort.flow	ok	0	3618552706-92	det	-
+examples/basics/dot_product.flow	ok	0	4294967295-0	det	-
+examples/basics/factorial.flow	ok	120	4294967295-0	det	-
+examples/basics/fibonacci.flow	ok	55	4294967295-0	det	-
+examples/basics/gcd.flow	ok	14	4294967295-0	det	-
+examples/basics/hashmap_i64_smoke.flow	ok	30	4294967295-0	det	-
+examples/basics/hello_world.flow	ok	0	4294967295-0	det	-
+examples/basics/loops.flow	ok	50	4294967295-0	det	-
+examples/basics/match_enums.flow	ok	0	2652146886-32	det	-
+examples/basics/mouse_probe.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/basics/palindrome.flow	ok	1	4294967295-0	det	-
+examples/basics/pipeline_choose.flow	ok	0	264571430-56	det	-
+examples/basics/pipeline_fork.flow	ok	0	2301819946-42	det	-
+examples/basics/pipeline_fork_inferred.flow	ok	0	2301819946-42	det	-
+examples/basics/pipeline_placeholder.flow	ok	0	2510030950-48	det	-
+examples/basics/power.flow	ok	0	4294967295-0	det	-
+examples/basics/prime_numbers.flow	ok	10	4294967295-0	det	-
+examples/basics/result_pipeline.flow	ok	0	3555805869-84	det	-
+examples/basics/simple_for.flow	ok	0	204724159-6925	det	-
+examples/basics/simple_search.flow	ok	5	4294967295-0	det	-
+examples/basics/spans.flow	ok	0	4294967295-0	det	-
+examples/basics/type_safety_demo.flow	ok	0	1756331406-393	det	-
+examples/bench/matmul_mlir.flow	ok	0	4294967295-0	det	-
+examples/bench/matmul_optimizations.flow	ok	0	26155500-619	det	-
+examples/book/01_hello.flow	ok	0	2042823904-13	det	-
+examples/book/02_values.flow	ok	0	103842137-59	det	-
+examples/book/03_control.flow	ok	0	3575833493-37	det	-
+examples/book/04_functions.flow	ok	0	697949903-31	det	-
+examples/book/05_records_arrays.flow	ok	0	1721664754-40	det	-
+examples/book/06_pipeline_result.flow	ok	0	240402074-35	det	-
+examples/book/07_decay.flow	ok	0	1145659461-67	det	-
+examples/book/08_types_patterns.flow	ok	0	2658095200-40	det	-
+examples/book/09_memory_cleanup.flow	ok	0	2347885530-16	det	-
+examples/book/10_effect_handler.flow	ok	0	3418211297-28	det	-
+examples/book/11_closure_snapshot.flow	ok	0	153780568-20	det	-
+examples/book/12_parallel_transform.flow	ok	0	543672968-20	det	-
+examples/book/13_rk4_decay.flow	ok	0	3826597738-20	det	-
+examples/book/14_numeric_gradient.flow	ok	0	1810507654-60	det	-
+examples/circuits/bjt_curves.flow	ok	0	116270331-2107	det	-
+examples/circuits/buck_converter.flow	ok	0	2679220003-2313	det	-
+examples/circuits/chua.flow	ok	0	1184014547-4065	det	-
+examples/circuits/diode_iv.flow	ok	0	458568046-2576	det	-
+examples/circuits/lc_tank.flow	ok	0	80567443-2003	det	-
+examples/circuits/logic_delays.flow	ok	0	4264368493-2288	det	-
+examples/circuits/mna_dc.flow	ok	0	4230398833-1685	det	-
+examples/circuits/netlist_demo.flow	ok	0	4147278493-2736	det	-
+examples/circuits/opamp.flow	ok	0	1811988765-3239	det	-
+examples/circuits/oscillator_colpitts.flow	ok	0	409097831-1050	det	-
+examples/circuits/pll.flow	ok	0	1411609527-2364	det	-
+examples/circuits/rc_rl_rlc.flow	ok	0	4093542461-1362	det	-
+examples/circuits/transmission_line.flow	ok	0	2519652016-1632	det	-
+examples/compilers/calculator.flow	ok	0	185503815-389	det	-
+examples/compilers/claim_address_demo.flow	ok	0	3599101252-121	det	-
+examples/compilers/flow_identifier_lexer.flow	ok	0	1173393260-28	det	-
+examples/compilers/flow_lexer.flow	ok	0	2738221884-17	det	-
+examples/compilers/know_demo.flow	ok	0	1717263351-220	det	-
+examples/compilers/know_index_demo.flow	ok	0	1222078222-2648	det	-
+examples/compilers/lsp_ordering_port.flow	ok	0	2760034851-66	det	-
+examples/compilers/math_prose_demo.flow	ok	0	3146931444-268	det	-
+examples/compilers/math_prose_expr_demo.flow	ok	0	3193553749-2551	det	-
+examples/compilers/proof_parse_demo.flow	ok	0	1794065405-5398	det	-
+examples/concurrency/channels.flow	ok	0	3853008178-71	det	-
+examples/concurrency/channels_i64.flow	ok	0	2405423991-80	det	-
+examples/concurrency/cont_demo.flow	ok	0	851245455-68	det	-
+examples/concurrency/cont_flow_resume.flow	ok	0	2606432618-29	det	-
+examples/concurrency/cont_multishot.flow	ok	0	1601765798-50	det	-
+examples/concurrency/cont_reset.flow	ok	0	3385088820-47	det	-
+examples/concurrency/cont_scaffold.flow	ok	0	1958250670-140	det	-
+examples/concurrency/cont_stackcopy.flow	ok	0	2081658314-50	det	-
+examples/concurrency/fiber_async.flow	ok	0	1662386919-48	det	-
+examples/concurrency/fiber_netpoll.flow	ok	0	3522181425-50	det	-
+examples/concurrency/fiber_suspend.flow	ok	0	2679466087-64	nondet	-
+examples/concurrency/generic_channel.flow	ok	0	11014630-66	det	-
+examples/concurrency/gomaxprocs.flow	ok	timeout	4294967295-0	nondet	-
+examples/concurrency/http_fiber.flow	ok	0	3210325917-49	det	-
+examples/concurrency/http_hello.flow	ok	0	1023501666-92	nondet	-
+examples/concurrency/http_middleware.flow	ok	0	732890238-40	det	-
+examples/concurrency/http_routed.flow	ok	0	3253179156-54	det	-
+examples/concurrency/http_tls.flow	ok	0	3985658907-126	det	-
+examples/concurrency/netpoll.flow	ok	0	13059270-63	det	-
+examples/concurrency/parallel_for.flow	ok	0	3427094087-52	det	-
+examples/concurrency/pipeline.flow	ok	0	1936067682-150	det	-
+examples/concurrency/race_hooks.flow	ok	0	2685279137-19	det	-
+examples/concurrency/select.flow	ok	0	1354972099-136	det	-
+examples/concurrency/select4.flow	ok	0	3709543612-137	det	-
+examples/concurrency/tcp_echo_once.flow	ok	0	4062963448-47	det	-
+examples/concurrency/threaded_async.flow	ok	0	4214726124-54	det	-
+examples/concurrency/work_steal.flow	ok	0	3003065982-59	nondet	-
+examples/crypto/runtime_sha256.flow	ok	0	3839880378-18	det	-
+examples/crypto/sha256.flow	ok	134	4270045606-164	det	-
+examples/data/csv_parser.flow	ok	0	2055323633-467	det	-
+examples/demos/ui_layout_flow/src/main.flow	ok	7	2706282835-87	det	-
+examples/demos/ui_layout_window_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_2048_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_breakout_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_flow_advanced/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_flow_basic/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_layout_dsl_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_layout_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_pong_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_snake_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/vulkan_tetris_flow/src/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/demos/wasm/examples/particles/particles.flow	ok	0	4294967295-0	det	-
+examples/dsp/pipeline.flow	ok	0	1627444889-178	det	-
+examples/dynamics/controllability_demo.flow	ok	0	4294967295-0	det	-
+examples/dynamics/ga_control.flow	ok	0	4294967295-0	det	-
+examples/dynamics/ga_dsys_namespaced.flow	ok	0	1013928779-153	det	-
+examples/dynamics/ga_dsys_syntax.flow	ok	0	2526099867-466	det	-
+examples/dynamics/ga_full_analysis.flow	ok	0	2206992254-1107	det	-
+examples/dynamics/ga_wfc_coupled.flow	ok	0	2653177447-415	det	-
+examples/dynamics/gramian_demo.flow	ok	0	4294967295-0	det	-
+examples/dynamics/lorenz_attractor.flow	ok	0	4294967295-0	det	-
+examples/dynamics/wfc_demo.flow	ok	0	4294967295-0	det	-
+examples/ecosystem/app_cache/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/cli_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/collectionsx_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/compress_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/dns_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/ffi_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/http_get/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/image_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/json_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/log_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/serde_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/sqlite_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/sqlkit_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/strings_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/testing_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/ecosystem/toml_demo/src/main.flow	reject	-	-	-	Error resolving modules: Could not resolve import 'X'
+examples/effects/async_effects.flow	ok	0	2020954734-477	det	-
+examples/effects/async_primitives.flow	ok	timeout	4294967295-0	det	-
+examples/effects/dependency_injection.flow	ok	0	2771970117-508	det	-
+examples/effects/effect_rows.flow	ok	0	3047198196-14	det	-
+examples/effects/showcase.flow	ok	0	1418869739-2151	det	-
+examples/effects/state_effects.flow	ok	0	1175093906-496	det	-
+examples/evoleco/allee_effect.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/bottleneck.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/breeders_equation.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/clonal_interference.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/competitive_lv.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/fitness_landscape.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/hamilton_rule.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/hardy_weinberg.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/hawk_dove.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/hitchhiking.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/island_migration.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/lotka_volterra_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/metapopulation.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/moran_process.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/mullers_ratchet.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/mutation_selection.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/quasispecies.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/red_queen.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/replicator_dynamics.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/rock_paper_scissors.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/runaway_selection.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/selection_locus.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/sir_spatial.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/spatial_pd.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evoleco/wright_fisher.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evolution/age_structured.flow	ok	0	2745514482-2468	det	-
+examples/evolution/bouncing_ball.flow	ok	0	3731752735-1250	det	-
+examples/evolution/bouncing_ball_energy.flow	ok	0	92167402-4220	det	-
+examples/evolution/bouncing_ball_evolves.flow	ok	0	398082993-800	det	-
+examples/evolution/chain4_lqr.flow	ok	0	2325723701-189	det	-
+examples/evolution/chemostat.flow	ok	timeout	4294967295-0	det	-
+examples/evolution/cruise_control.flow	ok	0	1237917909-589	det	-
+examples/evolution/double_pendulum.flow	ok	0	245052533-5909	det	-
+examples/evolution/duffing.flow	ok	0	3037043005-3649	det	-
+examples/evolution/flow_pipeline_stages.flow	ok	0	1749876097-41	det	-
+examples/evolution/heat_diffusion.flow	ok	0	1845903364-1426	det	-
+examples/evolution/logistic_bifurcation.flow	ok	0	1725366113-4075	det	-
+examples/evolution/lorenz_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/evolution/lotka_volterra.flow	ok	0	3581267895-1672	det	-
+examples/evolution/pacemaker.flow	ok	0	877922095-3427	det	-
+examples/evolution/parent_input_connect.flow	ok	0	755539390-37	det	-
+examples/evolution/pendulum.flow	ok	0	2252464499-1037	det	-
+examples/evolution/pendulum_always.flow	ok	0	728330671-195	det	-
+examples/evolution/pendulum_evolves.flow	ok	0	4146742024-987	det	-
+examples/evolution/pendulum_represent_linear.flow	ok	0	4137957933-287	det	-
+examples/evolution/pendulum_rk4.flow	ok	0	3167300612-961	det	-
+examples/evolution/pid_tuning.flow	ok	0	251192957-661	det	-
+examples/evolution/robot_connect.flow	ok	1	695261680-475	det	-
+examples/evolution/rossler.flow	ok	0	3551974656-5638	det	-
+examples/evolution/sir_epidemic.flow	ok	0	377729354-2732	det	-
+examples/evolution/spring_chain.flow	ok	0	189816753-4687	det	-
+examples/evolution/spring_mass_control.flow	ok	0	1257006866-1229	det	-
+examples/evolution/spring_mass_lqr.flow	ok	0	463952410-307	det	-
+examples/evolution/thermostat_evolves.flow	ok	0	1195233341-744	det	-
+examples/evolution/thermostat_hysteresis.flow	ok	0	1251390677-2937	det	-
+examples/evolution/traffic_lights.flow	ok	0	3746369709-3245	det	-
+examples/evolution/units_kinematics.flow	ok	0	386002300-31	det	-
+examples/evolution/van_der_pol.flow	ok	0	1791035339-5638	det	-
+examples/evolution/water_tank_cascade.flow	ok	0	734945254-3281	det	-
+examples/flow_way/sensor_calibration.flow	ok	0	1189931703-23	det	-
+examples/flow_way/swappable_telemetry.flow	ok	0	729258418-37	det	-
+examples/games/2048.flow	ok	timeout	522718150-688664576	nondet	-
+examples/games/2048_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/2048_window.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/asteroids_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/breakout_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/checkers_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/chetris.flow	ok	timeout	2806346307-555536384	nondet	-
+examples/games/chetris_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/chetris_test.flow	ok	0	3113116090-868	det	-
+examples/games/connect4_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/falling_sand_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/flappy_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/frogger_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/hanoi_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/icy_tower_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/invaders_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/jumper_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/lane_racer_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/lightsout_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/match3_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/maze_chase_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/minesweeper_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/missile_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/othello_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/pong_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/simon_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/snake_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/sokoban_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/games/tetris_gfx.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/generics_traits/closures_demo.flow	ok	0	1908809219-179	det	-
+examples/generics_traits/composition_car_engine.flow	ok	150	4294967295-0	det	-
+examples/generics_traits/composition_team_employee.flow	ok	128	4294967295-0	det	-
+examples/generics_traits/enum_match_exhaustive.flow	ok	0	3495275660-81	det	-
+examples/generics_traits/enums_demo.flow	ok	0	1444707397-104	det	-
+examples/generics_traits/generics_demo.flow	ok	0	392395942-135	det	-
+examples/generics_traits/oop_counter.flow	ok	7	4294967295-0	det	-
+examples/generics_traits/oop_person.flow	ok	30	4294967295-0	det	-
+examples/generics_traits/option_result_demo.flow	ok	0	3398974794-253	det	-
+examples/generics_traits/traits_demo.flow	ok	0	376916766-161	det	-
+examples/gpu/flow_gpu_grid_launch.flow	ok	0	2057251857-138	det	-
+examples/gpu/flow_gpu_matrix_add.flow	ok	0	1930724634-111	det	-
+examples/gpu/flow_gpu_tensor3d_add.flow	ok	0	1870358163-72	det	-
+examples/gpu/flow_gpu_vector_add.flow	ok	0	1172326626-79	det	-
+examples/gpu/gpu_fft.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/gpu/gpu_memory_roundtrip.flow	ok	0	3649020062-102	det	-
+examples/gpu/gpu_mul_backward.flow	ok	0	612332653-114	det	-
+examples/gpu/matmul_tile.flow	ok	0	4294967295-0	det	-
+examples/gpu/metal_gpu_demo.flow	ok	0	4027007251-119	det	-
+examples/gpu/simd_loop.flow	ok	0	4294967295-0	det	-
+examples/gpu/simd_saxpy.flow	ok	0	99545954-71	det	-
+examples/gpu/vector_add_gpu.flow	ok	0	328615198-388	det	-
+examples/gpu/vgpu/depth_estimation.flow	ccfail	-	-	-	error: 'X' must return 'X'
+examples/gpu/vgpu/mnist.flow	ccfail	-	-	-	error: 'X' must return 'X'
+examples/graphics/gif_writer.flow	ok	0	1411058236-32	det	-
+examples/graphics/graphics.flow	ok	0	319855503-381	det	-
+examples/graphics/shader_demo.flow	ok	0	3150180668-353	det	-
+examples/graphics/text_demo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/interop/python_embed.flow	ok	0	1411541278-53	det	-
+examples/linalg/blas_demo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/linalg/lu_decomposition.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/linalg/lu_decomposition_pedagogical.flow	ok	0	23015517-581	det	-
+examples/linalg/matrix_ops.flow	ok	0	2259045198-902	det	-
+examples/ml/autodiff/autodiff_benchmark.flow	ok	0	1103541810-164	det	-
+examples/ml/autodiff/autodiff_clean_syntax.flow	ok	0	4266835325-269	det	-
+examples/ml/autodiff/dual_ops.flow	ok	0	2607113942-86	det	-
+examples/ml/autodiff/neural_network.flow	ok	0	1251326069-406	det	-
+examples/ml/autodiff/neural_network_backprop.flow	ok	0	3356911050-585	det	-
+examples/ml/autodiff/nn_gradcheck.flow	ok	0	4204712840-658	det	-
+examples/ml/autodiff/nn_xor.flow	ok	0	2055020251-381	det	-
+examples/ml/autodiff/tensor_ops.flow	ok	0	291392117-57	det	-
+examples/ml/digits_mlp.flow	ok	0	1406363422-1095	nondet	-
+examples/ml/digits_mlp_metal.flow	ok	0	292457959-713	nondet	-
+examples/ml/digits_mlp_parallel.flow	ok	0	839077955-327	nondet	-
+examples/ml/mlir_tensor_bench.flow	ok	0	37307852-134	det	-
+examples/ml/models/mlp_xor.flow	ok	0	3890639456-478	det	-
+examples/ml/models/mlp_xor_adam.flow	ok	0	1176935243-266	det	-
+examples/ml/models/mlp_xor_from_scratch.flow	ok	0	4002870385-542	det	-
+examples/ml/nn_layers.flow	ok	0	907295803-200	det	-
+examples/ml/optimizers.flow	ok	0	1798169724-171	det	-
+examples/ml/tape_mul.flow	ok	0	1147711392-72	det	-
+examples/ml/tensor.flow	ok	0	2016209562-131	det	-
+examples/morphogenesis/allen_cahn.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/ant_pheromone.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/belousov.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/bone_remodelling.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/branching_vessels.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/brusselator.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/bz_3d_slice.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/cahn_hilliard.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/cell_sorting.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/coral_ballistic.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/crack_propagation.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/cyclic_ca.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/dla.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/eden_growth.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/fitzhugh_waves.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/flocking_patterns.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/gierer_meinhardt.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/gray_scott.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/heat_morph.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/hexagonal_ca.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/kuramoto_sivashinsky.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/laplacian_growth.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/life_variants.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/lsystem_plant.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/lsystem_tree.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/mycelium.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/phase_field_dendrite.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/river_erosion.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/sandpile.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/schelling_segregation.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/schnakenberg.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/slime_mold.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/somite_clock.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/swift_hohenberg.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/turing_hex_ca.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/turing_spots.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/turing_stripes.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/viscous_fingering.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/voronoi_growth.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/morphogenesis/wfc_growth.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/net/http_hello.flow	ok	0	2028086725-54	det	-
+examples/net/tcp_echo.flow	ok	0	2000971840-97	det	-
+examples/neuro/balanced_network.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/cable_equation.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/cpg_gait.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/fitzhugh_nagumo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/hodgkin_huxley.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/hopfield.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/izhikevich_zoo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/lif_fi_curve.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/morris_lecar.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/multicompartment.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/orientation_tuning.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/reservoir.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/ring_attractor.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/stdp_window.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/neuro/wta_circuit.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/numerical/fmm_adaptive.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/numerical/fmm_selftest.flow	ok	0	2029249735-171	nondet	-
+examples/numerical/ode_solver.flow	ok	0	2715364966-650	det	-
+examples/numerical/optimization.flow	ok	0	2558844683-1137	det	-
+examples/packages/use_hello_lib/src/main.flow	ok	0	156970113-59	det	-
+examples/physics/natural_physics.flow	ok	0	3569067739-81	det	-
+examples/physics/natural_syntax_demo.flow	ok	0	718327033-926	det	-
+examples/planet/planet_biomes.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/planet/planet_climate.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/planet/planet_elevation.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/planet/planet_erosion.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/planet/planet_evidence.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/planet/planet_spin.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/planet/planet_tectonics.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/cave_worms.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/domain_warp.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/heightmap_fbm.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/island_mask.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/noise_atlas.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/tile_map.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/voronoi_sites.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/procgen/wfc_dungeon.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/rf/dft.flow	ok	0	1712675933-499	det	-
+examples/rf/iq_mixer.flow	ok	0	2982769813-712	det	-
+examples/rf/sdr_receiver.flow	ok	0	3025343704-280	det	-
+examples/social/deffuant.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/social/hegselmann_krause.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/social/majority_rule.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/social/sznajd.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/social/voter_model.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/stats/regression_gd.flow	ok	0	769473885-67	det	-
+examples/systems/arena_frame.flow	ok	0	3605980749-230	det	-
+examples/systems/hash_table.flow	ok	0	3247533666-604	det	-
+examples/systems/manual_memory.flow	ok	0	2246474296-68	det	-
+examples/systems/memory_pool.flow	ok	0	1813916162-726	det	-
+examples/systems/ring_buffer.flow	ok	0	1379410510-596	det	-
+examples/systems/system_info.flow	ok	0	4032694771-144	det	-
+examples/systems/tiny_pointers.flow	ok	134	2813721591-3426	det	-
+examples/threed/billboard_particles.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/fps_camera.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/heightmap_terrain.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/physics3d.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/raycast_shooter.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/spinning_solids.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/third_person.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/threed/voxel_world.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/ui/layout_hello.flow	ok	0	1073317009-52	det	-
+examples/verify/circuits/full_adder.flow	ok	0	2250910200-36	det	-
+examples/wasm/fs_counter.flow	ok	0	1141469270-159	nondet	-
+examples/wasm/fs_preload.flow	ok	1	2632267428-126	det	-
+examples/wasm/gpu_vector_add.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+examples/wasm/hello_wasm.flow	ok	0	2845637659-24	det	-
+examples/wasm/parallel_scaling.flow	ok	0	3685507023-607	nondet	-
+examples/wasm/parallel_sum.flow	ok	0	2906558954-342	nondet	-
+examples/wasm/python_embed.flow	ok	3	611978983-66	det	-
+examples/wasm/tcp_echo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+lib/stdlib/autodiff.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+lib/stdlib/gpu_gradients.flow	ok	0	2071544347-53	det	-
+lib/stdlib/gpu_kernels.flow	ok	0	4094372339-72	det	-
+lib/verify/SchurLattice.flow	ok	0	4294967295-0	det	-
+scripts/tools/abi_bindings/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/abi_bindings
+scripts/tools/bench_baselines/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/bench_baselines
+scripts/tools/bench_publish/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/bench_publish
+scripts/tools/build_wiki/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/build_wiki
+scripts/tools/challenge_check/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/challenge_check
+scripts/tools/changelog_check/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/changelog_check
+scripts/tools/demo_nav/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/demo_nav
+scripts/tools/demo_overview/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/demo_overview
+scripts/tools/doc_coverage/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/doc_coverage
+scripts/tools/doc_links/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/doc_links
+scripts/tools/gen_stdlib_docs/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.proc' from scripts/tools/gen_stdlib_docs
+scripts/tools/grad/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/grad
+scripts/tools/install/setup.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+scripts/tools/jules_dispatch/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/jules_dispatch
+scripts/tools/lib/wiki_blocks.flow	reject	-	-	-	Error resolving modules: Symbol 'X' in scripts/tools/lib/text.flow is not exported (imported from scripts/tools/lib/wiki_blocks.flow)
+scripts/tools/measure_size/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/measure_size
+scripts/tools/pkg_sync/main.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+scripts/tools/prepare_release/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/prepare_release
+scripts/tools/repo_stats/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/repo_stats
+scripts/tools/roadmap_sync/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/roadmap_sync
+scripts/tools/shader_gallery/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/shader_gallery
+scripts/tools/stability_manifest/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/stability_manifest
+scripts/tools/sync_version/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/sync_version
+scripts/tools/triage_verify_failures/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/triage_verify_failures
+scripts/tools/verify_examples/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/verify_examples
+scripts/tools/wasm_build/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/wasm_build
+scripts/tools/wasm_crossings/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/wasm_crossings
+scripts/tools/wiki_links/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/wiki_links
+scripts/tools/wiki_nav/main.flow	reject	-	-	-	Error resolving modules: Could not resolve relative import '.text' from scripts/tools/wiki_nav
+tests/arrays/test_array_index_read.flow	ok	0	4294967295-0	det	-
+tests/arrays/test_array_index_write.flow	ok	0	4294967295-0	det	-
+tests/arrays/test_array_return.flow	ok	0	2901052639-13	det	-
+tests/arrays/test_array_types.flow	ok	0	2813133680-16	det	-
+tests/arrays/test_nested_array_access.flow	ok	0	4294967295-0	det	-
+tests/benchmarks/micro/fft_benchmark.flow	ok	0	1631756267-1263	det	-
+tests/benchmarks/micro/mandelbrot_benchmark.flow	ok	0	2638680430-1311	det	-
+tests/benchmarks/micro/matmul_benchmark.flow	ok	139	4294967295-0	det	-
+tests/benchmarks/micro/nbody_benchmark.flow	ok	0	4358781-1209	det	-
+tests/benchmarks/micro/sort_benchmark.flow	ok	0	1092377014-423	det	-
+tests/benchmarks/publish/flow/fib.flow	ok	0	2478063392-35	nondet	-
+tests/benchmarks/publish/flow/mandelbrot.flow	ok	0	3748990196-33	nondet	-
+tests/benchmarks/publish/flow/matmul.flow	ok	0	1033213734-41	nondet	-
+tests/benchmarks/publish/flow/nbody.flow	ok	0	861637708-40	nondet	-
+tests/benchmarks/publish/flow/spectral.flow	ok	0	2720803833-39	nondet	-
+tests/benchmarks/runner.flow	ok	0	2996662736-1541	nondet	-
+tests/benchmarks/standardized/json/json.flow	ok	0	578971527-37	nondet	-
+tests/benchmarks/standardized/minimal/minimal.flow	ok	0	4294967295-0	det	-
+tests/benchmarks/standardized/record/record.flow	ok	0	1605788873-40	nondet	-
+tests/benchmarks/suite/flow/01_fibonacci.flow	ok	0	1058656638-375	nondet	-
+tests/benchmarks/suite/flow/02_nbody.flow	ok	0	1756423030-454	nondet	-
+tests/benchmarks/suite/flow/03_matmul.flow	ok	0	2496972975-654	nondet	-
+tests/benchmarks/suite/flow/04_spectral.flow	ok	0	448713410-310	nondet	-
+tests/benchmarks/suite/flow/05_spmv.flow	ok	0	1026594859-947	nondet	-
+tests/benchmarks/suite/flow/06_audio_rt.flow	ok	0	4049776366-681	nondet	-
+tests/conformance/01_functions.flow	ok	42	4294967295-0	det	-
+tests/conformance/02_structs.flow	ok	42	4294967295-0	det	-
+tests/conformance/03_arrays.flow	ok	42	4294967295-0	det	-
+tests/conformance/04_control_flow.flow	ok	42	4294967295-0	det	-
+tests/conformance/05_consts_mutability.flow	ok	42	4294967295-0	det	-
+tests/conformance/06_for_ranges.flow	ok	42	4294967295-0	det	-
+tests/conformance/07_bitwise.flow	ok	42	4294967295-0	det	-
+tests/conformance/08_casts.flow	ok	42	4294967295-0	det	-
+tests/core/fibonacci.flow	ok	55	4294967295-0	det	-
+tests/core/hello_world.flow	ok	42	4294967295-0	det	-
+tests/core/loops.flow	ok	50	4294967295-0	det	-
+tests/core/test_arrays_len.flow	ok	0	4294967295-0	det	-
+tests/core/test_bitwise.flow	ok	0	4294967295-0	det	-
+tests/core/test_closure_capture.flow	ok	0	4214441273-35	det	-
+tests/core/test_control.flow	ok	35	4294967295-0	det	-
+tests/core/test_coverage_effects.flow	ok	0	2760044776-46	det	-
+tests/core/test_coverage_flow_instances.flow	ok	0	2056165278-40	det	-
+tests/core/test_coverage_hybrid_events.flow	ok	0	283737619-39	det	-
+tests/core/test_coverage_match_deep.flow	ok	0	2780533882-37	det	-
+tests/core/test_coverage_units.flow	ok	0	3600179556-32	det	-
+tests/core/test_distinct_types.flow	ok	0	3108675710-88	det	-
+tests/core/test_evolves_bouncing_ball.flow	ok	0	3547335985-138	det	-
+tests/core/test_evolves_pendulum.flow	ok	0	2073146673-64	det	-
+tests/core/test_evolves_rk4.flow	ok	0	4294967295-0	det	-
+tests/core/test_evolves_time_blocks.flow	ok	0	2717413767-135	det	-
+tests/core/test_extern.flow	ok	0	1008285284-13	nondet	-
+tests/core/test_extern_multi.flow	ok	0	4294967295-0	det	-
+tests/core/test_gpu_sim.flow	ok	0	4294967295-0	det	-
+tests/core/test_gpu_sim_grid.flow	ok	0	4294967295-0	det	-
+tests/core/test_gpu_sim_host_alloc.flow	ok	0	4294967295-0	det	-
+tests/core/test_gpu_sim_layout2d.flow	ok	0	4294967295-0	det	-
+tests/core/test_gpu_sim_layout3d.flow	ok	0	4294967295-0	det	-
+tests/core/test_gpu_sim_props.flow	ok	0	4294967295-0	det	-
+tests/core/test_match_advanced.flow	ok	0	2088301293-32	det	-
+tests/core/test_match_enum_exhaustive.flow	ok	0	327644807-43	det	-
+tests/core/test_match_nested.flow	ok	0	14206880-30	det	-
+tests/core/test_math.flow	ok	54	4294967295-0	det	-
+tests/core/test_mutation.flow	ok	0	4294967295-0	det	-
+tests/core/test_native_testing.flow	ok	0	1422271278-58	det	-
+tests/core/test_print_string.flow	ok	0	3062123984-22	det	-
+tests/core/test_println.flow	ok	0	1479093145-27	det	-
+tests/core/test_production_features.flow	ok	0	2896913847-8	det	-
+tests/core/test_simple.flow	ok	30	4294967295-0	det	-
+tests/core/test_type_alias.flow	ok	0	747791036-27	det	-
+tests/core/test_ui_layout.flow	ok	139	4294967295-0	det	-
+tests/core/test_ui_layout_positions.flow	ok	0	4294967295-0	det	-
+tests/core/test_ui_layout_snapshot.flow	ok	0	4294967295-0	det	-
+tests/core/test_ui_layout_std.flow	ok	139	4294967295-0	det	-
+tests/core/test_units_basic.flow	ok	0	3398752904-16	det	-
+tests/experimental/minimal_turing.flow	ok	62	4294967295-0	det	-
+tests/experimental/simple_turing_fixed.flow	ok	63	4294967295-0	det	-
+tests/experimental/turing_basic.flow	ok	81	4294967295-0	det	-
+tests/fixtures/counted_loop_rotation.flow	ok	201	4294967295-0	det	-
+tests/fixtures/doc_preambles/effects-basics-all.flow	ok	0	3109885610-38	det	-
+tests/fixtures/doc_preambles/effects-showcase-all.flow	ok	0	4200087900-2	det	-
+tests/fixtures/module_collision/main.flow	ok	42	4294967295-0	det	-
+tests/fixtures/modules/consumer_brace.flow	ok	42	4294967295-0	det	-
+tests/fixtures/modules/consumer_dot.flow	ok	42	4294967295-0	det	-
+tests/fixtures/modules/consumer_reexport.flow	ok	113	4294967295-0	det	-
+tests/fixtures/modules/consumer_reexport_chain.flow	ok	11	4294967295-0	det	-
+tests/fixtures/modules/consumer_sibling.flow	ok	42	4294967295-0	det	-
+tests/fixtures/modules/testlib/with_main.flow	ok	7	567710023-18	det	-
+tests/fixtures/time_header_externs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_arithmetic.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_literal_argument.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_repeat.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_return_values.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_struct_pointers.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_types.flow	ok	0	4294967295-0	det	-
+tests/lang/test_arrays.flow	ok	0	4294967295-0	det	-
+tests/lang/test_ast_names_port.flow	ok	0	559311235-36	det	-
+tests/lang/test_ast_span_mutability.flow	ok	0	3371498565-46	det	-
+tests/lang/test_attributes.flow	ok	0	3135862212-28	det	-
+tests/lang/test_basics_smokes.flow	ok	0	4294967295-0	det	-
+tests/lang/test_bpf_target_port.flow	ok	0	1740174325-38	det	-
+tests/lang/test_c_embed.flow	ok	0	3273482523-25	det	-
+tests/lang/test_c_gen_externs.flow	ok	0	1036788073-709	det	-
+tests/lang/test_c_import.flow	ok	0	3063813517-26	det	-
+tests/lang/test_c_import_auto.flow	ok	0	3981808265-83	det	-
+tests/lang/test_c_import_dirs.flow	ok	6	2273154632-88	det	-
+tests/lang/test_c_import_julia.flow	ok	0	3456767998-32	det	-
+tests/lang/test_c_import_math.flow	ok	0	1786766655-31	det	-
+tests/lang/test_c_import_python.flow	ccfail	-	-	-	error: expected ')'
+tests/lang/test_c_import_stdlib.flow	ok	0	1369741788-33	det	-
+tests/lang/test_c_import_string_time.flow	ok	0	1140511104-134	det	-
+tests/lang/test_c_import_struct.flow	ok	0	1722293522-102	det	-
+tests/lang/test_c_parser.flow	ok	0	3377777364-129	det	-
+tests/lang/test_c_type_map.flow	ok	0	1203933046-174	det	-
+tests/lang/test_cast_in_string_concat.flow	ok	0	4294967295-0	det	-
+tests/lang/test_check_duplicates.flow	ok	0	965631990-36	det	-
+tests/lang/test_claim_address_phrase.flow	ok	0	1276990362-38	det	-
+tests/lang/test_claim_path_latex.flow	ok	0	3683972964-34	det	-
+tests/lang/test_claim_path_tier.flow	ok	0	3884404096-33	det	-
+tests/lang/test_closures.flow	ok	0	4294967295-0	det	-
+tests/lang/test_complex_builtins.flow	ok	0	4294967295-0	det	-
+tests/lang/test_concurrent_link.flow	ok	0	4294967295-0	det	-
+tests/lang/test_const_libc_macro_name.flow	ok	0	4294967295-0	det	-
+tests/lang/test_constraints.flow	ok	0	1157412170-29	det	-
+tests/lang/test_control_flow.flow	ok	0	4294967295-0	det	-
+tests/lang/test_conventions.flow	ok	0	718497885-29	det	-
+tests/lang/test_counted_loop_rotation.flow	ok	0	4294967295-0	det	-
+tests/lang/test_dbg_expect.flow	ok	0	4294967295-0	det	-
+tests/lang/test_deep_tail_recursion.flow	ok	0	4294967295-0	det	-
+tests/lang/test_defer_ordering.flow	ok	0	1693099629-9	det	-
+tests/lang/test_defer_return_order.flow	ok	0	4294967295-0	det	-
+tests/lang/test_dlopen.flow	ok	0	2036422409-24	det	-
+tests/lang/test_dsl_detect.flow	ok	0	1842771936-28	det	-
+tests/lang/test_dual_operator_sugar.flow	ok	0	4294967295-0	det	-
+tests/lang/test_dynamics_dsl.flow	ok	0	3969025799-30	det	-
+tests/lang/test_effects.flow	ok	0	2345866894-76	det	-
+tests/lang/test_enum.flow	ok	0	2052890834-77	det	-
+tests/lang/test_enum_match_arms.flow	ok	0	4294967295-0	det	-
+tests/lang/test_expect_fails.flow	ok	1	4294967295-0	det	-
+tests/lang/test_expr_type_port.flow	ok	0	509901505-43	det	-
+tests/lang/test_extern_type.flow	ok	0	428704804-29	det	-
+tests/lang/test_field_dsl_core.flow	ok	0	2659331179-32	det	-
+tests/lang/test_fileio_ext.flow	ok	0	3044477900-190	det	-
+tests/lang/test_fileio_subproc.flow	ok	0	163500948-122	det	-
+tests/lang/test_fir_analysis.flow	ok	0	1859047473-30	det	-
+tests/lang/test_fir_opts.flow	ok	0	4284065851-26	det	-
+tests/lang/test_fir_route.flow	ok	0	445430385-27	det	-
+tests/lang/test_flowlm.flow	ok	0	209375144-50	det	-
+tests/lang/test_fn_ptr.flow	ok	0	597997046-24	det	-
+tests/lang/test_for_step.flow	ok	0	362090265-113	det	-
+tests/lang/test_function_as_value.flow	ok	0	2889611929-52	det	-
+tests/lang/test_function_attributes.flow	ok	0	4294967295-0	det	-
+tests/lang/test_functions.flow	ok	0	4294967295-0	det	-
+tests/lang/test_general_plans.flow	ok	0	1657905216-31	det	-
+tests/lang/test_generic_channels.flow	ok	0	4294967295-0	det	-
+tests/lang/test_generic_explicit_call.flow	ok	0	4294967295-0	det	-
+tests/lang/test_generics.flow	ok	0	4294967295-0	det	-
+tests/lang/test_geometry_diagram.flow	ok	0	2698580218-34	det	-
+tests/lang/test_gif_encoder.flow	ok	0	4294967295-0	det	-
+tests/lang/test_hybrid_events.flow	ok	0	4294967295-0	det	-
+tests/lang/test_if_expression.flow	ok	0	4294967295-0	det	-
+tests/lang/test_import_module_with_main.flow	ok	0	4294967295-0	det	-
+tests/lang/test_import_path_forms.flow	ok	0	4294967295-0	det	-
+tests/lang/test_import_private_fn.flow	ok	0	4294967295-0	det	-
+tests/lang/test_imported_extern.flow	ok	0	4294967295-0	det	-
+tests/lang/test_in_operator.flow	ok	0	1405215564-93	det	-
+tests/lang/test_integration.flow	ok	0	105917604-55	det	-
+tests/lang/test_is_geometry_expr.flow	ok	0	2808812773-34	det	-
+tests/lang/test_know.flow	ok	0	857402579-22	det	-
+tests/lang/test_len_sized_array.flow	ok	0	4294967295-0	det	-
+tests/lang/test_libc_builtins.flow	ok	0	3528022634-17	det	-
+tests/lang/test_libc_externs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_libc_names_return_void.flow	ok	0	4294967295-0	det	-
+tests/lang/test_lifetime_domains.flow	ok	0	4294967295-0	det	-
+tests/lang/test_loops.flow	ok	0	4294967295-0	det	-
+tests/lang/test_lowered_forms.flow	ok	0	4294967295-0	det	-
+tests/lang/test_lsp_dynamics.flow	ok	0	3357172996-30	det	-
+tests/lang/test_lsp_intel.flow	ok	0	3036524823-27	det	-
+tests/lang/test_lsp_ordering.flow	ok	0	2001522773-30	det	-
+tests/lang/test_lsp_syntax.flow	ok	0	4000287664-28	det	-
+tests/lang/test_lsp_utils.flow	ok	0	568766706-27	det	-
+tests/lang/test_match.flow	ok	0	4294967295-0	det	-
+tests/lang/test_match_break.flow	ok	0	2785900864-30	det	-
+tests/lang/test_match_patterns.flow	ok	0	4294967295-0	det	-
+tests/lang/test_math_case_condition.flow	ok	0	1990296705-45	det	-
+tests/lang/test_math_prose_coord.flow	ok	0	139572936-39	det	-
+tests/lang/test_max_iterations_abort.flow	ok	134	4294967295-0	det	-
+tests/lang/test_max_iterations_bound.flow	ok	134	4294967295-0	det	-
+tests/lang/test_memref_param.flow	ok	0	4294967295-0	det	-
+tests/lang/test_method_ptr_receiver.flow	ok	0	4294967295-0	det	-
+tests/lang/test_misra_scan.flow	ok	0	2954167854-28	det	-
+tests/lang/test_mod_int_by_float.flow	ok	0	4294967295-0	det	-
+tests/lang/test_module_statics.flow	ok	0	4294967295-0	det	-
+tests/lang/test_mono_defs_port.flow	ok	0	1399255737-47	det	-
+tests/lang/test_mono_function_call_port.flow	ok	0	1289261967-49	det	-
+tests/lang/test_mono_plan_port.flow	ok	0	3873827526-50	det	-
+tests/lang/test_mono_program_usages_port.flow	ok	0	981045731-46	det	-
+tests/lang/test_mono_request_args_port.flow	ok	0	1752558646-44	det	-
+tests/lang/test_mono_requests_port.flow	ok	0	3675698759-44	det	-
+tests/lang/test_mono_struct_literal_port.flow	ok	0	2441406287-50	det	-
+tests/lang/test_mono_subst_ast_port.flow	ok	0	3676578214-52	det	-
+tests/lang/test_mono_subst_port.flow	ok	0	2801102096-52	det	-
+tests/lang/test_mono_subst_render_port.flow	ok	0	543688034-55	det	-
+tests/lang/test_mono_type_encode_port.flow	ok	0	3287405151-49	det	-
+tests/lang/test_mono_usage_body_port.flow	ok	0	3539664179-43	det	-
+tests/lang/test_mono_usage_body_requests_port.flow	ok	0	741593677-49	det	-
+tests/lang/test_mono_usage_port.flow	ok	0	3711606603-53	det	-
+tests/lang/test_mono_usage_program_port.flow	ok	0	662578467-51	det	-
+tests/lang/test_monomorphize_port.flow	ok	0	915892796-44	det	-
+tests/lang/test_notation_parser.flow	ok	0	4294967295-0	det	-
+tests/lang/test_operator_precedence.flow	ok	0	4294967295-0	det	-
+tests/lang/test_ordering_hints_port.flow	ok	0	2795377333-42	det	-
+tests/lang/test_overload_args_port.flow	ok	0	1868620793-56	det	-
+tests/lang/test_overload_call_port.flow	ok	0	3464632666-48	det	-
+tests/lang/test_overload_param_scope.flow	ok	0	4294967295-0	det	-
+tests/lang/test_overload_port.flow	ok	0	2616444467-36	det	-
+tests/lang/test_overload_registry_port.flow	ok	1	2792502147-21	det	-
+tests/lang/test_overload_select_port.flow	ok	0	1543800749-52	det	-
+tests/lang/test_overload_table_port.flow	ok	0	1754834137-42	det	-
+tests/lang/test_parallel_for.flow	ok	0	4294967295-0	det	-
+tests/lang/test_parser_python_forms.flow	ok	0	4294967295-0	det	-
+tests/lang/test_parser_span_mutability.flow	ok	0	971891443-40	det	-
+tests/lang/test_physics_dsl_port.flow	ok	0	2877840307-39	det	-
+tests/lang/test_pipeline_fusion.flow	ok	0	2493581573-33	det	-
+tests/lang/test_pointer_structs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_print.flow	ok	0	1003865564-24	det	-
+tests/lang/test_print_complex_multi.flow	ok	0	3706864085-35	det	-
+tests/lang/test_private_fn_collision.flow	ok	0	4294967295-0	det	-
+tests/lang/test_proof_doc_render.flow	ok	0	4294967295-0	det	-
+tests/lang/test_proof_document.flow	ok	0	3059746411-32	det	-
+tests/lang/test_proof_erase.flow	ok	0	4294967295-0	det	-
+tests/lang/test_proof_kernel.flow	ok	0	2825007997-30	det	-
+tests/lang/test_proof_sub_gen.flow	ok	0	610269630-35	det	-
+tests/lang/test_pthread.flow	ok	0	2782490010-54	det	-
+tests/lang/test_qsort.flow	ok	0	3439991395-89	det	-
+tests/lang/test_range_algebra.flow	ok	0	4294967295-0	det	-
+tests/lang/test_range_sum_step.flow	ok	0	4294967295-0	det	-
+tests/lang/test_range_sums_port.flow	ok	0	328087314-38	det	-
+tests/lang/test_reexport.flow	ok	0	1400323826-51	det	-
+tests/lang/test_return_not.flow	ok	0	4294967295-0	det	-
+tests/lang/test_scoped_name_types.flow	ok	0	2477235817-24	det	-
+tests/lang/test_selective_import.flow	ok	0	4294967295-0	det	-
+tests/lang/test_shader_dsl_port.flow	ok	0	876149250-33	det	-
+tests/lang/test_slice_f64_param.flow	ok	0	4294967295-0	det	-
+tests/lang/test_sort.flow	ok	0	4294967295-0	det	-
+tests/lang/test_sort_modifier_names.flow	ok	0	4294967295-0	det	-
+tests/lang/test_sort_nan.flow	ok	0	4294967295-0	det	-
+tests/lang/test_sort_plans.flow	ok	0	4294967295-0	det	-
+tests/lang/test_span_borrow_once.flow	ok	0	4294967295-0	det	-
+tests/lang/test_span_mut_array_arg.flow	ok	0	4294967295-0	det	-
+tests/lang/test_span_param_cross_module.flow	ok	0	4294967295-0	det	-
+tests/lang/test_span_slice_f64.flow	ok	0	4294967295-0	det	-
+tests/lang/test_spans.flow	ok	0	4294967295-0	det	-
+tests/lang/test_stdlib_math_import.flow	ok	0	4294967295-0	det	-
+tests/lang/test_stdlib_scales.flow	ok	0	4294967295-0	det	-
+tests/lang/test_string_concat_numbers.flow	ok	0	3423257080-37	det	-
+tests/lang/test_strings.flow	ok	0	4294967295-0	det	-
+tests/lang/test_struct_lit_array_field.flow	ok	0	4294967295-0	det	-
+tests/lang/test_struct_order_shadow_array_assign.flow	ok	0	4294967295-0	det	-
+tests/lang/test_structs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_strutil.flow	ok	0	2271034837-141	det	-
+tests/lang/test_tco_shim.flow	ok	0	4294967295-0	det	-
+tests/lang/test_time_blocks.flow	ok	0	4294967295-0	det	-
+tests/lang/test_torture.flow	ok	0	4294967295-0	det	-
+tests/lang/test_trait.flow	ok	0	1327096542-79	det	-
+tests/lang/test_type_name_port.flow	ok	0	1625340269-47	det	-
+tests/lang/test_typecheck_overload_integration.flow	ok	0	868678861-163	det	-
+tests/lang/test_units_dimensions.flow	ok	0	4294967295-0	det	-
+tests/lang/test_unsigned_ints.flow	ok	0	4294967295-0	det	-
+tests/lang/test_variadic_externs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_wcet.flow	ok	0	2662814280-22	det	-
+tests/lang/test_wide_ints.flow	ok	0	3427029761-38	det	-
+tests/memory/test_int_memref.flow	ok	0	4294967295-0	det	-
+tests/memory/test_struct_layout.flow	ok	32	1885383304-32	det	-
+tests/memory/test_struct_memory.flow	ok	5	1780399286-49	det	-
+tests/misc/examples_simple.flow	ok	50	4294967295-0	det	-
+tests/misc/test_loop_carried.flow	ok	0	1473027224-12	det	-
+tests/misc/test_optimization.flow	ok	0	1211541947-19	det	-
+tests/mlir/basic_arith.flow	ok	230	4294967295-0	det	-
+tests/runtime/gpu_features.flow	ok	0	457793478-658	det	-
+tests/runtime/interop/python_embed.flow	ok	0	2447379468-26	det	-
+tests/runtime/test_arithmetic.flow	ok	0	2137976870-28	det	-
+tests/runtime/test_arithmetic_ops.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_array_ops.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_arrays.flow	ok	0	1800177726-23	det	-
+tests/runtime/test_async_primitives.flow	ok	0	2118065887-34	det	-
+tests/runtime/test_channel_i64.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_channel_select.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_channel_select4.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_comparisons.flow	ok	0	262607253-28	det	-
+tests/runtime/test_concurrent_channels.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_control_flow.flow	ok	0	573861436-30	det	-
+tests/runtime/test_effects.flow	ok	0	1234942591-61	det	-
+tests/runtime/test_effects_showcase.flow	ok	0	4104784509-33	det	-
+tests/runtime/test_fiber_async.flow	ok	timeout	4294967295-0	nondet	-
+tests/runtime/test_flow_way_examples.flow	ok	0	3824599462-48	det	-
+tests/runtime/test_functions.flow	ok	0	4239085408-26	det	-
+tests/runtime/test_generics.flow	ok	0	2246874600-26	det	-
+tests/runtime/test_match.flow	ok	0	1492914099-23	det	-
+tests/runtime/test_match_bool.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_match_i32.flow	ok	0	731782993-13	det	-
+tests/runtime/test_module_statics.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_nested_while.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_netpoll.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_parallel_for.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_pointers.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_printf_hello.flow	ok	0	1713471468-31	det	-
+tests/runtime/test_recursion.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_string_len.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_struct_ops.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_structs.flow	ok	0	1435227680-24	det	-
+tests/runtime/test_threaded_async.flow	ok	0	4294967295-0	det	-
+tests/runtime/test_while_sum.flow	ok	0	4294967295-0	det	-
+tests/runtime/wip/test_short_circuit.flow	ok	0	2640054907-17	det	-
+tests/simd/test_for_parallel.flow	ok	0	3952150209-14	det	-
+tests/simd/test_simd_saxpy.flow	ok	0	4294967295-0	det	-
+tests/simd/test_simd_vector.flow	ok	0	1802023499-115	det	-
+tests/simd/test_simple_simd.flow	ok	0	4294967295-0	det	-
+tests/stdlib/audio/test_audio_core.flow	ok	0	2142525156-442	det	-
+tests/stdlib/audio/test_bus_graph.flow	ok	0	430122467-64	det	-
+tests/stdlib/audio/test_delay_line.flow	ok	0	1841712766-74	det	-
+tests/stdlib/audio/test_envelopes.flow	ok	0	3047735413-357	det	-
+tests/stdlib/audio/test_filters.flow	ok	0	3266512623-351	det	-
+tests/stdlib/audio/test_graph_scheduler.flow	ok	0	3212153114-72	det	-
+tests/stdlib/audio/test_oscillators.flow	ok	0	3148751020-368	det	-
+tests/stdlib/audio/test_safety.flow	ok	0	1446776246-4399	det	-
+tests/stdlib/audio/test_simd_gain.flow	ok	0	2253461245-66	det	-
+tests/stdlib/test_backward_a_dense_shapes.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_backward_a_from_layer.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_blas_gemm_dispatch.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+tests/stdlib/test_blas_solve.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
+tests/stdlib/test_bool_simple.flow	ok	0	2740903613-19	det	-
+tests/stdlib/test_complex_linalg.flow	ok	0	162251968-26	det	-
+tests/stdlib/test_dense2d_backward_only.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_backward.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_backward_call_only.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_backward_inline_free.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_backward_no_forward.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_create_only.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_grad_bias_only.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dense_grad_dim0_only.flow	ok	1	4294967295-0	det	-
+tests/stdlib/test_dense_grad_dim1_only.flow	ok	2	4294967295-0	det	-
+tests/stdlib/test_dense_grad_dims_diag.flow	ok	102	4294967295-0	det	-
+tests/stdlib/test_dense_grad_dims_nofree.flow	ok	102	4294967295-0	det	-
+tests/stdlib/test_dense_matmul_b_only.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_dynamics_gramian.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_ga_analysis.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_matmul_backward.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_matmul_backward_b_12x22.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_matmul_backward_dense_shapes.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_matmul_grad_weights.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_memory_advanced.flow	ok	0	3269763592-148	det	-
+tests/stdlib/test_memory_benchmarks.flow	ok	0	622886948-149	det	-
+tests/stdlib/test_memory_lib.flow	ok	0	198702114-186	det	-
+tests/stdlib/test_memory_minimal.flow	ok	0	2602331277-120	det	-
+tests/stdlib/test_memory_simple.flow	ok	0	2594987354-112	det	-
+tests/stdlib/test_memory_working.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_ml_autograd.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_ml_nn.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_ml_opt.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_mlp2_backward.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_psychstats.flow	ok	0	502977573-9987	det	-
+tests/stdlib/test_simple_bool.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_simple_return.flow	ok	42	4294967295-0	det	-
+tests/stdlib/test_tensor.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_wfc_collapse_index.flow	ok	0	4294967295-0	det	-
+tests/stdlib/test_wfc_ga_coupling.flow	ok	0	4294967295-0	det	-
+tests/test_synth_dummy.flow	ok	0	4294967295-0	det	-
+tools/python_ratchet/main.flow	ok	138	4294967295-0	det	-
+tools/repl/main.flow	reject	-	-	-	Error resolving modules: Invalid escape sequence: \x
+tools/test_reverb.flow	ok	0	1969865335-36	det	-
+wasm/wasm_examples/particles.flow	ok	0	4294967295-0	det	-

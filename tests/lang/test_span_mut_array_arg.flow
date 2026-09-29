@@ -1,0 +1,30 @@
+# An array passed where a `span<mut T>` parameter is expected borrows the
+# array. flowc's overload check once compared `span_mut_i32` against the
+# element type `i32` and reported "no matching overload" (corpus parity).
+
+function fill(values: span<mut i32>, v: i32) {
+    let mut i: i32 = 0
+    while i < len(values) {
+        values[i] = v
+        i = i + 1
+    }
+}
+
+function total(values: span<i32>) -> i32 {
+    let mut acc: i32 = 0
+    let mut i: i32 = 0
+    while i < len(values) {
+        acc = acc + values[i]
+        i = i + 1
+    }
+    return acc
+}
+
+function main() -> i32 {
+    let mut ys: array<i32, 3> = [0, 0, 0]
+    fill(ys, 4)
+    if total(ys) != 12 {
+        return 1
+    }
+    return 0
+}

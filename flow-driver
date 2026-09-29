@@ -446,20 +446,124 @@ flow_show_clang_flags() {
     echo "  sanitize: UBSAN=${FLOW_UBSAN:-0} ASAN=${FLOW_ASAN:-0} TSAN=${FLOW_TSAN:-0} FLOW_SANITIZE=${FLOW_SANITIZE:-}"
 }
 
+# The runtime every program links on the Python host: runtime/*.c
+# (concurrency, fibers, TLS, the dlopen Python bridge, Metal on Darwin) and
+# the always-linked lib/runtime/*.flow modules, the latter emitted by flowc
+# instead of Python. Built once per state of those sources, the flowc binary
+# and the flags into build/flowc_runtime/<key>/libflowrt.a, so a program
+# pulls in only the objects it uses. Sets FLOWC_RT_ARCHIVE; also leaves the
+# FLOW_CONC_* and FLOW_GPU_* arrays set for the final link.
+flowc_runtime_archive() {
+    local driver="$1"
+    local cc_bin="$2"
+    flow_concurrency_flags
+    flow_gpu_link_flags
+    local -a c_srcs=("$SCRIPT_DIR/runtime/flow_python_embed.c" "${FLOW_CONC_SOURCES[@]}")
+    if [ "${#FLOW_GPU_SOURCES[@]}" -gt 0 ]; then
+        c_srcs+=("${FLOW_GPU_SOURCES[@]}")
+    fi
+    local -a flow_srcs=()
+    local f base
+    for f in "$SCRIPT_DIR"/lib/runtime/*.flow; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f" .flow)
+        # The same selection as flow_runtime_flow_sources.
+        if [ "$base" = "gpu_memory_stub" ] && [ "$(uname -s)" = "Darwin" ]; then continue; fi
+        if [ "$base" = "shader_host" ] || [ "$base" = "gfx_record" ]; then continue; fi
+        if [ "$base" = "audio_device_stub" ] && [ "${FLOW_SKIP_AUDIO_STUB:-}" = "1" ]; then continue; fi
+        flow_srcs+=("$f")
+    done
+    local key
+    key="$( { printf '%s\n' "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "${FLOW_CONC_CFLAGS[@]}" "${c_srcs[@]}" "${flow_srcs[@]}"; \
+        cat "${c_srcs[@]}" "${flow_srcs[@]}" "$driver"; } | cksum | awk '{print $1 "-" $2}')"
+    local root="$SCRIPT_DIR/build/flowc_runtime"
+    local dir="$root/$key"
+    FLOWC_RT_ARCHIVE="$dir/libflowrt.a"
+    if [ -f "$FLOWC_RT_ARCHIVE" ]; then
+        return 0
+    fi
+    mkdir -p "$root"
+    local tmp
+    tmp="$(mktemp -d "$root/tmp.XXXXXX")" || return 1
+    local -a objs=()
+    for f in "${flow_srcs[@]}"; do
+        base=$(basename "$f" .flow)
+        if ! FLOWC_IN="$f" FLOWC_OUT="$tmp/rt_$base.c" "$driver" > "$tmp/rt_$base.log" 2>&1; then
+            print_error "flowc could not build runtime module $base.flow"
+            cat "$tmp/rt_$base.log" >&2
+            rm -rf "$tmp"
+            return 1
+        fi
+        if ! "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" -w -O2 "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
+            -c -o "$tmp/rt_$base.o" "$tmp/rt_$base.c"; then
+            print_error "C compilation failed for runtime module $base.flow (flowc host)"
+            rm -rf "$tmp"
+            return 1
+        fi
+        objs+=("$tmp/rt_$base.o")
+    done
+    for f in "${c_srcs[@]}"; do
+        base=$(basename "$f")
+        base="${base%.*}"
+        if ! "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" -w -O2 "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
+            -c -o "$tmp/c_$base.o" "$f"; then
+            print_error "C compilation failed for runtime source $f (flowc host)"
+            rm -rf "$tmp"
+            return 1
+        fi
+        objs+=("$tmp/c_$base.o")
+    done
+    rm -f "$tmp/libflowrt.a"
+    if ! ar rcs "$tmp/libflowrt.a" "${objs[@]}"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+    # Publish atomically; a concurrent build of the same key may have won.
+    if ! mv "$tmp" "$dir" 2>/dev/null; then
+        rm -rf "$tmp"
+    fi
+    [ -f "$FLOWC_RT_ARCHIVE" ]
+}
+
 flowc_link_c() {
     local c_file="$1"
     local exe_file="$2"
+    local program="${3:-}"
     flow_collect_cflags
-    # Show compiler diagnostics on failure (#252 / #269).
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
-        "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
-        -o "$exe_file" "$c_file"; then
-        if ! cc "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
+    local cc_bin=cc
+    if command -v clang > /dev/null 2>&1; then
+        cc_bin=clang
+    fi
+    local -a inc=()
+    if [ -n "$program" ]; then
+        inc+=("-I$(dirname "$program")")
+    fi
+    # FLOWC_NO_RUNTIME=1 links the program alone, as before the runtime
+    # archive existed.
+    if [ "${FLOWC_NO_RUNTIME:-}" = "1" ]; then
+        # Show compiler diagnostics on failure (#252 / #269).
+        if ! "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
+            "${inc[@]+"${inc[@]}"}" \
             "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
-            -o "$exe_file" "$c_file"; then
+            -o "$exe_file" "$c_file" -lm; then
             print_error "C compilation/linking failed (flowc host)"
             return 1
         fi
+        return 0
+    fi
+    local driver
+    driver="$(flow_resolve_flowc)" || return 1
+    if ! flowc_runtime_archive "$driver" "$cc_bin"; then
+        print_error "C compilation/linking failed (flowc host): no runtime archive"
+        return 1
+    fi
+    if ! "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
+        "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "${inc[@]+"${inc[@]}"}" \
+        -o "$exe_file" "$c_file" "$FLOWC_RT_ARCHIVE" \
+        "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
+        "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -lm; then
+        print_error "C compilation/linking failed (flowc host)"
+        return 1
     fi
     return 0
 }
@@ -477,7 +581,7 @@ compile_program_flowc() {
         return 1
     fi
     print_success "FLOW → C: $basename.c"
-    if ! flowc_link_c "$build_dir/$basename.c" "$build_dir/$basename"; then
+    if ! flowc_link_c "$build_dir/$basename.c" "$build_dir/$basename" "$program"; then
         return 1
     fi
     print_success "C → Executable: $basename"

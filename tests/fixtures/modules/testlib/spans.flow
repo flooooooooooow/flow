@@ -1,0 +1,15 @@
+# Span-taking functions for tests/lang/test_span_param_cross_module.flow.
+
+export function span_total(xs: &[f32]) -> f32 {
+    let mut acc: f32 = 0.0
+    let mut i: i32 = 0
+    while i < len(xs) {
+        acc = acc + xs[i]
+        i = i + 1
+    }
+    return acc
+}
+
+export function span_count(xs: &[f32]) -> i32 {
+    return len(xs)
+}
