@@ -3307,10 +3307,19 @@ case "${1:-help}" in
     "run")
         check_deps
         shift
-        # FLOW_RUN_PYTHON=1 uses the shell-independent Python runner (#400).
-        if [ "${FLOW_RUN_PYTHON:-0}" = "1" ]; then
+        # The one-process runner (tools/run, #400): --json, --keep,
+        # --extra-cflags, --predict, or FLOW_RUN_DIRECT=1 (FLOW_RUN_PYTHON=1
+        # is the old name for it).
+        direct="${FLOW_RUN_DIRECT:-${FLOW_RUN_PYTHON:-0}}"
+        for arg in "$@"; do
+            case "$arg" in
+                --json|--keep|--keep=*|--extra-cflags|--extra-cflags=*|--predict) direct=1 ;;
+            esac
+        done
+        if [ "$direct" = "1" ]; then
             flow_sync_program "${1:-}" || exit $?
-            PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.run "$@"
+            run_bin="$(flow_native_tool run)" || exit 1
+            FLOW_ROOT="$SCRIPT_DIR" exec "$run_bin" "$@"
         else
             run_program "$@"
         fi

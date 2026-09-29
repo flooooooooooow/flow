@@ -16,6 +16,8 @@
 #   ./scripts/check_doc_examples.sh snippets           Flow hidden in text fences
 #   ./scripts/check_doc_examples.sh lessons            tutorial lessons as JSON
 #   ./scripts/check_doc_examples.sh blocks FILE...     fenced blocks as JSON
+#   ./scripts/check_doc_examples.sh browser [--filter S] [--verbose] [--json F]
+#                                          site/flow-compile.js against flowc
 #
 # --root DIR checks the markdown under DIR (tracked or not) instead of the
 # repository; --ledger PATH names the ledger. Both are for tests.
@@ -66,7 +68,7 @@ for arg in "$@"; do
     if [[ "$prev" == "--root" ]]; then
         arg="$(cd "$CALLER_PWD" && cd "$arg" && pwd)"
         docs_root="$arg"
-    elif [[ "$prev" == "--ledger" && "$arg" != /* ]]; then
+    elif [[ ( "$prev" == "--ledger" || "$prev" == "--json" ) && "$arg" != /* ]]; then
         arg="$CALLER_PWD/$arg"
     fi
     args+=("$arg")

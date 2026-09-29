@@ -35,6 +35,7 @@ import "scripts/tools/lib/json.flow"
 import "scripts/tools/lib/regex.flow"
 import "tools/doc_examples/blocks.flow"
 import "tools/doc_examples/verify.flow"
+import "tools/doc_examples/browser.flow"
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -859,7 +860,7 @@ function print_blocks(bl: ptr<BlkList>) {
 
 # The tutorial lessons: docs/tutorials/*.md except README, flow blocks with
 # a `main`. The interactive app and the browser verifier both use this rule.
-function lessons(o: ptr<Opts>) -> i32 {
+function lesson_blocks(o: ptr<Opts>) -> ptr<BlkList> {
     let listing: string = or_empty(ft_read_file(o.listing))
     let all: ptr<StrList> = tracked_markdown(listing)
     let rels: ptr<StrList> = ft_list_new()
@@ -877,7 +878,7 @@ function lessons(o: ptr<Opts>) -> i32 {
     let bl: ptr<BlkList> = collect(rels, o.root, "flow", err)
     if bl == null {
         ft_errln("error: " + err.msg)
-        return 2
+        return null
     }
     let keep: ptr<BlkList> = bl_new()
     i = 0
@@ -886,6 +887,14 @@ function lessons(o: ptr<Opts>) -> i32 {
             bl_push(keep, bl_get(bl, i))
         }
         i = i + 1
+    }
+    return keep
+}
+
+function lessons(o: ptr<Opts>) -> i32 {
+    let keep: ptr<BlkList> = lesson_blocks(o)
+    if keep == null {
+        return 2
     }
     print_blocks(keep)
     return 0
@@ -896,15 +905,41 @@ function lessons(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> string {
-    return "usage: check_doc_examples.sh [check|strict|snippets|blocks FILE...|lessons] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
+    return "usage: check_doc_examples.sh [check|strict|snippets|blocks FILE...|lessons|browser] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
 }
 
 # A long option, or an unambiguous prefix of one, as argparse allows.
+function long_flags() -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, "--report")
+    ft_list_push(l, "--verbose")
+    ft_list_push(l, "--run")
+    ft_list_push(l, "--no-clang")
+    ft_list_push(l, "--write-ledger")
+    ft_list_push(l, "--fail-on-unverified")
+    ft_list_push(l, "--check-ledger")
+    return l
+}
+
+# The flag `arg` names: itself, or the one flag it is a prefix of. An
+# ambiguous prefix matches nothing.
 function flag_is(arg: string, name: string) -> bool {
     if ft_eq(arg, name) {
         return true
     }
-    return ft_len(arg) > 2 and ft_starts(name, arg) and ft_eq(arg, "--r") == false and ft_eq(arg, "--re") == false and ft_eq(arg, "--f") == false and ft_eq(arg, "--n") == false and ft_eq(arg, "--c") == false and ft_eq(arg, "--w") == false and ft_eq(arg, "--v") == false
+    if ft_len(arg) < 3 or ft_starts(name, arg) == false {
+        return false
+    }
+    let all: ptr<StrList> = long_flags()
+    let mut hits: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(all) {
+        if ft_starts(ft_list_get(all, i), arg) {
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    return hits == 1
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
@@ -925,15 +960,28 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut fail_f: bool = false
     let mut check_f: bool = false
     let mut ledger_arg: string = null
+    let mut filter: string = null
+    let mut json_out: string = null
+    let mut keep_f: bool = false
     let files: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
     while i < argc {
         let a: string = argv[i]
-        if i == 1 and (ft_eq(a, "check") or ft_eq(a, "strict") or ft_eq(a, "snippets") or ft_eq(a, "blocks") or ft_eq(a, "lessons") or ft_eq(a, "verdicts")) {
+        if i == 1 and (ft_eq(a, "check") or ft_eq(a, "strict") or ft_eq(a, "snippets") or ft_eq(a, "blocks") or ft_eq(a, "lessons") or ft_eq(a, "verdicts") or ft_eq(a, "browser")) {
             cmd = a
         } elif ft_eq(a, "--root") and i + 1 < argc {
             o.root = argv[i + 1]
             i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--filter") and i + 1 < argc {
+            filter = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--timeout") and i + 1 < argc {
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--json") and i + 1 < argc {
+            json_out = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(cmd, "browser") and ft_eq(a, "--keep") {
+            keep_f = true
         } elif ft_eq(a, "--ledger") and i + 1 < argc {
             ledger_arg = argv[i + 1]
             i = i + 1
@@ -994,6 +1042,13 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     }
     if ft_eq(cmd, "lessons") {
         return lessons(o)
+    }
+    if ft_eq(cmd, "browser") {
+        let lb: ptr<BlkList> = lesson_blocks(o)
+        if lb == null {
+            return 2
+        }
+        return browser_main(env, lb, filter, verbose, keep_f, json_out)
     }
     if ft_eq(cmd, "snippets") {
         return snippets(env, o)
