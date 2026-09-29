@@ -521,6 +521,7 @@ function flowc_parser_next_is_ident(p: Parser) -> i32
 function flowc_parser_is_sort_modifier(p: Parser) -> i32
 function flowc_parser_at_sort_by(p: Parser) -> i32
 function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32
+function flowc_parse_sort_key(p: ptr<Parser>) -> i32
 function flowc_parser_tok_is_ident(p: Parser, t: Token, lit: string) -> i32
 function flowc_parse_postfix(p: ptr<Parser>) -> i32
 function flowc_parse_match_arm_ext(p: ptr<Parser>) -> i32
@@ -1636,24 +1637,35 @@ function flowc_parser_is_sort_modifier(p: Parser) -> i32 {
 # After `|>`: `sort`/`order` with keys (`by ...`) or a `with entropy` policy,
 # or `order` at all. Plain `sort [modifiers]` keeps the Stage-A call form.
 function flowc_parser_at_sort_by(p: Parser) -> i32 {
-    let is_order: i32 = flowc_parser_ident_is(p, "order")
-    if flowc_parser_ident_is(p, "sort") == 0 and is_order == 0 {
-        return 0
+    # Python claims every `|> sort`, `|> sortBy` and `|> order` as a
+    # declarative sort (_at_declarative_sort).
+    return flowc_parser_ident_is(p, "sort") + flowc_parser_ident_is(p, "sortBy") + flowc_parser_ident_is(p, "order")
+}
+
+# Sort keys after `by` or `sortBy`: `.f`, `asc .f`, or `[desc .a, asc .b]`.
+function flowc_parse_sort_keys(p: ptr<Parser>) -> i32 {
+    if flowc_parser_check(p[0], TOK_LBRACK) == 0 {
+        return flowc_parse_sort_key(p)
     }
-    if is_order == 1 {
-        return 1
+    flowc_parser_advance(p)
+    let mut keys: i32 = AST_NONE
+    let mut more: i32 = 1
+    while more == 1 {
+        let k: i32 = flowc_parse_sort_key(p)
+        if k == AST_NONE {
+            return AST_NONE
+        }
+        keys = flowc_ast_chain_push(&p[0].arena, keys, k)
+        if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            flowc_parser_advance(p)
+        } else {
+            more = 0
+        }
     }
-    let mut lx: Lexer = p.lex
-    let mut t: Token = flowc_lexer_next(&lx)
-    if flowc_parser_tok_is_ident(p, t, "by") == 1 {
-        return 1
+    if flowc_parser_eat(p, TOK_RBRACK) == 0 {
+        return AST_NONE
     }
-    let mut q: Parser = p
-    q.cur = t
-    while flowc_parser_is_sort_modifier(q) == 1 or flowc_token_is_kw(q.cur, KW_PARALLEL) == 1 {
-        q.cur = flowc_lexer_next(&lx)
-    }
-    return flowc_parser_ident_is(q, "with")
+    return keys
 }
 
 # One sort key: [asc | desc] .field, as an AST_IDENT for the field with
@@ -1683,38 +1695,33 @@ function flowc_parse_sort_key(p: ptr<Parser>) -> i32 {
 # Parse-only AST_SORT_BY: a = source expr, b = key chain.
 function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
     let start: i32 = p[0].cur.start
+    let head_by: i32 = flowc_parser_ident_is(p[0], "sortBy")
     flowc_parser_advance(p)
     let mut keys: i32 = AST_NONE
-    if flowc_parser_ident_is(p[0], "by") == 1 {
-        flowc_parser_advance(p)
-        if flowc_parser_check(p[0], TOK_LBRACK) == 1 {
+    if head_by == 1 or flowc_parser_ident_is(p[0], "by") == 1 {
+        if head_by == 0 {
             flowc_parser_advance(p)
-            let mut more: i32 = 1
-            while more == 1 {
-                let k: i32 = flowc_parse_sort_key(p)
-                if k == AST_NONE {
-                    return AST_NONE
-                }
-                keys = flowc_ast_chain_push(&p[0].arena, keys, k)
-                if flowc_parser_check(p[0], TOK_COMMA) == 1 {
-                    flowc_parser_advance(p)
-                } else {
-                    more = 0
-                }
-            }
-            if flowc_parser_eat(p, TOK_RBRACK) == 0 {
-                return AST_NONE
-            }
-        } else {
-            keys = flowc_parse_sort_key(p)
-            if keys == AST_NONE {
-                return AST_NONE
-            }
+        }
+        keys = flowc_parse_sort_keys(p)
+        if keys == AST_NONE {
+            return AST_NONE
         }
     }
+    # ival bit 1: global descending; bit 2: unique.
+    let mut desc: i32 = 0
+    let mut uniq: i32 = 0
     let mut more_mods: i32 = 1
     while more_mods == 1 {
         if flowc_parser_is_sort_modifier(p[0]) == 1 or flowc_parser_check_kw(p[0], KW_PARALLEL) == 1 {
+            if flowc_parser_ident_is(p[0], "descending") + flowc_parser_ident_is(p[0], "desc") > 0 {
+                desc = 1
+            }
+            if flowc_parser_ident_is(p[0], "ascending") + flowc_parser_ident_is(p[0], "asc") > 0 {
+                desc = 0
+            }
+            if flowc_parser_ident_is(p[0], "unique") == 1 {
+                uniq = 2
+            }
             flowc_parser_advance(p)
         } else {
             if flowc_parser_ident_is(p[0], "with") == 1 {
@@ -1757,6 +1764,7 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
     }
     p[0].arena.nodes[id].a = source
     p[0].arena.nodes[id].b = keys
+    p[0].arena.nodes[id].ival = desc + uniq
     return id
 }
 

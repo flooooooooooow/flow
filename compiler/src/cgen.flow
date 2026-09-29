@@ -16,7 +16,7 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
     AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
-    AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC,
+    AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY,
     flowc_ast_enum_of_const
 }
 import .token {
@@ -2321,6 +2321,130 @@ function flowc_cgen_emit_pipe_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     }
 }
 
+# --- declarative sort -----------------------------------------------------
+# `xs |> sort`, `|> sort by keys`, `|> sortBy keys`, `|> order` sort the
+# fixed-size array in place, stable, as c_generator._gen_sort_expr does.
+# The plan it picks changes speed only, so Stage-A always emits a stable
+# insertion sort. Three-way compares go through __flowc_ord, which follows
+# _scalar_cmp: strcmp for strings, a total order for floats, else < and >.
+
+function flowc_cgen_sort_cmp(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, lhs: string, rhs: string) {
+    let gdesc: i32 = arena.nodes[id].ival % 2
+    let keys: i32 = arena.nodes[id].b
+    if keys == AST_NONE {
+        if gdesc == 1 {
+            flowc_cgen_puts(w, "(0 - ")
+        }
+        flowc_cgen_puts(w, "__flowc_ord(")
+        flowc_cgen_puts(w, lhs)
+        flowc_cgen_puts(w, ", ")
+        flowc_cgen_puts(w, rhs)
+        flowc_cgen_puts(w, ")")
+        if gdesc == 1 {
+            flowc_cgen_puts(w, ")")
+        }
+        return
+    }
+    # Lexicographic: (k1 != 0 ? k1 : (k2 != 0 ? k2 : k3)).
+    let mut k: i32 = keys
+    let mut open: i32 = 0
+    while k != AST_NONE {
+        let mut desc: i32 = arena.nodes[k].ival
+        if gdesc == 1 {
+            desc = 1 - desc
+        }
+        let mut last: i32 = 0
+        if arena.nodes[k].next == AST_NONE {
+            last = 1
+        }
+        let mut reps: i32 = 2
+        if last == 1 {
+            reps = 1
+        } else {
+            flowc_cgen_puts(w, "(")
+        }
+        while reps > 0 {
+            if desc == 1 {
+                flowc_cgen_puts(w, "(0 - ")
+            }
+            flowc_cgen_puts(w, "__flowc_ord((")
+            flowc_cgen_puts(w, lhs)
+            flowc_cgen_puts(w, ").")
+            flowc_cgen_put_span(w, src, arena.nodes[k].name_start, arena.nodes[k].name_end)
+            flowc_cgen_puts(w, ", (")
+            flowc_cgen_puts(w, rhs)
+            flowc_cgen_puts(w, ").")
+            flowc_cgen_put_span(w, src, arena.nodes[k].name_start, arena.nodes[k].name_end)
+            flowc_cgen_puts(w, ")")
+            if desc == 1 {
+                flowc_cgen_puts(w, ")")
+            }
+            reps = reps - 1
+            if reps == 1 {
+                flowc_cgen_puts(w, " != 0 ? ")
+            }
+        }
+        if last == 0 {
+            flowc_cgen_puts(w, " : ")
+            open = open + 1
+        }
+        k = arena.nodes[k].next
+    }
+    while open > 0 {
+        flowc_cgen_puts(w, ")")
+        open = open - 1
+    }
+}
+
+function flowc_cgen_emit_sort_by(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let arr: i32 = arena.nodes[id].a
+    flowc_cgen_puts(w, "({ __typeof__(&(")
+    flowc_cgen_emit_expr(w, arena, src, arr)
+    flowc_cgen_puts(w, ")[0]) __flowc_sa = &(")
+    flowc_cgen_emit_expr(w, arena, src, arr)
+    flowc_cgen_puts(w, ")[0]; int32_t __flowc_sn = ")
+    let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, arr)
+    let mut n: i32 = 0
+    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].ival > 0 {
+        if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array") == 1 {
+            n = arena.nodes[ty].ival
+        }
+    }
+    if n > 0 {
+        flowc_cgen_put_i32(w, n)
+    } else {
+        flowc_cgen_puts(w, "(int32_t)(sizeof(")
+        flowc_cgen_emit_expr(w, arena, src, arr)
+        flowc_cgen_puts(w, ") / sizeof((")
+        flowc_cgen_emit_expr(w, arena, src, arr)
+        flowc_cgen_puts(w, ")[0]))")
+    }
+    # Bottom-up merge sort (the Python host's bottom_up_merge body).
+    flowc_cgen_puts(w, "; if (__flowc_sn > 1) { __typeof__(__flowc_sa[0])* __flowc_sb = malloc(sizeof(__flowc_sa[0]) * (size_t)__flowc_sn); for (int32_t __flowc_sw = 1; __flowc_sw < __flowc_sn; __flowc_sw *= 2) { for (int32_t __flowc_slo = 0; __flowc_slo < __flowc_sn; __flowc_slo += 2 * __flowc_sw) { int32_t __flowc_smid = __flowc_slo + __flowc_sw; if (__flowc_smid > __flowc_sn) { __flowc_smid = __flowc_sn; } int32_t __flowc_shi = __flowc_slo + 2 * __flowc_sw; if (__flowc_shi > __flowc_sn) { __flowc_shi = __flowc_sn; } int32_t __flowc_si = __flowc_slo, __flowc_sj = __flowc_smid, __flowc_sk = __flowc_slo; while (__flowc_si < __flowc_smid && __flowc_sj < __flowc_shi) { if ((")
+    flowc_cgen_sort_cmp(w, arena, src, id, "__flowc_sa[__flowc_sj]", "__flowc_sa[__flowc_si]")
+    flowc_cgen_puts(w, ") < 0) { __flowc_sb[__flowc_sk++] = __flowc_sa[__flowc_sj++]; } else { __flowc_sb[__flowc_sk++] = __flowc_sa[__flowc_si++]; } } while (__flowc_si < __flowc_smid) { __flowc_sb[__flowc_sk++] = __flowc_sa[__flowc_si++]; } while (__flowc_sj < __flowc_shi) { __flowc_sb[__flowc_sk++] = __flowc_sa[__flowc_sj++]; } } for (int32_t __flowc_st = 0; __flowc_st < __flowc_sn; __flowc_st++) { __flowc_sa[__flowc_st] = __flowc_sb[__flowc_st]; } } free(__flowc_sb); } ")
+    if arena.nodes[id].ival >= 2 {
+        # unique: compact equal neighbours into the prefix; the tail is stale.
+        flowc_cgen_puts(w, "{ int32_t __flowc_sw = 0; for (int32_t __flowc_sr = 0; __flowc_sr < __flowc_sn; __flowc_sr++) { if (__flowc_sw == 0 || (")
+        flowc_cgen_sort_cmp(w, arena, src, id, "__flowc_sa[__flowc_sw - 1]", "__flowc_sa[__flowc_sr]")
+        flowc_cgen_puts(w, ") != 0) { __flowc_sa[__flowc_sw] = __flowc_sa[__flowc_sr]; __flowc_sw = __flowc_sw + 1; } } } ")
+    }
+    flowc_cgen_emit_expr(w, arena, src, arr)
+    flowc_cgen_puts(w, "; })")
+}
+
+# 1 when the module holds a declarative sort (it needs __flowc_ord).
+function flowc_cgen_uses_sort_by(arena: AstArena) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_SORT_BY {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -2328,6 +2452,10 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     let kind: i32 = arena.nodes[id].kind
     if kind == AST_PIPE_BLOCK {
         flowc_cgen_emit_pipe_block(w, arena, src, id)
+        return
+    }
+    if kind == AST_SORT_BY {
+        flowc_cgen_emit_sort_by(w, arena, src, id)
         return
     }
     if kind == AST_INT {
@@ -5640,6 +5768,14 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } free(tmp); return 0; }\n")
         flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_putc(&w, 10)
+    }
+    if flowc_cgen_uses_sort_by(arena) == 1 {
+        flowc_cgen_puts(&w, "#ifndef FLOWC_ORD\n#define FLOWC_ORD\n")
+        flowc_cgen_puts(&w, "static inline int __flowc_ord_s(const char* a, const char* b) { return strcmp(a, b); }\n")
+        flowc_cgen_puts(&w, "static inline int __flowc_ord_d(double a, double b) { uint64_t ua; uint64_t ub; memcpy(&ua, &a, 8); memcpy(&ub, &b, 8); ua = ua ^ ((uint64_t)(-(int64_t)(ua >> 63)) | 0x8000000000000000ULL); ub = ub ^ ((uint64_t)(-(int64_t)(ub >> 63)) | 0x8000000000000000ULL); return (ua > ub) - (ua < ub); }\n")
+        flowc_cgen_puts(&w, "static inline int __flowc_ord_i(__int128 a, __int128 b) { return (a > b) - (a < b); }\n")
+        flowc_cgen_puts(&w, "#define __flowc_ord(a, b) _Generic((a), char*: __flowc_ord_s, const char*: __flowc_ord_s, float: __flowc_ord_d, double: __flowc_ord_d, default: __flowc_ord_i)((a), (b))\n")
+        flowc_cgen_puts(&w, "#endif\n")
     }
     if flowc_cgen_uses_ui_state(arena, src) == 1 {
         flowc_cgen_puts(&w, "#ifndef FLOWC_UI_STATE\n#define FLOWC_UI_STATE\nvoid* _ui_state = NULL;\n#endif\n")

@@ -102,8 +102,9 @@ export const AST_CAPABILITY_TYPE: i32 = 91
 # AST_VECTOR_LIT: `<a, b, c>` SIMD vector literal. a = element chain.
 export const AST_TRY: i32 = 92
 export const AST_VECTOR_LIT: i32 = 93
-# AST_SORT_BY: `|> sort by keys` / `with entropy` / `|> order`. a = source,
-#   b = key chain (AST_IDENT field, ival = 1 when descending).
+# AST_SORT_BY: any `|> sort`, `|> sortBy` or `|> order`. a = source,
+#   b = key chain (AST_IDENT field, ival = 1 when descending), ival = 1 for a
+#   global `descending` plus 2 for `unique`.
 # AST_MODULE: `module Name { ... }`. name_* = name, a = item chain.
 export const AST_SORT_BY: i32 = 94
 export const AST_MODULE: i32 = 95
@@ -344,6 +345,7 @@ export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
     let k: i32 = arena.nodes[i].kind
     if k == AST_MATCH_ARM_EXT { return 1 }
     if k == AST_LAYOUT { return 1 }
+    if k == AST_SORT_BY { return 1 }
     # Fork and choose blocks lower; flow stage parameters belong to flow
     # blocks.
     if k == AST_PIPE_BLOCK and arena.nodes[i].ival != PIPE_BLOCK_STAGE { return 1 }

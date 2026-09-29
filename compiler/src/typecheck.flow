@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY,
     flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
 }
 import .overload_table {
@@ -655,6 +655,11 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     }
     if kind == AST_PIPE_BLOCK {
         flowc_tc_check_pipe_block(ctx, arena, id)
+        return
+    }
+    if kind == AST_SORT_BY {
+        # Keys name fields of the element type; only the array is an expression.
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         return
     }
     if kind == AST_IDENT {
