@@ -52,7 +52,7 @@ tests/lang/test_lsp_syntax.flow	accept	0	26754452f23676d14623f3260b61d4f3	-
 tests/lang/test_match_break.flow	accept	0	388b7b0ebb118a733c0159cf7e9f3d8e	-
 tests/lang/test_match_patterns.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
 tests/lang/test_match.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
-tests/lang/test_parser_python_forms.flow	accept	7	794f0b89a6f21d1029eb7dbbf99d2688	-
+tests/lang/test_parser_python_forms.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
 tests/lang/test_sort_modifier_names.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
 tests/lang/test_sort_nan.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-
 tests/lang/test_sort_plans.flow	accept	0	d41d8cd98f00b204e9800998ecf8427e	-

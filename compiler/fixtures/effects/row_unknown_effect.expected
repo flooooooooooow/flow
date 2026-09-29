@@ -1,0 +1,2 @@
+reject
+Function 'greet' declares unknown effect 'Nope' in its `with` row

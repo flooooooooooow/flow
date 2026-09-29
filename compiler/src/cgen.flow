@@ -17,7 +17,12 @@ import .ast {
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
     AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
     AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TYPE_FIXED_ARRAY, AST_TRY, AST_VECTOR_LIT, flowc_ast_chain_len,
-    flowc_ast_enum_of_const
+    flowc_ast_enum_of_const,
+    AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_TYPE_CAPABILITY
+}
+import .effects {
+    FLOWC_EFF_EFFECT, flowc_eff_collect, flowc_eff_has_fiber_cap, flowc_eff_copy_entries, flowc_eff_find,
+    flowc_eff_is_effect, flowc_eff_is_cap
 }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
@@ -33,6 +38,7 @@ extern {
     function fread(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
     function malloc(n: i32) -> ptr<u8>
     function free(p: ptr<u8>) -> void
+    function getenv(name: string) -> string
 }
 
 # Fixed-buffer writer for C text.
@@ -79,11 +85,17 @@ export struct CgenBuf {
     loop_defer_base: i32,
     # Function whose body carries the __flowc_tail label (self tail calls
     # become parameter updates and a jump), else AST_NONE.
-    tail_fn: i32
+    tail_fn: i32,
+    # Effect table (effects.flow): the bundle's earlier modules, then this one.
+    eff: ptr<u8>,
+    eff_len: i32,
+    # 1 when a FiberAsync or FiberCont capability is in the program: main
+    # then runs on a fiber, as on the Python host.
+    fiber_main: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -206,6 +218,7 @@ function flowc_cgen_mp_arm_cond(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
 function flowc_cgen_emit_defers_to(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32)
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 function flowc_cgen_ident_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
+function flowc_cgen_is_fiber_main(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
 # Compare two source spans for equal content.
 function flowc_cgen_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -614,9 +627,50 @@ function flowc_cgen_emit_ret_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
 
 # Stage-A type → C: ptr<T> → T*, u8 → uint8_t, i64 → int64_t, structs by name.
 # Unknown named types (imported structs) are emitted as-is for multi-module dogfood.
+# C type for a primitive type name span; other names are written as is.
+function flowc_cgen_prim_span_ctype(src: ptr<u8>, s: i32, e: i32) -> string {
+    if flowc_cgen_span_is(src, s, e, "i8") == 1 { return "int8_t" }
+    if flowc_cgen_span_is(src, s, e, "i16") == 1 { return "int16_t" }
+    if flowc_cgen_span_is(src, s, e, "i32") == 1 { return "int32_t" }
+    if flowc_cgen_span_is(src, s, e, "i64") == 1 { return "int64_t" }
+    if flowc_cgen_span_is(src, s, e, "u8") == 1 { return "uint8_t" }
+    if flowc_cgen_span_is(src, s, e, "u16") == 1 { return "uint16_t" }
+    if flowc_cgen_span_is(src, s, e, "u32") == 1 { return "uint32_t" }
+    if flowc_cgen_span_is(src, s, e, "u64") == 1 { return "uint64_t" }
+    if flowc_cgen_span_is(src, s, e, "f32") == 1 { return "float" }
+    if flowc_cgen_span_is(src, s, e, "f64") == 1 { return "double" }
+    if flowc_cgen_span_is(src, s, e, "bool") == 1 { return "bool" }
+    if flowc_cgen_span_is(src, s, e, "string") == 1 { return "const char*" }
+    return ""
+}
+
+function flowc_cgen_emit_prim_span(w: ptr<CgenBuf>, src: ptr<u8>, s: i32, e: i32) {
+    let ct: string = flowc_cgen_prim_span_ctype(src, s, e)
+    let cp: ptr<u8> = ct as ptr<u8>
+    if cp[0] != 0 {
+        flowc_cgen_puts(w, ct)
+    } else {
+        flowc_cgen_put_span(w, src, s, e)
+    }
+}
+
 function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
     if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
         flowc_cgen_puts(w, "int32_t")
+        return
+    }
+    # `capability E`: an opaque handle; dispatch goes through E's handler slot.
+    if arena.nodes[ty].c == AST_TYPE_CAPABILITY {
+        flowc_cgen_puts(w, "void*")
+        return
+    }
+    # Legacy `array_f32` spelling (effect signatures in the examples): a
+    # pointer to the element, as on the Python host.
+    let ans: i32 = arena.nodes[ty].name_start
+    let ane: i32 = arena.nodes[ty].name_end
+    if arena.nodes[ty].a == AST_NONE and ane - ans > 6 and flowc_cgen_span_is(src, ans, ans + 6, "array_") == 1 {
+        flowc_cgen_emit_prim_span(w, src, ans + 6, ane)
+        flowc_cgen_putc(w, 42)
         return
     }
     # Monomorphization substitution: check if type name matches a type param.
@@ -2479,6 +2533,44 @@ function flowc_cgen_uses_sort_by(arena: AstArena) -> i32 {
     return 0
 }
 
+# Empty capability tokens for parameters [from, n) of fn when every one of
+# them is typed `capability E` or by an effect E.
+function flowc_cgen_emit_implicit_caps(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fn: i32, from: i32, first: i32) {
+    let mut prm: i32 = arena.nodes[fn].a
+    let mut i: i32 = 0
+    while i < from and prm != AST_NONE {
+        prm = arena.nodes[prm].next
+        i = i + 1
+    }
+    let mut chk: i32 = prm
+    while chk != AST_NONE {
+        let ty: i32 = arena.nodes[chk].a
+        if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+            return
+        }
+        if arena.nodes[ty].c != AST_TYPE_CAPABILITY and flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end) == 0 {
+            return
+        }
+        chk = arena.nodes[chk].next
+    }
+    let mut lead: i32 = first
+    while prm != AST_NONE {
+        if lead == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        lead = 0
+        let ty: i32 = arena.nodes[prm].a
+        if arena.nodes[ty].c == AST_TYPE_CAPABILITY {
+            flowc_cgen_puts(w, "(void*)0")
+        } else {
+            flowc_cgen_putc(w, 40)
+            flowc_cgen_put_span(w, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
+            flowc_cgen_puts(w, "){ 0 }")
+        }
+        prm = arena.nodes[prm].next
+    }
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -2841,6 +2933,12 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_CALL {
+        # E.op(args) performs an effect operation (#675).
+        let espan: array<i32, 2> = []
+        if flowc_cgen_eff_call_effect(w, arena, src, id, &espan[0]) == 1 {
+            flowc_cgen_emit_eff_call(w, arena, src, id, espan[0], espan[1])
+            return
+        }
         # i32_to_f32(v) with no Flow definition in this module: the Python
         # host's default helper, inlined so a later module may define it.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "i32_to_f32") == 1 and arena.nodes[id].a != AST_NONE {
@@ -3176,6 +3274,11 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_emit_expr(w, arena, src, arg)
             arg = arena.nodes[arg].next
             param_idx = param_idx + 1
+        }
+        # Trailing capability parameters left out inside `handle` are
+        # supplied as empty tokens, as on the Python host.
+        if fn_id != AST_NONE {
+            flowc_cgen_emit_implicit_caps(w, arena, src, fn_id, param_idx, first)
         }
         flowc_cgen_putc(w, 41)
         # A returned sized array arrives wrapped; expose the array.
@@ -4513,6 +4616,10 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_puts(w, ";\n")
         return
     }
+    if kind == AST_HANDLE {
+        flowc_cgen_emit_handle(w, arena, src, id)
+        return
+    }
     if kind == AST_EXPR_STMT {
         flowc_cgen_puts(w, "  ")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -4659,6 +4766,9 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "rand") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "srand") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "getenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "putenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "setenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "unsetenv") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "system") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "abs") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "atoi") == 1 { return 1 }
@@ -4781,6 +4891,19 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
         return
     }
 
+    # FiberAsync programs: main runs on a fiber so park and yield suspend
+    # real Flow frames (the Python host's lowering).
+    if flowc_cgen_is_fiber_main(w, arena, src, id) == 1 {
+        if arena.nodes[id].c == AST_NONE {
+            return
+        }
+        flowc_cgen_puts(w, "static int32_t __flow_main_body(void) ")
+        flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_puts(w, "\n/* FiberAsync: main runs on a fiber (mid-function suspend). */\n")
+        flowc_cgen_puts(w, "extern int32_t flow_fiber_run_main(int32_t (*fn)(void));\n")
+        flowc_cgen_puts(w, "int main(void) { return (int)flow_fiber_run_main(__flow_main_body); }\n")
+        return
+    }
     # Stage-A: emit return type; omitted (AST_NONE) → void.
     # Function pointer return types are emitted as void* (simplification).
     let ret_ty: i32 = arena.nodes[id].b
@@ -4874,8 +4997,20 @@ function flowc_cgen_has_self_tail_call(arena: AstArena, src: ptr<u8>, fn: i32) -
     return 0
 }
 
+# 1 if `id` is a zero-parameter main in a program with a fiber capability.
+function flowc_cgen_is_fiber_main(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if w[0].fiber_main == 0 or arena.nodes[id].a != AST_NONE {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "main")
+}
+
 # Emit just the function prototype (forward declaration) for functions with a body.
 function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if flowc_cgen_is_fiber_main(w, arena, src, id) == 1 {
+        flowc_cgen_puts(w, "static int32_t __flow_main_body(void);\n")
+        return
+    }
     let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
     if cli_main == 1 {
         let p0: i32 = arena.nodes[id].a
@@ -5637,6 +5772,409 @@ function flowc_cgen_is_cembed_fn(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32
     return 0
 }
 
+# --- algebraic effects (#675) ------------------------------------------------
+# Same lowering as the Python host (src/flow/c_generator.py):
+#   effect E        -> E_Handler vtable type, a fiber/thread-local handler
+#                      slot, and a dispatch function E_op per operation that
+#                      calls the installed handler or takes the unhandled path
+#   capability C    -> functions C_m, plus a vtable _C_E_vtable per effect
+#   handle E with C -> save the slot, install &_C_E_vtable, run the body,
+#                      restore the slot
+#   E.op(args)      -> E_op(args)
+# Unhandled operations return zero, or abort when FLOW_STRICT_EFFECTS=1 at run
+# time (FLOWC_STRICT_EFFECTS=1 at compile time makes that unconditional).
+
+# Unwrap `export` around a declaration of `want` kind.
+function flowc_cgen_eff_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
+    if item == AST_NONE {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == want {
+        return item
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and arena.nodes[inner].kind == want {
+            return inner
+        }
+    }
+    return AST_NONE
+}
+
+# Shared once per C unit: the strict flag, the unhandled path and the weak
+# fiber id the handler slots key on.
+function flowc_cgen_eff_runtime_once(w: ptr<CgenBuf>) {
+    flowc_cgen_puts(w, "#ifndef FLOWC_EFFECT_RT\n#define FLOWC_EFFECT_RT\n")
+    if flowc_cgen_eff_strict() == 1 {
+        flowc_cgen_puts(w, "#define FLOW_STRICT_EFFECTS_COMPILE 1\n")
+        flowc_cgen_puts(w, "static int _flow_strict_effects(void) {\n    return 1;\n}\n")
+    } else {
+        flowc_cgen_puts(w, "static int _flow_strict_effects(void) {\n    static int cached = -1;\n    if (cached < 0) {\n        const char *e = getenv(\"FLOW_STRICT_EFFECTS\");\n        cached = (e && e[0] == '1') ? 1 : 0;\n    }\n    return cached;\n}\n")
+    }
+    flowc_cgen_puts(w, "static void _flow_unhandled_effect(const char *effect, const char *op) {\n    if (_flow_strict_effects()) {\n        fprintf(stderr, \"flow: unhandled effect %s.%s (set FLOW_STRICT_EFFECTS=0 to allow zero defaults)\\n\", effect, op);\n        abort();\n    }\n}\n")
+    flowc_cgen_puts(w, "__attribute__((weak)) int32_t flow_fiber_current_id(void) { return -1; }\n")
+    flowc_cgen_puts(w, "#ifndef FLOW_FIBER_MAX\n#define FLOW_FIBER_MAX 4096\n#endif\n")
+    flowc_cgen_puts(w, "#endif\n")
+}
+
+function flowc_cgen_eff_strict() -> i32 {
+    let se: string = getenv("FLOWC_STRICT_EFFECTS")
+    let sep: ptr<u8> = se as ptr<u8>
+    if sep != null and sep[0] == 49 {
+        return 1
+    }
+    return 0
+}
+
+# Parameter list `T1 a, T2 b` (names) or `T1, T2` (types only, "void" if none).
+function flowc_cgen_eff_params(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, first: i32, with_names: i32) {
+    let mut prm: i32 = first
+    let mut lead: i32 = 1
+    if prm == AST_NONE and with_names == 0 {
+        flowc_cgen_puts(w, "void")
+        return
+    }
+    let mut idx: i32 = 0
+    while prm != AST_NONE {
+        if lead == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        lead = 0
+        flowc_cgen_emit_type(w, arena, src, arena.nodes[prm].a)
+        if with_names == 1 {
+            flowc_cgen_putc(w, 32)
+            if arena.nodes[prm].name_end > arena.nodes[prm].name_start {
+                flowc_cgen_put_ident(w, src, arena.nodes[prm].name_start, arena.nodes[prm].name_end)
+            } else {
+                flowc_cgen_puts(w, "_a")
+                flowc_cgen_put_i32(w, idx)
+            }
+        }
+        idx = idx + 1
+        prm = arena.nodes[prm].next
+    }
+}
+
+# Argument names matching flowc_cgen_eff_params(..., 1).
+function flowc_cgen_eff_arg_names(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, first: i32) {
+    let mut prm: i32 = first
+    let mut idx: i32 = 0
+    while prm != AST_NONE {
+        if idx > 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        if arena.nodes[prm].name_end > arena.nodes[prm].name_start {
+            flowc_cgen_put_ident(w, src, arena.nodes[prm].name_start, arena.nodes[prm].name_end)
+        } else {
+            flowc_cgen_puts(w, "_a")
+            flowc_cgen_put_i32(w, idx)
+        }
+        idx = idx + 1
+        prm = arena.nodes[prm].next
+    }
+}
+
+# Handler type, slot and dispatch functions for one effect declaration.
+function flowc_cgen_emit_effect(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ef: i32) {
+    let es: i32 = arena.nodes[ef].name_start
+    let ee: i32 = arena.nodes[ef].name_end
+    # A value typed by the effect itself (`gpu: GPU`) is an empty token.
+    flowc_cgen_puts(w, "typedef struct ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, " { char _flowc_unused; } ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, ";\n")
+    flowc_cgen_puts(w, "/* Effect handler vtable for ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, " */\ntypedef struct {\n")
+    let mut op: i32 = arena.nodes[ef].a
+    while op != AST_NONE {
+        flowc_cgen_puts(w, "    ")
+        flowc_cgen_emit_ret_type(w, arena, src, arena.nodes[op].b)
+        flowc_cgen_puts(w, " (*")
+        flowc_cgen_put_ident(w, src, arena.nodes[op].name_start, arena.nodes[op].name_end)
+        flowc_cgen_puts(w, ")(")
+        flowc_cgen_eff_params(w, arena, src, arena.nodes[op].a, 0)
+        flowc_cgen_puts(w, ");\n")
+        op = arena.nodes[op].next
+    }
+    flowc_cgen_puts(w, "} ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_Handler;\n")
+    # Fiber-local on a fiber (work stealing migrates OS threads), else
+    # thread-local.
+    flowc_cgen_puts(w, "static _Thread_local ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_Handler* _tls_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler = NULL;\nstatic ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_Handler* _fiber_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler[FLOW_FIBER_MAX];\nstatic inline ")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_Handler** _slot_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler(void) {\n    int32_t _fid = flow_fiber_current_id();\n    if (_fid >= 0 && _fid < FLOW_FIBER_MAX) return &_fiber_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler[_fid];\n    return &_tls_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler;\n}\n#define _current_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler (*_slot_")
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_puts(w, "_handler())\n")
+    op = arena.nodes[ef].a
+    while op != AST_NONE {
+        let os: i32 = arena.nodes[op].name_start
+        let oe: i32 = arena.nodes[op].name_end
+        let rt: i32 = arena.nodes[op].b
+        let mut is_void: i32 = 0
+        if rt == AST_NONE {
+            is_void = 1
+        } elif flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "void") == 1 and arena.nodes[rt].a == AST_NONE {
+            is_void = 1
+        }
+        flowc_cgen_emit_ret_type(w, arena, src, rt)
+        flowc_cgen_putc(w, 32)
+        flowc_cgen_put_span(w, src, es, ee)
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_span(w, src, os, oe)
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_eff_params(w, arena, src, arena.nodes[op].a, 1)
+        flowc_cgen_puts(w, ") {\n    if (_current_")
+        flowc_cgen_put_span(w, src, es, ee)
+        flowc_cgen_puts(w, "_handler && _current_")
+        flowc_cgen_put_span(w, src, es, ee)
+        flowc_cgen_puts(w, "_handler->")
+        flowc_cgen_put_ident(w, src, os, oe)
+        flowc_cgen_puts(w, ") {\n        ")
+        if is_void == 0 {
+            flowc_cgen_puts(w, "return ")
+        }
+        flowc_cgen_puts(w, "_current_")
+        flowc_cgen_put_span(w, src, es, ee)
+        flowc_cgen_puts(w, "_handler->")
+        flowc_cgen_put_ident(w, src, os, oe)
+        flowc_cgen_putc(w, 40)
+        flowc_cgen_eff_arg_names(w, arena, src, arena.nodes[op].a)
+        flowc_cgen_puts(w, ");\n")
+        if is_void == 1 {
+            flowc_cgen_puts(w, "        return;\n")
+        }
+        flowc_cgen_puts(w, "    }\n    _flow_unhandled_effect(\"")
+        flowc_cgen_put_span(w, src, es, ee)
+        flowc_cgen_puts(w, "\", \"")
+        flowc_cgen_put_span(w, src, os, oe)
+        flowc_cgen_puts(w, "\");\n")
+        if is_void == 1 {
+            flowc_cgen_puts(w, "    return;\n")
+        } else {
+            flowc_cgen_puts(w, "    { ")
+            flowc_cgen_emit_ret_type(w, arena, src, rt)
+            flowc_cgen_puts(w, " _z; memset(&_z, 0, sizeof(_z)); return _z; }\n")
+        }
+        flowc_cgen_puts(w, "}\n")
+        op = arena.nodes[op].next
+    }
+}
+
+# `ret C_m(params)` for a capability method.
+function flowc_cgen_emit_cap_sig(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, cp: i32, m: i32) {
+    flowc_cgen_emit_ret_type(w, arena, src, arena.nodes[m].b)
+    flowc_cgen_putc(w, 32)
+    flowc_cgen_put_span(w, src, arena.nodes[cp].name_start, arena.nodes[cp].name_end)
+    flowc_cgen_putc(w, 95)
+    flowc_cgen_put_span(w, src, arena.nodes[m].name_start, arena.nodes[m].name_end)
+    flowc_cgen_putc(w, 40)
+    let mut prm: i32 = arena.nodes[m].a
+    let mut first: i32 = 1
+    if prm == AST_NONE {
+        flowc_cgen_puts(w, "void")
+    }
+    while prm != AST_NONE {
+        if first == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_cgen_emit_param(w, arena, src, prm)
+        prm = arena.nodes[prm].next
+    }
+    flowc_cgen_putc(w, 41)
+}
+
+# Method prototypes and one vtable per handled effect.
+function flowc_cgen_emit_cap_decls(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, cp: i32) {
+    let mut m: i32 = arena.nodes[cp].b
+    while m != AST_NONE {
+        flowc_cgen_emit_cap_sig(w, arena, src, cp, m)
+        flowc_cgen_puts(w, ";\n")
+        m = arena.nodes[m].next
+    }
+    let mut en: i32 = arena.nodes[cp].a
+    while en != AST_NONE {
+        let es: i32 = arena.nodes[en].name_start
+        let ee: i32 = arena.nodes[en].name_end
+        if flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, es, ee) == 1 {
+            flowc_cgen_puts(w, "static ")
+            flowc_cgen_put_span(w, src, es, ee)
+            flowc_cgen_puts(w, "_Handler _")
+            flowc_cgen_put_span(w, src, arena.nodes[cp].name_start, arena.nodes[cp].name_end)
+            flowc_cgen_putc(w, 95)
+            flowc_cgen_put_span(w, src, es, ee)
+            flowc_cgen_puts(w, "_vtable = {")
+            m = arena.nodes[cp].b
+            let mut first: i32 = 1
+            while m != AST_NONE {
+                let ms: i32 = arena.nodes[m].name_start
+                let me: i32 = arena.nodes[m].name_end
+                if flowc_eff_find(w[0].eff, w[0].eff_len, FLOWC_EFF_EFFECT, src, es, ee, ms, me) >= 0 {
+                    if first == 0 {
+                        flowc_cgen_putc(w, 44)
+                    }
+                    first = 0
+                    flowc_cgen_puts(w, " .")
+                    flowc_cgen_put_ident(w, src, ms, me)
+                    flowc_cgen_puts(w, " = ")
+                    flowc_cgen_put_span(w, src, arena.nodes[cp].name_start, arena.nodes[cp].name_end)
+                    flowc_cgen_putc(w, 95)
+                    flowc_cgen_put_span(w, src, ms, me)
+                }
+                m = arena.nodes[m].next
+            }
+            flowc_cgen_puts(w, " };\n")
+        }
+        en = arena.nodes[en].next
+    }
+}
+
+# Method bodies.
+function flowc_cgen_emit_cap_bodies(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, cp: i32) {
+    let mut m: i32 = arena.nodes[cp].b
+    while m != AST_NONE {
+        w[0].cur_fn = m
+        flowc_cgen_emit_cap_sig(w, arena, src, cp, m)
+        flowc_cgen_putc(w, 32)
+        flowc_cgen_emit_block(w, arena, src, arena.nodes[m].c)
+        flowc_cgen_putc(w, 10)
+        m = arena.nodes[m].next
+    }
+    w[0].cur_fn = AST_NONE
+}
+
+# Effect performed by `recv.op(...)`, as a span in out[0..1]: the receiver is
+# an effect, or a value typed `capability E` or `E`. 0 if not an effect call.
+function flowc_cgen_eff_call_effect(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32, out: ptr<i32>) -> i32 {
+    if w[0].eff_len <= 0 {
+        return 0
+    }
+    let recv: i32 = arena.nodes[call].a
+    if recv == AST_NONE or arena.nodes[call].b != AST_NONE {
+        return 0
+    }
+    if arena.nodes[recv].kind != AST_IDENT {
+        return 0
+    }
+    let rs: i32 = arena.nodes[recv].name_start
+    let re: i32 = arena.nodes[recv].name_end
+    if src[re] != 46 {
+        return 0
+    }
+    let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, recv)
+    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
+        let ts: i32 = arena.nodes[ty].name_start
+        let te: i32 = arena.nodes[ty].name_end
+        if arena.nodes[ty].c == AST_TYPE_CAPABILITY or flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, ts, te) == 1 {
+            out[0] = ts
+            out[1] = te
+            return 1
+        }
+        return 0
+    }
+    if flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, rs, re) == 1 {
+        out[0] = rs
+        out[1] = re
+        return 1
+    }
+    return 0
+}
+
+# E_op(args), without the receiver.
+function flowc_cgen_emit_eff_call(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32, es: i32, ee: i32) {
+    flowc_cgen_put_span(w, src, es, ee)
+    flowc_cgen_putc(w, 95)
+    flowc_cgen_put_span(w, src, arena.nodes[call].name_start, arena.nodes[call].name_end)
+    flowc_cgen_putc(w, 40)
+    let mut arg: i32 = arena.nodes[arena.nodes[call].a].next
+    let mut first: i32 = 1
+    while arg != AST_NONE {
+        if first == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_cgen_emit_expr(w, arena, src, arg)
+        arg = arena.nodes[arg].next
+    }
+    flowc_cgen_putc(w, 41)
+}
+
+# handle E1, E2 with H1, H2 { body }: one handler for all effects, or one
+# per effect.
+function flowc_cgen_emit_handle(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let effects: i32 = arena.nodes[id].b
+    let handlers: i32 = arena.nodes[id].c
+    let mut single: i32 = 0
+    if flowc_ast_chain_len(arena, handlers) == 1 {
+        single = 1
+    }
+    flowc_cgen_puts(w, "  {\n")
+    let mut en: i32 = effects
+    while en != AST_NONE {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_Handler* _prev_")
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_handler = _current_")
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_handler;\n")
+        en = arena.nodes[en].next
+    }
+    en = effects
+    let mut hn: i32 = handlers
+    while en != AST_NONE and hn != AST_NONE {
+        flowc_cgen_puts(w, "  _current_")
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_handler = &_")
+        flowc_cgen_put_span(w, src, arena.nodes[hn].name_start, arena.nodes[hn].name_end)
+        flowc_cgen_putc(w, 95)
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_vtable;\n")
+        en = arena.nodes[en].next
+        if single == 0 {
+            hn = arena.nodes[hn].next
+        }
+    }
+    flowc_cgen_emit_block(w, arena, src, arena.nodes[id].a)
+    # Restore in reverse order: walk the chain once per slot, last first.
+    let n: i32 = flowc_ast_chain_len(arena, effects)
+    let mut k: i32 = n - 1
+    while k >= 0 {
+        en = effects
+        let mut j: i32 = 0
+        while j < k {
+            en = arena.nodes[en].next
+            j = j + 1
+        }
+        flowc_cgen_puts(w, "  _current_")
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_handler = _prev_")
+        flowc_cgen_put_span(w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+        flowc_cgen_puts(w, "_handler;\n")
+        k = k - 1
+    }
+    flowc_cgen_puts(w, "  }\n")
+}
+
 export function flowc_cgen_emit_sigs(
     arena: AstArena,
     root: i32,
@@ -5659,6 +6197,16 @@ export function flowc_cgen_emit_sigs(
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
     w.sigs = sigs
     w.sigs_len = sigs_len
+    # Effect table: effects of earlier bundle modules ride in the signature
+    # table; this module's own are appended.
+    let eff_cap: i32 = 262144
+    let eff_buf: ptr<u8> = malloc(eff_cap)
+    if eff_buf != null {
+        w.eff = eff_buf
+        w.eff_len = flowc_eff_copy_entries(sigs, sigs_len, eff_buf, eff_cap, 0)
+        w.eff_len = flowc_eff_collect(arena, root, src, eff_buf, eff_cap, w.eff_len)
+        w.fiber_main = flowc_eff_has_fiber_cap(eff_buf, w.eff_len)
+    }
     # Allocate cembed function name table (up to 32 entries).
     let cembed_name_buf: array<u8, 4096> = []
     let cembed_off_arr: array<i32, 32> = []
@@ -6127,6 +6675,21 @@ export function flowc_cgen_emit_sigs(
         li2 = li2 + 1
     }
 
+    # Pass 1.8: effect runtime: handler types, slots and dispatch functions.
+    let mut have_effect: i32 = 0
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let ef: i32 = flowc_cgen_eff_unwrap(arena, item, AST_EFFECT)
+        if ef != AST_NONE {
+            if have_effect == 0 {
+                flowc_cgen_eff_runtime_once(&w)
+                have_effect = 1
+            }
+            flowc_cgen_emit_effect(&w, arena, src, ef)
+        }
+        item = arena.nodes[item].next
+    }
+
     # Pass 2: consts (export const is AST_CONST with ival=1, not wrapped)
     item = arena.nodes[root].a
     while item != AST_NONE {
@@ -6259,6 +6822,16 @@ export function flowc_cgen_emit_sigs(
         item = arena.nodes[item].next
     }
 
+    # Pass 2.9: capability method prototypes and handler vtables.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let cp: i32 = flowc_cgen_eff_unwrap(arena, item, AST_CAPABILITY)
+        if cp != AST_NONE {
+            flowc_cgen_emit_cap_decls(&w, arena, src, cp)
+        }
+        item = arena.nodes[item].next
+    }
+
     # Pass 3: functions (including export function)
     # Skip Flow-defined functions that shadow C standard library names
     # (the C header already provides the correct prototype).
@@ -6272,6 +6845,10 @@ export function flowc_cgen_emit_sigs(
                     flowc_cgen_emit_fn(&w, arena, src, fn)
                 }
             }
+        }
+        let cp: i32 = flowc_cgen_eff_unwrap(arena, item, AST_CAPABILITY)
+        if cp != AST_NONE {
+            flowc_cgen_emit_cap_bodies(&w, arena, src, cp)
         }
         item = arena.nodes[item].next
     }
@@ -6315,6 +6892,9 @@ export function flowc_cgen_emit_sigs(
         i = i + 1
     }
 
+    if w.eff != null {
+        free(w.eff)
+    }
     if w.err != 0 {
         return 0 - 1
     }

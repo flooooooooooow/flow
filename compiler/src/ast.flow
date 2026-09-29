@@ -59,6 +59,17 @@ export const AST_EFFECT: i32 = 47
 export const AST_CAPABILITY: i32 = 48
 export const AST_HANDLE: i32 = 49
 export const AST_EFFECT_OP: i32 = 50
+# Algebraic effects (#675, #996).
+# AST_EFFECT: `effect E { op(params) -> T, ... }`. name_* = E,
+#   a = AST_EFFECT_OP chain (name_* = op, a = AST_PARAM chain, b = ret type).
+# AST_CAPABILITY: `capability C { effect E1, E2, function m(...) { } }`.
+#   name_* = C, a = AST_IDENT chain of handled effects, b = AST_CAP_METHOD chain.
+# AST_CAP_METHOD: a capability method. Laid out like AST_FN (a = params,
+#   b = return type, c = body) under its own kind, so the whole-arena scans for
+#   top-level functions never mistake `Console.info` for a function `info`.
+# AST_HANDLE: `handle E1, E2 with H1, H2 { body }`. a = body block,
+#   b = effect name chain, c = handler name chain (AST_IDENT).
+export const AST_CAP_METHOD: i32 = 70
 
 # Parse-only kinds, numbered from 80 to stay clear of concurrent additions.
 # The parser accepts them so tools can read every file the Python parser
@@ -88,6 +99,7 @@ export const AST_LAYOUT: i32 = 86
 export const AST_PIPE_BLOCK: i32 = 87
 # AST_EFFECT_ROW: `with E1, E2` on a function or function type. a = effect
 #   name chain, b = the AST_FN / AST_TYPE it belongs to (not linked from it).
+#   Lowered: the typecheck reads it under FLOWC_STRICT_EFFECTS=1.
 export const AST_EFFECT_ROW: i32 = 88
 # AST_MATCH_ARM_EXT: a match arm beyond the Stage-A pattern forms (or-pattern,
 #   guard, nested or literal struct fields). a = pattern chain (alternatives),
@@ -96,6 +108,7 @@ export const AST_MATCH_ARM_EXT: i32 = 89
 # AST_FIXED_ARRAY_TYPE / AST_CAPABILITY_TYPE: markers for the type forms
 #   `[T; N]` and `capability E`. The type itself is an ordinary AST_TYPE; the
 #   marker (b = that AST_TYPE) sits in the arena so backends refuse it.
+#   `capability E` is lowered: its AST_TYPE carries c = AST_TYPE_CAPABILITY.
 export const AST_FIXED_ARRAY_TYPE: i32 = 90
 export const AST_CAPABILITY_TYPE: i32 = 91
 # AST_TRY: `expr?` Result propagation. a = expr.
@@ -134,6 +147,8 @@ export const AST_TYPE_SPAN_MUTABLE: i32 = 1
 # AST_TYPE.c for the `[T; N]` fixed-array form: an array<T, N> (a = T,
 # ival = N) with no `array` name span in the source.
 export const AST_TYPE_FIXED_ARRAY: i32 = 2
+# AST_TYPE.c for `capability E`: the type names effect E and lowers to void*.
+export const AST_TYPE_CAPABILITY: i32 = 3
 
 # AST_IDENT.ival marker for a sort DSL modifier (`xs |> sort descending`).
 # Only the pipeline lowering sets it, so `descending`, `desc`, `unique` and
@@ -338,8 +353,6 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
     if kind == AST_VECTOR_LIT { return "vector literal <...>" }
     if kind == AST_SORT_BY { return "sort by keys / with entropy / order" }
     if kind == AST_MODULE { return "module block" }
-    # Parsed with the Python grammar, but no Stage-A backend lowers it.
-    if kind == AST_HANDLE { return "handle" }
     return ""
 }
 
@@ -353,6 +366,9 @@ export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
     if k == AST_TRY { return 1 }
     if k == AST_VECTOR_LIT { return 1 }
     if k == AST_MODULE { return 1 }
+    # Effect rows and capability types are lowered (#675).
+    if k == AST_EFFECT_ROW { return 1 }
+    if k == AST_CAPABILITY_TYPE { return 1 }
     # Fork and choose blocks lower; flow stage parameters belong to flow
     # blocks.
     if k == AST_PIPE_BLOCK and arena.nodes[i].ival != PIPE_BLOCK_STAGE { return 1 }
@@ -364,7 +380,7 @@ export function flowc_ast_first_unsupported(arena: AstArena) -> i32 {
     let mut i: i32 = 0
     while i < arena.len {
         let k: i32 = arena.nodes[i].kind
-        if (k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST) or k == AST_HANDLE {
+        if k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST {
             if flowc_ast_parse_only_lowered(arena, i) == 0 {
                 return i
             }
@@ -392,6 +408,30 @@ export function flowc_ast_reject_unsupported(arena: AstArena, src: ptr<u8>, who:
     }
     printf("%s: line %d: unsupported in Stage-A: %s\n", who, line, flowc_ast_unsupported_label(arena.nodes[bad].kind))
     return 1
+}
+
+# Backends that do not lower algebraic effects (fmt, jsgen) refuse a program
+# holding one, as they did before cgen lowered them, instead of dropping it.
+export function flowc_ast_reject_effects(arena: AstArena, src: ptr<u8>, who: string) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        let k: i32 = arena.nodes[i].kind
+        if k == AST_EFFECT or k == AST_CAPABILITY or k == AST_HANDLE or k == AST_EFFECT_ROW or k == AST_CAPABILITY_TYPE {
+            let mut line: i32 = 1
+            let mut j: i32 = 0
+            let stop: i32 = arena.nodes[i].start
+            while j < stop and src[j] != 0 {
+                if src[j] == 10 {
+                    line = line + 1
+                }
+                j = j + 1
+            }
+            printf("%s: line %d: unsupported in Stage-A: algebraic effects\n", who, line)
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
 }
 
 export function flowc_ast_chain_push(arena: ptr<AstArena>, head: i32, node: i32) -> i32 {

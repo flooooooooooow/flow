@@ -115,12 +115,11 @@ subject is a clang warning or flag (test_array_return.py stack-address
 check, test_attributes.py -O2 and nm checks, test_time_header_externs.py),
 tests of a Python pass that the transpiler does not call
 (test_pipeline_fusion.py fusion correctness, the rotation-equivalence tests
-in test_counted_loop_rotation.py), env-gated runtime modes
-(test_strict_effects.py), comparisons against a Python reference
+in test_counted_loop_rotation.py), comparisons against a Python reference
 (test_time_blocks.py rk4), and tool tests (test_gfx_recorder.py,
 test_gif_flow_encoder.py, test_flow_run.py).
 
-## Inventory: tests/unit/ (169 test files)
+## Inventory: tests/unit/ (165 test files)
 
 | File | Class | Reason |
 |---|---|---|
@@ -140,8 +139,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_c_import_glibc_forms.py | c | @cImport header reader internals |
 | test_c_import_macros.py | c | @cImport macro reader internals |
 | test_c_import_no_redeclare.py | b | redeclaration shape of generated C |
-| test_capability_method_params.py | c | capability typechecking diagnostics |
-| test_capability_not_a_value.py | c | capability diagnostics |
 | test_claim_address.py | c | unit tests of flow.claim_address |
 | test_claim_path.py | c | unit tests of flow.claim_path |
 | test_closure_capture.py | b | run tests moved to tests/lang; generated-C asserts remain |
@@ -171,7 +168,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_dual_ops.py | b | operator rewrite asserted on generated text |
 | test_dynamics_dsl.py | c | dynamics DSL parse and lowering internals |
 | test_dynamics_dsl_regressions.py | c | dynamics DSL internals |
-| test_effect_rows.py | c | effect-row typechecking diagnostics |
 | test_ensure_flowc_staleness.py | c | build tooling |
 | test_escaped_strings.py | b | string literal escaping in generated C |
 | test_escaping_closures.py | c | run tests moved to tests/lang; parse and typecheck checks remain |
@@ -269,7 +265,7 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_sort_expr.py | b | sort lowering asserted on generated C |
 | test_span_data_field.py | c | span typechecking |
 | test_spans.py | c | span typechecking and lowering |
-| test_strict_effects.py | b | abort-helper shape in generated C; one env-gated runtime abort check |
+| test_strict_effects.py | b | #line directives in generated C; the effect checks moved to compiler/scripts/parity_effects.sh |
 | test_strict_gaps.py | c | strict-mode typechecking regressions |
 | test_strict_lambda_types.py | c | strict-mode lambda diagnostics |
 | test_string_concat.py | b | string concat lowering in generated C |
@@ -283,7 +279,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_type_checker.py | c | TypeChecker diagnostics |
 | test_units.py | c | units checker internals |
 | test_unknown_type_diagnostic.py | c | typechecker diagnostics |
-| test_unqualified_effect_op.py | c | effect diagnostics |
 | test_variadic_externs.py | b | variadic extern emission in C and MLIR |
 | test_vectorization_audit.py | b | vectorization report on generated code |
 | test_version.py | c | version string |

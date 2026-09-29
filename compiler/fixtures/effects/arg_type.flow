@@ -1,0 +1,21 @@
+# Effects parity fixture: literal arguments of the wrong type.
+
+effect Log {
+    info(msg: string) -> void,
+    metric(name: string, value: i32) -> i32,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        Log.info(42)
+        let v: i32 = Log.metric("ok", "not a number")
+    }
+    return 0
+}

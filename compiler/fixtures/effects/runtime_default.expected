@@ -1,0 +1,6 @@
+run exit=0
+a=0
+[metric] helper 7
+b=107
+c=0
+[console] restored

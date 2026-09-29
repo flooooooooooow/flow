@@ -11,7 +11,8 @@ import .ast {
     AST_PROGRAM, AST_FN, AST_BLOCK, AST_LET, AST_RETURN,
     AST_IF, AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_BOOL,
     AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
-    AST_EXPORT, AST_BREAK, AST_CONTINUE, flowc_ast_reject_unsupported
+    AST_EXPORT, AST_BREAK, AST_CONTINUE, flowc_ast_reject_unsupported,
+    flowc_ast_reject_effects
 }
 
 extern {
@@ -373,6 +374,9 @@ export function flowc_jsgen_emit(arena: AstArena, root: i32, src: ptr<u8>, out: 
         return 0 - 1
     }
     if flowc_ast_reject_unsupported(arena, src, "flowc jsgen") != 0 {
+        return 0 - 1
+    }
+    if flowc_ast_reject_effects(arena, src, "flowc jsgen") != 0 {
         return 0 - 1
     }
     let mut w: JsgenBuf = flowc_jsgen_buf_init(out, out_cap)

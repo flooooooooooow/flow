@@ -237,6 +237,11 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/ast_flowc.c compiler/build/ast_flowc.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/lexer_flowc.c compiler/build/lexer_flowc.h
+# Effect table shared by cgen, typecheck and resolve (#675).
+compile_module effects compiler/src/effects.flow \
+    compiler/build/ast_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/effects_flowc.c compiler/build/effects_flowc.h
 compile_module parser compiler/src/parser.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
@@ -257,7 +262,8 @@ echo "PASS compile_module parser greps"
 # Sixth module: cgen.flow (imports token/ast — -include their headers; extern → string.h).
 compile_module cgen compiler/src/cgen.flow \
     compiler/build/token_flowc.h \
-    compiler/build/ast_flowc.h
+    compiler/build/ast_flowc.h \
+    compiler/build/effects_flowc.h
 for needle in 'flowc_cgen_emit' 'flowc_cgen_emit_ex' 'typedef struct CgenBuf' '#include <string.h>' ' % '; do
     if ! grep -Fq "$needle" compiler/build/cgen_flowc.c; then
         echo "FAIL compile_module cgen: missing '${needle}' in emitted C" >&2
@@ -318,6 +324,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 # Seventh module: typecheck.flow (imports ast and the overload modules).
 compile_module typecheck compiler/src/typecheck.flow \
     compiler/build/ast_flowc.h \
+    compiler/build/effects_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
     compiler/build/overload_registry_flowc.h \
@@ -349,6 +356,7 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/dynamics_dsl_flowc.h \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \
+    compiler/build/effects_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
@@ -657,6 +665,7 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/dynamics_dsl_flowc.o \
     compiler/build/flow_blocks_flowc.o \
     compiler/build/shader_dsl_flowc.o \
+    compiler/build/effects_flowc.o \
     compiler/build/cgen_flowc.o \
     compiler/build/overload_flowc.o \
     compiler/build/overload_table_flowc.o \

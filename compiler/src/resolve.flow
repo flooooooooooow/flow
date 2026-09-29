@@ -20,6 +20,7 @@ import .dynamics_dsl { flowc_dynamics_expand_in_place }
 import .flow_blocks { flowc_flow_blocks_expand_in_place }
 import .shader_dsl { flowc_shader_expand_in_place }
 import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
+import .effects { flowc_eff_collect }
 import .typecheck {
     TcCtx,
     flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
@@ -1158,6 +1159,8 @@ function flowc_resolve_emit_one(
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
     if sigs != null {
         siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
+        # Effects, capabilities and `with` rows for later modules (#675).
+        siglen[0] = flowc_eff_collect(p.arena, root, src, sigs, sigcap, siglen[0])
     }
     flowc_parser_free(p)
     free(src)

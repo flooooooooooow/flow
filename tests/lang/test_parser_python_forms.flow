@@ -1,5 +1,5 @@
-# Parser contract for the Python-grammar forms flowc accepts as parse-only
-# nodes, and for parse error positions. See compiler/scripts/parse_coverage.sh.
+# Parser contract for the Python-grammar forms flowc accepts, which of them
+# stay parse-only nodes, and parse error positions. See compiler/scripts/parse_coverage.sh.
 
 import "compiler/src/ast.flow"
 import "compiler/src/parser.flow"
@@ -45,6 +45,25 @@ function unsupported_kind(text: string) -> i32 {
     return k
 }
 
+# Parse `src`; 1 when some node of the program has kind `kind`.
+function has_kind(text: string, kind: i32) -> i32 {
+    let src: ptr<u8> = text
+    let mut p: Parser = flowc_parser_new(src, strlen(src), 4096)
+    let root: i32 = flowc_parse_program(&p)
+    let mut found: i32 = 0
+    if p.err == 0 and root != AST_NONE {
+        let mut i: i32 = 0
+        while i < p.arena.len {
+            if p.arena.nodes[i].kind == kind {
+                found = 1
+            }
+            i = i + 1
+        }
+    }
+    flowc_parser_free(p)
+    return found
+}
+
 function main() -> i32 {
     # Claim coordinates, assume and therefore.
     let theorem_src: string = "theorem «Nat» «plus» «zero left» (m: Nat) {\n    assume «Nat» «plus» «commutes»(m, 0)\n    therefore m + 0 == m by ring\n}\n"
@@ -71,19 +90,23 @@ function main() -> i32 {
         puts("FAIL: flow block")
         return 5
     }
-    if unsupported_kind("function f() -> i32 {\n    handle Log with ConsoleLog {\n        return 1\n    }\n    return 0\n}\n") != AST_HANDLE {
+    # Parsed to AST_HANDLE and lowered by Stage-A (#996, #675).
+    if has_kind("function f() -> i32 {\n    handle Log with ConsoleLog {\n        return 1\n    }\n    return 0\n}\n", AST_HANDLE) == 0 or unsupported_kind("function f() -> i32 {\n    handle Log with ConsoleLog {\n        return 1\n    }\n    return 0\n}\n") != 0 {
         puts("FAIL: handle")
         return 6
     }
-    if unsupported_kind("function f(v: i32) -> i32 {\n    match v {\n        1 | 2 => { return 0 }\n        _ => { return 1 }\n    }\n    return 0\n}\n") != AST_MATCH_ARM_EXT {
+    # Parsed to AST_MATCH_ARM_EXT and lowered by Stage-A (#996, #675).
+    if has_kind("function f(v: i32) -> i32 {\n    match v {\n        1 | 2 => { return 0 }\n        _ => { return 1 }\n    }\n    return 0\n}\n", AST_MATCH_ARM_EXT) == 0 or unsupported_kind("function f(v: i32) -> i32 {\n    match v {\n        1 | 2 => { return 0 }\n        _ => { return 1 }\n    }\n    return 0\n}\n") != 0 {
         puts("FAIL: or-pattern")
         return 7
     }
-    if unsupported_kind("function f() -> void with Log {\n}\n") != AST_EFFECT_ROW {
+    # Parsed to AST_EFFECT_ROW and lowered by Stage-A (#996, #675).
+    if has_kind("function f() -> void with Log {\n}\n", AST_EFFECT_ROW) == 0 or unsupported_kind("function f() -> void with Log {\n}\n") != 0 {
         puts("FAIL: effect row")
         return 8
     }
-    if unsupported_kind("function f(x: i32) -> i32 {\n    return x |> { a = g }\n}\n") != AST_PIPE_BLOCK {
+    # Parsed to AST_PIPE_BLOCK and lowered by Stage-A (#996, #675).
+    if has_kind("function f(x: i32) -> i32 {\n    return x |> { a = g }\n}\n", AST_PIPE_BLOCK) == 0 or unsupported_kind("function f(x: i32) -> i32 {\n    return x |> { a = g }\n}\n") != 0 {
         puts("FAIL: fork block")
         return 9
     }
