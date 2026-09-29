@@ -16,7 +16,7 @@ import .ast {
     AST_CALL, AST_BINOP, AST_INT, AST_IDENT, AST_MATCH, AST_MATCH_ARM,
     flowc_ast_count_kind, flowc_ast_chain_len
 }
-import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_report, Parser }
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser }
 import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
 import .pipeline_fusion { flowc_fuse_pipelines }
 import .cgen { flowc_cgen_emit }
@@ -301,8 +301,7 @@ function flowc_emit_mode() -> i32 {
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
             puts("flowc emit: parse failed")
-            flowc_parser_report(p, in_path)
-            printf("flowc emit: at %d\n", p.cur.start)
+            flowc_parser_print_error(p, in_path)
             printf("flowc emit: arena_len=%d\n", p.arena.len)
             flowc_parser_free(p)
             free(src)
@@ -374,6 +373,39 @@ function flowc_emit_mode() -> i32 {
     }
 
     free(out)
+    return rc
+}
+
+# FLOWC_PARSE_ONLY=1 with FLOWC_IN: run the lexer and parser only. Prints
+# `ok <path>` and returns 0, or prints `<path>:<line>:<col>: parse error: ...`
+# and returns 1. Used by compiler/scripts/parse_coverage.sh.
+function flowc_parse_only_mode() -> i32 {
+    let in_path: string = getenv("FLOWC_IN")
+    let src_cap: i32 = 8388608
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc parse: malloc src failed")
+        return 2
+    }
+    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc < 0 {
+        puts("flowc parse: read FLOWC_IN failed")
+        free(src)
+        return 2
+    }
+    src[nsrc] = 0
+    # One node per source byte is more than any Flow program needs.
+    let mut p: Parser = flowc_parser_new(src, nsrc, nsrc + 4096)
+    let root: i32 = flowc_parse_program(&p)
+    let mut rc: i32 = 0
+    if root < 0 or p.err != 0 {
+        flowc_parser_print_error(p, in_path)
+        rc = 1
+    } else {
+        puts("ok")
+    }
+    flowc_parser_free(p)
+    free(src)
     return rc
 }
 
@@ -2151,6 +2183,9 @@ function test_typecheck_match_catchall() -> i32 {
 }
 
 function main() -> i32 {
+    if flowc_env_set("FLOWC_IN") == 1 and flowc_env_set("FLOWC_PARSE_ONLY") == 1 {
+        return flowc_parse_only_mode()
+    }
     if flowc_env_set("FLOWC_IN") == 1 {
         return flowc_emit_mode()
     }

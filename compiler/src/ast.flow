@@ -4,6 +4,7 @@
 extern {
     function malloc(size: i64) -> ptr<u8>
     function free(p: ptr<u8>) -> void
+    function printf(fmt: string, ...) -> i32
 }
 
 export const AST_NONE: i32 = -1
@@ -58,6 +59,72 @@ export const AST_EFFECT: i32 = 47
 export const AST_CAPABILITY: i32 = 48
 export const AST_HANDLE: i32 = 49
 export const AST_EFFECT_OP: i32 = 50
+
+# Parse-only kinds, numbered from 80 to stay clear of concurrent additions.
+# The parser accepts them so tools can read every file the Python parser
+# reads, but no Stage-A backend lowers them: each backend calls
+# flowc_ast_first_unsupported and refuses the program with a clear error.
+# AST_THEOREM: name_* = claim ref, a = AST_PARAM chain (a = type or AST_NONE),
+#   b = body block, ival = 1 if exported.
+# AST_ASSUME: name_* = claim ref, a = argument expr chain.
+# AST_THEREFORE: a = expr, name_* = `by` method ident (0,0 when absent).
+# AST_CLAIM_REF: name_* = claim ref or dashed name in an export/import list.
+export const AST_THEOREM: i32 = 80
+export const AST_ASSUME: i32 = 81
+export const AST_THEREFORE: i32 = 82
+export const AST_CLAIM_REF: i32 = 83
+# AST_FLOW_DECL: `flow Name { ... }`. name_* = name, a = AST_FLOW_ITEM chain.
+# AST_FLOW_ITEM: one body item. ival = FLOW_ITEM_* kind, name_* = the member
+#   or target name (the block word for blocks), a = type or expr,
+#   b = initializer expr or AST_FLOW_ITEM chain (becomes / connect bodies).
+export const AST_FLOW_DECL: i32 = 84
+export const AST_FLOW_ITEM: i32 = 85
+# AST_LAYOUT: ui_layout/ui_row/... block. name_* = word, a = args, b = body.
+# AST_PIPE_BLOCK: a `|>` stage block. ival = PIPE_BLOCK_* kind, a = source
+#   expr, b = AST_FIELD chain (fork / stage params, field expr in a) or
+#   AST_MATCH_ARM chain (choose: a = pattern chain, b = stage expr),
+#   c = choose selector expr, name_* = record name (0,0 if anonymous).
+export const AST_LAYOUT: i32 = 86
+export const AST_PIPE_BLOCK: i32 = 87
+# AST_EFFECT_ROW: `with E1, E2` on a function or function type. a = effect
+#   name chain, b = the AST_FN / AST_TYPE it belongs to (not linked from it).
+export const AST_EFFECT_ROW: i32 = 88
+# AST_MATCH_ARM_EXT: a match arm beyond the Stage-A pattern forms (or-pattern,
+#   guard, nested or literal struct fields). a = pattern chain (alternatives),
+#   b = body block, c = guard expr or AST_NONE.
+export const AST_MATCH_ARM_EXT: i32 = 89
+# AST_FIXED_ARRAY_TYPE / AST_CAPABILITY_TYPE: markers for the type forms
+#   `[T; N]` and `capability E`. The type itself is an ordinary AST_TYPE; the
+#   marker (b = that AST_TYPE) sits in the arena so backends refuse it.
+export const AST_FIXED_ARRAY_TYPE: i32 = 90
+export const AST_CAPABILITY_TYPE: i32 = 91
+# AST_TRY: `expr?` Result propagation. a = expr.
+# AST_VECTOR_LIT: `<a, b, c>` SIMD vector literal. a = element chain.
+export const AST_TRY: i32 = 92
+export const AST_VECTOR_LIT: i32 = 93
+# AST_SORT_BY: `|> sort by keys` / `with entropy` / `|> order`. a = source,
+#   b = key chain (AST_IDENT field, ival = 1 when descending).
+# AST_MODULE: `module Name { ... }`. name_* = name, a = item chain.
+export const AST_SORT_BY: i32 = 94
+export const AST_MODULE: i32 = 95
+# Last parse-only kind; keep flowc_ast_first_unsupported in step.
+export const AST_PARSE_ONLY_LAST: i32 = 95
+
+export const PIPE_BLOCK_FORK: i32 = 1
+export const PIPE_BLOCK_STAGE: i32 = 2
+export const PIPE_BLOCK_CHOOSE: i32 = 3
+
+export const FLOW_ITEM_MEMBER: i32 = 1
+export const FLOW_ITEM_EVOLVES: i32 = 2
+export const FLOW_ITEM_WHEN: i32 = 3
+export const FLOW_ITEM_EVERY: i32 = 4
+export const FLOW_ITEM_SOLVER: i32 = 5
+export const FLOW_ITEM_ALWAYS: i32 = 6
+export const FLOW_ITEM_NEVER: i32 = 7
+export const FLOW_ITEM_RECOGNIZE: i32 = 8
+export const FLOW_ITEM_CONNECT: i32 = 9
+export const FLOW_ITEM_CHILD: i32 = 10
+export const FLOW_ITEM_BECOMES: i32 = 11
 
 # AST_TYPE.c metadata. Keep this in the existing child slot so AstNode remains
 # 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep
@@ -197,6 +264,61 @@ export function flowc_ast_count_kind(arena: AstArena, kind: i32) -> i32 {
         i = i + 1
     }
     return n
+}
+
+# Source-facing name of a parse-only kind, or "" for kinds backends lower.
+export function flowc_ast_unsupported_label(kind: i32) -> string {
+    if kind == AST_THEOREM { return "theorem" }
+    if kind == AST_ASSUME { return "assume" }
+    if kind == AST_THEREFORE { return "therefore" }
+    if kind == AST_CLAIM_REF { return "claim reference" }
+    if kind == AST_FLOW_DECL or kind == AST_FLOW_ITEM { return "flow block" }
+    if kind == AST_LAYOUT { return "ui layout block" }
+    if kind == AST_PIPE_BLOCK { return "pipeline fork/choose block" }
+    if kind == AST_EFFECT_ROW { return "effect row (with ...)" }
+    if kind == AST_MATCH_ARM_EXT { return "match arm with an or-pattern, guard or nested pattern" }
+    if kind == AST_FIXED_ARRAY_TYPE { return "array type [T; N]" }
+    if kind == AST_CAPABILITY_TYPE { return "capability type" }
+    if kind == AST_TRY { return "? operator" }
+    if kind == AST_VECTOR_LIT { return "vector literal <...>" }
+    if kind == AST_SORT_BY { return "sort by keys / with entropy / order" }
+    if kind == AST_MODULE { return "module block" }
+    # Parsed with the Python grammar, but no Stage-A backend lowers it.
+    if kind == AST_HANDLE { return "handle" }
+    return ""
+}
+
+# First node in the arena whose kind no Stage-A backend lowers, or AST_NONE.
+export function flowc_ast_first_unsupported(arena: AstArena) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        let k: i32 = arena.nodes[i].kind
+        if (k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST) or k == AST_HANDLE {
+            return i
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# If the program holds a parse-only node, print
+# `<who>: line N: unsupported in Stage-A: <construct>` and return 1.
+export function flowc_ast_reject_unsupported(arena: AstArena, src: ptr<u8>, who: string) -> i32 {
+    let bad: i32 = flowc_ast_first_unsupported(arena)
+    if bad == AST_NONE {
+        return 0
+    }
+    let mut line: i32 = 1
+    let mut i: i32 = 0
+    let stop: i32 = arena.nodes[bad].start
+    while i < stop and src[i] != 0 {
+        if src[i] == 10 {
+            line = line + 1
+        }
+        i = i + 1
+    }
+    printf("%s: line %d: unsupported in Stage-A: %s\n", who, line, flowc_ast_unsupported_label(arena.nodes[bad].kind))
+    return 1
 }
 
 export function flowc_ast_chain_push(arena: ptr<AstArena>, head: i32, node: i32) -> i32 {

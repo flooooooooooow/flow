@@ -10,7 +10,7 @@ import .ast {
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD,
-    flowc_ast_chain_len
+    flowc_ast_chain_len, flowc_ast_reject_unsupported
 }
 import .overload_table {
     FlowcOverloadTable,
@@ -1269,6 +1269,17 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
         return ctx[0].err
     }
     if arena.nodes[root].kind != AST_PROGRAM {
+        flowc_tc_err(ctx)
+        return ctx[0].err
+    }
+    # A parse-only construct (theorem, flow block, guarded match arm, ...)
+    # has no Stage-A meaning to check; say so before name errors pile up.
+    let mut who: string = "flowc tc"
+    let path_p: ptr<u8> = ctx[0].path as ptr<u8>
+    if path_p != null and path_p[0] != 0 {
+        who = ctx[0].path
+    }
+    if flowc_ast_reject_unsupported(arena, ctx[0].src, who) != 0 {
         flowc_tc_err(ctx)
         return ctx[0].err
     }

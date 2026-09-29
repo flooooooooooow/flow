@@ -12,7 +12,7 @@ import .ast {
     AST_IMPORT, AST_FN, AST_EXPORT
 }
 import .parser {
-    flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_report, Parser
+    flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser
 }
 import .fileio { flowc_read_file, flowc_io_exists }
 import .field_dsl { flowc_field_expand_in_place }
@@ -842,9 +842,7 @@ function flowc_resolve_gather(
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
-            puts("flowc gather: parse failed")
-            flowc_parser_report(p, mpath)
-            printf("flowc gather: nsrc=%d\n", nsrc)
+            flowc_parser_print_error(p, mpath)
             flowc_parser_free(p)
             free(mod_dir)
             free(imp_path)
@@ -1436,9 +1434,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
-            puts("flowc bundle tc: parse failed")
-            flowc_parser_report(p, mpath)
-            printf("flowc bundle tc: nsrc=%d\n", nsrc)
+            flowc_parser_print_error(p, mpath)
             flowc_parser_free(p)
             free(src)
             flowc_tc_free(&ctx)

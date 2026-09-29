@@ -790,7 +790,7 @@ if ! grep -Fq 'int32_t other = __flowc_match;' compiler/build/stage_a_match.c; t
     echo "FAIL stage_a_match: expected binding arm decl" >&2
     exit 1
 fi
-# Unsupported pattern forms (struct patterns) must be rejected with a message.
+# Unsupported pattern forms (or-patterns) parse but must be rejected with a message.
 rm -f compiler/build/match_unsupported.c
 set +e
 FLOWC_FORCE_HOST=1 stage_a_emit \
@@ -805,7 +805,7 @@ if [[ -f compiler/build/match_unsupported.c ]]; then
     echo "FAIL stage_a_match: unsupported-pattern fixture should not write C" >&2
     exit 1
 fi
-if ! grep -Fq 'or/struct/list patterns unsupported in Stage-A' compiler/build/match_unsupported.log; then
+if ! grep -Fq 'unsupported in Stage-A: match arm with an or-pattern' compiler/build/match_unsupported.log; then
     echo "FAIL stage_a_match: expected unsupported-pattern diagnostic" >&2
     cat compiler/build/match_unsupported.log >&2
     exit 1
@@ -819,7 +819,7 @@ stage_a_emit compiler/fixtures/keyword_param.flow compiler/build/keyword_param.c
 kw_rc=$?
 set -e
 test "$kw_rc" -ne 0
-if ! grep -Fq "keyword_param.flow:3:27: parse error at 'to'" compiler/build/keyword_param.log \
+if ! grep -Fq "keyword_param.flow:3:27: parse error: unexpected keyword 'to'" compiler/build/keyword_param.log \
     || ! grep -Fq "'to' is a reserved word" compiler/build/keyword_param.log; then
     echo "FAIL keyword_param: expected a located parse diagnostic" >&2
     cat compiler/build/keyword_param.log >&2
