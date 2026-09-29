@@ -6338,6 +6338,7 @@ int32_t flowc_fmt_prev_tok(int32_t* els, int32_t k);
 int32_t flowc_fmt_binary_at(int32_t* els, int32_t k);
 int32_t flowc_fmt_word_char(int32_t c);
 int32_t flowc_fmt_would_merge(uint8_t* src, int32_t a_end, int32_t b_start);
+int32_t flowc_fmt_on_import_line(int32_t* els, int32_t k);
 int32_t flowc_fmt_space(int32_t* els, int32_t a, int32_t b, int32_t had, int32_t top);
 int32_t flowc_fmt_trailing_cont(int32_t* els, int32_t k);
 int32_t flowc_fmt_leading_cont(int32_t* els, int32_t k, int32_t code_tok);
@@ -6569,6 +6570,21 @@ int32_t flowc_fmt_would_merge(uint8_t* src, int32_t a_end, int32_t b_start) {
   return 0;
 }
 
+int32_t flowc_fmt_on_import_line(int32_t* els, int32_t k) {
+  int32_t i = k;
+  while (i > 0 && els[((i * FMT_REC) + FMT_NL)] == 0) {
+  i = (i - 1);
+}
+  if (els[((i * FMT_REC) + FMT_KIND)] != TOK_KEYWORD) {
+  return 0;
+}
+  int32_t kw = els[((i * FMT_REC) + FMT_KW)];
+  if (kw == KW_IMPORT || kw == KW_EXPORT) {
+  return 1;
+}
+  return 0;
+}
+
 int32_t flowc_fmt_space(int32_t* els, int32_t a, int32_t b, int32_t had, int32_t top) {
   int32_t ak = els[((a * FMT_REC) + FMT_KIND)];
   int32_t bk = els[((b * FMT_REC) + FMT_KIND)];
@@ -6620,6 +6636,11 @@ int32_t flowc_fmt_space(int32_t* els, int32_t a, int32_t b, int32_t had, int32_t
   return 0;
 }
   return had;
+}
+  if (flowc_fmt_is_arith_op(ak) == 1 || flowc_fmt_is_arith_op(bk) == 1 || flowc_fmt_is_spaced_op(ak) == 1 || flowc_fmt_is_spaced_op(bk) == 1) {
+  if (flowc_fmt_on_import_line(els, a) == 1) {
+  return had;
+}
 }
   if (flowc_fmt_is_spaced_op(ak) == 1 || flowc_fmt_is_spaced_op(bk) == 1) {
   return 1;
