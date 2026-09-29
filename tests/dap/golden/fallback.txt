@@ -1,0 +1,14 @@
+exit=2
+--- to client
+Content-Length: 132
+
+{"type": "response", "request_seq": 1, "success": true, "command": "initialize", "body": {"supportsConfigurationDoneRequest": true}}Content-Length: 53
+
+{"type": "event", "event": "initialized", "body": {}}Content-Length: 89
+
+{"type": "response", "request_seq": 2, "success": true, "command": "threads", "body": {}}Content-Length: 82
+
+{"type": "response", "request_seq": 3, "success": true, "command": "", "body": {}}Content-Length: 149
+
+{"type": "response", "request_seq": 4, "success": false, "command": "launch", "message": "lldb-dap not found; install Xcode CLT or use ./flow debug"}
+--- to lldb-dap

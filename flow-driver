@@ -3394,7 +3394,15 @@ case "${1:-help}" in
             exit 1
         fi
         require_flow_file "${1:-}"
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.dap_server "$@"
+        # From a terminal: interactive LLDB. From an IDE (stdin is a pipe):
+        # the DAP server in tools/dap/main.flow, built on first use.
+        if [ -t 0 ]; then
+            exec "$SCRIPT_DIR/flow" debug "$1"
+        fi
+        if ! dap_bin="$(flow_native_tool dap)"; then
+            exit 1
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$dap_bin"
         ;;
     "debug")
         shift

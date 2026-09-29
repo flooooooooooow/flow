@@ -1,0 +1,665 @@
+# @module tools.dap
+# @means  `flow dap` in an IDE: a Debug Adapter Protocol server that wraps
+#         lldb-dap. Replaces src/flow/dap_server.py.
+#
+# Requests from the client go to lldb-dap, except that `launch` is
+# rewritten: the Flow file named by flowFile, program or source is built
+# with `flow debug --no-launch`, and the request's program becomes the
+# build/<stem>.debug binary (cwd defaults to the repository). A forked
+# child pumps lldb-dap's messages back to the client. Every message is
+# written the way Python's json.dumps writes it (", " and ": " separators,
+# non-ASCII as \uXXXX), as the Python server did.
+#
+# Without lldb-dap, initialize is answered (with an initialized event) and
+# launch fails with a pointer to `flow debug`; the server then exits 2.
+#
+# Env: FLOW_ROOT (repository root, set by flow-driver). FLOW_LLDB_DAP names
+# the lldb-dap to run instead of searching; "-" means none (for tests).
+
+import "tools/hostlib/text.flow"
+import "tools/hostlib/sys.flow"
+import "tools/lsp/json.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strtod(s: string, end: ptr<void>) -> f64
+    function pipe(fds: ptr<i32>) -> i32
+    function fork() -> i32
+    function dup2(a: i32, b: i32) -> i32
+    function close(fd: i32) -> i32
+    function execvp(file: string, argv: ptr<string>) -> i32
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function kill(pid: i32, sig: i32) -> i32
+    function usleep(us: i32) -> i32
+    function _exit(code: i32) -> void
+    function access(path: string, mode: i32) -> i32
+    function getenv(name: string) -> string
+}
+
+# ── Framing ─────────────────────────────────────────────────────
+
+# One message body; ok = false at end of input or a missing length.
+struct Frame {
+    body: string,
+    ok: bool
+}
+
+# _read_message: header lines up to a blank line, then Content-Length
+# bytes of body.
+function read_frame(r: ptr<TReader>) -> Frame {
+    let mut length: i32 = 0
+    while true {
+        let line: TLine = tr_line(r)
+        if not line.ok {
+            return Frame { body: "", ok: false }
+        }
+        let mut text: string = line.text
+        while t_len(text) > 0 and t_at(text, t_len(text) - 1) == 13 {
+            text = t_sub(text, 0, t_len(text) - 1)
+        }
+        if t_len(text) == 0 {
+            break
+        }
+        let colon: i32 = t_find_char(text, 58)
+        if colon >= 0 {
+            let key: string = t_lower(t_strip(t_sub(text, 0, colon)))
+            if t_eq(key, "content-length") {
+                length = parse_len(t_strip(t_from(text, colon + 1)))
+            }
+        }
+    }
+    if length <= 0 {
+        return Frame { body: "", ok: false }
+    }
+    let mut tb: TBuf = tb_new()
+    let mut got: i32 = 0
+    while got < length {
+        let c: i32 = tr_getc(r)
+        if c < 0 {
+            break
+        }
+        tb_putc(&tb, c)
+        got = got + 1
+    }
+    return Frame { body: tb_str(&tb), ok: true }
+}
+
+function parse_len(s: string) -> i32 {
+    let mut v: i32 = 0
+    let mut i: i32 = 0
+    while i < t_len(s) {
+        let c: i32 = t_at(s, i)
+        if c < 48 or c > 57 {
+            return 0
+        }
+        v = v * 10 + (c - 48)
+        i = i + 1
+    }
+    return v
+}
+
+function write_frame(fd: i32, json: string) {
+    let msg: string = "Content-Length: " + t_int(t_len(json)) + "\r\n\r\n" + json
+    t_write_fd(fd, msg as ptr<u8>, t_len(msg))
+}
+
+# ── JSON re-serialisation (json.dumps defaults) ─────────────────
+
+# Decoded text of an object key span.
+function key_text(d: ptr<JDoc>, id: i32) -> string {
+    let ks: i32 = d.nodes[id].key_start
+    let ke: i32 = d.nodes[id].key_end
+    # Reuse jstr by viewing the key, with its quotes, as a string node.
+    let mut probe: JDoc = JDoc { src: d.src, len: d.len, nodes: malloc(64) as ptr<JNode>, n: 1, cap: 1, pos: 0, err: 0, root: 0 }
+    probe.nodes[0].kind = J_STR
+    probe.nodes[0].start = ks - 1
+    probe.nodes[0].end = ke + 1
+    probe.nodes[0].child = J_NONE
+    probe.nodes[0].next = J_NONE
+    return jstr(&probe, 0)
+}
+
+# repr(float(text)): the shortest digits that round-trip, positioned the
+# way Python's repr places them.
+function py_float(text: string) -> string {
+    let v: f64 = strtod(text, null)
+    let buf: ptr<u8> = malloc(64) as ptr<u8>
+    let mut p: i32 = 0
+    while p < 17 {
+        snprintf(buf, 64, "%.*e", p, v)
+        if strtod(buf as string, null) == v {
+            break
+        }
+        p = p + 1
+    }
+    let s: string = buf as string
+    let mut neg: bool = false
+    let mut i: i32 = 0
+    if t_at(s, 0) == 45 {
+        neg = true
+        i = 1
+    }
+    let e: i32 = t_find_char(s, 101)
+    let mut digits: TBuf = tb_new()
+    while i < e {
+        if t_at(s, i) != 46 {
+            tb_putc(&digits, t_at(s, i))
+        }
+        i = i + 1
+    }
+    let ds: string = tb_str(&digits)
+    let exp: i32 = strtod(t_from(s, e + 1), null) as i32
+    let nd: i32 = t_len(ds)
+    let mut tb: TBuf = tb_new()
+    if neg {
+        tb_putc(&tb, 45)
+    }
+    if exp >= -4 and exp < 16 {
+        if exp < 0 {
+            tb_puts(&tb, "0.")
+            let mut z: i32 = 0
+            while z < 0 - exp - 1 {
+                tb_putc(&tb, 48)
+                z = z + 1
+            }
+            tb_puts(&tb, ds)
+        } else {
+            let mut k: i32 = 0
+            while k <= exp {
+                if k < nd {
+                    tb_putc(&tb, t_at(ds, k))
+                } else {
+                    tb_putc(&tb, 48)
+                }
+                k = k + 1
+            }
+            tb_putc(&tb, 46)
+            if exp + 1 < nd {
+                tb_puts(&tb, t_from(ds, exp + 1))
+            } else {
+                tb_putc(&tb, 48)
+            }
+        }
+        return tb_str(&tb)
+    }
+    tb_putc(&tb, t_at(ds, 0))
+    if nd > 1 {
+        tb_putc(&tb, 46)
+        tb_puts(&tb, t_from(ds, 1))
+    }
+    tb_putc(&tb, 101)
+    let mut ax: i32 = exp
+    if exp < 0 {
+        tb_putc(&tb, 45)
+        ax = 0 - exp
+    } else {
+        tb_putc(&tb, 43)
+    }
+    if ax < 10 {
+        tb_putc(&tb, 48)
+    }
+    tb_put_int(&tb, ax)
+    return tb_str(&tb)
+}
+
+function py_number(text: string) -> string {
+    if t_find_char(text, 46) >= 0 or t_find_char(text, 101) >= 0 or t_find_char(text, 69) >= 0 {
+        return py_float(text)
+    }
+    if t_eq(text, "-0") {
+        return "0"
+    }
+    return text
+}
+
+function ser(d: ptr<JDoc>, id: i32, w: ptr<JW>) {
+    let k: i32 = jkind(d, id)
+    if k == J_OBJ {
+        jw_obj(w)
+        let mut c: i32 = d.nodes[id].child
+        while c != J_NONE {
+            jw_key(w, key_text(d, c))
+            ser(d, c, w)
+            c = d.nodes[c].next
+        }
+        jw_end(w)
+    } elif k == J_ARR {
+        jw_arr(w)
+        let mut c: i32 = d.nodes[id].child
+        while c != J_NONE {
+            ser(d, c, w)
+            c = d.nodes[c].next
+        }
+        jw_end(w)
+    } elif k == J_STR {
+        jw_str(w, jstr(d, id))
+    } elif k == J_NUM {
+        jw_raw(w, py_number(jraw(d, id)))
+    } elif k == J_TRUE {
+        jw_raw(w, "true")
+    } elif k == J_FALSE {
+        jw_raw(w, "false")
+    } else {
+        jw_null(w)
+    }
+}
+
+function dumps(d: ptr<JDoc>, id: i32) -> string {
+    let mut w: JW = jw_new()
+    ser(d, id, &w)
+    return jw_text(&w)
+}
+
+# Python truthiness of a JSON value.
+function truthy(d: ptr<JDoc>, id: i32) -> bool {
+    let k: i32 = jkind(d, id)
+    if k == J_NONE or k == J_NULL or k == J_FALSE {
+        return false
+    }
+    if k == J_STR {
+        return d.nodes[id].end - d.nodes[id].start > 2
+    }
+    if k == J_NUM {
+        return strtod(jraw(d, id), null) != 0.0
+    }
+    if k == J_OBJ or k == J_ARR {
+        return d.nodes[id].child != J_NONE
+    }
+    return true
+}
+
+# str() of a JSON value, for the forms a path can take.
+function py_str(d: ptr<JDoc>, id: i32) -> string {
+    let k: i32 = jkind(d, id)
+    if k == J_STR {
+        return jstr(d, id)
+    }
+    if k == J_TRUE {
+        return "True"
+    }
+    if k == J_NUM {
+        return py_number(jraw(d, id))
+    }
+    return dumps(d, id)
+}
+
+# msg.get(key, 0) or msg.get(key, "") re-serialised.
+function field_or(d: ptr<JDoc>, id: i32, key: string, fallback: string) -> string {
+    let v: i32 = jget(d, id, key)
+    if v == J_NONE {
+        return fallback
+    }
+    return dumps(d, v)
+}
+
+function str_is(d: ptr<JDoc>, id: i32, key: string, want: string) -> bool {
+    let v: i32 = jget(d, id, key)
+    return jkind(d, v) == J_STR and t_eq(jstr(d, v), want)
+}
+
+# ── Responses ───────────────────────────────────────────────────
+
+function send_error(seq: string, command: string, message: string) {
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_kstr(&w, "type", "response")
+    jw_key(&w, "request_seq")
+    jw_raw(&w, seq)
+    jw_key(&w, "success")
+    jw_bool(&w, false)
+    jw_kstr(&w, "command", command)
+    jw_kstr(&w, "message", message)
+    jw_end(&w)
+    write_frame(1, jw_text(&w))
+}
+
+# ── Finding lldb-dap ────────────────────────────────────────────
+
+function which(name: string) -> string {
+    let path: string = t_env("PATH", "")
+    let dirs: TList = split_on(path, 58)
+    let mut i: i32 = 0
+    while i < dirs.len {
+        let mut dir: string = tl_get(&dirs, i)
+        if t_len(dir) == 0 {
+            dir = "."
+        }
+        let cand: string = dir + "/" + name
+        if is_file(cand) and access(cand, 1) == 0 {
+            return cand
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+function find_lldb_dap() -> string {
+    let forced: string = getenv("FLOW_LLDB_DAP")
+    if forced != null {
+        if t_eq(forced, "-") {
+            return ""
+        }
+        return forced
+    }
+    let on_path: string = which("lldb-dap")
+    if t_len(on_path) > 0 {
+        return on_path
+    }
+    if is_file("/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap") {
+        return "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap"
+    }
+    if is_file("/Library/Developer/CommandLineTools/usr/bin/lldb-dap") {
+        return "/Library/Developer/CommandLineTools/usr/bin/lldb-dap"
+    }
+    let found: TProc = t_run("xcrun -f lldb-dap 2>/dev/null")
+    let p: string = t_strip(found.out)
+    if t_len(p) > 0 and is_file(p) {
+        return p
+    }
+    return ""
+}
+
+# ── Without lldb-dap ────────────────────────────────────────────
+
+function run_without_lldb() -> i32 {
+    let mut r: TReader = tr_new()
+    while true {
+        let f: Frame = read_frame(&r)
+        if not f.ok {
+            return 2
+        }
+        let mut d: JDoc = json_parse(f.body as ptr<u8>, t_len(f.body))
+        if d.err != 0 {
+            return 1
+        }
+        let root: i32 = d.root
+        let seq: string = field_or(&d, root, "seq", "0")
+        if str_is(&d, root, "command", "initialize") {
+            let mut w: JW = jw_new()
+            jw_obj(&w)
+            jw_kstr(&w, "type", "response")
+            jw_key(&w, "request_seq")
+            jw_raw(&w, seq)
+            jw_key(&w, "success")
+            jw_bool(&w, true)
+            jw_kstr(&w, "command", "initialize")
+            jw_key(&w, "body")
+            jw_obj(&w)
+            jw_key(&w, "supportsConfigurationDoneRequest")
+            jw_bool(&w, true)
+            jw_end(&w)
+            jw_end(&w)
+            write_frame(1, jw_text(&w))
+            write_frame(1, "{\"type\": \"event\", \"event\": \"initialized\", \"body\": {}}")
+        } elif str_is(&d, root, "command", "launch") {
+            send_error(seq, "launch", "lldb-dap not found; install Xcode CLT or use ./flow debug")
+            return 2
+        } else {
+            let mut w: JW = jw_new()
+            jw_obj(&w)
+            jw_kstr(&w, "type", "response")
+            jw_key(&w, "request_seq")
+            jw_raw(&w, seq)
+            jw_key(&w, "success")
+            jw_bool(&w, true)
+            jw_key(&w, "command")
+            jw_raw(&w, field_or(&d, root, "command", "\"\""))
+            jw_key(&w, "body")
+            jw_raw(&w, "{}")
+            jw_end(&w)
+            write_frame(1, jw_text(&w))
+        }
+    }
+    return 2
+}
+
+# ── Launch ──────────────────────────────────────────────────────
+
+# First n code points of UTF-8 text (str[:n]).
+function head_chars(s: string, n: i32) -> string {
+    let len: i32 = t_len(s)
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < len {
+        let c: i32 = t_at(s, i)
+        if c < 128 or c >= 192 {
+            if count == n {
+                return t_sub(s, 0, i)
+            }
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return s
+}
+
+function expanduser(p: string) -> string {
+    if t_eq(p, "~") or t_starts_with(p, "~/") {
+        let home: string = t_env("HOME", "")
+        if t_len(home) > 0 {
+            if t_eq(home, "/") and t_starts_with(p, "~/") {
+                return t_from(p, 1)
+            }
+            return home + t_from(p, 1)
+        }
+    }
+    return p
+}
+
+struct Built {
+    exe: string,
+    err: string
+}
+
+# _build_debug: `flow debug SRC --no-launch` in the repository.
+function build_debug(repo: string, src: string, scratch: string) -> Built {
+    let mut argv: TList = tl_new()
+    tl_push(&argv, repo + "/flow")
+    tl_push(&argv, "debug")
+    tl_push(&argv, src)
+    tl_push(&argv, "--no-launch")
+    let out_path: string = scratch + "/out"
+    let err_path: string = scratch + "/err"
+    let pr: Proc = spawn(&argv, repo, "", out_path, err_path, 0.0)
+    if pr.code != 0 {
+        let so: string = universal(t_read_file(out_path))
+        let se: string = universal(t_read_file(err_path))
+        return Built { exe: "", err: "flow debug --no-launch failed:\n" + so + "\n" + se }
+    }
+    let exe: string = repo + "/build/" + stem(src) + ".debug"
+    if not t_file_exists(exe) {
+        return Built { exe: "", err: "expected debug binary missing: " + exe }
+    }
+    return Built { exe: exe, err: "" }
+}
+
+# The launch request with arguments.program set to the debug binary and
+# arguments.cwd defaulted, keys in Python's dict order.
+function launch_json(d: ptr<JDoc>, root: i32, program: string, repo: string) -> string {
+    let args: i32 = jget(d, root, "arguments")
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    let mut saw_args: bool = false
+    let mut c: i32 = d.nodes[root].child
+    while c != J_NONE {
+        let key: string = key_text(d, c)
+        jw_key(&w, key)
+        if t_eq(key, "arguments") and not saw_args {
+            saw_args = true
+            write_args(d, args, &w, program, repo)
+        } else {
+            ser(d, c, &w)
+        }
+        c = d.nodes[c].next
+    }
+    if not saw_args {
+        jw_key(&w, "arguments")
+        write_args(d, args, &w, program, repo)
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+function write_args(d: ptr<JDoc>, args: i32, w: ptr<JW>, program: string, repo: string) {
+    jw_obj(w)
+    let mut saw_program: bool = false
+    let mut saw_cwd: bool = false
+    if jkind(d, args) == J_OBJ {
+        let mut c: i32 = d.nodes[args].child
+        while c != J_NONE {
+            let key: string = key_text(d, c)
+            jw_key(w, key)
+            if t_eq(key, "program") {
+                saw_program = true
+                jw_str(w, program)
+            } else {
+                if t_eq(key, "cwd") {
+                    saw_cwd = true
+                }
+                ser(d, c, w)
+            }
+            c = d.nodes[c].next
+        }
+    }
+    if not saw_program {
+        jw_kstr(w, "program", program)
+    }
+    if not saw_cwd {
+        jw_kstr(w, "cwd", repo)
+    }
+    jw_end(w)
+}
+
+# ── With lldb-dap ───────────────────────────────────────────────
+
+function run_with_lldb(lldb: string, repo: string) -> i32 {
+    let to_lldb: ptr<i32> = malloc(8) as ptr<i32>
+    let from_lldb: ptr<i32> = malloc(8) as ptr<i32>
+    pipe(to_lldb)
+    pipe(from_lldb)
+    let argv: ptr<string> = malloc(16) as ptr<string>
+    argv[0] = lldb
+    argv[1] = null
+    let child: i32 = fork()
+    if child == 0 {
+        dup2(to_lldb[0], 0)
+        dup2(from_lldb[1], 1)
+        close(to_lldb[0])
+        close(to_lldb[1])
+        close(from_lldb[0])
+        close(from_lldb[1])
+        execvp(lldb, argv)
+        _exit(127)
+    }
+    close(to_lldb[0])
+    close(from_lldb[1])
+
+    # pump_lldb_to_client, in a child process.
+    let pump: i32 = fork()
+    if pump == 0 {
+        close(to_lldb[1])
+        dup2(from_lldb[0], 0)
+        close(from_lldb[0])
+        let mut pr: TReader = tr_new()
+        while true {
+            let f: Frame = read_frame(&pr)
+            if not f.ok {
+                break
+            }
+            let mut d: JDoc = json_parse(f.body as ptr<u8>, t_len(f.body))
+            if d.err != 0 {
+                break
+            }
+            write_frame(1, dumps(&d, d.root))
+        }
+        _exit(0)
+    }
+    close(from_lldb[0])
+
+    let scratch_buf: string = t_env("TMPDIR", "/tmp") + "/flow-dap." + t_int(child)
+    t_run("mkdir -p " + t_shq(scratch_buf))
+
+    let mut r: TReader = tr_new()
+    let mut rc: i32 = 0
+    while true {
+        let f: Frame = read_frame(&r)
+        if not f.ok {
+            break
+        }
+        let mut d: JDoc = json_parse(f.body as ptr<u8>, t_len(f.body))
+        if d.err != 0 {
+            rc = 1
+            break
+        }
+        let root: i32 = d.root
+        let mut out: string = ""
+        if str_is(&d, root, "type", "request") and str_is(&d, root, "command", "launch") {
+            let seq: string = field_or(&d, root, "seq", "0")
+            let args: i32 = jget(&d, root, "arguments")
+            let mut src_id: i32 = J_NONE
+            if jkind(&d, args) == J_OBJ {
+                let keys: TList = launch_keys()
+                let mut k: i32 = 0
+                while k < keys.len and src_id == J_NONE {
+                    let v: i32 = jget(&d, args, tl_get(&keys, k))
+                    if truthy(&d, v) {
+                        src_id = v
+                    }
+                    k = k + 1
+                }
+            }
+            if src_id == J_NONE {
+                send_error(seq, "launch", "missing flowFile/program")
+                continue
+            }
+            let mut src: string = expanduser(py_str(&d, src_id))
+            if not t_starts_with(src, "/") {
+                let mut base: string = repo
+                let cwd_id: i32 = jget(&d, args, "cwd")
+                if truthy(&d, cwd_id) {
+                    base = py_str(&d, cwd_id)
+                }
+                src = resolve(join_path(base, src))
+            }
+            let built: Built = build_debug(repo, src, scratch_buf)
+            if t_len(built.err) > 0 {
+                send_error(seq, "launch", head_chars(built.err, 500))
+                continue
+            }
+            out = launch_json(&d, root, built.exe, repo)
+        } else {
+            out = dumps(&d, root)
+        }
+        write_frame(to_lldb[1], out)
+    }
+    close(to_lldb[1])
+    kill(child, 15)
+    t_run("rm -rf " + t_shq(scratch_buf))
+    # Let the pump forward what lldb-dap wrote before it stopped.
+    let status: ptr<i32> = malloc(4) as ptr<i32>
+    let mut waited: i32 = 0
+    while waitpid(pump, status, 1) == 0 and waited < 2000 {
+        usleep(1000)
+        waited = waited + 1
+    }
+    kill(pump, 9)
+    return rc
+}
+
+function launch_keys() -> TList {
+    let mut l: TList = tl_new()
+    tl_push(&l, "flowFile")
+    tl_push(&l, "program")
+    tl_push(&l, "source")
+    return l
+}
+
+function main() -> i32 {
+    let repo: string = t_env("FLOW_ROOT", ".")
+    let lldb: string = find_lldb_dap()
+    if t_len(lldb) == 0 {
+        return run_without_lldb()
+    }
+    return run_with_lldb(lldb, repo)
+}
