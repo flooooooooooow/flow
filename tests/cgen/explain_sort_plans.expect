@@ -1,0 +1,3 @@
+# The explain report equals the Python host's --explain text (#1055).
+explain explain_sort_plans.explain
+exit 0

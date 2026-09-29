@@ -31,7 +31,8 @@ import .ast {
     AST_THEOREM, AST_ASSUME, AST_THEREFORE, AST_CLAIM_REF,
     AST_FLOW_DECL, AST_FLOW_ITEM, AST_LAYOUT, AST_PIPE_BLOCK, AST_HANDLE, AST_EFFECT_ROW, AST_MATCH_ARM_EXT,
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
-    AST_SORT_BY, AST_MODULE,
+    AST_SORT_BY, AST_MODULE, AST_SORT_DESC, AST_SORT_UNIQUE, AST_SORT_UNSTABLE,
+    AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND,
     AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_EXPORTED, AST_ATTR_HAS_ARGS,
     PIPE_BLOCK_FORK, PIPE_BLOCK_STAGE, PIPE_BLOCK_CHOOSE,
@@ -1716,9 +1717,20 @@ function flowc_parse_pipe_chain(p: ptr<Parser>, first: i32) -> i32 {
                 }
             }
         }
+        # `xs |> find(t)` is the declarative search (Python FindExpr).
+        let mut pipe_find: i32 = 0
+        if p[0].arena.nodes[rhs].kind == AST_CALL and p[0].arena.nodes[rhs].ival == 0 {
+            let fa: i32 = p[0].arena.nodes[rhs].a
+            if flowc_parser_span_is(p[0], p[0].arena.nodes[rhs].name_start, p[0].arena.nodes[rhs].name_end, "find") == 1 and fa != AST_NONE and p[0].arena.nodes[fa].next == AST_NONE {
+                pipe_find = 1
+            }
+        }
         result = flowc_parse_apply_pipe(p, result, rhs)
         if result == AST_NONE {
             return AST_NONE
+        }
+        if pipe_find == 1 and result == rhs {
+            p[0].arena.nodes[result].ival = AST_CALL_PIPE_FIND
         }
     }
     return result
@@ -1811,21 +1823,39 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
             return AST_NONE
         }
     }
-    # ival bit 1: global descending; bit 2: unique.
+    # ival: the AST_SORT_* flag bits. name_* spans the modifiers.
     let mut desc: i32 = 0
     let mut uniq: i32 = 0
+    let mut unstable: i32 = 0
+    let mut adaptive: i32 = 0
+    let mut general: i32 = 0
+    let mod_start: i32 = p[0].cur.start
+    let mut mod_end: i32 = mod_start
     let mut more_mods: i32 = 1
     while more_mods == 1 {
         if flowc_parser_is_sort_modifier(p[0]) == 1 or flowc_parser_check_kw(p[0], KW_PARALLEL) == 1 {
             if flowc_parser_ident_is(p[0], "descending") + flowc_parser_ident_is(p[0], "desc") > 0 {
-                desc = 1
+                desc = AST_SORT_DESC
             }
             if flowc_parser_ident_is(p[0], "ascending") + flowc_parser_ident_is(p[0], "asc") > 0 {
                 desc = 0
             }
             if flowc_parser_ident_is(p[0], "unique") == 1 {
-                uniq = 2
+                uniq = AST_SORT_UNIQUE
             }
+            if flowc_parser_ident_is(p[0], "unstable") == 1 {
+                unstable = AST_SORT_UNSTABLE
+            }
+            if flowc_parser_ident_is(p[0], "stable") == 1 {
+                unstable = 0
+            }
+            if flowc_parser_ident_is(p[0], "adaptive") == 1 {
+                adaptive = AST_SORT_ADAPTIVE
+            }
+            if flowc_parser_ident_is(p[0], "general") == 1 {
+                general = AST_SORT_GENERAL
+            }
+            mod_end = p[0].cur.end
             flowc_parser_advance(p)
         } else {
             if flowc_parser_ident_is(p[0], "with") == 1 {
@@ -1834,6 +1864,7 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
                     flowc_parser_fail(p)
                     return AST_NONE
                 }
+                mod_end = p[0].cur.end
                 flowc_parser_advance(p)
                 if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
                     flowc_parser_advance(p)
@@ -1852,6 +1883,7 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
                         }
                         flowc_parser_advance(p)
                     }
+                    mod_end = p[0].cur.end
                     if flowc_parser_eat(p, TOK_RPAREN) == 0 {
                         return AST_NONE
                     }
@@ -1868,7 +1900,9 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
     }
     p[0].arena.nodes[id].a = source
     p[0].arena.nodes[id].b = keys
-    p[0].arena.nodes[id].ival = desc + uniq
+    p[0].arena.nodes[id].ival = desc + uniq + unstable + adaptive + general
+    p[0].arena.nodes[id].name_start = mod_start
+    p[0].arena.nodes[id].name_end = mod_end
     return id
 }
 

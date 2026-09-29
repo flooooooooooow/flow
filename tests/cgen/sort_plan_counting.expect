@@ -1,0 +1,9 @@
+# Counting plans: 256 buckets for u8 (walked high to low for descending),
+# 2 for bool, and 9 for the literal's proven range [1, 9] (#1054).
++ /* plan: counting --
++ int32_t __flowc_scounts[256];
++ for (int32_t __flowc_sv = 256 - 1; __flowc_sv >= 0; __flowc_sv--)
++ int32_t __flowc_scounts[2];
++ int32_t __flowc_scounts[9];
++ __flowc_scounts[(int64_t)(__flowc_sa[__flowc_si]) - 1]++;
+exit 0

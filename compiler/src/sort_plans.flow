@@ -1,0 +1,829 @@
+# @module flowc.sort_plans
+# @means  Cost-based plan selection for `|> sort` and `|> find` (#145, #146).
+#         Port of src/flow/plan_selector.py and src/flow/ordering_plans.py.
+#
+# A declarative sort or search names an intent. Several C lowerings satisfy
+# it. This module checks each registered plan against the facts the compiler
+# knows at the site, rejects the ones that do not apply or that would put more
+# than the scratch budget on the C stack, and keeps the cheapest of the rest.
+# Ties break on the declared rank, then on the name.
+#
+# It also renders the record of every choice as the `flow explain` report,
+# with the same text the Python host printed.
+#
+# Costs are estimated element operations from a static model. They compare
+# plans within one construct only.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function realloc(p: ptr<u8>, size: i64) -> ptr<u8>
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function sqrt(x: f64) -> f64
+    function log2(x: f64) -> f64
+    function fabs(x: f64) -> f64
+}
+
+# Plan codes. Sort plans are listed in registry order, which is also the
+# order the report prints them in.
+export const FLOWC_PLAN_ALREADY_ORDERED: i32 = 0
+export const FLOWC_PLAN_REVERSE_IN_PLACE: i32 = 1
+export const FLOWC_PLAN_COUNTING: i32 = 2
+export const FLOWC_PLAN_INSERTION: i32 = 3
+export const FLOWC_PLAN_NATURAL_MERGE: i32 = 4
+export const FLOWC_PLAN_BOTTOM_UP_MERGE: i32 = 5
+export const FLOWC_PLAN_LINEAR_SCAN: i32 = 10
+export const FLOWC_PLAN_BINARY_SEARCH: i32 = 11
+
+# Input order codes (the same numbers as ordering_hints.flow).
+export const FLOWC_PLAN_ORDER_UNKNOWN: i32 = 0
+export const FLOWC_PLAN_ORDER_ASC: i32 = 1
+export const FLOWC_PLAN_ORDER_ASC_STRICT: i32 = 2
+export const FLOWC_PLAN_ORDER_DESC: i32 = 3
+export const FLOWC_PLAN_ORDER_DESC_STRICT: i32 = 4
+
+# A sort helper keeps its scratch on the C stack. A plan that needs more than
+# this is rejected, so a large sort cannot overflow the stack.
+export const FLOWC_PLAN_SCRATCH_BUDGET: i64 = 262144
+
+# A counting sort allocates one bucket per distinct key. Past this span the
+# bucket array costs more than the merge it replaces.
+export const FLOWC_PLAN_COUNTING_MAX_SPAN: i64 = 4096
+
+# Below this length run detection has nothing to detect.
+export const FLOWC_PLAN_MERGE_MIN_N: i32 = 16
+
+# Shortest run the natural merge merges. Shorter runs are grown by insertion
+# first. The emitted loop uses the same number.
+export const FLOWC_PLAN_SORT_MIN_RUN: i32 = 32
+
+# What the compiler knows at one site. `search` is 1 for `|> find`.
+# `lo` / `hi` hold the proven key range when `has_range` is 1; `hi_u64max`
+# stands in for a `hi` of 2^64 - 1, which an i64 cannot hold.
+export struct PlanFacts {
+    search: i32,
+    n: i32,
+    elem: string,
+    elem_kind: string,
+    elem_bytes: i32,
+    keys: i32,
+    stable: i32,
+    unique: i32,
+    desc: i32,
+    order: i32,
+    has_range: i32,
+    lo: i64,
+    hi: i64,
+    hi_u64max: i32,
+    adaptive: i32,
+    general: i32
+}
+
+# The chosen plan and the sentence that says why. `plan` is -1 when every
+# plan was rejected; `reason` then holds the error.
+export struct PlanChoice {
+    plan: i32,
+    reason: string
+}
+
+# Growable text buffer for reasons and the explain report.
+export struct PlanText {
+    buf: ptr<u8>,
+    len: i32,
+    cap: i32
+}
+
+export function flowc_plan_text_new() -> PlanText {
+    let cap: i32 = 1024
+    let buf: ptr<u8> = malloc(cap as i64)
+    if buf != null {
+        buf[0] = 0
+    }
+    return PlanText { buf: buf, len: 0, cap: cap }
+}
+
+export function flowc_plan_putc(t: ptr<PlanText>, c: i32) {
+    if t[0].buf == null {
+        return
+    }
+    if t[0].len + 2 > t[0].cap {
+        let ncap: i32 = t[0].cap * 2
+        let nb: ptr<u8> = realloc(t[0].buf, ncap as i64)
+        if nb == null {
+            return
+        }
+        t[0].buf = nb
+        t[0].cap = ncap
+    }
+    t[0].buf[t[0].len] = c
+    t[0].len = t[0].len + 1
+    t[0].buf[t[0].len] = 0
+}
+
+export function flowc_plan_puts(t: ptr<PlanText>, s: string) {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        flowc_plan_putc(t, p[i])
+        i = i + 1
+    }
+}
+
+export function flowc_plan_put_i64(t: ptr<PlanText>, v: i64) {
+    let buf: array<u8, 32> = []
+    let _n: i32 = snprintf(&buf[0], 32, "%lld", v)
+    flowc_plan_puts(t, &buf[0] as string)
+}
+
+# The text so far as a string. The buffer stays owned by `t`.
+export function flowc_plan_text_str(t: PlanText) -> string {
+    if t.buf == null {
+        return ""
+    }
+    return t.buf as string
+}
+
+function plan_pad_right(t: ptr<PlanText>, s: string, width: i32) {
+    flowc_plan_puts(t, s)
+    let mut n: i32 = strlen(s) as i32
+    while n < width {
+        flowc_plan_putc(t, 32)
+        n = n + 1
+    }
+}
+
+function plan_pad_left(t: ptr<PlanText>, s: string, width: i32) {
+    let mut n: i32 = strlen(s) as i32
+    while n < width {
+        flowc_plan_putc(t, 32)
+        n = n + 1
+    }
+    flowc_plan_puts(t, s)
+}
+
+# ── Names ────────────────────────────────────────────────────────
+
+export function flowc_plan_name(plan: i32) -> string {
+    if plan == FLOWC_PLAN_ALREADY_ORDERED { return "already_ordered" }
+    if plan == FLOWC_PLAN_REVERSE_IN_PLACE { return "reverse_in_place" }
+    if plan == FLOWC_PLAN_COUNTING { return "counting" }
+    if plan == FLOWC_PLAN_INSERTION { return "insertion" }
+    if plan == FLOWC_PLAN_NATURAL_MERGE { return "natural_merge" }
+    if plan == FLOWC_PLAN_BOTTOM_UP_MERGE { return "bottom_up_merge" }
+    if plan == FLOWC_PLAN_LINEAR_SCAN { return "linear_scan" }
+    if plan == FLOWC_PLAN_BINARY_SEARCH { return "binary_search" }
+    return "?"
+}
+
+export function flowc_plan_order_name(order: i32) -> string {
+    if order == FLOWC_PLAN_ORDER_ASC { return "asc" }
+    if order == FLOWC_PLAN_ORDER_ASC_STRICT { return "asc_strict" }
+    if order == FLOWC_PLAN_ORDER_DESC { return "desc" }
+    if order == FLOWC_PLAN_ORDER_DESC_STRICT { return "desc_strict" }
+    return "unknown"
+}
+
+function plan_summary(plan: i32) -> string {
+    if plan == FLOWC_PLAN_ALREADY_ORDERED { return "no-op; provenance proves the array is already in this order" }
+    if plan == FLOWC_PLAN_REVERSE_IN_PLACE { return "reverse the array in place; provenance proves it is strictly reversed" }
+    if plan == FLOWC_PLAN_COUNTING { return "stable counting sort over a proven non-negative bounded key range" }
+    if plan == FLOWC_PLAN_INSERTION { return "stable in-place insertion sort; no scratch, wins for small n" }
+    if plan == FLOWC_PLAN_NATURAL_MERGE { return "run-detecting stable merge; one pass finds ascending and descending runs, then merges them pairwise" }
+    if plan == FLOWC_PLAN_BOTTOM_UP_MERGE { return "stable bottom-up merge sort; the general-purpose plan" }
+    if plan == FLOWC_PLAN_LINEAR_SCAN { return "scan from index 0 and stop at the first match" }
+    if plan == FLOWC_PLAN_BINARY_SEARCH { return "lower-bound binary search; provenance proves the array is ascending" }
+    return ""
+}
+
+# What the programmer could change to make a rejected plan apply.
+function plan_resolution(plan: i32) -> string {
+    if plan == FLOWC_PLAN_ALREADY_ORDERED { return "sort where the order is provable. A call taking the array, a write to one of its elements, or a surrounding loop all drop the fact." }
+    if plan == FLOWC_PLAN_REVERSE_IN_PLACE { return "only a strictly reversed input can be sorted by reversing it; add `unstable` if equal keys may be reordered" }
+    if plan == FLOWC_PLAN_COUNTING { return "narrow the element type (u8 bounds keys to [0, 255], bool to [0, 1]) so the key range is proven without analysis" }
+    if plan == FLOWC_PLAN_INSERTION { return "drop the `general` policy" }
+    if plan == FLOWC_PLAN_NATURAL_MERGE or plan == FLOWC_PLAN_BOTTOM_UP_MERGE { return "the merge buffer is one element per input element; sort in chunks that fit the scratch budget, or use a narrower element type" }
+    if plan == FLOWC_PLAN_BINARY_SEARCH { return "sort the array immediately before searching it; a call taking the array in between drops the ordering fact" }
+    return ""
+}
+
+# Declared rank: the lower rank wins a tie on cost.
+function plan_rank(plan: i32) -> i32 {
+    if plan == FLOWC_PLAN_LINEAR_SCAN { return 1 }
+    if plan == FLOWC_PLAN_BINARY_SEARCH { return 0 }
+    return plan
+}
+
+# ── Applicability ────────────────────────────────────────────────
+
+function plan_direction(f: PlanFacts) -> string {
+    if f.desc == 1 {
+        return "desc"
+    }
+    return "asc"
+}
+
+# The order word without `_strict`.
+function plan_order_head(order: i32) -> string {
+    if order == FLOWC_PLAN_ORDER_ASC or order == FLOWC_PLAN_ORDER_ASC_STRICT {
+        return "asc"
+    }
+    if order == FLOWC_PLAN_ORDER_DESC or order == FLOWC_PLAN_ORDER_DESC_STRICT {
+        return "desc"
+    }
+    return "unknown"
+}
+
+function plan_order_is_asc(order: i32) -> i32 {
+    if order == FLOWC_PLAN_ORDER_ASC or order == FLOWC_PLAN_ORDER_ASC_STRICT {
+        return 1
+    }
+    return 0
+}
+
+function plan_pinned(f: PlanFacts, plan: i32) -> string {
+    if f.general == 1 and plan != FLOWC_PLAN_BOTTOM_UP_MERGE {
+        return "the `general` policy pinned this site to bottom_up_merge"
+    }
+    return ""
+}
+
+# Key range text: `[lo, hi]`.
+function plan_put_range(t: ptr<PlanText>, f: PlanFacts) {
+    flowc_plan_puts(t, "[")
+    flowc_plan_put_i64(t, f.lo)
+    flowc_plan_puts(t, ", ")
+    if f.hi_u64max == 1 {
+        flowc_plan_puts(t, "18446744073709551615")
+    } else {
+        flowc_plan_put_i64(t, f.hi)
+    }
+    flowc_plan_puts(t, "]")
+}
+
+# Number of buckets a counting sort would need, or -1 when it does not fit
+# in an i64 (the whole u64 range).
+function plan_span(f: PlanFacts) -> i64 {
+    if f.hi_u64max == 1 {
+        return 0 - 1
+    }
+    return f.hi - f.lo + 1
+}
+
+# "" when `plan` may lower this site, else the constraint that failed.
+function plan_check(f: PlanFacts, plan: i32) -> string {
+    let mut t: PlanText = flowc_plan_text_new()
+    if plan == FLOWC_PLAN_LINEAR_SCAN {
+        return ""
+    }
+    if plan == FLOWC_PLAN_BINARY_SEARCH {
+        if plan_order_is_asc(f.order) == 1 {
+            return ""
+        }
+        flowc_plan_puts(&t, "input is not proven to be in ascending order (provenance: ")
+        flowc_plan_puts(&t, flowc_plan_order_name(f.order))
+        flowc_plan_puts(&t, ")")
+        return flowc_plan_text_str(t)
+    }
+    let pin: string = plan_pinned(f, plan)
+    if strlen(pin) > 0 {
+        return pin
+    }
+    if plan == FLOWC_PLAN_ALREADY_ORDERED {
+        if f.unique == 1 {
+            return "`unique` still has to compact duplicates, so the sort cannot be skipped"
+        }
+        if strcmp(plan_order_head(f.order), plan_direction(f)) != 0 {
+            flowc_plan_puts(&t, "input is not proven to be in ")
+            flowc_plan_puts(&t, plan_direction(f))
+            flowc_plan_puts(&t, " order (provenance: ")
+            flowc_plan_puts(&t, flowc_plan_order_name(f.order))
+            flowc_plan_puts(&t, ")")
+            return flowc_plan_text_str(t)
+        }
+        return ""
+    }
+    if plan == FLOWC_PLAN_REVERSE_IN_PLACE {
+        if f.unique == 1 {
+            return "`unique` still has to compact duplicates, so a reverse is not enough"
+        }
+        let mut want: i32 = FLOWC_PLAN_ORDER_DESC_STRICT
+        let mut opposite: string = "desc"
+        if f.desc == 1 {
+            want = FLOWC_PLAN_ORDER_ASC_STRICT
+            opposite = "asc"
+        }
+        if f.order != want {
+            flowc_plan_puts(&t, "input is not proven to be in strictly ")
+            flowc_plan_puts(&t, opposite)
+            flowc_plan_puts(&t, " order (provenance: ")
+            flowc_plan_puts(&t, flowc_plan_order_name(f.order))
+            flowc_plan_puts(&t, "); reversing a run of equal keys would break stability")
+            return flowc_plan_text_str(t)
+        }
+        return ""
+    }
+    if plan == FLOWC_PLAN_COUNTING {
+        if f.keys > 0 {
+            return "counting sort handles whole-element keys only, not `by` keys"
+        }
+        if strcmp(f.elem_kind, "int") != 0 and strcmp(f.elem_kind, "bool") != 0 {
+            flowc_plan_puts(&t, "element type is ")
+            flowc_plan_puts(&t, f.elem_kind)
+            flowc_plan_puts(&t, ", not a bounded integer")
+            return flowc_plan_text_str(t)
+        }
+        if f.has_range == 0 {
+            return "key range is not proven bounded and non-negative"
+        }
+        if f.lo < 0 {
+            flowc_plan_puts(&t, "key range ")
+            plan_put_range(&t, f)
+            flowc_plan_puts(&t, " includes negative values")
+            return flowc_plan_text_str(t)
+        }
+        let span: i64 = plan_span(f)
+        if span < 0 or span > FLOWC_PLAN_COUNTING_MAX_SPAN {
+            flowc_plan_puts(&t, "key span ")
+            if span < 0 {
+                flowc_plan_puts(&t, "18446744073709551616")
+            } else {
+                flowc_plan_put_i64(&t, span)
+            }
+            flowc_plan_puts(&t, " exceeds the 4096-bucket counting budget")
+            return flowc_plan_text_str(t)
+        }
+        if f.n < 8 {
+            flowc_plan_puts(&t, "n=")
+            flowc_plan_put_i64(&t, f.n as i64)
+            flowc_plan_puts(&t, " is too small to amortise the bucket pass")
+            return flowc_plan_text_str(t)
+        }
+        return ""
+    }
+    if plan == FLOWC_PLAN_NATURAL_MERGE {
+        if f.n < FLOWC_PLAN_MERGE_MIN_N {
+            flowc_plan_puts(&t, "n=")
+            flowc_plan_put_i64(&t, f.n as i64)
+            flowc_plan_puts(&t, " is below the 16-element run-detection floor")
+            return flowc_plan_text_str(t)
+        }
+        return ""
+    }
+    # insertion and bottom_up_merge apply everywhere unless pinned away.
+    return ""
+}
+
+# ── Cost and scratch ─────────────────────────────────────────────
+
+function plan_log2(x: f64) -> f64 {
+    if x > 1.0 {
+        return log2(x)
+    }
+    return 0.0
+}
+
+function plan_max(a: f64, b: f64) -> f64 {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+# Estimated ascending runs in the input.
+function plan_runs(f: PlanFacts) -> f64 {
+    let n: f64 = f.n as f64
+    if plan_order_is_asc(f.order) == 1 {
+        return 1.0
+    }
+    if f.adaptive == 1 {
+        # `adaptive` asserts the data has structure: sqrt(n) runs.
+        return plan_max(1.0, sqrt(n))
+    }
+    # No information: alternating pairs, n/2 runs.
+    return plan_max(1.0, n / 2.0)
+}
+
+function plan_cost(f: PlanFacts, plan: i32) -> f64 {
+    let n: f64 = f.n as f64
+    if plan == FLOWC_PLAN_ALREADY_ORDERED {
+        return 0.0
+    }
+    if plan == FLOWC_PLAN_REVERSE_IN_PLACE {
+        return n / 2.0
+    }
+    if plan == FLOWC_PLAN_COUNTING {
+        let span: f64 = plan_span(f) as f64
+        return 2.0 * n + 2.0 * span
+    }
+    if plan == FLOWC_PLAN_INSERTION {
+        if plan_order_is_asc(f.order) == 1 and f.desc == 0 {
+            return n
+        }
+        if f.adaptive == 1 {
+            return n * sqrt(plan_max(1.0, n))
+        }
+        return n * n / 4.0
+    }
+    if plan == FLOWC_PLAN_NATURAL_MERGE {
+        let mut found: f64 = plan_runs(f)
+        let ceiling: f64 = plan_max(1.0, n / (FLOWC_PLAN_SORT_MIN_RUN as f64))
+        let mut extension: f64 = 0.0
+        if found > ceiling {
+            found = ceiling
+            # SORT_MIN_RUN / 8 per element, calibrated against
+            # benchmarks/ordering/adaptive_sort_bench.flow.
+            extension = n * ((FLOWC_PLAN_SORT_MIN_RUN as f64) / 8.0)
+        }
+        return n + extension + n * plan_log2(found)
+    }
+    if plan == FLOWC_PLAN_BOTTOM_UP_MERGE {
+        return n + n * plan_log2(n)
+    }
+    if plan == FLOWC_PLAN_LINEAR_SCAN {
+        return plan_max(1.0, n / 2.0)
+    }
+    if plan == FLOWC_PLAN_BINARY_SEARCH {
+        return plan_log2(plan_max(2.0, n))
+    }
+    return n
+}
+
+function plan_scratch(f: PlanFacts, plan: i32) -> i64 {
+    let n: i64 = f.n as i64
+    let eb: i64 = f.elem_bytes as i64
+    if plan == FLOWC_PLAN_COUNTING {
+        if f.has_range == 0 {
+            return 0
+        }
+        return 4 * plan_span(f) + n * eb
+    }
+    if plan == FLOWC_PLAN_NATURAL_MERGE or plan == FLOWC_PLAN_BOTTOM_UP_MERGE {
+        return n * eb
+    }
+    return 0
+}
+
+# ── Number text (Python's _cost and _bytes) ──────────────────────
+
+function plan_fmt_f64(fmt: string, v: f64) -> string {
+    let buf: ptr<u8> = malloc(48)
+    if buf == null {
+        return ""
+    }
+    let _n: i32 = snprintf(buf, 48, fmt, v)
+    return buf as string
+}
+
+export function flowc_plan_cost_text(v: f64) -> string {
+    if v == 0.0 {
+        return "0"
+    }
+    if v >= 100000.0 {
+        return plan_fmt_f64("%.3g", v)
+    }
+    if v >= 10.0 {
+        return plan_fmt_f64("%.0f", v)
+    }
+    return plan_fmt_f64("%.2f", v)
+}
+
+function plan_put_bytes(t: ptr<PlanText>, n: i64) {
+    if n >= 1048576 {
+        flowc_plan_puts(t, plan_fmt_f64("%.2f", (n as f64) / 1048576.0))
+        flowc_plan_puts(t, " MiB")
+        return
+    }
+    if n >= 1024 {
+        flowc_plan_puts(t, plan_fmt_f64("%.1f", (n as f64) / 1024.0))
+        flowc_plan_puts(t, " KiB")
+        return
+    }
+    flowc_plan_put_i64(t, n)
+    flowc_plan_puts(t, " B")
+}
+
+# math.isclose with the default relative tolerance.
+function plan_isclose(a: f64, b: f64) -> i32 {
+    if a == b {
+        return 1
+    }
+    let diff: f64 = fabs(a - b)
+    let scale: f64 = plan_max(fabs(a), fabs(b))
+    if diff <= 0.000000001 * scale {
+        return 1
+    }
+    return 0
+}
+
+# ── Facts summary ────────────────────────────────────────────────
+
+# `n=..., key=value, ...` with the keys in sorted order, skipping unset ones,
+# as Facts.summary_items does.
+function plan_put_facts(t: ptr<PlanText>, f: PlanFacts) {
+    flowc_plan_puts(t, "n=")
+    flowc_plan_put_i64(t, f.n as i64)
+    if f.search == 1 {
+        flowc_plan_puts(t, ", elem=")
+        flowc_plan_puts(t, f.elem)
+        flowc_plan_puts(t, ", elem_kind=")
+        flowc_plan_puts(t, f.elem_kind)
+        flowc_plan_puts(t, ", input_order=")
+        flowc_plan_puts(t, flowc_plan_order_name(f.order))
+        return
+    }
+    flowc_plan_puts(t, ", direction=")
+    flowc_plan_puts(t, plan_direction(f))
+    flowc_plan_puts(t, ", elem=")
+    flowc_plan_puts(t, f.elem)
+    flowc_plan_puts(t, ", elem_bytes=")
+    flowc_plan_put_i64(t, f.elem_bytes as i64)
+    flowc_plan_puts(t, ", elem_kind=")
+    flowc_plan_puts(t, f.elem_kind)
+    flowc_plan_puts(t, ", expect_runs=")
+    if f.adaptive == 1 {
+        flowc_plan_puts(t, "few")
+    } else {
+        flowc_plan_puts(t, "unknown")
+    }
+    flowc_plan_puts(t, ", input_order=")
+    if f.general == 1 {
+        flowc_plan_puts(t, "unknown")
+    } else {
+        flowc_plan_puts(t, flowc_plan_order_name(f.order))
+    }
+    if f.has_range == 1 {
+        flowc_plan_puts(t, ", key_range=")
+        plan_put_range(t, f)
+    }
+    flowc_plan_puts(t, ", keys=")
+    flowc_plan_put_i64(t, f.keys as i64)
+    if f.general == 1 {
+        flowc_plan_puts(t, ", pinned=bottom_up_merge")
+    }
+    if f.stable == 1 {
+        flowc_plan_puts(t, ", stable=True")
+    }
+    if f.unique == 1 {
+        flowc_plan_puts(t, ", unique=True")
+    }
+}
+
+# ── Selection ────────────────────────────────────────────────────
+
+# Pick the cheapest applicable plan for one site. When `report` is not null,
+# append the site's explain block, numbered `index`, to it. `location` is
+# `line N in fn()`; `detail` is the one-line description of the site.
+export function flowc_plan_select(f0: PlanFacts, location: string, detail: string, index: i32, report: ptr<PlanText>) -> PlanChoice {
+    let mut f: PlanFacts = f0
+    if f.general == 1 {
+        # `general` ignores every hint.
+        f.order = FLOWC_PLAN_ORDER_UNKNOWN
+    }
+    let plans: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut count: i32 = 0
+    if f.search == 1 {
+        plans[0] = FLOWC_PLAN_LINEAR_SCAN
+        plans[1] = FLOWC_PLAN_BINARY_SEARCH
+        count = 2
+    } else {
+        while count < 6 {
+            plans[count] = count
+            count = count + 1
+        }
+    }
+    let rejected: array<string, 8> = []
+    let over: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let costs: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let mut viable: i32 = 0
+    let mut over_budget: i32 = 0
+    let mut best: i32 = 0 - 1
+    let mut runner: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < count {
+        let plan: i32 = plans[i]
+        let mut why: string = plan_check(f, plan)
+        if strlen(why) == 0 {
+            let need: i64 = plan_scratch(f, plan)
+            if need > FLOWC_PLAN_SCRATCH_BUDGET {
+                over[i] = 1
+                over_budget = 1
+                let mut t: PlanText = flowc_plan_text_new()
+                flowc_plan_puts(&t, "scratch ")
+                plan_put_bytes(&t, need)
+                flowc_plan_puts(&t, " exceeds the ")
+                plan_put_bytes(&t, FLOWC_PLAN_SCRATCH_BUDGET)
+                flowc_plan_puts(&t, " compiler scratch budget")
+                why = flowc_plan_text_str(t)
+            }
+        }
+        rejected[i] = why
+        if strlen(why) == 0 {
+            costs[i] = plan_cost(f, plan)
+            viable = viable + 1
+            # Keep the two best by (cost, rank, name).
+            if best < 0 or plan_before(costs[i], plan, costs[best], plans[best]) == 1 {
+                runner = best
+                best = i
+            } else {
+                if runner < 0 or plan_before(costs[i], plan, costs[runner], plans[runner]) == 1 {
+                    runner = i
+                }
+            }
+        }
+        i = i + 1
+    }
+    if best < 0 {
+        # `general` pins the merge plan, and its buffer is over budget.
+        let mut et: PlanText = flowc_plan_text_new()
+        flowc_plan_puts(&et, "Every implementation of '")
+        if f.search == 1 {
+            flowc_plan_puts(&et, "search")
+        } else {
+            flowc_plan_puts(&et, "sort")
+        }
+        flowc_plan_puts(&et, "' was rejected at ")
+        flowc_plan_puts(&et, location)
+        return PlanChoice { plan: 0 - 1, reason: flowc_plan_text_str(et) }
+    }
+    let chosen: i32 = plans[best]
+    let mut rt: PlanText = flowc_plan_text_new()
+    if viable == 1 {
+        flowc_plan_puts(&rt, "only applicable implementation")
+    } else {
+        let bc: f64 = costs[best]
+        let rc: f64 = costs[runner]
+        if plan_isclose(bc, rc) == 1 {
+            flowc_plan_puts(&rt, "tied with ")
+            flowc_plan_puts(&rt, flowc_plan_name(plans[runner]))
+            flowc_plan_puts(&rt, " on cost; broke the tie on declared rank")
+        } else {
+            let saving: f64 = (rc - bc) / rc * 100.0
+            flowc_plan_puts(&rt, "cheapest applicable plan: ")
+            flowc_plan_puts(&rt, flowc_plan_cost_text(bc))
+            flowc_plan_puts(&rt, " vs ")
+            flowc_plan_puts(&rt, flowc_plan_cost_text(rc))
+            flowc_plan_puts(&rt, " for ")
+            flowc_plan_puts(&rt, flowc_plan_name(plans[runner]))
+            flowc_plan_puts(&rt, " (")
+            flowc_plan_puts(&rt, plan_fmt_f64("%.0f", saving))
+            flowc_plan_puts(&rt, "% less work)")
+        }
+    }
+    let reason: string = flowc_plan_text_str(rt)
+
+    if report != null {
+        let mut constrained: i32 = 0
+        if over_budget == 1 or viable == 1 {
+            constrained = 1
+        }
+        let mut width: i32 = 0
+        i = 0
+        while i < count {
+            let nl: i32 = strlen(flowc_plan_name(plans[i])) as i32
+            if nl > width {
+                width = nl
+            }
+            i = i + 1
+        }
+        flowc_plan_puts(report, "[")
+        flowc_plan_put_i64(report, index as i64)
+        if f.search == 1 {
+            flowc_plan_puts(report, "] search")
+        } else {
+            flowc_plan_puts(report, "] sort")
+        }
+        if strlen(location) > 0 {
+            flowc_plan_puts(report, " at ")
+            flowc_plan_puts(report, location)
+        }
+        flowc_plan_puts(report, "\n")
+        if strlen(detail) > 0 {
+            flowc_plan_puts(report, "      ")
+            flowc_plan_puts(report, detail)
+            flowc_plan_puts(report, "\n")
+        }
+        flowc_plan_puts(report, "      facts: ")
+        plan_put_facts(report, f)
+        flowc_plan_puts(report, "\n\n")
+        i = 0
+        while i < count {
+            let plan: i32 = plans[i]
+            if plan == chosen {
+                flowc_plan_puts(report, "   -> ")
+            } else {
+                flowc_plan_puts(report, "      ")
+            }
+            plan_pad_right(report, flowc_plan_name(plan), width)
+            flowc_plan_puts(report, "  ")
+            if strlen(rejected[i]) > 0 {
+                plan_pad_left(report, "--", 10)
+                flowc_plan_puts(report, "   rejected: ")
+                flowc_plan_puts(report, rejected[i])
+                flowc_plan_puts(report, "\n")
+            } else {
+                plan_pad_left(report, flowc_plan_cost_text(costs[i]), 10)
+                if plan == chosen {
+                    flowc_plan_puts(report, "   CHOSEN\n")
+                } else {
+                    flowc_plan_puts(report, "   ok\n")
+                }
+                flowc_plan_puts(report, "      ")
+                plan_pad_right(report, "", width)
+                flowc_plan_puts(report, "  ")
+                plan_pad_left(report, "", 10)
+                flowc_plan_puts(report, "   ")
+                flowc_plan_puts(report, plan_summary(plan))
+                flowc_plan_puts(report, "\n")
+            }
+            i = i + 1
+        }
+        flowc_plan_puts(report, "\n      chose ")
+        flowc_plan_puts(report, flowc_plan_name(chosen))
+        flowc_plan_puts(report, ": ")
+        flowc_plan_puts(report, reason)
+        flowc_plan_puts(report, "\n")
+        if constrained == 1 {
+            # Budget failures first, then the rest in registry order; at
+            # most four.
+            let mut shown: i32 = 0
+            let mut pass: i32 = 0
+            while pass < 2 {
+                i = 0
+                while i < count {
+                    let want_over: i32 = 1 - pass
+                    let res: string = plan_resolution(plans[i])
+                    if strlen(rejected[i]) > 0 and strlen(res) > 0 and over[i] == want_over {
+                        if shown < 4 {
+                            if shown == 0 {
+                                flowc_plan_puts(report, "\n      possible resolutions\n")
+                            }
+                            flowc_plan_puts(report, "        - ")
+                            flowc_plan_puts(report, flowc_plan_name(plans[i]))
+                            flowc_plan_puts(report, ": ")
+                            flowc_plan_puts(report, res)
+                            flowc_plan_puts(report, "\n")
+                        }
+                        shown = shown + 1
+                    }
+                    i = i + 1
+                }
+                pass = pass + 1
+            }
+        }
+        flowc_plan_puts(report, "\n")
+    }
+    return PlanChoice { plan: chosen, reason: reason }
+}
+
+# 1 when (cost a, plan pa) sorts before (cost b, plan pb): lower cost, then
+# lower rank, then the name.
+function plan_before(a: f64, pa: i32, b: f64, pb: i32) -> i32 {
+    if a < b {
+        return 1
+    }
+    if a > b {
+        return 0
+    }
+    let ra: i32 = plan_rank(pa)
+    let rb: i32 = plan_rank(pb)
+    if ra < rb {
+        return 1
+    }
+    if ra > rb {
+        return 0
+    }
+    if strcmp(flowc_plan_name(pa), flowc_plan_name(pb)) < 0 {
+        return 1
+    }
+    return 0
+}
+
+# The explain report header, as format_selections prints it.
+export function flowc_plan_report_header(t: ptr<PlanText>, source: string) {
+    let mut h: PlanText = flowc_plan_text_new()
+    flowc_plan_puts(&h, "Compilation plan")
+    if strlen(source) > 0 {
+        flowc_plan_puts(&h, " for ")
+        flowc_plan_puts(&h, source)
+    }
+    flowc_plan_puts(t, flowc_plan_text_str(h))
+    flowc_plan_puts(t, "\n")
+    let mut i: i32 = 0
+    while i < h.len {
+        flowc_plan_putc(t, 61)
+        i = i + 1
+    }
+    flowc_plan_puts(t, "\n\n")
+}
+
+# The report footer. `sites` is how many selection records were printed.
+export function flowc_plan_report_footer(t: ptr<PlanText>, sites: i32) {
+    if sites == 0 {
+        flowc_plan_puts(t, "No selection sites. This program has no declarative\n")
+        flowc_plan_puts(t, "construct with more than one implementation.\n\n")
+        return
+    }
+    flowc_plan_puts(t, "Costs are estimated element operations from a static model, not measurements.\n\n")
+}

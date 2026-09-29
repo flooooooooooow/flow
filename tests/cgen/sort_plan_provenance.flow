@@ -1,0 +1,22 @@
+# Ordering provenance picks the plan (#1054). A strictly ascending literal
+# needs no sort, a strictly descending one is reversed, a sort leaves the
+# array ascending so the next find is a binary search, and a call taking
+# the array drops that fact so the find after it is a linear scan.
+function touch(xs: ptr<i32>) -> i32 {
+    return xs[0]
+}
+
+function main() -> i32 {
+    let mut a: array<i32, 20> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    a |> sort
+    let mut b: array<i32, 20> = [20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    b |> sort
+    let hit: i32 = b |> find(13)
+    touch(b)
+    let again: i32 = b |> find(13)
+    if a[0] != 1 || a[19] != 20 { return 1 }
+    if b[0] != 1 || b[19] != 20 { return 2 }
+    if hit != 12 || again != 12 { return 3 }
+    if (b |> find(99)) != -1 { return 4 }
+    return 0
+}
