@@ -243,10 +243,29 @@ compile_module effects compiler/src/effects.flow \
     compiler/build/ast_flowc.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/effects_flowc.c compiler/build/effects_flowc.h
+# Function attribute vocabulary: parser guards, typecheck checks, cgen
+# lowering (#1028, #1029).
+compile_module attributes compiler/src/attributes.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/attributes_flowc.c compiler/build/attributes_flowc.h
+# Sort and find plan selection used by cgen (#1054).
+compile_module ordering_hints compiler/src/ordering_hints.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/ordering_hints_flowc.c compiler/build/ordering_hints_flowc.h
+compile_module sort_plans compiler/src/sort_plans.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/sort_plans_flowc.c compiler/build/sort_plans_flowc.h
+compile_module sort_sites compiler/src/sort_sites.flow \
+    compiler/build/token_flowc.h \
+    compiler/build/ast_flowc.h \
+    compiler/build/ordering_hints_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/sort_sites_flowc.c compiler/build/sort_sites_flowc.h
 compile_module parser compiler/src/parser.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
-    compiler/build/lexer_flowc.h
+    compiler/build/lexer_flowc.h \
+    compiler/build/attributes_flowc.h
 for needle in 'flowc_parser_new' 'flowc_parse_program' 'typedef struct Parser'; do
     if ! grep -Fq "$needle" compiler/build/parser_flowc.c; then
         echo "FAIL compile_module parser: missing '${needle}' in emitted C" >&2
@@ -272,7 +291,10 @@ compile_module cgen compiler/src/cgen.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
     compiler/build/effects_flowc.h \
-    compiler/build/proof_lower_flowc.h
+    compiler/build/proof_lower_flowc.h \
+    compiler/build/attributes_flowc.h \
+    compiler/build/sort_plans_flowc.h \
+    compiler/build/sort_sites_flowc.h
 for needle in 'flowc_cgen_emit' 'flowc_cgen_emit_ex' 'typedef struct CgenBuf' '#include <string.h>' ' % '; do
     if ! grep -Fq "$needle" compiler/build/cgen_flowc.c; then
         echo "FAIL compile_module cgen: missing '${needle}' in emitted C" >&2
@@ -333,6 +355,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 # Seventh module: typecheck.flow (imports ast and the overload modules).
 compile_module typecheck compiler/src/typecheck.flow \
     compiler/build/ast_flowc.h \
+    compiler/build/attributes_flowc.h \
     compiler/build/effects_flowc.h \
     compiler/build/proof_lower_flowc.h \
     compiler/build/overload_table_flowc.h \
@@ -367,6 +390,7 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \
     compiler/build/effects_flowc.h \
+    compiler/build/sort_plans_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
@@ -680,6 +704,10 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/shader_dsl_flowc.o \
     compiler/build/effects_flowc.o \
     compiler/build/proof_lower_flowc.o \
+    compiler/build/attributes_flowc.o \
+    compiler/build/ordering_hints_flowc.o \
+    compiler/build/sort_plans_flowc.o \
+    compiler/build/sort_sites_flowc.o \
     compiler/build/cgen_flowc.o \
     compiler/build/overload_flowc.o \
     compiler/build/overload_table_flowc.o \
@@ -742,6 +770,7 @@ compile_module driver compiler/src/driver.flow \
     compiler/build/dynamics_dsl_flowc.h \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \
+    compiler/build/sort_plans_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \

@@ -17,7 +17,7 @@ if [[ ! -f compiler/build/flowc_frontend_self.o ]]; then
 fi
 
 # Headers for the C host ABI (same layouts as host-emitted *_flowc.h).
-for mod in token ast lexer parser cgen typecheck resolve; do
+for mod in token ast lexer parser sort_plans cgen typecheck resolve; do
     if [[ ! -f "compiler/build/${mod}_flowc.h" ]]; then
         if [[ ! -f "compiler/build/${mod}_flowc.c" ]]; then
             echo "FAIL stage_a_self_emit_g2: missing compiler/build/${mod}_flowc.c" >&2
@@ -101,10 +101,27 @@ g2_emit_module effects compiler/build/g2_ast.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/g2_effects.c compiler/build/g2_effects.h
 
+# Function attribute vocabulary (#1028, #1029) and sort plan selection
+# (#1054), used by the parser, typecheck and cgen.
+g2_emit_module attributes
+g2_emit_module ordering_hints
+g2_emit_module sort_plans
+for m in attributes ordering_hints sort_plans; do
+    python3 compiler/scripts/flowc_c_to_hdr.py \
+        "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
+done
+g2_emit_module sort_sites \
+    compiler/build/g2_token.h \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_ordering_hints.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/g2_sort_sites.c compiler/build/g2_sort_sites.h
+
 g2_emit_module parser \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h \
-    compiler/build/g2_lexer.h
+    compiler/build/g2_lexer.h \
+    compiler/build/g2_attributes.h
 
 # Proof-layer erasure, called from cgen and the typecheck (#996).
 g2_emit_module proof_lower compiler/build/g2_ast.h
@@ -115,7 +132,10 @@ g2_emit_module cgen \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h \
     compiler/build/g2_effects.h \
-    compiler/build/g2_proof_lower.h
+    compiler/build/g2_proof_lower.h \
+    compiler/build/g2_attributes.h \
+    compiler/build/g2_sort_plans.h \
+    compiler/build/g2_sort_sites.h
 
 # typecheck.flow resolves calls through the native overload modules, so those
 # are emitted first, in dependency order, and their headers are included below.
@@ -153,6 +173,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 
 g2_emit_module typecheck \
     compiler/build/g2_ast.h \
+    compiler/build/g2_attributes.h \
     compiler/build/g2_effects.h \
     compiler/build/g2_proof_lower.h \
     compiler/build/g2_overload_table.h \
@@ -180,6 +201,7 @@ g2_emit_module resolve \
     compiler/build/g2_flow_blocks.h \
     compiler/build/g2_shader_dsl.h \
     compiler/build/g2_effects.h \
+    compiler/build/g2_sort_plans.h \
     compiler/build/g2_cgen.h \
     compiler/build/g2_overload_table.h \
     compiler/build/g2_overload_call.h \
@@ -198,6 +220,10 @@ cc -r -o compiler/build/flowc_frontend_g2.o \
     compiler/build/g2_shader_dsl.o \
     compiler/build/g2_effects.o \
     compiler/build/g2_proof_lower.o \
+    compiler/build/g2_attributes.o \
+    compiler/build/g2_ordering_hints.o \
+    compiler/build/g2_sort_plans.o \
+    compiler/build/g2_sort_sites.o \
     compiler/build/g2_cgen.o \
     compiler/build/g2_overload.o \
     compiler/build/g2_overload_table.o \
@@ -223,7 +249,7 @@ wc -c compiler/build/flowc_frontend_self.o compiler/build/flowc_frontend_g2.o
 # objects can differ from include-path / toolchain metadata while C matches.
 echo "=== fixed-point cmp self_*.c vs g2_*.c ==="
 fp_fail=0
-for mod in token ast lexer fileio field_dsl dynamics_dsl flow_blocks shader_dsl effects parser proof_lower cgen typecheck resolve; do
+for mod in token ast lexer fileio field_dsl dynamics_dsl flow_blocks shader_dsl effects attributes ordering_hints sort_plans sort_sites parser proof_lower cgen typecheck resolve; do
     if ! cmp -s "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c"; then
         echo "FAIL C drift: ${mod}" >&2
         diff -u "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c" | head -80 >&2 || true
