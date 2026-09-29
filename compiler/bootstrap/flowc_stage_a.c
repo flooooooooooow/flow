@@ -10625,7 +10625,7 @@ int32_t gs_parse_compare(GsCtx* c);
 int32_t gs_parse_expr(GsCtx* c);
 int32_t gs_parse(GsCtx* c, const char* text);
 int32_t gs_truthy(GsVal v);
-GsVal gs_bool(int32_t b);
+GsVal gs_bool(bool b);
 double gs_factorial(int32_t p);
 GsVal gs_call_builtin(GsCtx* c, int32_t id, GsVal* v, int32_t n);
 GsVal gs_eval(GsCtx* c, GsEnv* env, int32_t id);
@@ -11229,8 +11229,8 @@ int32_t gs_truthy(GsVal v) {
   return 1;
 }
 
-GsVal gs_bool(int32_t b) {
-  if (b == 1) {
+GsVal gs_bool(bool b) {
+  if (b) {
   return gs_num(1.0);
 }
   return gs_num(0.0);
@@ -31489,7 +31489,7 @@ int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32
 
 const char* pdg_env(const char* name) {
   const char* v = getenv(name);
-  if (v == NULL) {
+  if ((uint8_t*)(v) == NULL) {
   return "";
 }
   return v;
