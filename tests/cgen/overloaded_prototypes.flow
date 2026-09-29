@@ -1,0 +1,16 @@
+# Two prototypes that share a name but not their parameters are overloads
+# (#1049). The Python host gave each a mangled C name. flowc gave both
+# the plain name, and C rejected the second as a conflicting type.
+function analyse(samples: ptr<f32>, n: i32) -> f32
+function analyse(samples: array<f32, 512>) -> f32
+
+# A forward declaration of a single function keeps the plain name.
+function twice(x: i32) -> i32
+
+function twice(x: i32) -> i32 {
+    return x * 2
+}
+
+function main() -> i32 {
+    return twice(0)
+}

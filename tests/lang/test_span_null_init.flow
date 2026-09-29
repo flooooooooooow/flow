@@ -1,0 +1,14 @@
+# A module-level span initialized with `null` is the empty span (#1048).
+# The Python host emitted `{0}`. flowc emitted `= NULL`, which C rejects
+# for the span struct.
+
+@lifetime(application)
+let mut cache: span<f32> = null
+
+let mut scratch: span<i32> = null
+
+function main() -> i32 {
+    if cache.len != 0 { return 1 }
+    if scratch.len != 0 { return 2 }
+    return 0
+}
