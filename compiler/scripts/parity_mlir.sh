@@ -312,9 +312,12 @@ if [[ "$mode" == "--python" ]]; then
             run_same=$((run_same + 1))
         else
             # Timings and printed addresses change from run to run. A program
-            # whose Python build disagrees with itself is not comparable.
+            # whose build disagrees with itself on a second run (either path)
+            # is not comparable.
             run_exe "$WORK/python/$key" "$(dirname "$f")" "$WORK/python/$key.out2"
-            if ! cmp -s "$WORK/python/$key.out" "$WORK/python/$key.out2"; then
+            run_exe "$WORK/flowc/$key" "$(dirname "$f")" "$WORK/flowc/$key.out2"
+            if ! cmp -s "$WORK/python/$key.out" "$WORK/python/$key.out2" \
+                || ! cmp -s "$WORK/flowc/$key.out" "$WORK/flowc/$key.out2"; then
                 run_nondet=$((run_nondet + 1))
             else
                 run_fail=$((run_fail + 1))
