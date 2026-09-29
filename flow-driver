@@ -3587,8 +3587,11 @@ case "${1:-help}" in
             exit 1
         fi
         check_deps
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
-            python3 -m flow.fir_cli "$@"
+        # tools/fir/main.flow, built on first use.
+        if ! fir_bin="$(flow_native_tool fir)"; then
+            exit 1
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$fir_bin" "$@"
         ;;
     "shader")
         shift

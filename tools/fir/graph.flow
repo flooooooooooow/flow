@@ -1,0 +1,605 @@
+# @module tools.fir.graph
+# @means  FIR-G, the columnar program graph behind `flow fir-g`: dense
+#         function, block, op and value ids, a CSR call graph, and the CPU
+#         analyses (effect propagation, reachability, purity) and the
+#         optimisation candidates. Port of src/flow/fir_g.py,
+#         fir_analysis.py and fir_opts.py; the propagation and reachability
+#         loops are the ones in compiler/src/fir_analysis.flow.
+
+import "tools/hostlib/text.flow"
+import "compiler/src/fir_analysis.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+export const OP_CONST: i32 = 1
+export const OP_PARAM: i32 = 2
+export const OP_LOAD: i32 = 3
+export const OP_STORE: i32 = 4
+export const OP_BINOP: i32 = 5
+export const OP_UNOP: i32 = 6
+export const OP_CALL: i32 = 7
+export const OP_RET: i32 = 8
+export const OP_BR: i32 = 9
+export const OP_COND_BR: i32 = 10
+export const OP_ALLOCA: i32 = 12
+export const OP_EFFECT: i32 = 15
+export const OP_OTHER: i32 = 255
+
+export const EFF_WRITES_MEMORY: i32 = 2
+export const EFF_ALLOCATES: i32 = 4
+export const EFF_IO: i32 = 8
+export const EFF_FFI: i32 = 16
+export const EFF_GPU: i32 = 256
+export const EFF_UNKNOWN: i32 = 32768
+
+# ── Growable i32 vector ─────────────────────────────────────────
+
+export struct IVec {
+    data: ptr<i32>,
+    len: i32,
+    cap: i32
+}
+
+export function iv_new() -> IVec {
+    let cap: i32 = 16
+    return IVec { data: malloc((cap * 4) as i64) as ptr<i32>, len: 0, cap: cap }
+}
+
+export function iv_push(v: ptr<IVec>, x: i32) {
+    if v.len >= v.cap {
+        v.cap = v.cap * 2
+        v.data = realloc(v.data as ptr<void>, (v.cap as i64) * 4) as ptr<i32>
+    }
+    let d: ptr<i32> = v.data
+    d[v.len] = x
+    v.len = v.len + 1
+}
+
+export function iv_get(v: ptr<IVec>, i: i32) -> i32 {
+    let d: ptr<i32> = v.data
+    return d[i]
+}
+
+export function iv_set(v: ptr<IVec>, i: i32, x: i32) {
+    let d: ptr<i32> = v.data
+    d[i] = x
+}
+
+# ── String to id map (open addressing) ──────────────────────────
+
+export struct SMap {
+    keys: ptr<ptr<u8>>,
+    vals: ptr<i32>,
+    cap: i32,
+    n: i32
+}
+
+export function sm_new() -> SMap {
+    let cap: i32 = 64
+    return SMap {
+        keys: calloc(cap as i64, 8) as ptr<ptr<u8>>,
+        vals: calloc(cap as i64, 4) as ptr<i32>,
+        cap: cap,
+        n: 0
+    }
+}
+
+function sm_hash(s: string) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut h: i32 = 5381
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        h = (h * 33 + (p[i] as i32)) & 1073741823
+        i = i + 1
+    }
+    return h
+}
+
+function sm_slot(m: ptr<SMap>, s: string) -> i32 {
+    let mut i: i32 = sm_hash(s) % m.cap
+    let ks: ptr<ptr<u8>> = m.keys
+    while ks[i] != null {
+        if t_eq(ks[i] as string, s) {
+            return i
+        }
+        i = (i + 1) % m.cap
+    }
+    return i
+}
+
+# Value for `s`, or -1.
+export function sm_get(m: ptr<SMap>, s: string) -> i32 {
+    let i: i32 = sm_slot(m, s)
+    let ks: ptr<ptr<u8>> = m.keys
+    if ks[i] == null {
+        return -1
+    }
+    let vs: ptr<i32> = m.vals
+    return vs[i]
+}
+
+export function sm_put(m: ptr<SMap>, s: string, v: i32) {
+    if (m.n + 1) * 2 > m.cap {
+        let oldk: ptr<ptr<u8>> = m.keys
+        let oldv: ptr<i32> = m.vals
+        let oldc: i32 = m.cap
+        m.cap = oldc * 2
+        m.keys = calloc(m.cap as i64, 8) as ptr<ptr<u8>>
+        m.vals = calloc(m.cap as i64, 4) as ptr<i32>
+        m.n = 0
+        let mut j: i32 = 0
+        while j < oldc {
+            if oldk[j] != null {
+                sm_put(m, oldk[j] as string, oldv[j])
+            }
+            j = j + 1
+        }
+    }
+    let i: i32 = sm_slot(m, s)
+    let ks: ptr<ptr<u8>> = m.keys
+    let vs: ptr<i32> = m.vals
+    if ks[i] == null {
+        ks[i] = s as ptr<u8>
+        m.n = m.n + 1
+    }
+    vs[i] = v
+}
+
+# ── The graph ───────────────────────────────────────────────────
+
+export struct FirG {
+    func_name: TList,
+    func_first_block: IVec,
+    func_block_count: IVec,
+    func_effect_bits: IVec,
+    func_is_extern: IVec,
+    block_function: IVec,
+    block_first_op: IVec,
+    block_op_count: IVec,
+    op_opcode: IVec,
+    op_function: IVec,
+    op_block: IVec,
+    op_result_begin: IVec,
+    op_callee: IVec,
+    num_operands: i32,
+    num_values: i32,
+    type_name: TList,
+    func_by_name: SMap,
+    type_by_name: SMap,
+    call_row_offsets: IVec,
+    call_columns: IVec,
+    call_edge_sites: IVec
+}
+
+export function fg_new() -> ptr<FirG> {
+    let g: ptr<FirG> = calloc(1, 1024) as ptr<FirG>
+    g.func_name = tl_new()
+    g.func_first_block = iv_new()
+    g.func_block_count = iv_new()
+    g.func_effect_bits = iv_new()
+    g.func_is_extern = iv_new()
+    g.block_function = iv_new()
+    g.block_first_op = iv_new()
+    g.block_op_count = iv_new()
+    g.op_opcode = iv_new()
+    g.op_function = iv_new()
+    g.op_block = iv_new()
+    g.op_result_begin = iv_new()
+    g.op_callee = iv_new()
+    g.num_operands = 0
+    g.num_values = 0
+    g.type_name = tl_new()
+    g.func_by_name = sm_new()
+    g.type_by_name = sm_new()
+    g.call_row_offsets = iv_new()
+    g.call_columns = iv_new()
+    g.call_edge_sites = iv_new()
+    return g
+}
+
+export function fg_num_funcs(g: ptr<FirG>) -> i32 {
+    return g.func_name.len
+}
+
+export function fg_num_ops(g: ptr<FirG>) -> i32 {
+    return g.op_opcode.len
+}
+
+export function fg_func_name(g: ptr<FirG>, f: i32) -> string {
+    return tl_get(&g.func_name, f)
+}
+
+export function fg_intern_type(g: ptr<FirG>, name: string) -> i32 {
+    let tid: i32 = sm_get(&g.type_by_name, name)
+    if tid >= 0 {
+        return tid
+    }
+    let nt: i32 = g.type_name.len
+    tl_push(&g.type_name, name)
+    sm_put(&g.type_by_name, name, nt)
+    return nt
+}
+
+export function fg_add_function(g: ptr<FirG>, name: string, is_extern: bool, effect_bits: i32) -> i32 {
+    let fid: i32 = g.func_name.len
+    tl_push(&g.func_name, name)
+    iv_push(&g.func_first_block, 0)
+    iv_push(&g.func_block_count, 0)
+    iv_push(&g.func_effect_bits, effect_bits)
+    if is_extern {
+        iv_push(&g.func_is_extern, 1)
+    } else {
+        iv_push(&g.func_is_extern, 0)
+    }
+    sm_put(&g.func_by_name, name, fid)
+    return fid
+}
+
+export function fg_add_block(g: ptr<FirG>, fid: i32) -> i32 {
+    let bid: i32 = g.block_function.len
+    iv_push(&g.block_function, fid)
+    iv_push(&g.block_first_op, g.op_opcode.len)
+    iv_push(&g.block_op_count, 0)
+    if iv_get(&g.func_block_count, fid) == 0 {
+        iv_set(&g.func_first_block, fid, bid)
+    }
+    iv_set(&g.func_block_count, fid, iv_get(&g.func_block_count, fid) + 1)
+    return bid
+}
+
+# Append an op with `n_operands` operand edges and `n_results` result
+# values. Returns the op id; its first result value is fg_result(g, op).
+export function fg_add_op(g: ptr<FirG>, opcode: i32, fid: i32, bid: i32, n_operands: i32, n_results: i32, callee: i32) -> i32 {
+    let op: i32 = g.op_opcode.len
+    g.num_operands = g.num_operands + n_operands
+    iv_push(&g.op_result_begin, g.num_values)
+    g.num_values = g.num_values + n_results
+    iv_push(&g.op_opcode, opcode)
+    iv_push(&g.op_function, fid)
+    iv_push(&g.op_block, bid)
+    iv_push(&g.op_callee, callee)
+    if iv_get(&g.block_op_count, bid) == 0 {
+        iv_set(&g.block_first_op, bid, op)
+    }
+    iv_set(&g.block_op_count, bid, iv_get(&g.block_op_count, bid) + 1)
+    return op
+}
+
+export function fg_result(g: ptr<FirG>, op: i32) -> i32 {
+    return iv_get(&g.op_result_begin, op)
+}
+
+export function fg_or_effect(g: ptr<FirG>, fid: i32, bits: i32) {
+    iv_set(&g.func_effect_bits, fid, iv_get(&g.func_effect_bits, fid) | bits)
+}
+
+export function fg_build_call_graph_csr(g: ptr<FirG>) {
+    let nf: i32 = fg_num_funcs(g)
+    # Count edges per caller, then fill in op order.
+    let counts: ptr<i32> = calloc((nf + 1) as i64, 4) as ptr<i32>
+    let nops: i32 = fg_num_ops(g)
+    let mut op: i32 = 0
+    while op < nops {
+        if iv_get(&g.op_opcode, op) == OP_CALL and iv_get(&g.op_callee, op) >= 0 {
+            let caller: i32 = iv_get(&g.op_function, op)
+            counts[caller] = counts[caller] + 1
+        }
+        op = op + 1
+    }
+    g.call_row_offsets = iv_new()
+    iv_push(&g.call_row_offsets, 0)
+    let mut f: i32 = 0
+    let mut acc: i32 = 0
+    while f < nf {
+        acc = acc + counts[f]
+        iv_push(&g.call_row_offsets, acc)
+        f = f + 1
+    }
+    let fill: ptr<i32> = calloc((nf + 1) as i64, 4) as ptr<i32>
+    let cols: ptr<i32> = calloc((acc + 1) as i64, 4) as ptr<i32>
+    let sites: ptr<i32> = calloc((acc + 1) as i64, 4) as ptr<i32>
+    op = 0
+    while op < nops {
+        if iv_get(&g.op_opcode, op) == OP_CALL and iv_get(&g.op_callee, op) >= 0 {
+            let caller: i32 = iv_get(&g.op_function, op)
+            let at: i32 = iv_get(&g.call_row_offsets, caller) + fill[caller]
+            cols[at] = iv_get(&g.op_callee, op)
+            sites[at] = op
+            fill[caller] = fill[caller] + 1
+        }
+        op = op + 1
+    }
+    g.call_columns = IVec { data: cols, len: acc, cap: acc + 1 }
+    g.call_edge_sites = IVec { data: sites, len: acc, cap: acc + 1 }
+    free(counts as ptr<void>)
+    free(fill as ptr<void>)
+}
+
+export function fg_num_edges(g: ptr<FirG>) -> i32 {
+    return g.call_columns.len
+}
+
+export function fg_summary(g: ptr<FirG>) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "FIR-G: funcs=")
+    tb_put_int(&tb, fg_num_funcs(g))
+    tb_puts(&tb, " blocks=")
+    tb_put_int(&tb, g.block_function.len)
+    tb_puts(&tb, " ops=")
+    tb_put_int(&tb, fg_num_ops(g))
+    tb_puts(&tb, " values=")
+    tb_put_int(&tb, g.num_values)
+    tb_puts(&tb, " operands=")
+    tb_put_int(&tb, g.num_operands)
+    tb_puts(&tb, " types=")
+    tb_put_int(&tb, g.type_name.len)
+    return tb.data as string
+}
+
+# ── Analyses ────────────────────────────────────────────────────
+
+export function fg_propagate_effects(g: ptr<FirG>) {
+    let _iters: i32 = flowc_propagate_effects(
+        g.func_effect_bits.data,
+        g.call_row_offsets.data,
+        g.call_columns.data,
+        fg_num_funcs(g),
+        64
+    )
+}
+
+# Reachability from `main` (or function 0 when there is no main). Returns a
+# per-function 0/1 array.
+export function fg_reachable(g: ptr<FirG>) -> ptr<i32> {
+    let nf: i32 = fg_num_funcs(g)
+    let visited: ptr<i32> = calloc((nf + 1) as i64, 4) as ptr<i32>
+    let roots: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let mut nroots: i32 = 0
+    let m: i32 = sm_get(&g.func_by_name, "main")
+    if m >= 0 {
+        roots[0] = m
+        nroots = 1
+    } elif nf > 0 {
+        roots[0] = 0
+        nroots = 1
+    }
+    let _n: i32 = flowc_reachable_functions(
+        g.call_row_offsets.data,
+        g.call_columns.data,
+        roots,
+        nroots,
+        nf,
+        visited
+    )
+    return visited
+}
+
+export function fg_is_pure(g: ptr<FirG>, f: i32) -> bool {
+    return flowc_is_pure(iv_get(&g.func_effect_bits, f)) == 1
+}
+
+export function fg_num_call_ops(g: ptr<FirG>) -> i32 {
+    return flowc_count_call_ops(g.op_opcode.data, fg_num_ops(g))
+}
+
+export function fg_func_op_count(g: ptr<FirG>, fid: i32) -> i32 {
+    let first: i32 = iv_get(&g.func_first_block, fid)
+    let nb: i32 = iv_get(&g.func_block_count, fid)
+    let mut total: i32 = 0
+    let mut b: i32 = first
+    while b < first + nb {
+        total = total + iv_get(&g.block_op_count, b)
+        b = b + 1
+    }
+    return total
+}
+
+# ── Optimisation candidates (fir_opts.py) ───────────────────────
+
+export const KIND_DEAD: i32 = 0
+export const KIND_INLINE: i32 = 1
+
+export struct Cand {
+    kind: i32,
+    target: string,
+    score: f64,
+    reason: string,
+    caller: string,
+    callsite_op: i32,
+    callee_ops: i32,
+    call_sites: i32
+}
+
+export struct CandList {
+    items: ptr<Cand>,
+    len: i32,
+    cap: i32
+}
+
+function cl_push(l: ptr<CandList>, c: Cand) {
+    if l.len >= l.cap {
+        l.cap = l.cap * 2
+        l.items = realloc(l.items as ptr<void>, (l.cap as i64) * 64) as ptr<Cand>
+    }
+    let it: ptr<Cand> = l.items
+    it[l.len] = c
+    l.len = l.len + 1
+}
+
+export function cl_get(l: ptr<CandList>, i: i32) -> Cand {
+    let it: ptr<Cand> = l.items
+    return it[i]
+}
+
+# Python's round(x, 4) for the scores here: nearest 1e-4, ties to even on
+# the exact double, which is what printf's "%.4f" does.
+extern {
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strtod(s: string, end: ptr<void>) -> f64
+}
+
+function round4(x: f64) -> f64 {
+    let buf: ptr<u8> = malloc(64) as ptr<u8>
+    let _n: i32 = snprintf(buf, 64, "%.4f", x)
+    let v: f64 = strtod(buf as string, null)
+    free(buf as ptr<void>)
+    return v
+}
+
+function kind_name(k: i32) -> string {
+    if k == KIND_DEAD {
+        return "dead_elim"
+    }
+    return "inline"
+}
+
+function sort_op(c: Cand) -> i32 {
+    # Python sorts on `callsite_op or -1`: None and op 0 both count as -1.
+    if c.callsite_op <= 0 {
+        return -1
+    }
+    return c.callsite_op
+}
+
+# a sorts before b under (-score, kind, target, callsite_op or -1).
+function cand_before(a: Cand, b: Cand) -> bool {
+    if a.score != b.score {
+        return a.score > b.score
+    }
+    let c: i32 = strcmp_s(kind_name(a.kind), kind_name(b.kind))
+    if c != 0 {
+        return c < 0
+    }
+    let d: i32 = strcmp_s(a.target, b.target)
+    if d != 0 {
+        return d < 0
+    }
+    return sort_op(a) < sort_op(b)
+}
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}
+
+export function strcmp_s(a: string, b: string) -> i32 {
+    return strcmp(a, b)
+}
+
+export function discover_candidates(g: ptr<FirG>, live: ptr<i32>) -> CandList {
+    let mut out: CandList = CandList { items: malloc(64 * 16) as ptr<Cand>, len: 0, cap: 16 }
+    let nf: i32 = fg_num_funcs(g)
+    let mut f: i32 = 0
+    while f < nf {
+        let name: string = fg_func_name(g, f)
+        if live[f] == 0 and not t_eq(name, "main") {
+            let ops: i32 = fg_func_op_count(g, f)
+            cl_push(&out, Cand {
+                kind: KIND_DEAD,
+                target: name,
+                score: 10.0 + (ops as f64),
+                reason: "unreachable from roots",
+                caller: "",
+                callsite_op: -1,
+                callee_ops: ops,
+                call_sites: -1
+            })
+        }
+        f = f + 1
+    }
+    # Call sites per callee, callees in order of their first call (Python
+    # dict insertion order).
+    let nops: i32 = fg_num_ops(g)
+    let site_count: ptr<i32> = calloc((nf + 1) as i64, 4) as ptr<i32>
+    let mut order: IVec = iv_new()
+    let mut op: i32 = 0
+    while op < nops {
+        if iv_get(&g.op_opcode, op) == OP_CALL {
+            let cal: i32 = iv_get(&g.op_callee, op)
+            if cal >= 0 {
+                if site_count[cal] == 0 {
+                    iv_push(&order, cal)
+                }
+                site_count[cal] = site_count[cal] + 1
+            }
+        }
+        op = op + 1
+    }
+    let mut oi: i32 = 0
+    while oi < order.len {
+        let cal: i32 = iv_get(&order, oi)
+        oi = oi + 1
+        if live[cal] == 0 {
+            continue
+        }
+        if iv_get(&g.func_is_extern, cal) != 0 {
+            continue
+        }
+        let ops: i32 = fg_func_op_count(g, cal)
+        if ops <= 0 or ops > 16 {
+            continue
+        }
+        let name: string = fg_func_name(g, cal)
+        # purity_flags is a dict by name: a later function of the same name
+        # decides it.
+        let is_pure: bool = fg_is_pure(g, sm_get(&g.func_by_name, name))
+        let n_sites: i32 = site_count[cal]
+        let mut score: f64 = ((16 - ops + 1) as f64) / (n_sites as f64)
+        if n_sites == 1 {
+            score = score * 2.0
+        }
+        if is_pure {
+            score = score * 1.5
+        }
+        score = round4(score)
+        let mut tb: TBuf = tb_new()
+        tb_puts(&tb, "callee_ops=")
+        tb_put_int(&tb, ops)
+        tb_puts(&tb, " sites=")
+        tb_put_int(&tb, n_sites)
+        if is_pure {
+            tb_puts(&tb, " pure=True")
+        } else {
+            tb_puts(&tb, " pure=False")
+        }
+        let reason: string = tb.data as string
+        op = 0
+        while op < nops {
+            if iv_get(&g.op_opcode, op) == OP_CALL and iv_get(&g.op_callee, op) == cal {
+                cl_push(&out, Cand {
+                    kind: KIND_INLINE,
+                    target: name,
+                    score: score,
+                    reason: reason,
+                    caller: fg_func_name(g, iv_get(&g.op_function, op)),
+                    callsite_op: op,
+                    callee_ops: ops,
+                    call_sites: n_sites
+                })
+            }
+            op = op + 1
+        }
+    }
+    # Stable insertion sort (Python's sort is stable).
+    let it: ptr<Cand> = out.items
+    let mut i: i32 = 1
+    while i < out.len {
+        let cur: Cand = it[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and cand_before(cur, it[j]) {
+            it[j + 1] = it[j]
+            j = j - 1
+        }
+        it[j + 1] = cur
+        i = i + 1
+    }
+    return out
+}
+
+export function cand_kind_name(k: i32) -> string {
+    return kind_name(k)
+}
