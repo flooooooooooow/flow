@@ -6300,385 +6300,6 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
 }
 
 
-typedef struct JsgenBuf {
-  uint8_t* out;
-  int32_t cap;
-  int32_t len;
-  int32_t err;
-} JsgenBuf;
-
-JsgenBuf flowc_jsgen_buf_init(uint8_t* out, int32_t cap);
-void flowc_jsgen_putc(JsgenBuf* w, int32_t c);
-void flowc_jsgen_puts(JsgenBuf* w, const char* s);
-void flowc_jsgen_put_span(JsgenBuf* w, uint8_t* src, int32_t start, int32_t end);
-void flowc_jsgen_put_i32(JsgenBuf* w, int32_t val);
-void flowc_jsgen_emit_binop_op(JsgenBuf* w, int32_t op);
-void flowc_jsgen_emit_expr(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-void flowc_jsgen_emit_block(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-void flowc_jsgen_emit_stmt(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-void flowc_jsgen_emit_fn(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-int32_t flowc_jsgen_unwrap_fn(AstArena arena, int32_t item);
-int32_t flowc_jsgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap);
-JsgenBuf flowc_jsgen_buf_init(uint8_t* out, int32_t cap) {
-  return (JsgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0 };
-}
-
-void flowc_jsgen_putc(JsgenBuf* w, int32_t c) {
-  if ((w[0]).err != 0) {
-  return;
-}
-  if ((w[0]).len >= (w[0]).cap) {
-  (w[0]).err = 1;
-  return;
-}
-  (w[0]).out[(w[0]).len] = c;
-  (w[0]).len = ((w[0]).len + 1);
-}
-
-void flowc_jsgen_puts(JsgenBuf* w, const char* s) {
-  uint8_t* p = (uint8_t*)(s);
-  int32_t n = (int32_t)(strlen(s));
-  int32_t i = 0;
-  while (i < n) {
-  flowc_jsgen_putc(w, p[i]);
-  i = (i + 1);
-}
-}
-
-void flowc_jsgen_put_span(JsgenBuf* w, uint8_t* src, int32_t start, int32_t end) {
-  int32_t i = start;
-  while (i < end) {
-  flowc_jsgen_putc(w, src[i]);
-  i = (i + 1);
-}
-}
-
-void flowc_jsgen_put_i32(JsgenBuf* w, int32_t val) {
-  int32_t v = val;
-  if (v < 0) {
-  flowc_jsgen_putc(w, 45);
-  v = (0 - v);
-}
-  if (v == 0) {
-  flowc_jsgen_putc(w, 48);
-  return;
-}
-  uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-  int32_t n = 0;
-  while (v > 0) {
-  digits[n] = ((v % 10) + 48);
-  v = (v / 10);
-  n = (n + 1);
-}
-  int32_t i = n;
-  while (i > 0) {
-  i = (i - 1);
-  flowc_jsgen_putc(w, digits[i]);
-}
-}
-
-void flowc_jsgen_emit_expr(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-void flowc_jsgen_emit_stmt(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-void flowc_jsgen_emit_block(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
-void flowc_jsgen_emit_binop_op(JsgenBuf* w, int32_t op) {
-  if (op == TOK_PLUS) {
-  flowc_jsgen_puts(w, " + ");
-  return;
-}
-  if (op == TOK_MINUS) {
-  flowc_jsgen_puts(w, " - ");
-  return;
-}
-  if (op == TOK_STAR) {
-  flowc_jsgen_puts(w, " * ");
-  return;
-}
-  if (op == TOK_SLASH) {
-  flowc_jsgen_puts(w, " / ");
-  return;
-}
-  if (op == TOK_PERCENT) {
-  flowc_jsgen_puts(w, " % ");
-  return;
-}
-  if (op == TOK_EQEQ) {
-  flowc_jsgen_puts(w, " == ");
-  return;
-}
-  if (op == TOK_NE) {
-  flowc_jsgen_puts(w, " != ");
-  return;
-}
-  if (op == TOK_LT) {
-  flowc_jsgen_puts(w, " < ");
-  return;
-}
-  if (op == TOK_GT) {
-  flowc_jsgen_puts(w, " > ");
-  return;
-}
-  if (op == TOK_LE) {
-  flowc_jsgen_puts(w, " <= ");
-  return;
-}
-  if (op == TOK_GE) {
-  flowc_jsgen_puts(w, " >= ");
-  return;
-}
-  if (op == TOK_AMPAMP) {
-  flowc_jsgen_puts(w, " && ");
-  return;
-}
-  if (op == TOK_BARBAR) {
-  flowc_jsgen_puts(w, " || ");
-  return;
-}
-  flowc_jsgen_puts(w, " /*op*/ ");
-}
-
-void flowc_jsgen_emit_expr(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
-  if (id == AST_NONE || (w[0]).err != 0) {
-  return;
-}
-  int32_t kind = ((arena).nodes[id]).kind;
-  if (kind == AST_INT) {
-  flowc_jsgen_put_i32(w, ((arena).nodes[id]).ival);
-  return;
-}
-  if (kind == AST_BOOL) {
-  if (((arena).nodes[id]).ival != 0) {
-  flowc_jsgen_puts(w, "true");
-} else {
-  flowc_jsgen_puts(w, "false");
-}
-  return;
-}
-  if (kind == AST_IDENT) {
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  return;
-}
-  if (kind == AST_BINOP) {
-  flowc_jsgen_putc(w, 40);
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_emit_binop_op(w, ((arena).nodes[id]).ival);
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
-  flowc_jsgen_putc(w, 41);
-  return;
-}
-  if (kind == AST_UNARY) {
-  flowc_jsgen_putc(w, 40);
-  if (((arena).nodes[id]).ival == TOK_MINUS) {
-  flowc_jsgen_putc(w, 45);
-} else {
-  if (((arena).nodes[id]).ival == TOK_BANG) {
-  flowc_jsgen_putc(w, 33);
-}
-}
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_putc(w, 41);
-  return;
-}
-  if (kind == AST_CALL) {
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_jsgen_putc(w, 40);
-  int32_t arg = ((arena).nodes[id]).a;
-  int32_t first = 1;
-  while (arg != AST_NONE) {
-  if (first == 0) {
-  flowc_jsgen_puts(w, ", ");
-}
-  first = 0;
-  flowc_jsgen_emit_expr(w, arena, src, arg);
-  arg = ((arena).nodes[arg]).next;
-}
-  flowc_jsgen_putc(w, 41);
-  return;
-}
-  flowc_jsgen_puts(w, "0");
-}
-
-void flowc_jsgen_emit_block(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
-  if (id == AST_NONE || (w[0]).err != 0) {
-  return;
-}
-  flowc_jsgen_puts(w, "{\n");
-  int32_t st = ((arena).nodes[id]).a;
-  while (st != AST_NONE) {
-  flowc_jsgen_emit_stmt(w, arena, src, st);
-  st = ((arena).nodes[st]).next;
-}
-  flowc_jsgen_puts(w, "}\n");
-}
-
-void flowc_jsgen_emit_stmt(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
-  if (id == AST_NONE || (w[0]).err != 0) {
-  return;
-}
-  int32_t kind = ((arena).nodes[id]).kind;
-  if (kind == AST_LET) {
-  flowc_jsgen_puts(w, "  let ");
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  if (((arena).nodes[id]).b != AST_NONE) {
-  flowc_jsgen_puts(w, " = ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
-}
-  flowc_jsgen_puts(w, ";\n");
-  return;
-}
-  if (kind == AST_RETURN) {
-  if (((arena).nodes[id]).a == AST_NONE) {
-  flowc_jsgen_puts(w, "  return;\n");
-  return;
-}
-  flowc_jsgen_puts(w, "  return ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_puts(w, ";\n");
-  return;
-}
-  if (kind == AST_IF) {
-  flowc_jsgen_puts(w, "  if (");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_puts(w, ") {\n");
-  int32_t then_b = ((arena).nodes[id]).b;
-  if (then_b != AST_NONE) {
-  int32_t st = ((arena).nodes[then_b]).a;
-  while (st != AST_NONE) {
-  flowc_jsgen_emit_stmt(w, arena, src, st);
-  st = ((arena).nodes[st]).next;
-}
-}
-  if (((arena).nodes[id]).c != AST_NONE) {
-  flowc_jsgen_puts(w, "} else {\n");
-  int32_t else_b = ((arena).nodes[id]).c;
-  int32_t est = ((arena).nodes[else_b]).a;
-  while (est != AST_NONE) {
-  flowc_jsgen_emit_stmt(w, arena, src, est);
-  est = ((arena).nodes[est]).next;
-}
-  flowc_jsgen_puts(w, "}\n");
-} else {
-  flowc_jsgen_puts(w, "}\n");
-}
-  return;
-}
-  if (kind == AST_WHILE) {
-  flowc_jsgen_puts(w, "  while (");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_puts(w, ") ");
-  flowc_jsgen_emit_block(w, arena, src, ((arena).nodes[id]).b);
-  return;
-}
-  if (kind == AST_FOR) {
-  flowc_jsgen_puts(w, "  for (let ");
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_jsgen_puts(w, " = ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_puts(w, "; ");
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_jsgen_puts(w, " < ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
-  flowc_jsgen_puts(w, "; ");
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_jsgen_puts(w, "++) ");
-  flowc_jsgen_emit_block(w, arena, src, ((arena).nodes[id]).c);
-  return;
-}
-  if (kind == AST_BREAK) {
-  flowc_jsgen_puts(w, "  break;\n");
-  return;
-}
-  if (kind == AST_CONTINUE) {
-  flowc_jsgen_puts(w, "  continue;\n");
-  return;
-}
-  if (kind == AST_ASSIGN) {
-  flowc_jsgen_puts(w, "  ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_puts(w, " = ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
-  flowc_jsgen_puts(w, ";\n");
-  return;
-}
-  if (kind == AST_EXPR_STMT) {
-  flowc_jsgen_puts(w, "  ");
-  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_jsgen_puts(w, ";\n");
-  return;
-}
-  if (kind == AST_BLOCK) {
-  flowc_jsgen_emit_block(w, arena, src, id);
-  return;
-}
-}
-
-void flowc_jsgen_emit_fn(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
-  if (((arena).nodes[id]).c == AST_NONE) {
-  return;
-}
-  flowc_jsgen_puts(w, "function ");
-  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
-  flowc_jsgen_putc(w, 40);
-  int32_t param = ((arena).nodes[id]).a;
-  int32_t first = 1;
-  while (param != AST_NONE) {
-  if (first == 0) {
-  flowc_jsgen_puts(w, ", ");
-}
-  first = 0;
-  flowc_jsgen_put_span(w, src, ((arena).nodes[param]).name_start, ((arena).nodes[param]).name_end);
-  param = ((arena).nodes[param]).next;
-}
-  flowc_jsgen_puts(w, ") ");
-  flowc_jsgen_emit_block(w, arena, src, ((arena).nodes[id]).c);
-  flowc_jsgen_putc(w, 10);
-}
-
-int32_t flowc_jsgen_unwrap_fn(AstArena arena, int32_t item) {
-  if (item == AST_NONE) {
-  return AST_NONE;
-}
-  if (((arena).nodes[item]).kind == AST_FN) {
-  return item;
-}
-  if (((arena).nodes[item]).kind == AST_EXPORT) {
-  int32_t inner = ((arena).nodes[item]).a;
-  if (inner != AST_NONE && ((arena).nodes[inner]).kind == AST_FN) {
-  return inner;
-}
-}
-  return AST_NONE;
-}
-
-int32_t flowc_jsgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap) {
-  if (root == AST_NONE || root < 0) {
-  return (0 - 1);
-}
-  if (((arena).nodes[root]).kind != AST_PROGRAM) {
-  return (0 - 1);
-}
-  if (flowc_ast_reject_unsupported(arena, src, "flowc jsgen") != 0) {
-  return (0 - 1);
-}
-  if (flowc_ast_reject_effects(arena, src, "flowc jsgen") != 0) {
-  return (0 - 1);
-}
-  JsgenBuf w = flowc_jsgen_buf_init(out, out_cap);
-  flowc_jsgen_puts((&w), "// Generated by flowc Stage-A\n\n");
-  int32_t item = ((arena).nodes[root]).a;
-  while (item != AST_NONE) {
-  int32_t fn = flowc_jsgen_unwrap_fn(arena, item);
-  if (fn != AST_NONE) {
-  flowc_jsgen_emit_fn((&w), arena, src, fn);
-}
-  item = ((arena).nodes[item]).next;
-}
-  if ((w).err != 0) {
-  return (0 - 1);
-}
-  return (w).len;
-}
-
-
 typedef struct FmtBuf {
   uint8_t* out;
   int32_t cap;
@@ -7348,6 +6969,5255 @@ int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const 
 }
 
 
+typedef struct FlowcClaimAddress {
+  const char* carrier;
+  const char* structure;
+  const char* law;
+  int32_t ok;
+} FlowcClaimAddress;
+
+static const int32_t FLOWC_CLAIM_GUIL_OPEN0 = 194;
+static const int32_t FLOWC_CLAIM_GUIL_OPEN1 = 171;
+static const int32_t FLOWC_CLAIM_GUIL_CLOSE0 = 194;
+static const int32_t FLOWC_CLAIM_GUIL_CLOSE1 = 187;
+FlowcClaimAddress flowc_claim_empty();
+FlowcClaimAddress flowc_claim_make(const char* carrier, const char* structure, const char* law);
+int32_t flowc_claim_is_ws(int32_t c);
+int32_t flowc_claim_is_alpha(int32_t c);
+int32_t flowc_claim_is_alnum(int32_t c);
+int32_t flowc_claim_is_lower(int32_t c);
+int32_t flowc_claim_to_lower(int32_t c);
+int32_t flowc_claim_is_alnum_slug(int32_t c);
+const char* flowc_claim_substr(const char* s, int32_t start, int32_t end);
+const char* flowc_claim_strip(const char* s);
+const char* flowc_claim_strip_paren(const char* s);
+const char* flowc_claim_slug_phrase(const char* text);
+const char* flowc_claim_structure_name(const char* sym);
+const char* flowc_claim_facet_law(const char* facet);
+const char* flowc_claim_structure_sym(const char* name);
+const char* flowc_claim_law_facet(const char* law);
+const char* flowc_claim_slug(FlowcClaimAddress addr);
+const char* flowc_claim_guillemets(FlowcClaimAddress addr);
+const char* flowc_claim_display(FlowcClaimAddress addr);
+const char* flowc_claim_to_legacy_path(FlowcClaimAddress addr);
+FlowcClaimAddress flowc_claim_legacy_to_address(const char* carrier, const char* structure_sym, const char* facet);
+int32_t flowc_claim_at_guil_open(uint8_t* p, int32_t i, int32_t n);
+int32_t flowc_claim_at_guil_close(uint8_t* p, int32_t i, int32_t n);
+int32_t flowc_claim_find_guil_close(uint8_t* p, int32_t i, int32_t n);
+int32_t flowc_claim_skip_ws(uint8_t* p, int32_t i, int32_t n);
+FlowcClaimAddress flowc_claim_parse_guillemets(const char* raw);
+int32_t flowc_claim_parse_structure_end(uint8_t* p, int32_t start, int32_t n);
+FlowcClaimAddress flowc_claim_parse_legacy(const char* raw);
+FlowcClaimAddress flowc_claim_parse_slug(const char* raw);
+FlowcClaimAddress flowc_claim_parse(const char* text);
+FlowcClaimAddress flowc_claim_try_parse(const char* text);
+const char* flowc_claim_address_phrase(FlowcClaimAddress addr);
+const char* flowc_claim_carrier_math(const char* raw);
+const char* flowc_claim_structure_math(const char* raw);
+const char* flowc_claim_law_phrase(const char* law);
+const char* flowc_claim_carrier_math(const char* raw);
+const char* flowc_claim_structure_math(const char* raw);
+const char* flowc_claim_law_phrase(const char* law);
+FlowcClaimAddress flowc_claim_empty() {
+  return (FlowcClaimAddress){ .carrier = "", .structure = "", .law = "", .ok = 0 };
+}
+
+FlowcClaimAddress flowc_claim_make(const char* carrier, const char* structure, const char* law) {
+  return (FlowcClaimAddress){ .carrier = carrier, .structure = structure, .law = law, .ok = 1 };
+}
+
+int32_t flowc_claim_is_ws(int32_t c) {
+  if (c == 32 || c == 9 || c == 10 || c == 13) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_claim_is_alpha(int32_t c) {
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_claim_is_alnum(int32_t c) {
+  if (flowc_claim_is_alpha(c) == 1) {
+  return 1;
+}
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_claim_is_lower(int32_t c) {
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_claim_to_lower(int32_t c) {
+  if (c >= 65 && c <= 90) {
+  return (c + 32);
+}
+  return c;
+}
+
+int32_t flowc_claim_is_alnum_slug(int32_t c) {
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+const char* flowc_claim_substr(const char* s, int32_t start, int32_t end) {
+  if (end <= start) {
+  return "";
+}
+  uint8_t* src = (uint8_t*)(s);
+  int32_t n = (end - start);
+  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  int32_t i = 0;
+  while (i < n) {
+  buf[i] = src[(start + i)];
+  i = (i + 1);
+}
+  buf[n] = 0;
+  const char* out = (const char*)(buf);
+  return out;
+}
+
+const char* flowc_claim_strip(const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  int32_t lo = 0;
+  int32_t hi = n;
+  while (lo < hi && flowc_claim_is_ws(p[lo]) == 1) {
+  lo = (lo + 1);
+}
+  while (hi > lo && flowc_claim_is_ws(p[(hi - 1)]) == 1) {
+  hi = (hi - 1);
+}
+  return flowc_claim_substr(s, lo, hi);
+}
+
+const char* flowc_claim_strip_paren(const char* s) {
+  const char* t = flowc_claim_strip(s);
+  uint8_t* p = (uint8_t*)(t);
+  int32_t n = (int32_t)(strlen(t));
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 40) {
+  return flowc_claim_strip(flowc_claim_substr(t, 0, i));
+}
+  i = (i + 1);
+}
+  return t;
+}
+
+const char* flowc_claim_slug_phrase(const char* text) {
+  const char* s = flowc_claim_strip(text);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  int32_t j = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t c = flowc_claim_to_lower(p[i]);
+  if (flowc_claim_is_alnum_slug(c) == 1) {
+  buf[j] = c;
+  j = (j + 1);
+} else {
+  if (j > 0 && buf[(j - 1)] != 95) {
+  buf[j] = 95;
+  j = (j + 1);
+}
+}
+  i = (i + 1);
+}
+  while (j > 0 && buf[(j - 1)] == 95) {
+  j = (j - 1);
+}
+  buf[j] = 0;
+  const char* out = (const char*)(buf);
+  return out;
+}
+
+const char* flowc_claim_structure_name(const char* sym) {
+  if (strcmp(sym, "+") == 0) {
+  return "addition";
+}
+  if (strcmp(sym, "*") == 0) {
+  return "multiplication";
+}
+  if (strcmp(sym, "||") == 0) {
+  return "disjunction";
+}
+  if (strcmp(sym, "&&") == 0) {
+  return "conjunction";
+}
+  if (strcmp(sym, "=") == 0) {
+  return "equality";
+}
+  if (strcmp(sym, "out") == 0) {
+  return "output";
+}
+  if (strcmp(sym, "fifo") == 0) {
+  return "fifo";
+}
+  if (strcmp(sym, "vectorize") == 0) {
+  return "vectorization";
+}
+  if (strcmp(sym, "fuse") == 0) {
+  return "fusion";
+}
+  return sym;
+}
+
+const char* flowc_claim_facet_law(const char* facet) {
+  if (strcmp(facet, "zero-left") == 0) {
+  return "zero is the left identity";
+}
+  if (strcmp(facet, "zero-right") == 0) {
+  return "zero is the right identity";
+}
+  if (strcmp(facet, "succ-right") == 0) {
+  return "successor on the right steps the sum";
+}
+  if (strcmp(facet, "succ-left") == 0) {
+  return "successor on the left steps the sum";
+}
+  if (strcmp(facet, "commutes") == 0) {
+  return "order does not matter";
+}
+  if (strcmp(facet, "assoc") == 0) {
+  return "parentheses do not matter";
+}
+  if (strcmp(facet, "reflexive") == 0) {
+  return "everything equals itself";
+}
+  if (strcmp(facet, "symmetric") == 0) {
+  return "equality reverses";
+}
+  if (strcmp(facet, "transitive") == 0) {
+  return "equality chains";
+}
+  if (strcmp(facet, "square-nonneg") == 0) {
+  return "squaring never yields a negative";
+}
+  if (strcmp(facet, "correct") == 0) {
+  return "output matches specification";
+}
+  if (strcmp(facet, "semantics-equal") == 0) {
+  return "optimized code matches naive code";
+}
+  if (strcmp(facet, "order-kept") == 0) {
+  return "order is preserved";
+}
+  uint8_t* p = (uint8_t*)(facet);
+  int32_t n = (int32_t)(strlen(facet));
+  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 45) {
+  buf[i] = 32;
+} else {
+  buf[i] = p[i];
+}
+  i = (i + 1);
+}
+  buf[n] = 0;
+  const char* out = (const char*)(buf);
+  return out;
+}
+
+const char* flowc_claim_structure_sym(const char* name) {
+  if (strcmp(name, "addition") == 0) {
+  return "+";
+}
+  if (strcmp(name, "multiplication") == 0) {
+  return "*";
+}
+  if (strcmp(name, "disjunction") == 0) {
+  return "||";
+}
+  if (strcmp(name, "conjunction") == 0) {
+  return "&&";
+}
+  if (strcmp(name, "equality") == 0) {
+  return "=";
+}
+  if (strcmp(name, "output") == 0) {
+  return "out";
+}
+  if (strcmp(name, "fifo") == 0) {
+  return "fifo";
+}
+  if (strcmp(name, "vectorization") == 0) {
+  return "vectorize";
+}
+  if (strcmp(name, "fusion") == 0) {
+  return "fuse";
+}
+  return name;
+}
+
+const char* flowc_claim_law_facet(const char* law) {
+  if (strcmp(law, "zero is the left identity") == 0) {
+  return "zero-left";
+}
+  if (strcmp(law, "zero is the right identity") == 0) {
+  return "zero-right";
+}
+  if (strcmp(law, "successor on the right steps the sum") == 0) {
+  return "succ-right";
+}
+  if (strcmp(law, "successor on the left steps the sum") == 0) {
+  return "succ-left";
+}
+  if (strcmp(law, "order does not matter") == 0) {
+  return "commutes";
+}
+  if (strcmp(law, "parentheses do not matter") == 0) {
+  return "assoc";
+}
+  if (strcmp(law, "everything equals itself") == 0) {
+  return "reflexive";
+}
+  if (strcmp(law, "equality reverses") == 0) {
+  return "symmetric";
+}
+  if (strcmp(law, "equality chains") == 0) {
+  return "transitive";
+}
+  if (strcmp(law, "squaring never yields a negative") == 0) {
+  return "square-nonneg";
+}
+  if (strcmp(law, "output matches specification") == 0) {
+  return "correct";
+}
+  if (strcmp(law, "optimized code matches naive code") == 0) {
+  return "semantics-equal";
+}
+  if (strcmp(law, "order is preserved") == 0) {
+  return "order-kept";
+}
+  const char* slug = flowc_claim_slug_phrase(law);
+  uint8_t* p = (uint8_t*)(slug);
+  int32_t n = (int32_t)(strlen(slug));
+  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 95) {
+  buf[i] = 45;
+} else {
+  buf[i] = p[i];
+}
+  i = (i + 1);
+}
+  buf[n] = 0;
+  const char* out = (const char*)(buf);
+  return out;
+}
+
+const char* flowc_claim_slug(FlowcClaimAddress addr) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, "."), (addr).structure), "."), flowc_claim_slug_phrase((addr).law));
+}
+
+const char* flowc_claim_guillemets(FlowcClaimAddress addr) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("«", (addr).carrier), "» «"), (addr).structure), "» «"), (addr).law), "»");
+}
+
+const char* flowc_claim_display(FlowcClaimAddress addr) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, " › "), (addr).structure), " › "), (addr).law);
+}
+
+const char* flowc_claim_to_legacy_path(FlowcClaimAddress addr) {
+  const char* sym = flowc_claim_structure_sym((addr).structure);
+  const char* facet = flowc_claim_law_facet((addr).law);
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, "/"), sym), "."), facet);
+}
+
+FlowcClaimAddress flowc_claim_legacy_to_address(const char* carrier, const char* structure_sym, const char* facet) {
+  const char* structure = flowc_claim_structure_name(structure_sym);
+  const char* law = flowc_claim_facet_law(facet);
+  return flowc_claim_make(carrier, structure, law);
+}
+
+int32_t flowc_claim_at_guil_open(uint8_t* p, int32_t i, int32_t n) {
+  if ((i + 1) >= n) {
+  return 0;
+}
+  if (p[i] == FLOWC_CLAIM_GUIL_OPEN0 && p[(i + 1)] == FLOWC_CLAIM_GUIL_OPEN1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_claim_at_guil_close(uint8_t* p, int32_t i, int32_t n) {
+  if ((i + 1) >= n) {
+  return 0;
+}
+  if (p[i] == FLOWC_CLAIM_GUIL_CLOSE0 && p[(i + 1)] == FLOWC_CLAIM_GUIL_CLOSE1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_claim_find_guil_close(uint8_t* p, int32_t i, int32_t n) {
+  int32_t j = i;
+  while ((j + 1) < n) {
+  if (flowc_claim_at_guil_close(p, j, n) == 1) {
+  return j;
+}
+  j = (j + 1);
+}
+  return (-1);
+}
+
+int32_t flowc_claim_skip_ws(uint8_t* p, int32_t i, int32_t n) {
+  int32_t j = i;
+  while (j < n && flowc_claim_is_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  return j;
+}
+
+FlowcClaimAddress flowc_claim_parse_guillemets(const char* raw) {
+  uint8_t* p = (uint8_t*)(raw);
+  int32_t n = (int32_t)(strlen(raw));
+  int32_t i = 0;
+  if (flowc_claim_at_guil_open(p, i, n) == 0) {
+  return flowc_claim_empty();
+}
+  i = (i + 2);
+  int32_t c0 = i;
+  int32_t c1 = flowc_claim_find_guil_close(p, i, n);
+  if (c1 < 0) {
+  return flowc_claim_empty();
+}
+  const char* carrier = flowc_claim_strip(flowc_claim_substr(raw, c0, c1));
+  i = (c1 + 2);
+  i = flowc_claim_skip_ws(p, i, n);
+  if (flowc_claim_at_guil_open(p, i, n) == 0) {
+  return flowc_claim_empty();
+}
+  i = (i + 2);
+  int32_t s0 = i;
+  int32_t s1 = flowc_claim_find_guil_close(p, i, n);
+  if (s1 < 0) {
+  return flowc_claim_empty();
+}
+  const char* structure = flowc_claim_strip(flowc_claim_substr(raw, s0, s1));
+  i = (s1 + 2);
+  i = flowc_claim_skip_ws(p, i, n);
+  if (flowc_claim_at_guil_open(p, i, n) == 0) {
+  return flowc_claim_empty();
+}
+  i = (i + 2);
+  int32_t l0 = i;
+  int32_t l1 = flowc_claim_find_guil_close(p, i, n);
+  if (l1 < 0) {
+  return flowc_claim_empty();
+}
+  const char* law = flowc_claim_strip(flowc_claim_substr(raw, l0, l1));
+  return flowc_claim_make(carrier, structure, law);
+}
+
+int32_t flowc_claim_parse_structure_end(uint8_t* p, int32_t start, int32_t n) {
+  if (start >= n) {
+  return (-1);
+}
+  if ((start + 1) < n && p[start] == 124 && p[(start + 1)] == 124) {
+  return (start + 2);
+}
+  int32_t c = p[start];
+  if (c == 43 || c == 124 || c == 61 || c == 42) {
+  return (start + 1);
+}
+  if (flowc_claim_is_lower(c) == 0) {
+  return (-1);
+}
+  int32_t j = (start + 1);
+  while (j < n) {
+  int32_t d = p[j];
+  if (flowc_claim_is_alnum(d) == 1 || d == 95 || d == 45) {
+  j = (j + 1);
+} else {
+  return j;
+}
+}
+  return j;
+}
+
+FlowcClaimAddress flowc_claim_parse_legacy(const char* raw) {
+  uint8_t* p = (uint8_t*)(raw);
+  int32_t n = (int32_t)(strlen(raw));
+  if (n < 5) {
+  return flowc_claim_empty();
+}
+  if (flowc_claim_is_alpha(p[0]) == 0) {
+  return flowc_claim_empty();
+}
+  int32_t i = 1;
+  while (i < n && (flowc_claim_is_alnum(p[i]) == 1 || p[i] == 95)) {
+  i = (i + 1);
+}
+  if (i >= n || p[i] != 47) {
+  return flowc_claim_empty();
+}
+  const char* carrier = flowc_claim_substr(raw, 0, i);
+  i = (i + 1);
+  int32_t struct_start = i;
+  int32_t struct_end = flowc_claim_parse_structure_end(p, struct_start, n);
+  if (struct_end < 0 || struct_end >= n || p[struct_end] != 46) {
+  return flowc_claim_empty();
+}
+  const char* structure_sym = flowc_claim_substr(raw, struct_start, struct_end);
+  i = (struct_end + 1);
+  if (i >= n || flowc_claim_is_lower(p[i]) == 0) {
+  return flowc_claim_empty();
+}
+  int32_t facet_start = i;
+  i = (i + 1);
+  int32_t facet_chars = 1;
+  while (i < n) {
+  int32_t d = p[i];
+  if (flowc_claim_is_lower(d) == 1 || d >= 48 && d <= 57 || d == 45) {
+  i = (i + 1);
+  facet_chars = (facet_chars + 1);
+} else {
+  return flowc_claim_empty();
+}
+}
+  if (facet_chars < 2) {
+  return flowc_claim_empty();
+}
+  const char* facet = flowc_claim_substr(raw, facet_start, i);
+  return flowc_claim_legacy_to_address(carrier, structure_sym, facet);
+}
+
+FlowcClaimAddress flowc_claim_parse_slug(const char* raw) {
+  uint8_t* p = (uint8_t*)(raw);
+  int32_t n = (int32_t)(strlen(raw));
+  int32_t dots = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 46) {
+  dots = (dots + 1);
+}
+  i = (i + 1);
+}
+  if (dots < 2) {
+  return flowc_claim_empty();
+}
+  int32_t d1 = (-1);
+  i = 0;
+  while (i < n) {
+  if (p[i] == 46) {
+  d1 = i;
+  i = n;
+} else {
+  i = (i + 1);
+}
+}
+  if (d1 < 0) {
+  return flowc_claim_empty();
+}
+  int32_t d2 = (-1);
+  i = (d1 + 1);
+  while (i < n) {
+  if (p[i] == 46) {
+  d2 = i;
+  i = n;
+} else {
+  i = (i + 1);
+}
+}
+  if (d2 < 0) {
+  return flowc_claim_empty();
+}
+  const char* carrier = flowc_claim_substr(raw, 0, d1);
+  const char* structure = flowc_claim_substr(raw, (d1 + 1), d2);
+  const char* law_slug = flowc_claim_substr(raw, (d2 + 1), n);
+  uint8_t* lp = (uint8_t*)(law_slug);
+  int32_t ln = (int32_t)(strlen(law_slug));
+  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(ln) + 1)));
+  int32_t j = 0;
+  while (j < ln) {
+  if (lp[j] == 95) {
+  buf[j] = 32;
+} else {
+  buf[j] = lp[j];
+}
+  j = (j + 1);
+}
+  buf[ln] = 0;
+  const char* law = (const char*)(buf);
+  return flowc_claim_make(carrier, structure, law);
+}
+
+FlowcClaimAddress flowc_claim_parse(const char* text) {
+  const char* raw = flowc_claim_strip_paren(text);
+  FlowcClaimAddress g = flowc_claim_parse_guillemets(raw);
+  if ((g).ok == 1) {
+  return g;
+}
+  FlowcClaimAddress leg = flowc_claim_parse_legacy(raw);
+  if ((leg).ok == 1) {
+  return leg;
+}
+  FlowcClaimAddress slug = flowc_claim_parse_slug(raw);
+  if ((slug).ok == 1) {
+  return slug;
+}
+  return flowc_claim_empty();
+}
+
+FlowcClaimAddress flowc_claim_try_parse(const char* text) {
+  return flowc_claim_parse(text);
+}
+
+const char* flowc_claim_address_phrase(FlowcClaimAddress addr) {
+  if (strcmp((addr).carrier, "Nat") == 0 && strcmp((addr).structure, "addition") == 0) {
+  if (strcmp((addr).law, "zero is the left identity") == 0) {
+  return "adding zero on the left does not change the number";
+}
+  if (strcmp((addr).law, "zero is the right identity") == 0) {
+  return "adding zero on the right does not change the number";
+}
+  if (strcmp((addr).law, "successor on the right steps the sum") == 0) {
+  return "adding one more on the right bumps the sum by one";
+}
+  if (strcmp((addr).law, "order does not matter") == 0) {
+  return "you can swap the order when you add";
+}
+}
+  if (strcmp((addr).carrier, "Eq") == 0 && strcmp((addr).structure, "equality") == 0) {
+  if (strcmp((addr).law, "everything equals itself") == 0) {
+  return "anything is always equal to itself";
+}
+}
+  if (strcmp((addr).carrier, "Bool") == 0 && strcmp((addr).structure, "disjunction") == 0) {
+  if (strcmp((addr).law, "order does not matter") == 0) {
+  return "order does not matter for \"or\"";
+}
+}
+  if (strcmp((addr).carrier, "Int") == 0 && strcmp((addr).structure, "multiplication") == 0) {
+  if (strcmp((addr).law, "squaring never yields a negative") == 0) {
+  return "squaring never gives a negative number";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "triangle") == 0) {
+  if (strcmp((addr).law, "interior angles sum to two right angles") == 0) {
+  return "the three interior angles of a triangle sum to two right angles";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "isosceles triangle") == 0) {
+  if (strcmp((addr).law, "base angles are equal") == 0) {
+  return "the angles at the base of an isosceles triangle are equal";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "intersecting lines") == 0) {
+  if (strcmp((addr).law, "vertical angles are equal") == 0) {
+  return "vertical angles formed by intersecting lines are equal";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "right triangle") == 0) {
+  if (strcmp((addr).law, "the Pythagorean relation holds") == 0) {
+  return "the square on the hypotenuse equals the sum of squares on the legs";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "parallel lines") == 0) {
+  if (strcmp((addr).law, "alternate angles are equal") == 0) {
+  return "alternate interior angles are equal when parallel lines meet a transversal";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "triangle congruence") == 0) {
+  if (strcmp((addr).law, "side-angle-side implies congruence") == 0) {
+  return "two sides and the included angle determine a triangle up to congruence";
+}
+}
+  if (strcmp((addr).carrier, "Geometry") == 0 && strcmp((addr).structure, "circle") == 0) {
+  if (strcmp((addr).law, "radii from the centre are equal") == 0) {
+  return "all radii from the centre to the circumference are equal";
+}
+  if (strcmp((addr).law, "inscribed angle is half the central angle") == 0) {
+  return "an inscribed angle equals half the central angle on the same arc";
+}
+  if (strcmp((addr).law, "Thales right angle in semicircle") == 0) {
+  return "an angle inscribed in a semicircle is a right angle";
+}
+}
+  if (strcmp((addr).carrier, "Analysis") == 0 && strcmp((addr).structure, "Taylor series") == 0) {
+  if (strcmp((addr).law, "sin equals its Maclaurin series near zero") == 0) {
+  return "sin(x) matches its Maclaurin partial sums in a neighbourhood of the origin";
+}
+}
+  if (strcmp((addr).carrier, "Analysis") == 0 && strcmp((addr).structure, "smooth functions") == 0) {
+  if (strcmp((addr).law, "derivatives of sine are known") == 0) {
+  return "the derivatives of sine at zero follow the alternating pattern of the Maclaurin series";
+}
+}
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_claim_law_phrase((addr).law), ", for "), flowc_claim_structure_math((addr).structure)), " on "), flowc_claim_carrier_math((addr).carrier));
+}
+
+const char* flowc_claim_carrier_math(const char* raw) {
+  const char* name = flowc_claim_strip(raw);
+  if (strcmp(name, "Nat") == 0) {
+  return "the natural numbers";
+}
+  if (strcmp(name, "Bool") == 0) {
+  return "boolean truth values";
+}
+  if (strcmp(name, "Int") == 0) {
+  return "the integers";
+}
+  if (strcmp(name, "Eq") == 0) {
+  return "equality";
+}
+  if (strcmp(name, "Geometry") == 0) {
+  return "the Euclidean plane";
+}
+  if (strcmp(name, "Analysis") == 0) {
+  return "real analysis";
+}
+  if (strcmp(name, "Real") == 0) {
+  return "the real numbers";
+}
+  if (strcmp(name, "bool") == 0) {
+  return "boolean truth values";
+}
+  if (strcmp(name, "i32") == 0) {
+  return "the integers";
+}
+  if (strcmp(name, "i64") == 0) {
+  return "the integers";
+}
+  return name;
+}
+
+const char* flowc_claim_structure_math(const char* raw) {
+  const char* name = flowc_claim_strip(raw);
+  if (strcmp(name, "addition") == 0) {
+  return "addition";
+}
+  if (strcmp(name, "multiplication") == 0) {
+  return "multiplication";
+}
+  if (strcmp(name, "disjunction") == 0) {
+  return "disjunction";
+}
+  if (strcmp(name, "conjunction") == 0) {
+  return "conjunction";
+}
+  if (strcmp(name, "equality") == 0) {
+  return "equality";
+}
+  if (strcmp(name, "output") == 0) {
+  return "output";
+}
+  if (strcmp(name, "fifo") == 0) {
+  return "first-in-first-out ordering";
+}
+  if (strcmp(name, "vectorization") == 0) {
+  return "vectorization";
+}
+  if (strcmp(name, "fusion") == 0) {
+  return "loop fusion";
+}
+  if (strcmp(name, "triangle") == 0) {
+  return "triangles in";
+}
+  if (strcmp(name, "isosceles triangle") == 0) {
+  return "isosceles triangles in";
+}
+  if (strcmp(name, "intersecting lines") == 0) {
+  return "intersecting lines in";
+}
+  if (strcmp(name, "right triangle") == 0) {
+  return "right triangles in";
+}
+  if (strcmp(name, "parallel lines") == 0) {
+  return "parallel lines in";
+}
+  if (strcmp(name, "triangle congruence") == 0) {
+  return "triangle congruence in";
+}
+  if (strcmp(name, "circle") == 0) {
+  return "circles in";
+}
+  if (strcmp(name, "Euclid Book I") == 0) {
+  return "Book I of the Elements in";
+}
+  return name;
+}
+
+const char* flowc_claim_law_phrase(const char* law) {
+  int32_t n = (int32_t)(strlen(law));
+  if (n == 0) {
+  return "the stated law";
+}
+  uint8_t* p = (uint8_t*)(law);
+  if (p[0] >= 65 && p[0] <= 90) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  int32_t i = 0;
+  while (i <= n) {
+  buf[i] = p[i];
+  i = (i + 1);
+}
+  buf[0] = (p[0] + 32);
+  return (const char*)(buf);
+}
+  return law;
+}
+
+
+typedef struct FlowcClaimPath {
+  const char* domain;
+  const char* morphism;
+  const char* facet;
+  int32_t ok;
+} FlowcClaimPath;
+
+FlowcClaimPath flowc_claim_path_empty();
+FlowcClaimPath flowc_claim_path_parse(const char* text);
+const char* flowc_claim_path_normalize_tier(const char* raw);
+const char* flowc_claim_path_tier_label(const char* tier);
+const char* flowc_claim_path_ontology(FlowcClaimPath path);
+const char* flowc_claim_fingerprint(const char* expr);
+const char* flowc_claim_fingerprint_key(const char* carrier, const char* structure, const char* fp);
+const char* str_append(const char* a, const char* b);
+const char* flowc_morphism_gloss(const char* morphism);
+const char* flowc_tier_opening_plain(const char* tier, FlowcClaimPath path);
+int32_t flowc_is_duplicate_claim(const char* path_a, const char* expr_a, const char* path_b, const char* expr_b);
+FlowcClaimPath flowc_claim_path_empty() {
+  return (FlowcClaimPath){ .domain = "", .morphism = "", .facet = "", .ok = 0 };
+}
+
+FlowcClaimPath flowc_claim_path_parse(const char* text) {
+  FlowcClaimAddress addr = flowc_claim_parse(text);
+  if ((addr).ok == 0) {
+  return flowc_claim_path_empty();
+}
+  const char* law = (addr).law;
+  uint8_t* p = (uint8_t*)(law);
+  int32_t n = (int32_t)(strlen(law));
+  uint8_t buf[64] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  int32_t i = 0;
+  int32_t w = 0;
+  while (i < n && w < 63) {
+  int32_t c = p[i];
+  if (c == 32) {
+  buf[w] = 45;
+} else {
+  buf[w] = c;
+}
+  w = (w + 1);
+  i = (i + 1);
+}
+  buf[w] = 0;
+  const char* facet = (const char*)(buf);
+  const char* morph = (addr).structure;
+  if (strcmp((addr).structure, "addition") == 0) {
+  morph = "+";
+}
+  if (strcmp((addr).structure, "multiplication") == 0) {
+  morph = "*";
+}
+  if (strcmp((addr).structure, "disjunction") == 0) {
+  morph = "||";
+}
+  if (strcmp((addr).structure, "equality") == 0) {
+  morph = "=";
+}
+  return (FlowcClaimPath){ .domain = (addr).carrier, .morphism = morph, .facet = facet, .ok = 1 };
+}
+
+const char* flowc_claim_path_normalize_tier(const char* raw) {
+  int32_t n = (int32_t)(strlen(raw));
+  uint8_t* p = (uint8_t*)(raw);
+  int32_t a = 0;
+  while (a < n && (p[a] == 32 || p[a] == 9 || p[a] == 10 || p[a] == 13)) {
+  a = (a + 1);
+}
+  int32_t b = n;
+  while (b > a && (p[(b - 1)] == 32 || p[(b - 1)] == 9 || p[(b - 1)] == 10 || p[(b - 1)] == 13)) {
+  b = (b - 1);
+}
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((b - a) + 1))));
+  int32_t i = 0;
+  while ((a + i) < b) {
+  uint8_t c = p[(a + i)];
+  if (c >= 65 && c <= 90) {
+  buf[i] = (c + 32);
+} else {
+  buf[i] = c;
+}
+  i = (i + 1);
+}
+  buf[i] = 0;
+  const char* tier = (const char*)(buf);
+  if (strcmp(tier, "definitions-only") == 0) {
+  return "definition";
+}
+  if (strcmp(tier, "definition-only") == 0) {
+  return "definition";
+}
+  return tier;
+}
+
+const char* flowc_claim_path_tier_label(const char* tier) {
+  const char* t = flowc_claim_path_normalize_tier(tier);
+  if (strcmp(t, "definition") == 0) {
+  return "Definition";
+}
+  if (strcmp(t, "axiom") == 0) {
+  return "Axiom";
+}
+  if (strcmp(t, "derived") == 0) {
+  return "Derived fact";
+}
+  return "Theorem";
+}
+
+const char* flowc_claim_path_ontology(FlowcClaimPath path) {
+  if ((path).ok == 0) {
+  return "";
+}
+  return (path).domain;
+}
+
+const char* flowc_claim_fingerprint(const char* expr) {
+  uint8_t* p = (uint8_t*)(expr);
+  int32_t n = (int32_t)(strlen(expr));
+  int32_t i = 0;
+  while (i < n && (p[i] == 32 || p[i] == 9)) {
+  i = (i + 1);
+}
+  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  int32_t w = 0;
+  while (i < n) {
+  if ((i + 3) < n && p[i] == 32 && p[(i + 1)] == 98 && p[(i + 2)] == 121 && p[(i + 3)] == 32) {
+  i = n;
+} else {
+  int32_t c = p[i];
+  if (c == 32 || c == 9 || c == 10 || c == 13) {
+  i = (i + 1);
+} else {
+  if (c == 61 && (i + 1) < n && p[(i + 1)] == 61) {
+  buf[w] = 61;
+  w = (w + 1);
+  i = (i + 2);
+} else {
+  if (c >= 65 && c <= 90) {
+  buf[w] = (c + 32);
+} else {
+  buf[w] = c;
+}
+  w = (w + 1);
+  i = (i + 1);
+}
+}
+}
+}
+  buf[w] = 0;
+  const char* out = (const char*)(buf);
+  return out;
+}
+
+const char* flowc_claim_fingerprint_key(const char* carrier, const char* structure, const char* fp) {
+  if (strcmp(carrier, "Nat") == 0 && strcmp(structure, "addition") == 0) {
+  if (strcmp(fp, "0+n=n") == 0) {
+  return "Nat/addition#0+n=n";
+}
+  if (strcmp(fp, "m+n=n+m") == 0) {
+  return "Nat/addition#m+n=n+m";
+}
+}
+  if (strcmp(carrier, "Bool") == 0 && strcmp(structure, "disjunction") == 0) {
+  if (strcmp(fp, "aorb=bora") == 0) {
+  return "Bool/disjunction#aorb=bora";
+}
+}
+  return fp;
+}
+
+const char* str_append(const char* a, const char* b) {
+  int32_t la = (int32_t)(strlen(a));
+  int32_t lb = (int32_t)(strlen(b));
+  int32_t total = (la + lb);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((total + 1))));
+  if (la > 0) {
+  memcpy(buf, a, (int64_t)(la));
+}
+  if (lb > 0) {
+  memcpy((buf + la), b, (int64_t)(lb));
+}
+  buf[total] = 0;
+  return (const char*)(buf);
+}
+
+const char* flowc_morphism_gloss(const char* morphism) {
+  if (strcmp(morphism, "+") == 0) {
+  return "addition";
+}
+  if (strcmp(morphism, "||") == 0) {
+  return "disjunction (or)";
+}
+  if (strcmp(morphism, "=") == 0) {
+  return "equality";
+}
+  if (strcmp(morphism, "*") == 0) {
+  return "multiplication";
+}
+  if (strcmp(morphism, "out") == 0) {
+  return "output";
+}
+  if (strcmp(morphism, "fifo") == 0) {
+  return "FIFO behaviour";
+}
+  if (strcmp(morphism, "vectorize") == 0) {
+  return "vectorization";
+}
+  if (strcmp(morphism, "fuse") == 0) {
+  return "loop fusion";
+}
+  return morphism;
+}
+
+const char* flowc_tier_opening_plain(const char* tier, FlowcClaimPath path) {
+  const char* t = flowc_claim_path_normalize_tier(tier);
+  const char* addr_text = str_append(str_append(str_append((path).domain, "/"), (path).morphism), ".");
+  const char* addr_text2 = str_append(addr_text, (path).facet);
+  FlowcClaimAddress addr = flowc_claim_parse(addr_text2);
+  const char* gloss = flowc_morphism_gloss((path).morphism);
+  if (strcmp(t, "definition") == 0) {
+  if ((addr).ok == 1) {
+  const char* s = "We stipulate the law ";
+  s = str_append(s, (addr).law);
+  s = str_append(s, " for ");
+  s = str_append(s, (addr).structure);
+  s = str_append(s, " on ");
+  s = str_append(s, (addr).carrier);
+  s = str_append(s, ". This is a definition rather than a derived fact.");
+  return s;
+}
+  const char* s = "We stipulate how ";
+  s = str_append(s, gloss);
+  s = str_append(s, " behaves on ");
+  s = str_append(s, (path).domain);
+  s = str_append(s, ". This is a definition rather than a derived fact.");
+  return s;
+}
+  if (strcmp(t, "axiom") == 0) {
+  const char* s = "We accept this axiom on ";
+  s = str_append(s, (path).domain);
+  s = str_append(s, " without proof. It is an ontological commitment rather than a lemma.");
+  return s;
+}
+  if ((addr).ok == 1) {
+  const char* s = "We prove that on ";
+  s = str_append(s, (addr).carrier);
+  s = str_append(s, ", ");
+  s = str_append(s, (addr).structure);
+  s = str_append(s, " satisfies ");
+  s = str_append(s, (addr).law);
+  s = str_append(s, ".");
+  return s;
+}
+  const char* s = "We prove this derived fact about ";
+  s = str_append(s, (path).domain);
+  s = str_append(s, " and ");
+  s = str_append(s, gloss);
+  s = str_append(s, " from prior claims.");
+  return s;
+}
+
+int32_t flowc_is_duplicate_claim(const char* path_a, const char* expr_a, const char* path_b, const char* expr_b) {
+  if (strcmp(path_a, path_b) == 0) {
+  return 0;
+}
+  FlowcClaimAddress addr_a = flowc_claim_try_parse(path_a);
+  if ((addr_a).ok == 0) {
+  return 0;
+}
+  FlowcClaimAddress addr_b = flowc_claim_try_parse(path_b);
+  if ((addr_b).ok == 0) {
+  return 0;
+}
+  if (strcmp((addr_a).carrier, (addr_b).carrier) != 0) {
+  return 0;
+}
+  if (strcmp((addr_a).structure, (addr_b).structure) != 0) {
+  return 0;
+}
+  const char* fp_a = flowc_claim_fingerprint(expr_a);
+  const char* fp_b = flowc_claim_fingerprint(expr_b);
+  if (strcmp(fp_a, fp_b) != 0) {
+  return 0;
+}
+  return 1;
+}
+
+
+const char* mp_strip_ws(const char* s);
+const char* flowc_carrier_mathematical(const char* raw);
+const char* flowc_structure_mathematical(const char* raw);
+int32_t flowc_type_latex_known(const char* name);
+const char* flowc_type_latex(const char* raw);
+const char* flowc_on_structure_carrier(const char* structure, const char* carrier);
+const char* flowc_law_phrase(const char* law);
+const char* flowc_addr_prose(FlowcClaimAddress addr);
+const char* flowc_tier_opening_mathematical(const char* tier, FlowcClaimAddress addr);
+const char* flowc_tier_opening_parse(const char* tier, const char* claim_text);
+const char* mp_str_append(const char* a, const char* b);
+const char* flowc_structure_coordinate_display(const char* raw);
+const char* flowc_addr_coordinate_display(FlowcClaimAddress addr);
+const char* flowc_addr_coordinate_latex(FlowcClaimAddress addr);
+int32_t is_ident_char(int32_t c);
+int32_t is_space(int32_t c);
+const char* extract_ident(const char* s, int32_t start);
+int32_t skip_spaces(const char* s, int32_t start);
+int32_t match_suffix(const char* s, int32_t start, const char* suffix);
+int32_t match_suffix_ci(const char* s, int32_t start, const char* suffix);
+const char* flowc_mathematical_case_condition(const char* cond);
+const char* flowc_replace_eq(const char* s);
+int32_t contains_word(const char* s, const char* word);
+int32_t contains_word_prefix(const char* s, const char* prefix);
+int32_t flowc_is_geometry_expr(const char* expr);
+const char* escape_underscores(const char* s);
+const char* flowc_claim_path_latex(const char* path);
+const char* mp_substr(const char* s, int32_t start, int32_t end);
+const char* mp_append_char(const char* s, int32_t c);
+int32_t mp_at(const char* s, int32_t i, const char* lit);
+int32_t mp_boundary_before(const char* s, int32_t i);
+int32_t mp_not_after_backslash(const char* s, int32_t i);
+const char* mp_trim(const char* s);
+const char* mp_collapse_spaces(const char* s);
+const char* mp_replace_all(const char* s, const char* needle, const char* repl);
+const char* mp_replace_word(const char* s, const char* token, const char* phrase);
+const char* mp_drop_by_clause(const char* s);
+const char* mp_geometry_token_english(const char* tok);
+const char* mp_geometry_token_latex(const char* tok);
+const char* mp_analysis_token_english(const char* tok);
+const char* mp_analysis_token_latex(const char* tok);
+int32_t mp_is_alnum(int32_t c);
+int32_t mp_underscore_ident_end(const char* s, int32_t i);
+const char* mp_ident_to_english(const char* ident);
+const char* mp_ident_to_latex(const char* ident);
+const char* mp_replace_underscore_idents(const char* s, int32_t latex);
+const char* mp_finalize_latex(const char* s);
+const char* mp_angle_rewrites(const char* s, int32_t latex);
+const char* mp_mult_latex(const char* s);
+const char* mp_normalize_geometry_tokens(const char* s, int32_t latex);
+int32_t mp_operand_end(const char* s, int32_t i);
+const char* mp_join_pass(const char* s, const char* keyword, int32_t shield);
+int32_t mp_index_last(const char* s, int32_t ch);
+int32_t mp_index_from(const char* s, int32_t start, int32_t ch);
+const char* mp_expand_disjunctions(const char* s);
+const char* mp_rewrite_succ(const char* s, const char* prefix, const char* suffix);
+const char* flowc_geometry_expr_to_latex(const char* expr);
+const char* flowc_flow_expr_to_mathematical_english(const char* expr);
+int32_t flowc_is_analysis_expr(const char* expr);
+const char* mp_rewrite_taylor(const char* s);
+const char* mp_latex_sin(const char* s);
+const char* flowc_analysis_expr_to_latex(const char* expr);
+const char* flowc_flow_expr_to_latex(const char* expr);
+const char* flowc_invoke_premise_mathematical(FlowcClaimAddress addr, const char* phrase, const char* args, const char* kind, const char* theorem_ref);
+const char* escape_underscores(const char* s);
+const char* mp_strip_ws(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t a = 0;
+  while (a < n && (p[a] == 32 || p[a] == 9 || p[a] == 10 || p[a] == 13 || p[a] == 11 || p[a] == 12)) {
+  a = (a + 1);
+}
+  int32_t b = n;
+  while (b > a && (p[(b - 1)] == 32 || p[(b - 1)] == 9 || p[(b - 1)] == 10 || p[(b - 1)] == 13 || p[(b - 1)] == 11 || p[(b - 1)] == 12)) {
+  b = (b - 1);
+}
+  if (a == 0 && b == n) {
+  return s;
+}
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((b - a) + 1))));
+  int32_t i = 0;
+  while ((a + i) < b) {
+  buf[i] = p[(a + i)];
+  i = (i + 1);
+}
+  buf[i] = 0;
+  return (const char*)(buf);
+}
+
+const char* flowc_carrier_mathematical(const char* raw) {
+  return flowc_claim_carrier_math(raw);
+}
+
+const char* flowc_structure_mathematical(const char* raw) {
+  return flowc_claim_structure_math(raw);
+}
+
+int32_t flowc_type_latex_known(const char* name) {
+  if (strcmp(name, "Nat") == 0) {
+  return 1;
+}
+  if (strcmp(name, "Int") == 0) {
+  return 1;
+}
+  if (strcmp(name, "Real") == 0) {
+  return 1;
+}
+  if (strcmp(name, "i32") == 0) {
+  return 1;
+}
+  if (strcmp(name, "i64") == 0) {
+  return 1;
+}
+  if (strcmp(name, "bool") == 0) {
+  return 1;
+}
+  if (strcmp(name, "Bool") == 0) {
+  return 1;
+}
+  return 0;
+}
+
+const char* flowc_type_latex(const char* raw) {
+  const char* name = mp_strip_ws(raw);
+  if (strcmp(name, "Nat") == 0) {
+  return "\\mathbb{N}";
+}
+  if (strcmp(name, "Int") == 0) {
+  return "\\mathbb{Z}";
+}
+  if (strcmp(name, "Real") == 0) {
+  return "\\mathbb{R}";
+}
+  if (strcmp(name, "i32") == 0) {
+  return "\\mathbb{Z}";
+}
+  if (strcmp(name, "i64") == 0) {
+  return "\\mathbb{Z}";
+}
+  if (strcmp(name, "bool") == 0) {
+  return "\\{\\mathsf{true}, \\mathsf{false}\\}";
+}
+  if (strcmp(name, "Bool") == 0) {
+  return "\\{\\mathsf{true}, \\mathsf{false}\\}";
+}
+  return name;
+}
+
+const char* flowc_on_structure_carrier(const char* structure, const char* carrier) {
+  const char* st = flowc_structure_mathematical(structure);
+  const char* car = flowc_carrier_mathematical(carrier);
+  if (strcmp(mp_strip_ws(carrier), "Geometry") == 0) {
+  return __flowc_str_concat(__flowc_str_concat(st, " "), car);
+}
+  return __flowc_str_concat(__flowc_str_concat(st, " on "), car);
+}
+
+const char* flowc_law_phrase(const char* law) {
+  return flowc_claim_law_phrase(law);
+}
+
+const char* flowc_addr_prose(FlowcClaimAddress addr) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_law_phrase((addr).law), ", for "), flowc_structure_mathematical((addr).structure)), " on "), flowc_carrier_mathematical((addr).carrier));
+}
+
+const char* flowc_tier_opening_mathematical(const char* tier, FlowcClaimAddress addr) {
+  const char* t = flowc_claim_path_normalize_tier(tier);
+  const char* ctx = flowc_on_structure_carrier((addr).structure, (addr).carrier);
+  const char* law = flowc_law_phrase((addr).law);
+  if (strcmp(t, "definition") == 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We stipulate ", law), " for "), ctx), ". This is a definition rather than a derived fact.");
+}
+  if (strcmp(t, "axiom") == 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We accept ", law), " for "), ctx), " without proof. This is an ontological commitment rather than a lemma.");
+}
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We prove that ", law), " for "), ctx), ".");
+}
+
+const char* flowc_tier_opening_parse(const char* tier, const char* claim_text) {
+  FlowcClaimAddress addr = flowc_claim_parse(claim_text);
+  if ((addr).ok == 0) {
+  return "";
+}
+  return flowc_tier_opening_mathematical(tier, addr);
+}
+
+const char* mp_str_append(const char* a, const char* b) {
+  int32_t la = (int32_t)(strlen(a));
+  int32_t lb = (int32_t)(strlen(b));
+  int32_t total = (la + lb);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((total + 1))));
+  if (la > 0) {
+  memcpy(buf, a, (int64_t)(la));
+}
+  if (lb > 0) {
+  memcpy((buf + la), b, (int64_t)(lb));
+}
+  buf[total] = 0;
+  return (const char*)(buf);
+}
+
+const char* flowc_structure_coordinate_display(const char* raw) {
+  const char* name = mp_strip_ws(raw);
+  if (strcmp(name, "triangle") == 0) {
+  return "triangle";
+}
+  if (strcmp(name, "isosceles triangle") == 0) {
+  return "isosceles triangle";
+}
+  if (strcmp(name, "intersecting lines") == 0) {
+  return "intersecting lines";
+}
+  if (strcmp(name, "right triangle") == 0) {
+  return "right triangle";
+}
+  if (strcmp(name, "parallel lines") == 0) {
+  return "parallel lines";
+}
+  if (strcmp(name, "triangle congruence") == 0) {
+  return "triangle congruence";
+}
+  if (strcmp(name, "circle") == 0) {
+  return "circle";
+}
+  if (strcmp(name, "Euclid Book I") == 0) {
+  return "Euclid Book I";
+}
+  if (strcmp(name, "Taylor series") == 0) {
+  return "Taylor series";
+}
+  if (strcmp(name, "smooth functions") == 0) {
+  return "smooth functions";
+}
+  return flowc_structure_mathematical(name);
+}
+
+const char* flowc_addr_coordinate_display(FlowcClaimAddress addr) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_carrier_mathematical((addr).carrier), " · "), flowc_structure_coordinate_display((addr).structure)), " · "), (addr).law);
+}
+
+const char* flowc_addr_coordinate_latex(FlowcClaimAddress addr) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_carrier_mathematical((addr).carrier), " \\cdot "), flowc_structure_coordinate_display((addr).structure)), " \\cdot "), escape_underscores((addr).law));
+}
+
+int32_t is_ident_char(int32_t c) {
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  if (c == 95) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t is_space(int32_t c) {
+  if (c == 32 || c == 9 || c == 13 || c == 10) {
+  return 1;
+}
+  return 0;
+}
+
+const char* extract_ident(const char* s, int32_t start) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = start;
+  while (i < n && is_ident_char(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i == start) {
+  return "";
+}
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)(((i - start) + 1)))));
+  int32_t j = 0;
+  int32_t k = start;
+  while (k < i) {
+  buf[j] = p[k];
+  j = (j + 1);
+  k = (k + 1);
+}
+  buf[j] = 0;
+  return (const char*)(buf);
+}
+
+int32_t skip_spaces(const char* s, int32_t start) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = start;
+  while (i < n && is_space(p[i]) == 1) {
+  i = (i + 1);
+}
+  return i;
+}
+
+int32_t match_suffix(const char* s, int32_t start, const char* suffix) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t sl = (int32_t)(strlen(suffix));
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* sp = (uint8_t*)(suffix);
+  int32_t i = start;
+  int32_t j = 0;
+  while (j < sl && i < n) {
+  if (p[i] != sp[j]) {
+  return 0;
+}
+  i = (i + 1);
+  j = (j + 1);
+}
+  if (j == sl) {
+  while (i < n && is_space(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i == n) {
+  return 1;
+}
+}
+  return 0;
+}
+
+int32_t match_suffix_ci(const char* s, int32_t start, const char* suffix) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t sl = (int32_t)(strlen(suffix));
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* sp = (uint8_t*)(suffix);
+  int32_t i = start;
+  int32_t j = 0;
+  while (j < sl && i < n) {
+  int32_t a = p[i];
+  int32_t b = sp[j];
+  int32_t al = a;
+  int32_t bl = b;
+  if (a >= 65 && a <= 90) {
+  al = (a + 32);
+}
+  if (b >= 65 && b <= 90) {
+  bl = (b + 32);
+}
+  if (al != bl) {
+  return 0;
+}
+  i = (i + 1);
+  j = (j + 1);
+}
+  if (j == sl) {
+  while (i < n && is_space(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i == n) {
+  return 1;
+}
+}
+  return 0;
+}
+
+const char* flowc_replace_eq(const char* s);
+const char* flowc_mathematical_case_condition(const char* cond) {
+  int32_t n = (int32_t)(strlen(cond));
+  uint8_t* p = (uint8_t*)(cond);
+  int32_t i = 0;
+  i = skip_spaces(cond, 0);
+  const char* name = extract_ident(cond, i);
+  if (strlen(name) == 0) {
+  return flowc_replace_eq(cond);
+}
+  int32_t j = (i + (int32_t)(strlen(name)));
+  j = skip_spaces(cond, j);
+  if ((j + 1) < n && p[j] == 61 && p[(j + 1)] == 61) {
+  j = (j + 2);
+  j = skip_spaces(cond, j);
+  if (match_suffix_ci(cond, j, "true") == 1) {
+  const char* s = name;
+  s = mp_str_append(s, " holds");
+  return s;
+}
+  if (match_suffix_ci(cond, j, "false") == 1) {
+  const char* s = name;
+  s = mp_str_append(s, " does not hold");
+  return s;
+}
+  if (j < n && p[j] == 48) {
+  int32_t k = (j + 1);
+  while (k < n && is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k == n) {
+  const char* s = name;
+  s = mp_str_append(s, " is zero");
+  return s;
+}
+}
+}
+  return flowc_replace_eq(cond);
+}
+
+const char* flowc_replace_eq(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  if ((i + 1) < n && p[i] == 61 && p[(i + 1)] == 61) {
+  out = mp_str_append(out, " equals ");
+  i = (i + 2);
+} else {
+  uint8_t buf[2] = { 0, 0 };
+  buf[0] = p[i];
+  out = mp_str_append(out, (const char*)(buf));
+  i = (i + 1);
+}
+}
+  int32_t on = (int32_t)(strlen(out));
+  uint8_t* op = (uint8_t*)(out);
+  int32_t start = 0;
+  while (start < on && is_space(op[start]) == 1) {
+  start = (start + 1);
+}
+  int32_t end = on;
+  while (end > start && is_space(op[(end - 1)]) == 1) {
+  end = (end - 1);
+}
+  if (start >= end) {
+  return "";
+}
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)(((end - start) + 1)))));
+  int32_t k = 0;
+  int32_t m = start;
+  while (m < end) {
+  buf[k] = op[m];
+  k = (k + 1);
+  m = (m + 1);
+}
+  buf[k] = 0;
+  return (const char*)(buf);
+}
+
+int32_t contains_word(const char* s, const char* word) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t wl = (int32_t)(strlen(word));
+  if (wl == 0) {
+  return 1;
+}
+  if (wl > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* wp = (uint8_t*)(word);
+  int32_t i = 0;
+  while ((i + wl) <= n) {
+  if (i > 0 && is_ident_char(p[(i - 1)]) == 1) {
+  i = (i + 1);
+  continue;
+}
+  int32_t matched = 1;
+  int32_t j = 0;
+  while (j < wl) {
+  if (p[(i + j)] != wp[j]) {
+  matched = 0;
+  break;
+}
+  j = (j + 1);
+}
+  if (matched == 1) {
+  int32_t after = (i + wl);
+  if (after >= n || is_ident_char(p[after]) == 0) {
+  return 1;
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t contains_word_prefix(const char* s, const char* prefix) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t pl = (int32_t)(strlen(prefix));
+  if (pl == 0) {
+  return 1;
+}
+  if (pl > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* pp = (uint8_t*)(prefix);
+  int32_t i = 0;
+  while ((i + pl) <= n) {
+  if (i > 0 && is_ident_char(p[(i - 1)]) == 1) {
+  i = (i + 1);
+  continue;
+}
+  int32_t matched = 1;
+  int32_t j = 0;
+  while (j < pl) {
+  if (p[(i + j)] != pp[j]) {
+  matched = 0;
+  break;
+}
+  j = (j + 1);
+}
+  if (matched == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t flowc_is_geometry_expr(const char* expr) {
+  if (contains_word_prefix(expr, "angle_") == 1) {
+  return 1;
+}
+  if (contains_word_prefix(expr, "two_right_angles") == 1) {
+  return 1;
+}
+  if (contains_word_prefix(expr, "one_right_angle") == 1) {
+  return 1;
+}
+  if (contains_word_prefix(expr, "half_of_") == 1) {
+  return 1;
+}
+  if (contains_word_prefix(expr, "radius_") == 1) {
+  return 1;
+}
+  if (contains_word_prefix(expr, "triangle_") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "triangle_ABC") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "triangle_DEF") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "two_right_angles") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "one_right_angle") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "half_of_angle_AOB") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "radius_OA") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "radius_OB") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "angle_alpha") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "angle_alpha_prime") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "angle_beta") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "angle_beta_prime") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "angle_gamma") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+const char* escape_underscores(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 95) {
+  out = mp_str_append(out, "\\_");
+} else {
+  uint8_t buf[2] = { 0, 0 };
+  buf[0] = p[i];
+  out = mp_str_append(out, (const char*)(buf));
+}
+  i = (i + 1);
+}
+  return out;
+}
+
+const char* flowc_claim_path_latex(const char* path) {
+  FlowcClaimAddress addr = flowc_claim_try_parse(path);
+  if ((addr).ok == 0) {
+  return escape_underscores(path);
+}
+  return flowc_addr_coordinate_latex(addr);
+}
+
+const char* mp_substr(const char* s, int32_t start, int32_t end) {
+  if (end <= start) {
+  return "";
+}
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (end - start);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  int32_t i = 0;
+  while (i < n) {
+  buf[i] = p[(start + i)];
+  i = (i + 1);
+}
+  buf[n] = 0;
+  return (const char*)(buf);
+}
+
+const char* mp_append_char(const char* s, int32_t c) {
+  uint8_t buf[2] = { 0, 0 };
+  buf[0] = (uint8_t)(c);
+  buf[1] = 0;
+  return mp_str_append(s, (const char*)(buf));
+}
+
+int32_t mp_at(const char* s, int32_t i, const char* lit) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t ll = (int32_t)(strlen(lit));
+  if ((i + ll) > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* lp = (uint8_t*)(lit);
+  int32_t j = 0;
+  while (j < ll) {
+  if (p[(i + j)] != lp[j]) {
+  return 0;
+}
+  j = (j + 1);
+}
+  return 1;
+}
+
+int32_t mp_boundary_before(const char* s, int32_t i) {
+  if (i == 0) {
+  return 1;
+}
+  uint8_t* p = (uint8_t*)(s);
+  if (is_ident_char(p[(i - 1)]) == 1) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t mp_not_after_backslash(const char* s, int32_t i) {
+  if (i == 0) {
+  return 1;
+}
+  uint8_t* p = (uint8_t*)(s);
+  if (p[(i - 1)] == 92) {
+  return 0;
+}
+  return 1;
+}
+
+const char* mp_trim(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t a = 0;
+  while (a < n && is_space(p[a]) == 1) {
+  a = (a + 1);
+}
+  int32_t b = n;
+  while (b > a && is_space(p[(b - 1)]) == 1) {
+  b = (b - 1);
+}
+  return mp_substr(s, a, b);
+}
+
+const char* mp_collapse_spaces(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  if (is_space(p[i]) == 1) {
+  while (i < n && is_space(p[i]) == 1) {
+  i = (i + 1);
+}
+  out = mp_append_char(out, 32);
+} else {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return mp_trim(out);
+}
+
+const char* mp_replace_all(const char* s, const char* needle, const char* repl) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t fl = (int32_t)(strlen(needle));
+  if (fl == 0) {
+  return s;
+}
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  if (mp_at(s, i, needle) == 1) {
+  out = mp_str_append(out, repl);
+  i = (i + fl);
+} else {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* mp_replace_word(const char* s, const char* token, const char* phrase) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t tl = (int32_t)(strlen(token));
+  if (tl == 0) {
+  return s;
+}
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t hit = 0;
+  if (mp_boundary_before(s, i) == 1 && mp_at(s, i, token) == 1) {
+  int32_t after = (i + tl);
+  if (after >= n || is_ident_char(p[after]) == 0) {
+  hit = 1;
+}
+}
+  if (hit == 1) {
+  out = mp_str_append(out, phrase);
+  i = (i + tl);
+} else {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* mp_drop_by_clause(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = 0;
+  while (i < n) {
+  if (is_space(p[i]) == 1) {
+  int32_t cut = i;
+  int32_t j = i;
+  while (j < n && is_space(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (mp_at(s, j, "by") == 1) {
+  int32_t k = (j + 2);
+  if (k < n && is_space(p[k]) == 1) {
+  while (k < n && is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k < n && is_ident_char(p[k]) == 1) {
+  return mp_substr(s, 0, cut);
+}
+}
+}
+  i = j;
+} else {
+  i = (i + 1);
+}
+}
+  return s;
+}
+
+const char* mp_geometry_token_english(const char* tok) {
+  if (strcmp(tok, "two_right_angles") == 0) {
+  return "two right angles";
+}
+  if (strcmp(tok, "one_right_angle") == 0) {
+  return "one right angle";
+}
+  if (strcmp(tok, "half_of_angle_AOB") == 0) {
+  return "half of angle AOB";
+}
+  if (strcmp(tok, "radius_OA") == 0) {
+  return "radius OA";
+}
+  if (strcmp(tok, "radius_OB") == 0) {
+  return "radius OB";
+}
+  if (strcmp(tok, "angle_alpha") == 0) {
+  return "angle α";
+}
+  if (strcmp(tok, "angle_alpha_prime") == 0) {
+  return "angle α′";
+}
+  if (strcmp(tok, "angle_beta") == 0) {
+  return "angle β";
+}
+  if (strcmp(tok, "angle_beta_prime") == 0) {
+  return "angle β′";
+}
+  if (strcmp(tok, "angle_gamma") == 0) {
+  return "angle γ";
+}
+  return "";
+}
+
+const char* mp_geometry_token_latex(const char* tok) {
+  if (strcmp(tok, "triangle_ABC") == 0) {
+  return "\\triangle ABC";
+}
+  if (strcmp(tok, "triangle_DEF") == 0) {
+  return "\\triangle DEF";
+}
+  if (strcmp(tok, "two_right_angles") == 0) {
+  return "180^\\circ";
+}
+  if (strcmp(tok, "one_right_angle") == 0) {
+  return "90^\\circ";
+}
+  if (strcmp(tok, "half_of_angle_AOB") == 0) {
+  return "\\tfrac{1}{2}\\angle AOB";
+}
+  if (strcmp(tok, "radius_OA") == 0) {
+  return "OA";
+}
+  if (strcmp(tok, "radius_OB") == 0) {
+  return "OB";
+}
+  if (strcmp(tok, "angle_alpha") == 0) {
+  return "\\alpha";
+}
+  if (strcmp(tok, "angle_alpha_prime") == 0) {
+  return "\\alpha'";
+}
+  if (strcmp(tok, "angle_beta") == 0) {
+  return "\\beta";
+}
+  if (strcmp(tok, "angle_beta_prime") == 0) {
+  return "\\beta'";
+}
+  if (strcmp(tok, "angle_gamma") == 0) {
+  return "\\gamma";
+}
+  return "";
+}
+
+const char* mp_analysis_token_english(const char* tok) {
+  if (strcmp(tok, "sin_prime_at_zero") == 0) {
+  return "the first derivative of sine at zero";
+}
+  if (strcmp(tok, "sin_double_prime_at_zero") == 0) {
+  return "the second derivative of sine at zero";
+}
+  if (strcmp(tok, "near_zero") == 0) {
+  return "in a neighbourhood of zero";
+}
+  return "";
+}
+
+const char* mp_analysis_token_latex(const char* tok) {
+  if (strcmp(tok, "sin_prime_at_zero") == 0) {
+  return "\\sin'(0)";
+}
+  if (strcmp(tok, "sin_double_prime_at_zero") == 0) {
+  return "\\sin''(0)";
+}
+  if (strcmp(tok, "near_zero") == 0) {
+  return "x \\to 0";
+}
+  return "";
+}
+
+int32_t mp_is_alnum(int32_t c) {
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t mp_underscore_ident_end(const char* s, int32_t i) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  if (i >= n) {
+  return (0 - 1);
+}
+  int32_t c0 = p[i];
+  int32_t is_alpha = 0;
+  if (c0 >= 97 && c0 <= 122) {
+  is_alpha = 1;
+}
+  if (c0 >= 65 && c0 <= 90) {
+  is_alpha = 1;
+}
+  if (is_alpha == 0) {
+  return (0 - 1);
+}
+  int32_t j = (i + 1);
+  while (j < n && mp_is_alnum(p[j]) == 1) {
+  j = (j + 1);
+}
+  int32_t groups = 0;
+  while (j < n && p[j] == 95) {
+  int32_t k = (j + 1);
+  if (k >= n || mp_is_alnum(p[k]) == 0) {
+  break;
+}
+  while (k < n && mp_is_alnum(p[k]) == 1) {
+  k = (k + 1);
+}
+  j = k;
+  groups = (groups + 1);
+}
+  if (groups == 0) {
+  return (0 - 1);
+}
+  return j;
+}
+
+const char* mp_ident_to_english(const char* ident) {
+  const char* a = mp_analysis_token_english(ident);
+  if (strlen(a) > 0) {
+  return a;
+}
+  const char* g = mp_geometry_token_english(ident);
+  if (strlen(g) > 0) {
+  return g;
+}
+  return mp_replace_all(ident, "_", " ");
+}
+
+const char* mp_ident_to_latex(const char* ident) {
+  const char* a = mp_analysis_token_latex(ident);
+  if (strlen(a) > 0) {
+  return a;
+}
+  const char* g = mp_geometry_token_latex(ident);
+  if (strlen(g) > 0) {
+  return g;
+}
+  const char* out = "\\text{";
+  out = mp_str_append(out, mp_replace_all(ident, "_", " "));
+  out = mp_str_append(out, "}");
+  return out;
+}
+
+const char* mp_replace_underscore_idents(const char* s, int32_t latex) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t handled = 0;
+  if (mp_boundary_before(s, i) == 1 && mp_not_after_backslash(s, i) == 1) {
+  int32_t end = mp_underscore_ident_end(s, i);
+  if (end > i) {
+  const char* ident = mp_substr(s, i, end);
+  if (latex == 1) {
+  out = mp_str_append(out, mp_ident_to_latex(ident));
+} else {
+  out = mp_str_append(out, mp_ident_to_english(ident));
+}
+  i = end;
+  handled = 1;
+}
+}
+  if (handled == 0) {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* mp_finalize_latex(const char* s) {
+  return mp_replace_underscore_idents(s, 1);
+}
+
+const char* mp_angle_rewrites(const char* s, int32_t latex) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t handled = 0;
+  if (mp_boundary_before(s, i) == 1) {
+  int32_t pre = 0;
+  if (mp_at(s, i, "angle_at_") == 1) {
+  pre = 9;
+}
+  if (pre == 0 && mp_at(s, i, "angle_") == 1) {
+  pre = 6;
+}
+  if (pre > 0) {
+  int32_t j = (i + pre);
+  int32_t start = j;
+  while (j < n && is_ident_char(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j > start) {
+  const char* name = mp_substr(s, start, j);
+  if (latex == 1) {
+  out = mp_str_append(out, "\\angle ");
+} else {
+  if (pre == 9) {
+  out = mp_str_append(out, "angle at ");
+} else {
+  out = mp_str_append(out, "angle ");
+}
+}
+  out = mp_str_append(out, name);
+  i = j;
+  handled = 1;
+}
+}
+}
+  if (handled == 0) {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* mp_mult_latex(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t handled = 0;
+  if (mp_boundary_before(s, i) == 1 && is_ident_char(p[i]) == 1) {
+  int32_t e1 = i;
+  while (e1 < n && is_ident_char(p[e1]) == 1) {
+  e1 = (e1 + 1);
+}
+  int32_t j = e1;
+  while (j < n && is_space(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j < n && p[j] == 42) {
+  int32_t k = (j + 1);
+  while (k < n && is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k < n && is_ident_char(p[k]) == 1) {
+  int32_t e2 = k;
+  while (e2 < n && is_ident_char(p[e2]) == 1) {
+  e2 = (e2 + 1);
+}
+  const char* w1 = mp_substr(s, i, e1);
+  const char* w2 = mp_substr(s, k, e2);
+  if (strcmp(w1, w2) == 0) {
+  out = mp_str_append(out, w1);
+  out = mp_str_append(out, "^{2}");
+} else {
+  out = mp_str_append(out, w1);
+  out = mp_str_append(out, " \\cdot ");
+  out = mp_str_append(out, w2);
+}
+  i = e2;
+  handled = 1;
+}
+}
+}
+  if (handled == 0) {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* mp_normalize_geometry_tokens(const char* s, int32_t latex) {
+  const char* t = s;
+  if (latex == 1) {
+  t = mp_replace_word(t, "triangle_ABC", "\\triangle ABC");
+  t = mp_replace_word(t, "triangle_DEF", "\\triangle DEF");
+  t = mp_replace_word(t, "two_right_angles", "180^\\circ");
+  t = mp_replace_word(t, "one_right_angle", "90^\\circ");
+  t = mp_replace_word(t, "half_of_angle_AOB", "\\tfrac{1}{2}\\angle AOB");
+  t = mp_replace_word(t, "radius_OA", "OA");
+  t = mp_replace_word(t, "radius_OB", "OB");
+  t = mp_replace_word(t, "angle_alpha_prime", "\\alpha'");
+  t = mp_replace_word(t, "angle_alpha", "\\alpha");
+  t = mp_replace_word(t, "angle_beta_prime", "\\beta'");
+  t = mp_replace_word(t, "angle_beta", "\\beta");
+  t = mp_replace_word(t, "angle_gamma", "\\gamma");
+  t = mp_angle_rewrites(t, 1);
+  t = mp_mult_latex(t);
+  return t;
+}
+  t = mp_replace_word(t, "two_right_angles", "two right angles");
+  t = mp_replace_word(t, "one_right_angle", "one right angle");
+  t = mp_replace_word(t, "half_of_angle_AOB", "half of angle AOB");
+  t = mp_replace_word(t, "radius_OA", "radius OA");
+  t = mp_replace_word(t, "radius_OB", "radius OB");
+  t = mp_replace_word(t, "angle_alpha_prime", "angle α′");
+  t = mp_replace_word(t, "angle_alpha", "angle α");
+  t = mp_replace_word(t, "angle_beta_prime", "angle β′");
+  t = mp_replace_word(t, "angle_beta", "angle β");
+  t = mp_replace_word(t, "angle_gamma", "angle γ");
+  t = mp_angle_rewrites(t, 0);
+  return t;
+}
+
+int32_t mp_operand_end(const char* s, int32_t i) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  if (i >= n) {
+  return (0 - 1);
+}
+  if (p[i] == 1) {
+  int32_t depth = 0;
+  int32_t j = i;
+  while (j < n) {
+  if (p[j] == 1) {
+  depth = (depth + 1);
+}
+  if (p[j] == 3) {
+  depth = (depth - 1);
+  if (depth == 0) {
+  return (j + 1);
+}
+}
+  j = (j + 1);
+}
+  return (0 - 1);
+}
+  if (is_ident_char(p[i]) == 1) {
+  int32_t j = i;
+  while (j < n && is_ident_char(p[j]) == 1) {
+  j = (j + 1);
+}
+  return j;
+}
+  return (0 - 1);
+}
+
+const char* mp_join_pass(const char* s, const char* keyword, int32_t shield) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t kl = (int32_t)(strlen(keyword));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t handled = 0;
+  int32_t ok_start = 0;
+  if (p[i] == 1) {
+  ok_start = 1;
+} else {
+  if (mp_boundary_before(s, i) == 1 && is_ident_char(p[i]) == 1) {
+  ok_start = 1;
+}
+}
+  if (ok_start == 1) {
+  int32_t e1 = mp_operand_end(s, i);
+  if (e1 > i) {
+  int32_t j = e1;
+  int32_t spaces = 0;
+  while (j < n && is_space(p[j]) == 1) {
+  j = (j + 1);
+  spaces = (spaces + 1);
+}
+  if (spaces > 0 && mp_at(s, j, keyword) == 1) {
+  int32_t k = (j + kl);
+  int32_t spaces2 = 0;
+  while (k < n && is_space(p[k]) == 1) {
+  k = (k + 1);
+  spaces2 = (spaces2 + 1);
+}
+  if (spaces2 > 0) {
+  int32_t e2 = mp_operand_end(s, k);
+  if (e2 > k) {
+  const char* a = mp_substr(s, i, e1);
+  const char* b = mp_substr(s, k, e2);
+  if (shield == 1) {
+  out = mp_append_char(out, 1);
+  out = mp_str_append(out, a);
+  out = mp_append_char(out, 2);
+  out = mp_str_append(out, b);
+  out = mp_append_char(out, 3);
+} else {
+  out = mp_str_append(out, "the conjunction of ");
+  out = mp_str_append(out, a);
+  out = mp_str_append(out, " and ");
+  out = mp_str_append(out, b);
+}
+  i = e2;
+  handled = 1;
+}
+}
+}
+}
+}
+  if (handled == 0) {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+int32_t mp_index_last(const char* s, int32_t ch) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = (n - 1);
+  while (i >= 0) {
+  if (p[i] == ch) {
+  return i;
+}
+  i = (i - 1);
+}
+  return (0 - 1);
+}
+
+int32_t mp_index_from(const char* s, int32_t start, int32_t ch) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = start;
+  while (i < n) {
+  if (p[i] == ch) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+const char* mp_expand_disjunctions(const char* s) {
+  const char* t = s;
+  int32_t guard = 0;
+  while (guard < 16) {
+  int32_t open = mp_index_last(t, 1);
+  if (open < 0) {
+  return t;
+}
+  int32_t sep = mp_index_from(t, (open + 1), 2);
+  if (sep < 0) {
+  return t;
+}
+  int32_t close = mp_index_from(t, (sep + 1), 3);
+  if (close < 0) {
+  return t;
+}
+  const char* a = mp_substr(t, (open + 1), sep);
+  const char* b = mp_substr(t, (sep + 1), close);
+  const char* out = mp_substr(t, 0, open);
+  out = mp_str_append(out, "the disjunction of ");
+  out = mp_str_append(out, a);
+  out = mp_str_append(out, " and ");
+  out = mp_str_append(out, b);
+  out = mp_str_append(out, mp_substr(t, (close + 1), (int32_t)(strlen(t))));
+  t = out;
+  guard = (guard + 1);
+}
+  return t;
+}
+
+const char* mp_rewrite_succ(const char* s, const char* prefix, const char* suffix) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t handled = 0;
+  if (mp_boundary_before(s, i) == 1 && mp_at(s, i, "succ(") == 1) {
+  int32_t start = (i + 5);
+  int32_t close = mp_index_from(s, start, 41);
+  if (close > start) {
+  out = mp_str_append(out, prefix);
+  out = mp_str_append(out, mp_substr(s, start, close));
+  out = mp_str_append(out, suffix);
+  i = (close + 1);
+  handled = 1;
+}
+}
+  if (handled == 0) {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* flowc_geometry_expr_to_latex(const char* expr) {
+  const char* s = mp_trim(expr);
+  s = mp_drop_by_clause(s);
+  s = mp_replace_all(s, "==", "=");
+  s = mp_normalize_geometry_tokens(s, 1);
+  return mp_finalize_latex(s);
+}
+
+const char* flowc_flow_expr_to_mathematical_english(const char* expr) {
+  const char* s = mp_trim(expr);
+  s = mp_drop_by_clause(s);
+  s = mp_replace_underscore_idents(s, 0);
+  s = mp_normalize_geometry_tokens(s, 0);
+  s = mp_replace_all(s, "==", " equals ");
+  int32_t guard = 0;
+  while (guard < 8) {
+  const char* next = mp_join_pass(s, "or", 1);
+  if (strcmp(next, s) == 0) {
+  break;
+}
+  s = next;
+  guard = (guard + 1);
+}
+  s = mp_join_pass(s, "and", 0);
+  s = mp_expand_disjunctions(s);
+  s = mp_rewrite_succ(s, "the successor of ", "");
+  s = mp_replace_all(s, ">=", " is at least ");
+  s = mp_replace_all(s, "<=", " is at most ");
+  s = mp_replace_all(s, "=", " equals ");
+  s = mp_replace_all(s, "+", " plus ");
+  s = mp_replace_all(s, "*", " times ");
+  return mp_collapse_spaces(s);
+}
+
+int32_t flowc_is_analysis_expr(const char* expr) {
+  if (contains_word(expr, "taylor_sin") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "near_zero") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "sin_prime_at_zero") == 1) {
+  return 1;
+}
+  if (contains_word(expr, "sin_double_prime_at_zero") == 1) {
+  return 1;
+}
+  int32_t n = (int32_t)(strlen(expr));
+  int32_t i = 0;
+  while (i < n) {
+  if (mp_boundary_before(expr, i) == 1 && mp_at(expr, i, "sin(") == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+const char* mp_rewrite_taylor(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t handled = 0;
+  if (mp_boundary_before(s, i) == 1 && mp_at(s, i, "taylor_sin(") == 1) {
+  int32_t arg_start = (i + 11);
+  int32_t comma = mp_index_from(s, arg_start, 44);
+  if (comma > arg_start) {
+  int32_t j = (comma + 1);
+  while (j < n && is_space(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (mp_at(s, j, "order_") == 1) {
+  int32_t dig_start = (j + 6);
+  int32_t k = dig_start;
+  while (k < n && p[k] >= 48 && p[k] <= 57) {
+  k = (k + 1);
+}
+  if (k > dig_start && k < n && p[k] == 41) {
+  out = mp_str_append(out, "S_{");
+  out = mp_str_append(out, mp_substr(s, dig_start, k));
+  out = mp_str_append(out, "}(");
+  out = mp_str_append(out, mp_substr(s, arg_start, comma));
+  out = mp_str_append(out, ")");
+  i = (k + 1);
+  handled = 1;
+}
+}
+}
+}
+  if (handled == 0) {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* mp_latex_sin(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "";
+  int32_t i = 0;
+  while (i < n) {
+  if (mp_boundary_before(s, i) == 1 && mp_at(s, i, "sin(") == 1) {
+  out = mp_str_append(out, "\\sin(");
+  i = (i + 4);
+} else {
+  out = mp_append_char(out, p[i]);
+  i = (i + 1);
+}
+}
+  return out;
+}
+
+const char* flowc_analysis_expr_to_latex(const char* expr) {
+  if (flowc_is_analysis_expr(expr) == 0) {
+  return "";
+}
+  const char* s = mp_trim(expr);
+  s = mp_drop_by_clause(s);
+  s = mp_replace_all(s, "==", "=");
+  s = mp_rewrite_taylor(s);
+  s = mp_latex_sin(s);
+  s = mp_replace_word(s, "near_zero", "\\quad (x \\to 0)");
+  return mp_finalize_latex(s);
+}
+
+const char* flowc_flow_expr_to_latex(const char* expr) {
+  const char* trimmed = mp_trim(expr);
+  if (flowc_is_geometry_expr(trimmed) == 1) {
+  return flowc_geometry_expr_to_latex(trimmed);
+}
+  if (flowc_is_analysis_expr(trimmed) == 1) {
+  return flowc_analysis_expr_to_latex(trimmed);
+}
+  const char* s = mp_drop_by_clause(trimmed);
+  s = mp_replace_all(s, "==", "=");
+  s = mp_rewrite_succ(s, "\\mathrm{succ}(", ")");
+  s = mp_replace_word(s, "or", "\\lor");
+  s = mp_replace_word(s, "and", "\\land");
+  s = mp_replace_word(s, "true", "\\mathsf{true}");
+  s = mp_replace_word(s, "false", "\\mathsf{false}");
+  s = mp_mult_latex(s);
+  s = mp_replace_all(s, ">=", "\\ge");
+  s = mp_replace_all(s, "<=", "\\le");
+  return mp_finalize_latex(s);
+}
+
+const char* flowc_invoke_premise_mathematical(FlowcClaimAddress addr, const char* phrase, const char* args, const char* kind, const char* theorem_ref) {
+  if (strlen(theorem_ref) > 0) {
+  if (strlen(args) > 0) {
+  const char* s = "We invoke ";
+  s = mp_str_append(s, theorem_ref);
+  s = mp_str_append(s, " (");
+  s = mp_str_append(s, phrase);
+  s = mp_str_append(s, ", instantiated for ");
+  s = mp_str_append(s, args);
+  s = mp_str_append(s, ").");
+  return s;
+}
+  const char* s2 = "We invoke ";
+  s2 = mp_str_append(s2, theorem_ref);
+  s2 = mp_str_append(s2, ": ");
+  s2 = mp_str_append(s2, phrase);
+  s2 = mp_str_append(s2, ".");
+  return s2;
+}
+  const char* ctx = flowc_on_structure_carrier((addr).structure, (addr).carrier);
+  const char* s3 = "We invoke the ";
+  s3 = mp_str_append(s3, kind);
+  s3 = mp_str_append(s3, " governing ");
+  s3 = mp_str_append(s3, ctx);
+  s3 = mp_str_append(s3, ": ");
+  s3 = mp_str_append(s3, phrase);
+  if (strlen(args) > 0) {
+  s3 = mp_str_append(s3, " (instantiated for ");
+  s3 = mp_str_append(s3, args);
+  s3 = mp_str_append(s3, ").");
+  return s3;
+}
+  s3 = mp_str_append(s3, ".");
+  return s3;
+}
+
+
+#define str_append __flowc_m11_str_append
+typedef struct FlowcGeomCurve {
+  double* xs;
+  double* ys;
+  int32_t n;
+  const char* stroke;
+  double width;
+  int32_t dashed;
+  const char* label;
+} FlowcGeomCurve;
+
+typedef struct FlowcGeomFill {
+  double* xs;
+  double* ys;
+  int32_t n;
+  const char* fill;
+  double opacity;
+} FlowcGeomFill;
+
+typedef struct FlowcGeomLabel {
+  double x;
+  double y;
+  const char* text;
+  int32_t size;
+} FlowcGeomLabel;
+
+typedef struct FlowcGeomDiagram {
+  int32_t ok;
+  const char* title;
+  const char* caption;
+  int32_t width;
+  int32_t height;
+  const char** pt_name;
+  double* pt_x;
+  double* pt_y;
+  int32_t npt;
+  const char** seg_a;
+  const char** seg_b;
+  int32_t nseg;
+  const char** ang_v;
+  const char** ang_a1;
+  const char** ang_a2;
+  const char** ang_label;
+  int32_t nang;
+  const char** right;
+  int32_t nright;
+  const char** par_a;
+  const char** par_b;
+  int32_t npar;
+  const char** circ_c;
+  double* circ_r;
+  int32_t ncirc;
+  FlowcGeomCurve* curves;
+  int32_t ncurve;
+  FlowcGeomFill* fills;
+  int32_t nfill;
+  FlowcGeomLabel* labels;
+  int32_t nlabel;
+  int32_t has_axes;
+  double ax_ox;
+  double ax_oy;
+  double ax_scale;
+  double ax_xmin;
+  double ax_xmax;
+  double ax_ymin;
+  double ax_ymax;
+} FlowcGeomDiagram;
+
+static const int32_t GEOM_CAP = 32;
+static const int32_t GEOM_CURVE_CAP = 512;
+const char* str_append(const char* a, const char* b);
+const char* flowc_svg_escape(const char* text);
+double flowc_vec2_unit_x(double vx, double vy);
+double flowc_vec2_unit_y(double vx, double vy);
+double flowc_vec2_length(double vx, double vy);
+double flowc_vec2_dot(double ax, double ay, double bx, double by);
+double flowc_point_distance(double ax, double ay, double bx, double by);
+double flowc_lerp(double a, double b, double t);
+const char* geom_sidx(const char* s);
+FlowcGeomDiagram flowc_geom_new(const char* title);
+FlowcGeomDiagram flowc_geom_none();
+void geom_pt(FlowcGeomDiagram* g, const char* name, double x, double y);
+void geom_seg(FlowcGeomDiagram* g, const char* a, const char* b);
+void geom_ang(FlowcGeomDiagram* g, const char* v, const char* a1, const char* a2, const char* label);
+void geom_right(FlowcGeomDiagram* g, const char* v);
+void geom_circle(FlowcGeomDiagram* g, const char* c, double r);
+int32_t geom_find(FlowcGeomDiagram* g, const char* name);
+FlowcGeomDiagram flowc_geom_template(const char* key);
+const char* geom_lower(const char* s);
+int32_t geom_contains(const char* s, const char* needle);
+const char* flowc_geom_infer_id(const char* claim_path);
+const char* geom_fmt(const char* fmt, double v);
+const char* f1(double v);
+const char* geom_itoa(int32_t v);
+double geom_pymod(double x, double m);
+double geom_unit_x(double vx, double vy);
+double geom_unit_y(double vx, double vy);
+const char* geom_arc_path(double vx, double vy, double a1x, double a1y, double a2x, double a2y);
+const char* geom_polyline(double* xs, double* ys, int32_t n);
+int32_t geom_arms(FlowcGeomDiagram* g, const char* vertex, const char** out);
+const char* geom_char(const char* s, int32_t i);
+const char* flowc_geom_render_svg(FlowcGeomDiagram* g);
+const char* geom_latex_escape(const char* text);
+const char* geom_angle_label_tex(const char* label);
+int32_t geom_color_index(const char** names, int32_t n, const char* color);
+const char* geom_tikz_color(const char** names, int32_t n, const char* color);
+const char* geom_coords(FlowcGeomDiagram* g, double* xs, double* ys, int32_t n);
+const char* flowc_geom_render_tikz(FlowcGeomDiagram* g);
+const char* str_append(const char* a, const char* b) {
+  int32_t la = (int32_t)(strlen(a));
+  int32_t lb = (int32_t)(strlen(b));
+  int32_t total = (la + lb);
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((total + 1)))));
+  if (la > 0) {
+  memcpy(buf, a, (int64_t)(la));
+}
+  if (lb > 0) {
+  memcpy((buf + la), b, (int64_t)(lb));
+}
+  buf[total] = 0;
+  return (const char*)(buf);
+}
+
+const char* flowc_svg_escape(const char* text) {
+  int32_t n = (int32_t)(strlen(text));
+  uint8_t* p = (uint8_t*)(text);
+  const char* result = "";
+  int32_t i = 0;
+  while (i < n) {
+  int32_t c = p[i];
+  if (c == 38) {
+  result = str_append(result, "&amp;");
+} else {
+  if (c == 60) {
+  result = str_append(result, "&lt;");
+} else {
+  if (c == 62) {
+  result = str_append(result, "&gt;");
+} else {
+  uint8_t buf[2] = { 0, 0 };
+  buf[0] = c;
+  result = str_append(result, (const char*)(buf));
+}
+}
+}
+  i = (i + 1);
+}
+  return result;
+}
+
+double flowc_vec2_unit_x(double vx, double vy) {
+  double m = sqrt(((vx * vx) + (vy * vy)));
+  if (m == 0.0) {
+  return vx;
+}
+  return (vx / m);
+}
+
+double flowc_vec2_unit_y(double vx, double vy) {
+  double m = sqrt(((vx * vx) + (vy * vy)));
+  if (m == 0.0) {
+  return vy;
+}
+  return (vy / m);
+}
+
+double flowc_vec2_length(double vx, double vy) {
+  return sqrt(((vx * vx) + (vy * vy)));
+}
+
+double flowc_vec2_dot(double ax, double ay, double bx, double by) {
+  return ((ax * bx) + (ay * by));
+}
+
+double flowc_point_distance(double ax, double ay, double bx, double by) {
+  double dx = (bx - ax);
+  double dy = (by - ay);
+  return sqrt(((dx * dx) + (dy * dy)));
+}
+
+double flowc_lerp(double a, double b, double t) {
+  return (a + ((b - a) * t));
+}
+
+const char* geom_sidx(const char* s) {
+  return s;
+}
+
+FlowcGeomDiagram flowc_geom_new(const char* title) {
+  int64_t c = (int64_t)(GEOM_CAP);
+  return (FlowcGeomDiagram){ .ok = 1, .title = title, .caption = "", .width = 480, .height = 360, .pt_name = (const char**)(malloc((c * 8))), .pt_x = (double*)(malloc((c * 8))), .pt_y = (double*)(malloc((c * 8))), .npt = 0, .seg_a = (const char**)(malloc((c * 8))), .seg_b = (const char**)(malloc((c * 8))), .nseg = 0, .ang_v = (const char**)(malloc((c * 8))), .ang_a1 = (const char**)(malloc((c * 8))), .ang_a2 = (const char**)(malloc((c * 8))), .ang_label = (const char**)(malloc((c * 8))), .nang = 0, .right = (const char**)(malloc((c * 8))), .nright = 0, .par_a = (const char**)(malloc((c * 8))), .par_b = (const char**)(malloc((c * 8))), .npar = 0, .circ_c = (const char**)(malloc((c * 8))), .circ_r = (double*)(malloc((c * 8))), .ncirc = 0, .curves = (FlowcGeomCurve*)(malloc(((int64_t)(GEOM_CURVE_CAP) * 64))), .ncurve = 0, .fills = (FlowcGeomFill*)(malloc(((int64_t)(GEOM_CURVE_CAP) * 48))), .nfill = 0, .labels = (FlowcGeomLabel*)(malloc(((int64_t)(GEOM_CURVE_CAP) * 32))), .nlabel = 0, .has_axes = 0, .ax_ox = 0.0, .ax_oy = 0.0, .ax_scale = 0.0, .ax_xmin = 0.0, .ax_xmax = 0.0, .ax_ymin = 0.0, .ax_ymax = 0.0 };
+}
+
+FlowcGeomDiagram flowc_geom_none() {
+  FlowcGeomDiagram g = flowc_geom_new("");
+  (g).ok = 0;
+  return g;
+}
+
+void geom_pt(FlowcGeomDiagram* g, const char* name, double x, double y) {
+  int32_t k = (g[0]).npt;
+  (g[0]).pt_name[k] = name;
+  (g[0]).pt_x[k] = x;
+  (g[0]).pt_y[k] = y;
+  (g[0]).npt = (k + 1);
+}
+
+void geom_seg(FlowcGeomDiagram* g, const char* a, const char* b) {
+  int32_t k = (g[0]).nseg;
+  (g[0]).seg_a[k] = a;
+  (g[0]).seg_b[k] = b;
+  (g[0]).nseg = (k + 1);
+}
+
+void geom_ang(FlowcGeomDiagram* g, const char* v, const char* a1, const char* a2, const char* label) {
+  int32_t k = (g[0]).nang;
+  (g[0]).ang_v[k] = v;
+  (g[0]).ang_a1[k] = a1;
+  (g[0]).ang_a2[k] = a2;
+  (g[0]).ang_label[k] = label;
+  (g[0]).nang = (k + 1);
+}
+
+void geom_right(FlowcGeomDiagram* g, const char* v) {
+  (g[0]).right[(g[0]).nright] = v;
+  (g[0]).nright = ((g[0]).nright + 1);
+}
+
+void geom_circle(FlowcGeomDiagram* g, const char* c, double r) {
+  (g[0]).circ_c[(g[0]).ncirc] = c;
+  (g[0]).circ_r[(g[0]).ncirc] = r;
+  (g[0]).ncirc = ((g[0]).ncirc + 1);
+}
+
+int32_t geom_find(FlowcGeomDiagram* g, const char* name) {
+  int32_t i = 0;
+  while (i < (g[0]).npt) {
+  if (strcmp((g[0]).pt_name[i], name) == 0) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+FlowcGeomDiagram flowc_geom_template(const char* key) {
+  if (strcmp(key, "triangle-angle-sum") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Triangle interior angles");
+  geom_pt((&g), "A", 70.0, 290.0);
+  geom_pt((&g), "B", 410.0, 290.0);
+  geom_pt((&g), "C", 230.0, 70.0);
+  geom_seg((&g), "A", "B");
+  geom_seg((&g), "B", "C");
+  geom_seg((&g), "C", "A");
+  geom_ang((&g), "A", "C", "B", "α");
+  geom_ang((&g), "B", "A", "C", "β");
+  geom_ang((&g), "C", "B", "A", "γ");
+  (g).caption = "Triangle ABC: the three interior angles α, β, and γ sum to two right angles.";
+  return g;
+}
+  if (strcmp(key, "isosceles-base-angles") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Isosceles triangle");
+  geom_pt((&g), "A", 240.0, 60.0);
+  geom_pt((&g), "B", 80.0, 300.0);
+  geom_pt((&g), "C", 400.0, 300.0);
+  geom_seg((&g), "A", "B");
+  geom_seg((&g), "A", "C");
+  geom_seg((&g), "B", "C");
+  geom_ang((&g), "B", "A", "C", "θ");
+  geom_ang((&g), "C", "A", "B", "θ");
+  geom_ang((&g), "A", "B", "C", "φ");
+  geom_ang((&g), "A", "C", "B", "ψ");
+  (g).caption = "Isosceles triangle with AB = AC: the base angles at B and C are equal.";
+  return g;
+}
+  if (strcmp(key, "vertical-angles") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Vertical angles");
+  geom_pt((&g), "O", 240.0, 180.0);
+  geom_pt((&g), "A", 60.0, 80.0);
+  geom_pt((&g), "B", 420.0, 280.0);
+  geom_pt((&g), "C", 420.0, 80.0);
+  geom_pt((&g), "D", 60.0, 280.0);
+  geom_seg((&g), "A", "B");
+  geom_seg((&g), "C", "D");
+  geom_ang((&g), "O", "A", "C", "α");
+  geom_ang((&g), "O", "C", "B", "β");
+  geom_ang((&g), "O", "B", "D", "α′");
+  geom_ang((&g), "O", "D", "A", "β′");
+  (g).caption = "Intersecting lines: vertical angles α and α′ are equal, as are β and β′.";
+  return g;
+}
+  if (strcmp(key, "right-triangle-pythagoras") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Right triangle");
+  geom_pt((&g), "A", 80.0, 300.0);
+  geom_pt((&g), "B", 380.0, 300.0);
+  geom_pt((&g), "C", 80.0, 80.0);
+  geom_seg((&g), "A", "B");
+  geom_seg((&g), "B", "C");
+  geom_seg((&g), "C", "A");
+  geom_right((&g), "A");
+  geom_ang((&g), "B", "A", "C", "a");
+  geom_ang((&g), "C", "B", "A", "b");
+  (g).caption = "Right triangle with legs a, b and hypotenuse c: c² = a² + b².";
+  return g;
+}
+  if (strcmp(key, "parallel-lines-alternate") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Parallel lines and a transversal");
+  geom_pt((&g), "P", 60.0, 120.0);
+  geom_pt((&g), "Q", 420.0, 120.0);
+  geom_pt((&g), "R", 40.0, 260.0);
+  geom_pt((&g), "S", 440.0, 260.0);
+  geom_pt((&g), "T", 120.0, 40.0);
+  geom_pt((&g), "U", 360.0, 320.0);
+  geom_pt((&g), "X", 200.0, 120.0);
+  geom_pt((&g), "Y", 260.0, 260.0);
+  geom_seg((&g), "P", "Q");
+  geom_seg((&g), "R", "S");
+  geom_seg((&g), "T", "U");
+  (g).par_a[0] = "PQ";
+  (g).par_b[0] = "RS";
+  (g).npar = 1;
+  geom_ang((&g), "X", "T", "P", "α");
+  geom_ang((&g), "Y", "R", "T", "α");
+  geom_ang((&g), "X", "Q", "U", "β");
+  geom_ang((&g), "Y", "S", "U", "β");
+  (g).caption = "Parallel lines cut by a transversal: alternate interior angles are equal.";
+  return g;
+}
+  if (strcmp(key, "triangle-congruence-sas") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Side-angle-side congruence");
+  geom_pt((&g), "A", 90.0, 280.0);
+  geom_pt((&g), "B", 220.0, 280.0);
+  geom_pt((&g), "C", 160.0, 100.0);
+  geom_pt((&g), "D", 290.0, 280.0);
+  geom_pt((&g), "E", 390.0, 280.0);
+  geom_pt((&g), "F", 330.0, 100.0);
+  geom_seg((&g), "A", "B");
+  geom_seg((&g), "B", "C");
+  geom_seg((&g), "C", "A");
+  geom_seg((&g), "D", "E");
+  geom_seg((&g), "E", "F");
+  geom_seg((&g), "F", "D");
+  geom_ang((&g), "A", "B", "C", "θ");
+  geom_ang((&g), "D", "E", "F", "θ");
+  (g).caption = "Two triangles with two sides and the included angle equal: the triangles are congruent.";
+  return g;
+}
+  if (strcmp(key, "thales-right-angle") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Thales' theorem");
+  geom_pt((&g), "O", 240.0, 200.0);
+  geom_pt((&g), "A", 100.0, 200.0);
+  geom_pt((&g), "B", 380.0, 200.0);
+  geom_pt((&g), "C", 240.0, 70.0);
+  geom_circle((&g), "O", 130.0);
+  geom_seg((&g), "A", "B");
+  geom_seg((&g), "A", "C");
+  geom_seg((&g), "B", "C");
+  geom_right((&g), "C");
+  geom_ang((&g), "C", "A", "B", "θ");
+  (g).caption = "Angle in a semicircle: when AB is a diameter, the inscribed angle at C is a right angle.";
+  return g;
+}
+  if (strcmp(key, "circle-radii-equal") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Radii of a circle");
+  geom_pt((&g), "O", 240.0, 180.0);
+  geom_pt((&g), "A", 100.0, 220.0);
+  geom_pt((&g), "B", 380.0, 140.0);
+  geom_circle((&g), "O", 130.0);
+  geom_seg((&g), "O", "A");
+  geom_seg((&g), "O", "B");
+  (g).caption = "Circle with centre O: radii OA and OB are equal.";
+  return g;
+}
+  if (strcmp(key, "inscribed-angle-half-central") == 0) {
+  FlowcGeomDiagram g = flowc_geom_new("Inscribed and central angles");
+  geom_pt((&g), "O", 240.0, 190.0);
+  geom_pt((&g), "A", 110.0, 250.0);
+  geom_pt((&g), "B", 370.0, 250.0);
+  geom_pt((&g), "P", 240.0, 55.0);
+  geom_circle((&g), "O", 135.0);
+  geom_seg((&g), "O", "A");
+  geom_seg((&g), "O", "B");
+  geom_seg((&g), "P", "A");
+  geom_seg((&g), "P", "B");
+  geom_ang((&g), "O", "A", "B", "2θ");
+  geom_ang((&g), "P", "A", "B", "θ");
+  (g).caption = "Inscribed angle θ at P equals half the central angle 2θ subtending arc AB.";
+  return g;
+}
+  return flowc_geom_none();
+}
+
+const char* geom_lower(const char* s) {
+  int32_t n = (int32_t)(strlen(s));
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((n + 1)))));
+  int32_t i = 0;
+  while (i < n) {
+  uint8_t c = p[i];
+  if (c >= 65 && c <= 90) {
+  buf[i] = (c + 32);
+} else {
+  buf[i] = c;
+}
+  i = (i + 1);
+}
+  buf[n] = 0;
+  return (const char*)(buf);
+}
+
+int32_t geom_contains(const char* s, const char* needle) {
+  int32_t n = (int32_t)(strlen(s));
+  int32_t m = (int32_t)(strlen(needle));
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* q = (uint8_t*)(needle);
+  int32_t i = 0;
+  while ((i + m) <= n) {
+  int32_t j = 0;
+  while (j < m && p[(i + j)] == q[j]) {
+  j = (j + 1);
+}
+  if (j == m) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+const char* flowc_geom_infer_id(const char* claim_path) {
+  const char* law = geom_lower(claim_path);
+  if (geom_contains(law, "interior angles") == 1 || geom_contains(law, "angle-sum") == 1 || geom_contains(law, "two right") == 1) {
+  return "triangle-angle-sum";
+}
+  if (geom_contains(law, "isosceles") == 1 || geom_contains(law, "base angles") == 1) {
+  return "isosceles-base-angles";
+}
+  if (geom_contains(law, "vertical") == 1) {
+  return "vertical-angles";
+}
+  if (geom_contains(law, "pythagoras") == 1 || geom_contains(law, "hypotenuse") == 1) {
+  return "right-triangle-pythagoras";
+}
+  if (geom_contains(law, "alternate") == 1) {
+  return "parallel-lines-alternate";
+}
+  if (geom_contains(law, "side-angle-side") == 1 || geom_contains(law, "congruence") == 1) {
+  return "triangle-congruence-sas";
+}
+  if (geom_contains(law, "thales") == 1 || geom_contains(law, "semicircle") == 1) {
+  return "thales-right-angle";
+}
+  if (geom_contains(law, "inscribed") == 1) {
+  return "inscribed-angle-half-central";
+}
+  return "";
+}
+
+const char* geom_fmt(const char* fmt, double v) {
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(64)));
+  int32_t _n = snprintf(buf, 64, fmt, v);
+  return (const char*)(buf);
+}
+
+const char* f1(double v) {
+  return geom_fmt("%.1f", v);
+}
+
+const char* geom_itoa(int32_t v) {
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(32)));
+  int32_t _n = snprintf(buf, 32, "%d", v);
+  return (const char*)(buf);
+}
+
+double geom_pymod(double x, double m) {
+  double r = fmod(x, m);
+  if (r != 0.0) {
+  if (m < 0.0 != r < 0.0) {
+  r = (r + m);
+}
+} else {
+  r = 0.0;
+}
+  return r;
+}
+
+double geom_unit_x(double vx, double vy) {
+  double m = hypot(vx, vy);
+  if (m == 0.0) {
+  m = 1.0;
+}
+  return (vx / m);
+}
+
+double geom_unit_y(double vx, double vy) {
+  double m = hypot(vx, vy);
+  if (m == 0.0) {
+  m = 1.0;
+}
+  return (vy / m);
+}
+
+const char* geom_arc_path(double vx, double vy, double a1x, double a1y, double a2x, double a2y) {
+  double radius = 28.0;
+  double pi = 3.141592653589793;
+  double a1 = atan2((a1y - vy), (a1x - vx));
+  double a2 = atan2((a2y - vy), (a2x - vx));
+  double da = geom_pymod((a2 - a1), (2.0 * pi));
+  if (da > pi) {
+  double tmp = a1;
+  a1 = a2;
+  a2 = tmp;
+  da = geom_pymod((a2 - a1), (2.0 * pi));
+}
+  double sx = (vx + (radius * cos(a1)));
+  double sy = (vy + (radius * sin(a1)));
+  double ex = (vx + (radius * cos(a2)));
+  double ey = (vy + (radius * sin(a2)));
+  const char* large = "0";
+  if (da > pi) {
+  large = "1";
+}
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("M ", f1(sx)), " "), f1(sy)), " A "), f1(radius)), " "), f1(radius)), " 0 "), large), " 1 "), f1(ex)), " "), f1(ey));
+}
+
+const char* geom_polyline(double* xs, double* ys, int32_t n) {
+  const char* s = "";
+  int32_t i = 0;
+  while (i < n) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, " ");
+}
+  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, f1(xs[i])), ","), f1(ys[i]));
+  i = (i + 1);
+}
+  return s;
+}
+
+int32_t geom_arms(FlowcGeomDiagram* g, const char* vertex, const char** out) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (g[0]).nseg) {
+  if (strcmp((g[0]).seg_a[i], vertex) == 0) {
+  out[n] = (g[0]).seg_b[i];
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nseg) {
+  if (strcmp((g[0]).seg_b[i], vertex) == 0) {
+  out[n] = (g[0]).seg_a[i];
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return n;
+}
+
+const char* geom_char(const char* s, int32_t i) {
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(2)));
+  uint8_t* p = (uint8_t*)(s);
+  buf[0] = p[i];
+  buf[1] = 0;
+  return (const char*)(buf);
+}
+
+const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
+  const char* w = geom_itoa((g[0]).width);
+  const char* h = geom_itoa((g[0]).height);
+  const char* out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 "), w), " "), h), "\" width=\""), w), "\" height=\""), h), "\">\n");
+  out = __flowc_str_concat(out, "<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>\n");
+  out = __flowc_str_concat(out, "<rect width=\"100%\" height=\"100%\" fill=\"#faf9f6\"/>");
+  if ((g[0]).has_axes == 1) {
+  double x0 = ((g[0]).ax_ox + ((g[0]).ax_xmin * (g[0]).ax_scale));
+  double x1 = ((g[0]).ax_ox + ((g[0]).ax_xmax * (g[0]).ax_scale));
+  double y0 = ((g[0]).ax_oy - ((g[0]).ax_ymin * (g[0]).ax_scale));
+  double y1 = ((g[0]).ax_oy - ((g[0]).ax_ymax * (g[0]).ax_scale));
+  double ox = (g[0]).ax_ox;
+  double oy = (g[0]).ax_oy;
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1(x0)), "\" y1=\""), f1(oy)), "\" x2=\""), f1(x1)), "\" y2=\""), f1(oy)), "\" stroke=\"#bdc3c7\" stroke-width=\"1.2\"/>");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1(ox)), "\" y1=\""), f1(y0)), "\" x2=\""), f1(ox)), "\" y2=\""), f1(y1)), "\" stroke=\"#bdc3c7\" stroke-width=\"1.2\"/>");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((x1 - 8.0))), "\" y=\""), f1((oy + 16.0))), "\" font-size=\"12\" fill=\"#7f8c8d\">x</text>");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((ox + 6.0))), "\" y=\""), f1((y1 + 4.0))), "\" font-size=\"12\" fill=\"#7f8c8d\">y</text>");
+}
+  int32_t i = 0;
+  while (i < (g[0]).nfill) {
+  FlowcGeomFill f = (g[0]).fills[i];
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<polygon points=\""), geom_polyline((f).xs, (f).ys, (f).n)), "\" fill=\""), (f).fill), "\" fill-opacity=\""), geom_fmt("%.2f", (f).opacity)), "\" stroke=\"none\"/>");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncurve) {
+  FlowcGeomCurve c = (g[0]).curves[i];
+  const char* dash = "";
+  if ((c).dashed == 1) {
+  dash = " stroke-dasharray=\"7 5\"";
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<polyline points=\""), geom_polyline((c).xs, (c).ys, (c).n)), "\" fill=\"none\" stroke=\""), (c).stroke), "\" stroke-width=\""), f1((c).width)), "\" stroke-linecap=\"round\""), dash), "/>");
+  if (strlen((c).label) > 0 && (c).n > 0) {
+  int32_t k = ((c).n / 3);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((c).xs[k])), "\" y=\""), f1(((c).ys[k] - 8.0))), "\" font-size=\"12\" fill=\""), (c).stroke), "\">"), flowc_svg_escape((c).label)), "</text>");
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncirc) {
+  int32_t ci = geom_find(g, (g[0]).circ_c[i]);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<circle cx=\""), f1((g[0]).pt_x[ci])), "\" cy=\""), f1((g[0]).pt_y[ci])), "\" r=\""), f1((g[0]).circ_r[i])), "\" fill=\"none\" stroke=\"#95a5a6\" stroke-width=\"1.8\"/>");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nseg) {
+  int32_t a = geom_find(g, (g[0]).seg_a[i]);
+  int32_t b = geom_find(g, (g[0]).seg_b[i]);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1((g[0]).pt_x[a])), "\" y1=\""), f1((g[0]).pt_y[a])), "\" x2=\""), f1((g[0]).pt_x[b])), "\" y2=\""), f1((g[0]).pt_y[b])), "\" stroke=\"#2c3e50\" stroke-width=\"2.2\" stroke-linecap=\"round\"/>");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).npar) {
+  int32_t side = 0;
+  while (side < 2) {
+  const char* label = (g[0]).par_a[i];
+  if (side == 1) {
+  label = (g[0]).par_b[i];
+}
+  if (strlen(label) >= 2) {
+  int32_t p1 = geom_find(g, geom_char(label, 0));
+  int32_t p2 = geom_find(g, geom_char(label, 1));
+  double mx = (((g[0]).pt_x[p1] + (g[0]).pt_x[p2]) / 2.0);
+  double my = (((g[0]).pt_y[p1] + (g[0]).pt_y[p2]) / 2.0);
+  double ux = geom_unit_x(((g[0]).pt_x[p2] - (g[0]).pt_x[p1]), ((g[0]).pt_y[p2] - (g[0]).pt_y[p1]));
+  double uy = geom_unit_y(((g[0]).pt_x[p2] - (g[0]).pt_x[p1]), ((g[0]).pt_y[p2] - (g[0]).pt_y[p1]));
+  double px = (0.0 - uy);
+  double py = ux;
+  int32_t o = 0;
+  while (o < 2) {
+  double offset = (0.0 - 12.0);
+  if (o == 1) {
+  offset = 12.0;
+}
+  double cx = (mx + (ux * offset));
+  double cy = (my + (uy * offset));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1((cx + (px * 6.0)))), "\" y1=\""), f1((cy + (py * 6.0)))), "\" x2=\""), f1((cx - (px * 6.0)))), "\" y2=\""), f1((cy - (py * 6.0)))), "\" stroke=\"#7f8c8d\" stroke-width=\"1.4\"/>");
+  o = (o + 1);
+}
+}
+  side = (side + 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nang) {
+  int32_t v = geom_find(g, (g[0]).ang_v[i]);
+  int32_t a1 = geom_find(g, (g[0]).ang_a1[i]);
+  int32_t a2 = geom_find(g, (g[0]).ang_a2[i]);
+  double vx = (g[0]).pt_x[v];
+  double vy = (g[0]).pt_y[v];
+  const char* path = geom_arc_path(vx, vy, (g[0]).pt_x[a1], (g[0]).pt_y[a1], (g[0]).pt_x[a2], (g[0]).pt_y[a2]);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<path d=\""), path), "\" fill=\"none\" stroke=\"#c0392b\" stroke-width=\"1.6\"/>");
+  double u1x = geom_unit_x(((g[0]).pt_x[a1] - vx), ((g[0]).pt_y[a1] - vy));
+  double u1y = geom_unit_y(((g[0]).pt_x[a1] - vx), ((g[0]).pt_y[a1] - vy));
+  double u2x = geom_unit_x(((g[0]).pt_x[a2] - vx), ((g[0]).pt_y[a2] - vy));
+  double u2y = geom_unit_y(((g[0]).pt_x[a2] - vx), ((g[0]).pt_y[a2] - vy));
+  double bx = (u1x + u2x);
+  double by = (u1y + u2y);
+  double lx = (vx + (geom_unit_x(bx, by) * 42.0));
+  double ly = (vy + (geom_unit_y(bx, by) * 42.0));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1(lx)), "\" y=\""), f1(ly)), "\" text-anchor=\"middle\">"), geom_sidx((g[0]).ang_label[i])), "</text>");
+  i = (i + 1);
+}
+  const char** arms = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
+  i = 0;
+  while (i < (g[0]).nright) {
+  int32_t v = geom_find(g, (g[0]).right[i]);
+  int32_t na = geom_arms(g, (g[0]).right[i], arms);
+  if (na >= 2) {
+  int32_t a1 = geom_find(g, arms[0]);
+  int32_t a2 = geom_find(g, arms[1]);
+  double vx = (g[0]).pt_x[v];
+  double vy = (g[0]).pt_y[v];
+  double size = 14.0;
+  double u1x = geom_unit_x(((g[0]).pt_x[a1] - vx), ((g[0]).pt_y[a1] - vy));
+  double u1y = geom_unit_y(((g[0]).pt_x[a1] - vx), ((g[0]).pt_y[a1] - vy));
+  double u2x = geom_unit_x(((g[0]).pt_x[a2] - vx), ((g[0]).pt_y[a2] - vy));
+  double u2y = geom_unit_y(((g[0]).pt_x[a2] - vx), ((g[0]).pt_y[a2] - vy));
+  double p1x = (vx + (u1x * size));
+  double p1y = (vy + (u1y * size));
+  double p2x = (vx + (u2x * size));
+  double p2y = (vy + (u2y * size));
+  double p3x = (p1x + (u2x * size));
+  double p3y = (p1y + (u2y * size));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<path d=\"M "), f1(p1x)), " "), f1(p1y)), " L "), f1(p3x)), " "), f1(p3y)), " L "), f1(p2x)), " "), f1(p2y)), "\" fill=\"none\" stroke=\"#2c3e50\" stroke-width=\"1.5\"/>");
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nlabel) {
+  FlowcGeomLabel lab = (g[0]).labels[i];
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((lab).x)), "\" y=\""), f1((lab).y)), "\" text-anchor=\"middle\" font-size=\""), geom_itoa((lab).size)), "\" fill=\"#2c3e50\">"), flowc_svg_escape((lab).text)), "</text>");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).npt) {
+  double x = (g[0]).pt_x[i];
+  double y = (g[0]).pt_y[i];
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<circle cx=\""), f1(x)), "\" cy=\""), f1(y)), "\" r=\"4.5\" fill=\"#2c3e50\"/>");
+  double oy = (0.0 - 14.0);
+  if (y < 120.0) {
+  oy = 20.0;
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1(x)), "\" y=\""), f1((y + oy))), "\" text-anchor=\"middle\" font-weight=\"bold\">"), geom_sidx((g[0]).pt_name[i])), "</text>");
+  i = (i + 1);
+}
+  if (strlen((g[0]).caption) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), geom_fmt("%.0f", ((double)((g[0]).width) / 2.0))), "\" y=\""), geom_itoa(((g[0]).height - 16))), "\" text-anchor=\"middle\" font-size=\"13\" fill=\"#555\">"), flowc_svg_escape((g[0]).caption)), "</text>");
+}
+  return __flowc_str_concat(out, "\n</svg>");
+}
+
+const char* geom_latex_escape(const char* text) {
+  int32_t n = (int32_t)(strlen(text));
+  uint8_t* p = (uint8_t*)(text);
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)(((n * 16) + 1)))));
+  int32_t o = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t c = p[i];
+  const char* rep = "";
+  if (c == 92) {
+  rep = "\\textbackslash{}";
+}
+  if (c == 38) {
+  rep = "\\&";
+}
+  if (c == 37) {
+  rep = "\\%";
+}
+  if (c == 95) {
+  rep = "\\_";
+}
+  int32_t rl = (int32_t)(strlen(rep));
+  if (rl > 0) {
+  uint8_t* rp = (uint8_t*)(rep);
+  int32_t k = 0;
+  while (k < rl) {
+  buf[o] = rp[k];
+  o = (o + 1);
+  k = (k + 1);
+}
+} else {
+  buf[o] = p[i];
+  o = (o + 1);
+}
+  i = (i + 1);
+}
+  buf[o] = 0;
+  return (const char*)(buf);
+}
+
+const char* geom_angle_label_tex(const char* label) {
+  if (strcmp(label, "α") == 0) {
+  return "$\\alpha$";
+}
+  if (strcmp(label, "β") == 0) {
+  return "$\\beta$";
+}
+  if (strcmp(label, "γ") == 0) {
+  return "$\\gamma$";
+}
+  if (strcmp(label, "θ") == 0) {
+  return "$\\theta$";
+}
+  if (strcmp(label, "φ") == 0) {
+  return "$\\varphi$";
+}
+  if (strcmp(label, "ψ") == 0) {
+  return "$\\psi$";
+}
+  if (strcmp(label, "α′") == 0) {
+  return "$\\alpha'$";
+}
+  if (strcmp(label, "β′") == 0) {
+  return "$\\beta'$";
+}
+  if (strcmp(label, "2θ") == 0) {
+  return "$2\\theta$";
+}
+  if (strcmp(label, "a") == 0) {
+  return "$a$";
+}
+  if (strcmp(label, "b") == 0) {
+  return "$b$";
+}
+  return geom_latex_escape(label);
+}
+
+int32_t geom_color_index(const char** names, int32_t n, const char* color) {
+  int32_t i = 0;
+  while (i < n) {
+  if (strcmp(names[i], color) == 0) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+const char* geom_tikz_color(const char** names, int32_t n, const char* color) {
+  uint8_t* p = (uint8_t*)(color);
+  if (p[0] == 35) {
+  return __flowc_str_concat("geomc", geom_itoa(geom_color_index(names, n, color)));
+}
+  return color;
+}
+
+const char* geom_coords(FlowcGeomDiagram* g, double* xs, double* ys, int32_t n) {
+  const char* s = "";
+  double h = (double)((g[0]).height);
+  int32_t i = 0;
+  while (i < n) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, " ");
+}
+  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "("), f1(xs[i])), ","), f1((h - ys[i]))), ")");
+  i = (i + 1);
+}
+  return s;
+}
+
+const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
+  const char** names = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nfill + (g[0]).ncurve) + 2)) * 8))));
+  int32_t nc = 0;
+  int32_t i = 0;
+  while (i < (g[0]).nfill) {
+  const char* f = ((g[0]).fills[i]).fill;
+  uint8_t* fp = (uint8_t*)(f);
+  if (fp[0] == 35 && geom_color_index(names, nc, f) < 0) {
+  names[nc] = f;
+  nc = (nc + 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncurve) {
+  const char* c = ((g[0]).curves[i]).stroke;
+  uint8_t* cp = (uint8_t*)(c);
+  if (cp[0] == 35 && geom_color_index(names, nc, c) < 0) {
+  names[nc] = c;
+  nc = (nc + 1);
+}
+  i = (i + 1);
+}
+  double h = (double)((g[0]).height);
+  const char* out = "\\begin{center}\n\\begin{tikzpicture}[scale=0.035, line cap=round, line join=round]";
+  i = 0;
+  while (i < nc) {
+  const char* hex = names[i];
+  uint8_t* hp = (uint8_t*)(hex);
+  const char* rest = (const char*)((hp + 1));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\definecolor{geomc"), geom_itoa(i)), "}{HTML}{"), rest), "}");
+  i = (i + 1);
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\fill[fill=gray!4] (-10,-10) rectangle ("), geom_itoa(((g[0]).width + 20))), ","), geom_itoa(((g[0]).height + 10))), ");");
+  if ((g[0]).has_axes == 1) {
+  double x0 = ((g[0]).ax_ox + ((g[0]).ax_xmin * (g[0]).ax_scale));
+  double x1 = ((g[0]).ax_ox + ((g[0]).ax_xmax * (g[0]).ax_scale));
+  double y0 = (h - ((g[0]).ax_oy - ((g[0]).ax_ymin * (g[0]).ax_scale)));
+  double y1 = (h - ((g[0]).ax_oy - ((g[0]).ax_ymax * (g[0]).ax_scale)));
+  double oy = (h - (g[0]).ax_oy);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray!60] ("), f1(x0)), ","), f1(oy)), ") -- ("), f1(x1)), ","), f1(oy)), ");");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray!60] ("), f1((g[0]).ax_ox)), ","), f1(y0)), ") -- ("), f1((g[0]).ax_ox)), ","), f1(y1)), ");");
+}
+  i = 0;
+  while (i < (g[0]).nfill) {
+  FlowcGeomFill f = (g[0]).fills[i];
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\fill[fill="), geom_tikz_color(names, nc, (f).fill)), ", opacity="), geom_fmt("%.2f", (f).opacity)), "] "), geom_coords(g, (f).xs, (f).ys, (f).n)), " -- cycle;");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).npt) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\coordinate ("), geom_sidx((g[0]).pt_name[i])), ") at ("), f1((g[0]).pt_x[i])), ","), f1((h - (g[0]).pt_y[i]))), ");");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncirc) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray] ("), geom_sidx((g[0]).circ_c[i])), ") circle ("), f1((g[0]).circ_r[i])), ");");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nseg) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[thick] ("), geom_sidx((g[0]).seg_a[i])), ") -- ("), geom_sidx((g[0]).seg_b[i])), ");");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).npar) {
+  int32_t side = 0;
+  while (side < 2) {
+  const char* label = (g[0]).par_a[i];
+  if (side == 1) {
+  label = (g[0]).par_b[i];
+}
+  if (strlen(label) >= 2) {
+  int32_t p1 = geom_find(g, geom_char(label, 0));
+  int32_t p2 = geom_find(g, geom_char(label, 1));
+  double mx = (((g[0]).pt_x[p1] + (g[0]).pt_x[p2]) / 2.0);
+  double my = (h - (((g[0]).pt_y[p1] + (g[0]).pt_y[p2]) / 2.0));
+  double ux = geom_unit_x(((g[0]).pt_x[p2] - (g[0]).pt_x[p1]), ((g[0]).pt_y[p2] - (g[0]).pt_y[p1]));
+  double uy = geom_unit_y(((g[0]).pt_x[p2] - (g[0]).pt_x[p1]), ((g[0]).pt_y[p2] - (g[0]).pt_y[p1]));
+  double px = (0.0 - uy);
+  double py = ux;
+  int32_t o = 0;
+  while (o < 2) {
+  double offset = (0.0 - 12.0);
+  if (o == 1) {
+  offset = 12.0;
+}
+  double cx = (mx + (ux * offset));
+  double cy = (my + (uy * offset));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray] ("), f1((cx + (px * 6.0)))), ","), f1((cy + (py * 6.0)))), ") -- ("), f1((cx - (px * 6.0)))), ","), f1((cy - (py * 6.0)))), ");");
+  o = (o + 1);
+}
+}
+  side = (side + 1);
+}
+  i = (i + 1);
+}
+  const char** arms = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
+  i = 0;
+  while (i < (g[0]).nright) {
+  int32_t na = geom_arms(g, (g[0]).right[i], arms);
+  if (na >= 2) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\pic [draw, angle radius=3.5mm] {right angle = "), geom_sidx(arms[0])), "--"), geom_sidx((g[0]).right[i])), "--"), geom_sidx(arms[1])), "};");
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nang) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\pic [draw, angle radius=5mm, \""), geom_angle_label_tex((g[0]).ang_label[i])), "\"] {angle = "), geom_sidx((g[0]).ang_a1[i])), "--"), geom_sidx((g[0]).ang_v[i])), "--"), geom_sidx((g[0]).ang_a2[i])), "};");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncurve) {
+  FlowcGeomCurve c = (g[0]).curves[i];
+  const char* style = "thick";
+  if ((c).dashed == 1) {
+  style = "dashed, thick";
+}
+  const char* stroke = geom_tikz_color(names, nc, (c).stroke);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw["), style), ", draw="), stroke), "] plot[smooth] coordinates {"), geom_coords(g, (c).xs, (c).ys, (c).n)), "};");
+  if (strlen((c).label) > 0 && (c).n > 0) {
+  int32_t k = ((c).n / 3);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[font=\\scriptsize, text="), stroke), "] at ("), f1((c).xs[k])), ","), f1((h - (c).ys[k]))), ") {"), geom_latex_escape((c).label)), "};");
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nlabel) {
+  FlowcGeomLabel lab = (g[0]).labels[i];
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[font=\\small] at ("), f1((lab).x)), ","), f1((h - (lab).y))), ") {"), geom_latex_escape((lab).text)), "};");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).npt) {
+  const char* name = (g[0]).pt_name[i];
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\fill ("), name), ") circle (6pt);");
+  const char* oy = "-14";
+  if ((g[0]).pt_y[i] < 120.0) {
+  oy = "20";
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[font=\\bfseries] at ($( "), name), " ) + (0,"), oy), ")$) {"), name), "};");
+  i = (i + 1);
+}
+  if (strlen((g[0]).caption) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[below, text width=14cm, align=center, font=\\small] at (240,20) {"), geom_latex_escape((g[0]).caption)), "};");
+}
+  return __flowc_str_concat(out, "\n\\end{tikzpicture}\n\\end{center}");
+}
+
+
+#undef str_append
+typedef struct GsVal {
+  int32_t kind;
+  double num;
+  int32_t idx;
+  const char* s;
+} GsVal;
+
+typedef struct GsEnv {
+  const char** names;
+  GsVal* vals;
+  int32_t n;
+  int32_t cap;
+} GsEnv;
+
+typedef struct GsFn {
+  const char** params;
+  int32_t nparams;
+  const char** body;
+  int32_t nbody;
+  GsEnv closure;
+} GsFn;
+
+typedef struct GsNode {
+  int32_t kind;
+  double num;
+  const char* name;
+  int32_t a;
+  int32_t b;
+  int32_t* args;
+  int32_t nargs;
+} GsNode;
+
+typedef struct GsCtx {
+  FlowcGeomDiagram* g;
+  GsFn* fns;
+  int32_t nfn;
+  int32_t capfn;
+  GsNode* nodes;
+  int32_t nnode;
+  int32_t capnode;
+  const char** cache_keys;
+  int32_t* cache_vals;
+  int32_t ncache;
+  int32_t capcache;
+  int32_t err;
+  int32_t* toks_kind;
+  double* toks_num;
+  const char** toks_text;
+  int32_t ntok;
+  int32_t tpos;
+} GsCtx;
+
+static const int32_t GS_NUM = 0;
+static const int32_t GS_FN = 1;
+static const int32_t GS_BUILTIN = 2;
+static const int32_t GS_STR = 3;
+static const int32_t GT_NUM = 1;
+static const int32_t GT_IDENT = 2;
+static const int32_t GT_STR = 3;
+static const int32_t GT_OP = 4;
+double rint(double x);
+const char* gs_sidx(const char* s);
+int32_t gs_len(const char* s);
+int32_t gs_eq(const char* a, const char* b);
+const char* gs_sub(const char* s, int32_t a, int32_t b);
+int32_t gs_ws(int32_t c);
+const char* gs_strip(const char* s);
+int32_t gs_starts(const char* s, const char* lit);
+int32_t gs_find(const char* s, const char* needle, int32_t from);
+int32_t gs_lower_eq_at(const char* s, int32_t i, const char* lit);
+int32_t gs_ends_with_char(const char* s, int32_t c);
+int32_t gs_count_char(const char* s, int32_t c);
+double gs_float(const char* s);
+int32_t gs_split_ws(const char* s, const char** out, int32_t cap);
+GsVal gs_num(double v);
+GsEnv gs_env_new(int32_t cap);
+GsEnv gs_env_copy(GsEnv* e);
+int32_t gs_env_find(GsEnv* e, const char* name);
+void gs_env_set(GsEnv* e, const char* name, GsVal v);
+GsVal gs_builtin(int32_t id);
+GsEnv gs_default_env();
+void gs_fail(GsCtx* c, const char* msg);
+int32_t gs_is_digit(int32_t c);
+int32_t gs_is_alpha(int32_t c);
+void gs_push_tok(GsCtx* c, int32_t kind, double num, const char* text);
+void gs_tokenize(GsCtx* c, const char* text);
+int32_t gs_node(GsCtx* c, int32_t kind);
+const char* gs_peek_op(GsCtx* c);
+int32_t gs_peek_kind(GsCtx* c);
+int32_t gs_bin(GsCtx* c, const char* op, int32_t l, int32_t r);
+int32_t gs_parse_atom(GsCtx* c);
+int32_t gs_parse_unary(GsCtx* c);
+int32_t gs_parse_pow(GsCtx* c);
+int32_t gs_parse_mul(GsCtx* c);
+int32_t gs_parse_add(GsCtx* c);
+int32_t gs_is_cmp(const char* op);
+int32_t gs_parse_compare(GsCtx* c);
+int32_t gs_parse_expr(GsCtx* c);
+int32_t gs_parse(GsCtx* c, const char* text);
+int32_t gs_truthy(GsVal v);
+GsVal gs_bool(int32_t b);
+double gs_factorial(int32_t p);
+GsVal gs_call_builtin(GsCtx* c, int32_t id, GsVal* v, int32_t n);
+GsVal gs_eval(GsCtx* c, GsEnv* env, int32_t id);
+GsVal gs_eval_text(GsCtx* c, GsEnv* env, const char* text);
+const char* gs_string_arg(const char* text);
+void gs_math_to_pixel(GsCtx* c, double* xs, double* ys, int32_t n);
+int32_t gs_sample(GsCtx* c, GsEnv* env, int32_t root, double lo, double hi, int32_t samples_in, double* xs, double* ys);
+int32_t gs_opt_search(const char* text, const char* key, int32_t* vs, int32_t* ve);
+int32_t gs_take_dash(const char* text, const char** out);
+const char* gs_replace_all(const char* s, const char* needle, const char* repl);
+void gs_cmd_plot(GsCtx* c, GsEnv* env, const char* text_in);
+int32_t gs_kw_at(const char* t, int32_t i, const char* kw);
+void gs_cmd_fill(GsCtx* c, GsEnv* env, const char* text);
+void gs_cmd_text(GsCtx* c, const char* text);
+void gs_exec_line(GsCtx* c, GsEnv* env, const char* line);
+void gs_exec_block(GsCtx* c, GsEnv* env, const char* header, const char** body, int32_t nbody);
+void gs_run_lines(GsCtx* c, GsEnv* env, const char** lines, int32_t n);
+const char** gs_lines(const char* text, int32_t* out_n);
+FlowcGeomDiagram flowc_geom_run_script(const char* source);
+const char* gs_read(const char* path);
+FlowcGeomDiagram gs_load_script(const char* meta, const char* flow_dir, const char* root);
+FlowcGeomDiagram flowc_geom_for_theorem(const char* claim_path, const char* diagram, const char* diagram_script, const char* flow_dir, const char* root);
+const char* gs_lower(const char* s);
+const char* gs_lower(const char* s);
+const char* gs_sidx(const char* s) {
+  return s;
+}
+
+int32_t gs_len(const char* s) {
+  return (int32_t)(strlen(s));
+}
+
+int32_t gs_eq(const char* a, const char* b) {
+  if (strcmp(a, b) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+const char* gs_sub(const char* s, int32_t a, int32_t b) {
+  int32_t lo = a;
+  int32_t hi = b;
+  int32_t n = gs_len(s);
+  if (lo < 0) {
+  lo = 0;
+}
+  if (hi > n) {
+  hi = n;
+}
+  if (hi <= lo) {
+  return "";
+}
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((hi - lo) + 1))));
+  uint8_t* p = (uint8_t*)(s);
+  memcpy(buf, (p + lo), (int64_t)((hi - lo)));
+  buf[(hi - lo)] = 0;
+  return (const char*)(buf);
+}
+
+int32_t gs_ws(int32_t c) {
+  if (c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12) {
+  return 1;
+}
+  return 0;
+}
+
+const char* gs_strip(const char* s) {
+  int32_t n = gs_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t a = 0;
+  while (a < n && gs_ws(p[a]) == 1) {
+  a = (a + 1);
+}
+  int32_t b = n;
+  while (b > a && gs_ws(p[(b - 1)]) == 1) {
+  b = (b - 1);
+}
+  return gs_sub(s, a, b);
+}
+
+int32_t gs_starts(const char* s, const char* lit) {
+  int32_t n = gs_len(s);
+  int32_t m = gs_len(lit);
+  if (m > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* q = (uint8_t*)(lit);
+  int32_t i = 0;
+  while (i < m) {
+  if (p[i] != q[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t gs_find(const char* s, const char* needle, int32_t from) {
+  int32_t n = gs_len(s);
+  int32_t m = gs_len(needle);
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* q = (uint8_t*)(needle);
+  int32_t i = from;
+  while ((i + m) <= n) {
+  int32_t j = 0;
+  while (j < m && p[(i + j)] == q[j]) {
+  j = (j + 1);
+}
+  if (j == m) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t gs_lower_eq_at(const char* s, int32_t i, const char* lit) {
+  int32_t n = gs_len(s);
+  int32_t m = gs_len(lit);
+  if (i < 0 || (i + m) > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* q = (uint8_t*)(lit);
+  int32_t k = 0;
+  while (k < m) {
+  int32_t c = p[(i + k)];
+  if (c >= 65 && c <= 90) {
+  c = (c + 32);
+}
+  if (c != q[k]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t gs_ends_with_char(const char* s, int32_t c) {
+  int32_t n = gs_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  if (n > 0 && p[(n - 1)] == c) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t gs_count_char(const char* s, int32_t c) {
+  int32_t n = gs_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t k = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == c) {
+  k = (k + 1);
+}
+  i = (i + 1);
+}
+  return k;
+}
+
+double gs_float(const char* s) {
+  return strtod(gs_strip(s), NULL);
+}
+
+int32_t gs_split_ws(const char* s, const char** out, int32_t cap) {
+  int32_t n = gs_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t c = 0;
+  int32_t i = 0;
+  while (i < n) {
+  while (i < n && gs_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i < n) {
+  int32_t st = i;
+  while (i < n && gs_ws(p[i]) == 0) {
+  i = (i + 1);
+}
+  if (c < cap) {
+  out[c] = gs_sub(s, st, i);
+}
+  c = (c + 1);
+}
+}
+  return c;
+}
+
+GsVal gs_num(double v) {
+  return (GsVal){ .kind = GS_NUM, .num = v, .idx = 0, .s = "" };
+}
+
+GsEnv gs_env_new(int32_t cap) {
+  return (GsEnv){ .names = (const char**)(malloc(((int64_t)(cap) * 8))), .vals = (GsVal*)(malloc(((int64_t)(cap) * 32))), .n = 0, .cap = cap };
+}
+
+GsEnv gs_env_copy(GsEnv* e) {
+  GsEnv c = gs_env_new((e[0]).cap);
+  int32_t i = 0;
+  while (i < (e[0]).n) {
+  (c).names[i] = (e[0]).names[i];
+  (c).vals[i] = (e[0]).vals[i];
+  i = (i + 1);
+}
+  (c).n = (e[0]).n;
+  return c;
+}
+
+int32_t gs_env_find(GsEnv* e, const char* name) {
+  int32_t i = 0;
+  while (i < (e[0]).n) {
+  if (gs_eq((e[0]).names[i], name) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+void gs_env_set(GsEnv* e, const char* name, GsVal v) {
+  int32_t at = gs_env_find(e, name);
+  if (at >= 0) {
+  (e[0]).vals[at] = v;
+  return;
+}
+  if ((e[0]).n >= (e[0]).cap) {
+  int32_t ncap = (((e[0]).cap * 2) + 8);
+  const char** nn = (const char**)((const char**)(malloc(((int64_t)(ncap) * 8))));
+  GsVal* nv = (GsVal*)((GsVal*)(malloc(((int64_t)(ncap) * 32))));
+  int32_t i = 0;
+  while (i < (e[0]).n) {
+  nn[i] = (e[0]).names[i];
+  nv[i] = (e[0]).vals[i];
+  i = (i + 1);
+}
+  (e[0]).names = nn;
+  (e[0]).vals = nv;
+  (e[0]).cap = ncap;
+}
+  (e[0]).names[(e[0]).n] = name;
+  (e[0]).vals[(e[0]).n] = v;
+  (e[0]).n = ((e[0]).n + 1);
+}
+
+GsVal gs_builtin(int32_t id) {
+  return (GsVal){ .kind = GS_BUILTIN, .num = 0.0, .idx = id, .s = "" };
+}
+
+GsEnv gs_default_env() {
+  GsEnv e = gs_env_new(32);
+  gs_env_set((&e), "pi", gs_num(3.141592653589793));
+  gs_env_set((&e), "e", gs_num(2.718281828459045));
+  gs_env_set((&e), "sin", gs_builtin(1));
+  gs_env_set((&e), "cos", gs_builtin(2));
+  gs_env_set((&e), "tan", gs_builtin(3));
+  gs_env_set((&e), "exp", gs_builtin(4));
+  gs_env_set((&e), "log", gs_builtin(5));
+  gs_env_set((&e), "sqrt", gs_builtin(6));
+  gs_env_set((&e), "abs", gs_builtin(7));
+  gs_env_set((&e), "pow", gs_builtin(8));
+  gs_env_set((&e), "min", gs_builtin(9));
+  gs_env_set((&e), "max", gs_builtin(10));
+  gs_env_set((&e), "fact", gs_builtin(11));
+  gs_env_set((&e), "palette", gs_builtin(12));
+  gs_env_set((&e), "taylor_sin", gs_builtin(13));
+  gs_env_set((&e), "taylor_exp", gs_builtin(14));
+  gs_env_set((&e), "x", gs_num(0.0));
+  return e;
+}
+
+void gs_fail(GsCtx* c, const char* msg) {
+  if ((c[0]).err == 0) {
+  printf("flowc geom: %s\n", msg);
+}
+  (c[0]).err = 1;
+}
+
+int32_t gs_is_digit(int32_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t gs_is_alpha(int32_t c) {
+  if (c >= 65 && c <= 90 || c >= 97 && c <= 122 || c >= 128) {
+  return 1;
+}
+  return 0;
+}
+
+void gs_push_tok(GsCtx* c, int32_t kind, double num, const char* text) {
+  int32_t k = (c[0]).ntok;
+  (c[0]).toks_kind[k] = kind;
+  (c[0]).toks_num[k] = num;
+  (c[0]).toks_text[k] = text;
+  (c[0]).ntok = (k + 1);
+}
+
+void gs_tokenize(GsCtx* c, const char* text) {
+  int32_t n = gs_len(text);
+  int32_t cap = (n + 4);
+  (c[0]).toks_kind = (int32_t*)(malloc(((int64_t)(cap) * 4)));
+  (c[0]).toks_num = (double*)(malloc(((int64_t)(cap) * 8)));
+  (c[0]).toks_text = (const char**)(malloc(((int64_t)(cap) * 8)));
+  (c[0]).ntok = 0;
+  (c[0]).tpos = 0;
+  uint8_t* p = (uint8_t*)(text);
+  int32_t i = 0;
+  while (i < n && (c[0]).err == 0) {
+  int32_t ch = p[i];
+  if (gs_ws(ch) == 1) {
+  i = (i + 1);
+} else {
+  if (ch == 40 || ch == 41 || ch == 123 || ch == 125 || ch == 91 || ch == 93 || ch == 44 || ch == 58 || ch == 59 || ch == 43 || ch == 45 || ch == 42 || ch == 47 || ch == 94 || ch == 60 || ch == 62 || ch == 61 || ch == 33) {
+  const char* two = gs_sub(text, i, (i + 2));
+  if (gs_eq(two, "..") == 1 || gs_eq(two, "<=") == 1 || gs_eq(two, ">=") == 1 || gs_eq(two, "==") == 1 || gs_eq(two, "!=") == 1) {
+  gs_push_tok(c, GT_OP, 0.0, two);
+  i = (i + 2);
+} else {
+  gs_push_tok(c, GT_OP, 0.0, gs_sub(text, i, (i + 1)));
+  i = (i + 1);
+}
+} else {
+  if (ch == 34 || ch == 39) {
+  i = (i + 1);
+  int32_t st = i;
+  while (i < n && p[i] != ch) {
+  i = (i + 1);
+}
+  gs_push_tok(c, GT_STR, 0.0, gs_sub(text, st, i));
+  i = (i + 1);
+} else {
+  if (ch == 35) {
+  while (i < n && p[i] != 10) {
+  i = (i + 1);
+}
+} else {
+  if (gs_is_digit(ch) == 1 || ch == 46 && (i + 1) < n && gs_is_digit(p[(i + 1)]) == 1) {
+  int32_t st = i;
+  while (i < n && (gs_is_digit(p[i]) == 1 || p[i] == 46)) {
+  i = (i + 1);
+}
+  gs_push_tok(c, GT_NUM, gs_float(gs_sub(text, st, i)), "");
+} else {
+  if (gs_is_alpha(ch) == 1 || ch == 95) {
+  int32_t st = i;
+  while (i < n && (gs_is_alpha(p[i]) == 1 || gs_is_digit(p[i]) == 1 || p[i] == 95)) {
+  i = (i + 1);
+}
+  const char* word = gs_sub(text, st, i);
+  if (gs_eq(word, "true") == 1) {
+  gs_push_tok(c, GT_NUM, 1.0, "");
+} else {
+  if (gs_eq(word, "false") == 1) {
+  gs_push_tok(c, GT_NUM, 0.0, "");
+} else {
+  gs_push_tok(c, GT_IDENT, 0.0, word);
+}
+}
+} else {
+  gs_fail(c, "unexpected character");
+}
+}
+}
+}
+}
+}
+}
+}
+
+int32_t gs_node(GsCtx* c, int32_t kind) {
+  if ((c[0]).nnode >= (c[0]).capnode) {
+  int32_t ncap = (((c[0]).capnode * 2) + 64);
+  GsNode* nb = (GsNode*)((GsNode*)(malloc(((int64_t)(ncap) * 56))));
+  int32_t i = 0;
+  while (i < (c[0]).nnode) {
+  nb[i] = (c[0]).nodes[i];
+  i = (i + 1);
+}
+  (c[0]).nodes = nb;
+  (c[0]).capnode = ncap;
+}
+  int32_t k = (c[0]).nnode;
+  ((c[0]).nodes[k]).kind = kind;
+  ((c[0]).nodes[k]).num = 0.0;
+  ((c[0]).nodes[k]).name = "";
+  ((c[0]).nodes[k]).a = (0 - 1);
+  ((c[0]).nodes[k]).b = (0 - 1);
+  ((c[0]).nodes[k]).args = NULL;
+  ((c[0]).nodes[k]).nargs = 0;
+  (c[0]).nnode = (k + 1);
+  return k;
+}
+
+const char* gs_peek_op(GsCtx* c) {
+  if ((c[0]).tpos >= (c[0]).ntok) {
+  return "";
+}
+  if ((c[0]).toks_kind[(c[0]).tpos] != GT_OP) {
+  return "";
+}
+  return (c[0]).toks_text[(c[0]).tpos];
+}
+
+int32_t gs_peek_kind(GsCtx* c) {
+  if ((c[0]).tpos >= (c[0]).ntok) {
+  return 0;
+}
+  return (c[0]).toks_kind[(c[0]).tpos];
+}
+
+int32_t gs_bin(GsCtx* c, const char* op, int32_t l, int32_t r) {
+  int32_t k = gs_node(c, 5);
+  ((c[0]).nodes[k]).name = op;
+  ((c[0]).nodes[k]).a = l;
+  ((c[0]).nodes[k]).b = r;
+  return k;
+}
+
+int32_t gs_parse_expr(GsCtx* c);
+int32_t gs_parse_atom(GsCtx* c) {
+  int32_t kind = gs_peek_kind(c);
+  if (kind == GT_NUM) {
+  int32_t k = gs_node(c, 1);
+  ((c[0]).nodes[k]).num = (c[0]).toks_num[(c[0]).tpos];
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  return k;
+}
+  if (kind == GT_IDENT) {
+  const char* name = (c[0]).toks_text[(c[0]).tpos];
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  if (gs_eq(gs_peek_op(c), "(") == 1) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t* args = (int32_t*)((int32_t*)(malloc(((int64_t)(((c[0]).ntok + 1)) * 4))));
+  int32_t na = 0;
+  if (gs_eq(gs_peek_op(c), ")") == 0) {
+  args[na] = gs_parse_expr(c);
+  na = (na + 1);
+  while (gs_eq(gs_peek_op(c), ",") == 1 && (c[0]).err == 0) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  args[na] = gs_parse_expr(c);
+  na = (na + 1);
+}
+}
+  if (gs_eq(gs_peek_op(c), ")") == 0) {
+  gs_fail(c, "expected )");
+  return (0 - 1);
+}
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t k = gs_node(c, 3);
+  ((c[0]).nodes[k]).name = name;
+  ((c[0]).nodes[k]).args = args;
+  ((c[0]).nodes[k]).nargs = na;
+  return k;
+}
+  int32_t k = gs_node(c, 2);
+  ((c[0]).nodes[k]).name = name;
+  return k;
+}
+  if (gs_eq(gs_peek_op(c), "(") == 1) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t e = gs_parse_expr(c);
+  if (gs_eq(gs_peek_op(c), ")") == 0) {
+  gs_fail(c, "expected )");
+  return (0 - 1);
+}
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  return e;
+}
+  gs_fail(c, "unexpected token");
+  return (0 - 1);
+}
+
+int32_t gs_parse_unary(GsCtx* c) {
+  __flowc_tail: ;
+  if (gs_eq(gs_peek_op(c), "-") == 1) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t k = gs_node(c, 4);
+  ((c[0]).nodes[k]).a = gs_parse_unary(c);
+  return k;
+}
+  if (gs_eq(gs_peek_op(c), "+") == 1) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  {
+  __auto_type __flowc_targ0 = c;
+  c = __flowc_targ0;
+  goto __flowc_tail;
+  }
+}
+  return gs_parse_atom(c);
+}
+
+int32_t gs_parse_pow(GsCtx* c) {
+  int32_t left = gs_parse_unary(c);
+  if (gs_eq(gs_peek_op(c), "^") == 1) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t right = gs_parse_pow(c);
+  return gs_bin(c, "^", left, right);
+}
+  return left;
+}
+
+int32_t gs_parse_mul(GsCtx* c) {
+  int32_t left = gs_parse_pow(c);
+  const char* op = gs_peek_op(c);
+  while ((gs_eq(op, "*") == 1 || gs_eq(op, "/") == 1) && (c[0]).err == 0) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t right = gs_parse_pow(c);
+  left = gs_bin(c, op, left, right);
+  op = gs_peek_op(c);
+}
+  return left;
+}
+
+int32_t gs_parse_add(GsCtx* c) {
+  int32_t left = gs_parse_mul(c);
+  const char* op = gs_peek_op(c);
+  while ((gs_eq(op, "+") == 1 || gs_eq(op, "-") == 1) && (c[0]).err == 0) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t right = gs_parse_mul(c);
+  left = gs_bin(c, op, left, right);
+  op = gs_peek_op(c);
+}
+  return left;
+}
+
+int32_t gs_is_cmp(const char* op) {
+  if (gs_eq(op, "<") == 1 || gs_eq(op, ">") == 1 || gs_eq(op, "<=") == 1 || gs_eq(op, ">=") == 1 || gs_eq(op, "==") == 1 || gs_eq(op, "!=") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t gs_parse_compare(GsCtx* c) {
+  int32_t left = gs_parse_add(c);
+  const char* op = gs_peek_op(c);
+  while (gs_is_cmp(op) == 1 && (c[0]).err == 0) {
+  (c[0]).tpos = ((c[0]).tpos + 1);
+  int32_t right = gs_parse_add(c);
+  left = gs_bin(c, op, left, right);
+  op = gs_peek_op(c);
+}
+  return left;
+}
+
+int32_t gs_parse_expr(GsCtx* c) {
+  return gs_parse_compare(c);
+}
+
+int32_t gs_parse(GsCtx* c, const char* text) {
+  int32_t i = 0;
+  while (i < (c[0]).ncache) {
+  if (gs_eq((c[0]).cache_keys[i], text) == 1) {
+  return (c[0]).cache_vals[i];
+}
+  i = (i + 1);
+}
+  gs_tokenize(c, text);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  int32_t root = gs_parse_expr(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  if ((c[0]).ncache >= (c[0]).capcache) {
+  int32_t ncap = (((c[0]).capcache * 2) + 32);
+  const char** nk = (const char**)((const char**)(malloc(((int64_t)(ncap) * 8))));
+  int32_t* nv = (int32_t*)((int32_t*)(malloc(((int64_t)(ncap) * 4))));
+  int32_t j = 0;
+  while (j < (c[0]).ncache) {
+  nk[j] = (c[0]).cache_keys[j];
+  nv[j] = (c[0]).cache_vals[j];
+  j = (j + 1);
+}
+  (c[0]).cache_keys = nk;
+  (c[0]).cache_vals = nv;
+  (c[0]).capcache = ncap;
+}
+  (c[0]).cache_keys[(c[0]).ncache] = text;
+  (c[0]).cache_vals[(c[0]).ncache] = root;
+  (c[0]).ncache = ((c[0]).ncache + 1);
+  return root;
+}
+
+int32_t gs_truthy(GsVal v) {
+  if ((v).kind == GS_NUM) {
+  if ((v).num != 0.0) {
+  return 1;
+}
+  return 0;
+}
+  if ((v).kind == GS_STR) {
+  if (gs_len((v).s) > 0) {
+  return 1;
+}
+  return 0;
+}
+  return 1;
+}
+
+GsVal gs_bool(int32_t b) {
+  if (b == 1) {
+  return gs_num(1.0);
+}
+  return gs_num(0.0);
+}
+
+double gs_factorial(int32_t p) {
+  int64_t out = 1;
+  int32_t i = 2;
+  while (i <= p && i <= 20) {
+  out = (out * (int64_t)(i));
+  i = (i + 1);
+}
+  double f = (double)(out);
+  while (i <= p) {
+  f = (f * (double)(i));
+  i = (i + 1);
+}
+  return f;
+}
+
+void gs_run_lines(GsCtx* c, GsEnv* env, const char** lines, int32_t n);
+GsVal gs_call_builtin(GsCtx* c, int32_t id, GsVal* v, int32_t n) {
+  double a = 0.0;
+  double b = 0.0;
+  if (n > 0) {
+  a = (v[0]).num;
+}
+  if (n > 1) {
+  b = (v[1]).num;
+}
+  if (id == 1) {
+  return gs_num(sin(a));
+}
+  if (id == 2) {
+  return gs_num(cos(a));
+}
+  if (id == 3) {
+  return gs_num(tan(a));
+}
+  if (id == 4) {
+  return gs_num(exp(a));
+}
+  if (id == 5) {
+  return gs_num(log(a));
+}
+  if (id == 6) {
+  return gs_num(sqrt(a));
+}
+  if (id == 7) {
+  return gs_num(fabs(a));
+}
+  if (id == 8) {
+  return gs_num(pow(a, b));
+}
+  if (id == 9 || id == 10) {
+  double best = a;
+  int32_t i = 1;
+  while (i < n) {
+  if (id == 9 && (v[i]).num < best) {
+  best = (v[i]).num;
+}
+  if (id == 10 && (v[i]).num > best) {
+  best = (v[i]).num;
+}
+  i = (i + 1);
+}
+  return gs_num(best);
+}
+  if (id == 11) {
+  int32_t k = (int32_t)(rint(a));
+  double out = 1.0;
+  int32_t i = 2;
+  while (i <= k) {
+  out = (out * (double)(i));
+  i = (i + 1);
+}
+  return gs_num(out);
+}
+  if (id == 12) {
+  int32_t idx = ((int32_t)(rint(a)) % 6);
+  if (idx < 0) {
+  idx = (idx + 6);
+}
+  const char* s = "#2c3e50";
+  if (idx == 1) {
+  s = "#c0392b";
+}
+  if (idx == 2) {
+  s = "#2980b9";
+}
+  if (idx == 3) {
+  s = "#27ae60";
+}
+  if (idx == 4) {
+  s = "#8e44ad";
+}
+  if (idx == 5) {
+  s = "#d35400";
+}
+  return (GsVal){ .kind = GS_STR, .num = 0.0, .idx = 0, .s = s };
+}
+  if (id == 13) {
+  int32_t k = (int32_t)(rint(b));
+  double total = 0.0;
+  int32_t i = 0;
+  while (i <= k) {
+  int32_t p = ((2 * i) + 1);
+  total = (total + ((pow((0.0 - 1.0), (double)(i)) * pow(a, (double)(p))) / gs_factorial(p)));
+  i = (i + 1);
+}
+  return gs_num(total);
+}
+  if (id == 14) {
+  int32_t k = (int32_t)(rint(b));
+  double total = 0.0;
+  int32_t i = 0;
+  while (i <= k) {
+  total = (total + (pow(a, (double)(i)) / gs_factorial(i)));
+  i = (i + 1);
+}
+  return gs_num(total);
+}
+  gs_fail(c, "unknown builtin");
+  return gs_num(0.0);
+}
+
+GsVal gs_eval(GsCtx* c, GsEnv* env, int32_t id) {
+  if ((c[0]).err != 0 || id < 0) {
+  return gs_num(0.0);
+}
+  GsNode node = (c[0]).nodes[id];
+  if ((node).kind == 1) {
+  return gs_num((node).num);
+}
+  if ((node).kind == 2) {
+  int32_t at = gs_env_find(env, (node).name);
+  if (at < 0) {
+  gs_fail(c, "undefined variable");
+  return gs_num(0.0);
+}
+  return (env[0]).vals[at];
+}
+  if ((node).kind == 3) {
+  GsVal* vals = (GsVal*)((GsVal*)(malloc(((int64_t)(((node).nargs + 1)) * 32))));
+  int32_t i = 0;
+  while (i < (node).nargs) {
+  vals[i] = gs_eval(c, env, (node).args[i]);
+  i = (i + 1);
+}
+  int32_t at = gs_env_find(env, (node).name);
+  if (at < 0) {
+  gs_fail(c, "undefined function");
+  return gs_num(0.0);
+}
+  GsVal f = (env[0]).vals[at];
+  if ((f).kind == GS_FN) {
+  GsFn fnd = (c[0]).fns[(f).idx];
+  GsEnv local = gs_env_copy((&(fnd).closure));
+  int32_t k = 0;
+  while (k < (fnd).nparams && k < (node).nargs) {
+  gs_env_set((&local), (fnd).params[k], vals[k]);
+  k = (k + 1);
+}
+  gs_run_lines(c, (&local), (fnd).body, (fnd).nbody);
+  int32_t r = gs_env_find((&local), "_return");
+  if (r >= 0) {
+  return (local).vals[r];
+}
+  return gs_num(0.0);
+}
+  if ((f).kind == GS_BUILTIN) {
+  return gs_call_builtin(c, (f).idx, vals, (node).nargs);
+}
+  gs_fail(c, "not callable");
+  return gs_num(0.0);
+}
+  if ((node).kind == 4) {
+  GsVal v = gs_eval(c, env, (node).a);
+  return gs_num((0.0 - (v).num));
+}
+  const char* op = (node).name;
+  if (gs_eq(op, "-") == 1) {
+  GsVal v = gs_eval(c, env, (node).a);
+  return gs_num((0.0 - (v).num));
+}
+  GsVal l = gs_eval(c, env, (node).a);
+  GsVal r = gs_eval(c, env, (node).b);
+  if (gs_eq(op, "+") == 1) {
+  return gs_num(((l).num + (r).num));
+}
+  if (gs_eq(op, "*") == 1) {
+  return gs_num(((l).num * (r).num));
+}
+  if (gs_eq(op, "/") == 1) {
+  return gs_num(((l).num / (r).num));
+}
+  if (gs_eq(op, "^") == 1) {
+  return gs_num(pow((l).num, (r).num));
+}
+  if (gs_eq(op, "<") == 1) {
+  return gs_bool((l).num < (r).num);
+}
+  if (gs_eq(op, ">") == 1) {
+  return gs_bool((l).num > (r).num);
+}
+  if (gs_eq(op, "<=") == 1) {
+  return gs_bool((l).num <= (r).num);
+}
+  if (gs_eq(op, ">=") == 1) {
+  return gs_bool((l).num >= (r).num);
+}
+  if (gs_eq(op, "==") == 1) {
+  return gs_bool((l).num == (r).num);
+}
+  if (gs_eq(op, "!=") == 1) {
+  return gs_bool((l).num != (r).num);
+}
+  gs_fail(c, "bad operator");
+  return gs_num(0.0);
+}
+
+GsVal gs_eval_text(GsCtx* c, GsEnv* env, const char* text) {
+  int32_t root = gs_parse(c, text);
+  return gs_eval(c, env, root);
+}
+
+const char* gs_string_arg(const char* text) {
+  const char* t = gs_strip(text);
+  int32_t n = gs_len(t);
+  uint8_t* p = (uint8_t*)(t);
+  if (n >= 2 && (p[0] == 34 && p[(n - 1)] == 34 || p[0] == 39 && p[(n - 1)] == 39)) {
+  return gs_sub(t, 1, (n - 1));
+}
+  if (n == 1 && (p[0] == 34 || p[0] == 39)) {
+  return "";
+}
+  return t;
+}
+
+void gs_math_to_pixel(GsCtx* c, double* xs, double* ys, int32_t n) {
+  FlowcGeomDiagram* g = (FlowcGeomDiagram*)((c[0]).g);
+  if ((g[0]).has_axes == 0) {
+  gs_fail(c, "plot/fill requires axes");
+  return;
+}
+  int32_t i = 0;
+  while (i < n) {
+  xs[i] = ((g[0]).ax_ox + (xs[i] * (g[0]).ax_scale));
+  ys[i] = ((g[0]).ax_oy - (ys[i] * (g[0]).ax_scale));
+  i = (i + 1);
+}
+}
+
+int32_t gs_sample(GsCtx* c, GsEnv* env, int32_t root, double lo, double hi, int32_t samples_in, double* xs, double* ys) {
+  int32_t samples = samples_in;
+  if (samples < 2) {
+  samples = 2;
+}
+  int32_t i = 0;
+  while (i < samples && (c[0]).err == 0) {
+  double t = (lo + (((hi - lo) * (double)(i)) / (double)((samples - 1))));
+  gs_env_set(env, "x", gs_num(t));
+  GsVal y = gs_eval(c, env, root);
+  xs[i] = t;
+  ys[i] = (y).num;
+  i = (i + 1);
+}
+  return samples;
+}
+
+int32_t gs_opt_search(const char* text, const char* key, int32_t* vs, int32_t* ve) {
+  int32_t n = gs_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  int32_t m = gs_len(key);
+  int32_t i = gs_find(text, key, 0);
+  while (i >= 0) {
+  int32_t boundary = 1;
+  if (i > 0) {
+  int32_t pc = p[(i - 1)];
+  if (gs_is_alpha(pc) == 1 || gs_is_digit(pc) == 1 || pc == 95) {
+  boundary = 0;
+}
+}
+  if (boundary == 1) {
+  int32_t j = (i + m);
+  if (j < n && gs_ws(p[j]) == 1) {
+  while (j < n && gs_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j < n) {
+  int32_t s = j;
+  while (j < n && gs_ws(p[j]) == 0) {
+  j = (j + 1);
+}
+  vs[0] = s;
+  ve[0] = j;
+  return i;
+}
+}
+}
+  i = gs_find(text, key, (i + 1));
+}
+  return (0 - 1);
+}
+
+int32_t gs_take_dash(const char* text, const char** out) {
+  int32_t n = gs_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  int32_t found = 0;
+  const char* res = "";
+  int32_t pos = 0;
+  int32_t i = gs_find(text, "dash", 0);
+  while (i >= 0) {
+  int32_t ok = 1;
+  if (i > 0) {
+  int32_t pc = p[(i - 1)];
+  if (gs_is_alpha(pc) == 1 || gs_is_digit(pc) == 1 || pc == 95) {
+  ok = 0;
+}
+}
+  if ((i + 4) < n) {
+  int32_t nc = p[(i + 4)];
+  if (gs_is_alpha(nc) == 1 || gs_is_digit(nc) == 1 || nc == 95) {
+  ok = 0;
+}
+}
+  if (ok == 1) {
+  found = 1;
+  res = __flowc_str_concat(res, gs_sub(text, pos, i));
+  pos = (i + 4);
+  i = gs_find(text, "dash", (i + 4));
+} else {
+  i = gs_find(text, "dash", (i + 1));
+}
+}
+  out[0] = __flowc_str_concat(res, gs_sub(text, pos, n));
+  return found;
+}
+
+const char* gs_replace_all(const char* s, const char* needle, const char* repl) {
+  int32_t m = gs_len(needle);
+  if (m == 0) {
+  return s;
+}
+  const char* out = "";
+  int32_t pos = 0;
+  int32_t i = gs_find(s, needle, 0);
+  while (i >= 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, gs_sub(s, pos, i)), repl);
+  pos = (i + m);
+  i = gs_find(s, needle, pos);
+}
+  return __flowc_str_concat(out, gs_sub(s, pos, gs_len(s)));
+}
+
+void gs_cmd_plot(GsCtx* c, GsEnv* env, const char* text_in) {
+  const char* text = text_in;
+  const char* color = "#2980b9";
+  double width = 2.2;
+  int32_t dash = 0;
+  const char* label = "";
+  double samples = 160.0;
+  const char* expr_src = text;
+  double lo = (0.0 - 3.14);
+  double hi = 3.14;
+  int32_t fr = gs_find(text, " from ", 0);
+  if (fr >= 0) {
+  expr_src = gs_sub(text, 0, fr);
+  const char* range = gs_sub(text, (fr + 6), gs_len(text));
+  int32_t to_at = gs_find(range, " to ", 0);
+  if (to_at < 0) {
+  gs_fail(c, "plot range needs 'to'");
+  return;
+}
+  const char* lo_s = gs_sub(range, 0, to_at);
+  const char* rest = gs_sub(range, (to_at + 4), gs_len(range));
+  const char** parts = (const char**)((const char**)(malloc(((int64_t)((gs_len(rest) + 2)) * 8))));
+  int32_t np = gs_split_ws(rest, parts, (gs_len(rest) + 1));
+  const char* hi_s = "";
+  if (np > 0) {
+  hi_s = parts[0];
+}
+  lo = (gs_eval_text(c, env, gs_strip(lo_s))).num;
+  hi = (gs_eval_text(c, env, gs_strip(hi_s))).num;
+  text = "";
+  int32_t k = 1;
+  while (k < np) {
+  if (k > 1) {
+  text = __flowc_str_concat(text, " ");
+}
+  text = __flowc_str_concat(text, gs_sidx(parts[k]));
+  k = (k + 1);
+}
+}
+  int32_t* vs = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* ve = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t ki = 0;
+  while (ki < 4) {
+  const char* key = "color";
+  if (ki == 1) {
+  key = "width";
+}
+  if (ki == 2) {
+  key = "label";
+}
+  if (ki == 3) {
+  key = "samples";
+}
+  int32_t at = gs_opt_search(text, key, vs, ve);
+  if (at >= 0) {
+  const char* val = gs_sub(text, vs[0], ve[0]);
+  const char* whole = gs_sub(text, at, ve[0]);
+  if (ki == 0) {
+  color = val;
+}
+  if (ki == 1) {
+  width = gs_float(val);
+}
+  if (ki == 2) {
+  label = val;
+}
+  if (ki == 3) {
+  samples = gs_float(val);
+}
+  text = gs_replace_all(text, whole, "");
+}
+  ki = (ki + 1);
+}
+  const char** rest2 = (const char**)((const char**)(malloc(8)));
+  if (gs_take_dash(text, rest2) == 1) {
+  dash = 1;
+  text = rest2[0];
+}
+  int32_t root = gs_parse(c, gs_strip(expr_src));
+  if ((c[0]).err != 0) {
+  return;
+}
+  int32_t ns = (int32_t)(samples);
+  int32_t cap = (ns + 2);
+  double* xs = (double*)((double*)(malloc(((int64_t)(cap) * 8))));
+  double* ys = (double*)((double*)(malloc(((int64_t)(cap) * 8))));
+  int32_t n = gs_sample(c, env, root, lo, hi, ns, xs, ys);
+  gs_math_to_pixel(c, xs, ys, n);
+  if ((c[0]).err != 0) {
+  return;
+}
+  FlowcGeomDiagram* g = (FlowcGeomDiagram*)((c[0]).g);
+  int32_t k = (g[0]).ncurve;
+  ((g[0]).curves[k]).xs = xs;
+  ((g[0]).curves[k]).ys = ys;
+  ((g[0]).curves[k]).n = n;
+  ((g[0]).curves[k]).stroke = color;
+  ((g[0]).curves[k]).width = width;
+  ((g[0]).curves[k]).dashed = dash;
+  ((g[0]).curves[k]).label = label;
+  (g[0]).ncurve = (k + 1);
+}
+
+int32_t gs_kw_at(const char* t, int32_t i, const char* kw) {
+  int32_t n = gs_len(t);
+  uint8_t* p = (uint8_t*)(t);
+  if (i >= n || gs_ws(p[i]) == 0) {
+  return (0 - 1);
+}
+  int32_t j = i;
+  while (j < n && gs_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (gs_lower_eq_at(t, j, kw) == 0) {
+  return (0 - 1);
+}
+  j = (j + gs_len(kw));
+  if (j >= n || gs_ws(p[j]) == 0) {
+  return (0 - 1);
+}
+  while (j < n && gs_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  return j;
+}
+
+void gs_cmd_fill(GsCtx* c, GsEnv* env, const char* text) {
+  int32_t n = gs_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  int32_t ok = 0;
+  int32_t e1s = 0;
+  int32_t e1e = 0;
+  int32_t e2s = 0;
+  int32_t e2e = 0;
+  int32_t los = 0;
+  int32_t loe = 0;
+  int32_t his = 0;
+  const char* color = "";
+  if (gs_lower_eq_at(text, 0, "between") == 1 && n > 7 && gs_ws(p[7]) == 1) {
+  int32_t a1 = 7;
+  while (a1 < n && gs_ws(p[a1]) == 1) {
+  a1 = (a1 + 1);
+}
+  int32_t x1 = (a1 + 1);
+  while (x1 < n && ok == 0) {
+  int32_t a2 = gs_kw_at(text, x1, "and");
+  if (a2 >= 0) {
+  int32_t x2 = (a2 + 1);
+  while (x2 < n && ok == 0) {
+  int32_t a3 = gs_kw_at(text, x2, "from");
+  if (a3 >= 0) {
+  int32_t x3 = (a3 + 1);
+  while (x3 < n && ok == 0) {
+  int32_t a4 = gs_kw_at(text, x3, "to");
+  if (a4 >= 0 && a4 < n) {
+  ok = 1;
+  e1s = a1;
+  e1e = x1;
+  e2s = a2;
+  e2e = x2;
+  los = a3;
+  loe = x3;
+  his = a4;
+  int32_t a5 = gs_kw_at(text, (a4 + 1), "color");
+  if (a5 >= 0 && a5 < n) {
+  int32_t j = a5;
+  while (j < n && gs_ws(p[j]) == 0) {
+  j = (j + 1);
+}
+  color = gs_sub(text, a5, j);
+}
+}
+  x3 = (x3 + 1);
+}
+}
+  x2 = (x2 + 1);
+}
+}
+  x1 = (x1 + 1);
+}
+}
+  if (ok == 0) {
+  gs_fail(c, "fill syntax: between f and g from a to b [color #hex@alpha]");
+  return;
+}
+  double lo = (gs_eval_text(c, env, gs_strip(gs_sub(text, los, loe)))).num;
+  double hi = (gs_eval_text(c, env, gs_strip(gs_sub(text, his, (his + 1))))).num;
+  int32_t r1 = gs_parse(c, gs_strip(gs_sub(text, e1s, e1e)));
+  int32_t r2 = gs_parse(c, gs_strip(gs_sub(text, e2s, e2e)));
+  if ((c[0]).err != 0) {
+  return;
+}
+  double* xs1 = (double*)((double*)(malloc((82 * 8))));
+  double* ys1 = (double*)((double*)(malloc((82 * 8))));
+  double* xs2 = (double*)((double*)(malloc((82 * 8))));
+  double* ys2 = (double*)((double*)(malloc((82 * 8))));
+  int32_t n1 = gs_sample(c, env, r1, lo, hi, 80, xs1, ys1);
+  gs_math_to_pixel(c, xs1, ys1, n1);
+  int32_t n2 = gs_sample(c, env, r2, lo, hi, 80, xs2, ys2);
+  gs_math_to_pixel(c, xs2, ys2, n2);
+  if ((c[0]).err != 0) {
+  return;
+}
+  const char* spec = color;
+  if (gs_len(spec) == 0) {
+  spec = "#f39c12@25";
+}
+  const char* fill = spec;
+  double opacity = 0.25;
+  uint8_t* sp = (uint8_t*)(spec);
+  int32_t at = (0 - 1);
+  int32_t q = 0;
+  while (q < gs_len(spec)) {
+  if (sp[q] == 64) {
+  at = q;
+}
+  q = (q + 1);
+}
+  if (at >= 0) {
+  fill = gs_sub(spec, 0, at);
+  const char* alpha = gs_sub(spec, (at + 1), gs_len(spec));
+  uint8_t* ap = (uint8_t*)(alpha);
+  int32_t al = gs_len(alpha);
+  int32_t good = 0;
+  int32_t v = 0;
+  int32_t z = 0;
+  while (z < al) {
+  if (gs_is_digit(ap[z]) == 1) {
+  v = ((v * 10) + (ap[z] - 48));
+  good = 1;
+} else {
+  good = 0;
+  z = al;
+}
+  z = (z + 1);
+}
+  if (good == 1) {
+  opacity = ((double)(v) / 100.0);
+}
+}
+  double* xs = (double*)((double*)(malloc(((int64_t)(((n1 + n2) + 1)) * 8))));
+  double* ys = (double*)((double*)(malloc(((int64_t)(((n1 + n2) + 1)) * 8))));
+  int32_t k = 0;
+  while (k < n1) {
+  xs[k] = xs1[k];
+  ys[k] = ys1[k];
+  k = (k + 1);
+}
+  int32_t r = (n2 - 1);
+  while (r >= 0) {
+  xs[k] = xs2[r];
+  ys[k] = ys2[r];
+  k = (k + 1);
+  r = (r - 1);
+}
+  FlowcGeomDiagram* g = (FlowcGeomDiagram*)((c[0]).g);
+  int32_t fi = (g[0]).nfill;
+  ((g[0]).fills[fi]).xs = xs;
+  ((g[0]).fills[fi]).ys = ys;
+  ((g[0]).fills[fi]).n = k;
+  ((g[0]).fills[fi]).fill = fill;
+  ((g[0]).fills[fi]).opacity = opacity;
+  (g[0]).nfill = (fi + 1);
+}
+
+void gs_cmd_text(GsCtx* c, const char* text) {
+  int32_t n = gs_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  int32_t i = 0;
+  while (i < n && gs_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t xs = i;
+  while (i < n && gs_ws(p[i]) == 0) {
+  i = (i + 1);
+}
+  int32_t xe = i;
+  while (i < n && gs_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t ys = i;
+  while (i < n && gs_ws(p[i]) == 0) {
+  i = (i + 1);
+}
+  int32_t ye = i;
+  while (i < n && gs_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (xe == xs || ye == ys || i >= n) {
+  gs_fail(c, "text x y \"label\"");
+  return;
+}
+  double x = gs_float(gs_sub(text, xs, xe));
+  double y = gs_float(gs_sub(text, ys, ye));
+  const char* label = gs_string_arg(gs_sub(text, i, n));
+  FlowcGeomDiagram* g = (FlowcGeomDiagram*)((c[0]).g);
+  double px = x;
+  double py = y;
+  if ((g[0]).has_axes == 1) {
+  px = ((g[0]).ax_ox + (x * (g[0]).ax_scale));
+  py = ((g[0]).ax_oy - (y * (g[0]).ax_scale));
+}
+  int32_t k = (g[0]).nlabel;
+  ((g[0]).labels[k]).x = px;
+  ((g[0]).labels[k]).y = py;
+  ((g[0]).labels[k]).text = label;
+  ((g[0]).labels[k]).size = 14;
+  (g[0]).nlabel = (k + 1);
+}
+
+void gs_exec_line(GsCtx* c, GsEnv* env, const char* line) {
+  FlowcGeomDiagram* g = (FlowcGeomDiagram*)((c[0]).g);
+  int32_t n = gs_len(line);
+  if (gs_starts(line, "return ") == 1) {
+  GsVal v = gs_eval_text(c, env, gs_strip(gs_sub(line, 7, n)));
+  gs_env_set(env, "_return", v);
+  return;
+}
+  if (gs_starts(line, "let ") == 1) {
+  const char* rest = gs_strip(gs_sub(line, 4, n));
+  int32_t eq = gs_find(rest, "=", 0);
+  if (eq < 0) {
+  gs_fail(c, "invalid let");
+  return;
+}
+  const char* name = gs_strip(gs_sub(rest, 0, eq));
+  GsVal v = gs_eval_text(c, env, gs_strip(gs_sub(rest, (eq + 1), gs_len(rest))));
+  gs_env_set(env, name, v);
+  return;
+}
+  if (gs_starts(line, "title ") == 1) {
+  (g[0]).title = gs_string_arg(gs_sub(line, 6, n));
+  return;
+}
+  if (gs_starts(line, "caption ") == 1) {
+  (g[0]).caption = gs_string_arg(gs_sub(line, 8, n));
+  return;
+}
+  if (gs_starts(line, "size ") == 1) {
+  const char** parts = (const char**)((const char**)(malloc(((int64_t)((n + 2)) * 8))));
+  int32_t np = gs_split_ws(gs_sub(line, 5, n), parts, (n + 1));
+  if (np < 2) {
+  gs_fail(c, "size w h");
+  return;
+}
+  (g[0]).width = (int32_t)(gs_float(parts[0]));
+  (g[0]).height = (int32_t)(gs_float(parts[1]));
+  return;
+}
+  if (gs_starts(line, "axes ") == 1) {
+  const char** parts = (const char**)((const char**)(malloc(((int64_t)((n + 2)) * 8))));
+  int32_t np = gs_split_ws(gs_sub(line, 5, n), parts, (n + 1));
+  if (np < 7) {
+  gs_fail(c, "axes ox oy scale xmin xmax ymin ymax");
+  return;
+}
+  (g[0]).has_axes = 1;
+  (g[0]).ax_ox = gs_float(parts[0]);
+  (g[0]).ax_oy = gs_float(parts[1]);
+  (g[0]).ax_scale = gs_float(parts[2]);
+  (g[0]).ax_xmin = gs_float(parts[3]);
+  (g[0]).ax_xmax = gs_float(parts[4]);
+  (g[0]).ax_ymin = gs_float(parts[5]);
+  (g[0]).ax_ymax = gs_float(parts[6]);
+  return;
+}
+  if (gs_starts(line, "plot ") == 1) {
+  gs_cmd_plot(c, env, gs_sub(line, 5, n));
+  return;
+}
+  if (gs_starts(line, "fill ") == 1) {
+  gs_cmd_fill(c, env, gs_sub(line, 5, n));
+  return;
+}
+  if (gs_starts(line, "text ") == 1) {
+  gs_cmd_text(c, gs_sub(line, 5, n));
+  return;
+}
+  gs_fail(c, "unknown statement");
+}
+
+void gs_exec_block(GsCtx* c, GsEnv* env, const char* header, const char** body, int32_t nbody) {
+  int32_t hn = gs_len(header);
+  if (gs_starts(header, "def ") == 1) {
+  const char* rest = gs_strip(gs_sub(header, 4, hn));
+  int32_t lp = gs_find(rest, "(", 0);
+  if (lp < 0) {
+  gs_fail(c, "invalid def");
+  return;
+}
+  const char* name = gs_strip(gs_sub(rest, 0, lp));
+  const char* after = gs_sub(rest, (lp + 1), gs_len(rest));
+  uint8_t* ap = (uint8_t*)(after);
+  int32_t rp = (gs_len(after) - 1);
+  while (rp >= 0 && ap[rp] != 41) {
+  rp = (rp - 1);
+}
+  const char* plist = after;
+  if (rp >= 0) {
+  plist = gs_sub(after, 0, rp);
+}
+  const char** params = (const char**)((const char**)(malloc(((int64_t)((gs_len(plist) + 2)) * 8))));
+  int32_t np = 0;
+  int32_t pn = gs_len(plist);
+  uint8_t* pp = (uint8_t*)(plist);
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= pn) {
+  if (i == pn || pp[i] == 44) {
+  const char* part = gs_strip(gs_sub(plist, s, i));
+  if (gs_len(part) > 0) {
+  params[np] = part;
+  np = (np + 1);
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  if ((c[0]).nfn >= (c[0]).capfn) {
+  int32_t ncap = (((c[0]).capfn * 2) + 8);
+  GsFn* nb = (GsFn*)((GsFn*)(malloc(((int64_t)(ncap) * 64))));
+  int32_t j = 0;
+  while (j < (c[0]).nfn) {
+  nb[j] = (c[0]).fns[j];
+  j = (j + 1);
+}
+  (c[0]).fns = nb;
+  (c[0]).capfn = ncap;
+}
+  int32_t k = (c[0]).nfn;
+  ((c[0]).fns[k]).params = params;
+  ((c[0]).fns[k]).nparams = np;
+  ((c[0]).fns[k]).body = body;
+  ((c[0]).fns[k]).nbody = nbody;
+  ((c[0]).fns[k]).closure = gs_env_copy(env);
+  (c[0]).nfn = (k + 1);
+  gs_env_set(env, name, (GsVal){ .kind = GS_FN, .num = 0.0, .idx = k, .s = "" });
+  return;
+}
+  if (gs_starts(header, "if ") == 1) {
+  GsVal v = gs_eval_text(c, env, gs_strip(gs_sub(header, 3, hn)));
+  if (gs_truthy(v) == 1) {
+  gs_run_lines(c, env, body, nbody);
+}
+  return;
+}
+  if (gs_starts(header, "while ") == 1) {
+  const char* cond = gs_strip(gs_sub(header, 6, hn));
+  int32_t guard = 0;
+  while (guard < 100000 && (c[0]).err == 0 && gs_truthy(gs_eval_text(c, env, cond)) == 1) {
+  gs_run_lines(c, env, body, nbody);
+  guard = (guard + 1);
+}
+  if (guard >= 100000) {
+  gs_fail(c, "while loop exceeded 100000 iterations");
+}
+  return;
+}
+  if (gs_starts(header, "for ") == 1) {
+  const char* rest = gs_strip(gs_sub(header, 4, hn));
+  int32_t inn = gs_find(rest, " in ", 0);
+  if (inn < 0) {
+  gs_fail(c, "invalid for");
+  return;
+}
+  const char* var = gs_strip(gs_sub(rest, 0, inn));
+  const char* rng = gs_strip(gs_sub(rest, (inn + 4), gs_len(rest)));
+  int32_t dd = gs_find(rng, "..", 0);
+  if (dd < 0) {
+  gs_fail(c, "expected range with ..");
+  return;
+}
+  int32_t lo = (int32_t)((gs_eval_text(c, env, gs_strip(gs_sub(rng, 0, dd)))).num);
+  int32_t hi = (int32_t)((gs_eval_text(c, env, gs_strip(gs_sub(rng, (dd + 2), gs_len(rng))))).num);
+  int32_t v = lo;
+  while (v <= hi && (c[0]).err == 0) {
+  gs_env_set(env, var, gs_num((double)(v)));
+  gs_run_lines(c, env, body, nbody);
+  v = (v + 1);
+}
+  return;
+}
+  gs_fail(c, "unknown block");
+}
+
+void gs_run_lines(GsCtx* c, GsEnv* env, const char** lines, int32_t n) {
+  int32_t i = 0;
+  while (i < n && (c[0]).err == 0) {
+  const char* raw = gs_strip(lines[i]);
+  i = (i + 1);
+  uint8_t* rp = (uint8_t*)(raw);
+  if (gs_len(raw) > 0 && rp[0] != 35) {
+  if (gs_ends_with_char(raw, 123) == 1) {
+  const char* header = gs_strip(gs_sub(raw, 0, (gs_len(raw) - 1)));
+  const char** body = (const char**)((const char**)(malloc(((int64_t)(((n - i) + 1)) * 8))));
+  int32_t nb = 0;
+  int32_t depth = 1;
+  while (i < n && depth > 0) {
+  const char* line = lines[i];
+  i = (i + 1);
+  const char* st = gs_strip(line);
+  depth = ((depth + gs_count_char(st, 123)) - gs_count_char(st, 125));
+  if (depth > 0) {
+  body[nb] = line;
+  nb = (nb + 1);
+}
+}
+  gs_exec_block(c, env, header, body, nb);
+} else {
+  gs_exec_line(c, env, raw);
+}
+}
+}
+}
+
+const char** gs_lines(const char* text, int32_t* out_n) {
+  int32_t n = gs_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  const char** lines = (const char**)((const char**)(malloc(((int64_t)((n + 2)) * 8))));
+  int32_t c = 0;
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 10 || p[i] == 13) {
+  lines[c] = gs_sub(text, s, i);
+  c = (c + 1);
+  if (p[i] == 13 && (i + 1) < n && p[(i + 1)] == 10) {
+  i = (i + 1);
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  if (s < n) {
+  lines[c] = gs_sub(text, s, n);
+  c = (c + 1);
+}
+  out_n[0] = c;
+  return lines;
+}
+
+FlowcGeomDiagram flowc_geom_run_script(const char* source) {
+  FlowcGeomDiagram g = flowc_geom_new("Scripted figure");
+  GsCtx c = (GsCtx){ .g = (&g), .fns = (GsFn*)(malloc((8 * 64))), .nfn = 0, .capfn = 8, .nodes = (GsNode*)(malloc((256 * 56))), .nnode = 0, .capnode = 256, .cache_keys = (const char**)(malloc((64 * 8))), .cache_vals = (int32_t*)(malloc((64 * 4))), .ncache = 0, .capcache = 64, .err = 0, .toks_kind = NULL, .toks_num = NULL, .toks_text = NULL, .ntok = 0, .tpos = 0 };
+  GsEnv env = gs_default_env();
+  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  const char** lines = (const char**)(gs_lines(source, cnt));
+  gs_run_lines((&c), (&env), lines, cnt[0]);
+  if ((c).err != 0) {
+  (g).ok = (0 - 1);
+}
+  return g;
+}
+
+const char* gs_read(const char* path) {
+  int64_t size = flowc_io_file_size(path);
+  if (size < 0) {
+  return "";
+}
+  int32_t cap = ((int32_t)(size) + 1);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((cap + 1))));
+  int32_t n = flowc_read_file(path, buf, cap);
+  if (n < 0) {
+  n = 0;
+}
+  buf[n] = 0;
+  return (const char*)(buf);
+}
+
+FlowcGeomDiagram gs_load_script(const char* meta, const char* flow_dir, const char* root) {
+  const char* src = gs_strip(meta);
+  if (gs_len(src) == 0) {
+  return flowc_geom_none();
+}
+  if (gs_find(src, "\n", 0) >= 0 || gs_starts(src, "title ") == 1 || gs_starts(src, "axes ") == 1 || gs_starts(src, "plot ") == 1 || gs_starts(src, "let ") == 1 || gs_starts(src, "def ") == 1) {
+  return flowc_geom_run_script(src);
+}
+  uint8_t* sp = (uint8_t*)(src);
+  const char* path = src;
+  if (sp[0] != 47 && gs_len(flow_dir) > 0) {
+  path = __flowc_str_concat(__flowc_str_concat(flow_dir, "/"), src);
+}
+  if (flowc_io_exists(path) == 1) {
+  return flowc_geom_run_script(gs_read(path));
+}
+  const char* alt = __flowc_str_concat(__flowc_str_concat(root, "/examples/verify/geometry/scripts/"), src);
+  if (flowc_io_exists(alt) == 1) {
+  return flowc_geom_run_script(gs_read(alt));
+}
+  return flowc_geom_none();
+}
+
+FlowcGeomDiagram flowc_geom_for_theorem(const char* claim_path, const char* diagram, const char* diagram_script, const char* flow_dir, const char* root) {
+  if (gs_len(gs_strip(diagram_script)) > 0) {
+  return gs_load_script(diagram_script, flow_dir, root);
+}
+  if (gs_len(diagram) > 0) {
+  FlowcGeomDiagram t = flowc_geom_template(diagram);
+  if ((t).ok == 1) {
+  return t;
+}
+}
+  const char* inferred = flowc_geom_infer_id(claim_path);
+  if (gs_len(inferred) > 0) {
+  return flowc_geom_template(inferred);
+}
+  const char* low = gs_lower(claim_path);
+  if (gs_find(low, "taylor", 0) >= 0 || gs_find(low, "maclaurin", 0) >= 0) {
+  return gs_load_script("taylor-sin.geom", flow_dir, root);
+}
+  return flowc_geom_none();
+}
+
+const char* gs_lower(const char* s) {
+  int32_t n = gs_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  int32_t i = 0;
+  while (i < n) {
+  uint8_t ch = p[i];
+  if (ch >= 65 && ch <= 90) {
+  buf[i] = (ch + 32);
+} else {
+  buf[i] = ch;
+}
+  i = (i + 1);
+}
+  buf[n] = 0;
+  return (const char*)(buf);
+}
+
+
 const int32_t FLOWC_EFF_EFFECT = 64;
 const int32_t FLOWC_EFF_CAP = 35;
 const int32_t FLOWC_EFF_ROW = 33;
@@ -7973,6 +12843,168 @@ int32_t flowc_eff_has_fiber_cap(uint8_t* buf, int32_t len) {
   return 1;
 }
   return flowc_eff_has_cap_lit(buf, len, "FiberCont");
+}
+
+
+void flowc_proof_retag_span(AstArena arena, int32_t id);
+int32_t flowc_proof_is_stmt(int32_t kind);
+int32_t flowc_proof_filter_names(AstArena arena, int32_t head);
+void flowc_proof_filter_block(AstArena arena, int32_t block);
+int32_t flowc_proof_erase(AstArena arena, int32_t root);
+void flowc_proof_retag_span(AstArena arena, int32_t id) {
+  AstNode* nodes = (AstNode*)((arena).nodes);
+  int32_t s = (nodes[id]).start;
+  int32_t e = (nodes[id]).end;
+  (nodes[id]).kind = AST_ERROR;
+  int32_t i = 0;
+  while (i < (arena).len) {
+  int32_t k = (nodes[i]).kind;
+  if (k != AST_PROGRAM && k != AST_ERROR) {
+  if ((nodes[i]).start >= s && (nodes[i]).end <= e && (nodes[i]).start < e) {
+  (nodes[i]).kind = AST_ERROR;
+}
+}
+  i = (i + 1);
+}
+}
+
+int32_t flowc_proof_is_stmt(int32_t kind) {
+  if (kind == AST_ASSUME || kind == AST_THEREFORE) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_proof_filter_names(AstArena arena, int32_t head) {
+  AstNode* nodes = (AstNode*)((arena).nodes);
+  int32_t new_head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t cur = head;
+  while (cur != AST_NONE) {
+  int32_t nxt = (nodes[cur]).next;
+  if ((nodes[cur]).kind == AST_CLAIM_REF) {
+  (nodes[cur]).next = AST_NONE;
+  (nodes[cur]).kind = AST_ERROR;
+} else {
+  if (tail == AST_NONE) {
+  new_head = cur;
+} else {
+  (nodes[tail]).next = cur;
+}
+  tail = cur;
+}
+  cur = nxt;
+}
+  if (tail != AST_NONE) {
+  (nodes[tail]).next = AST_NONE;
+}
+  return new_head;
+}
+
+void flowc_proof_filter_block(AstArena arena, int32_t block) {
+  AstNode* nodes = (AstNode*)((arena).nodes);
+  int32_t new_head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t cur = (nodes[block]).a;
+  while (cur != AST_NONE) {
+  int32_t nxt = (nodes[cur]).next;
+  if (flowc_proof_is_stmt((nodes[cur]).kind) == 1) {
+  (nodes[cur]).next = AST_NONE;
+  flowc_proof_retag_span(arena, cur);
+} else {
+  if (tail == AST_NONE) {
+  new_head = cur;
+} else {
+  (nodes[tail]).next = cur;
+}
+  tail = cur;
+}
+  cur = nxt;
+}
+  if (tail != AST_NONE) {
+  (nodes[tail]).next = AST_NONE;
+}
+  (nodes[block]).a = new_head;
+}
+
+int32_t flowc_proof_erase(AstArena arena, int32_t root) {
+  if (root == AST_NONE || root < 0) {
+  return 0;
+}
+  AstNode* nodes = (AstNode*)((arena).nodes);
+  if ((nodes[root]).kind != AST_PROGRAM) {
+  return 0;
+}
+  int32_t erased = 0;
+  int32_t new_head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t cur = (nodes[root]).a;
+  while (cur != AST_NONE) {
+  int32_t nxt = (nodes[cur]).next;
+  int32_t keep = 1;
+  int32_t k = (nodes[cur]).kind;
+  if (k == AST_THEOREM) {
+  keep = 0;
+}
+  if (k == AST_EXPORT && (nodes[cur]).ival == 1) {
+  int32_t before = (nodes[cur]).a;
+  (nodes[cur]).a = flowc_proof_filter_names(arena, before);
+  if ((nodes[cur]).a != before) {
+  erased = (erased + 1);
+}
+  if ((nodes[cur]).a == AST_NONE) {
+  keep = 0;
+}
+}
+  if (k == AST_IMPORT) {
+  int32_t before = (nodes[cur]).a;
+  (nodes[cur]).a = flowc_proof_filter_names(arena, before);
+  if ((nodes[cur]).a != before) {
+  erased = (erased + 1);
+}
+  int32_t mark = (nodes[cur]).b;
+  if (mark != AST_NONE && (nodes[mark]).kind == AST_CLAIM_REF) {
+  (nodes[mark]).kind = AST_ERROR;
+  (nodes[cur]).b = AST_NONE;
+}
+}
+  if (keep == 0) {
+  (nodes[cur]).next = AST_NONE;
+  flowc_proof_retag_span(arena, cur);
+  erased = (erased + 1);
+} else {
+  if (tail == AST_NONE) {
+  new_head = cur;
+} else {
+  (nodes[tail]).next = cur;
+}
+  tail = cur;
+}
+  cur = nxt;
+}
+  if (tail != AST_NONE) {
+  (nodes[tail]).next = AST_NONE;
+}
+  (nodes[root]).a = new_head;
+  int32_t i = 0;
+  while (i < (arena).len) {
+  if ((nodes[i]).kind == AST_BLOCK) {
+  int32_t has = 0;
+  int32_t s = (nodes[i]).a;
+  while (s != AST_NONE) {
+  if (flowc_proof_is_stmt((nodes[s]).kind) == 1) {
+  has = 1;
+}
+  s = (nodes[s]).next;
+}
+  if (has == 1) {
+  flowc_proof_filter_block(arena, i);
+  erased = (erased + 1);
+}
+}
+  i = (i + 1);
+}
+  return erased;
 }
 
 
@@ -23882,6 +28914,3676 @@ int32_t flowc_expr_is_unsuffixed_int_literal(AstArena arena, int32_t id) {
 }
 
 
+typedef struct PdgStep {
+  int32_t kind;
+  const char* text;
+  const char* detail;
+} PdgStep;
+
+typedef struct PdgThm {
+  const char* claim_path;
+  const char* params;
+  const char* means;
+  const char* from_source;
+  const char* tier;
+  const char* needs;
+  const char* used_by;
+  const char* diagram;
+  const char* diagram_script;
+  const char* claim_expr;
+  int32_t step0;
+  int32_t nsteps;
+  int32_t number;
+  const char* diagram_svg;
+} PdgThm;
+
+typedef struct PdgDoc {
+  const char* modname;
+  const char* means;
+  const char* from_source;
+  const char* tier;
+  PdgThm* thms;
+  int32_t nthm;
+  int32_t cap_thm;
+  PdgStep* steps;
+  int32_t nstep;
+  int32_t cap_step;
+} PdgDoc;
+
+typedef struct PdgLine {
+  int32_t number;
+  const char* english;
+  const char* math;
+  int32_t is_goal;
+  int32_t* refs;
+  int32_t nrefs;
+} PdgLine;
+
+typedef struct PdgMap {
+  const char** keys;
+  const char** vals;
+  int32_t n;
+  int32_t cap;
+  int32_t* slots;
+  int32_t nslots;
+} PdgMap;
+
+static const int32_t PDG_IF = 1;
+static const int32_t PDG_CASE = 2;
+static const int32_t PDG_ASSUME = 3;
+static const int32_t PDG_THEREFORE = 4;
+static const int32_t PDG_LET = 5;
+int64_t write(int32_t fd, const char* buf, int64_t n);
+const char* pdg_sidx(const char* s);
+void pdg_err(const char* msg);
+int32_t pdg_len(const char* s);
+int32_t pdg_eq(const char* a, const char* b);
+const char* pdg_sub(const char* s, int32_t a, int32_t b);
+int32_t pdg_is_ws(int32_t c);
+int32_t pdg_is_word(int32_t c);
+const char* pdg_strip(const char* s);
+int32_t pdg_at(const char* s, int32_t i, const char* lit);
+int32_t pdg_starts(const char* s, const char* lit);
+int32_t pdg_find(const char* s, const char* needle, int32_t from);
+int32_t pdg_contains(const char* s, const char* needle);
+int32_t pdg_find_char(const char* s, int32_t c, int32_t from);
+int32_t pdg_rfind_char(const char* s, int32_t c);
+const char* pdg_replace(const char* s, const char* needle, const char* repl);
+const char* pdg_lower(const char* s);
+const char* pdg_itoa(int32_t v);
+const char* pdg_upper_first(const char* s);
+const char* pdg_lower_first(const char* s);
+const char* pdg_capitalize(const char* s);
+const char* pdg_rstrip_dots(const char* s);
+const char* pdg_collapse_ws(const char* s);
+int32_t pdg_split_lines(const char* s, int32_t* starts, int32_t* ends, int32_t cap);
+int32_t pdg_count_lines(const char* s);
+int32_t pdg_meta_line(const char* line, const char** key_out, const char** val_out);
+void pdg_meta_set(PdgThm* t, const char* key, const char* val);
+void pdg_push_step(PdgDoc* d, int32_t kind, const char* text, const char* detail);
+int32_t pdg_block_line(const char* line, const char* kw, int32_t* cond_s, int32_t* cond_e);
+int32_t pdg_else_line(const char* line);
+const char* pdg_kw_rest(const char* line, const char* kw, int32_t* ok);
+const char* pdg_let_line(const char* line);
+const char* pdg_parse_steps(PdgDoc* d, const char* body);
+int32_t pdg_guil_open(uint8_t* p, int32_t i, int32_t n);
+int32_t pdg_guil_close(uint8_t* p, int32_t i, int32_t n);
+int32_t pdg_guil_term(uint8_t* p, int32_t i, int32_t n);
+int32_t pdg_theorem_search(const char* text, int32_t pos, int32_t* out);
+int32_t pdg_brace_body(const char* text, int32_t open, const char** body_out);
+int32_t pdg_push_thm(PdgDoc* d);
+PdgDoc flowc_proof_parse_text(const char* text);
+int32_t pdg_hash(const char* s);
+PdgMap flowc_pdg_map_new(int32_t cap);
+int32_t pdg_map_find(PdgMap* m, const char* key);
+void pdg_map_set(PdgMap* m, const char* key, const char* val);
+const char* pdg_map_get(PdgMap* m, const char* key, const char* dflt);
+const char* pdg_package_prefix(const char* modname);
+const char* pdg_qualify(const char* modname, const char* claim_path);
+void pdg_index_add(PdgMap* idx, const char* key, const char* entry, PdgMap* seen);
+const char* flowc_proof_read(const char* path);
+const char** pdg_list_flow(const char* root, int32_t* out_n);
+PdgMap flowc_proof_global_tiers(const char* root);
+PdgMap pdg_merged_tiers(PdgMap* global, PdgDoc* d);
+const char* pdg_circled(int32_t n);
+int32_t pdg_sorted_unique(int32_t* nums, int32_t n, int32_t* out);
+const char* pdg_join_labels(const char** labels, int32_t n);
+const char* pdg_fmt_refs(int32_t* nums, int32_t n);
+const char* pdg_under_refs(int32_t* nums, int32_t n);
+const char* pdg_claim_phrase(const char* path);
+const char* pdg_latex_escape(const char* text);
+const char* pdg_slug_label(const char* path);
+const char* pdg_facet_title(const char* claim_path, const char* means);
+const char* pdg_tier_or_derived(const char* tier);
+const char* pdg_claim_sentence(PdgThm* t);
+const char* pdg_claim_math_latex(PdgThm* t);
+const char* pdg_assume_ref(const char* text);
+const char* pdg_assume_args(const char* text);
+int32_t pdg_split_args(const char* args, const char** out, int32_t cap);
+int32_t pdg_count_commas(const char* s);
+const char* pdg_premise_template(FlowcClaimAddress addr);
+const char* pdg_sub_word(const char* s, const char* name, const char* value);
+const char* pdg_premise_latex(const char* ref, const char* args, const char* claim_expr, const char* params);
+const char* pdg_assume_premise(const char* ref, const char* phrase, const char* args, const char* ref_tier, const char* theorem_ref);
+void pdg_catalog_add(PdgMap* cat, PdgDoc* d);
+const char* pdg_catalog_ref(PdgMap* cat, const char* ref);
+const char* pdg_natural_assume(PdgDoc* d, PdgThm* t, const char* text, PdgMap* tiers, PdgMap* cat, int32_t* ctx, int32_t nctx);
+const char* pdg_natural_let(const char* text, int32_t* ctx, int32_t nctx);
+const char* pdg_geometry_direct(const char* claim_path);
+const char* pdg_geometry_deduction(const char* claim_path, const char* prem);
+const char* pdg_natural_therefore(const char* text, int32_t is_base, int32_t is_final, int32_t npremise, int32_t* premise_nums, const char* premise_ref_str, const char* tier, int32_t in_case, int32_t* case_close, int32_t ncase_close, const char* claim_path, const char** premise_claims, int32_t nclaims);
+void pdg_add_line(PdgLine* lines, int32_t* n, int32_t number, const char* english, const char* math, int32_t* refs, int32_t nrefs);
+int32_t pdg_step_kind(PdgDoc* d, PdgThm* t, int32_t i);
+int32_t pdg_is_induction(PdgDoc* d, PdgThm* t);
+int32_t pdg_is_case_analysis(PdgDoc* d, PdgThm* t);
+int32_t* pdg_one(int32_t v);
+int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* lines);
+int32_t pdg_needs(const char* needs, const char** out);
+int32_t pdg_lines_cap(PdgThm* t);
+const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers);
+const char* pdg_rstrip(const char* s);
+const char* flowc_proof_render_md(PdgDoc* d, const char* stem, PdgMap* tiers);
+const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, int32_t book_mode);
+const char* flowc_proof_render_tex(PdgDoc* d, const char* stem, PdgMap* tiers);
+int32_t pdg_write(const char* path, const char* text);
+void pdg_mkdir_p(const char* dir);
+const char* pdg_join(const char* dir, const char* name);
+const char* pdg_dirname(const char* path);
+const char* pdg_stem(const char* path);
+int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32_t start, PdgMap* global, const char* root, int32_t verbose);
+const char* pdg_env(const char* name);
+int32_t flowc_proof_doc_mode();
+int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out, int32_t n);
+int32_t pdg_read_book(const char* root, const char* manifest, const char** part_id, const char** part_title, int32_t* part_start, const char** files);
+const char* pdg_part_heading(const char* title, int32_t first);
+const char* pdg_render_bundle(PdgDoc* docs, int32_t ndocs, int32_t* doc_part, const char** part_title, int32_t nparts, const char* title, PdgMap* global);
+int32_t pdg_eq_i(int32_t a, int32_t b);
+int32_t flowc_proof_book_mode();
+const char* pdg_hex4(int32_t v);
+const char* pdg_json_str(const char* s);
+const char* pdg_node_kind(const char* english, int32_t has_math);
+void pdg_activate(PdgLine* lines, int32_t n, const char** keys, const char** vals, int32_t ninst, int32_t* active);
+int32_t pdg_param_names(const char* params, const char** out);
+int32_t pdg_kernel(const char* path, const char* root, const char** keys, const char** vals, int32_t ninst, const char** json_out, const char** dot_out);
+const char* pdg_with_suffix(const char* path, const char* suffix);
+const char* pdg_suffix(const char* path);
+int32_t flowc_proof_kernel_mode();
+PdgMap pdg_scan_index(const char* root, PdgDoc* docs, const char** paths, int32_t* ndocs);
+int32_t pdg_ends_with(const char* s, const char* suffix);
+const char* pdg_join_list(const char* raw);
+const char* pdg_abspath(const char* path);
+const char* pdg_format_know(PdgDoc* d, PdgThm* t, const char* file_path);
+const char* pdg_fingerprint(const char* expr);
+const char* pdg_py_repr(const char* s);
+int32_t flowc_proof_know_mode();
+const char* pdg_sidx(const char* s) {
+  return s;
+}
+
+void pdg_err(const char* msg) {
+  const char* line = __flowc_str_concat(msg, "\n");
+  int64_t _w = write(2, line, strlen(line));
+}
+
+int32_t pdg_len(const char* s) {
+  return (int32_t)(strlen(s));
+}
+
+int32_t pdg_eq(const char* a, const char* b) {
+  if (strcmp(a, b) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+const char* pdg_sub(const char* s, int32_t a, int32_t b) {
+  int32_t n = pdg_len(s);
+  int32_t lo = a;
+  int32_t hi = b;
+  if (lo < 0) {
+  lo = 0;
+}
+  if (hi > n) {
+  hi = n;
+}
+  if (hi <= lo) {
+  return "";
+}
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((hi - lo) + 1))));
+  uint8_t* p = (uint8_t*)(s);
+  memcpy(buf, (p + lo), (int64_t)((hi - lo)));
+  buf[(hi - lo)] = 0;
+  return (const char*)(buf);
+}
+
+int32_t pdg_is_ws(int32_t c) {
+  if (c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t pdg_is_word(int32_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c == 95) {
+  return 1;
+}
+  if (c >= 128) {
+  return 1;
+}
+  return 0;
+}
+
+const char* pdg_strip(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t a = 0;
+  while (a < n && pdg_is_ws(p[a]) == 1) {
+  a = (a + 1);
+}
+  int32_t b = n;
+  while (b > a && pdg_is_ws(p[(b - 1)]) == 1) {
+  b = (b - 1);
+}
+  if (a == 0 && b == n) {
+  return s;
+}
+  return pdg_sub(s, a, b);
+}
+
+int32_t pdg_at(const char* s, int32_t i, const char* lit) {
+  int32_t n = pdg_len(s);
+  int32_t m = pdg_len(lit);
+  if (i < 0 || (i + m) > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* q = (uint8_t*)(lit);
+  int32_t k = 0;
+  while (k < m) {
+  if (p[(i + k)] != q[k]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t pdg_starts(const char* s, const char* lit) {
+  return pdg_at(s, 0, lit);
+}
+
+int32_t pdg_find(const char* s, const char* needle, int32_t from) {
+  int32_t n = pdg_len(s);
+  int32_t m = pdg_len(needle);
+  int32_t i = from;
+  if (i < 0) {
+  i = 0;
+}
+  while ((i + m) <= n) {
+  if (pdg_at(s, i, needle) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t pdg_contains(const char* s, const char* needle) {
+  if (pdg_find(s, needle, 0) >= 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t pdg_find_char(const char* s, int32_t c, int32_t from) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = from;
+  while (i < n) {
+  if (p[i] == c) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t pdg_rfind_char(const char* s, int32_t c) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = (pdg_len(s) - 1);
+  while (i >= 0) {
+  if (p[i] == c) {
+  return i;
+}
+  i = (i - 1);
+}
+  return (0 - 1);
+}
+
+const char* pdg_replace(const char* s, const char* needle, const char* repl) {
+  int32_t m = pdg_len(needle);
+  if (m == 0) {
+  return s;
+}
+  int32_t first = pdg_find(s, needle, 0);
+  if (first < 0) {
+  return s;
+}
+  const char* out = "";
+  int32_t pos = 0;
+  while (first >= 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, pos, first)), repl);
+  pos = (first + m);
+  first = pdg_find(s, needle, pos);
+}
+  return __flowc_str_concat(out, pdg_sub(s, pos, pdg_len(s)));
+}
+
+const char* pdg_lower(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  int32_t i = 0;
+  while (i < n) {
+  uint8_t c = p[i];
+  if (c >= 65 && c <= 90) {
+  buf[i] = (c + 32);
+} else {
+  buf[i] = c;
+}
+  i = (i + 1);
+}
+  buf[n] = 0;
+  return (const char*)(buf);
+}
+
+const char* pdg_itoa(int32_t v) {
+  if (v == 0) {
+  return "0";
+}
+  uint8_t* buf = (uint8_t*)(malloc(16));
+  int32_t x = v;
+  int32_t neg = 0;
+  if (x < 0) {
+  neg = 1;
+  x = (0 - x);
+}
+  uint8_t* tmp = (uint8_t*)(malloc(16));
+  int32_t k = 0;
+  while (x > 0) {
+  tmp[k] = ((x % 10) + 48);
+  x = (x / 10);
+  k = (k + 1);
+}
+  int32_t o = 0;
+  if (neg == 1) {
+  buf[0] = 45;
+  o = 1;
+}
+  while (k > 0) {
+  k = (k - 1);
+  buf[o] = tmp[k];
+  o = (o + 1);
+}
+  buf[o] = 0;
+  return (const char*)(buf);
+}
+
+const char* pdg_upper_first(const char* s) {
+  int32_t n = pdg_len(s);
+  if (n == 0) {
+  return s;
+}
+  uint8_t* p = (uint8_t*)(s);
+  if (p[0] >= 97 && p[0] <= 122) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  memcpy(buf, p, (int64_t)((n + 1)));
+  buf[0] = (p[0] - 32);
+  return (const char*)(buf);
+}
+  return s;
+}
+
+const char* pdg_lower_first(const char* s) {
+  int32_t n = pdg_len(s);
+  if (n == 0) {
+  return s;
+}
+  uint8_t* p = (uint8_t*)(s);
+  if (p[0] >= 65 && p[0] <= 90) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  memcpy(buf, p, (int64_t)((n + 1)));
+  buf[0] = (p[0] + 32);
+  return (const char*)(buf);
+}
+  return s;
+}
+
+const char* pdg_capitalize(const char* s) {
+  return pdg_upper_first(pdg_lower(s));
+}
+
+const char* pdg_rstrip_dots(const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t b = pdg_len(s);
+  while (b > 0 && p[(b - 1)] == 46) {
+  b = (b - 1);
+}
+  return pdg_sub(s, 0, b);
+}
+
+const char* pdg_collapse_ws(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  int32_t o = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (pdg_is_ws(p[i]) == 1) {
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  buf[o] = 32;
+  o = (o + 1);
+} else {
+  buf[o] = p[i];
+  o = (o + 1);
+  i = (i + 1);
+}
+}
+  buf[o] = 0;
+  return (const char*)(buf);
+}
+
+int32_t pdg_split_lines(const char* s, int32_t* starts, int32_t* ends, int32_t cap) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t count = 0;
+  int32_t i = 0;
+  int32_t ls = 0;
+  while (i < n) {
+  int32_t c = p[i];
+  if (c == 10 || c == 13) {
+  if (count < cap) {
+  starts[count] = ls;
+  ends[count] = i;
+}
+  count = (count + 1);
+  if (c == 13 && (i + 1) < n && p[(i + 1)] == 10) {
+  i = (i + 1);
+}
+  i = (i + 1);
+  ls = i;
+} else {
+  i = (i + 1);
+}
+}
+  if (ls < n) {
+  if (count < cap) {
+  starts[count] = ls;
+  ends[count] = n;
+}
+  count = (count + 1);
+}
+  return count;
+}
+
+int32_t pdg_count_lines(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t c = 2;
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 10 || p[i] == 13) {
+  c = (c + 1);
+}
+  i = (i + 1);
+}
+  return c;
+}
+
+int32_t pdg_meta_line(const char* line, const char** key_out, const char** val_out) {
+  int32_t n = pdg_len(line);
+  uint8_t* p = (uint8_t*)(line);
+  int32_t i = 0;
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i >= n || p[i] != 35) {
+  return 0;
+}
+  i = (i + 1);
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i >= n || p[i] != 64) {
+  return 0;
+}
+  i = (i + 1);
+  int32_t ks = i;
+  while (i < n && (p[i] >= 97 && p[i] <= 122 || p[i] >= 65 && p[i] <= 90 || p[i] == 45)) {
+  i = (i + 1);
+}
+  int32_t ke = i;
+  if (ke == ks) {
+  return 0;
+}
+  if (i >= n || pdg_is_ws(p[i]) == 0) {
+  return 0;
+}
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t vs = i;
+  int32_t ve = n;
+  while (ve > vs && pdg_is_ws(p[(ve - 1)]) == 1) {
+  ve = (ve - 1);
+}
+  if (ve <= vs && (i - ke) < 2) {
+  return 0;
+}
+  const char* key = pdg_replace(pdg_lower(pdg_sub(line, ks, ke)), "-", "_");
+  if (pdg_eq(key, "from") == 1) {
+  key = "from_source";
+}
+  key_out[0] = key;
+  val_out[0] = pdg_strip(pdg_sub(line, vs, ve));
+  return 1;
+}
+
+void pdg_meta_set(PdgThm* t, const char* key, const char* val) {
+  if (pdg_eq(key, "means") == 1) {
+  (t[0]).means = val;
+}
+  if (pdg_eq(key, "from_source") == 1) {
+  (t[0]).from_source = val;
+}
+  if (pdg_eq(key, "tier") == 1) {
+  (t[0]).tier = val;
+}
+  if (pdg_eq(key, "needs") == 1) {
+  (t[0]).needs = val;
+}
+  if (pdg_eq(key, "used_by") == 1) {
+  (t[0]).used_by = val;
+}
+  if (pdg_eq(key, "diagram") == 1) {
+  (t[0]).diagram = val;
+}
+  if (pdg_eq(key, "diagram_script") == 1) {
+  (t[0]).diagram_script = val;
+}
+}
+
+void pdg_push_step(PdgDoc* d, int32_t kind, const char* text, const char* detail) {
+  if ((d[0]).nstep >= (d[0]).cap_step) {
+  int32_t ncap = (((d[0]).cap_step * 2) + 16);
+  PdgStep* nb = (PdgStep*)((PdgStep*)(malloc(((int64_t)(ncap) * 24))));
+  int32_t i = 0;
+  while (i < (d[0]).nstep) {
+  nb[i] = (d[0]).steps[i];
+  i = (i + 1);
+}
+  (d[0]).steps = nb;
+  (d[0]).cap_step = ncap;
+}
+  int32_t k = (d[0]).nstep;
+  ((d[0]).steps[k]).kind = kind;
+  ((d[0]).steps[k]).text = text;
+  ((d[0]).steps[k]).detail = detail;
+  (d[0]).nstep = (k + 1);
+}
+
+int32_t pdg_block_line(const char* line, const char* kw, int32_t* cond_s, int32_t* cond_e) {
+  int32_t n = pdg_len(line);
+  uint8_t* p = (uint8_t*)(line);
+  int32_t i = 0;
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i < n && p[i] == 125) {
+  i = (i + 1);
+}
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (pdg_at(line, i, kw) == 0) {
+  return 0;
+}
+  i = (i + pdg_len(kw));
+  if (i >= n || pdg_is_ws(p[i]) == 0) {
+  return 0;
+}
+  int32_t ws0 = (i + 1);
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t st = i;
+  while (st >= ws0) {
+  int32_t j = pdg_find_char(line, 123, (st + 1));
+  if (j >= 0) {
+  int32_t e = j;
+  while (e > (st + 1) && pdg_is_ws(p[(e - 1)]) == 1) {
+  e = (e - 1);
+}
+  cond_s[0] = st;
+  cond_e[0] = e;
+  return 1;
+}
+  st = (st - 1);
+}
+  return 0;
+}
+
+int32_t pdg_else_line(const char* line) {
+  int32_t n = pdg_len(line);
+  uint8_t* p = (uint8_t*)(line);
+  int32_t i = 0;
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i < n && p[i] == 125) {
+  i = (i + 1);
+}
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (pdg_at(line, i, "else") == 0) {
+  return 0;
+}
+  i = (i + 4);
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i < n && p[i] == 123) {
+  return 1;
+}
+  return 0;
+}
+
+const char* pdg_kw_rest(const char* line, const char* kw, int32_t* ok) {
+  ok[0] = 0;
+  int32_t n = pdg_len(line);
+  uint8_t* p = (uint8_t*)(line);
+  if (pdg_starts(line, kw) == 0) {
+  return "";
+}
+  int32_t i = pdg_len(kw);
+  if (i >= n || pdg_is_ws(p[i]) == 0) {
+  return "";
+}
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i >= n) {
+  if ((i - 1) > pdg_len(kw)) {
+  ok[0] = 1;
+  return pdg_sub(line, (i - 1), n);
+}
+  return "";
+}
+  ok[0] = 1;
+  return pdg_sub(line, i, n);
+}
+
+const char* pdg_let_line(const char* line) {
+  int32_t n = pdg_len(line);
+  uint8_t* p = (uint8_t*)(line);
+  if (pdg_starts(line, "let") == 0) {
+  return "";
+}
+  int32_t i = 3;
+  if (i >= n || pdg_is_ws(p[i]) == 0) {
+  return "";
+}
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t after_let = i;
+  int32_t tries = 0;
+  while (tries < 2) {
+  int32_t j = after_let;
+  int32_t good = 1;
+  if (tries == 0) {
+  if (pdg_at(line, j, "mut") == 1 && (j + 3) < n && pdg_is_ws(p[(j + 3)]) == 1) {
+  j = (j + 3);
+  while (j < n && pdg_is_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+} else {
+  good = 0;
+}
+}
+  if (good == 1) {
+  int32_t ns = j;
+  while (j < n && pdg_is_word(p[j]) == 1) {
+  j = (j + 1);
+}
+  int32_t ne = j;
+  if (ne > ns) {
+  while (j < n && pdg_is_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j < n && p[j] == 61) {
+  j = (j + 1);
+  while (j < n && pdg_is_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  int32_t rs = j;
+  if (rs >= n && rs > (ne + 1) && pdg_is_ws(p[(rs - 1)]) == 1) {
+  rs = (rs - 1);
+}
+  if (rs < n) {
+  return __flowc_str_concat(__flowc_str_concat(pdg_sub(line, ns, ne), " = "), pdg_strip(pdg_sub(line, rs, n)));
+}
+}
+}
+}
+  tries = (tries + 1);
+}
+  return "";
+}
+
+const char* pdg_parse_steps(PdgDoc* d, const char* body) {
+  int32_t cap = pdg_count_lines(body);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(body, starts, ends, cap);
+  const char* claim = "";
+  int32_t* cs = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* ok = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t li = 0;
+  while (li < nl) {
+  const char* line = pdg_strip(pdg_sub(body, starts[li], ends[li]));
+  uint8_t* lp = (uint8_t*)(line);
+  if (pdg_len(line) > 0 && lp[0] != 35) {
+  int32_t done = 0;
+  if (pdg_block_line(line, "if", cs, (cs + 1)) == 1) {
+  const char* cond = pdg_sub(line, cs[0], cs[1]);
+  pdg_push_step(d, PDG_IF, pdg_strip(cond), cond);
+  done = 1;
+}
+  if (done == 0 && pdg_block_line(line, "elif", cs, (cs + 1)) == 1) {
+  const char* cond = pdg_sub(line, cs[0], cs[1]);
+  pdg_push_step(d, PDG_CASE, __flowc_str_concat("case ", pdg_strip(cond)), cond);
+  done = 1;
+}
+  if (done == 0 && pdg_else_line(line) == 1) {
+  pdg_push_step(d, PDG_CASE, "inductive step", "else");
+  done = 1;
+}
+  if (done == 0) {
+  const char* rest = pdg_kw_rest(line, "assume", ok);
+  if (ok[0] == 1) {
+  pdg_push_step(d, PDG_ASSUME, pdg_strip(rest), "");
+  done = 1;
+}
+}
+  if (done == 0) {
+  const char* rest = pdg_kw_rest(line, "therefore", ok);
+  if (ok[0] == 1) {
+  const char* expr = pdg_strip(rest);
+  pdg_push_step(d, PDG_THEREFORE, expr, "");
+  int32_t by = pdg_find(expr, " by ", 0);
+  if (by >= 0) {
+  claim = pdg_strip(pdg_sub(expr, 0, by));
+} else {
+  claim = pdg_strip(expr);
+}
+  done = 1;
+}
+}
+  if (done == 0) {
+  const char* lt = pdg_let_line(line);
+  if (pdg_len(lt) > 0) {
+  pdg_push_step(d, PDG_LET, lt, "");
+}
+}
+}
+  li = (li + 1);
+}
+  return claim;
+}
+
+int32_t pdg_guil_open(uint8_t* p, int32_t i, int32_t n) {
+  if ((i + 1) < n && p[i] == 194 && p[(i + 1)] == 171) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t pdg_guil_close(uint8_t* p, int32_t i, int32_t n) {
+  if ((i + 1) < n && p[i] == 194 && p[(i + 1)] == 187) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t pdg_guil_term(uint8_t* p, int32_t i, int32_t n) {
+  if (pdg_guil_open(p, i, n) == 0) {
+  return (0 - 1);
+}
+  int32_t j = (i + 2);
+  int32_t body0 = j;
+  while (j < n && pdg_guil_close(p, j, n) == 0) {
+  j = (j + 1);
+}
+  if (j >= n || j == body0) {
+  return (0 - 1);
+}
+  return (j + 2);
+}
+
+int32_t pdg_theorem_search(const char* text, int32_t pos, int32_t* out) {
+  int32_t n = pdg_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  int32_t s = pdg_find(text, "theorem", pos);
+  while (s >= 0) {
+  int32_t i = (s + 7);
+  if (i < n && pdg_is_ws(p[i]) == 1) {
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t ps = i;
+  int32_t alt = 0;
+  while (alt < 2) {
+  int32_t pe = (0 - 1);
+  if (alt == 0) {
+  int32_t a = pdg_guil_term(p, ps, n);
+  if (a >= 0) {
+  int32_t b = a;
+  while (b < n && pdg_is_ws(p[b]) == 1) {
+  b = (b + 1);
+}
+  int32_t c = pdg_guil_term(p, b, n);
+  if (c >= 0) {
+  int32_t d = c;
+  while (d < n && pdg_is_ws(p[d]) == 1) {
+  d = (d + 1);
+}
+  pe = pdg_guil_term(p, d, n);
+}
+}
+} else {
+  int32_t j = ps;
+  while (j < n && pdg_is_ws(p[j]) == 0 && p[j] != 40) {
+  j = (j + 1);
+}
+  if (j > ps) {
+  pe = j;
+}
+}
+  if (pe >= 0) {
+  int32_t j = pe;
+  while (j < n && pdg_is_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j < n && p[j] == 40) {
+  int32_t qs = (j + 1);
+  int32_t qe = pdg_find_char(text, 41, qs);
+  if (qe >= 0) {
+  int32_t k = (qe + 1);
+  while (k < n && pdg_is_ws(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k < n && p[k] == 123) {
+  out[0] = s;
+  out[1] = ps;
+  out[2] = pe;
+  out[3] = qs;
+  out[4] = qe;
+  out[5] = k;
+  return 1;
+}
+}
+}
+}
+  alt = (alt + 1);
+}
+}
+  s = pdg_find(text, "theorem", (s + 1));
+}
+  return 0;
+}
+
+int32_t pdg_brace_body(const char* text, int32_t open, const char** body_out) {
+  int32_t n = pdg_len(text);
+  uint8_t* p = (uint8_t*)(text);
+  int32_t depth = 0;
+  int32_t i = open;
+  while (i < n) {
+  if (p[i] == 123) {
+  depth = (depth + 1);
+} else {
+  if (p[i] == 125) {
+  depth = (depth - 1);
+  if (depth == 0) {
+  body_out[0] = pdg_sub(text, (open + 1), i);
+  return (i + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  body_out[0] = pdg_sub(text, (open + 1), n);
+  return n;
+}
+
+int32_t pdg_push_thm(PdgDoc* d) {
+  if ((d[0]).nthm >= (d[0]).cap_thm) {
+  int32_t ncap = (((d[0]).cap_thm * 2) + 8);
+  PdgThm* nb = (PdgThm*)((PdgThm*)(malloc(((int64_t)(ncap) * 112))));
+  int32_t i = 0;
+  while (i < (d[0]).nthm) {
+  nb[i] = (d[0]).thms[i];
+  i = (i + 1);
+}
+  (d[0]).thms = nb;
+  (d[0]).cap_thm = ncap;
+}
+  int32_t k = (d[0]).nthm;
+  ((d[0]).thms[k]).claim_path = "";
+  ((d[0]).thms[k]).params = "";
+  ((d[0]).thms[k]).means = "";
+  ((d[0]).thms[k]).from_source = "";
+  ((d[0]).thms[k]).tier = "";
+  ((d[0]).thms[k]).needs = "";
+  ((d[0]).thms[k]).used_by = "";
+  ((d[0]).thms[k]).diagram = "";
+  ((d[0]).thms[k]).diagram_script = "";
+  ((d[0]).thms[k]).claim_expr = "";
+  ((d[0]).thms[k]).step0 = (d[0]).nstep;
+  ((d[0]).thms[k]).nsteps = 0;
+  ((d[0]).thms[k]).number = 0;
+  ((d[0]).thms[k]).diagram_svg = "";
+  (d[0]).nthm = (k + 1);
+  return k;
+}
+
+PdgDoc flowc_proof_parse_text(const char* text) {
+  PdgDoc d = (PdgDoc){ .modname = "", .means = "", .from_source = "", .tier = "", .thms = (PdgThm*)(malloc((8 * 112))), .nthm = 0, .cap_thm = 8, .steps = (PdgStep*)(malloc((64 * 24))), .nstep = 0, .cap_step = 64 };
+  const char** key = (const char**)((const char**)(malloc(16)));
+  const char** val = (const char**)((const char**)(malloc(16)));
+  int32_t cap = pdg_count_lines(text);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(text, starts, ends, cap);
+  int32_t li = 0;
+  int32_t more = 1;
+  while (li < nl && more == 1) {
+  if (pdg_meta_line(pdg_sub(text, starts[li], ends[li]), key, val) == 1) {
+  if (pdg_eq(key[0], "module") == 1) {
+  (d).modname = val[0];
+}
+  if (pdg_eq(key[0], "means") == 1) {
+  (d).means = val[0];
+}
+  if (pdg_eq(key[0], "from_source") == 1) {
+  (d).from_source = val[0];
+}
+  if (pdg_eq(key[0], "tier") == 1) {
+  (d).tier = val[0];
+}
+  li = (li + 1);
+} else {
+  more = 0;
+}
+}
+  int32_t* m = (int32_t*)((int32_t*)(malloc(32)));
+  const char** body = (const char**)((const char**)(malloc(16)));
+  int32_t n = pdg_len(text);
+  int32_t pos = 0;
+  while (pos < n && pdg_theorem_search(text, pos, m) == 1) {
+  int32_t k = pdg_push_thm((&d));
+  const char* pre = pdg_sub(text, 0, m[0]);
+  int32_t pcap = pdg_count_lines(pre);
+  int32_t* ps = (int32_t*)((int32_t*)(malloc(((int64_t)(pcap) * 4))));
+  int32_t* pe = (int32_t*)((int32_t*)(malloc(((int64_t)(pcap) * 4))));
+  int32_t pn = pdg_split_lines(pre, ps, pe, pcap);
+  int32_t first_meta = pn;
+  int32_t j = (pn - 1);
+  int32_t scanning = 1;
+  while (j >= 0 && scanning == 1) {
+  const char* ln = pdg_sub(pre, ps[j], pe[j]);
+  const char* st = pdg_strip(ln);
+  if (pdg_meta_line(ln, key, val) == 1) {
+  first_meta = j;
+} else {
+  uint8_t* sp = (uint8_t*)(st);
+  if (pdg_len(st) == 0 || pdg_starts(st, "import ") == 1 || sp[0] == 35) {
+} else {
+  scanning = 0;
+}
+}
+  j = (j - 1);
+}
+  int32_t q = first_meta;
+  while (q < pn) {
+  const char* ln = pdg_sub(pre, ps[q], pe[q]);
+  if (pdg_meta_line(ln, key, val) == 1) {
+  pdg_meta_set((&(d).thms[k]), key[0], val[0]);
+}
+  q = (q + 1);
+}
+  int32_t end_pos = pdg_brace_body(text, m[5], body);
+  int32_t step0 = (d).nstep;
+  const char* claim = pdg_parse_steps((&d), body[0]);
+  ((d).thms[k]).claim_path = pdg_strip(pdg_sub(text, m[1], m[2]));
+  ((d).thms[k]).params = pdg_strip(pdg_sub(text, m[3], m[4]));
+  ((d).thms[k]).claim_expr = claim;
+  ((d).thms[k]).step0 = step0;
+  ((d).thms[k]).nsteps = ((d).nstep - step0);
+  pos = end_pos;
+}
+  return d;
+}
+
+int32_t pdg_hash(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t h = 5381;
+  int32_t i = 0;
+  while (i < n) {
+  h = (((h * 33) + p[i]) % 1000003);
+  i = (i + 1);
+}
+  if (h < 0) {
+  h = (0 - h);
+}
+  return h;
+}
+
+PdgMap flowc_pdg_map_new(int32_t cap) {
+  int32_t nslots = ((cap * 2) + 1);
+  int32_t* slots = (int32_t*)((int32_t*)(malloc(((int64_t)(nslots) * 4))));
+  int32_t i = 0;
+  while (i < nslots) {
+  slots[i] = (0 - 1);
+  i = (i + 1);
+}
+  return (PdgMap){ .keys = (const char**)(malloc(((int64_t)(cap) * 8))), .vals = (const char**)(malloc(((int64_t)(cap) * 8))), .n = 0, .cap = cap, .slots = slots, .nslots = nslots };
+}
+
+int32_t pdg_map_find(PdgMap* m, const char* key) {
+  int32_t h = (pdg_hash(key) % (m[0]).nslots);
+  while ((m[0]).slots[h] >= 0) {
+  if (pdg_eq((m[0]).keys[(m[0]).slots[h]], key) == 1) {
+  return (m[0]).slots[h];
+}
+  h = ((h + 1) % (m[0]).nslots);
+}
+  return (0 - 1);
+}
+
+void pdg_map_set(PdgMap* m, const char* key, const char* val) {
+  int32_t at = pdg_map_find(m, key);
+  if (at >= 0) {
+  (m[0]).vals[at] = val;
+  return;
+}
+  if ((m[0]).n >= (m[0]).cap) {
+  PdgMap bigger = flowc_pdg_map_new((((m[0]).cap * 2) + 16));
+  int32_t i = 0;
+  while (i < (m[0]).n) {
+  pdg_map_set((&bigger), (m[0]).keys[i], (m[0]).vals[i]);
+  i = (i + 1);
+}
+  m[0] = bigger;
+}
+  int32_t k = (m[0]).n;
+  (m[0]).keys[k] = key;
+  (m[0]).vals[k] = val;
+  (m[0]).n = (k + 1);
+  int32_t h = (pdg_hash(key) % (m[0]).nslots);
+  while ((m[0]).slots[h] >= 0) {
+  h = ((h + 1) % (m[0]).nslots);
+}
+  (m[0]).slots[h] = k;
+}
+
+const char* pdg_map_get(PdgMap* m, const char* key, const char* dflt) {
+  int32_t at = pdg_map_find(m, key);
+  if (at < 0) {
+  return dflt;
+}
+  return (m[0]).vals[at];
+}
+
+const char* pdg_package_prefix(const char* modname) {
+  if (pdg_len(modname) == 0 || pdg_find_char(modname, 47, 0) < 0) {
+  return modname;
+}
+  const char* out = "";
+  int32_t first = 1;
+  int32_t s = 0;
+  int32_t n = pdg_len(modname);
+  int32_t i = 0;
+  while (i <= n) {
+  uint8_t* p = (uint8_t*)(modname);
+  if (i == n || p[i] == 46) {
+  const char* seg = pdg_sub(modname, s, i);
+  if (pdg_find_char(seg, 47, 0) < 0) {
+  if (first == 0) {
+  out = __flowc_str_concat(out, ".");
+}
+  out = __flowc_str_concat(out, seg);
+  first = 0;
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  return out;
+}
+
+const char* pdg_qualify(const char* modname, const char* claim_path) {
+  const char* prefix = pdg_package_prefix(modname);
+  if (pdg_len(prefix) > 0) {
+  return __flowc_str_concat(__flowc_str_concat(prefix, "."), claim_path);
+}
+  return claim_path;
+}
+
+void pdg_index_add(PdgMap* idx, const char* key, const char* entry, PdgMap* seen) {
+  if (pdg_map_find(seen, key) >= 0) {
+  return;
+}
+  pdg_map_set(seen, key, "");
+  pdg_map_set(idx, key, entry);
+}
+
+const char* flowc_proof_read(const char* path) {
+  int64_t size = flowc_io_file_size(path);
+  if (size < 0) {
+  return "";
+}
+  int32_t cap = ((int32_t)(size) + 1);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((cap + 1))));
+  int32_t n = flowc_read_file(path, buf, cap);
+  if (n < 0) {
+  buf[0] = 0;
+  return (const char*)(buf);
+}
+  buf[n] = 0;
+  return (const char*)(buf);
+}
+
+const char** pdg_list_flow(const char* root, int32_t* out_n) {
+  int32_t cap = 4194304;
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(cap)));
+  const char* cmd = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("if [ -d '", root), "' ]; then find '"), root), "' -name '*.flow' -type f | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'; fi");
+  int32_t n = flowc_io_popen_read(cmd, buf, (cap - 1));
+  int32_t count = 0;
+  if (n <= 0) {
+  out_n[0] = 0;
+  return (const char**)(malloc(8));
+}
+  buf[n] = 0;
+  const char* text = (const char*)(buf);
+  int32_t lc = pdg_count_lines(text);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(lc) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(lc) * 4))));
+  int32_t nl = pdg_split_lines(text, starts, ends, lc);
+  const char** files = (const char**)((const char**)(malloc(((int64_t)((nl + 1)) * 8))));
+  int32_t i = 0;
+  while (i < nl) {
+  if (ends[i] > starts[i]) {
+  files[count] = pdg_sub(text, starts[i], ends[i]);
+  count = (count + 1);
+}
+  i = (i + 1);
+}
+  out_n[0] = count;
+  return files;
+}
+
+PdgMap flowc_proof_global_tiers(const char* root) {
+  PdgMap idx = flowc_pdg_map_new(4096);
+  PdgMap tiers = flowc_pdg_map_new(2048);
+  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t r = 0;
+  while (r < 2) {
+  const char* dir = __flowc_str_concat(root, "/lib/verify");
+  if (r == 1) {
+  dir = __flowc_str_concat(root, "/examples/verify");
+}
+  const char** files = (const char**)(pdg_list_flow(dir, cnt));
+  int32_t nf = cnt[0];
+  int32_t fi = 0;
+  while (fi < nf) {
+  const char* text = flowc_proof_read(files[fi]);
+  PdgDoc d = flowc_proof_parse_text(text);
+  int32_t k = 0;
+  while (k < (d).nthm) {
+  const char* cp = ((d).thms[k]).claim_path;
+  const char* entry = __flowc_str_concat(__flowc_str_concat(cp, "\n"), ((d).thms[k]).tier);
+  PdgMap seen = flowc_pdg_map_new(16);
+  pdg_index_add((&idx), cp, entry, (&seen));
+  pdg_index_add((&idx), pdg_qualify((d).modname, cp), entry, (&seen));
+  FlowcClaimAddress addr = flowc_claim_try_parse(cp);
+  if ((addr).ok == 1) {
+  const char* g = flowc_claim_guillemets(addr);
+  const char* leg = flowc_claim_to_legacy_path(addr);
+  pdg_index_add((&idx), g, entry, (&seen));
+  pdg_index_add((&idx), flowc_claim_slug(addr), entry, (&seen));
+  pdg_index_add((&idx), flowc_claim_display(addr), entry, (&seen));
+  pdg_index_add((&idx), leg, entry, (&seen));
+  pdg_index_add((&idx), pdg_qualify((d).modname, g), entry, (&seen));
+  pdg_index_add((&idx), pdg_qualify((d).modname, leg), entry, (&seen));
+}
+  k = (k + 1);
+}
+  fi = (fi + 1);
+}
+  r = (r + 1);
+}
+  int32_t i = 0;
+  while (i < (idx).n) {
+  const char* e = (idx).vals[i];
+  int32_t nlp = pdg_find_char(e, 10, 0);
+  const char* tier = pdg_sub(e, (nlp + 1), pdg_len(e));
+  if (pdg_len(tier) > 0) {
+  pdg_map_set((&tiers), pdg_sub(e, 0, nlp), tier);
+}
+  i = (i + 1);
+}
+  return tiers;
+}
+
+PdgMap pdg_merged_tiers(PdgMap* global, PdgDoc* d) {
+  PdgMap m = flowc_pdg_map_new((((global[0]).n + (d[0]).nthm) + 16));
+  int32_t i = 0;
+  while (i < (global[0]).n) {
+  pdg_map_set((&m), (global[0]).keys[i], (global[0]).vals[i]);
+  i = (i + 1);
+}
+  int32_t k = 0;
+  while (k < (d[0]).nthm) {
+  if (pdg_len(((d[0]).thms[k]).tier) > 0) {
+  pdg_map_set((&m), ((d[0]).thms[k]).claim_path, ((d[0]).thms[k]).tier);
+}
+  k = (k + 1);
+}
+  return m;
+}
+
+const char* pdg_circled(int32_t n) {
+  if (n >= 1 && n <= 20) {
+  uint8_t* buf = (uint8_t*)(malloc(4));
+  int32_t cp = ((9312 + n) - 1);
+  buf[0] = (224 + (cp / 4096));
+  buf[1] = (128 + ((cp / 64) % 64));
+  buf[2] = (128 + (cp % 64));
+  buf[3] = 0;
+  return (const char*)(buf);
+}
+  return __flowc_str_concat(__flowc_str_concat("(", pdg_itoa(n)), ")");
+}
+
+int32_t pdg_sorted_unique(int32_t* nums, int32_t n, int32_t* out) {
+  int32_t m = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t v = nums[i];
+  int32_t dup = 0;
+  int32_t j = 0;
+  while (j < m) {
+  if (out[j] == v) {
+  dup = 1;
+}
+  j = (j + 1);
+}
+  if (dup == 0) {
+  int32_t k = m;
+  while (k > 0 && out[(k - 1)] > v) {
+  out[k] = out[(k - 1)];
+  k = (k - 1);
+}
+  out[k] = v;
+  m = (m + 1);
+}
+  i = (i + 1);
+}
+  return m;
+}
+
+const char* pdg_join_labels(const char** labels, int32_t n) {
+  if (n == 0) {
+  return "";
+}
+  if (n == 1) {
+  return labels[0];
+}
+  if (n == 2) {
+  return __flowc_str_concat(__flowc_str_concat(pdg_sidx(labels[0]), " and "), pdg_sidx(labels[1]));
+}
+  const char* s = "";
+  int32_t i = 0;
+  while (i < (n - 1)) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, ", ");
+}
+  s = __flowc_str_concat(s, pdg_sidx(labels[i]));
+  i = (i + 1);
+}
+  return __flowc_str_concat(__flowc_str_concat(s, ", and "), pdg_sidx(labels[(n - 1)]));
+}
+
+const char* pdg_fmt_refs(int32_t* nums, int32_t n) {
+  int32_t* u = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t m = pdg_sorted_unique(nums, n, u);
+  const char** labels = (const char**)((const char**)(malloc(((int64_t)((m + 1)) * 8))));
+  int32_t i = 0;
+  while (i < m) {
+  labels[i] = __flowc_str_concat("step ", pdg_itoa(u[i]));
+  i = (i + 1);
+}
+  return pdg_join_labels(labels, m);
+}
+
+const char* pdg_under_refs(int32_t* nums, int32_t n) {
+  if (n == 0) {
+  return "";
+}
+  if (n == 1) {
+  return __flowc_str_concat(__flowc_str_concat("Under the supposition in step ", pdg_itoa(nums[0])), ", ");
+}
+  return __flowc_str_concat(__flowc_str_concat("Under the suppositions in ", pdg_fmt_refs(nums, n)), ", ");
+}
+
+const char* pdg_claim_phrase(const char* path) {
+  FlowcClaimAddress addr = flowc_claim_try_parse(path);
+  if ((addr).ok == 1) {
+  return flowc_claim_address_phrase(addr);
+}
+  return path;
+}
+
+const char* pdg_latex_escape(const char* text) {
+  const char* s = text;
+  s = pdg_replace(s, "\\", "\\textbackslash{}");
+  s = pdg_replace(s, "&", "\\&");
+  s = pdg_replace(s, "%", "\\%");
+  s = pdg_replace(s, "$", "\\$");
+  s = pdg_replace(s, "#", "\\#");
+  s = pdg_replace(s, "_", "\\_");
+  s = pdg_replace(s, "{", "\\{");
+  s = pdg_replace(s, "}", "\\}");
+  s = pdg_replace(s, "~", "\\textasciitilde{}");
+  s = pdg_replace(s, "^", "\\textasciicircum{}");
+  s = pdg_replace(s, "·", "\\textperiodcentered{}");
+  s = pdg_replace(s, "«", "\\guillemotleft{}");
+  s = pdg_replace(s, "»", "\\guillemotright{}");
+  s = pdg_replace(s, "α", "$\\alpha$");
+  s = pdg_replace(s, "β", "$\\beta$");
+  s = pdg_replace(s, "γ", "$\\gamma$");
+  s = pdg_replace(s, "′", "$'$");
+  return s;
+}
+
+const char* pdg_slug_label(const char* path) {
+  FlowcClaimAddress addr = flowc_claim_try_parse(path);
+  if ((addr).ok == 1) {
+  return pdg_replace(flowc_claim_slug(addr), ".", "-");
+}
+  const char* s = pdg_replace(path, "/", "-");
+  s = pdg_replace(s, "+", "plus");
+  s = pdg_replace(s, "*", "star");
+  s = pdg_replace(s, "|", "or");
+  s = pdg_replace(s, ".", "-");
+  s = pdg_replace(s, "=", "eq");
+  s = pdg_replace(s, "«", "");
+  s = pdg_replace(s, "»", "");
+  s = pdg_replace(s, " ", "-");
+  return s;
+}
+
+const char* pdg_facet_title(const char* claim_path, const char* means) {
+  if (pdg_len(means) > 0) {
+  int32_t dot = pdg_find_char(means, 46, 0);
+  const char* first = means;
+  if (dot >= 0) {
+  first = pdg_sub(means, 0, dot);
+}
+  first = pdg_strip(first);
+  if (pdg_starts(pdg_lower(first), "adding") == 1) {
+  return pdg_upper_first(first);
+}
+  return first;
+}
+  const char* facet = claim_path;
+  int32_t dot = pdg_rfind_char(claim_path, 46);
+  if (dot >= 0) {
+  facet = pdg_sub(claim_path, (dot + 1), pdg_len(claim_path));
+}
+  return pdg_capitalize(pdg_replace(facet, "-", " "));
+}
+
+const char* pdg_tier_or_derived(const char* tier) {
+  if (pdg_len(tier) == 0) {
+  return "derived";
+}
+  return tier;
+}
+
+const char* pdg_claim_sentence(PdgThm* t) {
+  if (pdg_len((t[0]).means) > 0) {
+  return pdg_rstrip_dots((t[0]).means);
+}
+  if (pdg_len((t[0]).claim_expr) > 0) {
+  const char* key = pdg_collapse_ws(flowc_flow_expr_to_mathematical_english((t[0]).claim_expr));
+  return __flowc_str_concat(__flowc_str_concat("We're showing that ", key), ".");
+}
+  return "We're showing this claim holds.";
+}
+
+const char* pdg_claim_math_latex(PdgThm* t) {
+  const char* src = (t[0]).claim_expr;
+  if (pdg_len(src) == 0) {
+  src = (t[0]).means;
+}
+  const char* claim = flowc_flow_expr_to_latex(src);
+  const char* params = (t[0]).params;
+  if (pdg_len(params) == 0) {
+  return claim;
+}
+  const char* quants = "";
+  int32_t nq = 0;
+  int32_t n = pdg_len(params);
+  uint8_t* p = (uint8_t*)(params);
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == n || p[i] == 44) {
+  const char* chunk = pdg_strip(pdg_sub(params, s, i));
+  int32_t colon = pdg_find_char(chunk, 58, 0);
+  if (pdg_len(chunk) > 0 && colon >= 0) {
+  const char* var = pdg_strip(pdg_sub(chunk, 0, colon));
+  const char* dom = pdg_strip(pdg_sub(chunk, (colon + 1), pdg_len(chunk)));
+  const char* dom_tex = pdg_latex_escape(dom);
+  if (flowc_type_latex_known(dom) == 1) {
+  dom_tex = flowc_type_latex(dom);
+}
+  if (nq > 0) {
+  quants = __flowc_str_concat(quants, " ");
+}
+  quants = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(quants, "\\forall "), var), " \\in "), dom_tex);
+  nq = (nq + 1);
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  if (nq > 0) {
+  return __flowc_str_concat(__flowc_str_concat(quants, "\\quad "), claim);
+}
+  return claim;
+}
+
+const char* pdg_assume_ref(const char* text) {
+  int32_t lp = pdg_find_char(text, 40, 0);
+  if (lp < 0) {
+  return pdg_strip(text);
+}
+  return pdg_strip(pdg_sub(text, 0, lp));
+}
+
+const char* pdg_assume_args(const char* text) {
+  int32_t lp = pdg_find_char(text, 40, 0);
+  if (lp < 0) {
+  return "";
+}
+  int32_t rp = pdg_rfind_char(text, 41);
+  return pdg_strip(pdg_sub(text, (lp + 1), rp));
+}
+
+int32_t pdg_split_args(const char* args, const char** out, int32_t cap) {
+  if (pdg_len(pdg_strip(args)) == 0) {
+  return 0;
+}
+  int32_t n = pdg_len(args);
+  uint8_t* p = (uint8_t*)(args);
+  int32_t c = 0;
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == n || p[i] == 44) {
+  if (c < cap) {
+  out[c] = pdg_strip(pdg_sub(args, s, i));
+}
+  c = (c + 1);
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  return c;
+}
+
+int32_t pdg_count_commas(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t c = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 44) {
+  c = (c + 1);
+}
+  i = (i + 1);
+}
+  return c;
+}
+
+const char* pdg_premise_template(FlowcClaimAddress addr) {
+  const char* c = (addr).carrier;
+  const char* s = (addr).structure;
+  const char* l = (addr).law;
+  if (pdg_eq(c, "Nat") == 1 && pdg_eq(s, "addition") == 1) {
+  if (pdg_eq(l, "zero is the left identity") == 1) {
+  return "0 + {0} == {0}";
+}
+  if (pdg_eq(l, "successor on the right steps the sum") == 1) {
+  return "{0} + succ({1}) == succ({0} + {1})";
+}
+  if (pdg_eq(l, "zero is the right identity") == 1) {
+  return "{0} + 0 == {0}";
+}
+  if (pdg_eq(l, "order does not matter") == 1) {
+  return "{0} + {1} == {1} + {0}";
+}
+}
+  if (pdg_eq(c, "Eq") == 1 && pdg_eq(s, "equality") == 1 && pdg_eq(l, "everything equals itself") == 1) {
+  return "{0} == {0}";
+}
+  if (pdg_eq(c, "Bool") == 1 && pdg_eq(s, "disjunction") == 1 && pdg_eq(l, "order does not matter") == 1) {
+  return "{0} or {1} == {1} or {0}";
+}
+  if (pdg_eq(c, "Int") == 1 && pdg_eq(s, "multiplication") == 1 && pdg_eq(l, "squaring never yields a negative") == 1) {
+  return "{0} * {0} >= 0";
+}
+  return "";
+}
+
+const char* pdg_sub_word(const char* s, const char* name, const char* value) {
+  int32_t n = pdg_len(s);
+  int32_t m = pdg_len(name);
+  if (m == 0) {
+  return s;
+}
+  uint8_t* p = (uint8_t*)(s);
+  uint8_t* q = (uint8_t*)(name);
+  int32_t name_w0 = pdg_is_word(q[0]);
+  int32_t name_w1 = pdg_is_word(q[(m - 1)]);
+  const char* out = "";
+  int32_t pos = 0;
+  int32_t i = 0;
+  while ((i + m) <= n) {
+  int32_t hit = 0;
+  if (pdg_at(s, i, name) == 1) {
+  int32_t before = 0;
+  if (i > 0) {
+  before = pdg_is_word(p[(i - 1)]);
+}
+  int32_t after = 0;
+  if ((i + m) < n) {
+  after = pdg_is_word(p[(i + m)]);
+}
+  if (before != name_w0 && after != name_w1) {
+  hit = 1;
+}
+}
+  if (hit == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, pos, i)), value);
+  i = (i + m);
+  pos = i;
+} else {
+  i = (i + 1);
+}
+}
+  return __flowc_str_concat(out, pdg_sub(s, pos, n));
+}
+
+const char* pdg_premise_latex(const char* ref, const char* args, const char* claim_expr, const char* params) {
+  const char** vals = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas(args) + 2)) * 8))));
+  FlowcClaimAddress addr = flowc_claim_try_parse(ref);
+  if ((addr).ok == 1) {
+  const char* tmpl = pdg_premise_template(addr);
+  if (pdg_len(tmpl) > 0) {
+  int32_t nv = pdg_split_args(args, vals, (pdg_count_commas(args) + 1));
+  const char* filled = tmpl;
+  int32_t i = 0;
+  while (i < nv) {
+  filled = pdg_replace(filled, __flowc_str_concat(__flowc_str_concat("{", pdg_itoa(i)), "}"), vals[i]);
+  i = (i + 1);
+}
+  return flowc_flow_expr_to_latex(filled);
+}
+}
+  if (pdg_len(claim_expr) > 0 && pdg_len(params) > 0) {
+  const char** names = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas(params) + 2)) * 8))));
+  int32_t nn = 0;
+  int32_t np = pdg_len(params);
+  uint8_t* pp = (uint8_t*)(params);
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= np) {
+  if (i == np || pp[i] == 44) {
+  const char* chunk = pdg_strip(pdg_sub(params, s, i));
+  if (pdg_len(chunk) > 0) {
+  int32_t colon = pdg_find_char(chunk, 58, 0);
+  if (colon >= 0) {
+  names[nn] = pdg_strip(pdg_sub(chunk, 0, colon));
+} else {
+  names[nn] = chunk;
+}
+  nn = (nn + 1);
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  int32_t nv = pdg_split_args(args, vals, (pdg_count_commas(args) + 1));
+  if (nn > 0 && nv > 0 && nn == nv) {
+  const char* out = claim_expr;
+  int32_t k = 0;
+  while (k < nn) {
+  out = pdg_sub_word(out, names[k], vals[k]);
+  k = (k + 1);
+}
+  return flowc_flow_expr_to_latex(out);
+}
+}
+  return "";
+}
+
+const char* pdg_assume_premise(const char* ref, const char* phrase, const char* args, const char* ref_tier, const char* theorem_ref) {
+  const char* t = flowc_claim_path_normalize_tier(ref_tier);
+  const char* kind = "prior claim";
+  if (pdg_eq(t, "definition") == 1) {
+  kind = "definitional clause";
+}
+  if (pdg_eq(t, "axiom") == 1) {
+  kind = "axiom";
+}
+  if (pdg_eq(t, "derived") == 1) {
+  kind = "derived fact";
+}
+  FlowcClaimAddress addr = flowc_claim_try_parse(ref);
+  if ((addr).ok == 1) {
+  return flowc_invoke_premise_mathematical(addr, phrase, args, kind, theorem_ref);
+}
+  if (pdg_len(args) > 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We invoke the ", kind), ": "), phrase), " (instantiated for "), args), ").");
+}
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We invoke the ", kind), ": "), phrase), ".");
+}
+
+void pdg_catalog_add(PdgMap* cat, PdgDoc* d) {
+  int32_t k = 0;
+  while (k < (d[0]).nthm) {
+  PdgThm t = (d[0]).thms[k];
+  pdg_map_set(cat, (t).claim_path, __flowc_str_concat(__flowc_str_concat(pdg_tier_or_derived((t).tier), "\n"), pdg_itoa((t).number)));
+  k = (k + 1);
+}
+}
+
+const char* pdg_catalog_ref(PdgMap* cat, const char* ref) {
+  if ((cat[0]).n == 0) {
+  return "";
+}
+  const char* e = pdg_map_get(cat, ref, "");
+  if (pdg_len(e) == 0) {
+  return "";
+}
+  int32_t nl = pdg_find_char(e, 10, 0);
+  return __flowc_str_concat(__flowc_str_concat(flowc_claim_path_tier_label(pdg_sub(e, 0, nl)), " "), pdg_sub(e, (nl + 1), pdg_len(e)));
+}
+
+const char* pdg_natural_assume(PdgDoc* d, PdgThm* t, const char* text, PdgMap* tiers, PdgMap* cat, int32_t* ctx, int32_t nctx) {
+  const char* ref = pdg_assume_ref(text);
+  const char* phrase = pdg_claim_phrase(ref);
+  const char* args = pdg_assume_args(text);
+  if (pdg_eq(ref, (t[0]).claim_path) == 1) {
+  const char* var = "n";
+  if (pdg_len(args) > 0) {
+  int32_t c = pdg_find_char(args, 44, 0);
+  if (c >= 0) {
+  var = pdg_strip(pdg_sub(args, 0, c));
+} else {
+  var = pdg_strip(args);
+}
+} else {
+  if (pdg_len((t[0]).params) > 0) {
+  int32_t c = pdg_find_char((t[0]).params, 58, 0);
+  if (c >= 0) {
+  var = pdg_strip(pdg_sub((t[0]).params, 0, c));
+} else {
+  var = pdg_strip((t[0]).params);
+}
+}
+}
+  const char* lead = pdg_under_refs(ctx, nctx);
+  const char* body = __flowc_str_concat(__flowc_str_concat("We cross the inductive boundary: assume the claim holds for ", var), " (the induction hypothesis).");
+  if (pdg_len(lead) > 0) {
+  return __flowc_str_concat(lead, pdg_lower_first(body));
+}
+  return body;
+}
+  const char* ref_tier = pdg_map_get(tiers, ref, "derived");
+  return pdg_assume_premise(ref, phrase, args, ref_tier, pdg_catalog_ref(cat, ref));
+}
+
+const char* pdg_natural_let(const char* text, int32_t* ctx, int32_t nctx) {
+  const char* lead = pdg_under_refs(ctx, nctx);
+  const char* t = pdg_strip(text);
+  int32_t n = pdg_len(t);
+  uint8_t* p = (uint8_t*)(t);
+  const char* body = "";
+  int32_t i = 0;
+  while (i < n && pdg_is_word(p[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t ne = i;
+  if (ne > 0) {
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (i < n && p[i] == 61) {
+  i = (i + 1);
+  while (i < n && pdg_is_ws(p[i]) == 1) {
+  i = (i + 1);
+}
+  if (pdg_at(t, i, "pred(") == 1) {
+  int32_t a0 = (i + 5);
+  int32_t j = a0;
+  while (j < n && pdg_is_word(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j > a0 && j < n && p[j] == 41) {
+  body = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("let ", pdg_sub(t, 0, ne)), " denote the predecessor of "), pdg_sub(t, a0, j)), ".");
+}
+}
+}
+}
+  if (pdg_len(body) == 0) {
+  if (pdg_contains(text, "pred(n)") == 1) {
+  body = "let k denote the predecessor of n.";
+} else {
+  body = __flowc_str_concat(__flowc_str_concat("let ", text), ".");
+}
+}
+  if (pdg_len(lead) > 0) {
+  return __flowc_str_concat(lead, body);
+}
+  return pdg_upper_first(body);
+}
+
+const char* pdg_geometry_direct(const char* claim_path) {
+  if (pdg_eq(claim_path, "«Geometry» «intersecting lines» «vertical angles are equal»") == 1) {
+  return "α and β form a straight angle, and so do β and α′, hence α equals α′";
+}
+  if (pdg_eq(claim_path, "«Geometry» «right triangle» «the Pythagorean relation holds»") == 1) {
+  return "the square on the hypotenuse decomposes into the two squares on the legs";
+}
+  return "";
+}
+
+const char* pdg_geometry_deduction(const char* claim_path, const char* prem) {
+  if (pdg_eq(claim_path, "«Geometry» «isosceles triangle» «base angles are equal»") == 1 && pdg_eq(prem, "«Geometry» «triangle congruence» «side-angle-side implies congruence»") == 1) {
+  return "the two halves of the isosceles triangle are congruent by SAS, so the base angles match";
+}
+  if (pdg_eq(claim_path, "«Geometry» «triangle» «interior angles sum to two right angles»") == 1 && pdg_eq(prem, "«Geometry» «parallel lines» «alternate angles are equal»") == 1) {
+  return "a line through the apex parallel to the base makes alternate angles with the sides, so the three interior angles line up on a straight line";
+}
+  if (pdg_eq(claim_path, "«Geometry» «circle» «Thales right angle in semicircle»") == 1 && pdg_eq(prem, "«Geometry» «triangle» «interior angles sum to two right angles»") == 1) {
+  return "triangle ABC has two equal base angles at A and B because OA = OB, so the angle at C is the remaining half of two right angles";
+}
+  if (pdg_eq(claim_path, "«Geometry» «circle» «inscribed angle is half the central angle»") == 1 && pdg_eq(prem, "«Geometry» «circle» «radii from the centre are equal»") == 1) {
+  return "the two radii OA and OB form an isosceles triangle, so the inscribed angle at P is half the central angle at O";
+}
+  if (pdg_eq(claim_path, "«Analysis» «Taylor series» «sin equals its Maclaurin series near zero»") == 1 && pdg_eq(prem, "«Analysis» «smooth functions» «derivatives of sine are known»") == 1) {
+  return "the Maclaurin coefficients match the known derivatives of sine at zero, so each partial sum agrees with sin(x) to the next order";
+}
+  return "";
+}
+
+const char* pdg_natural_therefore(const char* text, int32_t is_base, int32_t is_final, int32_t npremise, int32_t* premise_nums, const char* premise_ref_str, const char* tier, int32_t in_case, int32_t* case_close, int32_t ncase_close, const char* claim_path, const char** premise_claims, int32_t nclaims) {
+  const char* plain = flowc_flow_expr_to_mathematical_english(text);
+  const char* from_phrase = "";
+  if (pdg_len(premise_ref_str) > 0) {
+  from_phrase = __flowc_str_concat(__flowc_str_concat("From ", premise_ref_str), ", ");
+}
+  if (npremise == 0) {
+  const char* body = "";
+  const char* direct = pdg_geometry_direct(claim_path);
+  if (pdg_eq(tier, "definition") == 1) {
+  body = __flowc_str_concat(__flowc_str_concat("This follows directly from the definition: ", plain), ".");
+} else {
+  if (pdg_eq(tier, "axiom") == 1) {
+  body = __flowc_str_concat(__flowc_str_concat("This holds immediately by the stated axiom: ", plain), ".");
+} else {
+  if (in_case == 1 && is_final == 0) {
+  body = __flowc_str_concat(__flowc_str_concat("In this case, we can deduce that ", plain), ".");
+} else {
+  if (in_case == 1 && is_final == 1) {
+  body = __flowc_str_concat(__flowc_str_concat("In this case, this implies ", plain), ".");
+} else {
+  if (is_final == 1 && pdg_len(direct) > 0) {
+  body = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(direct, ", so "), plain), ".");
+} else {
+  body = __flowc_str_concat(__flowc_str_concat("We can deduce that ", plain), ".");
+}
+}
+}
+}
+}
+  if (is_final == 1) {
+  return __flowc_str_concat(body, " Hence proven.");
+}
+  return body;
+}
+  if (nclaims > 0 && pdg_len(claim_path) > 0) {
+  int32_t i = 0;
+  while (i < nclaims) {
+  const char* bridge = pdg_geometry_deduction(claim_path, premise_claims[i]);
+  if (pdg_len(bridge) > 0 && is_final == 1 && in_case == 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, bridge), ", so "), plain), ". Hence proven.");
+}
+  i = (i + 1);
+}
+  if (is_final == 1 && in_case == 0 && pdg_contains(claim_path, "«Euclid Book I»") == 1 && pdg_len(premise_ref_str) > 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "by the chain of results established in Book I ("), premise_ref_str), "), we obtain "), plain), ". Hence proven.");
+}
+}
+  if (is_base == 1) {
+  const char* base_refs = premise_ref_str;
+  if (pdg_len(base_refs) == 0) {
+  base_refs = pdg_fmt_refs(premise_nums, npremise);
+}
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "we can deduce that "), plain), ". This establishes the base case (see "), base_refs), "). Hence proven.");
+}
+  if (is_final == 1 && in_case == 1 && ncase_close > 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "this implies "), plain), ". Together with the other cases ("), pdg_fmt_refs(case_close, ncase_close)), "), the goal is discharged. Hence proven.");
+}
+  if (is_final == 1) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "this implies "), plain), ". Hence proven.");
+}
+  if (in_case == 1) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "this implies "), plain), " in this case.");
+}
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "we can deduce that "), plain), ".");
+}
+
+void pdg_add_line(PdgLine* lines, int32_t* n, int32_t number, const char* english, const char* math, int32_t* refs, int32_t nrefs) {
+  int32_t k = n[0];
+  (lines[k]).number = number;
+  (lines[k]).english = english;
+  (lines[k]).math = math;
+  (lines[k]).is_goal = 0;
+  int32_t* r = (int32_t*)((int32_t*)(malloc(((int64_t)((nrefs + 1)) * 4))));
+  int32_t i = 0;
+  while (i < nrefs) {
+  r[i] = refs[i];
+  i = (i + 1);
+}
+  (lines[k]).refs = r;
+  (lines[k]).nrefs = nrefs;
+  n[0] = (k + 1);
+}
+
+int32_t pdg_step_kind(PdgDoc* d, PdgThm* t, int32_t i) {
+  return ((d[0]).steps[((t[0]).step0 + i)]).kind;
+}
+
+int32_t pdg_is_induction(PdgDoc* d, PdgThm* t) {
+  int32_t has_if = 0;
+  int32_t has_else = 0;
+  int32_t recursive = 0;
+  int32_t lp = pdg_find_char((t[0]).claim_path, 40, 0);
+  const char* head = (t[0]).claim_path;
+  if (lp >= 0) {
+  head = pdg_sub(head, 0, lp);
+}
+  int32_t i = 0;
+  while (i < (t[0]).nsteps) {
+  PdgStep s = (d[0]).steps[((t[0]).step0 + i)];
+  if ((s).kind == PDG_IF) {
+  has_if = 1;
+}
+  if ((s).kind == PDG_CASE && pdg_eq((s).detail, "else") == 1) {
+  has_else = 1;
+}
+  if ((s).kind == PDG_ASSUME && pdg_contains((s).text, head) == 1) {
+  recursive = 1;
+}
+  i = (i + 1);
+}
+  if (has_if == 1 && has_else == 1 && recursive == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t pdg_is_case_analysis(PdgDoc* d, PdgThm* t) {
+  int32_t has_if = 0;
+  int32_t i = 0;
+  while (i < (t[0]).nsteps) {
+  if (pdg_step_kind(d, t, i) == PDG_IF) {
+  has_if = 1;
+}
+  i = (i + 1);
+}
+  if (has_if == 1 && pdg_is_induction(d, t) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t* pdg_one(int32_t v) {
+  int32_t* r = (int32_t*)((int32_t*)(malloc(8)));
+  r[0] = v;
+  return r;
+}
+
+int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* lines) {
+  int32_t* nl = (int32_t*)((int32_t*)(malloc(8)));
+  nl[0] = 0;
+  int32_t* none = (int32_t*)((int32_t*)(malloc(8)));
+  (lines[0]).number = 0;
+  (lines[0]).english = pdg_claim_sentence(t);
+  (lines[0]).math = pdg_claim_math_latex(t);
+  (lines[0]).is_goal = 1;
+  (lines[0]).refs = none;
+  (lines[0]).nrefs = 0;
+  nl[0] = 1;
+  int32_t step_num = 1;
+  FlowcClaimAddress claim = flowc_claim_try_parse((t[0]).claim_path);
+  if ((claim).ok == 1 && pdg_len((t[0]).tier) > 0) {
+  pdg_add_line(lines, nl, step_num, flowc_tier_opening_mathematical((t[0]).tier, claim), "", none, 0);
+  step_num = (step_num + 1);
+}
+  int32_t induction = pdg_is_induction(d, t);
+  int32_t case_analysis = pdg_is_case_analysis(d, t);
+  if (case_analysis == 1) {
+  pdg_add_line(lines, nl, step_num, "We split into exhaustive cases. The claim must hold in each one.", "", none, 0);
+  step_num = (step_num + 1);
+}
+  int32_t case_num = 0;
+  if (induction == 1) {
+  const char* var = "n";
+  if (pdg_len((t[0]).params) > 0) {
+  int32_t c = pdg_find_char((t[0]).params, 58, 0);
+  if (c >= 0) {
+  var = pdg_strip(pdg_sub((t[0]).params, 0, c));
+} else {
+  var = pdg_strip((t[0]).params);
+}
+}
+  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat("We proceed by induction on ", var), ": first the base case, then the inductive step."), "", none, 0);
+  step_num = (step_num + 1);
+}
+  int32_t in_base = induction;
+  int32_t seen_else = 0;
+  int32_t cap = ((t[0]).nsteps + 8);
+  int32_t* pending = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t npending = 0;
+  int32_t therefore_count = 0;
+  int32_t total_therefore = 0;
+  int32_t i0 = 0;
+  while (i0 < (t[0]).nsteps) {
+  if (pdg_step_kind(d, t, i0) == PDG_THEREFORE) {
+  total_therefore = (total_therefore + 1);
+}
+  i0 = (i0 + 1);
+}
+  int32_t current_case_step = (0 - 1);
+  int32_t* case_open = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t ncase_open = 0;
+  int32_t inductive_step_num = 0;
+  int32_t base_case_step_num = 0;
+  int32_t split_step_num = 0;
+  int32_t meta_cap = ((cap * 2) + 8);
+  const char** meta_ref = (const char**)((const char**)(malloc(((int64_t)(meta_cap) * 8))));
+  int32_t* meta_has = (int32_t*)((int32_t*)(malloc(((int64_t)(meta_cap) * 4))));
+  int32_t z = 0;
+  while (z < meta_cap) {
+  meta_has[z] = 0;
+  z = (z + 1);
+}
+  if (case_analysis == 1 && nl[0] > 0 && (lines[(nl[0] - 1)]).is_goal == 0) {
+  split_step_num = (lines[(nl[0] - 1)]).number;
+}
+  int32_t* premise = (int32_t*)((int32_t*)(malloc((((int64_t)(cap) * 4) + 8))));
+  const char** prem_labels = (const char**)((const char**)(malloc((((int64_t)(cap) * 8) + 8))));
+  const char** prem_claims = (const char**)((const char**)(malloc((((int64_t)(cap) * 8) + 8))));
+  int32_t* uniq = (int32_t*)((int32_t*)(malloc((((int64_t)(cap) * 4) + 8))));
+  int32_t si = 0;
+  while (si < (t[0]).nsteps) {
+  PdgStep st = (d[0]).steps[((t[0]).step0 + si)];
+  if ((st).kind == PDG_IF && case_analysis == 1) {
+  case_num = (case_num + 1);
+  const char* cond = flowc_mathematical_case_condition((st).detail);
+  if (split_step_num != 0) {
+  int32_t* r = (int32_t*)(pdg_one(split_step_num));
+  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), " (see "), pdg_fmt_refs(r, 1)), "): suppose "), cond), "."), "", r, 1);
+} else {
+  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), ": suppose "), cond), "."), "", none, 0);
+}
+  current_case_step = step_num;
+  case_open[ncase_open] = step_num;
+  ncase_open = (ncase_open + 1);
+  npending = 0;
+  step_num = (step_num + 1);
+} else {
+  if ((st).kind == PDG_IF && induction == 1) {
+  const char* cond = flowc_mathematical_case_condition((st).detail);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat("Consider the base case in which ", cond), "."), "", none, 0);
+  base_case_step_num = step_num;
+  current_case_step = step_num;
+  npending = 0;
+  step_num = (step_num + 1);
+  in_base = 1;
+} else {
+  if ((st).kind == PDG_CASE && case_analysis == 1 && induction == 0) {
+  npending = 0;
+  case_num = (case_num + 1);
+  int32_t* refs = (int32_t*)(none);
+  int32_t nrefs = 0;
+  if (split_step_num != 0) {
+  refs = pdg_one(split_step_num);
+  nrefs = 1;
+}
+  const char* see = pdg_fmt_refs(refs, nrefs);
+  if (pdg_eq((st).detail, "else") == 1) {
+  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), " (see "), see), "): neither disjunct holds."), "", refs, nrefs);
+} else {
+  const char* cond = flowc_mathematical_case_condition(pdg_replace((st).detail, "case ", ""));
+  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), " (see "), see), "): suppose "), cond), "."), "", refs, nrefs);
+}
+  current_case_step = step_num;
+  case_open[ncase_open] = step_num;
+  ncase_open = (ncase_open + 1);
+  step_num = (step_num + 1);
+} else {
+  if ((st).kind == PDG_CASE && pdg_eq((st).detail, "else") == 1 && induction == 1) {
+  if (seen_else == 0) {
+  pdg_add_line(lines, nl, step_num, "For the inductive step, suppose the claim holds for all smaller values.", "", none, 0);
+  inductive_step_num = step_num;
+  current_case_step = step_num;
+  npending = 0;
+  step_num = (step_num + 1);
+  seen_else = 1;
+  in_base = 0;
+}
+} else {
+  if ((st).kind == PDG_ASSUME) {
+  const char* ref = pdg_assume_ref((st).text);
+  const char* args = pdg_assume_args((st).text);
+  int32_t* ctx = (int32_t*)(none);
+  int32_t nctx = 0;
+  if (pdg_eq(ref, (t[0]).claim_path) == 1 && inductive_step_num != 0) {
+  ctx = pdg_one(inductive_step_num);
+  nctx = 1;
+} else {
+  if (in_base == 1 && base_case_step_num != 0 && pdg_eq(ref, (t[0]).claim_path) == 0) {
+  ctx = pdg_one(base_case_step_num);
+  nctx = 1;
+}
+}
+  const char* ce = "";
+  const char* pa = "";
+  if (pdg_eq(ref, (t[0]).claim_path) == 1) {
+  ce = (t[0]).claim_expr;
+  pa = (t[0]).params;
+}
+  const char* premise_latex = pdg_premise_latex(ref, args, ce, pa);
+  const char* english = pdg_natural_assume(d, t, (st).text, tiers, cat, ctx, nctx);
+  pdg_add_line(lines, nl, step_num, english, premise_latex, ctx, nctx);
+  if (step_num < meta_cap) {
+  meta_ref[step_num] = ref;
+  meta_has[step_num] = 1;
+}
+  pending[npending] = step_num;
+  npending = (npending + 1);
+  step_num = (step_num + 1);
+} else {
+  if ((st).kind == PDG_LET) {
+  int32_t* ctx = (int32_t*)(none);
+  int32_t nctx = 0;
+  if (inductive_step_num != 0 && in_base == 0) {
+  ctx = pdg_one(inductive_step_num);
+  nctx = 1;
+}
+  pdg_add_line(lines, nl, step_num, pdg_natural_let((st).text, ctx, nctx), "", ctx, nctx);
+  pending[npending] = step_num;
+  npending = (npending + 1);
+  step_num = (step_num + 1);
+} else {
+  if ((st).kind == PDG_THEREFORE) {
+  therefore_count = (therefore_count + 1);
+  int32_t np = 0;
+  if (current_case_step >= 0) {
+  premise[np] = current_case_step;
+  np = (np + 1);
+}
+  int32_t q = 0;
+  while (q < npending) {
+  premise[np] = pending[q];
+  np = (np + 1);
+  q = (q + 1);
+}
+  int32_t is_final = 0;
+  if (therefore_count == total_therefore) {
+  is_final = 1;
+}
+  int32_t nu = pdg_sorted_unique(premise, np, uniq);
+  int32_t u = 0;
+  while (u < nu) {
+  int32_t pn = uniq[u];
+  const char* lab = __flowc_str_concat("step ", pdg_itoa(pn));
+  if (pn >= 0 && pn < meta_cap && meta_has[pn] == 1) {
+  if (pdg_eq(meta_ref[pn], (t[0]).claim_path) == 0) {
+  const char* tr = pdg_catalog_ref(cat, meta_ref[pn]);
+  if (pdg_len(tr) > 0) {
+  lab = tr;
+}
+}
+}
+  prem_labels[u] = lab;
+  u = (u + 1);
+}
+  const char* premise_ref_str = pdg_join_labels(prem_labels, nu);
+  int32_t nclaims = 0;
+  int32_t w = 0;
+  while (w < np) {
+  int32_t pn = premise[w];
+  if (pn >= 0 && pn < meta_cap && meta_has[pn] == 1 && pdg_eq(meta_ref[pn], (t[0]).claim_path) == 0) {
+  prem_claims[nclaims] = meta_ref[pn];
+  nclaims = (nclaims + 1);
+}
+  w = (w + 1);
+}
+  int32_t is_base = 0;
+  if (in_base == 1 && induction == 1) {
+  is_base = 1;
+}
+  int32_t ncc = 0;
+  if (is_final == 1 && case_analysis == 1) {
+  ncc = ncase_open;
+}
+  const char* english = pdg_natural_therefore((st).text, is_base, is_final, np, premise, premise_ref_str, (t[0]).tier, case_analysis, case_open, ncc, (t[0]).claim_path, prem_claims, nclaims);
+  pdg_add_line(lines, nl, step_num, english, flowc_flow_expr_to_latex((st).text), premise, np);
+  step_num = (step_num + 1);
+  npending = 0;
+}
+}
+}
+}
+}
+}
+}
+  si = (si + 1);
+}
+  if (step_num == 1 && pdg_len((t[0]).claim_expr) > 0) {
+  const char* plain = flowc_flow_expr_to_mathematical_english((t[0]).claim_expr);
+  pdg_add_line(lines, nl, 1, __flowc_str_concat(__flowc_str_concat("The claim follows immediately: ", plain), ". Hence proven."), flowc_flow_expr_to_latex((t[0]).claim_expr), none, 0);
+}
+  return nl[0];
+}
+
+int32_t pdg_needs(const char* needs, const char** out) {
+  int32_t n = pdg_len(needs);
+  uint8_t* p = (uint8_t*)(needs);
+  int32_t c = 0;
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == n || p[i] == 44) {
+  const char* part = pdg_strip(pdg_sub(needs, s, i));
+  if (pdg_len(part) > 0) {
+  out[c] = part;
+  c = (c + 1);
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  return c;
+}
+
+int32_t pdg_lines_cap(PdgThm* t) {
+  return (((t[0]).nsteps * 2) + 16);
+}
+
+const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
+  const char* out = "";
+  FlowcClaimAddress claim = flowc_claim_try_parse((t[0]).claim_path);
+  if ((claim).ok == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "**Coordinate.** "), flowc_addr_coordinate_display(claim)), " · **"), flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier))), "**\n\n");
+}
+  if (pdg_len((t[0]).from_source) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "*Source: "), (t[0]).from_source), "*\n\n");
+}
+  const char** needs = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
+  int32_t nn = pdg_needs((t[0]).needs, needs);
+  if (nn > 0) {
+  const char* s = "";
+  int32_t i = 0;
+  while (i < nn) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, ", ");
+}
+  s = __flowc_str_concat(s, pdg_claim_phrase(needs[i]));
+  i = (i + 1);
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "*Built on: "), s), "*\n\n");
+}
+  PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
+  PdgMap none = flowc_pdg_map_new(4);
+  int32_t n = pdg_tutorial(d, t, tiers, (&none), lines);
+  if (n > 0 && (lines[0]).is_goal == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "> **Goal.** "), (lines[0]).english), "\n");
+  if (pdg_len((lines[0]).math) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, ">\n> $$"), (lines[0]).math), "$$\n");
+}
+  out = __flowc_str_concat(out, "\n");
+}
+  if (pdg_len((t[0]).diagram_svg) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "**Figure.**\n\n!["), (t[0]).diagram_svg), "]("), (t[0]).diagram_svg), ")\n\n");
+}
+  out = __flowc_str_concat(out, "| | **Proof** | | **Math** |\n|:---:|:---|:---:|:---|\n");
+  int32_t i = 0;
+  int32_t ntraced = 0;
+  while (i < n) {
+  if ((lines[i]).is_goal == 0) {
+  const char* c = pdg_circled((lines[i]).number);
+  const char* mc = "";
+  const char* c2 = "";
+  if (pdg_len((lines[i]).math) > 0) {
+  mc = __flowc_str_concat(__flowc_str_concat("$", (lines[i]).math), "$");
+  c2 = c;
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "| "), c), " | "), (lines[i]).english), " | "), c2), " | "), mc), " |\n");
+  if ((lines[i]).nrefs > 0) {
+  ntraced = (ntraced + 1);
+}
+}
+  i = (i + 1);
+}
+  if (ntraced > 0) {
+  out = __flowc_str_concat(out, "\n**Trace.** Each step lists the earlier steps it depends on.\n\n| Step | Uses |\n|:---:|:---|\n");
+  int32_t j = 0;
+  while (j < n) {
+  if ((lines[j]).is_goal == 0 && (lines[j]).nrefs > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "| "), pdg_circled((lines[j]).number)), " | "), pdg_fmt_refs((lines[j]).refs, (lines[j]).nrefs)), " |\n");
+}
+  j = (j + 1);
+}
+}
+  out = __flowc_str_concat(out, "\n");
+  if ((claim).ok == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "`"), flowc_addr_coordinate_display(claim)), "`");
+} else {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "`"), (t[0]).claim_path), "`");
+}
+  return out;
+}
+
+const char* pdg_rstrip(const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t b = pdg_len(s);
+  while (b > 0 && pdg_is_ws(p[(b - 1)]) == 1) {
+  b = (b - 1);
+}
+  return pdg_sub(s, 0, b);
+}
+
+const char* flowc_proof_render_md(PdgDoc* d, const char* stem, PdgMap* tiers) {
+  const char* title = (d[0]).modname;
+  if (pdg_len(title) == 0) {
+  title = stem;
+}
+  const char* out = __flowc_str_concat(__flowc_str_concat("# ", title), "\n\n");
+  if (pdg_len((d[0]).means) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "*"), (d[0]).means), "*\n\n");
+}
+  if (pdg_len((d[0]).from_source) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "**Source.** "), (d[0]).from_source), "\n\n");
+}
+  int32_t k = 0;
+  while (k < (d[0]).nthm) {
+  PdgThm* t = (PdgThm*)((&(d[0]).thms[k]));
+  const char* title2 = pdg_facet_title((t[0]).claim_path, (t[0]).means);
+  const char* label = flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "## "), label), " "), pdg_itoa((t[0]).number)), ": "), title2), "\n\n");
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_render_thm_md(d, t, tiers)), "\n\n");
+  k = (k + 1);
+}
+  return __flowc_str_concat(pdg_rstrip(out), "\n");
+}
+
+const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, int32_t book_mode) {
+  const char* label = pdg_slug_label((t[0]).claim_path);
+  const char* title = pdg_facet_title((t[0]).claim_path, (t[0]).means);
+  const char* tier = flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier));
+  const char* out = "\\bigskip\n";
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\noindent{\\large \\textbf{"), tier), " "), pdg_itoa((t[0]).number)), ".} \\textit{"), pdg_latex_escape(title)), "} \\hfill "), flowc_claim_path_latex((t[0]).claim_path)), "}\\par\n");
+  if (book_mode == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\addcontentsline{toc}{subsection}{"), pdg_latex_escape(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(tier, " "), pdg_itoa((t[0]).number)), ": "), title))), "}\n");
+}
+  FlowcClaimAddress claim = flowc_claim_try_parse((t[0]).claim_path);
+  if ((claim).ok == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\smallskip\\noindent\\textit{Coordinate: "), flowc_addr_coordinate_latex(claim)), "}\\par\n");
+}
+  if (pdg_len((t[0]).from_source) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\smallskip\\noindent\\textit{Source: "), pdg_latex_escape((t[0]).from_source)), "}\\par\n");
+}
+  const char** needs = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
+  int32_t nn = pdg_needs((t[0]).needs, needs);
+  if ((cat[0]).n > 0 && nn > 0) {
+  const char* s = "";
+  int32_t i = 0;
+  while (i < nn) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, ", ");
+}
+  const char* need = needs[i];
+  const char* e = pdg_map_get(cat, need, "");
+  if (pdg_len(e) > 0) {
+  int32_t nl = pdg_find_char(e, 10, 0);
+  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "\\hyperref[thm:"), pdg_slug_label(need)), "]{"), flowc_claim_path_tier_label(pdg_sub(e, 0, nl))), " "), pdg_sub(e, (nl + 1), pdg_len(e))), "}");
+} else {
+  s = __flowc_str_concat(s, pdg_latex_escape(pdg_claim_phrase(needs[i])));
+}
+  i = (i + 1);
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\smallskip\\noindent\\textit{Built on: "), s), "}\\par\n");
+}
+  PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
+  int32_t n = pdg_tutorial(d, t, tiers, cat, lines);
+  if (n > 0 && (lines[0]).is_goal == 1) {
+  out = __flowc_str_concat(out, "\\medskip\n");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\noindent\\textbf{Goal.} "), pdg_latex_escape((lines[0]).english)), "\\par\n");
+  if (pdg_len((lines[0]).math) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\noindent$\\displaystyle "), (lines[0]).math), "$\\par\n");
+}
+}
+  out = __flowc_str_concat(out, "\\medskip\n\\noindent\n");
+  out = __flowc_str_concat(out, "\\begin{tabular}{@{} >{\\raggedright\\arraybackslash}p{0.06\\textwidth} >{\\raggedright\\arraybackslash}p{0.47\\textwidth} >{\\raggedleft\\arraybackslash}p{0.41\\textwidth} @{}}\n");
+  out = __flowc_str_concat(out, "\\textbf{\\#} & \\textbf{Proof} & \\textbf{Mathematics} \\\\\n");
+  out = __flowc_str_concat(out, "\\midrule\n");
+  int32_t i = 0;
+  while (i < n) {
+  if ((lines[i]).is_goal == 0) {
+  const char* right = "&";
+  if (pdg_len((lines[i]).math) > 0) {
+  right = __flowc_str_concat(__flowc_str_concat("& $\\displaystyle ", (lines[i]).math), "$");
+}
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\textbf{"), pdg_itoa((lines[i]).number)), ".} & "), pdg_latex_escape((lines[i]).english)), " "), right), " \\\\[0.45em]\n");
+}
+  i = (i + 1);
+}
+  out = __flowc_str_concat(out, "\\bottomrule\n\\end{tabular}\n");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\label{thm:"), label), "}\n");
+  out = __flowc_str_concat(out, "\\par\\medskip\\hrule");
+  return out;
+}
+
+const char* flowc_proof_render_tex(PdgDoc* d, const char* stem, PdgMap* tiers) {
+  const char* out = "\\documentclass[11pt]{article}\n";
+  out = __flowc_str_concat(out, "\\usepackage[T1]{fontenc}\n");
+  out = __flowc_str_concat(out, "\\usepackage{textcomp}\n");
+  out = __flowc_str_concat(out, "\\usepackage[margin=0.75in]{geometry}\n");
+  out = __flowc_str_concat(out, "\\usepackage{amsmath,amssymb,amsthm}\n");
+  out = __flowc_str_concat(out, "\\usepackage{array,booktabs}\n");
+  out = __flowc_str_concat(out, "\\usepackage{hyperref}\n");
+  out = __flowc_str_concat(out, "\\setlength{\\parindent}{0pt}\n");
+  out = __flowc_str_concat(out, "\\newtheorem{theorem}{Theorem}\n");
+  out = __flowc_str_concat(out, "\\theoremstyle{definition}\n");
+  out = __flowc_str_concat(out, "\\newtheorem{definition}{Definition}\n");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\title{"), pdg_latex_escape(__flowc_str_concat("Flow Proof Artifact: ", stem))), "}\n");
+  out = __flowc_str_concat(out, "\\author{Generated by \\texttt{flow doc proof}}\n");
+  out = __flowc_str_concat(out, "\\date{Flow Proof Book}\n");
+  out = __flowc_str_concat(out, "\\begin{document}\n");
+  out = __flowc_str_concat(out, "\\maketitle\n");
+  if (pdg_len((d[0]).means) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_latex_escape((d[0]).means)), "\\\\[0.5em]\n");
+}
+  if (pdg_len((d[0]).from_source) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\textbf{Source.} "), pdg_latex_escape((d[0]).from_source)), "\\\\[0.5em]\n");
+}
+  PdgMap cat = flowc_pdg_map_new(((d[0]).nthm + 8));
+  pdg_catalog_add((&cat), d);
+  int32_t k = 0;
+  while (k < (d[0]).nthm) {
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_render_thm_tex(d, (&(d[0]).thms[k]), tiers, (&cat), 0)), "\n");
+  k = (k + 1);
+}
+  return __flowc_str_concat(out, "\\end{document}\n");
+}
+
+int32_t pdg_write(const char* path, const char* text) {
+  int32_t rc = flowc_write_file(path, (uint8_t*)(text), pdg_len(text));
+  if (rc != 0) {
+  printf("flowc proof: cannot write %s\n", path);
+}
+  return rc;
+}
+
+void pdg_mkdir_p(const char* dir) {
+  int32_t n = pdg_len(dir);
+  uint8_t* p = (uint8_t*)(dir);
+  int32_t i = 1;
+  while (i <= n) {
+  if (i == n || p[i] == 47) {
+  int32_t _r = flowc_io_mkdir(pdg_sub(dir, 0, i));
+}
+  i = (i + 1);
+}
+}
+
+const char* pdg_join(const char* dir, const char* name) {
+  const char* d = dir;
+  uint8_t* dp = (uint8_t*)(d);
+  int32_t n = pdg_len(d);
+  while (n > 1 && dp[(n - 1)] == 47) {
+  n = (n - 1);
+}
+  d = pdg_sub(d, 0, n);
+  while (pdg_starts(d, "./") == 1) {
+  d = pdg_sub(d, 2, pdg_len(d));
+}
+  if (pdg_len(d) == 0 || pdg_eq(d, ".") == 1) {
+  return name;
+}
+  if (pdg_eq(d, "/") == 1) {
+  return __flowc_str_concat("/", name);
+}
+  return __flowc_str_concat(__flowc_str_concat(d, "/"), name);
+}
+
+const char* pdg_dirname(const char* path) {
+  int32_t s = pdg_rfind_char(path, 47);
+  if (s < 0) {
+  return ".";
+}
+  if (s == 0) {
+  return "/";
+}
+  return pdg_sub(path, 0, s);
+}
+
+const char* pdg_stem(const char* path) {
+  int32_t s = pdg_rfind_char(path, 47);
+  const char* base = pdg_sub(path, (s + 1), pdg_len(path));
+  int32_t dot = pdg_rfind_char(base, 46);
+  if (dot <= 0) {
+  return base;
+}
+  return pdg_sub(base, 0, dot);
+}
+
+int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32_t start, PdgMap* global, const char* root, int32_t verbose) {
+  const char* text = flowc_proof_read(path);
+  PdgDoc d = flowc_proof_parse_text(text);
+  int32_t k = 0;
+  while (k < (d).nthm) {
+  ((d).thms[k]).number = (start + k);
+  k = (k + 1);
+}
+  const char* stem = pdg_stem(path);
+  pdg_mkdir_p(out_dir);
+  const char* src_dir = pdg_dirname(path);
+  const char* diagrams = "";
+  k = 0;
+  while (k < (d).nthm) {
+  PdgThm t = (d).thms[k];
+  FlowcGeomDiagram g = flowc_geom_for_theorem((t).claim_path, (t).diagram, (t).diagram_script, src_dir, root);
+  if ((g).ok == 1) {
+  const char* suffix = "";
+  if ((d).nthm != 1) {
+  suffix = __flowc_str_concat("-", pdg_itoa((k + 1)));
+}
+  const char* svg_name = __flowc_str_concat(__flowc_str_concat(stem, suffix), ".proof.svg");
+  const char* svg_path = pdg_join(out_dir, svg_name);
+  const char* tex_path = pdg_join(out_dir, __flowc_str_concat(__flowc_str_concat(stem, suffix), ".proof-diagram.tex"));
+  if (pdg_write(svg_path, flowc_geom_render_svg((&g))) != 0) {
+  return (0 - 1);
+}
+  if (pdg_write(tex_path, __flowc_str_concat(flowc_geom_render_tikz((&g)), "\n")) != 0) {
+  return (0 - 1);
+}
+  ((d).thms[k]).diagram_svg = svg_name;
+  diagrams = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(diagrams, "Wrote "), svg_path), "\nWrote "), tex_path), "\n");
+} else {
+  if ((g).ok < 0) {
+  printf("flowc proof: %s: bad diagram script\n", path);
+  return (0 - 1);
+}
+}
+  k = (k + 1);
+}
+  PdgMap tiers = pdg_merged_tiers(global, (&d));
+  const char* md_path = pdg_join(out_dir, __flowc_str_concat(stem, ".proof.md"));
+  const char* tex_path = pdg_join(out_dir, __flowc_str_concat(stem, ".proof.tex"));
+  if (pdg_write(md_path, flowc_proof_render_md((&d), stem, (&tiers))) != 0) {
+  return (0 - 1);
+}
+  if (pdg_write(tex_path, flowc_proof_render_tex((&d), stem, (&tiers))) != 0) {
+  return (0 - 1);
+}
+  if (verbose == 1) {
+  printf("Wrote %s\nWrote %s\n%s", md_path, tex_path, diagrams);
+}
+  if (verbose == 2) {
+  printf("%s\n  -> %s\n  -> %s\n", path, md_path, tex_path);
+  const char* cmd = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cd '", out_dir), "' 2>/dev/null && { ls -1 -- '"), stem), "'*.proof.svg 2>/dev/null | LC_ALL=C sort; ls -1 -- '"), stem), "'*.proof-diagram.tex 2>/dev/null | LC_ALL=C sort; }");
+  uint8_t* buf = (uint8_t*)(malloc(1048576));
+  int32_t got = flowc_io_popen_read(cmd, buf, 1048575);
+  if (got > 0) {
+  buf[got] = 0;
+  const char* listing = (const char*)(buf);
+  int32_t cap = pdg_count_lines(listing);
+  int32_t* ls = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* le = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(listing, ls, le, cap);
+  int32_t j = 0;
+  while (j < nl) {
+  if (le[j] > ls[j]) {
+  printf("  -> %s\n", pdg_join(out_dir, pdg_sub(listing, ls[j], le[j])));
+}
+  j = (j + 1);
+}
+}
+}
+  return (d).nthm;
+}
+
+const char* pdg_env(const char* name) {
+  const char* v = getenv(name);
+  if (v == NULL) {
+  return "";
+}
+  return v;
+}
+
+int32_t flowc_proof_doc_mode() {
+  if (pdg_len(pdg_env("FLOWC_PROOF_BOOK")) > 0) {
+  return flowc_proof_book_mode();
+}
+  if (pdg_len(pdg_env("FLOWC_PROOF_KERNEL")) > 0) {
+  return flowc_proof_kernel_mode();
+}
+  if (pdg_len(pdg_env("FLOWC_KNOW")) > 0 || pdg_len(pdg_env("FLOWC_KNOW_LINT")) > 0) {
+  return flowc_proof_know_mode();
+}
+  const char* root = pdg_env("FLOWC_PROOF_ROOT");
+  if (pdg_len(root) == 0) {
+  root = ".";
+}
+  PdgMap global = flowc_proof_global_tiers(root);
+  const char* out = pdg_env("FLOWC_PROOF_OUT");
+  int32_t mirror = pdg_len(pdg_env("FLOWC_PROOF_MIRROR"));
+  int32_t tree = pdg_len(pdg_env("FLOWC_PROOF_TREE"));
+  const char** files = (const char**)((const char**)(malloc(16)));
+  int32_t nf = 0;
+  const char* list = pdg_env("FLOWC_PROOF_LIST");
+  if (pdg_len(list) > 0) {
+  const char* text = flowc_proof_read(list);
+  int32_t cap = pdg_count_lines(text);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(text, starts, ends, cap);
+  files = (const char**)(malloc(((int64_t)((nl + 1)) * 8)));
+  int32_t i = 0;
+  while (i < nl) {
+  const char* f = pdg_strip(pdg_sub(text, starts[i], ends[i]));
+  if (pdg_len(f) > 0) {
+  files[nf] = f;
+  nf = (nf + 1);
+}
+  i = (i + 1);
+}
+} else {
+  files[0] = pdg_env("FLOWC_IN");
+  nf = 1;
+}
+  int32_t counter = 1;
+  int32_t failed = 0;
+  int32_t written = 0;
+  int32_t i = 0;
+  while (i < nf) {
+  const char* f = files[i];
+  int32_t skip = 0;
+  if (tree > 0) {
+  const char* text = flowc_proof_read(f);
+  if (pdg_contains(text, "theorem ") == 0) {
+  skip = 1;
+} else {
+  PdgDoc d = flowc_proof_parse_text(text);
+  if ((d).nthm == 0) {
+  skip = 1;
+}
+}
+}
+  if (skip == 0) {
+  const char* dir = pdg_dirname(f);
+  if (pdg_len(out) > 0) {
+  dir = out;
+  if (mirror > 0) {
+  dir = __flowc_str_concat(__flowc_str_concat(out, "/"), pdg_dirname(f));
+}
+}
+  int32_t start = 1;
+  if (tree > 0) {
+  start = counter;
+}
+  int32_t verbose = 1;
+  if (tree > 0) {
+  verbose = 2;
+}
+  if (pdg_len(pdg_env("FLOWC_PROOF_QUIET")) > 0) {
+  verbose = 0;
+}
+  int32_t n = flowc_proof_write_artifacts(f, dir, start, (&global), root, verbose);
+  if (n < 0) {
+  failed = (failed + 1);
+} else {
+  counter = (counter + n);
+  written = (written + 1);
+}
+}
+  i = (i + 1);
+}
+  if (tree > 0 && pdg_len(pdg_env("FLOWC_PROOF_QUIET")) == 0) {
+  if (written == 0 && failed == 0) {
+  pdg_err("No theorem files found.");
+  return 1;
+}
+  printf("\nGenerated %d proof artifact pair(s).\n", written);
+}
+  if (failed > 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out, int32_t n) {
+  const char* mf = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(root, "/"), dir), "/MANIFEST.txt");
+  int32_t count = n;
+  if (flowc_io_file_size(mf) >= 0) {
+  const char* text = flowc_proof_read(mf);
+  int32_t cap = pdg_count_lines(text);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(text, starts, ends, cap);
+  int32_t i = 0;
+  while (i < nl) {
+  const char* f = pdg_strip(pdg_sub(text, starts[i], ends[i]));
+  if (pdg_len(f) > 0) {
+  out[count] = f;
+  count = (count + 1);
+}
+  i = (i + 1);
+}
+  return count;
+}
+  uint8_t* buf = (uint8_t*)(malloc(1048576));
+  const char* cmd = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cd '", root), "/"), dir), "' 2>/dev/null && ls prop-*.flow 2>/dev/null | LC_ALL=C sort");
+  int32_t got = flowc_io_popen_read(cmd, buf, 1048575);
+  if (got <= 0) {
+  return count;
+}
+  buf[got] = 0;
+  const char* text = (const char*)(buf);
+  int32_t cap = pdg_count_lines(text);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(text, starts, ends, cap);
+  int32_t i = 0;
+  while (i < nl) {
+  const char* f = pdg_strip(pdg_sub(text, starts[i], ends[i]));
+  if (pdg_len(f) > 0) {
+  out[count] = __flowc_str_concat(__flowc_str_concat(dir, "/"), f);
+  count = (count + 1);
+}
+  i = (i + 1);
+}
+  return count;
+}
+
+int32_t pdg_read_book(const char* root, const char* manifest, const char** part_id, const char** part_title, int32_t* part_start, const char** files) {
+  if (flowc_io_file_size(manifest) < 0) {
+  printf("flowc proof: cannot read %s\n", manifest);
+  return (0 - 1);
+}
+  const char* text = flowc_proof_read(manifest);
+  int32_t cap = pdg_count_lines(text);
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t nl = pdg_split_lines(text, starts, ends, cap);
+  int32_t np = 0;
+  int32_t nf = 0;
+  int32_t i = 0;
+  while (i < nl) {
+  const char* line = pdg_strip(pdg_sub(text, starts[i], ends[i]));
+  uint8_t* lp = (uint8_t*)(line);
+  if (pdg_len(line) > 0 && lp[0] != 35) {
+  if (pdg_starts(line, "== ") == 1) {
+  const char* rest = pdg_strip(pdg_sub(line, 3, pdg_len(line)));
+  int32_t sp = pdg_find_char(rest, 32, 0);
+  part_id[np] = pdg_sub(rest, 0, sp);
+  part_title[np] = pdg_strip(pdg_sub(rest, (sp + 1), pdg_len(rest)));
+  part_start[np] = nf;
+  np = (np + 1);
+} else {
+  if (pdg_starts(line, "@manifest ") == 1) {
+  nf = pdg_expand_manifest(root, pdg_strip(pdg_sub(line, 10, pdg_len(line))), files, nf);
+} else {
+  files[nf] = line;
+  nf = (nf + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  part_start[np] = nf;
+  return np;
+}
+
+const char* pdg_part_heading(const char* title, int32_t first) {
+  const char* out = "";
+  if (first == 0) {
+  out = "\\clearpage\n";
+}
+  const char* pt = pdg_latex_escape(title);
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\section*{"), pt), "}\n");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\addcontentsline{toc}{section}{"), pt), "}\n");
+  return __flowc_str_concat(out, "\\medskip\\par\n");
+}
+
+const char* pdg_render_bundle(PdgDoc* docs, int32_t ndocs, int32_t* doc_part, const char** part_title, int32_t nparts, const char* title, PdgMap* global) {
+  const char* out = "\\documentclass[11pt]{article}\n";
+  out = __flowc_str_concat(out, "\\usepackage[T1]{fontenc}\n");
+  out = __flowc_str_concat(out, "\\usepackage{textcomp}\n");
+  out = __flowc_str_concat(out, "\\usepackage[margin=0.75in]{geometry}\n");
+  out = __flowc_str_concat(out, "\\usepackage{amsmath,amssymb,amsthm}\n");
+  out = __flowc_str_concat(out, "\\usepackage{array,booktabs}\n");
+  out = __flowc_str_concat(out, "\\usepackage{hyperref}\n");
+  out = __flowc_str_concat(out, "\\setlength{\\parindent}{0pt}\n");
+  out = __flowc_str_concat(out, "\\newtheorem{theorem}{Theorem}\n");
+  out = __flowc_str_concat(out, "\\theoremstyle{definition}\n");
+  out = __flowc_str_concat(out, "\\newtheorem{definition}{Definition}\n");
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\title{"), pdg_latex_escape(title)), "}\n");
+  out = __flowc_str_concat(out, "\\author{Generated by \\texttt{flow doc proof}}\n");
+  out = __flowc_str_concat(out, "\\date{Flow Proof Book}\n");
+  out = __flowc_str_concat(out, "\\begin{document}\n");
+  out = __flowc_str_concat(out, "\\maketitle\n");
+  if (nparts > 0) {
+  out = __flowc_str_concat(out, "\\tableofcontents\n\\bigskip\\par\n");
+}
+  out = __flowc_str_concat(out, "\\noindent\\textit{Each proof step is numbered. English reasoning is on the left; the matching equation is on the right. Prerequisite facts are cited by number (e.g.\\ Definition 2, Axiom 9).}\\par\n");
+  out = __flowc_str_concat(out, "\\medskip\n");
+  out = __flowc_str_concat(out, "\\noindent\\textbf{Labels.} \\textit{Axiom} = accepted without proof; \\textit{Definition} = stipulation; \\textit{Derived fact} = proved from prior claims.\\par\n");
+  out = __flowc_str_concat(out, "\\bigskip\\par\n");
+  PdgMap cat = flowc_pdg_map_new(4096);
+  int32_t i = 0;
+  while (i < ndocs) {
+  pdg_catalog_add((&cat), (&docs[i]));
+  i = (i + 1);
+}
+  int32_t cur_part = (0 - 1);
+  i = 0;
+  while (i < ndocs) {
+  if (nparts > 0) {
+  while (cur_part < doc_part[i]) {
+  cur_part = (cur_part + 1);
+  const char* pt = part_title[cur_part];
+  out = __flowc_str_concat(out, pdg_part_heading(pt, pdg_eq_i(cur_part, 0)));
+}
+}
+  PdgMap tiers = pdg_merged_tiers(global, (&docs[i]));
+  int32_t k = 0;
+  while (k < (docs[i]).nthm) {
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_render_thm_tex((&docs[i]), (&(docs[i]).thms[k]), (&tiers), (&cat), 1)), "\n");
+  k = (k + 1);
+}
+  i = (i + 1);
+}
+  while (nparts > 0 && cur_part < (nparts - 1)) {
+  cur_part = (cur_part + 1);
+  const char* pt = part_title[cur_part];
+  out = __flowc_str_concat(out, pdg_part_heading(pt, pdg_eq_i(cur_part, 0)));
+}
+  return __flowc_str_concat(out, "\\end{document}\n");
+}
+
+int32_t pdg_eq_i(int32_t a, int32_t b) {
+  if (a == b) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_proof_book_mode() {
+  const char* root = pdg_env("FLOWC_PROOF_ROOT");
+  if (pdg_len(root) == 0) {
+  root = ".";
+}
+  const char* which = pdg_env("FLOWC_PROOF_BOOK");
+  const char* out_dir = pdg_env("FLOWC_PROOF_OUT");
+  if (pdg_len(out_dir) == 0) {
+  out_dir = __flowc_str_concat(root, "/build/proofs");
+}
+  const char* manifest = pdg_env("FLOWC_PROOF_MANIFEST");
+  if (pdg_len(manifest) == 0) {
+  manifest = __flowc_str_concat(root, "/tools/doc/proof_book.txt");
+}
+  const char** part_id = (const char**)((const char**)(malloc((64 * 8))));
+  const char** part_title = (const char**)((const char**)(malloc((64 * 8))));
+  int32_t* part_start = (int32_t*)((int32_t*)(malloc((65 * 4))));
+  const char** all_files = (const char**)((const char**)(malloc((16384 * 8))));
+  int32_t nparts = pdg_read_book(root, manifest, part_id, part_title, part_start, all_files);
+  if (nparts < 0) {
+  return 1;
+}
+  const char* want = "";
+  const char* title = "Flow Proof Book";
+  const char* tex_name = "flow-proof-book.tex";
+  if (pdg_eq(which, "basic") == 1) {
+  want = "basic";
+  title = "Flow Basic Proofs";
+  tex_name = "basic-proofs-side-by-side.tex";
+} else {
+  if (pdg_eq(which, "geometry") == 1) {
+  want = "euclid-i";
+  title = "Flow Euclidean Geometry";
+  tex_name = "geometry-proofs-side-by-side.tex";
+} else {
+  if (pdg_eq(which, "book") == 0) {
+  printf("flowc proof: FLOWC_PROOF_BOOK must be book, basic or geometry, got %s\n", which);
+  return 1;
+}
+}
+}
+  const char** files = (const char**)((const char**)(malloc((16384 * 8))));
+  int32_t* doc_part = (int32_t*)((int32_t*)(malloc((16384 * 4))));
+  int32_t nf = 0;
+  int32_t p = 0;
+  while (p < nparts) {
+  if (pdg_len(want) == 0 || pdg_eq(part_id[p], want) == 1) {
+  int32_t f = part_start[p];
+  while (f < part_start[(p + 1)]) {
+  files[nf] = all_files[f];
+  doc_part[nf] = p;
+  nf = (nf + 1);
+  f = (f + 1);
+}
+}
+  p = (p + 1);
+}
+  PdgMap global = flowc_proof_global_tiers(root);
+  PdgDoc* docs = (PdgDoc*)((PdgDoc*)(malloc(((int64_t)((nf + 1)) * 80))));
+  int32_t counter = 1;
+  int32_t i = 0;
+  while (i < nf) {
+  const char* path = __flowc_str_concat(__flowc_str_concat(root, "/"), pdg_sidx(files[i]));
+  if (flowc_io_file_size(path) < 0) {
+  printf("flowc proof: proof file missing: %s\n", path);
+  return 1;
+}
+  docs[i] = flowc_proof_parse_text(flowc_proof_read(path));
+  int32_t k = 0;
+  while (k < (docs[i]).nthm) {
+  ((docs[i]).thms[k]).number = (counter + k);
+  k = (k + 1);
+}
+  counter = (counter + (docs[i]).nthm);
+  i = (i + 1);
+}
+  int32_t ngroups = 0;
+  if (pdg_len(want) == 0) {
+  ngroups = nparts;
+}
+  const char* tex = pdg_render_bundle(docs, nf, doc_part, part_title, ngroups, title, (&global));
+  pdg_mkdir_p(out_dir);
+  const char* tex_path = __flowc_str_concat(__flowc_str_concat(out_dir, "/"), tex_name);
+  if (pdg_write(tex_path, tex) != 0) {
+  return 1;
+}
+  printf("Wrote %s\n", tex_path);
+  if (pdg_len(pdg_env("FLOWC_PROOF_NO_REFRESH")) == 0) {
+  i = 0;
+  while (i < nf) {
+  const char* path = __flowc_str_concat(__flowc_str_concat(root, "/"), pdg_sidx(files[i]));
+  int32_t n = flowc_proof_write_artifacts(path, pdg_dirname(path), 1, (&global), root, 0);
+  if (n < 0) {
+  return 1;
+}
+  i = (i + 1);
+}
+}
+  return 0;
+}
+
+const char* pdg_hex4(int32_t v) {
+  const char* digits = "0123456789abcdef";
+  uint8_t* dp = (uint8_t*)(digits);
+  uint8_t* buf = (uint8_t*)(malloc(8));
+  buf[0] = dp[((v / 4096) % 16)];
+  buf[1] = dp[((v / 256) % 16)];
+  buf[2] = dp[((v / 16) % 16)];
+  buf[3] = dp[(v % 16)];
+  buf[4] = 0;
+  return (const char*)(buf);
+}
+
+const char* pdg_json_str(const char* s) {
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  const char* out = "\"";
+  int32_t run = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t c = p[i];
+  const char* esc = "";
+  int32_t adv = 1;
+  if (c == 34) {
+  esc = "\\\"";
+}
+  if (c == 92) {
+  esc = "\\\\";
+}
+  if (c == 10) {
+  esc = "\\n";
+}
+  if (c == 13) {
+  esc = "\\r";
+}
+  if (c == 9) {
+  esc = "\\t";
+}
+  if (c == 8) {
+  esc = "\\b";
+}
+  if (c == 12) {
+  esc = "\\f";
+}
+  if (pdg_len(esc) == 0 && c < 32) {
+  esc = __flowc_str_concat("\\u", pdg_hex4(c));
+}
+  if (c >= 128) {
+  int32_t cp = 0;
+  if (c >= 240 && (i + 3) < n) {
+  cp = (((((c % 8) * 262144) + ((p[(i + 1)] % 64) * 4096)) + ((p[(i + 2)] % 64) * 64)) + (p[(i + 3)] % 64));
+  adv = 4;
+} else {
+  if (c >= 224 && (i + 2) < n) {
+  cp = ((((c % 16) * 4096) + ((p[(i + 1)] % 64) * 64)) + (p[(i + 2)] % 64));
+  adv = 3;
+} else {
+  if ((i + 1) < n) {
+  cp = (((c % 32) * 64) + (p[(i + 1)] % 64));
+  adv = 2;
+} else {
+  cp = c;
+}
+}
+}
+  if (cp >= 65536) {
+  int32_t v = (cp - 65536);
+  esc = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("\\u", pdg_hex4((55296 + (v / 1024)))), "\\u"), pdg_hex4((56320 + (v % 1024))));
+} else {
+  esc = __flowc_str_concat("\\u", pdg_hex4(cp));
+}
+}
+  if (pdg_len(esc) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, run, i)), esc);
+  i = (i + adv);
+  run = i;
+} else {
+  i = (i + 1);
+}
+}
+  return __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, run, n)), "\"");
+}
+
+const char* pdg_node_kind(const char* english, int32_t has_math) {
+  const char* lower = pdg_lower(english);
+  if (has_math == 1 && pdg_contains(lower, "hence proven") == 1) {
+  return "conclude";
+}
+  if (has_math == 1) {
+  return "deduce";
+}
+  if (pdg_contains(lower, "case ") == 1) {
+  return "case";
+}
+  if (pdg_contains(lower, "invoke") == 1 || pdg_contains(lower, "inductive boundary") == 1) {
+  return "invoke";
+}
+  if (pdg_contains(lower, "let ") == 1 || pdg_contains(lower, "denote") == 1) {
+  return "bind";
+}
+  if (pdg_contains(lower, "induction") == 1 || pdg_contains(lower, "split into") == 1) {
+  return "frame";
+}
+  if (pdg_contains(lower, "stipulate") == 1 || pdg_contains(lower, "axiom") == 1 || pdg_contains(lower, "prove this derived") == 1) {
+  return "frame";
+}
+  if (pdg_contains(lower, "consider the base") == 1 || pdg_contains(lower, "inductive step") == 1) {
+  return "frame";
+}
+  return "step";
+}
+
+void pdg_activate(PdgLine* lines, int32_t n, const char** keys, const char** vals, int32_t ninst, int32_t* active) {
+  int32_t i = 0;
+  int32_t maxn = 0;
+  while (i < n) {
+  active[i] = 1;
+  if ((lines[i]).is_goal == 0 && (lines[i]).number > maxn) {
+  maxn = (lines[i]).number;
+}
+  i = (i + 1);
+}
+  if (ninst == 0) {
+  return;
+}
+  i = 0;
+  while (i < n) {
+  if ((lines[i]).is_goal == 0 && (lines[i]).number > 0) {
+  const char* lower = pdg_lower((lines[i]).english);
+  int32_t v = 0;
+  while (v < ninst) {
+  const char* var = keys[v];
+  const char* val = vals[v];
+  const char* vl = pdg_lower(val);
+  int32_t skip = 0;
+  if (pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("suppose ", var), "  is  true")) == 1 || pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("suppose ", var), " is true")) == 1) {
+  if (pdg_eq(vl, "true") == 0 && pdg_eq(vl, "false") == 0) {
+  skip = 1;
+} else {
+  if (pdg_eq(vl, "false") == 1) {
+  active[i] = 0;
+}
+}
+}
+  if (skip == 0) {
+  if (pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("where ", var), "  =  0")) == 1 || pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("where ", var), " = 0")) == 1) {
+  if (pdg_eq(val, "0") == 0) {
+  active[i] = 0;
+}
+}
+  if (pdg_contains(pdg_replace(lower, "=", " = "), __flowc_str_concat(__flowc_str_concat("where ", var), "  =  0")) == 1 && pdg_eq(val, "0") == 0) {
+  active[i] = 0;
+}
+}
+  v = (v + 1);
+}
+}
+  i = (i + 1);
+}
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t ns = 0;
+  i = 0;
+  while (i < n) {
+  if ((lines[i]).is_goal == 0 && pdg_starts(pdg_lower((lines[i]).english), "case ") == 1) {
+  starts[ns] = (lines[i]).number;
+  ns = (ns + 1);
+}
+  i = (i + 1);
+}
+  int32_t* sorted = (int32_t*)((int32_t*)(malloc(((int64_t)((ns + 1)) * 4))));
+  int32_t m = pdg_sorted_unique(starts, ns, sorted);
+  int32_t k = 0;
+  while (k < m) {
+  int32_t start = sorted[k];
+  int32_t start_on = 1;
+  int32_t j = 0;
+  while (j < n) {
+  if ((lines[j]).is_goal == 0 && (lines[j]).number == start && active[j] == 0) {
+  start_on = 0;
+}
+  j = (j + 1);
+}
+  if (start_on == 0) {
+  int32_t end = (maxn + 1);
+  if ((k + 1) < m) {
+  end = sorted[(k + 1)];
+}
+  j = 0;
+  while (j < n) {
+  if ((lines[j]).is_goal == 0 && (lines[j]).number > start && (lines[j]).number < end) {
+  active[j] = 0;
+}
+  j = (j + 1);
+}
+}
+  k = (k + 1);
+}
+}
+
+int32_t pdg_param_names(const char* params, const char** out) {
+  if (pdg_len(pdg_strip(params)) == 0) {
+  return 0;
+}
+  int32_t n = pdg_len(params);
+  uint8_t* p = (uint8_t*)(params);
+  int32_t c = 0;
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == n || p[i] == 44) {
+  const char* part = pdg_strip(pdg_sub(params, s, i));
+  int32_t colon = pdg_find_char(part, 58, 0);
+  const char* name = part;
+  if (colon >= 0) {
+  name = pdg_strip(pdg_sub(part, 0, colon));
+}
+  if (pdg_len(name) > 0) {
+  out[c] = name;
+  c = (c + 1);
+}
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  return c;
+}
+
+int32_t pdg_kernel(const char* path, const char* root, const char** keys, const char** vals, int32_t ninst, const char** json_out, const char** dot_out) {
+  const char* text = flowc_proof_read(path);
+  PdgDoc d = flowc_proof_parse_text(text);
+  if ((d).nthm == 0) {
+  printf("flowc proof: No theorems in %s\n", path);
+  return 1;
+}
+  PdgMap global = flowc_proof_global_tiers(root);
+  PdgMap tiers = pdg_merged_tiers((&global), (&d));
+  PdgMap none = flowc_pdg_map_new(4);
+  PdgThm* t = (PdgThm*)((&(d).thms[0]));
+  PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
+  int32_t n = pdg_tutorial((&d), t, (&tiers), (&none), lines);
+  int32_t* active = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  pdg_activate(lines, n, keys, vals, ninst, active);
+  FlowcClaimAddress addr = flowc_claim_try_parse((t[0]).claim_path);
+  const char* display = (t[0]).claim_path;
+  if ((addr).ok == 1) {
+  display = flowc_addr_coordinate_display(addr);
+}
+  const char* js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("{\n  \"claim\": ", pdg_json_str((t[0]).claim_path)), ",\n  \"claim_display\": "), pdg_json_str(display)), ",\n  \"parameters\": ");
+  const char** names = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).params) + 2)) * 8))));
+  int32_t nn = pdg_param_names((t[0]).params, names);
+  if (nn == 0) {
+  js = __flowc_str_concat(js, "[]");
+} else {
+  js = __flowc_str_concat(js, "[");
+  int32_t i = 0;
+  while (i < nn) {
+  if (i > 0) {
+  js = __flowc_str_concat(js, ",");
+}
+  js = __flowc_str_concat(__flowc_str_concat(js, "\n    "), pdg_json_str(names[i]));
+  i = (i + 1);
+}
+  js = __flowc_str_concat(js, "\n  ]");
+}
+  js = __flowc_str_concat(js, ",\n  \"instantiation\": ");
+  if (ninst == 0) {
+  js = __flowc_str_concat(js, "{}");
+} else {
+  js = __flowc_str_concat(js, "{");
+  int32_t i = 0;
+  while (i < ninst) {
+  if (i > 0) {
+  js = __flowc_str_concat(js, ",");
+}
+  js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(js, "\n    "), pdg_json_str(keys[i])), ": "), pdg_json_str(vals[i]));
+  i = (i + 1);
+}
+  js = __flowc_str_concat(js, "\n  }");
+}
+  js = __flowc_str_concat(js, ",\n  \"nodes\": ");
+  const char* dot = "digraph ProofKernel {\n  rankdir=TB; node [shape=box, fontname=\"Helvetica\"];";
+  const char* edges = "";
+  const char* dot_edges = "";
+  int32_t nnodes = 0;
+  int32_t nedges = 0;
+  int32_t i = 0;
+  while (i < n) {
+  PdgLine l = lines[i];
+  if ((l).is_goal == 0 && (l).number > 0) {
+  int32_t has_math = 0;
+  if (pdg_len((l).math) > 0) {
+  has_math = 1;
+}
+  const char* kind = pdg_node_kind((l).english, has_math);
+  if (nnodes == 0) {
+  js = __flowc_str_concat(js, "[");
+} else {
+  js = __flowc_str_concat(js, ",");
+}
+  js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(js, "\n    {\n      \"step\": "), pdg_itoa((l).number)), ",\n      \"kind\": "), pdg_json_str(kind)), ",\n      \"text\": "), pdg_json_str((l).english)), ",\n      \"math\": ");
+  if (has_math == 1) {
+  js = __flowc_str_concat(js, pdg_json_str((l).math));
+} else {
+  js = __flowc_str_concat(js, "null");
+}
+  js = __flowc_str_concat(js, ",\n      \"refs\": ");
+  if ((l).nrefs == 0) {
+  js = __flowc_str_concat(js, "[]");
+} else {
+  js = __flowc_str_concat(js, "[");
+  int32_t r = 0;
+  while (r < (l).nrefs) {
+  if (r > 0) {
+  js = __flowc_str_concat(js, ",");
+}
+  js = __flowc_str_concat(__flowc_str_concat(js, "\n        "), pdg_itoa((l).refs[r]));
+  r = (r + 1);
+}
+  js = __flowc_str_concat(js, "\n      ]");
+}
+  js = __flowc_str_concat(js, ",\n      \"active\": ");
+  if (active[i] == 1) {
+  js = __flowc_str_concat(js, "true");
+} else {
+  js = __flowc_str_concat(js, "false");
+}
+  js = __flowc_str_concat(js, "\n    }");
+  nnodes = (nnodes + 1);
+  const char* color = "#eeeeee";
+  if (active[i] == 1) {
+  color = "#c8e6c9";
+}
+  const char* esc_kind = pdg_replace(pdg_replace(kind, "\\", "\\\\"), "\"", "\\\"");
+  dot = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(dot, "\n  n"), pdg_itoa((l).number)), " [label=\""), pdg_itoa((l).number)), ": "), esc_kind), "\", style=filled, fillcolor=\""), color), "\"];");
+  int32_t r2 = 0;
+  while (r2 < (l).nrefs) {
+  if (nedges > 0) {
+  edges = __flowc_str_concat(edges, ",");
+}
+  edges = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(edges, "\n    {\n      \"from\": "), pdg_itoa((l).refs[r2])), ",\n      \"to\": "), pdg_itoa((l).number)), "\n    }");
+  dot_edges = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(dot_edges, "\n  n"), pdg_itoa((l).refs[r2])), " -> n"), pdg_itoa((l).number)), ";");
+  nedges = (nedges + 1);
+  r2 = (r2 + 1);
+}
+}
+  i = (i + 1);
+}
+  if (nnodes == 0) {
+  js = __flowc_str_concat(js, "[]");
+} else {
+  js = __flowc_str_concat(js, "\n  ]");
+}
+  js = __flowc_str_concat(js, ",\n  \"edges\": ");
+  if (nedges == 0) {
+  js = __flowc_str_concat(js, "[]");
+} else {
+  js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(js, "["), edges), "\n  ]");
+}
+  js = __flowc_str_concat(js, "\n}");
+  json_out[0] = js;
+  dot_out[0] = __flowc_str_concat(__flowc_str_concat(dot, dot_edges), "\n}");
+  return 0;
+}
+
+const char* pdg_with_suffix(const char* path, const char* suffix) {
+  int32_t slash = pdg_rfind_char(path, 47);
+  int32_t dot = pdg_rfind_char(path, 46);
+  if (dot > (slash + 1)) {
+  return __flowc_str_concat(pdg_sub(path, 0, dot), suffix);
+}
+  return __flowc_str_concat(path, suffix);
+}
+
+const char* pdg_suffix(const char* path) {
+  int32_t slash = pdg_rfind_char(path, 47);
+  int32_t dot = pdg_rfind_char(path, 46);
+  if (dot > (slash + 1)) {
+  return pdg_sub(path, dot, pdg_len(path));
+}
+  return "";
+}
+
+int32_t flowc_proof_kernel_mode() {
+  const char* root = pdg_env("FLOWC_PROOF_ROOT");
+  if (pdg_len(root) == 0) {
+  root = ".";
+}
+  const char* path = pdg_env("FLOWC_IN");
+  if (flowc_io_file_size(path) < 0) {
+  printf("flowc proof: cannot read %s\n", path);
+  return 1;
+}
+  const char* params = pdg_env("FLOWC_KERNEL_PARAMS");
+  int32_t cap = pdg_count_lines(params);
+  const char** keys = (const char**)((const char**)(malloc(((int64_t)((cap + 1)) * 8))));
+  const char** vals = (const char**)((const char**)(malloc(((int64_t)((cap + 1)) * 8))));
+  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)((cap + 1)) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)((cap + 1)) * 4))));
+  int32_t nl = pdg_split_lines(params, starts, ends, cap);
+  int32_t ninst = 0;
+  int32_t i = 0;
+  while (i < nl) {
+  const char* pair = pdg_sub(params, starts[i], ends[i]);
+  int32_t eq = pdg_find_char(pair, 61, 0);
+  if (eq >= 0) {
+  const char* k = pdg_strip(pdg_sub(pair, 0, eq));
+  const char* v = pdg_strip(pdg_sub(pair, (eq + 1), pdg_len(pair)));
+  int32_t found = (0 - 1);
+  int32_t j = 0;
+  while (j < ninst) {
+  if (pdg_eq(keys[j], k) == 1) {
+  found = j;
+}
+  j = (j + 1);
+}
+  if (found >= 0) {
+  vals[found] = v;
+} else {
+  keys[ninst] = k;
+  vals[ninst] = v;
+  ninst = (ninst + 1);
+}
+}
+  i = (i + 1);
+}
+  const char** js = (const char**)((const char**)(malloc(16)));
+  const char** dot = (const char**)((const char**)(malloc(16)));
+  if (pdg_kernel(path, root, keys, vals, ninst, js, dot) != 0) {
+  return 1;
+}
+  const char* out = pdg_env("FLOWC_KERNEL_OUT");
+  if (pdg_len(out) == 0) {
+  out = pdg_with_suffix(path, ".proof.kernel.json");
+}
+  if (pdg_write(out, js[0]) != 0) {
+  return 1;
+}
+  printf("Wrote %s\n", out);
+  const char* plot = pdg_env("FLOWC_KERNEL_PLOT");
+  if (pdg_len(plot) > 0) {
+  const char* dp = plot;
+  if (pdg_eq(pdg_suffix(plot), ".dot") == 0) {
+  dp = pdg_with_suffix(plot, ".dot");
+}
+  if (pdg_write(dp, dot[0]) != 0) {
+  return 1;
+}
+  printf("Wrote %s\n", dp);
+}
+  return 0;
+}
+
+PdgMap pdg_scan_index(const char* root, PdgDoc* docs, const char** paths, int32_t* ndocs) {
+  PdgMap idx = flowc_pdg_map_new(8192);
+  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t nd = 0;
+  int32_t r = 0;
+  while (r < 2) {
+  const char* dir = __flowc_str_concat(root, "/lib/verify");
+  if (r == 1) {
+  dir = __flowc_str_concat(root, "/examples/verify");
+}
+  const char** files = (const char**)(pdg_list_flow(dir, cnt));
+  int32_t fi = 0;
+  while (fi < cnt[0]) {
+  docs[nd] = flowc_proof_parse_text(flowc_proof_read(files[fi]));
+  paths[nd] = files[fi];
+  PdgDoc d = docs[nd];
+  int32_t k = 0;
+  while (k < (d).nthm) {
+  const char* cp = ((d).thms[k]).claim_path;
+  const char* entry = __flowc_str_concat(__flowc_str_concat(pdg_itoa(nd), "\n"), pdg_itoa(k));
+  pdg_map_set((&idx), cp, entry);
+  pdg_map_set((&idx), pdg_qualify((d).modname, cp), entry);
+  FlowcClaimAddress addr = flowc_claim_try_parse(cp);
+  if ((addr).ok == 1) {
+  const char* g = flowc_claim_guillemets(addr);
+  const char* leg = flowc_claim_to_legacy_path(addr);
+  pdg_map_set((&idx), g, entry);
+  pdg_map_set((&idx), flowc_claim_slug(addr), entry);
+  pdg_map_set((&idx), flowc_claim_display(addr), entry);
+  pdg_map_set((&idx), leg, entry);
+  pdg_map_set((&idx), pdg_qualify((d).modname, g), entry);
+  pdg_map_set((&idx), pdg_qualify((d).modname, leg), entry);
+}
+  k = (k + 1);
+}
+  nd = (nd + 1);
+  fi = (fi + 1);
+}
+  r = (r + 1);
+}
+  ndocs[0] = nd;
+  return idx;
+}
+
+int32_t pdg_ends_with(const char* s, const char* suffix) {
+  int32_t n = pdg_len(s);
+  int32_t m = pdg_len(suffix);
+  if (m > n) {
+  return 0;
+}
+  return pdg_at(s, (n - m), suffix);
+}
+
+const char* pdg_join_list(const char* raw) {
+  const char** items = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas(raw) + 2)) * 8))));
+  int32_t n = pdg_needs(raw, items);
+  const char* s = "";
+  int32_t i = 0;
+  while (i < n) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, ", ");
+}
+  s = __flowc_str_concat(s, pdg_sidx(items[i]));
+  i = (i + 1);
+}
+  return s;
+}
+
+const char* pdg_abspath(const char* path) {
+  uint8_t* p = (uint8_t*)(path);
+  if (pdg_len(path) > 0 && p[0] == 47) {
+  return path;
+}
+  uint8_t* buf = (uint8_t*)(malloc(4096));
+  int32_t n = flowc_io_popen_read("pwd", buf, 4095);
+  if (n <= 0) {
+  return path;
+}
+  buf[n] = 0;
+  const char* cwd = pdg_strip((const char*)(buf));
+  const char* rel = path;
+  while (pdg_starts(rel, "./") == 1) {
+  rel = pdg_sub(rel, 2, pdg_len(rel));
+}
+  return __flowc_str_concat(__flowc_str_concat(cwd, "/"), rel);
+}
+
+const char* pdg_format_know(PdgDoc* d, PdgThm* t, const char* file_path) {
+  const char* out = __flowc_str_concat(pdg_qualify((d[0]).modname, (t[0]).claim_path), "\n");
+  FlowcClaimAddress addr = flowc_claim_try_parse((t[0]).claim_path);
+  if ((addr).ok == 1) {
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  coordinate: "), flowc_claim_display(addr));
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  syntax:     "), flowc_claim_guillemets(addr));
+}
+  if (pdg_len((t[0]).means) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  means:   "), (t[0]).means);
+}
+  if (pdg_len((t[0]).claim_expr) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  claim:   "), flowc_flow_expr_to_mathematical_english((t[0]).claim_expr));
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n           $"), flowc_flow_expr_to_latex((t[0]).claim_expr)), "$");
+}
+  if (pdg_len((t[0]).tier) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  tier:    "), flowc_claim_path_tier_label((t[0]).tier)), " ("), (t[0]).tier), ")");
+}
+  if (pdg_len((t[0]).from_source) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  from:    "), (t[0]).from_source);
+}
+  const char* needs = pdg_join_list((t[0]).needs);
+  if (pdg_len(needs) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  needs:   "), needs);
+}
+  const char* used = pdg_join_list((t[0]).used_by);
+  if (pdg_len(used) > 0) {
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n  used-by: "), used);
+}
+  out = __flowc_str_concat(__flowc_str_concat(out, "\n\n  source:  "), pdg_abspath(file_path));
+  out = __flowc_str_concat(out, "\n\n  proof:   run `flow doc proof` on the source file for the full trace");
+  return out;
+}
+
+const char* pdg_fingerprint(const char* expr) {
+  const char* s = pdg_strip(expr);
+  int32_t n = pdg_len(s);
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = 0;
+  int32_t cut = (0 - 1);
+  while (i < n && cut < 0) {
+  if (pdg_is_ws(p[i]) == 1) {
+  int32_t j = i;
+  while (j < n && pdg_is_ws(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (pdg_at(s, j, "by") == 1 && (j + 2) < n && pdg_is_ws(p[(j + 2)]) == 1) {
+  int32_t k = (j + 2);
+  while (k < n && pdg_is_ws(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k < n && pdg_is_word(p[k]) == 1) {
+  cut = i;
+}
+}
+  i = j;
+} else {
+  i = (i + 1);
+}
+}
+  if (cut >= 0) {
+  s = pdg_sub(s, 0, cut);
+}
+  s = pdg_replace(s, "==", "=");
+  int32_t m = pdg_len(s);
+  uint8_t* q = (uint8_t*)(s);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((m + 1))));
+  int32_t o = 0;
+  int32_t z = 0;
+  while (z < m) {
+  if (pdg_is_ws(q[z]) == 0) {
+  buf[o] = q[z];
+  o = (o + 1);
+}
+  z = (z + 1);
+}
+  buf[o] = 0;
+  s = (const char*)(buf);
+  return pdg_lower(s);
+}
+
+const char* pdg_py_repr(const char* s) {
+  const char* quote = "'";
+  if (pdg_contains(s, "'") == 1 && pdg_contains(s, "\"") == 0) {
+  quote = "\"";
+}
+  const char* body = pdg_replace(s, "\\", "\\\\");
+  body = pdg_replace(body, quote, __flowc_str_concat("\\", quote));
+  return __flowc_str_concat(__flowc_str_concat(quote, body), quote);
+}
+
+int32_t flowc_proof_know_mode() {
+  const char* root = pdg_env("FLOWC_PROOF_ROOT");
+  if (pdg_len(root) == 0) {
+  root = ".";
+}
+  PdgDoc* docs = (PdgDoc*)((PdgDoc*)(malloc((8192 * 80))));
+  const char** paths = (const char**)((const char**)(malloc((8192 * 8))));
+  int32_t* nd = (int32_t*)((int32_t*)(malloc(8)));
+  if (pdg_len(pdg_env("FLOWC_KNOW_LINT")) > 0) {
+  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  PdgMap seen = flowc_pdg_map_new(4096);
+  int32_t nerr = 0;
+  int32_t r = 0;
+  while (r < 2) {
+  const char* dir = __flowc_str_concat(root, "/lib/verify");
+  if (r == 1) {
+  dir = __flowc_str_concat(root, "/examples/verify");
+}
+  const char** files = (const char**)(pdg_list_flow(dir, cnt));
+  int32_t fi = 0;
+  while (fi < cnt[0]) {
+  PdgDoc d = flowc_proof_parse_text(flowc_proof_read(files[fi]));
+  int32_t k = 0;
+  while (k < (d).nthm) {
+  PdgThm t = (d).thms[k];
+  const char* expr = (t).claim_expr;
+  if (pdg_len(expr) == 0) {
+  int32_t s = 0;
+  while (s < (t).nsteps && pdg_len(expr) == 0) {
+  if (((d).steps[((t).step0 + s)]).kind == PDG_THEREFORE) {
+  expr = ((d).steps[((t).step0 + s)]).text;
+}
+  s = (s + 1);
+}
+}
+  if (pdg_len(expr) > 0) {
+  FlowcClaimAddress addr = flowc_claim_try_parse((t).claim_path);
+  if ((addr).ok == 1) {
+  const char* fp = pdg_fingerprint(expr);
+  const char* key = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, "/"), (addr).structure), "#"), fp);
+  const char* prev = pdg_map_get((&seen), key, "");
+  if (pdg_len(prev) > 0 && pdg_eq(prev, (t).claim_path) == 0) {
+  const char* fp_repr = pdg_py_repr(fp);
+  printf("Duplicate claim: `%s` and `%s` say the same thing (%s, fingerprint %s); see %s\n", (t).claim_path, prev, flowc_claim_display(addr), fp_repr, pdg_abspath(files[fi]));
+  nerr = (nerr + 1);
+} else {
+  pdg_map_set((&seen), key, (t).claim_path);
+}
+}
+}
+  k = (k + 1);
+}
+  fi = (fi + 1);
+}
+  r = (r + 1);
+}
+  if (nerr == 0) {
+  puts("No duplicate claims found.");
+  return 0;
+}
+  return 1;
+}
+  const char* query = pdg_env("FLOWC_KNOW");
+  PdgMap idx = pdg_scan_index(root, docs, paths, nd);
+  const char* q = pdg_strip(query);
+  if (pdg_starts(q, "verify.") == 1) {
+  q = pdg_sub(q, 7, pdg_len(q));
+}
+  if (pdg_starts(q, "examples.verify.") == 1) {
+  q = pdg_sub(q, 16, pdg_len(q));
+}
+  if (pdg_starts(q, "lib.verify.") == 1) {
+  q = pdg_sub(q, 11, pdg_len(q));
+}
+  const char* entry = pdg_map_get((&idx), q, "");
+  if (pdg_len(entry) == 0) {
+  int32_t i = 0;
+  while (i < (idx).n && pdg_len(entry) == 0) {
+  const char* e = (idx).vals[i];
+  int32_t nl = pdg_find_char(e, 10, 0);
+  int32_t di = atoi(pdg_sub(e, 0, nl));
+  int32_t ti = atoi(pdg_sub(e, (nl + 1), pdg_len(e)));
+  const char* key = (idx).keys[i];
+  if (pdg_ends_with(key, q) == 1 || pdg_ends_with(q, ((docs[di]).thms[ti]).claim_path) == 1) {
+  entry = e;
+}
+  i = (i + 1);
+}
+}
+  if (pdg_len(entry) == 0) {
+  pdg_err(__flowc_str_concat("Unknown Claim Path: ", query));
+  pdg_err("Try: Nat/+.zero-right, Bool/||.commutes, Eq/=.reflexive");
+  return 1;
+}
+  int32_t nl = pdg_find_char(entry, 10, 0);
+  int32_t di = atoi(pdg_sub(entry, 0, nl));
+  int32_t ti = atoi(pdg_sub(entry, (nl + 1), pdg_len(entry)));
+  puts(pdg_format_know((&docs[di]), (&(docs[di]).thms[ti]), paths[di]));
+  return 0;
+}
+
+
 typedef struct CgenBuf {
   uint8_t* out;
   int32_t cap;
@@ -30304,6 +39006,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   if (((arena).nodes[root]).kind != AST_PROGRAM) {
   return (0 - 1);
 }
+  flowc_proof_erase(arena, root);
   if (flowc_ast_reject_unsupported(arena, src, "flowc cgen") != 0) {
   return (0 - 1);
 }
@@ -31188,6 +39891,386 @@ int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint
   item = ((arena).nodes[item]).next;
 }
   return n;
+}
+
+
+typedef struct JsgenBuf {
+  uint8_t* out;
+  int32_t cap;
+  int32_t len;
+  int32_t err;
+} JsgenBuf;
+
+JsgenBuf flowc_jsgen_buf_init(uint8_t* out, int32_t cap);
+void flowc_jsgen_putc(JsgenBuf* w, int32_t c);
+void flowc_jsgen_puts(JsgenBuf* w, const char* s);
+void flowc_jsgen_put_span(JsgenBuf* w, uint8_t* src, int32_t start, int32_t end);
+void flowc_jsgen_put_i32(JsgenBuf* w, int32_t val);
+void flowc_jsgen_emit_binop_op(JsgenBuf* w, int32_t op);
+void flowc_jsgen_emit_expr(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_jsgen_emit_block(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_jsgen_emit_stmt(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_jsgen_emit_fn(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_jsgen_unwrap_fn(AstArena arena, int32_t item);
+int32_t flowc_jsgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap);
+JsgenBuf flowc_jsgen_buf_init(uint8_t* out, int32_t cap) {
+  return (JsgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0 };
+}
+
+void flowc_jsgen_putc(JsgenBuf* w, int32_t c) {
+  if ((w[0]).err != 0) {
+  return;
+}
+  if ((w[0]).len >= (w[0]).cap) {
+  (w[0]).err = 1;
+  return;
+}
+  (w[0]).out[(w[0]).len] = c;
+  (w[0]).len = ((w[0]).len + 1);
+}
+
+void flowc_jsgen_puts(JsgenBuf* w, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  int32_t i = 0;
+  while (i < n) {
+  flowc_jsgen_putc(w, p[i]);
+  i = (i + 1);
+}
+}
+
+void flowc_jsgen_put_span(JsgenBuf* w, uint8_t* src, int32_t start, int32_t end) {
+  int32_t i = start;
+  while (i < end) {
+  flowc_jsgen_putc(w, src[i]);
+  i = (i + 1);
+}
+}
+
+void flowc_jsgen_put_i32(JsgenBuf* w, int32_t val) {
+  int32_t v = val;
+  if (v < 0) {
+  flowc_jsgen_putc(w, 45);
+  v = (0 - v);
+}
+  if (v == 0) {
+  flowc_jsgen_putc(w, 48);
+  return;
+}
+  uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  int32_t n = 0;
+  while (v > 0) {
+  digits[n] = ((v % 10) + 48);
+  v = (v / 10);
+  n = (n + 1);
+}
+  int32_t i = n;
+  while (i > 0) {
+  i = (i - 1);
+  flowc_jsgen_putc(w, digits[i]);
+}
+}
+
+void flowc_jsgen_emit_expr(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_jsgen_emit_stmt(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_jsgen_emit_block(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_jsgen_emit_binop_op(JsgenBuf* w, int32_t op) {
+  if (op == TOK_PLUS) {
+  flowc_jsgen_puts(w, " + ");
+  return;
+}
+  if (op == TOK_MINUS) {
+  flowc_jsgen_puts(w, " - ");
+  return;
+}
+  if (op == TOK_STAR) {
+  flowc_jsgen_puts(w, " * ");
+  return;
+}
+  if (op == TOK_SLASH) {
+  flowc_jsgen_puts(w, " / ");
+  return;
+}
+  if (op == TOK_PERCENT) {
+  flowc_jsgen_puts(w, " % ");
+  return;
+}
+  if (op == TOK_EQEQ) {
+  flowc_jsgen_puts(w, " == ");
+  return;
+}
+  if (op == TOK_NE) {
+  flowc_jsgen_puts(w, " != ");
+  return;
+}
+  if (op == TOK_LT) {
+  flowc_jsgen_puts(w, " < ");
+  return;
+}
+  if (op == TOK_GT) {
+  flowc_jsgen_puts(w, " > ");
+  return;
+}
+  if (op == TOK_LE) {
+  flowc_jsgen_puts(w, " <= ");
+  return;
+}
+  if (op == TOK_GE) {
+  flowc_jsgen_puts(w, " >= ");
+  return;
+}
+  if (op == TOK_AMPAMP) {
+  flowc_jsgen_puts(w, " && ");
+  return;
+}
+  if (op == TOK_BARBAR) {
+  flowc_jsgen_puts(w, " || ");
+  return;
+}
+  flowc_jsgen_puts(w, " /*op*/ ");
+}
+
+void flowc_jsgen_emit_expr(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id == AST_NONE || (w[0]).err != 0) {
+  return;
+}
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_INT) {
+  flowc_jsgen_put_i32(w, ((arena).nodes[id]).ival);
+  return;
+}
+  if (kind == AST_BOOL) {
+  if (((arena).nodes[id]).ival != 0) {
+  flowc_jsgen_puts(w, "true");
+} else {
+  flowc_jsgen_puts(w, "false");
+}
+  return;
+}
+  if (kind == AST_IDENT) {
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  return;
+}
+  if (kind == AST_BINOP) {
+  flowc_jsgen_putc(w, 40);
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_emit_binop_op(w, ((arena).nodes[id]).ival);
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_jsgen_putc(w, 41);
+  return;
+}
+  if (kind == AST_UNARY) {
+  flowc_jsgen_putc(w, 40);
+  if (((arena).nodes[id]).ival == TOK_MINUS) {
+  flowc_jsgen_putc(w, 45);
+} else {
+  if (((arena).nodes[id]).ival == TOK_BANG) {
+  flowc_jsgen_putc(w, 33);
+}
+}
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_putc(w, 41);
+  return;
+}
+  if (kind == AST_CALL) {
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_jsgen_putc(w, 40);
+  int32_t arg = ((arena).nodes[id]).a;
+  int32_t first = 1;
+  while (arg != AST_NONE) {
+  if (first == 0) {
+  flowc_jsgen_puts(w, ", ");
+}
+  first = 0;
+  flowc_jsgen_emit_expr(w, arena, src, arg);
+  arg = ((arena).nodes[arg]).next;
+}
+  flowc_jsgen_putc(w, 41);
+  return;
+}
+  flowc_jsgen_puts(w, "0");
+}
+
+void flowc_jsgen_emit_block(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id == AST_NONE || (w[0]).err != 0) {
+  return;
+}
+  flowc_jsgen_puts(w, "{\n");
+  int32_t st = ((arena).nodes[id]).a;
+  while (st != AST_NONE) {
+  flowc_jsgen_emit_stmt(w, arena, src, st);
+  st = ((arena).nodes[st]).next;
+}
+  flowc_jsgen_puts(w, "}\n");
+}
+
+void flowc_jsgen_emit_stmt(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id == AST_NONE || (w[0]).err != 0) {
+  return;
+}
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_LET) {
+  flowc_jsgen_puts(w, "  let ");
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  if (((arena).nodes[id]).b != AST_NONE) {
+  flowc_jsgen_puts(w, " = ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+}
+  flowc_jsgen_puts(w, ";\n");
+  return;
+}
+  if (kind == AST_RETURN) {
+  if (((arena).nodes[id]).a == AST_NONE) {
+  flowc_jsgen_puts(w, "  return;\n");
+  return;
+}
+  flowc_jsgen_puts(w, "  return ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_puts(w, ";\n");
+  return;
+}
+  if (kind == AST_IF) {
+  flowc_jsgen_puts(w, "  if (");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_puts(w, ") {\n");
+  int32_t then_b = ((arena).nodes[id]).b;
+  if (then_b != AST_NONE) {
+  int32_t st = ((arena).nodes[then_b]).a;
+  while (st != AST_NONE) {
+  flowc_jsgen_emit_stmt(w, arena, src, st);
+  st = ((arena).nodes[st]).next;
+}
+}
+  if (((arena).nodes[id]).c != AST_NONE) {
+  flowc_jsgen_puts(w, "} else {\n");
+  int32_t else_b = ((arena).nodes[id]).c;
+  int32_t est = ((arena).nodes[else_b]).a;
+  while (est != AST_NONE) {
+  flowc_jsgen_emit_stmt(w, arena, src, est);
+  est = ((arena).nodes[est]).next;
+}
+  flowc_jsgen_puts(w, "}\n");
+} else {
+  flowc_jsgen_puts(w, "}\n");
+}
+  return;
+}
+  if (kind == AST_WHILE) {
+  flowc_jsgen_puts(w, "  while (");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_puts(w, ") ");
+  flowc_jsgen_emit_block(w, arena, src, ((arena).nodes[id]).b);
+  return;
+}
+  if (kind == AST_FOR) {
+  flowc_jsgen_puts(w, "  for (let ");
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_jsgen_puts(w, " = ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_puts(w, "; ");
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_jsgen_puts(w, " < ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_jsgen_puts(w, "; ");
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_jsgen_puts(w, "++) ");
+  flowc_jsgen_emit_block(w, arena, src, ((arena).nodes[id]).c);
+  return;
+}
+  if (kind == AST_BREAK) {
+  flowc_jsgen_puts(w, "  break;\n");
+  return;
+}
+  if (kind == AST_CONTINUE) {
+  flowc_jsgen_puts(w, "  continue;\n");
+  return;
+}
+  if (kind == AST_ASSIGN) {
+  flowc_jsgen_puts(w, "  ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_puts(w, " = ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_jsgen_puts(w, ";\n");
+  return;
+}
+  if (kind == AST_EXPR_STMT) {
+  flowc_jsgen_puts(w, "  ");
+  flowc_jsgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_jsgen_puts(w, ";\n");
+  return;
+}
+  if (kind == AST_BLOCK) {
+  flowc_jsgen_emit_block(w, arena, src, id);
+  return;
+}
+}
+
+void flowc_jsgen_emit_fn(JsgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (((arena).nodes[id]).c == AST_NONE) {
+  return;
+}
+  flowc_jsgen_puts(w, "function ");
+  flowc_jsgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_jsgen_putc(w, 40);
+  int32_t param = ((arena).nodes[id]).a;
+  int32_t first = 1;
+  while (param != AST_NONE) {
+  if (first == 0) {
+  flowc_jsgen_puts(w, ", ");
+}
+  first = 0;
+  flowc_jsgen_put_span(w, src, ((arena).nodes[param]).name_start, ((arena).nodes[param]).name_end);
+  param = ((arena).nodes[param]).next;
+}
+  flowc_jsgen_puts(w, ") ");
+  flowc_jsgen_emit_block(w, arena, src, ((arena).nodes[id]).c);
+  flowc_jsgen_putc(w, 10);
+}
+
+int32_t flowc_jsgen_unwrap_fn(AstArena arena, int32_t item) {
+  if (item == AST_NONE) {
+  return AST_NONE;
+}
+  if (((arena).nodes[item]).kind == AST_FN) {
+  return item;
+}
+  if (((arena).nodes[item]).kind == AST_EXPORT) {
+  int32_t inner = ((arena).nodes[item]).a;
+  if (inner != AST_NONE && ((arena).nodes[inner]).kind == AST_FN) {
+  return inner;
+}
+}
+  return AST_NONE;
+}
+
+int32_t flowc_jsgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap) {
+  if (root == AST_NONE || root < 0) {
+  return (0 - 1);
+}
+  if (((arena).nodes[root]).kind != AST_PROGRAM) {
+  return (0 - 1);
+}
+  flowc_proof_erase(arena, root);
+  if (flowc_ast_reject_unsupported(arena, src, "flowc jsgen") != 0) {
+  return (0 - 1);
+}
+  if (flowc_ast_reject_effects(arena, src, "flowc jsgen") != 0) {
+  return (0 - 1);
+}
+  JsgenBuf w = flowc_jsgen_buf_init(out, out_cap);
+  flowc_jsgen_puts((&w), "// Generated by flowc Stage-A\n\n");
+  int32_t item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t fn = flowc_jsgen_unwrap_fn(arena, item);
+  if (fn != AST_NONE) {
+  flowc_jsgen_emit_fn((&w), arena, src, fn);
+}
+  item = ((arena).nodes[item]).next;
+}
+  if ((w).err != 0) {
+  return (0 - 1);
+}
+  return (w).len;
 }
 
 
@@ -33831,6 +42914,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   if (path_p != NULL && path_p[0] != 0) {
   who = (ctx[0]).path;
 }
+  flowc_proof_erase(arena, root);
   if (flowc_ast_reject_unsupported(arena, (ctx[0]).src, who) != 0) {
   flowc_tc_err(ctx);
   return (ctx[0]).err;
@@ -33872,7 +42956,7 @@ int32_t flowc_typecheck(AstArena arena, int32_t root, uint8_t* src) {
 }
 
 
-static const int32_t FLOWC_RESOLVE_MAX_MODS = 32;
+static const int32_t FLOWC_RESOLVE_MAX_MODS = 64;
 static const int32_t FLOWC_RESOLVE_PATH_CAP = 256;
 static const int32_t FLOWC_RESOLVE_SRC_CAP = 1048576;
 static const int32_t FLOWC_RESOLVE_AST_CAP = 262144;
@@ -33886,6 +42970,7 @@ int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap);
 int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap);
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
+int32_t flowc_resolve_claim_domain_path(uint8_t* import_span_src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s);
 int32_t flowc_resolve_project_root(const char* entry_path, uint8_t* out, int32_t cap);
 int32_t flowc_resolve_is_space(int32_t c);
@@ -34113,6 +43198,7 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   return (0 - 1);
 }
 
+int32_t flowc_resolve_claim_domain_path(uint8_t* import_span_src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
   int32_t s = name_start;
   int32_t e = name_end;
@@ -34197,7 +43283,42 @@ int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, 
   if (flowc_io_exists((const char*)(out_path)) == 1) {
   return o;
 }
+  return flowc_resolve_claim_domain_path(import_span_src, s, e, search_dir, out_path, out_path_cap);
+}
+
+int32_t flowc_resolve_claim_domain_path(uint8_t* import_span_src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
+  int32_t n = (e - s);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  if (buf == NULL) {
   return (0 - 1);
+}
+  int32_t o = 0;
+  int32_t skipping = 0;
+  int32_t had_slash = 0;
+  int32_t i = s;
+  while (i < e) {
+  uint8_t c = import_span_src[i];
+  if (c == 47) {
+  skipping = 1;
+  had_slash = 1;
+}
+  if (c == 46) {
+  skipping = 0;
+}
+  if (skipping == 0) {
+  buf[o] = c;
+  o = (o + 1);
+}
+  i = (i + 1);
+}
+  buf[o] = 0;
+  if (had_slash == 0 || o == 0) {
+  free(buf);
+  return (0 - 1);
+}
+  int32_t r = flowc_resolve_dotted_path(buf, 0, o, search_dir, out_path, out_path_cap);
+  free(buf);
+  return r;
 }
 
 int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s) {
@@ -35201,7 +44322,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   return (0 - 1);
 }
   int32_t n = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, (&siglen));
-  if (n <= 0) {
+  if (n < 0) {
   free(fns);
   free(sigs);
   free(order_store);
@@ -35429,7 +44550,7 @@ int32_t flowc_emit_mode() {
   if (flowc_env_set("FLOWC_EXPAND_ONLY") == 1) {
   return flowc_expand_only_mode(in_path, out_path);
 }
-  int32_t out_cap = 1048576;
+  int32_t out_cap = 4194304;
   uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
   if (out == NULL) {
   puts("flowc emit: malloc out failed");
@@ -37231,6 +46352,9 @@ int32_t test_typecheck_match_catchall() {
 }
 
 int32_t main() {
+  if (flowc_env_set("FLOWC_PROOF_DOC") == 1) {
+  return flowc_proof_doc_mode();
+}
   if (flowc_env_set("FLOWC_IN") == 1 && flowc_env_set("FLOWC_PARSE_ONLY") == 1) {
   return flowc_parse_only_mode();
 }
