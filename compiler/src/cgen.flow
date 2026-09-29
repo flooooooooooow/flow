@@ -2240,6 +2240,165 @@ function flowc_cgen_sig_put_spans(
     return n
 }
 
+# A Flow function named like a libc function that is not that function:
+# its first parameter is a struct (`log(x: Dual)`), or it is an allocator
+# whose Flow signature returns a non-pointer (`malloc(size: i32) -> i32`).
+# The Python host mangles every function by its parameter types, so its
+# calls reach the Flow definition; flowc emits the definition as
+# `__flowc_libc_<name>` and routes matching calls to it. Returns the struct
+# type node of the first parameter, the function itself when every call is
+# routed, or AST_NONE when the name means libc.
+function flowc_cgen_user_libc_kind(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE or arena.nodes[fn].c == AST_NONE or arena.nodes[fn].ival != 0 {
+        return AST_NONE
+    }
+    if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
+        return AST_NONE
+    }
+    let p: i32 = arena.nodes[fn].a
+    if p != AST_NONE {
+        let pt: i32 = arena.nodes[p].a
+        if pt != AST_NONE and arena.nodes[pt].kind == AST_TYPE and arena.nodes[pt].a == AST_NONE and arena.nodes[pt].ival == 0 and flowc_cgen_is_struct_type(arena, src, pt) == 1 {
+            return pt
+        }
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    if flowc_cgen_span_is(src, ns, ne, "malloc") == 1 or flowc_cgen_span_is(src, ns, ne, "calloc") == 1 or flowc_cgen_span_is(src, ns, ne, "realloc") == 1 or flowc_cgen_span_is(src, ns, ne, "free") == 1 or flowc_cgen_span_is(src, ns, ne, "aligned_alloc") == 1 {
+        let r: i32 = arena.nodes[fn].b
+        if r != AST_NONE and arena.nodes[r].kind == AST_TYPE and arena.nodes[r].a == AST_NONE and flowc_cgen_span_is(src, arena.nodes[r].name_start, arena.nodes[r].name_end, "void") == 0 {
+            return fn
+        }
+    }
+    return AST_NONE
+}
+
+# `#define name __flowc_libc_name` (open 1) or `#undef name` (open 0)
+# around the definition of a function flowc_cgen_user_libc_kind renames.
+function flowc_cgen_user_libc_define(w: ptr<CgenBuf>, src: ptr<u8>, fn: i32, arena: AstArena, open: i32) {
+    if open == 1 {
+        flowc_cgen_puts(w, "#define ")
+        flowc_cgen_put_span(w, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+        flowc_cgen_puts(w, " __flowc_libc_")
+        flowc_cgen_put_span(w, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+        flowc_cgen_putc(w, 10)
+        return
+    }
+    flowc_cgen_puts(w, "#undef ")
+    flowc_cgen_put_span(w, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+    flowc_cgen_putc(w, 10)
+}
+
+# Record `%name\0Struct\0` (or `%name\0\0` when every call is routed) for a
+# function flowc_cgen_user_libc_kind renames, for later bundle modules.
+function flowc_cgen_sig_put_user_libc(arena: AstArena, src: ptr<u8>, buf: ptr<u8>, cap: i32, len: i32, fn: i32) -> i32 {
+    let k: i32 = flowc_cgen_user_libc_kind(arena, src, fn)
+    if k == AST_NONE {
+        return len
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let mut ts: i32 = 0
+    let mut te: i32 = 0
+    if k != fn {
+        ts = arena.nodes[k].name_start
+        te = arena.nodes[k].name_end
+    }
+    if len + (ne - ns) + (te - ts) + 4 > cap {
+        return len
+    }
+    let mut n: i32 = len
+    buf[n] = 37
+    n = n + 1
+    let mut i: i32 = ns
+    while i < ne {
+        buf[n] = src[i]
+        n = n + 1
+        i = i + 1
+    }
+    buf[n] = 0
+    n = n + 1
+    i = ts
+    while i < te {
+        buf[n] = src[i]
+        n = n + 1
+        i = i + 1
+    }
+    buf[n] = 0
+    return n + 1
+}
+
+# 1 when a call to a libc-named function goes to the renamed Flow
+# definition: one of this module (fn_id), or one an earlier module recorded.
+function flowc_cgen_call_user_libc(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32, fn_id: i32) -> i32 {
+    let arg: i32 = arena.nodes[call].a
+    if fn_id != AST_NONE {
+        let k: i32 = flowc_cgen_user_libc_kind(arena, src, fn_id)
+        if k == AST_NONE {
+            return 0
+        }
+        if k == fn_id {
+            return 1
+        }
+        if arg == AST_NONE {
+            return 0
+        }
+        let nm: array<u8, 128> = []
+        let mut q: i32 = 0
+        let mut j: i32 = arena.nodes[k].name_start
+        while j < arena.nodes[k].name_end and q < 127 {
+            nm[q] = src[j]
+            q = q + 1
+            j = j + 1
+        }
+        nm[q] = 0
+        return flowc_cgen_expr_is_named(w, arena, src, arg, &nm[0] as string)
+    }
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let cs: i32 = arena.nodes[call].name_start
+    let nlen: i32 = arena.nodes[call].name_end - cs
+    let mut p: i32 = 0
+    while p < blen {
+        let mut k2: i32 = 0
+        while p + k2 < blen and buf[p + k2] != 0 {
+            k2 = k2 + 1
+        }
+        let vpos: i32 = p + k2 + 1
+        if vpos >= blen {
+            return 0
+        }
+        let mut v: i32 = vpos
+        while v < blen and buf[v] != 0 {
+            v = v + 1
+        }
+        if k2 == nlen + 1 and buf[p] == 37 {
+            let mut hit: i32 = 1
+            let mut j2: i32 = 0
+            while j2 < nlen {
+                if buf[p + 1 + j2] != src[cs + j2] {
+                    hit = 0
+                }
+                j2 = j2 + 1
+            }
+            if hit == 1 {
+                if v == vpos {
+                    return 1
+                }
+                if arg == AST_NONE {
+                    return 0
+                }
+                return flowc_cgen_expr_is_named(w, arena, src, arg, (buf + vpos) as string)
+            }
+        }
+        p = v + 1
+    }
+    return 0
+}
+
 # Record `&name\0Struct\0` when the function's first parameter is
 # ptr<Struct>, so a later module's method call `v.name(...)` on a by-value
 # Struct passes its address (see flowc_cgen_method_recv_needs_addr).
@@ -4598,6 +4757,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
             if fn_id != AST_NONE or flowc_cgen_is_libc_fn(arena, src, id) == 1 {
+                if flowc_cgen_is_libc_fn(arena, src, id) == 1 and flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1 {
+                    flowc_cgen_puts(w, "__flowc_libc_")
+                }
                 flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
             } else {
                 # Assume it's a closure if not found. (Not perfect, but works for the subset. In reality we should check if it's a known closure variable).
@@ -8333,6 +8495,10 @@ export function flowc_cgen_emit_sigs(
             if arena.nodes[fn].ival == 0 and arena.nodes[fn].c != AST_NONE {
                 if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
                     flowc_cgen_emit_fn_proto(&w, arena, src, fn)
+                } elif flowc_cgen_user_libc_kind(arena, src, fn) != AST_NONE {
+                    flowc_cgen_user_libc_define(&w, src, fn, arena, 1)
+                    flowc_cgen_emit_fn_proto(&w, arena, src, fn)
+                    flowc_cgen_user_libc_define(&w, src, fn, arena, 0)
                 }
             }
         }
@@ -8364,6 +8530,10 @@ export function flowc_cgen_emit_sigs(
             if arena.nodes[fn].ival == 0 {
                 if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
                     flowc_cgen_emit_fn(&w, arena, src, fn)
+                } elif flowc_cgen_user_libc_kind(arena, src, fn) != AST_NONE {
+                    flowc_cgen_user_libc_define(&w, src, fn, arena, 1)
+                    flowc_cgen_emit_fn(&w, arena, src, fn)
+                    flowc_cgen_user_libc_define(&w, src, fn, arena, 0)
                 }
             }
         }
@@ -8849,6 +9019,7 @@ export function flowc_cgen_collect_sigs(
             }
             n = flowc_cgen_sig_put_spans(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_recv(arena, src, buf, cap, n, fn)
+            n = flowc_cgen_sig_put_user_libc(arena, src, buf, cap, n, fn)
         }
         # C functions an extern block declares: an importer's inferred
         # `let` takes their return type too.
