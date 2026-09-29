@@ -404,6 +404,13 @@ function flowc_cgen_count_fn_named(arena: AstArena, src: ptr<u8>, lit: string) -
 # 1 when expression `id` is a Dual (stdlib/autodiff): a Dual-typed value,
 # or + - * / and unary minus with a Dual operand.
 function flowc_cgen_expr_is_dual(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    return flowc_cgen_expr_is_named(w, arena, src, id, "Dual")
+}
+
+# 1 when the expression has the struct type `name` (Dual, Tensor): a value
+# of it, a call returning it, or `+ - * /` / unary `-` with such an operand
+# (the operator sugar keeps the type, as on the Python host).
+function flowc_cgen_expr_is_named(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, name: string) -> i32 {
     if id == AST_NONE or id < 0 {
         return 0
     }
@@ -411,16 +418,16 @@ function flowc_cgen_expr_is_dual(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     if k == AST_BINOP {
         let op: i32 = arena.nodes[id].ival
         if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR or op == TOK_SLASH {
-            if flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].a) == 1 {
+            if flowc_cgen_expr_is_named(w, arena, src, arena.nodes[id].a, name) == 1 {
                 return 1
             }
-            return flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].b)
+            return flowc_cgen_expr_is_named(w, arena, src, arena.nodes[id].b, name)
         }
         return 0
     }
     if k == AST_UNARY {
         if arena.nodes[id].ival == TOK_MINUS {
-            return flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].a)
+            return flowc_cgen_expr_is_named(w, arena, src, arena.nodes[id].a, name)
         }
         return 0
     }
@@ -429,20 +436,20 @@ function flowc_cgen_expr_is_dual(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
         if fn != AST_NONE {
             let rt: i32 = arena.nodes[fn].b
             if rt != AST_NONE and arena.nodes[rt].kind == AST_TYPE and arena.nodes[rt].a == AST_NONE {
-                return flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "Dual")
+                return flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, name)
             }
             return 0
         }
         let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         if off >= 0 {
-            return flowc_cgen_sig_ctype_is(w, off, "Dual")
+            return flowc_cgen_sig_ctype_is(w, off, name)
         }
         return 0
     }
     if k == AST_IDENT or k == AST_FIELD_ACCESS or k == AST_INDEX {
         let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, id)
         if ty != AST_NONE and ty >= 0 and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE {
-            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "Dual")
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, name)
         }
     }
     return 0
@@ -3856,6 +3863,42 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 if rd == 0 { flowc_cgen_puts(w, "(float)(") }
                 flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
                 if rd == 0 { flowc_cgen_putc(w, 41) }
+                flowc_cgen_putc(w, 41)
+                return
+            }
+        }
+        # Tensor operator sugar (#161), as on the Python host: `+ - * /` of
+        # two Tensors is tensor_add/sub/mul/div, `t * s` and `s * t` are
+        # tensor_scale(t, s), `t + s` and `s + t` are tensor_add_scalar(t, s).
+        if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR or op == TOK_SLASH {
+            let lt: i32 = flowc_cgen_expr_is_named(w, arena, src, arena.nodes[id].a, "Tensor")
+            let rt: i32 = flowc_cgen_expr_is_named(w, arena, src, arena.nodes[id].b, "Tensor")
+            let mut tfn: string = ""
+            let mut swap: i32 = 0
+            if lt == 1 and rt == 1 {
+                tfn = "tensor_add("
+                if op == TOK_MINUS { tfn = "tensor_sub(" }
+                if op == TOK_STAR { tfn = "tensor_mul(" }
+                if op == TOK_SLASH { tfn = "tensor_div(" }
+            } else {
+                if lt == 1 or rt == 1 {
+                    if op == TOK_STAR { tfn = "tensor_scale(" }
+                    if op == TOK_PLUS { tfn = "tensor_add_scalar(" }
+                    if rt == 1 { swap = 1 }
+                }
+            }
+            let tp: ptr<u8> = tfn as ptr<u8>
+            if tp[0] != 0 {
+                flowc_cgen_puts(w, tfn)
+                if swap == 1 {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                    flowc_cgen_puts(w, ", ")
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                    flowc_cgen_puts(w, ", ")
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                }
                 flowc_cgen_putc(w, 41)
                 return
             }
