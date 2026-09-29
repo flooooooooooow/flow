@@ -1,4 +1,4 @@
-total 67087
+total 67005
 benchmarks/cross_harness/cold/cli_oneshot/oneshot.py
 benchmarks/cross_harness/cold/file_transform/transform.py
 benchmarks/cross_harness/cold/hello/hello.py
@@ -173,7 +173,6 @@ tests/unit/test_docs_blocks.py
 tests/unit/test_dsp_pipeline.py
 tests/unit/test_dynamics_dsl.py
 tests/unit/test_dynamics_dsl_regressions.py
-tests/unit/test_ensure_flowc_staleness.py
 tests/unit/test_escaped_strings.py
 tests/unit/test_escaping_closures.py
 tests/unit/test_evolves_syntax.py

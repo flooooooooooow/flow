@@ -133,8 +133,10 @@ vector-field structure of `flow` evolution blocks for the MLIR passes (#664,
 `denotational_blocks` kwarg of `flow_to_mlir` and the `FLOW_DENOTATIONAL=1`
 path in `transpiler.py` are not on main.
 
-As of 2026-09-29 the Python suite on CI is at 1656 passed, 0 failed, 103
-skipped, and the tracked Python is 310 files and 79712 lines.
+The Python C backend is retired (flowc is the only C compiler). After that,
+on 2026-09-29, the local Python suite (`pytest tests/ -m "not slow"`) is at
+1443 passed, 0 failed, 9 skipped, and the tracked Python is 278 files and
+67005 lines.
 
 ### Bootstrap suite
 
