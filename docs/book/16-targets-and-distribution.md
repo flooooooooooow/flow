@@ -116,16 +116,17 @@ which functions and structs have compatible signatures.
 
 ## 16.7 Native libraries and ABI
 
-For a C consumer, compile the library to C:
+For a C or JavaScript consumer, generate named exports:
 
 ```bash
-compiler/scripts/flowc_emit.sh library.flow build/signal.c
+compiler/scripts/flowc_emit.sh --library \
+    --export add --export process \
+    library.flow build/signal.c
 ```
 
-flowc emits each exported function under its plain name. The library mode
-that added versioned `flow_export_` aliases (`transpile --c --library
---export ...`) belonged to the retired Python C backend, and flowc has no
-equivalent yet. Pointers,
+External consumers call versioned `flow_export_` aliases. `--library` leaves
+out `main` and the runtime checks and keeps plain C names with external
+linkage. See docs/language/export-abi.md. Pointers,
 struct layout, ownership, alignment, calling convention, and error reporting
 must be documented at every boundary.
 

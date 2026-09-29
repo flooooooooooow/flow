@@ -107,9 +107,12 @@ function add_api(a: i32, b: i32) -> i32 {
 }
 ```
 
-flowc emits every exported function under its plain name. The versioned
-`flow_export_` aliases came from the library mode of the retired Python C
-backend, and flowc has no equivalent yet.
+flowc emits every exported function under its plain name. It can also emit
+versioned ABI aliases when compiling a library:
+
+```bash
+compiler/scripts/flowc_emit.sh --library --export add --export scale library.flow build/library.c
+```
 
 ## 11.9 Native project sources
 

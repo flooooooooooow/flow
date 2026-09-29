@@ -7141,7 +7141,8 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
 # Lower function attributes to C declaration specifiers (#1028). Port of
 # `_c_attribute_prefix` in the Python C generator:
 #   @inline         static inline (extern inline when the symbol keeps
-#                   external linkage: main, exported or @flow_api)
+#                   external linkage: main, exported, @flow_api or any
+#                   function of a library unit, FLOWC_LIBRARY=1)
 #   @always_inline  __attribute__((always_inline)) plus that inline specifier
 #   @noinline       __attribute__((noinline))
 #   @target("...")  __attribute__((target("..."))), only when the spec
@@ -7191,6 +7192,10 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
         return
     }
     if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "main") == 1 {
+        external = 1
+    }
+    # Every function of a library unit keeps external linkage (#1030).
+    if flowc_cgen_library_mode() == 1 {
         external = 1
     }
     if want_noinline == 1 {
@@ -8295,6 +8300,321 @@ function flowc_cgen_lambda_has_caps(w: ptr<CgenBuf>, lam_id: i32) -> i32 {
     return 0
 }
 
+# --- export aliases and library units (#1030) ------------------------------
+# FLOWC_EXPORT="a,b" (flowc_emit.sh --export NAME) appends, for each named
+# function, a visible alias `flow_export_<name>` that forwards to the C symbol
+# (the mangled one when the name is overloaded), as the Python host's
+# `--export` did (#396). A WASM or FFI caller then links against a name that
+# does not depend on the mangling scheme. A name no module defines gets a
+# `not found` comment. In a bundle each module aliases the names it defines;
+# the signature table carries a `#export:<name>` entry for each alias already
+# written, so a later module skips it and the bundle knows what is missing.
+#
+# FLOWC_LIBRARY=1 (flowc_emit.sh --library) emits a unit meant to be linked
+# next to a program: no runtime checks and no fault handler, and main is
+# never moved onto a fiber. flowc already keeps plain C names (only true
+# overloads are mangled, since C cannot hold two definitions of one name),
+# gives every function external linkage and needs no main.
+
+# 1 when FLOWC_LIBRARY=1.
+export function flowc_cgen_library_mode() -> i32 {
+    let v: ptr<u8> = getenv("FLOWC_LIBRARY") as ptr<u8>
+    if v == null {
+        return 0
+    }
+    if v[0] == 49 and v[1] == 0 {
+        return 1
+    }
+    return 0
+}
+
+# 1 when byte c separates names in FLOWC_EXPORT (comma, space, tab).
+function flowc_cgen_export_sep(c: i32) -> i32 {
+    if c == 44 or c == 32 or c == 9 {
+        return 1
+    }
+    return 0
+}
+
+# End of the name that starts at `s` in the FLOWC_EXPORT list.
+function flowc_cgen_export_name_end(list: ptr<u8>, s: i32) -> i32 {
+    let mut e: i32 = s
+    while list[e] != 0 and flowc_cgen_export_sep(list[e] as i32) == 0 {
+        e = e + 1
+    }
+    return e
+}
+
+# 1 when list[a..a+n) and list[b..b+n) hold the same bytes.
+function flowc_cgen_export_same(list: ptr<u8>, a: i32, b: i32, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if list[a + i] != list[b + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# 1 when the name list[s..e) already appeared earlier in the list.
+function flowc_cgen_export_repeat(list: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut p: i32 = 0
+    while p < s {
+        if flowc_cgen_export_sep(list[p] as i32) == 1 {
+            p = p + 1
+        } else {
+            let q: i32 = flowc_cgen_export_name_end(list, p)
+            if q - p == e - s and flowc_cgen_export_same(list, p, s, e - s) == 1 {
+                return 1
+            }
+            p = q
+        }
+    }
+    return 0
+}
+
+# The top-level function of this module that the alias for list[s..e)
+# forwards to: the first definition with a body that is not generic.
+function flowc_cgen_export_target(arena: AstArena, src: ptr<u8>, root: i32, list: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
+        if fn != AST_NONE and arena.nodes[fn].c != AST_NONE and arena.nodes[fn].ival == 0 {
+            let ns: i32 = arena.nodes[fn].name_start
+            let ne: i32 = arena.nodes[fn].name_end
+            if ns >= 0 and ne - ns == e - s {
+                let mut same: i32 = 1
+                let mut i: i32 = 0
+                while i < e - s {
+                    if src[ns + i] != list[s + i] {
+                        same = 0
+                    }
+                    i = i + 1
+                }
+                if same == 1 {
+                    let libc: i32 = flowc_cgen_is_libc_fn(arena, src, fn)
+                    if libc == 0 or flowc_cgen_user_libc_kind(arena, src, fn) != AST_NONE {
+                        return fn
+                    }
+                }
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    return AST_NONE
+}
+
+# 1 when the signature table holds `#export:<list[s..e)>`, or, when s == e,
+# any `#export:` entry at all.
+function flowc_cgen_export_marked(buf: ptr<u8>, blen: i32, list: ptr<u8>, s: i32, e: i32) -> i32 {
+    if buf == null {
+        return 0
+    }
+    let tag: ptr<u8> = "#export:" as ptr<u8>
+    let mut p: i32 = 0
+    while p < blen {
+        let mut i: i32 = 0
+        while p + i < blen and buf[p + i] != 0 {
+            i = i + 1
+        }
+        if i >= 8 {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < 8 {
+                if buf[p + j] != tag[j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+            if hit == 1 and s < e {
+                if i - 8 != e - s {
+                    hit = 0
+                } else {
+                    let mut k: i32 = 0
+                    while k < e - s {
+                        if buf[p + 8 + k] != list[s + k] {
+                            hit = 0
+                        }
+                        k = k + 1
+                    }
+                }
+            }
+            if hit == 1 {
+                return 1
+            }
+        }
+        let vpos: i32 = p + i + 1
+        let mut k2: i32 = 0
+        while vpos + k2 < blen and buf[vpos + k2] != 0 {
+            k2 = k2 + 1
+        }
+        p = vpos + k2 + 1
+    }
+    return 0
+}
+
+# One alias: `__attribute__((visibility("default"))) R flow_export_<name>(P)
+# { return <c name>(args); }`. A void function calls without `return`.
+function flowc_cgen_emit_export_alias(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fn: i32) {
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let ret: i32 = arena.nodes[fn].b
+    flowc_cgen_puts(w, "__attribute__((visibility(\"default\"))) ")
+    flowc_cgen_emit_ret_type(w, arena, src, ret)
+    flowc_cgen_puts(w, " flow_export_")
+    flowc_cgen_put_span(w, src, ns, ne)
+    flowc_cgen_putc(w, 40)
+    let mut p: i32 = arena.nodes[fn].a
+    if p == AST_NONE {
+        flowc_cgen_puts(w, "void")
+    }
+    let mut first: i32 = 1
+    while p != AST_NONE {
+        if first == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_cgen_emit_param(w, arena, src, p)
+        p = arena.nodes[p].next
+    }
+    flowc_cgen_puts(w, ") { ")
+    if flowc_cgen_ret_is_void(arena, src, ret) == 0 {
+        flowc_cgen_puts(w, "return ")
+    }
+    if flowc_cgen_count_overloads(arena, src, ns, ne) > 1 {
+        flowc_cgen_put_mangled_fn(w, arena, src, fn)
+    } else {
+        flowc_cgen_put_ident(w, src, ns, ne)
+    }
+    flowc_cgen_putc(w, 40)
+    p = arena.nodes[fn].a
+    first = 1
+    while p != AST_NONE {
+        if first == 0 {
+            flowc_cgen_puts(w, ", ")
+        }
+        first = 0
+        flowc_cgen_put_span(w, src, arena.nodes[p].name_start, arena.nodes[p].name_end)
+        p = arena.nodes[p].next
+    }
+    flowc_cgen_puts(w, "); }\n")
+}
+
+# `/* --export NAME: not found in this TU */`
+function flowc_cgen_export_not_found(w: ptr<CgenBuf>, list: ptr<u8>, s: i32, e: i32) {
+    flowc_cgen_puts(w, "/* --export ")
+    flowc_cgen_put_span(w, list, s, e)
+    flowc_cgen_puts(w, ": not found in this TU */\n")
+}
+
+# The aliases this module defines. One file (no signature table) also gets
+# the `not found` comments; a bundle adds those at the end
+# (flowc_cgen_export_missing).
+function flowc_cgen_emit_export_aliases(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, root: i32) {
+    let list: ptr<u8> = getenv("FLOWC_EXPORT") as ptr<u8>
+    if list == null {
+        return
+    }
+    let mut header: i32 = flowc_cgen_export_marked(w[0].sigs, w[0].sigs_len, list, 0, 0)
+    let mut s: i32 = 0
+    while list[s] != 0 {
+        if flowc_cgen_export_sep(list[s] as i32) == 1 {
+            s = s + 1
+        } else {
+            let e: i32 = flowc_cgen_export_name_end(list, s)
+            if flowc_cgen_export_repeat(list, s, e) == 0 {
+                let fn: i32 = flowc_cgen_export_target(arena, src, root, list, s, e)
+                if fn != AST_NONE and flowc_cgen_export_marked(w[0].sigs, w[0].sigs_len, list, s, e) == 0 {
+                    if header == 0 {
+                        flowc_cgen_puts(w, "\n/* Flow export aliases (#396) */\n")
+                        header = 1
+                    }
+                    flowc_cgen_emit_export_alias(w, arena, src, fn)
+                } elif fn == AST_NONE and w[0].sigs == null {
+                    if header == 0 {
+                        flowc_cgen_puts(w, "\n/* Flow export aliases (#396) */\n")
+                        header = 1
+                    }
+                    flowc_cgen_export_not_found(w, list, s, e)
+                }
+            }
+            s = e
+        }
+    }
+}
+
+# Add `#export:<name>\0 1\0` to the signature table for every alias this
+# module wrote, so later modules of the bundle skip those names.
+function flowc_cgen_export_mark(arena: AstArena, src: ptr<u8>, root: i32, buf: ptr<u8>, cap: i32, len: i32) -> i32 {
+    let list: ptr<u8> = getenv("FLOWC_EXPORT") as ptr<u8>
+    if list == null {
+        return len
+    }
+    let mut n: i32 = len
+    let mut s: i32 = 0
+    while list[s] != 0 {
+        if flowc_cgen_export_sep(list[s] as i32) == 1 {
+            s = s + 1
+        } else {
+            let e: i32 = flowc_cgen_export_name_end(list, s)
+            if flowc_cgen_export_target(arena, src, root, list, s, e) != AST_NONE and flowc_cgen_export_marked(buf, n, list, s, e) == 0 and n + 8 + (e - s) + 3 <= cap {
+                let tag: ptr<u8> = "#export:" as ptr<u8>
+                let mut i: i32 = 0
+                while i < 8 {
+                    buf[n + i] = tag[i]
+                    i = i + 1
+                }
+                n = n + 8
+                i = 0
+                while i < e - s {
+                    buf[n + i] = list[s + i]
+                    i = i + 1
+                }
+                n = n + (e - s)
+                buf[n] = 0
+                buf[n + 1] = 49
+                buf[n + 2] = 0
+                n = n + 3
+            }
+            s = e
+        }
+    }
+    return n
+}
+
+# After a bundle: the `not found` comment for each FLOWC_EXPORT name no
+# module aliased. Writes into `out` (capacity `cap`); returns the length,
+# or -1 when it does not fit.
+export function flowc_cgen_export_missing(sigs: ptr<u8>, sigs_len: i32, out: ptr<u8>, cap: i32) -> i32 {
+    let list: ptr<u8> = getenv("FLOWC_EXPORT") as ptr<u8>
+    if list == null {
+        return 0
+    }
+    let mut w: CgenBuf = flowc_cgen_buf_init(out, cap)
+    let mut header: i32 = flowc_cgen_export_marked(sigs, sigs_len, list, 0, 0)
+    let mut s: i32 = 0
+    while list[s] != 0 {
+        if flowc_cgen_export_sep(list[s] as i32) == 1 {
+            s = s + 1
+        } else {
+            let e: i32 = flowc_cgen_export_name_end(list, s)
+            if flowc_cgen_export_repeat(list, s, e) == 0 and flowc_cgen_export_marked(sigs, sigs_len, list, s, e) == 0 {
+                if header == 0 {
+                    flowc_cgen_puts(&w, "\n/* Flow export aliases (#396) */\n")
+                    header = 1
+                }
+                flowc_cgen_export_not_found(&w, list, s, e)
+            }
+            s = e
+        }
+    }
+    if w.err != 0 {
+        return 0 - 1
+    }
+    return w.len
+}
+
 export function flowc_cgen_emit_sigs(
     arena: AstArena,
     root: i32,
@@ -8355,6 +8675,12 @@ export function flowc_cgen_emit_sigs(
         if chk[0] == 49 and chk[1] == 0 {
             w.checks = 1
         }
+    }
+    # A library unit (FLOWC_LIBRARY=1, #1030) carries no runtime checks and
+    # never moves main onto a fiber.
+    if flowc_cgen_library_mode() == 1 {
+        w.checks = 0
+        w.fiber_main = 0
     }
     # FLOWC_DEBUG_INFO=1: #line directives name this module's file. A bundle
     # sets FLOWC_CGEN_FILE per module (resolve.flow); one file is FLOWC_IN.
@@ -9155,6 +9481,9 @@ export function flowc_cgen_emit_sigs(
         i = i + 1
     }
 
+    # --export aliases (FLOWC_EXPORT, #1030) close the unit.
+    flowc_cgen_emit_export_aliases(&w, arena, src, root)
+
     if w.eff != null {
         free(w.eff)
     }
@@ -9600,5 +9929,7 @@ export function flowc_cgen_collect_sigs(
         }
         item = arena.nodes[item].next
     }
+    # Aliases this module wrote (#1030), so a later module skips them.
+    n = flowc_cgen_export_mark(arena, src, root, buf, cap, n)
     return n
 }

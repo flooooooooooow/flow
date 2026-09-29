@@ -78,15 +78,12 @@ def flow_to_c_available() -> bool:
 def flow_to_c(flow_file: Path, out_c: Path, library: bool = False) -> Path:
     """Compile a .flow source to C with flowc (compiler/scripts/flowc_emit.sh).
 
-    flowc has no --library flag. A runtime module without `main` compiles to
-    its own C unit as is, the way `flow compile` builds lib/runtime/*.flow
-    into the runtime archive. flowc keeps its helpers static, so that unit
-    links next to the program's C. Library modules compile lenient, programs
-    strict, as before.
+    A runtime module is a library unit (--library, #1030) and compiles
+    lenient; programs compile strict, as before.
     """
     out_c.parent.mkdir(parents=True, exist_ok=True)
-    mode = "--lenient" if library else "--strict"
-    run([FLOWC_EMIT, mode, flow_file, out_c], quiet=True)
+    mode = ["--library", "--lenient"] if library else ["--strict"]
+    run([FLOWC_EMIT, *mode, flow_file, out_c], quiet=True)
     if not out_c.exists():
         sys.exit(f"flowc produced no C for {flow_file}")
     return out_c

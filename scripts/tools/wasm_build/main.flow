@@ -639,12 +639,14 @@ function resolve_backend(explicit: string, errs: ptr<StrList>) -> string {
 
 function flow_to_c(b: ptr<Build>, program: string, c_out: string, library: bool) -> string {
     let _m: bool = pr_mkdir_p(parent_dir(c_out))
-    # flowc through compiler/scripts/flowc_emit.sh. flowc has no --library
-    # flag: a runtime module without main compiles to its own C unit as is,
-    # with its helpers static, so it links next to the program's C. The
-    # `library` argument stays for the callers' benefit.
-    let _lib: bool = library
-    let cmd: string = pr_quote(root() + "/compiler/scripts/flowc_emit.sh") + " --lenient " + pr_quote(program) + " " + pr_quote(c_out)
+    # flowc through compiler/scripts/flowc_emit.sh. A runtime module is a
+    # library unit (--library, #1030): no runtime checks and plain external
+    # names, so it links next to the program's C.
+    let mut cmd: string = pr_quote(root() + "/compiler/scripts/flowc_emit.sh")
+    if library {
+        cmd = cmd + " --library"
+    }
+    cmd = cmd + " --lenient " + pr_quote(program) + " " + pr_quote(c_out)
     let pr: ptr<Proc> = run_capture(cmd, "")
     if pr[0].code != 0 or ft_exists(c_out) == false {
         let _f: bool = fail(b, "flow->c: " + last_detail(pr, "flowc failed"))

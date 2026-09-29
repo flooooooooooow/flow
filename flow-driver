@@ -248,13 +248,15 @@ flowc_emit_to_c() {
 }
 
 # Emit one lib/runtime/*.flow module as its own C unit, the way
-# flowc_runtime_archive builds the runtime objects.
+# flowc_runtime_archive builds the runtime objects: a library unit
+# (FLOWC_LIBRARY=1, the old `--c --library --lenient`, #1030).
 flowc_emit_runtime_module() {
     local module="$1"
     local c_out="$2"
     local driver
     driver="$(flow_resolve_flowc)" || return 1
-    env -u FLOWC_BUNDLE FLOWC_IN="$module" FLOWC_OUT="$c_out" "$driver"
+    env -u FLOWC_BUNDLE -u FLOWC_EXPORT FLOWC_LIBRARY=1 FLOWC_LENIENT=1 \
+        FLOWC_IN="$module" FLOWC_OUT="$c_out" "$driver"
 }
 
 # Host tools written in Flow (tools/<name>/main.flow: repl, lsp). Builds the
@@ -457,7 +459,7 @@ flowc_runtime_archive() {
         flow_srcs+=("$f")
     done
     local key
-    key="$( { printf '%s\n' "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "${FLOW_CONC_CFLAGS[@]}" "${c_srcs[@]}" "${flow_srcs[@]}"; \
+    key="$( { printf '%s\n' library "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "${FLOW_CONC_CFLAGS[@]}" "${c_srcs[@]}" "${flow_srcs[@]}"; \
         cat "${c_srcs[@]}" "${flow_srcs[@]}" "$driver"; } | cksum | awk '{print $1 "-" $2}')"
     local root="$SCRIPT_DIR/build/flowc_runtime"
     local dir="$root/$key"
@@ -471,7 +473,9 @@ flowc_runtime_archive() {
     local -a objs=()
     for f in "${flow_srcs[@]}"; do
         base=$(basename "$f" .flow)
-        if ! FLOWC_IN="$f" FLOWC_OUT="$tmp/rt_$base.c" "$driver" > "$tmp/rt_$base.log" 2>&1; then
+        # Library units (#1030): no runtime checks, plain external names.
+        if ! env -u FLOWC_BUNDLE -u FLOWC_EXPORT FLOWC_LIBRARY=1 FLOWC_LENIENT=1 \
+            FLOWC_IN="$f" FLOWC_OUT="$tmp/rt_$base.c" "$driver" > "$tmp/rt_$base.log" 2>&1; then
             print_error "flowc could not build runtime module $base.flow"
             cat "$tmp/rt_$base.log" >&2
             rm -rf "$tmp"

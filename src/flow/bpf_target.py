@@ -50,7 +50,7 @@ class BPFProgram:
     def export_symbol(self) -> str:
         """The symbol to decorate, as the MLIR path actually names it.
 
-        `flow_export_<name>` is an alias the retired Python C backend emitted
+        `flow_export_<name>` is an alias the C backend (flowc) emits
         for `--export`. The MLIR path does not emit it. Since this target lowers with
         `--llvm`, the definition in the IR carries the plain Flow name.
         """
@@ -60,7 +60,7 @@ class BPFProgram:
     def candidate_symbols(self) -> tuple[str, ...]:
         """Names the entry may appear under, most explicit first.
 
-        The retired Python C backend emitted both the mangled definition and
+        The C backend (flowc --export) emits both the C definition and
         a visible `flow_export_<name>` alias. When both are present the alias
         is the one to decorate. The MLIR path emits only the plain name.
         """

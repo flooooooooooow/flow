@@ -19,7 +19,7 @@ import .field_dsl { flowc_field_expand_in_place }
 import .dynamics_dsl { flowc_dynamics_expand_in_place }
 import .flow_blocks { flowc_flow_blocks_expand_in_place }
 import .shader_dsl { flowc_shader_expand_in_place }
-import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
+import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs, flowc_cgen_export_missing }
 import .effects { flowc_eff_collect }
 import .typecheck {
     TcCtx,
@@ -2243,6 +2243,11 @@ export function flowc_bundle_emit(
         }
         written = written + nundef
         mi = mi + 1
+    }
+    # --export names no module defined (#1030).
+    let nmiss: i32 = flowc_cgen_export_missing(sigs, siglen, out + written, out_cap - written)
+    if nmiss > 0 {
+        written = written + nmiss
     }
 
     if tpl != null {
