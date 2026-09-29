@@ -1,152 +1,125 @@
 flowc corpus parity with the Python host (C backend)
 
-files with main(): 998
-at parity:         792 (79.4%)
-  same run:        543 of 743 that Python builds (73.1%)
-  both reject:     249
+files with main(): 1014
+at parity:         960 (94.7%)
+  same run:        712 of 759 that Python builds (93.8%)
+  both reject:     248
+flowc better:      5 (Python's C does not compile, flowc's does)
 
 by status:
-  match             792
-  flowc-ccfail      142
-  flowc-reject       29
-  run-stdout         24
-  flowc-accepts       6
-  run-exit            5
+  match             960
+  run-stdout         13
+  flowc-reject       13
+  run-exit           10
+  flowc-ccfail        9
+  flowc-better        5
+  run-timeout         2
+  flowc-accepts       2
 
 by directory (parity / files):
   apps                                 4 /     6   66.7%
-  benchmarks                           3 /     4   75.0%
+  benchmarks                           4 /     4  100.0%
   benchmarks/baselines                 4 /     4  100.0%
-  benchmarks/concurrency               0 /     6    0.0%
-  benchmarks/cross_harness            19 /    20   95.0%
+  benchmarks/concurrency               6 /     6  100.0%
+  benchmarks/cross_harness            20 /    20  100.0%
   benchmarks/crossover                 4 /     4  100.0%
-  benchmarks/micro                     2 /     8   25.0%
+  benchmarks/micro                     8 /     8  100.0%
   benchmarks/ordering                  1 /     1  100.0%
   benchmarks/publish                   5 /     5  100.0%
-  benchmarks/standardized              1 /     3   33.3%
-  benchmarks/suite                     0 /     6    0.0%
+  benchmarks/standardized              3 /     3  100.0%
+  benchmarks/suite                     6 /     6  100.0%
   compiler/fixtures                   87 /   102   85.3%
   compiler/src                         3 /     6   50.0%
   demos                               11 /    11  100.0%
-  docs                                 2 /     3   66.7%
+  docs                                 3 /     3  100.0%
   examples/ai                          2 /     4   50.0%
-  examples/audio                       6 /    24   25.0%
-  examples/basics                     23 /    25   92.0%
+  examples/audio                      23 /    24   95.8%
+  examples/basics                     25 /    25  100.0%
   examples/bench                       1 /     2   50.0%
   examples/book                       13 /    14   92.9%
   examples/circuits                   13 /    13  100.0%
   examples/compilers                  10 /    10  100.0%
-  examples/concurrency                 1 /    27    3.7%
-  examples/crypto                      0 /     2    0.0%
+  examples/concurrency                23 /    27   85.2%
+  examples/crypto                      1 /     2   50.0%
   examples/data                        1 /     1  100.0%
   examples/demos                      12 /    12  100.0%
-  examples/dsp                         0 /     1    0.0%
+  examples/dsp                         1 /     1  100.0%
   examples/dynamics                    5 /     9   55.6%
   examples/ecosystem                  16 /    16  100.0%
-  examples/effects                     5 /     6   83.3%
+  examples/effects                     6 /     6  100.0%
   examples/evoleco                    25 /    25  100.0%
   examples/evolution                  32 /    34   94.1%
   examples/flow_way                    2 /     2  100.0%
   examples/games                      29 /    29  100.0%
   examples/generics_traits             9 /    10   90.0%
-  examples/gpu                         4 /    14   28.6%
-  examples/graphics                    3 /     4   75.0%
+  examples/gpu                        14 /    14  100.0%
+  examples/graphics                    4 /     4  100.0%
   examples/interop                     0 /     1    0.0%
   examples/linalg                      4 /     4  100.0%
-  examples/ml                          2 /    19   10.5%
+  examples/ml                         17 /    19   89.5%
   examples/morphogenesis              40 /    40  100.0%
   examples/net                         2 /     2  100.0%
   examples/neuro                      15 /    15  100.0%
   examples/numerical                   4 /     4  100.0%
   examples/packages                    1 /     1  100.0%
-  examples/physics                     1 /     2   50.0%
+  examples/physics                     2 /     2  100.0%
   examples/planet                      7 /     7  100.0%
   examples/procgen                     8 /     8  100.0%
-  examples/rf                          0 /     3    0.0%
+  examples/rf                          1 /     3   33.3%
   examples/social                      5 /     5  100.0%
   examples/stats                       1 /     1  100.0%
-  examples/systems                     5 /     7   71.4%
+  examples/systems                     6 /     7   85.7%
   examples/threed                      8 /     8  100.0%
   examples/ui                          1 /     1  100.0%
   examples/verify                      1 /     1  100.0%
-  examples/wasm                        5 /     8   62.5%
-  lib                                  2 /     4   50.0%
+  examples/wasm                        7 /     8   87.5%
+  lib                                  4 /     4  100.0%
   scripts                             28 /    29   96.6%
-  tests                                0 /     1    0.0%
-  tests/arrays                         1 /     5   20.0%
-  tests/benchmarks                     6 /    20   30.0%
+  tests                                1 /     1  100.0%
+  tests/arrays                         4 /     5   80.0%
+  tests/benchmarks                    20 /    20  100.0%
   tests/conformance                    8 /     8  100.0%
-  tests/core                          39 /    41   95.1%
+  tests/core                          41 /    41  100.0%
   tests/experimental                   3 /     3  100.0%
-  tests/fixtures                       5 /    10   50.0%
-  tests/lang                         155 /   168   92.3%
-  tests/memory                         2 /     3   66.7%
-  tests/misc                           2 /     3   66.7%
+  tests/fixtures                      11 /    11  100.0%
+  tests/lang                         179 /   183   97.8%
+  tests/memory                         3 /     3  100.0%
+  tests/misc                           3 /     3  100.0%
   tests/mlir                           1 /     1  100.0%
-  tests/runtime                       25 /    35   71.4%
-  tests/simd                           3 /     4   75.0%
-  tests/stdlib                        42 /    49   85.7%
-  tools                                1 /     3   33.3%
+  tests/runtime                       34 /    35   97.1%
+  tests/simd                           4 /     4  100.0%
+  tests/stdlib                        47 /    49   95.9%
+  tools                                2 /     3   66.7%
   wasm                                 1 /     1  100.0%
 
 failure causes, ranked (count, status, first flowc diagnostic):
-     29  flowc-ccfail error: expected ')' 
-     24  run-stdout stdout differs 
-     14  flowc-reject flowc bundle tc: gather failed 
-     14  flowc-ccfail link: undefined symbol flow_async_delay 
-     13  flowc-ccfail link: undefined symbol __atomic_compare_exchange_n_bool 
-     11  flowc-ccfail error: unknown type name 'X' 
-      8  flowc-ccfail error: initializing 'X' with an expression of incompatible type 'float[256]' 
-      5  flowc-ccfail link: undefined symbol flow_audio_copy_interleaved_f32_fast 
-      4  flowc-ccfail link: undefined symbol gpu_thread_id 
-      4  flowc-ccfail link: undefined symbol flow_audio_available_read 
-      4  flowc-ccfail error: passing 'X' to parameter of incompatible type 'X' (aka 'struct Dual') 
-      4  flowc-ccfail error: invalid operands to binary expression ('X' (aka 'long long') and 'X') 
-      3  flowc-reject flowc tc: no matching overload 
-      3  flowc-ccfail link: undefined symbol print_line 
-      3  flowc-ccfail link: undefined symbol flow_parallel_for_i32 
-      3  flowc-ccfail link: undefined symbol flow_gpu_alloc 
-      3  flowc-ccfail error: use of undeclared identifier 'X' 
-      3  flowc-accepts Python ccfail: clang: error: linker command failed with exit code 1 (use -v to see invocation) 
-      2  run-exit exit code differs (Python 134, flowc 0) 
-      2  flowc-reject flowc tc: unbound ident 
+     13  run-stdout stdout differs 
+      3  run-exit exit code differs (Python timeout, flowc 0) 
+      3  run-exit exit code differs (Python 134, flowc 0) 
+      3  flowc-better Python C does not compile: clang: error: linker command failed with exit code 1 (use -v to see invocation) 
+      2  run-timeout flowc build times out (Python exit 0) 
+      2  run-exit exit code differs (Python 0, flowc 1) 
       2  flowc-reject flowc tc: unbound call 
-      2  flowc-ccfail link: undefined symbol jit_time 
-      2  flowc-ccfail link: undefined symbol flow_rt_monotonic_ns 
-      2  flowc-ccfail link: undefined symbol flow_bench_http_server_rps 
-      2  flowc-ccfail link: undefined symbol flow_bench_fiber_fanout_sum 
-      2  flowc-ccfail fatal error: 'X' file not found 
+      2  flowc-ccfail error: use of undeclared identifier 'X' 
+      2  flowc-ccfail error: passing 'X' to parameter of incompatible type 'int32_t (*)(int32_t)' (aka 'int (*)(int)') 
       2  flowc-accepts Python reject: Error resolving modules: Invalid escape sequence: \x 
-      1  run-exit exit code differs (Python timeout, flowc 0) 
-      1  run-exit exit code differs (Python 1, flowc 0) 
+      1  run-exit exit code differs (Python 3, flowc 1) 
       1  run-exit exit code differs (Python 0, flowc 134) 
       1  flowc-reject Variable 'X' initialized with Meter/Second^3 but annotated as Meter 
       1  flowc-reject line 9: dimensional error: Meter + Second (operands of '+' must have the same dimension) 
       1  flowc-reject line 7: dimensional error: Meter < f32 (comparison requires both operands to have the same dimension) 
       1  flowc-reject line 3: unknown unit 'X' in declaration of 'X' (units must be declared before use) 
+      1  flowc-reject flowc tc: unbound ident 
+      1  flowc-reject flowc tc: no matching overload 
+      1  flowc-reject flowc gather: apps/http_json_cache/src/main.flow: cannot resolve import json.lib 
       1  flowc-reject error: Function 'X' declares unknown effect 'X' in its `with` row 
       1  flowc-reject error: Effect operation 'X' argument 1 expects string, got i32 
       1  flowc-reject dimensional error: sin() requires a dimensionless or Radian argument, got Meter 
       1  flowc-reject Cannot cast Meter to Second 
-      1  flowc-ccfail link: undefined symbol flow_random_bytes 
-      1  flowc-ccfail link: undefined symbol flow_https_h2_selftest 
-      1  flowc-ccfail link: undefined symbol flow_http_routed_selftest 
-      1  flowc-ccfail link: undefined symbol flow_http_mw_enable 
-      1  flowc-ccfail link: undefined symbol flow_http_fiber_selftest 
-      1  flowc-ccfail link: undefined symbol flow_demo_fiber_netpoll_pipe 
-      1  flowc-ccfail link: undefined symbol flow_demo_cont_stackcopy 
-      1  flowc-ccfail link: undefined symbol flow_demo_cont_reset 
-      1  flowc-ccfail link: undefined symbol flow_demo_cont_multishot 
-      1  flowc-ccfail link: undefined symbol flow_bench_fiber_chan_pingpong_ns 
-      1  flowc-ccfail link: undefined symbol flow_bench_chan_pingpong_ns 
       1  flowc-ccfail link: undefined symbol array_f32 
-      1  flowc-ccfail link: undefined symbol _cpu_features_string 
-      1  flowc-ccfail fatal error: 'julia/julia.h' file not found 
       1  flowc-ccfail error: returning 'X' from a function with incompatible result type 'void *' 
-      1  flowc-ccfail error: passing 'X' to parameter of incompatible type 'int32_t (*)(int32_t)' (aka 'int (*)(int)') 
       1  flowc-ccfail error: passing 'X' (aka 'struct NotationReader') to parameter of incompatible type 'NotationReader *' (aka 'struct NotationReader *'); take the address with & 
-      1  flowc-ccfail error: operand of type 'X' where arithmetic or pointer type is required 
-      1  flowc-ccfail error: member reference base type 'int32_t[5]' (aka 'int[5]') is not a structure or union 
+      1  flowc-ccfail error: passing 'X' (aka 'struct Dual') to parameter of incompatible type 'X' 
       1  flowc-ccfail error: invalid operands to binary expression ('X' (aka 'struct Tensor') and 'X') 
-      1  flowc-ccfail error: initializing 'X' with an expression of incompatible type 'double[16]' 
-      1  flowc-ccfail error: initializing 'struct (unnamed struct)' with an expression of incompatible type 'int32_t (*)(int32_t)' (aka 'int (*)(int)') 
+      1  flowc-better Python C does not compile: error: use of undeclared identifier 'X' 
+      1  flowc-better Python C does not compile: error: expected ')' 

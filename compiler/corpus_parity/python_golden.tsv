@@ -604,7 +604,7 @@ examples/wasm/fs_counter.flow	ok	0	1141469270-159	nondet	-
 examples/wasm/fs_preload.flow	ok	1	2632267428-126	det	-
 examples/wasm/gpu_vector_add.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
 examples/wasm/hello_wasm.flow	ok	0	2845637659-24	det	-
-examples/wasm/parallel_scaling.flow	ok	0	4089699886-607	nondet	-
+examples/wasm/parallel_scaling.flow	ok	0	3685507023-607	nondet	-
 examples/wasm/parallel_sum.flow	ok	0	2906558954-342	nondet	-
 examples/wasm/python_embed.flow	ok	3	611978983-66	det	-
 examples/wasm/tcp_echo.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
@@ -727,8 +727,10 @@ tests/fixtures/modules/consumer_dot.flow	ok	42	4294967295-0	det	-
 tests/fixtures/modules/consumer_reexport.flow	ok	113	4294967295-0	det	-
 tests/fixtures/modules/consumer_reexport_chain.flow	ok	11	4294967295-0	det	-
 tests/fixtures/modules/consumer_sibling.flow	ok	42	4294967295-0	det	-
+tests/fixtures/modules/testlib/with_main.flow	ok	7	567710023-18	det	-
 tests/fixtures/time_header_externs.flow	ok	0	4294967295-0	det	-
 tests/lang/test_arithmetic.flow	ok	0	4294967295-0	det	-
+tests/lang/test_array_literal_argument.flow	ok	0	4294967295-0	det	-
 tests/lang/test_array_repeat.flow	ok	0	4294967295-0	det	-
 tests/lang/test_array_return_values.flow	ok	0	4294967295-0	det	-
 tests/lang/test_array_struct_pointers.flow	ok	0	4294967295-0	det	-
@@ -760,6 +762,7 @@ tests/lang/test_claim_path_tier.flow	ok	0	3884404096-33	det	-
 tests/lang/test_closures.flow	ok	0	4294967295-0	det	-
 tests/lang/test_complex_builtins.flow	ok	0	4294967295-0	det	-
 tests/lang/test_concurrent_link.flow	ok	0	4294967295-0	det	-
+tests/lang/test_const_libc_macro_name.flow	ok	0	4294967295-0	det	-
 tests/lang/test_constraints.flow	ok	0	1157412170-29	det	-
 tests/lang/test_control_flow.flow	ok	0	4294967295-0	det	-
 tests/lang/test_conventions.flow	ok	0	718497885-29	det	-
@@ -770,6 +773,7 @@ tests/lang/test_defer_ordering.flow	ok	0	1693099629-9	det	-
 tests/lang/test_defer_return_order.flow	ok	0	4294967295-0	det	-
 tests/lang/test_dlopen.flow	ok	0	2036422409-24	det	-
 tests/lang/test_dsl_detect.flow	ok	0	1842771936-28	det	-
+tests/lang/test_dual_operator_sugar.flow	ok	0	4294967295-0	det	-
 tests/lang/test_dynamics_dsl.flow	ok	0	3969025799-30	det	-
 tests/lang/test_effects.flow	ok	0	2345866894-76	det	-
 tests/lang/test_enum.flow	ok	0	2052890834-77	det	-
@@ -797,14 +801,18 @@ tests/lang/test_geometry_diagram.flow	ok	0	2698580218-34	det	-
 tests/lang/test_gif_encoder.flow	ok	0	4294967295-0	det	-
 tests/lang/test_hybrid_events.flow	ok	0	4294967295-0	det	-
 tests/lang/test_if_expression.flow	ok	0	4294967295-0	det	-
+tests/lang/test_import_module_with_main.flow	ok	0	4294967295-0	det	-
+tests/lang/test_import_path_forms.flow	ok	0	4294967295-0	det	-
 tests/lang/test_import_private_fn.flow	ok	0	4294967295-0	det	-
 tests/lang/test_imported_extern.flow	ok	0	4294967295-0	det	-
 tests/lang/test_in_operator.flow	ok	0	1405215564-93	det	-
 tests/lang/test_integration.flow	ok	0	105917604-55	det	-
 tests/lang/test_is_geometry_expr.flow	ok	0	2808812773-34	det	-
 tests/lang/test_know.flow	ok	0	857402579-22	det	-
+tests/lang/test_len_sized_array.flow	ok	0	4294967295-0	det	-
 tests/lang/test_libc_builtins.flow	ok	0	3528022634-17	det	-
 tests/lang/test_libc_externs.flow	ok	0	4294967295-0	det	-
+tests/lang/test_libc_names_return_void.flow	ok	0	4294967295-0	det	-
 tests/lang/test_lifetime_domains.flow	ok	0	4294967295-0	det	-
 tests/lang/test_loops.flow	ok	0	4294967295-0	det	-
 tests/lang/test_lowered_forms.flow	ok	0	4294967295-0	det	-
@@ -820,8 +828,10 @@ tests/lang/test_math_case_condition.flow	ok	0	1990296705-45	det	-
 tests/lang/test_math_prose_coord.flow	ok	0	139572936-39	det	-
 tests/lang/test_max_iterations_abort.flow	ok	134	4294967295-0	det	-
 tests/lang/test_max_iterations_bound.flow	ok	134	4294967295-0	det	-
+tests/lang/test_memref_param.flow	ok	0	4294967295-0	det	-
 tests/lang/test_method_ptr_receiver.flow	ok	0	4294967295-0	det	-
 tests/lang/test_misra_scan.flow	ok	0	2954167854-28	det	-
+tests/lang/test_mod_int_by_float.flow	ok	0	4294967295-0	det	-
 tests/lang/test_module_statics.flow	ok	0	4294967295-0	det	-
 tests/lang/test_mono_defs_port.flow	ok	0	1399255737-47	det	-
 tests/lang/test_mono_function_call_port.flow	ok	0	1289261967-49	det	-
@@ -844,17 +854,19 @@ tests/lang/test_operator_precedence.flow	ok	0	4294967295-0	det	-
 tests/lang/test_ordering_hints_port.flow	ok	0	2795377333-42	det	-
 tests/lang/test_overload_args_port.flow	ok	0	1868620793-56	det	-
 tests/lang/test_overload_call_port.flow	ok	0	3464632666-48	det	-
+tests/lang/test_overload_param_scope.flow	ok	0	4294967295-0	det	-
 tests/lang/test_overload_port.flow	ok	0	2616444467-36	det	-
 tests/lang/test_overload_registry_port.flow	ok	1	2792502147-21	det	-
 tests/lang/test_overload_select_port.flow	ok	0	1543800749-52	det	-
 tests/lang/test_overload_table_port.flow	ok	0	1754834137-42	det	-
 tests/lang/test_parallel_for.flow	ok	0	4294967295-0	det	-
-tests/lang/test_parser_python_forms.flow	ok	6	459463655-13	det	-
+tests/lang/test_parser_python_forms.flow	ok	0	4294967295-0	det	-
 tests/lang/test_parser_span_mutability.flow	ok	0	971891443-40	det	-
 tests/lang/test_physics_dsl_port.flow	ok	0	2877840307-39	det	-
 tests/lang/test_pipeline_fusion.flow	ok	0	2493581573-33	det	-
 tests/lang/test_pointer_structs.flow	ok	0	4294967295-0	det	-
 tests/lang/test_print.flow	ok	0	1003865564-24	det	-
+tests/lang/test_print_complex_multi.flow	ok	0	3706864085-35	det	-
 tests/lang/test_private_fn_collision.flow	ok	0	4294967295-0	det	-
 tests/lang/test_proof_doc_render.flow	ok	0	4294967295-0	det	-
 tests/lang/test_proof_document.flow	ok	0	3059746411-32	det	-
@@ -877,12 +889,16 @@ tests/lang/test_sort_modifier_names.flow	ok	0	4294967295-0	det	-
 tests/lang/test_sort_nan.flow	ok	0	4294967295-0	det	-
 tests/lang/test_sort_plans.flow	ok	0	4294967295-0	det	-
 tests/lang/test_span_borrow_once.flow	ok	0	4294967295-0	det	-
+tests/lang/test_span_mut_array_arg.flow	ok	0	4294967295-0	det	-
+tests/lang/test_span_param_cross_module.flow	ok	0	4294967295-0	det	-
 tests/lang/test_span_slice_f64.flow	ok	0	4294967295-0	det	-
 tests/lang/test_spans.flow	ok	0	4294967295-0	det	-
 tests/lang/test_stdlib_math_import.flow	ok	0	4294967295-0	det	-
 tests/lang/test_stdlib_scales.flow	ok	0	4294967295-0	det	-
 tests/lang/test_string_concat_numbers.flow	ok	0	3423257080-37	det	-
 tests/lang/test_strings.flow	ok	0	4294967295-0	det	-
+tests/lang/test_struct_lit_array_field.flow	ok	0	4294967295-0	det	-
+tests/lang/test_struct_order_shadow_array_assign.flow	ok	0	4294967295-0	det	-
 tests/lang/test_structs.flow	ok	0	4294967295-0	det	-
 tests/lang/test_strutil.flow	ok	0	2271034837-141	det	-
 tests/lang/test_tco_shim.flow	ok	0	4294967295-0	det	-
