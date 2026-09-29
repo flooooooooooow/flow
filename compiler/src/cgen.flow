@@ -5900,6 +5900,40 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 cmp = " >= "
             }
         }
+        # Without a step the range runs toward its end, down when it starts
+        # above it (`for r in 5 to 0`), as on the Python host.
+        if arena.nodes[id].ival == AST_NONE or arena.nodes[id].ival == 0 {
+            flowc_cgen_puts(w, "  for (int32_t ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ", __flowc_up_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " = ((")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") <= (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ")); __flowc_up_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " ? ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " < (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ") : ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " > (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, "); ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " += __flowc_up_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " ? 1 : -1) ")
+            let saved_ubase: i32 = w[0].loop_defer_base
+            w[0].loop_defer_base = w[0].defer_len
+            flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+            w[0].loop_defer_base = saved_ubase
+            return
+        }
         flowc_cgen_puts(w, "  for (int32_t ")
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_puts(w, " = ")
