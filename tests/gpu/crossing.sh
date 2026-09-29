@@ -35,6 +35,9 @@ if [[ "$record" -eq 1 ]]; then
     tree="$work/ref"
     mkdir -p "$tree"
     git archive "$PARITY_REF" wasm src lib compiler/scripts compiler/bootstrap examples | tar -x -C "$tree"
+    # The inputs are this checkout's programs (the page embeds the source).
+    rm -rf "$tree/examples"
+    cp -R examples "$tree/examples"
     mkdir -p "$tree/tests/gpu"
     cp -R tests/gpu/programs "$tree/tests/gpu/"
 else
