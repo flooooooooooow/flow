@@ -2376,6 +2376,8 @@ run_tests() {
     mkdir -p "$test_build_dir"
 
     # Only run git-tracked .flow files so local WIP verify corpora do not break tier tests.
+    # tests/tools/<tool>/fixtures/ are inputs to tool transcripts (some are
+    # broken on purpose, to test diagnostics); the transcripts check them.
     # examples/ecosystem/ and examples/demos/ are package projects (registry deps,
     # cross-directory imports) that cannot transpile standalone; their own tooling
     # verifies them.
@@ -2387,13 +2389,14 @@ run_tests() {
                 | grep -v '/wip/' \
                 | grep -v '^examples/verify/' \
                 | grep -v '^tests/fuzz/crashes/' \
+                | grep -v '^tests/tools/[^/]*/fixtures/' \
                 | grep -v '^examples/ecosystem/' \
                 | grep -v '^examples/demos/' \
                 | while read -r rel; do
                     echo "$SCRIPT_DIR/$rel"
                 done
         else
-            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
+            find "$SCRIPT_DIR/$suite" -name "*.flow" -not -path "*/wip/*" -not -path "*/fuzz/crashes/*" -not -path "*/tests/tools/*/fixtures/*" -not -path "*/examples/ecosystem/*" -not -path "*/examples/demos/*" 2>/dev/null
         fi
     }
 
