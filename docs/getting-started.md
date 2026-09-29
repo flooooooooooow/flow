@@ -20,7 +20,7 @@ cd flow
 ./flow version
 ```
 
-The requirement is Clang or GCC. `flow run` and `flow compile` use `flowc`, the self-hosted compiler, which `./flow` builds from checked-in C on first use. Python 3.9+ is needed only for a few tools, such as `flow check`, `flow python` and fetching package dependencies.
+The requirement is Clang or GCC. `flow run` and `flow compile` use `flowc`, the self-hosted compiler, which `./flow` builds from checked-in C on first use. Python 3.9+ is needed only for the MLIR backend (`--backend=mlir`) and for the wheel build step of `flow python`.
 
 If you installed from source, replace `flow` with `./flow` in the commands below.
 

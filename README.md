@@ -317,8 +317,9 @@ needs no Python to build a working compiler.
 The Python C backend is retired. On the repository corpus flowc matches it on
 1037 of 1053 programs with `main()` and builds 6 that it could not
 ([report](compiler/corpus_parity/report.txt)). `FLOW_HOST=python` now stops
-with an error. Python remains for the MLIR generator fallback, `flow check`,
-`flow python`, package publishing and some scripts. See
+with an error. Python remains for the MLIR backend (its generator fallback and
+the JIT) and for a few scripts. `flow python` still calls setuptools to build
+the wheel. See
 [docs/project/self-hosting.md](docs/project/self-hosting.md) and
 [compiler/README.md](compiler/README.md).
 

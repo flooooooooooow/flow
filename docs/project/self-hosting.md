@@ -199,8 +199,18 @@ flow blocks and the shader DSL, and it is now the only C compiler.
 | Thing | Why |
 |-------|-----|
 | MLIR generator fallback (`--backend=mlir`) | the Flow MLIR emitter runs first; the Python generator covers what it cannot |
-| `flow python`, package publish and build, wcet and MISRA scanners, fir tools, DAP server, project test runner | tooling with no Flow port yet |
-| Scripts under `scripts/` not yet ported | tooling outside the compile path |
+| MLIR JIT (`flow run --backend=mlir`, `--jit`) and the MLIR GPU and SPIR-V lowering | part of the MLIR backend |
+| `flow python` wheel build | the Flow tool writes the extension source, `setup.py` and `pyproject.toml`; `pip wheel` with setuptools builds the Python artifact |
+| wasm32 CI job | `alloc_sum.flow` uses an unsized array, which the Flow MLIR emitter refuses, so it takes the Python generator fallback |
+| `frames_to_gif.py`, `record_demos.py` | Pillow quantisation for byte-identical GIFs |
+| `playground_compile_server.py`, `ws_echo_relay.py`, `wiki_contrast.py`, `wiki_verify.py`, `deploy_wiki.py` | sockets, threads, Playwright or the aissh library |
+| Benchmark drivers that call the MLIR JIT or numpy | part of the MLIR backend or the Python baselines |
+
+`flow check`, `flow analyze`, `flow fir-g`, `flow gpu`, `flow dap`, `flow bpf`,
+`flow wasm32`, project-mode `flow test`, `flow run --json`, the package
+commands (`init`, `publish`, `build`, `build-native`, `run-native`, `clean`)
+and the doc example checkers are Flow tools. Each has a parity gate recorded
+from the Python version it replaced.
 
 ### Phase E: Packaging & polish  *(in progress)*
 

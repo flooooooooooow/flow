@@ -5,8 +5,9 @@
 > `test-lang` and the other C commands all use it, and since #960 they run
 > with no Python on `PATH`. The Python C backend (`c_generator.py`) is
 > retired and `FLOW_HOST=python` stops with an error. Python still runs the
-> MLIR generator fallback, `flow check`, `flow python`, the package publish
-> and build commands and the scripts not yet ported.
+> MLIR backend (generator fallback, JIT, GPU lowering), the setuptools wheel
+> build of `flow python`, and the scripts listed in
+> [self-hosting.md](self-hosting.md).
 > New code is written in Flow. `scripts/python_ratchet.sh` fails CI when a new
 > `.py` file appears or tracked Python grows (#981).
 
@@ -21,7 +22,7 @@ in progress and are not counted as landed.
 | Claim | Reality |
 |---|---|
 | Default `./flow compile` / `./flow run` | **flowc**, the only C compiler. `FLOW_HOST=python` is retired and stops with an error |
-| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency still calls `package.py`. `scripts/check_run_without_python.sh` checks it |
+| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency runs the Flow package manager (`compiler/src/pkg_main.flow`). `scripts/check_run_without_python.sh` checks it |
 | Stage-A lexer / parser / cgen / typecheck / resolve | Landed in `compiler/src/*.flow`; fixtures + module dogfood |
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |
@@ -54,7 +55,7 @@ the Flow port of each one. The table records where each port stands.
 | Verify / proof modules | `proof_*.py`, math prose host path | Helpers landed (see below); document assembly and PDF stay Python |
 | `repl.py` | `flow repl` | A REPL written in Flow (`tools/repl/main.flow`): open PR #987 |
 | `test_runner.py` | No callers | Deleted in open PR #987 |
-| `package.py` | `flow add`, `install`, `sync`, `search`, `info`, and fetching for `flow run` | Sync decision in Flow since #960. Full package manager in Flow (`compiler/src/pkg.flow`): open PR #989 |
+| `package.py`, `registry.py` | Every package command | Ported to `compiler/src/pkg.flow` and `pkg_main.flow`; both Python files are deleted |
 | `mlir_*.py`, GPU runtimes | MLIR / Metal / numpy | Core-language MLIR text in flowc ([`mlirgen.flow`](../../compiler/src/mlirgen.flow), `FLOWC_EMIT=mlir`); lowering in [`mlir_lower.sh`](../../compiler/scripts/mlir_lower.sh). Plan and slice order: [MLIR in Flow](../design/mlir-in-flow.md) |
 
 ## Boundary
@@ -63,9 +64,7 @@ the Flow port of each one. The table records where each port stands.
 |---|---|
 | `./flow` bash | orchestrates flowc. The bootstrap needs no Python: flowc is built from `compiler/bootstrap/flowc_stage_a.c` with `cc` |
 | `mlir_generator.py` | fallback when the Flow MLIR emitter cannot handle a program (`--backend=mlir`) |
-| `flow check`, wcet and MISRA scanners, the DAP server, the project test runner | not ported yet |
 | `mlir_jit.py` loading half, GPU/Metal **runtimes** | ctypes, numpy; planned to move to C (see [MLIR in Flow](../design/mlir-in-flow.md)) |
-| `package.py` (publish, build, fetch) | git and network |
 | `pip wheel` in `flow python` | building the wheel needs setuptools. The generator is the Flow tool `tools/pywheel` |
 | `wasm/flow_to_wasm.py` | takes its C from `compiler/scripts/flowc_emit.sh`. The GPU crossing and the WebGPU shader page moved to `wasm/crossings.sh gpu` and `wasm/crossings.sh shader` |
 | `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
