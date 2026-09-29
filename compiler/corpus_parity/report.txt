@@ -1,24 +1,21 @@
 flowc corpus parity with the Python host (C backend)
 
-files with main(): 1015
-at parity:         968 (95.4%)
-  same run:        720 of 759 that Python builds (94.9%)
-  both reject:     248
-flowc better:      5 (Python's C does not compile, flowc's does)
+files with main(): 1053
+at parity:         1039 (98.7%)
+  same run:        778 of 783 that Python builds (99.4%)
+  both reject:     261
+flowc better:      6 (Python's C does not compile, flowc's does)
 
 by status:
-  match             968
-  flowc-reject       13
-  run-stdout         11
-  run-exit            7
-  flowc-ccfail        6
-  flowc-better        5
+  match            1039
+  flowc-better        6
+  flowc-accepts       3
   run-timeout         2
-  flowc-accepts       2
-  nogolden            1
+  run-stdout          2
+  run-exit            1
 
 by directory (parity / files):
-  apps                                 5 /     6   83.3%
+  apps                                 6 /     6  100.0%
   benchmarks                           4 /     4  100.0%
   benchmarks/baselines                 4 /     4  100.0%
   benchmarks/concurrency               6 /     6  100.0%
@@ -29,35 +26,35 @@ by directory (parity / files):
   benchmarks/publish                   5 /     5  100.0%
   benchmarks/standardized              3 /     3  100.0%
   benchmarks/suite                     6 /     6  100.0%
-  compiler/fixtures                   87 /   102   85.3%
-  compiler/src                         3 /     6   50.0%
+  compiler/fixtures                  109 /   111   98.2%
+  compiler/src                         4 /     6   66.7%
   demos                               11 /    11  100.0%
   docs                                 3 /     3  100.0%
-  examples/ai                          3 /     4   75.0%
-  examples/audio                      23 /    24   95.8%
+  examples/ai                          4 /     4  100.0%
+  examples/audio                      24 /    24  100.0%
   examples/basics                     25 /    25  100.0%
   examples/bench                       2 /     2  100.0%
   examples/book                       14 /    14  100.0%
   examples/circuits                   13 /    13  100.0%
   examples/compilers                  10 /    10  100.0%
-  examples/concurrency                23 /    27   85.2%
+  examples/concurrency                24 /    27   88.9%
   examples/crypto                      2 /     2  100.0%
   examples/data                        1 /     1  100.0%
   examples/demos                      12 /    12  100.0%
   examples/dsp                         1 /     1  100.0%
-  examples/dynamics                    5 /     9   55.6%
+  examples/dynamics                    9 /     9  100.0%
   examples/ecosystem                  16 /    16  100.0%
   examples/effects                     6 /     6  100.0%
   examples/evoleco                    25 /    25  100.0%
-  examples/evolution                  32 /    34   94.1%
+  examples/evolution                  34 /    34  100.0%
   examples/flow_way                    2 /     2  100.0%
   examples/games                      29 /    29  100.0%
-  examples/generics_traits             9 /    10   90.0%
+  examples/generics_traits            10 /    10  100.0%
   examples/gpu                        14 /    14  100.0%
   examples/graphics                    4 /     4  100.0%
-  examples/interop                     0 /     1    0.0%
+  examples/interop                     1 /     1  100.0%
   examples/linalg                      4 /     4  100.0%
-  examples/ml                         17 /    19   89.5%
+  examples/ml                         19 /    19  100.0%
   examples/morphogenesis              40 /    40  100.0%
   examples/net                         2 /     2  100.0%
   examples/neuro                      15 /    15  100.0%
@@ -66,59 +63,42 @@ by directory (parity / files):
   examples/physics                     2 /     2  100.0%
   examples/planet                      7 /     7  100.0%
   examples/procgen                     8 /     8  100.0%
-  examples/rf                          1 /     3   33.3%
+  examples/rf                          2 /     3   66.7%
   examples/social                      5 /     5  100.0%
   examples/stats                       1 /     1  100.0%
   examples/systems                     7 /     7  100.0%
   examples/threed                      8 /     8  100.0%
   examples/ui                          1 /     1  100.0%
   examples/verify                      1 /     1  100.0%
-  examples/wasm                        7 /     8   87.5%
+  examples/wasm                        8 /     8  100.0%
   lib                                  4 /     4  100.0%
   scripts                             28 /    29   96.6%
   tests                                1 /     1  100.0%
-  tests/arrays                         4 /     5   80.0%
+  tests/arrays                         5 /     5  100.0%
   tests/benchmarks                    20 /    20  100.0%
   tests/conformance                    8 /     8  100.0%
   tests/core                          41 /    41  100.0%
   tests/experimental                   3 /     3  100.0%
   tests/fixtures                      11 /    11  100.0%
-  tests/lang                         181 /   184   98.4%
+  tests/lang                         194 /   196   99.0%
   tests/memory                         3 /     3  100.0%
   tests/misc                           3 /     3  100.0%
   tests/mlir                           1 /     1  100.0%
   tests/runtime                       34 /    35   97.1%
   tests/simd                           4 /     4  100.0%
-  tests/stdlib                        47 /    49   95.9%
-  tools                                2 /     3   66.7%
+  tests/stdlib                        49 /    49  100.0%
+  tests/tools                         16 /    16  100.0%
+  tools                                2 /     4   50.0%
   wasm                                 1 /     1  100.0%
 
 failure causes, ranked (count, status, first flowc diagnostic):
-     11  run-stdout stdout differs 
-      3  run-exit exit code differs (Python timeout, flowc 0) 
-      3  flowc-better Python C does not compile: clang: error: linker command failed with exit code 1 (use -v to see invocation) 
       2  run-timeout flowc build times out (Python exit 0) 
-      2  run-exit exit code differs (Python 0, flowc 1) 
-      2  flowc-reject flowc tc: unbound call 
-      2  flowc-ccfail error: use of undeclared identifier 'X' 
+      2  run-stdout stdout differs 
+      2  flowc-better Python C does not compile: clang: error: linker command failed with exit code 1 (use -v to see invocation) 
       2  flowc-accepts Python reject: Error resolving modules: Invalid escape sequence: \x 
-      1  run-exit exit code differs (Python 3, flowc 1) 
-      1  run-exit exit code differs (Python 0, flowc 134) 
-      1  nogolden no Python golden for this file 
-      1  flowc-reject Variable 'X' initialized with Meter/Second^3 but annotated as Meter 
-      1  flowc-reject line 9: dimensional error: Meter + Second (operands of '+' must have the same dimension) 
-      1  flowc-reject line 7: dimensional error: Meter < f32 (comparison requires both operands to have the same dimension) 
-      1  flowc-reject line 3: unknown unit 'X' in declaration of 'X' (units must be declared before use) 
-      1  flowc-reject flowc tc: unbound ident 
-      1  flowc-reject flowc tc: no matching overload 
-      1  flowc-reject flowc gather: apps/http_json_cache/src/main.flow: cannot resolve import json.lib 
-      1  flowc-reject error: Function 'X' declares unknown effect 'X' in its `with` row 
-      1  flowc-reject error: Effect operation 'X' argument 1 expects string, got i32 
-      1  flowc-reject dimensional error: sin() requires a dimensionless or Radian argument, got Meter 
-      1  flowc-reject Cannot cast Meter to Second 
-      1  flowc-ccfail link: undefined symbol array_f32 
-      1  flowc-ccfail error: passing 'X' (aka 'struct NotationReader') to parameter of incompatible type 'NotationReader *' (aka 'struct NotationReader *'); take the address with & 
-      1  flowc-ccfail error: passing 'X' (aka 'struct Dual') to parameter of incompatible type 'X' 
-      1  flowc-ccfail error: invalid operands to binary expression ('X' (aka 'struct Tensor') and 'X') 
+      1  run-exit exit code differs (Python timeout, flowc 0) 
+      1  flowc-better Python C does not compile: link: undefined symbol main 
       1  flowc-better Python C does not compile: error: use of undeclared identifier 'X' 
+      1  flowc-better Python C does not compile: error: returning 'int32_t (int32_t)' (aka 'int (int)') from a function with incompatible result type 'X' 
       1  flowc-better Python C does not compile: error: expected ')' 
+      1  flowc-accepts Python reject: Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.HANDLE at line 2051, column 10 
