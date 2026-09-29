@@ -1,0 +1,2 @@
+# Files at parity per OS (uname -s). corpus_parity.sh --check fails below it.
+Darwin 792
