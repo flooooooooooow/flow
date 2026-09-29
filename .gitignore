@@ -147,3 +147,7 @@ btree_test.db
 /test.txt
 /out.gif
 .flow_cache/
+
+# Parity goldens are source, not build output.
+!compiler/fixtures/mlir/*.mlir
+!compiler/fixtures/mlir/*.out
