@@ -1,0 +1,18 @@
+# An array literal used as a statement compiles and still evaluates its
+# elements (#1050). The Python host emitted a compound literal. flowc
+# emitted a bare `{ 1, 2, 3 };`, which is not a C expression.
+let mut hits: i32 = 0
+
+function bump() -> i32 {
+    hits = hits + 1
+    return hits
+}
+
+function main() -> i32 {
+    [bump(), bump()]
+    if hits != 2 {
+        return 1
+    }
+    [1, 2, 3, 4, 5]
+    return 0
+}

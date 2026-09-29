@@ -1,9 +1,9 @@
 {
   "generated": "2026-09-29",
   "totals": {
-    "verified": 603,
+    "verified": 618,
     "expected-error": 9,
-    "unverified": 21,
+    "unverified": 6,
     "ignored": 2
   },
   "blocks": [
@@ -51,10 +51,9 @@
       "key": "ROADMAP.md#cd3e425c1c9b",
       "path": "ROADMAP.md",
       "line": 459,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "type name requires a specifier or qualifier"
+      "stage": "codegen"
     },
     {
       "key": "demos/vulkan_scene/flow_style.md#a7af92438b2b",
@@ -67,7 +66,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#8d364bae4b7e",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 502,
+      "line": 493,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -75,7 +74,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#3645e09701ab",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 580,
+      "line": 570,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -83,7 +82,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#e8163ee23708",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 604,
+      "line": 594,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -91,7 +90,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#7dbb128f9b73",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 624,
+      "line": 614,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -99,7 +98,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#8d5eb65c2b2e",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 654,
+      "line": 644,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -107,7 +106,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#026de532b371",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 711,
+      "line": 701,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -115,7 +114,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#5f44c64b37f4",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 729,
+      "line": 719,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -123,7 +122,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#4d611b2b76a6",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 981,
+      "line": 970,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -203,7 +202,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#e3d945b4e92e",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 713,
+      "line": 714,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -211,7 +210,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#4bd6f3746d63",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 792,
+      "line": 793,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -219,7 +218,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#f5fec4e3617b",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 819,
+      "line": 820,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -227,7 +226,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0a1aaa9252df",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 852,
+      "line": 853,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -235,7 +234,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 944,
+      "line": 945,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -243,10 +242,10 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1037,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "flowc: block.flow:4:20: parse error: unexpected token '*' (byte 108)"
+      "line": 1038,
+      "status": "verified",
+      "mode": "stmt-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/blas-bindings.md#4bd5e7f4fa12",
@@ -876,9 +875,9 @@
       "key": "docs/book/10-memory-and-lifetimes.md#b09842aa30f5",
       "path": "docs/book/10-memory-and-lifetimes.md",
       "line": 27,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "flowc: block.flow:5:12: parse error: unexpected token '*' (byte 127)"
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#8549768ad56a",
@@ -1380,18 +1379,17 @@
       "key": "docs/effects-showcase.md#7a6734106f57",
       "path": "docs/effects-showcase.md",
       "line": 137,
-      "status": "unverified",
+      "status": "verified",
       "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "redefinition of 'main'"
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#5190313dfb63",
       "path": "docs/effects-showcase.md",
       "line": 155,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "flowc: block.flow:241:5: parse error: unexpected keyword 'capability' (byte 4856)"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#ad12bd3952c2",
@@ -1413,10 +1411,9 @@
       "key": "docs/effects-showcase.md#55c7b5e0d8d6",
       "path": "docs/effects-showcase.md",
       "line": 209,
-      "status": "unverified",
+      "status": "verified",
       "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "redefinition of 'main'"
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#cc380f5766c9",
@@ -1438,10 +1435,9 @@
       "key": "docs/effects-showcase.md#3634a12147df",
       "path": "docs/effects-showcase.md",
       "line": 253,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "redefinition of 'main'"
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#93cc8b826921",
@@ -1463,10 +1459,9 @@
       "key": "docs/effects-showcase.md#0e0af157b81b",
       "path": "docs/effects-showcase.md",
       "line": 312,
-      "status": "unverified",
+      "status": "verified",
       "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "redefinition of 'main'"
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#0e1bb2d5dbbb",
@@ -1480,9 +1475,9 @@
       "key": "docs/effects-showcase.md#9a48adee0be9",
       "path": "docs/effects-showcase.md",
       "line": 363,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "flowc: block.flow:241:5: parse error: unexpected keyword 'capability' (byte 4856)"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#6c16fa2854db",
@@ -1496,10 +1491,9 @@
       "key": "docs/effects-showcase.md#b5cd304c99fc",
       "path": "docs/effects-showcase.md",
       "line": 416,
-      "status": "unverified",
+      "status": "verified",
       "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "redefinition of 'main'"
+      "stage": "codegen"
     },
     {
       "key": "docs/effects-showcase.md#bd29de113a2e",
@@ -1849,10 +1843,9 @@
       "key": "docs/language/lifetime-domains.md#71e63214c2ab",
       "path": "docs/language/lifetime-domains.md",
       "line": 62,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "initializing 'flowc_span_float' with an expression of incompatible type 'void *'"
+      "stage": "codegen"
     },
     {
       "key": "docs/language/lifetime-domains.md#c84c5f8180fe",
@@ -2013,7 +2006,7 @@
       "status": "unverified",
       "mode": "standalone",
       "stage": "clang",
-      "detail": "conflicting types for 'analyse'"
+      "detail": "unknown type name 'Vec'"
     },
     {
       "key": "docs/language/spans.md#ad33eb3de2cd",
@@ -2092,10 +2085,9 @@
       "key": "docs/language/syntax.md#0c049903ce23",
       "path": "docs/language/syntax.md",
       "line": 161,
-      "status": "unverified",
+      "status": "verified",
       "mode": "stmt-wrap",
-      "stage": "clang",
-      "detail": "expected ';' after expression"
+      "stage": "codegen"
     },
     {
       "key": "docs/language/testing.md#f591c841dd97",
@@ -2629,10 +2621,9 @@
       "key": "docs/project/example-atlas.md#6c906f94dff6",
       "path": "docs/project/example-atlas.md",
       "line": 16,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "expected member name or ';' after declaration specifiers"
+      "stage": "codegen"
     },
     {
       "key": "docs/project/pattern-adoption.md#13f6b9dee704",
@@ -3407,18 +3398,17 @@
       "key": "docs/tutorials/effects-basics.md#ae55d95de4b4",
       "path": "docs/tutorials/effects-basics.md",
       "line": 138,
-      "status": "unverified",
+      "status": "verified",
       "mode": "standalone",
-      "stage": "clang",
-      "detail": "redefinition of 'main'"
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/effects-basics.md#fb86da4cc165",
       "path": "docs/tutorials/effects-basics.md",
       "line": 149,
-      "status": "unverified",
-      "stage": "types",
-      "detail": "flowc: block.flow:100:5: parse error: unexpected keyword 'capability' (byte 2164)"
+      "status": "verified",
+      "mode": "split-wrap",
+      "stage": "codegen"
     },
     {
       "key": "docs/tutorials/effects-basics.md#cd46eac448e0",

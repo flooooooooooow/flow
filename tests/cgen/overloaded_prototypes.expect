@@ -1,0 +1,6 @@
+# Overloaded prototypes get distinct C names (#1049).
++ float analyse_ptr_i32(float* samples, int32_t n);
++ float analyse_array(float* samples);
+- float analyse(
++ int32_t twice(int32_t x) {
+exit 0

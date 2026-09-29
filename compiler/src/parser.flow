@@ -1364,6 +1364,27 @@ function flowc_parse_primary(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].a = operand
         return id
     }
+    # Prefix `*p` dereferences a pointer. It is the same load or store as
+    # `p[0]`, so it parses to that index node and reuses its type and C.
+    if tok.kind == TOK_STAR {
+        flowc_parser_advance(p)
+        let target: i32 = flowc_parse_primary(p)
+        if target == AST_NONE {
+            return AST_NONE
+        }
+        let zero: i32 = flowc_ast_alloc(&p[0].arena, AST_INT, 0, 0)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
+        if zero == AST_NONE or id == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[zero].name_start = 0
+        p[0].arena.nodes[zero].name_end = 0
+        p[0].arena.nodes[zero].ival = 0
+        p[0].arena.nodes[id].a = target
+        p[0].arena.nodes[id].b = zero
+        return id
+    }
     # `not` keyword → logical negation (same as !)
     if tok.kind == TOK_KEYWORD and tok.kw == KW_NOT {
         let start: i32 = tok.start
@@ -2032,7 +2053,7 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         if k == TOK_INT or k == TOK_FLOAT or k == TOK_STRING or k == TOK_IDENT or k == TOK_LPAREN or k == TOK_LBRACK or k == TOK_BAR {
             is_expr = 1
         }
-        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP or k == TOK_TILDE {
+        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP or k == TOK_TILDE or k == TOK_STAR {
             is_expr = 1
         }
         # `return <a, b>` returns a vector literal.

@@ -1,0 +1,23 @@
+# A field named `I` compiles (#1051). flowc always includes <complex.h>,
+# whose macro I turned `double I;` into a syntax error. The Python host
+# included complex.h only for programs that used complex numbers.
+
+struct Neuron {
+    v: f64
+    I: f64
+}
+
+flow Cell {
+    state v: f64 = 0.0
+    input I: f64
+    v evolves as I
+}
+
+function main() -> i32 {
+    let mut n: Neuron = Neuron { v: 1.0, I: 2.0 }
+    n.I = n.I + 1.0
+    if n.I != 3.0 { return 1 }
+    let z: c128 = c128(1.0, 2.0)
+    if z == c128(1.0) { return 2 }
+    return 0
+}
