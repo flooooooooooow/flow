@@ -47,6 +47,7 @@ extern {
     function puts(s: string) -> i32
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
     function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
+    function getenv(name: string) -> string
 }
 
 # ---------------------------------------------------------------------------
@@ -234,9 +235,13 @@ export struct Mlg {
     mc_e: ptr<i32>,
     mc_t: ptr<i32>,
     nmc: i32,
-    # functions Python leaves out of the CPU module (@gpu, mode guards)
+    # functions Python leaves out of the CPU module (@gpu, mode guards),
+    # and the @gpu ones among them
     dropf: ptr<i32>,
-    ndropf: i32
+    ndropf: i32,
+    gpuf: ptr<i32>,
+    ngpuf: i32,
+    gpu_ssa: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -9644,8 +9649,11 @@ function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) -> i32 
     if mlg_kind(m, d) != AST_FN {
         return 0
     }
-    if gpu == 1 or (has_guard == 1 and active == 0) {
+    if has_guard == 1 and active == 0 {
         return 1
+    }
+    if gpu == 1 {
+        return 2
     }
     return 0
 }
@@ -10974,10 +10982,14 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
         if m[0].arena.nodes[item].end > prev_end {
             prev_end = m[0].arena.nodes[item].end
         }
-        if off_cpu == 1 {
+        if off_cpu != 0 {
             if m[0].ndropf < MLG_MAX_FNS {
                 m[0].dropf[m[0].ndropf] = item
                 m[0].ndropf = m[0].ndropf + 1
+            }
+            if off_cpu == 2 and m[0].ngpuf < MLG_MAX_FNS {
+                m[0].gpuf[m[0].ngpuf] = mlg_unwrap(m, item)
+                m[0].ngpuf = m[0].ngpuf + 1
             }
             item = m[0].arena.nodes[item].next
             continue
@@ -11062,6 +11074,736 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
     }
 }
 
+# ---------------------------------------------------------------------------
+# GPU dialect (mlir_gpu_codegen.py, under FLOWC_MLIR_GPU=1 as Python's
+# --mlir-gpu). Its values are numbered per kernel from %1 and its types are
+# small codes: GT_* scalars, or GT_MEM + an AST_TYPE node for a memref.
+# ---------------------------------------------------------------------------
+const GT_I32: i32 = 1
+const GT_I64: i32 = 2
+const GT_U32: i32 = 3
+const GT_U64: i32 = 4
+const GT_F32: i32 = 5
+const GT_F64: i32 = 6
+const GT_I1: i32 = 7
+const GT_INDEX: i32 = 8
+const GT_MEM: i32 = 100000
+
+# MLIRGpuGenerator.flow_type_to_mlir.
+function mlg_gpu_type_of(m: ptr<Mlg>, ft: i32) -> i32 {
+    if ft < 0 or mlg_kind(m, ft) != AST_TYPE {
+        return GT_I32
+    }
+    let ns: i32 = mlg_ns(m, ft)
+    let ne: i32 = mlg_ne(m, ft)
+    if mlg_span_is(m, ns, ne, "i32") == 1 { return GT_I32 }
+    if mlg_span_is(m, ns, ne, "i64") == 1 { return GT_I64 }
+    if mlg_span_is(m, ns, ne, "u32") == 1 { return GT_U32 }
+    if mlg_span_is(m, ns, ne, "u64") == 1 { return GT_U64 }
+    if mlg_span_is(m, ns, ne, "f32") == 1 { return GT_F32 }
+    if mlg_span_is(m, ns, ne, "f64") == 1 { return GT_F64 }
+    if mlg_span_is(m, ns, ne, "bool") == 1 { return GT_I1 }
+    if mlg_ft_is_fixed(m, ft) == 1 or mlg_span_is(m, ns, ne, "array") == 1 or mlg_span_prefix(m, ns, ne, "array") == 1 or mlg_ft_is_pointer(m, ft) == 1 {
+        return GT_MEM + ft
+    }
+    return GT_I32
+}
+
+function mlg_gpu_put_type(m: ptr<Mlg>, t: i32) {
+    if t >= GT_MEM {
+        let ft: i32 = t - GT_MEM
+        let el: i32 = m[0].arena.nodes[ft].a
+        if mlg_ft_is_pointer(m, ft) == 1 {
+            if el != AST_NONE and (mlg_ft_name_is(m, el, "f32") == 1 or mlg_ft_name_is(m, el, "f64") == 1 or mlg_ft_name_is(m, el, "i32") == 1 or mlg_ft_name_is(m, el, "i64") == 1) {
+                mlg_s(m, "memref<?x")
+                mlg_span(m, mlg_ns(m, el), mlg_ne(m, el))
+                mlg_s(m, ">")
+            } else {
+                mlg_s(m, "memref<?xi8>")
+            }
+            return
+        }
+        if el == AST_NONE {
+            mlg_s(m, "memref<?xi32>")
+            return
+        }
+        mlg_s(m, "memref<")
+        if m[0].arena.nodes[ft].ival > 0 {
+            mlg_i(m, m[0].arena.nodes[ft].ival)
+        } else {
+            mlg_s(m, "?")
+        }
+        mlg_s(m, "x")
+        mlg_span(m, mlg_ns(m, el), mlg_ne(m, el))
+        mlg_s(m, ">")
+        return
+    }
+    if t == GT_I32 { mlg_s(m, "i32") }
+    if t == GT_I64 { mlg_s(m, "i64") }
+    if t == GT_U32 { mlg_s(m, "u32") }
+    if t == GT_U64 { mlg_s(m, "u64") }
+    if t == GT_F32 { mlg_s(m, "f32") }
+    if t == GT_F64 { mlg_s(m, "f64") }
+    if t == GT_I1 { mlg_s(m, "i1") }
+    if t == GT_INDEX { mlg_s(m, "index") }
+}
+
+# The memref's element type as Python reads it off the type text.
+function mlg_gpu_elem(m: ptr<Mlg>, t: i32) -> i32 {
+    if t < GT_MEM {
+        return GT_F32
+    }
+    let ft: i32 = t - GT_MEM
+    let el: i32 = m[0].arena.nodes[ft].a
+    let mut r: i32 = GT_F32
+    if mlg_ft_is_pointer(m, ft) == 1 {
+        if el != AST_NONE and mlg_ft_name_is(m, el, "i32") == 1 { r = GT_I32 }
+        if el != AST_NONE and mlg_ft_name_is(m, el, "f64") == 1 { r = GT_F64 }
+        return r
+    }
+    if el == AST_NONE {
+        return GT_I32
+    }
+    if mlg_span_prefix(m, mlg_ns(m, el), mlg_ne(m, el), "i32") == 1 or mlg_ft_name_is(m, el, "i32") == 1 { r = GT_I32 }
+    if mlg_ft_name_is(m, el, "f64") == 1 { r = GT_F64 }
+    return r
+}
+
+function mlg_gpu_is_float(t: i32) -> i32 {
+    if t == GT_F32 or t == GT_F64 {
+        return 1
+    }
+    return 0
+}
+
+function mlg_gpu_new(m: ptr<Mlg>) -> i32 {
+    m[0].gpu_ssa = m[0].gpu_ssa + 1
+    return m[0].gpu_ssa
+}
+
+function mlg_gpu_v(m: ptr<Mlg>, s: i32) {
+    if s >= 0 {
+        mlg_putc(m, 37)
+        mlg_i(m, s)
+        return
+    }
+    mlg_s(m, "%arg")
+    mlg_i(m, 0 - s - 1)
+}
+
+function mlg_gpu_index(m: ptr<Mlg>, s: i32, t: i32) -> i32 {
+    if t == GT_INDEX {
+        return s
+    }
+    let c: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, c)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_gpu_v(m, s)
+    mlg_s(m, " : ")
+    mlg_gpu_put_type(m, t)
+    mlg_s(m, " to index")
+    mlg_nl(m)
+    return c
+}
+
+# gpu.<kind> <axis> as i32.
+function mlg_gpu_dim(m: ptr<Mlg>, kind: string, axis: string) -> i32 {
+    let a: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, a)
+    mlg_s(m, " = gpu.")
+    mlg_s(m, kind)
+    mlg_s(m, " ")
+    mlg_s(m, axis)
+    mlg_nl(m)
+    let b: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, b)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_gpu_v(m, a)
+    mlg_s(m, " : index to i32")
+    mlg_nl(m)
+    return b
+}
+
+function mlg_gpu_global_id(m: ptr<Mlg>, axis: string) -> i32 {
+    let bid: i32 = mlg_gpu_dim(m, "block_id", axis)
+    let bdim: i32 = mlg_gpu_dim(m, "block_dim", axis)
+    let tid: i32 = mlg_gpu_dim(m, "thread_id", axis)
+    let mul: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, mul)
+    mlg_s(m, " = arith.muli ")
+    mlg_gpu_v(m, bid)
+    mlg_s(m, ", ")
+    mlg_gpu_v(m, bdim)
+    mlg_s(m, " : i32")
+    mlg_nl(m)
+    let add: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, add)
+    mlg_s(m, " = arith.addi ")
+    mlg_gpu_v(m, mul)
+    mlg_s(m, ", ")
+    mlg_gpu_v(m, tid)
+    mlg_s(m, " : i32")
+    mlg_nl(m)
+    return add
+}
+
+# MLIRGpuGenerator.generate_expression: the value, its type in *t.
+function mlg_gpu_expr(m: ptr<Mlg>, e: i32, t: ptr<i32>) -> i32 {
+    if m[0].err != 0 {
+        return 0
+    }
+    let k: i32 = mlg_kind(m, e)
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL {
+        let s: i32 = mlg_gpu_new(m)
+        mlg_line(m)
+        mlg_gpu_v(m, s)
+        mlg_s(m, " = arith.constant ")
+        if k == AST_BOOL {
+            mlg_i(m, m[0].arena.nodes[e].ival)
+            t[0] = GT_I1
+        }
+        if k == AST_INT {
+            let mut ok: i32 = 1
+            mlg_i64(m, mlg_int_value(m, e, &ok))
+            t[0] = GT_I32
+        }
+        if k == AST_FLOAT {
+            mlg_span(m, mlg_ns(m, e), mlg_ne(m, e))
+            t[0] = GT_F32
+        }
+        mlg_s(m, " : ")
+        mlg_gpu_put_type(m, t[0])
+        mlg_nl(m)
+        return s
+    }
+    if k == AST_IDENT {
+        let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
+        if l < 0 {
+            mlg_refuse(m, e, "name in an @gpu kernel that is not a parameter or local")
+            return 0
+        }
+        t[0] = m[0].l_mt[l]
+        return m[0].l_ssa[l]
+    }
+    if k == AST_CALL and m[0].arena.nodes[e].start == m[0].arena.nodes[e].name_start {
+        let ns: i32 = mlg_ns(m, e)
+        let ne: i32 = mlg_ne(m, e)
+        t[0] = GT_I32
+        if mlg_span_is(m, ns, ne, "gpu_thread_id") == 1 or mlg_span_is(m, ns, ne, "gpu_thread_id_x") == 1 { return mlg_gpu_global_id(m, "x") }
+        if mlg_span_is(m, ns, ne, "gpu_thread_id_y") == 1 { return mlg_gpu_global_id(m, "y") }
+        if mlg_span_is(m, ns, ne, "gpu_thread_id_z") == 1 { return mlg_gpu_global_id(m, "z") }
+        if mlg_span_is(m, ns, ne, "gpu_local_id") == 1 or mlg_span_is(m, ns, ne, "gpu_local_id_x") == 1 { return mlg_gpu_dim(m, "thread_id", "x") }
+        if mlg_span_is(m, ns, ne, "gpu_local_id_y") == 1 { return mlg_gpu_dim(m, "thread_id", "y") }
+        if mlg_span_is(m, ns, ne, "gpu_local_id_z") == 1 { return mlg_gpu_dim(m, "thread_id", "z") }
+        if mlg_span_is(m, ns, ne, "gpu_block_id") == 1 or mlg_span_is(m, ns, ne, "gpu_block_id_x") == 1 { return mlg_gpu_dim(m, "block_id", "x") }
+        if mlg_span_is(m, ns, ne, "gpu_block_id_y") == 1 { return mlg_gpu_dim(m, "block_id", "y") }
+        if mlg_span_is(m, ns, ne, "gpu_block_id_z") == 1 { return mlg_gpu_dim(m, "block_id", "z") }
+        if mlg_span_is(m, ns, ne, "gpu_block_size") == 1 or mlg_span_is(m, ns, ne, "gpu_block_size_x") == 1 { return mlg_gpu_dim(m, "block_dim", "x") }
+        if mlg_span_is(m, ns, ne, "gpu_block_size_y") == 1 { return mlg_gpu_dim(m, "block_dim", "y") }
+        if mlg_span_is(m, ns, ne, "gpu_block_size_z") == 1 { return mlg_gpu_dim(m, "block_dim", "z") }
+        if mlg_span_is(m, ns, ne, "gpu_grid_size") == 1 or mlg_span_is(m, ns, ne, "gpu_grid_size_x") == 1 { return mlg_gpu_dim(m, "grid_dim", "x") }
+        if mlg_span_is(m, ns, ne, "gpu_grid_size_y") == 1 { return mlg_gpu_dim(m, "grid_dim", "y") }
+        if mlg_span_is(m, ns, ne, "gpu_grid_size_z") == 1 { return mlg_gpu_dim(m, "grid_dim", "z") }
+        mlg_refuse(m, e, "call in an @gpu kernel")
+        return 0
+    }
+    if k == AST_UNARY {
+        let op: i32 = m[0].arena.nodes[e].ival
+        if op != TOK_MINUS and op != TOK_BANG {
+            mlg_refuse(m, e, "unary operator in an @gpu kernel")
+            return 0
+        }
+        let mut ot: i32 = 0
+        let ov: i32 = mlg_gpu_expr(m, m[0].arena.nodes[e].a, &ot)
+        let s2: i32 = mlg_gpu_new(m)
+        mlg_line(m)
+        mlg_gpu_v(m, s2)
+        if op == TOK_MINUS {
+            if mlg_gpu_is_float(ot) == 1 {
+                mlg_s(m, " = arith.negf ")
+                mlg_gpu_v(m, ov)
+            } else {
+                mlg_s(m, " = arith.subi ")
+                mlg_gpu_v(m, ov)
+                mlg_s(m, ", 0")
+            }
+        } else {
+            mlg_s(m, " = arith.xori ")
+            mlg_gpu_v(m, ov)
+            mlg_s(m, ", 1")
+        }
+        mlg_s(m, " : ")
+        mlg_gpu_put_type(m, ot)
+        mlg_nl(m)
+        t[0] = ot
+        return s2
+    }
+    if k == AST_INDEX and m[0].arena.nodes[e].ival == 0 {
+        let mut at: i32 = 0
+        let av: i32 = mlg_gpu_expr(m, m[0].arena.nodes[e].a, &at)
+        let mut it: i32 = 0
+        let iv: i32 = mlg_gpu_expr(m, m[0].arena.nodes[e].b, &it)
+        let fi: i32 = mlg_gpu_index(m, iv, it)
+        let s3: i32 = mlg_gpu_new(m)
+        mlg_line(m)
+        mlg_gpu_v(m, s3)
+        mlg_s(m, " = memref.load ")
+        mlg_gpu_v(m, av)
+        mlg_s(m, "[")
+        mlg_gpu_v(m, fi)
+        mlg_s(m, "] : ")
+        mlg_gpu_put_type(m, at)
+        mlg_nl(m)
+        t[0] = mlg_gpu_elem(m, at)
+        return s3
+    }
+    if k == AST_BINOP {
+        let op2: i32 = m[0].arena.nodes[e].ival
+        let mut lt: i32 = 0
+        let mut rt: i32 = 0
+        let lv: i32 = mlg_gpu_expr(m, m[0].arena.nodes[e].a, &lt)
+        let rv: i32 = mlg_gpu_expr(m, m[0].arena.nodes[e].b, &rt)
+        if m[0].err != 0 {
+            return 0
+        }
+        let is_f: i32 = mlg_gpu_is_float(lt) + mlg_gpu_is_float(rt)
+        let s4: i32 = mlg_gpu_new(m)
+        mlg_line(m)
+        mlg_gpu_v(m, s4)
+        if mlg_is_cmp_op(op2) == 1 {
+            if is_f > 0 {
+                mlg_s(m, " = arith.cmpf ")
+                if op2 == TOK_LT { mlg_s(m, "olt") }
+                if op2 == TOK_LE { mlg_s(m, "ole") }
+                if op2 == TOK_GT { mlg_s(m, "ogt") }
+                if op2 == TOK_GE { mlg_s(m, "oge") }
+                if op2 == TOK_EQEQ { mlg_s(m, "oeq") }
+                if op2 == TOK_NE { mlg_s(m, "one") }
+            } else {
+                mlg_s(m, " = arith.cmpi ")
+                if op2 == TOK_LT { mlg_s(m, "slt") }
+                if op2 == TOK_LE { mlg_s(m, "sle") }
+                if op2 == TOK_GT { mlg_s(m, "sgt") }
+                if op2 == TOK_GE { mlg_s(m, "sge") }
+                if op2 == TOK_EQEQ { mlg_s(m, "eq") }
+                if op2 == TOK_NE { mlg_s(m, "ne") }
+            }
+            mlg_s(m, ",")
+            t[0] = GT_I1
+        } else {
+            if op2 != TOK_PLUS and op2 != TOK_MINUS and op2 != TOK_STAR and op2 != TOK_SLASH {
+                mlg_refuse(m, e, "binary operator in an @gpu kernel")
+                return 0
+            }
+            if is_f > 0 {
+                if op2 == TOK_PLUS { mlg_s(m, " = arith.addf") }
+                if op2 == TOK_MINUS { mlg_s(m, " = arith.subf") }
+                if op2 == TOK_STAR { mlg_s(m, " = arith.mulf") }
+                if op2 == TOK_SLASH { mlg_s(m, " = arith.divf") }
+            } else {
+                if op2 == TOK_PLUS { mlg_s(m, " = arith.addi") }
+                if op2 == TOK_MINUS { mlg_s(m, " = arith.subi") }
+                if op2 == TOK_STAR { mlg_s(m, " = arith.muli") }
+                if op2 == TOK_SLASH { mlg_s(m, " = arith.divsi") }
+            }
+            t[0] = lt
+        }
+        mlg_s(m, " ")
+        mlg_gpu_v(m, lv)
+        mlg_s(m, ", ")
+        mlg_gpu_v(m, rv)
+        mlg_s(m, " : ")
+        mlg_gpu_put_type(m, lt)
+        mlg_nl(m)
+        return s4
+    }
+    mlg_refuse(m, e, "expression in an @gpu kernel")
+    return 0
+}
+
+function mlg_gpu_stmt(m: ptr<Mlg>, st: i32)
+
+function mlg_gpu_stmts(m: ptr<Mlg>, b: i32) {
+    if b == AST_NONE {
+        return
+    }
+    let mut s: i32 = m[0].arena.nodes[b].a
+    while s != AST_NONE and m[0].err == 0 {
+        mlg_gpu_stmt(m, s)
+        s = m[0].arena.nodes[s].next
+    }
+}
+
+# Python _assigned_locals and _collect_declared_vars_from_block of the
+# GPU generator (top level and if branches; declared also looks into fors).
+function mlg_gpu_assigned(m: ptr<Mlg>, b: i32, buf: ptr<i32>, n0: i32) -> i32 {
+    let mut n: i32 = n0
+    if b == AST_NONE {
+        return n
+    }
+    let mut s: i32 = m[0].arena.nodes[b].a
+    while s != AST_NONE {
+        let k: i32 = mlg_kind(m, s)
+        if k == AST_ASSIGN and mlg_kind(m, m[0].arena.nodes[s].a) == AST_IDENT {
+            let t: i32 = m[0].arena.nodes[s].a
+            n = mlg_names_add(m, buf, n, mlg_ns(m, t), mlg_ne(m, t))
+        }
+        if k == AST_IF {
+            n = mlg_gpu_assigned(m, m[0].arena.nodes[s].b, buf, n)
+            n = mlg_gpu_assigned(m, m[0].arena.nodes[s].c, buf, n)
+        }
+        s = m[0].arena.nodes[s].next
+    }
+    return n
+}
+
+function mlg_gpu_declares(m: ptr<Mlg>, b: i32, ns: i32, ne: i32) -> i32 {
+    if b == AST_NONE {
+        return 0
+    }
+    let mut s: i32 = m[0].arena.nodes[b].a
+    while s != AST_NONE {
+        let k: i32 = mlg_kind(m, s)
+        if k == AST_LET and mlg_span_eq(m, ns, ne, mlg_ns(m, s), mlg_ne(m, s)) == 1 {
+            return 1
+        }
+        if k == AST_IF {
+            if mlg_gpu_declares(m, m[0].arena.nodes[s].b, ns, ne) == 1 or mlg_gpu_declares(m, m[0].arena.nodes[s].c, ns, ne) == 1 {
+                return 1
+            }
+        }
+        if k == AST_FOR and mlg_gpu_declares(m, m[0].arena.nodes[s].c, ns, ne) == 1 {
+            return 1
+        }
+        s = m[0].arena.nodes[s].next
+    }
+    return 0
+}
+
+# MLIRGpuGenerator.generate_for: scf.for over index with i32 loop-carried
+# locals.
+function mlg_gpu_for(m: ptr<Mlg>, st: i32) {
+    let body: i32 = m[0].arena.nodes[st].c
+    let names: ptr<i32> = mlg_names_new()
+    let nn: i32 = mlg_gpu_assigned(m, body, names, 0)
+    let locs: ptr<i32> = mlg_alloc_i32(MLG_MAX_MERGE)
+    let mut nc: i32 = 0
+    let mut q: i32 = 0
+    while q < nn {
+        let l: i32 = mlg_find_local(m, names[2 * q], names[2 * q + 1])
+        if l >= 0 and mlg_gpu_declares(m, body, names[2 * q], names[2 * q + 1]) == 0 and nc < MLG_MAX_MERGE {
+            locs[nc] = l
+            nc = nc + 1
+        }
+        q = q + 1
+    }
+    mlg_free_i32(names)
+    let mut lt: i32 = 0
+    let mut ut: i32 = 0
+    let lo: i32 = mlg_gpu_expr(m, m[0].arena.nodes[st].a, &lt)
+    let hi: i32 = mlg_gpu_expr(m, m[0].arena.nodes[st].b, &ut)
+    let lb: i32 = mlg_gpu_new(m)
+    let ub: i32 = mlg_gpu_new(m)
+    let sp: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, lb)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_gpu_v(m, lo)
+    mlg_s(m, " : ")
+    mlg_gpu_put_type(m, lt)
+    mlg_s(m, " to index")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_gpu_v(m, ub)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_gpu_v(m, hi)
+    mlg_s(m, " : ")
+    mlg_gpu_put_type(m, ut)
+    mlg_s(m, " to index")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_gpu_v(m, sp)
+    mlg_s(m, " = arith.constant 1 : index")
+    mlg_nl(m)
+    let iv: i32 = mlg_gpu_new(m)
+    let its: ptr<i32> = mlg_alloc_i32(nc + 1)
+    let res: ptr<i32> = mlg_alloc_i32(nc + 1)
+    let mut i: i32 = 0
+    while i < nc {
+        its[i] = mlg_gpu_new(m)
+        i = i + 1
+    }
+    i = 0
+    while i < nc {
+        res[i] = mlg_gpu_new(m)
+        i = i + 1
+    }
+    mlg_line(m)
+    if nc > 0 {
+        i = 0
+        while i < nc {
+            if i > 0 {
+                mlg_s(m, ", ")
+            }
+            mlg_gpu_v(m, res[i])
+            i = i + 1
+        }
+        mlg_s(m, " = ")
+    }
+    mlg_s(m, "scf.for ")
+    mlg_gpu_v(m, iv)
+    mlg_s(m, " = ")
+    mlg_gpu_v(m, lb)
+    mlg_s(m, " to ")
+    mlg_gpu_v(m, ub)
+    mlg_s(m, " step ")
+    mlg_gpu_v(m, sp)
+    if nc > 0 {
+        mlg_s(m, " iter_args(")
+        i = 0
+        while i < nc {
+            if i > 0 {
+                mlg_s(m, ", ")
+            }
+            mlg_gpu_v(m, its[i])
+            mlg_s(m, " = ")
+            mlg_gpu_v(m, m[0].l_ssa[locs[i]])
+            i = i + 1
+        }
+        mlg_s(m, ") -> (")
+        i = 0
+        while i < nc {
+            if i > 0 {
+                mlg_s(m, ", ")
+            }
+            mlg_gpu_put_type(m, m[0].l_mt[locs[i]])
+            i = i + 1
+        }
+        mlg_s(m, ")")
+    }
+    mlg_s(m, " {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    i = 0
+    while i < nc {
+        m[0].l_ssa[locs[i]] = its[i]
+        i = i + 1
+    }
+    let ivi: i32 = mlg_gpu_new(m)
+    mlg_line(m)
+    mlg_gpu_v(m, ivi)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_gpu_v(m, iv)
+    mlg_s(m, " : index to i32")
+    mlg_nl(m)
+    mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), GT_I32, FT_NONE, ivi)
+    mlg_gpu_stmts(m, body)
+    if nc > 0 {
+        mlg_line(m)
+        mlg_s(m, "scf.yield ")
+        i = 0
+        while i < nc {
+            if i > 0 {
+                mlg_s(m, ", ")
+            }
+            mlg_gpu_v(m, m[0].l_ssa[locs[i]])
+            i = i + 1
+        }
+        mlg_s(m, " : ")
+        i = 0
+        while i < nc {
+            if i > 0 {
+                mlg_s(m, ", ")
+            }
+            mlg_gpu_put_type(m, m[0].l_mt[locs[i]])
+            i = i + 1
+        }
+        mlg_nl(m)
+    }
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+    i = 0
+    while i < nc {
+        m[0].l_ssa[locs[i]] = res[i]
+        i = i + 1
+    }
+    mlg_free_i32(its)
+    mlg_free_i32(res)
+    mlg_free_i32(locs)
+}
+
+# MLIRGpuGenerator.generate_statement. Locals are not scoped: a name bound
+# in a branch stays bound, as in Python's flat symbol table.
+function mlg_gpu_stmt(m: ptr<Mlg>, st: i32) {
+    let k: i32 = mlg_kind(m, st)
+    if k == AST_LET {
+        let init: i32 = m[0].arena.nodes[st].b
+        if init == AST_NONE {
+            mlg_refuse(m, st, "uninitialized local in an @gpu kernel")
+            return
+        }
+        let mut t: i32 = 0
+        let v: i32 = mlg_gpu_expr(m, init, &t)
+        mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), t, m[0].arena.nodes[st].a, v)
+        return
+    }
+    if k == AST_ASSIGN {
+        let mut vt: i32 = 0
+        let v2: i32 = mlg_gpu_expr(m, m[0].arena.nodes[st].b, &vt)
+        let tg: i32 = m[0].arena.nodes[st].a
+        if mlg_kind(m, tg) == AST_INDEX and m[0].arena.nodes[tg].ival == 0 {
+            let mut at: i32 = 0
+            let av: i32 = mlg_gpu_expr(m, m[0].arena.nodes[tg].a, &at)
+            let mut it: i32 = 0
+            let iv: i32 = mlg_gpu_expr(m, m[0].arena.nodes[tg].b, &it)
+            let fi: i32 = mlg_gpu_index(m, iv, it)
+            mlg_line(m)
+            mlg_s(m, "memref.store ")
+            mlg_gpu_v(m, v2)
+            mlg_s(m, ", ")
+            mlg_gpu_v(m, av)
+            mlg_s(m, "[")
+            mlg_gpu_v(m, fi)
+            mlg_s(m, "] : ")
+            mlg_gpu_put_type(m, at)
+            mlg_nl(m)
+            return
+        }
+        if mlg_kind(m, tg) == AST_IDENT {
+            let l: i32 = mlg_find_local(m, mlg_ns(m, tg), mlg_ne(m, tg))
+            if l >= 0 {
+                m[0].l_ssa[l] = v2
+            }
+            return
+        }
+        mlg_refuse(m, st, "assignment target in an @gpu kernel")
+        return
+    }
+    if k == AST_IF {
+        let mut ct: i32 = 0
+        let cv: i32 = mlg_gpu_expr(m, m[0].arena.nodes[st].a, &ct)
+        mlg_line(m)
+        mlg_s(m, "scf.if ")
+        mlg_gpu_v(m, cv)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        mlg_gpu_stmts(m, m[0].arena.nodes[st].b)
+        m[0].ind = m[0].ind - 1
+        # Python drops elif branches and keeps the final else.
+        let mut cur: i32 = st
+        let mut el: i32 = mlg_elif_of(m, cur)
+        while el != AST_NONE {
+            cur = el
+            el = mlg_elif_of(m, cur)
+        }
+        let eb: i32 = m[0].arena.nodes[cur].c
+        if eb != AST_NONE {
+            mlg_line(m)
+            mlg_s(m, "} else {")
+            mlg_nl(m)
+            m[0].ind = m[0].ind + 1
+            mlg_gpu_stmts(m, eb)
+            m[0].ind = m[0].ind - 1
+        }
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        return
+    }
+    if k == AST_RETURN {
+        mlg_line(m)
+        mlg_s(m, "// return ignored in gpu kernel")
+        mlg_nl(m)
+        return
+    }
+    if k == AST_FOR {
+        mlg_gpu_for(m, st)
+        return
+    }
+    if k == AST_EXPR_STMT and mlg_kind(m, m[0].arena.nodes[st].a) == AST_CALL {
+        let c: i32 = m[0].arena.nodes[st].a
+        if mlg_span_is(m, mlg_ns(m, c), mlg_ne(m, c), "gpu_barrier") == 1 or mlg_span_is(m, mlg_ns(m, c), mlg_ne(m, c), "gpu_sync") == 1 {
+            mlg_line(m)
+            mlg_s(m, "gpu.barrier")
+            mlg_nl(m)
+            return
+        }
+        let mut dt: i32 = 0
+        mlg_gpu_expr(m, c, &dt)
+        return
+    }
+    mlg_refuse(m, st, "statement in an @gpu kernel")
+}
+
+# MLIRGpuGenerator.generate_gpu_module.
+function mlg_emit_gpu_module(m: ptr<Mlg>) {
+    mlg_line(m)
+    mlg_s(m, "gpu.module @flow_kernels {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    let mut g: i32 = 0
+    while g < m[0].ngpuf and m[0].err == 0 {
+        let f: i32 = m[0].gpuf[g]
+        m[0].nloc = 0
+        m[0].gpu_ssa = 0
+        mlg_line(m)
+        mlg_s(m, "gpu.func @")
+        mlg_span(m, mlg_ns(m, f), mlg_ne(m, f))
+        mlg_s(m, "(")
+        let mut p: i32 = m[0].arena.nodes[f].a
+        let mut i: i32 = 0
+        while p != AST_NONE {
+            if i > 0 {
+                mlg_s(m, ", ")
+            }
+            let pt: i32 = mlg_gpu_type_of(m, m[0].arena.nodes[p].a)
+            mlg_s(m, "%arg")
+            mlg_i(m, i)
+            mlg_s(m, ": ")
+            mlg_gpu_put_type(m, pt)
+            mlg_add_local(m, mlg_ns(m, p), mlg_ne(m, p), pt, m[0].arena.nodes[p].a, 0 - 1 - i)
+            i = i + 1
+            p = m[0].arena.nodes[p].next
+        }
+        mlg_s(m, ") kernel attributes {spirv.entry_point_abi = #spirv.entry_point_abi<workgroup_size = [64, 1, 1]>} {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        mlg_gpu_stmts(m, m[0].arena.nodes[f].c)
+        mlg_line(m)
+        mlg_s(m, "gpu.return")
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        g = g + 1
+    }
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+}
+
+function mlg_want_gpu() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_GPU")
+    let p: ptr<u8> = v
+    if p == null {
+        return 0
+    }
+    if p[0] == 49 {
+        return 1
+    }
+    return 0
+}
+
 function mlg_off_cpu(m: ptr<Mlg>, item: i32) -> i32 {
     let mut i: i32 = 0
     while i < m[0].ndropf {
@@ -11139,6 +11881,9 @@ function mlg_emit_decls(m: ptr<Mlg>, root: i32) {
     }
     if m[0].nef > 0 and m[0].ncap > 0 and m[0].err == 0 {
         mlg_emit_effects_init(m)
+    }
+    if m[0].ngpuf > 0 and m[0].err == 0 and mlg_want_gpu() == 1 {
+        mlg_emit_gpu_module(m)
     }
 }
 
@@ -11285,7 +12030,8 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         cap_node: mlg_alloc_i32(MLG_MAX_ENUMS), ncap: 0,
         hs_ef: mlg_alloc_i32(MLG_MAX_DEFERS), hs_cap: mlg_alloc_i32(MLG_MAX_DEFERS), nhs: 0,
         mc_e: mlg_alloc_i32(MLG_MAX_LOCALS), mc_t: mlg_alloc_i32(MLG_MAX_LOCALS), nmc: 0,
-        dropf: mlg_alloc_i32(MLG_MAX_FNS), ndropf: 0
+        dropf: mlg_alloc_i32(MLG_MAX_FNS), ndropf: 0,
+        gpuf: mlg_alloc_i32(MLG_MAX_FNS), ngpuf: 0, gpu_ssa: 0
     }
     let m: ptr<Mlg> = &mg
     mlg_collect(m, root)
