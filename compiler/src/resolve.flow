@@ -9,7 +9,7 @@
 # flowc_bundle_typecheck: deps-first check with growing seed of dep exports.
 
 import .ast {
-    AST_IMPORT, AST_FN, AST_EXPORT
+    AST_IMPORT, AST_FN, AST_EXPORT, AST_STRUCT, AST_NONE, AstArena
 }
 import .parser {
     flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser
@@ -74,6 +74,7 @@ const FLOWC_RESOLVE_SRC_CAP: i32 = 1048576
 const FLOWC_RESOLVE_AST_CAP: i32 = 262144
 const FLOWC_RESOLVE_SIG_CAP: i32 = 1048576
 const FLOWC_RESOLVE_FNS_CAP: i32 = 262144
+const FLOWC_RESOLVE_TPL_CAP: i32 = 262144
 
 # Copy NUL-terminated `s` into `dst` (cap includes NUL). Returns length, or -1.
 function flowc_resolve_copy_cstr(s: string, dst: ptr<u8>, cap: i32) -> i32 {
@@ -1281,6 +1282,49 @@ function flowc_resolve_topo(
 # flags forwarded to flowc_cgen_emit_sigs. `sigs` is the growing cross-module
 # return-type table (deps emitted first); `siglen` is read and updated in place
 # so a later module can type `let x = dep_fn(...)` with no annotation.
+# Generic templates across modules. A module's generic structs and
+# functions (`struct Chan<T>`, `function channel_new<T>`) are monomorphized
+# where they are used, which may be a later module of the bundle. Their
+# source text is kept in `tpl` as modules are emitted and appended to every
+# later module's source, so its monomorphizer sees the templates; the cgen
+# guards each instantiation so two modules using `Chan<i32>` define it once.
+# The Python host sees one merged program, so this matches it.
+function flowc_resolve_add_templates(arena: AstArena, root: i32, src: ptr<u8>, own_len: i32, tpl: ptr<u8>, tpl_cap: i32, tpl_len: i32) -> i32 {
+    let mut n: i32 = tpl_len
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let mut d: i32 = item
+        if arena.nodes[d].kind == AST_EXPORT and arena.nodes[d].a != AST_NONE {
+            d = arena.nodes[d].a
+        }
+        let k: i32 = arena.nodes[d].kind
+        let mut is_tpl: i32 = 0
+        if k == AST_FN and arena.nodes[d].ival > 0 and arena.nodes[d].c != AST_NONE {
+            is_tpl = 1
+        }
+        if k == AST_STRUCT and arena.nodes[d].b != AST_NONE {
+            is_tpl = 1
+        }
+        let s: i32 = arena.nodes[d].start
+        let e: i32 = arena.nodes[d].end
+        if is_tpl == 1 and s >= 0 and e > s and e <= own_len and n + (e - s) + 2 < tpl_cap {
+            tpl[n] = 10
+            n = n + 1
+            let mut i: i32 = s
+            while i < e {
+                tpl[n] = src[i]
+                n = n + 1
+                i = i + 1
+            }
+            tpl[n] = 10
+            n = n + 1
+            tpl[n] = 0
+        }
+        item = arena.nodes[item].next
+    }
+    return n
+}
+
 function flowc_resolve_emit_one(
     path: string,
     out: ptr<u8>,
@@ -1288,7 +1332,10 @@ function flowc_resolve_emit_one(
     flags: i32,
     sigs: ptr<u8>,
     sigcap: i32,
-    siglen: ptr<i32>
+    siglen: ptr<i32>,
+    tpl: ptr<u8>,
+    tpl_cap: i32,
+    tpl_len: ptr<i32>
 ) -> i32 {
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
     if src == null {
@@ -1299,10 +1346,20 @@ function flowc_resolve_emit_one(
         src[zi] = 0
         zi = zi + 1
     }
-    let nsrc: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
-    if nsrc <= 0 {
+    let own: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    if own <= 0 {
         free(src)
         return 0 - 1
+    }
+    let mut nsrc: i32 = own
+    # Earlier modules' generic templates, for this module's instantiations.
+    if tpl != null and tpl_len[0] > 0 and nsrc + tpl_len[0] < FLOWC_RESOLVE_SRC_CAP - 1 {
+        let mut ti: i32 = 0
+        while ti < tpl_len[0] {
+            src[nsrc + ti] = tpl[ti]
+            ti = ti + 1
+        }
+        nsrc = nsrc + tpl_len[0]
     }
     src[nsrc] = 0
 
@@ -1314,6 +1371,9 @@ function flowc_resolve_emit_one(
         return 0 - 1
     }
 
+    if tpl != null {
+        tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
+    }
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
     if sigs != null {
         siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
@@ -1722,6 +1782,13 @@ export function flowc_bundle_emit(
         li = li + 1
     }
 
+    # Generic templates of the modules emitted so far.
+    let tpl: ptr<u8> = malloc(FLOWC_RESOLVE_TPL_CAP as i64)
+    let mut tpl_len: i32 = 0
+    if tpl != null {
+        tpl[0] = 0
+    }
+
     let mut written: i32 = 0
     let mut mi: i32 = 0
     let mut first: i32 = 1
@@ -1751,7 +1818,7 @@ export function flowc_bundle_emit(
             free(path_store)
             return 0 - 1
         }
-        let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen)
+        let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen, tpl, FLOWC_RESOLVE_TPL_CAP, &tpl_len)
         # A module may emit no C at all (one that holds only theorems).
         if n < 0 {
             free(fns)
@@ -1777,6 +1844,9 @@ export function flowc_bundle_emit(
         mi = mi + 1
     }
 
+    if tpl != null {
+        free(tpl)
+    }
     free(fns)
     free(sigs)
     free(order_store)
