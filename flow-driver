@@ -262,14 +262,14 @@ flowc_emit_to_c() {
         (
             cd "$SCRIPT_DIR" &&
             FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
-            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" \
             FLOWC_IN="$abs_program" FLOWC_OUT="$abs_out" \
                 "$abs_driver"
         )
         return $?
     fi
     # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
-    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" \
     FLOWC_IN="$program" FLOWC_OUT="$c_out" \
         "$driver"
 }
@@ -3183,7 +3183,7 @@ run_lang_tests() {
             local abs_lang_program
             abs_lang_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
             transpile_output=$(cd "$SCRIPT_DIR" && FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
-                FLOWC_TYPECHECK=1 FLOWC_IN="$abs_lang_program" FLOWC_OUT="$c_file" \
+                FLOWC_TYPECHECK=1 FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_IN="$abs_lang_program" FLOWC_OUT="$c_file" \
                 "$lang_flowc" 2>&1) || transpile_status=$?
         else
             transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?

@@ -3504,8 +3504,16 @@ function flowc_cgen_div_is_checked(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     if arena.nodes[id].ival == TOK_PERCENT {
         return 1
     }
-    let lp: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
+    let mut lp: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].a)
     let rp: i32 = flowc_cgen_expr_prim(w, arena, src, arena.nodes[id].b)
+    # `xs[i] / d`: the element type of the indexed variable.
+    let la: i32 = arena.nodes[id].a
+    if lp == FLOWC_PRIM_UNKNOWN and arena.nodes[la].kind == AST_INDEX and arena.nodes[la].ival != 1 {
+        let lb: i32 = arena.nodes[la].a
+        if arena.nodes[lb].kind == AST_IDENT {
+            lp = flowc_cgen_prim_of_type(arena, src, flowc_cgen_var_elem_type(arena, src, lb))
+        }
+    }
     if rp == FLOWC_PRIM_F64 {
         return 0
     }
@@ -3868,6 +3876,31 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
         }
+        # Runtime checks: integer division and every shift.
+        if w[0].checks == 1 {
+            let mut chk_macro: string = ""
+            if (op == TOK_SLASH or op == TOK_PERCENT) and flowc_cgen_div_is_checked(w, arena, src, id) == 1 {
+                chk_macro = "FLOW_CHECKED_DIV(("
+                if op == TOK_PERCENT {
+                    chk_macro = "FLOW_CHECKED_MOD(("
+                }
+            }
+            if op == TOK_SHL {
+                chk_macro = "FLOW_CHECKED_SHL(("
+            }
+            if op == TOK_SHR {
+                chk_macro = "FLOW_CHECKED_SHR(("
+            }
+            let mp: ptr<u8> = chk_macro as ptr<u8>
+            if mp[0] != 0 {
+                flowc_cgen_puts(w, chk_macro)
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, "), (")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                flowc_cgen_puts(w, "))")
+                return
+            }
+        }
         let wrap: i32 = flowc_cgen_binop_needs_parens(op)
         if wrap == 1 {
             flowc_cgen_putc(w, 40)
@@ -3947,7 +3980,12 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_putc(w, 41)
         } else {
+            # `&a[i]` takes the address of an lvalue.
+            if arena.nodes[id].ival == TOK_AMP {
+                w[0].lval = 1
+            }
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            w[0].lval = 0
         }
         flowc_cgen_putc(w, 41)
         return
@@ -4052,12 +4090,28 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "})")
             return
         }
+        # The index is an rvalue even inside an lvalue.
+        let idx_lv: i32 = w[0].lval
+        # A checked read of a sized array variable or a span.
+        if w[0].checks == 1 and idx_lv == 0 {
+            let csize: i32 = flowc_cgen_checked_array_size(w, arena, src, arena.nodes[id].a)
+            if csize > 0 {
+                flowc_cgen_emit_checked_index(w, arena, src, id, csize)
+                return
+            }
+            if flowc_cgen_checked_is_span(w, arena, src, arena.nodes[id].a) == 1 {
+                flowc_cgen_emit_checked_index(w, arena, src, id, 0)
+                return
+            }
+        }
         # Span indexing: if base is a span variable, emit base.data[index]
         if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
             if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
                 flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
                 flowc_cgen_puts(w, ".data[")
+                w[0].lval = 0
                 flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                w[0].lval = idx_lv
                 flowc_cgen_putc(w, 93)
                 return
             }
@@ -4072,7 +4126,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         }
         flowc_cgen_putc(w, 91)
+        w[0].lval = 0
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        w[0].lval = idx_lv
         flowc_cgen_putc(w, 93)
         return
     }
@@ -6008,7 +6064,9 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 return
             }
         }
+        w[0].lval = 1
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        w[0].lval = 0
         flowc_cgen_puts(w, " = ")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
         flowc_cgen_puts(w, ";\n")

@@ -1,23 +1,24 @@
 flowc corpus parity with the Python host (C backend)
 
-files with main(): 1014
-at parity:         964 (95.1%)
-  same run:        716 of 759 that Python builds (94.3%)
+files with main(): 1015
+at parity:         968 (95.4%)
+  same run:        720 of 759 that Python builds (94.9%)
   both reject:     248
 flowc better:      5 (Python's C does not compile, flowc's does)
 
 by status:
-  match             964
+  match             968
   flowc-reject       13
-  run-stdout         12
-  run-exit            9
+  run-stdout         11
+  run-exit            7
   flowc-ccfail        6
   flowc-better        5
-  run-timeout         3
+  run-timeout         2
   flowc-accepts       2
+  nogolden            1
 
 by directory (parity / files):
-  apps                                 4 /     6   66.7%
+  apps                                 5 /     6   83.3%
   benchmarks                           4 /     4  100.0%
   benchmarks/baselines                 4 /     4  100.0%
   benchmarks/concurrency               6 /     6  100.0%
@@ -32,7 +33,7 @@ by directory (parity / files):
   compiler/src                         3 /     6   50.0%
   demos                               11 /    11  100.0%
   docs                                 3 /     3  100.0%
-  examples/ai                          2 /     4   50.0%
+  examples/ai                          3 /     4   75.0%
   examples/audio                      23 /    24   95.8%
   examples/basics                     25 /    25  100.0%
   examples/bench                       2 /     2  100.0%
@@ -40,7 +41,7 @@ by directory (parity / files):
   examples/circuits                   13 /    13  100.0%
   examples/compilers                  10 /    10  100.0%
   examples/concurrency                23 /    27   85.2%
-  examples/crypto                      1 /     2   50.0%
+  examples/crypto                      2 /     2  100.0%
   examples/data                        1 /     1  100.0%
   examples/demos                      12 /    12  100.0%
   examples/dsp                         1 /     1  100.0%
@@ -68,7 +69,7 @@ by directory (parity / files):
   examples/rf                          1 /     3   33.3%
   examples/social                      5 /     5  100.0%
   examples/stats                       1 /     1  100.0%
-  examples/systems                     6 /     7   85.7%
+  examples/systems                     7 /     7  100.0%
   examples/threed                      8 /     8  100.0%
   examples/ui                          1 /     1  100.0%
   examples/verify                      1 /     1  100.0%
@@ -82,7 +83,7 @@ by directory (parity / files):
   tests/core                          41 /    41  100.0%
   tests/experimental                   3 /     3  100.0%
   tests/fixtures                      11 /    11  100.0%
-  tests/lang                         181 /   183   98.9%
+  tests/lang                         181 /   184   98.4%
   tests/memory                         3 /     3  100.0%
   tests/misc                           3 /     3  100.0%
   tests/mlir                           1 /     1  100.0%
@@ -93,17 +94,17 @@ by directory (parity / files):
   wasm                                 1 /     1  100.0%
 
 failure causes, ranked (count, status, first flowc diagnostic):
-     12  run-stdout stdout differs 
-      3  run-timeout flowc build times out (Python exit 0) 
-      3  run-exit exit code differs (Python 134, flowc 0) 
+     11  run-stdout stdout differs 
+      3  run-exit exit code differs (Python timeout, flowc 0) 
       3  flowc-better Python C does not compile: clang: error: linker command failed with exit code 1 (use -v to see invocation) 
-      2  run-exit exit code differs (Python timeout, flowc 0) 
+      2  run-timeout flowc build times out (Python exit 0) 
       2  run-exit exit code differs (Python 0, flowc 1) 
       2  flowc-reject flowc tc: unbound call 
       2  flowc-ccfail error: use of undeclared identifier 'X' 
       2  flowc-accepts Python reject: Error resolving modules: Invalid escape sequence: \x 
       1  run-exit exit code differs (Python 3, flowc 1) 
       1  run-exit exit code differs (Python 0, flowc 134) 
+      1  nogolden no Python golden for this file 
       1  flowc-reject Variable 'X' initialized with Meter/Second^3 but annotated as Meter 
       1  flowc-reject line 9: dimensional error: Meter + Second (operands of '+' must have the same dimension) 
       1  flowc-reject line 7: dimensional error: Meter < f32 (comparison requires both operands to have the same dimension) 
