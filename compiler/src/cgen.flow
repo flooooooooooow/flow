@@ -5550,6 +5550,7 @@ function flowc_cgen_emit_match_general(w: ptr<CgenBuf>, arena: AstArena, src: pt
         flowc_cgen_emit_expr(w, arena, src, scrut)
         flowc_cgen_puts(w, ";\n")
     }
+    let exhaustive: i32 = flowc_cgen_match_is_exhaustive(w, arena, src, id)
     let mut first: i32 = 1
     arm = arena.nodes[id].b
     while arm != AST_NONE {
@@ -5559,7 +5560,10 @@ function flowc_cgen_emit_match_general(w: ptr<CgenBuf>, arena: AstArena, src: pt
             flowc_cgen_puts(w, "} else ")
         }
         first = 0
-        if arena.nodes[arm].kind == AST_MATCH_ARM_EXT {
+        if exhaustive == 1 and arena.nodes[arm].next == AST_NONE {
+            # Last arm of an exhaustive match: no fall-through (#1034).
+            flowc_cgen_puts(w, "{\n")
+        } elif arena.nodes[arm].kind == AST_MATCH_ARM_EXT {
             let pats: i32 = arena.nodes[arm].a
             let guard: i32 = arena.nodes[arm].c
             flowc_cgen_puts(w, "if (")
@@ -5589,6 +5593,291 @@ function flowc_cgen_emit_match_general(w: ptr<CgenBuf>, arena: AstArena, src: pt
         flowc_cgen_puts(w, "}\n")
     }
     flowc_cgen_puts(w, "  }\n")
+}
+
+# --- for loop forms -------------------------------------------------------
+
+# 1 when a for node came from `parallel for`: the parser starts its span at
+# the `parallel` keyword (#1032).
+function flowc_cgen_for_is_parallel(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let s: i32 = arena.nodes[id].start
+    if arena.nodes[id].end - s < 8 {
+        return 0
+    }
+    return flowc_cgen_span_is(src, s, s + 8, "parallel")
+}
+
+# The Python host's `parallel for`: an OpenMP loop when the C compiler
+# defines _OPENMP, else a serial loop. OpenMP needs the canonical ascending
+# form, so a negative step takes a serial descending loop. Without a step the
+# step is 1, as on the Python host.
+function flowc_cgen_emit_parallel_for(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let step: i32 = arena.nodes[id].ival
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    flowc_cgen_puts(w, "  { int32_t __flowc_pstep_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " = ")
+    if step != AST_NONE and step != 0 {
+        flowc_cgen_emit_expr(w, arena, src, step)
+    } else {
+        flowc_cgen_puts(w, "1")
+    }
+    flowc_cgen_puts(w, ";\n  if (__flowc_pstep_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " > 0) {\n#ifdef _OPENMP\n#pragma omp parallel for\n#endif\n")
+    let saved_base: i32 = w[0].loop_defer_base
+    let mut dir: i32 = 0
+    while dir < 2 {
+        if dir == 1 {
+            flowc_cgen_puts(w, "  } else if (__flowc_pstep_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " < 0) {\n")
+        }
+        flowc_cgen_puts(w, "  for (int32_t ")
+        flowc_cgen_put_span(w, src, ns, ne)
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_puts(w, "; ")
+        flowc_cgen_put_span(w, src, ns, ne)
+        if dir == 0 {
+            flowc_cgen_puts(w, " < ")
+        } else {
+            flowc_cgen_puts(w, " > ")
+        }
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_puts(w, "; ")
+        flowc_cgen_put_span(w, src, ns, ne)
+        flowc_cgen_puts(w, " += __flowc_pstep_")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, ") ")
+        w[0].loop_defer_base = w[0].defer_len
+        flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+        w[0].loop_defer_base = saved_base
+        dir = dir + 1
+    }
+    flowc_cgen_puts(w, "  }\n  }\n")
+}
+
+# 1 for a call the vectorize check allows: the Python host's math set.
+function flowc_cgen_is_vec_math_call(src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    if flowc_cgen_span_is(src, ns, ne, "sin") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cos") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "tan") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sqrt") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fabs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "abs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "exp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "pow") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "tanh") == 1 { return 1 }
+    return 0
+}
+
+# 1 when every node in the chain starting at `id` is a straight-line
+# expression: no control flow, no calls outside the math set.
+function flowc_cgen_vec_expr_ok(arena: AstArena, src: ptr<u8>, id: i32, depth: i32) -> i32 {
+    let mut cur: i32 = id
+    while cur != AST_NONE {
+        if cur < 0 or cur >= arena.len or depth > 64 {
+            return 0
+        }
+        let k: i32 = arena.nodes[cur].kind
+        if k == AST_TYPE or k == AST_TYPE_FIXED_ARRAY {
+            cur = arena.nodes[cur].next
+            continue
+        }
+        if k == AST_IF or k == AST_MATCH or k == AST_MATCH_ARM or k == AST_MATCH_ARM_EXT {
+            return 0
+        }
+        if k == AST_WHILE or k == AST_FOR or k == AST_BREAK or k == AST_CONTINUE {
+            return 0
+        }
+        if k == AST_RETURN or k == AST_FN or k == AST_BLOCK or k == AST_DEFER {
+            return 0
+        }
+        if k == AST_HANDLE or k == AST_TRY {
+            return 0
+        }
+        if k == AST_CALL {
+            if flowc_cgen_is_vec_math_call(src, arena.nodes[cur].name_start, arena.nodes[cur].name_end) == 0 {
+                return 0
+            }
+            if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[cur].a, depth + 1) == 0 {
+                return 0
+            }
+        } else {
+            if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[cur].a, depth + 1) == 0 {
+                return 0
+            }
+            if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[cur].b, depth + 1) == 0 {
+                return 0
+            }
+            if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[cur].c, depth + 1) == 0 {
+                return 0
+            }
+        }
+        cur = arena.nodes[cur].next
+    }
+    return 1
+}
+
+# The Python host's _loop_body_is_simple (#414): a body of lets and
+# assignments whose expressions call nothing but math functions. A call
+# statement, any branch, loop, break, continue or return keeps the loop
+# serial. Other statement kinds are treated as not simple.
+function flowc_cgen_loop_body_is_simple(arena: AstArena, src: ptr<u8>, body: i32) -> i32 {
+    if body == AST_NONE {
+        return 1
+    }
+    if arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        let k: i32 = arena.nodes[st].kind
+        if k != AST_LET and k != AST_ASSIGN and k != AST_EXPR_STMT {
+            return 0
+        }
+        if k == AST_EXPR_STMT {
+            let e: i32 = arena.nodes[st].a
+            if e == AST_NONE or arena.nodes[e].kind == AST_CALL {
+                return 0
+            }
+        }
+        if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[st].a, 0) == 0 {
+            return 0
+        }
+        if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[st].b, 0) == 0 {
+            return 0
+        }
+        if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[st].c, 0) == 0 {
+            return 0
+        }
+        st = arena.nodes[st].next
+    }
+    return 1
+}
+
+# --- exhaustive match ----------------------------------------------------
+
+# 1 when span [ps, pe) is `<Enum>_<Variant>`.
+function flowc_cgen_span_is_variant_const(src: ptr<u8>, ps: i32, pe: i32, es: i32, ee: i32, vs: i32, ve: i32) -> i32 {
+    let el: i32 = ee - es
+    if pe - ps != el + 1 + (ve - vs) {
+        return 0
+    }
+    if flowc_cgen_span_eq(src, ps, ps + el, es, ee) == 0 {
+        return 0
+    }
+    if src[ps + el] != 95 {
+        return 0
+    }
+    return flowc_cgen_span_eq(src, ps + el + 1, pe, vs, ve)
+}
+
+# 1 when a match covers every value of its scrutinee with plain value arms,
+# so the last arm can lower to a bare `else` (#620, #1034). The Python host
+# did this for an enum (`match e.tag` or `match e`) whose every variant has
+# an unguarded arm; `true` plus `false` on a bool is the same case.
+function flowc_cgen_match_is_exhaustive(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let scrut: i32 = arena.nodes[id].a
+    if scrut == AST_NONE or arena.nodes[id].b == AST_NONE {
+        return 0
+    }
+    let mut ty: i32 = AST_NONE
+    if arena.nodes[scrut].kind == AST_FIELD_ACCESS and flowc_cgen_span_is(src, arena.nodes[scrut].name_start, arena.nodes[scrut].name_end, "tag") == 1 {
+        ty = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[scrut].a)
+    } else {
+        ty = flowc_cgen_expr_type_node(w, arena, src, scrut)
+    }
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    let tns: i32 = arena.nodes[ty].name_start
+    let tne: i32 = arena.nodes[ty].name_end
+    # Every arm must be a plain value arm.
+    let mut arm: i32 = arena.nodes[id].b
+    while arm != AST_NONE {
+        if arena.nodes[arm].kind != AST_MATCH_ARM or arena.nodes[arm].ival != 0 or arena.nodes[arm].a == AST_NONE {
+            return 0
+        }
+        arm = arena.nodes[arm].next
+    }
+    if flowc_cgen_span_is(src, tns, tne, "bool") == 1 {
+        let mut seen_t: i32 = 0
+        let mut seen_f: i32 = 0
+        arm = arena.nodes[id].b
+        while arm != AST_NONE {
+            let pat: i32 = arena.nodes[arm].a
+            if arena.nodes[pat].kind != AST_BOOL {
+                return 0
+            }
+            if arena.nodes[pat].ival == 1 {
+                seen_t = 1
+            } else {
+                seen_f = 1
+            }
+            arm = arena.nodes[arm].next
+        }
+        if seen_t == 1 and seen_f == 1 {
+            return 1
+        }
+        return 0
+    }
+    let mut en: i32 = AST_NONE
+    let mut i: i32 = 0
+    while i < arena.len and en == AST_NONE {
+        if arena.nodes[i].kind == AST_ENUM {
+            if flowc_cgen_span_eq(src, arena.nodes[i].name_start, arena.nodes[i].name_end, tns, tne) == 1 {
+                en = i
+            }
+        }
+        i = i + 1
+    }
+    if en == AST_NONE {
+        return 0
+    }
+    let ens: i32 = arena.nodes[en].name_start
+    let ene: i32 = arena.nodes[en].name_end
+    # Every arm names a variant of this enum.
+    arm = arena.nodes[id].b
+    while arm != AST_NONE {
+        let pat: i32 = arena.nodes[arm].a
+        if arena.nodes[pat].kind != AST_IDENT {
+            return 0
+        }
+        let mut owned: i32 = 0
+        let mut v: i32 = arena.nodes[en].a
+        while v != AST_NONE and owned == 0 {
+            if flowc_cgen_span_is_variant_const(src, arena.nodes[pat].name_start, arena.nodes[pat].name_end, ens, ene, arena.nodes[v].name_start, arena.nodes[v].name_end) == 1 {
+                owned = 1
+            }
+            v = arena.nodes[v].next
+        }
+        if owned == 0 {
+            return 0
+        }
+        arm = arena.nodes[arm].next
+    }
+    # Every variant has an arm.
+    let mut v2: i32 = arena.nodes[en].a
+    while v2 != AST_NONE {
+        let mut hit: i32 = 0
+        arm = arena.nodes[id].b
+        while arm != AST_NONE and hit == 0 {
+            let pat: i32 = arena.nodes[arm].a
+            if flowc_cgen_span_is_variant_const(src, arena.nodes[pat].name_start, arena.nodes[pat].name_end, ens, ene, arena.nodes[v2].name_start, arena.nodes[v2].name_end) == 1 {
+                hit = 1
+            }
+            arm = arena.nodes[arm].next
+        }
+        if hit == 0 {
+            return 0
+        }
+        v2 = arena.nodes[v2].next
+    }
+    return 1
 }
 
 # --- ui layout blocks ----------------------------------------------------
@@ -6088,13 +6377,18 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_FOR {
+        if flowc_cgen_for_is_parallel(arena, src, id) == 1 {
+            flowc_cgen_emit_parallel_for(w, arena, src, id)
+            return
+        }
         # for i in lo to hi { body } → for (int32_t i = lo; i < hi; i = i + step) { body }
-        # When step is negative (unary minus), use >= instead of <.
+        # When step is negative (unary minus), use > instead of <: `to` stays
+        # exclusive of its end when counting down (#1035).
         let mut cmp: string = " < "
         if arena.nodes[id].ival != AST_NONE and arena.nodes[id].ival != 0 {
             let step_id: i32 = arena.nodes[id].ival
             if arena.nodes[step_id].kind == AST_UNARY and arena.nodes[step_id].ival == TOK_MINUS {
-                cmp = " >= "
+                cmp = " > "
             }
         }
         # Without a step the range runs toward its end, down when it starts
@@ -6130,6 +6424,12 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
             w[0].loop_defer_base = saved_ubase
             return
+        }
+        # A stepped loop with a straight-line body gets the vectorize hints
+        # the Python host emitted (#113, #414, #1031).
+        if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
+            flowc_cgen_puts(w, "  #pragma clang loop vectorize(enable) interleave(enable)\n")
+            flowc_cgen_puts(w, "  #pragma GCC ivdep\n")
         }
         flowc_cgen_puts(w, "  for (int32_t ")
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -6388,11 +6688,21 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         flowc_cgen_puts(w, "  { int32_t __flowc_match = ")
         flowc_cgen_emit_expr(w, arena, src, match_expr)
         flowc_cgen_puts(w, ";\n")
+        let exhaustive: i32 = flowc_cgen_match_is_exhaustive(w, arena, src, id)
         let mut arm: i32 = arm0
         let mut n_lit: i32 = 0
         let mut chain_open: i32 = 0
         while arm != AST_NONE {
-            if arena.nodes[arm].ival == 0 {
+            if exhaustive == 1 and arena.nodes[arm].next == AST_NONE {
+                # Last arm of an exhaustive match: no fall-through (#1034).
+                if n_lit == 0 {
+                    flowc_cgen_puts(w, "  {\n")
+                } else {
+                    flowc_cgen_puts(w, "} else {\n")
+                }
+                n_lit = n_lit + 1
+                chain_open = 1
+            } elif arena.nodes[arm].ival == 0 {
                 if n_lit == 0 {
                     flowc_cgen_puts(w, "  if (__flowc_match == ")
                 } else {
@@ -6744,6 +7054,34 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     return 0
 }
 
+# 1 when a bodiless declaration such as `function f(fmt: string, ...)` in an
+# extern block ends its parameter list with `...`. The parser skips the
+# ellipsis, so look for it in the source after the last parameter (#1033).
+function flowc_cgen_fn_is_variadic(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if arena.nodes[id].c != AST_NONE {
+        return 0
+    }
+    let mut param: i32 = arena.nodes[id].a
+    if param == AST_NONE {
+        return 0
+    }
+    while arena.nodes[param].next != AST_NONE {
+        param = arena.nodes[param].next
+    }
+    let mut i: i32 = arena.nodes[param].end
+    let stop: i32 = arena.nodes[id].end - 2
+    while i < stop {
+        if src[i] == 41 {
+            return 0
+        }
+        if src[i] == 46 and src[i + 1] == 46 and src[i + 2] == 46 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     # Stage-A CLI: main(argc, argv) → int main(int …, char **…) regardless of Flow types.
     let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
@@ -6814,6 +7152,9 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     }
     # Forward decl (no body): emit prototype `ret name(params);`
     if arena.nodes[id].c == AST_NONE {
+        if flowc_cgen_fn_is_variadic(arena, src, id) == 1 {
+            flowc_cgen_puts(w, ", ...")
+        }
         flowc_cgen_puts(w, ");\n")
         return
     }

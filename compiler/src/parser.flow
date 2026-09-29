@@ -2103,13 +2103,19 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].b = body
         return id
     }
-    # parallel for ... — skip the parallel prefix and parse as a normal for
+    # `parallel for ...` parses as a normal for whose node span starts at the
+    # `parallel` keyword; cgen reads that to emit the OpenMP form (#1032).
+    let mut par_start: i32 = -1
     if flowc_parser_check_kw(p[0], KW_PARALLEL) == 1 {
+        par_start = p[0].cur.start
         flowc_parser_advance(p)
     }
     # for name in lo to hi { body } | for name in lo .. hi { body }
     if flowc_parser_check_kw(p[0], KW_FOR) == 1 {
-        let start: i32 = p[0].cur.start
+        let mut start: i32 = p[0].cur.start
+        if par_start >= 0 {
+            start = par_start
+        }
         flowc_parser_advance(p)
         if flowc_parser_check(p[0], TOK_IDENT) == 0 {
             flowc_parser_fail(p)

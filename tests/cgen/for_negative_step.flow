@@ -1,0 +1,15 @@
+# `to` excludes its end when a stepped loop counts down, as on the Python
+# host (#1035): `3 to 0 step -1` runs 3, 2, 1.
+
+function main() -> i32 {
+    let mut n: i32 = 0
+    let mut last: i32 = 99
+    for i in 3 to 0 step -1 {
+        n = n + 1
+        last = i
+    }
+    if last != 1 {
+        return 10
+    }
+    return n
+}
