@@ -32,7 +32,7 @@ echo "=== stage_a_driver_self build ==="
 cc -O0 -I compiler/build -I compiler/host \
     -o compiler/build/stage_a_driver_self \
     compiler/host/stage_a_driver.c \
-    compiler/build/flowc_frontend_self.o
+    compiler/build/flowc_frontend_self.o -lm
 
 # Smoke: self.o-backed driver on stage_a_sum → exit 45.
 echo "=== stage_a_driver_self smoke (stage_a_sum → exit 45) ==="

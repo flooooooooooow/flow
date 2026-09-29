@@ -88,7 +88,7 @@
     "cli:test-python": "AI_FLOW_HANDBOOK.md",
     "cli:test-runtime": "DEVELOPMENT.md",
     "cli:test-strict": "tutorials/advanced.md",
-    "cli:transpile": "language/export-abi.md",
+    "cli:transpile": "book/appendix-c-command-reference.md",
     "cli:version": "library/stdlib-api.md",
     "cli:wasm": "language/wasm-crossings.md",
     "cli:window": "book/appendix-c-command-reference.md",

@@ -6,7 +6,6 @@ Installing dependencies (add, install, sync) and registry queries (search,
 info) are the Flow package manager in compiler/src/pkg.flow.
 """
 
-import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple

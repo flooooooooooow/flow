@@ -28,7 +28,7 @@ echo "=== stage_a_driver build ==="
 cc -O0 -I compiler/build -I compiler/host \
     -o compiler/build/stage_a_driver \
     compiler/host/stage_a_driver.c \
-    compiler/build/flowc_frontend.o
+    compiler/build/flowc_frontend.o -lm
 
 echo "=== stage_a_driver smoke (stage_a_sum → exit 45) ==="
 ./compiler/build/stage_a_driver \
