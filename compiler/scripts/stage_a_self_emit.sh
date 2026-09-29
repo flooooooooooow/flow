@@ -67,6 +67,10 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 self_emit_module shader_dsl
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_shader_dsl.c compiler/build/self_shader_dsl.h
+# Effect table shared by cgen, typecheck and resolve (#675).
+self_emit_module effects compiler/build/self_ast.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_effects.c compiler/build/self_effects.h
 
 self_emit_module parser \
     compiler/build/self_token.h \
@@ -75,7 +79,8 @@ self_emit_module parser \
 
 self_emit_module cgen \
     compiler/build/self_token.h \
-    compiler/build/self_ast.h
+    compiler/build/self_ast.h \
+    compiler/build/self_effects.h
 
 # typecheck.flow resolves calls through the native overload modules, so those
 # are emitted first, in dependency order, and their headers are included below.
@@ -113,6 +118,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 
 self_emit_module typecheck \
     compiler/build/self_ast.h \
+    compiler/build/self_effects.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
     compiler/build/self_overload_registry.h \
@@ -137,6 +143,7 @@ self_emit_module resolve \
     compiler/build/self_dynamics_dsl.h \
     compiler/build/self_flow_blocks.h \
     compiler/build/self_shader_dsl.h \
+    compiler/build/self_effects.h \
     compiler/build/self_cgen.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
@@ -153,6 +160,7 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_dynamics_dsl.o \
     compiler/build/self_flow_blocks.o \
     compiler/build/self_shader_dsl.o \
+    compiler/build/self_effects.o \
     compiler/build/self_cgen.o \
     compiler/build/self_overload.o \
     compiler/build/self_overload_table.o \
