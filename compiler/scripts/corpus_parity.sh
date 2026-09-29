@@ -233,7 +233,9 @@ main() {
     fi
 
     # The corpus: tracked files with main(), as `flow run` decides it.
-    git ls-files -z '*.flow' | xargs -0 grep -l -E 'function[[:space:]]+main' 2>/dev/null \
+    # tests/cgen holds flowc C goldens written after the Python host was
+    # retired, so there is no Python result to compare them with.
+    git ls-files -z '*.flow' ':!tests/cgen/**' | xargs -0 grep -l -E 'function[[:space:]]+main' 2>/dev/null \
         | LC_ALL=C sort > "$work/files" || true
     if [[ -n "$only" ]]; then
         grep -E "$only" "$work/files" > "$work/files.only" || true

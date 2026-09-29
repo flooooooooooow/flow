@@ -18,10 +18,10 @@ from flow.parser import parse_flow_code
 from flow.mlir_generator import MLIRGenerator
 from flow.mlir_jit import MLIRJIT
 from flow.jit_runner import compile_flow_to_mlir
-from tests.unit.test_postfix_chaining import (
-    POINTER_STRUCT_PROGRAM,
-    ARRAY_OF_STRUCTS_PROGRAM,
-)
+_CGEN = Path(__file__).parent.parent / "cgen"
+# The same programs the flowc C goldens check (tests/cgen).
+POINTER_STRUCT_PROGRAM = (_CGEN / "postfix_chaining_ptr_struct.flow").read_text()
+ARRAY_OF_STRUCTS_PROGRAM = (_CGEN / "postfix_chaining_array_struct.flow").read_text()
 
 
 def _toolchain_available() -> bool:
@@ -59,7 +59,7 @@ class TestMLIRPostfixChainingIR:
     def test_pointer_struct_field_reads_use_gep_load(self):
         mlir = _generate(POINTER_STRUCT_PROGRAM)
         assert "llvm.load" in mlir
-        # mass is f32 — reads should produce f32 loads, not constant-0 fallbacks
+        # mass is f32: reads should produce f32 loads, not constant-0 fallbacks
         assert "llvm.load" in mlir and "-> f32" in mlir
 
     def test_array_of_structs_reads_have_no_unsupported(self):
