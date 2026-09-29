@@ -249,7 +249,7 @@ echo "=== stage_a_driver_g2 build ==="
 cc -O0 -I compiler/build -I compiler/host \
     -o compiler/build/stage_a_driver_g2 \
     compiler/host/stage_a_driver.c \
-    compiler/build/flowc_frontend_g2.o
+    compiler/build/flowc_frontend_g2.o -lm
 
 echo "=== stage_a_driver_g2 smoke (stage_a_sum → exit 45) ==="
 ./compiler/build/stage_a_driver_g2 \
@@ -273,7 +273,7 @@ fi
 echo "=== stage_a_driver_flow_g2 build ==="
 cc -O0 -o compiler/build/stage_a_driver_flow_g2 \
     compiler/build/self_driver.o \
-    compiler/build/flowc_frontend_g2.o
+    compiler/build/flowc_frontend_g2.o -lm
 echo "=== stage_a_driver_flow_g2 smoke (stage_a_sum → exit 45) ==="
 ./compiler/build/stage_a_driver_flow_g2 \
     compiler/fixtures/stage_a_sum.flow \

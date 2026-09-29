@@ -714,7 +714,7 @@ echo "=== stage_a_driver ==="
 cc -O0 -I compiler/build -I compiler/host \
     -o compiler/build/stage_a_driver \
     compiler/host/stage_a_driver.c \
-    compiler/build/flowc_frontend.o
+    compiler/build/flowc_frontend.o -lm
 ./compiler/build/stage_a_driver \
     compiler/fixtures/stage_a_sum.flow \
     compiler/build/driven_sum.c
@@ -756,7 +756,7 @@ if grep -Eq '^int32_t flowc_parse_program' compiler/build/driver_flowc.c; then
 fi
 cc -O0 -o compiler/build/stage_a_driver_flow \
     compiler/build/driver_flowc.o \
-    compiler/build/flowc_frontend.o
+    compiler/build/flowc_frontend.o -lm
 # CLI path (preferred).
 ./compiler/build/stage_a_driver_flow \
     compiler/fixtures/stage_a_sum.flow \

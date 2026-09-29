@@ -232,7 +232,7 @@ cc -O0 -c \
     compiler/build/self_driver.c -o compiler/build/self_driver.o
 cc -O0 -o compiler/build/stage_a_driver_flow_self \
     compiler/build/self_driver.o \
-    compiler/build/flowc_frontend_self.o
+    compiler/build/flowc_frontend_self.o -lm
 
 echo "=== stage_a_driver_flow_self smoke (stage_a_sum → exit 45) ==="
 ./compiler/build/stage_a_driver_flow_self \
