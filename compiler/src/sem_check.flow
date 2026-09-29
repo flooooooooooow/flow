@@ -644,7 +644,8 @@ function sem_collect_types(c: ptr<Sem>) {
         } elif k == DK_ALIAS {
             let base_pt: i32 = sem_pt_of_ast(c, sem_na(c, node))
             let alias_t: i32 = sem_ty_named(c.t, TK_TYPE_ALIAS, name)
-            tys.base[alias_t] = sem_parse_type(c, base_pt)
+            let new_base_1: i32 = sem_parse_type(c, base_pt)
+            tys.base[alias_t] = new_base_1
             let s2: i32 = sem_sym_new(c, name, alias_t, SK_TYPE)
             sem_scope_define_global(c, s2)
             let se3: i32 = sem_se_new(c, name, SE_ALIAS, i)
@@ -730,7 +731,10 @@ function sem_define_function(c: ptr<Sem>, name: string, fi: i32) {
         sem_ty_add_param(c.t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)))
         i = i + 1
     }
-    tys.ret[f] = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
+    # The value goes into a local first: a call that makes a type can grow
+    # the table and move the array, and C may read the array before the call.
+    let new_ret_2: i32 = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
+    tys.ret[f] = new_ret_2
     i = 0
     while i < sem_fi_neffects(c, fi) {
         sem_ty_add_effect(c.t, f, sem_fi_effect(c, fi, i))
@@ -2768,7 +2772,8 @@ function sem_check_slice_expr(c: ptr<Sem>, e: i32) -> i32 {
     }
     let sp: i32 = sem_ty_named(c.t, TK_SPAN, prefix + sem_tstr(c, el))
     tys.elem[sp] = el
-    tys.size[sp] = sem_static_length(c, e)
+    let new_size_3: i32 = sem_static_length(c, e)
+    tys.size[sp] = new_size_3
     return sp
 }
 
@@ -2847,9 +2852,11 @@ function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
     c.return_sink = saved_sink
     sem_pop_scope(c)
     if sem_nb(c, e) != AST_NONE {
-        tys.ret[f] = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
+        let new_ret_4: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
+        tys.ret[f] = new_ret_4
     } else {
-        tys.ret[f] = sem_tmk(c, TK_VOID)
+        let new_ret_5: i32 = sem_tmk(c, TK_VOID)
+        tys.ret[f] = new_ret_5
     }
     return f
 }

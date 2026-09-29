@@ -1217,9 +1217,11 @@ export function sem_parse_type(c: ptr<Sem>, pt: i32) -> i32 {
             i = i + 1
         }
         if t.pt_elem[pt] >= 0 {
-            t.ret[f] = sem_parse_type(c, t.pt_elem[pt])
+            let new_ret_1: i32 = sem_parse_type(c, t.pt_elem[pt])
+            t.ret[f] = new_ret_1
         } else {
-            t.ret[f] = sem_ty_mk(t, TK_VOID)
+            let new_ret_2: i32 = sem_ty_mk(t, TK_VOID)
+            t.ret[f] = new_ret_2
         }
         if sem_s_starts(name, "fn_") {
             let mut e: i32 = 0
@@ -1297,13 +1299,16 @@ export function sem_parse_type(c: ptr<Sem>, pt: i32) -> i32 {
         let k: i32 = sem_iv_get(c.se_kind, se)
         if k == SE_ALIAS {
             let al: i32 = sem_ty_named(t, TK_TYPE_ALIAS, name)
-            t.base[al] = sem_parse_type(c, sem_iv_get(c.se_base, se))
+            let new_base_3: i32 = sem_parse_type(c, sem_iv_get(c.se_base, se))
+            t.base[al] = new_base_3
             return al
         }
         if k == SE_DISTINCT {
             let di: i32 = sem_ty_named(t, TK_DISTINCT, name)
-            t.base[di] = sem_parse_type(c, sem_iv_get(c.se_base, se))
-            t.dims[di] = sem_unit_dims_of_name(c, name)
+            let new_base_4: i32 = sem_parse_type(c, sem_iv_get(c.se_base, se))
+            t.base[di] = new_base_4
+            let new_dims_5: ptr<SemIntVec> = sem_unit_dims_of_name(c, name)
+            t.dims[di] = new_dims_5
             return di
         }
         return sem_ty_struct(t, name)
@@ -1421,7 +1426,8 @@ export function sem_unit_result_type(c: ptr<Sem>, dims: ptr<SemIntVec>) -> i32 {
         name = sem_format_dims(c, d)
     }
     let id: i32 = sem_ty_named(c.t, TK_DISTINCT, name)
-    tys.base[id] = sem_ty_mk(c.t, TK_F64)
+    let new_base_6: i32 = sem_ty_mk(c.t, TK_F64)
+    tys.base[id] = new_base_6
     tys.dims[id] = d
     return id
 }
