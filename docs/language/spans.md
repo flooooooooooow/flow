@@ -17,6 +17,11 @@ Without spans, a function that works over a run of floats has to pick one of
 these, and each one is wrong in a different way:
 
 ```flow
+struct Vec {
+    data: ptr<f32>,
+    len: i32
+}
+
 function analyse(samples: ptr<f32>, n: i32) -> f32   # length can lie
 function analyse(samples: array<f32, 512>) -> f32    # one extent only
 function analyse(samples: Vec) -> f32                # forces a container
