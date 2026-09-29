@@ -3615,6 +3615,11 @@ case "${1:-help}" in
     "gpu")
         shift
         # --wgsl emits WebGPU shaders instead of Metal, from the same AST.
+        # `--build` builds tools/gpu and prints the binary's path.
+        if [ "${1:-}" = "--build" ]; then
+            flow_native_tool gpu
+            exit $?
+        fi
         gpu_lang="metal"
         gpu_args=()
         while [ $# -gt 0 ]; do

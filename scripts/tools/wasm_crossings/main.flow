@@ -6,13 +6,14 @@
 #   crossings.sh all                     every crossing, then the index
 #   crossings.sh index [--out DIR]       index page only
 #   crossings.sh threads [program.flow] [--workers N] [--out DIR] [--no-build]
+#   crossings.sh gpu [program.flow] [-n COUNT] [--out DIR] [--no-build]
 #   crossings.sh sockets [program.flow] [--port N] [--out DIR] [--no-build]
 #   crossings.sh python  [program.flow] [--out DIR] [--no-build]
 #   crossings.sh fs [program.flow] [--fs memfs|idbfs] [--preload DIR@/MOUNT]
 #                   [--export-name NAME] [--out DIR] [--no-build]
 #
-# The GPU crossing stays in wasm/flow_wasm_gpu.py because its WGSL comes
-# from src/flow's code generator; `all` runs it through python3.
+# The GPU crossing takes its WGSL and kernel manifest from tools/gpu
+# (`flow gpu --build`), the Flow shader generator behind `flow gpu --wgsl`.
 #
 # Flow sources go to C through flowc (compiler/scripts/flowc_emit.sh), the
 # compiler `flow compile` runs. Page text lives in
@@ -43,6 +44,7 @@ struct Opts {
     fs: string
     preload: ptr<StrList>
     export_name: string
+    count: i32
 }
 
 # ---------------------------------------------------------------------------
@@ -658,6 +660,170 @@ function cmd_fs(o: ptr<Opts>) -> i32 {
 # Index and the whole set
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Crossing 2: an @gpu kernel on WebGPU
+# ---------------------------------------------------------------------------
+
+# 1048576 -> "1,048,576" (Python's {count:,}).
+function with_commas(n: i32) -> string {
+    let digits: string = ft_itoa(n)
+    let p: ptr<u8> = digits as ptr<u8>
+    let len: i32 = ft_len(digits)
+    let mut start: i32 = 0
+    let mut out: string = ""
+    if len > 0 and p[0] == 45 {
+        out = "-"
+        start = 1
+    }
+    let mut i: i32 = start
+    while i < len {
+        out = out + ft_slice(digits, i, i + 1)
+        let left: i32 = len - i - 1
+        if left > 0 and left % 3 == 0 {
+            out = out + ","
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# The values of `"key": "value"` lines in the kernel manifest, in order.
+function manifest_values(manifest: string, key: string) -> ptr<StrList> {
+    let vals: ptr<StrList> = ft_list_new()
+    let needle: string = "\"" + key + "\": \""
+    let mut pos: i32 = 0
+    while true {
+        let at: i32 = ft_find(manifest, needle, pos)
+        if at < 0 {
+            break
+        }
+        let s: i32 = at + ft_len(needle)
+        let e: i32 = ft_find(manifest, "\"", s)
+        ft_list_push(vals, ft_slice(manifest, s, e))
+        pos = e
+    }
+    return vals
+}
+
+function gpu_page(program: string, manifest: string, count: i32, out_dir: string) -> string {
+    let files: ptr<StrList> = manifest_values(manifest, "file")
+    let mut preview: string = ""
+    let first: string = out_dir + "/" + ft_list_get(files, 0)
+    if ft_exists(first) {
+        preview = read_or_die(first)
+    }
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    push2(keys, vals, "source", html_escape(read_or_die(program)))
+    push2(keys, vals, "wgsl_preview", html_escape(preview))
+    push2(keys, vals, "count_commas", with_commas(count))
+    push2(keys, vals, "nkernels", ft_itoa(ft_list_len(files)))
+    push2(keys, vals, "manifest", manifest)
+    push2(keys, vals, "count", ft_itoa(count))
+    push2(keys, vals, "stem", ft_stem(program))
+    return fill(read_asset("pages/gpu.html"), keys, vals)
+}
+
+# WGSL per @gpu function from tools/gpu (built by `flow gpu --build`), and
+# the same file through flowc to C to WASM, where the kernel bodies run one
+# element at a time as the CPU reference.
+function cmd_gpu(o: ptr<Opts>) -> i32 {
+    let mut arg: string = o[0].program
+    if arg == null {
+        arg = path_in("examples/wasm/gpu_vector_add.flow")
+    }
+    let program: string = resolve_program(arg)
+    let mut out_arg: string = o[0].out
+    if out_arg == null {
+        out_arg = site_dir() + "/gpu"
+    }
+    let out_dir: string = pr_resolve(out_arg)
+    let _m: bool = pr_mkdir_p(out_dir)
+
+    ft_outln("Flow @gpu -> WGSL: " + rel(program))
+    let tool: string = pr_chomp(pr_capture(pr_quote(path_in("flow")) + " gpu --build"))
+    if ft_len(tool) == 0 {
+        die("could not build the flow gpu tool (tools/gpu/main.flow)")
+    }
+    let bd: string = build_dir()
+    let _m2: bool = pr_mkdir_p(bd)
+    let mani_f: string = bd + "/.gpu-manifest.json"
+    let err_f: string = bd + "/.gpu-manifest.err"
+    let rc: i32 = pr_run("FLOW_ROOT=" + pr_quote(root()) + " " + pr_quote(tool) + " --crossing-manifest --out " + pr_quote(out_dir) + " " + pr_quote(program) + " >" + pr_quote(mani_f) + " 2>" + pr_quote(err_f))
+    if rc != 0 {
+        # On a failing kernel the tool lists the shaders it wrote before it.
+        let done: string = ft_read_file(mani_f)
+        if done != null {
+            let mut pos: i32 = 0
+            while pos < ft_len(done) {
+                let nl: i32 = ft_find(done, "\n", pos)
+                if nl < 0 {
+                    break
+                }
+                ft_outln("  wrote " + rel(out_dir + "/" + ft_slice(done, pos, nl)))
+                pos = nl + 1
+            }
+        }
+        let e: string = ft_read_file(err_f)
+        if e != null {
+            ft_err(e)
+        }
+        exit(1)
+    }
+    let manifest_text: string = read_or_die(mani_f)
+    # The tool prints the JSON with a final newline; the page embeds it bare.
+    let manifest: string = ft_slice(manifest_text, 0, ft_len(manifest_text) - 1)
+    let files: ptr<StrList> = manifest_values(manifest, "file")
+    let mut k: i32 = 0
+    while k < ft_list_len(files) {
+        ft_outln("  wrote " + rel(out_dir + "/" + ft_list_get(files, k)))
+        k = k + 1
+    }
+
+    if o[0].no_build == false {
+        ft_outln("Flow -> C -> WASM (CPU reference)")
+        let work: string = build_dir() + "/gpu"
+        let _m3: bool = pr_mkdir_p(work)
+        let c_file: string = flow_to_c(program, work + "/" + ft_stem(program) + ".c", false)
+        let exported: ptr<StrList> = ft_list_new()
+        ft_list_push(exported, "_malloc")
+        ft_list_push(exported, "_free")
+        ft_list_push(exported, "_fill_pattern")
+        let cpu: ptr<StrList> = manifest_values(manifest, "cpuEntry")
+        let mut c: i32 = 0
+        while c < ft_list_len(cpu) {
+            ft_list_push(exported, "_" + ft_list_get(cpu, c))
+            c = c + 1
+        }
+        let emcc: string = require_emcc()
+        let argv: ptr<StrList> = ft_list_new()
+        ft_list_push(argv, emcc)
+        ft_list_push(argv, "-O2")
+        ft_list_push(argv, "-Wno-everything")
+        ft_list_push(argv, c_file)
+        ft_list_push(argv, path_in("wasm/crossing_assets/gpu_thread_id_shim.c"))
+        ft_list_push(argv, "-sMODULARIZE=1")
+        ft_list_push(argv, "-sEXPORT_ES6=0")
+        ft_list_push(argv, "-sEXPORT_NAME=createFlowCpu")
+        ft_list_push(argv, "-sALLOW_MEMORY_GROWTH=1")
+        ft_list_push(argv, "-sEXPORTED_FUNCTIONS=" + json_list(exported))
+        let methods: ptr<StrList> = list_of("HEAPF32", "HEAP32")
+        ft_list_push(methods, "cwrap")
+        ft_list_push(argv, "-sEXPORTED_RUNTIME_METHODS=" + json_list(methods))
+        ft_list_push(argv, "-sENVIRONMENT=web")
+        ft_list_push(argv, "-o")
+        ft_list_push(argv, out_dir + "/" + ft_stem(program) + "_cpu.js")
+        emcc_run(argv)
+    }
+
+    write_out(out_dir + "/webgpu-host.js", read_asset("webgpu-host.js"))
+    write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
+    write_out(out_dir + "/index.html", gpu_page(program, manifest, o[0].count, out_dir))
+    ft_outln(SERVE)
+    ft_outln("Then open: http://127.0.0.1:8000/wasm-crossings/gpu/")
+    return 0
+}
+
 function write_index(out_dir: string) -> void {
     let keys: ptr<StrList> = ft_list_new()
     let vals: ptr<StrList> = ft_list_new()
@@ -676,6 +842,7 @@ function fresh_opts() -> ptr<Opts> {
     o[0].fs = "memfs"
     o[0].preload = ft_list_new()
     o[0].export_name = "createFlowFs"
+    o[0].count = 1048576
     return o
 }
 
@@ -689,10 +856,7 @@ function cmd_all(o: ptr<Opts>) -> i32 {
     ft_outln("=== threads ===")
     let _t: i32 = cmd_threads(fresh_opts())
     ft_outln("=== gpu ===")
-    let gpu_rc: i32 = pr_run("python3 " + pr_quote(path_in("wasm/flow_wasm_gpu.py")))
-    if gpu_rc != 0 {
-        die("flow_wasm_gpu.py failed (" + ft_itoa(gpu_rc) + ")")
-    }
+    let _g: i32 = cmd_gpu(fresh_opts())
     ft_outln("=== sockets ===")
     let _s: i32 = cmd_sockets(fresh_opts())
     ft_outln("=== python ===")
@@ -723,7 +887,7 @@ function cmd_index(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> i32 {
-    ft_errln("usage: crossings.sh {all,index,threads,sockets,python,fs} [program.flow] [options]")
+    ft_errln("usage: crossings.sh {all,index,threads,gpu,sockets,python,fs} [program.flow] [options]")
     return 2
 }
 
@@ -789,11 +953,14 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--preload") {
             ft_list_push(o[0].preload, option_value(argc, argv, i, a))
             i = i + 1
+        } elif ft_eq(a, "-n") or ft_eq(a, "--count") {
+            o[0].count = int_value(option_value(argc, argv, i, a), a)
+            i = i + 1
         } elif ft_eq(a, "--export-name") {
             o[0].export_name = option_value(argc, argv, i, a)
             i = i + 1
         } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
-            ft_outln("usage: crossings.sh {all,index,threads,sockets,python,fs} [program.flow] [options]")
+            ft_outln("usage: crossings.sh {all,index,threads,gpu,sockets,python,fs} [program.flow] [options]")
             return 0
         } elif ft_starts(a, "-") {
             ft_errln("crossings.sh: error: unrecognized arguments: " + a)
@@ -811,6 +978,9 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     }
     if ft_eq(cmd, "sockets") {
         return cmd_sockets(o)
+    }
+    if ft_eq(cmd, "gpu") {
+        return cmd_gpu(o)
     }
     if ft_eq(cmd, "python") {
         return cmd_python(o)

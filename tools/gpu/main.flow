@@ -1154,6 +1154,9 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
     mkdirs(out_dir)
     let mut report: TBuf = tb_new()
     let mut mani: TBuf = tb_new()
+    # Manifest mode: the files written so far, printed if a kernel fails so
+    # the caller can report them as the Python builder did.
+    let mut written: TBuf = tb_new()
     let mut k: i32 = 0
     while k < kernels.len {
         let dc: Decl = ld_decl(ld, strtoll(tl_get(&kernels, k), null, 10) as i32)
@@ -1168,11 +1171,15 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
         } else {
             let src: string = wgsl_kernel(g, dc.node, dc.name)
             if t_len(g.fail) > 0 {
+                if manifest {
+                    out(written.data as string)
+                }
                 err(t_cat3("error: ", g.fail, "\n"))
                 return 1
             }
             let path: string = t_cat3(out_dir, "/", t_cat(dc.name, ".wgsl"))
             let _w: bool = t_write_file(path, src)
+            tb_puts(&written, t_cat(dc.name, ".wgsl\n"))
             tb_puts(&report, t_cat3("Generated WGSL shader: ", path, "\n"))
             if k > 0 {
                 tb_puts(&mani, ",\n")
