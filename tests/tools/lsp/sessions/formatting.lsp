@@ -10,6 +10,8 @@
 {"jsonrpc":"2.0","id":5,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///t/clean.flow"},"options":{"tabSize":4,"insertSpaces":true}}}
 @open file:///t/params.flow tests/tools/lsp/fixtures/params.flow
 {"jsonrpc":"2.0","id":6,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///t/params.flow"},"options":{"tabSize":4,"insertSpaces":true}}}
+@open file:///t/messy_comments.flow tests/tools/lsp/fixtures/messy_comments.flow
+{"jsonrpc":"2.0","id":10,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///t/messy_comments.flow"},"options":{"tabSize":4,"insertSpaces":true}}}
 @open file://@ROOT@/examples/basics/fibonacci.flow examples/basics/fibonacci.flow
 {"jsonrpc":"2.0","id":7,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file://@ROOT@/examples/basics/fibonacci.flow"},"options":{"tabSize":4,"insertSpaces":true}}}
 @open file://@ROOT@/examples/basics/gcd.flow examples/basics/gcd.flow
