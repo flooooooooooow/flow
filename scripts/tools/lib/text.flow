@@ -315,7 +315,7 @@ export function ft_read_file(path: string) -> string {
     let buf: ptr<u8> = malloc(want + 1) as ptr<u8>
     if buf == null {
         let _c1: i32 = fclose(fp)
-        return null
+        return null as string
     }
     let got: i64 = fread(buf, 1, want, fp)
     let _c: i32 = fclose(fp)
