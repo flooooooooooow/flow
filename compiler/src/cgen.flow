@@ -1449,6 +1449,235 @@ function flowc_cgen_find_type_by_name(arena: AstArena, src: ptr<u8>, name: ptr<u
     return AST_NONE
 }
 
+# For one of several same-named functions with a body, add
+# `!name\0T0,T1,...\0`, the parameter type names its mangled C name joins
+# (flowc_cgen_put_mangled_fn). A call from a later module of the bundle picks
+# one with flowc_cgen_put_imported_overload (#1044).
+function flowc_cgen_sig_put_overload(
+    arena: AstArena,
+    src: ptr<u8>,
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32,
+    fn: i32
+) -> i32 {
+    if arena.nodes[fn].c == AST_NONE or arena.nodes[fn].ival != 0 {
+        return len
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    if ne <= ns or flowc_cgen_count_overloads(arena, src, ns, ne) < 2 {
+        return len
+    }
+    let mut need: i32 = (ne - ns) + 4
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        let ty: i32 = arena.nodes[prm].a
+        if ty != AST_NONE {
+            need = need + (arena.nodes[ty].name_end - arena.nodes[ty].name_start) + 1
+        }
+        prm = arena.nodes[prm].next
+    }
+    if len + need > cap {
+        return len
+    }
+    let mut n: i32 = len
+    buf[n] = 33
+    n = n + 1
+    let mut i: i32 = ns
+    while i < ne {
+        buf[n] = src[i]
+        n = n + 1
+        i = i + 1
+    }
+    buf[n] = 0
+    n = n + 1
+    let mut first: i32 = 1
+    prm = arena.nodes[fn].a
+    while prm != AST_NONE {
+        let ty: i32 = arena.nodes[prm].a
+        if ty != AST_NONE {
+            if first == 0 {
+                buf[n] = 44
+                n = n + 1
+            }
+            first = 0
+            i = arena.nodes[ty].name_start
+            while i < arena.nodes[ty].name_end {
+                buf[n] = src[i]
+                n = n + 1
+                i = i + 1
+            }
+        }
+        prm = arena.nodes[prm].next
+    }
+    buf[n] = 0
+    return n + 1
+}
+
+# 1 when the recorded type name buf[s, e) spells `lit`.
+function flowc_cgen_bufspan_is(buf: ptr<u8>, s: i32, e: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit as ptr<u8>
+    let mut i: i32 = 0
+    while s + i < e {
+        if lp[i] == 0 or lp[i] != buf[s + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if lp[i] != 0 {
+        return 0
+    }
+    return 1
+}
+
+# How well argument `arg` fits the recorded parameter type buf[s, e):
+# 10 exact, 9 or 5 for a literal that converts, 1 unknown, 0 a mismatch.
+function flowc_cgen_overload_arg_score(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, arg: i32, buf: ptr<u8>, s: i32, e: i32) -> i32 {
+    let k: i32 = arena.nodes[arg].kind
+    if k == AST_INT {
+        if flowc_cgen_bufspan_is(buf, s, e, "i32") == 1 { return 10 }
+        if flowc_cgen_bufspan_is(buf, s, e, "i64") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u32") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u64") == 1 or flowc_cgen_bufspan_is(buf, s, e, "i16") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u16") == 1 or flowc_cgen_bufspan_is(buf, s, e, "i8") == 1 or flowc_cgen_bufspan_is(buf, s, e, "u8") == 1 { return 5 }
+        return 0
+    }
+    if k == AST_FLOAT {
+        if flowc_cgen_bufspan_is(buf, s, e, "f64") == 1 { return 10 }
+        if flowc_cgen_bufspan_is(buf, s, e, "f32") == 1 { return 9 }
+        return 0
+    }
+    if k == AST_STRING {
+        if flowc_cgen_bufspan_is(buf, s, e, "string") == 1 { return 10 }
+        return 0
+    }
+    if k == AST_BOOL {
+        if flowc_cgen_bufspan_is(buf, s, e, "bool") == 1 { return 10 }
+        return 0
+    }
+    let ty: i32 = flowc_cgen_infer_arg_type(w, arena, src, arg)
+    if ty == AST_NONE {
+        return 1
+    }
+    let ts: i32 = arena.nodes[ty].name_start
+    let te: i32 = arena.nodes[ty].name_end
+    if te - ts != e - s {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < e - s {
+        if src[ts + i] != buf[s + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 10
+}
+
+# A call to a function no module of this unit defines under its plain name
+# but an earlier module of the bundle defines as overloads: write the mangled
+# name of the overload the arguments fit best (an exact fit first, then the
+# first of the best score) and return 1. Return 0 when nothing is recorded or
+# no overload takes this many arguments (#1044).
+function flowc_cgen_put_imported_overload(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let cs: i32 = arena.nodes[call].name_start
+    let nlen: i32 = arena.nodes[call].name_end - cs
+    let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[call].a)
+    let mut best: i32 = 0 - 1
+    let mut best_score: i32 = 0 - 1
+    let mut best_exact: i32 = 0
+    let mut p: i32 = 0
+    while p < blen {
+        let mut k: i32 = 0
+        while p + k < blen and buf[p + k] != 0 {
+            k = k + 1
+        }
+        let vpos: i32 = p + k + 1
+        if vpos > blen {
+            p = blen
+        } else {
+            let mut v: i32 = vpos
+            while v < blen and buf[v] != 0 {
+                v = v + 1
+            }
+            let mut hit: i32 = 0
+            if k == nlen + 1 and buf[p] == 33 {
+                hit = 1
+                let mut j: i32 = 0
+                while j < nlen {
+                    if buf[p + 1 + j] != src[cs + j] {
+                        hit = 0
+                    }
+                    j = j + 1
+                }
+            }
+            if hit == 1 {
+                # Score the parameter list buf[vpos, v) against the arguments.
+                let mut score: i32 = 0
+                let mut exact: i32 = 1
+                let mut ok: i32 = 1
+                let mut arg: i32 = arena.nodes[call].a
+                let mut nparams: i32 = 0
+                let mut ps: i32 = vpos
+                if v > vpos {
+                    while ps <= v {
+                        let mut pe: i32 = ps
+                        while pe < v and buf[pe] != 44 {
+                            pe = pe + 1
+                        }
+                        nparams = nparams + 1
+                        if arg == AST_NONE {
+                            ok = 0
+                        } else {
+                            let s1: i32 = flowc_cgen_overload_arg_score(w, arena, src, arg, buf, ps, pe)
+                            if s1 == 0 {
+                                ok = 0
+                            }
+                            if s1 < 10 {
+                                exact = 0
+                            }
+                            score = score + s1
+                            arg = arena.nodes[arg].next
+                        }
+                        ps = pe + 1
+                    }
+                }
+                if nparams != nargs {
+                    ok = 0
+                }
+                if ok == 1 {
+                    if (exact == 1 and best_exact == 0) or (exact == best_exact and score > best_score) {
+                        best = vpos
+                        best_score = score
+                        best_exact = exact
+                    }
+                }
+            }
+            p = v + 1
+        }
+    }
+    if best < 0 {
+        return 0
+    }
+    flowc_cgen_put_span(w, src, cs, cs + nlen)
+    let mut q: i32 = best
+    if buf[q] != 0 {
+        flowc_cgen_putc(w, 95)
+    }
+    while q < blen and buf[q] != 0 {
+        if buf[q] == 44 {
+            flowc_cgen_putc(w, 95)
+        } else {
+            flowc_cgen_putc(w, buf[q])
+        }
+        q = q + 1
+    }
+    return 1
+}
+
 # AST_TYPE node describing `init`, or AST_NONE when no node applies.
 function flowc_cgen_infer_type_node(arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
     if init == AST_NONE {
@@ -1460,7 +1689,9 @@ function flowc_cgen_infer_type_node(arena: AstArena, src: ptr<u8>, init: i32) ->
     }
     if kind == AST_CALL {
         let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
-        if fn != AST_NONE {
+        # A generic function's return type names its type parameters;
+        # flowc_cgen_write_lit_type substitutes them (#1042).
+        if fn != AST_NONE and (arena.nodes[fn].ival == 0 or arena.nodes[init].b == AST_NONE) {
             return arena.nodes[fn].b
         }
     }
@@ -1529,6 +1760,27 @@ function flowc_cgen_write_sig_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return 1
 }
 
+# The C name of a struct literal's type: Name, or Name_T0_T1 for a generic
+# struct's literal, with type parameters replaced inside an instantiation.
+function flowc_cgen_put_struct_lit_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    let mut ta: i32 = arena.nodes[id].b
+    while ta != AST_NONE {
+        if arena.nodes[ta].kind == AST_TYPE {
+            flowc_cgen_putc(w, 95)
+            let mut cty: i32 = ta
+            if w[0].mono_ntp > 0 {
+                let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+                if idx >= 0 {
+                    cty = w[0].mono_tp_concrete[idx]
+                }
+            }
+            flowc_cgen_put_span(w, src, arena.nodes[cty].name_start, arena.nodes[cty].name_end)
+        }
+        ta = arena.nodes[ta].next
+    }
+}
+
 # Write a C type for initialisers with no AST_TYPE node. 1 if written, else 0.
 function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, init: i32) -> i32 {
     if init == AST_NONE {
@@ -1544,7 +1796,8 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return 1
     }
     if kind == AST_STRUCT_LIT {
-        flowc_cgen_put_span(w, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
+        # A generic literal's type is its specialization (#1042).
+        flowc_cgen_put_struct_lit_name(w, arena, src, init)
         return 1
     }
     if kind == AST_PIPE_BLOCK {
@@ -1566,6 +1819,9 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return 0
     }
     if kind == AST_CALL {
+        if arena.nodes[init].b != AST_NONE and flowc_cgen_write_generic_ret(w, arena, src, init) == 1 {
+            return 1
+        }
         return flowc_cgen_write_sig_type(w, arena, src, init)
     }
     return 0
@@ -2337,6 +2593,44 @@ function flowc_cgen_sig_put_spans(
     return n
 }
 
+# Parameter count of a fixed-arity C library function flowc_cgen_is_libc_fn
+# knows, or -1 for one this table leaves out.
+function flowc_cgen_libc_arity(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if flowc_cgen_span_is(src, s, e, "bsearch") == 1 { return 5 }
+    if flowc_cgen_span_is(src, s, e, "qsort") == 1 { return 4 }
+    if flowc_cgen_span_is(src, s, e, "strlen") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "strcmp") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strncmp") == 1 { return 3 }
+    if flowc_cgen_span_is(src, s, e, "strcpy") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strncpy") == 1 { return 3 }
+    if flowc_cgen_span_is(src, s, e, "strcat") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strchr") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "strstr") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "memchr") == 1 { return 3 }
+    if flowc_cgen_span_is(src, s, e, "pow") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "atan2") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "fmod") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "fmin") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "fmax") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "hypot") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "abs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "labs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "atoi") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "atol") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "atof") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "rand") == 1 { return 0 }
+    if flowc_cgen_span_is(src, s, e, "srand") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "exit") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "clock") == 1 { return 0 }
+    if flowc_cgen_span_is(src, s, e, "getenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "puts") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "putchar") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "getchar") == 1 { return 0 }
+    if flowc_cgen_span_is(src, s, e, "remove") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "rename") == 1 { return 2 }
+    return 0 - 1
+}
+
 # A Flow function named like a libc function that is not that function:
 # its first parameter is a struct (`log(x: Dual)`), or it is an allocator
 # whose Flow signature returns a non-pointer (`malloc(size: i32) -> i32`).
@@ -2361,6 +2655,12 @@ function flowc_cgen_user_libc_kind(arena: AstArena, src: ptr<u8>, fn: i32) -> i3
     }
     let ns: i32 = arena.nodes[fn].name_start
     let ne: i32 = arena.nodes[fn].name_end
+    # A parameter count the C function does not take: a Flow function of
+    # its own, such as a tutorial's 3-argument `bsearch` (#1045).
+    let libc_arity: i32 = flowc_cgen_libc_arity(src, ns, ne)
+    if libc_arity >= 0 and libc_arity != flowc_ast_chain_len(arena, arena.nodes[fn].a) {
+        return fn
+    }
     if flowc_cgen_span_is(src, ns, ne, "malloc") == 1 or flowc_cgen_span_is(src, ns, ne, "calloc") == 1 or flowc_cgen_span_is(src, ns, ne, "realloc") == 1 or flowc_cgen_span_is(src, ns, ne, "free") == 1 or flowc_cgen_span_is(src, ns, ne, "aligned_alloc") == 1 {
         let r: i32 = arena.nodes[fn].b
         if r != AST_NONE and arena.nodes[r].kind == AST_TYPE and arena.nodes[r].a == AST_NONE and flowc_cgen_span_is(src, arena.nodes[r].name_start, arena.nodes[r].name_end, "void") == 0 {
@@ -4248,7 +4548,8 @@ function flowc_cgen_put_env_init(w: ptr<CgenBuf>, src: ptr<u8>, lam_id: i32) {
 
 # A closure over lambda `lam_id` whose environment is `env_expr_kind`:
 # 0 builds it from the enclosing scope, 1 copies `.env` of the local `var`.
-function flowc_cgen_emit_heap_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lam_id: i32, fty: i32, var: i32) {
+# `fname` is the closure typedef and `fcast` the cast of its fn slot.
+function flowc_cgen_emit_heap_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lam_id: i32, fname: string, fcast: string, var: i32) {
     flowc_cgen_puts(w, "(__extension__ ({ lambda_")
     flowc_cgen_put_i32(w, lam_id)
     flowc_cgen_puts(w, "_env* __flowc_fe = (lambda_")
@@ -4267,20 +4568,20 @@ function flowc_cgen_emit_heap_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr
         flowc_cgen_puts(w, ".env")
     }
     flowc_cgen_puts(w, "; (")
-    flowc_cgen_put_fat_name(w, arena, src, fty)
+    flowc_cgen_puts(w, fname)
     flowc_cgen_puts(w, "){ .fn = ")
-    flowc_cgen_put_fat_fn_cast(w, arena, src, fty)
+    flowc_cgen_puts(w, fcast)
     flowc_cgen_puts(w, "&__flowc_lambda_")
     flowc_cgen_put_i32(w, lam_id)
     flowc_cgen_puts(w, ", .env = __flowc_fe }; }))")
 }
 
 # `((fn_X){ .fn = <cast>&name, .env = NULL })` for an env-less function.
-function flowc_cgen_emit_null_env_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fty: i32, prefix: string, s: i32, e: i32, suffix: string) {
+function flowc_cgen_emit_null_env_closure(w: ptr<CgenBuf>, src: ptr<u8>, fname: string, fcast: string, prefix: string, s: i32, e: i32, suffix: string) {
     flowc_cgen_puts(w, "((")
-    flowc_cgen_put_fat_name(w, arena, src, fty)
+    flowc_cgen_puts(w, fname)
     flowc_cgen_puts(w, "){ .fn = ")
-    flowc_cgen_put_fat_fn_cast(w, arena, src, fty)
+    flowc_cgen_puts(w, fcast)
     flowc_cgen_puts(w, "&")
     flowc_cgen_puts(w, prefix)
     if e > s {
@@ -4292,15 +4593,17 @@ function flowc_cgen_emit_null_env_closure(w: ptr<CgenBuf>, arena: AstArena, src:
     flowc_cgen_puts(w, ", .env = NULL })")
 }
 
-# Emit `expr` as a value of function type `fty`.
-function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, fty: i32) {
+# Emit `expr` as a closure value of the typedef `fname`, whose fn slot takes
+# the cast `fcast`: a lambda, a named function or a local bound to a lambda
+# becomes a closure; anything else is emitted as it is.
+function flowc_cgen_emit_as_fat_named(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, fname: string, fcast: string) {
     let k: i32 = arena.nodes[expr].kind
     if k == AST_FN and arena.nodes[expr].name_start < 0 {
         let lam_id: i32 = 0 - arena.nodes[expr].name_start
         if flowc_cgen_lam_caps(w, lam_id) == 1 {
-            flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fty, AST_NONE)
+            flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fname, fcast, AST_NONE)
         } else {
-            flowc_cgen_emit_null_env_closure(w, arena, src, fty, "__flowc_lambda_", lam_id, lam_id, "_bridge")
+            flowc_cgen_emit_null_env_closure(w, src, fname, fcast, "__flowc_lambda_", lam_id, lam_id, "_bridge")
         }
         return
     }
@@ -4309,7 +4612,7 @@ function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
         if decl == AST_NONE {
             let f: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[expr].name_start, arena.nodes[expr].name_end)
             if f != AST_NONE and arena.nodes[f].name_start >= 0 {
-                flowc_cgen_emit_null_env_closure(w, arena, src, fty, "__flowc_fnadapt_", arena.nodes[expr].name_start, arena.nodes[expr].name_end, "")
+                flowc_cgen_emit_null_env_closure(w, src, fname, fcast, "__flowc_fnadapt_", arena.nodes[expr].name_start, arena.nodes[expr].name_end, "")
                 return
             }
         } else {
@@ -4318,9 +4621,9 @@ function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
                 if li != AST_NONE and arena.nodes[li].kind == AST_FN and arena.nodes[li].name_start < 0 {
                     let lam_id: i32 = 0 - arena.nodes[li].name_start
                     if flowc_cgen_lam_caps(w, lam_id) == 1 {
-                        flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fty, expr)
+                        flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fname, fcast, expr)
                     } else {
-                        flowc_cgen_emit_null_env_closure(w, arena, src, fty, "__flowc_lambda_", lam_id, lam_id, "_bridge")
+                        flowc_cgen_emit_null_env_closure(w, src, fname, fcast, "__flowc_lambda_", lam_id, lam_id, "_bridge")
                     }
                     return
                 }
@@ -4330,11 +4633,182 @@ function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     flowc_cgen_emit_expr(w, arena, src, expr)
 }
 
+# Emit `expr` as a value of function type `fty`.
+function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, fty: i32) {
+    let fname: array<u8, 256> = []
+    let mut nw: CgenBuf = flowc_cgen_buf_init(&fname[0], 255)
+    flowc_cgen_put_fat_name(&nw, arena, src, fty)
+    fname[nw.len] = 0
+    let fcast: array<u8, 512> = []
+    let mut cw: CgenBuf = flowc_cgen_buf_init(&fcast[0], 511)
+    flowc_cgen_put_fat_fn_cast(&cw, arena, src, fty)
+    fcast[cw.len] = 0
+    flowc_cgen_emit_as_fat_named(w, arena, src, expr, &fname[0] as string, &fcast[0] as string)
+}
+
+# For a function with function-typed parameters, add
+# `^name\0F0|C0;F1|C1;...\0` where Fi is the closure typedef of parameter i
+# and Ci the cast of its fn slot, both empty for another parameter. A call
+# from a later module of the bundle reads it to pass a lambda or a function
+# as a closure, as a call within the module does (#1043).
+function flowc_cgen_sig_put_fats(
+    arena: AstArena,
+    src: ptr<u8>,
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32,
+    fn: i32
+) -> i32 {
+    let mut any: i32 = 0
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if flowc_cgen_is_fat_ty(arena, arena.nodes[prm].a) == 1 {
+            any = 1
+        }
+        prm = arena.nodes[prm].next
+    }
+    if any == 0 {
+        return len
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let nlen: i32 = ne - ns
+    if nlen <= 0 or len + nlen + 4 > cap {
+        return len
+    }
+    buf[len] = 94
+    let mut i: i32 = 0
+    while i < nlen {
+        buf[len + 1 + i] = src[ns + i]
+        i = i + 1
+    }
+    let mut n: i32 = len + 1 + nlen
+    buf[n] = 0
+    n = n + 1
+    let dest: ptr<u8> = buf + n
+    let mut tw: CgenBuf = flowc_cgen_buf_init(dest, cap - n - 1)
+    let mut idx: i32 = 0
+    prm = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if idx > 0 {
+            flowc_cgen_putc(&tw, 59)
+        }
+        let pt: i32 = arena.nodes[prm].a
+        if flowc_cgen_is_fat_ty(arena, pt) == 1 {
+            flowc_cgen_put_fat_name(&tw, arena, src, pt)
+            flowc_cgen_putc(&tw, 124)
+            flowc_cgen_put_fat_fn_cast(&tw, arena, src, pt)
+        }
+        idx = idx + 1
+        prm = arena.nodes[prm].next
+    }
+    if tw.err != 0 {
+        return len
+    }
+    n = n + tw.len
+    buf[n] = 0
+    return n + 1
+}
+
+# Copy the closure typedef and fn-slot cast recorded by
+# flowc_cgen_sig_put_fats for parameter `param_idx` of the function named
+# [call_ns, call_ne) into fname and fcast (NUL-terminated). 1 if found.
+function flowc_cgen_sig_fat_param(w: ptr<CgenBuf>, src: ptr<u8>, call_ns: i32, call_ne: i32, param_idx: i32, fname: ptr<u8>, fname_cap: i32, fcast: ptr<u8>, fcast_cap: i32) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let nlen: i32 = call_ne - call_ns
+    let mut p: i32 = 0
+    while p < blen {
+        let mut k: i32 = 0
+        while p + k < blen and buf[p + k] != 0 {
+            k = k + 1
+        }
+        let vpos: i32 = p + k + 1
+        if vpos >= blen {
+            return 0
+        }
+        let mut hit: i32 = 0
+        if k == nlen + 1 and buf[p] == 94 {
+            hit = 1
+            let mut j: i32 = 0
+            while j < nlen {
+                if buf[p + 1 + j] != src[call_ns + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+        }
+        let mut v: i32 = vpos
+        if hit == 1 {
+            let mut idx: i32 = 0
+            while v < blen and buf[v] != 0 and idx < param_idx {
+                if buf[v] == 59 {
+                    idx = idx + 1
+                }
+                v = v + 1
+            }
+            if idx != param_idx {
+                return 0
+            }
+            let mut a: i32 = 0
+            while v < blen and buf[v] != 0 and buf[v] != 59 and buf[v] != 124 and a < fname_cap - 1 {
+                fname[a] = buf[v]
+                a = a + 1
+                v = v + 1
+            }
+            fname[a] = 0
+            if a == 0 or v >= blen or buf[v] != 124 {
+                return 0
+            }
+            v = v + 1
+            let mut c: i32 = 0
+            while v < blen and buf[v] != 0 and buf[v] != 59 and c < fcast_cap - 1 {
+                fcast[c] = buf[v]
+                c = c + 1
+                v = v + 1
+            }
+            fcast[c] = 0
+            return 1
+        }
+        while v < blen and buf[v] != 0 {
+            v = v + 1
+        }
+        p = v + 1
+    }
+    return 0
+}
+
+# 1 when an earlier module of the bundle recorded a function-typed
+# parameter (flowc_cgen_sig_put_fats), so this module may pass closures.
+function flowc_cgen_sigs_have_fat(w: ptr<CgenBuf>) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let mut p: i32 = 0
+    let mut field: i32 = 0
+    while p < blen {
+        if field == 0 and buf[p] == 94 {
+            return 1
+        }
+        while p < blen and buf[p] != 0 {
+            p = p + 1
+        }
+        p = p + 1
+        field = 1 - field
+    }
+    return 0
+}
+
 # Bridges and adapters: env-dropping entry points for lambdas and named
 # functions used as closures. Only programs that name a function type get
 # them. `which` 0 emits the lambda bridges, 1 the named-function adapters.
 function flowc_cgen_emit_fat_thunks(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, root: i32, which: i32) {
-    if flowc_cgen_uses_fat(arena) == 0 {
+    if flowc_cgen_uses_fat(arena) == 0 and flowc_cgen_sigs_have_fat(w) == 0 {
         return
     }
     let mut i: i32 = 0
@@ -5517,14 +5991,23 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "), 0)")
             return
         }
+        # find(xs, target) → flowc_find_i32(xs, n, target). A user function
+        # named find, of this module or an imported one, wins (#1045).
+        let mut user_find: i32 = 0
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 {
+            if flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) != AST_NONE {
+                user_find = 1
+            } elif flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end) >= 0 {
+                user_find = 1
+            }
+        }
         # xs |> find(t) on a fixed-size array: the selected search plan.
-        if arena.nodes[id].ival == AST_CALL_PIPE_FIND {
+        if arena.nodes[id].ival == AST_CALL_PIPE_FIND and user_find == 0 {
             if flowc_cgen_emit_pipe_find(w, arena, src, id) == 1 {
                 return
             }
         }
-        # find(xs, target) → flowc_find_i32(xs, n, target)
-        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 {
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 and user_find == 0 {
             flowc_cgen_puts(w, "flowc_find_i32(")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_puts(w, ", (int32_t)(sizeof(")
@@ -5640,6 +6123,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     flowc_cgen_puts(w, "__flowc_libc_")
                 }
                 flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
+                # An overload of an imported function: its mangled name (#1044).
+                fn_id = AST_NONE
             } else {
                 # Assume it's a closure if not found. (Not perfect, but works for the subset. In reality we should check if it's a known closure variable).
                 # Actually, check if it's declared locally as a closure.
@@ -5734,6 +6220,18 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 let fat_pty: i32 = flowc_cgen_fn_param_type(arena, fn_id, param_idx)
                 if flowc_cgen_is_fat_ty(arena, fat_pty) == 1 {
                     flowc_cgen_emit_as_fat(w, arena, src, arg, fat_pty)
+                    arg = arena.nodes[arg].next
+                    param_idx = param_idx + 1
+                    continue
+                }
+            }
+            # The callee lives in another module of the bundle: a
+            # function-typed parameter recorded there takes a closure (#1043).
+            if fn_id == AST_NONE {
+                let xfname: array<u8, 256> = []
+                let xfcast: array<u8, 512> = []
+                if flowc_cgen_sig_fat_param(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end, param_idx, &xfname[0], 256, &xfcast[0], 512) == 1 {
+                    flowc_cgen_emit_as_fat_named(w, arena, src, arg, &xfname[0] as string, &xfcast[0] as string)
                     arg = arena.nodes[arg].next
                     param_idx = param_idx + 1
                     continue
@@ -5855,24 +6353,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, " = ")
         }
         flowc_cgen_putc(w, 40)
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        let mut ta: i32 = arena.nodes[id].b
-        while ta != AST_NONE {
-            if arena.nodes[ta].kind == AST_TYPE {
-                flowc_cgen_putc(w, 95)
-                if w[0].mono_ntp > 0 {
-                    let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
-                    if idx >= 0 {
-                        flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[idx]].name_start, arena.nodes[w[0].mono_tp_concrete[idx]].name_end)
-                    } else {
-                        flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
-                    }
-                } else {
-                    flowc_cgen_put_span(w, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
-                }
-            }
-            ta = arena.nodes[ta].next
-        }
+        flowc_cgen_put_struct_lit_name(w, arena, src, id)
         flowc_cgen_puts(w, "){ ")
         let mut field: i32 = arena.nodes[id].a
         let mut first: i32 = 1
@@ -10442,6 +10923,100 @@ function flowc_cgen_mono_guard(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, k
     }
 }
 
+# Type parameter names of generic function `fn_id`, read from the source
+# between its name and `(` (`<T, U: Trait>`), into starts/ends (at most 8).
+function flowc_cgen_fn_tp_names(src: ptr<u8>, fn_id: i32, arena: AstArena, starts: ptr<i32>, ends: ptr<i32>) -> i32 {
+    let mut n: i32 = 0
+    let mut pos: i32 = arena.nodes[fn_id].name_end
+    let lim: i32 = arena.nodes[fn_id].end
+    while pos < lim and src[pos] != 60 and src[pos] != 40 {
+        pos = pos + 1
+    }
+    if pos < lim and src[pos] == 60 {
+        pos = pos + 1
+        while pos < lim and src[pos] != 62 {
+            while pos < lim and (src[pos] == 32 or src[pos] == 10 or src[pos] == 9) {
+                pos = pos + 1
+            }
+            if src[pos] == 62 {
+                break
+            }
+            if src[pos] == 44 {
+                pos = pos + 1
+            } else {
+                let id_start: i32 = pos
+                while pos < lim and ((src[pos] >= 65 and src[pos] <= 90) or (src[pos] >= 97 and src[pos] <= 122) or (src[pos] >= 48 and src[pos] <= 57) or src[pos] == 95) {
+                    pos = pos + 1
+                }
+                if n < 8 {
+                    starts[n] = id_start
+                    ends[n] = pos
+                    n = n + 1
+                }
+                # Skip `: Trait` if present.
+                while pos < lim and src[pos] != 44 and src[pos] != 62 {
+                    pos = pos + 1
+                }
+            }
+        }
+    }
+    return n
+}
+
+# `let x = f<A, B>(...)` with no annotation: write f's return type with its
+# type parameters replaced by A and B (resolved through an enclosing
+# instantiation first). 1 if written, else 0.
+function flowc_cgen_write_generic_ret(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let mut fn_id: i32 = AST_NONE
+    let mut j: i32 = 0
+    while j < arena.len {
+        if arena.nodes[j].kind == AST_FN and arena.nodes[j].ival > 0 {
+            if flowc_cgen_span_eq(src, arena.nodes[call].name_start, arena.nodes[call].name_end, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+                fn_id = j
+            }
+        }
+        j = j + 1
+    }
+    if fn_id == AST_NONE or arena.nodes[fn_id].b == AST_NONE {
+        return 0
+    }
+    let mut starts: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut ends: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut conc: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let ntp: i32 = flowc_cgen_fn_tp_names(src, fn_id, arena, &starts[0], &ends[0])
+    let mut nconc: i32 = 0
+    let mut ta: i32 = arena.nodes[call].b
+    while ta != AST_NONE and nconc < 8 {
+        let mut c: i32 = ta
+        if w[0].mono_ntp > 0 {
+            let idx: i32 = flowc_cgen_find_tp(src, arena.nodes[ta].name_start, arena.nodes[ta].name_end, w[0].mono_tp_starts, w[0].mono_tp_ends, w[0].mono_ntp)
+            if idx >= 0 {
+                c = w[0].mono_tp_concrete[idx]
+            }
+        }
+        conc[nconc] = c
+        nconc = nconc + 1
+        ta = arena.nodes[ta].next
+    }
+    if ntp == 0 or ntp != nconc {
+        return 0
+    }
+    let save_ntp: i32 = w[0].mono_ntp
+    let save_s: ptr<i32> = w[0].mono_tp_starts
+    let save_e: ptr<i32> = w[0].mono_tp_ends
+    let save_c: ptr<i32> = w[0].mono_tp_concrete
+    w[0].mono_tp_starts = &starts[0]
+    w[0].mono_tp_ends = &ends[0]
+    w[0].mono_tp_concrete = &conc[0]
+    w[0].mono_ntp = ntp
+    flowc_cgen_emit_type(w, arena, src, arena.nodes[fn_id].b)
+    w[0].mono_ntp = save_ntp
+    w[0].mono_tp_starts = save_s
+    w[0].mono_tp_ends = save_e
+    w[0].mono_tp_concrete = save_c
+    return 1
+}
+
 # Instantiate the generic function named [ns, ne) at the concrete types
 # conc[0..nconc) (type nodes), once per bundle (hash table `hashes`, and the
 # #ifndef guard across modules). Generic calls inside its body whose type
@@ -10491,40 +11066,7 @@ function flowc_cgen_mono_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ns: 
     let mut tp_starts: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
     let mut tp_ends: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
     let mut tp_concrete: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
-    let mut ntp_names: i32 = 0
-    let mut pos: i32 = arena.nodes[fn_id].name_end
-    let lim: i32 = arena.nodes[fn_id].end
-    while pos < lim and src[pos] != 60 and src[pos] != 40 {
-        pos = pos + 1
-    }
-    if pos < lim and src[pos] == 60 {
-        pos = pos + 1
-        while pos < lim and src[pos] != 62 {
-            while pos < lim and (src[pos] == 32 or src[pos] == 10 or src[pos] == 9) {
-                pos = pos + 1
-            }
-            if src[pos] == 62 {
-                break
-            }
-            if src[pos] == 44 {
-                pos = pos + 1
-            } else {
-                let id_start: i32 = pos
-                while pos < lim and ((src[pos] >= 65 and src[pos] <= 90) or (src[pos] >= 97 and src[pos] <= 122) or (src[pos] >= 48 and src[pos] <= 57) or src[pos] == 95) {
-                    pos = pos + 1
-                }
-                if ntp_names < 8 {
-                    tp_starts[ntp_names] = id_start
-                    tp_ends[ntp_names] = pos
-                    ntp_names = ntp_names + 1
-                }
-                # Skip `: Trait` if present.
-                while pos < lim and src[pos] != 44 and src[pos] != 62 {
-                    pos = pos + 1
-                }
-            }
-        }
-    }
+    let ntp_names: i32 = flowc_cgen_fn_tp_names(src, fn_id, arena, &tp_starts[0], &tp_ends[0])
     if ntp_names != nconc {
         return
     }
@@ -10787,6 +11329,8 @@ export function flowc_cgen_collect_sigs(
                 n = flowc_cgen_sig_put(arena, src, buf, cap, n, fn, rt)
             }
             n = flowc_cgen_sig_put_spans(arena, src, buf, cap, n, fn)
+            n = flowc_cgen_sig_put_overload(arena, src, buf, cap, n, fn)
+            n = flowc_cgen_sig_put_fats(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_recv(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_user_libc(arena, src, buf, cap, n, fn)
         }

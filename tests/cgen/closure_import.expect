@@ -1,0 +1,8 @@
+# The callee's function-typed parameter comes from the other module's
+# signature record, so the arguments are closure values (#1043), as for a
+# callee of the same module.
+~ apply\(\(\(fn_f32__f32\)\{ \.fn = \(float \(\*\)\(void\*, float\)\)&__flowc_lambda_[0-9]+_bridge, \.env = NULL \}\), 3\.0\)
++ apply(((fn_f32__f32){ .fn = (float (*)(void*, float))&__flowc_fnadapt_twice, .env = NULL }), 4.0)
+~ __flowc_lambda_[0-9]+_bridge\(void\* _env
++ __flowc_fnadapt_twice(void* _env
+exit 0

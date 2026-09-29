@@ -1,0 +1,11 @@
+# A bare generic struct literal takes its type arguments from the let
+# annotation or the field values (#1042, #954), and an unannotated let
+# takes the specialized struct type or the substituted return type. The
+# Python host typed every bare literal as Box<i32>.
++ Box_i32 a = (Box_i32){ .value = 4 };
++ Box_f64 b = (Box_f64){ .value = 1.5 };
++ Pair_i32_string p = (Pair_i32_string){ .first = 2, .second = "two" };
++ Box_f64 c = (Box_f64){ .value = 2.5 };
++ double y = identity_f64(0.5);
+- (Box){
+exit 0

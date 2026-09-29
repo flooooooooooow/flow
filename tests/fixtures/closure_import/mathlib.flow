@@ -1,0 +1,17 @@
+# Helper module for tests/lang/test_closure_import.flow and
+# tests/cgen/closure_import.flow (#1043): functions with function-typed
+# parameters.
+
+export function apply(f: (f32) -> f32, x: f32) -> f32 {
+    return f(x)
+}
+
+export function fold(n: i32, init: i32, step: (i32, i32) -> i32) -> i32 {
+    let mut acc: i32 = init
+    let mut i: i32 = 0
+    while i < n {
+        acc = step(acc, i)
+        i = i + 1
+    }
+    return acc
+}
