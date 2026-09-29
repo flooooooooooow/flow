@@ -11,8 +11,8 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
-    AST_ATTR, AST_ATTR_HAS_ARGS,
-    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
+    AST_ATTR, AST_ATTR_HAS_ARGS, AST_RECORD_UPDATE,
+    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const
 }
 import .attributes {
     flowc_attr_args_from_span, flowc_attr_span_is, flowc_is_known_attr,
@@ -3813,7 +3813,7 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
         who = ctx[0].path
     }
     flowc_proof_erase(arena, root)
-    if flowc_ast_reject_unsupported(arena, ctx[0].src, who) != 0 {
+    if flowc_ast_reject_unsupported_but(arena, ctx[0].src, who, AST_RECORD_UPDATE) != 0 {
         flowc_tc_err(ctx)
         ctx[0].fatal = ctx[0].fatal + 1
         return ctx[0].err

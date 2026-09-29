@@ -36,7 +36,7 @@ import .ast {
     AST_MATCH_ARM, AST_MATCH_ARM_EXT, AST_ENUM_VARIANT,
     AST_ERROR, AST_THEOREM, AST_CLAIM_REF,
     AST_TYPE_FIXED_ARRAY, AST_TYPE_CAPABILITY,
-    flowc_ast_reject_unsupported
+    flowc_ast_reject_unsupported_but, AST_RECORD_UPDATE
 }
 
 extern {
@@ -1706,6 +1706,9 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         return FT_NONE
     }
     if kind == AST_STRUCT_LIT {
+        if m[0].arena.nodes[e].c != AST_NONE {
+            return FT_NONE
+        }
         let sk: i32 = mlg_struct_index(m, mlg_ns(m, e), mlg_ne(m, e))
         if sk >= 0 {
             return FT_STRUCT - sk
@@ -1814,6 +1817,10 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         return MT_I32
     }
     if kind == AST_STRUCT_LIT {
+        if m[0].arena.nodes[e].c != AST_NONE {
+            # Python get_expression_type has no RecordUpdate case.
+            return MT_I32
+        }
         let sk: i32 = mlg_struct_index(m, mlg_ns(m, e), mlg_ne(m, e))
         if sk >= 0 {
             return MT_STRUCT + sk
@@ -4724,6 +4731,7 @@ function mlg_fv_walk(m: ptr<Mlg>, e: i32, bs: ptr<i32>, be: ptr<i32>, nb: i32, f
         return
     }
     if k == AST_STRUCT_LIT {
+        mlg_fv_walk(m, c, bs, be, nb, fs, fe, nf)
         let mut f: i32 = a
         while f != AST_NONE {
             mlg_fv_walk(m, m[0].arena.nodes[f].a, bs, be, nb, fs, fe, nf)
@@ -5558,6 +5566,95 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
     return r
 }
 
+# 1 when struct types a and b print the same MLIR text.
+function mlg_same_struct_text(m: ptr<Mlg>, a: i32, b: i32, depth: i32) -> i32 {
+    if a == b {
+        return 1
+    }
+    if depth > 8 or mlg_is_struct_mt(a) == 0 or mlg_is_struct_mt(b) == 0 {
+        return 0
+    }
+    let ka: i32 = a - MT_STRUCT
+    let kb: i32 = b - MT_STRUCT
+    let n: i32 = mlg_struct_nfields(m, ka)
+    if n != mlg_struct_nfields(m, kb) {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        let fa: i32 = mlg_field_member_mt(m, mlg_struct_field_at(m, ka, i))
+        let fb: i32 = mlg_field_member_mt(m, mlg_struct_field_at(m, kb, i))
+        if fa != fb and mlg_same_struct_text(m, fa, fb, depth + 1) == 0 {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Python generate_record_update: `Name { ..base, f: v }` copies base and
+# inserts the listed fields. The struct comes from the base's declared type
+# (or, for other expressions, the first struct whose MLIR type matches);
+# with none, the value is just the base.
+function mlg_emit_record_update(m: ptr<Mlg>, e: i32) -> i32 {
+    let base: i32 = m[0].arena.nodes[e].c
+    let mut k: i32 = 0 - 1
+    if mlg_kind(m, base) == AST_IDENT and (mlg_find_local(m, mlg_ns(m, base), mlg_ne(m, base)) >= 0 or mlg_find_const(m, mlg_ns(m, base), mlg_ne(m, base)) >= 0 or mlg_find_static(m, mlg_ns(m, base), mlg_ne(m, base)) >= 0) {
+        let bft: i32 = mlg_expr_ft(m, base)
+        if bft == FT_NONE or bft == FT_AUTO {
+            return mlg_emit_expr(m, base)
+        }
+        k = mlg_ft_struct(m, bft)
+    } else {
+        let bt: i32 = mlg_expr_mt(m, base)
+        if mlg_is_struct_mt(bt) == 1 {
+            let mut i: i32 = 0
+            while i < m[0].nst and k < 0 {
+                if m[0].st_enum[i] == 0 and i != m[0].span_st and i != m[0].clo_st and mlg_same_struct_text(m, MT_STRUCT + i, bt, 0) == 1 {
+                    k = i
+                }
+                i = i + 1
+            }
+        }
+    }
+    if k < 0 {
+        return mlg_emit_expr(m, base)
+    }
+    let st: i32 = MT_STRUCT + k
+    let mut agg: i32 = mlg_emit_expr(m, base)
+    let mut f: i32 = m[0].arena.nodes[e].a
+    while f != AST_NONE and m[0].err == 0 {
+        let val_e: i32 = m[0].arena.nodes[f].a
+        let mut v: i32 = mlg_emit_expr(m, val_e)
+        let mut idx: i32 = 0
+        let sf: i32 = mlg_struct_field(m, k, mlg_ns(m, f), mlg_ne(m, f), &idx)
+        let vt: i32 = mlg_expr_mt(m, val_e)
+        let mut ft: i32 = vt
+        if sf != AST_NONE {
+            ft = mlg_ft_to_mt(m, m[0].arena.nodes[sf].a, f)
+        } else {
+            idx = 0
+        }
+        v = mlg_cast(m, v, vt, ft)
+        let nx: i32 = mlg_new_val(m, st)
+        mlg_line(m)
+        mlg_v(m, nx)
+        mlg_s(m, " = llvm.insertvalue ")
+        mlg_v(m, v)
+        mlg_s(m, ", ")
+        mlg_v(m, agg)
+        mlg_s(m, "[")
+        mlg_i(m, idx)
+        mlg_s(m, "] : ")
+        mlg_put_type(m, st)
+        mlg_nl(m)
+        agg = nx
+        f = m[0].arena.nodes[f].next
+    }
+    mlg_set_vty(m, agg, st)
+    return agg
+}
+
 function mlg_emit_expr(m: ptr<Mlg>, e: i32) -> i32 {
     if m[0].err != 0 or e == AST_NONE {
         return V_NONE
@@ -5635,6 +5732,9 @@ function mlg_emit_expr(m: ptr<Mlg>, e: i32) -> i32 {
         return mlg_emit_field(m, e)
     }
     if kind == AST_STRUCT_LIT {
+        if m[0].arena.nodes[e].c != AST_NONE {
+            return mlg_emit_record_update(m, e)
+        }
         return mlg_emit_struct_lit(m, e)
     }
     if kind == AST_IF_EXPR {
@@ -9849,6 +9949,10 @@ function mlg_static_expr(m: ptr<Mlg>, e: i32, t: i32) -> i32 {
     }
     let k: i32 = mlg_kind(m, e)
     if k == AST_STRUCT_LIT {
+        if m[0].arena.nodes[e].c != AST_NONE {
+            mlg_refuse(m, e, "record update in a static initializer")
+            return V_NONE
+        }
         return mlg_static_struct_lit(m, e, t)
     }
     if k == AST_STRING {
@@ -11121,7 +11225,7 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
     if arena.nodes[root].kind != AST_PROGRAM {
         return 0 - 1
     }
-    if flowc_ast_reject_unsupported(arena, src, "flowc mlir") != 0 {
+    if flowc_ast_reject_unsupported_but(arena, src, "flowc mlir", AST_RECORD_UPDATE) != 0 {
         return 0 - 1
     }
     # The typecheck erases the proof layer (theorems, assume, therefore,

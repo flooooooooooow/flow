@@ -131,8 +131,11 @@ export const AST_VECTOR_LIT: i32 = 93
 # AST_MODULE: `module Name { ... }`. name_* = name, a = item chain.
 export const AST_SORT_BY: i32 = 94
 export const AST_MODULE: i32 = 95
+# AST_RECORD_UPDATE: marker for `Name { ..base, f: v }` (b = the AST_STRUCT_LIT,
+#   whose c holds the base expression). Only the MLIR emitter lowers it.
+export const AST_RECORD_UPDATE: i32 = 96
 # Last parse-only kind; keep flowc_ast_first_unsupported in step.
-export const AST_PARSE_ONLY_LAST: i32 = 95
+export const AST_PARSE_ONLY_LAST: i32 = 96
 
 export const PIPE_BLOCK_FORK: i32 = 1
 export const PIPE_BLOCK_STAGE: i32 = 2
@@ -374,6 +377,7 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
     if kind == AST_VECTOR_LIT { return "vector literal <...>" }
     if kind == AST_SORT_BY { return "sort by keys / with entropy / order" }
     if kind == AST_MODULE { return "module block" }
+    if kind == AST_RECORD_UPDATE { return "record update Name { ..base }" }
     return ""
 }
 
@@ -396,12 +400,20 @@ export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
     return 0
 }
 
+function flowc_ast_first_unsupported_but(arena: AstArena, allow: i32) -> i32
+function flowc_ast_reject_unsupported_but(arena: AstArena, src: ptr<u8>, who: string, allow: i32) -> i32
+
 # First node in the arena whose kind no Stage-A backend lowers, or AST_NONE.
 export function flowc_ast_first_unsupported(arena: AstArena) -> i32 {
+    return flowc_ast_first_unsupported_but(arena, AST_NONE)
+}
+
+# The same, passing over nodes of kind `allow` (a pass that lowers it).
+export function flowc_ast_first_unsupported_but(arena: AstArena, allow: i32) -> i32 {
     let mut i: i32 = 0
     while i < arena.len {
         let k: i32 = arena.nodes[i].kind
-        if k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST {
+        if k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST and k != allow {
             if flowc_ast_parse_only_lowered(arena, i) == 0 {
                 return i
             }
@@ -414,7 +426,12 @@ export function flowc_ast_first_unsupported(arena: AstArena) -> i32 {
 # If the program holds a parse-only node, print
 # `<who>: line N: unsupported in Stage-A: <construct>` and return 1.
 export function flowc_ast_reject_unsupported(arena: AstArena, src: ptr<u8>, who: string) -> i32 {
-    let bad: i32 = flowc_ast_first_unsupported(arena)
+    return flowc_ast_reject_unsupported_but(arena, src, who, AST_NONE)
+}
+
+# The same, passing over nodes of kind `allow`.
+export function flowc_ast_reject_unsupported_but(arena: AstArena, src: ptr<u8>, who: string, allow: i32) -> i32 {
+    let bad: i32 = flowc_ast_first_unsupported_but(arena, allow)
     if bad == AST_NONE {
         return 0
     }

@@ -33,6 +33,7 @@ import .ast {
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
     AST_SORT_BY, AST_MODULE, AST_SORT_DESC, AST_SORT_UNIQUE, AST_SORT_UNSTABLE,
     AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND,
+    AST_RECORD_UPDATE,
     AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_EXPORTED, AST_ATTR_HAS_ARGS,
     PIPE_BLOCK_FORK, PIPE_BLOCK_STAGE, PIPE_BLOCK_CHOOSE,
@@ -815,6 +816,9 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
             let mut is_lit: i32 = 0
             if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
                 is_lit = 1
+            } elif flowc_parser_check(p[0], TOK_DOTDOT) == 1 {
+                # Record update: Name { ..base, field: value }
+                is_lit = 2
             } else {
                 if flowc_parser_check(p[0], TOK_IDENT) == 1 or flowc_parser_check(p[0], TOK_KEYWORD) == 1 {
                     flowc_parser_advance(p)
@@ -830,6 +834,17 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
                 p[0].lex = saved_lex
                 p[0].cur = saved_cur
                 flowc_parser_advance(p)
+                let mut base_expr: i32 = AST_NONE
+                if is_lit == 2 {
+                    flowc_parser_advance(p)
+                    base_expr = flowc_parse_expr(p)
+                    if base_expr == AST_NONE {
+                        return AST_NONE
+                    }
+                    if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                        flowc_parser_advance(p)
+                    }
+                }
                 let mut fields: i32 = AST_NONE
                 while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
                     if flowc_parser_check(p[0], TOK_IDENT) == 0 and flowc_parser_check(p[0], TOK_KEYWORD) == 0 {
@@ -873,6 +888,15 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
                 p[0].arena.nodes[lit].name_end = name_e
                 p[0].arena.nodes[lit].a = fields
                 p[0].arena.nodes[lit].b = pending_type_args
+                if base_expr != AST_NONE {
+                    p[0].arena.nodes[lit].c = base_expr
+                    let mark: i32 = flowc_ast_alloc(&p[0].arena, AST_RECORD_UPDATE, name_s, p[0].cur.start)
+                    if mark == AST_NONE {
+                        flowc_parser_fail(p)
+                        return AST_NONE
+                    }
+                    p[0].arena.nodes[mark].b = lit
+                }
                 return lit
             }
         }
