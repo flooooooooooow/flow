@@ -134,7 +134,13 @@ build_run() {
 PYREF="$WORK/pyref"
 python_setup() {
     mkdir -p "$PYREF"
-    git archive "$1" src/flow | tar -x -C "$PYREF"
+    # The Python host expands flow blocks with flowc built from the
+    # bootstrap C of the same revision.
+    git archive "$1" src/flow compiler/bootstrap/flowc_stage_a.c | tar -x -C "$PYREF"
+    # The resolver's fallback stdlib and packages sit next to src/flow; point
+    # them at this checkout's, as flowc (FLOWC_ROOT) uses.
+    ln -sfn "$ROOT/lib" "$PYREF/lib"
+    ln -sfn "$ROOT/packages" "$PYREF/packages"
 }
 
 # python_emit <in.flow> <out.mlir> [--llvm]
