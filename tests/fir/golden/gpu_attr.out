@@ -1,0 +1,65 @@
+{
+  "summary": "FIR-G: funcs=4 blocks=7 ops=75 values=65 operands=34 types=6",
+  "call_edges": [],
+  "effects": {
+    "vector_add": 33024,
+    "vector_scale": 33024,
+    "vector_saxpy": 33024,
+    "main": 8
+  },
+  "pure": {
+    "vector_add": false,
+    "vector_scale": false,
+    "vector_saxpy": false,
+    "main": false
+  },
+  "reachable": [
+    "main"
+  ],
+  "dead": [
+    "vector_add",
+    "vector_scale",
+    "vector_saxpy"
+  ],
+  "num_call_ops": 16,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 3,
+    "by_kind": {
+      "dead_elim": 3
+    },
+    "top": [
+      {
+        "kind": "dead_elim",
+        "target": "vector_saxpy",
+        "score": 27.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 17,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "vector_add",
+        "score": 25.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 15,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "vector_scale",
+        "score": 25.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 15,
+        "call_sites": null
+      }
+    ]
+  }
+}

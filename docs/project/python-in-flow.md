@@ -63,7 +63,7 @@ the Flow port of each one. The table records where each port stands.
 |---|---|
 | `./flow` bash | orchestrates flowc. The bootstrap needs no Python: flowc is built from `compiler/bootstrap/flowc_stage_a.c` with `cc` |
 | `mlir_generator.py` | fallback when the Flow MLIR emitter cannot handle a program (`--backend=mlir`) |
-| `flow check`, wcet and MISRA scanners, fir tools, the DAP server, the project test runner | not ported yet |
+| `flow check`, wcet and MISRA scanners, the DAP server, the project test runner | not ported yet |
 | `mlir_jit.py` loading half, GPU/Metal **runtimes** | ctypes, numpy; planned to move to C (see [MLIR in Flow](../design/mlir-in-flow.md)) |
 | `package.py` (publish, build, fetch) | git and network |
 | `pip wheel` in `flow python` | building the wheel needs setuptools. The generator is the Flow tool `tools/pywheel` |
@@ -131,7 +131,8 @@ Python and ported those tests to `tests/lang/`. See
 | Matmul/reduce cost models | [`compiler/src/general_plans.flow`](../../compiler/src/general_plans.flow): `flowc_select_matmul` / `flowc_select_reduce` (pure cost/applicability, registry stays Python) |
 | FIR-G effect propagation | [`compiler/src/fir_analysis.flow`](../../compiler/src/fir_analysis.flow): `flowc_propagate_effects` / `flowc_reachable_functions` / `flowc_is_pure` (CSR graph, fixpoint OR) |
 | FIR-G opt candidate scoring | [`compiler/src/fir_opts.flow`](../../compiler/src/fir_opts.flow): `flowc_score_inline` / `flowc_score_dead_elim` / `flowc_compare_candidates` |
-| FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow): `flowc_choose_analysis_backend` (calibration and timing stay Python) |
+| FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow): `flowc_choose_analysis_backend` |
+| FIR-G tool (**complete**) | [`tools/fir/main.flow`](../../tools/fir/main.flow): `flow fir-g`, graphify on the flowc front end, monomorphization, analyses, candidates, routing and calibration. Gated by [`tests/fir/run.sh`](../../tests/fir/run.sh) against goldens from the retired Python tool |
 | Language server (**complete**) | [`tools/lsp/main.flow`](../../tools/lsp/main.flow): JSON-RPC over stdio, diagnostics from the flowc parser and Stage-A checker in process, hover, completion, definition, references, highlight, rename, document symbols, formatting through [`fmt.flow`](../../compiler/src/fmt.flow) and idiom code actions. `./flow lsp` and `./flow-lsp` run it. Gated by [`tests/tools/lsp/run.sh`](../../tests/tools/lsp/run.sh): recorded sessions diffed against the retired Python server, with the accepted differences listed in [`ACCEPTED.md`](../../tests/tools/lsp/ACCEPTED.md) |
 | LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow): `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` |
 | LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow): `flowc_receiver_before_dot` / `flowc_field_access_at` |

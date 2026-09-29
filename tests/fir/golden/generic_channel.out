@@ -1,0 +1,1059 @@
+{
+  "summary": "FIR-G: funcs=118 blocks=196 ops=1485 values=1201 operands=722 types=32",
+  "call_edges": [
+    {
+      "caller": "channel_destroy_Point",
+      "callee": "free",
+      "op": 1
+    },
+    {
+      "caller": "channel_close_Point",
+      "callee": "channel_bind_Point",
+      "op": 1
+    },
+    {
+      "caller": "channel_recv_Point",
+      "callee": "channel_bind_Point",
+      "op": 1
+    },
+    {
+      "caller": "channel_send_Point",
+      "callee": "channel_bind_Point",
+      "op": 1
+    },
+    {
+      "caller": "channel_new_Point",
+      "callee": "sizeof_Point",
+      "op": 1
+    },
+    {
+      "caller": "channel_destroy_i32",
+      "callee": "free",
+      "op": 1
+    },
+    {
+      "caller": "channel_close_i32",
+      "callee": "channel_bind_i32",
+      "op": 1
+    },
+    {
+      "caller": "channel_recv_i32",
+      "callee": "channel_bind_i32",
+      "op": 1
+    },
+    {
+      "caller": "channel_send_i32",
+      "callee": "channel_bind_i32",
+      "op": 1
+    },
+    {
+      "caller": "channel_new_i32",
+      "callee": "sizeof_i32",
+      "op": 1
+    },
+    {
+      "caller": "thread_spawn",
+      "callee": "flow_thread_spawn",
+      "op": 1
+    },
+    {
+      "caller": "thread_join",
+      "callee": "flow_thread_join",
+      "op": 1
+    },
+    {
+      "caller": "mutex_lock",
+      "callee": "mutex_bind",
+      "op": 1
+    },
+    {
+      "caller": "mutex_lock",
+      "callee": "flow_race_mutex_lock",
+      "op": 1
+    },
+    {
+      "caller": "mutex_unlock",
+      "callee": "flow_race_mutex_unlock",
+      "op": 1
+    },
+    {
+      "caller": "mutex_trylock",
+      "callee": "mutex_bind",
+      "op": 1
+    },
+    {
+      "caller": "condvar_wait",
+      "callee": "condvar_bind",
+      "op": 1
+    },
+    {
+      "caller": "condvar_wait",
+      "callee": "mutex_bind",
+      "op": 1
+    },
+    {
+      "caller": "condvar_signal",
+      "callee": "condvar_bind",
+      "op": 1
+    },
+    {
+      "caller": "condvar_broadcast",
+      "callee": "condvar_bind",
+      "op": 1
+    },
+    {
+      "caller": "rwlock_rdlock",
+      "callee": "rwlock_bind",
+      "op": 1
+    },
+    {
+      "caller": "rwlock_wrlock",
+      "callee": "rwlock_bind",
+      "op": 1
+    },
+    {
+      "caller": "semaphore_wait",
+      "callee": "semaphore_bind",
+      "op": 1
+    },
+    {
+      "caller": "semaphore_post",
+      "callee": "semaphore_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_try_send",
+      "callee": "channel_i32_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_send",
+      "callee": "channel_i32_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_try_recv",
+      "callee": "channel_i32_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_recv",
+      "callee": "channel_i32_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_close",
+      "callee": "channel_i32_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_destroy",
+      "callee": "free",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_select2_try",
+      "callee": "channel_i32_try_recv",
+      "op": 2
+    },
+    {
+      "caller": "channel_i32_select2",
+      "callee": "channel_i32_select2_try",
+      "op": 2
+    },
+    {
+      "caller": "channel_i32_select2",
+      "callee": "flow_thread_yield",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_select4_try",
+      "callee": "channel_i32_try_recv",
+      "op": 4
+    },
+    {
+      "caller": "channel_i32_select4",
+      "callee": "channel_i32_select4_try",
+      "op": 1
+    },
+    {
+      "caller": "channel_i32_select4",
+      "callee": "flow_thread_yield",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_try_send",
+      "callee": "channel_i64_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_send",
+      "callee": "channel_i64_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_try_recv",
+      "callee": "channel_i64_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_recv",
+      "callee": "channel_i64_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_close",
+      "callee": "channel_i64_bind",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_destroy",
+      "callee": "free",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_select2_try",
+      "callee": "channel_i64_try_recv",
+      "op": 2
+    },
+    {
+      "caller": "channel_i64_select2",
+      "callee": "channel_i64_select2_try",
+      "op": 1
+    },
+    {
+      "caller": "channel_i64_select2",
+      "callee": "flow_thread_yield",
+      "op": 1
+    },
+    {
+      "caller": "atomic_i32_load",
+      "callee": "flow_atomic_load_i32",
+      "op": 1
+    },
+    {
+      "caller": "atomic_i32_store",
+      "callee": "flow_atomic_store_i32",
+      "op": 1
+    },
+    {
+      "caller": "atomic_i64_load",
+      "callee": "__atomic_load_n_i64",
+      "op": 1
+    },
+    {
+      "caller": "atomic_i64_store",
+      "callee": "__atomic_store_n_i64",
+      "op": 1
+    },
+    {
+      "caller": "atomic_bool_load",
+      "callee": "__atomic_load_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "atomic_bool_store",
+      "callee": "__atomic_store_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "spinlock_lock",
+      "callee": "__atomic_compare_exchange_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "spinlock_unlock",
+      "callee": "__atomic_store_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "spinlock_is_locked",
+      "callee": "__atomic_load_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "once_is_done",
+      "callee": "__atomic_load_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "once_call_begin",
+      "callee": "__atomic_load_n_bool",
+      "op": 2
+    },
+    {
+      "caller": "once_call_begin",
+      "callee": "once_bind",
+      "op": 1
+    },
+    {
+      "caller": "once_call_end",
+      "callee": "__atomic_store_n_bool",
+      "op": 1
+    },
+    {
+      "caller": "waitgroup_add",
+      "callee": "waitgroup_bind",
+      "op": 1
+    },
+    {
+      "caller": "waitgroup_done",
+      "callee": "waitgroup_bind",
+      "op": 1
+    },
+    {
+      "caller": "waitgroup_count",
+      "callee": "waitgroup_bind",
+      "op": 1
+    },
+    {
+      "caller": "waitgroup_wait",
+      "callee": "waitgroup_bind",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_new_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_send_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_recv_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_close_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_destroy_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_new_Point",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_send_Point",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_recv_Point",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_close_Point",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "channel_destroy_Point",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "channel_destroy_Point": 32790,
+    "channel_close_Point": 32768,
+    "channel_bind_Point": 32768,
+    "channel_recv_Point": 32768,
+    "channel_send_Point": 32768,
+    "channel_new_Point": 0,
+    "sizeof_Point": 0,
+    "channel_destroy_i32": 32790,
+    "channel_close_i32": 32768,
+    "channel_bind_i32": 32768,
+    "channel_recv_i32": 32768,
+    "channel_send_i32": 32768,
+    "channel_new_i32": 0,
+    "sizeof_i32": 0,
+    "flow_thread_spawn": 16,
+    "flow_thread_join": 16,
+    "flow_thread_yield": 16,
+    "flow_async_spawn": 16,
+    "flow_async_join": 16,
+    "flow_async_delay": 16,
+    "malloc": 22,
+    "free": 22,
+    "flow_atomic_load_i32": 16,
+    "flow_atomic_store_i32": 16,
+    "flow_atomic_fetch_add_i32": 16,
+    "flow_atomic_fetch_sub_i32": 16,
+    "flow_atomic_cas_i32": 16,
+    "flow_race_mutex_lock": 16,
+    "flow_race_mutex_unlock": 16,
+    "flow_race_read": 16,
+    "flow_race_write": 16,
+    "__atomic_load_n_i64": 16,
+    "__atomic_store_n_i64": 16,
+    "__atomic_fetch_add_i64": 16,
+    "__atomic_fetch_sub_i64": 16,
+    "__atomic_compare_exchange_n_i64": 16,
+    "__atomic_load_n_bool": 16,
+    "__atomic_store_n_bool": 16,
+    "__atomic_compare_exchange_n_bool": 16,
+    "thread_new": 0,
+    "thread_is_running": 0,
+    "thread_spawn": 16,
+    "thread_join": 16,
+    "mutex_new": 0,
+    "mutex_bind": 32768,
+    "mutex_lock": 32784,
+    "mutex_unlock": 32784,
+    "mutex_trylock": 32768,
+    "mutex_destroy": 32768,
+    "mutex_is_locked": 0,
+    "condvar_new": 0,
+    "condvar_bind": 32768,
+    "condvar_wait": 32768,
+    "condvar_signal": 32768,
+    "condvar_broadcast": 32768,
+    "condvar_destroy": 32768,
+    "rwlock_new": 0,
+    "rwlock_bind": 32768,
+    "rwlock_rdlock": 32768,
+    "rwlock_wrlock": 32768,
+    "rwlock_unlock": 32768,
+    "rwlock_destroy": 32768,
+    "semaphore_new": 0,
+    "semaphore_bind": 32768,
+    "semaphore_wait": 32768,
+    "semaphore_post": 32768,
+    "semaphore_count": 0,
+    "channel_i32_new": 0,
+    "channel_i32_bind": 32768,
+    "channel_i32_is_empty": 0,
+    "channel_i32_is_full": 0,
+    "channel_i32_is_closed": 0,
+    "channel_i32_len": 0,
+    "channel_i32_try_send": 32768,
+    "channel_i32_send": 32768,
+    "channel_i32_try_recv": 32768,
+    "channel_i32_recv": 32768,
+    "channel_i32_close": 32768,
+    "channel_i32_destroy": 32790,
+    "channel_i32_select2_try": 32768,
+    "channel_i32_select2": 32784,
+    "channel_i32_select4_try": 32768,
+    "channel_i32_select4": 32784,
+    "channel_i64_new": 0,
+    "channel_i64_bind": 32768,
+    "channel_i64_try_send": 32768,
+    "channel_i64_send": 32768,
+    "channel_i64_try_recv": 32768,
+    "channel_i64_recv": 32768,
+    "channel_i64_close": 32768,
+    "channel_i64_destroy": 32790,
+    "channel_i64_select2_try": 32768,
+    "channel_i64_select2": 32784,
+    "atomic_i32_new": 0,
+    "atomic_i64_new": 0,
+    "atomic_bool_new": 0,
+    "atomic_i32_load": 16,
+    "atomic_i32_store": 16,
+    "atomic_i64_load": 16,
+    "atomic_i64_store": 16,
+    "atomic_bool_load": 16,
+    "atomic_bool_store": 16,
+    "spinlock_new": 0,
+    "spinlock_lock": 16,
+    "spinlock_unlock": 16,
+    "spinlock_is_locked": 16,
+    "once_new": 0,
+    "once_bind": 32768,
+    "once_is_done": 16,
+    "once_call_begin": 32784,
+    "once_call_end": 32784,
+    "waitgroup_new": 0,
+    "waitgroup_bind": 32768,
+    "waitgroup_add": 32768,
+    "waitgroup_done": 32768,
+    "waitgroup_count": 32768,
+    "waitgroup_wait": 32768,
+    "main": 32798
+  },
+  "pure": {
+    "channel_destroy_Point": false,
+    "channel_close_Point": false,
+    "channel_bind_Point": false,
+    "channel_recv_Point": false,
+    "channel_send_Point": false,
+    "channel_new_Point": true,
+    "sizeof_Point": true,
+    "channel_destroy_i32": false,
+    "channel_close_i32": false,
+    "channel_bind_i32": false,
+    "channel_recv_i32": false,
+    "channel_send_i32": false,
+    "channel_new_i32": true,
+    "sizeof_i32": true,
+    "flow_thread_spawn": false,
+    "flow_thread_join": false,
+    "flow_thread_yield": false,
+    "flow_async_spawn": false,
+    "flow_async_join": false,
+    "flow_async_delay": false,
+    "malloc": false,
+    "free": false,
+    "flow_atomic_load_i32": false,
+    "flow_atomic_store_i32": false,
+    "flow_atomic_fetch_add_i32": false,
+    "flow_atomic_fetch_sub_i32": false,
+    "flow_atomic_cas_i32": false,
+    "flow_race_mutex_lock": false,
+    "flow_race_mutex_unlock": false,
+    "flow_race_read": false,
+    "flow_race_write": false,
+    "__atomic_load_n_i64": false,
+    "__atomic_store_n_i64": false,
+    "__atomic_fetch_add_i64": false,
+    "__atomic_fetch_sub_i64": false,
+    "__atomic_compare_exchange_n_i64": false,
+    "__atomic_load_n_bool": false,
+    "__atomic_store_n_bool": false,
+    "__atomic_compare_exchange_n_bool": false,
+    "thread_new": true,
+    "thread_is_running": true,
+    "thread_spawn": false,
+    "thread_join": false,
+    "mutex_new": true,
+    "mutex_bind": false,
+    "mutex_lock": false,
+    "mutex_unlock": false,
+    "mutex_trylock": false,
+    "mutex_destroy": false,
+    "mutex_is_locked": true,
+    "condvar_new": true,
+    "condvar_bind": false,
+    "condvar_wait": false,
+    "condvar_signal": false,
+    "condvar_broadcast": false,
+    "condvar_destroy": false,
+    "rwlock_new": true,
+    "rwlock_bind": false,
+    "rwlock_rdlock": false,
+    "rwlock_wrlock": false,
+    "rwlock_unlock": false,
+    "rwlock_destroy": false,
+    "semaphore_new": true,
+    "semaphore_bind": false,
+    "semaphore_wait": false,
+    "semaphore_post": false,
+    "semaphore_count": true,
+    "channel_i32_new": true,
+    "channel_i32_bind": false,
+    "channel_i32_is_empty": true,
+    "channel_i32_is_full": true,
+    "channel_i32_is_closed": true,
+    "channel_i32_len": true,
+    "channel_i32_try_send": false,
+    "channel_i32_send": false,
+    "channel_i32_try_recv": false,
+    "channel_i32_recv": false,
+    "channel_i32_close": false,
+    "channel_i32_destroy": false,
+    "channel_i32_select2_try": false,
+    "channel_i32_select2": false,
+    "channel_i32_select4_try": false,
+    "channel_i32_select4": false,
+    "channel_i64_new": true,
+    "channel_i64_bind": false,
+    "channel_i64_try_send": false,
+    "channel_i64_send": false,
+    "channel_i64_try_recv": false,
+    "channel_i64_recv": false,
+    "channel_i64_close": false,
+    "channel_i64_destroy": false,
+    "channel_i64_select2_try": false,
+    "channel_i64_select2": false,
+    "atomic_i32_new": true,
+    "atomic_i64_new": true,
+    "atomic_bool_new": true,
+    "atomic_i32_load": false,
+    "atomic_i32_store": false,
+    "atomic_i64_load": false,
+    "atomic_i64_store": false,
+    "atomic_bool_load": false,
+    "atomic_bool_store": false,
+    "spinlock_new": true,
+    "spinlock_lock": false,
+    "spinlock_unlock": false,
+    "spinlock_is_locked": false,
+    "once_new": true,
+    "once_bind": false,
+    "once_is_done": false,
+    "once_call_begin": false,
+    "once_call_end": false,
+    "waitgroup_new": true,
+    "waitgroup_bind": false,
+    "waitgroup_add": false,
+    "waitgroup_done": false,
+    "waitgroup_count": false,
+    "waitgroup_wait": false,
+    "main": false
+  },
+  "reachable": [
+    "channel_bind_Point",
+    "channel_bind_i32",
+    "channel_close_Point",
+    "channel_close_i32",
+    "channel_destroy_Point",
+    "channel_destroy_i32",
+    "channel_new_Point",
+    "channel_new_i32",
+    "channel_recv_Point",
+    "channel_recv_i32",
+    "channel_send_Point",
+    "channel_send_i32",
+    "free",
+    "main",
+    "sizeof_Point",
+    "sizeof_i32"
+  ],
+  "dead": [
+    "flow_thread_spawn",
+    "flow_thread_join",
+    "flow_thread_yield",
+    "flow_async_spawn",
+    "flow_async_join",
+    "flow_async_delay",
+    "malloc",
+    "flow_atomic_load_i32",
+    "flow_atomic_store_i32",
+    "flow_atomic_fetch_add_i32",
+    "flow_atomic_fetch_sub_i32",
+    "flow_atomic_cas_i32",
+    "flow_race_mutex_lock",
+    "flow_race_mutex_unlock",
+    "flow_race_read",
+    "flow_race_write",
+    "__atomic_load_n_i64",
+    "__atomic_store_n_i64",
+    "__atomic_fetch_add_i64",
+    "__atomic_fetch_sub_i64",
+    "__atomic_compare_exchange_n_i64",
+    "__atomic_load_n_bool",
+    "__atomic_store_n_bool",
+    "__atomic_compare_exchange_n_bool",
+    "thread_new",
+    "thread_is_running",
+    "thread_spawn",
+    "thread_join",
+    "mutex_new",
+    "mutex_bind",
+    "mutex_lock",
+    "mutex_unlock",
+    "mutex_trylock",
+    "mutex_destroy",
+    "mutex_is_locked",
+    "condvar_new",
+    "condvar_bind",
+    "condvar_wait",
+    "condvar_signal",
+    "condvar_broadcast",
+    "condvar_destroy",
+    "rwlock_new",
+    "rwlock_bind",
+    "rwlock_rdlock",
+    "rwlock_wrlock",
+    "rwlock_unlock",
+    "rwlock_destroy",
+    "semaphore_new",
+    "semaphore_bind",
+    "semaphore_wait",
+    "semaphore_post",
+    "semaphore_count",
+    "channel_i32_new",
+    "channel_i32_bind",
+    "channel_i32_is_empty",
+    "channel_i32_is_full",
+    "channel_i32_is_closed",
+    "channel_i32_len",
+    "channel_i32_try_send",
+    "channel_i32_send",
+    "channel_i32_try_recv",
+    "channel_i32_recv",
+    "channel_i32_close",
+    "channel_i32_destroy",
+    "channel_i32_select2_try",
+    "channel_i32_select2",
+    "channel_i32_select4_try",
+    "channel_i32_select4",
+    "channel_i64_new",
+    "channel_i64_bind",
+    "channel_i64_try_send",
+    "channel_i64_send",
+    "channel_i64_try_recv",
+    "channel_i64_recv",
+    "channel_i64_close",
+    "channel_i64_destroy",
+    "channel_i64_select2_try",
+    "channel_i64_select2",
+    "atomic_i32_new",
+    "atomic_i64_new",
+    "atomic_bool_new",
+    "atomic_i32_load",
+    "atomic_i32_store",
+    "atomic_i64_load",
+    "atomic_i64_store",
+    "atomic_bool_load",
+    "atomic_bool_store",
+    "spinlock_new",
+    "spinlock_lock",
+    "spinlock_unlock",
+    "spinlock_is_locked",
+    "once_new",
+    "once_bind",
+    "once_is_done",
+    "once_call_begin",
+    "once_call_end",
+    "waitgroup_new",
+    "waitgroup_bind",
+    "waitgroup_add",
+    "waitgroup_done",
+    "waitgroup_count",
+    "waitgroup_wait"
+  ],
+  "num_call_ops": 221,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 114,
+    "by_kind": {
+      "dead_elim": 102,
+      "inline": 12
+    },
+    "top": [
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_select2",
+        "score": 78.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 68,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_select4",
+        "score": 68.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 58,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_recv",
+        "score": 52.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 42,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_recv",
+        "score": 52.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 42,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_send",
+        "score": 50.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 40,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_send",
+        "score": 50.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 40,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_try_send",
+        "score": 48.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 38,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_select2",
+        "score": 48.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 38,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_select4_try",
+        "score": 45.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 35,
+        "call_sites": null
+      },
+      {
+        "kind": "inline",
+        "target": "sizeof_Point",
+        "score": 45.0,
+        "reason": "callee_ops=2 sites=1 pure=True",
+        "caller": "channel_new_Point",
+        "callsite_op": 133,
+        "callee_ops": 2,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "sizeof_i32",
+        "score": 45.0,
+        "reason": "callee_ops=2 sites=1 pure=True",
+        "caller": "channel_new_i32",
+        "callsite_op": 276,
+        "callee_ops": 2,
+        "call_sites": 1
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_try_send",
+        "score": 44.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 34,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_try_recv",
+        "score": 42.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 32,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_try_recv",
+        "score": 42.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 32,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "once_call_begin",
+        "score": 33.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 23,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "mutex_trylock",
+        "score": 32.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 22,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_select2_try",
+        "score": 29.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 19,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_select2_try",
+        "score": 29.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 19,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "waitgroup_done",
+        "score": 29.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 19,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "semaphore_wait",
+        "score": 28.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 18,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "spinlock_lock",
+        "score": 27.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 17,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_bind",
+        "score": 25.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 15,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_new",
+        "score": 25.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 15,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_bind",
+        "score": 25.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 15,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_new",
+        "score": 25.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 15,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "mutex_lock",
+        "score": 24.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 14,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "thread_spawn",
+        "score": 24.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 14,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "waitgroup_wait",
+        "score": 24.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 14,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_close",
+        "score": 23.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 13,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_destroy",
+        "score": 23.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 13,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_close",
+        "score": 23.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 13,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_destroy",
+        "score": 23.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 13,
+        "call_sites": null
+      }
+    ]
+  }
+}

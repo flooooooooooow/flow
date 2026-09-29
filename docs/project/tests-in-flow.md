@@ -181,10 +181,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_evolves_syntax.py | a | AST and validation of evolves; reference-Euler run blocked on flow blocks in Stage-A (#681) |
 | test_export_abi.py | b | --export ABI shape in generated C |
 | test_field_dsl.py | c | field DSL through the flowc expander; parity lives in `compiler/scripts/parity_field_dsl.sh` |
-| test_fir_analysis.py | c | FIR analysis internals |
-| test_fir_g.py | c | FIR-G internals |
-| test_fir_mlx_oracle.py | c | FIR-G MLX oracle internals |
-| test_fir_route_opts.py | c | FIR-G routing internals |
 | test_flow_dimensioned_state.py | a | parse and validation; one integration run blocked on flow blocks in Stage-A (#681) |
 | test_flow_run.py | c | `flow run` CLI runner |
 | test_frontend_cache.py | c | frontend cache internals |

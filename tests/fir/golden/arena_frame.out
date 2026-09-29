@@ -1,0 +1,105 @@
+FIR-G: funcs=49 blocks=70 ops=511 values=388 operands=280 types=12
+call ops: 44
+reachable: align_up, arena_alloc, arena_alloc_i32, arena_create, arena_destroy, arena_remaining, arena_reset, arena_used, fill_temps, free, is_power_of_two, main, malloc, sizeof_i32
+dead: calloc, realloc, sizeof_i8, sizeof_i64, sizeof_f32, sizeof_f64, sizeof_ptr, alignof_i32, alignof_i64, alignof_f32, alignof_f64, align_down, alloc_bytes, alloc_zeroed, alloc_i32, alloc_f32, alloc_f64, memory_zero_i32, memory_copy_i32, grow_uninit, grow_zeroed, alloc_uninit, arena_alloc_f32, frame_arena_create, frame_arena_destroy, frame_begin, frame_alloc, frame_alloc_i32, frame_alloc_f32, frame_alloc_f64, frame_end, frame_used, frame_remaining, frame_high_water, frame_count
+call graph:
+  align_up -> is_power_of_two  (op 1)
+  align_down -> is_power_of_two  (op 1)
+  alloc_bytes -> malloc  (op 1)
+  alloc_zeroed -> calloc  (op 1)
+  alloc_i32 -> sizeof_i32  (op 1)
+  alloc_i32 -> calloc  (op 1)
+  alloc_f32 -> sizeof_f32  (op 1)
+  alloc_f32 -> calloc  (op 1)
+  alloc_f64 -> sizeof_f64  (op 1)
+  alloc_f64 -> calloc  (op 1)
+  grow_uninit -> realloc  (op 1)
+  grow_zeroed -> realloc  (op 1)
+  alloc_uninit -> malloc  (op 1)
+  arena_create -> malloc  (op 1)
+  arena_alloc -> align_up  (op 1)
+  arena_alloc_i32 -> sizeof_i32  (op 1)
+  arena_alloc_i32 -> arena_alloc  (op 1)
+  arena_alloc_f32 -> sizeof_f32  (op 1)
+  arena_alloc_f32 -> arena_alloc  (op 1)
+  arena_destroy -> free  (op 1)
+  frame_arena_create -> arena_create  (op 1)
+  frame_arena_destroy -> free  (op 1)
+  frame_alloc -> align_up  (op 1)
+  frame_alloc_i32 -> sizeof_i32  (op 1)
+  frame_alloc_i32 -> frame_alloc  (op 1)
+  frame_alloc_f32 -> sizeof_f32  (op 1)
+  frame_alloc_f32 -> frame_alloc  (op 1)
+  frame_alloc_f64 -> sizeof_f64  (op 1)
+  frame_alloc_f64 -> frame_alloc  (op 1)
+  fill_temps -> arena_alloc_i32  (op 1)
+  main -> arena_create  (op 1)
+  main -> fill_temps  (op 1)
+  main -> arena_destroy  (op 2)
+  main -> arena_used  (op 2)
+  main -> arena_remaining  (op 1)
+  main -> arena_reset  (op 1)
+effects / pure:
+  malloc: effects=0x0016 pure=False
+  calloc: effects=0x0016 pure=False
+  realloc: effects=0x0016 pure=False
+  free: effects=0x0016 pure=False
+  sizeof_i8: effects=0x0000 pure=True
+  sizeof_i32: effects=0x0000 pure=True
+  sizeof_i64: effects=0x0000 pure=True
+  sizeof_f32: effects=0x0000 pure=True
+  sizeof_f64: effects=0x0000 pure=True
+  sizeof_ptr: effects=0x0000 pure=True
+  alignof_i32: effects=0x0000 pure=True
+  alignof_i64: effects=0x0000 pure=True
+  alignof_f32: effects=0x0000 pure=True
+  alignof_f64: effects=0x0000 pure=True
+  is_power_of_two: effects=0x0000 pure=True
+  align_up: effects=0x0000 pure=True
+  align_down: effects=0x0000 pure=True
+  alloc_bytes: effects=0x0016 pure=False
+  alloc_zeroed: effects=0x0016 pure=False
+  alloc_i32: effects=0x0016 pure=False
+  alloc_f32: effects=0x0016 pure=False
+  alloc_f64: effects=0x0016 pure=False
+  memory_zero_i32: effects=0x0000 pure=True
+  memory_copy_i32: effects=0x0000 pure=True
+  grow_uninit: effects=0x0016 pure=False
+  grow_zeroed: effects=0x0016 pure=False
+  alloc_uninit: effects=0x0016 pure=False
+  arena_create: effects=0x0016 pure=False
+  arena_alloc: effects=0x0006 pure=False
+  arena_alloc_i32: effects=0x0006 pure=False
+  arena_alloc_f32: effects=0x0006 pure=False
+  arena_reset: effects=0x0000 pure=True
+  arena_destroy: effects=0x0016 pure=False
+  arena_used: effects=0x0000 pure=True
+  arena_remaining: effects=0x0000 pure=True
+  frame_arena_create: effects=0x0016 pure=False
+  frame_arena_destroy: effects=0x0016 pure=False
+  frame_begin: effects=0x0000 pure=True
+  frame_alloc: effects=0x0000 pure=True
+  frame_alloc_i32: effects=0x0000 pure=True
+  frame_alloc_f32: effects=0x0000 pure=True
+  frame_alloc_f64: effects=0x0000 pure=True
+  frame_end: effects=0x0000 pure=True
+  frame_used: effects=0x0000 pure=True
+  frame_remaining: effects=0x0000 pure=True
+  frame_high_water: effects=0x0000 pure=True
+  frame_count: effects=0x0000 pure=True
+  fill_temps: effects=0x0006 pure=False
+  main: effects=0x001e pure=False
+device: requested=cpu chosen=cpu
+opt candidates: total=47 by_kind={'dead_elim': 35, 'inline': 12}
+  [dead_elim] frame_alloc score=51.0 (unreachable from roots)
+  [dead_elim] grow_zeroed score=51.0 (unreachable from roots)
+  [inline] arena_reset score=42.0 (callee_ops=3 sites=1 pure=True) caller=main
+  [inline] arena_remaining score=36.0 (callee_ops=5 sites=1 pure=True) caller=main
+  [dead_elim] frame_arena_destroy score=29.0 (unreachable from roots)
+  [dead_elim] memory_copy_i32 score=26.0 (unreachable from roots)
+  [dead_elim] align_down score=25.0 (unreachable from roots)
+  [dead_elim] memory_zero_i32 score=25.0 (unreachable from roots)
+  [dead_elim] frame_end score=24.0 (unreachable from roots)
+  [dead_elim] arena_alloc_f32 score=18.0 (unreachable from roots)
+  [dead_elim] frame_alloc_f32 score=18.0 (unreachable from roots)
+  [dead_elim] frame_alloc_f64 score=18.0 (unreachable from roots)

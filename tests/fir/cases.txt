@@ -9,6 +9,9 @@ basics_fib_opts	none	examples/basics/fibonacci.flow --json --opts
 hello_opts	none	examples/basics/hello_world.flow --opts
 forms_text	none	tests/fir/programs/forms.flow --opts
 forms_json	none	tests/fir/programs/forms.flow --json --opts
+analysis_text	none	tests/fir/programs/analysis.flow --opts
+analysis_json	none	tests/fir/programs/analysis.flow --json --opts
+nomain	none	tests/fir/programs/nomain.flow --json --opts
 uses_lib	none	tests/fir/programs/uses_lib.flow --json --opts
 generics	none	tests/lang/test_generics.flow --json --opts
 generic_explicit	none	tests/lang/test_generic_explicit_call.flow --opts

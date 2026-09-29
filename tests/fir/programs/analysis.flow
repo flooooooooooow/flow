@@ -1,0 +1,43 @@
+# fir-g parity fixture: the CPU analyses. IO reaches main through a call
+# chain, one function is dead, a callee is called twice from one caller
+# (edge weight 2), and two functions call each other.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function leaf() -> i32 {
+    return printf("x", 1)
+}
+
+function mid() -> i32 {
+    return leaf()
+}
+
+function callee1() -> i32 { return 1 }
+function callee2() -> i32 { return 2 }
+
+function caller() -> i32 {
+    callee1()
+    callee2()
+    return callee1()
+}
+
+function ping(n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    return pong(n - 1)
+}
+
+function pong(n: i32) -> i32 {
+    return ping(n - 1)
+}
+
+function dead() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return mid() + caller() + ping(4)
+}
