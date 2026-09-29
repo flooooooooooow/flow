@@ -1,0 +1,418 @@
+# @module flowc.dynamic_invariants
+# @means  Flow-native dynamic invariant discovery over observed integer values.
+#
+# This module mines candidate invariants from runtime observations. Candidates
+# are evidence, not proof: an optimizer may use them only after static proof or
+# behind a runtime guard. The core is allocation-free and deterministic so it
+# can be embedded in profiling/instrumentation paths.
+#
+# Scalar candidates:
+#   constant, bounded range, nonzero, sign, congruence, power-of-two alignment.
+# Pair candidates:
+#   equality/inequality and strict/non-strict ordering.
+#
+# The API deliberately keeps collection separate from optimisation policy.
+
+export const FLOWC_DYN_USE_NONE: i32 = 0
+export const FLOWC_DYN_USE_GUARDED: i32 = 1
+export const FLOWC_DYN_USE_PROVEN: i32 = 2
+
+export struct FlowcDynScalar {
+    value_id: i32,
+    samples: i32,
+    first: i64,
+    last: i64,
+    min_value: i64,
+    max_value: i64,
+    gcd_from_first: u64,
+    gcd_abs: u64,
+    zero_count: i32,
+    negative_count: i32,
+    positive_count: i32,
+    changes: i32
+}
+
+export struct FlowcDynPair {
+    left_id: i32,
+    right_id: i32,
+    samples: i32,
+    eq_count: i32,
+    ne_count: i32,
+    lt_count: i32,
+    le_count: i32,
+    gt_count: i32,
+    ge_count: i32
+}
+
+export function flowc_dyn_scalar_new(value_id: i32) -> FlowcDynScalar {
+    return FlowcDynScalar {
+        value_id: value_id,
+        samples: 0,
+        first: 0,
+        last: 0,
+        min_value: 0,
+        max_value: 0,
+        gcd_from_first: 0,
+        gcd_abs: 0,
+        zero_count: 0,
+        negative_count: 0,
+        positive_count: 0,
+        changes: 0
+    }
+}
+
+export function flowc_dyn_pair_new(left_id: i32, right_id: i32) -> FlowcDynPair {
+    return FlowcDynPair {
+        left_id: left_id,
+        right_id: right_id,
+        samples: 0,
+        eq_count: 0,
+        ne_count: 0,
+        lt_count: 0,
+        le_count: 0,
+        gt_count: 0,
+        ge_count: 0
+    }
+}
+
+export function flowc_dyn_u64_gcd(a: u64, b: u64) -> u64 {
+    let mut x: u64 = a
+    let mut y: u64 = b
+    while y != 0 {
+        let r: u64 = x % y
+        x = y
+        y = r
+    }
+    return x
+}
+
+# Magnitude without signed overflow, including INT64_MIN.
+export function flowc_dyn_i64_magnitude(value: i64) -> u64 {
+    if value >= 0 {
+        return value as u64
+    }
+    let bits: u64 = value as u64
+    return (0 as u64) - bits
+}
+
+# |a-b| in u64 without overflowing signed i64.
+export function flowc_dyn_i64_distance(a: i64, b: i64) -> u64 {
+    if a >= 0 and b < 0 {
+        return (a as u64) + flowc_dyn_i64_magnitude(b)
+    }
+    if a < 0 and b >= 0 {
+        return flowc_dyn_i64_magnitude(a) + (b as u64)
+    }
+    if a >= b {
+        return (a - b) as u64
+    }
+    return (b - a) as u64
+}
+
+export function flowc_dyn_scalar_observe(state: ptr<FlowcDynScalar>, value: i64) -> void {
+    if state[0].samples == 0 {
+        state[0].samples = 1
+        state[0].first = value
+        state[0].last = value
+        state[0].min_value = value
+        state[0].max_value = value
+        state[0].gcd_from_first = 0
+        state[0].gcd_abs = flowc_dyn_i64_magnitude(value)
+        if value == 0 {
+            state[0].zero_count = 1
+        }
+        if value < 0 {
+            state[0].negative_count = 1
+        }
+        if value > 0 {
+            state[0].positive_count = 1
+        }
+        return
+    }
+
+    if value < state[0].min_value {
+        state[0].min_value = value
+    }
+    if value > state[0].max_value {
+        state[0].max_value = value
+    }
+    if value != state[0].last {
+        state[0].changes = state[0].changes + 1
+    }
+
+    let delta: u64 = flowc_dyn_i64_distance(value, state[0].first)
+    state[0].gcd_from_first = flowc_dyn_u64_gcd(state[0].gcd_from_first, delta)
+    state[0].gcd_abs = flowc_dyn_u64_gcd(
+        state[0].gcd_abs,
+        flowc_dyn_i64_magnitude(value)
+    )
+
+    if value == 0 {
+        state[0].zero_count = state[0].zero_count + 1
+    }
+    if value < 0 {
+        state[0].negative_count = state[0].negative_count + 1
+    }
+    if value > 0 {
+        state[0].positive_count = state[0].positive_count + 1
+    }
+
+    state[0].last = value
+    state[0].samples = state[0].samples + 1
+}
+
+export function flowc_dyn_pair_observe(
+    state: ptr<FlowcDynPair>,
+    left: i64,
+    right: i64
+) -> void {
+    state[0].samples = state[0].samples + 1
+
+    if left == right {
+        state[0].eq_count = state[0].eq_count + 1
+    } else {
+        state[0].ne_count = state[0].ne_count + 1
+    }
+
+    if left < right {
+        state[0].lt_count = state[0].lt_count + 1
+    }
+    if left <= right {
+        state[0].le_count = state[0].le_count + 1
+    }
+    if left > right {
+        state[0].gt_count = state[0].gt_count + 1
+    }
+    if left >= right {
+        state[0].ge_count = state[0].ge_count + 1
+    }
+}
+
+export function flowc_dyn_ready(samples: i32, min_samples: i32) -> i32 {
+    if min_samples <= 0 {
+        return 0
+    }
+    if samples < min_samples {
+        return 0
+    }
+    return 1
+}
+
+export function flowc_dyn_scalar_is_constant(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.min_value == state.max_value {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_scalar_is_nonzero(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.zero_count == 0 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_scalar_is_nonnegative(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.negative_count == 0 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_scalar_is_nonpositive(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.positive_count == 0 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_scalar_is_positive(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.positive_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_scalar_is_negative(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.negative_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+# For non-constant observations, every value seen satisfies:
+#   value == first (mod result)
+# A return of 0 means "no non-trivial congruence candidate".
+export function flowc_dyn_scalar_congruence_mod(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> u64 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.min_value == state.max_value {
+        return 0
+    }
+    if state.gcd_from_first <= 1 {
+        return 0
+    }
+    return state.gcd_from_first
+}
+
+# Greatest observed power-of-two divisor common to every sampled value.
+# 0 means there is no nonzero evidence from which to infer alignment.
+export function flowc_dyn_scalar_alignment(
+    state: FlowcDynScalar,
+    min_samples: i32
+) -> u64 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.gcd_abs == 0 {
+        return 0
+    }
+
+    let mut g: u64 = state.gcd_abs
+    let mut align: u64 = 1
+    while (g & 1) == 0 {
+        align = align << 1
+        g = g >> 1
+    }
+    return align
+}
+
+export function flowc_dyn_pair_is_equal(
+    state: FlowcDynPair,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.eq_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_pair_is_not_equal(
+    state: FlowcDynPair,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.ne_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_pair_is_less(
+    state: FlowcDynPair,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.lt_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_pair_is_less_equal(
+    state: FlowcDynPair,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.le_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_pair_is_greater(
+    state: FlowcDynPair,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.gt_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_dyn_pair_is_greater_equal(
+    state: FlowcDynPair,
+    min_samples: i32
+) -> i32 {
+    if flowc_dyn_ready(state.samples, min_samples) == 0 {
+        return 0
+    }
+    if state.ge_count == state.samples {
+        return 1
+    }
+    return 0
+}
+
+# Central safety policy for consumers of mined candidates.
+# A dynamic observation may become:
+#   PROVEN   only when a static analysis independently proves it;
+#   GUARDED  when code generation can check it before the specialised path;
+#   NONE     otherwise.
+export function flowc_dyn_optimization_mode(
+    candidate_holds: i32,
+    statically_proven: i32,
+    guard_available: i32
+) -> i32 {
+    if candidate_holds == 0 {
+        return FLOWC_DYN_USE_NONE
+    }
+    if statically_proven != 0 {
+        return FLOWC_DYN_USE_PROVEN
+    }
+    if guard_available != 0 {
+        return FLOWC_DYN_USE_GUARDED
+    }
+    return FLOWC_DYN_USE_NONE
+}
