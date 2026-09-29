@@ -66,3 +66,11 @@ tests/simd/test_simple_simd.flow
 compiler/fixtures/choose_uninferrable.flow
 compiler/fixtures/fork_uninferrable.flow
 tests/lang/test_lowered_forms.flow
+compiler/fixtures/units_add_mismatch.flow
+compiler/fixtures/units_annotation.flow
+compiler/fixtures/units_call_arg.flow
+compiler/fixtures/units_cast_cross.flow
+compiler/fixtures/units_compare_scalar.flow
+compiler/fixtures/units_sin_length.flow
+compiler/fixtures/units_unknown_factor.flow
+tests/lang/test_units_dimensions.flow

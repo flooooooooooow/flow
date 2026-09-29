@@ -1,0 +1,80 @@
+# Flow-native language test: unit arithmetic that checks and runs (#1008).
+#
+# flowc checks dimensions as the Python checker does: * and / compose
+# exponents and name the declared unit with the result's dimension, + - %
+# and comparisons need equal dimensions, a numeric scalar scales freely, a
+# cast gives a literal its unit, and sin() takes a Radian. Every expression
+# here is accepted by both; compiler/fixtures/units_*.flow hold the rejected
+# forms and compiler/parity_lowering pins their messages.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+unit Meter
+unit Second
+unit Kilogram
+unit Radian
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+unit Speed = Meter / Second
+unit Hertz = 1 / Second
+unit Joule = Kilogram * Meter^2 / Second^2
+type Angle = Radian
+
+struct Body {
+    pos: Meter,
+    vel: Velocity
+}
+
+function travel(v: Velocity, t: Second) -> Meter {
+    return v * t
+}
+
+function main() -> i32 {
+    let d: Meter = 100.0 as Meter
+    let t: Second = 8.0 as Second
+    let v: Velocity = d / t
+    if v != 12.5 as Velocity {
+        return 1
+    }
+    let s: Speed = v
+    let back: Meter = s * t
+    if back < d or back > d {
+        return 2
+    }
+    let g: Accel = 9.81 as Accel
+    let dv: Velocity = g * t
+    let a: Accel = d / t / t
+    let a2: Accel = d / (t * t)
+    if a != a2 {
+        return 3
+    }
+    let m: Kilogram = 2.0 as Kilogram
+    let e: Joule = m * v * v
+    if (e as f64) < 312.0 or (e as f64) > 313.0 {
+        return 4
+    }
+    let f: Hertz = 1.0 / t
+    let ratio: f64 = back / d
+    if ratio < 0.99 or ratio > 1.01 {
+        return 5
+    }
+    let scaled: Meter = d * 3.0
+    let half: Meter = 0.5 * d
+    let twice: Meter = d * 2
+    let rev: Velocity = -v
+    if scaled + half + twice != 550.0 as Meter or rev > 0.0 as Velocity {
+        return 6
+    }
+    let mut pos: Meter = 0.0 as Meter
+    pos = pos + v * t
+    pos += 1.0 as Meter
+    let b: Body = Body { pos: pos, vel: dv }
+    if b.pos != 101.0 as Meter or travel(b.vel, t) < 0.0 as Meter {
+        return 7
+    }
+    let angle: Angle = 0.0 as Angle
+    let sine: f64 = sin(angle)
+    if sine != 0.0 or (f as f64) != 0.125 {
+        return 8
+    }
+    return 0
+}
