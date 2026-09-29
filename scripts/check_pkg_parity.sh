@@ -78,6 +78,8 @@ snapshot() {
                 elif [ -d "$p" ]; then
                     echo "D $p"
                 else
+                    # One regular file: ls -l is portable across GNU and BSD stat.
+                    # shellcheck disable=SC2012
                     mode="$(ls -l "$p" | cut -c1-10)"
                     sum="$(cksum < "$p")"
                     echo "F $p $mode $sum"
