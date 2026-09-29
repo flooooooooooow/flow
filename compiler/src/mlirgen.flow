@@ -233,7 +233,10 @@ export struct Mlg {
     # method calls already rewritten (call node -> plain call node)
     mc_e: ptr<i32>,
     mc_t: ptr<i32>,
-    nmc: i32
+    nmc: i32,
+    # functions Python leaves out of the CPU module (@gpu, mode guards)
+    dropf: ptr<i32>,
+    ndropf: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -9472,7 +9475,14 @@ function mlg_is_name_char(c: i32) -> i32 {
 
 # The parser drops top-level `@attr` lines. Python acts on some of them, so
 # those are refused; the rest (@inline, @lifetime, ...) do not change MLIR.
-function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) {
+function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) -> i32 {
+    # Returns 1 when the item is a function Python leaves out of the CPU
+    # module: an @gpu kernel (generate_module splits those off), or a
+    # function whose mode guards name no active mode (the MLIR backend runs
+    # with `compile` and `mlir` active, transpiler._function_allowed).
+    let mut gpu: i32 = 0
+    let mut has_guard: i32 = 0
+    let mut active: i32 = 0
     let mut i: i32 = from
     while i < to_pos {
         let c: i32 = m[0].src[i] as i32
@@ -9487,22 +9497,42 @@ function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) {
                 while j < to_pos and mlg_is_name_char(m[0].src[j] as i32) == 1 {
                     j = j + 1
                 }
-                # Python acts on these: @gpu kernels leave the CPU module,
-                # mode guards filter functions, C interop adds declarations.
-                let mut ok: i32 = 1
-                if mlg_span_is(m, ns, j, "gpu") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "only") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "guard") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "hot") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "jit") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "interp") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "c") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "cInclude") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "cImport") == 1 { ok = 0 }
-                if mlg_span_is(m, ns, j, "cEmbed") == 1 { ok = 0 }
-                if ok == 0 {
-                    mlg_refuse(m, item, "@gpu, mode-guard or C interop attribute")
-                    return
+                if mlg_span_is(m, ns, j, "cInclude") == 1 or mlg_span_is(m, ns, j, "cImport") == 1 or mlg_span_is(m, ns, j, "cEmbed") == 1 {
+                    # Python rejects CIncludeDecl and CEmbedDecl; @cImport
+                    # reads C headers.
+                    mlg_refuse(m, item, "C interop attribute")
+                    return 0
+                }
+                if mlg_span_is(m, ns, j, "gpu") == 1 {
+                    gpu = 1
+                }
+                if mlg_span_is(m, ns, j, "hot") == 1 or mlg_span_is(m, ns, j, "jit") == 1 or mlg_span_is(m, ns, j, "interp") == 1 or mlg_span_is(m, ns, j, "c") == 1 {
+                    has_guard = 1
+                }
+                if mlg_span_is(m, ns, j, "compile") == 1 or mlg_span_is(m, ns, j, "mlir") == 1 {
+                    has_guard = 1
+                    active = 1
+                }
+                if mlg_span_is(m, ns, j, "only") == 1 or mlg_span_is(m, ns, j, "guard") == 1 {
+                    has_guard = 1
+                    # @only(mode, ...): the modes it names.
+                    let mut q: i32 = j
+                    if q < to_pos and m[0].src[q] == 40 {
+                        while q < to_pos and m[0].src[q] != 41 {
+                            if mlg_is_name_char(m[0].src[q] as i32) == 1 {
+                                let ws: i32 = q
+                                while q < to_pos and mlg_is_name_char(m[0].src[q] as i32) == 1 {
+                                    q = q + 1
+                                }
+                                if mlg_span_is(m, ws, q, "compile") == 1 or mlg_span_is(m, ws, q, "mlir") == 1 {
+                                    active = 1
+                                }
+                            } else {
+                                q = q + 1
+                            }
+                        }
+                        j = q
+                    }
                 }
                 i = j
             } else {
@@ -9510,6 +9540,14 @@ function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) {
             }
         }
     }
+    let d: i32 = mlg_unwrap(m, item)
+    if mlg_kind(m, d) != AST_FN {
+        return 0
+    }
+    if gpu == 1 or (has_guard == 1 and active == 0) {
+        return 1
+    }
+    return 0
 }
 
 # Module consts with a literal value (Python generate_const's literal cases).
@@ -10825,12 +10863,20 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
     let mut item: i32 = m[0].arena.nodes[root].a
     let mut prev_end: i32 = 0
     while item != AST_NONE {
-        mlg_check_attrs(m, prev_end, m[0].arena.nodes[item].start, item)
+        let off_cpu: i32 = mlg_check_attrs(m, prev_end, m[0].arena.nodes[item].start, item)
         if m[0].err != 0 {
             return
         }
         if m[0].arena.nodes[item].end > prev_end {
             prev_end = m[0].arena.nodes[item].end
+        }
+        if off_cpu == 1 {
+            if m[0].ndropf < MLG_MAX_FNS {
+                m[0].dropf[m[0].ndropf] = item
+                m[0].ndropf = m[0].ndropf + 1
+            }
+            item = m[0].arena.nodes[item].next
+            continue
         }
         if mlg_item_dropped(m, item) == 1 {
             item = m[0].arena.nodes[item].next
@@ -10912,6 +10958,17 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
     }
 }
 
+function mlg_off_cpu(m: ptr<Mlg>, item: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < m[0].ndropf {
+        if m[0].dropf[i] == item {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 function mlg_emit_decls(m: ptr<Mlg>, root: i32) {
     # Enum variant tag globals lead the declarations (Python
     # _emit_enum_tag_globals).
@@ -10944,7 +11001,7 @@ function mlg_emit_decls(m: ptr<Mlg>, root: i32) {
         }
         if k == AST_FN {
             let fk: i32 = mlg_find_fn(m, mlg_ns(m, d), mlg_ne(m, d))
-            if fk >= 0 and mlg_item_dropped(m, item) == 0 {
+            if fk >= 0 and mlg_item_dropped(m, item) == 0 and mlg_off_cpu(m, item) == 0 {
                 mlg_emit_function(m, d)
             }
         }
@@ -11123,7 +11180,8 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         ef_node: mlg_alloc_i32(MLG_MAX_ENUMS), nef: 0,
         cap_node: mlg_alloc_i32(MLG_MAX_ENUMS), ncap: 0,
         hs_ef: mlg_alloc_i32(MLG_MAX_DEFERS), hs_cap: mlg_alloc_i32(MLG_MAX_DEFERS), nhs: 0,
-        mc_e: mlg_alloc_i32(MLG_MAX_LOCALS), mc_t: mlg_alloc_i32(MLG_MAX_LOCALS), nmc: 0
+        mc_e: mlg_alloc_i32(MLG_MAX_LOCALS), mc_t: mlg_alloc_i32(MLG_MAX_LOCALS), nmc: 0,
+        dropf: mlg_alloc_i32(MLG_MAX_FNS), ndropf: 0
     }
     let m: ptr<Mlg> = &mg
     mlg_collect(m, root)
