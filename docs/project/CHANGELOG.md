@@ -12,6 +12,8 @@ All notable changes to FLOW will be documented in this file.
 - `flow explain` is gone with the plan selector. flowc lowers every `|> sort` to a stable insertion sort.
 - The bootstrap C regenerates without Python. `compiler/scripts/bootstrap_from_c.sh --regen` self-emits from the previous bootstrap until the C reaches a fixed point, and `compiler/scripts/flowc_host.sh` builds a flowc from the current `compiler/src` for `roundtrip.sh` and `ensure_flowc.sh`.
 - C output goldens live in `tests/cgen` (`tests/cgen/run.sh`). They replace the pytest tests that asserted on the Python backend's C.
+- flowc lowers `@inline`, `@always_inline`, `@noinline` and `@target("...")` to the same C specifiers the Python host emitted, on the prototype and the definition (#1028). The type checker reports an unknown attribute, a malformed `@target` and `@noinline` with `@inline`.
+- flowc applies `@only` / `@guard` build-mode guards: a function whose modes are all off is dropped, so two definitions under different guards compile to one (#1029). `FLOWC_MODE` replaces `--mode`.
 
 ### Language server
 

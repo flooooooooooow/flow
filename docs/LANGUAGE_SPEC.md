@@ -335,13 +335,17 @@ function shared_path() -> void { ... }
 function release_only() -> void { ... }
 ```
 
-Modes are resolved by the transpiler:
-- `compile` (default)
-- `jit`
-- `hot`
-- `mlir`, `c`
+A guard lists modes. The function is part of the build when at least one of
+them is active, and is dropped before type checking otherwise. A function
+without a guard is always kept. The modes are:
+- `compile` (always active)
+- `c` (active for a C build) or `mlir` (active for an MLIR build)
+- `jit`, `hot`, `interp` (active only when named with `FLOWC_MODE`)
 
-Use `--mode` in the CLI to override mode detection when needed.
+A C build therefore keeps `@only(compile)`, `@only(c)` and `@guard(jit, c)`
+and drops `@only(jit)` and `@hot`. Two definitions of one function under
+different guards compile to a single function. Set `FLOWC_MODE=hot` (the
+old `--mode hot`) to add one more mode.
 
 ### 3.2 Variable Declaration
 
@@ -456,8 +460,9 @@ extern "C" {
 
 An attribute is written `@name` or `@name(arg, …)` immediately before a
 `function` declaration. Several may be stacked. The full vocabulary lives in
-`src/flow/attributes.py`. A name outside it is a type error, so a misspelled
-attribute gets reported.
+`compiler/src/attributes.flow`. A name outside it is a type error, so a
+misspelled attribute gets reported. Under `--lenient` it is a warning and
+the attribute is ignored; it never reaches the C.
 
 ```flow-pseudocode
 @always_inline
@@ -483,10 +488,10 @@ forward declaration and the definition, so the two always agree.
 
 | Flow | Emitted C |
 |------|-----------|
-| `@inline` | `static inline int32_t add_i32_i32(int32_t a, int32_t b)` |
-| `@noinline` | `__attribute__((noinline)) int32_t sub_i32_i32(int32_t a, int32_t b)` |
-| `@always_inline` | `__attribute__((always_inline)) static inline int32_t mul_i32_i32(int32_t a, int32_t b)` |
-| `@target("crypto")` | `__attribute__((target("crypto"))) int32_t bump_i32(int32_t a)` |
+| `@inline` | `static inline int32_t add(int32_t a, int32_t b)` |
+| `@noinline` | `__attribute__((noinline)) int32_t sub(int32_t a, int32_t b)` |
+| `@always_inline` | `__attribute__((always_inline)) static inline int32_t mul(int32_t a, int32_t b)` |
+| `@target("crypto")` | `__attribute__((target("crypto"))) int32_t bump(int32_t a)` |
 
 Caveats worth knowing before you reach for them:
 
@@ -494,9 +499,9 @@ Caveats worth knowing before you reach for them:
   at `-O2` a small function is usually inlined with or without the attribute.
 - **`@inline` and `@always_inline` add `static`.** That is what makes the
   inline definition self-contained. Some symbols have to stay visible to
-  another object file: `main`, an `export function`, a `@flow_api` function,
-  and anything in a `--library` build. For those the backend emits C99
-  `extern inline`, which keeps the external definition and the hint.
+  another object file: `main`, an `export function` and a `@flow_api`
+  function. For those the backend emits C99 `extern inline`, which keeps the
+  external definition and the hint.
 - **`@always_inline` is honored at every optimization level,** including
   `-O0`. If the compiler cannot inline the call, it reports an error.
 - **`@always_inline` combined with `@target(…)` usually fails to build.** A
@@ -504,7 +509,8 @@ Caveats worth knowing before you reach for them:
   and clang says so. Flow emits both attributes as written and lets the C
   compiler make the call.
 - **`@noinline` cannot be combined with `@inline` or `@always_inline`;** the
-  type checker rejects the pair.
+  type checker rejects the pair. Under `--lenient` it warns and `@noinline`
+  wins.
 - **`@target` is platform-specific and unverified at compile time.** Flow
   checks only the string's shape: comma-separated items, each a bare feature
   (`avx2`, `crypto`), a signed feature (`+avx2`, `-sse`, `no-sse`) or a
@@ -512,7 +518,8 @@ Caveats worth knowing before you reach for them:
   `branch-protection=standard`). Whether those features exist is decided by the
   host C compiler for the machine it is targeting. Clang warns on an
   unrecognized feature and ignores it, so an x86 target string still compiles
-  on arm64 and does nothing there.
+  on arm64 and does nothing there. A string of any other shape is a type
+  error, and it never reaches the C, even under `--lenient`.
 - **Attributes on `extern` and forward declarations are dropped.** There is no
   body in that translation unit, so an inline specifier would promise a
   definition the backend never emits.

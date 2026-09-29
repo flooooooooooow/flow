@@ -18,8 +18,10 @@ import .ast {
     AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
     AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TYPE_FIXED_ARRAY, AST_TRY, AST_VECTOR_LIT, flowc_ast_chain_len,
     flowc_ast_enum_of_const,
-    AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_TYPE_CAPABILITY
+    AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_TYPE_CAPABILITY,
+    AST_ATTR, AST_ATTR_EXPORTED, AST_ATTR_HAS_ARGS
 }
+import .attributes { flowc_attr_args_from_span, flowc_validate_target_spec, flowc_normalize_target_spec }
 import .effects {
     FLOWC_EFF_EFFECT, flowc_eff_collect, flowc_eff_has_fiber_cap, flowc_eff_copy_entries, flowc_eff_find,
     flowc_eff_is_effect, flowc_eff_is_cap
@@ -6744,6 +6746,84 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     return 0
 }
 
+# Lower function attributes to C declaration specifiers (#1028). Port of
+# `_c_attribute_prefix` in the Python C generator:
+#   @inline         static inline (extern inline when the symbol keeps
+#                   external linkage: main, exported or @flow_api)
+#   @always_inline  __attribute__((always_inline)) plus that inline specifier
+#   @noinline       __attribute__((noinline))
+#   @target("...")  __attribute__((target("..."))), only when the spec
+#                   passes flowc_validate_target_spec
+# A function without a body gets nothing: an inline specifier there would
+# promise a definition this file never emits. An invalid @target is left
+# out of the C; the typecheck reports it.
+function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if arena.nodes[id].c == AST_NONE {
+        return
+    }
+    let mut any: i32 = 0
+    let mut want_inline: i32 = 0
+    let mut want_always: i32 = 0
+    let mut want_noinline: i32 = 0
+    let mut external: i32 = 0
+    let mut target: string = ""
+    let mut i: i32 = 0
+    while i < id {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == id {
+            any = 1
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            if (arena.nodes[i].ival & AST_ATTR_EXPORTED) != 0 {
+                external = 1
+            }
+            if flowc_cgen_span_is(src, ns, ne, "inline") == 1 {
+                want_inline = 1
+            } elif flowc_cgen_span_is(src, ns, ne, "always_inline") == 1 {
+                want_always = 1
+            } elif flowc_cgen_span_is(src, ns, ne, "noinline") == 1 {
+                want_noinline = 1
+            } elif flowc_cgen_span_is(src, ns, ne, "flow_api") == 1 {
+                external = 1
+            } elif flowc_cgen_span_is(src, ns, ne, "target") == 1 {
+                if (arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
+                    let args: string = flowc_attr_args_from_span(src, arena.nodes[i].start, arena.nodes[i].end)
+                    if strlen(args) > 0 {
+                        target = flowc_normalize_target_spec(args)
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if any == 0 {
+        return
+    }
+    if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "main") == 1 {
+        external = 1
+    }
+    if want_noinline == 1 {
+        flowc_cgen_puts(w, "__attribute__((noinline)) ")
+    } elif want_always == 1 {
+        flowc_cgen_puts(w, "__attribute__((always_inline)) ")
+    }
+    if strlen(target) > 0 and flowc_validate_target_spec(target) == 1 {
+        flowc_cgen_puts(w, "__attribute__((target(\"")
+        flowc_cgen_puts(w, target)
+        flowc_cgen_puts(w, "\"))) ")
+    }
+    # `inline` is only a hint, so @noinline wins; the typecheck reports
+    # the combination.
+    if (want_inline == 1 or want_always == 1) and want_noinline == 0 {
+        if external == 1 {
+            # C99 `extern inline`: an inline hint and an external
+            # definition, so other objects still link to the symbol.
+            flowc_cgen_puts(w, "extern inline ")
+        } else {
+            flowc_cgen_puts(w, "static inline ")
+        }
+    }
+}
+
 function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     # Stage-A CLI: main(argc, argv) → int main(int …, char **…) regardless of Flow types.
     let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
@@ -6785,6 +6865,7 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
         flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
+    flowc_cgen_emit_attr_prefix(w, arena, src, id)
     flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
     # Monomorphization: emit mangled name when mono context is active.
@@ -6901,6 +6982,7 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
         flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
+    flowc_cgen_emit_attr_prefix(w, arena, src, id)
     flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
     # Monomorphization: emit mangled name when mono context is active.
