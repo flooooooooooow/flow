@@ -5659,6 +5659,25 @@ function flowc_cgen_emit_parallel_for(w: ptr<CgenBuf>, arena: AstArena, src: ptr
     flowc_cgen_puts(w, "  }\n  }\n")
 }
 
+# 1 when a for step is an integer literal, `N` or `-N`, so its sign is known
+# when the C is emitted (#1053).
+function flowc_cgen_step_is_literal(arena: AstArena, step: i32) -> i32 {
+    if step == AST_NONE or step == 0 {
+        return 1
+    }
+    let k: i32 = arena.nodes[step].kind
+    if k == AST_INT {
+        return 1
+    }
+    if k == AST_UNARY and arena.nodes[step].ival == TOK_MINUS {
+        let op: i32 = arena.nodes[step].a
+        if op != AST_NONE and arena.nodes[op].kind == AST_INT {
+            return 1
+        }
+    }
+    return 0
+}
+
 # 1 for a call the vectorize check allows: the Python host's math set.
 function flowc_cgen_is_vec_math_call(src: ptr<u8>, ns: i32, ne: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "sin") == 1 { return 1 }
@@ -6430,6 +6449,39 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
             flowc_cgen_puts(w, "  #pragma clang loop vectorize(enable) interleave(enable)\n")
             flowc_cgen_puts(w, "  #pragma GCC ivdep\n")
+        }
+        # A step that is not a literal takes its direction from its sign at
+        # run time, as on the Python host (#1053). Literal steps keep the
+        # plain `<` / `>` test so the loop stays vectorizable (#1004).
+        if flowc_cgen_step_is_literal(arena, arena.nodes[id].ival) == 0 {
+            flowc_cgen_puts(w, "  for (int32_t __flowc_step_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " = (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].ival)
+            flowc_cgen_puts(w, "), ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, "; (__flowc_step_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " > 0) ? ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " < (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ") : ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " > (")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, "); ")
+            flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            flowc_cgen_puts(w, " += __flowc_step_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, ") ")
+            let saved_vbase: i32 = w[0].loop_defer_base
+            w[0].loop_defer_base = w[0].defer_len
+            flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+            w[0].loop_defer_base = saved_vbase
+            return
         }
         flowc_cgen_puts(w, "  for (int32_t ")
         flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
