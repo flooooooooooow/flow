@@ -33,7 +33,7 @@ import .sort_sites { flowc_sort_sites_hints, flowc_sort_sites_is_site }
 import .attributes { flowc_attr_args_from_span, flowc_validate_target_spec, flowc_normalize_target_spec }
 import .effects {
     FLOWC_EFF_EFFECT, flowc_eff_collect, flowc_eff_has_fiber_cap, flowc_eff_copy_entries, flowc_eff_find,
-    flowc_eff_is_effect, flowc_eff_is_cap
+    flowc_eff_is_effect, flowc_eff_is_cap, flowc_eff_cap_has_method
 }
 import .proof_lower { flowc_proof_erase }
 import .token {
@@ -130,11 +130,16 @@ export struct CgenBuf {
     plan_hi: ptr<i64>,
     plan_seen: ptr<i32>,
     # 1 under FLOWC_EXPLAIN=1: each site's plan record goes to stderr.
-    explain: i32
+    explain: i32,
+    # Enclosing `handle` statement ids, innermost last. Inside them an effect
+    # operation calls the handler's method directly (#1056). handle_len can
+    # pass FLOWC_HANDLE_MAX; deeper blocks then keep the vtable dispatch.
+    handle_ids: ptr<i32>,
+    handle_len: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -3249,6 +3254,11 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
             }
             i = i + 2
         }
+        # An effect or capability name (the receiver of `Log.info(...)`) is
+        # a type, not a value to capture (#1057).
+        if flowc_cgen_is_effect_name(w, src, ns, ne) == 1 {
+            is_param = 1
+        }
         # Skip builtins and function names (they resolve to C functions).
         if is_param == 0 {
             # Check if already in captured list (by text comparison).
@@ -3351,6 +3361,17 @@ function flowc_cgen_scan_lambda_caps(
     count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, count, param_spans, nparams)
     count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, count, param_spans, nparams)
     return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, count, param_spans, nparams)
+}
+
+# 1 if src[ns..ne] names an effect or capability of the effect table.
+function flowc_cgen_is_effect_name(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    if w[0].eff_len <= 0 {
+        return 0
+    }
+    if flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, ns, ne) == 1 or flowc_eff_is_cap(w[0].eff, w[0].eff_len, src, ns, ne) == 1 {
+        return 1
+    }
+    return 0
 }
 
 # Check if a name span matches a captured variable.
@@ -9551,9 +9572,56 @@ function flowc_cgen_eff_call_effect(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     return 0
 }
 
-# E_op(args), without the receiver.
+const FLOWC_HANDLE_MAX: i32 = 256
+
+# Handler named by the innermost enclosing `handle` of effect src[es..ee], as
+# a span in out[0..1]. 0 when no block handles it, when the call sits in a
+# lambda (the closure may run after the block exits), or when the handler has
+# no method `op`: the call then dispatches through the runtime handler.
+function flowc_cgen_static_handler(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, es: i32, ee: i32, os: i32, oe: i32, out: ptr<i32>) -> i32 {
+    if w[0].in_lambda != 0 or w[0].handle_len <= 0 or w[0].handle_len > FLOWC_HANDLE_MAX {
+        return 0
+    }
+    let mut k: i32 = w[0].handle_len - 1
+    while k >= 0 {
+        let hid: i32 = w[0].handle_ids[k]
+        let handlers: i32 = arena.nodes[hid].c
+        let mut single: i32 = 0
+        if flowc_ast_chain_len(arena, handlers) == 1 {
+            single = 1
+        }
+        let mut en: i32 = arena.nodes[hid].b
+        let mut hn: i32 = handlers
+        while en != AST_NONE and hn != AST_NONE {
+            if flowc_cgen_span_eq(src, arena.nodes[en].name_start, arena.nodes[en].name_end, es, ee) == 1 {
+                let hs: i32 = arena.nodes[hn].name_start
+                let he: i32 = arena.nodes[hn].name_end
+                if flowc_eff_cap_has_method(w[0].eff, w[0].eff_len, src, hs, he, os, oe) == 0 {
+                    return 0
+                }
+                out[0] = hs
+                out[1] = he
+                return 1
+            }
+            en = arena.nodes[en].next
+            if single == 0 {
+                hn = arena.nodes[hn].next
+            }
+        }
+        k = k - 1
+    }
+    return 0
+}
+
+# E_op(args), without the receiver, or C_op(args) when a handle block fixes
+# the handler C at compile time (the Python host's zero-cost path, #1056).
 function flowc_cgen_emit_eff_call(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32, es: i32, ee: i32) {
-    flowc_cgen_put_span(w, src, es, ee)
+    let hspan: array<i32, 2> = []
+    if flowc_cgen_static_handler(w, arena, src, es, ee, arena.nodes[call].name_start, arena.nodes[call].name_end, &hspan[0]) == 1 {
+        flowc_cgen_put_span(w, src, hspan[0], hspan[1])
+    } else {
+        flowc_cgen_put_span(w, src, es, ee)
+    }
     flowc_cgen_putc(w, 95)
     flowc_cgen_put_span(w, src, arena.nodes[call].name_start, arena.nodes[call].name_end)
     flowc_cgen_putc(w, 40)
@@ -9606,7 +9674,16 @@ function flowc_cgen_emit_handle(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
             hn = arena.nodes[hn].next
         }
     }
+    if w[0].handle_ids == null {
+        let raw: ptr<u8> = malloc(FLOWC_HANDLE_MAX * 4)
+        w[0].handle_ids = raw
+    }
+    if w[0].handle_len < FLOWC_HANDLE_MAX {
+        w[0].handle_ids[w[0].handle_len] = id
+    }
+    w[0].handle_len = w[0].handle_len + 1
     flowc_cgen_emit_block(w, arena, src, arena.nodes[id].a)
+    w[0].handle_len = w[0].handle_len - 1
     # Restore in reverse order: walk the chain once per slot, last first.
     let n: i32 = flowc_ast_chain_len(arena, effects)
     let mut k: i32 = n - 1
@@ -10266,10 +10343,12 @@ export function flowc_cgen_emit_sigs(
                 let per_lam_count: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[li].c, &per_lam_buf[0], 0, &param_span_buf[0], nparams)
                 let mut pi: i32 = 0
                 while pi < per_lam_count and w.lambda_cap_count < 256 {
-                    w.lambda_cap_lambda[w.lambda_cap_count] = lam_id
-                    w.lambda_cap_start[w.lambda_cap_count] = per_lam_buf[pi * 2]
-                    w.lambda_cap_end[w.lambda_cap_count] = per_lam_buf[pi * 2 + 1]
-                    w.lambda_cap_count = w.lambda_cap_count + 1
+                    if flowc_cgen_is_effect_name(&w, src, per_lam_buf[pi * 2], per_lam_buf[pi * 2 + 1]) == 0 {
+                        w.lambda_cap_lambda[w.lambda_cap_count] = lam_id
+                        w.lambda_cap_start[w.lambda_cap_count] = per_lam_buf[pi * 2]
+                        w.lambda_cap_end[w.lambda_cap_count] = per_lam_buf[pi * 2 + 1]
+                        w.lambda_cap_count = w.lambda_cap_count + 1
+                    }
                     pi = pi + 1
                 }
             }
