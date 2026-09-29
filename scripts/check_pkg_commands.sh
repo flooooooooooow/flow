@@ -117,11 +117,13 @@ normalize() {
 }
 
 # Files a command may have written, relative to the project directory.
+# A debug build on macOS also leaves a .dSYM bundle next to the binary;
+# other hosts have none, so the snapshot leaves them out.
 snapshot() {
     local dir="$1"
     (
         cd "$dir" || exit 1
-        find . -path ./flow_packages -prune -o -print | LC_ALL=C sort | while IFS= read -r p; do
+        find . \( -path ./flow_packages -o -name '*.dSYM' \) -prune -o -print | LC_ALL=C sort | while IFS= read -r p; do
             [[ "$p" == "." ]] && continue
             if [[ -d "$p" ]]; then
                 echo "D $p"

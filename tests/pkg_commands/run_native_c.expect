@@ -11,15 +11,6 @@ sum 5 product 20
 D ./build
 F ./build/runc
 F ./build/runc.c
-D ./build/runc.dSYM
-D ./build/runc.dSYM/Contents
-F ./build/runc.dSYM/Contents/Info.plist
-D ./build/runc.dSYM/Contents/Resources
-D ./build/runc.dSYM/Contents/Resources/DWARF
-F ./build/runc.dSYM/Contents/Resources/DWARF/runc
-D ./build/runc.dSYM/Contents/Resources/Relocations
-D ./build/runc.dSYM/Contents/Resources/Relocations/aarch64
-F ./build/runc.dSYM/Contents/Resources/Relocations/aarch64/runc.yml
 F ./flow.toml
   | [package]
   | name = "runc"

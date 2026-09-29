@@ -9,15 +9,6 @@ $ flow build-native
 D ./build
 F ./build/nativec
 F ./build/nativec.c
-D ./build/nativec.dSYM
-D ./build/nativec.dSYM/Contents
-F ./build/nativec.dSYM/Contents/Info.plist
-D ./build/nativec.dSYM/Contents/Resources
-D ./build/nativec.dSYM/Contents/Resources/DWARF
-F ./build/nativec.dSYM/Contents/Resources/DWARF/nativec
-D ./build/nativec.dSYM/Contents/Resources/Relocations
-D ./build/nativec.dSYM/Contents/Resources/Relocations/aarch64
-F ./build/nativec.dSYM/Contents/Resources/Relocations/aarch64/nativec.yml
 F ./flow.toml
   | [package]
   | name = "nativec"

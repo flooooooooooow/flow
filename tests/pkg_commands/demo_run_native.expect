@@ -11,15 +11,6 @@ sum 5 product 20
 D ./build
 F ./build/demo
 F ./build/demo.c
-D ./build/demo.dSYM
-D ./build/demo.dSYM/Contents
-F ./build/demo.dSYM/Contents/Info.plist
-D ./build/demo.dSYM/Contents/Resources
-D ./build/demo.dSYM/Contents/Resources/DWARF
-F ./build/demo.dSYM/Contents/Resources/DWARF/demo
-D ./build/demo.dSYM/Contents/Resources/Relocations
-D ./build/demo.dSYM/Contents/Resources/Relocations/aarch64
-F ./build/demo.dSYM/Contents/Resources/Relocations/aarch64/demo.yml
 F ./flow.toml
   | [package]
   | name = "demo"

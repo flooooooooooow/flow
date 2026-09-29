@@ -9,15 +9,6 @@ $ flow build-native other.flow
 D ./build
 F ./build/entryarg
 F ./build/entryarg.c
-D ./build/entryarg.dSYM
-D ./build/entryarg.dSYM/Contents
-F ./build/entryarg.dSYM/Contents/Info.plist
-D ./build/entryarg.dSYM/Contents/Resources
-D ./build/entryarg.dSYM/Contents/Resources/DWARF
-F ./build/entryarg.dSYM/Contents/Resources/DWARF/entryarg
-D ./build/entryarg.dSYM/Contents/Resources/Relocations
-D ./build/entryarg.dSYM/Contents/Resources/Relocations/aarch64
-F ./build/entryarg.dSYM/Contents/Resources/Relocations/aarch64/entryarg.yml
 F ./flow.toml
   | [package]
   | name = "entryarg"
