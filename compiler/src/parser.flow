@@ -853,6 +853,9 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
                 }
                 p[0].arena.nodes[param].name_start = pname_s
                 p[0].arena.nodes[param].name_end = pname_e
+                # The type sits in `a`, as on a function's parameters (the
+                # C prototype reads it there), and in `b` for older readers.
+                p[0].arena.nodes[param].a = pty
                 p[0].arena.nodes[param].b = pty
                 params = flowc_ast_chain_push(&p[0].arena, params, param)
                 if flowc_parser_check(p[0], TOK_COMMA) == 1 {

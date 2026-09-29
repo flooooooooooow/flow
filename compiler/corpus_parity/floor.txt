@@ -1,4 +1,4 @@
 # Files at parity (or flowc better) per OS (uname -s). corpus_parity.sh
 # --check fails below it. --update sets it FLOOR_MARGIN (default 10) under
 # the run, because a few HTTP and timing programs are flaky in parallel.
-Darwin 955
+Darwin 959
