@@ -386,6 +386,15 @@ jobs:
           chmod +x ./flow-driver tests/check/run.sh
           ./tests/check/run.sh
 
+      - name: flow python generator goldens (tests/pywheel)
+        run: ./tests/pywheel/run.sh
+
+      - name: Project test runner parity (flow test)
+        run: ./compiler/scripts/parity_project_test.sh
+
+      - name: Debug adapter parity (flow dap)
+        run: ./compiler/scripts/parity_dap.sh
+
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
