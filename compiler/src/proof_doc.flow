@@ -93,7 +93,7 @@ export struct PdgThm {
 }
 
 export struct PdgDoc {
-    module: string,
+    modname: string,
     means: string,
     from_source: string,
     tier: string,
@@ -816,7 +816,7 @@ function pdg_push_thm(d: ptr<PdgDoc>) -> i32 {
 # parse_proof_file over the file text.
 export function flowc_proof_parse_text(text: string) -> PdgDoc {
     let mut d: PdgDoc = PdgDoc {
-        module: "",
+        modname: "",
         means: "",
         from_source: "",
         tier: "",
@@ -838,7 +838,7 @@ export function flowc_proof_parse_text(text: string) -> PdgDoc {
     let mut more: i32 = 1
     while li < nl and more == 1 {
         if pdg_meta_line(pdg_sub(text, starts[li], ends[li]), key, val) == 1 {
-            if pdg_eq(key[0], "module") == 1 { d.module = val[0] }
+            if pdg_eq(key[0], "module") == 1 { d.modname = val[0] }
             if pdg_eq(key[0], "means") == 1 { d.means = val[0] }
             if pdg_eq(key[0], "from_source") == 1 { d.from_source = val[0] }
             if pdg_eq(key[0], "tier") == 1 { d.tier = val[0] }
@@ -980,19 +980,19 @@ function pdg_map_get(m: ptr<PdgMap>, key: string, dflt: string) -> string {
 }
 
 # know._package_prefix
-function pdg_package_prefix(module: string) -> string {
-    if pdg_len(module) == 0 or pdg_find_char(module, 47, 0) < 0 {
-        return module
+function pdg_package_prefix(modname: string) -> string {
+    if pdg_len(modname) == 0 or pdg_find_char(modname, 47, 0) < 0 {
+        return modname
     }
     let mut out: string = ""
     let mut first: i32 = 1
     let mut s: i32 = 0
-    let n: i32 = pdg_len(module)
+    let n: i32 = pdg_len(modname)
     let mut i: i32 = 0
     while i <= n {
-        let p: ptr<u8> = module
+        let p: ptr<u8> = modname
         if i == n or p[i] == 46 {
-            let seg: string = pdg_sub(module, s, i)
+            let seg: string = pdg_sub(modname, s, i)
             if pdg_find_char(seg, 47, 0) < 0 {
                 if first == 0 { out = out + "." }
                 out = out + seg
@@ -1006,8 +1006,8 @@ function pdg_package_prefix(module: string) -> string {
 }
 
 # know._qualify
-function pdg_qualify(module: string, claim_path: string) -> string {
-    let prefix: string = pdg_package_prefix(module)
+function pdg_qualify(modname: string, claim_path: string) -> string {
+    let prefix: string = pdg_package_prefix(modname)
     if pdg_len(prefix) > 0 {
         return prefix + "." + claim_path
     }
@@ -1094,7 +1094,7 @@ export function flowc_proof_global_tiers(root: string) -> PdgMap {
                 let entry: string = cp + "\n" + d.thms[k].tier
                 let mut seen: PdgMap = flowc_pdg_map_new(16)
                 pdg_index_add(&idx, cp, entry, &seen)
-                pdg_index_add(&idx, pdg_qualify(d.module, cp), entry, &seen)
+                pdg_index_add(&idx, pdg_qualify(d.modname, cp), entry, &seen)
                 let addr: FlowcClaimAddress = flowc_claim_try_parse(cp)
                 if addr.ok == 1 {
                     let g: string = flowc_claim_guillemets(addr)
@@ -1103,8 +1103,8 @@ export function flowc_proof_global_tiers(root: string) -> PdgMap {
                     pdg_index_add(&idx, flowc_claim_slug(addr), entry, &seen)
                     pdg_index_add(&idx, flowc_claim_display(addr), entry, &seen)
                     pdg_index_add(&idx, leg, entry, &seen)
-                    pdg_index_add(&idx, pdg_qualify(d.module, g), entry, &seen)
-                    pdg_index_add(&idx, pdg_qualify(d.module, leg), entry, &seen)
+                    pdg_index_add(&idx, pdg_qualify(d.modname, g), entry, &seen)
+                    pdg_index_add(&idx, pdg_qualify(d.modname, leg), entry, &seen)
                 }
                 k = k + 1
             }
@@ -2132,7 +2132,7 @@ function pdg_rstrip(s: string) -> string {
 
 # render_english
 export function flowc_proof_render_md(d: ptr<PdgDoc>, stem: string, tiers: ptr<PdgMap>) -> string {
-    let mut title: string = d[0].module
+    let mut title: string = d[0].modname
     if pdg_len(title) == 0 { title = stem }
     let mut out: string = "# " + title + "\n\n"
     if pdg_len(d[0].means) > 0 {
@@ -3138,7 +3138,7 @@ function pdg_scan_index(root: string, docs: ptr<PdgDoc>, paths: ptr<string>, ndo
                 let cp: string = d.thms[k].claim_path
                 let entry: string = pdg_itoa(nd) + "\n" + pdg_itoa(k)
                 pdg_map_set(&idx, cp, entry)
-                pdg_map_set(&idx, pdg_qualify(d.module, cp), entry)
+                pdg_map_set(&idx, pdg_qualify(d.modname, cp), entry)
                 let addr: FlowcClaimAddress = flowc_claim_try_parse(cp)
                 if addr.ok == 1 {
                     let g: string = flowc_claim_guillemets(addr)
@@ -3147,8 +3147,8 @@ function pdg_scan_index(root: string, docs: ptr<PdgDoc>, paths: ptr<string>, ndo
                     pdg_map_set(&idx, flowc_claim_slug(addr), entry)
                     pdg_map_set(&idx, flowc_claim_display(addr), entry)
                     pdg_map_set(&idx, leg, entry)
-                    pdg_map_set(&idx, pdg_qualify(d.module, g), entry)
-                    pdg_map_set(&idx, pdg_qualify(d.module, leg), entry)
+                    pdg_map_set(&idx, pdg_qualify(d.modname, g), entry)
+                    pdg_map_set(&idx, pdg_qualify(d.modname, leg), entry)
                 }
                 k = k + 1
             }
@@ -3197,7 +3197,7 @@ function pdg_abspath(path: string) -> string {
 
 # format_know
 function pdg_format_know(d: ptr<PdgDoc>, t: ptr<PdgThm>, file_path: string) -> string {
-    let mut out: string = pdg_qualify(d[0].module, t[0].claim_path) + "\n"
+    let mut out: string = pdg_qualify(d[0].modname, t[0].claim_path) + "\n"
     let addr: FlowcClaimAddress = flowc_claim_try_parse(t[0].claim_path)
     if addr.ok == 1 {
         out = out + "\n  coordinate: " + flowc_claim_display(addr)
