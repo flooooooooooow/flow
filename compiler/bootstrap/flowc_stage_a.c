@@ -11419,6 +11419,2538 @@ int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t*
 }
 
 
+typedef struct ShBuf {
+  uint8_t* buf;
+  int32_t cap;
+  int32_t len;
+} ShBuf;
+
+typedef struct ShCtx {
+  uint8_t* p;
+  int32_t n;
+  int32_t pn;
+  int32_t target;
+  int32_t err;
+  ShBuf* msg;
+  int32_t* tk;
+  int32_t* ts;
+  int32_t* te;
+  int32_t ntok;
+  int32_t ti;
+  int32_t* nk;
+  int32_t* na;
+  int32_t* nb;
+  int32_t* nc;
+  int32_t* nx;
+  int32_t* s1;
+  int32_t* e1;
+  int32_t* nf;
+  int32_t nn;
+  int32_t* ys;
+  int32_t* ye;
+  int32_t ny;
+  int32_t ybase;
+  int32_t* vs;
+  int32_t* ve;
+  int32_t* vt;
+  int32_t nv;
+  int32_t* fns;
+  int32_t* fne;
+  int32_t* fbs;
+  int32_t* fbe;
+  int32_t* frt;
+  int32_t* fp0;
+  int32_t* fpn;
+  int32_t nfn;
+  int32_t* pas;
+  int32_t* pae;
+  int32_t* pat;
+  int32_t npa;
+  int32_t* fls;
+  int32_t* fle;
+  int32_t* flbs;
+  int32_t* flbe;
+  int32_t nfl;
+} ShCtx;
+
+const int32_t SH_METAL = 0;
+const int32_t SH_WGSL = 1;
+static const int32_t T_NUMBER = 1;
+static const int32_t T_IDENT = 2;
+static const int32_t T_OP = 3;
+static const int32_t T_COMPARE = 4;
+static const int32_t T_AND = 5;
+static const int32_t T_OR = 6;
+static const int32_t T_NOT = 7;
+static const int32_t T_ASSIGN = 8;
+static const int32_t T_LPAREN = 9;
+static const int32_t T_RPAREN = 10;
+static const int32_t T_LBRACE = 11;
+static const int32_t T_RBRACE = 12;
+static const int32_t T_COMMA = 13;
+static const int32_t T_COLON = 14;
+static const int32_t T_DOT = 15;
+static const int32_t T_SEMI = 16;
+static const int32_t T_NEWLINE = 17;
+static const int32_t T_EOF = 18;
+static const int32_t E_NUMBER = 1;
+static const int32_t E_NAME = 2;
+static const int32_t E_UNARY = 3;
+static const int32_t E_BINARY = 4;
+static const int32_t E_CALL = 5;
+static const int32_t E_SWIZZLE = 6;
+static const int32_t E_CAST = 7;
+static const int32_t S_LET = 10;
+static const int32_t S_ASSIGN = 11;
+static const int32_t S_RETURN = 12;
+static const int32_t S_IF = 13;
+static const int32_t S_FOR = 14;
+static const int32_t TY_FSL = 0;
+static const int32_t TY_METAL = 9;
+static const int32_t TY_WGSL = 18;
+static const int32_t TY_CONSTS = 27;
+ShBuf* flowc_shader_buf_new(int32_t cap);
+void flowc_shader_buf_free(ShBuf* w);
+void sh_putc(ShBuf* w, uint8_t c);
+void flowc_shader_putc(ShBuf* w, uint8_t c);
+void sh_puts(ShBuf* w, const char* s);
+void sh_line(ShBuf* w, const char* s);
+void sh_put_span(ShBuf* w, uint8_t* p, int32_t s, int32_t e);
+void sh_rule(ShBuf* w, int32_t n);
+void sh_pad(ShBuf* w, int32_t indent);
+int32_t* sh_ints(int32_t n);
+void sh_pool_add(ShCtx* c, const char* s);
+void sh_pool_add_set(ShCtx* c, const char* a, const char* b, const char* d, const char* e, const char* f, const char* g, const char* h, const char* i, const char* j);
+ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n);
+void flowc_shader_ctx_free(ShCtx* c);
+int32_t flowc_shader_ctx_err(ShCtx* c);
+ShBuf* flowc_shader_ctx_msg(ShCtx* c);
+int32_t flowc_shader_fill_count(ShCtx* c);
+void flowc_shader_put_fill_name(ShCtx* c, ShBuf* w, int32_t k);
+int32_t flowc_shader_fill_named(ShCtx* c, int32_t k, uint8_t* name, int32_t nlen);
+int32_t sh_err(ShCtx* c);
+void sh_fail(ShCtx* c, const char* m);
+int32_t sh_is_space(uint8_t c);
+int32_t sh_is_word(uint8_t c);
+int32_t sh_is_digit(uint8_t c);
+int32_t sh_is_ident_start(uint8_t c);
+int32_t sh_is_ident(uint8_t c);
+int32_t sh_is_ret_ch(uint8_t c);
+int32_t sh_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit);
+int32_t sh_span_is(uint8_t* p, int32_t s, int32_t e, const char* lit);
+int32_t sh_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
+int32_t sh_skip_ws(uint8_t* p, int32_t i, int32_t e);
+int32_t sh_fill_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* out);
+int32_t sh_fn_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* out);
+void sh_strip(uint8_t* p, int32_t* se);
+int32_t sh_ty_span(ShCtx* c, int32_t s, int32_t e);
+int32_t sh_brace_block(ShCtx* c, int32_t at);
+int32_t sh_parse_params(ShCtx* c, int32_t s, int32_t e);
+int32_t flowc_shader_extract(ShCtx* c);
+int32_t flowc_shader_is_module(uint8_t* p, int32_t n);
+int32_t flowc_shader_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
+void sh_tok(ShCtx* c, int32_t kind, int32_t s, int32_t e);
+void sh_tokenize(ShCtx* c, int32_t s, int32_t e);
+const char* sh_kind_name(int32_t k);
+int32_t sh_cur(ShCtx* c);
+int32_t sh_cur_is(ShCtx* c, int32_t kind, const char* lit);
+int32_t sh_advance(ShCtx* c);
+int32_t sh_match(ShCtx* c, int32_t kind);
+void sh_err_got(ShCtx* c, const char* head);
+int32_t sh_expect(ShCtx* c, int32_t kind, const char* lit);
+void sh_skip_nl(ShCtx* c);
+int32_t sh_node(ShCtx* c, int32_t kind);
+int32_t sh_node_tok(ShCtx* c, int32_t kind, int32_t t);
+int32_t sh_binary(ShCtx* c, int32_t op, int32_t left, int32_t right);
+int32_t sh_parse_stmts(ShCtx* c);
+int32_t sh_parse_block(ShCtx* c);
+int32_t sh_parse_stmt(ShCtx* c);
+int32_t sh_parse_let(ShCtx* c);
+int32_t sh_parse_body(ShCtx* c);
+int32_t sh_parse_if(ShCtx* c);
+int32_t sh_parse_for(ShCtx* c);
+int32_t sh_parse_expr(ShCtx* c);
+int32_t sh_parse_or(ShCtx* c);
+int32_t sh_parse_and(ShCtx* c);
+int32_t sh_parse_compare(ShCtx* c);
+int32_t sh_parse_term(ShCtx* c);
+int32_t sh_parse_factor(ShCtx* c);
+int32_t sh_parse_unary(ShCtx* c);
+int32_t sh_parse_postfix(ShCtx* c);
+int32_t sh_parse_primary(ShCtx* c);
+int32_t sh_parse_body_span(ShCtx* c, int32_t s, int32_t e);
+int32_t sh_ty_is(ShCtx* c, int32_t h, const char* lit);
+int32_t sh_ty_eq(ShCtx* c, int32_t a, int32_t b);
+void sh_put_ty(ShCtx* c, ShBuf* w, int32_t h);
+int32_t sh_ty_known(ShCtx* c, int32_t k);
+int32_t sh_map_type(ShCtx* c, int32_t h);
+int32_t sh_ty_named(ShCtx* c, int32_t s, int32_t e);
+void sh_env_set(ShCtx* c, int32_t s, int32_t e, int32_t ty);
+int32_t sh_env_get(ShCtx* c, int32_t s, int32_t e, int32_t dflt);
+int32_t sh_find_fn(ShCtx* c, int32_t s, int32_t e);
+int32_t sh_node_is(ShCtx* c, int32_t k, const char* lit);
+int32_t sh_rank(ShCtx* c, int32_t h);
+int32_t sh_is_metal_float_fn(ShCtx* c, int32_t k);
+int32_t sh_is_wgsl_float_fn(ShCtx* c, int32_t k);
+int32_t sh_guess(ShCtx* c, int32_t x);
+int32_t sh_is_metal_builtin(ShCtx* c, int32_t k);
+int32_t sh_is_wgsl_builtin(ShCtx* c, int32_t k);
+void sh_put_name(ShCtx* c, ShBuf* w, int32_t k);
+void sh_unknown_fn(ShCtx* c, int32_t x);
+void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x);
+void sh_emit_expr(ShCtx* c, ShBuf* w, int32_t x);
+int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent);
+int32_t sh_has_color_assign(ShCtx* c, int32_t head);
+void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k);
+void sh_emit_fill(ShCtx* c, ShBuf* w, int32_t k);
+int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int32_t nlen, int32_t only);
+void sh_prelude_metal(ShBuf* w);
+void sh_prelude_wgsl(ShBuf* w);
+ShBuf* flowc_shader_buf_new(int32_t cap) {
+  ShBuf* w = (ShBuf*)((ShBuf*)(malloc(24)));
+  (w[0]).buf = malloc((int64_t)((cap + 1)));
+  (w[0]).cap = cap;
+  (w[0]).len = 0;
+  return w;
+}
+
+void flowc_shader_buf_free(ShBuf* w) {
+  free((w[0]).buf);
+  free((uint8_t*)(w));
+}
+
+void sh_putc(ShBuf* w, uint8_t c) {
+  if ((w[0]).len >= (w[0]).cap) {
+  int32_t ncap = (((w[0]).cap * 2) + 64);
+  (w[0]).buf = realloc((w[0]).buf, (int64_t)((ncap + 1)));
+  (w[0]).cap = ncap;
+}
+  (w[0]).buf[(w[0]).len] = c;
+  (w[0]).len = ((w[0]).len + 1);
+}
+
+void flowc_shader_putc(ShBuf* w, uint8_t c) {
+  sh_putc(w, c);
+}
+
+void sh_puts(ShBuf* w, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  int32_t i = 0;
+  while (i < n) {
+  sh_putc(w, p[i]);
+  i = (i + 1);
+}
+}
+
+void sh_line(ShBuf* w, const char* s) {
+  sh_puts(w, s);
+  sh_putc(w, 10);
+}
+
+void sh_put_span(ShBuf* w, uint8_t* p, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  sh_putc(w, p[i]);
+  i = (i + 1);
+}
+}
+
+void sh_rule(ShBuf* w, int32_t n) {
+  int32_t i = 0;
+  while (i < n) {
+  sh_putc(w, 226);
+  sh_putc(w, 148);
+  sh_putc(w, 128);
+  i = (i + 1);
+}
+}
+
+void sh_pad(ShBuf* w, int32_t indent) {
+  int32_t i = 0;
+  while (i < (indent * 4)) {
+  sh_putc(w, 32);
+  i = (i + 1);
+}
+}
+
+int32_t* sh_ints(int32_t n) {
+  return (int32_t*)(malloc(((int64_t)((n + 4)) * 4)));
+}
+
+void sh_pool_add(ShCtx* c, const char* s) {
+  uint8_t* sp = (uint8_t*)(s);
+  int32_t k = (int32_t)(strlen(s));
+  (c[0]).ys[(c[0]).ny] = (c[0]).pn;
+  int32_t i = 0;
+  while (i < k) {
+  (c[0]).p[(c[0]).pn] = sp[i];
+  (c[0]).pn = ((c[0]).pn + 1);
+  i = (i + 1);
+}
+  (c[0]).ye[(c[0]).ny] = (c[0]).pn;
+  (c[0]).ny = ((c[0]).ny + 1);
+}
+
+void sh_pool_add_set(ShCtx* c, const char* a, const char* b, const char* d, const char* e, const char* f, const char* g, const char* h, const char* i, const char* j) {
+  sh_pool_add(c, a);
+  sh_pool_add(c, b);
+  sh_pool_add(c, d);
+  sh_pool_add(c, e);
+  sh_pool_add(c, f);
+  sh_pool_add(c, g);
+  sh_pool_add(c, h);
+  sh_pool_add(c, i);
+  sh_pool_add(c, j);
+}
+
+ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n) {
+  ShCtx* c = (ShCtx*)((ShCtx*)(malloc(512)));
+  int32_t cap = (n + 8);
+  (c[0]).p = malloc((int64_t)((n + 512)));
+  int32_t i = 0;
+  while (i < n) {
+  (c[0]).p[i] = src[i];
+  i = (i + 1);
+}
+  (c[0]).p[n] = 0;
+  (c[0]).n = n;
+  (c[0]).pn = (n + 1);
+  (c[0]).target = SH_METAL;
+  (c[0]).err = 0;
+  (c[0]).msg = flowc_shader_buf_new(256);
+  (c[0]).tk = sh_ints(cap);
+  (c[0]).ts = sh_ints(cap);
+  (c[0]).te = sh_ints(cap);
+  (c[0]).ntok = 0;
+  (c[0]).ti = 0;
+  (c[0]).nk = sh_ints((cap * 2));
+  (c[0]).na = sh_ints((cap * 2));
+  (c[0]).nb = sh_ints((cap * 2));
+  (c[0]).nc = sh_ints((cap * 2));
+  (c[0]).nx = sh_ints((cap * 2));
+  (c[0]).s1 = sh_ints((cap * 2));
+  (c[0]).e1 = sh_ints((cap * 2));
+  (c[0]).nf = sh_ints((cap * 2));
+  (c[0]).nn = 0;
+  (c[0]).ys = sh_ints(((cap * 3) + TY_CONSTS));
+  (c[0]).ye = sh_ints(((cap * 3) + TY_CONSTS));
+  (c[0]).ny = 0;
+  (c[0]).vs = sh_ints((cap * 2));
+  (c[0]).ve = sh_ints((cap * 2));
+  (c[0]).vt = sh_ints((cap * 2));
+  (c[0]).nv = 0;
+  (c[0]).fns = sh_ints(cap);
+  (c[0]).fne = sh_ints(cap);
+  (c[0]).fbs = sh_ints(cap);
+  (c[0]).fbe = sh_ints(cap);
+  (c[0]).frt = sh_ints(cap);
+  (c[0]).fp0 = sh_ints(cap);
+  (c[0]).fpn = sh_ints(cap);
+  (c[0]).nfn = 0;
+  (c[0]).pas = sh_ints(cap);
+  (c[0]).pae = sh_ints(cap);
+  (c[0]).pat = sh_ints(cap);
+  (c[0]).npa = 0;
+  (c[0]).fls = sh_ints(cap);
+  (c[0]).fle = sh_ints(cap);
+  (c[0]).flbs = sh_ints(cap);
+  (c[0]).flbe = sh_ints(cap);
+  (c[0]).nfl = 0;
+  sh_pool_add_set(c, "f32", "i32", "bool", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4");
+  sh_pool_add_set(c, "float", "int", "bool", "float2", "float3", "float4", "float2x2", "float3x3", "float4x4");
+  sh_pool_add_set(c, "f32", "i32", "bool", "vec2<f32>", "vec3<f32>", "vec4<f32>", "mat2x2<f32>", "mat3x3<f32>", "mat4x4<f32>");
+  (c[0]).ybase = (c[0]).ny;
+  return c;
+}
+
+void flowc_shader_ctx_free(ShCtx* c) {
+  free((c[0]).p);
+  flowc_shader_buf_free((c[0]).msg);
+  free((uint8_t*)((c[0]).tk));
+  free((uint8_t*)((c[0]).ts));
+  free((uint8_t*)((c[0]).te));
+  free((uint8_t*)((c[0]).nk));
+  free((uint8_t*)((c[0]).na));
+  free((uint8_t*)((c[0]).nb));
+  free((uint8_t*)((c[0]).nc));
+  free((uint8_t*)((c[0]).nx));
+  free((uint8_t*)((c[0]).s1));
+  free((uint8_t*)((c[0]).e1));
+  free((uint8_t*)((c[0]).nf));
+  free((uint8_t*)((c[0]).ys));
+  free((uint8_t*)((c[0]).ye));
+  free((uint8_t*)((c[0]).vs));
+  free((uint8_t*)((c[0]).ve));
+  free((uint8_t*)((c[0]).vt));
+  free((uint8_t*)((c[0]).fns));
+  free((uint8_t*)((c[0]).fne));
+  free((uint8_t*)((c[0]).fbs));
+  free((uint8_t*)((c[0]).fbe));
+  free((uint8_t*)((c[0]).frt));
+  free((uint8_t*)((c[0]).fp0));
+  free((uint8_t*)((c[0]).fpn));
+  free((uint8_t*)((c[0]).pas));
+  free((uint8_t*)((c[0]).pae));
+  free((uint8_t*)((c[0]).pat));
+  free((uint8_t*)((c[0]).fls));
+  free((uint8_t*)((c[0]).fle));
+  free((uint8_t*)((c[0]).flbs));
+  free((uint8_t*)((c[0]).flbe));
+  free((uint8_t*)(c));
+}
+
+int32_t flowc_shader_ctx_err(ShCtx* c) {
+  return (c[0]).err;
+}
+
+ShBuf* flowc_shader_ctx_msg(ShCtx* c) {
+  return (c[0]).msg;
+}
+
+int32_t flowc_shader_fill_count(ShCtx* c) {
+  return (c[0]).nfl;
+}
+
+void flowc_shader_put_fill_name(ShCtx* c, ShBuf* w, int32_t k) {
+  sh_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+}
+
+int32_t flowc_shader_fill_named(ShCtx* c, int32_t k, uint8_t* name, int32_t nlen) {
+  int32_t s = (c[0]).fls[k];
+  int32_t e = (c[0]).fle[k];
+  if ((e - s) != nlen) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < nlen) {
+  if ((c[0]).p[(s + i)] != name[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t sh_err(ShCtx* c) {
+  if ((c[0]).err != 0) {
+  return 0;
+}
+  (c[0]).err = 1;
+  ((c[0]).msg[0]).len = 0;
+  return 1;
+}
+
+void sh_fail(ShCtx* c, const char* m) {
+  if (sh_err(c) == 1) {
+  sh_puts((c[0]).msg, m);
+}
+}
+
+int32_t sh_is_space(uint8_t c) {
+  if (c == 32) {
+  return 1;
+}
+  if (c >= 9 && c <= 13) {
+  return 1;
+}
+  if (c >= 28 && c <= 31) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_is_word(uint8_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c == 95) {
+  return 1;
+}
+  if (c >= 128) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_is_digit(uint8_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_is_ident_start(uint8_t c) {
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c == 95) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_is_ident(uint8_t c) {
+  if (sh_is_ident_start(c) == 1) {
+  return 1;
+}
+  return sh_is_digit(c);
+}
+
+int32_t sh_is_ret_ch(uint8_t c) {
+  if (sh_is_ident(c) == 1) {
+  return 1;
+}
+  if (c == 60 || c == 62 || c == 44) {
+  return 1;
+}
+  return sh_is_space(c);
+}
+
+int32_t sh_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit) {
+  uint8_t* lp = (uint8_t*)(lit);
+  int32_t n = (int32_t)(strlen(lit));
+  if ((i + n) > e) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < n) {
+  if (p[(i + k)] != lp[k]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t sh_span_is(uint8_t* p, int32_t s, int32_t e, const char* lit) {
+  int32_t n = (int32_t)(strlen(lit));
+  if ((e - s) != n) {
+  return 0;
+}
+  return sh_lit_at(p, s, e, lit);
+}
+
+int32_t sh_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
+  if ((a1 - a0) != (b1 - b0)) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < (a1 - a0)) {
+  if (p[(a0 + k)] != p[(b0 + k)]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t sh_skip_ws(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && sh_is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t sh_fill_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* out) {
+  if (sh_lit_at(p, i, n, "shader") == 0) {
+  return (0 - 1);
+}
+  if (i > 0 && sh_is_word(p[(i - 1)]) == 1) {
+  return (0 - 1);
+}
+  int32_t j = (i + 6);
+  int32_t a = sh_skip_ws(p, j, n);
+  if (a == j) {
+  return (0 - 1);
+}
+  if (sh_lit_at(p, a, n, "fill") == 0) {
+  return (0 - 1);
+}
+  j = (a + 4);
+  int32_t b = sh_skip_ws(p, j, n);
+  if (b == j) {
+  return (0 - 1);
+}
+  if (b >= n || sh_is_ident_start(p[b]) == 0) {
+  return (0 - 1);
+}
+  int32_t k = (b + 1);
+  while (k < n && sh_is_ident(p[k]) == 1) {
+  k = (k + 1);
+}
+  out[0] = b;
+  out[1] = k;
+  int32_t d = sh_skip_ws(p, k, n);
+  if (d >= n || p[d] != 123) {
+  return (0 - 1);
+}
+  return (d + 1);
+}
+
+int32_t sh_fn_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* out) {
+  if (sh_lit_at(p, i, n, "fn") == 0) {
+  return (0 - 1);
+}
+  if (i > 0 && sh_is_word(p[(i - 1)]) == 1) {
+  return (0 - 1);
+}
+  int32_t j = (i + 2);
+  int32_t a = sh_skip_ws(p, j, n);
+  if (a == j) {
+  return (0 - 1);
+}
+  if (a >= n || sh_is_ident_start(p[a]) == 0) {
+  return (0 - 1);
+}
+  int32_t k = (a + 1);
+  while (k < n && sh_is_ident(p[k]) == 1) {
+  k = (k + 1);
+}
+  out[0] = a;
+  out[1] = k;
+  int32_t lp = sh_skip_ws(p, k, n);
+  if (lp >= n || p[lp] != 40) {
+  return (0 - 1);
+}
+  int32_t rp = (lp + 1);
+  while (rp < n && p[rp] != 41) {
+  rp = (rp + 1);
+}
+  if (rp >= n) {
+  return (0 - 1);
+}
+  out[2] = (lp + 1);
+  out[3] = rp;
+  int32_t ar = sh_skip_ws(p, (rp + 1), n);
+  if (sh_lit_at(p, ar, n, "->") == 0) {
+  return (0 - 1);
+}
+  int32_t rs = (ar + 2);
+  int32_t re = rs;
+  while (re < n && sh_is_ret_ch(p[re]) == 1) {
+  re = (re + 1);
+}
+  if (re == rs || re >= n || p[re] != 123) {
+  return (0 - 1);
+}
+  out[4] = rs;
+  out[5] = re;
+  return (re + 1);
+}
+
+void sh_strip(uint8_t* p, int32_t* se) {
+  while (se[0] < se[1] && sh_is_space(p[se[0]]) == 1) {
+  se[0] = (se[0] + 1);
+}
+  while (se[1] > se[0] && sh_is_space(p[(se[1] - 1)]) == 1) {
+  se[1] = (se[1] - 1);
+}
+}
+
+int32_t sh_ty_span(ShCtx* c, int32_t s, int32_t e) {
+  int32_t h = (c[0]).ny;
+  (c[0]).ys[h] = s;
+  (c[0]).ye[h] = e;
+  (c[0]).ny = (h + 1);
+  return h;
+}
+
+int32_t sh_brace_block(ShCtx* c, int32_t at) {
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  int32_t n = (c[0]).n;
+  int32_t depth = 0;
+  int32_t i = at;
+  while (i < n) {
+  if (p[i] == 123) {
+  depth = (depth + 1);
+} else {
+  if (p[i] == 125) {
+  depth = (depth - 1);
+  if (depth == 0) {
+  return (i + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  sh_fail(c, "Unclosed '{' in shader module");
+  return (0 - 1);
+}
+
+int32_t sh_parse_params(ShCtx* c, int32_t s, int32_t e) {
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  int32_t* se = (int32_t*)(sh_ints(2));
+  se[0] = s;
+  se[1] = e;
+  sh_strip(p, se);
+  if (se[0] == se[1]) {
+  free((uint8_t*)(se));
+  return 0;
+}
+  int32_t rs = se[0];
+  int32_t rend = se[1];
+  int32_t a = rs;
+  int32_t rc = 0;
+  while (a <= rend && rc == 0) {
+  int32_t b = a;
+  while (b < rend && p[b] != 44) {
+  b = (b + 1);
+}
+  se[0] = a;
+  se[1] = b;
+  sh_strip(p, se);
+  if (se[0] < se[1]) {
+  int32_t colon = se[0];
+  while (colon < se[1] && p[colon] != 58) {
+  colon = (colon + 1);
+}
+  if (colon >= se[1]) {
+  if (sh_err(c) == 1) {
+  sh_puts((c[0]).msg, "Shader fn param needs name: type, got '");
+  sh_put_span((c[0]).msg, p, se[0], se[1]);
+  sh_puts((c[0]).msg, "'");
+}
+  rc = (0 - 1);
+} else {
+  int32_t ps = se[0];
+  int32_t pe = se[1];
+  se[0] = ps;
+  se[1] = colon;
+  sh_strip(p, se);
+  int32_t k = (c[0]).npa;
+  (c[0]).pas[k] = se[0];
+  (c[0]).pae[k] = se[1];
+  se[0] = (colon + 1);
+  se[1] = pe;
+  sh_strip(p, se);
+  (c[0]).pat[k] = sh_ty_span(c, se[0], se[1]);
+  (c[0]).npa = (k + 1);
+}
+}
+  a = (b + 1);
+}
+  free((uint8_t*)(se));
+  return rc;
+}
+
+int32_t flowc_shader_extract(ShCtx* c) {
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  int32_t n = (c[0]).n;
+  int32_t* hf = (int32_t*)(sh_ints(8));
+  int32_t* hs = (int32_t*)(sh_ints(8));
+  int32_t fpos = 0;
+  int32_t fat = (0 - 1);
+  int32_t fend = (0 - 1);
+  int32_t spos = 0;
+  int32_t sat = (0 - 1);
+  int32_t send = (0 - 1);
+  int32_t occupied = (0 - 1);
+  int32_t rc = 0;
+  int32_t done = 0;
+  while (done == 0) {
+  if (fat < 0) {
+  while (fpos < n && fat < 0) {
+  int32_t r = sh_fn_head_at(p, fpos, n, hf);
+  if (r >= 0) {
+  fat = fpos;
+  fend = r;
+} else {
+  fpos = (fpos + 1);
+}
+}
+  if (fat < 0) {
+  fat = (n + 1);
+}
+}
+  if (sat < 0) {
+  while (spos < n && sat < 0) {
+  int32_t r2 = sh_fill_head_at(p, spos, n, hs);
+  if (r2 >= 0) {
+  sat = spos;
+  send = r2;
+} else {
+  spos = (spos + 1);
+}
+}
+  if (sat < 0) {
+  sat = (n + 1);
+}
+}
+  if (fat > n && sat > n) {
+  done = 1;
+} else {
+  int32_t is_fn = 0;
+  int32_t start = sat;
+  if (fat < sat) {
+  is_fn = 1;
+  start = fat;
+}
+  if (start >= occupied) {
+  int32_t brace = start;
+  while (brace < n && p[brace] != 123) {
+  brace = (brace + 1);
+}
+  int32_t end = sh_brace_block(c, brace);
+  if (end < 0) {
+  rc = (0 - 1);
+  done = 1;
+} else {
+  occupied = end;
+  if (is_fn == 1) {
+  int32_t k = (c[0]).nfn;
+  (c[0]).fns[k] = hf[0];
+  (c[0]).fne[k] = hf[1];
+  (c[0]).fbs[k] = (brace + 1);
+  (c[0]).fbe[k] = (end - 1);
+  (c[0]).fp0[k] = (c[0]).npa;
+  if (sh_parse_params(c, hf[2], hf[3]) != 0) {
+  rc = (0 - 1);
+  done = 1;
+} else {
+  (c[0]).fpn[k] = ((c[0]).npa - (c[0]).fp0[k]);
+  int32_t* rse = (int32_t*)(sh_ints(2));
+  rse[0] = hf[4];
+  rse[1] = hf[5];
+  sh_strip(p, rse);
+  (c[0]).frt[k] = sh_ty_span(c, rse[0], rse[1]);
+  free((uint8_t*)(rse));
+  (c[0]).nfn = (k + 1);
+}
+} else {
+  int32_t k2 = (c[0]).nfl;
+  (c[0]).fls[k2] = hs[0];
+  (c[0]).fle[k2] = hs[1];
+  (c[0]).flbs[k2] = (brace + 1);
+  (c[0]).flbe[k2] = (end - 1);
+  (c[0]).nfl = (k2 + 1);
+}
+}
+}
+  if (is_fn == 1) {
+  fpos = fend;
+  fat = (0 - 1);
+} else {
+  spos = send;
+  sat = (0 - 1);
+}
+}
+}
+  free((uint8_t*)(hf));
+  free((uint8_t*)(hs));
+  (c[0]).ybase = (c[0]).ny;
+  return rc;
+}
+
+int32_t flowc_shader_is_module(uint8_t* p, int32_t n) {
+  int32_t* hs = (int32_t*)(sh_ints(2));
+  int32_t i = 0;
+  int32_t found = 0;
+  while (i < n && found == 0) {
+  int32_t k = i;
+  while (k < n && (p[k] == 32 || p[k] == 9)) {
+  k = (k + 1);
+}
+  if (sh_fill_head_at(p, k, n, hs) >= 0) {
+  found = 1;
+}
+  while (i < n && p[i] != 10) {
+  i = (i + 1);
+}
+  i = (i + 1);
+}
+  free((uint8_t*)(hs));
+  return found;
+}
+
+int32_t flowc_shader_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
+  if (n < 0) {
+  return n;
+}
+  if (flowc_shader_is_module(buf, n) == 0) {
+  return n;
+}
+  ShCtx* c = (ShCtx*)(flowc_shader_ctx_new(buf, n));
+  int32_t rc = flowc_shader_extract(c);
+  if (rc == 0 && (c[0]).nfl == 0) {
+  sh_fail(c, "Fill-shader module has no `shader fill` blocks");
+  rc = (0 - 1);
+}
+  if (rc != 0) {
+  ShBuf* line = (ShBuf*)(flowc_shader_buf_new(256));
+  sh_puts(line, "flowc shader: ");
+  sh_put_span(line, ((c[0]).msg[0]).buf, 0, ((c[0]).msg[0]).len);
+  (line[0]).buf[(line[0]).len] = 0;
+  puts((const char*)((line[0]).buf));
+  flowc_shader_buf_free(line);
+  flowc_shader_ctx_free(c);
+  return (0 - 1);
+}
+  flowc_shader_ctx_free(c);
+  const char* stub = "function main() -> i32 {\n    return 0\n}\n";
+  uint8_t* sp = (uint8_t*)(stub);
+  int32_t sn = (int32_t)(strlen(stub));
+  if (sn >= cap) {
+  puts("flowc shader: source buffer too small for the host stub");
+  return (0 - 1);
+}
+  int32_t k = 0;
+  while (k < sn) {
+  buf[k] = sp[k];
+  k = (k + 1);
+}
+  buf[sn] = 0;
+  return sn;
+}
+
+void sh_tok(ShCtx* c, int32_t kind, int32_t s, int32_t e) {
+  int32_t k = (c[0]).ntok;
+  (c[0]).tk[k] = kind;
+  (c[0]).ts[k] = s;
+  (c[0]).te[k] = e;
+  (c[0]).ntok = (k + 1);
+}
+
+void sh_tokenize(ShCtx* c, int32_t s, int32_t e) {
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  (c[0]).ntok = 0;
+  (c[0]).ti = 0;
+  int32_t i = s;
+  while (i < e) {
+  uint8_t ch = p[i];
+  if (sh_is_digit(ch) == 1) {
+  int32_t j = i;
+  while (j < e && sh_is_digit(p[j]) == 1) {
+  j = (j + 1);
+}
+  if (j < e && p[j] == 46) {
+  j = (j + 1);
+  while (j < e && sh_is_digit(p[j]) == 1) {
+  j = (j + 1);
+}
+}
+  sh_tok(c, T_NUMBER, i, j);
+  i = j;
+} else {
+  if (ch == 46 && (i + 1) < e && sh_is_digit(p[(i + 1)]) == 1) {
+  int32_t j2 = (i + 1);
+  while (j2 < e && sh_is_digit(p[j2]) == 1) {
+  j2 = (j2 + 1);
+}
+  sh_tok(c, T_NUMBER, i, j2);
+  i = j2;
+} else {
+  if (sh_is_ident_start(ch) == 1) {
+  int32_t j3 = (i + 1);
+  while (j3 < e && sh_is_ident(p[j3]) == 1) {
+  j3 = (j3 + 1);
+}
+  sh_tok(c, T_IDENT, i, j3);
+  i = j3;
+} else {
+  if (ch == 43 || ch == 45 || ch == 42 || ch == 47 || ch == 37) {
+  sh_tok(c, T_OP, i, (i + 1));
+  i = (i + 1);
+} else {
+  if ((ch == 60 || ch == 62 || ch == 61 || ch == 33) && (i + 1) < e && p[(i + 1)] == 61) {
+  sh_tok(c, T_COMPARE, i, (i + 2));
+  i = (i + 2);
+} else {
+  if (ch == 60 || ch == 62) {
+  sh_tok(c, T_COMPARE, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 38 && (i + 1) < e && p[(i + 1)] == 38) {
+  sh_tok(c, T_AND, i, (i + 2));
+  i = (i + 2);
+} else {
+  if (ch == 124 && (i + 1) < e && p[(i + 1)] == 124) {
+  sh_tok(c, T_OR, i, (i + 2));
+  i = (i + 2);
+} else {
+  if (ch == 33) {
+  sh_tok(c, T_NOT, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 61) {
+  sh_tok(c, T_ASSIGN, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 40) {
+  sh_tok(c, T_LPAREN, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 41) {
+  sh_tok(c, T_RPAREN, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 123) {
+  sh_tok(c, T_LBRACE, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 125) {
+  sh_tok(c, T_RBRACE, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 44) {
+  sh_tok(c, T_COMMA, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 58) {
+  sh_tok(c, T_COLON, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 46) {
+  sh_tok(c, T_DOT, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 59) {
+  sh_tok(c, T_SEMI, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 10) {
+  sh_tok(c, T_NEWLINE, i, (i + 1));
+  i = (i + 1);
+} else {
+  if (ch == 35) {
+  while (i < e && p[i] != 10) {
+  i = (i + 1);
+}
+} else {
+  i = (i + 1);
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  sh_tok(c, T_EOF, e, e);
+}
+
+const char* sh_kind_name(int32_t k) {
+  if (k == T_NUMBER) {
+  return "NUMBER";
+}
+  if (k == T_IDENT) {
+  return "IDENT";
+}
+  if (k == T_OP) {
+  return "OP";
+}
+  if (k == T_COMPARE) {
+  return "COMPARE";
+}
+  if (k == T_AND) {
+  return "AND";
+}
+  if (k == T_OR) {
+  return "OR";
+}
+  if (k == T_NOT) {
+  return "NOT";
+}
+  if (k == T_ASSIGN) {
+  return "ASSIGN";
+}
+  if (k == T_LPAREN) {
+  return "LPAREN";
+}
+  if (k == T_RPAREN) {
+  return "RPAREN";
+}
+  if (k == T_LBRACE) {
+  return "LBRACE";
+}
+  if (k == T_RBRACE) {
+  return "RBRACE";
+}
+  if (k == T_COMMA) {
+  return "COMMA";
+}
+  if (k == T_COLON) {
+  return "COLON";
+}
+  if (k == T_DOT) {
+  return "DOT";
+}
+  if (k == T_SEMI) {
+  return "SEMI";
+}
+  if (k == T_NEWLINE) {
+  return "NEWLINE";
+}
+  return "EOF";
+}
+
+int32_t sh_cur(ShCtx* c) {
+  return (c[0]).tk[(c[0]).ti];
+}
+
+int32_t sh_cur_is(ShCtx* c, int32_t kind, const char* lit) {
+  int32_t t = (c[0]).ti;
+  if ((c[0]).tk[t] != kind) {
+  return 0;
+}
+  return sh_span_is((c[0]).p, (c[0]).ts[t], (c[0]).te[t], lit);
+}
+
+int32_t sh_advance(ShCtx* c) {
+  int32_t t = (c[0]).ti;
+  if (t < ((c[0]).ntok - 1)) {
+  (c[0]).ti = (t + 1);
+}
+  return t;
+}
+
+int32_t sh_match(ShCtx* c, int32_t kind) {
+  if (sh_cur(c) != kind) {
+  return 0;
+}
+  sh_advance(c);
+  return 1;
+}
+
+void sh_err_got(ShCtx* c, const char* head) {
+  if (sh_err(c) == 1) {
+  int32_t t = (c[0]).ti;
+  sh_puts((c[0]).msg, head);
+  sh_puts((c[0]).msg, sh_kind_name((c[0]).tk[t]));
+  sh_puts((c[0]).msg, " '");
+  sh_put_span((c[0]).msg, (c[0]).p, (c[0]).ts[t], (c[0]).te[t]);
+  sh_puts((c[0]).msg, "'");
+}
+}
+
+int32_t sh_expect(ShCtx* c, int32_t kind, const char* lit) {
+  int32_t t = (c[0]).ti;
+  uint8_t* lp = (uint8_t*)(lit);
+  int32_t has_lit = (int32_t)(strlen(lit));
+  int32_t ok = 1;
+  if ((c[0]).tk[t] != kind) {
+  ok = 0;
+} else {
+  if (has_lit > 0 && sh_span_is((c[0]).p, (c[0]).ts[t], (c[0]).te[t], lit) == 0) {
+  ok = 0;
+}
+}
+  if (ok == 0) {
+  if (sh_err(c) == 1) {
+  sh_puts((c[0]).msg, "Shader parse error: expected ");
+  sh_puts((c[0]).msg, sh_kind_name(kind));
+  if (has_lit > 0) {
+  sh_puts((c[0]).msg, " '");
+  sh_puts((c[0]).msg, lit);
+  sh_puts((c[0]).msg, "'");
+}
+  sh_puts((c[0]).msg, ", got ");
+  sh_puts((c[0]).msg, sh_kind_name((c[0]).tk[t]));
+  sh_puts((c[0]).msg, " '");
+  sh_put_span((c[0]).msg, (c[0]).p, (c[0]).ts[t], (c[0]).te[t]);
+  sh_puts((c[0]).msg, "'");
+}
+  return (0 - 1);
+}
+  return sh_advance(c);
+}
+
+void sh_skip_nl(ShCtx* c) {
+  while (sh_cur(c) == T_NEWLINE) {
+  sh_advance(c);
+}
+}
+
+int32_t sh_node(ShCtx* c, int32_t kind) {
+  int32_t k = (c[0]).nn;
+  (c[0]).nk[k] = kind;
+  (c[0]).na[k] = (0 - 1);
+  (c[0]).nb[k] = (0 - 1);
+  (c[0]).nc[k] = (0 - 1);
+  (c[0]).nx[k] = (0 - 1);
+  (c[0]).s1[k] = 0;
+  (c[0]).e1[k] = 0;
+  (c[0]).nf[k] = 0;
+  (c[0]).nn = (k + 1);
+  return k;
+}
+
+int32_t sh_node_tok(ShCtx* c, int32_t kind, int32_t t) {
+  int32_t k = sh_node(c, kind);
+  (c[0]).s1[k] = (c[0]).ts[t];
+  (c[0]).e1[k] = (c[0]).te[t];
+  return k;
+}
+
+int32_t sh_binary(ShCtx* c, int32_t op, int32_t left, int32_t right) {
+  int32_t k = sh_node_tok(c, E_BINARY, op);
+  (c[0]).na[k] = left;
+  (c[0]).nb[k] = right;
+  return k;
+}
+
+int32_t sh_parse_stmts(ShCtx* c) {
+  int32_t head = (0 - 1);
+  int32_t tail = (0 - 1);
+  sh_skip_nl(c);
+  while ((c[0]).err == 0 && sh_cur(c) != T_EOF && sh_cur(c) != T_RBRACE) {
+  int32_t st = sh_parse_stmt(c);
+  if ((c[0]).err == 0) {
+  if (tail < 0) {
+  head = st;
+} else {
+  (c[0]).nx[tail] = st;
+}
+  tail = st;
+  sh_match(c, T_SEMI);
+  sh_skip_nl(c);
+}
+}
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  return head;
+}
+
+int32_t sh_parse_block(ShCtx* c) {
+  if (sh_expect(c, T_LBRACE, "") < 0) {
+  return (0 - 1);
+}
+  sh_skip_nl(c);
+  int32_t body = sh_parse_stmts(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  if (sh_expect(c, T_RBRACE, "") < 0) {
+  return (0 - 1);
+}
+  return body;
+}
+
+int32_t sh_parse_stmt(ShCtx* c) {
+  sh_skip_nl(c);
+  if (sh_cur_is(c, T_IDENT, "let") == 1 || sh_cur_is(c, T_IDENT, "var") == 1) {
+  return sh_parse_let(c);
+}
+  if (sh_cur_is(c, T_IDENT, "if") == 1) {
+  return sh_parse_if(c);
+}
+  if (sh_cur_is(c, T_IDENT, "for") == 1) {
+  return sh_parse_for(c);
+}
+  if (sh_cur_is(c, T_IDENT, "return") == 1) {
+  sh_advance(c);
+  int32_t r = sh_node(c, S_RETURN);
+  int32_t k = sh_cur(c);
+  if (k == T_NEWLINE || k == T_SEMI || k == T_RBRACE || k == T_EOF) {
+  return r;
+}
+  (c[0]).na[r] = sh_parse_expr(c);
+  return r;
+}
+  if (sh_cur(c) == T_IDENT) {
+  int32_t name = sh_advance(c);
+  if (sh_expect(c, T_ASSIGN, "") < 0) {
+  return (0 - 1);
+}
+  int32_t a = sh_node_tok(c, S_ASSIGN, name);
+  (c[0]).na[a] = sh_parse_expr(c);
+  return a;
+}
+  sh_err_got(c, "Shader statement expected, got ");
+  return (0 - 1);
+}
+
+int32_t sh_parse_let(ShCtx* c) {
+  int32_t mutable = 0;
+  if (sh_cur_is(c, T_IDENT, "var") == 1) {
+  mutable = 1;
+}
+  sh_advance(c);
+  int32_t name = sh_expect(c, T_IDENT, "");
+  if (name < 0) {
+  return (0 - 1);
+}
+  int32_t st = sh_node_tok(c, S_LET, name);
+  (c[0]).nf[st] = mutable;
+  if (sh_match(c, T_COLON) == 1) {
+  int32_t ty = sh_expect(c, T_IDENT, "");
+  if (ty < 0) {
+  return (0 - 1);
+}
+  (c[0]).nb[st] = sh_ty_span(c, (c[0]).ts[ty], (c[0]).te[ty]);
+}
+  if (sh_expect(c, T_ASSIGN, "") < 0) {
+  return (0 - 1);
+}
+  (c[0]).na[st] = sh_parse_expr(c);
+  return st;
+}
+
+int32_t sh_parse_body(ShCtx* c) {
+  if (sh_cur(c) == T_LBRACE) {
+  return sh_parse_block(c);
+}
+  return sh_parse_stmt(c);
+}
+
+int32_t sh_parse_if(ShCtx* c) {
+  if (sh_expect(c, T_IDENT, "if") < 0) {
+  return (0 - 1);
+}
+  int32_t st = sh_node(c, S_IF);
+  (c[0]).na[st] = sh_parse_expr(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  sh_skip_nl(c);
+  (c[0]).nb[st] = sh_parse_body(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  sh_skip_nl(c);
+  if (sh_cur_is(c, T_IDENT, "else") == 1) {
+  sh_advance(c);
+  sh_skip_nl(c);
+  if (sh_cur_is(c, T_IDENT, "if") == 1) {
+  (c[0]).nc[st] = sh_parse_if(c);
+} else {
+  (c[0]).nc[st] = sh_parse_body(c);
+}
+}
+  return st;
+}
+
+int32_t sh_parse_for(ShCtx* c) {
+  if (sh_expect(c, T_IDENT, "for") < 0) {
+  return (0 - 1);
+}
+  int32_t v = sh_expect(c, T_IDENT, "");
+  if (v < 0) {
+  return (0 - 1);
+}
+  int32_t st = sh_node_tok(c, S_FOR, v);
+  if (sh_cur_is(c, T_IDENT, "in") == 0) {
+  sh_fail(c, "Expected 'in' after for variable");
+  return (0 - 1);
+}
+  sh_advance(c);
+  (c[0]).na[st] = sh_parse_expr(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  if (sh_cur_is(c, T_IDENT, "to") == 0) {
+  sh_fail(c, "Expected 'to' in for-range");
+  return (0 - 1);
+}
+  sh_advance(c);
+  (c[0]).nb[st] = sh_parse_expr(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  sh_skip_nl(c);
+  (c[0]).nc[st] = sh_parse_body(c);
+  return st;
+}
+
+int32_t sh_parse_expr(ShCtx* c) {
+  return sh_parse_or(c);
+}
+
+int32_t sh_parse_or(ShCtx* c) {
+  int32_t left = sh_parse_and(c);
+  while ((c[0]).err == 0 && sh_cur(c) == T_OR) {
+  int32_t op = sh_advance(c);
+  left = sh_binary(c, op, left, sh_parse_and(c));
+}
+  return left;
+}
+
+int32_t sh_parse_and(ShCtx* c) {
+  int32_t left = sh_parse_compare(c);
+  while ((c[0]).err == 0 && sh_cur(c) == T_AND) {
+  int32_t op = sh_advance(c);
+  left = sh_binary(c, op, left, sh_parse_compare(c));
+}
+  return left;
+}
+
+int32_t sh_parse_compare(ShCtx* c) {
+  int32_t left = sh_parse_term(c);
+  while ((c[0]).err == 0 && sh_cur(c) == T_COMPARE) {
+  int32_t op = sh_advance(c);
+  left = sh_binary(c, op, left, sh_parse_term(c));
+}
+  return left;
+}
+
+int32_t sh_parse_term(ShCtx* c) {
+  int32_t left = sh_parse_factor(c);
+  while ((c[0]).err == 0 && (sh_cur_is(c, T_OP, "+") == 1 || sh_cur_is(c, T_OP, "-") == 1)) {
+  int32_t op = sh_advance(c);
+  left = sh_binary(c, op, left, sh_parse_factor(c));
+}
+  return left;
+}
+
+int32_t sh_parse_factor(ShCtx* c) {
+  int32_t left = sh_parse_unary(c);
+  while ((c[0]).err == 0 && (sh_cur_is(c, T_OP, "*") == 1 || sh_cur_is(c, T_OP, "/") == 1 || sh_cur_is(c, T_OP, "%") == 1)) {
+  int32_t op = sh_advance(c);
+  left = sh_binary(c, op, left, sh_parse_unary(c));
+}
+  return left;
+}
+
+int32_t sh_parse_unary(ShCtx* c) {
+  if (sh_cur_is(c, T_OP, "-") == 1 || sh_cur(c) == T_NOT) {
+  int32_t op = sh_advance(c);
+  int32_t u = sh_node_tok(c, E_UNARY, op);
+  (c[0]).na[u] = sh_parse_unary(c);
+  return u;
+}
+  return sh_parse_postfix(c);
+}
+
+int32_t sh_parse_postfix(ShCtx* c) {
+  int32_t expr = sh_parse_primary(c);
+  while ((c[0]).err == 0 && sh_cur(c) == T_DOT) {
+  sh_advance(c);
+  int32_t f = sh_expect(c, T_IDENT, "");
+  if (f < 0) {
+  return (0 - 1);
+}
+  int32_t sw = sh_node_tok(c, E_SWIZZLE, f);
+  (c[0]).na[sw] = expr;
+  expr = sw;
+}
+  return expr;
+}
+
+int32_t sh_parse_primary(ShCtx* c) {
+  sh_skip_nl(c);
+  int32_t t = (c[0]).ti;
+  int32_t kind = (c[0]).tk[t];
+  if (kind == T_NUMBER) {
+  sh_advance(c);
+  int32_t num = sh_node_tok(c, E_NUMBER, t);
+  int32_t dot = 0;
+  int32_t i = (c[0]).ts[t];
+  while (i < (c[0]).te[t]) {
+  if ((c[0]).p[i] == 46) {
+  dot = 1;
+}
+  i = (i + 1);
+}
+  if (dot == 0) {
+  (c[0]).nf[num] = 1;
+}
+  return num;
+}
+  if (kind == T_IDENT) {
+  sh_advance(c);
+  if (sh_match(c, T_LPAREN) == 1) {
+  int32_t call = sh_node_tok(c, E_CALL, t);
+  int32_t nargs = 0;
+  int32_t tail = (0 - 1);
+  sh_skip_nl(c);
+  if (sh_match(c, T_RPAREN) == 0) {
+  int32_t more = 1;
+  while (more == 1) {
+  sh_skip_nl(c);
+  int32_t arg = sh_parse_expr(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  if (tail < 0) {
+  (c[0]).na[call] = arg;
+} else {
+  (c[0]).nx[tail] = arg;
+}
+  tail = arg;
+  nargs = (nargs + 1);
+  sh_skip_nl(c);
+  if (sh_match(c, T_COMMA) == 0) {
+  if (sh_expect(c, T_RPAREN, "") < 0) {
+  return (0 - 1);
+}
+  more = 0;
+}
+}
+}
+  (c[0]).nc[call] = nargs;
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  int32_t ns = (c[0]).ts[t];
+  int32_t ne = (c[0]).te[t];
+  if (nargs == 1 && (sh_span_is(p, ns, ne, "f32") == 1 || sh_span_is(p, ns, ne, "i32") == 1 || sh_span_is(p, ns, ne, "bool") == 1)) {
+  (c[0]).nk[call] = E_CAST;
+}
+  return call;
+}
+  return sh_node_tok(c, E_NAME, t);
+}
+  if (sh_match(c, T_LPAREN) == 1) {
+  sh_skip_nl(c);
+  int32_t inner = sh_parse_expr(c);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  sh_skip_nl(c);
+  if (sh_expect(c, T_RPAREN, "") < 0) {
+  return (0 - 1);
+}
+  return inner;
+}
+  sh_err_got(c, "Shader expression expected, got ");
+  return (0 - 1);
+}
+
+int32_t sh_parse_body_span(ShCtx* c, int32_t s, int32_t e) {
+  sh_tokenize(c, s, e);
+  (c[0]).nn = 0;
+  (c[0]).ny = (c[0]).ybase;
+  return sh_parse_stmts(c);
+}
+
+int32_t sh_ty_is(ShCtx* c, int32_t h, const char* lit) {
+  return sh_span_is((c[0]).p, (c[0]).ys[h], (c[0]).ye[h], lit);
+}
+
+int32_t sh_ty_eq(ShCtx* c, int32_t a, int32_t b) {
+  return sh_span_eq((c[0]).p, (c[0]).ys[a], (c[0]).ye[a], (c[0]).ys[b], (c[0]).ye[b]);
+}
+
+void sh_put_ty(ShCtx* c, ShBuf* w, int32_t h) {
+  sh_put_span(w, (c[0]).p, (c[0]).ys[h], (c[0]).ye[h]);
+}
+
+int32_t sh_ty_known(ShCtx* c, int32_t k) {
+  if ((c[0]).target == SH_WGSL) {
+  return (TY_WGSL + k);
+}
+  return (TY_METAL + k);
+}
+
+int32_t sh_map_type(ShCtx* c, int32_t h) {
+  if (h < 0 || (c[0]).ys[h] == (c[0]).ye[h]) {
+  return sh_ty_known(c, 0);
+}
+  int32_t k = 0;
+  while (k < 9) {
+  if (sh_ty_eq(c, h, (TY_FSL + k)) == 1) {
+  return sh_ty_known(c, k);
+}
+  k = (k + 1);
+}
+  if ((c[0]).target == SH_WGSL) {
+  if (sh_err(c) == 1) {
+  sh_puts((c[0]).msg, "Unsupported WGSL shader type '");
+  sh_put_ty(c, (c[0]).msg, h);
+  sh_puts((c[0]).msg, "'");
+}
+  return (0 - 1);
+}
+  return h;
+}
+
+int32_t sh_ty_named(ShCtx* c, int32_t s, int32_t e) {
+  int32_t k = 0;
+  while (k < 9) {
+  if (sh_span_eq((c[0]).p, s, e, (c[0]).ys[(TY_FSL + k)], (c[0]).ye[(TY_FSL + k)]) == 1) {
+  return sh_ty_known(c, k);
+}
+  k = (k + 1);
+}
+  return sh_ty_known(c, 0);
+}
+
+void sh_env_set(ShCtx* c, int32_t s, int32_t e, int32_t ty) {
+  int32_t i = 0;
+  while (i < (c[0]).nv) {
+  if (sh_span_eq((c[0]).p, (c[0]).vs[i], (c[0]).ve[i], s, e) == 1) {
+  (c[0]).vt[i] = ty;
+  return;
+}
+  i = (i + 1);
+}
+  int32_t k = (c[0]).nv;
+  (c[0]).vs[k] = s;
+  (c[0]).ve[k] = e;
+  (c[0]).vt[k] = ty;
+  (c[0]).nv = (k + 1);
+}
+
+int32_t sh_env_get(ShCtx* c, int32_t s, int32_t e, int32_t dflt) {
+  int32_t i = 0;
+  while (i < (c[0]).nv) {
+  if (sh_span_eq((c[0]).p, (c[0]).vs[i], (c[0]).ve[i], s, e) == 1) {
+  return (c[0]).vt[i];
+}
+  i = (i + 1);
+}
+  return dflt;
+}
+
+int32_t sh_find_fn(ShCtx* c, int32_t s, int32_t e) {
+  int32_t i = ((c[0]).nfn - 1);
+  while (i >= 0) {
+  if (sh_span_eq((c[0]).p, (c[0]).fns[i], (c[0]).fne[i], s, e) == 1) {
+  return i;
+}
+  i = (i - 1);
+}
+  return (0 - 1);
+}
+
+int32_t sh_node_is(ShCtx* c, int32_t k, const char* lit) {
+  return sh_span_is((c[0]).p, (c[0]).s1[k], (c[0]).e1[k], lit);
+}
+
+int32_t sh_rank(ShCtx* c, int32_t h) {
+  if (sh_ty_is(c, h, "bool") == 1) {
+  return 0;
+}
+  if ((c[0]).target == SH_WGSL) {
+  if (sh_ty_is(c, h, "vec2<f32>") == 1) {
+  return 2;
+}
+  if (sh_ty_is(c, h, "vec3<f32>") == 1) {
+  return 3;
+}
+  if (sh_ty_is(c, h, "vec4<f32>") == 1) {
+  return 4;
+}
+  return 1;
+}
+  if (sh_ty_is(c, h, "float2") == 1) {
+  return 2;
+}
+  if (sh_ty_is(c, h, "float3") == 1) {
+  return 3;
+}
+  if (sh_ty_is(c, h, "float4") == 1) {
+  return 4;
+}
+  return 1;
+}
+
+int32_t sh_is_metal_float_fn(ShCtx* c, int32_t k) {
+  if (sh_node_is(c, k, "noise") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "fbm") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "hash") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "length") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "dot") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "sin") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "cos") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "atan2") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_is_wgsl_float_fn(ShCtx* c, int32_t k) {
+  if (sh_node_is(c, k, "noise") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "fbm") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "hash") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "length") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "distance") == 1) {
+  return 1;
+}
+  if (sh_node_is(c, k, "dot") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_guess(ShCtx* c, int32_t x) {
+  __flowc_tail: ;
+  int32_t kind = (c[0]).nk[x];
+  if (kind == E_NUMBER) {
+  return sh_ty_known(c, 0);
+}
+  if (kind == E_NAME) {
+  if (sh_node_is(c, x, "uv") == 1 || sh_node_is(c, x, "resolution") == 1) {
+  return sh_ty_known(c, 3);
+}
+  if (sh_node_is(c, x, "time") == 1) {
+  return sh_ty_known(c, 0);
+}
+  if (sh_node_is(c, x, "color") == 1) {
+  return sh_ty_known(c, 5);
+}
+  return sh_env_get(c, (c[0]).s1[x], (c[0]).e1[x], sh_ty_known(c, 0));
+}
+  if (kind == E_CAST) {
+  return sh_ty_named(c, (c[0]).s1[x], (c[0]).e1[x]);
+}
+  if (kind == E_CALL) {
+  if (sh_node_is(c, x, "vec2") == 1) {
+  return sh_ty_known(c, 3);
+}
+  if ((c[0]).target == SH_WGSL) {
+  if (sh_node_is(c, x, "vec3") == 1 || sh_node_is(c, x, "palette") == 1 || sh_node_is(c, x, "cross") == 1) {
+  return sh_ty_known(c, 4);
+}
+  if (sh_node_is(c, x, "vec4") == 1) {
+  return sh_ty_known(c, 5);
+}
+  int32_t f = sh_find_fn(c, (c[0]).s1[x], (c[0]).e1[x]);
+  if (f >= 0) {
+  return sh_map_type(c, (c[0]).frt[f]);
+}
+  if (sh_is_wgsl_float_fn(c, x) == 1) {
+  return sh_ty_known(c, 0);
+}
+} else {
+  if (sh_node_is(c, x, "vec3") == 1 || sh_node_is(c, x, "palette") == 1 || sh_node_is(c, x, "normalize") == 1 || sh_node_is(c, x, "cross") == 1 || sh_node_is(c, x, "reflect") == 1) {
+  return sh_ty_known(c, 4);
+}
+  if (sh_node_is(c, x, "vec4") == 1) {
+  return sh_ty_known(c, 5);
+}
+  if (sh_is_metal_float_fn(c, x) == 1) {
+  return sh_ty_known(c, 0);
+}
+  if (sh_find_fn(c, (c[0]).s1[x], (c[0]).e1[x]) >= 0) {
+  return sh_ty_known(c, 0);
+}
+}
+  if ((c[0]).na[x] >= 0) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = (c[0]).na[x];
+  c = __flowc_targ0;
+  x = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  return sh_ty_known(c, 0);
+}
+  if (kind == E_SWIZZLE) {
+  int32_t flen = ((c[0]).e1[x] - (c[0]).s1[x]);
+  if (flen == 2) {
+  return sh_ty_known(c, 3);
+}
+  if (flen == 3) {
+  return sh_ty_known(c, 4);
+}
+  if (flen == 4) {
+  return sh_ty_known(c, 5);
+}
+  return sh_ty_known(c, 0);
+}
+  if (kind == E_UNARY) {
+  if (sh_node_is(c, x, "!") == 1) {
+  return sh_ty_known(c, 2);
+}
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = (c[0]).na[x];
+  c = __flowc_targ0;
+  x = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (kind == E_BINARY) {
+  if (sh_node_is(c, x, "<") == 1 || sh_node_is(c, x, ">") == 1 || sh_node_is(c, x, "<=") == 1 || sh_node_is(c, x, ">=") == 1 || sh_node_is(c, x, "==") == 1 || sh_node_is(c, x, "!=") == 1 || sh_node_is(c, x, "&&") == 1 || sh_node_is(c, x, "||") == 1) {
+  return sh_ty_known(c, 2);
+}
+  int32_t lt = sh_guess(c, (c[0]).na[x]);
+  if (lt < 0) {
+  return (0 - 1);
+}
+  int32_t rt = sh_guess(c, (c[0]).nb[x]);
+  if (rt < 0) {
+  return (0 - 1);
+}
+  if (sh_rank(c, lt) >= sh_rank(c, rt)) {
+  return lt;
+}
+  return rt;
+}
+  return sh_ty_known(c, 0);
+}
+
+int32_t sh_is_metal_builtin(ShCtx* c, int32_t k) {
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  int32_t s = (c[0]).s1[k];
+  int32_t e = (c[0]).e1[k];
+  if (sh_span_is(p, s, e, "sin") == 1 || sh_span_is(p, s, e, "cos") == 1 || sh_span_is(p, s, e, "tan") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "asin") == 1 || sh_span_is(p, s, e, "acos") == 1 || sh_span_is(p, s, e, "atan") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "atan2") == 1 || sh_span_is(p, s, e, "abs") == 1 || sh_span_is(p, s, e, "sign") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "floor") == 1 || sh_span_is(p, s, e, "ceil") == 1 || sh_span_is(p, s, e, "fract") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "trunc") == 1 || sh_span_is(p, s, e, "sqrt") == 1 || sh_span_is(p, s, e, "rsqrt") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "exp") == 1 || sh_span_is(p, s, e, "exp2") == 1 || sh_span_is(p, s, e, "log") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "log2") == 1 || sh_span_is(p, s, e, "pow") == 1 || sh_span_is(p, s, e, "min") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "max") == 1 || sh_span_is(p, s, e, "clamp") == 1 || sh_span_is(p, s, e, "saturate") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "mix") == 1 || sh_span_is(p, s, e, "step") == 1 || sh_span_is(p, s, e, "smoothstep") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "length") == 1 || sh_span_is(p, s, e, "distance") == 1 || sh_span_is(p, s, e, "dot") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "cross") == 1 || sh_span_is(p, s, e, "normalize") == 1 || sh_span_is(p, s, e, "reflect") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "refract") == 1 || sh_span_is(p, s, e, "mod") == 1 || sh_span_is(p, s, e, "fmod") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t sh_is_wgsl_builtin(ShCtx* c, int32_t k) {
+  uint8_t* p = (uint8_t*)((c[0]).p);
+  int32_t s = (c[0]).s1[k];
+  int32_t e = (c[0]).e1[k];
+  if (sh_span_is(p, s, e, "sin") == 1 || sh_span_is(p, s, e, "cos") == 1 || sh_span_is(p, s, e, "tan") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "asin") == 1 || sh_span_is(p, s, e, "acos") == 1 || sh_span_is(p, s, e, "atan") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "atan2") == 1 || sh_span_is(p, s, e, "abs") == 1 || sh_span_is(p, s, e, "sign") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "floor") == 1 || sh_span_is(p, s, e, "ceil") == 1 || sh_span_is(p, s, e, "fract") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "trunc") == 1 || sh_span_is(p, s, e, "sqrt") == 1 || sh_span_is(p, s, e, "inverseSqrt") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "exp") == 1 || sh_span_is(p, s, e, "exp2") == 1 || sh_span_is(p, s, e, "log") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "log2") == 1 || sh_span_is(p, s, e, "pow") == 1 || sh_span_is(p, s, e, "min") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "max") == 1 || sh_span_is(p, s, e, "clamp") == 1 || sh_span_is(p, s, e, "mix") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "step") == 1 || sh_span_is(p, s, e, "smoothstep") == 1 || sh_span_is(p, s, e, "length") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "distance") == 1 || sh_span_is(p, s, e, "dot") == 1 || sh_span_is(p, s, e, "cross") == 1) {
+  return 1;
+}
+  if (sh_span_is(p, s, e, "normalize") == 1 || sh_span_is(p, s, e, "reflect") == 1 || sh_span_is(p, s, e, "refract") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+void sh_put_name(ShCtx* c, ShBuf* w, int32_t k) {
+  sh_put_span(w, (c[0]).p, (c[0]).s1[k], (c[0]).e1[k]);
+}
+
+void sh_unknown_fn(ShCtx* c, int32_t x) {
+  if (sh_err(c) == 1) {
+  sh_puts((c[0]).msg, "Unknown shader function '");
+  sh_put_name(c, (c[0]).msg, x);
+  sh_puts((c[0]).msg, "'");
+}
+}
+
+void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x) {
+  int32_t nargs = (c[0]).nc[x];
+  ShBuf* args = (ShBuf*)(flowc_shader_buf_new(64));
+  int32_t* ars = (int32_t*)(sh_ints(nargs));
+  int32_t* ae = (int32_t*)(sh_ints(nargs));
+  int32_t a = (c[0]).na[x];
+  int32_t k = 0;
+  while (a >= 0 && (c[0]).err == 0) {
+  if (k > 0) {
+  sh_puts(args, ", ");
+}
+  ars[k] = (args[0]).len;
+  sh_emit_expr(c, args, a);
+  ae[k] = (args[0]).len;
+  k = (k + 1);
+  a = (c[0]).nx[a];
+}
+  if ((c[0]).err == 0) {
+  int32_t wg = (c[0]).target;
+  int32_t paren = 1;
+  if (sh_node_is(c, x, "vec2") == 1) {
+  sh_put_ty(c, w, sh_ty_known(c, 3));
+} else {
+  if (sh_node_is(c, x, "vec3") == 1) {
+  sh_put_ty(c, w, sh_ty_known(c, 4));
+} else {
+  if (sh_node_is(c, x, "vec4") == 1) {
+  sh_put_ty(c, w, sh_ty_known(c, 5));
+} else {
+  if (sh_node_is(c, x, "hash") == 1) {
+  if (wg == SH_WGSL) {
+  if (nargs != 1) {
+  sh_fail(c, "hash() expects one argument");
+} else {
+  int32_t at = sh_guess(c, (c[0]).na[x]);
+  if (at >= 0 && sh_ty_is(c, at, "vec2<f32>") == 1) {
+  sh_puts(w, "fsl_hash21");
+} else {
+  sh_puts(w, "fsl_hash11");
+}
+}
+} else {
+  if (nargs == 1) {
+  int32_t at2 = sh_guess(c, (c[0]).na[x]);
+  if (sh_ty_is(c, at2, "float2") == 1 || sh_ty_is(c, at2, "vec2") == 1) {
+  sh_puts(w, "fsl_hash21");
+} else {
+  sh_puts(w, "fsl_hash11");
+}
+} else {
+  sh_puts(w, "fsl_hash21");
+}
+}
+} else {
+  if (sh_node_is(c, x, "noise") == 1) {
+  sh_puts(w, "fsl_noise");
+} else {
+  if (sh_node_is(c, x, "fbm") == 1) {
+  sh_puts(w, "fsl_fbm");
+} else {
+  if (sh_node_is(c, x, "palette") == 1) {
+  sh_puts(w, "fsl_palette");
+} else {
+  if (wg == SH_METAL && sh_node_is(c, x, "mod") == 1) {
+  sh_puts(w, "fmod");
+} else {
+  if (wg == SH_WGSL && (sh_node_is(c, x, "mod") == 1 || sh_node_is(c, x, "fmod") == 1)) {
+  if (nargs != 2) {
+  if (sh_err(c) == 1) {
+  sh_put_name(c, (c[0]).msg, x);
+  sh_puts((c[0]).msg, "() expects two arguments");
+}
+} else {
+  sh_putc(w, 40);
+  sh_put_span(w, (args[0]).buf, ars[0], ae[0]);
+  sh_puts(w, " % ");
+  sh_put_span(w, (args[0]).buf, ars[1], ae[1]);
+  sh_putc(w, 41);
+}
+  paren = 0;
+} else {
+  if (wg == SH_WGSL && sh_node_is(c, x, "saturate") == 1) {
+  if (nargs != 1) {
+  sh_fail(c, "saturate() expects one argument");
+} else {
+  sh_puts(w, "clamp(");
+  sh_put_span(w, (args[0]).buf, ars[0], ae[0]);
+  sh_puts(w, ", 0.0, 1.0)");
+}
+  paren = 0;
+} else {
+  if (wg == SH_WGSL && sh_node_is(c, x, "rsqrt") == 1) {
+  sh_puts(w, "inverseSqrt");
+} else {
+  int32_t known = 0;
+  if (wg == SH_WGSL) {
+  known = sh_is_wgsl_builtin(c, x);
+} else {
+  known = sh_is_metal_builtin(c, x);
+}
+  if (known == 0 && sh_find_fn(c, (c[0]).s1[x], (c[0]).e1[x]) >= 0) {
+  known = 1;
+}
+  if (known == 1) {
+  sh_put_name(c, w, x);
+} else {
+  sh_unknown_fn(c, x);
+  paren = 0;
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  if (paren == 1 && (c[0]).err == 0) {
+  sh_putc(w, 40);
+  sh_put_span(w, (args[0]).buf, 0, (args[0]).len);
+  sh_putc(w, 41);
+}
+}
+  free((uint8_t*)(ars));
+  free((uint8_t*)(ae));
+  flowc_shader_buf_free(args);
+}
+
+void sh_emit_expr(ShCtx* c, ShBuf* w, int32_t x) {
+  if ((c[0]).err != 0) {
+  return;
+}
+  int32_t kind = (c[0]).nk[x];
+  if (kind == E_NUMBER) {
+  sh_put_name(c, w, x);
+  if ((c[0]).nf[x] == 1) {
+  sh_puts(w, ".0");
+}
+  return;
+}
+  if (kind == E_NAME) {
+  if (sh_node_is(c, x, "time") == 1) {
+  sh_puts(w, "uniforms.time");
+} else {
+  if (sh_node_is(c, x, "resolution") == 1) {
+  sh_put_ty(c, w, sh_ty_known(c, 3));
+  sh_puts(w, "(uniforms.width, uniforms.height)");
+} else {
+  sh_put_name(c, w, x);
+}
+}
+  return;
+}
+  if (kind == E_UNARY) {
+  sh_putc(w, 40);
+  sh_put_name(c, w, x);
+  sh_emit_expr(c, w, (c[0]).na[x]);
+  sh_putc(w, 41);
+  return;
+}
+  if (kind == E_BINARY) {
+  if ((c[0]).target == SH_METAL && sh_node_is(c, x, "%") == 1) {
+  sh_puts(w, "fmod(");
+  sh_emit_expr(c, w, (c[0]).na[x]);
+  sh_puts(w, ", ");
+  sh_emit_expr(c, w, (c[0]).nb[x]);
+  sh_putc(w, 41);
+  return;
+}
+  sh_putc(w, 40);
+  sh_emit_expr(c, w, (c[0]).na[x]);
+  sh_putc(w, 32);
+  sh_put_name(c, w, x);
+  sh_putc(w, 32);
+  sh_emit_expr(c, w, (c[0]).nb[x]);
+  sh_putc(w, 41);
+  return;
+}
+  if (kind == E_SWIZZLE) {
+  sh_emit_expr(c, w, (c[0]).na[x]);
+  sh_putc(w, 46);
+  sh_put_name(c, w, x);
+  return;
+}
+  if (kind == E_CAST) {
+  sh_put_ty(c, w, sh_ty_named(c, (c[0]).s1[x], (c[0]).e1[x]));
+  sh_putc(w, 40);
+  sh_emit_expr(c, w, (c[0]).na[x]);
+  sh_putc(w, 41);
+  return;
+}
+  sh_emit_call(c, w, x);
+}
+
+int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
+  int32_t lines = 0;
+  int32_t st = head;
+  while (st >= 0 && (c[0]).err == 0) {
+  int32_t kind = (c[0]).nk[st];
+  if (kind == S_LET) {
+  int32_t ty = 0;
+  if ((c[0]).nb[st] >= 0) {
+  ty = sh_map_type(c, (c[0]).nb[st]);
+} else {
+  ty = sh_guess(c, (c[0]).na[st]);
+}
+  if ((c[0]).err == 0) {
+  sh_env_set(c, (c[0]).s1[st], (c[0]).e1[st], ty);
+  sh_pad(w, indent);
+  if ((c[0]).target == SH_WGSL) {
+  if ((c[0]).nf[st] == 1) {
+  sh_puts(w, "var ");
+} else {
+  sh_puts(w, "let ");
+}
+  sh_put_name(c, w, st);
+  sh_puts(w, ": ");
+  sh_put_ty(c, w, ty);
+} else {
+  sh_put_ty(c, w, ty);
+  sh_putc(w, 32);
+  sh_put_name(c, w, st);
+}
+  sh_puts(w, " = ");
+  sh_emit_expr(c, w, (c[0]).na[st]);
+  sh_line(w, ";");
+  lines = (lines + 1);
+}
+} else {
+  if (kind == S_ASSIGN) {
+  sh_pad(w, indent);
+  sh_put_name(c, w, st);
+  sh_puts(w, " = ");
+  sh_emit_expr(c, w, (c[0]).na[st]);
+  sh_line(w, ";");
+  lines = (lines + 1);
+} else {
+  if (kind == S_RETURN) {
+  sh_pad(w, indent);
+  if ((c[0]).na[st] < 0) {
+  sh_line(w, "return;");
+} else {
+  sh_puts(w, "return ");
+  sh_emit_expr(c, w, (c[0]).na[st]);
+  sh_line(w, ";");
+}
+  lines = (lines + 1);
+} else {
+  if (kind == S_IF) {
+  sh_pad(w, indent);
+  sh_puts(w, "if (");
+  sh_emit_expr(c, w, (c[0]).na[st]);
+  sh_line(w, ") {");
+  lines = (lines + 1);
+  lines = (lines + sh_emit_stmts(c, w, (c[0]).nb[st], (indent + 1)));
+  if ((c[0]).nc[st] >= 0) {
+  sh_pad(w, indent);
+  sh_line(w, "} else {");
+  lines = (lines + 1);
+  lines = (lines + sh_emit_stmts(c, w, (c[0]).nc[st], (indent + 1)));
+}
+  sh_pad(w, indent);
+  sh_line(w, "}");
+  lines = (lines + 1);
+} else {
+  int32_t wg = (c[0]).target;
+  sh_env_set(c, (c[0]).s1[st], (c[0]).e1[st], sh_ty_known(c, 1));
+  sh_pad(w, indent);
+  if (wg == SH_WGSL) {
+  sh_puts(w, "for (var ");
+  sh_put_name(c, w, st);
+  sh_puts(w, ": i32 = i32(");
+} else {
+  sh_puts(w, "for (int ");
+  sh_put_name(c, w, st);
+  sh_puts(w, " = int(");
+}
+  sh_emit_expr(c, w, (c[0]).na[st]);
+  sh_puts(w, "); ");
+  sh_put_name(c, w, st);
+  if (wg == SH_WGSL) {
+  sh_puts(w, " < i32(");
+} else {
+  sh_puts(w, " < int(");
+}
+  sh_emit_expr(c, w, (c[0]).nb[st]);
+  sh_puts(w, "); ");
+  sh_put_name(c, w, st);
+  if (wg == SH_WGSL) {
+  sh_puts(w, " = ");
+  sh_put_name(c, w, st);
+  sh_line(w, " + 1) {");
+} else {
+  sh_line(w, "++) {");
+}
+  lines = (lines + 1);
+  lines = (lines + sh_emit_stmts(c, w, (c[0]).nc[st], (indent + 1)));
+  sh_pad(w, indent);
+  sh_line(w, "}");
+  lines = (lines + 1);
+}
+}
+}
+}
+  st = (c[0]).nx[st];
+}
+  return lines;
+}
+
+int32_t sh_has_color_assign(ShCtx* c, int32_t head) {
+  int32_t st = head;
+  while (st >= 0) {
+  int32_t kind = (c[0]).nk[st];
+  if (kind == S_ASSIGN && sh_node_is(c, st, "color") == 1) {
+  return 1;
+}
+  if (kind == S_IF) {
+  if (sh_has_color_assign(c, (c[0]).nb[st]) == 1 || sh_has_color_assign(c, (c[0]).nc[st]) == 1) {
+  return 1;
+}
+}
+  if (kind == S_FOR && sh_has_color_assign(c, (c[0]).nc[st]) == 1) {
+  return 1;
+}
+  st = (c[0]).nx[st];
+}
+  return 0;
+}
+
+void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k) {
+  (c[0]).nv = 0;
+  int32_t wg = (c[0]).target;
+  int32_t ret = 0;
+  if (wg == SH_METAL) {
+  ret = sh_map_type(c, (c[0]).frt[k]);
+}
+  ShBuf* params = (ShBuf*)(flowc_shader_buf_new(64));
+  int32_t i = 0;
+  while (i < (c[0]).fpn[k] && (c[0]).err == 0) {
+  int32_t pi = ((c[0]).fp0[k] + i);
+  int32_t mt = sh_map_type(c, (c[0]).pat[pi]);
+  if ((c[0]).err == 0) {
+  sh_env_set(c, (c[0]).pas[pi], (c[0]).pae[pi], mt);
+  if (i > 0) {
+  sh_puts(params, ", ");
+}
+  if (wg == SH_WGSL) {
+  sh_put_span(params, (c[0]).p, (c[0]).pas[pi], (c[0]).pae[pi]);
+  sh_puts(params, ": ");
+  sh_put_ty(c, params, mt);
+} else {
+  sh_put_ty(c, params, mt);
+  sh_putc(params, 32);
+  sh_put_span(params, (c[0]).p, (c[0]).pas[pi], (c[0]).pae[pi]);
+}
+}
+  i = (i + 1);
+}
+  if ((c[0]).err != 0) {
+  flowc_shader_buf_free(params);
+  return;
+}
+  ShBuf* body = (ShBuf*)(flowc_shader_buf_new(256));
+  int32_t stmts = sh_parse_body_span(c, (c[0]).fbs[k], (c[0]).fbe[k]);
+  int32_t nl = 0;
+  if ((c[0]).err == 0) {
+  nl = sh_emit_stmts(c, body, stmts, 1);
+}
+  if ((c[0]).err == 0 && wg == SH_WGSL) {
+  ret = sh_map_type(c, (c[0]).frt[k]);
+}
+  if ((c[0]).err == 0) {
+  if (wg == SH_WGSL) {
+  sh_puts(w, "fn ");
+  sh_put_span(w, (c[0]).p, (c[0]).fns[k], (c[0]).fne[k]);
+  sh_putc(w, 40);
+  sh_put_span(w, (params[0]).buf, 0, (params[0]).len);
+  sh_puts(w, ") -> ");
+  sh_put_ty(c, w, ret);
+  sh_line(w, " {");
+} else {
+  sh_puts(w, "static inline ");
+  sh_put_ty(c, w, ret);
+  sh_putc(w, 32);
+  sh_put_span(w, (c[0]).p, (c[0]).fns[k], (c[0]).fne[k]);
+  sh_putc(w, 40);
+  sh_put_span(w, (params[0]).buf, 0, (params[0]).len);
+  sh_line(w, ") {");
+}
+  sh_put_span(w, (body[0]).buf, 0, (body[0]).len);
+  if (nl == 0) {
+  sh_putc(w, 10);
+}
+  sh_line(w, "}");
+}
+  flowc_shader_buf_free(params);
+  flowc_shader_buf_free(body);
+}
+
+void sh_emit_fill(ShCtx* c, ShBuf* w, int32_t k) {
+  int32_t stmts = sh_parse_body_span(c, (c[0]).flbs[k], (c[0]).flbe[k]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  if (sh_has_color_assign(c, stmts) == 0) {
+  if (sh_err(c) == 1) {
+  sh_puts((c[0]).msg, "shader fill '");
+  sh_put_span((c[0]).msg, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+  sh_puts((c[0]).msg, "' must assign `color = ...`");
+}
+  return;
+}
+  (c[0]).nv = 0;
+  if ((c[0]).target == SH_WGSL) {
+  sh_line(w, "@fragment");
+  sh_puts(w, "fn ");
+  sh_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+  sh_line(w, "_frag(in: FlowVertexOut) -> @location(0) vec4<f32> {");
+  sh_line(w, "    let uv: vec2<f32> = in.uv;");
+  sh_line(w, "    var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);");
+} else {
+  sh_puts(w, "fragment float4 ");
+  sh_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+  sh_line(w, "_frag(");
+  sh_line(w, "    FlowVertexOut in [[stage_in]],");
+  sh_line(w, "    constant FlowShaderUniforms& uniforms [[buffer(0)]]");
+  sh_line(w, ") {");
+  sh_line(w, "    float2 uv = in.uv;");
+  sh_line(w, "    float4 color = float4(0.0, 0.0, 0.0, 1.0);");
+}
+  sh_emit_stmts(c, w, stmts, 1);
+  sh_line(w, "    return color;");
+  sh_line(w, "}");
+}
+
+int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int32_t nlen, int32_t only) {
+  (c[0]).target = target;
+  int32_t nsel = 0;
+  int32_t k = 0;
+  while (k < (c[0]).nfl) {
+  if ((nlen < 0 || flowc_shader_fill_named(c, k, name, nlen) == 1) && (only < 0 || only == k)) {
+  nsel = (nsel + 1);
+}
+  k = (k + 1);
+}
+  if (nsel == 0) {
+  sh_fail(c, "No `shader fill` blocks in module");
+  return (0 - 1);
+}
+  if (target == SH_WGSL) {
+  sh_prelude_wgsl(w);
+} else {
+  sh_prelude_metal(w);
+}
+  sh_puts(w, "\n\n");
+  int32_t f = 0;
+  while (f < (c[0]).nfn && (c[0]).err == 0) {
+  sh_emit_fn(c, w, f);
+  sh_puts(w, "\n\n");
+  f = (f + 1);
+}
+  int32_t seen = 0;
+  k = 0;
+  while (k < (c[0]).nfl && (c[0]).err == 0) {
+  if ((nlen < 0 || flowc_shader_fill_named(c, k, name, nlen) == 1) && (only < 0 || only == k)) {
+  sh_emit_fill(c, w, k);
+  seen = (seen + 1);
+  if (seen < nsel) {
+  sh_putc(w, 10);
+}
+}
+  k = (k + 1);
+}
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  return 0;
+}
+
+void sh_prelude_metal(ShBuf* w) {
+  sh_line(w, "");
+  sh_line(w, "#include <metal_stdlib>");
+  sh_line(w, "using namespace metal;");
+  sh_line(w, "");
+  sh_line(w, "struct FlowShaderUniforms {");
+  sh_line(w, "    float time;");
+  sh_line(w, "    float width;");
+  sh_line(w, "    float height;");
+  sh_line(w, "};");
+  sh_line(w, "");
+  sh_line(w, "struct FlowVertexOut {");
+  sh_line(w, "    float4 position [[position]];");
+  sh_line(w, "    float2 uv;");
+  sh_line(w, "};");
+  sh_line(w, "");
+  sh_line(w, "vertex FlowVertexOut flow_shader_vertex(uint vid [[vertex_id]]) {");
+  sh_line(w, "    float2 pos;");
+  sh_line(w, "    if (vid == 0) pos = float2(-1.0, -1.0);");
+  sh_line(w, "    else if (vid == 1) pos = float2( 3.0, -1.0);");
+  sh_line(w, "    else pos = float2(-1.0,  3.0);");
+  sh_line(w, "    FlowVertexOut out;");
+  sh_line(w, "    out.position = float4(pos, 0.0, 1.0);");
+  sh_line(w, "    out.uv = float2(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5));");
+  sh_line(w, "    return out;");
+  sh_line(w, "}");
+  sh_line(w, "");
+  sh_puts(w, "// ");
+  sh_rule(w, 2);
+  sh_puts(w, " FSL standard library (hash / noise / palette) ");
+  sh_rule(w, 19);
+  sh_putc(w, 10);
+  sh_line(w, "static inline float fsl_hash11(float p) {");
+  sh_line(w, "    p = fract(p * 0.1031);");
+  sh_line(w, "    p *= p + 33.33;");
+  sh_line(w, "    p *= p + p;");
+  sh_line(w, "    return fract(p);");
+  sh_line(w, "}");
+  sh_line(w, "static inline float fsl_hash21(float2 p) {");
+  sh_line(w, "    float3 p3 = fract(float3(p.xyx) * 0.1031);");
+  sh_line(w, "    p3 += dot(p3, p3.yzx + 33.33);");
+  sh_line(w, "    return fract((p3.x + p3.y) * p3.z);");
+  sh_line(w, "}");
+  sh_line(w, "static inline float2 fsl_hash22(float2 p) {");
+  sh_line(w, "    float3 p3 = fract(float3(p.xyx) * float3(0.1031, 0.1030, 0.0973));");
+  sh_line(w, "    p3 += dot(p3, p3.yzx + 33.33);");
+  sh_line(w, "    return fract((p3.xx + p3.yz) * p3.zy);");
+  sh_line(w, "}");
+  sh_line(w, "static inline float fsl_noise(float2 p) {");
+  sh_line(w, "    float2 i = floor(p);");
+  sh_line(w, "    float2 f = fract(p);");
+  sh_line(w, "    float a = fsl_hash21(i);");
+  sh_line(w, "    float b = fsl_hash21(i + float2(1.0, 0.0));");
+  sh_line(w, "    float c = fsl_hash21(i + float2(0.0, 1.0));");
+  sh_line(w, "    float d = fsl_hash21(i + float2(1.0, 1.0));");
+  sh_line(w, "    float2 u = f * f * (3.0 - 2.0 * f);");
+  sh_line(w, "    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;");
+  sh_line(w, "}");
+  sh_line(w, "static inline float fsl_fbm(float2 p) {");
+  sh_line(w, "    float v = 0.0;");
+  sh_line(w, "    float a = 0.5;");
+  sh_line(w, "    for (int i = 0; i < 5; i++) {");
+  sh_line(w, "        v += a * fsl_noise(p);");
+  sh_line(w, "        p *= 2.0;");
+  sh_line(w, "        a *= 0.5;");
+  sh_line(w, "    }");
+  sh_line(w, "    return v;");
+  sh_line(w, "}");
+  sh_line(w, "static inline float3 fsl_palette(float t) {");
+  sh_line(w, "    float3 a = float3(0.5, 0.5, 0.5);");
+  sh_line(w, "    float3 b = float3(0.5, 0.5, 0.5);");
+  sh_line(w, "    float3 c = float3(1.0, 1.0, 1.0);");
+  sh_line(w, "    float3 d = float3(0.00, 0.33, 0.67);");
+  sh_line(w, "    return a + b * cos(6.28318 * (c * t + d));");
+  sh_line(w, "}");
+}
+
+void sh_prelude_wgsl(ShBuf* w) {
+  sh_line(w, "");
+  sh_line(w, "struct FlowShaderUniforms {");
+  sh_line(w, "    time: f32,");
+  sh_line(w, "    width: f32,");
+  sh_line(w, "    height: f32,");
+  sh_line(w, "    _pad: f32,");
+  sh_line(w, "};");
+  sh_line(w, "");
+  sh_line(w, "@group(0) @binding(0)");
+  sh_line(w, "var<uniform> uniforms: FlowShaderUniforms;");
+  sh_line(w, "");
+  sh_line(w, "struct FlowVertexOut {");
+  sh_line(w, "    @builtin(position) position: vec4<f32>,");
+  sh_line(w, "    @location(0) uv: vec2<f32>,");
+  sh_line(w, "};");
+  sh_line(w, "");
+  sh_line(w, "@vertex");
+  sh_line(w, "fn flow_shader_vertex(@builtin(vertex_index) vid: u32) -> FlowVertexOut {");
+  sh_line(w, "    var pos: vec2<f32>;");
+  sh_line(w, "    if (vid == 0u) {");
+  sh_line(w, "        pos = vec2<f32>(-1.0, -1.0);");
+  sh_line(w, "    } else if (vid == 1u) {");
+  sh_line(w, "        pos = vec2<f32>(3.0, -1.0);");
+  sh_line(w, "    } else {");
+  sh_line(w, "        pos = vec2<f32>(-1.0, 3.0);");
+  sh_line(w, "    }");
+  sh_line(w, "");
+  sh_line(w, "    var out: FlowVertexOut;");
+  sh_line(w, "    out.position = vec4<f32>(pos, 0.0, 1.0);");
+  sh_line(w, "    out.uv = vec2<f32>(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5));");
+  sh_line(w, "    return out;");
+  sh_line(w, "}");
+  sh_line(w, "");
+  sh_line(w, "fn fsl_hash11(value: f32) -> f32 {");
+  sh_line(w, "    var p = fract(value * 0.1031);");
+  sh_line(w, "    p = p * (p + 33.33);");
+  sh_line(w, "    p = p * (p + p);");
+  sh_line(w, "    return fract(p);");
+  sh_line(w, "}");
+  sh_line(w, "");
+  sh_line(w, "fn fsl_hash21(value: vec2<f32>) -> f32 {");
+  sh_line(w, "    var p3 = fract(vec3<f32>(value.x, value.y, value.x) * vec3<f32>(0.1031));");
+  sh_line(w, "    let d = dot(p3, p3.yzx + vec3<f32>(33.33));");
+  sh_line(w, "    p3 = p3 + vec3<f32>(d);");
+  sh_line(w, "    return fract((p3.x + p3.y) * p3.z);");
+  sh_line(w, "}");
+  sh_line(w, "");
+  sh_line(w, "fn fsl_noise(p: vec2<f32>) -> f32 {");
+  sh_line(w, "    let i = floor(p);");
+  sh_line(w, "    let f = fract(p);");
+  sh_line(w, "    let a = fsl_hash21(i);");
+  sh_line(w, "    let b = fsl_hash21(i + vec2<f32>(1.0, 0.0));");
+  sh_line(w, "    let c = fsl_hash21(i + vec2<f32>(0.0, 1.0));");
+  sh_line(w, "    let d = fsl_hash21(i + vec2<f32>(1.0, 1.0));");
+  sh_line(w, "    let u = f * f * (vec2<f32>(3.0) - vec2<f32>(2.0) * f);");
+  sh_line(w, "    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;");
+  sh_line(w, "}");
+  sh_line(w, "");
+  sh_line(w, "fn fsl_fbm(value: vec2<f32>) -> f32 {");
+  sh_line(w, "    var p = value;");
+  sh_line(w, "    var v = 0.0;");
+  sh_line(w, "    var a = 0.5;");
+  sh_line(w, "    for (var i: i32 = 0; i < 5; i = i + 1) {");
+  sh_line(w, "        v = v + a * fsl_noise(p);");
+  sh_line(w, "        p = p * vec2<f32>(2.0);");
+  sh_line(w, "        a = a * 0.5;");
+  sh_line(w, "    }");
+  sh_line(w, "    return v;");
+  sh_line(w, "}");
+  sh_line(w, "");
+  sh_line(w, "fn fsl_palette(t: f32) -> vec3<f32> {");
+  sh_line(w, "    let a = vec3<f32>(0.5, 0.5, 0.5);");
+  sh_line(w, "    let b = vec3<f32>(0.5, 0.5, 0.5);");
+  sh_line(w, "    let c = vec3<f32>(1.0, 1.0, 1.0);");
+  sh_line(w, "    let d = vec3<f32>(0.00, 0.33, 0.67);");
+  sh_line(w, "    return a + b * cos(vec3<f32>(6.28318) * (c * vec3<f32>(t) + d));");
+  sh_line(w, "}");
+}
+
+
 typedef struct FlowcOverloadTable {
   uint8_t* src;
   int32_t* ns;
@@ -24727,6 +27259,359 @@ int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const c
 }
 
 
+void se_putc(ShBuf* w, uint8_t c);
+void se_puts(ShBuf* w, const char* s);
+const char* se_cstr(ShBuf* w);
+void se_error(const char* head, const char* tail);
+void se_ctx_error(ShCtx* c);
+ShBuf* se_path(const char* dir, ShBuf* a, const char* b);
+void se_mkdirs(const char* dir);
+ShBuf* se_stem(const char* path);
+int32_t se_write(ShBuf* path, ShBuf* data);
+ShBuf* se_fill_name(ShCtx* c, int32_t k);
+int32_t se_metal(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen);
+int32_t se_wgsl(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen);
+int32_t se_mode_is(const char* mode, const char* want);
+int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out_path, const char* name);
+void se_putc(ShBuf* w, uint8_t c) {
+  flowc_shader_putc(w, c);
+}
+
+void se_puts(ShBuf* w, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  int32_t i = 0;
+  while (i < n) {
+  se_putc(w, p[i]);
+  i = (i + 1);
+}
+}
+
+const char* se_cstr(ShBuf* w) {
+  (w[0]).buf[(w[0]).len] = 0;
+  return (const char*)((w[0]).buf);
+}
+
+void se_error(const char* head, const char* tail) {
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(4096));
+  se_puts(w, "flowc shader: ");
+  se_puts(w, head);
+  se_puts(w, tail);
+  puts(se_cstr(w));
+  flowc_shader_buf_free(w);
+}
+
+void se_ctx_error(ShCtx* c) {
+  ShBuf* m = (ShBuf*)(flowc_shader_ctx_msg(c));
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(((m[0]).len + 64)));
+  se_puts(w, "flowc shader: ");
+  int32_t i = 0;
+  while (i < (m[0]).len) {
+  se_putc(w, (m[0]).buf[i]);
+  i = (i + 1);
+}
+  puts(se_cstr(w));
+  flowc_shader_buf_free(w);
+}
+
+ShBuf* se_path(const char* dir, ShBuf* a, const char* b) {
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(4096));
+  se_puts(w, dir);
+  if ((w[0]).len > 0 && (w[0]).buf[((w[0]).len - 1)] != 47) {
+  se_putc(w, 47);
+}
+  int32_t i = 0;
+  while (i < (a[0]).len) {
+  se_putc(w, (a[0]).buf[i]);
+  i = (i + 1);
+}
+  se_puts(w, b);
+  return w;
+}
+
+void se_mkdirs(const char* dir) {
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(4096));
+  se_puts(w, dir);
+  int32_t n = (w[0]).len;
+  int32_t i = 1;
+  while (i < n) {
+  if ((w[0]).buf[i] == 47) {
+  (w[0]).buf[i] = 0;
+  flowc_io_mkdir((const char*)((w[0]).buf));
+  (w[0]).buf[i] = 47;
+}
+  i = (i + 1);
+}
+  flowc_io_mkdir(se_cstr(w));
+  flowc_shader_buf_free(w);
+}
+
+ShBuf* se_stem(const char* path) {
+  uint8_t* p = (uint8_t*)(path);
+  int32_t n = (int32_t)(strlen(path));
+  int32_t b = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 47) {
+  b = (i + 1);
+}
+  i = (i + 1);
+}
+  int32_t e = n;
+  int32_t k = (n - 1);
+  while (k > b) {
+  if (p[k] == 46) {
+  e = k;
+  k = b;
+}
+  k = (k - 1);
+}
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new((n + 8)));
+  i = b;
+  while (i < e) {
+  se_putc(w, p[i]);
+  i = (i + 1);
+}
+  return w;
+}
+
+int32_t se_write(ShBuf* path, ShBuf* data) {
+  if (flowc_write_file(se_cstr(path), (data[0]).buf, (data[0]).len) != 0) {
+  se_error("cannot write ", se_cstr(path));
+  return 1;
+}
+  return 0;
+}
+
+ShBuf* se_fill_name(ShCtx* c, int32_t k) {
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(64));
+  flowc_shader_put_fill_name(c, w, k);
+  return w;
+}
+
+int32_t se_metal(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen) {
+  se_mkdirs(out_dir);
+  ShBuf* stem = (ShBuf*)(se_stem(in_path));
+  ShBuf* src = (ShBuf*)(flowc_shader_buf_new(65536));
+  if (flowc_shader_gen(c, src, SH_METAL, name, nlen, (0 - 1)) != 0) {
+  se_ctx_error(c);
+  return 1;
+}
+  ShBuf* gallery = (ShBuf*)(se_path(out_dir, stem, "_gallery.metal"));
+  int32_t rc = se_write(gallery, src);
+  ShBuf* entries = (ShBuf*)(flowc_shader_buf_new(4096));
+  int32_t nfl = flowc_shader_fill_count(c);
+  int32_t k = 0;
+  while (k < nfl) {
+  if (nlen < 0 || flowc_shader_fill_named(c, k, name, nlen) == 1) {
+  flowc_shader_put_fill_name(c, entries, k);
+  se_puts(entries, "_frag\n");
+}
+  k = (k + 1);
+}
+  ShBuf* epath = (ShBuf*)(se_path(out_dir, stem, "_gallery.entries"));
+  if (rc == 0) {
+  rc = se_write(epath, entries);
+}
+  k = 0;
+  while (k < nfl && rc == 0) {
+  if (nlen < 0 || flowc_shader_fill_named(c, k, name, nlen) == 1) {
+  ShBuf* one = (ShBuf*)(flowc_shader_buf_new(65536));
+  flowc_shader_gen(c, one, SH_METAL, name, nlen, k);
+  ShBuf* fname = (ShBuf*)(se_fill_name(c, k));
+  ShBuf* mpath = (ShBuf*)(se_path(out_dir, fname, "_fill.metal"));
+  rc = se_write(mpath, one);
+  ShBuf* entry = (ShBuf*)(flowc_shader_buf_new(128));
+  flowc_shader_put_fill_name(c, entry, k);
+  se_puts(entry, "_frag\n");
+  ShBuf* ypath = (ShBuf*)(se_path(out_dir, fname, "_fill.entry"));
+  if (rc == 0) {
+  rc = se_write(ypath, entry);
+}
+  flowc_shader_buf_free(one);
+  flowc_shader_buf_free(fname);
+  flowc_shader_buf_free(mpath);
+  flowc_shader_buf_free(entry);
+  flowc_shader_buf_free(ypath);
+}
+  k = (k + 1);
+}
+  if (rc == 0) {
+  puts(se_cstr(gallery));
+}
+  flowc_shader_buf_free(stem);
+  flowc_shader_buf_free(src);
+  flowc_shader_buf_free(gallery);
+  flowc_shader_buf_free(entries);
+  flowc_shader_buf_free(epath);
+  return rc;
+}
+
+int32_t se_wgsl(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen) {
+  se_mkdirs(out_dir);
+  ShBuf* stem = (ShBuf*)(se_stem(in_path));
+  ShBuf* src = (ShBuf*)(flowc_shader_buf_new(65536));
+  if (flowc_shader_gen(c, src, SH_WGSL, name, nlen, (0 - 1)) != 0) {
+  se_ctx_error(c);
+  return 1;
+}
+  ShBuf* out = (ShBuf*)(se_path(out_dir, stem, "_gallery.wgsl"));
+  if (nlen >= 0) {
+  flowc_shader_buf_free(out);
+  ShBuf* nb = (ShBuf*)(flowc_shader_buf_new((nlen + 8)));
+  int32_t i = 0;
+  while (i < nlen) {
+  se_putc(nb, name[i]);
+  i = (i + 1);
+}
+  out = se_path(out_dir, nb, "_fill.wgsl");
+  flowc_shader_buf_free(nb);
+}
+  int32_t rc = se_write(out, src);
+  ShBuf* entries = (ShBuf*)(flowc_shader_buf_new(4096));
+  int32_t nfl = flowc_shader_fill_count(c);
+  int32_t first = 1;
+  int32_t k = 0;
+  while (k < nfl) {
+  if (nlen < 0 || flowc_shader_fill_named(c, k, name, nlen) == 1) {
+  if (first == 0) {
+  se_putc(entries, 10);
+}
+  flowc_shader_put_fill_name(c, entries, k);
+  se_puts(entries, "_frag");
+  first = 0;
+}
+  k = (k + 1);
+}
+  ShBuf* epath = (ShBuf*)(se_path(out_dir, stem, "_gallery.wgsl.entries"));
+  if (rc == 0) {
+  rc = se_write(epath, entries);
+}
+  if (rc == 0) {
+  puts(se_cstr(out));
+}
+  flowc_shader_buf_free(stem);
+  flowc_shader_buf_free(src);
+  flowc_shader_buf_free(out);
+  flowc_shader_buf_free(entries);
+  flowc_shader_buf_free(epath);
+  return rc;
+}
+
+int32_t se_mode_is(const char* mode, const char* want) {
+  if (strcmp(mode, want) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out_path, const char* name) {
+  int32_t known = (((se_mode_is(mode, "metal") + se_mode_is(mode, "wgsl")) + se_mode_is(mode, "list")) + se_mode_is(mode, "expand"));
+  if (known == 0) {
+  se_error("unknown FLOWC_SHADER mode ", mode);
+  return 1;
+}
+  uint8_t* ip = (uint8_t*)(in_path);
+  if (ip == NULL) {
+  se_error("FLOWC_IN is required", "");
+  return 1;
+}
+  uint8_t* op = (uint8_t*)(out_path);
+  if (op == NULL && se_mode_is(mode, "list") == 0) {
+  se_error("FLOWC_OUT is required", "");
+  return 1;
+}
+  int64_t fsize = flowc_io_file_size(in_path);
+  if (fsize < 0) {
+  se_error("cannot read ", in_path);
+  return 1;
+}
+  int32_t cap = ((int32_t)(fsize) + 256);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((cap + 1))));
+  int32_t n = flowc_read_file(in_path, buf, cap);
+  if (n < 0) {
+  se_error("cannot read ", in_path);
+  free(buf);
+  return 1;
+}
+  buf[n] = 0;
+  if (se_mode_is(mode, "expand") == 1) {
+  int32_t xn = flowc_shader_expand_in_place(buf, n, cap);
+  int32_t xrc = 1;
+  if (xn >= 0) {
+  xrc = 0;
+  if (flowc_write_file(out_path, buf, xn) != 0) {
+  se_error("cannot write ", out_path);
+  xrc = 1;
+}
+}
+  free(buf);
+  return xrc;
+}
+  ShCtx* c = (ShCtx*)(flowc_shader_ctx_new(buf, n));
+  free(buf);
+  if (flowc_shader_extract(c) != 0) {
+  se_ctx_error(c);
+  flowc_shader_ctx_free(c);
+  return 1;
+}
+  int32_t nfl = flowc_shader_fill_count(c);
+  if (se_mode_is(mode, "list") == 1) {
+  int32_t k = 0;
+  while (k < nfl) {
+  ShBuf* nm = (ShBuf*)(se_fill_name(c, k));
+  puts(se_cstr(nm));
+  flowc_shader_buf_free(nm);
+  k = (k + 1);
+}
+  flowc_shader_ctx_free(c);
+  return 0;
+}
+  if (nfl == 0) {
+  if (se_mode_is(mode, "metal") == 1) {
+  se_error("No `shader fill Name ", "{ ... }` blocks found.\nSee docs/language/shaders.md");
+} else {
+  se_error("No `shader fill Name ", "{ ... }` blocks found");
+}
+  flowc_shader_ctx_free(c);
+  return 1;
+}
+  uint8_t* np = (uint8_t*)(name);
+  int32_t nlen = (0 - 1);
+  if (np != NULL) {
+  if (strlen(name) > 0) {
+  nlen = (int32_t)(strlen(name));
+}
+}
+  if (nlen >= 0) {
+  int32_t hit = 0;
+  int32_t k2 = 0;
+  while (k2 < nfl) {
+  hit = (hit + flowc_shader_fill_named(c, k2, np, nlen));
+  k2 = (k2 + 1);
+}
+  if (hit == 0) {
+  ShBuf* w = (ShBuf*)(flowc_shader_buf_new((nlen + 32)));
+  se_puts(w, "Shader '");
+  se_puts(w, name);
+  se_puts(w, "' not found");
+  se_error(se_cstr(w), "");
+  flowc_shader_buf_free(w);
+  flowc_shader_ctx_free(c);
+  return 1;
+}
+}
+  int32_t rc = 0;
+  if (se_mode_is(mode, "metal") == 1) {
+  rc = se_metal(c, in_path, out_path, np, nlen);
+} else {
+  rc = se_wgsl(c, in_path, out_path, np, nlen);
+}
+  flowc_shader_ctx_free(c);
+  return rc;
+}
+
+
 const int32_t FLOWC_OVERLOAD_SELECT_NO_MATCH = (-1);
 const int32_t FLOWC_OVERLOAD_SELECT_AMBIGUOUS = (-2);
 const int32_t FLOWC_OVERLOAD_SELECT_UNKNOWN = (-3);
@@ -26277,6 +29162,9 @@ int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint
 
 int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages) {
   int32_t m = n;
+  if (m >= 0 && (stages & 8) != 0) {
+  m = flowc_shader_expand_in_place(src, m, cap);
+}
   if (m >= 0 && (stages & 1) != 0) {
   m = flowc_field_expand_in_place(src, m, cap);
 }
@@ -26290,7 +29178,7 @@ int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32
 }
 
 int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap) {
-  return flowc_expand_stages_in_place(src, n, cap, 7);
+  return flowc_expand_stages_in_place(src, n, cap, 15);
 }
 
 int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap) {
@@ -27416,6 +30304,9 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   return flowc_wasm_gen_compile(in_path, out_path, "2");
+}
+  if (flowc_env_set("FLOWC_SHADER") == 1) {
+  return flowc_shader_mode(getenv("FLOWC_SHADER"), in_path, out_path, getenv("FLOWC_SHADER_NAME"));
 }
   if (flowc_env_eq("FLOWC_BACKEND", "bpf") == 1) {
   if (out_path == NULL) {
