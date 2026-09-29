@@ -1,6 +1,6 @@
 from flow.recognition_ssa import (
     AttractorSignature, RecognitionContract, RecognitionRefinementError,
-    assert_recognition_refinement, check_recognition_refinement,
+    assert_recognition_refinement, check_recognition_refinement, contracts_from_flow,
 )
 
 def discrete_yes(before, after):
@@ -34,3 +34,14 @@ def test_basin_change_is_rejected():
 def test_discrete_refinement_remains_mandatory():
     cert = check_recognition_refinement("a", "b", discrete_refines=lambda a, b: False)
     assert not cert.preserved
+
+
+def test_recognize_declaration_lowers_to_contracts():
+    from flow.parser import Lexer, Parser
+
+    code = """flow Demo {\nrecognize { numerical safety }\nstate x: f64 = 0.0\nevolve x = -x\n}\n"""
+    program = Parser(Lexer(code), source=code).parse()
+    flow = program.flows[0]
+    contracts = contracts_from_flow(flow, epsilon_by_domain={"numerical": 0.01})
+    assert tuple(c.domain for c in contracts) == ("numerical", "safety")
+    assert tuple(c.epsilon for c in contracts) == (0.01, 0.0)
