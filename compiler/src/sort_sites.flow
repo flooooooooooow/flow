@@ -1,0 +1,569 @@
+# @module flowc.sort_sites
+# @means  Ordering provenance for `|> sort` and `|> find` sites (#145).
+#         Port of the AST walk in src/flow/ordering_hints.py.
+#
+# The pass walks each function body in source order and keeps, per array
+# variable, the order it is known to be in and the integer range of its
+# elements. Two things create a fact: an array literal initializer whose
+# elements are all numeric literals, and a `|> sort` statement on the
+# variable. A fact is dropped on any assignment to the variable or to one of
+# its elements, when the variable is passed to a call, and when the variable
+# is written anywhere inside a loop, conditional or match. A site inside a
+# nested block sees no facts at all. The pass never guesses: a missed fact
+# costs a general plan, a wrong one would skip a sort that was needed.
+#
+# The result is one entry per AST node id: the input order code (the
+# ordering_hints.flow numbers) and, when known, the key range.
+
+import .ast {
+    AstArena, AST_NONE, AST_FN, AST_BLOCK, AST_LET, AST_RETURN, AST_IF, AST_WHILE,
+    AST_FOR, AST_MATCH, AST_UNARY, AST_CALL, AST_IDENT, AST_INT, AST_FLOAT, AST_TYPE,
+    AST_ASSIGN, AST_EXPR_STMT, AST_INDEX, AST_FIELD_ACCESS, AST_ARRAY_LIT, AST_SORT_BY,
+    AST_CALL_PIPE_FIND
+}
+import .token { TOK_MINUS, TOK_AMP }
+import .ordering_hints {
+    flowc_order_of_f64, flowc_order_after_sort, FlowcKeyRange, flowc_key_range_i64
+}
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
+}
+
+# Most array variables one function body can carry facts for at once.
+const SS_KNOWN_CAP: i32 = 256
+# Most elements an array literal may have and still yield a fact.
+const SS_LIT_CAP: i32 = 4096
+
+struct SortSites {
+    arena: AstArena,
+    src: ptr<u8>,
+    order: ptr<i32>,
+    has_range: ptr<i32>,
+    lo: ptr<i64>,
+    hi: ptr<i64>,
+    kn_start: ptr<i32>,
+    kn_end: ptr<i32>,
+    kn_order: ptr<i32>,
+    kn_has: ptr<i32>,
+    kn_lo: ptr<i64>,
+    kn_hi: ptr<i64>,
+    kn_len: i32,
+    # Names a statement writes, as start/end span pairs.
+    mut_start: ptr<i32>,
+    mut_end: ptr<i32>,
+    mut_len: i32
+}
+
+function ss_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < a1 - a0 {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function ss_valid(s: ptr<SortSites>, id: i32) -> i32 {
+    if id >= 0 and id < s[0].arena.len {
+        return 1
+    }
+    return 0
+}
+
+# 1 for a selection site: any declarative sort, or `xs |> find(t)`.
+export function flowc_sort_sites_is_site(arena: AstArena, id: i32) -> i32 {
+    if id < 0 or id >= arena.len {
+        return 0
+    }
+    if arena.nodes[id].kind == AST_SORT_BY {
+        return 1
+    }
+    if arena.nodes[id].kind == AST_CALL and arena.nodes[id].ival == AST_CALL_PIPE_FIND {
+        return 1
+    }
+    return 0
+}
+
+# Root variable of `x`, `x[i]`, `x.f`, `x |> sort`, `x |> find(t)`, as an
+# AST_IDENT id, else AST_NONE.
+function ss_base_name(s: ptr<SortSites>, expr: i32) -> i32 {
+    let mut e: i32 = expr
+    let mut guard: i32 = 0
+    while ss_valid(s, e) == 1 and guard < 32 {
+        guard = guard + 1
+        let k: i32 = s[0].arena.nodes[e].kind
+        if k == AST_IDENT {
+            if s[0].arena.nodes[e].ival != 0 {
+                return AST_NONE
+            }
+            return e
+        }
+        if k == AST_INDEX or k == AST_FIELD_ACCESS or k == AST_SORT_BY or flowc_sort_sites_is_site(s[0].arena, e) == 1 {
+            e = s[0].arena.nodes[e].a
+        } else {
+            return AST_NONE
+        }
+    }
+    return AST_NONE
+}
+
+function ss_add_mut(s: ptr<SortSites>, ident: i32) {
+    if ident == AST_NONE or s[0].mut_len >= SS_KNOWN_CAP {
+        return
+    }
+    s[0].mut_start[s[0].mut_len] = s[0].arena.nodes[ident].name_start
+    s[0].mut_end[s[0].mut_len] = s[0].arena.nodes[ident].name_end
+    s[0].mut_len = s[0].mut_len + 1
+}
+
+function ss_add_mut_span(s: ptr<SortSites>, ns: i32, ne: i32) {
+    if s[0].mut_len >= SS_KNOWN_CAP {
+        return
+    }
+    s[0].mut_start[s[0].mut_len] = ns
+    s[0].mut_end[s[0].mut_len] = ne
+    s[0].mut_len = s[0].mut_len + 1
+}
+
+function ss_collect_mut_chain(s: ptr<SortSites>, first: i32, depth: i32)
+
+# Names `id` could write, directly or through a callee (_collect_mutations).
+function ss_collect_mut(s: ptr<SortSites>, id: i32, depth: i32) {
+    if ss_valid(s, id) == 0 or depth > 200 {
+        return
+    }
+    let k: i32 = s[0].arena.nodes[id].kind
+    if k == AST_TYPE {
+        return
+    }
+    if k == AST_ASSIGN {
+        ss_add_mut(s, ss_base_name(s, s[0].arena.nodes[id].a))
+    }
+    if k == AST_LET {
+        ss_add_mut_span(s, s[0].arena.nodes[id].name_start, s[0].arena.nodes[id].name_end)
+    }
+    if k == AST_CALL and s[0].arena.nodes[id].ival != AST_CALL_PIPE_FIND {
+        # An array argument decays to a pointer; the callee may reorder it.
+        let mut arg: i32 = s[0].arena.nodes[id].a
+        while ss_valid(s, arg) == 1 {
+            ss_add_mut(s, ss_base_name(s, arg))
+            arg = s[0].arena.nodes[arg].next
+        }
+    }
+    if k == AST_SORT_BY {
+        # Ordering is in place, so the array it names is written.
+        ss_add_mut(s, ss_base_name(s, s[0].arena.nodes[id].a))
+    }
+    if k == AST_UNARY and s[0].arena.nodes[id].ival == TOK_AMP {
+        ss_add_mut(s, ss_base_name(s, s[0].arena.nodes[id].a))
+    }
+    ss_collect_mut_chain(s, s[0].arena.nodes[id].a, depth + 1)
+    ss_collect_mut_chain(s, s[0].arena.nodes[id].b, depth + 1)
+    ss_collect_mut_chain(s, s[0].arena.nodes[id].c, depth + 1)
+    if k == AST_FOR {
+        let step: i32 = s[0].arena.nodes[id].ival
+        if step != 0 {
+            ss_collect_mut(s, step, depth + 1)
+        }
+    }
+}
+
+function ss_collect_mut_chain(s: ptr<SortSites>, first: i32, depth: i32) {
+    let mut k: i32 = first
+    let mut guard: i32 = 0
+    while ss_valid(s, k) == 1 and guard < 100000 {
+        ss_collect_mut(s, k, depth)
+        k = s[0].arena.nodes[k].next
+        guard = guard + 1
+    }
+}
+
+function ss_known_find(s: ptr<SortSites>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < s[0].kn_len {
+        if ss_span_eq(s[0].src, ns, ne, s[0].kn_start[i], s[0].kn_end[i]) == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function ss_known_drop(s: ptr<SortSites>, ns: i32, ne: i32) {
+    let i: i32 = ss_known_find(s, ns, ne)
+    if i < 0 {
+        return
+    }
+    let last: i32 = s[0].kn_len - 1
+    s[0].kn_start[i] = s[0].kn_start[last]
+    s[0].kn_end[i] = s[0].kn_end[last]
+    s[0].kn_order[i] = s[0].kn_order[last]
+    s[0].kn_has[i] = s[0].kn_has[last]
+    s[0].kn_lo[i] = s[0].kn_lo[last]
+    s[0].kn_hi[i] = s[0].kn_hi[last]
+    s[0].kn_len = last
+}
+
+function ss_known_set(s: ptr<SortSites>, ns: i32, ne: i32, order: i32, has: i32, lo: i64, hi: i64) {
+    let mut i: i32 = ss_known_find(s, ns, ne)
+    if i < 0 {
+        if s[0].kn_len >= SS_KNOWN_CAP {
+            return
+        }
+        i = s[0].kn_len
+        s[0].kn_len = i + 1
+    }
+    s[0].kn_start[i] = ns
+    s[0].kn_end[i] = ne
+    s[0].kn_order[i] = order
+    s[0].kn_has[i] = has
+    s[0].kn_lo[i] = lo
+    s[0].kn_hi[i] = hi
+}
+
+# Drop every fact about a name statement `id` writes.
+function ss_kill(s: ptr<SortSites>, id: i32) {
+    s[0].mut_len = 0
+    ss_collect_mut(s, id, 0)
+    let mut i: i32 = 0
+    while i < s[0].mut_len {
+        ss_known_drop(s, s[0].mut_start[i], s[0].mut_end[i])
+        i = i + 1
+    }
+}
+
+# The facts a site sees on entry to its statement.
+function ss_record(s: ptr<SortSites>, site: i32) {
+    let arr: i32 = s[0].arena.nodes[site].a
+    if ss_valid(s, arr) == 0 or s[0].arena.nodes[arr].kind != AST_IDENT or s[0].arena.nodes[arr].ival != 0 {
+        return
+    }
+    let i: i32 = ss_known_find(s, s[0].arena.nodes[arr].name_start, s[0].arena.nodes[arr].name_end)
+    if i < 0 {
+        return
+    }
+    s[0].order[site] = s[0].kn_order[i]
+    s[0].has_range[site] = s[0].kn_has[i]
+    s[0].lo[site] = s[0].kn_lo[i]
+    s[0].hi[site] = s[0].kn_hi[i]
+}
+
+function ss_sites_chain(s: ptr<SortSites>, first: i32, depth: i32)
+
+# Record every site in `id` outside nested blocks and lambdas.
+function ss_sites(s: ptr<SortSites>, id: i32, depth: i32) {
+    if ss_valid(s, id) == 0 or depth > 200 {
+        return
+    }
+    let k: i32 = s[0].arena.nodes[id].kind
+    if k == AST_BLOCK or k == AST_FN or k == AST_TYPE {
+        return
+    }
+    if flowc_sort_sites_is_site(s[0].arena, id) == 1 {
+        ss_record(s, id)
+    }
+    ss_sites_chain(s, s[0].arena.nodes[id].a, depth + 1)
+    ss_sites_chain(s, s[0].arena.nodes[id].b, depth + 1)
+    ss_sites_chain(s, s[0].arena.nodes[id].c, depth + 1)
+    if k == AST_FOR {
+        let step: i32 = s[0].arena.nodes[id].ival
+        if step != 0 {
+            ss_sites(s, step, depth + 1)
+        }
+    }
+}
+
+function ss_sites_chain(s: ptr<SortSites>, first: i32, depth: i32) {
+    let mut k: i32 = first
+    let mut guard: i32 = 0
+    while ss_valid(s, k) == 1 and guard < 100000 {
+        ss_sites(s, k, depth)
+        k = s[0].arena.nodes[k].next
+        guard = guard + 1
+    }
+}
+
+# Integer literal text as an i64: decimal, 0x, 0o, 0b, with `_` separators.
+function ss_parse_int(src: ptr<u8>, s0: i32, e0: i32) -> i64 {
+    let mut i: i32 = s0
+    let mut base: i64 = 10
+    if e0 - s0 > 2 and src[s0] == 48 {
+        let c: i32 = src[s0 + 1]
+        if c == 120 or c == 88 {
+            base = 16
+            i = s0 + 2
+        }
+        if c == 111 or c == 79 {
+            base = 8
+            i = s0 + 2
+        }
+        if c == 98 or c == 66 {
+            base = 2
+            i = s0 + 2
+        }
+    }
+    let mut v: i64 = 0
+    while i < e0 {
+        let c: i32 = src[i]
+        let mut d: i32 = 0 - 1
+        if c >= 48 and c <= 57 {
+            d = c - 48
+        }
+        if c >= 97 and c <= 102 {
+            d = c - 87
+        }
+        if c >= 65 and c <= 70 {
+            d = c - 55
+        }
+        if d >= 0 and (d as i64) < base {
+            v = v * base + (d as i64)
+        } else {
+            if c != 95 {
+                i = e0
+            }
+        }
+        i = i + 1
+    }
+    return v
+}
+
+function ss_parse_float(src: ptr<u8>, s0: i32, e0: i32) -> f64 {
+    let n: i32 = e0 - s0
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    if buf == null {
+        return 0.0
+    }
+    let mut j: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if src[s0 + i] != 95 {
+            buf[j] = src[s0 + i]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    buf[j] = 0
+    let v: f64 = strtod(buf, null)
+    free(buf)
+    return v
+}
+
+# 1 for an integer literal, 2 for a float literal, 0 for anything else
+# (_numeric_literal). The value lands in ival[0] / fval[0].
+function ss_numeric(s: ptr<SortSites>, id: i32, ival: ptr<i64>, fval: ptr<f64>) -> i32 {
+    if ss_valid(s, id) == 0 {
+        return 0
+    }
+    let k: i32 = s[0].arena.nodes[id].kind
+    if k == AST_UNARY and s[0].arena.nodes[id].ival == TOK_MINUS {
+        let r: i32 = ss_numeric(s, s[0].arena.nodes[id].a, ival, fval)
+        ival[0] = 0 - ival[0]
+        fval[0] = 0.0 - fval[0]
+        return r
+    }
+    if k == AST_INT {
+        let v: i64 = ss_parse_int(s[0].src, s[0].arena.nodes[id].name_start, s[0].arena.nodes[id].name_end)
+        ival[0] = v
+        fval[0] = v as f64
+        return 1
+    }
+    if k == AST_FLOAT {
+        let f: f64 = ss_parse_float(s[0].src, s[0].arena.nodes[id].name_start, s[0].arena.nodes[id].name_end)
+        ival[0] = 0
+        fval[0] = f
+        return 2
+    }
+    return 0
+}
+
+# `let name[: array<T, N>] = [literals]`: order and integer key range of the
+# literal (_facts_from_literal). Returns 1 and sets the name's fact, or 0
+# when the initializer yields no fact.
+function ss_literal_fact(s: ptr<SortSites>, let_id: i32) -> i32 {
+    let init: i32 = s[0].arena.nodes[let_id].b
+    if ss_valid(s, init) == 0 or s[0].arena.nodes[init].kind != AST_ARRAY_LIT {
+        return 0
+    }
+    if s[0].arena.nodes[init].b != AST_NONE {
+        return 0
+    }
+    let mut count: i32 = 0
+    let mut e: i32 = s[0].arena.nodes[init].a
+    while ss_valid(s, e) == 1 {
+        count = count + 1
+        e = s[0].arena.nodes[e].next
+    }
+    # A short initializer zero-fills the rest, so it says nothing about the
+    # whole array.
+    let ty: i32 = s[0].arena.nodes[let_id].a
+    if ss_valid(s, ty) == 1 and s[0].arena.nodes[ty].kind == AST_TYPE and s[0].arena.nodes[ty].ival > 0 {
+        if s[0].arena.nodes[ty].ival != count {
+            return 0
+        }
+    }
+    if count > SS_LIT_CAP {
+        return 0
+    }
+    let ns: i32 = s[0].arena.nodes[let_id].name_start
+    let ne: i32 = s[0].arena.nodes[let_id].name_end
+    if count == 0 {
+        ss_known_set(s, ns, ne, 0, 0, 0, 0)
+        return 1
+    }
+    let fvals: ptr<f64> = malloc((count as i64) * 8) as ptr<f64>
+    let ivals: ptr<i64> = malloc((count as i64) * 8) as ptr<i64>
+    if fvals == null or ivals == null {
+        return 0
+    }
+    let iv: array<i64, 1> = [0]
+    let fv: array<f64, 1> = [0.0]
+    let mut all_int: i32 = 1
+    let mut n: i32 = 0
+    e = s[0].arena.nodes[init].a
+    while ss_valid(s, e) == 1 {
+        let r: i32 = ss_numeric(s, e, &iv[0], &fv[0])
+        if r == 0 {
+            free(fvals as ptr<u8>)
+            free(ivals as ptr<u8>)
+            return 0
+        }
+        if r == 2 {
+            all_int = 0
+        }
+        fvals[n] = fv[0]
+        ivals[n] = iv[0]
+        n = n + 1
+        e = s[0].arena.nodes[e].next
+    }
+    let order: i32 = flowc_order_of_f64(fvals, n)
+    let mut has: i32 = 0
+    let mut lo: i64 = 0
+    let mut hi: i64 = 0
+    if all_int == 1 {
+        let kr: FlowcKeyRange = flowc_key_range_i64(ivals, n)
+        has = kr.valid
+        lo = kr.lo
+        hi = kr.hi
+    }
+    free(fvals as ptr<u8>)
+    free(ivals as ptr<u8>)
+    ss_known_set(s, ns, ne, order, has, lo, hi)
+    return 1
+}
+
+# The sort a statement is, when it is just `x |> sort` (or `y = x |> sort`,
+# `return x |> sort`), else AST_NONE (_bare_expression).
+function ss_bare_sort(s: ptr<SortSites>, stmt: i32) -> i32 {
+    let k: i32 = s[0].arena.nodes[stmt].kind
+    let mut e: i32 = AST_NONE
+    if k == AST_SORT_BY {
+        e = stmt
+    }
+    if k == AST_EXPR_STMT or k == AST_RETURN {
+        e = s[0].arena.nodes[stmt].a
+    }
+    if k == AST_ASSIGN {
+        e = s[0].arena.nodes[stmt].b
+    }
+    if ss_valid(s, e) == 1 and s[0].arena.nodes[e].kind == AST_SORT_BY {
+        return e
+    }
+    return AST_NONE
+}
+
+function ss_statement(s: ptr<SortSites>, stmt: i32) {
+    # The facts that hold on entry are the ones the statement's sites see.
+    ss_sites(s, stmt, 0)
+    let k: i32 = s[0].arena.nodes[stmt].kind
+    if k == AST_LET {
+        ss_kill(s, stmt)
+        if ss_literal_fact(s, stmt) == 1 {
+            return
+        }
+        ss_known_drop(s, s[0].arena.nodes[stmt].name_start, s[0].arena.nodes[stmt].name_end)
+        return
+    }
+    if k == AST_IF or k == AST_WHILE or k == AST_FOR or k == AST_MATCH {
+        # Anything a nested block writes is unknown afterwards.
+        ss_kill(s, stmt)
+        return
+    }
+    let srt: i32 = ss_bare_sort(s, stmt)
+    if srt != AST_NONE {
+        let arr: i32 = s[0].arena.nodes[srt].a
+        if ss_valid(s, arr) == 1 and s[0].arena.nodes[arr].kind == AST_IDENT and s[0].arena.nodes[arr].ival == 0 and s[0].arena.nodes[srt].b == AST_NONE {
+            let flags: i32 = s[0].arena.nodes[srt].ival
+            let desc: i32 = flags % 2
+            let uniq: i32 = (flags / 2) % 2
+            let order: i32 = flowc_order_after_sort(desc, uniq, 0)
+            ss_known_set(s, s[0].arena.nodes[arr].name_start, s[0].arena.nodes[arr].name_end, order, 0, 0, 0)
+            return
+        }
+    }
+    ss_kill(s, stmt)
+}
+
+function ss_function(s: ptr<SortSites>, fn: i32) {
+    s[0].kn_len = 0
+    let body: i32 = s[0].arena.nodes[fn].c
+    if ss_valid(s, body) == 0 or s[0].arena.nodes[body].kind != AST_BLOCK {
+        return
+    }
+    let mut st: i32 = s[0].arena.nodes[body].a
+    while ss_valid(s, st) == 1 {
+        ss_statement(s, st)
+        st = s[0].arena.nodes[st].next
+    }
+}
+
+# Run the pass over every named function. `order`, `has_range`, `lo` and
+# `hi` have one slot per node id and start zeroed; a site nothing is known
+# about keeps order 0 (unknown) and has_range 0.
+export function flowc_sort_sites_hints(
+    arena: AstArena,
+    src: ptr<u8>,
+    order: ptr<i32>,
+    has_range: ptr<i32>,
+    lo: ptr<i64>,
+    hi: ptr<i64>
+) -> i32 {
+    let cap: i64 = SS_KNOWN_CAP as i64
+    let mut s: SortSites = SortSites {
+        arena: arena, src: src, order: order, has_range: has_range, lo: lo, hi: hi,
+        kn_start: malloc(cap * 4) as ptr<i32>, kn_end: malloc(cap * 4) as ptr<i32>,
+        kn_order: malloc(cap * 4) as ptr<i32>, kn_has: malloc(cap * 4) as ptr<i32>,
+        kn_lo: malloc(cap * 8) as ptr<i64>, kn_hi: malloc(cap * 8) as ptr<i64>,
+        kn_len: 0,
+        mut_start: malloc(cap * 4) as ptr<i32>, mut_end: malloc(cap * 4) as ptr<i32>,
+        mut_len: 0
+    }
+    if s.kn_start == null or s.kn_end == null or s.kn_order == null or s.kn_has == null or s.kn_lo == null or s.kn_hi == null or s.mut_start == null or s.mut_end == null {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        # Lambdas carry a negative name start; their bodies are nested
+        # blocks of the enclosing function, where nothing is known.
+        if arena.nodes[i].kind == AST_FN and arena.nodes[i].name_start >= 0 {
+            ss_function(&s, i)
+        }
+        i = i + 1
+    }
+    free(s.kn_start as ptr<u8>)
+    free(s.kn_end as ptr<u8>)
+    free(s.kn_order as ptr<u8>)
+    free(s.kn_has as ptr<u8>)
+    free(s.kn_lo as ptr<u8>)
+    free(s.kn_hi as ptr<u8>)
+    free(s.mut_start as ptr<u8>)
+    free(s.mut_end as ptr<u8>)
+    return 0
+}

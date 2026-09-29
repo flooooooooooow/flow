@@ -21,6 +21,7 @@ import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
 import .pipeline_fusion { flowc_fuse_pipelines }
 import .proof_doc { flowc_proof_doc_mode }
 import .cgen { flowc_cgen_emit }
+import .sort_plans { PlanText, flowc_plan_text_new, flowc_plan_report_header, flowc_plan_report_footer }
 import .jsgen { flowc_jsgen_emit }
 import .mlirgen { flowc_mlirgen_emit }
 import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
@@ -41,6 +42,9 @@ extern {
     function strlen(s: string) -> i64
     function getenv(name: string) -> string
     function strcmp(a: string, b: string) -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function atoi(s: string) -> i32
+    function write(fd: i32, buf: string, n: i64) -> i64
 }
 
 # Non-null and non-empty getenv result → 1, else 0.
@@ -203,6 +207,39 @@ function flowc_want_mlir() -> i32 {
     return 0
 }
 
+# FLOWC_EXPLAIN=1: the `flow explain` report goes to stderr. The header names
+# FLOWC_EXPLAIN_SOURCE, else FLOWC_IN; cgen writes one record per sort or
+# search site and counts them in FLOWC_EXPLAIN_SITES (#146).
+function flowc_explain_begin() {
+    if flowc_env_eq("FLOWC_EXPLAIN", "1") == 0 {
+        return
+    }
+    let _s: i32 = setenv("FLOWC_EXPLAIN_SITES", "0", 1)
+    let mut source: string = getenv("FLOWC_IN")
+    if flowc_env_set("FLOWC_EXPLAIN_SOURCE") == 1 {
+        source = getenv("FLOWC_EXPLAIN_SOURCE")
+    }
+    if source == null {
+        source = ""
+    }
+    let mut t: PlanText = flowc_plan_text_new()
+    flowc_plan_report_header(&t, source)
+    let _w: i64 = write(2, t.buf as string, t.len as i64)
+}
+
+function flowc_explain_end() {
+    if flowc_env_eq("FLOWC_EXPLAIN", "1") == 0 {
+        return
+    }
+    let mut sites: i32 = 0
+    if flowc_env_set("FLOWC_EXPLAIN_SITES") == 1 {
+        sites = atoi(getenv("FLOWC_EXPLAIN_SITES"))
+    }
+    let mut t: PlanText = flowc_plan_text_new()
+    flowc_plan_report_footer(&t, sites)
+    let _w: i64 = write(2, t.buf as string, t.len as i64)
+}
+
 # FLOWC_IN / FLOWC_OUT emit path: read .flow, Stage-A emit, write (or stdout).
 # FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt or =tokens → flowc_fmt_mode;
 # else cgen (C).
@@ -260,6 +297,9 @@ function flowc_emit_mode() -> i32 {
 
     let mut nout: i32 = 0
     let want_mlir: i32 = flowc_want_mlir()
+    if want_mlir == 0 and flowc_env_set("FLOWC_BACKEND") == 0 {
+        flowc_explain_begin()
+    }
     if want_mlir == 1 and flowc_env_set("FLOWC_BUNDLE") == 1 {
         puts("flowc mlir: unsupported: imports (bundle mode) at line 0")
         free(out)
@@ -398,6 +438,9 @@ function flowc_emit_mode() -> i32 {
         free(src)
     }
 
+    if want_mlir == 0 and flowc_env_set("FLOWC_BACKEND") == 0 {
+        flowc_explain_end()
+    }
     let mut rc: i32 = 0
     if flowc_env_set("FLOWC_OUT") == 1 {
         let out_path: string = getenv("FLOWC_OUT")
