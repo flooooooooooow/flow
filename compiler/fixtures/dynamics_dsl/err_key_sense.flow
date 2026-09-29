@@ -1,0 +1,4 @@
+sense on nope {
+    spectral -> r
+}
+function main() -> i32 { return 0 }

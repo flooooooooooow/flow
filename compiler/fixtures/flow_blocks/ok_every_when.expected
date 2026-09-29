@@ -1,0 +1,18 @@
+struct Tick { t: f64, n: f64, m: f64, p: f64, __every_0_acc: i64, __every_1_acc: i64, __guard_0_prev: f64, __guard_1_prev: f64 }
+@flow_api function Tick_new() -> Tick { let mut __self: Tick = Tick { t: 0.0, n: 0.0, m: 0.0, p: 0.0, __every_0_acc: 0, __every_1_acc: 0, __guard_0_prev: 0.0, __guard_1_prev: 0.0 }; Tick_init(&__self); return __self; }
+@flow_api function Tick_init(self: ptr<Tick>) -> void { self.p = 1.0; self.t = 0.0; self.n = 0.0; self.m = 0.0; self.__every_0_acc = 0; self.__every_1_acc = 0; self.__guard_0_prev = self.t - (self.p * 2.0); self.__guard_1_prev = self.t - (3.0); }
+@flow_api function Tick_derivs(self: ptr<Tick>, d_t: ptr<f64>) -> void { d_t[0] = 1.0; }
+@flow_api function Tick_step(self: ptr<Tick>, dt: f64) -> void { let mut d_t: f64 = 0.0; Tick_derivs(self, &d_t); self.t = self.t + d_t * dt; let __dt_ns: i64 = ((dt * 1000000000.0) as i64); self.__every_0_acc = self.__every_0_acc + __dt_ns; let mut __every_0_n: i64 = 0; while self.__every_0_acc >= 10000000 && __every_0_n < 1024 { self.__every_0_acc = self.__every_0_acc - 10000000; __every_0_n = __every_0_n + 1; let __tick_0_n: f64 = self.n + 1.0; let __tick_0_m: f64 = self.n; self.n = __tick_0_n; self.m = __tick_0_m; } self.__every_1_acc = self.__every_1_acc + __dt_ns; let mut __every_1_n: i64 = 0; while self.__every_1_acc >= 1500000000 && __every_1_n < 1024 { self.__every_1_acc = self.__every_1_acc - 1500000000; __every_1_n = __every_1_n + 1; let __tick_1_m: f64 = 0.0; self.m = __tick_1_m; } let __g_0: f64 = self.t - (self.p * 2.0); if (__g_0 < 0.0) != (self.__guard_0_prev < 0.0) || __g_0 == 0.0 { let __reset_0_n: f64 = 0.0; self.n = __reset_0_n; } self.__guard_0_prev = self.t - (self.p * 2.0); let __g_1: f64 = self.t - (3.0); if (__g_1 < 0.0) != (self.__guard_1_prev < 0.0) || __g_1 == 0.0 { let __reset_1_m: f64 = -1.0; self.m = __reset_1_m; } self.__guard_1_prev = self.t - (3.0); }
+@flow_api function Tick_default_dt() -> f64 { return 0.001; }
+
+
+
+
+
+
+
+
+
+
+
+

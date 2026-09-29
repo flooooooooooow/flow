@@ -1,0 +1,2 @@
+Error: Expected a duration in the solver dt of flow 'Osc', got TokenType.IDENTIFIER at line 3, column 17
+write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)

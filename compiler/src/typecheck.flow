@@ -348,6 +348,10 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "puts") == 1 {
         return 1
     }
+    # The trap a flow `always`/`never` block lowers to (cgen intrinsic).
+    if flowc_tc_span_is(ctx.src, start, end, "flow_panic") == 1 {
+        return 1
+    }
     if flowc_tc_span_is(ctx.src, start, end, "sort") == 1 {
         return 1
     }

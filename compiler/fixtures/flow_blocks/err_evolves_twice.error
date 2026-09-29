@@ -1,0 +1,1 @@
+Error: state 'x' in flow 'Osc' has two 'evolves' declarations; a state has exactly one derivative at line 4

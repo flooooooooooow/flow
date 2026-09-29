@@ -1,0 +1,32 @@
+flow Motor {
+    input v : f64
+    state w : f64 = 0.0
+    output speed : f64 = w
+    w evolves as v - w
+}
+
+flow Ctrl {
+    input meas : f64
+    state i : f64 = 0.0
+    param target : f64 = 1.0
+    output u : f64 = target - meas + i
+    i evolves as target - meas
+}
+
+flow Loop {
+    plant : Motor
+    ctl : Ctrl
+    state ref : f64 = 1.0
+    connect {
+        plant.speed -> ctl.meas
+        ctl.u -> plant.v
+    }
+}
+
+flow Driven {
+    input cmd : f64
+    m : Motor
+    connect {
+        cmd -> m.v
+    }
+}

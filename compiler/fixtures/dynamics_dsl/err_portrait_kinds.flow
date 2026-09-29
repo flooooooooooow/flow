@@ -1,0 +1,7 @@
+flow P {
+    state a : f64 = 0.0
+    represent phase_portrait(a, b) {
+        map a in [0, 1] -> col
+        map b in [0, 1] -> col
+    }
+}

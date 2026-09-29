@@ -503,7 +503,7 @@ class ForkBlock:
     binds `source` once when it is non-trivial, substitutes it into the
     branches, infers a record type for the anonymous form, and rewrites this
     into a `StructLiteral`. The node never survives `parse()`, so no later
-    phase — type checker, backends, tooling — needs to know about it.
+    phase (type checker, backends, tooling) needs to know about it.
     """
 
     record_name: Optional[str]
@@ -537,7 +537,7 @@ class ChooseBlock:
     state). Each arm value is a template pipeline over `ForkSource` (the piped
     value). `desugar_forks` binds `source` once, infers the result type from the
     arms, and lowers this to a hoisted `let mut __choose_N` plus a `match`
-    statement that assigns the chosen arm — so no value-form `match` is needed
+    statement that assigns the chosen arm, so no value-form `match` is needed
     and no later phase sees this node.
     """
 
@@ -640,7 +640,7 @@ class ArrayAccess:
 
 @dataclass
 class SliceExpr:
-    """`base[start..end]` — a borrowed view (span) over contiguous storage.
+    """`base[start..end]`: a borrowed view (span) over contiguous storage.
 
     See docs/language/spans.md. `start`/`end` are ordinary expressions; when
     both are integer literals the extent is a compile-time fact.
@@ -880,7 +880,7 @@ class ModuleDecl:
 
 @dataclass
 class ImportDecl:
-    """Module import — dot paths (verify.nat) or legacy string paths.
+    """Module import: dot paths (verify.nat) or legacy string paths.
 
     `is_reexport` marks `export import ...`: the imported module's exported
     symbols (all of them, or the brace-list selection) become exports of the
@@ -903,7 +903,7 @@ class ExportDecl:
 
 @dataclass
 class TheoremDecl:
-    """Verified claim at a Claim Path — same shape as function, different keyword."""
+    """Verified claim at a Claim Path: same shape as function, different keyword."""
 
     claim_path: str
     parameters: List[Parameter]
@@ -1161,7 +1161,7 @@ class FlowSolverDecl:
 
 @dataclass
 class FlowChildDecl:
-    """`plant : Motor` — a nested flow-typed member of a composite flow.
+    """`plant : Motor`: a nested flow-typed member of a composite flow.
 
     Spec: docs/vision/north-star.md §8. The type name must name another
     `flow` in the same compilation unit. Lowered as an embedded struct
@@ -1246,7 +1246,7 @@ class FlowDecl:
     """`flow Name { ... }`: a struct plus continuous dynamics.
 
     Recognized contextually (`flow` stays a legal identifier everywhere else).
-    Lowered by src/flow/flow_blocks.py into a StructDecl plus generated
+    Lowered by flowc (compiler/src/flow_blocks.flow) into a struct plus generated
     Name_new/Name_init/Name_derivs/Name_step/Name_outputs/Name_check functions.
     Spec: docs/vision/north-star.md sections 1, 2, and 5.4.
     """
@@ -1742,6 +1742,11 @@ class Parser:
             TypeAliasDecl, DistinctTypeDecl, FlowDecl
         ]
     ]:
+        if expand_flows:
+            from .flow_blocks import has_flow_blocks
+
+            if has_flow_blocks(self.source):
+                return self._parse_lowered_flows()
         declarations = []
         while self.current_token.type != TokenType.EOF:
             is_exported = False
@@ -1893,9 +1898,7 @@ class Parser:
             else:
                 raise SyntaxError(f"Unexpected declaration: {self.current_token.type}")
         if expand_flows and any(isinstance(d, FlowDecl) for d in declarations):
-            from .flow_blocks import expand_flow_decls
-
-            declarations = expand_flow_decls(declarations, source=self.source)
+            return self._parse_lowered_flows()
         if self._has_fork:
             from .fork_records import desugar_forks
 
@@ -1912,6 +1915,28 @@ class Parser:
             declarations.extend(helper_declarations())
 
         return declarations
+
+    def _parse_lowered_flows(self) -> List[Any]:
+        """Parse with `flow` blocks lowered by flowc (src/flow/flow_blocks.py).
+
+        Each lowered struct keeps the FlowDecl it came from and its
+        recognition manifest, for tooling.
+        """
+        from .flow_blocks import expand_flow_blocks
+        from .recognition import recognition_manifest
+
+        lowered = Parser(Lexer(expand_flow_blocks(self.source))).parse(expand_flows=False)
+        try:
+            raw = Parser(Lexer(self.source), source=self.source).parse(expand_flows=False)
+        except SyntaxError:
+            # Flow stages (`x |> Gain { k: 2.0 }`) only parse once lowered.
+            raw = []
+        flows = {d.name: d for d in raw if isinstance(d, FlowDecl)}
+        for decl in lowered:
+            if isinstance(decl, StructDecl) and decl.name in flows:
+                decl.flow_decl = flows[decl.name]
+                decl.recognition_manifest = recognition_manifest(flows[decl.name])
+        return lowered
 
     def parse_module(self) -> ModuleDecl:
         """Parse module name { ... } and collect inner declarations."""
@@ -2144,11 +2169,11 @@ class Parser:
         """Parse extern block or extern type. Returns list of declarations."""
         self.expect(TokenType.EXTERN)
 
-        # extern "module" { ... } — skip the module name
+        # extern "module" { ... }: skip the module name
         if self.current_token.type == TokenType.STRING_LITERAL:
             self.advance()
 
-        # extern type Name — opaque C struct forward declaration
+        # extern type Name: opaque C struct forward declaration
         if self.current_token.type == TokenType.TYPE:
             self.advance()
             name = self.expect(TokenType.IDENTIFIER).value
@@ -2543,12 +2568,12 @@ class Parser:
             src_tok = self.current_token
             first = self.expect(TokenType.IDENTIFIER).value
             if self.current_token.type == TokenType.DOT:
-                # `child.port` — a sibling subflow's output/state.
+                # `child.port`: a sibling subflow's output/state.
                 self.advance()
                 src_member = first
                 src_port = self.expect(TokenType.IDENTIFIER).value
             else:
-                # Bare `port` — a port of the enclosing (parent) flow.
+                # Bare `port`: a port of the enclosing (parent) flow.
                 # Empty src_member marks a parent source.
                 src_member = ""
                 src_port = first
@@ -4074,7 +4099,7 @@ class Parser:
         range_end = self.parse_expression_without_assign()
 
         step = None
-        # Contextual keyword: `for i in 0 to 10 step 2` — `step` is otherwise
+        # Contextual keyword: `for i in 0 to 10 step 2`: `step` is otherwise
         # a normal identifier (e.g. `let step = FullAdder(...)`).
         if (
             self.current_token.type == TokenType.STEP
@@ -4288,7 +4313,7 @@ class Parser:
         return expr
 
     def _parse_stage_params(self, name: str, source: Expression, line: int):
-        """Parse `Name { p: v, q: w }` after `|>` — a flow stage with params."""
+        """Parse `Name { p: v, q: w }` after `|>`: a flow stage with params."""
         params: List[tuple] = []
         seen = set()
         while self.current_token.type != TokenType.RBRACE:

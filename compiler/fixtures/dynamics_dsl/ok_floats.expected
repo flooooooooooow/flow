@@ -1,0 +1,26 @@
+import "stdlib/dynamics/ga_analysis.flow"
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let h_h: Horizon = horizon_infinite(1)
+    let __dsys_p_A: array<f64, 9> = [0.10000000000000001, 0.20000000000000001, 0.29999999999999999, 1000.5, -0.0, 1.0000000000000001e+300, 2.4999721679567075e-320, 1.2345678901234568e+17, 0.5]
+    let __dsys_p_B: array<f64, 3> = [1.0, 2.0, 3.0]
+    let __dsys_p_C: array<f64, 3> = [inf.0, -inf.0, 1.0]
+    let __dsys_p: DynamicalSystem = dsys_discrete(3, 1, 1, 0.001, Matrix { data: __dsys_p_A, rows: 3, cols: 3 }, Matrix { data: __dsys_p_B, rows: 3, cols: 1 }, Matrix { data: __dsys_p_C, rows: 1, cols: 3 })
+    let p: DynamicalSystem = __dsys_p
+    let mut a: f64 = 0.0
+    let mut b: f64 = 0.0
+    let __ga_e0_k1: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_k2: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_fit: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_bk1: array<f64, 1> = [0.0]
+    let __ga_e0_bk2: array<f64, 1> = [0.0]
+    let __ga_e0_hist: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_cfg: GAConfig = GAConfig { population: 8, generations: 20, horizon: 50, mutation: 0.12345678901230001 }
+    ga_evolve_traced(__dsys_p, 50, __ga_e0_cfg, __ga_e0_k1, __ga_e0_k2, __ga_e0_fit, __ga_e0_bk1, __ga_e0_bk2, __ga_e0_hist)
+    a = __ga_e0_bk1[0]
+    b = __ga_e0_bk2[0]
+    # --- end dsys DSL expansion ---
+
+    return 0
+}

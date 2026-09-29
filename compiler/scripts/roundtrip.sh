@@ -221,6 +221,12 @@ echo "PASS compile_module fileio greps"
 compile_module field_dsl compiler/src/field_dsl.flow
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/field_dsl_flowc.c compiler/build/field_dsl_flowc.h
+compile_module dynamics_dsl compiler/src/dynamics_dsl.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/dynamics_dsl_flowc.c compiler/build/dynamics_dsl_flowc.h
+compile_module flow_blocks compiler/src/flow_blocks.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/flow_blocks_flowc.c compiler/build/flow_blocks_flowc.h
 
 # Fifth module: parser.flow (imports token/ast/lexer — -include their headers).
 python3 compiler/scripts/flowc_c_to_hdr.py \
@@ -336,6 +342,8 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
     compiler/build/field_dsl_flowc.h \
+    compiler/build/dynamics_dsl_flowc.h \
+    compiler/build/flow_blocks_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
@@ -641,6 +649,8 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/parser_flowc.o \
     compiler/build/fileio_flowc.o \
     compiler/build/field_dsl_flowc.o \
+    compiler/build/dynamics_dsl_flowc.o \
+    compiler/build/flow_blocks_flowc.o \
     compiler/build/cgen_flowc.o \
     compiler/build/overload_flowc.o \
     compiler/build/overload_table_flowc.o \
@@ -700,6 +710,8 @@ compile_module driver compiler/src/driver.flow \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
     compiler/build/field_dsl_flowc.h \
+    compiler/build/dynamics_dsl_flowc.h \
+    compiler/build/flow_blocks_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \

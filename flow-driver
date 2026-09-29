@@ -177,14 +177,16 @@ flowc_emit_to_c() {
         return 1
     fi
     print_info "flowc emit via $driver"
-    # A program that imports modules, or uses the Field DSL (which adds an
-    # import of stdlib/dynamics/pde.flow), is bundled into one C unit. flowc
-    # resolves `stdlib/...` against lib/stdlib from the working directory and
-    # path imports such as "compiler/src/fileio.flow" against FLOWC_DIR, so
-    # the bundle runs from the repository root with absolute paths. Relative
-    # `.sibling` imports still resolve next to the importing module.
+    # A program that imports modules, or uses the Field or dynamics DSL
+    # (which add imports of stdlib/dynamics/*.flow), is bundled into one C
+    # unit. flowc resolves `stdlib/...` against lib/stdlib from the working
+    # directory and path imports such as "compiler/src/fileio.flow" against
+    # FLOWC_DIR, so the bundle runs from the repository root with absolute
+    # paths. Relative `.sibling` imports still resolve next to the importing
+    # module.
     if grep -Eq '^[[:space:]]*import[[:space:]]' "$program" || \
-        grep -Eq '^[[:space:]]*(field|boundary)[[:space:]]' "$program"; then
+        grep -Eq '^[[:space:]]*(field|boundary)[[:space:]]' "$program" || \
+        grep -Eq '^[[:space:]]*((dyn|dynamics)\.)?(dsys|horizon|sense|ga|closed|analyze|wfc|couple|guide|represent)[[:space:]]|^[[:space:]]*(dyn|dynamics)[[:space:]]*\{' "$program"; then
         local abs_program abs_out abs_driver
         abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
         abs_out="$(cd "$(dirname "$c_out")" && pwd)/$(basename "$c_out")"

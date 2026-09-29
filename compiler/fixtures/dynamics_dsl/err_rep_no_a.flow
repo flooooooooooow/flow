@@ -1,0 +1,6 @@
+flow P {
+    state a : f64 = 0.0
+    represent linear {
+        at (a: 0.0, b: 1.5e-07, a: 2)
+    }
+}

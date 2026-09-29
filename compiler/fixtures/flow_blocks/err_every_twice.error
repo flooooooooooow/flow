@@ -1,0 +1,1 @@
+Error: state 'x' has two 'becomes' updates in one 'every' body of flow 'Osc'; updates in a block apply simultaneously, so each state has one writer at line 5

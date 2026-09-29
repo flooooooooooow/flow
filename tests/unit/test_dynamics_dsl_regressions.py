@@ -1,6 +1,6 @@
 import pytest
 
-from flow.dynamics_dsl import expand_dynamics_dsl, parse_dynamics_dsl
+from flow.dynamics_dsl import expand_dynamics_dsl
 
 
 def test_dsys_expansion_preserves_single_line_main_body() -> None:
@@ -44,7 +44,7 @@ dsys bloch {
         SyntaxError,
         match=r"dsys 'bloch': A needs 4 entries for n = 2, got 1",
     ):
-        parse_dynamics_dsl(source)
+        expand_dynamics_dsl(source)
 
 
 def test_dsys_rejects_non_positive_dimensions() -> None:
@@ -63,4 +63,4 @@ dsys invalid {
         SyntaxError,
         match=r"dsys 'invalid': n must be positive, got 0",
     ):
-        parse_dynamics_dsl(source)
+        expand_dynamics_dsl(source)

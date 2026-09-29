@@ -1,0 +1,6 @@
+analyze c {
+    lqr {
+        Q 1 2
+        -> k
+    }
+}

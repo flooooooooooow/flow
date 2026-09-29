@@ -1,0 +1,2 @@
+Error: connection source 's' in flow 'B' is not a port of this flow at line 10
+a bare source must be an input or state of 'B'; a child source is written 'child.port'

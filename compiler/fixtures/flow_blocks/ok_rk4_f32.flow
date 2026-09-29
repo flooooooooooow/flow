@@ -1,0 +1,14 @@
+flow P {
+    state a : f32 = 0.5
+    state w : f32 = 0.0
+    param g : f32 = 9.81
+    solver {
+        method rk4
+        dt 500 us
+    }
+    w evolves as -g * sin(a)   # comment inside
+    a evolves as w
+    when a reaches 0.0 {
+        w becomes -w * 0.9
+    }
+}

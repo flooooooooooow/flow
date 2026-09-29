@@ -10,11 +10,13 @@
 # Keeps the hand-written C host (host/stage_a_driver.c) as a CLI fallback.
 
 import .fileio { flowc_read_file, flowc_write_file }
-import .field_dsl { flowc_field_expand_in_place }
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_report, Parser }
 import .cgen { flowc_cgen_emit }
 import .typecheck { flowc_typecheck, flowc_typecheck_ex }
-import .resolve { flowc_bundle_emit, flowc_bundle_typecheck, flowc_resolve_dirname }
+import .resolve {
+    flowc_bundle_emit, flowc_bundle_typecheck, flowc_resolve_dirname,
+    flowc_expand_all_in_place
+}
 
 extern {
     function printf(fmt: string, val: i32) -> i32
@@ -149,8 +151,8 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
     }
     src[nsrc] = 0
 
-    # Field DSL expands before parse, as the Python host does.
-    nsrc = flowc_field_expand_in_place(src, nsrc, src_cap - 1)
+    # DSLs expand before parse, as the Python host does.
+    nsrc = flowc_expand_all_in_place(src, nsrc, src_cap - 1)
     if nsrc < 0 {
         free(src)
         free(out)

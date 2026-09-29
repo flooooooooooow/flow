@@ -1,0 +1,2 @@
+flow Osc {
+    state x : f64 = 1.0

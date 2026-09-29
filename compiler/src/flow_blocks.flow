@@ -1,0 +1,5595 @@
+# @module flowc.flow_blocks
+# @means  Lowering for `flow Name { ... }` blocks (evolves, when, every,
+#         solver, always/never, recognize, connect, nested flows and
+#         `|>` flow pipelines), the whole of src/flow/flow_blocks.py and
+#         the flow-block grammar from src/flow/parser.py, run as a source
+#         expansion before parse.
+#
+# The Python host lowered a parsed FlowDecl into AST. flowc has no AST
+# rewrite stage before its own parser, so this module lowers the flow to
+# Flow source instead: the same struct and the same Name_new / Name_init /
+# Name_derivs / Name_step / Name_default_dt / Name_outputs / Name_check
+# functions, statement for statement. compiler/scripts/parity_flow_blocks.sh
+# parses both sides with the Python parser at a git revision and requires
+# the declaration trees to match, and holds error messages to the Python
+# text (message, line, column, hint).
+#
+# Layout: each generated declaration goes on its own line in place of the
+# flow block, and statements inside a declaration are separated by `;`, so
+# code after the block keeps its line numbers when the block has at least
+# as many lines as the lowering has declarations. `;` also keeps a numeric
+# literal from being read as a quantity literal (`0.0 Name_init(...)`).
+#
+# Tokens follow the Python lexer exactly (its regex order, its column
+# arithmetic with tabs expanded to 4, and its quirk that whitespace which
+# swallows a newline does not advance the line count), so diagnostics carry
+# the same line and column as the Python host.
+#
+# Leaf module: externs only.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function realloc(p: ptr<u8>, size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function puts(s: string) -> i32
+}
+
+# ── Growable byte buffer ─────────────────────────────────────────
+
+export struct FbBuf {
+    p: ptr<u8>,
+    len: i32,
+    cap: i32
+}
+
+function fb_buf_new(cap: i32) -> ptr<FbBuf> {
+    let b: ptr<FbBuf> = malloc(16) as ptr<FbBuf>
+    b[0].p = malloc((cap + 1) as i64)
+    b[0].len = 0
+    b[0].cap = cap
+    b[0].p[0] = 0
+    return b
+}
+
+function fb_buf_free(b: ptr<FbBuf>) {
+    free(b[0].p)
+    free(b as ptr<u8>)
+}
+
+function fb_putc(b: ptr<FbBuf>, ch: u8) {
+    if b[0].len + 1 >= b[0].cap {
+        let ncap: i32 = b[0].cap * 2 + 64
+        b[0].p = realloc(b[0].p, (ncap + 1) as i64)
+        b[0].cap = ncap
+    }
+    b[0].p[b[0].len] = ch
+    b[0].len = b[0].len + 1
+    b[0].p[b[0].len] = 0
+}
+
+function fb_puts(b: ptr<FbBuf>, s: string) {
+    let sp: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while sp[i] != 0 {
+        fb_putc(b, sp[i])
+        i = i + 1
+    }
+}
+
+function fb_put_span(b: ptr<FbBuf>, src: ptr<u8>, s: i32, e: i32) {
+    let mut i: i32 = s
+    while i < e {
+        fb_putc(b, src[i])
+        i = i + 1
+    }
+}
+
+function fb_put_i64(b: ptr<FbBuf>, v: i64) {
+    if v < 0 {
+        fb_putc(b, 45)
+        # -2^63 cannot be negated; durations never reach it.
+        fb_put_i64(b, 0 - v)
+        return
+    }
+    if v >= 10 {
+        fb_put_i64(b, v / 10)
+    }
+    fb_putc(b, (48 + (v % 10)) as u8)
+}
+
+function fb_put_int(b: ptr<FbBuf>, v: i32) {
+    fb_put_i64(b, v as i64)
+}
+
+# ── Characters ───────────────────────────────────────────────────
+
+# Python `\s` over ASCII.
+function fb_is_space(ch: u8) -> i32 {
+    if ch == 32 { return 1 }
+    if ch >= 9 and ch <= 13 { return 1 }
+    if ch >= 28 and ch <= 31 { return 1 }
+    return 0
+}
+
+function fb_is_digit(ch: u8) -> i32 {
+    if ch >= 48 and ch <= 57 { return 1 }
+    return 0
+}
+
+function fb_is_hex(ch: u8) -> i32 {
+    if fb_is_digit(ch) == 1 { return 1 }
+    if ch >= 97 and ch <= 102 { return 1 }
+    if ch >= 65 and ch <= 70 { return 1 }
+    return 0
+}
+
+function fb_is_alpha(ch: u8) -> i32 {
+    if ch >= 97 and ch <= 122 { return 1 }
+    if ch >= 65 and ch <= 90 { return 1 }
+    return 0
+}
+
+function fb_is_lower(ch: u8) -> i32 {
+    if ch >= 97 and ch <= 122 { return 1 }
+    return 0
+}
+
+function fb_is_upper(ch: u8) -> i32 {
+    if ch >= 65 and ch <= 90 { return 1 }
+    return 0
+}
+
+function fb_is_ident_start(ch: u8) -> i32 {
+    if fb_is_alpha(ch) == 1 or ch == 95 { return 1 }
+    return 0
+}
+
+function fb_is_ident_char(ch: u8) -> i32 {
+    if fb_is_ident_start(ch) == 1 or fb_is_digit(ch) == 1 { return 1 }
+    return 0
+}
+
+function fb_str_eq(a: ptr<u8>, b: string) -> i32 {
+    if strcmp(a as string, b) == 0 { return 1 }
+    return 0
+}
+
+# ── Token kinds and operator codes ───────────────────────────────
+
+const TK_IDENT: i32 = 1
+const TK_NUM: i32 = 2
+const TK_STR: i32 = 3
+const TK_OP: i32 = 4
+const TK_CLAIM_PATH: i32 = 5
+const TK_CLAIM_COORD: i32 = 6
+const TK_EOF: i32 = 7
+
+const OP_ARROW: i32 = 1
+const OP_FAT_ARROW: i32 = 2
+const OP_QUESTION: i32 = 3
+const OP_EQUALS: i32 = 4
+const OP_NOT_EQUALS: i32 = 5
+const OP_LSHIFT: i32 = 6
+const OP_RSHIFT: i32 = 7
+const OP_LESS_EQUAL: i32 = 8
+const OP_GREATER_EQUAL: i32 = 9
+const OP_AND: i32 = 10
+const OP_OR: i32 = 11
+const OP_PIPELINE: i32 = 12
+const OP_PIPE: i32 = 13
+const OP_AMPERSAND: i32 = 14
+const OP_CARET: i32 = 15
+const OP_TILDE: i32 = 16
+const OP_ELLIPSIS: i32 = 17
+const OP_DOTDOT: i32 = 18
+const OP_DOUBLE_COLON: i32 = 19
+const OP_PLUS_ASSIGN: i32 = 20
+const OP_MINUS_ASSIGN: i32 = 21
+const OP_STAR_ASSIGN: i32 = 22
+const OP_SLASH_ASSIGN: i32 = 23
+const OP_PLUS: i32 = 24
+const OP_MINUS: i32 = 25
+const OP_STAR: i32 = 26
+const OP_SLASH: i32 = 27
+const OP_PERCENT: i32 = 28
+const OP_LESS: i32 = 29
+const OP_GREATER: i32 = 30
+const OP_ASSIGN: i32 = 31
+const OP_NOT: i32 = 32
+const OP_LPAREN: i32 = 33
+const OP_RPAREN: i32 = 34
+const OP_LBRACE: i32 = 35
+const OP_RBRACE: i32 = 36
+const OP_LBRACKET: i32 = 37
+const OP_RBRACKET: i32 = 38
+const OP_SEMICOLON: i32 = 39
+const OP_COLON: i32 = 40
+const OP_COMMA: i32 = 41
+const OP_DOT: i32 = 42
+const OP_AT: i32 = 43
+
+function fb_op_name(op: i32) -> string {
+    if op == OP_ARROW { return "ARROW" }
+    if op == OP_FAT_ARROW { return "FAT_ARROW" }
+    if op == OP_QUESTION { return "QUESTION" }
+    if op == OP_EQUALS { return "EQUALS" }
+    if op == OP_NOT_EQUALS { return "NOT_EQUALS" }
+    if op == OP_LSHIFT { return "LSHIFT" }
+    if op == OP_RSHIFT { return "RSHIFT" }
+    if op == OP_LESS_EQUAL { return "LESS_EQUAL" }
+    if op == OP_GREATER_EQUAL { return "GREATER_EQUAL" }
+    if op == OP_AND { return "AND" }
+    if op == OP_OR { return "OR" }
+    if op == OP_PIPELINE { return "PIPELINE" }
+    if op == OP_PIPE { return "PIPE" }
+    if op == OP_AMPERSAND { return "AMPERSAND" }
+    if op == OP_CARET { return "CARET" }
+    if op == OP_TILDE { return "TILDE" }
+    if op == OP_ELLIPSIS { return "ELLIPSIS" }
+    if op == OP_DOTDOT { return "DOTDOT" }
+    if op == OP_DOUBLE_COLON { return "DOUBLE_COLON" }
+    if op == OP_PLUS_ASSIGN { return "PLUS_ASSIGN" }
+    if op == OP_MINUS_ASSIGN { return "MINUS_ASSIGN" }
+    if op == OP_STAR_ASSIGN { return "STAR_ASSIGN" }
+    if op == OP_SLASH_ASSIGN { return "SLASH_ASSIGN" }
+    if op == OP_PLUS { return "PLUS" }
+    if op == OP_MINUS { return "MINUS" }
+    if op == OP_STAR { return "STAR" }
+    if op == OP_SLASH { return "SLASH" }
+    if op == OP_PERCENT { return "PERCENT" }
+    if op == OP_LESS { return "LESS" }
+    if op == OP_GREATER { return "GREATER" }
+    if op == OP_ASSIGN { return "ASSIGN" }
+    if op == OP_NOT { return "NOT" }
+    if op == OP_LPAREN { return "LPAREN" }
+    if op == OP_RPAREN { return "RPAREN" }
+    if op == OP_LBRACE { return "LBRACE" }
+    if op == OP_RBRACE { return "RBRACE" }
+    if op == OP_LBRACKET { return "LBRACKET" }
+    if op == OP_RBRACKET { return "RBRACKET" }
+    if op == OP_SEMICOLON { return "SEMICOLON" }
+    if op == OP_COLON { return "COLON" }
+    if op == OP_COMMA { return "COMMA" }
+    if op == OP_DOT { return "DOT" }
+    return "AT"
+}
+
+# ── The expansion context ────────────────────────────────────────
+
+const FB_MAX_FLOWS: i32 = 256
+
+export struct Fb {
+    src: ptr<u8>,
+    n: i32,
+    # tokens
+    nt: i32,
+    tk: ptr<i32>,
+    top: ptr<i32>,
+    ts: ptr<i32>,
+    te: ptr<i32>,
+    tl: ptr<i32>,
+    tc: ptr<i32>,
+    tvar: ptr<i32>,
+    pos: i32,
+    # expression nodes
+    nn: i32,
+    ncap: i32,
+    nk: ptr<i32>,
+    nop: ptr<i32>,
+    ntok: ptr<i32>,
+    na: ptr<i32>,
+    nb: ptr<i32>,
+    nc: ptr<i32>,
+    nx: ptr<i32>,
+    nfs: ptr<i32>,
+    nfe: ptr<i32>,
+    # string arena: every name is an offset into it
+    nm: ptr<FbBuf>,
+    # flows
+    nf: i32,
+    f_name: ptr<i32>,
+    f_line: ptr<i32>,
+    f_start: ptr<i32>,
+    f_end: ptr<i32>,
+    f_solver: ptr<i32>,
+    f_dt_ns: ptr<i64>,
+    f_dt_text: ptr<i32>,
+    f_method: ptr<i32>,
+    f_solver_line: ptr<i32>,
+    f_rec: ptr<i32>,
+    f_rec_line: ptr<i32>,
+    f_out: ptr<i32>,
+    # members: states, inputs, outputs, params, children
+    nmm: i32,
+    icap: i32,
+    mm_flow: ptr<i32>,
+    mm_kind: ptr<i32>,
+    mm_name: ptr<i32>,
+    mm_type: ptr<i32>,
+    mm_init: ptr<i32>,
+    mm_line: ptr<i32>,
+    mm_synth: ptr<i32>,
+    mm_params: ptr<i32>,
+    mm_pipe_m: ptr<i32>,
+    mm_pipe_p: ptr<i32>,
+    # evolves
+    nev: i32,
+    ev_flow: ptr<i32>,
+    ev_target: ptr<i32>,
+    ev_expr: ptr<i32>,
+    ev_line: ptr<i32>,
+    # when
+    nwh: i32,
+    wh_flow: ptr<i32>,
+    wh_target: ptr<i32>,
+    wh_thr: ptr<i32>,
+    wh_line: ptr<i32>,
+    # every
+    ney: i32,
+    ey_flow: ptr<i32>,
+    ey_ns: ptr<i64>,
+    ey_text: ptr<i32>,
+    ey_line: ptr<i32>,
+    # becomes (bodies of when and every)
+    nbc: i32,
+    bc_kind: ptr<i32>,
+    bc_owner: ptr<i32>,
+    bc_target: ptr<i32>,
+    bc_expr: ptr<i32>,
+    bc_line: ptr<i32>,
+    # always / never clauses
+    niv: i32,
+    iv_flow: ptr<i32>,
+    iv_kind: ptr<i32>,
+    iv_expr: ptr<i32>,
+    iv_line: ptr<i32>,
+    iv_text: ptr<i32>,
+    # connections
+    ncn: i32,
+    cn_flow: ptr<i32>,
+    cn_sm: ptr<i32>,
+    cn_sp: ptr<i32>,
+    cn_dm: ptr<i32>,
+    cn_dp: ptr<i32>,
+    cn_line: ptr<i32>,
+    # recognize domains
+    nrc: i32,
+    rc_flow: ptr<i32>,
+    rc_name: ptr<i32>,
+    # file-level names
+    nnames: i32,
+    nx_kind: ptr<i32>,
+    nx_name: ptr<i32>,
+    # error
+    err: i32,
+    err_flow: i32,
+    err_line: i32,
+    err_col: i32,
+    emsg: ptr<FbBuf>,
+    ehint: ptr<FbBuf>,
+    has_hint: i32,
+    # lowering
+    cur: i32,
+    out: ptr<FbBuf>
+}
+
+# File-level name kinds (nx_kind).
+const NX_TAKEN: i32 = 1
+const NX_LOCAL_FN: i32 = 2
+const NX_DIMENSION: i32 = 3
+
+# Member kinds.
+const MK_DEAD: i32 = 0
+const MK_STATE: i32 = 1
+const MK_INPUT: i32 = 2
+const MK_OUTPUT: i32 = 3
+const MK_PARAM: i32 = 4
+const MK_CHILD: i32 = 5
+
+# Expression node kinds.
+const N_VAR: i32 = 1
+const N_LIT: i32 = 2
+const N_BIN: i32 = 3
+const N_UN: i32 = 4
+const N_CALL: i32 = 5
+const N_METHOD: i32 = 6
+const N_FIELD: i32 = 7
+const N_INDEX: i32 = 8
+const N_SLICE: i32 = 9
+const N_CAST: i32 = 10
+const N_TRY: i32 = 11
+const N_ARRAY: i32 = 12
+const N_VEC: i32 = 13
+const N_STRUCT: i32 = 14
+const N_RECUPD: i32 = 15
+const N_EFFECT: i32 = 16
+const N_LAMBDA: i32 = 17
+const N_IFX: i32 = 18
+const N_STAGE: i32 = 19
+const N_FORK: i32 = 20
+const N_FINIT: i32 = 21
+const N_OPAQUE: i32 = 22
+
+# ── String arena ─────────────────────────────────────────────────
+
+function fb_s(c: ptr<Fb>, off: i32) -> ptr<u8> {
+    return c[0].nm[0].p + off
+}
+
+function fb_intern_span(c: ptr<Fb>, s: i32, e: i32) -> i32 {
+    let off: i32 = c[0].nm[0].len
+    fb_put_span(c[0].nm, c[0].src, s, e)
+    fb_putc(c[0].nm, 0)
+    return off
+}
+
+function fb_intern(c: ptr<Fb>, s: string) -> i32 {
+    let off: i32 = c[0].nm[0].len
+    fb_puts(c[0].nm, s)
+    fb_putc(c[0].nm, 0)
+    return off
+}
+
+function fb_intern_buf(c: ptr<Fb>, b: ptr<FbBuf>) -> i32 {
+    let off: i32 = c[0].nm[0].len
+    fb_put_span(c[0].nm, b[0].p, 0, b[0].len)
+    fb_putc(c[0].nm, 0)
+    return off
+}
+
+function fb_tok_str(c: ptr<Fb>, t: i32) -> i32 {
+    return fb_intern_span(c, c[0].ts[t], c[0].te[t])
+}
+
+function fb_name_eq(c: ptr<Fb>, a: i32, b: i32) -> i32 {
+    if a < 0 or b < 0 { return 0 }
+    if strcmp(fb_s(c, a) as string, fb_s(c, b) as string) == 0 { return 1 }
+    return 0
+}
+
+function fb_name_is(c: ptr<Fb>, a: i32, lit: string) -> i32 {
+    if a < 0 { return 0 }
+    if strcmp(fb_s(c, a) as string, lit) == 0 { return 1 }
+    return 0
+}
+
+function fb_name_starts_uu(c: ptr<Fb>, a: i32) -> i32 {
+    let p: ptr<u8> = fb_s(c, a)
+    if p[0] == 95 and p[1] == 95 { return 1 }
+    return 0
+}
+
+# ── Errors ───────────────────────────────────────────────────────
+
+# err: 0 none, 1 FlowSyntaxError (prints "Error: ... at line L[, column C]"),
+# 2 plain SyntaxError (message only).
+function fb_err_begin(c: ptr<Fb>, kind: i32, line: i32, col: i32) -> ptr<FbBuf> {
+    c[0].err = kind
+    c[0].err_line = line
+    c[0].err_col = col
+    c[0].emsg[0].len = 0
+    c[0].emsg[0].p[0] = 0
+    c[0].ehint[0].len = 0
+    c[0].ehint[0].p[0] = 0
+    c[0].has_hint = 0
+    return c[0].emsg
+}
+
+function fb_err_hint(c: ptr<Fb>) -> ptr<FbBuf> {
+    c[0].has_hint = 1
+    return c[0].ehint
+}
+
+function fb_contains(hay: ptr<u8>, needle: string) -> i32 {
+    let np: ptr<u8> = needle as ptr<u8>
+    let nl: i32 = strlen(needle) as i32
+    let mut i: i32 = 0
+    while hay[i] != 0 {
+        let mut k: i32 = 0
+        while k < nl and hay[i + k] == np[k] {
+            k = k + 1
+        }
+        if k == nl { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+# get_suggestion() in parser.py: the first ERROR_SUGGESTIONS pattern found.
+function fb_auto_hint(c: ptr<Fb>) {
+    let m: ptr<u8> = c[0].emsg[0].p
+    if fb_contains(m, "Expected TokenType.RBRACE") == 1 {
+        fb_puts(fb_err_hint(c), "Missing closing brace '}'. Check for unbalanced braces.")
+        return
+    }
+    if fb_contains(m, "Expected TokenType.RPAREN") == 1 {
+        fb_puts(fb_err_hint(c), "Missing closing parenthesis ')'. Check function calls and expressions.")
+        return
+    }
+    if fb_contains(m, "Expected TokenType.SEMICOLON") == 1 {
+        fb_puts(fb_err_hint(c), "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.")
+        return
+    }
+    if fb_contains(m, "Expected TokenType.IDENTIFIER") == 1 {
+        fb_puts(fb_err_hint(c), "Expected a name (identifier) here. Names must start with a letter or underscore.")
+        return
+    }
+    if fb_contains(m, "Unexpected token in expression") == 1 {
+        fb_puts(fb_err_hint(c), "This token cannot start an expression. Check for typos or missing operators.")
+        return
+    }
+    if fb_contains(m, "Unexpected declaration") == 1 {
+        fb_puts(fb_err_hint(c), "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.")
+        return
+    }
+}
+
+# Parser.error(): FlowSyntaxError at the current token.
+function fb_perr(c: ptr<Fb>) -> ptr<FbBuf> {
+    let t: i32 = c[0].pos
+    return fb_err_begin(c, 1, c[0].tl[t], c[0].tc[t])
+}
+
+# _error() in flow_blocks.py: FlowSyntaxError at a line, no column.
+function fb_verr(c: ptr<Fb>, line: i32) -> ptr<FbBuf> {
+    return fb_err_begin(c, 1, line, 0)
+}
+
+# A plain SyntaxError (str() is the message alone).
+function fb_serr(c: ptr<Fb>) -> ptr<FbBuf> {
+    return fb_err_begin(c, 2, 0, 0)
+}
+
+function fb_err_clear(c: ptr<Fb>) {
+    c[0].err = 0
+}
+
+# ── Lexer (src/flow/parser.py Lexer, same regex order) ──────────
+
+# len(text.expandtabs(4)) over src[s..e): tabs to the next multiple of 4,
+# the column resets after \n and \r, UTF-8 continuation bytes do not count.
+function fb_expand_len(p: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut total: i32 = 0
+    let mut col: i32 = 0
+    let mut i: i32 = s
+    while i < e {
+        let ch: u8 = p[i]
+        if ch == 9 {
+            let w: i32 = 4 - (col % 4)
+            total = total + w
+            col = col + w
+        } else {
+            if ch == 10 or ch == 13 {
+                total = total + 1
+                col = 0
+            } else {
+                if ch < 128 or ch >= 192 {
+                    total = total + 1
+                    col = col + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return total
+}
+
+function fb_op2(op: ptr<i32>, code: i32, len: i32) -> i32 {
+    op[0] = code
+    return len
+}
+
+# Length of the operator at src[i], and its code in *op; 0 when none.
+function fb_lex_op(p: ptr<u8>, i: i32, n: i32, op: ptr<i32>) -> i32 {
+    let a: u8 = p[i]
+    let mut b: u8 = 0
+    if i + 1 < n { b = p[i + 1] }
+    let mut d: u8 = 0
+    if i + 2 < n { d = p[i + 2] }
+    if a == 45 and b == 62 { return fb_op2(op, OP_ARROW, 2) }
+    if a == 61 and b == 62 { return fb_op2(op, OP_FAT_ARROW, 2) }
+    if a == 63 { return fb_op2(op, OP_QUESTION, 1) }
+    if a == 61 and b == 61 { return fb_op2(op, OP_EQUALS, 2) }
+    if a == 33 and b == 61 { return fb_op2(op, OP_NOT_EQUALS, 2) }
+    if a == 60 and b == 60 { return fb_op2(op, OP_LSHIFT, 2) }
+    if a == 62 and b == 62 { return fb_op2(op, OP_RSHIFT, 2) }
+    if a == 60 and b == 61 { return fb_op2(op, OP_LESS_EQUAL, 2) }
+    if a == 62 and b == 61 { return fb_op2(op, OP_GREATER_EQUAL, 2) }
+    if a == 38 and b == 38 { return fb_op2(op, OP_AND, 2) }
+    if a == 124 and b == 124 { return fb_op2(op, OP_OR, 2) }
+    if a == 124 and b == 62 { return fb_op2(op, OP_PIPELINE, 2) }
+    if a == 124 { return fb_op2(op, OP_PIPE, 1) }
+    if a == 38 { return fb_op2(op, OP_AMPERSAND, 1) }
+    if a == 94 { return fb_op2(op, OP_CARET, 1) }
+    if a == 126 { return fb_op2(op, OP_TILDE, 1) }
+    if a == 46 and b == 46 and d == 46 { return fb_op2(op, OP_ELLIPSIS, 3) }
+    if a == 46 and b == 46 { return fb_op2(op, OP_DOTDOT, 2) }
+    if a == 58 and b == 58 { return fb_op2(op, OP_DOUBLE_COLON, 2) }
+    if a == 43 and b == 61 { return fb_op2(op, OP_PLUS_ASSIGN, 2) }
+    if a == 45 and b == 61 { return fb_op2(op, OP_MINUS_ASSIGN, 2) }
+    if a == 42 and b == 61 { return fb_op2(op, OP_STAR_ASSIGN, 2) }
+    if a == 47 and b == 61 { return fb_op2(op, OP_SLASH_ASSIGN, 2) }
+    if a == 43 { return fb_op2(op, OP_PLUS, 1) }
+    if a == 45 { return fb_op2(op, OP_MINUS, 1) }
+    if a == 42 { return fb_op2(op, OP_STAR, 1) }
+    if a == 47 { return fb_op2(op, OP_SLASH, 1) }
+    if a == 37 { return fb_op2(op, OP_PERCENT, 1) }
+    if a == 60 { return fb_op2(op, OP_LESS, 1) }
+    if a == 62 { return fb_op2(op, OP_GREATER, 1) }
+    if a == 61 { return fb_op2(op, OP_ASSIGN, 1) }
+    if a == 33 { return fb_op2(op, OP_NOT, 1) }
+    if a == 40 { return fb_op2(op, OP_LPAREN, 1) }
+    if a == 41 { return fb_op2(op, OP_RPAREN, 1) }
+    if a == 123 { return fb_op2(op, OP_LBRACE, 1) }
+    if a == 125 { return fb_op2(op, OP_RBRACE, 1) }
+    if a == 91 { return fb_op2(op, OP_LBRACKET, 1) }
+    if a == 93 { return fb_op2(op, OP_RBRACKET, 1) }
+    if a == 59 { return fb_op2(op, OP_SEMICOLON, 1) }
+    if a == 58 { return fb_op2(op, OP_COLON, 1) }
+    if a == 44 { return fb_op2(op, OP_COMMA, 1) }
+    if a == 46 { return fb_op2(op, OP_DOT, 1) }
+    if a == 64 { return fb_op2(op, OP_AT, 1) }
+    return 0
+}
+
+# `"(?:[^"\\]|\\.)*"`: `.` does not match a newline, so a backslash before
+# a newline ends the match attempt. Returns the end, or -1.
+function fb_lex_string(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut k: i32 = i + 1
+    while k < n {
+        let ch: u8 = p[k]
+        if ch == 34 { return k + 1 }
+        if ch == 92 {
+            if k + 1 >= n { return 0 - 1 }
+            if p[k + 1] == 10 { return 0 - 1 }
+            k = k + 2
+        } else {
+            k = k + 1
+        }
+    }
+    return 0 - 1
+}
+
+# [eE][+-]?[0-9]+ at k; returns the end or -1.
+function fb_lex_exp(p: ptr<u8>, k: i32, n: i32) -> i32 {
+    if k < n and (p[k] == 101 or p[k] == 69) {
+        let mut j: i32 = k + 1
+        if j < n and (p[j] == 43 or p[j] == 45) { j = j + 1 }
+        if j < n and fb_is_digit(p[j]) == 1 {
+            while j < n and fb_is_digit(p[j]) == 1 { j = j + 1 }
+            return j
+        }
+    }
+    return 0 - 1
+}
+
+# NUMBER: 0x[0-9a-fA-F]+ | [0-9]+\.[0-9]+([eE][+-]?[0-9]+)? |
+# [0-9]+[eE][+-]?[0-9]+ | [0-9]+ (first alternative that matches).
+function fb_lex_number(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if p[i] == 48 and i + 2 < n and p[i + 1] == 120 and fb_is_hex(p[i + 2]) == 1 {
+        let mut h: i32 = i + 2
+        while h < n and fb_is_hex(p[h]) == 1 { h = h + 1 }
+        return h
+    }
+    let mut k: i32 = i
+    while k < n and fb_is_digit(p[k]) == 1 { k = k + 1 }
+    if k + 1 < n and p[k] == 46 and fb_is_digit(p[k + 1]) == 1 {
+        let mut f: i32 = k + 1
+        while f < n and fb_is_digit(p[f]) == 1 { f = f + 1 }
+        let x: i32 = fb_lex_exp(p, f, n)
+        if x > 0 { return x }
+        return f
+    }
+    let x2: i32 = fb_lex_exp(p, k, n)
+    if x2 > 0 { return x2 }
+    return k
+}
+
+# « = C2 AB, » = C2 BB.
+function fb_is_laquo(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 1 < n and p[i] == 194 and p[i + 1] == 171 { return 1 }
+    return 0
+}
+
+function fb_is_raquo(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 1 < n and p[i] == 194 and p[i + 1] == 187 { return 1 }
+    return 0
+}
+
+# «[^»]+» ; returns the end or -1.
+function fb_lex_guillemet(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if fb_is_laquo(p, i, n) == 0 { return 0 - 1 }
+    let mut k: i32 = i + 2
+    let start: i32 = k
+    while k < n and fb_is_raquo(p, k, n) == 0 { k = k + 1 }
+    if k >= n or k == start { return 0 - 1 }
+    return k + 2
+}
+
+# «[^»]+»\s*«[^»]+»\s*«[^»]+»
+function fb_lex_claim_coord(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut k: i32 = fb_lex_guillemet(p, i, n)
+    if k < 0 { return 0 - 1 }
+    while k < n and fb_is_space(p[k]) == 1 { k = k + 1 }
+    k = fb_lex_guillemet(p, k, n)
+    if k < 0 { return 0 - 1 }
+    while k < n and fb_is_space(p[k]) == 1 { k = k + 1 }
+    return fb_lex_guillemet(p, k, n)
+}
+
+# [A-Za-z][A-Za-z0-9_]*/(?:\|\||[+|=|*]|[a-z][a-zA-Z0-9_-]*)\.[a-z][a-z0-9-]+
+function fb_lex_claim_path(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if fb_is_alpha(p[i]) == 0 { return 0 - 1 }
+    let mut k: i32 = i + 1
+    while k < n and fb_is_ident_char(p[k]) == 1 { k = k + 1 }
+    if k >= n or p[k] != 47 { return 0 - 1 }
+    k = k + 1
+    if k >= n { return 0 - 1 }
+    if k + 1 < n and p[k] == 124 and p[k + 1] == 124 {
+        k = k + 2
+    } else {
+        let ch: u8 = p[k]
+        if ch == 43 or ch == 124 or ch == 61 or ch == 42 {
+            k = k + 1
+        } else {
+            if fb_is_lower(ch) == 0 { return 0 - 1 }
+            k = k + 1
+            while k < n and (fb_is_ident_char(p[k]) == 1 or p[k] == 45) { k = k + 1 }
+        }
+    }
+    if k >= n or p[k] != 46 { return 0 - 1 }
+    k = k + 1
+    if k >= n or fb_is_lower(p[k]) == 0 { return 0 - 1 }
+    k = k + 1
+    let first: i32 = k
+    while k < n and (fb_is_lower(p[k]) == 1 or fb_is_digit(p[k]) == 1 or p[k] == 45) { k = k + 1 }
+    if k == first { return 0 - 1 }
+    return k
+}
+
+function fb_add_tok(c: ptr<Fb>, kind: i32, op: i32, s: i32, e: i32, line: i32, col: i32) {
+    let t: i32 = c[0].nt
+    c[0].tk[t] = kind
+    c[0].top[t] = op
+    c[0].ts[t] = s
+    c[0].te[t] = e
+    c[0].tl[t] = line
+    c[0].tc[t] = col
+    c[0].tvar[t] = 0
+    c[0].nt = t + 1
+}
+
+# One token at i (not whitespace or a comment): its end, kind and op, or
+# -1 for a character the Python lexer rejects.
+function fb_lex_one(p: ptr<u8>, i: i32, n: i32, kind: ptr<i32>, op: ptr<i32>) -> i32 {
+    let ch: u8 = p[i]
+    let ol: i32 = fb_lex_op(p, i, n, op)
+    if ol > 0 {
+        kind[0] = TK_OP
+        return i + ol
+    }
+    op[0] = 0
+    if ch == 34 {
+        kind[0] = TK_STR
+        return fb_lex_string(p, i, n)
+    }
+    if fb_is_digit(ch) == 1 {
+        kind[0] = TK_NUM
+        return fb_lex_number(p, i, n)
+    }
+    let cc: i32 = fb_lex_claim_coord(p, i, n)
+    if cc > 0 {
+        kind[0] = TK_CLAIM_COORD
+        return cc
+    }
+    let cp: i32 = fb_lex_claim_path(p, i, n)
+    if cp > 0 {
+        kind[0] = TK_CLAIM_PATH
+        return cp
+    }
+    if fb_is_ident_start(ch) == 1 {
+        let mut k: i32 = i
+        while k < n and fb_is_ident_char(p[k]) == 1 { k = k + 1 }
+        kind[0] = TK_IDENT
+        return k
+    }
+    return 0 - 1
+}
+
+# Tokenize the whole source. Returns 0, or -1 on a character the Python
+# lexer rejects (the file then passes through for the parser to report).
+function fb_lex(c: ptr<Fb>) -> i32 {
+    let p: ptr<u8> = c[0].src
+    let n: i32 = c[0].n
+    let mut i: i32 = 0
+    let mut line: i32 = 1
+    let mut col: i32 = 1
+    let box: ptr<i32> = malloc(8) as ptr<i32>
+    let mut rc: i32 = 0
+    while i < n and rc == 0 {
+        let ch: u8 = p[i]
+        if ch == 35 {
+            let mut k: i32 = i
+            while k < n and p[k] != 10 { k = k + 1 }
+            col = col + fb_expand_len(p, i, k)
+            i = k
+        } else {
+            if ch == 10 {
+                line = line + 1
+                col = 1
+                i = i + 1
+            } else {
+                if fb_is_space(ch) == 1 {
+                    let mut k: i32 = i
+                    while k < n and fb_is_space(p[k]) == 1 { k = k + 1 }
+                    col = col + fb_expand_len(p, i, k)
+                    i = k
+                } else {
+                    let e: i32 = fb_lex_one(p, i, n, box, box + 1)
+                    if e < 0 {
+                        rc = 0 - 1
+                    } else {
+                        fb_add_tok(c, box[0], box[1], i, e, line, col)
+                        col = col + fb_expand_len(p, i, e)
+                        i = e
+                    }
+                }
+            }
+        }
+    }
+    fb_add_tok(c, TK_EOF, 0, n, n, line, col)
+    free(box as ptr<u8>)
+    return rc
+}
+
+# ── Token classification (TokenType names) ──────────────────────
+
+function fb_tok_is(c: ptr<Fb>, t: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit as ptr<u8>
+    let s: i32 = c[0].ts[t]
+    let e: i32 = c[0].te[t]
+    let mut i: i32 = 0
+    while s + i < e {
+        if lp[i] != c[0].src[s + i] { return 0 }
+        i = i + 1
+    }
+    if lp[i] != 0 { return 0 }
+    return 1
+}
+
+# The keyword_map TokenType name for an identifier-shaped token, or
+# "IDENTIFIER" (ptr and array stay identifiers).
+function fb_word_type(c: ptr<Fb>, t: i32) -> string {
+    if fb_tok_is(c, t, "true") == 1 or fb_tok_is(c, t, "false") == 1 { return "BOOLEAN" }
+    if fb_tok_is(c, t, "string") == 1 { return "STRING_TYPE" }
+    if fb_tok_is(c, t, "function") == 1 { return "FUNCTION" }
+    if fb_tok_is(c, t, "let") == 1 { return "LET" }
+    if fb_tok_is(c, t, "mut") == 1 { return "MUT" }
+    if fb_tok_is(c, t, "return") == 1 { return "RETURN" }
+    if fb_tok_is(c, t, "if") == 1 { return "IF" }
+    if fb_tok_is(c, t, "elif") == 1 { return "ELIF" }
+    if fb_tok_is(c, t, "else") == 1 { return "ELSE" }
+    if fb_tok_is(c, t, "while") == 1 { return "WHILE" }
+    if fb_tok_is(c, t, "for") == 1 { return "FOR" }
+    if fb_tok_is(c, t, "break") == 1 { return "BREAK" }
+    if fb_tok_is(c, t, "continue") == 1 { return "CONTINUE" }
+    if fb_tok_is(c, t, "in") == 1 { return "IN" }
+    if fb_tok_is(c, t, "parallel") == 1 { return "PARALLEL" }
+    if fb_tok_is(c, t, "to") == 1 { return "TO" }
+    if fb_tok_is(c, t, "match") == 1 { return "MATCH" }
+    if fb_tok_is(c, t, "default") == 1 { return "DEFAULT" }
+    if fb_tok_is(c, t, "test") == 1 { return "TEST" }
+    if fb_tok_is(c, t, "trait") == 1 { return "TRAIT" }
+    if fb_tok_is(c, t, "impl") == 1 { return "IMPL" }
+    if fb_tok_is(c, t, "self") == 1 { return "SELF" }
+    if fb_tok_is(c, t, "type") == 1 { return "TYPE" }
+    if fb_tok_is(c, t, "distinct") == 1 { return "DISTINCT" }
+    if fb_tok_is(c, t, "as") == 1 { return "AS" }
+    if fb_tok_is(c, t, "enum") == 1 { return "ENUM" }
+    if fb_tok_is(c, t, "theorem") == 1 { return "THEOREM" }
+    if fb_tok_is(c, t, "assume") == 1 { return "ASSUME" }
+    if fb_tok_is(c, t, "therefore") == 1 { return "THEREFORE" }
+    if fb_tok_is(c, t, "with") == 1 { return "WITH" }
+    if fb_tok_is(c, t, "handle") == 1 { return "HANDLE" }
+    if fb_tok_is(c, t, "ui_layout") == 1 { return "UI_LAYOUT" }
+    if fb_tok_is(c, t, "ui_row") == 1 { return "UI_ROW" }
+    if fb_tok_is(c, t, "ui_column") == 1 { return "UI_COLUMN" }
+    if fb_tok_is(c, t, "ui_stack") == 1 { return "UI_STACK" }
+    if fb_tok_is(c, t, "ui_grid") == 1 { return "UI_GRID" }
+    if fb_tok_is(c, t, "effect") == 1 { return "EFFECT" }
+    if fb_tok_is(c, t, "capability") == 1 { return "CAPABILITY" }
+    if fb_tok_is(c, t, "import") == 1 { return "IMPORT" }
+    if fb_tok_is(c, t, "export") == 1 { return "EXPORT" }
+    if fb_tok_is(c, t, "extern") == 1 { return "EXTERN" }
+    if fb_tok_is(c, t, "const") == 1 { return "CONST" }
+    if fb_tok_is(c, t, "struct") == 1 { return "STRUCT" }
+    if fb_tok_is(c, t, "and") == 1 { return "AND" }
+    if fb_tok_is(c, t, "or") == 1 { return "OR" }
+    if fb_tok_is(c, t, "not") == 1 { return "NOT" }
+    if fb_tok_is(c, t, "null") == 1 { return "NULL" }
+    if fb_tok_is(c, t, "defer") == 1 { return "DEFER" }
+    if fb_tok_is(c, t, "dbg") == 1 { return "DBG" }
+    if fb_tok_is(c, t, "expect") == 1 { return "EXPECT" }
+    if fb_tok_is(c, t, "module") == 1 { return "MODULE" }
+    if fb_tok_is(c, t, "void") == 1 { return "VOID" }
+    if fb_tok_is(c, t, "i8") == 1 { return "I8" }
+    if fb_tok_is(c, t, "i16") == 1 { return "I16" }
+    if fb_tok_is(c, t, "i32") == 1 { return "I32" }
+    if fb_tok_is(c, t, "i64") == 1 { return "I64" }
+    if fb_tok_is(c, t, "i128") == 1 { return "I128" }
+    if fb_tok_is(c, t, "u8") == 1 { return "U8" }
+    if fb_tok_is(c, t, "u16") == 1 { return "U16" }
+    if fb_tok_is(c, t, "u32") == 1 { return "U32" }
+    if fb_tok_is(c, t, "u64") == 1 { return "U64" }
+    if fb_tok_is(c, t, "u128") == 1 { return "U128" }
+    if fb_tok_is(c, t, "f32") == 1 { return "F32" }
+    if fb_tok_is(c, t, "f64") == 1 { return "F64" }
+    if fb_tok_is(c, t, "c64") == 1 { return "C64" }
+    if fb_tok_is(c, t, "c128") == 1 { return "C128" }
+    if fb_tok_is(c, t, "bool") == 1 { return "BOOL" }
+    if fb_tok_is(c, t, "vec") == 1 { return "VEC" }
+    return "IDENTIFIER"
+}
+
+# Python TokenType name of token t.
+function fb_ttype(c: ptr<Fb>, t: i32) -> string {
+    let k: i32 = c[0].tk[t]
+    if k == TK_IDENT { return fb_word_type(c, t) }
+    if k == TK_NUM { return "NUMBER" }
+    if k == TK_STR { return "STRING_LITERAL" }
+    if k == TK_OP { return fb_op_name(c[0].top[t]) }
+    if k == TK_CLAIM_PATH { return "CLAIM_PATH" }
+    if k == TK_CLAIM_COORD { return "CLAIM_COORDINATE" }
+    return "EOF"
+}
+
+function fb_tt_is(c: ptr<Fb>, t: i32, name: string) -> i32 {
+    if strcmp(fb_ttype(c, t), name) == 0 { return 1 }
+    return 0
+}
+
+# TokenType.IDENTIFIER exactly (keywords excluded).
+function fb_is_ident(c: ptr<Fb>, t: i32) -> i32 {
+    if c[0].tk[t] != TK_IDENT { return 0 }
+    return fb_tt_is(c, t, "IDENTIFIER")
+}
+
+function fb_is_op(c: ptr<Fb>, t: i32, op: i32) -> i32 {
+    if c[0].tk[t] == TK_OP and c[0].top[t] == op { return 1 }
+    return 0
+}
+
+function fb_is_word(c: ptr<Fb>, t: i32, w: string) -> i32 {
+    if fb_is_ident(c, t) == 1 and fb_tok_is(c, t, w) == 1 { return 1 }
+    return 0
+}
+
+function fb_at_eof(c: ptr<Fb>) -> i32 {
+    if c[0].tk[c[0].pos] == TK_EOF { return 1 }
+    return 0
+}
+
+function fb_la(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    if c[0].tk[t] == TK_EOF { return t }
+    return t + 1
+}
+
+function fb_la2(c: ptr<Fb>) -> i32 {
+    let t: i32 = fb_la(c)
+    if c[0].tk[t] == TK_EOF { return t }
+    return t + 1
+}
+
+function fb_advance(c: ptr<Fb>) {
+    if c[0].tk[c[0].pos] != TK_EOF {
+        c[0].pos = c[0].pos + 1
+    }
+}
+
+function fb_put_ttype(c: ptr<Fb>, b: ptr<FbBuf>, t: i32) {
+    fb_puts(b, "TokenType.")
+    fb_puts(b, fb_ttype(c, t))
+}
+
+# Parser.expect(): consumes a token of TokenType `name`. Soft identifiers
+# (test, and, or) satisfy IDENTIFIER. On mismatch sets the error and
+# returns -1.
+function fb_expect(c: ptr<Fb>, name: string) -> i32 {
+    let t: i32 = c[0].pos
+    if fb_tt_is(c, t, name) == 1 {
+        fb_advance(c)
+        return t
+    }
+    if strcmp(name, "IDENTIFIER") == 0 {
+        if fb_tt_is(c, t, "TEST") == 1 or fb_tt_is(c, t, "AND") == 1 or fb_tt_is(c, t, "OR") == 1 {
+            fb_advance(c)
+            return t
+        }
+    }
+    let m: ptr<FbBuf> = fb_perr(c)
+    fb_puts(m, "Expected TokenType.")
+    fb_puts(m, name)
+    fb_puts(m, ", got ")
+    fb_put_ttype(c, m, t)
+    fb_auto_hint(c)
+    return 0 - 1
+}
+
+# ── Expression nodes ─────────────────────────────────────────────
+
+# Unary/binary op codes beyond the token op codes.
+const OPX_IN: i32 = 100
+const OPX_NOT_WORD: i32 = 101
+
+function fb_node(c: ptr<Fb>, kind: i32, tok: i32) -> i32 {
+    let id: i32 = c[0].nn
+    if id >= c[0].ncap {
+        let ncap: i32 = c[0].ncap * 2 + 64
+        let bytes: i64 = (ncap as i64) * 4
+        c[0].nk = realloc(c[0].nk as ptr<u8>, bytes) as ptr<i32>
+        c[0].nop = realloc(c[0].nop as ptr<u8>, bytes) as ptr<i32>
+        c[0].ntok = realloc(c[0].ntok as ptr<u8>, bytes) as ptr<i32>
+        c[0].na = realloc(c[0].na as ptr<u8>, bytes) as ptr<i32>
+        c[0].nb = realloc(c[0].nb as ptr<u8>, bytes) as ptr<i32>
+        c[0].nc = realloc(c[0].nc as ptr<u8>, bytes) as ptr<i32>
+        c[0].nx = realloc(c[0].nx as ptr<u8>, bytes) as ptr<i32>
+        c[0].nfs = realloc(c[0].nfs as ptr<u8>, bytes) as ptr<i32>
+        c[0].nfe = realloc(c[0].nfe as ptr<u8>, bytes) as ptr<i32>
+        c[0].ncap = ncap
+    }
+    c[0].nk[id] = kind
+    c[0].nop[id] = 0
+    c[0].ntok[id] = tok
+    c[0].na[id] = 0 - 1
+    c[0].nb[id] = 0 - 1
+    c[0].nc[id] = 0 - 1
+    c[0].nx[id] = 0 - 1
+    c[0].nfs[id] = tok
+    c[0].nfe[id] = tok
+    c[0].nn = id + 1
+    return id
+}
+
+function fb_node2(c: ptr<Fb>, kind: i32, tok: i32, a: i32, b: i32) -> i32 {
+    let id: i32 = fb_node(c, kind, tok)
+    c[0].na[id] = a
+    c[0].nb[id] = b
+    return id
+}
+
+# Append node x to the list that starts at head; returns the head.
+function fb_list_add(c: ptr<Fb>, head: i32, x: i32) -> i32 {
+    if head < 0 { return x }
+    let mut k: i32 = head
+    while c[0].nx[k] >= 0 {
+        k = c[0].nx[k]
+    }
+    c[0].nx[k] = x
+    return head
+}
+
+function fb_list_len(c: ptr<Fb>, head: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut k: i32 = head
+    while k >= 0 {
+        n = n + 1
+        k = c[0].nx[k]
+    }
+    return n
+}
+
+# ── Types (Parser.parse_type) ────────────────────────────────────
+
+# Numeric type keywords usable as a type name.
+function fb_is_numtype(c: ptr<Fb>, t: i32) -> i32 {
+    let ty: string = fb_ttype(c, t)
+    if strcmp(ty, "I8") == 0 or strcmp(ty, "I16") == 0 or strcmp(ty, "I32") == 0 { return 1 }
+    if strcmp(ty, "I64") == 0 or strcmp(ty, "I128") == 0 { return 1 }
+    if strcmp(ty, "U8") == 0 or strcmp(ty, "U16") == 0 or strcmp(ty, "U32") == 0 { return 1 }
+    if strcmp(ty, "U64") == 0 or strcmp(ty, "U128") == 0 { return 1 }
+    if strcmp(ty, "F32") == 0 or strcmp(ty, "F64") == 0 { return 1 }
+    if strcmp(ty, "C64") == 0 or strcmp(ty, "C128") == 0 { return 1 }
+    return 0
+}
+
+# Parser.expect(GREATER), which also takes the first half of `>>`.
+function fb_expect_greater(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    if fb_is_op(c, t, OP_RSHIFT) == 1 {
+        c[0].ts[t] = c[0].ts[t] + 1
+        c[0].tc[t] = c[0].tc[t] + 1
+        c[0].top[t] = OP_GREATER
+        return t
+    }
+    return fb_expect(c, "GREATER")
+}
+
+# Parse a type. Returns the Python Type.name as an arena string, or -1
+# with the error set.
+function fb_parse_type(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    if fb_is_ident(c, t) == 1 or fb_is_numtype(c, t) == 1 {
+        let name: i32 = fb_tok_str(c, t)
+        fb_advance(c)
+        let cur: i32 = c[0].pos
+        if fb_is_op(c, cur, OP_LESS) == 1 and (fb_name_is(c, name, "array") == 1 or fb_name_is(c, name, "ptr") == 1) {
+            fb_advance(c)
+            let inner: i32 = fb_parse_type(c)
+            if inner < 0 { return 0 - 1 }
+            let b: ptr<FbBuf> = fb_buf_new(32)
+            fb_puts(b, fb_s(c, name) as string)
+            fb_putc(b, 95)
+            if fb_name_is(c, name, "array") == 1 and fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+                fb_advance(c)
+                let st: i32 = c[0].pos
+                if c[0].tk[st] != TK_NUM {
+                    let m: ptr<FbBuf> = fb_perr(c)
+                    fb_puts(m, "array size must be an integer literal, got ")
+                    fb_put_ttype(c, m, st)
+                    fb_puts(fb_err_hint(c), "use a non-negative integer literal for the array size, e.g. 4")
+                    fb_buf_free(b)
+                    return 0 - 1
+                }
+                fb_put_span(b, c[0].src, c[0].ts[st], c[0].te[st])
+                fb_putc(b, 95)
+                fb_advance(c)
+            }
+            fb_puts(b, fb_s(c, inner) as string)
+            let out: i32 = fb_intern_buf(c, b)
+            fb_buf_free(b)
+            if fb_expect_greater(c) < 0 { return 0 - 1 }
+            return out
+        }
+        if fb_is_op(c, cur, OP_LBRACKET) == 1 {
+            fb_advance(c)
+            if fb_expect(c, "RBRACKET") < 0 { return 0 - 1 }
+            let b2: ptr<FbBuf> = fb_buf_new(32)
+            fb_puts(b2, "array_")
+            fb_puts(b2, fb_s(c, name) as string)
+            let out2: i32 = fb_intern_buf(c, b2)
+            fb_buf_free(b2)
+            return out2
+        }
+        if fb_is_op(c, cur, OP_LESS) == 1 {
+            fb_advance(c)
+            let b3: ptr<FbBuf> = fb_buf_new(32)
+            fb_puts(b3, fb_s(c, name) as string)
+            let a0: i32 = fb_parse_type(c)
+            if a0 < 0 {
+                fb_buf_free(b3)
+                return 0 - 1
+            }
+            fb_putc(b3, 95)
+            fb_puts(b3, fb_s(c, a0) as string)
+            while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+                fb_advance(c)
+                let a1: i32 = fb_parse_type(c)
+                if a1 < 0 {
+                    fb_buf_free(b3)
+                    return 0 - 1
+                }
+                fb_putc(b3, 95)
+                fb_puts(b3, fb_s(c, a1) as string)
+            }
+            let out3: i32 = fb_intern_buf(c, b3)
+            fb_buf_free(b3)
+            if fb_expect_greater(c) < 0 { return 0 - 1 }
+            return out3
+        }
+        return name
+    }
+    if fb_tt_is(c, t, "BOOL") == 1 or fb_tt_is(c, t, "VOID") == 1 or fb_tt_is(c, t, "STRING_TYPE") == 1 {
+        fb_advance(c)
+        return fb_tok_str(c, t)
+    }
+    let m2: ptr<FbBuf> = fb_serr(c)
+    fb_puts(m2, "Unexpected type token: ")
+    fb_put_ttype(c, m2, t)
+    return 0 - 1
+}
+
+# ── Expressions (Parser.parse_expression_without_assign) ─────────
+
+function fb_is_orop(c: ptr<Fb>, t: i32) -> i32 {
+    return fb_tt_is(c, t, "OR")
+}
+
+function fb_is_andop(c: ptr<Fb>, t: i32) -> i32 {
+    return fb_tt_is(c, t, "AND")
+}
+
+function fb_bin(c: ptr<Fb>, op: i32, tok: i32, l: i32, r: i32) -> i32 {
+    let id: i32 = fb_node2(c, N_BIN, tok, l, r)
+    c[0].nop[id] = op
+    return id
+}
+
+function fb_parse_expr(c: ptr<Fb>) -> i32 {
+    let left: i32 = fb_parse_or(c)
+    if left < 0 { return 0 - 1 }
+    return fb_parse_pipeline(c, left)
+}
+
+function fb_parse_or(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_and(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_orop(c, c[0].pos) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_and(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, OP_OR, t, left, right)
+    }
+    return left
+}
+
+function fb_parse_and(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_bitor(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_andop(c, c[0].pos) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_bitor(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, OP_AND, t, left, right)
+    }
+    return left
+}
+
+function fb_parse_bitor(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_xor(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_PIPE) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_xor(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, OP_PIPE, t, left, right)
+    }
+    return left
+}
+
+function fb_parse_xor(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_bitand(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_CARET) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_bitand(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, OP_CARET, t, left, right)
+    }
+    return left
+}
+
+function fb_parse_bitand(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_equality(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_AMPERSAND) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_equality(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, OP_AMPERSAND, t, left, right)
+    }
+    return left
+}
+
+function fb_parse_equality(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_comparison(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_EQUALS) == 1 or fb_is_op(c, c[0].pos, OP_NOT_EQUALS) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_comparison(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, c[0].top[t], t, left, right)
+    }
+    return left
+}
+
+function fb_cmp_op(c: ptr<Fb>, t: i32) -> i32 {
+    if fb_is_op(c, t, OP_LESS) == 1 { return OP_LESS }
+    if fb_is_op(c, t, OP_GREATER) == 1 { return OP_GREATER }
+    if fb_is_op(c, t, OP_LESS_EQUAL) == 1 { return OP_LESS_EQUAL }
+    if fb_is_op(c, t, OP_GREATER_EQUAL) == 1 { return OP_GREATER_EQUAL }
+    if fb_tt_is(c, t, "IN") == 1 { return OPX_IN }
+    return 0
+}
+
+function fb_parse_comparison(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_shift(c)
+    if left < 0 { return 0 - 1 }
+    while fb_cmp_op(c, c[0].pos) != 0 {
+        let t: i32 = c[0].pos
+        let op: i32 = fb_cmp_op(c, t)
+        fb_advance(c)
+        let right: i32 = fb_parse_shift(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, op, t, left, right)
+    }
+    return left
+}
+
+function fb_parse_shift(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_term(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_LSHIFT) == 1 or fb_is_op(c, c[0].pos, OP_RSHIFT) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_term(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, c[0].top[t], t, left, right)
+    }
+    return left
+}
+
+function fb_parse_term(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_factor(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_PLUS) == 1 or fb_is_op(c, c[0].pos, OP_MINUS) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_factor(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, c[0].top[t], t, left, right)
+    }
+    return left
+}
+
+function fb_parse_factor(c: ptr<Fb>) -> i32 {
+    let mut left: i32 = fb_parse_cast(c)
+    if left < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_STAR) == 1 or fb_is_op(c, c[0].pos, OP_SLASH) == 1 or fb_is_op(c, c[0].pos, OP_PERCENT) == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let right: i32 = fb_parse_cast(c)
+        if right < 0 { return 0 - 1 }
+        left = fb_bin(c, c[0].top[t], t, left, right)
+    }
+    return left
+}
+
+function fb_parse_cast(c: ptr<Fb>) -> i32 {
+    let mut e: i32 = fb_parse_unary(c)
+    if e < 0 { return 0 - 1 }
+    while fb_tt_is(c, c[0].pos, "AS") == 1 {
+        let t: i32 = c[0].pos
+        fb_advance(c)
+        let ty: i32 = fb_parse_type(c)
+        if ty < 0 { return 0 - 1 }
+        e = fb_node2(c, N_CAST, t, e, 0 - 1)
+        c[0].nop[e] = ty
+    }
+    while fb_is_op(c, c[0].pos, OP_QUESTION) == 1 {
+        let t2: i32 = c[0].pos
+        fb_advance(c)
+        e = fb_node2(c, N_TRY, t2, e, 0 - 1)
+    }
+    return e
+}
+
+function fb_parse_unary(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    if fb_tt_is(c, t, "DBG") == 1 {
+        fb_advance(c)
+        let operand: i32 = fb_parse_unary(c)
+        if operand < 0 { return 0 - 1 }
+        # `dbg x` lowers to the call __flow_dbg(x).
+        let call: i32 = fb_node2(c, N_CALL, 0 - 1, operand, 0 - 1)
+        return call
+    }
+    let mut op: i32 = 0
+    if fb_is_op(c, t, OP_MINUS) == 1 { op = OP_MINUS }
+    if fb_is_op(c, t, OP_NOT) == 1 { op = OP_NOT }
+    if c[0].tk[t] == TK_IDENT and fb_tok_is(c, t, "not") == 1 { op = OPX_NOT_WORD }
+    if fb_is_op(c, t, OP_TILDE) == 1 { op = OP_TILDE }
+    if fb_is_op(c, t, OP_AMPERSAND) == 1 { op = OP_AMPERSAND }
+    if fb_is_op(c, t, OP_STAR) == 1 { op = OP_STAR }
+    if op != 0 {
+        fb_advance(c)
+        let operand2: i32 = fb_parse_unary(c)
+        if operand2 < 0 { return 0 - 1 }
+        let u: i32 = fb_node2(c, N_UN, t, operand2, 0 - 1)
+        c[0].nop[u] = op
+        return u
+    }
+    return fb_parse_primary(c)
+}
+
+# Comma-separated expressions up to (not including) the closing token.
+# Returns the head of the list, -1 for an empty list, -2 on error.
+function fb_parse_args(c: ptr<Fb>, close: i32) -> i32 {
+    if fb_is_op(c, c[0].pos, close) == 1 { return 0 - 1 }
+    let first: i32 = fb_parse_expr(c)
+    if first < 0 { return 0 - 2 }
+    let mut head: i32 = first
+    while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+        fb_advance(c)
+        let a: i32 = fb_parse_expr(c)
+        if a < 0 { return 0 - 2 }
+        head = fb_list_add(c, head, a)
+    }
+    return head
+}
+
+function fb_parse_call(c: ptr<Fb>, name_tok: i32) -> i32 {
+    if fb_expect(c, "LPAREN") < 0 { return 0 - 1 }
+    let args: i32 = fb_parse_args(c, OP_RPAREN)
+    if args == 0 - 2 { return 0 - 1 }
+    if fb_expect(c, "RPAREN") < 0 { return 0 - 1 }
+    return fb_node2(c, N_CALL, name_tok, args, 0 - 1)
+}
+
+function fb_parse_postfix(c: ptr<Fb>, base: i32) -> i32 {
+    let mut e: i32 = base
+    while fb_is_op(c, c[0].pos, OP_DOT) == 1 or fb_is_op(c, c[0].pos, OP_LBRACKET) == 1 {
+        if fb_is_op(c, c[0].pos, OP_DOT) == 1 {
+            fb_advance(c)
+            let mt: i32 = fb_expect(c, "IDENTIFIER")
+            if mt < 0 { return 0 - 1 }
+            if fb_is_op(c, c[0].pos, OP_LPAREN) == 1 {
+                fb_advance(c)
+                let args: i32 = fb_parse_args(c, OP_RPAREN)
+                if args == 0 - 2 { return 0 - 1 }
+                if fb_expect(c, "RPAREN") < 0 { return 0 - 1 }
+                e = fb_node2(c, N_METHOD, mt, e, args)
+            } else {
+                e = fb_node2(c, N_FIELD, mt, e, 0 - 1)
+            }
+        } else {
+            let bt: i32 = c[0].pos
+            fb_advance(c)
+            let idx: i32 = fb_parse_expr(c)
+            if idx < 0 { return 0 - 1 }
+            if fb_is_op(c, c[0].pos, OP_DOTDOT) == 1 {
+                fb_advance(c)
+                let hi: i32 = fb_parse_expr(c)
+                if hi < 0 { return 0 - 1 }
+                if fb_expect(c, "RBRACKET") < 0 { return 0 - 1 }
+                e = fb_node2(c, N_SLICE, bt, e, idx)
+                c[0].nc[e] = hi
+            } else {
+                if fb_expect(c, "RBRACKET") < 0 { return 0 - 1 }
+                e = fb_node2(c, N_INDEX, bt, e, idx)
+            }
+        }
+    }
+    return e
+}
+
+# `Name { field: value, ... }` or `Name { ..base, field: value }`, with the
+# current token on `{`.
+function fb_parse_struct_lit(c: ptr<Fb>, name_tok: i32) -> i32 {
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    if fb_is_op(c, c[0].pos, OP_DOTDOT) == 1 {
+        fb_advance(c)
+        let base: i32 = fb_parse_expr(c)
+        if base < 0 { return 0 - 1 }
+        let mut ups: i32 = 0 - 1
+        while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+            if fb_is_op(c, c[0].pos, OP_RBRACE) == 1 { break }
+            let ft: i32 = fb_expect(c, "IDENTIFIER")
+            if ft < 0 { return 0 - 1 }
+            if fb_expect(c, "COLON") < 0 { return 0 - 1 }
+            let fv: i32 = fb_parse_expr(c)
+            if fv < 0 { return 0 - 1 }
+            ups = fb_list_add(c, ups, fb_node2(c, N_FINIT, ft, fv, 0 - 1))
+        }
+        if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+        return fb_node2(c, N_RECUPD, name_tok, base, ups)
+    }
+    let mut fields: i32 = 0 - 1
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            fb_puts(fb_serr(c), "Unterminated struct literal: expected '}' before end of file")
+            return 0 - 1
+        }
+        let ft2: i32 = fb_expect(c, "IDENTIFIER")
+        if ft2 < 0 { return 0 - 1 }
+        if fb_expect(c, "COLON") < 0 { return 0 - 1 }
+        let fv2: i32 = fb_parse_expr(c)
+        if fv2 < 0 { return 0 - 1 }
+        fields = fb_list_add(c, fields, fb_node2(c, N_FINIT, ft2, fv2, 0 - 1))
+        if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+        }
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    return fb_node2(c, N_STRUCT, name_tok, fields, 0 - 1)
+}
+
+# Skip a balanced `{ ... }` starting at the current `{`.
+function fb_skip_braces(c: ptr<Fb>) -> i32 {
+    let mut depth: i32 = 0
+    while fb_at_eof(c) == 0 {
+        let t: i32 = c[0].pos
+        if fb_is_op(c, t, OP_LBRACE) == 1 { depth = depth + 1 }
+        if fb_is_op(c, t, OP_RBRACE) == 1 {
+            depth = depth - 1
+            if depth == 0 {
+                fb_advance(c)
+                return 0
+            }
+        }
+        fb_advance(c)
+    }
+    fb_puts(fb_serr(c), "Unterminated block: expected '}' before end of file")
+    return 0 - 1
+}
+
+function fb_parse_lambda(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    if fb_expect(c, "PIPE") < 0 { return 0 - 1 }
+    if fb_is_op(c, c[0].pos, OP_PIPE) == 0 {
+        if fb_expect(c, "IDENTIFIER") < 0 { return 0 - 1 }
+        if fb_is_op(c, c[0].pos, OP_COLON) == 1 {
+            fb_advance(c)
+            if fb_parse_type(c) < 0 { return 0 - 1 }
+        }
+        while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+            if fb_expect(c, "IDENTIFIER") < 0 { return 0 - 1 }
+            if fb_is_op(c, c[0].pos, OP_COLON) == 1 {
+                fb_advance(c)
+                if fb_parse_type(c) < 0 { return 0 - 1 }
+            }
+        }
+    }
+    if fb_expect(c, "PIPE") < 0 { return 0 - 1 }
+    if fb_is_op(c, c[0].pos, OP_ARROW) == 1 {
+        fb_advance(c)
+        if fb_parse_type(c) < 0 { return 0 - 1 }
+    }
+    if fb_is_op(c, c[0].pos, OP_LBRACE) == 1 {
+        if fb_skip_braces(c) < 0 { return 0 - 1 }
+    } else {
+        if fb_parse_expr(c) < 0 { return 0 - 1 }
+    }
+    return fb_node(c, N_LAMBDA, t)
+}
+
+function fb_parse_if_expr(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    fb_advance(c)
+    let cond: i32 = fb_parse_expr(c)
+    if cond < 0 { return 0 - 1 }
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    let th: i32 = fb_parse_expr(c)
+    if th < 0 { return 0 - 1 }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    if fb_tt_is(c, c[0].pos, "ELSE") == 0 {
+        fb_puts(fb_serr(c), "if-expression requires an else branch")
+        return 0 - 1
+    }
+    fb_advance(c)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    let el: i32 = fb_parse_expr(c)
+    if el < 0 { return 0 - 1 }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    let id: i32 = fb_node2(c, N_IFX, t, cond, th)
+    c[0].nc[id] = el
+    return id
+}
+
+# An identifier (or soft keyword) in primary position.
+function fb_parse_name_primary(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    fb_advance(c)
+    let cur: i32 = c[0].pos
+    if fb_is_op(c, cur, OP_LPAREN) == 1 {
+        let call: i32 = fb_parse_call(c, t)
+        if call < 0 { return 0 - 1 }
+        return fb_parse_postfix(c, call)
+    }
+    if fb_is_op(c, cur, OP_LESS) == 1 {
+        # Generic call / struct literal, else backtrack to a variable.
+        let save_nn: i32 = c[0].nn
+        fb_advance(c)
+        let mut ok: i32 = 1
+        if fb_parse_type(c) < 0 { ok = 0 }
+        while ok == 1 and fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+            if fb_parse_type(c) < 0 { ok = 0 }
+        }
+        if ok == 1 and fb_expect_greater(c) < 0 { ok = 0 }
+        if ok == 1 {
+            if fb_is_op(c, c[0].pos, OP_LPAREN) == 1 {
+                let gcall: i32 = fb_parse_call(c, t)
+                if gcall >= 0 {
+                    c[0].nop[gcall] = 1
+                    return fb_parse_postfix(c, gcall)
+                }
+                ok = 0
+            } else {
+                if fb_is_op(c, c[0].pos, OP_LBRACE) == 1 {
+                    let gs: i32 = fb_parse_struct_lit(c, t)
+                    if gs >= 0 { return gs }
+                    ok = 0
+                } else {
+                    # A generic type in expression position: Variable(Name_T),
+                    # which never names a member.
+                    return fb_node(c, N_OPAQUE, t)
+                }
+            }
+        }
+        fb_err_clear(c)
+        c[0].pos = cur
+        c[0].nn = save_nn
+        return fb_node(c, N_VAR, t)
+    }
+    if fb_is_op(c, cur, OP_LBRACE) == 1 {
+        let save_nn2: i32 = c[0].nn
+        let sl: i32 = fb_parse_struct_lit(c, t)
+        if sl >= 0 { return sl }
+        fb_err_clear(c)
+        c[0].pos = cur
+        c[0].nn = save_nn2
+        return fb_node(c, N_VAR, t)
+    }
+    if fb_is_op(c, cur, OP_DOT) == 1 or fb_is_op(c, cur, OP_LBRACKET) == 1 {
+        return fb_parse_postfix(c, fb_node(c, N_VAR, t))
+    }
+    if fb_is_op(c, cur, OP_DOUBLE_COLON) == 1 {
+        fb_advance(c)
+        if fb_expect(c, "IDENTIFIER") < 0 { return 0 - 1 }
+        if fb_expect(c, "LPAREN") < 0 { return 0 - 1 }
+        let eargs: i32 = fb_parse_args(c, OP_RPAREN)
+        if eargs == 0 - 2 { return 0 - 1 }
+        if fb_expect(c, "RPAREN") < 0 { return 0 - 1 }
+        return fb_node2(c, N_EFFECT, t, eargs, 0 - 1)
+    }
+    return fb_node(c, N_VAR, t)
+}
+
+function fb_parse_primary(c: ptr<Fb>) -> i32 {
+    let t: i32 = c[0].pos
+    let k: i32 = c[0].tk[t]
+    if k == TK_NUM {
+        fb_advance(c)
+        let lit: i32 = fb_node(c, N_LIT, t)
+        # Quantity literal: NUMBER then an uppercase identifier on the same
+        # line reads as `NUMBER as Unit`.
+        let u: i32 = c[0].pos
+        if fb_is_ident(c, u) == 1 and c[0].tl[u] == c[0].tl[t] and fb_is_upper(c[0].src[c[0].ts[u]]) == 1 {
+            fb_advance(c)
+            let q: i32 = fb_node2(c, N_CAST, u, lit, 0 - 1)
+            c[0].nop[q] = fb_tok_str(c, u)
+            return q
+        }
+        return lit
+    }
+    if fb_tt_is(c, t, "BOOLEAN") == 1 or k == TK_STR or fb_tt_is(c, t, "NULL") == 1 {
+        fb_advance(c)
+        return fb_node(c, N_LIT, t)
+    }
+    if fb_tt_is(c, t, "SELF") == 1 {
+        fb_advance(c)
+        let sv: i32 = fb_node(c, N_VAR, t)
+        if fb_is_op(c, c[0].pos, OP_DOT) == 1 {
+            return fb_parse_postfix(c, sv)
+        }
+        return sv
+    }
+    if fb_is_op(c, t, OP_LESS) == 1 {
+        fb_advance(c)
+        let mut els: i32 = 0 - 1
+        if fb_is_op(c, c[0].pos, OP_GREATER) == 0 {
+            let e0: i32 = fb_parse_primary(c)
+            if e0 < 0 { return 0 - 1 }
+            els = e0
+            while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+                fb_advance(c)
+                let e1: i32 = fb_parse_primary(c)
+                if e1 < 0 { return 0 - 1 }
+                els = fb_list_add(c, els, e1)
+            }
+        }
+        if fb_expect(c, "GREATER") < 0 { return 0 - 1 }
+        return fb_node2(c, N_VEC, t, els, 0 - 1)
+    }
+    if fb_is_op(c, t, OP_LBRACKET) == 1 {
+        fb_advance(c)
+        let mut ael: i32 = 0 - 1
+        if fb_is_op(c, c[0].pos, OP_RBRACKET) == 0 {
+            let a0: i32 = fb_parse_expr(c)
+            if a0 < 0 { return 0 - 1 }
+            ael = a0
+            if fb_is_op(c, c[0].pos, OP_SEMICOLON) == 1 {
+                fb_advance(c)
+                if fb_parse_expr(c) < 0 { return 0 - 1 }
+            } else {
+                while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+                    fb_advance(c)
+                    let a1: i32 = fb_parse_expr(c)
+                    if a1 < 0 { return 0 - 1 }
+                    ael = fb_list_add(c, ael, a1)
+                }
+            }
+        }
+        if fb_expect(c, "RBRACKET") < 0 { return 0 - 1 }
+        return fb_node2(c, N_ARRAY, t, ael, 0 - 1)
+    }
+    if fb_is_ident(c, t) == 1 or fb_tt_is(c, t, "AND") == 1 or fb_tt_is(c, t, "OR") == 1 or fb_tt_is(c, t, "C64") == 1 or fb_tt_is(c, t, "C128") == 1 {
+        return fb_parse_name_primary(c)
+    }
+    if fb_is_op(c, t, OP_LBRACE) == 1 and fb_is_op(c, fb_la(c), OP_DOTDOT) == 1 {
+        return fb_parse_struct_lit(c, 0 - 1)
+    }
+    if fb_is_op(c, t, OP_LPAREN) == 1 {
+        fb_advance(c)
+        let inner: i32 = fb_parse_expr(c)
+        if inner < 0 { return 0 - 1 }
+        if fb_expect(c, "RPAREN") < 0 { return 0 - 1 }
+        return fb_parse_postfix(c, inner)
+    }
+    if fb_is_op(c, t, OP_PIPE) == 1 {
+        return fb_parse_lambda(c)
+    }
+    if fb_tt_is(c, t, "IF") == 1 {
+        return fb_parse_if_expr(c)
+    }
+    let m: ptr<FbBuf> = fb_serr(c)
+    fb_puts(m, "Unexpected token in expression: ")
+    fb_put_ttype(c, m, t)
+    return 0 - 1
+}
+
+function fb_is_placeholder(c: ptr<Fb>, x: i32) -> i32 {
+    if c[0].nk[x] == N_VAR and fb_tok_is(c, c[0].ntok[x], "_") == 1 { return 1 }
+    return 0
+}
+
+# _insert_pipe_arg: prepend the piped value, or put it in the one `_` slot.
+function fb_pipe_args(c: ptr<Fb>, piped: i32, args: i32) -> i32 {
+    let mut holes: i32 = 0
+    let mut k: i32 = args
+    while k >= 0 {
+        if fb_is_placeholder(c, k) == 1 { holes = holes + 1 }
+        k = c[0].nx[k]
+    }
+    if holes == 0 {
+        c[0].nx[piped] = args
+        return piped
+    }
+    if holes > 1 {
+        let m: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m, "Pipeline placeholder '_' may appear at most once per '|>' stage (found ")
+        fb_put_int(m, holes)
+        fb_puts(m, "); the piped value fills a single slot")
+        return 0 - 2
+    }
+    # Rebuild the list with the hole replaced.
+    let mut head: i32 = 0 - 1
+    let mut j: i32 = args
+    while j >= 0 {
+        let nxt: i32 = c[0].nx[j]
+        c[0].nx[j] = 0 - 1
+        if fb_is_placeholder(c, j) == 1 {
+            head = fb_list_add(c, head, piped)
+        } else {
+            head = fb_list_add(c, head, j)
+        }
+        j = nxt
+    }
+    return head
+}
+
+# `|> Name { p: v, ... }`: a flow stage with parameter overrides.
+function fb_parse_stage_params(c: ptr<Fb>, name_tok: i32, source: i32) -> i32 {
+    let mut params: i32 = 0 - 1
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        let pt: i32 = c[0].pos
+        if fb_is_ident(c, pt) == 0 {
+            fb_puts(fb_perr(c), "Expected a parameter name in flow stage params")
+            return 0 - 1
+        }
+        fb_advance(c)
+        if fb_expect(c, "COLON") < 0 { return 0 - 1 }
+        let mut k: i32 = params
+        while k >= 0 {
+            if fb_tok_span_eq(c, c[0].ntok[k], pt) == 1 {
+                let m: ptr<FbBuf> = fb_perr(c)
+                fb_puts(m, "Duplicate stage parameter '")
+                fb_put_span(m, c[0].src, c[0].ts[pt], c[0].te[pt])
+                fb_puts(m, "'")
+                return 0 - 1
+            }
+            k = c[0].nx[k]
+        }
+        let vs: i32 = c[0].pos
+        let v: i32 = fb_parse_expr(c)
+        if v < 0 { return 0 - 1 }
+        fb_wrap_top(c, v, vs)
+        params = fb_list_add(c, params, fb_node2(c, N_FINIT, pt, v, 0 - 1))
+        if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+        }
+    }
+    if params < 0 {
+        let m2: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m2, "flow stage '")
+        fb_put_span(m2, c[0].src, c[0].ts[name_tok], c[0].te[name_tok])
+        fb_puts(m2, "' has empty '{}'; drop the braces or add `param: value` overrides")
+        return 0 - 1
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    return fb_node2(c, N_STAGE, name_tok, source, params)
+}
+
+function fb_tok_span_eq(c: ptr<Fb>, a: i32, b: i32) -> i32 {
+    let la: i32 = c[0].te[a] - c[0].ts[a]
+    let lb: i32 = c[0].te[b] - c[0].ts[b]
+    if la != lb { return 0 }
+    let mut i: i32 = 0
+    while i < la {
+        if c[0].src[c[0].ts[a] + i] != c[0].src[c[0].ts[b] + i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+# A fork block `|> Rec { a = f, b = g |> h }` after its `{`: parsed for its
+# diagnostics and kept whole; it is never a flow stage.
+function fb_parse_fork(c: ptr<Fb>, t: i32, source: i32) -> i32 {
+    let mut nfields: i32 = 0
+    let first_field: i32 = c[0].pos
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        let ft: i32 = c[0].pos
+        if fb_is_ident(c, ft) == 0 {
+            fb_puts(fb_perr(c), "Expected a fork field name before '='")
+            return 0 - 1
+        }
+        fb_advance(c)
+        if fb_is_op(c, c[0].pos, OP_COLON) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `")
+            fb_put_tok(m, c, ft)
+            fb_puts(m, "  = source-pipeline`")
+            return 0 - 1
+        }
+        if fb_expect(c, "ASSIGN") < 0 { return 0 - 1 }
+        # Earlier field with the same name?
+        let mut q: i32 = first_field
+        while q < ft {
+            if fb_is_ident(c, q) == 1 and fb_is_op(c, q + 1, OP_ASSIGN) == 1 and fb_tok_span_eq(c, q, ft) == 1 and fb_fork_field_start(c, first_field, q) == 1 {
+                let m2: ptr<FbBuf> = fb_perr(c)
+                fb_puts(m2, "Duplicate fork field '")
+                fb_put_tok(m2, c, ft)
+                fb_puts(m2, "'")
+                return 0 - 1
+            }
+            q = q + 1
+        }
+        let rhs: i32 = fb_parse_or(c)
+        if rhs < 0 { return 0 - 1 }
+        let src: i32 = fb_node(c, N_OPAQUE, ft)
+        let k: i32 = c[0].nk[rhs]
+        if k != N_CALL and k != N_METHOD and k != N_VAR {
+            fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
+            return 0 - 1
+        }
+        if fb_parse_pipeline(c, src) < 0 { return 0 - 1 }
+        nfields = nfields + 1
+        if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+        }
+    }
+    if nfields == 0 {
+        fb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch")
+        return 0 - 1
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    return fb_node2(c, N_FORK, t, source, 0 - 1)
+}
+
+# Is token q the start of a fork field (the first token, or right after a
+# depth-0 comma) within the fork body that starts at `first`?
+function fb_fork_field_start(c: ptr<Fb>, first: i32, q: i32) -> i32 {
+    if q == first { return 1 }
+    let mut depth: i32 = 0
+    let mut i: i32 = first
+    let mut at_start: i32 = 1
+    while i < q {
+        if fb_is_op(c, i, OP_LPAREN) == 1 or fb_is_op(c, i, OP_LBRACKET) == 1 or fb_is_op(c, i, OP_LBRACE) == 1 { depth = depth + 1 }
+        if fb_is_op(c, i, OP_RPAREN) == 1 or fb_is_op(c, i, OP_RBRACKET) == 1 or fb_is_op(c, i, OP_RBRACE) == 1 { depth = depth - 1 }
+        at_start = 0
+        if depth == 0 and fb_is_op(c, i, OP_COMMA) == 1 { at_start = 1 }
+        i = i + 1
+    }
+    return at_start
+}
+
+function fb_parse_pipeline(c: ptr<Fb>, left0: i32) -> i32 {
+    let mut left: i32 = left0
+    while fb_is_op(c, c[0].pos, OP_PIPELINE) == 1 {
+        fb_advance(c)
+        let t: i32 = c[0].pos
+        # Fork block or flow stage: `Name { ... }` or `{ ... }`.
+        let mut named: i32 = 0
+        if fb_is_ident(c, t) == 1 and fb_is_op(c, fb_la(c), OP_LBRACE) == 1 {
+            named = 1
+        }
+        if fb_is_op(c, t, OP_LBRACE) == 1 or named == 1 {
+            let mut rec: i32 = 0 - 1
+            if named == 1 {
+                rec = t
+                fb_advance(c)
+            }
+            if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+            if fb_is_ident(c, c[0].pos) == 1 and fb_is_op(c, fb_la(c), OP_COLON) == 1 {
+                if rec < 0 {
+                    fb_puts(fb_perr(c), "an anonymous `|> { ... }` is a fork block and uses '=' branches; ':' parameter fields need a named flow stage")
+                    return 0 - 1
+                }
+                left = fb_parse_stage_params(c, rec, left)
+                if left < 0 { return 0 - 1 }
+            } else {
+                left = fb_parse_fork(c, t, left)
+                if left < 0 { return 0 - 1 }
+            }
+        } else {
+            let rhs: i32 = fb_parse_or(c)
+            if rhs < 0 { return 0 - 1 }
+            let rk: i32 = c[0].nk[rhs]
+            if rk == N_CALL {
+                let args: i32 = fb_pipe_args(c, left, c[0].na[rhs])
+                if args == 0 - 2 { return 0 - 1 }
+                let call: i32 = fb_node2(c, N_CALL, c[0].ntok[rhs], args, 0 - 1)
+                c[0].nop[call] = c[0].nop[rhs]
+                left = call
+            } else {
+                if rk == N_METHOD {
+                    let margs: i32 = fb_pipe_args(c, left, c[0].nb[rhs])
+                    if margs == 0 - 2 { return 0 - 1 }
+                    left = fb_node2(c, N_METHOD, c[0].ntok[rhs], c[0].na[rhs], margs)
+                } else {
+                    if rk == N_VAR {
+                        c[0].nx[left] = 0 - 1
+                        left = fb_node2(c, N_CALL, c[0].ntok[rhs], left, 0 - 1)
+                    } else {
+                        fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
+                        return 0 - 1
+                    }
+                }
+            }
+        }
+    }
+    return left
+}
+
+# ── Item tables ──────────────────────────────────────────────────
+
+function fb_add_member(c: ptr<Fb>, f: i32, kind: i32, name: i32, ty: i32, init: i32, line: i32) -> i32 {
+    let i: i32 = c[0].nmm
+    c[0].mm_flow[i] = f
+    c[0].mm_kind[i] = kind
+    c[0].mm_name[i] = name
+    c[0].mm_type[i] = ty
+    c[0].mm_init[i] = init
+    c[0].mm_line[i] = line
+    c[0].mm_synth[i] = 0
+    c[0].mm_params[i] = 0 - 1
+    c[0].mm_pipe_m[i] = 0 - 1
+    c[0].mm_pipe_p[i] = 0 - 1
+    c[0].nmm = i + 1
+    return i
+}
+
+function fb_add_conn(c: ptr<Fb>, f: i32, sm: i32, sp: i32, dm: i32, dp: i32, line: i32) {
+    let i: i32 = c[0].ncn
+    c[0].cn_flow[i] = f
+    c[0].cn_sm[i] = sm
+    c[0].cn_sp[i] = sp
+    c[0].cn_dm[i] = dm
+    c[0].cn_dp[i] = dp
+    c[0].cn_line[i] = line
+    c[0].ncn = i + 1
+}
+
+function fb_add_name(c: ptr<Fb>, kind: i32, name: i32) {
+    let i: i32 = c[0].nnames
+    c[0].nx_kind[i] = kind
+    c[0].nx_name[i] = name
+    c[0].nnames = i + 1
+}
+
+function fb_has_name(c: ptr<Fb>, kind: i32, name: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < c[0].nnames {
+        if c[0].nx_kind[i] == kind and fb_name_eq(c, c[0].nx_name[i], name) == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+# ── Durations (Parser.parse_duration) ────────────────────────────
+
+const FB_I64_MAX: i64 = 9223372036854775807
+
+# 10^k for 0 <= k <= 18.
+function fb_pow10(k: i32) -> i64 {
+    let mut v: i64 = 1
+    let mut i: i32 = 0
+    while i < k {
+        v = v * 10
+        i = i + 1
+    }
+    return v
+}
+
+# Parse `NUMBER unit` at the current token. Returns 0 and stores the
+# nanoseconds in *ns and "text unit" in *text, or -1 with the error set.
+function fb_parse_duration(c: ptr<Fb>, where_s: i32, ns: ptr<i64>, text: ptr<i32>) -> i32 {
+    let nt: i32 = c[0].pos
+    if c[0].tk[nt] != TK_NUM {
+        let m: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m, "Expected a duration in ")
+        fb_puts(m, fb_s(c, where_s) as string)
+        fb_puts(m, ", got ")
+        fb_put_ttype(c, m, nt)
+        fb_puts(fb_err_hint(c), "write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)")
+        return 0 - 1
+    }
+    fb_advance(c)
+    let st: i32 = c[0].pos
+    let mut upow: i32 = 0 - 1
+    let mut mult: i64 = 1
+    if fb_is_ident(c, st) == 1 {
+        if fb_tok_is(c, st, "ns") == 1 { upow = 0 }
+        if fb_tok_is(c, st, "us") == 1 { upow = 3 }
+        if fb_tok_is(c, st, "ms") == 1 { upow = 6 }
+        if fb_tok_is(c, st, "s") == 1 { upow = 9 }
+        if fb_tok_is(c, st, "min") == 1 {
+            upow = 10
+            mult = 6
+        }
+    }
+    if upow < 0 {
+        let m2: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m2, "Expected a time unit after '")
+        fb_put_span(m2, c[0].src, c[0].ts[nt], c[0].te[nt])
+        fb_puts(m2, "' in ")
+        fb_puts(m2, fb_s(c, where_s) as string)
+        fb_puts(m2, ", got ")
+        if fb_is_ident(c, st) == 1 {
+            fb_putc(m2, 39)
+            fb_put_span(m2, c[0].src, c[0].ts[st], c[0].te[st])
+            fb_putc(m2, 39)
+        } else {
+            fb_put_ttype(c, m2, st)
+        }
+        fb_puts(fb_err_hint(c), "valid time units: ns, us, ms, s, min")
+        return 0 - 1
+    }
+    fb_advance(c)
+    let tb: ptr<FbBuf> = fb_buf_new(32)
+    fb_put_span(tb, c[0].src, c[0].ts[nt], c[0].te[nt])
+    fb_putc(tb, 32)
+    fb_put_span(tb, c[0].src, c[0].ts[st], c[0].te[st])
+    text[0] = fb_intern_buf(c, tb)
+    fb_buf_free(tb)
+    # Mantissa and decimal exponent of the number token.
+    let p: ptr<u8> = c[0].src
+    let s: i32 = c[0].ts[nt]
+    let e: i32 = c[0].te[nt]
+    let mut mant: i64 = 0
+    let mut e10: i32 = 0
+    let mut over: i32 = 0
+    if e - s > 2 and p[s] == 48 and p[s + 1] == 120 {
+        let mut h: i32 = s + 2
+        while h < e {
+            let ch: u8 = p[h]
+            let mut dv: i64 = 0
+            if fb_is_digit(ch) == 1 { dv = (ch - 48) as i64 }
+            if ch >= 97 and ch <= 102 { dv = (ch - 87) as i64 }
+            if ch >= 65 and ch <= 70 { dv = (ch - 55) as i64 }
+            if mant > (FB_I64_MAX - dv) / 16 { over = 1 } else { mant = mant * 16 + dv }
+            h = h + 1
+        }
+    } else {
+        let mut i: i32 = s
+        let mut frac: i32 = 0
+        let mut in_frac: i32 = 0
+        while i < e and p[i] != 101 and p[i] != 69 {
+            if p[i] == 46 {
+                in_frac = 1
+            } else {
+                let dv2: i64 = (p[i] - 48) as i64
+                if mant > (FB_I64_MAX - dv2) / 10 {
+                    # Digits past i64 precision: only zeros can be dropped exactly.
+                    if dv2 != 0 { over = 1 }
+                    if in_frac == 0 { e10 = e10 + 1 }
+                } else {
+                    mant = mant * 10 + dv2
+                    if in_frac == 1 { frac = frac + 1 }
+                }
+            }
+            i = i + 1
+        }
+        e10 = e10 - frac
+        if i < e {
+            i = i + 1
+            let mut neg: i32 = 0
+            if p[i] == 45 {
+                neg = 1
+                i = i + 1
+            } else {
+                if p[i] == 43 { i = i + 1 }
+            }
+            let mut ex: i32 = 0
+            while i < e {
+                if ex < 100000 { ex = ex * 10 + ((p[i] - 48) as i32) }
+                i = i + 1
+            }
+            if neg == 1 { e10 = e10 - ex } else { e10 = e10 + ex }
+        }
+    }
+    # Drop trailing zeros so a negative power only remains when needed.
+    while mant != 0 and mant % 10 == 0 and e10 < 0 {
+        mant = mant / 10
+        e10 = e10 + 1
+    }
+    let mut pw: i32 = upow + e10
+    let mut whole: i32 = 1
+    let mut val: i64 = 0
+    if mant == 0 {
+        val = 0
+    } else {
+        if mant > FB_I64_MAX / mult {
+            over = 1
+        } else {
+            let mut x: i64 = mant * mult
+            if pw < 0 {
+                if pw < 0 - 18 {
+                    whole = 0
+                } else {
+                    let d: i64 = fb_pow10(0 - pw)
+                    if x % d != 0 { whole = 0 } else { x = x / d }
+                }
+            } else {
+                while pw > 0 and over == 0 {
+                    if x > FB_I64_MAX / 10 { over = 1 } else { x = x * 10 }
+                    pw = pw - 1
+                }
+            }
+            val = x
+        }
+    }
+    if whole == 0 {
+        let m3: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m3, "Duration '")
+        fb_puts(m3, fb_s(c, text[0]) as string)
+        fb_puts(m3, "' in ")
+        fb_puts(m3, fb_s(c, where_s) as string)
+        fb_puts(m3, " is not a whole number of nanoseconds; time is not silently rounded")
+        fb_puts(fb_err_hint(c), "use a finer unit, e.g. '500 us' instead of '0.5 ms'")
+        return 0 - 1
+    }
+    if over == 1 {
+        let m4: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m4, "Duration '")
+        fb_puts(m4, fb_s(c, text[0]) as string)
+        fb_puts(m4, "' in ")
+        fb_puts(m4, fb_s(c, where_s) as string)
+        fb_puts(m4, " overflows the i64 nanosecond range")
+        return 0 - 1
+    }
+    ns[0] = val
+    return 0
+}
+
+# ── Flow block grammar (Parser.parse_flow_decl) ──────────────────
+
+function fb_put_tok(b: ptr<FbBuf>, c: ptr<Fb>, t: i32) {
+    fb_put_span(b, c[0].src, c[0].ts[t], c[0].te[t])
+}
+
+# "... in flow 'Name' ..." helpers.
+function fb_put_fname(b: ptr<FbBuf>, c: ptr<Fb>, f: i32) {
+    fb_puts(b, fb_s(c, c[0].f_name[f]) as string)
+}
+
+# `{ NAME becomes expr ... }` shared by `when` and `every`. kind 1 when,
+# 2 every; owner is the when/every index.
+function fb_parse_becomes_body(c: ptr<Fb>, f: i32, kind: i32, owner: i32, word: string, what: string) -> i32 {
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Unterminated '")
+            fb_puts(m, word)
+            fb_puts(m, "' body in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "': expected '}' before end of file")
+            return 0 - 1
+        }
+        let st: i32 = c[0].pos
+        let la: i32 = fb_la(c)
+        if fb_is_ident(c, st) == 0 or fb_is_word(c, la, "becomes") == 0 {
+            let m2: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m2, "Unexpected statement in '")
+            fb_puts(m2, word)
+            fb_puts(m2, "' body of flow '")
+            fb_put_fname(m2, c, f)
+            fb_puts(m2, "'")
+            let h: ptr<FbBuf> = fb_err_hint(c)
+            fb_puts(h, "'")
+            fb_puts(h, word)
+            fb_puts(h, "' bodies contain ")
+            fb_puts(h, what)
+            fb_puts(h, " in this version: 'x becomes expr'")
+            return 0 - 1
+        }
+        fb_advance(c)
+        fb_advance(c)
+        let rhs_s: i32 = c[0].pos
+        let rhs: i32 = fb_parse_expr(c)
+        if rhs < 0 { return 0 - 1 }
+        let i: i32 = c[0].nbc
+        c[0].bc_kind[i] = kind
+        c[0].bc_owner[i] = owner
+        c[0].bc_target[i] = fb_tok_str(c, st)
+        c[0].bc_expr[i] = fb_wrap_top(c, rhs, rhs_s)
+        c[0].bc_line[i] = c[0].tl[st]
+        c[0].nbc = i + 1
+    }
+    return fb_expect(c, "RBRACE")
+}
+
+# Record the token range of a top-level expression on its root node, so it
+# can be re-emitted as written.
+function fb_wrap_top(c: ptr<Fb>, root: i32, start_tok: i32) -> i32 {
+    c[0].nfs[root] = start_tok
+    c[0].nfe[root] = c[0].pos
+    return root
+}
+
+# parser._source_between(start_tok, end_tok).
+function fb_source_between(c: ptr<Fb>, st: i32, et: i32) -> i32 {
+    let p: ptr<u8> = c[0].src
+    let b: ptr<FbBuf> = fb_buf_new(64)
+    let sl: i32 = c[0].tl[st]
+    let el: i32 = c[0].tl[et]
+    # Line starts by counting "\n" (source.split("\n")).
+    let s_off: i32 = fb_col_offset(c, sl, c[0].tc[st])
+    let e_off: i32 = fb_col_offset(c, el, c[0].tc[et])
+    if sl == el {
+        fb_put_stripped(b, p, s_off, e_off)
+    } else {
+        let mut first: i32 = 1
+        # lines[sl][sc:]
+        let l0e: i32 = fb_line_end(c, s_off)
+        first = fb_put_part(b, p, s_off, l0e, first)
+        let mut ln: i32 = sl + 1
+        while ln < el {
+            let ls: i32 = fb_line_start(c, ln)
+            if ls >= 0 {
+                first = fb_put_part(b, p, ls, fb_line_end(c, ls), first)
+            }
+            ln = ln + 1
+        }
+        let ls2: i32 = fb_line_start(c, el)
+        if ls2 >= 0 {
+            first = fb_put_part(b, p, ls2, e_off, first)
+        }
+    }
+    let out: i32 = fb_intern_buf(c, b)
+    fb_buf_free(b)
+    return out
+}
+
+# Start offset of 1-based line ln (split on "\n"), or -1.
+function fb_line_start(c: ptr<Fb>, ln: i32) -> i32 {
+    let mut line: i32 = 1
+    let mut i: i32 = 0
+    if ln == 1 { return 0 }
+    while i < c[0].n {
+        if c[0].src[i] == 10 {
+            line = line + 1
+            if line == ln { return i + 1 }
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function fb_line_end(c: ptr<Fb>, off: i32) -> i32 {
+    let mut i: i32 = off
+    while i < c[0].n and c[0].src[i] != 10 { i = i + 1 }
+    return i
+}
+
+# Offset of python-slice column (col - 1, clamped at 0) within line ln.
+# The slice index counts characters, so UTF-8 continuation bytes are
+# skipped while counting.
+function fb_col_offset(c: ptr<Fb>, ln: i32, col: i32) -> i32 {
+    let ls: i32 = fb_line_start(c, ln)
+    if ls < 0 { return c[0].n }
+    let le: i32 = fb_line_end(c, ls)
+    let mut want: i32 = col - 1
+    if want < 0 { want = 0 }
+    let mut i: i32 = ls
+    let mut k: i32 = 0
+    while i < le and k < want {
+        i = i + 1
+        while i < le and c[0].src[i] >= 128 and c[0].src[i] < 192 { i = i + 1 }
+        k = k + 1
+    }
+    return i
+}
+
+# Python str.strip() of p[s..e) into b.
+function fb_put_stripped(b: ptr<FbBuf>, p: ptr<u8>, s: i32, e: i32) {
+    let mut a: i32 = s
+    let mut z: i32 = e
+    while a < z and fb_is_space(p[a]) == 1 { a = a + 1 }
+    while z > a and fb_is_space(p[z - 1]) == 1 { z = z - 1 }
+    fb_put_span(b, p, a, z)
+}
+
+# One part of " ".join(p.strip() for p in parts if p.strip()).
+function fb_put_part(b: ptr<FbBuf>, p: ptr<u8>, s: i32, e: i32, first: i32) -> i32 {
+    let mut a: i32 = s
+    let mut z: i32 = e
+    while a < z and fb_is_space(p[a]) == 1 { a = a + 1 }
+    while z > a and fb_is_space(p[z - 1]) == 1 { z = z - 1 }
+    if a >= z { return first }
+    if first == 0 { fb_putc(b, 32) }
+    fb_put_span(b, p, a, z)
+    return 0
+}
+
+function fb_parse_invariant(c: ptr<Fb>, f: i32, kind: i32, word: string) -> i32 {
+    fb_advance(c)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    let mut count: i32 = 0
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Unterminated '")
+            fb_puts(m, word)
+            fb_puts(m, "' body in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "': expected '}' before end of file")
+            return 0 - 1
+        }
+        let st: i32 = c[0].pos
+        let ex: i32 = fb_parse_expr(c)
+        if ex < 0 { return 0 - 1 }
+        let i: i32 = c[0].niv
+        c[0].iv_flow[i] = f
+        c[0].iv_kind[i] = kind
+        c[0].iv_expr[i] = fb_wrap_top(c, ex, st)
+        c[0].iv_line[i] = c[0].tl[st]
+        c[0].iv_text[i] = fb_source_between(c, st, c[0].pos)
+        c[0].niv = i + 1
+        count = count + 1
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    if count == 0 {
+        let m2: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m2, "'")
+        fb_puts(m2, word)
+        fb_puts(m2, "' block in flow '")
+        fb_put_fname(m2, c, f)
+        fb_puts(m2, "' needs at least one boolean expression")
+        let h: ptr<FbBuf> = fb_err_hint(c)
+        fb_puts(h, "write '")
+        fb_puts(h, word)
+        fb_puts(h, " { x < 1.0 }' or remove the block")
+        return 0 - 1
+    }
+    return 0
+}
+
+function fb_parse_recognize(c: ptr<Fb>, f: i32) -> i32 {
+    let rt: i32 = c[0].pos
+    fb_advance(c)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    let first: i32 = c[0].nrc
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Unterminated 'recognize' block in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "': expected '}' before end of file")
+            return 0 - 1
+        }
+        if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+        } else {
+            let dt: i32 = fb_expect(c, "IDENTIFIER")
+            if dt < 0 { return 0 - 1 }
+            let dn: i32 = fb_tok_str(c, dt)
+            let mut k: i32 = first
+            while k < c[0].nrc {
+                if fb_name_eq(c, c[0].rc_name[k], dn) == 1 {
+                    let m2: ptr<FbBuf> = fb_perr(c)
+                    fb_puts(m2, "recognition domain '")
+                    fb_puts(m2, fb_s(c, dn) as string)
+                    fb_puts(m2, "' appears twice in flow '")
+                    fb_put_fname(m2, c, f)
+                    fb_puts(m2, "'")
+                    fb_puts(fb_err_hint(c), "list each recognition domain once")
+                    return 0 - 1
+                }
+                k = k + 1
+            }
+            let i: i32 = c[0].nrc
+            c[0].rc_flow[i] = f
+            c[0].rc_name[i] = dn
+            c[0].nrc = i + 1
+            if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+                fb_advance(c)
+            }
+        }
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    if c[0].nrc == first {
+        let m3: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m3, "'recognize' block in flow '")
+        fb_put_fname(m3, c, f)
+        fb_puts(m3, "' needs at least one domain")
+        fb_puts(fb_err_hint(c), "write 'recognize { numerical realtime causal safety memory }'")
+        return 0 - 1
+    }
+    c[0].f_rec[f] = 1
+    c[0].f_rec_line[f] = c[0].tl[rt]
+    return 0
+}
+
+function fb_parse_connect(c: ptr<Fb>, f: i32) -> i32 {
+    fb_advance(c)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Unterminated 'connect' body in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "': expected '}' before end of file")
+            return 0 - 1
+        }
+        let st: i32 = c[0].pos
+        let first: i32 = fb_expect(c, "IDENTIFIER")
+        if first < 0 { return 0 - 1 }
+        let mut sm: i32 = fb_intern(c, "")
+        let mut sp: i32 = fb_tok_str(c, first)
+        if fb_is_op(c, c[0].pos, OP_DOT) == 1 {
+            fb_advance(c)
+            let pt: i32 = fb_expect(c, "IDENTIFIER")
+            if pt < 0 { return 0 - 1 }
+            sm = fb_tok_str(c, first)
+            sp = fb_tok_str(c, pt)
+        }
+        if fb_expect(c, "ARROW") < 0 { return 0 - 1 }
+        let dmt: i32 = fb_expect(c, "IDENTIFIER")
+        if dmt < 0 { return 0 - 1 }
+        if fb_expect(c, "DOT") < 0 { return 0 - 1 }
+        let dpt: i32 = fb_expect(c, "IDENTIFIER")
+        if dpt < 0 { return 0 - 1 }
+        fb_add_conn(c, f, sm, sp, fb_tok_str(c, dmt), fb_tok_str(c, dpt), c[0].tl[st])
+    }
+    return fb_expect(c, "RBRACE")
+}
+
+function fb_parse_solver(c: ptr<Fb>, f: i32) -> i32 {
+    let st: i32 = c[0].pos
+    fb_advance(c)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    let mut have_dt: i32 = 0
+    let mut method: i32 = 0 - 1
+    let nsbox: ptr<i64> = malloc(8) as ptr<i64>
+    let txbox: ptr<i32> = malloc(4) as ptr<i32>
+    let wb: ptr<FbBuf> = fb_buf_new(64)
+    fb_puts(wb, "the solver dt of flow '")
+    fb_put_fname(wb, c, f)
+    fb_puts(wb, "'")
+    let where_s: i32 = fb_intern_buf(c, wb)
+    fb_buf_free(wb)
+    let mut rc: i32 = 0
+    while rc == 0 and fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Unterminated 'solver' block in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "': expected '}' before end of file")
+            rc = 0 - 1
+        } else {
+            let t: i32 = c[0].pos
+            if fb_is_word(c, t, "dt") == 1 {
+                if have_dt == 1 {
+                    let m2: ptr<FbBuf> = fb_perr(c)
+                    fb_puts(m2, "'solver' block in flow '")
+                    fb_put_fname(m2, c, f)
+                    fb_puts(m2, "' sets 'dt' twice")
+                    rc = 0 - 1
+                } else {
+                    fb_advance(c)
+                    if fb_parse_duration(c, where_s, nsbox, txbox) < 0 {
+                        rc = 0 - 1
+                    } else {
+                        have_dt = 1
+                        c[0].f_dt_ns[f] = nsbox[0]
+                        c[0].f_dt_text[f] = txbox[0]
+                    }
+                }
+            } else {
+                if fb_is_word(c, t, "method") == 1 {
+                    if method >= 0 {
+                        let m3: ptr<FbBuf> = fb_perr(c)
+                        fb_puts(m3, "'solver' block in flow '")
+                        fb_put_fname(m3, c, f)
+                        fb_puts(m3, "' sets 'method' twice")
+                        rc = 0 - 1
+                    } else {
+                        fb_advance(c)
+                        let mt: i32 = fb_expect(c, "IDENTIFIER")
+                        if mt < 0 {
+                            rc = 0 - 1
+                        } else {
+                            method = fb_tok_str(c, mt)
+                        }
+                    }
+                } else {
+                    let m4: ptr<FbBuf> = fb_perr(c)
+                    fb_puts(m4, "Unexpected item in 'solver' block of flow '")
+                    fb_put_fname(m4, c, f)
+                    fb_puts(m4, "'")
+                    fb_puts(fb_err_hint(c), "solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'")
+                    rc = 0 - 1
+                }
+            }
+        }
+    }
+    free(nsbox as ptr<u8>)
+    free(txbox as ptr<u8>)
+    if rc < 0 { return 0 - 1 }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    if have_dt == 0 {
+        let m5: ptr<FbBuf> = fb_perr(c)
+        fb_puts(m5, "'solver' block in flow '")
+        fb_put_fname(m5, c, f)
+        fb_puts(m5, "' needs a 'dt' setting")
+        fb_puts(fb_err_hint(c), "write 'solver { dt 1 ms }'")
+        return 0 - 1
+    }
+    if method < 0 { method = fb_intern(c, "euler") }
+    c[0].f_solver[f] = 1
+    c[0].f_method[f] = method
+    c[0].f_solver_line[f] = c[0].tl[st]
+    return 0
+}
+
+function fb_is_section_word(c: ptr<Fb>, t: i32) -> i32 {
+    if fb_tok_is(c, t, "state") == 1 or fb_tok_is(c, t, "input") == 1 { return 1 }
+    if fb_tok_is(c, t, "output") == 1 or fb_tok_is(c, t, "param") == 1 { return 1 }
+    return 0
+}
+
+# One item of a flow body at the current token.
+function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
+    let t: i32 = c[0].pos
+    let la: i32 = fb_la(c)
+    let tid: i32 = fb_is_ident(c, t)
+    if tid == 1 and fb_is_section_word(c, t) == 1 and fb_is_ident(c, la) == 1 {
+        fb_advance(c)
+        let nt: i32 = fb_expect(c, "IDENTIFIER")
+        if nt < 0 { return 0 - 1 }
+        if fb_expect(c, "COLON") < 0 { return 0 - 1 }
+        let ty: i32 = fb_parse_type(c)
+        if ty < 0 { return 0 - 1 }
+        let mut init: i32 = 0 - 1
+        if fb_is_op(c, c[0].pos, OP_ASSIGN) == 1 {
+            fb_advance(c)
+            let is: i32 = c[0].pos
+            let ie: i32 = fb_parse_expr(c)
+            if ie < 0 { return 0 - 1 }
+            init = fb_wrap_top(c, ie, is)
+        }
+        let mut kind: i32 = MK_STATE
+        if fb_tok_is(c, t, "input") == 1 { kind = MK_INPUT }
+        if fb_tok_is(c, t, "output") == 1 { kind = MK_OUTPUT }
+        if fb_tok_is(c, t, "param") == 1 { kind = MK_PARAM }
+        if kind == MK_INPUT and init >= 0 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "input '")
+            fb_put_tok(m, c, nt)
+            fb_puts(m, "' in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "' cannot have an initializer; inputs are written by the embedder")
+            fb_puts(fb_err_hint(c), "remove the '= ...' part")
+            return 0 - 1
+        }
+        fb_add_member(c, f, kind, fb_tok_str(c, nt), ty, init, c[0].tl[t])
+        return 0
+    }
+    if tid == 1 and fb_is_word(c, la, "evolves") == 1 {
+        fb_advance(c)
+        fb_advance(c)
+        if fb_expect(c, "AS") < 0 { return 0 - 1 }
+        let rs: i32 = c[0].pos
+        let rhs: i32 = fb_parse_expr(c)
+        if rhs < 0 { return 0 - 1 }
+        let i: i32 = c[0].nev
+        c[0].ev_flow[i] = f
+        c[0].ev_target[i] = fb_tok_str(c, t)
+        c[0].ev_expr[i] = fb_wrap_top(c, rhs, rs)
+        c[0].ev_line[i] = c[0].tl[t]
+        c[0].nev = i + 1
+        return 0
+    }
+    if tid == 1 and fb_tok_is(c, t, "when") == 1 and fb_is_ident(c, la) == 1 and fb_is_word(c, fb_la2(c), "reaches") == 1 {
+        fb_advance(c)
+        let gt: i32 = fb_expect(c, "IDENTIFIER")
+        if gt < 0 { return 0 - 1 }
+        fb_advance(c)
+        let ts0: i32 = c[0].pos
+        let thr: i32 = fb_parse_expr(c)
+        if thr < 0 { return 0 - 1 }
+        let w: i32 = c[0].nwh
+        c[0].wh_flow[w] = f
+        c[0].wh_target[w] = fb_tok_str(c, gt)
+        c[0].wh_thr[w] = fb_wrap_top(c, thr, ts0)
+        c[0].wh_line[w] = c[0].tl[t]
+        c[0].nwh = w + 1
+        return fb_parse_becomes_body(c, f, 1, w, "when", "resets")
+    }
+    if tid == 1 and fb_tok_is(c, t, "every") == 1 and c[0].tk[la] == TK_NUM {
+        fb_advance(c)
+        let wb: ptr<FbBuf> = fb_buf_new(64)
+        fb_puts(wb, "the 'every' period of flow '")
+        fb_put_fname(wb, c, f)
+        fb_puts(wb, "'")
+        let where_s: i32 = fb_intern_buf(c, wb)
+        fb_buf_free(wb)
+        let nsbox: ptr<i64> = malloc(8) as ptr<i64>
+        let txbox: ptr<i32> = malloc(4) as ptr<i32>
+        let drc: i32 = fb_parse_duration(c, where_s, nsbox, txbox)
+        let ev: i32 = c[0].ney
+        if drc == 0 {
+            c[0].ey_flow[ev] = f
+            c[0].ey_ns[ev] = nsbox[0]
+            c[0].ey_text[ev] = txbox[0]
+            c[0].ey_line[ev] = c[0].tl[t]
+            c[0].ney = ev + 1
+        }
+        free(nsbox as ptr<u8>)
+        free(txbox as ptr<u8>)
+        if drc < 0 { return 0 - 1 }
+        return fb_parse_becomes_body(c, f, 2, ev, "every", "discrete updates")
+    }
+    let la_brace: i32 = fb_is_op(c, la, OP_LBRACE)
+    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "solver") == 1 {
+        if c[0].f_solver[f] == 1 {
+            let m2: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m2, "flow '")
+            fb_put_fname(m2, c, f)
+            fb_puts(m2, "' has two 'solver' blocks; a flow pins at most one default step")
+            fb_puts(fb_err_hint(c), "merge the settings into one solver block")
+            return 0 - 1
+        }
+        return fb_parse_solver(c, f)
+    }
+    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "always") == 1 {
+        return fb_parse_invariant(c, f, 1, "always")
+    }
+    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "never") == 1 {
+        return fb_parse_invariant(c, f, 2, "never")
+    }
+    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "recognize") == 1 {
+        if c[0].f_rec[f] == 1 {
+            let m3: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m3, "flow '")
+            fb_put_fname(m3, c, f)
+            fb_puts(m3, "' has two 'recognize' blocks")
+            fb_puts(fb_err_hint(c), "merge the domains into one recognize block")
+            return 0 - 1
+        }
+        return fb_parse_recognize(c, f)
+    }
+    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "connect") == 1 {
+        return fb_parse_connect(c, f)
+    }
+    if tid == 1 and fb_is_section_word(c, t) == 0 and fb_is_op(c, la, OP_COLON) == 1 {
+        fb_advance(c)
+        fb_advance(c)
+        let cty: i32 = fb_parse_type(c)
+        if cty < 0 { return 0 - 1 }
+        if fb_is_op(c, c[0].pos, OP_ASSIGN) == 1 {
+            let m4: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m4, "nested flow member '")
+            fb_put_tok(m4, c, t)
+            fb_puts(m4, "' in flow '")
+            fb_put_fname(m4, c, f)
+            fb_puts(m4, "' cannot have an initializer; children are constructed by ")
+            fb_puts(m4, fb_s(c, cty) as string)
+            fb_puts(m4, "_new inside the parent")
+            fb_puts(fb_err_hint(c), "remove the '= ...' part")
+            return 0 - 1
+        }
+        fb_add_member(c, f, MK_CHILD, fb_tok_str(c, t), cty, 0 - 1, c[0].tl[t])
+        return 0
+    }
+    let m5: ptr<FbBuf> = fb_perr(c)
+    fb_puts(m5, "Unexpected item in flow '")
+    fb_put_fname(m5, c, f)
+    fb_puts(m5, "' body")
+    fb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')")
+    return 0 - 1
+}
+
+# Parse the flow whose `flow` token is c.pos. Fills flow f.
+function fb_parse_flow(c: ptr<Fb>, f: i32) -> i32 {
+    let ft: i32 = c[0].pos
+    c[0].f_start[f] = c[0].ts[ft]
+    c[0].f_line[f] = c[0].tl[ft]
+    fb_advance(c)
+    let nt: i32 = fb_expect(c, "IDENTIFIER")
+    if nt < 0 { return 0 - 1 }
+    c[0].f_name[f] = fb_tok_str(c, nt)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<FbBuf> = fb_perr(c)
+            fb_puts(m, "Unterminated flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "': expected '}' before end of file")
+            return 0 - 1
+        }
+        if fb_parse_flow_item(c, f) < 0 { return 0 - 1 }
+    }
+    let rb: i32 = fb_expect(c, "RBRACE")
+    if rb < 0 { return 0 - 1 }
+    c[0].f_end[f] = c[0].te[rb]
+    return 0
+}
+
+# ── Lookups ──────────────────────────────────────────────────────
+
+function fb_find_flow(c: ptr<Fb>, name: i32) -> i32 {
+    let mut f: i32 = 0
+    while f < c[0].nf {
+        if fb_name_eq(c, c[0].f_name[f], name) == 1 { return f }
+        f = f + 1
+    }
+    return 0 - 1
+}
+
+function fb_find_flow_str(c: ptr<Fb>, name: ptr<u8>) -> i32 {
+    let mut f: i32 = 0
+    while f < c[0].nf {
+        if strcmp(fb_s(c, c[0].f_name[f]) as string, name as string) == 0 { return f }
+        f = f + 1
+    }
+    return 0 - 1
+}
+
+# Member of flow f with the given kind and name, or -1.
+function fb_find_member(c: ptr<Fb>, f: i32, kind: i32, name: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f and c[0].mm_kind[i] == kind and fb_name_eq(c, c[0].mm_name[i], name) == 1 { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# _lookup_port: state, input, output, param in that order.
+function fb_lookup_port(c: ptr<Fb>, f: i32, name: i32) -> i32 {
+    let s: i32 = fb_find_member(c, f, MK_STATE, name)
+    if s >= 0 { return s }
+    let i: i32 = fb_find_member(c, f, MK_INPUT, name)
+    if i >= 0 { return i }
+    let o: i32 = fb_find_member(c, f, MK_OUTPUT, name)
+    if o >= 0 { return o }
+    return fb_find_member(c, f, MK_PARAM, name)
+}
+
+function fb_kind_word(k: i32) -> string {
+    if k == MK_STATE { return "state" }
+    if k == MK_INPUT { return "input" }
+    if k == MK_OUTPUT { return "output" }
+    if k == MK_PARAM { return "param" }
+    return "child"
+}
+
+function fb_count_members(c: ptr<Fb>, f: i32, kind: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f and c[0].mm_kind[i] == kind { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+function fb_nth_member(c: ptr<Fb>, f: i32, kind: i32, k: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f and c[0].mm_kind[i] == kind {
+            if n == k { return i }
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function fb_evolve_of(c: ptr<Fb>, f: i32, name: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < c[0].nev {
+        if c[0].ev_flow[i] == f and fb_name_eq(c, c[0].ev_target[i], name) == 1 { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function fb_tok_name(c: ptr<Fb>, node: i32) -> ptr<u8> {
+    return fb_s(c, fb_tok_str(c, c[0].ntok[node]))
+}
+
+# Name of a call node (the dbg lowering is `__flow_dbg`).
+function fb_call_name(c: ptr<Fb>, node: i32) -> i32 {
+    if c[0].ntok[node] < 0 { return fb_intern(c, "__flow_dbg") }
+    return fb_tok_str(c, c[0].ntok[node])
+}
+
+# ── Expression walks (flow_blocks.py _children and friends) ─────
+
+# _children(): the sub-expressions the purity and threshold walks visit.
+# Writes up to 64 child ids into out; returns the count.
+function fb_children(c: ptr<Fb>, x: i32, out: ptr<i32>) -> i32 {
+    let k: i32 = c[0].nk[x]
+    if k == N_BIN {
+        out[0] = c[0].na[x]
+        out[1] = c[0].nb[x]
+        return 2
+    }
+    if k == N_UN or k == N_CAST or k == N_FIELD or k == N_TRY {
+        out[0] = c[0].na[x]
+        return 1
+    }
+    if k == N_INDEX {
+        out[0] = c[0].na[x]
+        out[1] = c[0].nb[x]
+        return 2
+    }
+    if k == N_ARRAY or k == N_VEC or k == N_STRUCT {
+        let mut n: i32 = 0
+        let mut e: i32 = c[0].na[x]
+        while e >= 0 and n < 64 {
+            if k == N_STRUCT {
+                out[n] = c[0].na[e]
+            } else {
+                out[n] = e
+            }
+            n = n + 1
+            e = c[0].nx[e]
+        }
+        return n
+    }
+    return 0
+}
+
+function fb_is_pure_math(name: ptr<u8>) -> i32 {
+    let s: string = name as string
+    if strcmp(s, "sin") == 0 or strcmp(s, "cos") == 0 or strcmp(s, "tan") == 0 { return 1 }
+    if strcmp(s, "asin") == 0 or strcmp(s, "acos") == 0 or strcmp(s, "atan") == 0 { return 1 }
+    if strcmp(s, "atan2") == 0 or strcmp(s, "sinh") == 0 or strcmp(s, "cosh") == 0 { return 1 }
+    if strcmp(s, "tanh") == 0 or strcmp(s, "asinh") == 0 or strcmp(s, "acosh") == 0 { return 1 }
+    if strcmp(s, "atanh") == 0 or strcmp(s, "sqrt") == 0 or strcmp(s, "cbrt") == 0 { return 1 }
+    if strcmp(s, "pow") == 0 or strcmp(s, "exp") == 0 or strcmp(s, "exp2") == 0 { return 1 }
+    if strcmp(s, "log") == 0 or strcmp(s, "log2") == 0 or strcmp(s, "log10") == 0 { return 1 }
+    if strcmp(s, "fabs") == 0 or strcmp(s, "abs") == 0 or strcmp(s, "floor") == 0 { return 1 }
+    if strcmp(s, "ceil") == 0 or strcmp(s, "round") == 0 or strcmp(s, "fmod") == 0 { return 1 }
+    if strcmp(s, "fmin") == 0 or strcmp(s, "fmax") == 0 or strcmp(s, "hypot") == 0 { return 1 }
+    return 0
+}
+
+# _check_pure(expr, flow, where, line, ...). `where` is an arena string.
+function fb_check_pure(c: ptr<Fb>, x: i32, f: i32, where_s: i32, line: i32) -> i32 {
+    if x < 0 { return 0 }
+    let k: i32 = c[0].nk[x]
+    if k == N_EFFECT {
+        let m: ptr<FbBuf> = fb_verr(c, line)
+        fb_puts(m, "effect call in ")
+        fb_puts(m, fb_s(c, where_s) as string)
+        fb_puts(m, " of flow '")
+        fb_put_fname(m, c, f)
+        fb_puts(m, "'; dynamics expressions must be pure")
+        fb_puts(fb_err_hint(c), "lift effectful work out of the flow body")
+        return 0 - 1
+    }
+    if k == N_METHOD {
+        let m2: ptr<FbBuf> = fb_verr(c, line)
+        fb_puts(m2, "method call in ")
+        fb_puts(m2, fb_s(c, where_s) as string)
+        fb_puts(m2, " of flow '")
+        fb_put_fname(m2, c, f)
+        fb_puts(m2, "'; dynamics expressions must be pure plain calls in this version")
+        return 0 - 1
+    }
+    if k == N_LAMBDA {
+        let m3: ptr<FbBuf> = fb_verr(c, line)
+        fb_puts(m3, "lambda in ")
+        fb_puts(m3, fb_s(c, where_s) as string)
+        fb_puts(m3, " of flow '")
+        fb_put_fname(m3, c, f)
+        fb_puts(m3, "' is not supported")
+        return 0 - 1
+    }
+    if k == N_CALL {
+        let nm: i32 = fb_call_name(c, x)
+        if fb_is_pure_math(fb_s(c, nm)) == 0 and fb_has_name(c, NX_LOCAL_FN, nm) == 0 {
+            let m4: ptr<FbBuf> = fb_verr(c, line)
+            fb_puts(m4, "call to '")
+            fb_puts(m4, fb_s(c, nm) as string)
+            fb_puts(m4, "' in ")
+            fb_puts(m4, fb_s(c, where_s) as string)
+            fb_puts(m4, " of flow '")
+            fb_put_fname(m4, c, f)
+            fb_puts(m4, "' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1)")
+            return 0 - 1
+        }
+        let mut a: i32 = c[0].na[x]
+        while a >= 0 {
+            if fb_check_pure(c, a, f, where_s, line) < 0 { return 0 - 1 }
+            a = c[0].nx[a]
+        }
+        return 0
+    }
+    let kids: ptr<i32> = malloc(256) as ptr<i32>
+    let nk: i32 = fb_children(c, x, kids)
+    let mut i: i32 = 0
+    while i < nk {
+        if fb_check_pure(c, kids[i], f, where_s, line) < 0 {
+            free(kids as ptr<u8>)
+            return 0 - 1
+        }
+        i = i + 1
+    }
+    free(kids as ptr<u8>)
+    return 0
+}
+
+function fb_check_pure_s(c: ptr<Fb>, x: i32, f: i32, where_s: string, line: i32) -> i32 {
+    return fb_check_pure(c, x, f, fb_intern(c, where_s), line)
+}
+
+# "'x evolves as'" style where-strings: pre + name + post.
+function fb_where(c: ptr<Fb>, pre: string, name: i32, post: string) -> i32 {
+    let b: ptr<FbBuf> = fb_buf_new(64)
+    fb_puts(b, pre)
+    fb_puts(b, fb_s(c, name) as string)
+    fb_puts(b, post)
+    let out: i32 = fb_intern_buf(c, b)
+    fb_buf_free(b)
+    return out
+}
+
+function fb_check_threshold(c: ptr<Fb>, x: i32, f: i32, w: i32) -> i32 {
+    if x < 0 { return 0 }
+    let k: i32 = c[0].nk[x]
+    if k == N_LIT { return 0 }
+    if k == N_VAR {
+        let nm: i32 = fb_tok_str(c, c[0].ntok[x])
+        if fb_find_member(c, f, MK_PARAM, nm) >= 0 { return 0 }
+        let m: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
+        fb_puts(m, "threshold of 'when ")
+        fb_puts(m, fb_s(c, c[0].wh_target[w]) as string)
+        fb_puts(m, " reaches' in flow '")
+        fb_put_fname(m, c, f)
+        fb_puts(m, "' references '")
+        fb_puts(m, fb_s(c, nm) as string)
+        fb_puts(m, "'; thresholds must be constant over a step, built from params and literals (v1)")
+        return 0 - 1
+    }
+    if k == N_BIN or k == N_UN or k == N_CAST {
+        let kids: ptr<i32> = malloc(256) as ptr<i32>
+        let nk: i32 = fb_children(c, x, kids)
+        let mut i: i32 = 0
+        while i < nk {
+            if fb_check_threshold(c, kids[i], f, w) < 0 {
+                free(kids as ptr<u8>)
+                return 0 - 1
+            }
+            i = i + 1
+        }
+        free(kids as ptr<u8>)
+        return 0
+    }
+    let m2: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
+    fb_puts(m2, "threshold of 'when ")
+    fb_puts(m2, fb_s(c, c[0].wh_target[w]) as string)
+    fb_puts(m2, " reaches' in flow '")
+    fb_put_fname(m2, c, f)
+    fb_puts(m2, "' must be built from params and literals (v1)")
+    return 0 - 1
+}
+
+function fb_check_booleanish(c: ptr<Fb>, x: i32, f: i32, word: string, line: i32) -> i32 {
+    let k: i32 = c[0].nk[x]
+    if k == N_BIN {
+        let op: i32 = c[0].nop[x]
+        if op == OP_EQUALS or op == OP_NOT_EQUALS or op == OP_LESS or op == OP_LESS_EQUAL { return 0 }
+        if op == OP_GREATER or op == OP_GREATER_EQUAL or op == OP_AND or op == OP_OR { return 0 }
+    }
+    if k == N_UN and (c[0].nop[x] == OP_NOT or c[0].nop[x] == OPX_NOT_WORD) { return 0 }
+    if k == N_LIT and fb_tt_is(c, c[0].ntok[x], "BOOLEAN") == 1 { return 0 }
+    if k == N_VAR { return 0 }
+    let m: ptr<FbBuf> = fb_verr(c, line)
+    fb_puts(m, "'")
+    fb_puts(m, word)
+    fb_puts(m, "' clause in flow '")
+    fb_put_fname(m, c, f)
+    fb_puts(m, "' must be a boolean expression")
+    fb_puts(fb_err_hint(c), "write a comparison or logical expression, e.g. 'x < 1.0'")
+    return 0 - 1
+}
+
+# _expr_refs_names(expr, input names of flow f).
+function fb_refs_inputs(c: ptr<Fb>, x: i32, f: i32) -> i32 {
+    if x < 0 { return 0 }
+    let k: i32 = c[0].nk[x]
+    if k == N_VAR {
+        if fb_find_member(c, f, MK_INPUT, fb_tok_str(c, c[0].ntok[x])) >= 0 { return 1 }
+        return 0
+    }
+    if k == N_CALL {
+        let mut a: i32 = c[0].na[x]
+        while a >= 0 {
+            if fb_refs_inputs(c, a, f) == 1 { return 1 }
+            a = c[0].nx[a]
+        }
+        return 0
+    }
+    let kids: ptr<i32> = malloc(256) as ptr<i32>
+    let nk: i32 = fb_children(c, x, kids)
+    let mut i: i32 = 0
+    let mut r: i32 = 0
+    while i < nk and r == 0 {
+        r = fb_refs_inputs(c, kids[i], f)
+        i = i + 1
+    }
+    free(kids as ptr<u8>)
+    return r
+}
+
+# _port_is_combinational(flow, port).
+function fb_port_combinational(c: ptr<Fb>, f: i32, port: i32) -> i32 {
+    let o: i32 = fb_find_member(c, f, MK_OUTPUT, port)
+    if o < 0 { return 0 }
+    # A pipeline output reads `__y_stageN.out`, never an input.
+    if c[0].mm_pipe_m[o] >= 0 { return 0 }
+    if c[0].mm_init[o] < 0 { return 0 }
+    return fb_refs_inputs(c, c[0].mm_init[o], f)
+}
+
+# ── Pipelines (_expand_flow_pipelines) ───────────────────────────
+
+function fb_single_port(c: ptr<Fb>, sf: i32, kind: i32, word: string, line: i32) -> i32 {
+    let n: i32 = fb_count_members(c, sf, kind)
+    if n != 1 {
+        let m: ptr<FbBuf> = fb_verr(c, line)
+        fb_puts(m, "flow '")
+        fb_put_fname(m, c, sf)
+        fb_puts(m, "' used as a pipeline stage must have exactly one ")
+        fb_puts(m, word)
+        fb_puts(m, " (has ")
+        fb_put_int(m, n)
+        fb_puts(m, "); wire it with `connect` explicitly")
+        return 0 - 1
+    }
+    return fb_nth_member(c, sf, kind, 0)
+}
+
+# Sorted ", ".join of the param names of flow sf, or "(none)".
+function fb_put_sorted_params(c: ptr<Fb>, b: ptr<FbBuf>, sf: i32) {
+    let n: i32 = fb_count_members(c, sf, MK_PARAM)
+    if n == 0 {
+        fb_puts(b, "(none)")
+        return
+    }
+    let used: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let mut i: i32 = 0
+    while i < n {
+        used[i] = 0
+        i = i + 1
+    }
+    let mut k: i32 = 0
+    while k < n {
+        let mut best: i32 = 0 - 1
+        let mut j: i32 = 0
+        while j < n {
+            if used[j] == 0 {
+                if best < 0 {
+                    best = j
+                } else {
+                    let a: i32 = c[0].mm_name[fb_nth_member(c, sf, MK_PARAM, j)]
+                    let bb: i32 = c[0].mm_name[fb_nth_member(c, sf, MK_PARAM, best)]
+                    if strcmp(fb_s(c, a) as string, fb_s(c, bb) as string) < 0 { best = j }
+                }
+            }
+            j = j + 1
+        }
+        used[best] = 1
+        if k > 0 { fb_puts(b, ", ") }
+        fb_puts(b, fb_s(c, c[0].mm_name[fb_nth_member(c, sf, MK_PARAM, best)]) as string)
+        k = k + 1
+    }
+    free(used as ptr<u8>)
+}
+
+function fb_expand_pipelines(c: ptr<Fb>, f: i32) -> i32 {
+    let stages: ptr<i32> = malloc(4096) as ptr<i32>
+    let nouts: i32 = fb_count_members(c, f, MK_OUTPUT)
+    let mut oi: i32 = 0
+    while oi < nouts {
+        let o: i32 = fb_nth_member(c, f, MK_OUTPUT, oi)
+        let line: i32 = c[0].mm_line[o]
+        let mut ns: i32 = 0
+        let mut cur: i32 = c[0].mm_init[o]
+        let mut going: i32 = 1
+        while going == 1 and cur >= 0 and ns < 1000 {
+            let k: i32 = c[0].nk[cur]
+            if k == N_STAGE {
+                let sname: i32 = fb_tok_str(c, c[0].ntok[cur])
+                let sf: i32 = fb_find_flow(c, sname)
+                if sf < 0 {
+                    let m: ptr<FbBuf> = fb_verr(c, line)
+                    fb_puts(m, "'")
+                    fb_puts(m, fb_s(c, sname) as string)
+                    fb_puts(m, " { ... }' in output '")
+                    fb_puts(m, fb_s(c, c[0].mm_name[o]) as string)
+                    fb_puts(m, "' of '")
+                    fb_put_fname(m, c, f)
+                    fb_puts(m, "' names '")
+                    fb_puts(m, fb_s(c, sname) as string)
+                    fb_puts(m, "', which is not a flow")
+                    free(stages as ptr<u8>)
+                    return 0 - 1
+                }
+                stages[ns * 2] = sf
+                stages[ns * 2 + 1] = c[0].nb[cur]
+                ns = ns + 1
+                cur = c[0].na[cur]
+            } else {
+                if k == N_CALL and c[0].ntok[cur] >= 0 and fb_find_flow(c, fb_call_name(c, cur)) >= 0 {
+                    let cf: i32 = fb_find_flow(c, fb_call_name(c, cur))
+                    if fb_list_len(c, c[0].na[cur]) != 1 {
+                        let m2: ptr<FbBuf> = fb_verr(c, line)
+                        fb_puts(m2, "flow stage '")
+                        fb_put_fname(m2, c, cf)
+                        fb_puts(m2, "' in output '")
+                        fb_puts(m2, fb_s(c, c[0].mm_name[o]) as string)
+                        fb_puts(m2, "' of '")
+                        fb_put_fname(m2, c, f)
+                        fb_puts(m2, "' takes only the piped value")
+                        free(stages as ptr<u8>)
+                        return 0 - 1
+                    }
+                    stages[ns * 2] = cf
+                    stages[ns * 2 + 1] = 0 - 1
+                    ns = ns + 1
+                    cur = c[0].na[cur]
+                } else {
+                    going = 0
+                }
+            }
+        }
+        if ns > 0 {
+            # Source port: a bare variable or `child.port`.
+            let mut src_m: i32 = 0 - 1
+            let mut src_p: i32 = 0 - 1
+            if c[0].nk[cur] == N_VAR {
+                src_m = fb_intern(c, "")
+                src_p = fb_tok_str(c, c[0].ntok[cur])
+            } else {
+                if c[0].nk[cur] == N_FIELD and c[0].nk[c[0].na[cur]] == N_VAR {
+                    src_m = fb_tok_str(c, c[0].ntok[c[0].na[cur]])
+                    src_p = fb_tok_str(c, c[0].ntok[cur])
+                }
+            }
+            if src_m < 0 {
+                let m3: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m3, "flow pipeline for output '")
+                fb_puts(m3, fb_s(c, c[0].mm_name[o]) as string)
+                fb_puts(m3, "' of '")
+                fb_put_fname(m3, c, f)
+                fb_puts(m3, "' must start from a port (an input/state, or `child.port`)")
+                free(stages as ptr<u8>)
+                return 0 - 1
+            }
+            let mut prev_m: i32 = src_m
+            let mut prev_p: i32 = src_p
+            let mut i: i32 = 0
+            while i < ns {
+                # Data-flow order: the innermost stage first.
+                let si: i32 = ns - 1 - i
+                let sf2: i32 = stages[si * 2]
+                let params: i32 = stages[si * 2 + 1]
+                let cb: ptr<FbBuf> = fb_buf_new(32)
+                fb_puts(cb, "__")
+                fb_puts(cb, fb_s(c, c[0].mm_name[o]) as string)
+                fb_puts(cb, "_stage")
+                fb_put_int(cb, i)
+                let child_name: i32 = fb_intern_buf(c, cb)
+                fb_buf_free(cb)
+                # _check_stage_params
+                let mut pk: i32 = params
+                while pk >= 0 {
+                    let pn: i32 = fb_tok_str(c, c[0].ntok[pk])
+                    if fb_find_member(c, sf2, MK_PARAM, pn) < 0 {
+                        let m4: ptr<FbBuf> = fb_verr(c, line)
+                        fb_puts(m4, "flow stage '")
+                        fb_put_fname(m4, c, sf2)
+                        fb_puts(m4, "' in '")
+                        fb_put_fname(m4, c, f)
+                        fb_puts(m4, "' has no param '")
+                        fb_puts(m4, fb_s(c, pn) as string)
+                        fb_puts(m4, "'")
+                        let h: ptr<FbBuf> = fb_err_hint(c)
+                        fb_puts(h, "stage overrides set `param` fields; declared params are: ")
+                        fb_put_sorted_params(c, h, sf2)
+                        free(stages as ptr<u8>)
+                        return 0 - 1
+                    }
+                    pk = c[0].nx[pk]
+                }
+                let ch: i32 = fb_add_member(c, f, MK_CHILD, child_name, c[0].f_name[sf2], 0 - 1, line)
+                c[0].mm_synth[ch] = 1
+                c[0].mm_params[ch] = params
+                let in_port: i32 = fb_single_port(c, sf2, MK_INPUT, "input", line)
+                if in_port < 0 {
+                    free(stages as ptr<u8>)
+                    return 0 - 1
+                }
+                let out_port: i32 = fb_single_port(c, sf2, MK_OUTPUT, "output", line)
+                if out_port < 0 {
+                    free(stages as ptr<u8>)
+                    return 0 - 1
+                }
+                fb_add_conn(c, f, prev_m, prev_p, child_name, c[0].mm_name[in_port], line)
+                prev_m = child_name
+                prev_p = c[0].mm_name[out_port]
+                i = i + 1
+            }
+            c[0].mm_pipe_m[o] = prev_m
+            c[0].mm_pipe_p[o] = prev_p
+        }
+        oi = oi + 1
+    }
+    free(stages as ptr<u8>)
+    return 0
+}
+
+# ── Validation (_validate_flow, _validate_connect) ───────────────
+
+function fb_is_member_type(c: ptr<Fb>, ty: i32) -> i32 {
+    if fb_name_is(c, ty, "f64") == 1 or fb_name_is(c, ty, "f32") == 1 { return 1 }
+    if fb_has_name(c, NX_DIMENSION, ty) == 1 { return 1 }
+    return 0
+}
+
+function fb_is_scalar_type(c: ptr<Fb>, ty: i32) -> i32 {
+    let s: string = fb_s(c, ty) as string
+    if strcmp(s, "f32") == 0 or strcmp(s, "f64") == 0 { return 1 }
+    if strcmp(s, "i8") == 0 or strcmp(s, "i16") == 0 or strcmp(s, "i32") == 0 or strcmp(s, "i64") == 0 { return 1 }
+    if strcmp(s, "u8") == 0 or strcmp(s, "u16") == 0 or strcmp(s, "u32") == 0 or strcmp(s, "u64") == 0 { return 1 }
+    return 0
+}
+
+# _reclassify_elided_states over every flow.
+function fb_reclassify(c: ptr<Fb>) {
+    let total: i32 = c[0].nmm
+    let mut f: i32 = 0
+    while f < c[0].nf {
+        let mut i: i32 = 0
+        while i < total {
+            if c[0].mm_flow[i] == f and c[0].mm_kind[i] == MK_CHILD {
+                let ty: i32 = c[0].mm_type[i]
+                if fb_find_flow(c, ty) < 0 and (fb_is_scalar_type(c, ty) == 1 or fb_has_name(c, NX_DIMENSION, ty) == 1) {
+                    fb_add_member(c, f, MK_STATE, c[0].mm_name[i], ty, 0 - 1, c[0].mm_line[i])
+                    c[0].mm_kind[i] = MK_DEAD
+                }
+            }
+            i = i + 1
+        }
+        f = f + 1
+    }
+}
+
+# Earlier member of flow f (any live kind) named like member i, in the
+# order states, inputs, outputs, params, children.
+function fb_member_rank(k: i32) -> i32 {
+    if k == MK_STATE { return 0 }
+    if k == MK_INPUT { return 1 }
+    if k == MK_OUTPUT { return 2 }
+    if k == MK_PARAM { return 3 }
+    if k == MK_CHILD { return 4 }
+    return 9
+}
+
+function fb_seen_before(c: ptr<Fb>, f: i32, i: i32) -> i32 {
+    let ri: i32 = fb_member_rank(c[0].mm_kind[i])
+    let mut j: i32 = 0
+    while j < c[0].nmm {
+        if j != i and c[0].mm_flow[j] == f and c[0].mm_kind[j] != MK_DEAD {
+            let rj: i32 = fb_member_rank(c[0].mm_kind[j])
+            if rj < ri or (rj == ri and j < i) {
+                if fb_name_eq(c, c[0].mm_name[j], c[0].mm_name[i]) == 1 { return 1 }
+            }
+        }
+        j = j + 1
+    }
+    return 0
+}
+
+function fb_validate_members(c: ptr<Fb>, f: i32) -> i32 {
+    let mut rank: i32 = 0
+    while rank < 4 {
+        let mut i: i32 = 0
+        while i < c[0].nmm {
+            if c[0].mm_flow[i] == f and fb_member_rank(c[0].mm_kind[i]) == rank {
+                let nm: i32 = c[0].mm_name[i]
+                if fb_seen_before(c, f, i) == 1 {
+                    let m: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
+                    fb_puts(m, "flow '")
+                    fb_put_fname(m, c, f)
+                    fb_puts(m, "' declares '")
+                    fb_puts(m, fb_s(c, nm) as string)
+                    fb_puts(m, "' twice")
+                    return 0 - 1
+                }
+                if fb_name_starts_uu(c, nm) == 1 {
+                    let m2: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
+                    fb_puts(m2, "flow member '")
+                    fb_puts(m2, fb_s(c, nm) as string)
+                    fb_puts(m2, "' may not start with '__' (reserved for compiler-generated fields)")
+                    return 0 - 1
+                }
+                if fb_is_member_type(c, c[0].mm_type[i]) == 0 {
+                    let m3: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
+                    fb_puts(m3, fb_kind_word(c[0].mm_kind[i]))
+                    fb_puts(m3, " '")
+                    fb_puts(m3, fb_s(c, nm) as string)
+                    fb_puts(m3, "' in flow '")
+                    fb_put_fname(m3, c, f)
+                    fb_puts(m3, "' has type '")
+                    fb_puts(m3, fb_s(c, c[0].mm_type[i]) as string)
+                    fb_puts(m3, "'; a flow member is f64, f32, or a declared unit")
+                    fb_puts(fb_err_hint(c), "declare the dimension with 'unit Angle' first")
+                    return 0 - 1
+                }
+            }
+            i = i + 1
+        }
+        rank = rank + 1
+    }
+    let mut ci: i32 = 0
+    while ci < c[0].nmm {
+        if c[0].mm_flow[ci] == f and c[0].mm_kind[ci] == MK_CHILD {
+            let cn: i32 = c[0].mm_name[ci]
+            if fb_seen_before(c, f, ci) == 1 {
+                let m4: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
+                fb_puts(m4, "flow '")
+                fb_put_fname(m4, c, f)
+                fb_puts(m4, "' declares '")
+                fb_puts(m4, fb_s(c, cn) as string)
+                fb_puts(m4, "' twice")
+                return 0 - 1
+            }
+            if fb_name_starts_uu(c, cn) == 1 and c[0].mm_synth[ci] == 0 {
+                let m5: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
+                fb_puts(m5, "flow member '")
+                fb_puts(m5, fb_s(c, cn) as string)
+                fb_puts(m5, "' may not start with '__' (reserved for compiler-generated fields)")
+                return 0 - 1
+            }
+            if fb_name_eq(c, c[0].mm_type[ci], c[0].f_name[f]) == 1 {
+                let m6: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
+                fb_puts(m6, "nested flow member '")
+                fb_puts(m6, fb_s(c, cn) as string)
+                fb_puts(m6, "' in flow '")
+                fb_put_fname(m6, c, f)
+                fb_puts(m6, "' cannot have the parent type (no recursive nesting)")
+                return 0 - 1
+            }
+            if fb_find_flow(c, c[0].mm_type[ci]) < 0 {
+                let m7: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
+                fb_puts(m7, "nested flow member '")
+                fb_puts(m7, fb_s(c, cn) as string)
+                fb_puts(m7, "' in flow '")
+                fb_put_fname(m7, c, f)
+                fb_puts(m7, "' has type '")
+                fb_puts(m7, fb_s(c, c[0].mm_type[ci]) as string)
+                fb_puts(m7, "', which is not a flow in this file")
+                fb_puts(fb_err_hint(c), "declare the child with 'flow ChildName { ... }' first")
+                return 0 - 1
+            }
+        }
+        ci = ci + 1
+    }
+    return 0
+}
+
+function fb_recognition_ok(name: ptr<u8>) -> i32 {
+    let s: string = name as string
+    if strcmp(s, "numerical") == 0 or strcmp(s, "realtime") == 0 or strcmp(s, "causal") == 0 { return 1 }
+    if strcmp(s, "safety") == 0 or strcmp(s, "memory") == 0 { return 1 }
+    return 0
+}
+
+function fb_validate_connect(c: ptr<Fb>, f: i32) -> i32 {
+    let nch: i32 = fb_count_members(c, f, MK_CHILD)
+    let mut first_conn: i32 = 0 - 1
+    let mut k: i32 = 0
+    while k < c[0].ncn {
+        if c[0].cn_flow[k] == f and first_conn < 0 { first_conn = k }
+        k = k + 1
+    }
+    if first_conn >= 0 and nch == 0 {
+        let m: ptr<FbBuf> = fb_verr(c, c[0].cn_line[first_conn])
+        fb_puts(m, "'connect' in flow '")
+        fb_put_fname(m, c, f)
+        fb_puts(m, "' needs nested flow members to wire (e.g. 'plant : Motor')")
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < c[0].ncn {
+        if c[0].cn_flow[i] == f {
+            let sm: i32 = c[0].cn_sm[i]
+            let sp: i32 = c[0].cn_sp[i]
+            let dm: i32 = c[0].cn_dm[i]
+            let dp: i32 = c[0].cn_dp[i]
+            let line: i32 = c[0].cn_line[i]
+            let parent: i32 = fb_name_is(c, sm, "")
+            let src_child: i32 = fb_find_member(c, f, MK_CHILD, sm)
+            let dst_child: i32 = fb_find_member(c, f, MK_CHILD, dm)
+            if parent == 0 and src_child < 0 {
+                let m1: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m1, "connection source '")
+                fb_puts(m1, fb_s(c, sm) as string)
+                fb_putc(m1, 46)
+                fb_puts(m1, fb_s(c, sp) as string)
+                fb_puts(m1, "' in flow '")
+                fb_put_fname(m1, c, f)
+                fb_puts(m1, "' names unknown nested member '")
+                fb_puts(m1, fb_s(c, sm) as string)
+                fb_puts(m1, "'")
+                return 0 - 1
+            }
+            if dst_child < 0 {
+                let m2: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m2, "connection destination '")
+                fb_puts(m2, fb_s(c, dm) as string)
+                fb_putc(m2, 46)
+                fb_puts(m2, fb_s(c, dp) as string)
+                fb_puts(m2, "' in flow '")
+                fb_put_fname(m2, c, f)
+                fb_puts(m2, "' names unknown nested member '")
+                fb_puts(m2, fb_s(c, dm) as string)
+                fb_puts(m2, "'")
+                return 0 - 1
+            }
+            if parent == 0 and fb_name_eq(c, sm, dm) == 1 {
+                let m3: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m3, "connection in flow '")
+                fb_put_fname(m3, c, f)
+                fb_puts(m3, "' wires '")
+                fb_puts(m3, fb_s(c, sm) as string)
+                fb_puts(m3, "' to itself; Stage-1 connect is between sibling subflows only")
+                return 0 - 1
+            }
+            let dst_flow: i32 = fb_find_flow(c, c[0].mm_type[dst_child])
+            let mut src_port: i32 = 0 - 1
+            if parent == 1 {
+                src_port = fb_lookup_port(c, f, sp)
+                if src_port < 0 {
+                    let m4: ptr<FbBuf> = fb_verr(c, line)
+                    fb_puts(m4, "connection source '")
+                    fb_puts(m4, fb_s(c, sp) as string)
+                    fb_puts(m4, "' in flow '")
+                    fb_put_fname(m4, c, f)
+                    fb_puts(m4, "' is not a port of this flow")
+                    let h: ptr<FbBuf> = fb_err_hint(c)
+                    fb_puts(h, "a bare source must be an input or state of '")
+                    fb_put_fname(h, c, f)
+                    fb_puts(h, "'; a child source is written 'child.port'")
+                    return 0 - 1
+                }
+                let sk: i32 = c[0].mm_kind[src_port]
+                if sk != MK_INPUT and sk != MK_STATE {
+                    let m5: ptr<FbBuf> = fb_verr(c, line)
+                    fb_puts(m5, "connection source '")
+                    fb_puts(m5, fb_s(c, sp) as string)
+                    fb_puts(m5, "' in flow '")
+                    fb_put_fname(m5, c, f)
+                    fb_puts(m5, "' is a ")
+                    fb_puts(m5, fb_kind_word(sk))
+                    fb_puts(m5, "; a parent source must be an input or state")
+                    return 0 - 1
+                }
+            } else {
+                let src_flow: i32 = fb_find_flow(c, c[0].mm_type[src_child])
+                src_port = fb_lookup_port(c, src_flow, sp)
+                if src_port < 0 {
+                    let m6: ptr<FbBuf> = fb_verr(c, line)
+                    fb_puts(m6, "'")
+                    fb_puts(m6, fb_s(c, sm) as string)
+                    fb_putc(m6, 46)
+                    fb_puts(m6, fb_s(c, sp) as string)
+                    fb_puts(m6, "' in flow '")
+                    fb_put_fname(m6, c, f)
+                    fb_puts(m6, "' is not a port of '")
+                    fb_put_fname(m6, c, src_flow)
+                    fb_puts(m6, "'")
+                    let h2: ptr<FbBuf> = fb_err_hint(c)
+                    fb_puts(h2, "connect sources must be an output or state of '")
+                    fb_put_fname(h2, c, src_flow)
+                    fb_puts(h2, "'")
+                    return 0 - 1
+                }
+                let sk2: i32 = c[0].mm_kind[src_port]
+                if sk2 != MK_OUTPUT and sk2 != MK_STATE {
+                    let m7: ptr<FbBuf> = fb_verr(c, line)
+                    fb_puts(m7, "'")
+                    fb_puts(m7, fb_s(c, sm) as string)
+                    fb_putc(m7, 46)
+                    fb_puts(m7, fb_s(c, sp) as string)
+                    fb_puts(m7, "' in flow '")
+                    fb_put_fname(m7, c, f)
+                    fb_puts(m7, "' is a ")
+                    fb_puts(m7, fb_kind_word(sk2))
+                    fb_puts(m7, "; connection sources must be an output or state")
+                    return 0 - 1
+                }
+            }
+            let dst_port: i32 = fb_lookup_port(c, dst_flow, dp)
+            if dst_port < 0 {
+                let m8: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m8, "'")
+                fb_puts(m8, fb_s(c, dm) as string)
+                fb_putc(m8, 46)
+                fb_puts(m8, fb_s(c, dp) as string)
+                fb_puts(m8, "' in flow '")
+                fb_put_fname(m8, c, f)
+                fb_puts(m8, "' is not a port of '")
+                fb_put_fname(m8, c, dst_flow)
+                fb_puts(m8, "'")
+                let h3: ptr<FbBuf> = fb_err_hint(c)
+                fb_puts(h3, "connection destinations must be an input of '")
+                fb_put_fname(h3, c, dst_flow)
+                fb_puts(h3, "'")
+                return 0 - 1
+            }
+            if c[0].mm_kind[dst_port] != MK_INPUT {
+                let m9: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m9, "'")
+                fb_puts(m9, fb_s(c, dm) as string)
+                fb_putc(m9, 46)
+                fb_puts(m9, fb_s(c, dp) as string)
+                fb_puts(m9, "' in flow '")
+                fb_put_fname(m9, c, f)
+                fb_puts(m9, "' is a ")
+                fb_puts(m9, fb_kind_word(c[0].mm_kind[dst_port]))
+                fb_puts(m9, "; connection destinations must be an input")
+                return 0 - 1
+            }
+            if fb_name_eq(c, c[0].mm_type[src_port], c[0].mm_type[dst_port]) == 0 {
+                let m10: ptr<FbBuf> = fb_verr(c, line)
+                fb_puts(m10, "type mismatch in connect of flow '")
+                fb_put_fname(m10, c, f)
+                fb_puts(m10, "': '")
+                fb_puts(m10, fb_s(c, sm) as string)
+                fb_putc(m10, 46)
+                fb_puts(m10, fb_s(c, sp) as string)
+                fb_puts(m10, "' is ")
+                fb_puts(m10, fb_s(c, c[0].mm_type[src_port]) as string)
+                fb_puts(m10, " but '")
+                fb_puts(m10, fb_s(c, dm) as string)
+                fb_putc(m10, 46)
+                fb_puts(m10, fb_s(c, dp) as string)
+                fb_puts(m10, "' is ")
+                fb_puts(m10, fb_s(c, c[0].mm_type[dst_port]) as string)
+                return 0 - 1
+            }
+            let mut j: i32 = 0
+            while j < i {
+                if c[0].cn_flow[j] == f and fb_name_eq(c, c[0].cn_dm[j], dm) == 1 and fb_name_eq(c, c[0].cn_dp[j], dp) == 1 {
+                    let m11: ptr<FbBuf> = fb_verr(c, line)
+                    fb_puts(m11, "input '")
+                    fb_puts(m11, fb_s(c, dm) as string)
+                    fb_putc(m11, 46)
+                    fb_puts(m11, fb_s(c, dp) as string)
+                    fb_puts(m11, "' in flow '")
+                    fb_put_fname(m11, c, f)
+                    fb_puts(m11, "' has two incoming connections")
+                    return 0 - 1
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    return fb_check_loops(c, f)
+}
+
+# Combinational child-to-child edge of connection i in flow f.
+function fb_conn_combo(c: ptr<Fb>, f: i32, i: i32) -> i32 {
+    if fb_name_is(c, c[0].cn_sm[i], "") == 1 { return 0 }
+    let sc: i32 = fb_find_member(c, f, MK_CHILD, c[0].cn_sm[i])
+    if sc < 0 { return 0 }
+    let sf: i32 = fb_find_flow(c, c[0].mm_type[sc])
+    return fb_port_combinational(c, sf, c[0].cn_sp[i])
+}
+
+# Index of child member ch among the children of f, or -1.
+function fb_child_index(c: ptr<Fb>, f: i32, name: i32) -> i32 {
+    let n: i32 = fb_count_members(c, f, MK_CHILD)
+    let mut k: i32 = 0
+    while k < n {
+        if fb_name_eq(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, k)], name) == 1 { return k }
+        k = k + 1
+    }
+    return 0 - 1
+}
+
+# _find_member_cycle by depth-first search. state: 0 new, 1 visiting,
+# 2 done. On a cycle, path holds the stack and *cyc_from its start index.
+function fb_dfs(c: ptr<Fb>, f: i32, node: i32, state: ptr<i32>, stack: ptr<i32>, sp: ptr<i32>, cyc: ptr<i32>) -> i32 {
+    state[node] = 1
+    stack[sp[0]] = node
+    sp[0] = sp[0] + 1
+    let mut i: i32 = 0
+    while i < c[0].ncn {
+        if c[0].cn_flow[i] == f and fb_conn_combo(c, f, i) == 1 {
+            let a: i32 = fb_child_index(c, f, c[0].cn_sm[i])
+            let b: i32 = fb_child_index(c, f, c[0].cn_dm[i])
+            if a == node and b >= 0 {
+                if state[b] == 1 {
+                    let mut k: i32 = 0
+                    while stack[k] != b { k = k + 1 }
+                    cyc[0] = k
+                    cyc[1] = b
+                    return 1
+                }
+                if state[b] == 0 {
+                    if fb_dfs(c, f, b, state, stack, sp, cyc) == 1 { return 1 }
+                }
+            }
+        }
+        i = i + 1
+    }
+    sp[0] = sp[0] - 1
+    state[node] = 2
+    return 0
+}
+
+function fb_check_loops(c: ptr<Fb>, f: i32) -> i32 {
+    let n: i32 = fb_count_members(c, f, MK_CHILD)
+    if n == 0 { return 0 }
+    let state: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let stack: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let sp: ptr<i32> = malloc(4) as ptr<i32>
+    let cyc: ptr<i32> = malloc(8) as ptr<i32>
+    let mut k: i32 = 0
+    while k < n {
+        state[k] = 0
+        k = k + 1
+    }
+    sp[0] = 0
+    let mut found: i32 = 0
+    let mut m: i32 = 0
+    while m < n and found == 0 {
+        if state[m] == 0 {
+            found = fb_dfs(c, f, m, state, stack, sp, cyc)
+        }
+        m = m + 1
+    }
+    let mut rc: i32 = 0
+    if found == 1 {
+        # The first combinational edge with both ends on the cycle.
+        let mut line: i32 = 0
+        let mut e: i32 = 0
+        let mut got: i32 = 0
+        while e < c[0].ncn and got == 0 {
+            if c[0].cn_flow[e] == f and fb_conn_combo(c, f, e) == 1 {
+                let a: i32 = fb_child_index(c, f, c[0].cn_sm[e])
+                let b: i32 = fb_child_index(c, f, c[0].cn_dm[e])
+                let mut ina: i32 = 0
+                let mut inb: i32 = 0
+                let mut q: i32 = cyc[0]
+                while q < sp[0] {
+                    if stack[q] == a { ina = 1 }
+                    if stack[q] == b { inb = 1 }
+                    q = q + 1
+                }
+                if ina == 1 and inb == 1 {
+                    line = c[0].cn_line[e]
+                    got = 1
+                }
+            }
+            e = e + 1
+        }
+        if got == 0 {
+            let mut e2: i32 = 0
+            while e2 < c[0].ncn and got == 0 {
+                if c[0].cn_flow[e2] == f {
+                    line = c[0].cn_line[e2]
+                    got = 1
+                }
+                e2 = e2 + 1
+            }
+        }
+        let mb: ptr<FbBuf> = fb_verr(c, line)
+        fb_puts(mb, "algebraic loop in connect of flow '")
+        fb_put_fname(mb, c, f)
+        fb_puts(mb, "' through combinational outputs: ")
+        let mut q2: i32 = cyc[0]
+        while q2 < sp[0] {
+            fb_puts(mb, fb_s(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, stack[q2])]) as string)
+            fb_puts(mb, " -> ")
+            q2 = q2 + 1
+        }
+        fb_puts(mb, fb_s(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, cyc[1])]) as string)
+        fb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope")
+        rc = 0 - 1
+    }
+    free(state as ptr<u8>)
+    free(stack as ptr<u8>)
+    free(sp as ptr<u8>)
+    free(cyc as ptr<u8>)
+    return rc
+}
+
+function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
+    let fline: i32 = c[0].f_line[f]
+    # Recognition contract: unknown domains (duplicates fail at parse).
+    let mut r: i32 = 0
+    while r < c[0].nrc {
+        if c[0].rc_flow[r] == f and fb_recognition_ok(fb_s(c, c[0].rc_name[r])) == 0 {
+            let mut rl: i32 = c[0].f_rec_line[f]
+            if rl == 0 { rl = fline }
+            let m: ptr<FbBuf> = fb_verr(c, rl)
+            fb_puts(m, "unknown recognition domain '")
+            fb_puts(m, fb_s(c, c[0].rc_name[r]) as string)
+            fb_puts(m, "' in flow '")
+            fb_put_fname(m, c, f)
+            fb_puts(m, "'; valid domains: numerical, realtime, causal, safety, memory")
+            return 0 - 1
+        }
+        r = r + 1
+    }
+    let nstates: i32 = fb_count_members(c, f, MK_STATE)
+    let nchildren: i32 = fb_count_members(c, f, MK_CHILD)
+    if nstates == 0 and nchildren == 0 {
+        let m2: ptr<FbBuf> = fb_verr(c, fline)
+        fb_puts(m2, "flow '")
+        fb_put_fname(m2, c, f)
+        fb_puts(m2, "' declares no state")
+        fb_puts(fb_err_hint(c), "add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite")
+        return 0 - 1
+    }
+    let mut si: i32 = 0
+    while si < 7 {
+        let mut suf: string = "_new"
+        if si == 1 { suf = "_init" }
+        if si == 2 { suf = "_derivs" }
+        if si == 3 { suf = "_step" }
+        if si == 4 { suf = "_outputs" }
+        if si == 5 { suf = "_check" }
+        if si == 6 { suf = "_default_dt" }
+        let gen: i32 = fb_where(c, "", c[0].f_name[f], suf)
+        if fb_has_name(c, NX_TAKEN, gen) == 1 {
+            let m3: ptr<FbBuf> = fb_verr(c, fline)
+            fb_puts(m3, "name '")
+            fb_puts(m3, fb_s(c, gen) as string)
+            fb_puts(m3, "' is reserved by flow '")
+            fb_put_fname(m3, c, f)
+            fb_puts(m3, "' (the compiler generates it)")
+            return 0 - 1
+        }
+        si = si + 1
+    }
+    if fb_validate_members(c, f) < 0 { return 0 - 1 }
+    # Params need defaults; outputs need a map.
+    let mut i: i32 = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f and c[0].mm_kind[i] == MK_PARAM and c[0].mm_init[i] < 0 {
+            let m4: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
+            fb_puts(m4, "param '")
+            fb_puts(m4, fb_s(c, c[0].mm_name[i]) as string)
+            fb_puts(m4, "' in flow '")
+            fb_put_fname(m4, c, f)
+            fb_puts(m4, "' needs a default value")
+            let h: ptr<FbBuf> = fb_err_hint(c)
+            fb_puts(h, "write 'param ")
+            fb_puts(h, fb_s(c, c[0].mm_name[i]) as string)
+            fb_puts(h, " : ")
+            fb_puts(h, fb_s(c, c[0].mm_type[i]) as string)
+            fb_puts(h, " = 1.0'")
+            return 0 - 1
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f and c[0].mm_kind[i] == MK_OUTPUT and c[0].mm_init[i] < 0 {
+            let m5: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
+            fb_puts(m5, "output '")
+            fb_puts(m5, fb_s(c, c[0].mm_name[i]) as string)
+            fb_puts(m5, "' in flow '")
+            fb_put_fname(m5, c, f)
+            fb_puts(m5, "' needs an inline map ('output ")
+            fb_puts(m5, fb_s(c, c[0].mm_name[i]) as string)
+            fb_puts(m5, " : ")
+            fb_puts(m5, fb_s(c, c[0].mm_type[i]) as string)
+            fb_puts(m5, " = expr'); assigning outputs from 'every'/'when' blocks is a later card")
+            return 0 - 1
+        }
+        i = i + 1
+    }
+    # evolves
+    let mut e: i32 = 0
+    while e < c[0].nev {
+        if c[0].ev_flow[e] == f {
+            let tg: i32 = c[0].ev_target[e]
+            if fb_find_member(c, f, MK_STATE, tg) < 0 {
+                let m6: ptr<FbBuf> = fb_verr(c, c[0].ev_line[e])
+                fb_puts(m6, "'")
+                fb_puts(m6, fb_s(c, tg) as string)
+                fb_puts(m6, " evolves as' in flow '")
+                fb_put_fname(m6, c, f)
+                fb_puts(m6, "' requires '")
+                fb_puts(m6, fb_s(c, tg) as string)
+                fb_puts(m6, "' to be a declared state")
+                let h2: ptr<FbBuf> = fb_err_hint(c)
+                fb_puts(h2, "declare 'state ")
+                fb_puts(h2, fb_s(c, tg) as string)
+                fb_puts(h2, " : f64 = 0.0' or fix the name")
+                return 0 - 1
+            }
+            if fb_evolve_of(c, f, tg) != e {
+                let m7: ptr<FbBuf> = fb_verr(c, c[0].ev_line[e])
+                fb_puts(m7, "state '")
+                fb_puts(m7, fb_s(c, tg) as string)
+                fb_puts(m7, "' in flow '")
+                fb_put_fname(m7, c, f)
+                fb_puts(m7, "' has two 'evolves' declarations; a state has exactly one derivative")
+                return 0 - 1
+            }
+            if fb_check_pure(c, c[0].ev_expr[e], f, fb_where(c, "'", tg, " evolves as'"), c[0].ev_line[e]) < 0 { return 0 - 1 }
+        }
+        e = e + 1
+    }
+    # when
+    let mut w: i32 = 0
+    while w < c[0].nwh {
+        if c[0].wh_flow[w] == f {
+            let gt: i32 = c[0].wh_target[w]
+            if fb_find_member(c, f, MK_STATE, gt) < 0 {
+                let m8: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
+                fb_puts(m8, "'when ")
+                fb_puts(m8, fb_s(c, gt) as string)
+                fb_puts(m8, " reaches' in flow '")
+                fb_put_fname(m8, c, f)
+                fb_puts(m8, "' requires '")
+                fb_puts(m8, fb_s(c, gt) as string)
+                fb_puts(m8, "' to be a declared state")
+                let h3: ptr<FbBuf> = fb_err_hint(c)
+                fb_puts(h3, "declare 'state ")
+                fb_puts(h3, fb_s(c, gt) as string)
+                fb_puts(h3, " : f64 = 0.0' or fix the name")
+                return 0 - 1
+            }
+            if fb_evolve_of(c, f, gt) < 0 {
+                let m9: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
+                fb_puts(m9, "'when ")
+                fb_puts(m9, fb_s(c, gt) as string)
+                fb_puts(m9, " reaches' in flow '")
+                fb_put_fname(m9, c, f)
+                fb_puts(m9, "' requires '")
+                fb_puts(m9, fb_s(c, gt) as string)
+                fb_puts(m9, "' to be a continuous state")
+                let h4: ptr<FbBuf> = fb_err_hint(c)
+                fb_puts(h4, "give '")
+                fb_puts(h4, fb_s(c, gt) as string)
+                fb_puts(h4, "' an '")
+                fb_puts(h4, fb_s(c, gt) as string)
+                fb_puts(h4, " evolves as ...' declaration")
+                return 0 - 1
+            }
+            if fb_check_threshold(c, c[0].wh_thr[w], f, w) < 0 { return 0 - 1 }
+            let mut b: i32 = 0
+            while b < c[0].nbc {
+                if c[0].bc_kind[b] == 1 and c[0].bc_owner[b] == w {
+                    let rt: i32 = c[0].bc_target[b]
+                    if fb_find_member(c, f, MK_STATE, rt) < 0 {
+                        let m10: ptr<FbBuf> = fb_verr(c, c[0].bc_line[b])
+                        fb_puts(m10, "'")
+                        fb_puts(m10, fb_s(c, rt) as string)
+                        fb_puts(m10, " becomes' in the 'when ")
+                        fb_puts(m10, fb_s(c, gt) as string)
+                        fb_puts(m10, " reaches' body of flow '")
+                        fb_put_fname(m10, c, f)
+                        fb_puts(m10, "' requires '")
+                        fb_puts(m10, fb_s(c, rt) as string)
+                        fb_puts(m10, "' to be a declared state")
+                        return 0 - 1
+                    }
+                    if fb_becomes_seen(c, 1, w, b) == 1 {
+                        let m11: ptr<FbBuf> = fb_verr(c, c[0].bc_line[b])
+                        fb_puts(m11, "state '")
+                        fb_puts(m11, fb_s(c, rt) as string)
+                        fb_puts(m11, "' has two 'becomes' resets in one 'when' body of flow '")
+                        fb_put_fname(m11, c, f)
+                        fb_puts(m11, "'; resets in an event apply simultaneously, so each state has one writer")
+                        return 0 - 1
+                    }
+                    if fb_check_pure(c, c[0].bc_expr[b], f, fb_where(c, "'", rt, " becomes'"), c[0].bc_line[b]) < 0 { return 0 - 1 }
+                }
+                b = b + 1
+            }
+        }
+        w = w + 1
+    }
+    # solver
+    if c[0].f_solver[f] == 1 {
+        if c[0].f_dt_ns[f] <= 0 {
+            let m12: ptr<FbBuf> = fb_verr(c, c[0].f_solver_line[f])
+            fb_puts(m12, "solver dt of flow '")
+            fb_put_fname(m12, c, f)
+            fb_puts(m12, "' must be positive, got '")
+            fb_puts(m12, fb_s(c, c[0].f_dt_text[f]) as string)
+            fb_puts(m12, "'")
+            return 0 - 1
+        }
+        let meth: i32 = c[0].f_method[f]
+        if fb_name_is(c, meth, "euler") == 0 and fb_name_is(c, meth, "rk4") == 0 {
+            let m13: ptr<FbBuf> = fb_verr(c, c[0].f_solver_line[f])
+            fb_puts(m13, "unknown solver method '")
+            fb_puts(m13, fb_s(c, meth) as string)
+            fb_puts(m13, "' in flow '")
+            fb_put_fname(m13, c, f)
+            fb_puts(m13, "'; valid methods: euler, rk4")
+            return 0 - 1
+        }
+    }
+    # every
+    let mut v: i32 = 0
+    while v < c[0].ney {
+        if c[0].ey_flow[v] == f {
+            if c[0].ey_ns[v] <= 0 {
+                let m14: ptr<FbBuf> = fb_verr(c, c[0].ey_line[v])
+                fb_puts(m14, "'every ")
+                fb_puts(m14, fb_s(c, c[0].ey_text[v]) as string)
+                fb_puts(m14, "' in flow '")
+                fb_put_fname(m14, c, f)
+                fb_puts(m14, "' has a zero period; the period must be positive")
+                return 0 - 1
+            }
+            let mut u: i32 = 0
+            while u < c[0].nbc {
+                if c[0].bc_kind[u] == 2 and c[0].bc_owner[u] == v {
+                    let ut: i32 = c[0].bc_target[u]
+                    if fb_find_member(c, f, MK_STATE, ut) < 0 {
+                        let m15: ptr<FbBuf> = fb_verr(c, c[0].bc_line[u])
+                        fb_puts(m15, "'")
+                        fb_puts(m15, fb_s(c, ut) as string)
+                        fb_puts(m15, " becomes' in the 'every ")
+                        fb_puts(m15, fb_s(c, c[0].ey_text[v]) as string)
+                        fb_puts(m15, "' body of flow '")
+                        fb_put_fname(m15, c, f)
+                        fb_puts(m15, "' requires '")
+                        fb_puts(m15, fb_s(c, ut) as string)
+                        fb_puts(m15, "' to be a declared state")
+                        return 0 - 1
+                    }
+                    if fb_evolve_of(c, f, ut) >= 0 {
+                        let m16: ptr<FbBuf> = fb_verr(c, c[0].bc_line[u])
+                        fb_puts(m16, "state '")
+                        fb_puts(m16, fb_s(c, ut) as string)
+                        fb_puts(m16, "' in flow '")
+                        fb_put_fname(m16, c, f)
+                        fb_puts(m16, "' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete")
+                        let h5: ptr<FbBuf> = fb_err_hint(c)
+                        fb_puts(h5, "reset '")
+                        fb_puts(h5, fb_s(c, ut) as string)
+                        fb_puts(h5, "' from a 'when ")
+                        fb_puts(h5, fb_s(c, ut) as string)
+                        fb_puts(h5, " reaches ...' event, or drop its 'evolves' declaration")
+                        return 0 - 1
+                    }
+                    if fb_becomes_seen(c, 2, v, u) == 1 {
+                        let m17: ptr<FbBuf> = fb_verr(c, c[0].bc_line[u])
+                        fb_puts(m17, "state '")
+                        fb_puts(m17, fb_s(c, ut) as string)
+                        fb_puts(m17, "' has two 'becomes' updates in one 'every' body of flow '")
+                        fb_put_fname(m17, c, f)
+                        fb_puts(m17, "'; updates in a block apply simultaneously, so each state has one writer")
+                        return 0 - 1
+                    }
+                    if fb_check_pure(c, c[0].bc_expr[u], f, fb_where(c, "'", ut, " becomes'"), c[0].bc_line[u]) < 0 { return 0 - 1 }
+                }
+                u = u + 1
+            }
+        }
+        v = v + 1
+    }
+    # always, then never
+    let mut kind: i32 = 1
+    while kind <= 2 {
+        let mut q: i32 = 0
+        while q < c[0].niv {
+            if c[0].iv_flow[q] == f and c[0].iv_kind[q] == kind {
+                let mut word: string = "always"
+                if kind == 2 { word = "never" }
+                let mut ws: string = "'always' clause"
+                if kind == 2 { ws = "'never' clause" }
+                if fb_check_pure_s(c, c[0].iv_expr[q], f, ws, c[0].iv_line[q]) < 0 { return 0 - 1 }
+                if fb_check_booleanish(c, c[0].iv_expr[q], f, word, c[0].iv_line[q]) < 0 { return 0 - 1 }
+            }
+            q = q + 1
+        }
+        kind = kind + 1
+    }
+    # initializers and output maps
+    let mut pass: i32 = 0
+    while pass < 3 {
+        let mut want: i32 = MK_STATE
+        if pass == 1 { want = MK_PARAM }
+        if pass == 2 { want = MK_OUTPUT }
+        let mut j: i32 = 0
+        while j < c[0].nmm {
+            if c[0].mm_flow[j] == f and c[0].mm_kind[j] == want and c[0].mm_pipe_m[j] < 0 {
+                let mut wh: i32 = fb_where(c, "initializer of '", c[0].mm_name[j], "'")
+                if want == MK_OUTPUT { wh = fb_where(c, "output map of '", c[0].mm_name[j], "'") }
+                if fb_check_pure(c, c[0].mm_init[j], f, wh, c[0].mm_line[j]) < 0 { return 0 - 1 }
+            }
+            j = j + 1
+        }
+        pass = pass + 1
+    }
+    let mut has_conn: i32 = 0
+    let mut z: i32 = 0
+    while z < c[0].ncn {
+        if c[0].cn_flow[z] == f { has_conn = 1 }
+        z = z + 1
+    }
+    if has_conn == 1 or nchildren > 0 {
+        return fb_validate_connect(c, f)
+    }
+    return 0
+}
+
+# An earlier `becomes` in the same body writes the same state.
+function fb_becomes_seen(c: ptr<Fb>, kind: i32, owner: i32, b: i32) -> i32 {
+    let mut k: i32 = 0
+    while k < b {
+        if c[0].bc_kind[k] == kind and c[0].bc_owner[k] == owner and fb_name_eq(c, c[0].bc_target[k], c[0].bc_target[b]) == 1 { return 1 }
+        k = k + 1
+    }
+    return 0
+}
+
+# ── Lowering to Flow source (_lower_flow) ────────────────────────
+
+# Mark the variables _rewrite() reaches: it recurses through Variable,
+# BinaryOperation, UnaryOperation, FunctionCall arguments, casts, field
+# access objects, indexing, array and vector literals and `?`, and leaves
+# every other node as written.
+function fb_mark_vars(c: ptr<Fb>, x: i32) {
+    if x < 0 { return }
+    let k: i32 = c[0].nk[x]
+    if k == N_VAR {
+        c[0].tvar[c[0].ntok[x]] = 1
+        return
+    }
+    if k == N_BIN or k == N_INDEX {
+        fb_mark_vars(c, c[0].na[x])
+        fb_mark_vars(c, c[0].nb[x])
+        return
+    }
+    if k == N_UN or k == N_CAST or k == N_FIELD or k == N_TRY {
+        fb_mark_vars(c, c[0].na[x])
+        return
+    }
+    if k == N_CALL or k == N_ARRAY or k == N_VEC {
+        let mut a: i32 = c[0].na[x]
+        while a >= 0 {
+            fb_mark_vars(c, a)
+            a = c[0].nx[a]
+        }
+    }
+}
+
+# Is the text of token t a member name of flow f (the struct fields,
+# including the hidden accumulator and guard fields)?
+function fb_is_member_tok(c: ptr<Fb>, f: i32, t: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f and c[0].mm_kind[i] != MK_DEAD {
+            if fb_tok_is(c, t, fb_s(c, c[0].mm_name[i]) as string) == 1 { return 1 }
+        }
+        i = i + 1
+    }
+    # __every_K_acc / __guard_K_prev
+    let s: i32 = c[0].ts[t]
+    let e: i32 = c[0].te[t]
+    let p: ptr<u8> = c[0].src
+    if e - s > 12 and fb_tok_starts(c, t, "__every_") == 1 and fb_tok_ends(c, t, "_acc") == 1 {
+        let k: i32 = fb_digits_value(p, s + 8, e - 4)
+        if k >= 0 and k < fb_count_everys(c, f) { return 1 }
+    }
+    if e - s > 13 and fb_tok_starts(c, t, "__guard_") == 1 and fb_tok_ends(c, t, "_prev") == 1 {
+        let k2: i32 = fb_digits_value(p, s + 8, e - 5)
+        if k2 >= 0 and k2 < fb_count_whens(c, f) { return 1 }
+    }
+    return 0
+}
+
+function fb_tok_starts(c: ptr<Fb>, t: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit as ptr<u8>
+    let s: i32 = c[0].ts[t]
+    let mut i: i32 = 0
+    while lp[i] != 0 {
+        if s + i >= c[0].te[t] { return 0 }
+        if c[0].src[s + i] != lp[i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+function fb_tok_ends(c: ptr<Fb>, t: i32, lit: string) -> i32 {
+    let ll: i32 = strlen(lit) as i32
+    let lp: ptr<u8> = lit as ptr<u8>
+    let e: i32 = c[0].te[t]
+    if e - c[0].ts[t] < ll { return 0 }
+    let mut i: i32 = 0
+    while i < ll {
+        if c[0].src[e - ll + i] != lp[i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+# Decimal value of p[s..e) when it is all digits (Python str(int) form,
+# so no leading zeros unless it is "0"); else -1.
+function fb_digits_value(p: ptr<u8>, s: i32, e: i32) -> i32 {
+    if s >= e { return 0 - 1 }
+    if p[s] == 48 and e - s > 1 { return 0 - 1 }
+    let mut v: i32 = 0
+    let mut i: i32 = s
+    while i < e {
+        if fb_is_digit(p[i]) == 0 { return 0 - 1 }
+        if v > 100000000 { return 0 - 1 }
+        v = v * 10 + ((p[i] - 48) as i32)
+        i = i + 1
+    }
+    return v
+}
+
+function fb_count_everys(c: ptr<Fb>, f: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].ney {
+        if c[0].ey_flow[i] == f { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+function fb_count_whens(c: ptr<Fb>, f: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].nwh {
+        if c[0].wh_flow[i] == f { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+# Emit a user expression as written, with member reads rewritten to
+# `self.name`. Line breaks and comments between tokens become one space.
+function fb_emit_expr(c: ptr<Fb>, b: ptr<FbBuf>, x: i32) {
+    let f: i32 = c[0].cur
+    let s: i32 = c[0].nfs[x]
+    let e: i32 = c[0].nfe[x]
+    let p: ptr<u8> = c[0].src
+    let mut t: i32 = s
+    while t < e {
+        if t > s {
+            let g0: i32 = c[0].te[t - 1]
+            let g1: i32 = c[0].ts[t]
+            if g1 > g0 {
+                let mut plain: i32 = 1
+                let mut k: i32 = g0
+                while k < g1 {
+                    if p[k] != 32 and p[k] != 9 { plain = 0 }
+                    k = k + 1
+                }
+                if plain == 1 {
+                    fb_put_span(b, p, g0, g1)
+                } else {
+                    fb_putc(b, 32)
+                }
+            }
+        }
+        if c[0].tvar[t] == 1 and fb_is_member_tok(c, f, t) == 1 {
+            fb_puts(b, "self.")
+        }
+        fb_put_span(b, p, c[0].ts[t], c[0].te[t])
+        t = t + 1
+    }
+}
+
+function fb_put_name(c: ptr<Fb>, b: ptr<FbBuf>, off: i32) {
+    fb_puts(b, fb_s(c, off) as string)
+}
+
+function fb_put_self(c: ptr<Fb>, b: ptr<FbBuf>, off: i32) {
+    fb_puts(b, "self.")
+    fb_put_name(c, b, off)
+}
+
+# repr(ns / 1e9) for a whole number of nanoseconds (shortest round-trip
+# repr equals the exact decimal up to 15 significant digits).
+function fb_put_seconds(b: ptr<FbBuf>, ns: i64) {
+    if ns == 0 {
+        fb_puts(b, "0.0")
+        return
+    }
+    let db: ptr<FbBuf> = fb_buf_new(32)
+    fb_put_i64(db, ns)
+    let full: i32 = db[0].len
+    let mut nd: i32 = full
+    while nd > 1 and db[0].p[nd - 1] == 48 { nd = nd - 1 }
+    let decpt: i32 = full - 9
+    let d: ptr<u8> = db[0].p
+    if decpt <= 0 - 4 or decpt > 16 {
+        fb_putc(b, d[0])
+        if nd > 1 {
+            fb_putc(b, 46)
+            fb_put_span(b, d, 1, nd)
+        }
+        fb_putc(b, 101)
+        let ex: i32 = decpt - 1
+        if ex < 0 {
+            fb_putc(b, 45)
+        } else {
+            fb_putc(b, 43)
+        }
+        let mut ax: i32 = ex
+        if ax < 0 { ax = 0 - ax }
+        if ax < 10 { fb_putc(b, 48) }
+        fb_put_int(b, ax)
+    } else {
+        if decpt <= 0 {
+            fb_puts(b, "0.")
+            let mut z: i32 = 0
+            while z < 0 - decpt {
+                fb_putc(b, 48)
+                z = z + 1
+            }
+            fb_put_span(b, d, 0, nd)
+        } else {
+            if decpt >= nd {
+                fb_put_span(b, d, 0, nd)
+                let mut z2: i32 = nd
+                while z2 < decpt {
+                    fb_putc(b, 48)
+                    z2 = z2 + 1
+                }
+                fb_puts(b, ".0")
+            } else {
+                fb_put_span(b, d, 0, decpt)
+                fb_putc(b, 46)
+                fb_put_span(b, d, decpt, nd)
+            }
+        }
+    }
+    fb_buf_free(db)
+}
+
+# Type name of member i as written in declarations.
+function fb_put_mtype(c: ptr<Fb>, b: ptr<FbBuf>, i: i32) {
+    fb_put_name(c, b, c[0].mm_type[i])
+}
+
+function fb_is_float_type(c: ptr<Fb>, ty: i32) -> i32 {
+    if fb_name_is(c, ty, "f64") == 1 or fb_name_is(c, ty, "f32") == 1 { return 1 }
+    return 0
+}
+
+# _derivative_type(): f64/f32 keep their type, a dimension becomes f64.
+function fb_put_dtype(c: ptr<Fb>, b: ptr<FbBuf>, i: i32) {
+    if fb_is_float_type(c, c[0].mm_type[i]) == 1 {
+        fb_put_mtype(c, b, i)
+    } else {
+        fb_puts(b, "f64")
+    }
+}
+
+# _dt_for_state(): `dt`, or `(dt as f32)` for an f32 state.
+function fb_put_dt(c: ptr<Fb>, b: ptr<FbBuf>, i: i32) {
+    if fb_name_is(c, c[0].mm_type[i], "f32") == 1 {
+        fb_puts(b, "(dt as f32)")
+    } else {
+        fb_puts(b, "dt")
+    }
+}
+
+# The ordered struct fields: children, states, inputs, outputs, params,
+# then the hidden every accumulators and guard memories. Calls back per
+# field with (name string, type string) through a small table.
+function fb_field_count(c: ptr<Fb>, f: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut r: i32 = 0
+    while r < 5 {
+        n = n + fb_count_members(c, f, fb_field_kind(r))
+        r = r + 1
+    }
+    return n + fb_count_everys(c, f) + fb_count_whens(c, f)
+}
+
+function fb_field_kind(r: i32) -> i32 {
+    if r == 0 { return MK_CHILD }
+    if r == 1 { return MK_STATE }
+    if r == 2 { return MK_INPUT }
+    if r == 3 { return MK_OUTPUT }
+    return MK_PARAM
+}
+
+# _zero_of(): the default for a struct field in Name_new.
+function fb_put_zero(c: ptr<Fb>, b: ptr<FbBuf>, ty: i32) {
+    if fb_name_is(c, ty, "i64") == 1 {
+        fb_puts(b, "0")
+        return
+    }
+    if fb_is_float_type(c, ty) == 1 {
+        fb_puts(b, "0.0")
+        return
+    }
+    if fb_find_flow(c, ty) < 0 {
+        fb_puts(b, "(0.0 as ")
+        fb_put_name(c, b, ty)
+        fb_puts(b, ")")
+        return
+    }
+    fb_put_name(c, b, ty)
+    fb_puts(b, "_new()")
+}
+
+function fb_emit_struct(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "struct ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, " { ")
+    let mut first: i32 = 1
+    let mut r: i32 = 0
+    while r < 5 {
+        let kind: i32 = fb_field_kind(r)
+        let n: i32 = fb_count_members(c, f, kind)
+        let mut k: i32 = 0
+        while k < n {
+            let i: i32 = fb_nth_member(c, f, kind, k)
+            if first == 0 { fb_puts(b, ", ") }
+            first = 0
+            fb_put_name(c, b, c[0].mm_name[i])
+            fb_puts(b, ": ")
+            fb_put_mtype(c, b, i)
+            k = k + 1
+        }
+        r = r + 1
+    }
+    let ne: i32 = fb_count_everys(c, f)
+    let mut j: i32 = 0
+    while j < ne {
+        if first == 0 { fb_puts(b, ", ") }
+        first = 0
+        fb_puts(b, "__every_")
+        fb_put_int(b, j)
+        fb_puts(b, "_acc: i64")
+        j = j + 1
+    }
+    let nw: i32 = fb_count_whens(c, f)
+    j = 0
+    while j < nw {
+        if first == 0 { fb_puts(b, ", ") }
+        first = 0
+        fb_puts(b, "__guard_")
+        fb_put_int(b, j)
+        fb_puts(b, "_prev: f64")
+        j = j + 1
+    }
+    fb_puts(b, " }")
+}
+
+function fb_fn_head(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, suffix: string, params: string, ret: string) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, suffix)
+    fb_puts(b, "(")
+    if strlen(params) > 0 {
+        fb_puts(b, params)
+    }
+    fb_puts(b, ") -> ")
+    fb_puts(b, ret)
+    fb_puts(b, " { ")
+}
+
+function fb_self_param(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "self: ptr<")
+    fb_put_fname(b, c, f)
+    fb_puts(b, ">")
+}
+
+function fb_emit_new(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_fn_head(c, b, f, "_new", "", fb_s(c, c[0].f_name[f]) as string)
+    fb_puts(b, "let mut __self: ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, " = ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, " { ")
+    let mut first: i32 = 1
+    let mut r: i32 = 0
+    while r < 5 {
+        let kind: i32 = fb_field_kind(r)
+        let n: i32 = fb_count_members(c, f, kind)
+        let mut k: i32 = 0
+        while k < n {
+            let i: i32 = fb_nth_member(c, f, kind, k)
+            if first == 0 { fb_puts(b, ", ") }
+            first = 0
+            fb_put_name(c, b, c[0].mm_name[i])
+            fb_puts(b, ": ")
+            fb_put_zero(c, b, c[0].mm_type[i])
+            k = k + 1
+        }
+        r = r + 1
+    }
+    let ne: i32 = fb_count_everys(c, f)
+    let mut j: i32 = 0
+    while j < ne {
+        if first == 0 { fb_puts(b, ", ") }
+        first = 0
+        fb_puts(b, "__every_")
+        fb_put_int(b, j)
+        fb_puts(b, "_acc: 0")
+        j = j + 1
+    }
+    let nw: i32 = fb_count_whens(c, f)
+    j = 0
+    while j < nw {
+        if first == 0 { fb_puts(b, ", ") }
+        first = 0
+        fb_puts(b, "__guard_")
+        fb_put_int(b, j)
+        fb_puts(b, "_prev: 0.0")
+        j = j + 1
+    }
+    fb_puts(b, " }; ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_init(&__self); return __self; }")
+}
+
+# Index of the k-th when of flow f in the global table.
+function fb_nth_when(c: ptr<Fb>, f: i32, k: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].nwh {
+        if c[0].wh_flow[i] == f {
+            if n == k { return i }
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function fb_nth_every(c: ptr<Fb>, f: i32, k: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].ney {
+        if c[0].ey_flow[i] == f {
+            if n == k { return i }
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# _guard_expr(): self.x - (threshold), widened to f64 for an f32 state.
+function fb_emit_guard(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, w: i32) {
+    let st: i32 = fb_find_member(c, f, MK_STATE, c[0].wh_target[w])
+    let narrow: i32 = fb_name_is(c, c[0].mm_type[st], "f32")
+    if narrow == 1 { fb_puts(b, "((") }
+    fb_put_self(c, b, c[0].wh_target[w])
+    fb_puts(b, " - (")
+    fb_emit_expr(c, b, c[0].wh_thr[w])
+    fb_puts(b, ")")
+    if narrow == 1 { fb_puts(b, ") as f64)") }
+}
+
+function fb_has_outputs(c: ptr<Fb>, f: i32) -> i32 {
+    if fb_count_members(c, f, MK_OUTPUT) > 0 { return 1 }
+    return 0
+}
+
+function fb_emit_init(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_init(")
+    fb_self_param(c, b, f)
+    fb_puts(b, ") -> void { ")
+    let np: i32 = fb_count_members(c, f, MK_PARAM)
+    let mut k: i32 = 0
+    while k < np {
+        let i: i32 = fb_nth_member(c, f, MK_PARAM, k)
+        fb_put_self(c, b, c[0].mm_name[i])
+        fb_puts(b, " = ")
+        fb_emit_expr(c, b, c[0].mm_init[i])
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+    let ni: i32 = fb_count_members(c, f, MK_INPUT)
+    k = 0
+    while k < ni {
+        let i2: i32 = fb_nth_member(c, f, MK_INPUT, k)
+        fb_put_self(c, b, c[0].mm_name[i2])
+        fb_puts(b, " = 0.0; ")
+        k = k + 1
+    }
+    let ns: i32 = fb_count_members(c, f, MK_STATE)
+    k = 0
+    while k < ns {
+        let i3: i32 = fb_nth_member(c, f, MK_STATE, k)
+        fb_put_self(c, b, c[0].mm_name[i3])
+        fb_puts(b, " = ")
+        if c[0].mm_init[i3] >= 0 {
+            fb_emit_expr(c, b, c[0].mm_init[i3])
+        } else {
+            fb_puts(b, "0.0")
+        }
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+    let nc: i32 = fb_count_members(c, f, MK_CHILD)
+    k = 0
+    while k < nc {
+        let i4: i32 = fb_nth_member(c, f, MK_CHILD, k)
+        fb_put_name(c, b, c[0].mm_type[i4])
+        fb_puts(b, "_init(&")
+        fb_put_self(c, b, c[0].mm_name[i4])
+        fb_puts(b, "); ")
+        let mut pk: i32 = c[0].mm_params[i4]
+        while pk >= 0 {
+            fb_put_self(c, b, c[0].mm_name[i4])
+            fb_putc(b, 46)
+            fb_put_span(b, c[0].src, c[0].ts[c[0].ntok[pk]], c[0].te[c[0].ntok[pk]])
+            fb_puts(b, " = ")
+            fb_emit_expr(c, b, c[0].na[pk])
+            fb_puts(b, "; ")
+            pk = c[0].nx[pk]
+        }
+        k = k + 1
+    }
+    let ne: i32 = fb_count_everys(c, f)
+    k = 0
+    while k < ne {
+        fb_puts(b, "self.__every_")
+        fb_put_int(b, k)
+        fb_puts(b, "_acc = 0; ")
+        k = k + 1
+    }
+    let nw: i32 = fb_count_whens(c, f)
+    k = 0
+    while k < nw {
+        fb_puts(b, "self.__guard_")
+        fb_put_int(b, k)
+        fb_puts(b, "_prev = ")
+        fb_emit_guard(c, b, f, fb_nth_when(c, f, k))
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+    if fb_has_outputs(c, f) == 1 {
+        fb_put_fname(b, c, f)
+        fb_puts(b, "_outputs(self); ")
+    }
+    fb_puts(b, "}")
+}
+
+# Evolved states in state declaration order (_in_state_order).
+function fb_nth_evolved(c: ptr<Fb>, f: i32, k: i32) -> i32 {
+    let ns: i32 = fb_count_members(c, f, MK_STATE)
+    let mut n: i32 = 0
+    let mut s: i32 = 0
+    while s < ns {
+        let i: i32 = fb_nth_member(c, f, MK_STATE, s)
+        if fb_evolve_of(c, f, c[0].mm_name[i]) >= 0 {
+            if n == k { return i }
+            n = n + 1
+        }
+        s = s + 1
+    }
+    return 0 - 1
+}
+
+function fb_count_evolved(c: ptr<Fb>, f: i32) -> i32 {
+    let mut n: i32 = 0
+    while fb_nth_evolved(c, f, n) >= 0 { n = n + 1 }
+    return n
+}
+
+function fb_emit_derivs(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_derivs(")
+    fb_self_param(c, b, f)
+    let nev: i32 = fb_count_evolved(c, f)
+    let mut k: i32 = 0
+    while k < nev {
+        let i: i32 = fb_nth_evolved(c, f, k)
+        fb_puts(b, ", d_")
+        fb_put_name(c, b, c[0].mm_name[i])
+        fb_puts(b, ": ptr<")
+        fb_put_dtype(c, b, i)
+        fb_puts(b, ">")
+        k = k + 1
+    }
+    fb_puts(b, ") -> void { ")
+    k = 0
+    while k < nev {
+        let i2: i32 = fb_nth_evolved(c, f, k)
+        let e: i32 = fb_evolve_of(c, f, c[0].mm_name[i2])
+        fb_puts(b, "d_")
+        fb_put_name(c, b, c[0].mm_name[i2])
+        fb_puts(b, "[0] = ")
+        fb_emit_expr(c, b, c[0].ev_expr[e])
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+    fb_puts(b, "}")
+}
+
+# Name_derivs(self, &<stage>_x, ...)
+function fb_emit_derivs_call(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, stage: string) {
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_derivs(self")
+    let nev: i32 = fb_count_evolved(c, f)
+    let mut k: i32 = 0
+    while k < nev {
+        let i: i32 = fb_nth_evolved(c, f, k)
+        fb_puts(b, ", &")
+        fb_puts(b, stage)
+        fb_putc(b, 95)
+        fb_put_name(c, b, c[0].mm_name[i])
+        k = k + 1
+    }
+    fb_puts(b, "); ")
+}
+
+function fb_emit_euler(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    let nev: i32 = fb_count_evolved(c, f)
+    let mut k: i32 = 0
+    while k < nev {
+        let i: i32 = fb_nth_evolved(c, f, k)
+        fb_puts(b, "let mut d_")
+        fb_put_name(c, b, c[0].mm_name[i])
+        fb_puts(b, ": ")
+        fb_put_dtype(c, b, i)
+        fb_puts(b, " = 0.0; ")
+        k = k + 1
+    }
+    if nev > 0 {
+        fb_emit_derivs_call(c, b, f, "d")
+    }
+    k = 0
+    while k < nev {
+        let i2: i32 = fb_nth_evolved(c, f, k)
+        let nm: i32 = c[0].mm_name[i2]
+        fb_put_self(c, b, nm)
+        fb_puts(b, " = ")
+        fb_put_self(c, b, nm)
+        fb_puts(b, " + ")
+        let dim: i32 = 1 - fb_is_float_type(c, c[0].mm_type[i2])
+        if dim == 1 { fb_puts(b, "((") }
+        fb_puts(b, "d_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, " * ")
+        fb_put_dt(c, b, i2)
+        if dim == 1 {
+            fb_puts(b, ") as ")
+            fb_put_mtype(c, b, i2)
+            fb_puts(b, ")")
+        }
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+}
+
+# self.x = y0_x + k_x * <scale> for every evolved state.
+function fb_emit_rk_stage(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, stage: string, scale: i32) {
+    let nev: i32 = fb_count_evolved(c, f)
+    let mut k: i32 = 0
+    while k < nev {
+        let i: i32 = fb_nth_evolved(c, f, k)
+        let nm: i32 = c[0].mm_name[i]
+        fb_put_self(c, b, nm)
+        fb_puts(b, " = y0_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, " + ")
+        fb_puts(b, stage)
+        fb_putc(b, 95)
+        fb_put_name(c, b, nm)
+        fb_puts(b, " * ")
+        if scale == 1 {
+            fb_puts(b, "(")
+            fb_put_dt(c, b, i)
+            fb_puts(b, " * 0.5)")
+        } else {
+            fb_put_dt(c, b, i)
+        }
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+}
+
+function fb_emit_rk4(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    let nev: i32 = fb_count_evolved(c, f)
+    let mut k: i32 = 0
+    while k < nev {
+        let i: i32 = fb_nth_evolved(c, f, k)
+        fb_puts(b, "let y0_")
+        fb_put_name(c, b, c[0].mm_name[i])
+        fb_puts(b, ": ")
+        fb_put_mtype(c, b, i)
+        fb_puts(b, " = ")
+        fb_put_self(c, b, c[0].mm_name[i])
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+    let mut st: i32 = 1
+    while st <= 4 {
+        k = 0
+        while k < nev {
+            let i2: i32 = fb_nth_evolved(c, f, k)
+            fb_puts(b, "let mut k")
+            fb_put_int(b, st)
+            fb_putc(b, 95)
+            fb_put_name(c, b, c[0].mm_name[i2])
+            fb_puts(b, ": ")
+            fb_put_mtype(c, b, i2)
+            fb_puts(b, " = 0.0; ")
+            k = k + 1
+        }
+        st = st + 1
+    }
+    fb_emit_derivs_call(c, b, f, "k1")
+    fb_emit_rk_stage(c, b, f, "k1", 1)
+    fb_emit_derivs_call(c, b, f, "k2")
+    fb_emit_rk_stage(c, b, f, "k2", 1)
+    fb_emit_derivs_call(c, b, f, "k3")
+    fb_emit_rk_stage(c, b, f, "k3", 2)
+    fb_emit_derivs_call(c, b, f, "k4")
+    k = 0
+    while k < nev {
+        let i3: i32 = fb_nth_evolved(c, f, k)
+        let nm: i32 = c[0].mm_name[i3]
+        fb_put_self(c, b, nm)
+        fb_puts(b, " = y0_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, " + (k1_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, " + k2_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, " * 2.0 + k3_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, " * 2.0 + k4_")
+        fb_put_name(c, b, nm)
+        fb_puts(b, ") * (")
+        fb_put_dt(c, b, i3)
+        fb_puts(b, " / 6.0); ")
+        k = k + 1
+    }
+}
+
+function fb_emit_every(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, k: i32) {
+    let v: i32 = fb_nth_every(c, f, k)
+    let acc: ptr<FbBuf> = fb_buf_new(32)
+    fb_puts(acc, "self.__every_")
+    fb_put_int(acc, k)
+    fb_puts(acc, "_acc")
+    let a: string = acc[0].p as string
+    fb_puts(b, a)
+    fb_puts(b, " = ")
+    fb_puts(b, a)
+    fb_puts(b, " + __dt_ns; let mut __every_")
+    fb_put_int(b, k)
+    fb_puts(b, "_n: i64 = 0; while ")
+    fb_puts(b, a)
+    fb_puts(b, " >= ")
+    fb_put_i64(b, c[0].ey_ns[v])
+    fb_puts(b, " && __every_")
+    fb_put_int(b, k)
+    fb_puts(b, "_n < 1024 { ")
+    fb_puts(b, a)
+    fb_puts(b, " = ")
+    fb_puts(b, a)
+    fb_puts(b, " - ")
+    fb_put_i64(b, c[0].ey_ns[v])
+    fb_puts(b, "; __every_")
+    fb_put_int(b, k)
+    fb_puts(b, "_n = __every_")
+    fb_put_int(b, k)
+    fb_puts(b, "_n + 1; ")
+    fb_emit_staged(c, b, f, 2, v, "__tick_", k)
+    fb_puts(b, "} ")
+    fb_buf_free(acc)
+}
+
+# Synchronous `becomes` writes: every right-hand side into a temporary,
+# then every target assigned.
+function fb_emit_staged(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, kind: i32, owner: i32, prefix: string, k: i32) {
+    let mut u: i32 = 0
+    while u < c[0].nbc {
+        if c[0].bc_kind[u] == kind and c[0].bc_owner[u] == owner {
+            let tg: i32 = c[0].bc_target[u]
+            let st: i32 = fb_find_member(c, f, MK_STATE, tg)
+            fb_puts(b, "let ")
+            fb_puts(b, prefix)
+            fb_put_int(b, k)
+            fb_putc(b, 95)
+            fb_put_name(c, b, tg)
+            fb_puts(b, ": ")
+            fb_put_mtype(c, b, st)
+            fb_puts(b, " = ")
+            fb_emit_expr(c, b, c[0].bc_expr[u])
+            fb_puts(b, "; ")
+        }
+        u = u + 1
+    }
+    u = 0
+    while u < c[0].nbc {
+        if c[0].bc_kind[u] == kind and c[0].bc_owner[u] == owner {
+            let tg2: i32 = c[0].bc_target[u]
+            fb_put_self(c, b, tg2)
+            fb_puts(b, " = ")
+            fb_puts(b, prefix)
+            fb_put_int(b, k)
+            fb_putc(b, 95)
+            fb_put_name(c, b, tg2)
+            fb_puts(b, "; ")
+        }
+        u = u + 1
+    }
+}
+
+function fb_emit_event(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, k: i32) {
+    let w: i32 = fb_nth_when(c, f, k)
+    fb_puts(b, "let __g_")
+    fb_put_int(b, k)
+    fb_puts(b, ": f64 = ")
+    fb_emit_guard(c, b, f, w)
+    fb_puts(b, "; if (__g_")
+    fb_put_int(b, k)
+    fb_puts(b, " < 0.0) != (self.__guard_")
+    fb_put_int(b, k)
+    fb_puts(b, "_prev < 0.0) || __g_")
+    fb_put_int(b, k)
+    fb_puts(b, " == 0.0 { ")
+    fb_emit_staged(c, b, f, 1, w, "__reset_", k)
+    fb_puts(b, "} self.__guard_")
+    fb_put_int(b, k)
+    fb_puts(b, "_prev = ")
+    fb_emit_guard(c, b, f, w)
+    fb_puts(b, "; ")
+}
+
+# _topo_child_order: stable Kahn over combinational edges; on a cycle,
+# declaration order. Writes child member ids into order.
+function fb_topo_children(c: ptr<Fb>, f: i32, order: ptr<i32>) -> i32 {
+    let n: i32 = fb_count_members(c, f, MK_CHILD)
+    let indeg: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let done: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let mut k: i32 = 0
+    while k < n {
+        indeg[k] = 0
+        done[k] = 0
+        k = k + 1
+    }
+    let mut i: i32 = 0
+    while i < c[0].ncn {
+        if c[0].cn_flow[i] == f and fb_conn_combo(c, f, i) == 1 {
+            let d: i32 = fb_child_index(c, f, c[0].cn_dm[i])
+            let s: i32 = fb_child_index(c, f, c[0].cn_sm[i])
+            if d >= 0 and s >= 0 { indeg[d] = indeg[d] + 1 }
+        }
+        i = i + 1
+    }
+    let mut placed: i32 = 0
+    let mut cyclic: i32 = 0
+    while placed < n and cyclic == 0 {
+        let mut pick: i32 = 0 - 1
+        k = 0
+        while k < n and pick < 0 {
+            if done[k] == 0 and indeg[k] == 0 { pick = k }
+            k = k + 1
+        }
+        if pick < 0 {
+            cyclic = 1
+        } else {
+            done[pick] = 1
+            order[placed] = fb_nth_member(c, f, MK_CHILD, pick)
+            placed = placed + 1
+            let pn: i32 = c[0].mm_name[order[placed - 1]]
+            i = 0
+            while i < c[0].ncn {
+                if c[0].cn_flow[i] == f and fb_conn_combo(c, f, i) == 1 and fb_name_eq(c, c[0].cn_sm[i], pn) == 1 {
+                    let d2: i32 = fb_child_index(c, f, c[0].cn_dm[i])
+                    if d2 >= 0 { indeg[d2] = indeg[d2] - 1 }
+                }
+                i = i + 1
+            }
+        }
+    }
+    if cyclic == 1 {
+        k = 0
+        while k < n {
+            order[k] = fb_nth_member(c, f, MK_CHILD, k)
+            k = k + 1
+        }
+    }
+    free(indeg as ptr<u8>)
+    free(done as ptr<u8>)
+    return n
+}
+
+function fb_emit_child_steps(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    let n: i32 = fb_count_members(c, f, MK_CHILD)
+    if n == 0 { return }
+    let order: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    fb_topo_children(c, f, order)
+    let mut k: i32 = 0
+    while k < n {
+        let ch: i32 = order[k]
+        let cn: i32 = c[0].mm_name[ch]
+        let mut i: i32 = 0
+        while i < c[0].ncn {
+            if c[0].cn_flow[i] == f and fb_name_eq(c, c[0].cn_dm[i], cn) == 1 {
+                fb_put_self(c, b, c[0].cn_dm[i])
+                fb_putc(b, 46)
+                fb_put_name(c, b, c[0].cn_dp[i])
+                fb_puts(b, " = ")
+                if fb_name_is(c, c[0].cn_sm[i], "") == 1 {
+                    fb_put_self(c, b, c[0].cn_sp[i])
+                } else {
+                    fb_put_self(c, b, c[0].cn_sm[i])
+                    fb_putc(b, 46)
+                    fb_put_name(c, b, c[0].cn_sp[i])
+                }
+                fb_puts(b, "; ")
+            }
+            i = i + 1
+        }
+        fb_put_name(c, b, c[0].mm_type[ch])
+        fb_puts(b, "_step(&")
+        fb_put_self(c, b, cn)
+        fb_puts(b, ", dt); ")
+        k = k + 1
+    }
+    free(order as ptr<u8>)
+}
+
+function fb_count_clauses(c: ptr<Fb>, f: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < c[0].niv {
+        if c[0].iv_flow[i] == f { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+# The idx-th invariant clause (always clauses first, then never).
+function fb_nth_clause(c: ptr<Fb>, f: i32, idx: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut kind: i32 = 1
+    while kind <= 2 {
+        let mut i: i32 = 0
+        while i < c[0].niv {
+            if c[0].iv_flow[i] == f and c[0].iv_kind[i] == kind {
+                if n == idx { return i }
+                n = n + 1
+            }
+            i = i + 1
+        }
+        kind = kind + 1
+    }
+    return 0 - 1
+}
+
+# C-string escaping of the invariant message (backslash, then quote).
+function fb_put_escaped(b: ptr<FbBuf>, s: ptr<u8>) {
+    let mut i: i32 = 0
+    while s[i] != 0 {
+        if s[i] == 92 or s[i] == 34 { fb_putc(b, 92) }
+        fb_putc(b, s[i])
+        i = i + 1
+    }
+}
+
+function fb_emit_step(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_step(")
+    fb_self_param(c, b, f)
+    fb_puts(b, ", dt: f64) -> void { ")
+    if c[0].f_solver[f] == 1 and fb_name_is(c, c[0].f_method[f], "rk4") == 1 {
+        fb_emit_rk4(c, b, f)
+    } else {
+        fb_emit_euler(c, b, f)
+    }
+    let ne: i32 = fb_count_everys(c, f)
+    if ne > 0 {
+        fb_puts(b, "let __dt_ns: i64 = ((dt * 1000000000.0) as i64); ")
+    }
+    let mut k: i32 = 0
+    while k < ne {
+        fb_emit_every(c, b, f, k)
+        k = k + 1
+    }
+    let nw: i32 = fb_count_whens(c, f)
+    k = 0
+    while k < nw {
+        fb_emit_event(c, b, f, k)
+        k = k + 1
+    }
+    if fb_has_outputs(c, f) == 1 {
+        fb_put_fname(b, c, f)
+        fb_puts(b, "_outputs(self); ")
+    }
+    fb_emit_child_steps(c, b, f)
+    let nclauses: i32 = fb_count_clauses(c, f)
+    if nclauses > 0 {
+        fb_puts(b, "let __viol: i32 = ")
+        fb_put_fname(b, c, f)
+        fb_puts(b, "_check(self); ")
+        let mut q: i32 = 0
+        while q < nclauses {
+            let cl: i32 = fb_nth_clause(c, f, q)
+            fb_puts(b, "if __viol == ")
+            fb_put_int(b, q + 1)
+            fb_puts(b, " { flow_panic(\"")
+            let mb: ptr<FbBuf> = fb_buf_new(64)
+            fb_put_fname(mb, c, f)
+            fb_putc(mb, 58)
+            fb_put_int(mb, c[0].iv_line[cl])
+            fb_puts(mb, ": invariant violated: ")
+            fb_puts(mb, fb_s(c, c[0].iv_text[cl]) as string)
+            fb_put_escaped(b, mb[0].p)
+            fb_buf_free(mb)
+            fb_puts(b, "\"); } ")
+            q = q + 1
+        }
+    }
+    fb_puts(b, "}")
+}
+
+function fb_emit_default_dt(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_default_dt() -> f64 { return ")
+    if c[0].f_solver[f] == 1 {
+        fb_put_seconds(b, c[0].f_dt_ns[f])
+    } else {
+        fb_put_seconds(b, 1000000)
+    }
+    fb_puts(b, "; }")
+}
+
+function fb_emit_outputs(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_outputs(")
+    fb_self_param(c, b, f)
+    fb_puts(b, ") -> void { ")
+    let no: i32 = fb_count_members(c, f, MK_OUTPUT)
+    let mut k: i32 = 0
+    while k < no {
+        let o: i32 = fb_nth_member(c, f, MK_OUTPUT, k)
+        fb_put_self(c, b, c[0].mm_name[o])
+        fb_puts(b, " = ")
+        if c[0].mm_pipe_m[o] >= 0 {
+            fb_put_self(c, b, c[0].mm_pipe_m[o])
+            fb_putc(b, 46)
+            fb_put_name(c, b, c[0].mm_pipe_p[o])
+        } else {
+            fb_emit_expr(c, b, c[0].mm_init[o])
+        }
+        fb_puts(b, "; ")
+        k = k + 1
+    }
+    fb_puts(b, "}")
+}
+
+function fb_emit_check(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+    fb_puts(b, "@flow_api function ")
+    fb_put_fname(b, c, f)
+    fb_puts(b, "_check(")
+    fb_self_param(c, b, f)
+    fb_puts(b, ") -> i32 { ")
+    let n: i32 = fb_count_clauses(c, f)
+    let mut q: i32 = 0
+    while q < n {
+        let cl: i32 = fb_nth_clause(c, f, q)
+        if c[0].iv_kind[cl] == 1 {
+            fb_puts(b, "if !(")
+        } else {
+            fb_puts(b, "if (")
+        }
+        fb_emit_expr(c, b, c[0].iv_expr[cl])
+        fb_puts(b, ") { return ")
+        fb_put_int(b, q + 1)
+        fb_puts(b, "; } ")
+        q = q + 1
+    }
+    fb_puts(b, "return 0; }")
+}
+
+# Mark every rewritable variable in flow f's expressions.
+function fb_mark_flow(c: ptr<Fb>, f: i32) {
+    let mut i: i32 = 0
+    while i < c[0].nmm {
+        if c[0].mm_flow[i] == f {
+            fb_mark_vars(c, c[0].mm_init[i])
+            let mut pk: i32 = c[0].mm_params[i]
+            while pk >= 0 {
+                fb_mark_vars(c, c[0].na[pk])
+                pk = c[0].nx[pk]
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < c[0].nev {
+        if c[0].ev_flow[i] == f { fb_mark_vars(c, c[0].ev_expr[i]) }
+        i = i + 1
+    }
+    i = 0
+    while i < c[0].nwh {
+        if c[0].wh_flow[i] == f {
+            fb_mark_vars(c, c[0].wh_thr[i])
+            let mut u: i32 = 0
+            while u < c[0].nbc {
+                if c[0].bc_kind[u] == 1 and c[0].bc_owner[u] == i { fb_mark_vars(c, c[0].bc_expr[u]) }
+                u = u + 1
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < c[0].ney {
+        if c[0].ey_flow[i] == f {
+            let mut u2: i32 = 0
+            while u2 < c[0].nbc {
+                if c[0].bc_kind[u2] == 2 and c[0].bc_owner[u2] == i { fb_mark_vars(c, c[0].bc_expr[u2]) }
+                u2 = u2 + 1
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < c[0].niv {
+        if c[0].iv_flow[i] == f { fb_mark_vars(c, c[0].iv_expr[i]) }
+        i = i + 1
+    }
+}
+
+# Lower flow f into c.out, one declaration per line, padded to the line
+# count of the original block.
+function fb_lower_flow(c: ptr<Fb>, f: i32) {
+    c[0].cur = f
+    fb_mark_flow(c, f)
+    let mut lines: i32 = 1
+    let mut k: i32 = c[0].f_start[f]
+    while k < c[0].f_end[f] {
+        if c[0].src[k] == 10 { lines = lines + 1 }
+        k = k + 1
+    }
+    let mut ndecl: i32 = 6
+    if fb_has_outputs(c, f) == 1 { ndecl = ndecl + 1 }
+    if fb_count_clauses(c, f) > 0 { ndecl = ndecl + 1 }
+    let b: ptr<FbBuf> = c[0].out
+    let mut d: i32 = 0
+    let mut used: i32 = 0
+    while d < ndecl {
+        if d > 0 {
+            if used < lines - 1 {
+                fb_putc(b, 10)
+                used = used + 1
+            } else {
+                fb_putc(b, 32)
+            }
+        }
+        if d == 0 { fb_emit_struct(c, b, f) }
+        if d == 1 { fb_emit_new(c, b, f) }
+        if d == 2 { fb_emit_init(c, b, f) }
+        if d == 3 { fb_emit_derivs(c, b, f) }
+        if d == 4 { fb_emit_step(c, b, f) }
+        if d == 5 { fb_emit_default_dt(c, b, f) }
+        if d == 6 {
+            if fb_has_outputs(c, f) == 1 {
+                fb_emit_outputs(c, b, f)
+            } else {
+                fb_emit_check(c, b, f)
+            }
+        }
+        if d == 7 { fb_emit_check(c, b, f) }
+        d = d + 1
+    }
+    while used < lines - 1 {
+        fb_putc(b, 10)
+        used = used + 1
+    }
+}
+
+# ── File scan and driver ─────────────────────────────────────────
+
+function fb_alloc_i32(n: i32) -> ptr<i32> {
+    return malloc(((n + 1) as i64) * 4) as ptr<i32>
+}
+
+function fb_ctx_new(src: ptr<u8>, n: i32) -> ptr<Fb> {
+    let c: ptr<Fb> = malloc(4096) as ptr<Fb>
+    c[0].src = src
+    c[0].n = n
+    let tcap: i32 = n + 2
+    c[0].nt = 0
+    c[0].tk = fb_alloc_i32(tcap)
+    c[0].top = fb_alloc_i32(tcap)
+    c[0].ts = fb_alloc_i32(tcap)
+    c[0].te = fb_alloc_i32(tcap)
+    c[0].tl = fb_alloc_i32(tcap)
+    c[0].tc = fb_alloc_i32(tcap)
+    c[0].tvar = fb_alloc_i32(tcap)
+    c[0].pos = 0
+    c[0].nn = 0
+    c[0].ncap = 256
+    c[0].nk = fb_alloc_i32(256)
+    c[0].nop = fb_alloc_i32(256)
+    c[0].ntok = fb_alloc_i32(256)
+    c[0].na = fb_alloc_i32(256)
+    c[0].nb = fb_alloc_i32(256)
+    c[0].nc = fb_alloc_i32(256)
+    c[0].nx = fb_alloc_i32(256)
+    c[0].nfs = fb_alloc_i32(256)
+    c[0].nfe = fb_alloc_i32(256)
+    c[0].nm = fb_buf_new(4096)
+    c[0].nf = 0
+    c[0].f_name = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_line = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_start = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_end = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_solver = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_dt_ns = malloc(((FB_MAX_FLOWS + 1) as i64) * 8) as ptr<i64>
+    c[0].f_dt_text = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_method = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_solver_line = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_rec = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_rec_line = fb_alloc_i32(FB_MAX_FLOWS)
+    c[0].f_out = fb_alloc_i32(FB_MAX_FLOWS)
+    # Items never outnumber tokens; pipelines add at most one child and
+    # one connection per stage token.
+    let icap: i32 = tcap * 2 + 16
+    c[0].icap = icap
+    c[0].nmm = 0
+    c[0].mm_flow = fb_alloc_i32(icap)
+    c[0].mm_kind = fb_alloc_i32(icap)
+    c[0].mm_name = fb_alloc_i32(icap)
+    c[0].mm_type = fb_alloc_i32(icap)
+    c[0].mm_init = fb_alloc_i32(icap)
+    c[0].mm_line = fb_alloc_i32(icap)
+    c[0].mm_synth = fb_alloc_i32(icap)
+    c[0].mm_params = fb_alloc_i32(icap)
+    c[0].mm_pipe_m = fb_alloc_i32(icap)
+    c[0].mm_pipe_p = fb_alloc_i32(icap)
+    c[0].nev = 0
+    c[0].ev_flow = fb_alloc_i32(icap)
+    c[0].ev_target = fb_alloc_i32(icap)
+    c[0].ev_expr = fb_alloc_i32(icap)
+    c[0].ev_line = fb_alloc_i32(icap)
+    c[0].nwh = 0
+    c[0].wh_flow = fb_alloc_i32(icap)
+    c[0].wh_target = fb_alloc_i32(icap)
+    c[0].wh_thr = fb_alloc_i32(icap)
+    c[0].wh_line = fb_alloc_i32(icap)
+    c[0].ney = 0
+    c[0].ey_flow = fb_alloc_i32(icap)
+    c[0].ey_ns = malloc(((icap + 1) as i64) * 8) as ptr<i64>
+    c[0].ey_text = fb_alloc_i32(icap)
+    c[0].ey_line = fb_alloc_i32(icap)
+    c[0].nbc = 0
+    c[0].bc_kind = fb_alloc_i32(icap)
+    c[0].bc_owner = fb_alloc_i32(icap)
+    c[0].bc_target = fb_alloc_i32(icap)
+    c[0].bc_expr = fb_alloc_i32(icap)
+    c[0].bc_line = fb_alloc_i32(icap)
+    c[0].niv = 0
+    c[0].iv_flow = fb_alloc_i32(icap)
+    c[0].iv_kind = fb_alloc_i32(icap)
+    c[0].iv_expr = fb_alloc_i32(icap)
+    c[0].iv_line = fb_alloc_i32(icap)
+    c[0].iv_text = fb_alloc_i32(icap)
+    c[0].ncn = 0
+    c[0].cn_flow = fb_alloc_i32(icap)
+    c[0].cn_sm = fb_alloc_i32(icap)
+    c[0].cn_sp = fb_alloc_i32(icap)
+    c[0].cn_dm = fb_alloc_i32(icap)
+    c[0].cn_dp = fb_alloc_i32(icap)
+    c[0].cn_line = fb_alloc_i32(icap)
+    c[0].nrc = 0
+    c[0].rc_flow = fb_alloc_i32(icap)
+    c[0].rc_name = fb_alloc_i32(icap)
+    c[0].nnames = 0
+    c[0].nx_kind = fb_alloc_i32(icap)
+    c[0].nx_name = fb_alloc_i32(icap)
+    c[0].err = 0
+    c[0].err_flow = 0 - 1
+    c[0].err_line = 0
+    c[0].err_col = 0
+    c[0].emsg = fb_buf_new(256)
+    c[0].ehint = fb_buf_new(256)
+    c[0].has_hint = 0
+    c[0].cur = 0
+    c[0].out = fb_buf_new(n * 2 + 1024)
+    return c
+}
+
+function fb_ctx_free(c: ptr<Fb>) {
+    free(c[0].tk as ptr<u8>)
+    free(c[0].top as ptr<u8>)
+    free(c[0].ts as ptr<u8>)
+    free(c[0].te as ptr<u8>)
+    free(c[0].tl as ptr<u8>)
+    free(c[0].tc as ptr<u8>)
+    free(c[0].tvar as ptr<u8>)
+    free(c[0].nk as ptr<u8>)
+    free(c[0].nop as ptr<u8>)
+    free(c[0].ntok as ptr<u8>)
+    free(c[0].na as ptr<u8>)
+    free(c[0].nb as ptr<u8>)
+    free(c[0].nc as ptr<u8>)
+    free(c[0].nx as ptr<u8>)
+    free(c[0].nfs as ptr<u8>)
+    free(c[0].nfe as ptr<u8>)
+    fb_buf_free(c[0].nm)
+    fb_buf_free(c[0].emsg)
+    fb_buf_free(c[0].ehint)
+    fb_buf_free(c[0].out)
+    # The item tables are small and freed with the process in the one-shot
+    # compile paths; the context itself is released here.
+    free(c as ptr<u8>)
+}
+
+# The name token after a declaration keyword at t, or -1.
+function fb_decl_name(c: ptr<Fb>, t: i32) -> i32 {
+    let nt: i32 = t + 1
+    if nt >= c[0].nt { return 0 - 1 }
+    if c[0].tk[nt] == TK_IDENT { return nt }
+    return 0 - 1
+}
+
+# Top-level scan: flow blocks and the names flow_blocks.py collects from
+# the other declarations (taken names, local functions, dimension types).
+function fb_scan(c: ptr<Fb>, flows: ptr<i32>) -> i32 {
+    let mut nfl: i32 = 0
+    let mut depth: i32 = 0
+    let mut extern_depth: i32 = 0 - 1
+    let mut prev_extern: i32 = 0
+    let mut t: i32 = 0
+    while t < c[0].nt and c[0].tk[t] != TK_EOF {
+        let k: i32 = c[0].tk[t]
+        if k == TK_OP {
+            let op: i32 = c[0].top[t]
+            if op == OP_LBRACE or op == OP_LPAREN or op == OP_LBRACKET {
+                if op == OP_LBRACE and prev_extern == 1 and depth == 0 {
+                    extern_depth = 1
+                }
+                depth = depth + 1
+            }
+            if op == OP_RBRACE or op == OP_RPAREN or op == OP_RBRACKET {
+                depth = depth - 1
+                if depth < extern_depth { extern_depth = 0 - 1 }
+                if depth < 0 { depth = 0 }
+            }
+        }
+        prev_extern = 0
+        if k == TK_IDENT {
+            if depth == 0 {
+                if fb_is_word(c, t, "flow") == 1 and fb_is_ident(c, t + 1) == 1 and fb_is_op(c, t + 2, OP_LBRACE) == 1 {
+                    if nfl < FB_MAX_FLOWS {
+                        flows[nfl] = t
+                        nfl = nfl + 1
+                    }
+                }
+                if fb_tok_is(c, t, "extern") == 1 { prev_extern = 1 }
+                let ty: string = fb_ttype(c, t)
+                let mut taken: i32 = 0
+                let mut dim: i32 = 0
+                let mut local: i32 = 0
+                let mut nt: i32 = fb_decl_name(c, t)
+                if strcmp(ty, "FUNCTION") == 0 {
+                    taken = 1
+                    local = 1
+                }
+                if strcmp(ty, "STRUCT") == 0 or strcmp(ty, "ENUM") == 0 or strcmp(ty, "TRAIT") == 0 { taken = 1 }
+                if strcmp(ty, "EFFECT") == 0 or strcmp(ty, "CAPABILITY") == 0 or strcmp(ty, "MODULE") == 0 { taken = 1 }
+                if strcmp(ty, "THEOREM") == 0 or strcmp(ty, "CONST") == 0 { taken = 1 }
+                if strcmp(ty, "LET") == 0 {
+                    taken = 1
+                    if nt >= 0 and fb_tok_is(c, nt, "mut") == 1 { nt = fb_decl_name(c, nt) }
+                }
+                if strcmp(ty, "TYPE") == 0 {
+                    taken = 1
+                    dim = 1
+                }
+                if fb_is_word(c, t, "unit") == 1 and fb_is_ident(c, t + 1) == 1 {
+                    taken = 1
+                    dim = 1
+                }
+                if taken == 1 and nt >= 0 {
+                    let nm: i32 = fb_tok_str(c, nt)
+                    fb_add_name(c, NX_TAKEN, nm)
+                    if local == 1 { fb_add_name(c, NX_LOCAL_FN, nm) }
+                    if dim == 1 { fb_add_name(c, NX_DIMENSION, nm) }
+                }
+            } else {
+                if depth == 1 and extern_depth == 1 and fb_tt_is(c, t, "FUNCTION") == 1 {
+                    let en: i32 = fb_decl_name(c, t)
+                    if en >= 0 { fb_add_name(c, NX_TAKEN, fb_tok_str(c, en)) }
+                }
+            }
+        }
+        t = t + 1
+    }
+    return nfl
+}
+
+# Print the diagnostic as the Python host would show the first line of
+# the exception, plus the hint.
+function fb_report(c: ptr<Fb>) {
+    let b: ptr<FbBuf> = fb_buf_new(512)
+    fb_puts(b, "flowc flow: ")
+    if c[0].err == 1 {
+        fb_puts(b, "Error: ")
+        fb_put_span(b, c[0].emsg[0].p, 0, c[0].emsg[0].len)
+        if c[0].err_line > 0 {
+            fb_puts(b, " at line ")
+            fb_put_int(b, c[0].err_line)
+            if c[0].err_col > 0 {
+                fb_puts(b, ", column ")
+                fb_put_int(b, c[0].err_col)
+            }
+        }
+    } else {
+        fb_put_span(b, c[0].emsg[0].p, 0, c[0].emsg[0].len)
+    }
+    puts(b[0].p as string)
+    if c[0].has_hint == 1 {
+        b[0].len = 0
+        b[0].p[0] = 0
+        fb_puts(b, "flowc flow hint: ")
+        fb_put_span(b, c[0].ehint[0].p, 0, c[0].ehint[0].len)
+        puts(b[0].p as string)
+    }
+    fb_buf_free(b)
+}
+
+# Does the source mention `flow` at all? Most files do not, and they skip
+# the lexer entirely.
+function fb_maybe_flow(p: ptr<u8>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i + 4 <= n {
+        if p[i] == 102 and p[i + 1] == 108 and p[i + 2] == 111 and p[i + 3] == 119 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+# Expand every flow block in c; the result is in c.out. Returns 1 when
+# something was lowered, 0 when the source has no flow block, -1 on error.
+function fb_expand(c: ptr<Fb>) -> i32 {
+    if fb_lex(c) < 0 { return 0 }
+    let flows: ptr<i32> = fb_alloc_i32(FB_MAX_FLOWS)
+    let nfl: i32 = fb_scan(c, flows)
+    if nfl == 0 {
+        free(flows as ptr<u8>)
+        return 0
+    }
+    let mut f: i32 = 0
+    while f < nfl {
+        c[0].f_solver[f] = 0
+        c[0].f_rec[f] = 0
+        c[0].f_rec_line[f] = 0
+        c[0].f_dt_ns[f] = 0
+        c[0].pos = flows[f]
+        c[0].nf = f + 1
+        if fb_parse_flow(c, f) < 0 {
+            free(flows as ptr<u8>)
+            return 0 - 1
+        }
+        f = f + 1
+    }
+    free(flows as ptr<u8>)
+    # flow 'X' is declared twice
+    f = 0
+    while f < nfl {
+        let mut g: i32 = 0
+        while g < f {
+            if fb_name_eq(c, c[0].f_name[g], c[0].f_name[f]) == 1 {
+                let m: ptr<FbBuf> = fb_verr(c, c[0].f_line[f])
+                fb_puts(m, "flow '")
+                fb_put_fname(m, c, f)
+                fb_puts(m, "' is declared twice")
+                return 0 - 1
+            }
+            g = g + 1
+        }
+        f = f + 1
+    }
+    fb_reclassify(c)
+    let mut prev: i32 = 0
+    f = 0
+    while f < nfl {
+        if fb_expand_pipelines(c, f) < 0 { return 0 - 1 }
+        if fb_validate_flow(c, f) < 0 { return 0 - 1 }
+        fb_put_span(c[0].out, c[0].src, prev, c[0].f_start[f])
+        fb_lower_flow(c, f)
+        prev = c[0].f_end[f]
+        f = f + 1
+    }
+    fb_put_span(c[0].out, c[0].src, prev, c[0].n)
+    return 1
+}
+
+# Expand flow blocks in `buf[0..n)` in place. Returns the new length, or
+# -1 after printing `flowc flow: <message>` (and `flowc flow hint: ...`).
+# Source without a flow block is left untouched.
+export function flowc_flow_blocks_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -> i32 {
+    if n < 0 { return n }
+    if fb_maybe_flow(buf, n) == 0 { return n }
+    let c: ptr<Fb> = fb_ctx_new(buf, n)
+    let rc: i32 = fb_expand(c)
+    if rc < 0 {
+        fb_report(c)
+        fb_ctx_free(c)
+        return 0 - 1
+    }
+    if rc == 0 {
+        fb_ctx_free(c)
+        return n
+    }
+    let out: ptr<FbBuf> = c[0].out
+    let m: i32 = out[0].len
+    if m >= cap {
+        puts("flowc flow: expanded source exceeds the source buffer")
+        fb_ctx_free(c)
+        return 0 - 1
+    }
+    let mut k: i32 = 0
+    while k < m {
+        buf[k] = out[0].p[k]
+        k = k + 1
+    }
+    buf[m] = 0
+    fb_ctx_free(c)
+    return m
+}

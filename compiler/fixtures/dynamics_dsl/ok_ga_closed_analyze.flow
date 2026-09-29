@@ -1,0 +1,28 @@
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+horizon rollout finite 50
+ga evolve on plant over rollout -> k1 k2 {
+    population 12
+    generations 30
+    mutation 0.3
+}
+closed plant with k1 k2 {
+    spectral -> rho_cl
+    energy over rollout -> E_cl
+    energy over missing -> E_missing
+    stable -> stable_cl
+}
+analyze plant ga k1 k2 over rollout -> report { full }
+analyze plant ga g1 g2 over other -> report2 {
+    full
+}
+
+function main() -> i32 {
+    return 0
+}

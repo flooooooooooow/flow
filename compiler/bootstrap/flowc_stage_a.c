@@ -4338,1099 +4338,6 @@ void flowc_parse_resolve_enum_arms(Parser* p) {
 static const int32_t FLOWC_IO_SEEK_SET = 0;
 static const int32_t FLOWC_IO_SEEK_END = 2;
 
-typedef struct FxBuf {
-  uint8_t* buf;
-  int32_t cap;
-  int32_t len;
-  int32_t err;
-} FxBuf;
-
-static const int32_t FX_MAX_FIELDS = 64;
-static const int32_t FX_REC = 9;
-static const int32_t FX_NAME_S = 0;
-static const int32_t FX_NAME_E = 1;
-static const int32_t FX_N_S = 2;
-static const int32_t FX_N_E = 3;
-static const int32_t FX_L_S = 4;
-static const int32_t FX_L_E = 5;
-static const int32_t FX_R_S = 6;
-static const int32_t FX_R_E = 7;
-static const int32_t FX_EVOLVED = 8;
-void fx_putc(FxBuf* w, uint8_t c);
-void fx_puts(FxBuf* w, const char* s);
-void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e);
-int32_t fx_is_space(uint8_t c);
-int32_t fx_is_word(uint8_t c);
-int32_t fx_is_digit(uint8_t c);
-int32_t fx_is_numch(uint8_t c);
-int32_t fx_skip_ws(uint8_t* p, int32_t i, int32_t e);
-int32_t fx_word_end(uint8_t* p, int32_t i, int32_t e);
-int32_t fx_numch_end(uint8_t* p, int32_t i, int32_t e);
-int32_t fx_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit);
-int32_t fx_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
-int32_t fx_span_has(uint8_t* p, int32_t s, int32_t e, uint8_t c);
-int32_t fx_span_count(uint8_t* p, int32_t s, int32_t e, uint8_t c);
-int32_t fx_span_find(uint8_t* p, int32_t s, int32_t e, uint8_t c);
-void fx_strip(uint8_t* p, int32_t* se);
-void fx_strip_comments(uint8_t* p, int32_t* se);
-int32_t fx_eol_len(uint8_t* p, int32_t i, int32_t n);
-int32_t fx_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le);
-int32_t fx_dsl_head_at(uint8_t* p, int32_t i, int32_t n);
-int32_t flowc_field_has_dsl(uint8_t* p, int32_t n);
-void fx_err_name(FxBuf* err, uint8_t* p, const char* pre, int32_t s, int32_t e, const char* post);
-int32_t fx_match_field(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-int32_t fx_match_boundary_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-int32_t fx_match_evolve(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-int32_t fx_match_lap_tail(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-int32_t fx_match_lap(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-int32_t fx_match_assign(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-int32_t fx_is_side_start(uint8_t* p, int32_t s, int32_t e, int32_t k);
-int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t start, int32_t* bs, int32_t* be, int32_t* cnt);
-void fx_emit_int_span(FxBuf* w, uint8_t* p, int32_t s, int32_t e);
-int32_t fx_int_le_one(uint8_t* p, int32_t s, int32_t e);
-int32_t fx_find_field(uint8_t* p, int32_t* rec, int32_t nf, int32_t s, int32_t e);
-void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf);
-int32_t fx_find_main(uint8_t* m, int32_t n);
-int32_t fx_contains(uint8_t* m, int32_t n, const char* lit);
-int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err);
-int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err);
-int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
-void fx_putc(FxBuf* w, uint8_t c) {
-  if ((w[0]).len >= (w[0]).cap) {
-  (w[0]).err = 1;
-  return;
-}
-  (w[0]).buf[(w[0]).len] = c;
-  (w[0]).len = ((w[0]).len + 1);
-}
-
-void fx_puts(FxBuf* w, const char* s) {
-  uint8_t* p = (uint8_t*)(s);
-  int32_t n = (int32_t)(strlen(s));
-  int32_t i = 0;
-  while (i < n) {
-  fx_putc(w, p[i]);
-  i = (i + 1);
-}
-}
-
-void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e) {
-  int32_t i = s;
-  while (i < e) {
-  fx_putc(w, src[i]);
-  i = (i + 1);
-}
-}
-
-int32_t fx_is_space(uint8_t c) {
-  if (c == 32) {
-  return 1;
-}
-  if (c >= 9 && c <= 13) {
-  return 1;
-}
-  if (c >= 28 && c <= 31) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_is_word(uint8_t c) {
-  if (c >= 48 && c <= 57) {
-  return 1;
-}
-  if (c >= 65 && c <= 90) {
-  return 1;
-}
-  if (c >= 97 && c <= 122) {
-  return 1;
-}
-  if (c == 95) {
-  return 1;
-}
-  if (c >= 128) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_is_digit(uint8_t c) {
-  if (c >= 48 && c <= 57) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_is_numch(uint8_t c) {
-  if (fx_is_digit(c) == 1) {
-  return 1;
-}
-  if (c == 43 || c == 45 || c == 46 || c == 101 || c == 69) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_skip_ws(uint8_t* p, int32_t i, int32_t e) {
-  int32_t k = i;
-  while (k < e && fx_is_space(p[k]) == 1) {
-  k = (k + 1);
-}
-  return k;
-}
-
-int32_t fx_word_end(uint8_t* p, int32_t i, int32_t e) {
-  int32_t k = i;
-  while (k < e && fx_is_word(p[k]) == 1) {
-  k = (k + 1);
-}
-  return k;
-}
-
-int32_t fx_numch_end(uint8_t* p, int32_t i, int32_t e) {
-  int32_t k = i;
-  while (k < e && fx_is_numch(p[k]) == 1) {
-  k = (k + 1);
-}
-  return k;
-}
-
-int32_t fx_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit) {
-  uint8_t* lp = (uint8_t*)(lit);
-  int32_t n = (int32_t)(strlen(lit));
-  if ((i + n) > e) {
-  return 0;
-}
-  int32_t k = 0;
-  while (k < n) {
-  if (p[(i + k)] != lp[k]) {
-  return 0;
-}
-  k = (k + 1);
-}
-  return 1;
-}
-
-int32_t fx_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
-  if ((a1 - a0) != (b1 - b0)) {
-  return 0;
-}
-  int32_t k = 0;
-  while (k < (a1 - a0)) {
-  if (p[(a0 + k)] != p[(b0 + k)]) {
-  return 0;
-}
-  k = (k + 1);
-}
-  return 1;
-}
-
-int32_t fx_span_has(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
-  int32_t k = s;
-  while (k < e) {
-  if (p[k] == c) {
-  return 1;
-}
-  k = (k + 1);
-}
-  return 0;
-}
-
-int32_t fx_span_count(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
-  int32_t n = 0;
-  int32_t k = s;
-  while (k < e) {
-  if (p[k] == c) {
-  n = (n + 1);
-}
-  k = (k + 1);
-}
-  return n;
-}
-
-int32_t fx_span_find(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
-  int32_t k = s;
-  while (k < e) {
-  if (p[k] == c) {
-  return k;
-}
-  k = (k + 1);
-}
-  return (0 - 1);
-}
-
-void fx_strip(uint8_t* p, int32_t* se) {
-  int32_t s = se[0];
-  int32_t e = se[1];
-  while (s < e && fx_is_space(p[s]) == 1) {
-  s = (s + 1);
-}
-  while (e > s && fx_is_space(p[(e - 1)]) == 1) {
-  e = (e - 1);
-}
-  se[0] = s;
-  se[1] = e;
-}
-
-void fx_strip_comments(uint8_t* p, int32_t* se) {
-  int32_t hash = fx_span_find(p, se[0], se[1], 35);
-  if (hash >= 0) {
-  se[1] = hash;
-}
-  fx_strip(p, se);
-}
-
-int32_t fx_eol_len(uint8_t* p, int32_t i, int32_t n) {
-  uint8_t c = p[i];
-  if (c == 13) {
-  if ((i + 1) < n && p[(i + 1)] == 10) {
-  return 2;
-}
-  return 1;
-}
-  if (c == 10 || c == 11 || c == 12 || c == 28 || c == 29 || c == 30) {
-  return 1;
-}
-  if (c == 194 && (i + 1) < n && p[(i + 1)] == 133) {
-  return 2;
-}
-  if (c == 226 && (i + 2) < n && p[(i + 1)] == 128 && (p[(i + 2)] == 168 || p[(i + 2)] == 169)) {
-  return 3;
-}
-  return 0;
-}
-
-int32_t fx_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le) {
-  int32_t count = 0;
-  int32_t start = 0;
-  int32_t i = 0;
-  while (i < n) {
-  int32_t t = fx_eol_len(p, i, n);
-  if (t > 0) {
-  ls[count] = start;
-  le[count] = i;
-  count = (count + 1);
-  i = (i + t);
-  start = i;
-} else {
-  i = (i + 1);
-}
-}
-  if (start < n) {
-  ls[count] = start;
-  le[count] = n;
-  count = (count + 1);
-}
-  return count;
-}
-
-int32_t fx_dsl_head_at(uint8_t* p, int32_t i, int32_t n) {
-  int32_t k = fx_skip_ws(p, i, n);
-  int32_t j = (0 - 1);
-  uint8_t close = 58;
-  if (fx_lit_at(p, k, n, "field") == 1) {
-  j = (k + 5);
-} else {
-  if (fx_lit_at(p, k, n, "boundary") == 1) {
-  j = (k + 8);
-  close = 123;
-}
-}
-  if (j < 0) {
-  return 0;
-}
-  int32_t w = fx_skip_ws(p, j, n);
-  if (w == j) {
-  return 0;
-}
-  int32_t we = fx_word_end(p, w, n);
-  if (we == w) {
-  return 0;
-}
-  int32_t c = fx_skip_ws(p, we, n);
-  if (c < n && p[c] == close) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t flowc_field_has_dsl(uint8_t* p, int32_t n) {
-  int32_t i = 0;
-  while (i <= n) {
-  if (i == 0 || p[(i - 1)] == 10) {
-  if (fx_dsl_head_at(p, i, n) == 1) {
-  return 1;
-}
-}
-  i = (i + 1);
-}
-  return 0;
-}
-
-void fx_err_name(FxBuf* err, uint8_t* p, const char* pre, int32_t s, int32_t e, const char* post) {
-  fx_puts(err, pre);
-  fx_put_span(err, p, s, e);
-  fx_puts(err, post);
-}
-
-int32_t fx_match_field(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
-  if (fx_lit_at(p, s, e, "field") == 0) {
-  return 0;
-}
-  int32_t i = (s + 5);
-  int32_t k = fx_skip_ws(p, i, e);
-  if (k == i) {
-  return 0;
-}
-  int32_t ne = fx_word_end(p, k, e);
-  if (ne == k) {
-  return 0;
-}
-  caps[0] = k;
-  caps[1] = ne;
-  i = fx_skip_ws(p, ne, e);
-  if (i >= e || p[i] != 58) {
-  return 0;
-}
-  i = fx_skip_ws(p, (i + 1), e);
-  if (fx_lit_at(p, i, e, "f64") == 0) {
-  return 0;
-}
-  i = fx_skip_ws(p, (i + 3), e);
-  if (i >= e || p[i] != 91) {
-  return 0;
-}
-  i = fx_skip_ws(p, (i + 1), e);
-  int32_t d = i;
-  while (d < e && fx_is_digit(p[d]) == 1) {
-  d = (d + 1);
-}
-  if (d == i) {
-  return 0;
-}
-  caps[2] = i;
-  caps[3] = d;
-  i = fx_skip_ws(p, d, e);
-  if (i >= e || p[i] != 93) {
-  return 0;
-}
-  i = (i + 1);
-  k = fx_skip_ws(p, i, e);
-  if (k == i) {
-  return 0;
-}
-  if (fx_lit_at(p, k, e, "on") == 0) {
-  return 0;
-}
-  i = (k + 2);
-  k = fx_skip_ws(p, i, e);
-  if (k == i) {
-  return 0;
-}
-  int32_t de = fx_word_end(p, k, e);
-  if (de == k) {
-  return 0;
-}
-  caps[4] = k;
-  caps[5] = de;
-  if (fx_skip_ws(p, de, e) != e) {
-  return 0;
-}
-  return 1;
-}
-
-int32_t fx_match_boundary_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
-  if (fx_lit_at(p, s, e, "boundary") == 0) {
-  return 0;
-}
-  int32_t i = (s + 8);
-  int32_t k = fx_skip_ws(p, i, e);
-  if (k == i) {
-  return 0;
-}
-  int32_t ne = fx_word_end(p, k, e);
-  if (ne == k) {
-  return 0;
-}
-  int32_t b = fx_skip_ws(p, ne, e);
-  if (b >= e || p[b] != 123) {
-  return 0;
-}
-  caps[0] = k;
-  caps[1] = ne;
-  return 1;
-}
-
-int32_t fx_match_evolve(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
-  int32_t ne = fx_word_end(p, s, e);
-  if (ne == s) {
-  return 0;
-}
-  int32_t k = fx_skip_ws(p, ne, e);
-  if (k == ne) {
-  return 0;
-}
-  if (fx_lit_at(p, k, e, "evolves") == 0) {
-  return 0;
-}
-  int32_t i = (k + 7);
-  k = fx_skip_ws(p, i, e);
-  if (k == i) {
-  return 0;
-}
-  if (fx_lit_at(p, k, e, "as") == 0) {
-  return 0;
-}
-  i = (k + 2);
-  k = fx_skip_ws(p, i, e);
-  if (k == i || k >= e) {
-  return 0;
-}
-  caps[0] = s;
-  caps[1] = ne;
-  caps[2] = k;
-  caps[3] = e;
-  return 1;
-}
-
-int32_t fx_match_lap_tail(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
-  if (fx_lit_at(p, s, e, "laplacian") == 0) {
-  return 0;
-}
-  int32_t i = fx_skip_ws(p, (s + 9), e);
-  if (i >= e || p[i] != 40) {
-  return 0;
-}
-  i = fx_skip_ws(p, (i + 1), e);
-  int32_t ne = fx_word_end(p, i, e);
-  if (ne == i) {
-  return 0;
-}
-  int32_t name_s = i;
-  i = fx_skip_ws(p, ne, e);
-  if (i >= e || p[i] != 41) {
-  return 0;
-}
-  i = (i + 1);
-  caps[0] = name_s;
-  caps[1] = ne;
-  caps[2] = (0 - 1);
-  caps[3] = (0 - 1);
-  int32_t st = fx_skip_ws(p, i, e);
-  if (st < e && p[st] == 42) {
-  int32_t q = fx_skip_ws(p, (st + 1), e);
-  int32_t n1 = fx_numch_end(p, q, e);
-  if (n1 > q && fx_skip_ws(p, n1, e) == e) {
-  caps[2] = q;
-  caps[3] = n1;
-  return 1;
-}
-  int32_t n2 = fx_word_end(p, q, e);
-  if (n2 > q && fx_skip_ws(p, n2, e) == e) {
-  caps[2] = q;
-  caps[3] = n2;
-  return 1;
-}
-}
-  if (fx_skip_ws(p, i, e) == e) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_match_lap(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
-  int32_t n1 = fx_numch_end(p, s, e);
-  if (n1 > s) {
-  int32_t st = fx_skip_ws(p, n1, e);
-  if (st < e && p[st] == 42) {
-  if (fx_match_lap_tail(p, fx_skip_ws(p, (st + 1), e), e, caps) == 1) {
-  caps[4] = s;
-  caps[5] = n1;
-  return 1;
-}
-}
-}
-  int32_t n2 = fx_word_end(p, s, e);
-  if (n2 > s) {
-  int32_t st2 = fx_skip_ws(p, n2, e);
-  if (st2 < e && p[st2] == 42) {
-  if (fx_match_lap_tail(p, fx_skip_ws(p, (st2 + 1), e), e, caps) == 1) {
-  caps[4] = s;
-  caps[5] = n2;
-  return 1;
-}
-}
-}
-  if (fx_match_lap_tail(p, s, e, caps) == 1) {
-  caps[4] = (0 - 1);
-  caps[5] = (0 - 1);
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_match_assign(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
-  int32_t side = 0;
-  int32_t i = s;
-  if (fx_lit_at(p, s, e, "left") == 1) {
-  side = 1;
-  i = (s + 4);
-} else {
-  if (fx_lit_at(p, s, e, "right") == 1) {
-  side = 2;
-  i = (s + 5);
-}
-}
-  if (side == 0) {
-  return 0;
-}
-  i = fx_skip_ws(p, i, e);
-  if (i >= e || p[i] != 61) {
-  return 0;
-}
-  i = (i + 1);
-  int32_t k = fx_skip_ws(p, i, e);
-  if (k < e) {
-  caps[0] = k;
-  caps[1] = e;
-  return side;
-}
-  if (k > i) {
-  caps[0] = (k - 1);
-  caps[1] = e;
-  return side;
-}
-  return 0;
-}
-
-int32_t fx_is_side_start(uint8_t* p, int32_t s, int32_t e, int32_t k) {
-  if (k > s && fx_is_word(p[(k - 1)]) == 1) {
-  return 0;
-}
-  int32_t j = (0 - 1);
-  if (fx_lit_at(p, k, e, "left") == 1) {
-  j = (k + 4);
-} else {
-  if (fx_lit_at(p, k, e, "right") == 1) {
-  j = (k + 5);
-}
-}
-  if (j < 0) {
-  return 0;
-}
-  int32_t q = fx_skip_ws(p, j, e);
-  if (q < e && p[q] == 61) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t start, int32_t* bs, int32_t* be, int32_t* cnt) {
-  int32_t depth = 0;
-  int32_t i = start;
-  int32_t nb = 0;
-  while (i < nlines) {
-  int32_t s = ls[i];
-  int32_t e = le[i];
-  depth = ((depth + fx_span_count(p, s, e, 123)) - fx_span_count(p, s, e, 125));
-  int32_t has_open = fx_span_has(p, s, e, 123);
-  if (i > start || has_open == 1) {
-  if (depth > 0 || i == start && has_open == 1) {
-  int32_t its = s;
-  if (i == start) {
-  its = (fx_span_find(p, s, e, 123) + 1);
-}
-  if (depth > 0) {
-  int32_t ite = e;
-  while (ite > its && p[(ite - 1)] == 125) {
-  ite = (ite - 1);
-}
-  bs[nb] = its;
-  be[nb] = ite;
-  nb = (nb + 1);
-} else {
-  if (fx_span_has(p, s, e, 125) == 1) {
-  int32_t ie2 = fx_span_find(p, its, e, 125);
-  if (ie2 < 0) {
-  ie2 = e;
-}
-  bs[nb] = its;
-  be[nb] = ie2;
-  nb = (nb + 1);
-}
-}
-}
-}
-  if (depth <= 0 && i > start) {
-  cnt[0] = nb;
-  return (i + 1);
-}
-  i = (i + 1);
-}
-  cnt[0] = nb;
-  return i;
-}
-
-void fx_emit_int_span(FxBuf* w, uint8_t* p, int32_t s, int32_t e) {
-  int32_t k = s;
-  while (k < (e - 1) && p[k] == 48) {
-  k = (k + 1);
-}
-  fx_put_span(w, p, k, e);
-}
-
-int32_t fx_int_le_one(uint8_t* p, int32_t s, int32_t e) {
-  int32_t k = s;
-  while (k < (e - 1) && p[k] == 48) {
-  k = (k + 1);
-}
-  if ((e - k) == 1 && (p[k] == 48 || p[k] == 49)) {
-  return 1;
-}
-  return 0;
-}
-
-int32_t fx_find_field(uint8_t* p, int32_t* rec, int32_t nf, int32_t s, int32_t e) {
-  int32_t f = 0;
-  while (f < nf) {
-  int32_t b = (f * FX_REC);
-  if (fx_span_eq(p, rec[(b + FX_NAME_S)], rec[(b + FX_NAME_E)], s, e) == 1) {
-  return f;
-}
-  f = (f + 1);
-}
-  return (0 - 1);
-}
-
-void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf) {
-  int32_t f = 0;
-  while (f < nf) {
-  int32_t b = (f * FX_REC);
-  int32_t ns = rec[(b + FX_NAME_S)];
-  int32_t ne = rec[(b + FX_NAME_E)];
-  if (f > 0) {
-  fx_puts(w, "\n");
-}
-  fx_puts(w, "# generated from field ");
-  fx_put_span(w, p, ns, ne);
-  fx_puts(w, " : f64[");
-  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
-  fx_puts(w, "] on Line\nconst ");
-  fx_put_span(w, p, ns, ne);
-  fx_puts(w, "_field_n: i32 = ");
-  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
-  fx_puts(w, "\n\nfunction ");
-  fx_put_span(w, p, ns, ne);
-  fx_puts(w, "_field_step(\n    u: ptr<f64>,\n    next: ptr<f64>,\n    r: f64\n) -> void {\n    heat_euler_step_1d(u, next, ");
-  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
-  fx_puts(w, ", r, ");
-  if (rec[(b + FX_L_S)] < 0) {
-  fx_puts(w, "0.0");
-} else {
-  fx_put_span(w, p, rec[(b + FX_L_S)], rec[(b + FX_L_E)]);
-}
-  fx_puts(w, ", ");
-  if (rec[(b + FX_R_S)] < 0) {
-  fx_puts(w, "0.0");
-} else {
-  fx_put_span(w, p, rec[(b + FX_R_S)], rec[(b + FX_R_E)]);
-}
-  fx_puts(w, ")\n}");
-  if ((f + 1) < nf) {
-  fx_puts(w, "\n");
-}
-  f = (f + 1);
-}
-}
-
-int32_t fx_find_main(uint8_t* m, int32_t n) {
-  int32_t i = 0;
-  while (i < n) {
-  if (m[i] == 10 && fx_lit_at(m, (i + 1), n, "function") == 1) {
-  int32_t j = (i + 9);
-  int32_t k = fx_skip_ws(m, j, n);
-  if (k > j && fx_lit_at(m, k, n, "main") == 1) {
-  int32_t q = fx_skip_ws(m, (k + 4), n);
-  if (q < n && m[q] == 40) {
-  return i;
-}
-}
-}
-  i = (i + 1);
-}
-  return (0 - 1);
-}
-
-int32_t fx_contains(uint8_t* m, int32_t n, const char* lit) {
-  int32_t i = 0;
-  while (i < n) {
-  if (fx_lit_at(m, i, n, lit) == 1) {
-  return 1;
-}
-  i = (i + 1);
-}
-  return 0;
-}
-
-int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err) {
-  int32_t* caps = (int32_t*)((int32_t*)(malloc(64)));
-  int32_t* se = (int32_t*)((int32_t*)(malloc(16)));
-  int32_t* cnt = (int32_t*)((int32_t*)(malloc(16)));
-  int32_t* bs = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t* be = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t* its = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t* ite = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t nf = 0;
-  int32_t rc = 0;
-  int32_t i = 0;
-  while (i < nlines && rc == 0) {
-  keep[i] = 0;
-  se[0] = ls[i];
-  se[1] = le[i];
-  fx_strip_comments(p, se);
-  int32_t s = se[0];
-  int32_t e = se[1];
-  int32_t handled = 0;
-  if (e > s && fx_match_field(p, s, e, caps) == 1) {
-  handled = 1;
-  if (fx_lit_at(p, caps[4], caps[5], "Line") == 0 || (caps[5] - caps[4]) != 4) {
-  fx_err_name(err, p, "field '", caps[0], caps[1], "': only `on Line` is supported in Stage-1 (got '");
-  fx_put_span(err, p, caps[4], caps[5]);
-  fx_puts(err, "')");
-  rc = (0 - 1);
-} else {
-  if (fx_int_le_one(p, caps[2], caps[3]) == 1) {
-  fx_err_name(err, p, "field '", caps[0], caps[1], "': size must be > 1");
-  rc = (0 - 1);
-} else {
-  if (fx_find_field(p, rec, nf, caps[0], caps[1]) >= 0) {
-  fx_err_name(err, p, "duplicate field '", caps[0], caps[1], "'");
-  rc = (0 - 1);
-} else {
-  if (nf >= FX_MAX_FIELDS) {
-  fx_puts(err, "too many fields (flowc limit 64)");
-  rc = (0 - 1);
-} else {
-  int32_t b = (nf * FX_REC);
-  rec[(b + FX_NAME_S)] = caps[0];
-  rec[(b + FX_NAME_E)] = caps[1];
-  rec[(b + FX_N_S)] = caps[2];
-  rec[(b + FX_N_E)] = caps[3];
-  rec[(b + FX_L_S)] = (0 - 1);
-  rec[(b + FX_L_E)] = (0 - 1);
-  rec[(b + FX_R_S)] = (0 - 1);
-  rec[(b + FX_R_E)] = (0 - 1);
-  rec[(b + FX_EVOLVED)] = 0;
-  nf = (nf + 1);
-}
-}
-}
-}
-  i = (i + 1);
-}
-  if (handled == 0 && e > s && fx_match_boundary_head(p, s, e, caps) == 1) {
-  handled = 1;
-  int32_t bn_s = caps[0];
-  int32_t bn_e = caps[1];
-  int32_t fi = fx_find_field(p, rec, nf, bn_s, bn_e);
-  if (fi < 0) {
-  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': declare `field ");
-  fx_put_span(err, p, bn_s, bn_e);
-  fx_puts(err, " : …` first");
-  rc = (0 - 1);
-} else {
-  int32_t next_i = fx_extract_block(p, ls, le, nlines, i, bs, be, cnt);
-  int32_t ni = 0;
-  int32_t bi = 0;
-  while (bi < cnt[0]) {
-  se[0] = bs[bi];
-  se[1] = be[bi];
-  fx_strip(p, se);
-  fx_strip_comments(p, se);
-  int32_t b0 = se[0];
-  int32_t b1 = se[1];
-  if (b1 > b0) {
-  int32_t ps = b0;
-  int32_t k = (b0 + 1);
-  while (k <= b1) {
-  int32_t cut = 0;
-  if (k == b1) {
-  cut = 1;
-} else {
-  if (fx_is_side_start(p, b0, b1, k) == 1) {
-  cut = 1;
-}
-}
-  if (cut == 1) {
-  se[0] = ps;
-  se[1] = k;
-  fx_strip(p, se);
-  if (se[1] > se[0]) {
-  its[ni] = se[0];
-  ite[ni] = se[1];
-  ni = (ni + 1);
-}
-  ps = k;
-}
-  k = (k + 1);
-}
-}
-  bi = (bi + 1);
-}
-  int32_t l_s = (0 - 1);
-  int32_t l_e = (0 - 1);
-  int32_t r_s = (0 - 1);
-  int32_t r_e = (0 - 1);
-  int32_t ii = 0;
-  while (ii < ni && rc == 0) {
-  int32_t side = fx_match_assign(p, its[ii], ite[ii], caps);
-  if (side == 0) {
-  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': expected `left = …` / `right = …`, got '");
-  fx_put_span(err, p, its[ii], ite[ii]);
-  fx_puts(err, "'");
-  rc = (0 - 1);
-} else {
-  se[0] = caps[0];
-  se[1] = caps[1];
-  fx_strip(p, se);
-  if (se[1] <= se[0]) {
-  if (side == 1) {
-  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty left value");
-} else {
-  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty right value");
-}
-  rc = (0 - 1);
-} else {
-  if (side == 1) {
-  l_s = se[0];
-  l_e = se[1];
-} else {
-  r_s = se[0];
-  r_e = se[1];
-}
-}
-}
-  ii = (ii + 1);
-}
-  if (rc == 0) {
-  if (l_s < 0 || r_s < 0) {
-  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': need both left and right");
-  rc = (0 - 1);
-} else {
-  int32_t fb = (fi * FX_REC);
-  rec[(fb + FX_L_S)] = l_s;
-  rec[(fb + FX_L_E)] = l_e;
-  rec[(fb + FX_R_S)] = r_s;
-  rec[(fb + FX_R_E)] = r_e;
-}
-}
-  int32_t z = (i + 1);
-  while (z < next_i && z < nlines) {
-  keep[z] = 0;
-  z = (z + 1);
-}
-  i = next_i;
-}
-}
-  if (handled == 0 && e > s && fx_match_evolve(p, s, e, caps) == 1) {
-  int32_t ev = fx_find_field(p, rec, nf, caps[0], caps[1]);
-  if (ev >= 0) {
-  handled = 1;
-  int32_t en_s = caps[0];
-  int32_t en_e = caps[1];
-  se[0] = caps[2];
-  se[1] = caps[3];
-  fx_strip(p, se);
-  int32_t ok = fx_match_lap(p, se[0], se[1], caps);
-  if (ok == 0 || fx_span_eq(p, caps[0], caps[1], en_s, en_e) == 0) {
-  fx_err_name(err, p, "field '", en_s, en_e, "' evolves: Stage-1 expects `");
-  fx_put_span(err, p, en_s, en_e);
-  fx_puts(err, " evolves as laplacian(");
-  fx_put_span(err, p, en_s, en_e);
-  fx_puts(err, ")` or `c * laplacian(");
-  fx_put_span(err, p, en_s, en_e);
-  fx_puts(err, ")`");
-  rc = (0 - 1);
-} else {
-  if (caps[4] >= 0 && caps[2] >= 0) {
-  fx_err_name(err, p, "field '", en_s, en_e, "' evolves: use at most one multiplier");
-  rc = (0 - 1);
-} else {
-  rec[((ev * FX_REC) + FX_EVOLVED)] = 1;
-}
-}
-  i = (i + 1);
-}
-}
-  if (handled == 0) {
-  keep[i] = 1;
-  i = (i + 1);
-}
-}
-  if (rc == 0) {
-  int32_t f = 0;
-  while (f < nf && rc == 0) {
-  int32_t b = (f * FX_REC);
-  if (rec[(b + FX_EVOLVED)] == 0) {
-  int32_t ms = rec[(b + FX_NAME_S)];
-  int32_t me = rec[(b + FX_NAME_E)];
-  fx_err_name(err, p, "field '", ms, me, "': missing `");
-  fx_put_span(err, p, ms, me);
-  fx_puts(err, " evolves as laplacian(");
-  fx_put_span(err, p, ms, me);
-  fx_puts(err, ")`");
-  rc = (0 - 1);
-}
-  f = (f + 1);
-}
-}
-  free((uint8_t*)(caps));
-  free((uint8_t*)(se));
-  free((uint8_t*)(cnt));
-  free((uint8_t*)(bs));
-  free((uint8_t*)(be));
-  free((uint8_t*)(its));
-  free((uint8_t*)(ite));
-  if (rc != 0) {
-  return (0 - 1);
-}
-  return nf;
-}
-
-int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
-  if (flowc_field_has_dsl(p, n) == 0) {
-  fx_put_span(out, p, 0, n);
-  if ((out[0]).err != 0) {
-  return (0 - 2);
-}
-  return (out[0]).len;
-}
-  int32_t* ls = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* le = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* keep = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* rec = (int32_t*)((int32_t*)(malloc(((int64_t)((FX_MAX_FIELDS * FX_REC)) * 4))));
-  int32_t nlines = fx_split_lines(p, n, ls, le);
-  int32_t nf = fx_parse(p, ls, le, nlines, keep, rec, err);
-  int32_t rc = 0;
-  if (nf < 0) {
-  rc = (0 - 1);
-} else {
-  int32_t mcap = (n + 64);
-  FxBuf mw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
-  if (nf > 0) {
-  FxBuf sw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
-  int32_t first0 = 1;
-  int32_t j0 = 0;
-  while (j0 < nlines) {
-  if (keep[j0] == 1) {
-  if (first0 == 0) {
-  fx_putc((&sw), 10);
-}
-  fx_put_span((&sw), p, ls[j0], le[j0]);
-  first0 = 0;
-}
-  j0 = (j0 + 1);
-}
-  if (fx_contains((sw).buf, (sw).len, "import \"stdlib/dynamics/pde.flow\"") == 0) {
-  fx_puts((&mw), "import \"stdlib/dynamics/pde.flow\"\n");
-}
-  fx_put_span((&mw), (sw).buf, 0, (sw).len);
-  free((sw).buf);
-} else {
-  int32_t first = 1;
-  int32_t j = 0;
-  while (j < nlines) {
-  if (keep[j] == 1) {
-  if (first == 0) {
-  fx_putc((&mw), 10);
-}
-  fx_put_span((&mw), p, ls[j], le[j]);
-  first = 0;
-}
-  j = (j + 1);
-}
-}
-  if (nf == 0) {
-  fx_put_span(out, (mw).buf, 0, (mw).len);
-} else {
-  int32_t at = fx_find_main((mw).buf, (mw).len);
-  if (at < 0) {
-  int32_t te = (mw).len;
-  while (te > 0 && fx_is_space((mw).buf[(te - 1)]) == 1) {
-  te = (te - 1);
-}
-  fx_put_span(out, (mw).buf, 0, te);
-  fx_puts(out, "\n\n");
-  fx_emit_helpers(out, p, rec, nf);
-  fx_puts(out, "\n");
-} else {
-  fx_put_span(out, (mw).buf, 0, at);
-  fx_puts(out, "\n\n");
-  fx_emit_helpers(out, p, rec, nf);
-  fx_puts(out, "\n");
-  fx_put_span(out, (mw).buf, at, (mw).len);
-}
-}
-  free((mw).buf);
-  if ((out[0]).err != 0) {
-  rc = (0 - 2);
-} else {
-  rc = (out[0]).len;
-}
-}
-  free((uint8_t*)(ls));
-  free((uint8_t*)(le));
-  free((uint8_t*)(keep));
-  free((uint8_t*)(rec));
-  return rc;
-}
-
-int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
-  if (n < 0) {
-  return n;
-}
-  if (flowc_field_has_dsl(buf, n) == 0) {
-  return n;
-}
-  int32_t ocap = ((n * 2) + 65536);
-  FxBuf ow = (FxBuf){ .buf = malloc((int64_t)((ocap + 1))), .cap = ocap, .len = 0, .err = 0 };
-  FxBuf ew = (FxBuf){ .buf = malloc(1024), .cap = 1023, .len = 0, .err = 0 };
-  int32_t rc = flowc_field_expand(buf, n, (&ow), (&ew));
-  if (rc < 0) {
-  if (rc == (0 - 2)) {
-  puts("flowc field: expanded source too large");
-} else {
-  const char* head = "flowc field: ";
-  uint8_t* hp = (uint8_t*)(head);
-  FxBuf line = (FxBuf){ .buf = malloc(1100), .cap = 1099, .len = 0, .err = 0 };
-  fx_put_span((&line), hp, 0, 13);
-  fx_put_span((&line), (ew).buf, 0, (ew).len);
-  (line).buf[(line).len] = 0;
-  puts((const char*)((line).buf));
-  free((line).buf);
-}
-  free((ow).buf);
-  free((ew).buf);
-  return (0 - 1);
-}
-  if (rc >= cap) {
-  puts("flowc field: expanded source exceeds the source buffer");
-  free((ow).buf);
-  free((ew).buf);
-  return (0 - 1);
-}
-  int32_t k = 0;
-  while (k < rc) {
-  buf[k] = (ow).buf[k];
-  k = (k + 1);
-}
-  buf[rc] = 0;
-  free((ow).buf);
-  free((ew).buf);
-  return rc;
-}
-
-
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src);
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   int32_t id = 0;
@@ -7772,7 +6679,13 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
 }
 }
+  if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_BINOP) {
+  flowc_cgen_putc(w, 40);
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_putc(w, 41);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+}
   flowc_cgen_putc(w, 41);
   return;
 }
@@ -7921,6 +6834,12 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   rarg = ((arena).nodes[rarg]).next;
 }
   flowc_cgen_puts(w, "))");
+  return;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "flow_panic") == 1) {
+  flowc_cgen_puts(w, "(fprintf(stderr, \"%s\\n\", ");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, "), exit(1))");
   return;
 }
   if (flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "len") == 1) {
@@ -12705,6 +11624,12403 @@ int32_t flowc_overload_registry_collect(FlowcOverloadTable* table, AstArena aren
 }
 
 
+typedef struct FxBuf {
+  uint8_t* buf;
+  int32_t cap;
+  int32_t len;
+  int32_t err;
+} FxBuf;
+
+static const int32_t FX_MAX_FIELDS = 64;
+static const int32_t FX_REC = 9;
+static const int32_t FX_NAME_S = 0;
+static const int32_t FX_NAME_E = 1;
+static const int32_t FX_N_S = 2;
+static const int32_t FX_N_E = 3;
+static const int32_t FX_L_S = 4;
+static const int32_t FX_L_E = 5;
+static const int32_t FX_R_S = 6;
+static const int32_t FX_R_E = 7;
+static const int32_t FX_EVOLVED = 8;
+void fx_putc(FxBuf* w, uint8_t c);
+void fx_puts(FxBuf* w, const char* s);
+void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e);
+int32_t fx_is_space(uint8_t c);
+int32_t fx_is_word(uint8_t c);
+int32_t fx_is_digit(uint8_t c);
+int32_t fx_is_numch(uint8_t c);
+int32_t fx_skip_ws(uint8_t* p, int32_t i, int32_t e);
+int32_t fx_word_end(uint8_t* p, int32_t i, int32_t e);
+int32_t fx_numch_end(uint8_t* p, int32_t i, int32_t e);
+int32_t fx_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit);
+int32_t fx_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
+int32_t fx_span_has(uint8_t* p, int32_t s, int32_t e, uint8_t c);
+int32_t fx_span_count(uint8_t* p, int32_t s, int32_t e, uint8_t c);
+int32_t fx_span_find(uint8_t* p, int32_t s, int32_t e, uint8_t c);
+void fx_strip(uint8_t* p, int32_t* se);
+void fx_strip_comments(uint8_t* p, int32_t* se);
+int32_t fx_eol_len(uint8_t* p, int32_t i, int32_t n);
+int32_t fx_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le);
+int32_t fx_dsl_head_at(uint8_t* p, int32_t i, int32_t n);
+int32_t flowc_field_has_dsl(uint8_t* p, int32_t n);
+void fx_err_name(FxBuf* err, uint8_t* p, const char* pre, int32_t s, int32_t e, const char* post);
+int32_t fx_match_field(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_boundary_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_evolve(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_lap_tail(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_lap(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_match_assign(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+int32_t fx_is_side_start(uint8_t* p, int32_t s, int32_t e, int32_t k);
+int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t start, int32_t* bs, int32_t* be, int32_t* cnt);
+void fx_emit_int_span(FxBuf* w, uint8_t* p, int32_t s, int32_t e);
+int32_t fx_int_le_one(uint8_t* p, int32_t s, int32_t e);
+int32_t fx_find_field(uint8_t* p, int32_t* rec, int32_t nf, int32_t s, int32_t e);
+void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf);
+int32_t fx_find_main(uint8_t* m, int32_t n);
+int32_t fx_contains(uint8_t* m, int32_t n, const char* lit);
+int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err);
+int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err);
+int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
+void fx_putc(FxBuf* w, uint8_t c) {
+  if ((w[0]).len >= (w[0]).cap) {
+  (w[0]).err = 1;
+  return;
+}
+  (w[0]).buf[(w[0]).len] = c;
+  (w[0]).len = ((w[0]).len + 1);
+}
+
+void fx_puts(FxBuf* w, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t n = (int32_t)(strlen(s));
+  int32_t i = 0;
+  while (i < n) {
+  fx_putc(w, p[i]);
+  i = (i + 1);
+}
+}
+
+void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  fx_putc(w, src[i]);
+  i = (i + 1);
+}
+}
+
+int32_t fx_is_space(uint8_t c) {
+  if (c == 32) {
+  return 1;
+}
+  if (c >= 9 && c <= 13) {
+  return 1;
+}
+  if (c >= 28 && c <= 31) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_is_word(uint8_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  if (c >= 65 && c <= 90) {
+  return 1;
+}
+  if (c >= 97 && c <= 122) {
+  return 1;
+}
+  if (c == 95) {
+  return 1;
+}
+  if (c >= 128) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_is_digit(uint8_t c) {
+  if (c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_is_numch(uint8_t c) {
+  if (fx_is_digit(c) == 1) {
+  return 1;
+}
+  if (c == 43 || c == 45 || c == 46 || c == 101 || c == 69) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_skip_ws(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && fx_is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t fx_word_end(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && fx_is_word(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t fx_numch_end(uint8_t* p, int32_t i, int32_t e) {
+  int32_t k = i;
+  while (k < e && fx_is_numch(p[k]) == 1) {
+  k = (k + 1);
+}
+  return k;
+}
+
+int32_t fx_lit_at(uint8_t* p, int32_t i, int32_t e, const char* lit) {
+  uint8_t* lp = (uint8_t*)(lit);
+  int32_t n = (int32_t)(strlen(lit));
+  if ((i + n) > e) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < n) {
+  if (p[(i + k)] != lp[k]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t fx_span_eq(uint8_t* p, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
+  if ((a1 - a0) != (b1 - b0)) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < (a1 - a0)) {
+  if (p[(a0 + k)] != p[(b0 + k)]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t fx_span_has(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == c) {
+  return 1;
+}
+  k = (k + 1);
+}
+  return 0;
+}
+
+int32_t fx_span_count(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
+  int32_t n = 0;
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == c) {
+  n = (n + 1);
+}
+  k = (k + 1);
+}
+  return n;
+}
+
+int32_t fx_span_find(uint8_t* p, int32_t s, int32_t e, uint8_t c) {
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == c) {
+  return k;
+}
+  k = (k + 1);
+}
+  return (0 - 1);
+}
+
+void fx_strip(uint8_t* p, int32_t* se) {
+  int32_t s = se[0];
+  int32_t e = se[1];
+  while (s < e && fx_is_space(p[s]) == 1) {
+  s = (s + 1);
+}
+  while (e > s && fx_is_space(p[(e - 1)]) == 1) {
+  e = (e - 1);
+}
+  se[0] = s;
+  se[1] = e;
+}
+
+void fx_strip_comments(uint8_t* p, int32_t* se) {
+  int32_t hash = fx_span_find(p, se[0], se[1], 35);
+  if (hash >= 0) {
+  se[1] = hash;
+}
+  fx_strip(p, se);
+}
+
+int32_t fx_eol_len(uint8_t* p, int32_t i, int32_t n) {
+  uint8_t c = p[i];
+  if (c == 13) {
+  if ((i + 1) < n && p[(i + 1)] == 10) {
+  return 2;
+}
+  return 1;
+}
+  if (c == 10 || c == 11 || c == 12 || c == 28 || c == 29 || c == 30) {
+  return 1;
+}
+  if (c == 194 && (i + 1) < n && p[(i + 1)] == 133) {
+  return 2;
+}
+  if (c == 226 && (i + 2) < n && p[(i + 1)] == 128 && (p[(i + 2)] == 168 || p[(i + 2)] == 169)) {
+  return 3;
+}
+  return 0;
+}
+
+int32_t fx_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le) {
+  int32_t count = 0;
+  int32_t start = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t t = fx_eol_len(p, i, n);
+  if (t > 0) {
+  ls[count] = start;
+  le[count] = i;
+  count = (count + 1);
+  i = (i + t);
+  start = i;
+} else {
+  i = (i + 1);
+}
+}
+  if (start < n) {
+  ls[count] = start;
+  le[count] = n;
+  count = (count + 1);
+}
+  return count;
+}
+
+int32_t fx_dsl_head_at(uint8_t* p, int32_t i, int32_t n) {
+  int32_t k = fx_skip_ws(p, i, n);
+  int32_t j = (0 - 1);
+  uint8_t close = 58;
+  if (fx_lit_at(p, k, n, "field") == 1) {
+  j = (k + 5);
+} else {
+  if (fx_lit_at(p, k, n, "boundary") == 1) {
+  j = (k + 8);
+  close = 123;
+}
+}
+  if (j < 0) {
+  return 0;
+}
+  int32_t w = fx_skip_ws(p, j, n);
+  if (w == j) {
+  return 0;
+}
+  int32_t we = fx_word_end(p, w, n);
+  if (we == w) {
+  return 0;
+}
+  int32_t c = fx_skip_ws(p, we, n);
+  if (c < n && p[c] == close) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_field_has_dsl(uint8_t* p, int32_t n) {
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == 0 || p[(i - 1)] == 10) {
+  if (fx_dsl_head_at(p, i, n) == 1) {
+  return 1;
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void fx_err_name(FxBuf* err, uint8_t* p, const char* pre, int32_t s, int32_t e, const char* post) {
+  fx_puts(err, pre);
+  fx_put_span(err, p, s, e);
+  fx_puts(err, post);
+}
+
+int32_t fx_match_field(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  if (fx_lit_at(p, s, e, "field") == 0) {
+  return 0;
+}
+  int32_t i = (s + 5);
+  int32_t k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  int32_t ne = fx_word_end(p, k, e);
+  if (ne == k) {
+  return 0;
+}
+  caps[0] = k;
+  caps[1] = ne;
+  i = fx_skip_ws(p, ne, e);
+  if (i >= e || p[i] != 58) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 1), e);
+  if (fx_lit_at(p, i, e, "f64") == 0) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 3), e);
+  if (i >= e || p[i] != 91) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 1), e);
+  int32_t d = i;
+  while (d < e && fx_is_digit(p[d]) == 1) {
+  d = (d + 1);
+}
+  if (d == i) {
+  return 0;
+}
+  caps[2] = i;
+  caps[3] = d;
+  i = fx_skip_ws(p, d, e);
+  if (i >= e || p[i] != 93) {
+  return 0;
+}
+  i = (i + 1);
+  k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  if (fx_lit_at(p, k, e, "on") == 0) {
+  return 0;
+}
+  i = (k + 2);
+  k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  int32_t de = fx_word_end(p, k, e);
+  if (de == k) {
+  return 0;
+}
+  caps[4] = k;
+  caps[5] = de;
+  if (fx_skip_ws(p, de, e) != e) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t fx_match_boundary_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  if (fx_lit_at(p, s, e, "boundary") == 0) {
+  return 0;
+}
+  int32_t i = (s + 8);
+  int32_t k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  int32_t ne = fx_word_end(p, k, e);
+  if (ne == k) {
+  return 0;
+}
+  int32_t b = fx_skip_ws(p, ne, e);
+  if (b >= e || p[b] != 123) {
+  return 0;
+}
+  caps[0] = k;
+  caps[1] = ne;
+  return 1;
+}
+
+int32_t fx_match_evolve(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t ne = fx_word_end(p, s, e);
+  if (ne == s) {
+  return 0;
+}
+  int32_t k = fx_skip_ws(p, ne, e);
+  if (k == ne) {
+  return 0;
+}
+  if (fx_lit_at(p, k, e, "evolves") == 0) {
+  return 0;
+}
+  int32_t i = (k + 7);
+  k = fx_skip_ws(p, i, e);
+  if (k == i) {
+  return 0;
+}
+  if (fx_lit_at(p, k, e, "as") == 0) {
+  return 0;
+}
+  i = (k + 2);
+  k = fx_skip_ws(p, i, e);
+  if (k == i || k >= e) {
+  return 0;
+}
+  caps[0] = s;
+  caps[1] = ne;
+  caps[2] = k;
+  caps[3] = e;
+  return 1;
+}
+
+int32_t fx_match_lap_tail(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  if (fx_lit_at(p, s, e, "laplacian") == 0) {
+  return 0;
+}
+  int32_t i = fx_skip_ws(p, (s + 9), e);
+  if (i >= e || p[i] != 40) {
+  return 0;
+}
+  i = fx_skip_ws(p, (i + 1), e);
+  int32_t ne = fx_word_end(p, i, e);
+  if (ne == i) {
+  return 0;
+}
+  int32_t name_s = i;
+  i = fx_skip_ws(p, ne, e);
+  if (i >= e || p[i] != 41) {
+  return 0;
+}
+  i = (i + 1);
+  caps[0] = name_s;
+  caps[1] = ne;
+  caps[2] = (0 - 1);
+  caps[3] = (0 - 1);
+  int32_t st = fx_skip_ws(p, i, e);
+  if (st < e && p[st] == 42) {
+  int32_t q = fx_skip_ws(p, (st + 1), e);
+  int32_t n1 = fx_numch_end(p, q, e);
+  if (n1 > q && fx_skip_ws(p, n1, e) == e) {
+  caps[2] = q;
+  caps[3] = n1;
+  return 1;
+}
+  int32_t n2 = fx_word_end(p, q, e);
+  if (n2 > q && fx_skip_ws(p, n2, e) == e) {
+  caps[2] = q;
+  caps[3] = n2;
+  return 1;
+}
+}
+  if (fx_skip_ws(p, i, e) == e) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_match_lap(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t n1 = fx_numch_end(p, s, e);
+  if (n1 > s) {
+  int32_t st = fx_skip_ws(p, n1, e);
+  if (st < e && p[st] == 42) {
+  if (fx_match_lap_tail(p, fx_skip_ws(p, (st + 1), e), e, caps) == 1) {
+  caps[4] = s;
+  caps[5] = n1;
+  return 1;
+}
+}
+}
+  int32_t n2 = fx_word_end(p, s, e);
+  if (n2 > s) {
+  int32_t st2 = fx_skip_ws(p, n2, e);
+  if (st2 < e && p[st2] == 42) {
+  if (fx_match_lap_tail(p, fx_skip_ws(p, (st2 + 1), e), e, caps) == 1) {
+  caps[4] = s;
+  caps[5] = n2;
+  return 1;
+}
+}
+}
+  if (fx_match_lap_tail(p, s, e, caps) == 1) {
+  caps[4] = (0 - 1);
+  caps[5] = (0 - 1);
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_match_assign(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t side = 0;
+  int32_t i = s;
+  if (fx_lit_at(p, s, e, "left") == 1) {
+  side = 1;
+  i = (s + 4);
+} else {
+  if (fx_lit_at(p, s, e, "right") == 1) {
+  side = 2;
+  i = (s + 5);
+}
+}
+  if (side == 0) {
+  return 0;
+}
+  i = fx_skip_ws(p, i, e);
+  if (i >= e || p[i] != 61) {
+  return 0;
+}
+  i = (i + 1);
+  int32_t k = fx_skip_ws(p, i, e);
+  if (k < e) {
+  caps[0] = k;
+  caps[1] = e;
+  return side;
+}
+  if (k > i) {
+  caps[0] = (k - 1);
+  caps[1] = e;
+  return side;
+}
+  return 0;
+}
+
+int32_t fx_is_side_start(uint8_t* p, int32_t s, int32_t e, int32_t k) {
+  if (k > s && fx_is_word(p[(k - 1)]) == 1) {
+  return 0;
+}
+  int32_t j = (0 - 1);
+  if (fx_lit_at(p, k, e, "left") == 1) {
+  j = (k + 4);
+} else {
+  if (fx_lit_at(p, k, e, "right") == 1) {
+  j = (k + 5);
+}
+}
+  if (j < 0) {
+  return 0;
+}
+  int32_t q = fx_skip_ws(p, j, e);
+  if (q < e && p[q] == 61) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t start, int32_t* bs, int32_t* be, int32_t* cnt) {
+  int32_t depth = 0;
+  int32_t i = start;
+  int32_t nb = 0;
+  while (i < nlines) {
+  int32_t s = ls[i];
+  int32_t e = le[i];
+  depth = ((depth + fx_span_count(p, s, e, 123)) - fx_span_count(p, s, e, 125));
+  int32_t has_open = fx_span_has(p, s, e, 123);
+  if (i > start || has_open == 1) {
+  if (depth > 0 || i == start && has_open == 1) {
+  int32_t its = s;
+  if (i == start) {
+  its = (fx_span_find(p, s, e, 123) + 1);
+}
+  if (depth > 0) {
+  int32_t ite = e;
+  while (ite > its && p[(ite - 1)] == 125) {
+  ite = (ite - 1);
+}
+  bs[nb] = its;
+  be[nb] = ite;
+  nb = (nb + 1);
+} else {
+  if (fx_span_has(p, s, e, 125) == 1) {
+  int32_t ie2 = fx_span_find(p, its, e, 125);
+  if (ie2 < 0) {
+  ie2 = e;
+}
+  bs[nb] = its;
+  be[nb] = ie2;
+  nb = (nb + 1);
+}
+}
+}
+}
+  if (depth <= 0 && i > start) {
+  cnt[0] = nb;
+  return (i + 1);
+}
+  i = (i + 1);
+}
+  cnt[0] = nb;
+  return i;
+}
+
+void fx_emit_int_span(FxBuf* w, uint8_t* p, int32_t s, int32_t e) {
+  int32_t k = s;
+  while (k < (e - 1) && p[k] == 48) {
+  k = (k + 1);
+}
+  fx_put_span(w, p, k, e);
+}
+
+int32_t fx_int_le_one(uint8_t* p, int32_t s, int32_t e) {
+  int32_t k = s;
+  while (k < (e - 1) && p[k] == 48) {
+  k = (k + 1);
+}
+  if ((e - k) == 1 && (p[k] == 48 || p[k] == 49)) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fx_find_field(uint8_t* p, int32_t* rec, int32_t nf, int32_t s, int32_t e) {
+  int32_t f = 0;
+  while (f < nf) {
+  int32_t b = (f * FX_REC);
+  if (fx_span_eq(p, rec[(b + FX_NAME_S)], rec[(b + FX_NAME_E)], s, e) == 1) {
+  return f;
+}
+  f = (f + 1);
+}
+  return (0 - 1);
+}
+
+void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf) {
+  int32_t f = 0;
+  while (f < nf) {
+  int32_t b = (f * FX_REC);
+  int32_t ns = rec[(b + FX_NAME_S)];
+  int32_t ne = rec[(b + FX_NAME_E)];
+  if (f > 0) {
+  fx_puts(w, "\n");
+}
+  fx_puts(w, "# generated from field ");
+  fx_put_span(w, p, ns, ne);
+  fx_puts(w, " : f64[");
+  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
+  fx_puts(w, "] on Line\nconst ");
+  fx_put_span(w, p, ns, ne);
+  fx_puts(w, "_field_n: i32 = ");
+  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
+  fx_puts(w, "\n\nfunction ");
+  fx_put_span(w, p, ns, ne);
+  fx_puts(w, "_field_step(\n    u: ptr<f64>,\n    next: ptr<f64>,\n    r: f64\n) -> void {\n    heat_euler_step_1d(u, next, ");
+  fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
+  fx_puts(w, ", r, ");
+  if (rec[(b + FX_L_S)] < 0) {
+  fx_puts(w, "0.0");
+} else {
+  fx_put_span(w, p, rec[(b + FX_L_S)], rec[(b + FX_L_E)]);
+}
+  fx_puts(w, ", ");
+  if (rec[(b + FX_R_S)] < 0) {
+  fx_puts(w, "0.0");
+} else {
+  fx_put_span(w, p, rec[(b + FX_R_S)], rec[(b + FX_R_E)]);
+}
+  fx_puts(w, ")\n}");
+  if ((f + 1) < nf) {
+  fx_puts(w, "\n");
+}
+  f = (f + 1);
+}
+}
+
+int32_t fx_find_main(uint8_t* m, int32_t n) {
+  int32_t i = 0;
+  while (i < n) {
+  if (m[i] == 10 && fx_lit_at(m, (i + 1), n, "function") == 1) {
+  int32_t j = (i + 9);
+  int32_t k = fx_skip_ws(m, j, n);
+  if (k > j && fx_lit_at(m, k, n, "main") == 1) {
+  int32_t q = fx_skip_ws(m, (k + 4), n);
+  if (q < n && m[q] == 40) {
+  return i;
+}
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fx_contains(uint8_t* m, int32_t n, const char* lit) {
+  int32_t i = 0;
+  while (i < n) {
+  if (fx_lit_at(m, i, n, lit) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err) {
+  int32_t* caps = (int32_t*)((int32_t*)(malloc(64)));
+  int32_t* se = (int32_t*)((int32_t*)(malloc(16)));
+  int32_t* cnt = (int32_t*)((int32_t*)(malloc(16)));
+  int32_t* bs = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* be = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* its = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* ite = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t nf = 0;
+  int32_t rc = 0;
+  int32_t i = 0;
+  while (i < nlines && rc == 0) {
+  keep[i] = 0;
+  se[0] = ls[i];
+  se[1] = le[i];
+  fx_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  int32_t handled = 0;
+  if (e > s && fx_match_field(p, s, e, caps) == 1) {
+  handled = 1;
+  if (fx_lit_at(p, caps[4], caps[5], "Line") == 0 || (caps[5] - caps[4]) != 4) {
+  fx_err_name(err, p, "field '", caps[0], caps[1], "': only `on Line` is supported in Stage-1 (got '");
+  fx_put_span(err, p, caps[4], caps[5]);
+  fx_puts(err, "')");
+  rc = (0 - 1);
+} else {
+  if (fx_int_le_one(p, caps[2], caps[3]) == 1) {
+  fx_err_name(err, p, "field '", caps[0], caps[1], "': size must be > 1");
+  rc = (0 - 1);
+} else {
+  if (fx_find_field(p, rec, nf, caps[0], caps[1]) >= 0) {
+  fx_err_name(err, p, "duplicate field '", caps[0], caps[1], "'");
+  rc = (0 - 1);
+} else {
+  if (nf >= FX_MAX_FIELDS) {
+  fx_puts(err, "too many fields (flowc limit 64)");
+  rc = (0 - 1);
+} else {
+  int32_t b = (nf * FX_REC);
+  rec[(b + FX_NAME_S)] = caps[0];
+  rec[(b + FX_NAME_E)] = caps[1];
+  rec[(b + FX_N_S)] = caps[2];
+  rec[(b + FX_N_E)] = caps[3];
+  rec[(b + FX_L_S)] = (0 - 1);
+  rec[(b + FX_L_E)] = (0 - 1);
+  rec[(b + FX_R_S)] = (0 - 1);
+  rec[(b + FX_R_E)] = (0 - 1);
+  rec[(b + FX_EVOLVED)] = 0;
+  nf = (nf + 1);
+}
+}
+}
+}
+  i = (i + 1);
+}
+  if (handled == 0 && e > s && fx_match_boundary_head(p, s, e, caps) == 1) {
+  handled = 1;
+  int32_t bn_s = caps[0];
+  int32_t bn_e = caps[1];
+  int32_t fi = fx_find_field(p, rec, nf, bn_s, bn_e);
+  if (fi < 0) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': declare `field ");
+  fx_put_span(err, p, bn_s, bn_e);
+  fx_puts(err, " : …` first");
+  rc = (0 - 1);
+} else {
+  int32_t next_i = fx_extract_block(p, ls, le, nlines, i, bs, be, cnt);
+  int32_t ni = 0;
+  int32_t bi = 0;
+  while (bi < cnt[0]) {
+  se[0] = bs[bi];
+  se[1] = be[bi];
+  fx_strip(p, se);
+  fx_strip_comments(p, se);
+  int32_t b0 = se[0];
+  int32_t b1 = se[1];
+  if (b1 > b0) {
+  int32_t ps = b0;
+  int32_t k = (b0 + 1);
+  while (k <= b1) {
+  int32_t cut = 0;
+  if (k == b1) {
+  cut = 1;
+} else {
+  if (fx_is_side_start(p, b0, b1, k) == 1) {
+  cut = 1;
+}
+}
+  if (cut == 1) {
+  se[0] = ps;
+  se[1] = k;
+  fx_strip(p, se);
+  if (se[1] > se[0]) {
+  its[ni] = se[0];
+  ite[ni] = se[1];
+  ni = (ni + 1);
+}
+  ps = k;
+}
+  k = (k + 1);
+}
+}
+  bi = (bi + 1);
+}
+  int32_t l_s = (0 - 1);
+  int32_t l_e = (0 - 1);
+  int32_t r_s = (0 - 1);
+  int32_t r_e = (0 - 1);
+  int32_t ii = 0;
+  while (ii < ni && rc == 0) {
+  int32_t side = fx_match_assign(p, its[ii], ite[ii], caps);
+  if (side == 0) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': expected `left = …` / `right = …`, got '");
+  fx_put_span(err, p, its[ii], ite[ii]);
+  fx_puts(err, "'");
+  rc = (0 - 1);
+} else {
+  se[0] = caps[0];
+  se[1] = caps[1];
+  fx_strip(p, se);
+  if (se[1] <= se[0]) {
+  if (side == 1) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty left value");
+} else {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty right value");
+}
+  rc = (0 - 1);
+} else {
+  if (side == 1) {
+  l_s = se[0];
+  l_e = se[1];
+} else {
+  r_s = se[0];
+  r_e = se[1];
+}
+}
+}
+  ii = (ii + 1);
+}
+  if (rc == 0) {
+  if (l_s < 0 || r_s < 0) {
+  fx_err_name(err, p, "boundary '", bn_s, bn_e, "': need both left and right");
+  rc = (0 - 1);
+} else {
+  int32_t fb = (fi * FX_REC);
+  rec[(fb + FX_L_S)] = l_s;
+  rec[(fb + FX_L_E)] = l_e;
+  rec[(fb + FX_R_S)] = r_s;
+  rec[(fb + FX_R_E)] = r_e;
+}
+}
+  int32_t z = (i + 1);
+  while (z < next_i && z < nlines) {
+  keep[z] = 0;
+  z = (z + 1);
+}
+  i = next_i;
+}
+}
+  if (handled == 0 && e > s && fx_match_evolve(p, s, e, caps) == 1) {
+  int32_t ev = fx_find_field(p, rec, nf, caps[0], caps[1]);
+  if (ev >= 0) {
+  handled = 1;
+  int32_t en_s = caps[0];
+  int32_t en_e = caps[1];
+  se[0] = caps[2];
+  se[1] = caps[3];
+  fx_strip(p, se);
+  int32_t ok = fx_match_lap(p, se[0], se[1], caps);
+  if (ok == 0 || fx_span_eq(p, caps[0], caps[1], en_s, en_e) == 0) {
+  fx_err_name(err, p, "field '", en_s, en_e, "' evolves: Stage-1 expects `");
+  fx_put_span(err, p, en_s, en_e);
+  fx_puts(err, " evolves as laplacian(");
+  fx_put_span(err, p, en_s, en_e);
+  fx_puts(err, ")` or `c * laplacian(");
+  fx_put_span(err, p, en_s, en_e);
+  fx_puts(err, ")`");
+  rc = (0 - 1);
+} else {
+  if (caps[4] >= 0 && caps[2] >= 0) {
+  fx_err_name(err, p, "field '", en_s, en_e, "' evolves: use at most one multiplier");
+  rc = (0 - 1);
+} else {
+  rec[((ev * FX_REC) + FX_EVOLVED)] = 1;
+}
+}
+  i = (i + 1);
+}
+}
+  if (handled == 0) {
+  keep[i] = 1;
+  i = (i + 1);
+}
+}
+  if (rc == 0) {
+  int32_t f = 0;
+  while (f < nf && rc == 0) {
+  int32_t b = (f * FX_REC);
+  if (rec[(b + FX_EVOLVED)] == 0) {
+  int32_t ms = rec[(b + FX_NAME_S)];
+  int32_t me = rec[(b + FX_NAME_E)];
+  fx_err_name(err, p, "field '", ms, me, "': missing `");
+  fx_put_span(err, p, ms, me);
+  fx_puts(err, " evolves as laplacian(");
+  fx_put_span(err, p, ms, me);
+  fx_puts(err, ")`");
+  rc = (0 - 1);
+}
+  f = (f + 1);
+}
+}
+  free((uint8_t*)(caps));
+  free((uint8_t*)(se));
+  free((uint8_t*)(cnt));
+  free((uint8_t*)(bs));
+  free((uint8_t*)(be));
+  free((uint8_t*)(its));
+  free((uint8_t*)(ite));
+  if (rc != 0) {
+  return (0 - 1);
+}
+  return nf;
+}
+
+int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
+  if (flowc_field_has_dsl(p, n) == 0) {
+  fx_put_span(out, p, 0, n);
+  if ((out[0]).err != 0) {
+  return (0 - 2);
+}
+  return (out[0]).len;
+}
+  int32_t* ls = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* le = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* keep = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* rec = (int32_t*)((int32_t*)(malloc(((int64_t)((FX_MAX_FIELDS * FX_REC)) * 4))));
+  int32_t nlines = fx_split_lines(p, n, ls, le);
+  int32_t nf = fx_parse(p, ls, le, nlines, keep, rec, err);
+  int32_t rc = 0;
+  if (nf < 0) {
+  rc = (0 - 1);
+} else {
+  int32_t mcap = (n + 64);
+  FxBuf mw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
+  if (nf > 0) {
+  FxBuf sw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
+  int32_t first0 = 1;
+  int32_t j0 = 0;
+  while (j0 < nlines) {
+  if (keep[j0] == 1) {
+  if (first0 == 0) {
+  fx_putc((&sw), 10);
+}
+  fx_put_span((&sw), p, ls[j0], le[j0]);
+  first0 = 0;
+}
+  j0 = (j0 + 1);
+}
+  if (fx_contains((sw).buf, (sw).len, "import \"stdlib/dynamics/pde.flow\"") == 0) {
+  fx_puts((&mw), "import \"stdlib/dynamics/pde.flow\"\n");
+}
+  fx_put_span((&mw), (sw).buf, 0, (sw).len);
+  free((sw).buf);
+} else {
+  int32_t first = 1;
+  int32_t j = 0;
+  while (j < nlines) {
+  if (keep[j] == 1) {
+  if (first == 0) {
+  fx_putc((&mw), 10);
+}
+  fx_put_span((&mw), p, ls[j], le[j]);
+  first = 0;
+}
+  j = (j + 1);
+}
+}
+  if (nf == 0) {
+  fx_put_span(out, (mw).buf, 0, (mw).len);
+} else {
+  int32_t at = fx_find_main((mw).buf, (mw).len);
+  if (at < 0) {
+  int32_t te = (mw).len;
+  while (te > 0 && fx_is_space((mw).buf[(te - 1)]) == 1) {
+  te = (te - 1);
+}
+  fx_put_span(out, (mw).buf, 0, te);
+  fx_puts(out, "\n\n");
+  fx_emit_helpers(out, p, rec, nf);
+  fx_puts(out, "\n");
+} else {
+  fx_put_span(out, (mw).buf, 0, at);
+  fx_puts(out, "\n\n");
+  fx_emit_helpers(out, p, rec, nf);
+  fx_puts(out, "\n");
+  fx_put_span(out, (mw).buf, at, (mw).len);
+}
+}
+  free((mw).buf);
+  if ((out[0]).err != 0) {
+  rc = (0 - 2);
+} else {
+  rc = (out[0]).len;
+}
+}
+  free((uint8_t*)(ls));
+  free((uint8_t*)(le));
+  free((uint8_t*)(keep));
+  free((uint8_t*)(rec));
+  return rc;
+}
+
+int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
+  if (n < 0) {
+  return n;
+}
+  if (flowc_field_has_dsl(buf, n) == 0) {
+  return n;
+}
+  int32_t ocap = ((n * 2) + 65536);
+  FxBuf ow = (FxBuf){ .buf = malloc((int64_t)((ocap + 1))), .cap = ocap, .len = 0, .err = 0 };
+  FxBuf ew = (FxBuf){ .buf = malloc(1024), .cap = 1023, .len = 0, .err = 0 };
+  int32_t rc = flowc_field_expand(buf, n, (&ow), (&ew));
+  if (rc < 0) {
+  if (rc == (0 - 2)) {
+  puts("flowc field: expanded source too large");
+} else {
+  const char* head = "flowc field: ";
+  uint8_t* hp = (uint8_t*)(head);
+  FxBuf line = (FxBuf){ .buf = malloc(1100), .cap = 1099, .len = 0, .err = 0 };
+  fx_put_span((&line), hp, 0, 13);
+  fx_put_span((&line), (ew).buf, 0, (ew).len);
+  (line).buf[(line).len] = 0;
+  puts((const char*)((line).buf));
+  free((line).buf);
+}
+  free((ow).buf);
+  free((ew).buf);
+  return (0 - 1);
+}
+  if (rc >= cap) {
+  puts("flowc field: expanded source exceeds the source buffer");
+  free((ow).buf);
+  free((ew).buf);
+  return (0 - 1);
+}
+  int32_t k = 0;
+  while (k < rc) {
+  buf[k] = (ow).buf[k];
+  k = (k + 1);
+}
+  buf[rc] = 0;
+  free((ow).buf);
+  free((ew).buf);
+  return rc;
+}
+
+
+typedef struct DySb {
+  uint8_t* p;
+  int32_t len;
+  int32_t cap;
+} DySb;
+
+typedef struct DyC {
+  int32_t err;
+  DySb* msg;
+  DySb* nm;
+  double* fp;
+  int32_t fnum;
+  int32_t fcap;
+  int32_t* bd_kind;
+  int32_t* bd_var;
+  int32_t* bd_hz;
+  int32_t nbd;
+  int32_t bdcap;
+  int32_t* gl;
+  int32_t ngl;
+  int32_t glcap;
+  int32_t* at_name;
+  double* at_val;
+  int32_t nat;
+  int32_t atcap;
+} DyC;
+
+typedef struct Dp {
+  int32_t cap;
+  int32_t nsy;
+  int32_t* sy_name;
+  int32_t* sy_mode;
+  double* sy_dt;
+  int64_t* sy_n;
+  int64_t* sy_m;
+  int64_t* sy_p;
+  int32_t* sy_a0;
+  int32_t* sy_an;
+  int32_t* sy_b0;
+  int32_t* sy_bn;
+  int32_t* sy_c0;
+  int32_t* sy_cn;
+  int32_t nhz;
+  int32_t* hz_name;
+  int32_t* hz_kind;
+  int64_t* hz_steps;
+  double* hz_gamma;
+  int32_t nwf;
+  int32_t* wf_name;
+  int64_t* wf_w;
+  int64_t* wf_h;
+  int64_t* wf_tiles;
+  int64_t* wf_seed;
+  int64_t* wf_pc;
+  int64_t* wf_pt;
+  int64_t* wf_steps;
+  int32_t nse;
+  int32_t* se_sys;
+  int32_t* se_b0;
+  int32_t* se_bn;
+  int32_t nga;
+  int32_t* ga_sys;
+  int32_t* ga_hz;
+  int32_t* ga_k1;
+  int32_t* ga_k2;
+  int64_t* ga_pop;
+  int64_t* ga_gen;
+  double* ga_mut;
+  int32_t ncl;
+  int32_t* cl_sys;
+  int32_t* cl_k1;
+  int32_t* cl_k2;
+  int32_t* cl_b0;
+  int32_t* cl_bn;
+  int32_t nanz;
+  int32_t* an_sys;
+  int32_t* an_k1;
+  int32_t* an_k2;
+  int32_t* an_hz;
+  int32_t* an_rep;
+  int32_t ncp;
+  int32_t* cp_sys;
+  int32_t* cp_field;
+  int32_t* cp_rep;
+  int32_t* cp_k1;
+  int32_t* cp_k2;
+  int32_t* cp_guid;
+  int32_t* cp_b0;
+  int32_t* cp_bn;
+  int32_t ngd;
+  int32_t* gd_sys;
+  int32_t* gd_k1;
+  int32_t* gd_k2;
+  int32_t* gd_field;
+  int32_t* gd_guid;
+  int32_t* gd_hz;
+  int32_t* gd_b0;
+  int32_t* gd_bn;
+  int32_t nrp;
+  int32_t* rp_flow;
+  int32_t* rp_mode;
+  double* rp_dt;
+  int64_t* rp_n;
+  int64_t* rp_m;
+  int64_t* rp_p;
+  int32_t* rp_a0;
+  int32_t* rp_an;
+  int32_t* rp_b0;
+  int32_t* rp_bn;
+  int32_t* rp_c0;
+  int32_t* rp_cn;
+  int32_t* rp_at0;
+  int32_t* rp_atn;
+  int32_t* rp_nin;
+  int32_t npt;
+  int32_t* pt_flow;
+  int32_t* pt_ax0;
+  int32_t* pt_ax1;
+  int64_t* pt_trail;
+  int64_t* pt_w;
+  int64_t* pt_h;
+  int32_t* pt_set0;
+  int32_t* pt_set1;
+  double* pt_lo0;
+  double* pt_hi0;
+  double* pt_lo1;
+  double* pt_hi1;
+  int32_t* pt_k0;
+  int32_t* pt_k1;
+  int32_t nlq;
+  int32_t* lq_sys;
+  int32_t* lq_q0;
+  int32_t* lq_qn;
+  double* lq_r;
+  int32_t* lq_g0;
+  int32_t* lq_gn;
+  int64_t* lq_it;
+} Dp;
+
+static const int32_t DY_ARROW = 8594;
+static const int32_t DY_TIMES = 215;
+static const int32_t DY_SECTION = 167;
+static const int32_t DY_ELLIPSIS = 8230;
+static const int32_t DY_DASH = 8212;
+int32_t dy_old_space(int32_t c);
+int32_t dy_old_starts(const char* s, const char* prefix);
+const char* flowc_strip_comments(const char* line);
+const char* flowc_strip_dynamics_namespace(const char* line);
+DySb* dy_sb_new(int32_t cap);
+void dy_putc(DySb* b, uint8_t ch);
+void dy_puts(DySb* b, const char* s);
+void dy_span(DySb* b, uint8_t* src, int32_t s, int32_t e);
+void dy_i64(DySb* b, int64_t v);
+void dy_utf8(DySb* b, int32_t cp);
+int32_t dy_ws(uint8_t ch);
+int32_t dy_digit(uint8_t ch);
+int32_t dy_word(uint8_t ch);
+void dy_strip(uint8_t* p, int32_t* se);
+void dy_rstrip(uint8_t* p, int32_t* se);
+void dy_strip_comments(uint8_t* p, int32_t* se);
+int32_t dy_count(uint8_t* p, int32_t s, int32_t e, uint8_t ch);
+int32_t dy_find(uint8_t* p, int32_t s, int32_t e, uint8_t ch);
+int32_t dy_find_str(uint8_t* p, int32_t s, int32_t e, const char* lit);
+int32_t dy_starts(uint8_t* p, int32_t s, int32_t e, const char* lit);
+int32_t dy_eq(uint8_t* p, int32_t s, int32_t e, const char* lit);
+int32_t dy_spans_eq(uint8_t* a, int32_t as0, int32_t ae, uint8_t* b, int32_t bs, int32_t be);
+int32_t dy_has_nonws(uint8_t* p, int32_t s, int32_t e);
+int32_t dy_eol_len(uint8_t* p, int32_t i, int32_t n);
+int32_t dy_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le);
+int32_t dy_split_ws(uint8_t* p, int32_t s, int32_t e, int32_t* ws, int32_t* we);
+int32_t dy_numch(uint8_t ch);
+int32_t dy_match(uint8_t* p, int32_t s, int32_t e, const char* pat, int32_t* caps);
+int32_t* dy_i32s(int32_t n);
+int64_t* dy_i64s(int32_t n);
+double* dy_f64s(int32_t n);
+int32_t dy_name(DyC* c, uint8_t* p, int32_t s, int32_t e);
+int32_t dy_name_lit(DyC* c, const char* s);
+const char* dy_nstr(DyC* c, int32_t off);
+int32_t dy_neq(DyC* c, int32_t a, int32_t b);
+int32_t dy_neq_lit(DyC* c, int32_t a, const char* s);
+void dy_pn(DySb* b, DyC* c, int32_t off);
+int32_t dy_fpush(DyC* c, double v);
+int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz);
+int32_t dy_gl(DyC* c, int32_t off);
+int32_t dy_at(DyC* c, int32_t name, double v);
+DySb* dy_err(DyC* c);
+void dy_err_s(DyC* c, const char* s);
+void dy_repr_str(DySb* b, uint8_t* p, int32_t s, int32_t e);
+int64_t dy_int(DyC* c, uint8_t* p, int32_t s0, int32_t e0);
+int32_t dy_digits_us(uint8_t* p, int32_t k, int32_t e);
+int32_t dy_lower_eq(uint8_t* p, int32_t s, int32_t e, const char* lit);
+double dy_float(DyC* c, uint8_t* p, int32_t s0, int32_t e0);
+int64_t dy_bits(double x);
+int32_t dy_exact(double x, uint8_t* dig, int32_t* dp);
+void dy_round(uint8_t* dig, int32_t nd, int32_t pr, uint8_t* out, int32_t* dp);
+int32_t dy_fmt_special(DySb* b, double v, const char* zero);
+void dy_exp10(DySb* b, int32_t x);
+void dy_g17(DySb* b, double v);
+void dy_repr(DySb* b, double v);
+void dy_flow_f64(DySb* b, double v);
+Dp* dy_prog_new(int32_t cap0);
+int32_t dy_find_sys(DyC* c, Dp* g, int32_t name);
+int32_t dy_find_hz(DyC* c, Dp* g, int32_t name);
+int32_t dy_find_wf(DyC* c, Dp* g, int32_t name);
+int32_t dy_sys_slot(DyC* c, Dp* g, int32_t name);
+int32_t dy_hz_slot(DyC* c, Dp* g, int32_t name);
+int32_t dy_wf_slot(DyC* c, Dp* g, int32_t name);
+void dy_copy_sys(Dp* d, int32_t k, Dp* s, int32_t i);
+void dy_merge(DyC* c, Dp* d, Dp* s);
+int32_t dy_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t start, int32_t* bs, int32_t* be, int32_t* nb);
+int32_t dy_block_keep(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t start, int32_t* bs, int32_t* be, int32_t* nb);
+int32_t dy_floats(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t* f0);
+int32_t dy_all_word(uint8_t* p, int32_t s, int32_t e);
+void dy_parse_nmp(DyC* c, uint8_t* p, int32_t s, int32_t e, int64_t* nv, int64_t* mv, int64_t* pv, int32_t idx);
+int64_t dy_int_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k);
+double dy_float_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k);
+int32_t dy_name_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k);
+void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r);
+int32_t dy_name_list(DyC* c, uint8_t* p, int32_t s0, int32_t e0);
+int32_t dy_paren_form(uint8_t* p, int32_t s, int32_t e, const char* word, int32_t* se);
+void dy_rep_linear_body(DyC* c, uint8_t* p, Dp* g, int32_t r, int32_t* bs, int32_t* be, int32_t nb);
+void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t* be, int32_t nb);
+int32_t dy_rep_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
+void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out);
+void dy_at_repr(DySb* m, DyC* c, Dp* g, int32_t r);
+void dy_rep_prefix(DySb* m, DyC* c, Dp* g, int32_t r);
+void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r);
+void dy_invalid(DyC* c, const char* what, uint8_t* p, int32_t s, int32_t e);
+int32_t dy_arrow(uint8_t* p, int32_t s, int32_t e, int32_t* l, int32_t* r);
+void dy_lqr_prefix(DySb* m, DyC* c, int32_t sys);
+void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb);
+void dy_an_prefix(DySb* m, DyC* c, int32_t sys);
+void dy_lqr_braces(DySb* m);
+void dy_analyze_vision(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb);
+void dy_validate_raw(DyC* c, Dp* g);
+int32_t dy_cp_prefix(uint8_t* p, int32_t s, int32_t e, int32_t limit);
+void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out);
+int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32_t nl, int32_t i, int32_t s, int32_t e, int32_t* bs, int32_t* be, int32_t* nb, int32_t* kept);
+void dy_ln(DySb* b, const char* s);
+void dy_eol(DySb* b);
+void dy_key_error(DyC* c, int32_t off);
+int64_t dy_steps_or(DyC* c, Dp* g, int32_t name, int64_t dflt);
+int32_t dy_bufs(DySb* b, int32_t* bi, int32_t count);
+void dy_bufref(DySb* b, int32_t k);
+void dy_bufargs(DySb* b, int32_t first, int32_t count);
+void dy_flat_array(DySb* b, DyC* c, int32_t f0, int32_t fnn);
+void dy_rep_array(DySb* b, int64_t n, const char* item);
+void dy_matrix(DySb* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols);
+void dy_ga_arrays(DySb* b, DySb* tag, int64_t pop);
+void dy_tag(DySb* t, const char* pre, int32_t k);
+void dy_tagp(DySb* b, DySb* t);
+int32_t dy_is_identifier(DyC* c, int32_t off);
+int32_t dy_compile(DyC* c, Dp* g, DySb* b);
+void dy_compile_portraits(DyC* c, Dp* g, DySb* b);
+int32_t dy_head_ns(uint8_t* p, int32_t k, int32_t n, int32_t* caps);
+int32_t dy_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* caps);
+int32_t flowc_dynamics_has_dsl(uint8_t* p, int32_t n);
+int32_t dy_contains(DySb* b, const char* lit);
+void dy_prepend(DySb* b, const char* lit);
+int32_t dy_find_main_call(uint8_t* p, int32_t n);
+int32_t dy_find_main_body(uint8_t* p, int32_t n);
+int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, DySb* out);
+DyC* dy_ctx_new(int32_t n);
+int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
+int32_t dy_old_space(int32_t c) {
+  if (c == 32 || c == 9 || c == 13 || c == 10) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t dy_old_starts(const char* s, const char* prefix) {
+  int32_t sl = (int32_t)(strlen(s));
+  int32_t pl = (int32_t)(strlen(prefix));
+  if (pl > sl) {
+  return 0;
+}
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  uint8_t* pp = (uint8_t*)((uint8_t*)(prefix));
+  int32_t i = 0;
+  while (i < pl) {
+  if (sp[i] != pp[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+const char* flowc_strip_comments(const char* line) {
+  int32_t n = (int32_t)(strlen(line));
+  uint8_t* p = (uint8_t*)((uint8_t*)(line));
+  int32_t hash_pos = (0 - 1);
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 35) {
+  hash_pos = i;
+  break;
+}
+  i = (i + 1);
+}
+  int32_t end = n;
+  if (hash_pos >= 0) {
+  end = hash_pos;
+}
+  while (end > 0 && dy_old_space((int32_t)(p[(end - 1)])) == 1) {
+  end = (end - 1);
+}
+  int32_t start = 0;
+  while (start < end && dy_old_space((int32_t)(p[start])) == 1) {
+  start = (start + 1);
+}
+  if (start >= end) {
+  return "";
+}
+  int32_t len = (end - start);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((len + 1))));
+  memcpy(buf, (p + start), (int64_t)(len));
+  buf[len] = 0;
+  return (const char*)(buf);
+}
+
+const char* flowc_strip_dynamics_namespace(const char* line) {
+  const char* stripped = flowc_strip_comments(line);
+  int32_t skip = 0;
+  if (dy_old_starts(stripped, "dyn.") == 1) {
+  skip = 4;
+} else {
+  if (dy_old_starts(stripped, "dynamics.") == 1) {
+  skip = 9;
+}
+}
+  if (skip == 0) {
+  return stripped;
+}
+  int32_t n = (int32_t)(strlen(stripped));
+  int32_t len = (n - skip);
+  uint8_t* p = (uint8_t*)((uint8_t*)(stripped));
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)((len + 1))));
+  memcpy(buf, (p + skip), (int64_t)(len));
+  buf[len] = 0;
+  return (const char*)(buf);
+}
+
+DySb* dy_sb_new(int32_t cap) {
+  DySb* b = (DySb*)((DySb*)(malloc(16)));
+  (b[0]).p = malloc((int64_t)((cap + 1)));
+  (b[0]).len = 0;
+  (b[0]).cap = cap;
+  (b[0]).p[0] = 0;
+  return b;
+}
+
+void dy_putc(DySb* b, uint8_t ch) {
+  if (((b[0]).len + 1) >= (b[0]).cap) {
+  int32_t ncap = (((b[0]).cap * 2) + 64);
+  (b[0]).p = realloc((b[0]).p, (int64_t)((ncap + 1)));
+  (b[0]).cap = ncap;
+}
+  (b[0]).p[(b[0]).len] = ch;
+  (b[0]).len = ((b[0]).len + 1);
+  (b[0]).p[(b[0]).len] = 0;
+}
+
+void dy_puts(DySb* b, const char* s) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  int32_t i = 0;
+  while (sp[i] != 0) {
+  dy_putc(b, sp[i]);
+  i = (i + 1);
+}
+}
+
+void dy_span(DySb* b, uint8_t* src, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  dy_putc(b, src[i]);
+  i = (i + 1);
+}
+}
+
+void dy_i64(DySb* b, int64_t v) {
+  if (v < 0) {
+  dy_putc(b, 45);
+  dy_i64(b, (0 - v));
+  return;
+}
+  if (v >= 10) {
+  dy_i64(b, (v / 10));
+}
+  dy_putc(b, (uint8_t)((48 + (v % 10))));
+}
+
+void dy_utf8(DySb* b, int32_t cp) {
+  if (cp < 128) {
+  dy_putc(b, (uint8_t)(cp));
+  return;
+}
+  if (cp < 2048) {
+  dy_putc(b, (uint8_t)((192 + (cp / 64))));
+  dy_putc(b, (uint8_t)((128 + (cp % 64))));
+  return;
+}
+  dy_putc(b, (uint8_t)((224 + (cp / 4096))));
+  dy_putc(b, (uint8_t)((128 + ((cp / 64) % 64))));
+  dy_putc(b, (uint8_t)((128 + (cp % 64))));
+}
+
+int32_t dy_ws(uint8_t ch) {
+  if (ch == 32) {
+  return 1;
+}
+  if (ch >= 9 && ch <= 13) {
+  return 1;
+}
+  if (ch >= 28 && ch <= 31) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t dy_digit(uint8_t ch) {
+  if (ch >= 48 && ch <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t dy_word(uint8_t ch) {
+  if (dy_digit(ch) == 1) {
+  return 1;
+}
+  if (ch >= 65 && ch <= 90) {
+  return 1;
+}
+  if (ch >= 97 && ch <= 122) {
+  return 1;
+}
+  if (ch == 95) {
+  return 1;
+}
+  if (ch >= 128) {
+  return 1;
+}
+  return 0;
+}
+
+void dy_strip(uint8_t* p, int32_t* se) {
+  while (se[0] < se[1] && dy_ws(p[se[0]]) == 1) {
+  se[0] = (se[0] + 1);
+}
+  while (se[1] > se[0] && dy_ws(p[(se[1] - 1)]) == 1) {
+  se[1] = (se[1] - 1);
+}
+}
+
+void dy_rstrip(uint8_t* p, int32_t* se) {
+  while (se[1] > se[0] && dy_ws(p[(se[1] - 1)]) == 1) {
+  se[1] = (se[1] - 1);
+}
+}
+
+void dy_strip_comments(uint8_t* p, int32_t* se) {
+  int32_t k = se[0];
+  while (k < se[1]) {
+  if (p[k] == 35) {
+  se[1] = k;
+  break;
+}
+  k = (k + 1);
+}
+  dy_strip(p, se);
+}
+
+int32_t dy_count(uint8_t* p, int32_t s, int32_t e, uint8_t ch) {
+  int32_t k = s;
+  int32_t c = 0;
+  while (k < e) {
+  if (p[k] == ch) {
+  c = (c + 1);
+}
+  k = (k + 1);
+}
+  return c;
+}
+
+int32_t dy_find(uint8_t* p, int32_t s, int32_t e, uint8_t ch) {
+  int32_t k = s;
+  while (k < e) {
+  if (p[k] == ch) {
+  return k;
+}
+  k = (k + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_find_str(uint8_t* p, int32_t s, int32_t e, const char* lit) {
+  uint8_t* lp = (uint8_t*)((uint8_t*)(lit));
+  int32_t ln = (int32_t)(strlen(lit));
+  int32_t k = s;
+  while ((k + ln) <= e) {
+  int32_t j = 0;
+  while (j < ln && p[(k + j)] == lp[j]) {
+  j = (j + 1);
+}
+  if (j == ln) {
+  return k;
+}
+  k = (k + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_starts(uint8_t* p, int32_t s, int32_t e, const char* lit) {
+  uint8_t* lp = (uint8_t*)((uint8_t*)(lit));
+  int32_t ln = (int32_t)(strlen(lit));
+  if ((e - s) < ln) {
+  return 0;
+}
+  int32_t j = 0;
+  while (j < ln) {
+  if (p[(s + j)] != lp[j]) {
+  return 0;
+}
+  j = (j + 1);
+}
+  return 1;
+}
+
+int32_t dy_eq(uint8_t* p, int32_t s, int32_t e, const char* lit) {
+  if ((e - s) != (int32_t)(strlen(lit))) {
+  return 0;
+}
+  return dy_starts(p, s, e, lit);
+}
+
+int32_t dy_spans_eq(uint8_t* a, int32_t as0, int32_t ae, uint8_t* b, int32_t bs, int32_t be) {
+  if ((ae - as0) != (be - bs)) {
+  return 0;
+}
+  int32_t k = 0;
+  while (k < (ae - as0)) {
+  if (a[(as0 + k)] != b[(bs + k)]) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+int32_t dy_has_nonws(uint8_t* p, int32_t s, int32_t e) {
+  int32_t k = s;
+  while (k < e) {
+  if (dy_ws(p[k]) == 0) {
+  return 1;
+}
+  k = (k + 1);
+}
+  return 0;
+}
+
+int32_t dy_eol_len(uint8_t* p, int32_t i, int32_t n) {
+  uint8_t c = p[i];
+  if (c == 13) {
+  if ((i + 1) < n && p[(i + 1)] == 10) {
+  return 2;
+}
+  return 1;
+}
+  if (c == 10 || c == 11 || c == 12 || c == 28 || c == 29 || c == 30) {
+  return 1;
+}
+  if (c == 194 && (i + 1) < n && p[(i + 1)] == 133) {
+  return 2;
+}
+  if (c == 226 && (i + 2) < n && p[(i + 1)] == 128 && (p[(i + 2)] == 168 || p[(i + 2)] == 169)) {
+  return 3;
+}
+  return 0;
+}
+
+int32_t dy_split_lines(uint8_t* p, int32_t n, int32_t* ls, int32_t* le) {
+  int32_t count = 0;
+  int32_t start = 0;
+  int32_t i = 0;
+  while (i < n) {
+  int32_t t = dy_eol_len(p, i, n);
+  if (t > 0) {
+  ls[count] = start;
+  le[count] = i;
+  count = (count + 1);
+  i = (i + t);
+  start = i;
+} else {
+  i = (i + 1);
+}
+}
+  if (start < n) {
+  ls[count] = start;
+  le[count] = n;
+  count = (count + 1);
+}
+  return count;
+}
+
+int32_t dy_split_ws(uint8_t* p, int32_t s, int32_t e, int32_t* ws, int32_t* we) {
+  int32_t k = s;
+  int32_t c = 0;
+  while (k < e) {
+  while (k < e && dy_ws(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k >= e) {
+  break;
+}
+  ws[c] = k;
+  while (k < e && dy_ws(p[k]) == 0) {
+  k = (k + 1);
+}
+  we[c] = k;
+  c = (c + 1);
+}
+  return c;
+}
+
+int32_t dy_numch(uint8_t ch) {
+  if (dy_digit(ch) == 1) {
+  return 1;
+}
+  if (ch == 43 || ch == 45 || ch == 46 || ch == 101 || ch == 69) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t dy_match(uint8_t* p, int32_t s, int32_t e, const char* pat, int32_t* caps) {
+  uint8_t* pp = (uint8_t*)((uint8_t*)(pat));
+  int32_t k = s;
+  int32_t j = 0;
+  int32_t nc = 0;
+  while (pp[j] != 0) {
+  uint8_t op = pp[j];
+  if (op == 94 || op == 126) {
+  int32_t st = k;
+  while (k < e && dy_ws(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (op == 94 && k == st) {
+  return (0 - 1);
+}
+} else {
+  if (op == 64 || op == 35 || op == 36 || op == 38) {
+  int32_t st2 = k;
+  while (k < e) {
+  uint8_t ch = p[k];
+  int32_t ok = 0;
+  if (op == 64) {
+  ok = dy_word(ch);
+}
+  if (op == 35) {
+  ok = dy_digit(ch);
+}
+  if (op == 36) {
+  if (dy_digit(ch) == 1 || ch == 46) {
+  ok = 1;
+}
+}
+  if (op == 38) {
+  ok = dy_numch(ch);
+}
+  if (ok == 0) {
+  break;
+}
+  k = (k + 1);
+}
+  if (k == st2) {
+  return (0 - 1);
+}
+  caps[(nc * 2)] = st2;
+  caps[((nc * 2) + 1)] = k;
+  nc = (nc + 1);
+} else {
+  if (k >= e || p[k] != op) {
+  return (0 - 1);
+}
+  k = (k + 1);
+}
+}
+  j = (j + 1);
+}
+  return k;
+}
+
+int32_t* dy_i32s(int32_t n) {
+  return (int32_t*)(malloc(((int64_t)((n + 1)) * 4)));
+}
+
+int64_t* dy_i64s(int32_t n) {
+  return (int64_t*)(malloc(((int64_t)((n + 1)) * 8)));
+}
+
+double* dy_f64s(int32_t n) {
+  return (double*)(malloc(((int64_t)((n + 1)) * 8)));
+}
+
+int32_t dy_name(DyC* c, uint8_t* p, int32_t s, int32_t e) {
+  int32_t off = ((c[0]).nm[0]).len;
+  dy_span((c[0]).nm, p, s, e);
+  dy_putc((c[0]).nm, 0);
+  return off;
+}
+
+int32_t dy_name_lit(DyC* c, const char* s) {
+  int32_t off = ((c[0]).nm[0]).len;
+  dy_puts((c[0]).nm, s);
+  dy_putc((c[0]).nm, 0);
+  return off;
+}
+
+const char* dy_nstr(DyC* c, int32_t off) {
+  return (const char*)((((c[0]).nm[0]).p + off));
+}
+
+int32_t dy_neq(DyC* c, int32_t a, int32_t b) {
+  if (strcmp(dy_nstr(c, a), dy_nstr(c, b)) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t dy_neq_lit(DyC* c, int32_t a, const char* s) {
+  if (strcmp(dy_nstr(c, a), s) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+void dy_pn(DySb* b, DyC* c, int32_t off) {
+  dy_puts(b, dy_nstr(c, off));
+}
+
+int32_t dy_fpush(DyC* c, double v) {
+  if ((c[0]).fnum >= (c[0]).fcap) {
+  int32_t ncap = (((c[0]).fcap * 2) + 64);
+  (c[0]).fp = (double*)(realloc((uint8_t*)((c[0]).fp), ((int64_t)((ncap + 1)) * 8)));
+  (c[0]).fcap = ncap;
+}
+  (c[0]).fp[(c[0]).fnum] = v;
+  (c[0]).fnum = ((c[0]).fnum + 1);
+  return ((c[0]).fnum - 1);
+}
+
+int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz) {
+  if ((c[0]).nbd >= (c[0]).bdcap) {
+  int32_t ncap = (((c[0]).bdcap * 2) + 64);
+  (c[0]).bd_kind = (int32_t*)(realloc((uint8_t*)((c[0]).bd_kind), ((int64_t)((ncap + 1)) * 4)));
+  (c[0]).bd_var = (int32_t*)(realloc((uint8_t*)((c[0]).bd_var), ((int64_t)((ncap + 1)) * 4)));
+  (c[0]).bd_hz = (int32_t*)(realloc((uint8_t*)((c[0]).bd_hz), ((int64_t)((ncap + 1)) * 4)));
+  (c[0]).bdcap = ncap;
+}
+  (c[0]).bd_kind[(c[0]).nbd] = kind;
+  (c[0]).bd_var[(c[0]).nbd] = var;
+  (c[0]).bd_hz[(c[0]).nbd] = hz;
+  (c[0]).nbd = ((c[0]).nbd + 1);
+  return ((c[0]).nbd - 1);
+}
+
+int32_t dy_gl(DyC* c, int32_t off) {
+  if ((c[0]).ngl >= (c[0]).glcap) {
+  int32_t ncap = (((c[0]).glcap * 2) + 64);
+  (c[0]).gl = (int32_t*)(realloc((uint8_t*)((c[0]).gl), ((int64_t)((ncap + 1)) * 4)));
+  (c[0]).glcap = ncap;
+}
+  (c[0]).gl[(c[0]).ngl] = off;
+  (c[0]).ngl = ((c[0]).ngl + 1);
+  return ((c[0]).ngl - 1);
+}
+
+int32_t dy_at(DyC* c, int32_t name, double v) {
+  if ((c[0]).nat >= (c[0]).atcap) {
+  int32_t ncap = (((c[0]).atcap * 2) + 64);
+  (c[0]).at_name = (int32_t*)(realloc((uint8_t*)((c[0]).at_name), ((int64_t)((ncap + 1)) * 4)));
+  (c[0]).at_val = (double*)(realloc((uint8_t*)((c[0]).at_val), ((int64_t)((ncap + 1)) * 8)));
+  (c[0]).atcap = ncap;
+}
+  (c[0]).at_name[(c[0]).nat] = name;
+  (c[0]).at_val[(c[0]).nat] = v;
+  (c[0]).nat = ((c[0]).nat + 1);
+  return ((c[0]).nat - 1);
+}
+
+DySb* dy_err(DyC* c) {
+  (c[0]).err = 1;
+  ((c[0]).msg[0]).len = 0;
+  ((c[0]).msg[0]).p[0] = 0;
+  return (c[0]).msg;
+}
+
+void dy_err_s(DyC* c, const char* s) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, s);
+}
+
+void dy_repr_str(DySb* b, uint8_t* p, int32_t s, int32_t e) {
+  uint8_t q = 39;
+  if (dy_find(p, s, e, 39) >= 0 && dy_find(p, s, e, 34) < 0) {
+  q = 34;
+}
+  dy_putc(b, q);
+  int32_t k = s;
+  while (k < e) {
+  uint8_t ch = p[k];
+  if (ch == 92 || ch == q) {
+  dy_putc(b, 92);
+}
+  dy_putc(b, ch);
+  k = (k + 1);
+}
+  dy_putc(b, q);
+}
+
+int64_t dy_int(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
+  int32_t s = s0;
+  int32_t e = e0;
+  while (s < e && dy_ws(p[s]) == 1) {
+  s = (s + 1);
+}
+  while (e > s && dy_ws(p[(e - 1)]) == 1) {
+  e = (e - 1);
+}
+  int32_t k = s;
+  int32_t neg = 0;
+  if (k < e && (p[k] == 43 || p[k] == 45)) {
+  if (p[k] == 45) {
+  neg = 1;
+}
+  k = (k + 1);
+}
+  int64_t v = 0;
+  int32_t nd = 0;
+  int32_t ok = 1;
+  int32_t prev_us = 1;
+  while (k < e) {
+  uint8_t ch = p[k];
+  if (dy_digit(ch) == 1) {
+  v = ((v * 10) + (int64_t)((ch - 48)));
+  nd = (nd + 1);
+  prev_us = 0;
+} else {
+  if (ch == 95 && prev_us == 0) {
+  prev_us = 1;
+} else {
+  ok = 0;
+  break;
+}
+}
+  k = (k + 1);
+}
+  if (nd == 0 || prev_us == 1) {
+  ok = 0;
+}
+  if (ok == 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "invalid literal for int() with base 10: ");
+  dy_repr_str(m, p, s0, e0);
+  return 0;
+}
+  if (neg == 1) {
+  return (0 - v);
+}
+  return v;
+}
+
+int32_t dy_digits_us(uint8_t* p, int32_t k, int32_t e) {
+  if (k >= e || dy_digit(p[k]) == 0) {
+  return k;
+}
+  int32_t j = (k + 1);
+  while (j < e) {
+  if (dy_digit(p[j]) == 1) {
+  j = (j + 1);
+} else {
+  if (p[j] == 95 && (j + 1) < e && dy_digit(p[(j + 1)]) == 1) {
+  j = (j + 2);
+} else {
+  break;
+}
+}
+}
+  return j;
+}
+
+int32_t dy_lower_eq(uint8_t* p, int32_t s, int32_t e, const char* lit) {
+  uint8_t* lp = (uint8_t*)((uint8_t*)(lit));
+  int32_t ln = (int32_t)(strlen(lit));
+  if ((e - s) != ln) {
+  return 0;
+}
+  int32_t j = 0;
+  while (j < ln) {
+  uint8_t ch = p[(s + j)];
+  if (ch >= 65 && ch <= 90) {
+  ch = (ch + 32);
+}
+  if (ch != lp[j]) {
+  return 0;
+}
+  j = (j + 1);
+}
+  return 1;
+}
+
+double dy_float(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
+  int32_t s = s0;
+  int32_t e = e0;
+  while (s < e && dy_ws(p[s]) == 1) {
+  s = (s + 1);
+}
+  while (e > s && dy_ws(p[(e - 1)]) == 1) {
+  e = (e - 1);
+}
+  int32_t k = s;
+  int32_t neg = 0;
+  if (k < e && (p[k] == 43 || p[k] == 45)) {
+  if (p[k] == 45) {
+  neg = 1;
+}
+  k = (k + 1);
+}
+  int32_t ok = 0;
+  int32_t special = 0;
+  if (dy_lower_eq(p, k, e, "inf") == 1 || dy_lower_eq(p, k, e, "infinity") == 1) {
+  special = 1;
+  ok = 1;
+}
+  if (dy_lower_eq(p, k, e, "nan") == 1) {
+  special = 2;
+  ok = 1;
+}
+  if (special == 0) {
+  int32_t a = dy_digits_us(p, k, e);
+  int32_t j = a;
+  int32_t have = 0;
+  if (a > k) {
+  have = 1;
+}
+  if (j < e && p[j] == 46) {
+  int32_t b = dy_digits_us(p, (j + 1), e);
+  if (b > (j + 1)) {
+  have = 1;
+}
+  j = b;
+}
+  if (have == 1 && j < e && (p[j] == 101 || p[j] == 69)) {
+  int32_t x = (j + 1);
+  if (x < e && (p[x] == 43 || p[x] == 45)) {
+  x = (x + 1);
+}
+  int32_t xe = dy_digits_us(p, x, e);
+  if (xe == x) {
+  have = 0;
+}
+  j = xe;
+}
+  if (have == 1 && j == e) {
+  ok = 1;
+}
+}
+  if (ok == 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "could not convert string to float: ");
+  dy_repr_str(m, p, s0, e0);
+  return 0.0;
+}
+  if (special == 1) {
+  double big = (1.0e308 * 10.0);
+  if (neg == 1) {
+  return (0.0 - big);
+}
+  return big;
+}
+  if (special == 2) {
+  double z = 0.0;
+  return (z / z);
+}
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((e - s) + 2))));
+  int32_t q = 0;
+  int32_t t = s;
+  while (t < e) {
+  if (p[t] != 95) {
+  buf[q] = p[t];
+  q = (q + 1);
+}
+  t = (t + 1);
+}
+  buf[q] = 0;
+  double v = strtod((const char*)(buf), NULL);
+  free(buf);
+  return v;
+}
+
+int64_t dy_bits(double x) {
+  double* tmp = (double*)((double*)(malloc(8)));
+  tmp[0] = x;
+  int64_t* ip = (int64_t*)((int64_t*)(tmp));
+  int64_t b = ip[0];
+  free((uint8_t*)(tmp));
+  return b;
+}
+
+int32_t dy_exact(double x, uint8_t* dig, int32_t* dp) {
+  int64_t b = dy_bits(x);
+  int64_t ex = ((b >> 52) & 2047);
+  int64_t frac = (b & 4503599627370495);
+  int64_t mant = frac;
+  int32_t e2 = (0 - 1074);
+  if (ex != 0) {
+  mant = (frac + 4503599627370496);
+  e2 = ((int32_t)(ex) - 1075);
+}
+  int64_t* limbs = (int64_t*)((int64_t*)(malloc(1024)));
+  int32_t nl = 0;
+  int64_t m = mant;
+  while (m > 0) {
+  limbs[nl] = (m % 1000000000);
+  m = (m / 1000000000);
+  nl = (nl + 1);
+}
+  int32_t times = e2;
+  int64_t mul = 2;
+  if (e2 < 0) {
+  times = (0 - e2);
+  mul = 5;
+}
+  int32_t t = 0;
+  while (t < times) {
+  int64_t carry = 0;
+  int32_t i = 0;
+  while (i < nl) {
+  int64_t v = ((limbs[i] * mul) + carry);
+  limbs[i] = (v % 1000000000);
+  carry = (v / 1000000000);
+  i = (i + 1);
+}
+  if (carry > 0) {
+  limbs[nl] = carry;
+  nl = (nl + 1);
+}
+  t = (t + 1);
+}
+  int32_t nd = 0;
+  int64_t top = limbs[(nl - 1)];
+  uint8_t* tmpd = (uint8_t*)(malloc(16));
+  int32_t tn = 0;
+  while (top > 0) {
+  tmpd[tn] = (uint8_t)((48 + (top % 10)));
+  top = (top / 10);
+  tn = (tn + 1);
+}
+  while (tn > 0) {
+  tn = (tn - 1);
+  dig[nd] = tmpd[tn];
+  nd = (nd + 1);
+}
+  int32_t li = (nl - 2);
+  while (li >= 0) {
+  int64_t v2 = limbs[li];
+  int32_t d = 8;
+  while (d >= 0) {
+  dig[(nd + d)] = (uint8_t)((48 + (v2 % 10)));
+  v2 = (v2 / 10);
+  d = (d - 1);
+}
+  nd = (nd + 9);
+  li = (li - 1);
+}
+  free(tmpd);
+  free((uint8_t*)(limbs));
+  if (e2 < 0) {
+  dp[0] = (nd + e2);
+} else {
+  dp[0] = nd;
+}
+  return nd;
+}
+
+void dy_round(uint8_t* dig, int32_t nd, int32_t pr, uint8_t* out, int32_t* dp) {
+  int32_t i = 0;
+  while (i < pr) {
+  if (i < nd) {
+  out[i] = dig[i];
+} else {
+  out[i] = 48;
+}
+  i = (i + 1);
+}
+  if (nd <= pr) {
+  return;
+}
+  uint8_t nx = dig[pr];
+  int32_t up = 0;
+  if (nx > 53) {
+  up = 1;
+}
+  if (nx == 53) {
+  int32_t rest = 0;
+  int32_t k = (pr + 1);
+  while (k < nd) {
+  if (dig[k] != 48) {
+  rest = 1;
+}
+  k = (k + 1);
+}
+  if (rest == 1) {
+  up = 1;
+} else {
+  if (((out[(pr - 1)] - 48) % 2) == 1) {
+  up = 1;
+}
+}
+}
+  if (up == 0) {
+  return;
+}
+  int32_t j = (pr - 1);
+  while (j >= 0) {
+  if (out[j] == 57) {
+  out[j] = 48;
+  j = (j - 1);
+} else {
+  out[j] = (out[j] + 1);
+  return;
+}
+}
+  out[0] = 49;
+  int32_t z = 1;
+  while (z < pr) {
+  out[z] = 48;
+  z = (z + 1);
+}
+  dp[0] = (dp[0] + 1);
+}
+
+int32_t dy_fmt_special(DySb* b, double v, const char* zero) {
+  if (v != v) {
+  dy_puts(b, "nan");
+  return 1;
+}
+  if (dy_bits(v) < 0) {
+  dy_putc(b, 45);
+}
+  double d = (v - v);
+  if (d != d) {
+  dy_puts(b, "inf");
+  return 1;
+}
+  if (v == 0.0) {
+  dy_puts(b, zero);
+  return 1;
+}
+  return 0;
+}
+
+void dy_exp10(DySb* b, int32_t x) {
+  if (x < 0) {
+  dy_putc(b, 45);
+} else {
+  dy_putc(b, 43);
+}
+  int32_t ax = x;
+  if (ax < 0) {
+  ax = (0 - ax);
+}
+  if (ax < 10) {
+  dy_putc(b, 48);
+}
+  dy_i64(b, (int64_t)(ax));
+}
+
+void dy_g17(DySb* b, double v) {
+  if (dy_fmt_special(b, v, "0") == 1) {
+  return;
+}
+  double a = v;
+  if (a < 0.0) {
+  a = (0.0 - a);
+}
+  uint8_t* dig = (uint8_t*)(malloc(1200));
+  uint8_t* r = (uint8_t*)(malloc(32));
+  int32_t* dp = (int32_t*)(dy_i32s(1));
+  int32_t nd = dy_exact(a, dig, dp);
+  dy_round(dig, nd, 17, r, dp);
+  int32_t decpt = dp[0];
+  int32_t x = (decpt - 1);
+  int32_t last = 17;
+  while (last > 1 && r[(last - 1)] == 48) {
+  last = (last - 1);
+}
+  if (x >= (0 - 4) && x < 17) {
+  if (decpt <= 0) {
+  dy_puts(b, "0.");
+  int32_t z = 0;
+  while (z < (0 - decpt)) {
+  dy_putc(b, 48);
+  z = (z + 1);
+}
+  dy_span(b, r, 0, last);
+} else {
+  dy_span(b, r, 0, decpt);
+  if (last > decpt) {
+  dy_putc(b, 46);
+  dy_span(b, r, decpt, last);
+}
+}
+} else {
+  dy_putc(b, r[0]);
+  if (last > 1) {
+  dy_putc(b, 46);
+  dy_span(b, r, 1, last);
+}
+  dy_putc(b, 101);
+  dy_exp10(b, x);
+}
+  free(dig);
+  free(r);
+  free((uint8_t*)(dp));
+}
+
+void dy_repr(DySb* b, double v) {
+  if (dy_fmt_special(b, v, "0.0") == 1) {
+  return;
+}
+  double a = v;
+  if (a < 0.0) {
+  a = (0.0 - a);
+}
+  uint8_t* dig = (uint8_t*)(malloc(1200));
+  uint8_t* r = (uint8_t*)(malloc(32));
+  int32_t* dp = (int32_t*)(dy_i32s(1));
+  int32_t nd = dy_exact(a, dig, dp);
+  int32_t exact_dp = dp[0];
+  DySb* chk = (DySb*)(dy_sb_new(64));
+  int32_t pr = 1;
+  while (pr <= 17) {
+  dp[0] = exact_dp;
+  dy_round(dig, nd, pr, r, dp);
+  (chk[0]).len = 0;
+  dy_puts(chk, "0.");
+  dy_span(chk, r, 0, pr);
+  dy_putc(chk, 101);
+  dy_i64(chk, (int64_t)(dp[0]));
+  if (strtod((const char*)((chk[0]).p), NULL) == a) {
+  break;
+}
+  pr = (pr + 1);
+}
+  int32_t last = pr;
+  while (last > 1 && r[(last - 1)] == 48) {
+  last = (last - 1);
+}
+  int32_t decpt = dp[0];
+  int32_t x = (decpt - 1);
+  if (x >= (0 - 4) && x < 16) {
+  if (decpt <= 0) {
+  dy_puts(b, "0.");
+  int32_t z = 0;
+  while (z < (0 - decpt)) {
+  dy_putc(b, 48);
+  z = (z + 1);
+}
+  dy_span(b, r, 0, last);
+} else {
+  if (decpt >= last) {
+  dy_span(b, r, 0, last);
+  int32_t z2 = last;
+  while (z2 < decpt) {
+  dy_putc(b, 48);
+  z2 = (z2 + 1);
+}
+  dy_puts(b, ".0");
+} else {
+  dy_span(b, r, 0, decpt);
+  dy_putc(b, 46);
+  dy_span(b, r, decpt, last);
+}
+}
+} else {
+  dy_putc(b, r[0]);
+  if (last > 1) {
+  dy_putc(b, 46);
+  dy_span(b, r, 1, last);
+}
+  dy_putc(b, 101);
+  dy_exp10(b, x);
+}
+  free(dig);
+  free(r);
+  free((uint8_t*)(dp));
+  free((chk[0]).p);
+  free((uint8_t*)(chk));
+}
+
+void dy_flow_f64(DySb* b, double v) {
+  DySb* t = (DySb*)(dy_sb_new(40));
+  dy_g17(t, v);
+  int32_t s = 0;
+  if ((t[0]).p[0] == 46) {
+  dy_putc(b, 48);
+}
+  if ((t[0]).len >= 2 && (t[0]).p[0] == 45 && (t[0]).p[1] == 46) {
+  dy_puts(b, "-0");
+  s = 1;
+}
+  dy_span(b, (t[0]).p, s, (t[0]).len);
+  if (dy_find((t[0]).p, 0, (t[0]).len, 101) < 0 && dy_find((t[0]).p, 0, (t[0]).len, 69) < 0 && dy_find((t[0]).p, 0, (t[0]).len, 46) < 0) {
+  dy_puts(b, ".0");
+}
+  free((t[0]).p);
+  free((uint8_t*)(t));
+}
+
+Dp* dy_prog_new(int32_t cap0) {
+  int32_t cap = (cap0 + 8);
+  Dp* g = (Dp*)((Dp*)(malloc(2048)));
+  (g[0]).cap = cap;
+  (g[0]).nsy = 0;
+  (g[0]).sy_name = dy_i32s(cap);
+  (g[0]).sy_mode = dy_i32s(cap);
+  (g[0]).sy_dt = dy_f64s(cap);
+  (g[0]).sy_n = dy_i64s(cap);
+  (g[0]).sy_m = dy_i64s(cap);
+  (g[0]).sy_p = dy_i64s(cap);
+  (g[0]).sy_a0 = dy_i32s(cap);
+  (g[0]).sy_an = dy_i32s(cap);
+  (g[0]).sy_b0 = dy_i32s(cap);
+  (g[0]).sy_bn = dy_i32s(cap);
+  (g[0]).sy_c0 = dy_i32s(cap);
+  (g[0]).sy_cn = dy_i32s(cap);
+  (g[0]).nhz = 0;
+  (g[0]).hz_name = dy_i32s(cap);
+  (g[0]).hz_kind = dy_i32s(cap);
+  (g[0]).hz_steps = dy_i64s(cap);
+  (g[0]).hz_gamma = dy_f64s(cap);
+  (g[0]).nwf = 0;
+  (g[0]).wf_name = dy_i32s(cap);
+  (g[0]).wf_w = dy_i64s(cap);
+  (g[0]).wf_h = dy_i64s(cap);
+  (g[0]).wf_tiles = dy_i64s(cap);
+  (g[0]).wf_seed = dy_i64s(cap);
+  (g[0]).wf_pc = dy_i64s(cap);
+  (g[0]).wf_pt = dy_i64s(cap);
+  (g[0]).wf_steps = dy_i64s(cap);
+  (g[0]).nse = 0;
+  (g[0]).se_sys = dy_i32s(cap);
+  (g[0]).se_b0 = dy_i32s(cap);
+  (g[0]).se_bn = dy_i32s(cap);
+  (g[0]).nga = 0;
+  (g[0]).ga_sys = dy_i32s(cap);
+  (g[0]).ga_hz = dy_i32s(cap);
+  (g[0]).ga_k1 = dy_i32s(cap);
+  (g[0]).ga_k2 = dy_i32s(cap);
+  (g[0]).ga_pop = dy_i64s(cap);
+  (g[0]).ga_gen = dy_i64s(cap);
+  (g[0]).ga_mut = dy_f64s(cap);
+  (g[0]).ncl = 0;
+  (g[0]).cl_sys = dy_i32s(cap);
+  (g[0]).cl_k1 = dy_i32s(cap);
+  (g[0]).cl_k2 = dy_i32s(cap);
+  (g[0]).cl_b0 = dy_i32s(cap);
+  (g[0]).cl_bn = dy_i32s(cap);
+  (g[0]).nanz = 0;
+  (g[0]).an_sys = dy_i32s(cap);
+  (g[0]).an_k1 = dy_i32s(cap);
+  (g[0]).an_k2 = dy_i32s(cap);
+  (g[0]).an_hz = dy_i32s(cap);
+  (g[0]).an_rep = dy_i32s(cap);
+  (g[0]).ncp = 0;
+  (g[0]).cp_sys = dy_i32s(cap);
+  (g[0]).cp_field = dy_i32s(cap);
+  (g[0]).cp_rep = dy_i32s(cap);
+  (g[0]).cp_k1 = dy_i32s(cap);
+  (g[0]).cp_k2 = dy_i32s(cap);
+  (g[0]).cp_guid = dy_i32s(cap);
+  (g[0]).cp_b0 = dy_i32s(cap);
+  (g[0]).cp_bn = dy_i32s(cap);
+  (g[0]).ngd = 0;
+  (g[0]).gd_sys = dy_i32s(cap);
+  (g[0]).gd_k1 = dy_i32s(cap);
+  (g[0]).gd_k2 = dy_i32s(cap);
+  (g[0]).gd_field = dy_i32s(cap);
+  (g[0]).gd_guid = dy_i32s(cap);
+  (g[0]).gd_hz = dy_i32s(cap);
+  (g[0]).gd_b0 = dy_i32s(cap);
+  (g[0]).gd_bn = dy_i32s(cap);
+  (g[0]).nrp = 0;
+  (g[0]).rp_flow = dy_i32s(cap);
+  (g[0]).rp_mode = dy_i32s(cap);
+  (g[0]).rp_dt = dy_f64s(cap);
+  (g[0]).rp_n = dy_i64s(cap);
+  (g[0]).rp_m = dy_i64s(cap);
+  (g[0]).rp_p = dy_i64s(cap);
+  (g[0]).rp_a0 = dy_i32s(cap);
+  (g[0]).rp_an = dy_i32s(cap);
+  (g[0]).rp_b0 = dy_i32s(cap);
+  (g[0]).rp_bn = dy_i32s(cap);
+  (g[0]).rp_c0 = dy_i32s(cap);
+  (g[0]).rp_cn = dy_i32s(cap);
+  (g[0]).rp_at0 = dy_i32s(cap);
+  (g[0]).rp_atn = dy_i32s(cap);
+  (g[0]).rp_nin = dy_i32s(cap);
+  (g[0]).npt = 0;
+  (g[0]).pt_flow = dy_i32s(cap);
+  (g[0]).pt_ax0 = dy_i32s(cap);
+  (g[0]).pt_ax1 = dy_i32s(cap);
+  (g[0]).pt_trail = dy_i64s(cap);
+  (g[0]).pt_w = dy_i64s(cap);
+  (g[0]).pt_h = dy_i64s(cap);
+  (g[0]).pt_set0 = dy_i32s(cap);
+  (g[0]).pt_set1 = dy_i32s(cap);
+  (g[0]).pt_lo0 = dy_f64s(cap);
+  (g[0]).pt_hi0 = dy_f64s(cap);
+  (g[0]).pt_lo1 = dy_f64s(cap);
+  (g[0]).pt_hi1 = dy_f64s(cap);
+  (g[0]).pt_k0 = dy_i32s(cap);
+  (g[0]).pt_k1 = dy_i32s(cap);
+  (g[0]).nlq = 0;
+  (g[0]).lq_sys = dy_i32s(cap);
+  (g[0]).lq_q0 = dy_i32s(cap);
+  (g[0]).lq_qn = dy_i32s(cap);
+  (g[0]).lq_r = dy_f64s(cap);
+  (g[0]).lq_g0 = dy_i32s(cap);
+  (g[0]).lq_gn = dy_i32s(cap);
+  (g[0]).lq_it = dy_i64s(cap);
+  return g;
+}
+
+int32_t dy_find_sys(DyC* c, Dp* g, int32_t name) {
+  int32_t i = 0;
+  while (i < (g[0]).nsy) {
+  if (dy_neq(c, (g[0]).sy_name[i], name) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_find_hz(DyC* c, Dp* g, int32_t name) {
+  int32_t i = 0;
+  while (i < (g[0]).nhz) {
+  if (dy_neq(c, (g[0]).hz_name[i], name) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_find_wf(DyC* c, Dp* g, int32_t name) {
+  int32_t i = 0;
+  while (i < (g[0]).nwf) {
+  if (dy_neq(c, (g[0]).wf_name[i], name) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_sys_slot(DyC* c, Dp* g, int32_t name) {
+  int32_t i = dy_find_sys(c, g, name);
+  if (i >= 0) {
+  return i;
+}
+  int32_t k = (g[0]).nsy;
+  (g[0]).sy_name[k] = name;
+  (g[0]).nsy = (k + 1);
+  return k;
+}
+
+int32_t dy_hz_slot(DyC* c, Dp* g, int32_t name) {
+  int32_t i = dy_find_hz(c, g, name);
+  if (i >= 0) {
+  return i;
+}
+  int32_t k = (g[0]).nhz;
+  (g[0]).hz_name[k] = name;
+  (g[0]).nhz = (k + 1);
+  return k;
+}
+
+int32_t dy_wf_slot(DyC* c, Dp* g, int32_t name) {
+  int32_t i = dy_find_wf(c, g, name);
+  if (i >= 0) {
+  return i;
+}
+  int32_t k = (g[0]).nwf;
+  (g[0]).wf_name[k] = name;
+  (g[0]).nwf = (k + 1);
+  return k;
+}
+
+void dy_copy_sys(Dp* d, int32_t k, Dp* s, int32_t i) {
+  (d[0]).sy_mode[k] = (s[0]).sy_mode[i];
+  (d[0]).sy_dt[k] = (s[0]).sy_dt[i];
+  (d[0]).sy_n[k] = (s[0]).sy_n[i];
+  (d[0]).sy_m[k] = (s[0]).sy_m[i];
+  (d[0]).sy_p[k] = (s[0]).sy_p[i];
+  (d[0]).sy_a0[k] = (s[0]).sy_a0[i];
+  (d[0]).sy_an[k] = (s[0]).sy_an[i];
+  (d[0]).sy_b0[k] = (s[0]).sy_b0[i];
+  (d[0]).sy_bn[k] = (s[0]).sy_bn[i];
+  (d[0]).sy_c0[k] = (s[0]).sy_c0[i];
+  (d[0]).sy_cn[k] = (s[0]).sy_cn[i];
+}
+
+void dy_merge(DyC* c, Dp* d, Dp* s) {
+  int32_t i = 0;
+  while (i < (s[0]).nsy) {
+  int32_t k = dy_sys_slot(c, d, (s[0]).sy_name[i]);
+  dy_copy_sys(d, k, s, i);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nhz) {
+  int32_t k = dy_hz_slot(c, d, (s[0]).hz_name[i]);
+  (d[0]).hz_kind[k] = (s[0]).hz_kind[i];
+  (d[0]).hz_steps[k] = (s[0]).hz_steps[i];
+  (d[0]).hz_gamma[k] = (s[0]).hz_gamma[i];
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nse) {
+  int32_t k = (d[0]).nse;
+  (d[0]).se_sys[k] = (s[0]).se_sys[i];
+  (d[0]).se_b0[k] = (s[0]).se_b0[i];
+  (d[0]).se_bn[k] = (s[0]).se_bn[i];
+  (d[0]).nse = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nga) {
+  int32_t k = (d[0]).nga;
+  (d[0]).ga_sys[k] = (s[0]).ga_sys[i];
+  (d[0]).ga_hz[k] = (s[0]).ga_hz[i];
+  (d[0]).ga_k1[k] = (s[0]).ga_k1[i];
+  (d[0]).ga_k2[k] = (s[0]).ga_k2[i];
+  (d[0]).ga_pop[k] = (s[0]).ga_pop[i];
+  (d[0]).ga_gen[k] = (s[0]).ga_gen[i];
+  (d[0]).ga_mut[k] = (s[0]).ga_mut[i];
+  (d[0]).nga = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).ncl) {
+  int32_t k = (d[0]).ncl;
+  (d[0]).cl_sys[k] = (s[0]).cl_sys[i];
+  (d[0]).cl_k1[k] = (s[0]).cl_k1[i];
+  (d[0]).cl_k2[k] = (s[0]).cl_k2[i];
+  (d[0]).cl_b0[k] = (s[0]).cl_b0[i];
+  (d[0]).cl_bn[k] = (s[0]).cl_bn[i];
+  (d[0]).ncl = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nanz) {
+  int32_t k = (d[0]).nanz;
+  (d[0]).an_sys[k] = (s[0]).an_sys[i];
+  (d[0]).an_k1[k] = (s[0]).an_k1[i];
+  (d[0]).an_k2[k] = (s[0]).an_k2[i];
+  (d[0]).an_hz[k] = (s[0]).an_hz[i];
+  (d[0]).an_rep[k] = (s[0]).an_rep[i];
+  (d[0]).nanz = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nwf) {
+  int32_t k = dy_wf_slot(c, d, (s[0]).wf_name[i]);
+  (d[0]).wf_w[k] = (s[0]).wf_w[i];
+  (d[0]).wf_h[k] = (s[0]).wf_h[i];
+  (d[0]).wf_tiles[k] = (s[0]).wf_tiles[i];
+  (d[0]).wf_seed[k] = (s[0]).wf_seed[i];
+  (d[0]).wf_pc[k] = (s[0]).wf_pc[i];
+  (d[0]).wf_pt[k] = (s[0]).wf_pt[i];
+  (d[0]).wf_steps[k] = (s[0]).wf_steps[i];
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).ncp) {
+  int32_t k = (d[0]).ncp;
+  (d[0]).cp_sys[k] = (s[0]).cp_sys[i];
+  (d[0]).cp_field[k] = (s[0]).cp_field[i];
+  (d[0]).cp_rep[k] = (s[0]).cp_rep[i];
+  (d[0]).cp_k1[k] = (s[0]).cp_k1[i];
+  (d[0]).cp_k2[k] = (s[0]).cp_k2[i];
+  (d[0]).cp_guid[k] = (s[0]).cp_guid[i];
+  (d[0]).cp_b0[k] = (s[0]).cp_b0[i];
+  (d[0]).cp_bn[k] = (s[0]).cp_bn[i];
+  (d[0]).ncp = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).ngd) {
+  int32_t k = (d[0]).ngd;
+  (d[0]).gd_sys[k] = (s[0]).gd_sys[i];
+  (d[0]).gd_k1[k] = (s[0]).gd_k1[i];
+  (d[0]).gd_k2[k] = (s[0]).gd_k2[i];
+  (d[0]).gd_field[k] = (s[0]).gd_field[i];
+  (d[0]).gd_guid[k] = (s[0]).gd_guid[i];
+  (d[0]).gd_hz[k] = (s[0]).gd_hz[i];
+  (d[0]).gd_b0[k] = (s[0]).gd_b0[i];
+  (d[0]).gd_bn[k] = (s[0]).gd_bn[i];
+  (d[0]).ngd = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nrp) {
+  (d[0]).rp_flow[(d[0]).nrp] = (s[0]).rp_flow[i];
+  (d[0]).nrp = ((d[0]).nrp + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).npt) {
+  int32_t k = (d[0]).npt;
+  (d[0]).pt_flow[k] = (s[0]).pt_flow[i];
+  (d[0]).pt_ax0[k] = (s[0]).pt_ax0[i];
+  (d[0]).pt_ax1[k] = (s[0]).pt_ax1[i];
+  (d[0]).pt_trail[k] = (s[0]).pt_trail[i];
+  (d[0]).pt_w[k] = (s[0]).pt_w[i];
+  (d[0]).pt_h[k] = (s[0]).pt_h[i];
+  (d[0]).pt_set0[k] = (s[0]).pt_set0[i];
+  (d[0]).pt_set1[k] = (s[0]).pt_set1[i];
+  (d[0]).pt_lo0[k] = (s[0]).pt_lo0[i];
+  (d[0]).pt_hi0[k] = (s[0]).pt_hi0[i];
+  (d[0]).pt_lo1[k] = (s[0]).pt_lo1[i];
+  (d[0]).pt_hi1[k] = (s[0]).pt_hi1[i];
+  (d[0]).pt_k0[k] = (s[0]).pt_k0[i];
+  (d[0]).pt_k1[k] = (s[0]).pt_k1[i];
+  (d[0]).npt = (k + 1);
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (s[0]).nlq) {
+  int32_t k = (d[0]).nlq;
+  (d[0]).lq_sys[k] = (s[0]).lq_sys[i];
+  (d[0]).lq_q0[k] = (s[0]).lq_q0[i];
+  (d[0]).lq_qn[k] = (s[0]).lq_qn[i];
+  (d[0]).lq_r[k] = (s[0]).lq_r[i];
+  (d[0]).lq_g0[k] = (s[0]).lq_g0[i];
+  (d[0]).lq_gn[k] = (s[0]).lq_gn[i];
+  (d[0]).lq_it[k] = (s[0]).lq_it[i];
+  (d[0]).nlq = (k + 1);
+  i = (i + 1);
+}
+}
+
+int32_t dy_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t start, int32_t* bs, int32_t* be, int32_t* nb) {
+  int32_t depth = 0;
+  int32_t i = start;
+  nb[0] = 0;
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  while (i < nl) {
+  int32_t a = ls[i];
+  int32_t b = le[i];
+  int32_t opens = dy_count(p, a, b, 123);
+  depth = ((depth + opens) - dy_count(p, a, b, 125));
+  if (i > start || opens > 0) {
+  if (depth > 0 || i == start && opens > 0) {
+  int32_t ia = a;
+  if (i == start) {
+  ia = (dy_find(p, a, b, 123) + 1);
+}
+  if (depth > 0) {
+  se[0] = ia;
+  se[1] = b;
+  while (se[1] > se[0] && p[(se[1] - 1)] == 125) {
+  se[1] = (se[1] - 1);
+}
+  dy_strip(p, se);
+  bs[nb[0]] = se[0];
+  be[nb[0]] = se[1];
+  nb[0] = (nb[0] + 1);
+} else {
+  if (dy_find(p, a, b, 125) >= 0) {
+  se[0] = ia;
+  int32_t cl = dy_find(p, ia, b, 125);
+  if (cl >= 0) {
+  se[1] = cl;
+} else {
+  se[1] = b;
+}
+  dy_strip(p, se);
+  bs[nb[0]] = se[0];
+  be[nb[0]] = se[1];
+  nb[0] = (nb[0] + 1);
+}
+}
+}
+}
+  if (depth <= 0 && i > start) {
+  free((uint8_t*)(se));
+  return (i + 1);
+}
+  i = (i + 1);
+}
+  free((uint8_t*)(se));
+  return i;
+}
+
+int32_t dy_block_keep(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t start, int32_t* bs, int32_t* be, int32_t* nb) {
+  int32_t depth = 0;
+  int32_t i = start;
+  nb[0] = 0;
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  while (i < nl) {
+  int32_t a = ls[i];
+  int32_t b = le[i];
+  if (i == start) {
+  int32_t o = dy_find(p, a, b, 123);
+  int32_t aa = b;
+  if (o >= 0) {
+  aa = (o + 1);
+}
+  depth = ((1 + dy_count(p, aa, b, 123)) - dy_count(p, aa, b, 125));
+  if (depth > 0) {
+  if (dy_has_nonws(p, aa, b) == 1) {
+  se[0] = aa;
+  se[1] = b;
+  dy_rstrip(p, se);
+  bs[nb[0]] = se[0];
+  be[nb[0]] = se[1];
+  nb[0] = (nb[0] + 1);
+}
+} else {
+  free((uint8_t*)(se));
+  return (i + 1);
+}
+} else {
+  depth = ((depth + dy_count(p, a, b, 123)) - dy_count(p, a, b, 125));
+  if (depth > 0) {
+  bs[nb[0]] = a;
+  be[nb[0]] = b;
+  nb[0] = (nb[0] + 1);
+} else {
+  int32_t last = (0 - 1);
+  int32_t k = a;
+  while (k < b) {
+  if (p[k] == 125) {
+  last = k;
+}
+  k = (k + 1);
+}
+  int32_t before = a;
+  if (last >= 0) {
+  before = last;
+}
+  if (dy_has_nonws(p, a, before) == 1) {
+  se[0] = a;
+  se[1] = before;
+  dy_rstrip(p, se);
+  bs[nb[0]] = se[0];
+  be[nb[0]] = se[1];
+  nb[0] = (nb[0] + 1);
+}
+  free((uint8_t*)(se));
+  return (i + 1);
+}
+}
+  i = (i + 1);
+}
+  free((uint8_t*)(se));
+  return i;
+}
+
+int32_t dy_floats(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t* f0) {
+  int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t n = dy_split_ws(p, s, e, ws, we);
+  f0[0] = (c[0]).fnum;
+  int32_t k = 0;
+  while (k < n) {
+  double v = dy_float(c, p, ws[k], we[k]);
+  if ((c[0]).err != 0) {
+  free((uint8_t*)(ws));
+  free((uint8_t*)(we));
+  return 0;
+}
+  dy_fpush(c, v);
+  k = (k + 1);
+}
+  free((uint8_t*)(ws));
+  free((uint8_t*)(we));
+  return n;
+}
+
+int32_t dy_all_word(uint8_t* p, int32_t s, int32_t e) {
+  if (e <= s) {
+  return 0;
+}
+  int32_t k = s;
+  while (k < e) {
+  if (dy_word(p[k]) == 0) {
+  return 0;
+}
+  k = (k + 1);
+}
+  return 1;
+}
+
+void dy_parse_nmp(DyC* c, uint8_t* p, int32_t s, int32_t e, int64_t* nv, int64_t* mv, int64_t* pv, int32_t idx) {
+  int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t n = dy_split_ws(p, s, e, ws, we);
+  nv[idx] = dy_int(c, p, ws[1], we[1]);
+  if ((c[0]).err == 0) {
+  int32_t k = 0;
+  while (k < n) {
+  if (dy_eq(p, ws[k], we[k], "m") == 1) {
+  if ((k + 1) >= n) {
+  dy_err_s(c, "list index out of range");
+} else {
+  mv[idx] = dy_int(c, p, ws[(k + 1)], we[(k + 1)]);
+}
+  break;
+}
+  k = (k + 1);
+}
+}
+  if ((c[0]).err == 0) {
+  int32_t k2 = 0;
+  while (k2 < n) {
+  if (dy_eq(p, ws[k2], we[k2], "p") == 1) {
+  if ((k2 + 1) >= n) {
+  dy_err_s(c, "list index out of range");
+} else {
+  pv[idx] = dy_int(c, p, ws[(k2 + 1)], we[(k2 + 1)]);
+}
+  break;
+}
+  k2 = (k2 + 1);
+}
+}
+  free((uint8_t*)(ws));
+  free((uint8_t*)(we));
+}
+
+int64_t dy_int_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
+  int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t n = dy_split_ws(p, s, e, ws, we);
+  int64_t v = 0;
+  if (k >= n) {
+  dy_err_s(c, "list index out of range");
+} else {
+  v = dy_int(c, p, ws[k], we[k]);
+}
+  free((uint8_t*)(ws));
+  free((uint8_t*)(we));
+  return v;
+}
+
+double dy_float_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
+  int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t n = dy_split_ws(p, s, e, ws, we);
+  double v = 0.0;
+  if (k >= n) {
+  dy_err_s(c, "list index out of range");
+} else {
+  v = dy_float(c, p, ws[k], we[k]);
+}
+  free((uint8_t*)(ws));
+  free((uint8_t*)(we));
+  return v;
+}
+
+int32_t dy_name_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
+  int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t n = dy_split_ws(p, s, e, ws, we);
+  int32_t v = (0 - 1);
+  if (k >= n) {
+  dy_err_s(c, "list index out of range");
+} else {
+  v = dy_name(c, p, ws[k], we[k]);
+}
+  free((uint8_t*)(ws));
+  free((uint8_t*)(we));
+  return v;
+}
+
+void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r) {
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  se[0] = s0;
+  se[1] = e0;
+  dy_strip(p, se);
+  (g[0]).rp_at0[r] = (c[0]).nat;
+  (g[0]).rp_atn[r] = 0;
+  if (se[0] >= se[1]) {
+  free((uint8_t*)(se));
+  return;
+}
+  int32_t k = se[0];
+  int32_t e = se[1];
+  while (k <= e) {
+  int32_t j = k;
+  while (j < e && p[j] != 44) {
+  j = (j + 1);
+}
+  int32_t* pa = (int32_t*)(dy_i32s(2));
+  pa[0] = k;
+  pa[1] = j;
+  dy_strip(p, pa);
+  if (pa[1] > pa[0]) {
+  int32_t col = dy_find(p, pa[0], pa[1], 58);
+  if (col < 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "invalid `at` binding '");
+  dy_span(m, p, pa[0], pa[1]);
+  dy_puts(m, "' in represent linear; expected name: value");
+  free((uint8_t*)(pa));
+  free((uint8_t*)(se));
+  return;
+}
+  int32_t* nm = (int32_t*)(dy_i32s(2));
+  nm[0] = pa[0];
+  nm[1] = col;
+  dy_strip(p, nm);
+  int32_t* vl = (int32_t*)(dy_i32s(2));
+  vl[0] = (col + 1);
+  vl[1] = pa[1];
+  dy_strip(p, vl);
+  if (dy_all_word(p, nm[0], nm[1]) == 0) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_puts(m2, "invalid state name in `at`: ");
+  dy_span(m2, p, nm[0], nm[1]);
+  return;
+}
+  double v = dy_float(c, p, vl[0], vl[1]);
+  if ((c[0]).err != 0) {
+  DySb* m3 = (DySb*)(dy_err(c));
+  dy_puts(m3, "invalid numeric value in `at` for '");
+  dy_span(m3, p, nm[0], nm[1]);
+  dy_puts(m3, "': ");
+  dy_span(m3, p, vl[0], vl[1]);
+  return;
+}
+  int32_t off = dy_name(c, p, nm[0], nm[1]);
+  int32_t found = (0 - 1);
+  int32_t q = (g[0]).rp_at0[r];
+  while (q < ((g[0]).rp_at0[r] + (g[0]).rp_atn[r])) {
+  if (dy_neq(c, (c[0]).at_name[q], off) == 1) {
+  found = q;
+}
+  q = (q + 1);
+}
+  if (found >= 0) {
+  (c[0]).at_val[found] = v;
+} else {
+  dy_at(c, off, v);
+  (g[0]).rp_atn[r] = ((g[0]).rp_atn[r] + 1);
+}
+}
+  free((uint8_t*)(pa));
+  k = (j + 1);
+}
+  free((uint8_t*)(se));
+}
+
+int32_t dy_name_list(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  se[0] = s0;
+  se[1] = e0;
+  dy_strip(p, se);
+  if (se[0] >= se[1]) {
+  return 0;
+}
+  int32_t count = 0;
+  int32_t k = se[0];
+  int32_t e = se[1];
+  while (k <= e) {
+  int32_t j = k;
+  while (j < e && p[j] != 44) {
+  j = (j + 1);
+}
+  int32_t* pa = (int32_t*)(dy_i32s(2));
+  pa[0] = k;
+  pa[1] = j;
+  dy_strip(p, pa);
+  if (pa[1] > pa[0]) {
+  if (dy_all_word(p, pa[0], pa[1]) == 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "invalid name in represent linear list: ");
+  dy_span(m, p, pa[0], pa[1]);
+  return 0;
+}
+  count = (count + 1);
+}
+  k = (j + 1);
+}
+  return count;
+}
+
+int32_t dy_paren_form(uint8_t* p, int32_t s, int32_t e, const char* word, int32_t* se) {
+  if (dy_starts(p, s, e, word) == 0) {
+  return 0;
+}
+  int32_t k = (s + (int32_t)(strlen(word)));
+  while (k < e && dy_ws(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k >= e || p[k] != 40) {
+  return 0;
+}
+  int32_t t = e;
+  while (t > (k + 1) && dy_ws(p[(t - 1)]) == 1) {
+  t = (t - 1);
+}
+  if (t <= (k + 1) || p[(t - 1)] != 41) {
+  return 0;
+}
+  se[0] = (k + 1);
+  se[1] = (t - 1);
+  return 1;
+}
+
+void dy_rep_linear_body(DyC* c, uint8_t* p, Dp* g, int32_t r, int32_t* bs, int32_t* be, int32_t nb) {
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  int32_t* inner = (int32_t*)(dy_i32s(2));
+  int32_t* f0 = (int32_t*)(dy_i32s(1));
+  int32_t i = 0;
+  while (i < nb) {
+  se[0] = bs[i];
+  se[1] = be[i];
+  dy_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  if (s < e) {
+  int32_t done = 0;
+  if (dy_paren_form(p, s, e, "at", inner) == 1) {
+  dy_parse_at(c, p, inner[0], inner[1], g, r);
+  done = 1;
+}
+  if (done == 0) {
+  int32_t kind = 0;
+  if (dy_paren_form(p, s, e, "inputs", inner) == 1) {
+  kind = 1;
+} else {
+  if (dy_paren_form(p, s, e, "outputs", inner) == 1) {
+  kind = 2;
+}
+}
+  if (kind > 0) {
+  int32_t cnt = dy_name_list(c, p, inner[0], inner[1]);
+  if (kind == 1) {
+  (g[0]).rp_nin[r] = cnt;
+}
+  done = 1;
+}
+}
+  if (done == 0) {
+  if (dy_eq(p, s, e, "continuous") == 1) {
+  (g[0]).rp_mode[r] = 1;
+} else {
+  if (dy_eq(p, s, e, "discrete") == 1) {
+  (g[0]).rp_mode[r] = 0;
+} else {
+  if (dy_starts(p, s, e, "dt ") == 1) {
+  (g[0]).rp_dt[r] = dy_float_part(c, p, s, e, 1);
+} else {
+  if (dy_starts(p, s, e, "n ") == 1) {
+  dy_parse_nmp(c, p, s, e, (g[0]).rp_n, (g[0]).rp_m, (g[0]).rp_p, r);
+} else {
+  if (dy_starts(p, s, e, "A ") == 1) {
+  (g[0]).rp_an[r] = dy_floats(c, p, (s + 2), e, f0);
+  (g[0]).rp_a0[r] = f0[0];
+} else {
+  if (dy_starts(p, s, e, "B ") == 1) {
+  (g[0]).rp_bn[r] = dy_floats(c, p, (s + 2), e, f0);
+  (g[0]).rp_b0[r] = f0[0];
+} else {
+  if (dy_starts(p, s, e, "C ") == 1) {
+  (g[0]).rp_cn[r] = dy_floats(c, p, (s + 2), e, f0);
+  (g[0]).rp_c0[r] = f0[0];
+} else {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "unknown item in represent linear for '");
+  dy_pn(m, c, (g[0]).rp_flow[r]);
+  dy_puts(m, "': ");
+  dy_span(m, p, s, e);
+}
+}
+}
+}
+}
+}
+}
+}
+  if ((c[0]).err != 0) {
+  return;
+}
+}
+  i = (i + 1);
+}
+}
+
+void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t* be, int32_t nb) {
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  int32_t* caps = (int32_t*)(dy_i32s(16));
+  int32_t fl = (g[0]).pt_flow[t];
+  int32_t i = 0;
+  while (i < nb) {
+  se[0] = bs[i];
+  se[1] = be[i];
+  dy_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  if (s < e) {
+  int32_t done = 0;
+  int32_t m1 = dy_match(p, s, e, "trail^#~", caps);
+  if (m1 == e) {
+  (g[0]).pt_trail[t] = dy_int(c, p, caps[0], caps[1]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  if ((g[0]).pt_trail[t] <= 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "represent phase_portrait for '");
+  dy_pn(m, c, fl);
+  dy_puts(m, "': trail must be positive");
+  return;
+}
+  done = 1;
+}
+  if (done == 0) {
+  int32_t m2 = dy_match(p, s, e, "window^#~,~#~", caps);
+  if (m2 == e) {
+  (g[0]).pt_w[t] = dy_int(c, p, caps[0], caps[1]);
+  (g[0]).pt_h[t] = dy_int(c, p, caps[2], caps[3]);
+  done = 1;
+}
+}
+  if (done == 0) {
+  int32_t m3 = dy_match(p, s, e, "map^@^in~[~&~,~&~]~->~@~", caps);
+  int32_t kind = 0;
+  if (m3 == e) {
+  if (dy_eq(p, caps[6], caps[7], "col") == 1) {
+  kind = 1;
+}
+  if (dy_eq(p, caps[6], caps[7], "row") == 1) {
+  kind = 2;
+}
+}
+  if (kind > 0) {
+  int32_t ax = dy_name(c, p, caps[0], caps[1]);
+  int32_t is0 = dy_neq(c, ax, (g[0]).pt_ax0[t]);
+  int32_t is1 = dy_neq(c, ax, (g[0]).pt_ax1[t]);
+  if (is0 == 0 && is1 == 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "represent phase_portrait for '");
+  dy_pn(m, c, fl);
+  dy_puts(m, "': map axis '");
+  dy_pn(m, c, ax);
+  dy_puts(m, "' is not one of (");
+  dy_pn(m, c, (g[0]).pt_ax0[t]);
+  dy_puts(m, ", ");
+  dy_pn(m, c, (g[0]).pt_ax1[t]);
+  dy_puts(m, ")");
+  return;
+}
+  double lo = dy_float(c, p, caps[2], caps[3]);
+  double hi = 0.0;
+  if ((c[0]).err == 0) {
+  hi = dy_float(c, p, caps[4], caps[5]);
+}
+  if ((c[0]).err != 0) {
+  DySb* m4 = (DySb*)(dy_err(c));
+  dy_puts(m4, "represent phase_portrait for '");
+  dy_pn(m4, c, fl);
+  dy_puts(m4, "': invalid range in map for '");
+  dy_pn(m4, c, ax);
+  dy_puts(m4, "'");
+  return;
+}
+  if (is0 == 1) {
+  (g[0]).pt_set0[t] = 1;
+  (g[0]).pt_lo0[t] = lo;
+  (g[0]).pt_hi0[t] = hi;
+  (g[0]).pt_k0[t] = kind;
+}
+  if (is1 == 1) {
+  (g[0]).pt_set1[t] = 1;
+  (g[0]).pt_lo1[t] = lo;
+  (g[0]).pt_hi1[t] = hi;
+  (g[0]).pt_k1[t] = kind;
+}
+  done = 1;
+}
+}
+  if (done == 0) {
+  DySb* m5 = (DySb*)(dy_err(c));
+  dy_puts(m5, "unknown item in represent phase_portrait for '");
+  dy_pn(m5, c, fl);
+  dy_puts(m5, "': ");
+  dy_span(m5, p, s, e);
+  return;
+}
+  if ((c[0]).err != 0) {
+  return;
+}
+}
+  i = (i + 1);
+}
+  if ((g[0]).pt_set0[t] == 0 || (g[0]).pt_set1[t] == 0) {
+  DySb* m6 = (DySb*)(dy_err(c));
+  dy_puts(m6, "represent phase_portrait for '");
+  dy_pn(m6, c, fl);
+  dy_puts(m6, "': need map for both '");
+  dy_pn(m6, c, (g[0]).pt_ax0[t]);
+  dy_puts(m6, "' and '");
+  dy_pn(m6, c, (g[0]).pt_ax1[t]);
+  dy_puts(m6, "'");
+  return;
+}
+  if ((g[0]).pt_k0[t] == (g[0]).pt_k1[t]) {
+  DySb* m7 = (DySb*)(dy_err(c));
+  dy_puts(m7, "represent phase_portrait for '");
+  dy_pn(m7, c, fl);
+  dy_puts(m7, "': maps must assign one axis to col and one to row");
+}
+}
+
+int32_t dy_rep_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
+  int32_t k = dy_match(p, s, e, "represent^@", caps);
+  if (k < 0) {
+  return 0;
+}
+  int32_t* sub = (int32_t*)(dy_i32s(4));
+  caps[2] = (0 - 1);
+  caps[3] = (0 - 1);
+  int32_t a = dy_match(p, k, e, "^for^@~{", sub);
+  if (a >= 0) {
+  caps[2] = sub[0];
+  caps[3] = sub[1];
+  free((uint8_t*)(sub));
+  return 1;
+}
+  int32_t b = dy_match(p, k, e, "^@~{", sub);
+  if (b >= 0) {
+  caps[2] = sub[0];
+  caps[3] = sub[1];
+  free((uint8_t*)(sub));
+  return 1;
+}
+  free((uint8_t*)(sub));
+  if (dy_match(p, k, e, "~{", sub) >= 0) {
+  return 1;
+}
+  return 0;
+}
+
+void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out) {
+  int32_t* ls = (int32_t*)(dy_i32s((n + 2)));
+  int32_t* le = (int32_t*)(dy_i32s((n + 2)));
+  int32_t nl = dy_split_lines(p, n, ls, le);
+  int32_t* bs = (int32_t*)(dy_i32s((nl + 2)));
+  int32_t* be = (int32_t*)(dy_i32s((nl + 2)));
+  int32_t* nb = (int32_t*)(dy_i32s(1));
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  int32_t* caps = (int32_t*)(dy_i32s(16));
+  int32_t first = 1;
+  int32_t depth = 0;
+  int32_t cur = (0 - 1);
+  int32_t fbd = 0;
+  int32_t have_fbd = 0;
+  int32_t i = 0;
+  while (i < nl) {
+  int32_t a = ls[i];
+  int32_t b = le[i];
+  se[0] = a;
+  se[1] = b;
+  dy_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  int32_t handled = 0;
+  if (s < e && depth == 0) {
+  if (dy_match(p, s, e, "flow^@~{", caps) >= 0) {
+  cur = dy_name(c, p, caps[0], caps[1]);
+  int32_t delta = (dy_count(p, a, b, 123) - dy_count(p, a, b, 125));
+  fbd = (depth + delta);
+  have_fbd = 1;
+  if (first == 0) {
+  dy_putc(out, 10);
+}
+  first = 0;
+  dy_span(out, p, a, b);
+  depth = (depth + delta);
+  i = (i + 1);
+  handled = 1;
+}
+}
+  if (handled == 0 && s < e) {
+  if (dy_match(p, s, e, "represent^phase_portrait~(~@~,~@~)~{", caps) >= 0) {
+  int32_t ax0 = dy_name(c, p, caps[0], caps[1]);
+  int32_t ax1 = dy_name(c, p, caps[2], caps[3]);
+  int32_t nxt = dy_block(p, ls, le, nl, i, bs, be, nb);
+  if (cur < 0 || have_fbd == 0 || depth < fbd) {
+  dy_err_s(c, "represent phase_portrait(...) must appear inside `flow Name { ... }`");
+  return;
+}
+  int32_t t = (g[0]).npt;
+  (g[0]).pt_flow[t] = cur;
+  (g[0]).pt_ax0[t] = ax0;
+  (g[0]).pt_ax1[t] = ax1;
+  (g[0]).pt_trail[t] = 320;
+  (g[0]).pt_w[t] = 900;
+  (g[0]).pt_h[t] = 700;
+  (g[0]).pt_set0[t] = 0;
+  (g[0]).pt_set1[t] = 0;
+  (g[0]).pt_k0[t] = 0;
+  (g[0]).pt_k1[t] = 0;
+  dy_portrait_body(c, p, g, t, bs, be, nb[0]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  (g[0]).npt = (t + 1);
+  i = nxt;
+  handled = 1;
+}
+}
+  if (handled == 0 && s < e) {
+  if (dy_rep_head(p, s, e, caps) == 1) {
+  int32_t ks = caps[0];
+  int32_t ke = caps[1];
+  int32_t xs = caps[2];
+  int32_t xe = caps[3];
+  int32_t nxt2 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  if (dy_eq(p, ks, ke, "nonlinear") == 0) {
+  if (dy_eq(p, ks, ke, "phase_portrait") == 1) {
+  dy_err_s(c, "represent phase_portrait needs axes: `represent phase_portrait(x, z) { ... }`");
+  return;
+}
+  if (dy_eq(p, ks, ke, "koopman") == 1 || dy_eq(p, ks, ke, "transfer_function") == 1 || dy_eq(p, ks, ke, "frequency") == 1) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "represent ");
+  dy_span(m, p, ks, ke);
+  dy_puts(m, ": not yet implemented (Stage-1 ships `represent linear` with explicit A/B/C; see docs/vision/north-star.md ");
+  dy_utf8(m, DY_SECTION);
+  dy_puts(m, "9)");
+  return;
+}
+  if (dy_eq(p, ks, ke, "linear") == 0) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_puts(m2, "unknown represent kind '");
+  dy_span(m2, p, ks, ke);
+  dy_puts(m2, "'; expected linear, nonlinear, phase_portrait, or a reserved form (koopman|transfer_function|frequency)");
+  return;
+}
+  int32_t fname = (0 - 1);
+  if (xs >= 0) {
+  fname = dy_name(c, p, xs, xe);
+} else {
+  if (cur >= 0 && have_fbd == 1 && depth >= fbd) {
+  fname = cur;
+} else {
+  dy_err_s(c, "represent linear { ... } at top level needs a flow name: `represent linear Name { ... }` or place the block inside `flow Name { ... }`");
+  return;
+}
+}
+  int32_t r = (g[0]).nrp;
+  (g[0]).rp_flow[r] = fname;
+  (g[0]).rp_mode[r] = 1;
+  (g[0]).rp_dt[r] = 0.001;
+  (g[0]).rp_n[r] = 0;
+  (g[0]).rp_m[r] = 0;
+  (g[0]).rp_p[r] = 0;
+  (g[0]).rp_an[r] = 0;
+  (g[0]).rp_bn[r] = 0;
+  (g[0]).rp_cn[r] = 0;
+  (g[0]).rp_a0[r] = 0;
+  (g[0]).rp_b0[r] = 0;
+  (g[0]).rp_c0[r] = 0;
+  (g[0]).rp_at0[r] = 0;
+  (g[0]).rp_atn[r] = 0;
+  (g[0]).rp_nin[r] = 0;
+  dy_rep_linear_body(c, p, g, r, bs, be, nb[0]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  (g[0]).nrp = (r + 1);
+}
+  i = nxt2;
+  handled = 1;
+}
+}
+  if (handled == 0) {
+  if (dy_has_nonws(p, a, b) == 1) {
+  depth = ((depth + dy_count(p, a, b, 123)) - dy_count(p, a, b, 125));
+  if (cur >= 0 && have_fbd == 1 && depth < fbd) {
+  cur = (0 - 1);
+  have_fbd = 0;
+}
+}
+  if (first == 0) {
+  dy_putc(out, 10);
+}
+  first = 0;
+  dy_span(out, p, a, b);
+  i = (i + 1);
+}
+}
+}
+
+void dy_at_repr(DySb* m, DyC* c, Dp* g, int32_t r) {
+  dy_putc(m, 123);
+  int32_t q = 0;
+  while (q < (g[0]).rp_atn[r]) {
+  if (q > 0) {
+  dy_puts(m, ", ");
+}
+  int32_t k = ((g[0]).rp_at0[r] + q);
+  uint8_t* nm = (uint8_t*)((((c[0]).nm[0]).p + (c[0]).at_name[k]));
+  dy_repr_str(m, nm, 0, (int32_t)(strlen((const char*)(nm))));
+  dy_puts(m, ": ");
+  dy_repr(m, (c[0]).at_val[k]);
+  q = (q + 1);
+}
+  dy_putc(m, 125);
+}
+
+void dy_rep_prefix(DySb* m, DyC* c, Dp* g, int32_t r) {
+  dy_puts(m, "represent linear for '");
+  dy_pn(m, c, (g[0]).rp_flow[r]);
+  dy_puts(m, "': ");
+}
+
+void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
+  int32_t an = (g[0]).rp_an[r];
+  if (an == 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_rep_prefix(m, c, g, r);
+  dy_puts(m, "linearization coefficients required");
+  if ((g[0]).rp_atn[r] > 0) {
+  dy_puts(m, " (operating point at ");
+  dy_at_repr(m, c, g, r);
+  dy_puts(m, " was given, but automatic Jacobian linearization is not yet implemented)");
+}
+  dy_puts(m, "; supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 -9.81 0.0`");
+  return;
+}
+  int64_t n = (g[0]).rp_n[r];
+  if (n <= 0) {
+  int64_t root = 0;
+  while (((root + 1) * (root + 1)) <= (int64_t)(an)) {
+  root = (root + 1);
+}
+  if ((((root + 1) * (root + 1)) - (int64_t)(an)) < ((int64_t)(an) - (root * root))) {
+  root = (root + 1);
+}
+  if ((root * root) != (int64_t)(an) || root < 1) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m2, c, g, r);
+  dy_puts(m2, "A must list n");
+  dy_utf8(m2, DY_TIMES);
+  dy_puts(m2, "n floats (got ");
+  dy_i64(m2, (int64_t)(an));
+  dy_puts(m2, " values); or set `n` explicitly");
+  return;
+}
+  n = root;
+} else {
+  if ((int64_t)(an) != (n * n)) {
+  DySb* m3 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m3, c, g, r);
+  dy_puts(m3, "A has ");
+  dy_i64(m3, (int64_t)(an));
+  dy_puts(m3, " entries but n=");
+  dy_i64(m3, n);
+  dy_puts(m3, " expects ");
+  dy_i64(m3, (n * n));
+  return;
+}
+}
+  int64_t mm = (g[0]).rp_m[r];
+  int32_t b0 = (g[0]).rp_b0[r];
+  int32_t bn = (g[0]).rp_bn[r];
+  if (bn == 0) {
+  if (mm < 0) {
+  mm = 0;
+}
+  int64_t zeros = 0;
+  if (mm == 0 && (g[0]).rp_nin[r] > 0) {
+  mm = (int64_t)((g[0]).rp_nin[r]);
+  zeros = (n * mm);
+} else {
+  if (mm == 0) {
+  zeros = 1;
+} else {
+  zeros = (n * mm);
+}
+}
+  b0 = (c[0]).fnum;
+  int64_t z = 0;
+  while (z < zeros) {
+  dy_fpush(c, 0.0);
+  z = (z + 1);
+}
+  bn = (int32_t)(zeros);
+} else {
+  if (mm <= 0) {
+  if (((int64_t)(bn) % n) != 0) {
+  DySb* m4 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m4, c, g, r);
+  dy_puts(m4, "B length ");
+  dy_i64(m4, (int64_t)(bn));
+  dy_puts(m4, " is not a multiple of n=");
+  dy_i64(m4, n);
+  return;
+}
+  mm = ((int64_t)(bn) / n);
+} else {
+  if ((int64_t)(bn) != (n * mm)) {
+  DySb* m5 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m5, c, g, r);
+  dy_puts(m5, "B has ");
+  dy_i64(m5, (int64_t)(bn));
+  dy_puts(m5, " entries but n=");
+  dy_i64(m5, n);
+  dy_puts(m5, " m=");
+  dy_i64(m5, mm);
+  dy_puts(m5, " expects ");
+  dy_i64(m5, (n * mm));
+  return;
+}
+}
+}
+  int64_t pp = (g[0]).rp_p[r];
+  int32_t c0 = (g[0]).rp_c0[r];
+  int32_t cn = (g[0]).rp_cn[r];
+  if (cn == 0) {
+  if (pp <= 0) {
+  pp = n;
+}
+  if (pp != n) {
+  DySb* m6 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m6, c, g, r);
+  dy_puts(m6, "supply C (p");
+  dy_utf8(m6, DY_TIMES);
+  dy_puts(m6, "n) when p != n (got p=");
+  dy_i64(m6, pp);
+  dy_puts(m6, ", n=");
+  dy_i64(m6, n);
+  dy_puts(m6, ")");
+  return;
+}
+  c0 = (c[0]).fnum;
+  int64_t ii = 0;
+  while (ii < pp) {
+  int64_t jj = 0;
+  while (jj < n) {
+  if (ii == jj) {
+  dy_fpush(c, 1.0);
+} else {
+  dy_fpush(c, 0.0);
+}
+  jj = (jj + 1);
+}
+  ii = (ii + 1);
+}
+  cn = (int32_t)((pp * n));
+} else {
+  if (pp <= 0) {
+  if (((int64_t)(cn) % n) != 0) {
+  DySb* m7 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m7, c, g, r);
+  dy_puts(m7, "C length ");
+  dy_i64(m7, (int64_t)(cn));
+  dy_puts(m7, " is not a multiple of n=");
+  dy_i64(m7, n);
+  return;
+}
+  pp = ((int64_t)(cn) / n);
+} else {
+  if ((int64_t)(cn) != (pp * n)) {
+  DySb* m8 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m8, c, g, r);
+  dy_puts(m8, "C has ");
+  dy_i64(m8, (int64_t)(cn));
+  dy_puts(m8, " entries but p=");
+  dy_i64(m8, pp);
+  dy_puts(m8, " n=");
+  dy_i64(m8, n);
+  dy_puts(m8, " expects ");
+  dy_i64(m8, (pp * n));
+  return;
+}
+}
+}
+  int32_t off = ((c[0]).nm[0]).len;
+  dy_pn((c[0]).nm, c, (g[0]).rp_flow[r]);
+  dy_puts((c[0]).nm, "_lin");
+  dy_putc((c[0]).nm, 0);
+  if (dy_find_sys(c, g, off) >= 0) {
+  DySb* m9 = (DySb*)(dy_err(c));
+  dy_rep_prefix(m9, c, g, r);
+  ((c[0]).msg[0]).len = (((c[0]).msg[0]).len - 2);
+  dy_puts(m9, " conflicts with an existing dsys '");
+  dy_pn(m9, c, off);
+  dy_puts(m9, "'");
+  return;
+}
+  int32_t k = dy_sys_slot(c, g, off);
+  (g[0]).sy_mode[k] = (g[0]).rp_mode[r];
+  (g[0]).sy_dt[k] = (g[0]).rp_dt[r];
+  (g[0]).sy_n[k] = n;
+  (g[0]).sy_m[k] = mm;
+  (g[0]).sy_p[k] = pp;
+  (g[0]).sy_a0[k] = (g[0]).rp_a0[r];
+  (g[0]).sy_an[k] = an;
+  (g[0]).sy_b0[k] = b0;
+  (g[0]).sy_bn[k] = bn;
+  (g[0]).sy_c0[k] = c0;
+  (g[0]).sy_cn[k] = cn;
+}
+
+void dy_invalid(DyC* c, const char* what, uint8_t* p, int32_t s, int32_t e) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, what);
+  dy_span(m, p, s, e);
+}
+
+int32_t dy_arrow(uint8_t* p, int32_t s, int32_t e, int32_t* l, int32_t* r) {
+  int32_t a = dy_find_str(p, s, e, "->");
+  if (a < 0) {
+  return 0;
+}
+  l[0] = s;
+  l[1] = a;
+  dy_strip(p, l);
+  r[0] = (a + 2);
+  r[1] = e;
+  dy_strip(p, r);
+  return 1;
+}
+
+void dy_lqr_prefix(DySb* m, DyC* c, int32_t sys) {
+  dy_puts(m, "analyze ");
+  dy_pn(m, c, sys);
+  dy_puts(m, " lqr: ");
+}
+
+void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb) {
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  int32_t* f0 = (int32_t*)(dy_i32s(1));
+  int32_t q0 = 0;
+  int32_t qn = 0;
+  double rr = 1.0;
+  int32_t g0 = 0;
+  int32_t gn = 0;
+  int64_t it = 200;
+  int32_t i = 0;
+  while (i < nb) {
+  se[0] = bs[i];
+  se[1] = be[i];
+  dy_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  if (s < e) {
+  if (dy_starts(p, s, e, "Q ") == 1) {
+  qn = dy_floats(c, p, (s + 2), e, f0);
+  q0 = f0[0];
+} else {
+  if (dy_starts(p, s, e, "R ") == 1) {
+  int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t np = dy_split_ws(p, s, e, ws, we);
+  if (np != 2) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m, c, sys);
+  dy_puts(m, "expected `R <scalar>`, got '");
+  dy_span(m, p, s, e);
+  dy_puts(m, "'");
+  return;
+}
+  rr = dy_float(c, p, ws[1], we[1]);
+} else {
+  if (dy_starts(p, s, e, "max_iter ") == 1) {
+  it = dy_int_part(c, p, s, e, 1);
+} else {
+  if (dy_starts(p, s, e, "->") == 1) {
+  int32_t* ws2 = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t* we2 = (int32_t*)(dy_i32s(((e - s) + 1)));
+  int32_t nn = dy_split_ws(p, (s + 2), e, ws2, we2);
+  if (nn == 0) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m2, c, sys);
+  dy_puts(m2, "`->` needs gain variable names");
+  return;
+}
+  int32_t k = 0;
+  while (k < nn) {
+  if (dy_all_word(p, ws2[k], we2[k]) == 0) {
+  DySb* m3 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m3, c, sys);
+  dy_puts(m3, "invalid gain name '");
+  dy_span(m3, p, ws2[k], we2[k]);
+  dy_puts(m3, "'");
+  return;
+}
+  k = (k + 1);
+}
+  g0 = (c[0]).ngl;
+  k = 0;
+  while (k < nn) {
+  dy_gl(c, dy_name(c, p, ws2[k], we2[k]));
+  k = (k + 1);
+}
+  gn = nn;
+} else {
+  DySb* m4 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m4, c, sys);
+  dy_puts(m4, "unknown item '");
+  dy_span(m4, p, s, e);
+  dy_puts(m4, "' (expected Q / R / max_iter / -> gains)");
+  return;
+}
+}
+}
+}
+  if ((c[0]).err != 0) {
+  return;
+}
+}
+  i = (i + 1);
+}
+  if (qn == 0) {
+  DySb* m5 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m5, c, sys);
+  dy_puts(m5, "missing `Q ");
+  dy_utf8(m5, DY_ELLIPSIS);
+  dy_puts(m5, "` diagonal");
+  return;
+}
+  if (gn == 0) {
+  DySb* m6 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m6, c, sys);
+  dy_puts(m6, "missing `-> k0 k1 ");
+  dy_utf8(m6, DY_ELLIPSIS);
+  dy_puts(m6, "` gain bindings");
+  return;
+}
+  if (gn != qn) {
+  DySb* m7 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m7, c, sys);
+  dy_puts(m7, "Q has ");
+  dy_i64(m7, (int64_t)(qn));
+  dy_puts(m7, " entries but -> lists ");
+  dy_i64(m7, (int64_t)(gn));
+  dy_puts(m7, " gains (need one gain per state)");
+  return;
+}
+  int32_t t = (g[0]).nlq;
+  (g[0]).lq_sys[t] = sys;
+  (g[0]).lq_q0[t] = q0;
+  (g[0]).lq_qn[t] = qn;
+  (g[0]).lq_r[t] = rr;
+  (g[0]).lq_g0[t] = g0;
+  (g[0]).lq_gn[t] = gn;
+  (g[0]).lq_it[t] = it;
+  (g[0]).nlq = (t + 1);
+}
+
+void dy_an_prefix(DySb* m, DyC* c, int32_t sys) {
+  dy_puts(m, "analyze ");
+  dy_pn(m, c, sys);
+  dy_puts(m, ": ");
+}
+
+void dy_lqr_braces(DySb* m) {
+  dy_puts(m, "`lqr { ");
+  dy_utf8(m, DY_ELLIPSIS);
+  dy_puts(m, " }`");
+}
+
+void dy_analyze_vision(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb) {
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  int32_t* cs = (int32_t*)(dy_i32s((nb + 2)));
+  int32_t* ce = (int32_t*)(dy_i32s((nb + 2)));
+  int32_t* cn = (int32_t*)(dy_i32s(1));
+  int32_t saw = 0;
+  int32_t i = 0;
+  while (i < nb) {
+  se[0] = bs[i];
+  se[1] = be[i];
+  dy_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  if (s >= e) {
+  i = (i + 1);
+} else {
+  if (dy_starts(p, s, e, "lqr") == 1 && dy_find(p, s, e, 123) >= 0) {
+  int32_t nx = dy_block(p, bs, be, nb, i, cs, ce, cn);
+  dy_lqr(c, p, g, sys, cs, ce, cn[0]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  saw = 1;
+  i = nx;
+} else {
+  if (dy_eq(p, s, e, "lqr") == 1) {
+  if ((i + 1) >= nb || dy_find(p, bs[(i + 1)], be[(i + 1)], 123) < 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_an_prefix(m, c, sys);
+  dy_puts(m, "expected ");
+  dy_lqr_braces(m);
+  return;
+}
+  int32_t nx2 = dy_block(p, bs, be, nb, (i + 1), cs, ce, cn);
+  dy_lqr(c, p, g, sys, cs, ce, cn[0]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  saw = 1;
+  i = nx2;
+} else {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_an_prefix(m2, c, sys);
+  dy_puts(m2, "Stage-1 supports ");
+  dy_lqr_braces(m2);
+  dy_puts(m2, " only; got '");
+  dy_span(m2, p, s, e);
+  dy_puts(m2, "'");
+  return;
+}
+}
+}
+}
+  if (saw == 0) {
+  DySb* m3 = (DySb*)(dy_err(c));
+  dy_an_prefix(m3, c, sys);
+  dy_puts(m3, "empty body ");
+  dy_utf8(m3, DY_DASH);
+  dy_puts(m3, " add `lqr { Q ");
+  dy_utf8(m3, DY_ELLIPSIS);
+  dy_puts(m3, " R ");
+  dy_utf8(m3, DY_ELLIPSIS);
+  dy_puts(m3, " -> ");
+  dy_utf8(m3, DY_ELLIPSIS);
+  dy_puts(m3, " }`");
+}
+}
+
+void dy_validate_raw(DyC* c, Dp* g) {
+  int32_t i = 0;
+  while (i < (g[0]).nsy) {
+  int32_t name = (g[0]).sy_name[i];
+  int32_t synth = 0;
+  int32_t r = 0;
+  while (r < (g[0]).nrp) {
+  int32_t off = ((c[0]).nm[0]).len;
+  dy_pn((c[0]).nm, c, (g[0]).rp_flow[r]);
+  dy_puts((c[0]).nm, "_lin");
+  dy_putc((c[0]).nm, 0);
+  if (dy_neq(c, off, name) == 1) {
+  synth = 1;
+}
+  r = (r + 1);
+}
+  if (synth == 0) {
+  int64_t n = (g[0]).sy_n[i];
+  int64_t mm = (g[0]).sy_m[i];
+  int64_t pp = (g[0]).sy_p[i];
+  if (n <= 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "dsys '");
+  dy_pn(m, c, name);
+  dy_puts(m, "': n must be positive, got ");
+  dy_i64(m, n);
+  return;
+}
+  if (mm < 0) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_puts(m2, "dsys '");
+  dy_pn(m2, c, name);
+  dy_puts(m2, "': m must be non-negative, got ");
+  dy_i64(m2, mm);
+  return;
+}
+  if (pp <= 0) {
+  DySb* m3 = (DySb*)(dy_err(c));
+  dy_puts(m3, "dsys '");
+  dy_pn(m3, c, name);
+  dy_puts(m3, "': p must be positive, got ");
+  dy_i64(m3, pp);
+  return;
+}
+  if ((g[0]).sy_an[i] > 0 || (g[0]).sy_bn[i] > 0 || (g[0]).sy_cn[i] > 0) {
+  int32_t which = 0;
+  while (which < 3) {
+  int64_t want = (n * n);
+  int32_t got = (g[0]).sy_an[i];
+  if (which == 1) {
+  want = (n * mm);
+  got = (g[0]).sy_bn[i];
+}
+  if (which == 2) {
+  want = (pp * n);
+  got = (g[0]).sy_cn[i];
+}
+  if ((int64_t)(got) != want) {
+  DySb* m4 = (DySb*)(dy_err(c));
+  dy_puts(m4, "dsys '");
+  dy_pn(m4, c, name);
+  dy_puts(m4, "': ");
+  if (which == 0) {
+  dy_puts(m4, "A needs ");
+}
+  if (which == 1) {
+  dy_puts(m4, "B needs ");
+}
+  if (which == 2) {
+  dy_puts(m4, "C needs ");
+}
+  dy_i64(m4, want);
+  dy_puts(m4, " entries for ");
+  if (which == 0) {
+  dy_puts(m4, "n = ");
+  dy_i64(m4, n);
+}
+  if (which == 1) {
+  dy_puts(m4, "n = ");
+  dy_i64(m4, n);
+  dy_puts(m4, ", m = ");
+  dy_i64(m4, mm);
+}
+  if (which == 2) {
+  dy_puts(m4, "p = ");
+  dy_i64(m4, pp);
+  dy_puts(m4, ", n = ");
+  dy_i64(m4, n);
+}
+  dy_puts(m4, ", got ");
+  dy_i64(m4, (int64_t)(got));
+  return;
+}
+  which = (which + 1);
+}
+}
+}
+  i = (i + 1);
+}
+}
+
+int32_t dy_cp_prefix(uint8_t* p, int32_t s, int32_t e, int32_t limit) {
+  int32_t k = s;
+  int32_t cps = 0;
+  while (k < e) {
+  if (p[k] < 128 || p[k] >= 192) {
+  if (cps == limit) {
+  return k;
+}
+  cps = (cps + 1);
+}
+  k = (k + 1);
+}
+  return e;
+}
+
+void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
+  DySb* st = (DySb*)(dy_sb_new((n0 + 16)));
+  dy_extract_represent(c, p0, n0, g, st);
+  if ((c[0]).err != 0) {
+  return;
+}
+  int32_t r = 0;
+  while (r < (g[0]).nrp) {
+  dy_rep_to_dsys(c, g, r);
+  if ((c[0]).err != 0) {
+  return;
+}
+  r = (r + 1);
+}
+  uint8_t* p = (uint8_t*)((st[0]).p);
+  int32_t n = (st[0]).len;
+  int32_t* ls = (int32_t*)(dy_i32s((n + 2)));
+  int32_t* le = (int32_t*)(dy_i32s((n + 2)));
+  int32_t nl = dy_split_lines(p, n, ls, le);
+  int32_t* bs = (int32_t*)(dy_i32s((nl + 2)));
+  int32_t* be = (int32_t*)(dy_i32s((nl + 2)));
+  int32_t* nb = (int32_t*)(dy_i32s(1));
+  int32_t* se = (int32_t*)(dy_i32s(2));
+  int32_t* l = (int32_t*)(dy_i32s(2));
+  int32_t* rh = (int32_t*)(dy_i32s(2));
+  int32_t* caps = (int32_t*)(dy_i32s(16));
+  int32_t* f0 = (int32_t*)(dy_i32s(1));
+  int32_t first = 1;
+  int32_t i = 0;
+  while (i < nl) {
+  int32_t a = ls[i];
+  int32_t b = le[i];
+  se[0] = a;
+  se[1] = b;
+  dy_strip_comments(p, se);
+  int32_t s = se[0];
+  int32_t e = se[1];
+  int32_t kept = 0;
+  if (s >= e) {
+  kept = 1;
+} else {
+  if (dy_match(p, s, e, "dyn~{", caps) >= 0 || dy_match(p, s, e, "dynamics~{", caps) >= 0) {
+  int32_t nx = dy_block_keep(p, ls, le, nl, i, bs, be, nb);
+  DySb* body = (DySb*)(dy_sb_new((n + 16)));
+  int32_t q = 0;
+  while (q < nb[0]) {
+  if (q > 0) {
+  dy_putc(body, 10);
+}
+  dy_span(body, p, bs[q], be[q]);
+  q = (q + 1);
+}
+  dy_putc(body, 10);
+  Dp* inner = (Dp*)(dy_prog_new((body[0]).len));
+  DySb* left = (DySb*)(dy_sb_new(((body[0]).len + 16)));
+  dy_parse(c, (body[0]).p, (body[0]).len, inner, left);
+  if ((c[0]).err != 0) {
+  return;
+}
+  int32_t* ls2 = (int32_t*)(dy_i32s(2));
+  ls2[0] = 0;
+  ls2[1] = (left[0]).len;
+  dy_strip((left[0]).p, ls2);
+  if (ls2[1] > ls2[0]) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "dynamics { ... } block may only contain dynamics DSL constructs; leftover:\n");
+  dy_span(m, (left[0]).p, ls2[0], dy_cp_prefix((left[0]).p, ls2[0], ls2[1], 200));
+  return;
+}
+  dy_merge(c, g, inner);
+  i = nx;
+} else {
+  if (dy_starts(p, s, e, "dyn.") == 1 && e > (s + 4)) {
+  s = (s + 4);
+} else {
+  if (dy_starts(p, s, e, "dynamics.") == 1 && e > (s + 9)) {
+  s = (s + 9);
+}
+}
+  se[0] = s;
+  se[1] = e;
+  dy_strip(p, se);
+  s = se[0];
+  e = se[1];
+  if (dy_starts(p, s, e, "dsys ") == 1) {
+  if (dy_match(p, s, e, "dsys^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid dsys declaration: ", p, s, e);
+  return;
+}
+  int32_t name = dy_name(c, p, caps[0], caps[1]);
+  int32_t nx2 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int32_t k = (g[0]).nsy;
+  (g[0]).sy_mode[k] = 0;
+  (g[0]).sy_dt[k] = 0.1;
+  (g[0]).sy_n[k] = 2;
+  (g[0]).sy_m[k] = 1;
+  (g[0]).sy_p[k] = 1;
+  (g[0]).sy_an[k] = 0;
+  (g[0]).sy_bn[k] = 0;
+  (g[0]).sy_cn[k] = 0;
+  (g[0]).sy_a0[k] = 0;
+  (g[0]).sy_b0[k] = 0;
+  (g[0]).sy_c0[k] = 0;
+  int32_t j = 0;
+  while (j < nb[0]) {
+  l[0] = bs[j];
+  l[1] = be[j];
+  dy_strip_comments(p, l);
+  int32_t ts = l[0];
+  int32_t te = l[1];
+  if (ts < te) {
+  if (dy_eq(p, ts, te, "discrete") == 1) {
+  (g[0]).sy_mode[k] = 0;
+} else {
+  if (dy_eq(p, ts, te, "continuous") == 1) {
+  (g[0]).sy_mode[k] = 1;
+} else {
+  if (dy_starts(p, ts, te, "dt ") == 1) {
+  (g[0]).sy_dt[k] = dy_float_part(c, p, ts, te, 1);
+} else {
+  if (dy_starts(p, ts, te, "n ") == 1) {
+  dy_parse_nmp(c, p, ts, te, (g[0]).sy_n, (g[0]).sy_m, (g[0]).sy_p, k);
+} else {
+  if (dy_starts(p, ts, te, "A ") == 1) {
+  (g[0]).sy_an[k] = dy_floats(c, p, (ts + 2), te, f0);
+  (g[0]).sy_a0[k] = f0[0];
+} else {
+  if (dy_starts(p, ts, te, "B ") == 1) {
+  (g[0]).sy_bn[k] = dy_floats(c, p, (ts + 2), te, f0);
+  (g[0]).sy_b0[k] = f0[0];
+} else {
+  if (dy_starts(p, ts, te, "C ") == 1) {
+  (g[0]).sy_cn[k] = dy_floats(c, p, (ts + 2), te, f0);
+  (g[0]).sy_c0[k] = f0[0];
+}
+}
+}
+}
+}
+}
+}
+  if ((c[0]).err != 0) {
+  return;
+}
+}
+  j = (j + 1);
+}
+  if (dy_find_sys(c, g, name) >= 0) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_puts(m2, "dsys '");
+  dy_pn(m2, c, name);
+  dy_puts(m2, "' redeclared (conflicts with a prior dsys or represent linear ");
+  dy_utf8(m2, DY_ARROW);
+  dy_puts(m2, " '");
+  dy_pn(m2, c, name);
+  dy_puts(m2, "')");
+  return;
+}
+  (g[0]).sy_name[k] = name;
+  (g[0]).nsy = (k + 1);
+  i = nx2;
+} else {
+  if (dy_starts(p, s, e, "horizon ") == 1) {
+  if (dy_match(p, s, e, "horizon^@^finite^#", caps) >= 0) {
+  int32_t hn = dy_name(c, p, caps[0], caps[1]);
+  int64_t steps = dy_int(c, p, caps[2], caps[3]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  int32_t hk = dy_hz_slot(c, g, hn);
+  (g[0]).hz_kind[hk] = 0;
+  (g[0]).hz_steps[hk] = steps;
+  (g[0]).hz_gamma[hk] = 1.0;
+} else {
+  if (dy_match(p, s, e, "horizon^@^infinite^gamma^$", caps) >= 0) {
+  int32_t hn2 = dy_name(c, p, caps[0], caps[1]);
+  double gm = dy_float(c, p, caps[2], caps[3]);
+  if ((c[0]).err != 0) {
+  return;
+}
+  int32_t hk2 = dy_hz_slot(c, g, hn2);
+  (g[0]).hz_kind[hk2] = 1;
+  (g[0]).hz_steps[hk2] = 0;
+  (g[0]).hz_gamma[hk2] = gm;
+} else {
+  dy_invalid(c, "Invalid horizon: ", p, s, e);
+  return;
+}
+}
+  i = (i + 1);
+} else {
+  i = dy_parse_rest(c, p, g, ls, le, nl, i, s, e, bs, be, nb, (&kept));
+  if ((c[0]).err != 0) {
+  return;
+}
+}
+}
+}
+}
+  if (kept == 1) {
+  if (first == 0) {
+  dy_putc(out, 10);
+}
+  first = 0;
+  dy_span(out, p, a, b);
+  i = (i + 1);
+}
+}
+  dy_validate_raw(c, g);
+}
+
+int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32_t nl, int32_t i, int32_t s, int32_t e, int32_t* bs, int32_t* be, int32_t* nb, int32_t* kept) {
+  int32_t* caps = (int32_t*)(dy_i32s(20));
+  int32_t* l = (int32_t*)(dy_i32s(2));
+  int32_t* r = (int32_t*)(dy_i32s(2));
+  int32_t* bl = (int32_t*)(dy_i32s(2));
+  if (dy_starts(p, s, e, "sense on ") == 1) {
+  if (dy_match(p, s, e, "sense^on^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid sense block: ", p, s, e);
+  return i;
+}
+  int32_t sys = dy_name(c, p, caps[0], caps[1]);
+  int32_t nx = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int32_t b0 = (c[0]).nbd;
+  int32_t j = 0;
+  while (j < nb[0]) {
+  bl[0] = bs[j];
+  bl[1] = be[j];
+  dy_strip_comments(p, bl);
+  if (dy_arrow(p, bl[0], bl[1], l, r) == 1) {
+  if (dy_eq(p, l[0], l[1], "controllable") == 1) {
+  dy_bd(c, 1, dy_name(c, p, r[0], r[1]), (0 - 1));
+} else {
+  if (dy_eq(p, l[0], l[1], "spectral") == 1) {
+  dy_bd(c, 2, dy_name(c, p, r[0], r[1]), (0 - 1));
+} else {
+  if (dy_starts(p, l[0], l[1], "gramian finite ") == 1) {
+  int32_t hz = dy_name_part(c, p, l[0], l[1], 2);
+  dy_bd(c, 3, dy_name(c, p, r[0], r[1]), hz);
+} else {
+  if (dy_starts(p, l[0], l[1], "gramian infinite ") == 1) {
+  int32_t hz2 = dy_name_part(c, p, l[0], l[1], 2);
+  dy_bd(c, 4, dy_name(c, p, r[0], r[1]), hz2);
+}
+}
+}
+}
+}
+  j = (j + 1);
+}
+  int32_t t = (g[0]).nse;
+  (g[0]).se_sys[t] = sys;
+  (g[0]).se_b0[t] = b0;
+  (g[0]).se_bn[t] = ((c[0]).nbd - b0);
+  (g[0]).nse = (t + 1);
+  return nx;
+}
+  if (dy_starts(p, s, e, "ga evolve on ") == 1) {
+  if (dy_match(p, s, e, "ga^evolve^on^@^over^@~->~@^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid ga evolve block: ", p, s, e);
+  return i;
+}
+  int32_t t2 = (g[0]).nga;
+  (g[0]).ga_sys[t2] = dy_name(c, p, caps[0], caps[1]);
+  (g[0]).ga_hz[t2] = dy_name(c, p, caps[2], caps[3]);
+  (g[0]).ga_k1[t2] = dy_name(c, p, caps[4], caps[5]);
+  (g[0]).ga_k2[t2] = dy_name(c, p, caps[6], caps[7]);
+  (g[0]).ga_pop[t2] = 8;
+  (g[0]).ga_gen[t2] = 20;
+  (g[0]).ga_mut[t2] = 0.3;
+  int32_t nx2 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int32_t j2 = 0;
+  while (j2 < nb[0]) {
+  bl[0] = bs[j2];
+  bl[1] = be[j2];
+  dy_strip_comments(p, bl);
+  if (dy_starts(p, bl[0], bl[1], "population ") == 1) {
+  (g[0]).ga_pop[t2] = dy_int_part(c, p, bl[0], bl[1], 1);
+} else {
+  if (dy_starts(p, bl[0], bl[1], "generations ") == 1) {
+  (g[0]).ga_gen[t2] = dy_int_part(c, p, bl[0], bl[1], 1);
+} else {
+  if (dy_starts(p, bl[0], bl[1], "mutation ") == 1) {
+  (g[0]).ga_mut[t2] = dy_float_part(c, p, bl[0], bl[1], 1);
+}
+}
+}
+  if ((c[0]).err != 0) {
+  return i;
+}
+  j2 = (j2 + 1);
+}
+  (g[0]).nga = (t2 + 1);
+  return nx2;
+}
+  if (dy_starts(p, s, e, "closed ") == 1) {
+  if (dy_match(p, s, e, "closed^@^with^@^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid closed block: ", p, s, e);
+  return i;
+}
+  int32_t t3 = (g[0]).ncl;
+  (g[0]).cl_sys[t3] = dy_name(c, p, caps[0], caps[1]);
+  (g[0]).cl_k1[t3] = dy_name(c, p, caps[2], caps[3]);
+  (g[0]).cl_k2[t3] = dy_name(c, p, caps[4], caps[5]);
+  int32_t nx3 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int32_t b3 = (c[0]).nbd;
+  int32_t j3 = 0;
+  while (j3 < nb[0]) {
+  bl[0] = bs[j3];
+  bl[1] = be[j3];
+  dy_strip_comments(p, bl);
+  if (dy_arrow(p, bl[0], bl[1], l, r) == 1) {
+  if (dy_eq(p, l[0], l[1], "spectral") == 1) {
+  dy_bd(c, 5, dy_name(c, p, r[0], r[1]), (0 - 1));
+} else {
+  if (dy_eq(p, l[0], l[1], "stable") == 1) {
+  dy_bd(c, 6, dy_name(c, p, r[0], r[1]), (0 - 1));
+} else {
+  if (dy_starts(p, l[0], l[1], "energy over ") == 1) {
+  int32_t hz3 = dy_name_part(c, p, l[0], l[1], 2);
+  dy_bd(c, 7, dy_name(c, p, r[0], r[1]), hz3);
+}
+}
+}
+}
+  j3 = (j3 + 1);
+}
+  (g[0]).cl_b0[t3] = b3;
+  (g[0]).cl_bn[t3] = ((c[0]).nbd - b3);
+  (g[0]).ncl = (t3 + 1);
+  return nx3;
+}
+  if (dy_starts(p, s, e, "analyze ") == 1) {
+  if (dy_match(p, s, e, "analyze^@^ga^@^@^over^@~->~@~{", caps) >= 0) {
+  int32_t t4 = (g[0]).nanz;
+  (g[0]).an_sys[t4] = dy_name(c, p, caps[0], caps[1]);
+  (g[0]).an_k1[t4] = dy_name(c, p, caps[2], caps[3]);
+  (g[0]).an_k2[t4] = dy_name(c, p, caps[4], caps[5]);
+  (g[0]).an_hz[t4] = dy_name(c, p, caps[6], caps[7]);
+  (g[0]).an_rep[t4] = dy_name(c, p, caps[8], caps[9]);
+  (g[0]).nanz = (t4 + 1);
+  return dy_block(p, ls, le, nl, i, bs, be, nb);
+}
+  if (dy_match(p, s, e, "analyze^@~{", caps) < 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_puts(m, "Invalid analyze block: ");
+  dy_span(m, p, s, e);
+  dy_puts(m, " (expected `analyze Name ga k1 k2 over H -> r {{");
+  dy_utf8(m, DY_ELLIPSIS);
+  dy_puts(m, "}}` or `analyze Name {{ lqr {{ ");
+  dy_utf8(m, DY_ELLIPSIS);
+  dy_puts(m, " }} }}`)");
+  return i;
+}
+  int32_t sys5 = dy_name(c, p, caps[0], caps[1]);
+  int32_t nx5 = dy_block_keep(p, ls, le, nl, i, bs, be, nb);
+  dy_analyze_vision(c, p, g, sys5, bs, be, nb[0]);
+  return nx5;
+}
+  if (dy_starts(p, s, e, "wfc field ") == 1) {
+  if (dy_match(p, s, e, "wfc^field^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid wfc field block: ", p, s, e);
+  return i;
+}
+  int32_t wn = dy_name(c, p, caps[0], caps[1]);
+  int32_t nx6 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int64_t w = 4;
+  int64_t h = 4;
+  int64_t tiles = 3;
+  int64_t seed = 7;
+  int64_t pc = 0;
+  int64_t pt = 1;
+  int64_t steps = 20;
+  int32_t j6 = 0;
+  while (j6 < nb[0]) {
+  bl[0] = bs[j6];
+  bl[1] = be[j6];
+  dy_strip_comments(p, bl);
+  int32_t ts = bl[0];
+  int32_t te = bl[1];
+  if (dy_starts(p, ts, te, "size ") == 1) {
+  w = dy_int_part(c, p, ts, te, 1);
+  if ((c[0]).err == 0) {
+  h = dy_int_part(c, p, ts, te, 2);
+}
+} else {
+  if (dy_starts(p, ts, te, "tiles ") == 1) {
+  tiles = dy_int_part(c, p, ts, te, 1);
+} else {
+  if (dy_starts(p, ts, te, "seed ") == 1) {
+  seed = dy_int_part(c, p, ts, te, 1);
+} else {
+  if (dy_starts(p, ts, te, "pin ") == 1) {
+  pc = dy_int_part(c, p, ts, te, 1);
+  if ((c[0]).err == 0) {
+  pt = dy_int_part(c, p, ts, te, 2);
+}
+} else {
+  if (dy_starts(p, ts, te, "collapse ") == 1) {
+  steps = dy_int_part(c, p, ts, te, 1);
+}
+}
+}
+}
+}
+  if ((c[0]).err != 0) {
+  return i;
+}
+  j6 = (j6 + 1);
+}
+  int32_t t6 = dy_wf_slot(c, g, wn);
+  (g[0]).wf_w[t6] = w;
+  (g[0]).wf_h[t6] = h;
+  (g[0]).wf_tiles[t6] = tiles;
+  (g[0]).wf_seed[t6] = seed;
+  (g[0]).wf_pc[t6] = pc;
+  (g[0]).wf_pt[t6] = pt;
+  (g[0]).wf_steps[t6] = steps;
+  return nx6;
+}
+  if (dy_starts(p, s, e, "couple ") == 1) {
+  if (dy_match(p, s, e, "couple^@^field^@^using^@^@^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid couple block: ", p, s, e);
+  return i;
+}
+  int32_t t7 = (g[0]).ncp;
+  (g[0]).cp_sys[t7] = dy_name(c, p, caps[0], caps[1]);
+  (g[0]).cp_field[t7] = dy_name(c, p, caps[2], caps[3]);
+  (g[0]).cp_rep[t7] = dy_name(c, p, caps[4], caps[5]);
+  (g[0]).cp_k1[t7] = dy_name(c, p, caps[6], caps[7]);
+  (g[0]).cp_k2[t7] = dy_name(c, p, caps[8], caps[9]);
+  (g[0]).cp_guid[t7] = dy_name_lit(c, "guide");
+  int32_t nx7 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int32_t b7 = (c[0]).nbd;
+  int32_t j7 = 0;
+  while (j7 < nb[0]) {
+  bl[0] = bs[j7];
+  bl[1] = be[j7];
+  dy_strip_comments(p, bl);
+  if (dy_arrow(p, bl[0], bl[1], l, r) == 1) {
+  if (dy_eq(p, l[0], l[1], "guidance") == 1) {
+  (g[0]).cp_guid[t7] = dy_name(c, p, r[0], r[1]);
+} else {
+  dy_bd(c, (0 - 1), dy_name(c, p, r[0], r[1]), dy_name(c, p, l[0], l[1]));
+}
+}
+  j7 = (j7 + 1);
+}
+  (g[0]).cp_b0[t7] = b7;
+  (g[0]).cp_bn[t7] = ((c[0]).nbd - b7);
+  (g[0]).ncp = (t7 + 1);
+  return nx7;
+}
+  if (dy_starts(p, s, e, "guide ") == 1) {
+  if (dy_match(p, s, e, "guide^@^with^@^@^through^@^using^@^over^@~{", caps) < 0) {
+  dy_invalid(c, "Invalid guide block: ", p, s, e);
+  return i;
+}
+  int32_t t8 = (g[0]).ngd;
+  (g[0]).gd_sys[t8] = dy_name(c, p, caps[0], caps[1]);
+  (g[0]).gd_k1[t8] = dy_name(c, p, caps[2], caps[3]);
+  (g[0]).gd_k2[t8] = dy_name(c, p, caps[4], caps[5]);
+  (g[0]).gd_field[t8] = dy_name(c, p, caps[6], caps[7]);
+  (g[0]).gd_guid[t8] = dy_name(c, p, caps[8], caps[9]);
+  (g[0]).gd_hz[t8] = dy_name(c, p, caps[10], caps[11]);
+  int32_t nx8 = dy_block(p, ls, le, nl, i, bs, be, nb);
+  int32_t b8 = (c[0]).nbd;
+  int32_t j8 = 0;
+  while (j8 < nb[0]) {
+  bl[0] = bs[j8];
+  bl[1] = be[j8];
+  dy_strip_comments(p, bl);
+  if (dy_arrow(p, bl[0], bl[1], l, r) == 1) {
+  dy_bd(c, (0 - 1), dy_name(c, p, r[0], r[1]), dy_name(c, p, l[0], l[1]));
+}
+  j8 = (j8 + 1);
+}
+  (g[0]).gd_b0[t8] = b8;
+  (g[0]).gd_bn[t8] = ((c[0]).nbd - b8);
+  (g[0]).ngd = (t8 + 1);
+  return nx8;
+}
+  kept[0] = 1;
+  return i;
+}
+
+void dy_ln(DySb* b, const char* s) {
+  dy_puts(b, s);
+}
+
+void dy_eol(DySb* b) {
+  dy_putc(b, 10);
+}
+
+void dy_key_error(DyC* c, int32_t off) {
+  DySb* m = (DySb*)(dy_err(c));
+  uint8_t* np = (uint8_t*)((((c[0]).nm[0]).p + off));
+  dy_repr_str(m, np, 0, (int32_t)(strlen((const char*)(np))));
+}
+
+int64_t dy_steps_or(DyC* c, Dp* g, int32_t name, int64_t dflt) {
+  if (name < 0) {
+  return dflt;
+}
+  int32_t h = dy_find_hz(c, g, name);
+  if (h >= 0 && (g[0]).hz_kind[h] == 0) {
+  return (g[0]).hz_steps[h];
+}
+  return dflt;
+}
+
+int32_t dy_bufs(DySb* b, int32_t* bi, int32_t count) {
+  int32_t first = bi[0];
+  int32_t k = 0;
+  while (k < count) {
+  dy_puts(b, "    let __dsys_b");
+  dy_i64(b, (int64_t)(bi[0]));
+  dy_puts(b, ": array<f64, 4> = [0.0, 0.0, 0.0, 0.0]\n");
+  bi[0] = (bi[0] + 1);
+  k = (k + 1);
+}
+  return first;
+}
+
+void dy_bufref(DySb* b, int32_t k) {
+  dy_puts(b, "__dsys_b");
+  dy_i64(b, (int64_t)(k));
+}
+
+void dy_bufargs(DySb* b, int32_t first, int32_t count) {
+  int32_t k = 0;
+  while (k < count) {
+  dy_puts(b, ", ");
+  dy_bufref(b, (first + k));
+  k = (k + 1);
+}
+}
+
+void dy_flat_array(DySb* b, DyC* c, int32_t f0, int32_t fnn) {
+  dy_puts(b, ": array<f64, ");
+  if (fnn > 1) {
+  dy_i64(b, (int64_t)(fnn));
+} else {
+  dy_puts(b, "1");
+}
+  dy_puts(b, "> = [");
+  int32_t k = 0;
+  while (k < fnn) {
+  if (k > 0) {
+  dy_puts(b, ", ");
+}
+  dy_flow_f64(b, (c[0]).fp[(f0 + k)]);
+  k = (k + 1);
+}
+  dy_puts(b, "]");
+}
+
+void dy_rep_array(DySb* b, int64_t n, const char* item) {
+  int64_t m = n;
+  if (m < 1) {
+  m = 1;
+}
+  dy_putc(b, 91);
+  int64_t k = 0;
+  while (k < m) {
+  if (k > 0) {
+  dy_puts(b, ", ");
+}
+  dy_puts(b, item);
+  k = (k + 1);
+}
+  dy_putc(b, 93);
+}
+
+void dy_matrix(DySb* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols) {
+  dy_puts(b, "Matrix { data: __dsys_");
+  dy_pn(b, c, name);
+  dy_puts(b, which);
+  dy_puts(b, ", rows: ");
+  dy_i64(b, rows);
+  dy_puts(b, ", cols: ");
+  dy_i64(b, cols);
+  dy_puts(b, " }");
+}
+
+void dy_ga_arrays(DySb* b, DySb* tag, int64_t pop) {
+  dy_puts(b, "    let ");
+  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
+  dy_puts(b, "_k1: array<f64, ");
+  dy_i64(b, pop);
+  dy_puts(b, "> = ");
+  dy_rep_array(b, pop, "0.0");
+  dy_eol(b);
+  dy_puts(b, "    let ");
+  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
+  dy_puts(b, "_k2: array<f64, ");
+  dy_i64(b, pop);
+  dy_puts(b, "> = ");
+  dy_rep_array(b, pop, "0.0");
+  dy_eol(b);
+  dy_puts(b, "    let ");
+  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
+  dy_puts(b, "_fit: array<f64, ");
+  dy_i64(b, pop);
+  dy_puts(b, "> = ");
+  dy_rep_array(b, pop, "0.0");
+  dy_eol(b);
+  dy_puts(b, "    let ");
+  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
+  dy_puts(b, "_bk1: array<f64, 1> = [0.0]\n");
+  dy_puts(b, "    let ");
+  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
+  dy_puts(b, "_bk2: array<f64, 1> = [0.0]\n");
+  dy_puts(b, "    let ");
+  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
+  dy_puts(b, "_hist: array<f64, 32> = ");
+  dy_rep_array(b, 32, "0.0");
+  dy_eol(b);
+}
+
+void dy_tag(DySb* t, const char* pre, int32_t k) {
+  (t[0]).len = 0;
+  dy_puts(t, pre);
+  dy_i64(t, (int64_t)(k));
+}
+
+void dy_tagp(DySb* b, DySb* t) {
+  dy_span(b, (t[0]).p, 0, (t[0]).len);
+}
+
+int32_t dy_is_identifier(DyC* c, int32_t off) {
+  uint8_t* np = (uint8_t*)((((c[0]).nm[0]).p + off));
+  if (np[0] == 0) {
+  return 0;
+}
+  if (dy_digit(np[0]) == 1) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
+  if ((g[0]).nsy == 0 && (g[0]).nwf == 0 && (g[0]).nse == 0 && (g[0]).nga == 0 && (g[0]).ncl == 0 && (g[0]).nanz == 0 && (g[0]).nlq == 0 && (g[0]).ncp == 0 && (g[0]).ngd == 0) {
+  return 0;
+}
+  int32_t* bi = (int32_t*)(dy_i32s(1));
+  bi[0] = 0;
+  DySb* tag = (DySb*)(dy_sb_new(32));
+  dy_puts(b, "    # --- dsys DSL expansion (auto-generated) ---\n");
+  int32_t i = 0;
+  while (i < (g[0]).nhz) {
+  dy_puts(b, "    let h_");
+  dy_pn(b, c, (g[0]).hz_name[i]);
+  if ((g[0]).hz_kind[i] == 0) {
+  dy_puts(b, ": Horizon = horizon_finite(");
+  dy_i64(b, (g[0]).hz_steps[i]);
+} else {
+  dy_puts(b, ": Horizon = horizon_infinite(");
+  dy_g17(b, (g[0]).hz_gamma[i]);
+}
+  dy_puts(b, ")\n");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nsy) {
+  int32_t nm = (g[0]).sy_name[i];
+  int64_t n = (g[0]).sy_n[i];
+  int64_t mm = (g[0]).sy_m[i];
+  int64_t pp = (g[0]).sy_p[i];
+  dy_puts(b, "    let __dsys_");
+  dy_pn(b, c, nm);
+  dy_puts(b, "_A");
+  dy_flat_array(b, c, (g[0]).sy_a0[i], (g[0]).sy_an[i]);
+  dy_eol(b);
+  dy_puts(b, "    let __dsys_");
+  dy_pn(b, c, nm);
+  dy_puts(b, "_B");
+  dy_flat_array(b, c, (g[0]).sy_b0[i], (g[0]).sy_bn[i]);
+  dy_eol(b);
+  dy_puts(b, "    let __dsys_");
+  dy_pn(b, c, nm);
+  dy_puts(b, "_C");
+  dy_flat_array(b, c, (g[0]).sy_c0[i], (g[0]).sy_cn[i]);
+  dy_eol(b);
+  dy_puts(b, "    let __dsys_");
+  dy_pn(b, c, nm);
+  if ((g[0]).sy_mode[i] == 1) {
+  dy_puts(b, "_cont: DynamicalSystem = dsys_continuous(");
+} else {
+  dy_puts(b, ": DynamicalSystem = dsys_discrete(");
+}
+  dy_i64(b, n);
+  dy_puts(b, ", ");
+  dy_i64(b, mm);
+  dy_puts(b, ", ");
+  dy_i64(b, pp);
+  dy_puts(b, ", ");
+  dy_g17(b, (g[0]).sy_dt[i]);
+  dy_puts(b, ", ");
+  dy_matrix(b, c, nm, "_A", n, n);
+  dy_puts(b, ", ");
+  dy_matrix(b, c, nm, "_B", n, mm);
+  dy_puts(b, ", ");
+  dy_matrix(b, c, nm, "_C", pp, n);
+  dy_puts(b, ")\n");
+  if ((g[0]).sy_mode[i] == 1) {
+  int32_t f = dy_bufs(b, bi, 5);
+  dy_puts(b, "    let __dsys_");
+  dy_pn(b, c, nm);
+  dy_puts(b, ": DynamicalSystem = dsys_euler_discretize(__dsys_");
+  dy_pn(b, c, nm);
+  dy_puts(b, "_cont");
+  dy_bufargs(b, f, 4);
+  dy_puts(b, ")\n");
+}
+  if (dy_is_identifier(c, nm) == 1) {
+  dy_puts(b, "    let ");
+  dy_pn(b, c, nm);
+  dy_puts(b, ": DynamicalSystem = __dsys_");
+  dy_pn(b, c, nm);
+  dy_eol(b);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nwf) {
+  int32_t wn = (g[0]).wf_name[i];
+  int64_t cells = ((g[0]).wf_w[i] * (g[0]).wf_h[i]);
+  int64_t opts = (cells * (g[0]).wf_tiles[i]);
+  dy_puts(b, "    let __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_cells: array<i32, ");
+  dy_i64(b, cells);
+  dy_puts(b, "> = ");
+  dy_rep_array(b, cells, "-1");
+  dy_eol(b);
+  dy_puts(b, "    let __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_opts: array<i32, ");
+  dy_i64(b, opts);
+  dy_puts(b, "> = ");
+  dy_rep_array(b, opts, "1");
+  dy_eol(b);
+  dy_puts(b, "    for __wfc_i in 0 to ");
+  dy_i64(b, cells);
+  dy_puts(b, " {\n        __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_cells[__wfc_i] = -1\n    }\n");
+  dy_puts(b, "    for __wfc_j in 0 to ");
+  dy_i64(b, opts);
+  dy_puts(b, " {\n        __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_opts[__wfc_j] = 1\n    }\n");
+  dy_puts(b, "    __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_cells[");
+  dy_i64(b, (g[0]).wf_pc[i]);
+  dy_puts(b, "] = ");
+  dy_i64(b, (g[0]).wf_pt[i]);
+  dy_eol(b);
+  dy_puts(b, "    let __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, ": WFCGrid = WFCGrid { width: ");
+  dy_i64(b, (g[0]).wf_w[i]);
+  dy_puts(b, ", height: ");
+  dy_i64(b, (g[0]).wf_h[i]);
+  dy_puts(b, ", cells: __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_cells, options: __wfc_");
+  dy_pn(b, c, wn);
+  dy_puts(b, "_opts }\n");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nse) {
+  int32_t sys = (g[0]).se_sys[i];
+  if (dy_find_sys(c, g, sys) < 0) {
+  dy_key_error(c, sys);
+  return 0;
+}
+  int32_t q = 0;
+  while (q < (g[0]).se_bn[i]) {
+  int32_t bdx = ((g[0]).se_b0[i] + q);
+  int32_t kind = (c[0]).bd_kind[bdx];
+  int32_t var = (c[0]).bd_var[bdx];
+  if (kind == 1) {
+  int32_t f = dy_bufs(b, bi, 5);
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var);
+  dy_puts(b, ": i32 = 0\n    ");
+  dy_pn(b, c, var);
+  dy_puts(b, " = is_controllable(__dsys_");
+  dy_pn(b, c, sys);
+  dy_bufargs(b, f, 5);
+  dy_puts(b, ")\n");
+}
+  if (kind == 2) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var);
+  dy_puts(b, ": f64 = 0.0\n    ");
+  dy_pn(b, c, var);
+  dy_puts(b, " = matrix_spectral_radius_2x2(__dsys_");
+  dy_pn(b, c, sys);
+  dy_puts(b, ".A)\n");
+}
+  if (kind == 3 || kind == 4) {
+  int32_t f2 = dy_bufs(b, bi, 4);
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var);
+  dy_puts(b, ": f64 = 0.0\n    let __W_");
+  dy_pn(b, c, var);
+  if (kind == 3) {
+  dy_puts(b, ": Matrix = gramian_finite_horizon(__dsys_");
+} else {
+  dy_puts(b, ": Matrix = gramian_infinite_horizon(__dsys_");
+}
+  dy_pn(b, c, sys);
+  dy_puts(b, ", h_");
+  dy_pn(b, c, (c[0]).bd_hz[bdx]);
+  dy_bufargs(b, f2, 4);
+  dy_puts(b, ")\n    ");
+  dy_pn(b, c, var);
+  dy_puts(b, " = matrix_trace(__W_");
+  dy_pn(b, c, var);
+  dy_puts(b, ")\n");
+}
+  q = (q + 1);
+}
+  i = (i + 1);
+}
+  int32_t* dg = (int32_t*)(dy_i32s((((4 * (g[0]).nga) + (4 * (g[0]).nanz)) + 4)));
+  int32_t ndg = 0;
+  i = 0;
+  while (i < (g[0]).nga) {
+  int32_t sys2 = (g[0]).ga_sys[i];
+  if (dy_find_sys(c, g, sys2) < 0) {
+  dy_key_error(c, sys2);
+  return 0;
+}
+  int64_t steps = dy_steps_or(c, g, (g[0]).ga_hz[i], 50);
+  int64_t pop = (g[0]).ga_pop[i];
+  dy_tag(tag, "__ga_e", i);
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, (g[0]).ga_k1[i]);
+  dy_puts(b, ": f64 = 0.0\n    let mut ");
+  dy_pn(b, c, (g[0]).ga_k2[i]);
+  dy_puts(b, ": f64 = 0.0\n");
+  dg[ndg] = (g[0]).ga_k1[i];
+  dg[(ndg + 1)] = (g[0]).ga_k2[i];
+  ndg = (ndg + 2);
+  dy_ga_arrays(b, tag, pop);
+  dy_puts(b, "    let ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_cfg: GAConfig = GAConfig { population: ");
+  dy_i64(b, pop);
+  dy_puts(b, ", generations: ");
+  dy_i64(b, (g[0]).ga_gen[i]);
+  dy_puts(b, ", horizon: ");
+  dy_i64(b, steps);
+  dy_puts(b, ", mutation: ");
+  dy_g17(b, (g[0]).ga_mut[i]);
+  dy_puts(b, " }\n    ga_evolve_traced(__dsys_");
+  dy_pn(b, c, sys2);
+  dy_puts(b, ", ");
+  dy_i64(b, steps);
+  dy_puts(b, ", ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_cfg, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k1, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k2, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_fit, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk1, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk2, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_hist)\n    ");
+  dy_pn(b, c, (g[0]).ga_k1[i]);
+  dy_puts(b, " = ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk1[0]\n    ");
+  dy_pn(b, c, (g[0]).ga_k2[i]);
+  dy_puts(b, " = ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk2[0]\n");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncl) {
+  int32_t sys3 = (g[0]).cl_sys[i];
+  if (dy_find_sys(c, g, sys3) < 0) {
+  dy_key_error(c, sys3);
+  return 0;
+}
+  int32_t f3 = dy_bufs(b, bi, 2);
+  dy_puts(b, "    let __cl_");
+  dy_pn(b, c, sys3);
+  dy_puts(b, ": DynamicalSystem = ga_closed_loop_matrix(__dsys_");
+  dy_pn(b, c, sys3);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).cl_k1[i]);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).cl_k2[i]);
+  dy_bufargs(b, f3, 2);
+  dy_puts(b, ")\n");
+  int32_t q3 = 0;
+  while (q3 < (g[0]).cl_bn[i]) {
+  int32_t bdx3 = ((g[0]).cl_b0[i] + q3);
+  int32_t kind3 = (c[0]).bd_kind[bdx3];
+  int32_t var3 = (c[0]).bd_var[bdx3];
+  if (kind3 == 5) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var3);
+  dy_puts(b, ": f64 = matrix_spectral_radius_2x2(__cl_");
+  dy_pn(b, c, sys3);
+  dy_puts(b, ".A)\n");
+}
+  if (kind3 == 6) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var3);
+  dy_puts(b, ": i32 = 0\n    if matrix_spectral_radius_2x2(__cl_");
+  dy_pn(b, c, sys3);
+  dy_puts(b, ".A) < 1.0 { ");
+  dy_pn(b, c, var3);
+  dy_puts(b, " = 1 }\n");
+}
+  if (kind3 == 7) {
+  int64_t st3 = dy_steps_or(c, g, (c[0]).bd_hz[bdx3], 50);
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var3);
+  dy_puts(b, ": f64 = ga_closed_loop_energy(__cl_");
+  dy_pn(b, c, sys3);
+  dy_puts(b, ", ");
+  dy_i64(b, st3);
+  dy_puts(b, ")\n");
+}
+  q3 = (q3 + 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nanz) {
+  int32_t sys4 = (g[0]).an_sys[i];
+  if (dy_find_sys(c, g, sys4) < 0) {
+  dy_key_error(c, sys4);
+  return 0;
+}
+  int64_t steps4 = dy_steps_or(c, g, (g[0]).an_hz[i], 50);
+  int32_t linked = (0 - 1);
+  int32_t gk = 0;
+  while (gk < (g[0]).nga) {
+  if (dy_neq(c, (g[0]).ga_sys[gk], sys4) == 1 && dy_neq(c, (g[0]).ga_hz[gk], (g[0]).an_hz[i]) == 1) {
+  linked = gk;
+}
+  gk = (gk + 1);
+}
+  int64_t pop4 = 12;
+  int64_t gens4 = 30;
+  double mut4 = 0.3;
+  if (linked >= 0) {
+  pop4 = (g[0]).ga_pop[linked];
+  gens4 = (g[0]).ga_gen[linked];
+  mut4 = (g[0]).ga_mut[linked];
+}
+  dy_tag(tag, "__ga_a", i);
+  int32_t rep = (g[0]).an_rep[i];
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, rep);
+  dy_puts(b, ": GAAnalysisReport = GAAnalysisReport {\n");
+  dy_puts(b, "        plant_controllable: 0, plant_spectral_radius: 0.0,\n");
+  dy_puts(b, "        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,\n");
+  dy_puts(b, "        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,\n");
+  dy_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n");
+  dy_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n");
+  dy_puts(b, "    }\n");
+  dy_ga_arrays(b, tag, pop4);
+  int32_t f4 = dy_bufs(b, bi, 12);
+  dy_puts(b, "    let ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_cfg: GAConfig = GAConfig { population: ");
+  dy_i64(b, pop4);
+  dy_puts(b, ", generations: ");
+  dy_i64(b, gens4);
+  dy_puts(b, ", horizon: ");
+  dy_i64(b, steps4);
+  dy_puts(b, ", mutation: ");
+  dy_g17(b, mut4);
+  dy_puts(b, " }\n    ");
+  dy_pn(b, c, rep);
+  dy_puts(b, " = ga_analyze_control_search(__dsys_");
+  dy_pn(b, c, sys4);
+  dy_puts(b, ", ");
+  dy_i64(b, steps4);
+  dy_puts(b, ", ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_cfg, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k1, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k2, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_fit, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk1, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk2, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_hist");
+  dy_bufargs(b, f4, 12);
+  dy_puts(b, ")\n");
+  int32_t kk = 0;
+  while (kk < 2) {
+  int32_t kv = (g[0]).an_k1[i];
+  if (kk == 1) {
+  kv = (g[0]).an_k2[i];
+}
+  int32_t seen = 0;
+  int32_t d = 0;
+  while (d < ndg) {
+  if (dy_neq(c, dg[d], kv) == 1) {
+  seen = 1;
+}
+  d = (d + 1);
+}
+  if (seen == 0) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, kv);
+  dy_puts(b, ": f64 = 0.0\n");
+  dg[ndg] = kv;
+  ndg = (ndg + 1);
+}
+  kk = (kk + 1);
+}
+  dy_puts(b, "    ");
+  dy_pn(b, c, (g[0]).an_k1[i]);
+  dy_puts(b, " = ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk1[0]\n    ");
+  dy_pn(b, c, (g[0]).an_k2[i]);
+  dy_puts(b, " = ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_bk2[0]\n");
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).nlq) {
+  int32_t sys5 = (g[0]).lq_sys[i];
+  int32_t si = dy_find_sys(c, g, sys5);
+  if (si < 0) {
+  DySb* m = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m, c, sys5);
+  dy_puts(m, "unknown dsys '");
+  dy_pn(m, c, sys5);
+  dy_puts(m, "'");
+  return 0;
+}
+  int64_t n5 = (g[0]).sy_n[si];
+  if ((g[0]).sy_m[si] != 1) {
+  DySb* m2 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m2, c, sys5);
+  dy_puts(m2, "Stage-1 needs scalar input (m=1), got m=");
+  dy_i64(m2, (g[0]).sy_m[si]);
+  return 0;
+}
+  if ((int64_t)((g[0]).lq_qn[i]) != n5) {
+  DySb* m3 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m3, c, sys5);
+  dy_puts(m3, "Q length ");
+  dy_i64(m3, (int64_t)((g[0]).lq_qn[i]));
+  dy_puts(m3, " != n=");
+  dy_i64(m3, n5);
+  return 0;
+}
+  if (n5 > 8) {
+  DySb* m4 = (DySb*)(dy_err(c));
+  dy_lqr_prefix(m4, c, sys5);
+  dy_puts(m4, "n=");
+  dy_i64(m4, n5);
+  dy_puts(m4, " exceeds LQR_MAX_N=8");
+  return 0;
+}
+  dy_tag(tag, "__lqr_", i);
+  dy_puts(b, "    let ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_q");
+  dy_flat_array(b, c, (g[0]).lq_q0[i], (g[0]).lq_qn[i]);
+  dy_puts(b, "\n    let mut ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k: array<f64, ");
+  dy_i64(b, n5);
+  dy_puts(b, "> = ");
+  dy_rep_array(b, n5, "0.0");
+  dy_puts(b, "\n    let ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_iters: i32 = dlqr_diag_q_scalar_u(__dsys_");
+  dy_pn(b, c, sys5);
+  dy_puts(b, ".A.data, __dsys_");
+  dy_pn(b, c, sys5);
+  dy_puts(b, ".B.data, ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_q, ");
+  dy_flow_f64(b, (g[0]).lq_r[i]);
+  dy_puts(b, ", ");
+  dy_i64(b, n5);
+  dy_puts(b, ", ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k, ");
+  dy_i64(b, (g[0]).lq_it[i]);
+  dy_puts(b, ")\n");
+  int32_t gi = 0;
+  while (gi < (g[0]).lq_gn[i]) {
+  dy_puts(b, "    let ");
+  dy_pn(b, c, (c[0]).gl[((g[0]).lq_g0[i] + gi)]);
+  dy_puts(b, ": f64 = ");
+  dy_tagp(b, tag);
+  dy_puts(b, "_k[");
+  dy_i64(b, (int64_t)(gi));
+  dy_puts(b, "]\n");
+  gi = (gi + 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ncp) {
+  int32_t fld = (g[0]).cp_field[i];
+  int32_t wi = dy_find_wf(c, g, fld);
+  if (wi < 0) {
+  dy_key_error(c, fld);
+  return 0;
+}
+  int32_t guid = (g[0]).cp_guid[i];
+  dy_puts(b, "    let ");
+  dy_pn(b, c, guid);
+  dy_puts(b, ": CoupledGuidance = couple_ga_wfc_guidance(");
+  dy_pn(b, c, (g[0]).cp_rep[i]);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).cp_k1[i]);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).cp_k2[i]);
+  dy_puts(b, ", ");
+  dy_i64(b, (g[0]).wf_seed[wi]);
+  dy_puts(b, ", ");
+  dy_i64(b, (g[0]).wf_steps[wi]);
+  dy_puts(b, ")\n    let __wfc_rep_");
+  dy_pn(b, c, fld);
+  dy_puts(b, ": WFCRunReport = wfc_run_guided(__wfc_");
+  dy_pn(b, c, fld);
+  dy_puts(b, ", ");
+  dy_i64(b, (g[0]).wf_tiles[wi]);
+  dy_puts(b, ", ");
+  dy_pn(b, c, guid);
+  dy_puts(b, ")\n");
+  int32_t q6 = 0;
+  while (q6 < (g[0]).cp_bn[i]) {
+  int32_t bdx6 = ((g[0]).cp_b0[i] + q6);
+  int32_t lhs = (c[0]).bd_hz[bdx6];
+  int32_t var6 = (c[0]).bd_var[bdx6];
+  if (dy_neq_lit(c, lhs, "collapsed") == 1) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var6);
+  dy_puts(b, ": i32 = __wfc_rep_");
+  dy_pn(b, c, fld);
+  dy_puts(b, ".collapsed\n");
+}
+  if (dy_neq_lit(c, lhs, "wall_fraction") == 1) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var6);
+  dy_puts(b, ": f64 = __wfc_rep_");
+  dy_pn(b, c, fld);
+  dy_puts(b, ".wall_fraction\n");
+}
+  if (dy_neq_lit(c, lhs, "entropy") == 1) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var6);
+  dy_puts(b, ": f64 = __wfc_rep_");
+  dy_pn(b, c, fld);
+  dy_puts(b, ".mean_entropy\n");
+}
+  q6 = (q6 + 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (g[0]).ngd) {
+  int32_t sys7 = (g[0]).gd_sys[i];
+  if (dy_find_sys(c, g, sys7) < 0) {
+  dy_key_error(c, sys7);
+  return 0;
+}
+  int64_t steps7 = dy_steps_or(c, g, (g[0]).gd_hz[i], 20);
+  int32_t fld7 = (g[0]).gd_field[i];
+  int32_t f7 = dy_bufs(b, bi, 3);
+  dy_tag(tag, "__guide_ev_", i);
+  dy_puts(b, "    let ");
+  dy_tagp(b, tag);
+  dy_puts(b, ": GuidedEvolutionReport = guide_state_evolution(__dsys_");
+  dy_pn(b, c, sys7);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).gd_k1[i]);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).gd_k2[i]);
+  dy_puts(b, ", ");
+  dy_pn(b, c, (g[0]).gd_guid[i]);
+  dy_puts(b, ", __wfc_rep_");
+  dy_pn(b, c, fld7);
+  dy_puts(b, ", ");
+  dy_i64(b, steps7);
+  dy_bufargs(b, f7, 3);
+  dy_puts(b, ")\n");
+  int32_t q7 = 0;
+  while (q7 < (g[0]).gd_bn[i]) {
+  int32_t bdx7 = ((g[0]).gd_b0[i] + q7);
+  int32_t lhs7 = (c[0]).bd_hz[bdx7];
+  int32_t var7 = (c[0]).bd_var[bdx7];
+  const char* field = "";
+  const char* ty = "";
+  if (dy_neq_lit(c, lhs7, "input_scale") == 1) {
+  field = ".input_scale";
+  ty = ": f64 = ";
+}
+  if (dy_neq_lit(c, lhs7, "energy") == 1) {
+  field = ".layout_energy";
+  ty = ": f64 = ";
+}
+  if (dy_neq_lit(c, lhs7, "spectral") == 1) {
+  field = ".guided_spectral_radius";
+  ty = ": f64 = ";
+}
+  if (dy_neq_lit(c, lhs7, "stable") == 1) {
+  field = ".stable_guided";
+  ty = ": i32 = ";
+}
+  if (dy_neq_lit(c, lhs7, "collapsed") == 1) {
+  field = ".collapsed_cells";
+  ty = ": i32 = ";
+}
+  if (strlen(field) > 0) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var7);
+  dy_puts(b, ty);
+  dy_tagp(b, tag);
+  dy_puts(b, field);
+  dy_eol(b);
+}
+  if (dy_neq_lit(c, lhs7, "wall_fraction") == 1) {
+  dy_puts(b, "    let mut ");
+  dy_pn(b, c, var7);
+  dy_puts(b, ": f64 = __wfc_rep_");
+  dy_pn(b, c, fld7);
+  dy_puts(b, ".wall_fraction\n");
+}
+  q7 = (q7 + 1);
+}
+  i = (i + 1);
+}
+  dy_puts(b, "    # --- end dsys DSL expansion ---");
+  return 1;
+}
+
+void dy_compile_portraits(DyC* c, Dp* g, DySb* b) {
+  int32_t i = 0;
+  while (i < (g[0]).npt) {
+  if (i > 0) {
+  dy_eol(b);
+}
+  int32_t fl = (g[0]).pt_flow[i];
+  int32_t ax0 = (g[0]).pt_ax0[i];
+  int32_t ax1 = (g[0]).pt_ax1[i];
+  double a0lo = (g[0]).pt_lo0[i];
+  double a0hi = (g[0]).pt_hi0[i];
+  if ((g[0]).pt_k0[i] == 2) {
+  a0lo = (g[0]).pt_hi0[i];
+  a0hi = (g[0]).pt_lo0[i];
+}
+  double a1lo = (g[0]).pt_lo1[i];
+  double a1hi = (g[0]).pt_hi1[i];
+  if ((g[0]).pt_k1[i] == 2) {
+  a1lo = (g[0]).pt_hi1[i];
+  a1hi = (g[0]).pt_lo1[i];
+}
+  int64_t tr = (g[0]).pt_trail[i];
+  int64_t w = (g[0]).pt_w[i];
+  int64_t h = (g[0]).pt_h[i];
+  dy_puts(b, "# generated from represent phase_portrait for ");
+  dy_pn(b, c, fl);
+  dy_puts(b, "\nconst ");
+  dy_pn(b, c, fl);
+  dy_puts(b, "_portrait_trail: i32 = ");
+  dy_i64(b, tr);
+  dy_puts(b, "\nconst ");
+  dy_pn(b, c, fl);
+  dy_puts(b, "_portrait_win_w: i32 = ");
+  dy_i64(b, w);
+  dy_puts(b, "\nconst ");
+  dy_pn(b, c, fl);
+  dy_puts(b, "_portrait_win_h: i32 = ");
+  dy_i64(b, h);
+  dy_puts(b, "\n\nfunction ");
+  dy_pn(b, c, fl);
+  dy_puts(b, "_portrait_frame(\n    g: Gfx,\n    xs: ptr<f64>,\n    zs: ptr<f64>,\n    head: ptr<i32>,\n    count: ptr<i32>,\n    ");
+  dy_pn(b, c, ax0);
+  dy_puts(b, ": f64,\n    ");
+  dy_pn(b, c, ax1);
+  dy_puts(b, ": f64\n) -> void {\n    trail_push_2d(xs, zs, ");
+  dy_i64(b, tr);
+  dy_puts(b, ", head, count, ");
+  dy_pn(b, c, ax0);
+  dy_puts(b, ", ");
+  dy_pn(b, c, ax1);
+  dy_puts(b, ")\n    let h: i32 = head[0]\n    let c: i32 = count[0]\n    gfx_clear(g, 8, 8, 16)\n    for i in 0 to c {\n        let idx: i32 = trail_index(h, c, ");
+  dy_i64(b, tr);
+  dy_puts(b, ", i)\n        let px: i32 = project_axis(xs[idx], ");
+  dy_repr(b, a0lo);
+  dy_puts(b, ", ");
+  dy_repr(b, a0hi);
+  dy_puts(b, ", ");
+  dy_i64(b, w);
+  dy_puts(b, ", 10)\n        let py: i32 = project_axis(zs[idx], ");
+  dy_repr(b, a1lo);
+  dy_puts(b, ", ");
+  dy_repr(b, a1hi);
+  dy_puts(b, ", ");
+  dy_i64(b, h);
+  dy_puts(b, ", 30)\n        let b: i32 = 25 + (230 * (i + 1)) / c\n        let mut size: i32 = 2\n        if i >= c - 12 { size = 3 }\n        gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)\n    }\n    let hx: i32 = project_axis(");
+  dy_pn(b, c, ax0);
+  dy_puts(b, ", ");
+  dy_repr(b, a0lo);
+  dy_puts(b, ", ");
+  dy_repr(b, a0hi);
+  dy_puts(b, ", ");
+  dy_i64(b, w);
+  dy_puts(b, ", 10)\n    let hz: i32 = project_axis(");
+  dy_pn(b, c, ax1);
+  dy_puts(b, ", ");
+  dy_repr(b, a1lo);
+  dy_puts(b, ", ");
+  dy_repr(b, a1hi);
+  dy_puts(b, ", ");
+  dy_i64(b, h);
+  dy_puts(b, ", 30)\n    gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)\n}\n");
+  i = (i + 1);
+}
+}
+
+int32_t dy_head_ns(uint8_t* p, int32_t k, int32_t n, int32_t* caps) {
+  if (dy_match(p, k, n, "dsys^@", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "horizon^@", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "sense^on^", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "ga^evolve^", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "closed^@", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "analyze^@", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "wfc^field^", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "couple^@", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "guide^@", caps) >= 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t dy_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* caps) {
+  int32_t k = i;
+  while (k < n && dy_ws(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (dy_head_ns(p, k, n, caps) == 1) {
+  return 1;
+}
+  if (dy_starts(p, k, n, "dyn.") == 1 && dy_head_ns(p, (k + 4), n, caps) == 1) {
+  return 1;
+}
+  if (dy_starts(p, k, n, "dynamics.") == 1 && dy_head_ns(p, (k + 9), n, caps) == 1) {
+  return 1;
+}
+  if (dy_match(p, k, n, "dyn~{", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "dynamics~{", caps) >= 0) {
+  return 1;
+}
+  if (dy_match(p, k, n, "represent^@", caps) >= 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_dynamics_has_dsl(uint8_t* p, int32_t n) {
+  int32_t* caps = (int32_t*)(dy_i32s(8));
+  int32_t i = 0;
+  int32_t r = 0;
+  while (i <= n) {
+  if (i == 0 || p[(i - 1)] == 10) {
+  if (dy_head_at(p, i, n, caps) == 1) {
+  r = 1;
+  break;
+}
+}
+  i = (i + 1);
+}
+  free((uint8_t*)(caps));
+  return r;
+}
+
+int32_t dy_contains(DySb* b, const char* lit) {
+  if (dy_find_str((b[0]).p, 0, (b[0]).len, lit) >= 0) {
+  return 1;
+}
+  return 0;
+}
+
+void dy_prepend(DySb* b, const char* lit) {
+  DySb* t = (DySb*)(dy_sb_new(((b[0]).len + 64)));
+  dy_puts(t, lit);
+  dy_span(t, (b[0]).p, 0, (b[0]).len);
+  (b[0]).len = 0;
+  dy_span(b, (t[0]).p, 0, (t[0]).len);
+  free((t[0]).p);
+  free((uint8_t*)(t));
+}
+
+int32_t dy_find_main_call(uint8_t* p, int32_t n) {
+  int32_t* caps = (int32_t*)(dy_i32s(4));
+  int32_t i = 0;
+  while (i < n) {
+  if (p[i] == 10 && dy_match(p, (i + 1), n, "function^main~(", caps) >= 0) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_find_main_body(uint8_t* p, int32_t n) {
+  int32_t* caps = (int32_t*)(dy_i32s(4));
+  int32_t i = 0;
+  while (i < n) {
+  int32_t a = dy_match(p, i, n, "function^main~(", caps);
+  if (a >= 0) {
+  int32_t k = a;
+  while (k < n && p[k] != 41) {
+  k = (k + 1);
+}
+  if (k < n) {
+  int32_t z = dy_match(p, k, n, ")~->~@~{", caps);
+  if (z >= 0) {
+  return z;
+}
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, DySb* out) {
+  if (flowc_dynamics_has_dsl(p, n) == 0) {
+  dy_span(out, p, 0, n);
+  return 0;
+}
+  Dp* g = (Dp*)(dy_prog_new(n));
+  DySb* merged = (DySb*)(dy_sb_new((n + 64)));
+  dy_parse(c, p, n, g, merged);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  DySb* setup = (DySb*)(dy_sb_new(4096));
+  int32_t has_setup = dy_compile(c, g, setup);
+  if ((c[0]).err != 0) {
+  return (0 - 1);
+}
+  DySb* portraits = (DySb*)(dy_sb_new(1024));
+  dy_compile_portraits(c, g, portraits);
+  if (has_setup == 0 && (portraits[0]).len == 0) {
+  dy_span(out, (merged[0]).p, 0, (merged[0]).len);
+  return 0;
+}
+  int32_t needs_ga = 0;
+  if ((g[0]).nsy > 0 || (g[0]).nse > 0 || (g[0]).nga > 0 || (g[0]).ncl > 0 || (g[0]).nanz > 0 || (g[0]).nlq > 0) {
+  needs_ga = 1;
+}
+  int32_t coupled = 0;
+  if ((g[0]).nwf > 0 || (g[0]).ncp > 0 || (g[0]).ngd > 0) {
+  if (dy_contains(merged, "import \"stdlib/dynamics/wfc_ga_coupling.flow\"") == 0) {
+  dy_prepend(merged, "import \"stdlib/dynamics/wfc_ga_coupling.flow\"\n\n");
+  coupled = 1;
+}
+}
+  if (coupled == 0 && needs_ga == 1) {
+  if (dy_contains(merged, "import \"stdlib/dynamics/ga_analysis.flow\"") == 0) {
+  dy_prepend(merged, "import \"stdlib/dynamics/ga_analysis.flow\"\n\n");
+}
+}
+  if ((g[0]).nlq > 0 && dy_contains(merged, "import \"stdlib/dynamics/lqr.flow\"") == 0) {
+  dy_prepend(merged, "import \"stdlib/dynamics/lqr.flow\"\n");
+}
+  if ((g[0]).npt > 0) {
+  if (dy_contains(merged, "import \"stdlib/dynamics/portrait.flow\"") == 0) {
+  dy_prepend(merged, "import \"stdlib/dynamics/portrait.flow\"\n");
+}
+  if (dy_contains(merged, "import \"stdlib/gfx.flow\"") == 0) {
+  dy_prepend(merged, "import \"stdlib/gfx.flow\"\n");
+}
+}
+  DySb* cur = (DySb*)(merged);
+  if ((portraits[0]).len > 0) {
+  int32_t* hs = (int32_t*)(dy_i32s(2));
+  hs[0] = 0;
+  hs[1] = (portraits[0]).len;
+  dy_strip((portraits[0]).p, hs);
+  DySb* nx = (DySb*)(dy_sb_new((((cur[0]).len + (portraits[0]).len) + 16)));
+  int32_t at = dy_find_main_call((cur[0]).p, (cur[0]).len);
+  if (at < 0) {
+  int32_t* rs = (int32_t*)(dy_i32s(2));
+  rs[0] = 0;
+  rs[1] = (cur[0]).len;
+  dy_rstrip((cur[0]).p, rs);
+  dy_span(nx, (cur[0]).p, 0, rs[1]);
+  dy_puts(nx, "\n\n");
+  dy_span(nx, (portraits[0]).p, hs[0], hs[1]);
+  dy_puts(nx, "\n");
+} else {
+  dy_span(nx, (cur[0]).p, 0, at);
+  dy_puts(nx, "\n\n");
+  dy_span(nx, (portraits[0]).p, hs[0], hs[1]);
+  dy_puts(nx, "\n");
+  dy_span(nx, (cur[0]).p, at, (cur[0]).len);
+}
+  cur = nx;
+}
+  if (has_setup == 1) {
+  int32_t end = dy_find_main_body((cur[0]).p, (cur[0]).len);
+  if (end < 0) {
+  dy_span(out, (cur[0]).p, 0, (cur[0]).len);
+  dy_puts(out, "\n\nfunction main() -> i32 {\n");
+  dy_span(out, (setup[0]).p, 0, (setup[0]).len);
+  dy_puts(out, "\n    return 0\n}\n");
+} else {
+  dy_span(out, (cur[0]).p, 0, end);
+  dy_puts(out, "\n");
+  dy_span(out, (setup[0]).p, 0, (setup[0]).len);
+  dy_puts(out, "\n");
+  dy_span(out, (cur[0]).p, end, (cur[0]).len);
+}
+  return 0;
+}
+  dy_span(out, (cur[0]).p, 0, (cur[0]).len);
+  return 0;
+}
+
+DyC* dy_ctx_new(int32_t n) {
+  DyC* c = (DyC*)((DyC*)(malloc(256)));
+  (c[0]).err = 0;
+  (c[0]).msg = dy_sb_new(256);
+  (c[0]).nm = dy_sb_new((n + 256));
+  (c[0]).fcap = (n + 64);
+  (c[0]).fp = dy_f64s((c[0]).fcap);
+  (c[0]).fnum = 0;
+  (c[0]).bdcap = (n + 64);
+  (c[0]).bd_kind = dy_i32s((c[0]).bdcap);
+  (c[0]).bd_var = dy_i32s((c[0]).bdcap);
+  (c[0]).bd_hz = dy_i32s((c[0]).bdcap);
+  (c[0]).nbd = 0;
+  (c[0]).glcap = (n + 64);
+  (c[0]).gl = dy_i32s((c[0]).glcap);
+  (c[0]).ngl = 0;
+  (c[0]).atcap = 64;
+  (c[0]).at_name = dy_i32s(64);
+  (c[0]).at_val = dy_f64s(64);
+  (c[0]).nat = 0;
+  dy_putc((c[0]).nm, 0);
+  return c;
+}
+
+int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
+  if (n < 0) {
+  return n;
+}
+  if (flowc_dynamics_has_dsl(buf, n) == 0) {
+  return n;
+}
+  DyC* c = (DyC*)(dy_ctx_new(n));
+  DySb* out = (DySb*)(dy_sb_new(((n * 2) + 4096)));
+  int32_t rc = dy_expand(c, buf, n, out);
+  if (rc < 0) {
+  DySb* line = (DySb*)(dy_sb_new((((c[0]).msg[0]).len + 32)));
+  dy_puts(line, "flowc dynamics: ");
+  dy_span(line, ((c[0]).msg[0]).p, 0, ((c[0]).msg[0]).len);
+  puts((const char*)((line[0]).p));
+  return (0 - 1);
+}
+  if ((out[0]).len >= cap) {
+  puts("flowc dynamics: expanded source exceeds the source buffer");
+  return (0 - 1);
+}
+  int32_t k = 0;
+  while (k < (out[0]).len) {
+  buf[k] = (out[0]).p[k];
+  k = (k + 1);
+}
+  buf[(out[0]).len] = 0;
+  return (out[0]).len;
+}
+
+
+typedef struct FbBuf {
+  uint8_t* p;
+  int32_t len;
+  int32_t cap;
+} FbBuf;
+
+typedef struct Fb {
+  uint8_t* src;
+  int32_t n;
+  int32_t nt;
+  int32_t* tk;
+  int32_t* top;
+  int32_t* ts;
+  int32_t* te;
+  int32_t* tl;
+  int32_t* tc;
+  int32_t* tvar;
+  int32_t pos;
+  int32_t nn;
+  int32_t ncap;
+  int32_t* nk;
+  int32_t* nop;
+  int32_t* ntok;
+  int32_t* na;
+  int32_t* nb;
+  int32_t* nc;
+  int32_t* nx;
+  int32_t* nfs;
+  int32_t* nfe;
+  FbBuf* nm;
+  int32_t nf;
+  int32_t* f_name;
+  int32_t* f_line;
+  int32_t* f_start;
+  int32_t* f_end;
+  int32_t* f_solver;
+  int64_t* f_dt_ns;
+  int32_t* f_dt_text;
+  int32_t* f_method;
+  int32_t* f_solver_line;
+  int32_t* f_rec;
+  int32_t* f_rec_line;
+  int32_t* f_out;
+  int32_t nmm;
+  int32_t icap;
+  int32_t* mm_flow;
+  int32_t* mm_kind;
+  int32_t* mm_name;
+  int32_t* mm_type;
+  int32_t* mm_init;
+  int32_t* mm_line;
+  int32_t* mm_synth;
+  int32_t* mm_params;
+  int32_t* mm_pipe_m;
+  int32_t* mm_pipe_p;
+  int32_t nev;
+  int32_t* ev_flow;
+  int32_t* ev_target;
+  int32_t* ev_expr;
+  int32_t* ev_line;
+  int32_t nwh;
+  int32_t* wh_flow;
+  int32_t* wh_target;
+  int32_t* wh_thr;
+  int32_t* wh_line;
+  int32_t ney;
+  int32_t* ey_flow;
+  int64_t* ey_ns;
+  int32_t* ey_text;
+  int32_t* ey_line;
+  int32_t nbc;
+  int32_t* bc_kind;
+  int32_t* bc_owner;
+  int32_t* bc_target;
+  int32_t* bc_expr;
+  int32_t* bc_line;
+  int32_t niv;
+  int32_t* iv_flow;
+  int32_t* iv_kind;
+  int32_t* iv_expr;
+  int32_t* iv_line;
+  int32_t* iv_text;
+  int32_t ncn;
+  int32_t* cn_flow;
+  int32_t* cn_sm;
+  int32_t* cn_sp;
+  int32_t* cn_dm;
+  int32_t* cn_dp;
+  int32_t* cn_line;
+  int32_t nrc;
+  int32_t* rc_flow;
+  int32_t* rc_name;
+  int32_t nnames;
+  int32_t* nx_kind;
+  int32_t* nx_name;
+  int32_t err;
+  int32_t err_flow;
+  int32_t err_line;
+  int32_t err_col;
+  FbBuf* emsg;
+  FbBuf* ehint;
+  int32_t has_hint;
+  int32_t cur;
+  FbBuf* out;
+} Fb;
+
+static const int32_t TK_IDENT = 1;
+static const int32_t TK_NUM = 2;
+static const int32_t TK_STR = 3;
+static const int32_t TK_OP = 4;
+static const int32_t TK_CLAIM_PATH = 5;
+static const int32_t TK_CLAIM_COORD = 6;
+static const int32_t TK_EOF = 7;
+static const int32_t OP_ARROW = 1;
+static const int32_t OP_FAT_ARROW = 2;
+static const int32_t OP_QUESTION = 3;
+static const int32_t OP_EQUALS = 4;
+static const int32_t OP_NOT_EQUALS = 5;
+static const int32_t OP_LSHIFT = 6;
+static const int32_t OP_RSHIFT = 7;
+static const int32_t OP_LESS_EQUAL = 8;
+static const int32_t OP_GREATER_EQUAL = 9;
+static const int32_t OP_AND = 10;
+static const int32_t OP_OR = 11;
+static const int32_t OP_PIPELINE = 12;
+static const int32_t OP_PIPE = 13;
+static const int32_t OP_AMPERSAND = 14;
+static const int32_t OP_CARET = 15;
+static const int32_t OP_TILDE = 16;
+static const int32_t OP_ELLIPSIS = 17;
+static const int32_t OP_DOTDOT = 18;
+static const int32_t OP_DOUBLE_COLON = 19;
+static const int32_t OP_PLUS_ASSIGN = 20;
+static const int32_t OP_MINUS_ASSIGN = 21;
+static const int32_t OP_STAR_ASSIGN = 22;
+static const int32_t OP_SLASH_ASSIGN = 23;
+static const int32_t OP_PLUS = 24;
+static const int32_t OP_MINUS = 25;
+static const int32_t OP_STAR = 26;
+static const int32_t OP_SLASH = 27;
+static const int32_t OP_PERCENT = 28;
+static const int32_t OP_LESS = 29;
+static const int32_t OP_GREATER = 30;
+static const int32_t OP_ASSIGN = 31;
+static const int32_t OP_NOT = 32;
+static const int32_t OP_LPAREN = 33;
+static const int32_t OP_RPAREN = 34;
+static const int32_t OP_LBRACE = 35;
+static const int32_t OP_RBRACE = 36;
+static const int32_t OP_LBRACKET = 37;
+static const int32_t OP_RBRACKET = 38;
+static const int32_t OP_SEMICOLON = 39;
+static const int32_t OP_COLON = 40;
+static const int32_t OP_COMMA = 41;
+static const int32_t OP_DOT = 42;
+static const int32_t OP_AT = 43;
+static const int32_t FB_MAX_FLOWS = 256;
+static const int32_t NX_TAKEN = 1;
+static const int32_t NX_LOCAL_FN = 2;
+static const int32_t NX_DIMENSION = 3;
+static const int32_t MK_DEAD = 0;
+static const int32_t MK_STATE = 1;
+static const int32_t MK_INPUT = 2;
+static const int32_t MK_OUTPUT = 3;
+static const int32_t MK_PARAM = 4;
+static const int32_t MK_CHILD = 5;
+static const int32_t N_VAR = 1;
+static const int32_t N_LIT = 2;
+static const int32_t N_BIN = 3;
+static const int32_t N_UN = 4;
+static const int32_t N_CALL = 5;
+static const int32_t N_METHOD = 6;
+static const int32_t N_FIELD = 7;
+static const int32_t N_INDEX = 8;
+static const int32_t N_SLICE = 9;
+static const int32_t N_CAST = 10;
+static const int32_t N_TRY = 11;
+static const int32_t N_ARRAY = 12;
+static const int32_t N_VEC = 13;
+static const int32_t N_STRUCT = 14;
+static const int32_t N_RECUPD = 15;
+static const int32_t N_EFFECT = 16;
+static const int32_t N_LAMBDA = 17;
+static const int32_t N_IFX = 18;
+static const int32_t N_STAGE = 19;
+static const int32_t N_FORK = 20;
+static const int32_t N_FINIT = 21;
+static const int32_t N_OPAQUE = 22;
+static const int32_t OPX_IN = 100;
+static const int32_t OPX_NOT_WORD = 101;
+static const int64_t FB_I64_MAX = 9223372036854775807;
+FbBuf* fb_buf_new(int32_t cap);
+void fb_buf_free(FbBuf* b);
+void fb_putc(FbBuf* b, uint8_t ch);
+void fb_puts(FbBuf* b, const char* s);
+void fb_put_span(FbBuf* b, uint8_t* src, int32_t s, int32_t e);
+void fb_put_i64(FbBuf* b, int64_t v);
+void fb_put_int(FbBuf* b, int32_t v);
+int32_t fb_is_space(uint8_t ch);
+int32_t fb_is_digit(uint8_t ch);
+int32_t fb_is_hex(uint8_t ch);
+int32_t fb_is_alpha(uint8_t ch);
+int32_t fb_is_lower(uint8_t ch);
+int32_t fb_is_upper(uint8_t ch);
+int32_t fb_is_ident_start(uint8_t ch);
+int32_t fb_is_ident_char(uint8_t ch);
+int32_t fb_str_eq(uint8_t* a, const char* b);
+const char* fb_op_name(int32_t op);
+uint8_t* fb_s(Fb* c, int32_t off);
+int32_t fb_intern_span(Fb* c, int32_t s, int32_t e);
+int32_t fb_intern(Fb* c, const char* s);
+int32_t fb_intern_buf(Fb* c, FbBuf* b);
+int32_t fb_tok_str(Fb* c, int32_t t);
+int32_t fb_name_eq(Fb* c, int32_t a, int32_t b);
+int32_t fb_name_is(Fb* c, int32_t a, const char* lit);
+int32_t fb_name_starts_uu(Fb* c, int32_t a);
+FbBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col);
+FbBuf* fb_err_hint(Fb* c);
+int32_t fb_contains(uint8_t* hay, const char* needle);
+void fb_auto_hint(Fb* c);
+FbBuf* fb_perr(Fb* c);
+FbBuf* fb_verr(Fb* c, int32_t line);
+FbBuf* fb_serr(Fb* c);
+void fb_err_clear(Fb* c);
+int32_t fb_expand_len(uint8_t* p, int32_t s, int32_t e);
+int32_t fb_op2(int32_t* op, int32_t code, int32_t len);
+int32_t fb_lex_op(uint8_t* p, int32_t i, int32_t n, int32_t* op);
+int32_t fb_lex_string(uint8_t* p, int32_t i, int32_t n);
+int32_t fb_lex_exp(uint8_t* p, int32_t k, int32_t n);
+int32_t fb_lex_number(uint8_t* p, int32_t i, int32_t n);
+int32_t fb_is_laquo(uint8_t* p, int32_t i, int32_t n);
+int32_t fb_is_raquo(uint8_t* p, int32_t i, int32_t n);
+int32_t fb_lex_guillemet(uint8_t* p, int32_t i, int32_t n);
+int32_t fb_lex_claim_coord(uint8_t* p, int32_t i, int32_t n);
+int32_t fb_lex_claim_path(uint8_t* p, int32_t i, int32_t n);
+void fb_add_tok(Fb* c, int32_t kind, int32_t op, int32_t s, int32_t e, int32_t line, int32_t col);
+int32_t fb_lex_one(uint8_t* p, int32_t i, int32_t n, int32_t* kind, int32_t* op);
+int32_t fb_lex(Fb* c);
+int32_t fb_tok_is(Fb* c, int32_t t, const char* lit);
+const char* fb_word_type(Fb* c, int32_t t);
+const char* fb_ttype(Fb* c, int32_t t);
+int32_t fb_tt_is(Fb* c, int32_t t, const char* name);
+int32_t fb_is_ident(Fb* c, int32_t t);
+int32_t fb_is_op(Fb* c, int32_t t, int32_t op);
+int32_t fb_is_word(Fb* c, int32_t t, const char* w);
+int32_t fb_at_eof(Fb* c);
+int32_t fb_la(Fb* c);
+int32_t fb_la2(Fb* c);
+void fb_advance(Fb* c);
+void fb_put_ttype(Fb* c, FbBuf* b, int32_t t);
+int32_t fb_expect(Fb* c, const char* name);
+int32_t fb_node(Fb* c, int32_t kind, int32_t tok);
+int32_t fb_node2(Fb* c, int32_t kind, int32_t tok, int32_t a, int32_t b);
+int32_t fb_list_add(Fb* c, int32_t head, int32_t x);
+int32_t fb_list_len(Fb* c, int32_t head);
+int32_t fb_is_numtype(Fb* c, int32_t t);
+int32_t fb_expect_greater(Fb* c);
+int32_t fb_parse_type(Fb* c);
+int32_t fb_is_orop(Fb* c, int32_t t);
+int32_t fb_is_andop(Fb* c, int32_t t);
+int32_t fb_bin(Fb* c, int32_t op, int32_t tok, int32_t l, int32_t r);
+int32_t fb_parse_expr(Fb* c);
+int32_t fb_parse_or(Fb* c);
+int32_t fb_parse_and(Fb* c);
+int32_t fb_parse_bitor(Fb* c);
+int32_t fb_parse_xor(Fb* c);
+int32_t fb_parse_bitand(Fb* c);
+int32_t fb_parse_equality(Fb* c);
+int32_t fb_cmp_op(Fb* c, int32_t t);
+int32_t fb_parse_comparison(Fb* c);
+int32_t fb_parse_shift(Fb* c);
+int32_t fb_parse_term(Fb* c);
+int32_t fb_parse_factor(Fb* c);
+int32_t fb_parse_cast(Fb* c);
+int32_t fb_parse_unary(Fb* c);
+int32_t fb_parse_args(Fb* c, int32_t close);
+int32_t fb_parse_call(Fb* c, int32_t name_tok);
+int32_t fb_parse_postfix(Fb* c, int32_t base);
+int32_t fb_parse_struct_lit(Fb* c, int32_t name_tok);
+int32_t fb_skip_braces(Fb* c);
+int32_t fb_parse_lambda(Fb* c);
+int32_t fb_parse_if_expr(Fb* c);
+int32_t fb_parse_name_primary(Fb* c);
+int32_t fb_parse_primary(Fb* c);
+int32_t fb_is_placeholder(Fb* c, int32_t x);
+int32_t fb_pipe_args(Fb* c, int32_t piped, int32_t args);
+int32_t fb_parse_stage_params(Fb* c, int32_t name_tok, int32_t source);
+int32_t fb_tok_span_eq(Fb* c, int32_t a, int32_t b);
+int32_t fb_parse_fork(Fb* c, int32_t t, int32_t source);
+int32_t fb_fork_field_start(Fb* c, int32_t first, int32_t q);
+int32_t fb_parse_pipeline(Fb* c, int32_t left0);
+int32_t fb_add_member(Fb* c, int32_t f, int32_t kind, int32_t name, int32_t ty, int32_t init, int32_t line);
+void fb_add_conn(Fb* c, int32_t f, int32_t sm, int32_t sp, int32_t dm, int32_t dp, int32_t line);
+void fb_add_name(Fb* c, int32_t kind, int32_t name);
+int32_t fb_has_name(Fb* c, int32_t kind, int32_t name);
+int64_t fb_pow10(int32_t k);
+int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text);
+void fb_put_tok(FbBuf* b, Fb* c, int32_t t);
+void fb_put_fname(FbBuf* b, Fb* c, int32_t f);
+int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, const char* word, const char* what);
+int32_t fb_wrap_top(Fb* c, int32_t root, int32_t start_tok);
+int32_t fb_source_between(Fb* c, int32_t st, int32_t et);
+int32_t fb_line_start(Fb* c, int32_t ln);
+int32_t fb_line_end(Fb* c, int32_t off);
+int32_t fb_col_offset(Fb* c, int32_t ln, int32_t col);
+void fb_put_stripped(FbBuf* b, uint8_t* p, int32_t s, int32_t e);
+int32_t fb_put_part(FbBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first);
+int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word);
+int32_t fb_parse_recognize(Fb* c, int32_t f);
+int32_t fb_parse_connect(Fb* c, int32_t f);
+int32_t fb_parse_solver(Fb* c, int32_t f);
+int32_t fb_is_section_word(Fb* c, int32_t t);
+int32_t fb_parse_flow_item(Fb* c, int32_t f);
+int32_t fb_parse_flow(Fb* c, int32_t f);
+int32_t fb_find_flow(Fb* c, int32_t name);
+int32_t fb_find_flow_str(Fb* c, uint8_t* name);
+int32_t fb_find_member(Fb* c, int32_t f, int32_t kind, int32_t name);
+int32_t fb_lookup_port(Fb* c, int32_t f, int32_t name);
+const char* fb_kind_word(int32_t k);
+int32_t fb_count_members(Fb* c, int32_t f, int32_t kind);
+int32_t fb_nth_member(Fb* c, int32_t f, int32_t kind, int32_t k);
+int32_t fb_evolve_of(Fb* c, int32_t f, int32_t name);
+uint8_t* fb_tok_name(Fb* c, int32_t node);
+int32_t fb_call_name(Fb* c, int32_t node);
+int32_t fb_children(Fb* c, int32_t x, int32_t* out);
+int32_t fb_is_pure_math(uint8_t* name);
+int32_t fb_check_pure(Fb* c, int32_t x, int32_t f, int32_t where_s, int32_t line);
+int32_t fb_check_pure_s(Fb* c, int32_t x, int32_t f, const char* where_s, int32_t line);
+int32_t fb_where(Fb* c, const char* pre, int32_t name, const char* post);
+int32_t fb_check_threshold(Fb* c, int32_t x, int32_t f, int32_t w);
+int32_t fb_check_booleanish(Fb* c, int32_t x, int32_t f, const char* word, int32_t line);
+int32_t fb_refs_inputs(Fb* c, int32_t x, int32_t f);
+int32_t fb_port_combinational(Fb* c, int32_t f, int32_t port);
+int32_t fb_single_port(Fb* c, int32_t sf, int32_t kind, const char* word, int32_t line);
+void fb_put_sorted_params(Fb* c, FbBuf* b, int32_t sf);
+int32_t fb_expand_pipelines(Fb* c, int32_t f);
+int32_t fb_is_member_type(Fb* c, int32_t ty);
+int32_t fb_is_scalar_type(Fb* c, int32_t ty);
+void fb_reclassify(Fb* c);
+int32_t fb_member_rank(int32_t k);
+int32_t fb_seen_before(Fb* c, int32_t f, int32_t i);
+int32_t fb_validate_members(Fb* c, int32_t f);
+int32_t fb_recognition_ok(uint8_t* name);
+int32_t fb_validate_connect(Fb* c, int32_t f);
+int32_t fb_conn_combo(Fb* c, int32_t f, int32_t i);
+int32_t fb_child_index(Fb* c, int32_t f, int32_t name);
+int32_t fb_dfs(Fb* c, int32_t f, int32_t node, int32_t* state, int32_t* stack, int32_t* sp, int32_t* cyc);
+int32_t fb_check_loops(Fb* c, int32_t f);
+int32_t fb_validate_flow(Fb* c, int32_t f);
+int32_t fb_becomes_seen(Fb* c, int32_t kind, int32_t owner, int32_t b);
+void fb_mark_vars(Fb* c, int32_t x);
+int32_t fb_is_member_tok(Fb* c, int32_t f, int32_t t);
+int32_t fb_tok_starts(Fb* c, int32_t t, const char* lit);
+int32_t fb_tok_ends(Fb* c, int32_t t, const char* lit);
+int32_t fb_digits_value(uint8_t* p, int32_t s, int32_t e);
+int32_t fb_count_everys(Fb* c, int32_t f);
+int32_t fb_count_whens(Fb* c, int32_t f);
+void fb_emit_expr(Fb* c, FbBuf* b, int32_t x);
+void fb_put_name(Fb* c, FbBuf* b, int32_t off);
+void fb_put_self(Fb* c, FbBuf* b, int32_t off);
+void fb_put_seconds(FbBuf* b, int64_t ns);
+void fb_put_mtype(Fb* c, FbBuf* b, int32_t i);
+int32_t fb_is_float_type(Fb* c, int32_t ty);
+void fb_put_dtype(Fb* c, FbBuf* b, int32_t i);
+void fb_put_dt(Fb* c, FbBuf* b, int32_t i);
+int32_t fb_field_count(Fb* c, int32_t f);
+int32_t fb_field_kind(int32_t r);
+void fb_put_zero(Fb* c, FbBuf* b, int32_t ty);
+void fb_emit_struct(Fb* c, FbBuf* b, int32_t f);
+void fb_fn_head(Fb* c, FbBuf* b, int32_t f, const char* suffix, const char* params, const char* ret);
+void fb_self_param(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_new(Fb* c, FbBuf* b, int32_t f);
+int32_t fb_nth_when(Fb* c, int32_t f, int32_t k);
+int32_t fb_nth_every(Fb* c, int32_t f, int32_t k);
+void fb_emit_guard(Fb* c, FbBuf* b, int32_t f, int32_t w);
+int32_t fb_has_outputs(Fb* c, int32_t f);
+void fb_emit_init(Fb* c, FbBuf* b, int32_t f);
+int32_t fb_nth_evolved(Fb* c, int32_t f, int32_t k);
+int32_t fb_count_evolved(Fb* c, int32_t f);
+void fb_emit_derivs(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_derivs_call(Fb* c, FbBuf* b, int32_t f, const char* stage);
+void fb_emit_euler(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_rk_stage(Fb* c, FbBuf* b, int32_t f, const char* stage, int32_t scale);
+void fb_emit_rk4(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_every(Fb* c, FbBuf* b, int32_t f, int32_t k);
+void fb_emit_staged(Fb* c, FbBuf* b, int32_t f, int32_t kind, int32_t owner, const char* prefix, int32_t k);
+void fb_emit_event(Fb* c, FbBuf* b, int32_t f, int32_t k);
+int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order);
+void fb_emit_child_steps(Fb* c, FbBuf* b, int32_t f);
+int32_t fb_count_clauses(Fb* c, int32_t f);
+int32_t fb_nth_clause(Fb* c, int32_t f, int32_t idx);
+void fb_put_escaped(FbBuf* b, uint8_t* s);
+void fb_emit_step(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_default_dt(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_outputs(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_check(Fb* c, FbBuf* b, int32_t f);
+void fb_mark_flow(Fb* c, int32_t f);
+void fb_lower_flow(Fb* c, int32_t f);
+int32_t* fb_alloc_i32(int32_t n);
+Fb* fb_ctx_new(uint8_t* src, int32_t n);
+void fb_ctx_free(Fb* c);
+int32_t fb_decl_name(Fb* c, int32_t t);
+int32_t fb_scan(Fb* c, int32_t* flows);
+void fb_report(Fb* c);
+int32_t fb_maybe_flow(uint8_t* p, int32_t n);
+int32_t fb_expand(Fb* c);
+int32_t flowc_flow_blocks_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
+FbBuf* fb_buf_new(int32_t cap) {
+  FbBuf* b = (FbBuf*)((FbBuf*)(malloc(16)));
+  (b[0]).p = malloc((int64_t)((cap + 1)));
+  (b[0]).len = 0;
+  (b[0]).cap = cap;
+  (b[0]).p[0] = 0;
+  return b;
+}
+
+void fb_buf_free(FbBuf* b) {
+  free((b[0]).p);
+  free((uint8_t*)(b));
+}
+
+void fb_putc(FbBuf* b, uint8_t ch) {
+  if (((b[0]).len + 1) >= (b[0]).cap) {
+  int32_t ncap = (((b[0]).cap * 2) + 64);
+  (b[0]).p = realloc((b[0]).p, (int64_t)((ncap + 1)));
+  (b[0]).cap = ncap;
+}
+  (b[0]).p[(b[0]).len] = ch;
+  (b[0]).len = ((b[0]).len + 1);
+  (b[0]).p[(b[0]).len] = 0;
+}
+
+void fb_puts(FbBuf* b, const char* s) {
+  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
+  int32_t i = 0;
+  while (sp[i] != 0) {
+  fb_putc(b, sp[i]);
+  i = (i + 1);
+}
+}
+
+void fb_put_span(FbBuf* b, uint8_t* src, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  fb_putc(b, src[i]);
+  i = (i + 1);
+}
+}
+
+void fb_put_i64(FbBuf* b, int64_t v) {
+  if (v < 0) {
+  fb_putc(b, 45);
+  fb_put_i64(b, (0 - v));
+  return;
+}
+  if (v >= 10) {
+  fb_put_i64(b, (v / 10));
+}
+  fb_putc(b, (uint8_t)((48 + (v % 10))));
+}
+
+void fb_put_int(FbBuf* b, int32_t v) {
+  fb_put_i64(b, (int64_t)(v));
+}
+
+int32_t fb_is_space(uint8_t ch) {
+  if (ch == 32) {
+  return 1;
+}
+  if (ch >= 9 && ch <= 13) {
+  return 1;
+}
+  if (ch >= 28 && ch <= 31) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_digit(uint8_t ch) {
+  if (ch >= 48 && ch <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_hex(uint8_t ch) {
+  if (fb_is_digit(ch) == 1) {
+  return 1;
+}
+  if (ch >= 97 && ch <= 102) {
+  return 1;
+}
+  if (ch >= 65 && ch <= 70) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_alpha(uint8_t ch) {
+  if (ch >= 97 && ch <= 122) {
+  return 1;
+}
+  if (ch >= 65 && ch <= 90) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_lower(uint8_t ch) {
+  if (ch >= 97 && ch <= 122) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_upper(uint8_t ch) {
+  if (ch >= 65 && ch <= 90) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_ident_start(uint8_t ch) {
+  if (fb_is_alpha(ch) == 1 || ch == 95) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_ident_char(uint8_t ch) {
+  if (fb_is_ident_start(ch) == 1 || fb_is_digit(ch) == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_str_eq(uint8_t* a, const char* b) {
+  if (strcmp((const char*)(a), b) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+const char* fb_op_name(int32_t op) {
+  if (op == OP_ARROW) {
+  return "ARROW";
+}
+  if (op == OP_FAT_ARROW) {
+  return "FAT_ARROW";
+}
+  if (op == OP_QUESTION) {
+  return "QUESTION";
+}
+  if (op == OP_EQUALS) {
+  return "EQUALS";
+}
+  if (op == OP_NOT_EQUALS) {
+  return "NOT_EQUALS";
+}
+  if (op == OP_LSHIFT) {
+  return "LSHIFT";
+}
+  if (op == OP_RSHIFT) {
+  return "RSHIFT";
+}
+  if (op == OP_LESS_EQUAL) {
+  return "LESS_EQUAL";
+}
+  if (op == OP_GREATER_EQUAL) {
+  return "GREATER_EQUAL";
+}
+  if (op == OP_AND) {
+  return "AND";
+}
+  if (op == OP_OR) {
+  return "OR";
+}
+  if (op == OP_PIPELINE) {
+  return "PIPELINE";
+}
+  if (op == OP_PIPE) {
+  return "PIPE";
+}
+  if (op == OP_AMPERSAND) {
+  return "AMPERSAND";
+}
+  if (op == OP_CARET) {
+  return "CARET";
+}
+  if (op == OP_TILDE) {
+  return "TILDE";
+}
+  if (op == OP_ELLIPSIS) {
+  return "ELLIPSIS";
+}
+  if (op == OP_DOTDOT) {
+  return "DOTDOT";
+}
+  if (op == OP_DOUBLE_COLON) {
+  return "DOUBLE_COLON";
+}
+  if (op == OP_PLUS_ASSIGN) {
+  return "PLUS_ASSIGN";
+}
+  if (op == OP_MINUS_ASSIGN) {
+  return "MINUS_ASSIGN";
+}
+  if (op == OP_STAR_ASSIGN) {
+  return "STAR_ASSIGN";
+}
+  if (op == OP_SLASH_ASSIGN) {
+  return "SLASH_ASSIGN";
+}
+  if (op == OP_PLUS) {
+  return "PLUS";
+}
+  if (op == OP_MINUS) {
+  return "MINUS";
+}
+  if (op == OP_STAR) {
+  return "STAR";
+}
+  if (op == OP_SLASH) {
+  return "SLASH";
+}
+  if (op == OP_PERCENT) {
+  return "PERCENT";
+}
+  if (op == OP_LESS) {
+  return "LESS";
+}
+  if (op == OP_GREATER) {
+  return "GREATER";
+}
+  if (op == OP_ASSIGN) {
+  return "ASSIGN";
+}
+  if (op == OP_NOT) {
+  return "NOT";
+}
+  if (op == OP_LPAREN) {
+  return "LPAREN";
+}
+  if (op == OP_RPAREN) {
+  return "RPAREN";
+}
+  if (op == OP_LBRACE) {
+  return "LBRACE";
+}
+  if (op == OP_RBRACE) {
+  return "RBRACE";
+}
+  if (op == OP_LBRACKET) {
+  return "LBRACKET";
+}
+  if (op == OP_RBRACKET) {
+  return "RBRACKET";
+}
+  if (op == OP_SEMICOLON) {
+  return "SEMICOLON";
+}
+  if (op == OP_COLON) {
+  return "COLON";
+}
+  if (op == OP_COMMA) {
+  return "COMMA";
+}
+  if (op == OP_DOT) {
+  return "DOT";
+}
+  return "AT";
+}
+
+uint8_t* fb_s(Fb* c, int32_t off) {
+  return (((c[0]).nm[0]).p + off);
+}
+
+int32_t fb_intern_span(Fb* c, int32_t s, int32_t e) {
+  int32_t off = ((c[0]).nm[0]).len;
+  fb_put_span((c[0]).nm, (c[0]).src, s, e);
+  fb_putc((c[0]).nm, 0);
+  return off;
+}
+
+int32_t fb_intern(Fb* c, const char* s) {
+  int32_t off = ((c[0]).nm[0]).len;
+  fb_puts((c[0]).nm, s);
+  fb_putc((c[0]).nm, 0);
+  return off;
+}
+
+int32_t fb_intern_buf(Fb* c, FbBuf* b) {
+  int32_t off = ((c[0]).nm[0]).len;
+  fb_put_span((c[0]).nm, (b[0]).p, 0, (b[0]).len);
+  fb_putc((c[0]).nm, 0);
+  return off;
+}
+
+int32_t fb_tok_str(Fb* c, int32_t t) {
+  return fb_intern_span(c, (c[0]).ts[t], (c[0]).te[t]);
+}
+
+int32_t fb_name_eq(Fb* c, int32_t a, int32_t b) {
+  if (a < 0 || b < 0) {
+  return 0;
+}
+  if (strcmp((const char*)(fb_s(c, a)), (const char*)(fb_s(c, b))) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_name_is(Fb* c, int32_t a, const char* lit) {
+  if (a < 0) {
+  return 0;
+}
+  if (strcmp((const char*)(fb_s(c, a)), lit) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_name_starts_uu(Fb* c, int32_t a) {
+  uint8_t* p = (uint8_t*)(fb_s(c, a));
+  if (p[0] == 95 && p[1] == 95) {
+  return 1;
+}
+  return 0;
+}
+
+FbBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col) {
+  (c[0]).err = kind;
+  (c[0]).err_line = line;
+  (c[0]).err_col = col;
+  ((c[0]).emsg[0]).len = 0;
+  ((c[0]).emsg[0]).p[0] = 0;
+  ((c[0]).ehint[0]).len = 0;
+  ((c[0]).ehint[0]).p[0] = 0;
+  (c[0]).has_hint = 0;
+  return (c[0]).emsg;
+}
+
+FbBuf* fb_err_hint(Fb* c) {
+  (c[0]).has_hint = 1;
+  return (c[0]).ehint;
+}
+
+int32_t fb_contains(uint8_t* hay, const char* needle) {
+  uint8_t* np = (uint8_t*)((uint8_t*)(needle));
+  int32_t nl = (int32_t)(strlen(needle));
+  int32_t i = 0;
+  while (hay[i] != 0) {
+  int32_t k = 0;
+  while (k < nl && hay[(i + k)] == np[k]) {
+  k = (k + 1);
+}
+  if (k == nl) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void fb_auto_hint(Fb* c) {
+  uint8_t* m = (uint8_t*)(((c[0]).emsg[0]).p);
+  if (fb_contains(m, "Expected TokenType.RBRACE") == 1) {
+  fb_puts(fb_err_hint(c), "Missing closing brace '}'. Check for unbalanced braces.");
+  return;
+}
+  if (fb_contains(m, "Expected TokenType.RPAREN") == 1) {
+  fb_puts(fb_err_hint(c), "Missing closing parenthesis ')'. Check function calls and expressions.");
+  return;
+}
+  if (fb_contains(m, "Expected TokenType.SEMICOLON") == 1) {
+  fb_puts(fb_err_hint(c), "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.");
+  return;
+}
+  if (fb_contains(m, "Expected TokenType.IDENTIFIER") == 1) {
+  fb_puts(fb_err_hint(c), "Expected a name (identifier) here. Names must start with a letter or underscore.");
+  return;
+}
+  if (fb_contains(m, "Unexpected token in expression") == 1) {
+  fb_puts(fb_err_hint(c), "This token cannot start an expression. Check for typos or missing operators.");
+  return;
+}
+  if (fb_contains(m, "Unexpected declaration") == 1) {
+  fb_puts(fb_err_hint(c), "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.");
+  return;
+}
+}
+
+FbBuf* fb_perr(Fb* c) {
+  int32_t t = (c[0]).pos;
+  return fb_err_begin(c, 1, (c[0]).tl[t], (c[0]).tc[t]);
+}
+
+FbBuf* fb_verr(Fb* c, int32_t line) {
+  return fb_err_begin(c, 1, line, 0);
+}
+
+FbBuf* fb_serr(Fb* c) {
+  return fb_err_begin(c, 2, 0, 0);
+}
+
+void fb_err_clear(Fb* c) {
+  (c[0]).err = 0;
+}
+
+int32_t fb_expand_len(uint8_t* p, int32_t s, int32_t e) {
+  int32_t total = 0;
+  int32_t col = 0;
+  int32_t i = s;
+  while (i < e) {
+  uint8_t ch = p[i];
+  if (ch == 9) {
+  int32_t w = (4 - (col % 4));
+  total = (total + w);
+  col = (col + w);
+} else {
+  if (ch == 10 || ch == 13) {
+  total = (total + 1);
+  col = 0;
+} else {
+  if (ch < 128 || ch >= 192) {
+  total = (total + 1);
+  col = (col + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  return total;
+}
+
+int32_t fb_op2(int32_t* op, int32_t code, int32_t len) {
+  op[0] = code;
+  return len;
+}
+
+int32_t fb_lex_op(uint8_t* p, int32_t i, int32_t n, int32_t* op) {
+  uint8_t a = p[i];
+  uint8_t b = 0;
+  if ((i + 1) < n) {
+  b = p[(i + 1)];
+}
+  uint8_t d = 0;
+  if ((i + 2) < n) {
+  d = p[(i + 2)];
+}
+  if (a == 45 && b == 62) {
+  return fb_op2(op, OP_ARROW, 2);
+}
+  if (a == 61 && b == 62) {
+  return fb_op2(op, OP_FAT_ARROW, 2);
+}
+  if (a == 63) {
+  return fb_op2(op, OP_QUESTION, 1);
+}
+  if (a == 61 && b == 61) {
+  return fb_op2(op, OP_EQUALS, 2);
+}
+  if (a == 33 && b == 61) {
+  return fb_op2(op, OP_NOT_EQUALS, 2);
+}
+  if (a == 60 && b == 60) {
+  return fb_op2(op, OP_LSHIFT, 2);
+}
+  if (a == 62 && b == 62) {
+  return fb_op2(op, OP_RSHIFT, 2);
+}
+  if (a == 60 && b == 61) {
+  return fb_op2(op, OP_LESS_EQUAL, 2);
+}
+  if (a == 62 && b == 61) {
+  return fb_op2(op, OP_GREATER_EQUAL, 2);
+}
+  if (a == 38 && b == 38) {
+  return fb_op2(op, OP_AND, 2);
+}
+  if (a == 124 && b == 124) {
+  return fb_op2(op, OP_OR, 2);
+}
+  if (a == 124 && b == 62) {
+  return fb_op2(op, OP_PIPELINE, 2);
+}
+  if (a == 124) {
+  return fb_op2(op, OP_PIPE, 1);
+}
+  if (a == 38) {
+  return fb_op2(op, OP_AMPERSAND, 1);
+}
+  if (a == 94) {
+  return fb_op2(op, OP_CARET, 1);
+}
+  if (a == 126) {
+  return fb_op2(op, OP_TILDE, 1);
+}
+  if (a == 46 && b == 46 && d == 46) {
+  return fb_op2(op, OP_ELLIPSIS, 3);
+}
+  if (a == 46 && b == 46) {
+  return fb_op2(op, OP_DOTDOT, 2);
+}
+  if (a == 58 && b == 58) {
+  return fb_op2(op, OP_DOUBLE_COLON, 2);
+}
+  if (a == 43 && b == 61) {
+  return fb_op2(op, OP_PLUS_ASSIGN, 2);
+}
+  if (a == 45 && b == 61) {
+  return fb_op2(op, OP_MINUS_ASSIGN, 2);
+}
+  if (a == 42 && b == 61) {
+  return fb_op2(op, OP_STAR_ASSIGN, 2);
+}
+  if (a == 47 && b == 61) {
+  return fb_op2(op, OP_SLASH_ASSIGN, 2);
+}
+  if (a == 43) {
+  return fb_op2(op, OP_PLUS, 1);
+}
+  if (a == 45) {
+  return fb_op2(op, OP_MINUS, 1);
+}
+  if (a == 42) {
+  return fb_op2(op, OP_STAR, 1);
+}
+  if (a == 47) {
+  return fb_op2(op, OP_SLASH, 1);
+}
+  if (a == 37) {
+  return fb_op2(op, OP_PERCENT, 1);
+}
+  if (a == 60) {
+  return fb_op2(op, OP_LESS, 1);
+}
+  if (a == 62) {
+  return fb_op2(op, OP_GREATER, 1);
+}
+  if (a == 61) {
+  return fb_op2(op, OP_ASSIGN, 1);
+}
+  if (a == 33) {
+  return fb_op2(op, OP_NOT, 1);
+}
+  if (a == 40) {
+  return fb_op2(op, OP_LPAREN, 1);
+}
+  if (a == 41) {
+  return fb_op2(op, OP_RPAREN, 1);
+}
+  if (a == 123) {
+  return fb_op2(op, OP_LBRACE, 1);
+}
+  if (a == 125) {
+  return fb_op2(op, OP_RBRACE, 1);
+}
+  if (a == 91) {
+  return fb_op2(op, OP_LBRACKET, 1);
+}
+  if (a == 93) {
+  return fb_op2(op, OP_RBRACKET, 1);
+}
+  if (a == 59) {
+  return fb_op2(op, OP_SEMICOLON, 1);
+}
+  if (a == 58) {
+  return fb_op2(op, OP_COLON, 1);
+}
+  if (a == 44) {
+  return fb_op2(op, OP_COMMA, 1);
+}
+  if (a == 46) {
+  return fb_op2(op, OP_DOT, 1);
+}
+  if (a == 64) {
+  return fb_op2(op, OP_AT, 1);
+}
+  return 0;
+}
+
+int32_t fb_lex_string(uint8_t* p, int32_t i, int32_t n) {
+  int32_t k = (i + 1);
+  while (k < n) {
+  uint8_t ch = p[k];
+  if (ch == 34) {
+  return (k + 1);
+}
+  if (ch == 92) {
+  if ((k + 1) >= n) {
+  return (0 - 1);
+}
+  if (p[(k + 1)] == 10) {
+  return (0 - 1);
+}
+  k = (k + 2);
+} else {
+  k = (k + 1);
+}
+}
+  return (0 - 1);
+}
+
+int32_t fb_lex_exp(uint8_t* p, int32_t k, int32_t n) {
+  if (k < n && (p[k] == 101 || p[k] == 69)) {
+  int32_t j = (k + 1);
+  if (j < n && (p[j] == 43 || p[j] == 45)) {
+  j = (j + 1);
+}
+  if (j < n && fb_is_digit(p[j]) == 1) {
+  while (j < n && fb_is_digit(p[j]) == 1) {
+  j = (j + 1);
+}
+  return j;
+}
+}
+  return (0 - 1);
+}
+
+int32_t fb_lex_number(uint8_t* p, int32_t i, int32_t n) {
+  if (p[i] == 48 && (i + 2) < n && p[(i + 1)] == 120 && fb_is_hex(p[(i + 2)]) == 1) {
+  int32_t h = (i + 2);
+  while (h < n && fb_is_hex(p[h]) == 1) {
+  h = (h + 1);
+}
+  return h;
+}
+  int32_t k = i;
+  while (k < n && fb_is_digit(p[k]) == 1) {
+  k = (k + 1);
+}
+  if ((k + 1) < n && p[k] == 46 && fb_is_digit(p[(k + 1)]) == 1) {
+  int32_t f = (k + 1);
+  while (f < n && fb_is_digit(p[f]) == 1) {
+  f = (f + 1);
+}
+  int32_t x = fb_lex_exp(p, f, n);
+  if (x > 0) {
+  return x;
+}
+  return f;
+}
+  int32_t x2 = fb_lex_exp(p, k, n);
+  if (x2 > 0) {
+  return x2;
+}
+  return k;
+}
+
+int32_t fb_is_laquo(uint8_t* p, int32_t i, int32_t n) {
+  if ((i + 1) < n && p[i] == 194 && p[(i + 1)] == 171) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_raquo(uint8_t* p, int32_t i, int32_t n) {
+  if ((i + 1) < n && p[i] == 194 && p[(i + 1)] == 187) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_lex_guillemet(uint8_t* p, int32_t i, int32_t n) {
+  if (fb_is_laquo(p, i, n) == 0) {
+  return (0 - 1);
+}
+  int32_t k = (i + 2);
+  int32_t start = k;
+  while (k < n && fb_is_raquo(p, k, n) == 0) {
+  k = (k + 1);
+}
+  if (k >= n || k == start) {
+  return (0 - 1);
+}
+  return (k + 2);
+}
+
+int32_t fb_lex_claim_coord(uint8_t* p, int32_t i, int32_t n) {
+  int32_t k = fb_lex_guillemet(p, i, n);
+  if (k < 0) {
+  return (0 - 1);
+}
+  while (k < n && fb_is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  k = fb_lex_guillemet(p, k, n);
+  if (k < 0) {
+  return (0 - 1);
+}
+  while (k < n && fb_is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  return fb_lex_guillemet(p, k, n);
+}
+
+int32_t fb_lex_claim_path(uint8_t* p, int32_t i, int32_t n) {
+  if (fb_is_alpha(p[i]) == 0) {
+  return (0 - 1);
+}
+  int32_t k = (i + 1);
+  while (k < n && fb_is_ident_char(p[k]) == 1) {
+  k = (k + 1);
+}
+  if (k >= n || p[k] != 47) {
+  return (0 - 1);
+}
+  k = (k + 1);
+  if (k >= n) {
+  return (0 - 1);
+}
+  if ((k + 1) < n && p[k] == 124 && p[(k + 1)] == 124) {
+  k = (k + 2);
+} else {
+  uint8_t ch = p[k];
+  if (ch == 43 || ch == 124 || ch == 61 || ch == 42) {
+  k = (k + 1);
+} else {
+  if (fb_is_lower(ch) == 0) {
+  return (0 - 1);
+}
+  k = (k + 1);
+  while (k < n && (fb_is_ident_char(p[k]) == 1 || p[k] == 45)) {
+  k = (k + 1);
+}
+}
+}
+  if (k >= n || p[k] != 46) {
+  return (0 - 1);
+}
+  k = (k + 1);
+  if (k >= n || fb_is_lower(p[k]) == 0) {
+  return (0 - 1);
+}
+  k = (k + 1);
+  int32_t first = k;
+  while (k < n && (fb_is_lower(p[k]) == 1 || fb_is_digit(p[k]) == 1 || p[k] == 45)) {
+  k = (k + 1);
+}
+  if (k == first) {
+  return (0 - 1);
+}
+  return k;
+}
+
+void fb_add_tok(Fb* c, int32_t kind, int32_t op, int32_t s, int32_t e, int32_t line, int32_t col) {
+  int32_t t = (c[0]).nt;
+  (c[0]).tk[t] = kind;
+  (c[0]).top[t] = op;
+  (c[0]).ts[t] = s;
+  (c[0]).te[t] = e;
+  (c[0]).tl[t] = line;
+  (c[0]).tc[t] = col;
+  (c[0]).tvar[t] = 0;
+  (c[0]).nt = (t + 1);
+}
+
+int32_t fb_lex_one(uint8_t* p, int32_t i, int32_t n, int32_t* kind, int32_t* op) {
+  uint8_t ch = p[i];
+  int32_t ol = fb_lex_op(p, i, n, op);
+  if (ol > 0) {
+  kind[0] = TK_OP;
+  return (i + ol);
+}
+  op[0] = 0;
+  if (ch == 34) {
+  kind[0] = TK_STR;
+  return fb_lex_string(p, i, n);
+}
+  if (fb_is_digit(ch) == 1) {
+  kind[0] = TK_NUM;
+  return fb_lex_number(p, i, n);
+}
+  int32_t cc = fb_lex_claim_coord(p, i, n);
+  if (cc > 0) {
+  kind[0] = TK_CLAIM_COORD;
+  return cc;
+}
+  int32_t cp = fb_lex_claim_path(p, i, n);
+  if (cp > 0) {
+  kind[0] = TK_CLAIM_PATH;
+  return cp;
+}
+  if (fb_is_ident_start(ch) == 1) {
+  int32_t k = i;
+  while (k < n && fb_is_ident_char(p[k]) == 1) {
+  k = (k + 1);
+}
+  kind[0] = TK_IDENT;
+  return k;
+}
+  return (0 - 1);
+}
+
+int32_t fb_lex(Fb* c) {
+  uint8_t* p = (uint8_t*)((c[0]).src);
+  int32_t n = (c[0]).n;
+  int32_t i = 0;
+  int32_t line = 1;
+  int32_t col = 1;
+  int32_t* box = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t rc = 0;
+  while (i < n && rc == 0) {
+  uint8_t ch = p[i];
+  if (ch == 35) {
+  int32_t k = i;
+  while (k < n && p[k] != 10) {
+  k = (k + 1);
+}
+  col = (col + fb_expand_len(p, i, k));
+  i = k;
+} else {
+  if (ch == 10) {
+  line = (line + 1);
+  col = 1;
+  i = (i + 1);
+} else {
+  if (fb_is_space(ch) == 1) {
+  int32_t k = i;
+  while (k < n && fb_is_space(p[k]) == 1) {
+  k = (k + 1);
+}
+  col = (col + fb_expand_len(p, i, k));
+  i = k;
+} else {
+  int32_t e = fb_lex_one(p, i, n, box, (box + 1));
+  if (e < 0) {
+  rc = (0 - 1);
+} else {
+  fb_add_tok(c, box[0], box[1], i, e, line, col);
+  col = (col + fb_expand_len(p, i, e));
+  i = e;
+}
+}
+}
+}
+}
+  fb_add_tok(c, TK_EOF, 0, n, n, line, col);
+  free((uint8_t*)(box));
+  return rc;
+}
+
+int32_t fb_tok_is(Fb* c, int32_t t, const char* lit) {
+  uint8_t* lp = (uint8_t*)((uint8_t*)(lit));
+  int32_t s = (c[0]).ts[t];
+  int32_t e = (c[0]).te[t];
+  int32_t i = 0;
+  while ((s + i) < e) {
+  if (lp[i] != (c[0]).src[(s + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  if (lp[i] != 0) {
+  return 0;
+}
+  return 1;
+}
+
+const char* fb_word_type(Fb* c, int32_t t) {
+  if (fb_tok_is(c, t, "true") == 1 || fb_tok_is(c, t, "false") == 1) {
+  return "BOOLEAN";
+}
+  if (fb_tok_is(c, t, "string") == 1) {
+  return "STRING_TYPE";
+}
+  if (fb_tok_is(c, t, "function") == 1) {
+  return "FUNCTION";
+}
+  if (fb_tok_is(c, t, "let") == 1) {
+  return "LET";
+}
+  if (fb_tok_is(c, t, "mut") == 1) {
+  return "MUT";
+}
+  if (fb_tok_is(c, t, "return") == 1) {
+  return "RETURN";
+}
+  if (fb_tok_is(c, t, "if") == 1) {
+  return "IF";
+}
+  if (fb_tok_is(c, t, "elif") == 1) {
+  return "ELIF";
+}
+  if (fb_tok_is(c, t, "else") == 1) {
+  return "ELSE";
+}
+  if (fb_tok_is(c, t, "while") == 1) {
+  return "WHILE";
+}
+  if (fb_tok_is(c, t, "for") == 1) {
+  return "FOR";
+}
+  if (fb_tok_is(c, t, "break") == 1) {
+  return "BREAK";
+}
+  if (fb_tok_is(c, t, "continue") == 1) {
+  return "CONTINUE";
+}
+  if (fb_tok_is(c, t, "in") == 1) {
+  return "IN";
+}
+  if (fb_tok_is(c, t, "parallel") == 1) {
+  return "PARALLEL";
+}
+  if (fb_tok_is(c, t, "to") == 1) {
+  return "TO";
+}
+  if (fb_tok_is(c, t, "match") == 1) {
+  return "MATCH";
+}
+  if (fb_tok_is(c, t, "default") == 1) {
+  return "DEFAULT";
+}
+  if (fb_tok_is(c, t, "test") == 1) {
+  return "TEST";
+}
+  if (fb_tok_is(c, t, "trait") == 1) {
+  return "TRAIT";
+}
+  if (fb_tok_is(c, t, "impl") == 1) {
+  return "IMPL";
+}
+  if (fb_tok_is(c, t, "self") == 1) {
+  return "SELF";
+}
+  if (fb_tok_is(c, t, "type") == 1) {
+  return "TYPE";
+}
+  if (fb_tok_is(c, t, "distinct") == 1) {
+  return "DISTINCT";
+}
+  if (fb_tok_is(c, t, "as") == 1) {
+  return "AS";
+}
+  if (fb_tok_is(c, t, "enum") == 1) {
+  return "ENUM";
+}
+  if (fb_tok_is(c, t, "theorem") == 1) {
+  return "THEOREM";
+}
+  if (fb_tok_is(c, t, "assume") == 1) {
+  return "ASSUME";
+}
+  if (fb_tok_is(c, t, "therefore") == 1) {
+  return "THEREFORE";
+}
+  if (fb_tok_is(c, t, "with") == 1) {
+  return "WITH";
+}
+  if (fb_tok_is(c, t, "handle") == 1) {
+  return "HANDLE";
+}
+  if (fb_tok_is(c, t, "ui_layout") == 1) {
+  return "UI_LAYOUT";
+}
+  if (fb_tok_is(c, t, "ui_row") == 1) {
+  return "UI_ROW";
+}
+  if (fb_tok_is(c, t, "ui_column") == 1) {
+  return "UI_COLUMN";
+}
+  if (fb_tok_is(c, t, "ui_stack") == 1) {
+  return "UI_STACK";
+}
+  if (fb_tok_is(c, t, "ui_grid") == 1) {
+  return "UI_GRID";
+}
+  if (fb_tok_is(c, t, "effect") == 1) {
+  return "EFFECT";
+}
+  if (fb_tok_is(c, t, "capability") == 1) {
+  return "CAPABILITY";
+}
+  if (fb_tok_is(c, t, "import") == 1) {
+  return "IMPORT";
+}
+  if (fb_tok_is(c, t, "export") == 1) {
+  return "EXPORT";
+}
+  if (fb_tok_is(c, t, "extern") == 1) {
+  return "EXTERN";
+}
+  if (fb_tok_is(c, t, "const") == 1) {
+  return "CONST";
+}
+  if (fb_tok_is(c, t, "struct") == 1) {
+  return "STRUCT";
+}
+  if (fb_tok_is(c, t, "and") == 1) {
+  return "AND";
+}
+  if (fb_tok_is(c, t, "or") == 1) {
+  return "OR";
+}
+  if (fb_tok_is(c, t, "not") == 1) {
+  return "NOT";
+}
+  if (fb_tok_is(c, t, "null") == 1) {
+  return "NULL";
+}
+  if (fb_tok_is(c, t, "defer") == 1) {
+  return "DEFER";
+}
+  if (fb_tok_is(c, t, "dbg") == 1) {
+  return "DBG";
+}
+  if (fb_tok_is(c, t, "expect") == 1) {
+  return "EXPECT";
+}
+  if (fb_tok_is(c, t, "module") == 1) {
+  return "MODULE";
+}
+  if (fb_tok_is(c, t, "void") == 1) {
+  return "VOID";
+}
+  if (fb_tok_is(c, t, "i8") == 1) {
+  return "I8";
+}
+  if (fb_tok_is(c, t, "i16") == 1) {
+  return "I16";
+}
+  if (fb_tok_is(c, t, "i32") == 1) {
+  return "I32";
+}
+  if (fb_tok_is(c, t, "i64") == 1) {
+  return "I64";
+}
+  if (fb_tok_is(c, t, "i128") == 1) {
+  return "I128";
+}
+  if (fb_tok_is(c, t, "u8") == 1) {
+  return "U8";
+}
+  if (fb_tok_is(c, t, "u16") == 1) {
+  return "U16";
+}
+  if (fb_tok_is(c, t, "u32") == 1) {
+  return "U32";
+}
+  if (fb_tok_is(c, t, "u64") == 1) {
+  return "U64";
+}
+  if (fb_tok_is(c, t, "u128") == 1) {
+  return "U128";
+}
+  if (fb_tok_is(c, t, "f32") == 1) {
+  return "F32";
+}
+  if (fb_tok_is(c, t, "f64") == 1) {
+  return "F64";
+}
+  if (fb_tok_is(c, t, "c64") == 1) {
+  return "C64";
+}
+  if (fb_tok_is(c, t, "c128") == 1) {
+  return "C128";
+}
+  if (fb_tok_is(c, t, "bool") == 1) {
+  return "BOOL";
+}
+  if (fb_tok_is(c, t, "vec") == 1) {
+  return "VEC";
+}
+  return "IDENTIFIER";
+}
+
+const char* fb_ttype(Fb* c, int32_t t) {
+  int32_t k = (c[0]).tk[t];
+  if (k == TK_IDENT) {
+  return fb_word_type(c, t);
+}
+  if (k == TK_NUM) {
+  return "NUMBER";
+}
+  if (k == TK_STR) {
+  return "STRING_LITERAL";
+}
+  if (k == TK_OP) {
+  return fb_op_name((c[0]).top[t]);
+}
+  if (k == TK_CLAIM_PATH) {
+  return "CLAIM_PATH";
+}
+  if (k == TK_CLAIM_COORD) {
+  return "CLAIM_COORDINATE";
+}
+  return "EOF";
+}
+
+int32_t fb_tt_is(Fb* c, int32_t t, const char* name) {
+  if (strcmp(fb_ttype(c, t), name) == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_ident(Fb* c, int32_t t) {
+  if ((c[0]).tk[t] != TK_IDENT) {
+  return 0;
+}
+  return fb_tt_is(c, t, "IDENTIFIER");
+}
+
+int32_t fb_is_op(Fb* c, int32_t t, int32_t op) {
+  if ((c[0]).tk[t] == TK_OP && (c[0]).top[t] == op) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_word(Fb* c, int32_t t, const char* w) {
+  if (fb_is_ident(c, t) == 1 && fb_tok_is(c, t, w) == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_at_eof(Fb* c) {
+  if ((c[0]).tk[(c[0]).pos] == TK_EOF) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_la(Fb* c) {
+  int32_t t = (c[0]).pos;
+  if ((c[0]).tk[t] == TK_EOF) {
+  return t;
+}
+  return (t + 1);
+}
+
+int32_t fb_la2(Fb* c) {
+  int32_t t = fb_la(c);
+  if ((c[0]).tk[t] == TK_EOF) {
+  return t;
+}
+  return (t + 1);
+}
+
+void fb_advance(Fb* c) {
+  if ((c[0]).tk[(c[0]).pos] != TK_EOF) {
+  (c[0]).pos = ((c[0]).pos + 1);
+}
+}
+
+void fb_put_ttype(Fb* c, FbBuf* b, int32_t t) {
+  fb_puts(b, "TokenType.");
+  fb_puts(b, fb_ttype(c, t));
+}
+
+int32_t fb_expect(Fb* c, const char* name) {
+  int32_t t = (c[0]).pos;
+  if (fb_tt_is(c, t, name) == 1) {
+  fb_advance(c);
+  return t;
+}
+  if (strcmp(name, "IDENTIFIER") == 0) {
+  if (fb_tt_is(c, t, "TEST") == 1 || fb_tt_is(c, t, "AND") == 1 || fb_tt_is(c, t, "OR") == 1) {
+  fb_advance(c);
+  return t;
+}
+}
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Expected TokenType.");
+  fb_puts(m, name);
+  fb_puts(m, ", got ");
+  fb_put_ttype(c, m, t);
+  fb_auto_hint(c);
+  return (0 - 1);
+}
+
+int32_t fb_node(Fb* c, int32_t kind, int32_t tok) {
+  int32_t id = (c[0]).nn;
+  if (id >= (c[0]).ncap) {
+  int32_t ncap = (((c[0]).ncap * 2) + 64);
+  int64_t bytes = ((int64_t)(ncap) * 4);
+  (c[0]).nk = (int32_t*)(realloc((uint8_t*)((c[0]).nk), bytes));
+  (c[0]).nop = (int32_t*)(realloc((uint8_t*)((c[0]).nop), bytes));
+  (c[0]).ntok = (int32_t*)(realloc((uint8_t*)((c[0]).ntok), bytes));
+  (c[0]).na = (int32_t*)(realloc((uint8_t*)((c[0]).na), bytes));
+  (c[0]).nb = (int32_t*)(realloc((uint8_t*)((c[0]).nb), bytes));
+  (c[0]).nc = (int32_t*)(realloc((uint8_t*)((c[0]).nc), bytes));
+  (c[0]).nx = (int32_t*)(realloc((uint8_t*)((c[0]).nx), bytes));
+  (c[0]).nfs = (int32_t*)(realloc((uint8_t*)((c[0]).nfs), bytes));
+  (c[0]).nfe = (int32_t*)(realloc((uint8_t*)((c[0]).nfe), bytes));
+  (c[0]).ncap = ncap;
+}
+  (c[0]).nk[id] = kind;
+  (c[0]).nop[id] = 0;
+  (c[0]).ntok[id] = tok;
+  (c[0]).na[id] = (0 - 1);
+  (c[0]).nb[id] = (0 - 1);
+  (c[0]).nc[id] = (0 - 1);
+  (c[0]).nx[id] = (0 - 1);
+  (c[0]).nfs[id] = tok;
+  (c[0]).nfe[id] = tok;
+  (c[0]).nn = (id + 1);
+  return id;
+}
+
+int32_t fb_node2(Fb* c, int32_t kind, int32_t tok, int32_t a, int32_t b) {
+  int32_t id = fb_node(c, kind, tok);
+  (c[0]).na[id] = a;
+  (c[0]).nb[id] = b;
+  return id;
+}
+
+int32_t fb_list_add(Fb* c, int32_t head, int32_t x) {
+  if (head < 0) {
+  return x;
+}
+  int32_t k = head;
+  while ((c[0]).nx[k] >= 0) {
+  k = (c[0]).nx[k];
+}
+  (c[0]).nx[k] = x;
+  return head;
+}
+
+int32_t fb_list_len(Fb* c, int32_t head) {
+  int32_t n = 0;
+  int32_t k = head;
+  while (k >= 0) {
+  n = (n + 1);
+  k = (c[0]).nx[k];
+}
+  return n;
+}
+
+int32_t fb_is_numtype(Fb* c, int32_t t) {
+  const char* ty = fb_ttype(c, t);
+  if (strcmp(ty, "I8") == 0 || strcmp(ty, "I16") == 0 || strcmp(ty, "I32") == 0) {
+  return 1;
+}
+  if (strcmp(ty, "I64") == 0 || strcmp(ty, "I128") == 0) {
+  return 1;
+}
+  if (strcmp(ty, "U8") == 0 || strcmp(ty, "U16") == 0 || strcmp(ty, "U32") == 0) {
+  return 1;
+}
+  if (strcmp(ty, "U64") == 0 || strcmp(ty, "U128") == 0) {
+  return 1;
+}
+  if (strcmp(ty, "F32") == 0 || strcmp(ty, "F64") == 0) {
+  return 1;
+}
+  if (strcmp(ty, "C64") == 0 || strcmp(ty, "C128") == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_expect_greater(Fb* c) {
+  int32_t t = (c[0]).pos;
+  if (fb_is_op(c, t, OP_RSHIFT) == 1) {
+  (c[0]).ts[t] = ((c[0]).ts[t] + 1);
+  (c[0]).tc[t] = ((c[0]).tc[t] + 1);
+  (c[0]).top[t] = OP_GREATER;
+  return t;
+}
+  return fb_expect(c, "GREATER");
+}
+
+int32_t fb_parse_type(Fb* c) {
+  int32_t t = (c[0]).pos;
+  if (fb_is_ident(c, t) == 1 || fb_is_numtype(c, t) == 1) {
+  int32_t name = fb_tok_str(c, t);
+  fb_advance(c);
+  int32_t cur = (c[0]).pos;
+  if (fb_is_op(c, cur, OP_LESS) == 1 && (fb_name_is(c, name, "array") == 1 || fb_name_is(c, name, "ptr") == 1)) {
+  fb_advance(c);
+  int32_t inner = fb_parse_type(c);
+  if (inner < 0) {
+  return (0 - 1);
+}
+  FbBuf* b = (FbBuf*)(fb_buf_new(32));
+  fb_puts(b, (const char*)(fb_s(c, name)));
+  fb_putc(b, 95);
+  if (fb_name_is(c, name, "array") == 1 && fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  int32_t st = (c[0]).pos;
+  if ((c[0]).tk[st] != TK_NUM) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "array size must be an integer literal, got ");
+  fb_put_ttype(c, m, st);
+  fb_puts(fb_err_hint(c), "use a non-negative integer literal for the array size, e.g. 4");
+  fb_buf_free(b);
+  return (0 - 1);
+}
+  fb_put_span(b, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
+  fb_putc(b, 95);
+  fb_advance(c);
+}
+  fb_puts(b, (const char*)(fb_s(c, inner)));
+  int32_t out = fb_intern_buf(c, b);
+  fb_buf_free(b);
+  if (fb_expect_greater(c) < 0) {
+  return (0 - 1);
+}
+  return out;
+}
+  if (fb_is_op(c, cur, OP_LBRACKET) == 1) {
+  fb_advance(c);
+  if (fb_expect(c, "RBRACKET") < 0) {
+  return (0 - 1);
+}
+  FbBuf* b2 = (FbBuf*)(fb_buf_new(32));
+  fb_puts(b2, "array_");
+  fb_puts(b2, (const char*)(fb_s(c, name)));
+  int32_t out2 = fb_intern_buf(c, b2);
+  fb_buf_free(b2);
+  return out2;
+}
+  if (fb_is_op(c, cur, OP_LESS) == 1) {
+  fb_advance(c);
+  FbBuf* b3 = (FbBuf*)(fb_buf_new(32));
+  fb_puts(b3, (const char*)(fb_s(c, name)));
+  int32_t a0 = fb_parse_type(c);
+  if (a0 < 0) {
+  fb_buf_free(b3);
+  return (0 - 1);
+}
+  fb_putc(b3, 95);
+  fb_puts(b3, (const char*)(fb_s(c, a0)));
+  while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  int32_t a1 = fb_parse_type(c);
+  if (a1 < 0) {
+  fb_buf_free(b3);
+  return (0 - 1);
+}
+  fb_putc(b3, 95);
+  fb_puts(b3, (const char*)(fb_s(c, a1)));
+}
+  int32_t out3 = fb_intern_buf(c, b3);
+  fb_buf_free(b3);
+  if (fb_expect_greater(c) < 0) {
+  return (0 - 1);
+}
+  return out3;
+}
+  return name;
+}
+  if (fb_tt_is(c, t, "BOOL") == 1 || fb_tt_is(c, t, "VOID") == 1 || fb_tt_is(c, t, "STRING_TYPE") == 1) {
+  fb_advance(c);
+  return fb_tok_str(c, t);
+}
+  FbBuf* m2 = (FbBuf*)(fb_serr(c));
+  fb_puts(m2, "Unexpected type token: ");
+  fb_put_ttype(c, m2, t);
+  return (0 - 1);
+}
+
+int32_t fb_is_orop(Fb* c, int32_t t) {
+  return fb_tt_is(c, t, "OR");
+}
+
+int32_t fb_is_andop(Fb* c, int32_t t) {
+  return fb_tt_is(c, t, "AND");
+}
+
+int32_t fb_bin(Fb* c, int32_t op, int32_t tok, int32_t l, int32_t r) {
+  int32_t id = fb_node2(c, N_BIN, tok, l, r);
+  (c[0]).nop[id] = op;
+  return id;
+}
+
+int32_t fb_parse_expr(Fb* c) {
+  int32_t left = fb_parse_or(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  return fb_parse_pipeline(c, left);
+}
+
+int32_t fb_parse_or(Fb* c) {
+  int32_t left = fb_parse_and(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_orop(c, (c[0]).pos) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_and(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, OP_OR, t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_and(Fb* c) {
+  int32_t left = fb_parse_bitor(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_andop(c, (c[0]).pos) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_bitor(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, OP_AND, t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_bitor(Fb* c) {
+  int32_t left = fb_parse_xor(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_PIPE) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_xor(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, OP_PIPE, t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_xor(Fb* c) {
+  int32_t left = fb_parse_bitand(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_CARET) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_bitand(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, OP_CARET, t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_bitand(Fb* c) {
+  int32_t left = fb_parse_equality(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_AMPERSAND) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_equality(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, OP_AMPERSAND, t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_equality(Fb* c) {
+  int32_t left = fb_parse_comparison(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_EQUALS) == 1 || fb_is_op(c, (c[0]).pos, OP_NOT_EQUALS) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_comparison(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, (c[0]).top[t], t, left, right);
+}
+  return left;
+}
+
+int32_t fb_cmp_op(Fb* c, int32_t t) {
+  if (fb_is_op(c, t, OP_LESS) == 1) {
+  return OP_LESS;
+}
+  if (fb_is_op(c, t, OP_GREATER) == 1) {
+  return OP_GREATER;
+}
+  if (fb_is_op(c, t, OP_LESS_EQUAL) == 1) {
+  return OP_LESS_EQUAL;
+}
+  if (fb_is_op(c, t, OP_GREATER_EQUAL) == 1) {
+  return OP_GREATER_EQUAL;
+}
+  if (fb_tt_is(c, t, "IN") == 1) {
+  return OPX_IN;
+}
+  return 0;
+}
+
+int32_t fb_parse_comparison(Fb* c) {
+  int32_t left = fb_parse_shift(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_cmp_op(c, (c[0]).pos) != 0) {
+  int32_t t = (c[0]).pos;
+  int32_t op = fb_cmp_op(c, t);
+  fb_advance(c);
+  int32_t right = fb_parse_shift(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, op, t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_shift(Fb* c) {
+  int32_t left = fb_parse_term(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_LSHIFT) == 1 || fb_is_op(c, (c[0]).pos, OP_RSHIFT) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_term(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, (c[0]).top[t], t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_term(Fb* c) {
+  int32_t left = fb_parse_factor(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_PLUS) == 1 || fb_is_op(c, (c[0]).pos, OP_MINUS) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_factor(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, (c[0]).top[t], t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_factor(Fb* c) {
+  int32_t left = fb_parse_cast(c);
+  if (left < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_STAR) == 1 || fb_is_op(c, (c[0]).pos, OP_SLASH) == 1 || fb_is_op(c, (c[0]).pos, OP_PERCENT) == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t right = fb_parse_cast(c);
+  if (right < 0) {
+  return (0 - 1);
+}
+  left = fb_bin(c, (c[0]).top[t], t, left, right);
+}
+  return left;
+}
+
+int32_t fb_parse_cast(Fb* c) {
+  int32_t e = fb_parse_unary(c);
+  if (e < 0) {
+  return (0 - 1);
+}
+  while (fb_tt_is(c, (c[0]).pos, "AS") == 1) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t ty = fb_parse_type(c);
+  if (ty < 0) {
+  return (0 - 1);
+}
+  e = fb_node2(c, N_CAST, t, e, (0 - 1));
+  (c[0]).nop[e] = ty;
+}
+  while (fb_is_op(c, (c[0]).pos, OP_QUESTION) == 1) {
+  int32_t t2 = (c[0]).pos;
+  fb_advance(c);
+  e = fb_node2(c, N_TRY, t2, e, (0 - 1));
+}
+  return e;
+}
+
+int32_t fb_parse_unary(Fb* c) {
+  int32_t t = (c[0]).pos;
+  if (fb_tt_is(c, t, "DBG") == 1) {
+  fb_advance(c);
+  int32_t operand = fb_parse_unary(c);
+  if (operand < 0) {
+  return (0 - 1);
+}
+  int32_t call = fb_node2(c, N_CALL, (0 - 1), operand, (0 - 1));
+  return call;
+}
+  int32_t op = 0;
+  if (fb_is_op(c, t, OP_MINUS) == 1) {
+  op = OP_MINUS;
+}
+  if (fb_is_op(c, t, OP_NOT) == 1) {
+  op = OP_NOT;
+}
+  if ((c[0]).tk[t] == TK_IDENT && fb_tok_is(c, t, "not") == 1) {
+  op = OPX_NOT_WORD;
+}
+  if (fb_is_op(c, t, OP_TILDE) == 1) {
+  op = OP_TILDE;
+}
+  if (fb_is_op(c, t, OP_AMPERSAND) == 1) {
+  op = OP_AMPERSAND;
+}
+  if (fb_is_op(c, t, OP_STAR) == 1) {
+  op = OP_STAR;
+}
+  if (op != 0) {
+  fb_advance(c);
+  int32_t operand2 = fb_parse_unary(c);
+  if (operand2 < 0) {
+  return (0 - 1);
+}
+  int32_t u = fb_node2(c, N_UN, t, operand2, (0 - 1));
+  (c[0]).nop[u] = op;
+  return u;
+}
+  return fb_parse_primary(c);
+}
+
+int32_t fb_parse_args(Fb* c, int32_t close) {
+  if (fb_is_op(c, (c[0]).pos, close) == 1) {
+  return (0 - 1);
+}
+  int32_t first = fb_parse_expr(c);
+  if (first < 0) {
+  return (0 - 2);
+}
+  int32_t head = first;
+  while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  int32_t a = fb_parse_expr(c);
+  if (a < 0) {
+  return (0 - 2);
+}
+  head = fb_list_add(c, head, a);
+}
+  return head;
+}
+
+int32_t fb_parse_call(Fb* c, int32_t name_tok) {
+  if (fb_expect(c, "LPAREN") < 0) {
+  return (0 - 1);
+}
+  int32_t args = fb_parse_args(c, OP_RPAREN);
+  if (args == (0 - 2)) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RPAREN") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_CALL, name_tok, args, (0 - 1));
+}
+
+int32_t fb_parse_postfix(Fb* c, int32_t base) {
+  int32_t e = base;
+  while (fb_is_op(c, (c[0]).pos, OP_DOT) == 1 || fb_is_op(c, (c[0]).pos, OP_LBRACKET) == 1) {
+  if (fb_is_op(c, (c[0]).pos, OP_DOT) == 1) {
+  fb_advance(c);
+  int32_t mt = fb_expect(c, "IDENTIFIER");
+  if (mt < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_LPAREN) == 1) {
+  fb_advance(c);
+  int32_t args = fb_parse_args(c, OP_RPAREN);
+  if (args == (0 - 2)) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RPAREN") < 0) {
+  return (0 - 1);
+}
+  e = fb_node2(c, N_METHOD, mt, e, args);
+} else {
+  e = fb_node2(c, N_FIELD, mt, e, (0 - 1));
+}
+} else {
+  int32_t bt = (c[0]).pos;
+  fb_advance(c);
+  int32_t idx = fb_parse_expr(c);
+  if (idx < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_DOTDOT) == 1) {
+  fb_advance(c);
+  int32_t hi = fb_parse_expr(c);
+  if (hi < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RBRACKET") < 0) {
+  return (0 - 1);
+}
+  e = fb_node2(c, N_SLICE, bt, e, idx);
+  (c[0]).nc[e] = hi;
+} else {
+  if (fb_expect(c, "RBRACKET") < 0) {
+  return (0 - 1);
+}
+  e = fb_node2(c, N_INDEX, bt, e, idx);
+}
+}
+}
+  return e;
+}
+
+int32_t fb_parse_struct_lit(Fb* c, int32_t name_tok) {
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_DOTDOT) == 1) {
+  fb_advance(c);
+  int32_t base = fb_parse_expr(c);
+  if (base < 0) {
+  return (0 - 1);
+}
+  int32_t ups = (0 - 1);
+  while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  if (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 1) {
+  break;
+}
+  int32_t ft = fb_expect(c, "IDENTIFIER");
+  if (ft < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "COLON") < 0) {
+  return (0 - 1);
+}
+  int32_t fv = fb_parse_expr(c);
+  if (fv < 0) {
+  return (0 - 1);
+}
+  ups = fb_list_add(c, ups, fb_node2(c, N_FINIT, ft, fv, (0 - 1)));
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_RECUPD, name_tok, base, ups);
+}
+  int32_t fields = (0 - 1);
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  fb_puts(fb_serr(c), "Unterminated struct literal: expected '}' before end of file");
+  return (0 - 1);
+}
+  int32_t ft2 = fb_expect(c, "IDENTIFIER");
+  if (ft2 < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "COLON") < 0) {
+  return (0 - 1);
+}
+  int32_t fv2 = fb_parse_expr(c);
+  if (fv2 < 0) {
+  return (0 - 1);
+}
+  fields = fb_list_add(c, fields, fb_node2(c, N_FINIT, ft2, fv2, (0 - 1)));
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+}
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_STRUCT, name_tok, fields, (0 - 1));
+}
+
+int32_t fb_skip_braces(Fb* c) {
+  int32_t depth = 0;
+  while (fb_at_eof(c) == 0) {
+  int32_t t = (c[0]).pos;
+  if (fb_is_op(c, t, OP_LBRACE) == 1) {
+  depth = (depth + 1);
+}
+  if (fb_is_op(c, t, OP_RBRACE) == 1) {
+  depth = (depth - 1);
+  if (depth == 0) {
+  fb_advance(c);
+  return 0;
+}
+}
+  fb_advance(c);
+}
+  fb_puts(fb_serr(c), "Unterminated block: expected '}' before end of file");
+  return (0 - 1);
+}
+
+int32_t fb_parse_lambda(Fb* c) {
+  int32_t t = (c[0]).pos;
+  if (fb_expect(c, "PIPE") < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_PIPE) == 0) {
+  if (fb_expect(c, "IDENTIFIER") < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_COLON) == 1) {
+  fb_advance(c);
+  if (fb_parse_type(c) < 0) {
+  return (0 - 1);
+}
+}
+  while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  if (fb_expect(c, "IDENTIFIER") < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_COLON) == 1) {
+  fb_advance(c);
+  if (fb_parse_type(c) < 0) {
+  return (0 - 1);
+}
+}
+}
+}
+  if (fb_expect(c, "PIPE") < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_ARROW) == 1) {
+  fb_advance(c);
+  if (fb_parse_type(c) < 0) {
+  return (0 - 1);
+}
+}
+  if (fb_is_op(c, (c[0]).pos, OP_LBRACE) == 1) {
+  if (fb_skip_braces(c) < 0) {
+  return (0 - 1);
+}
+} else {
+  if (fb_parse_expr(c) < 0) {
+  return (0 - 1);
+}
+}
+  return fb_node(c, N_LAMBDA, t);
+}
+
+int32_t fb_parse_if_expr(Fb* c) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t cond = fb_parse_expr(c);
+  if (cond < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t th = fb_parse_expr(c);
+  if (th < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  if (fb_tt_is(c, (c[0]).pos, "ELSE") == 0) {
+  fb_puts(fb_serr(c), "if-expression requires an else branch");
+  return (0 - 1);
+}
+  fb_advance(c);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t el = fb_parse_expr(c);
+  if (el < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t id = fb_node2(c, N_IFX, t, cond, th);
+  (c[0]).nc[id] = el;
+  return id;
+}
+
+int32_t fb_parse_name_primary(Fb* c) {
+  int32_t t = (c[0]).pos;
+  fb_advance(c);
+  int32_t cur = (c[0]).pos;
+  if (fb_is_op(c, cur, OP_LPAREN) == 1) {
+  int32_t call = fb_parse_call(c, t);
+  if (call < 0) {
+  return (0 - 1);
+}
+  return fb_parse_postfix(c, call);
+}
+  if (fb_is_op(c, cur, OP_LESS) == 1) {
+  int32_t save_nn = (c[0]).nn;
+  fb_advance(c);
+  int32_t ok = 1;
+  if (fb_parse_type(c) < 0) {
+  ok = 0;
+}
+  while (ok == 1 && fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  if (fb_parse_type(c) < 0) {
+  ok = 0;
+}
+}
+  if (ok == 1 && fb_expect_greater(c) < 0) {
+  ok = 0;
+}
+  if (ok == 1) {
+  if (fb_is_op(c, (c[0]).pos, OP_LPAREN) == 1) {
+  int32_t gcall = fb_parse_call(c, t);
+  if (gcall >= 0) {
+  (c[0]).nop[gcall] = 1;
+  return fb_parse_postfix(c, gcall);
+}
+  ok = 0;
+} else {
+  if (fb_is_op(c, (c[0]).pos, OP_LBRACE) == 1) {
+  int32_t gs = fb_parse_struct_lit(c, t);
+  if (gs >= 0) {
+  return gs;
+}
+  ok = 0;
+} else {
+  return fb_node(c, N_OPAQUE, t);
+}
+}
+}
+  fb_err_clear(c);
+  (c[0]).pos = cur;
+  (c[0]).nn = save_nn;
+  return fb_node(c, N_VAR, t);
+}
+  if (fb_is_op(c, cur, OP_LBRACE) == 1) {
+  int32_t save_nn2 = (c[0]).nn;
+  int32_t sl = fb_parse_struct_lit(c, t);
+  if (sl >= 0) {
+  return sl;
+}
+  fb_err_clear(c);
+  (c[0]).pos = cur;
+  (c[0]).nn = save_nn2;
+  return fb_node(c, N_VAR, t);
+}
+  if (fb_is_op(c, cur, OP_DOT) == 1 || fb_is_op(c, cur, OP_LBRACKET) == 1) {
+  return fb_parse_postfix(c, fb_node(c, N_VAR, t));
+}
+  if (fb_is_op(c, cur, OP_DOUBLE_COLON) == 1) {
+  fb_advance(c);
+  if (fb_expect(c, "IDENTIFIER") < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "LPAREN") < 0) {
+  return (0 - 1);
+}
+  int32_t eargs = fb_parse_args(c, OP_RPAREN);
+  if (eargs == (0 - 2)) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RPAREN") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_EFFECT, t, eargs, (0 - 1));
+}
+  return fb_node(c, N_VAR, t);
+}
+
+int32_t fb_parse_primary(Fb* c) {
+  int32_t t = (c[0]).pos;
+  int32_t k = (c[0]).tk[t];
+  if (k == TK_NUM) {
+  fb_advance(c);
+  int32_t lit = fb_node(c, N_LIT, t);
+  int32_t u = (c[0]).pos;
+  if (fb_is_ident(c, u) == 1 && (c[0]).tl[u] == (c[0]).tl[t] && fb_is_upper((c[0]).src[(c[0]).ts[u]]) == 1) {
+  fb_advance(c);
+  int32_t q = fb_node2(c, N_CAST, u, lit, (0 - 1));
+  (c[0]).nop[q] = fb_tok_str(c, u);
+  return q;
+}
+  return lit;
+}
+  if (fb_tt_is(c, t, "BOOLEAN") == 1 || k == TK_STR || fb_tt_is(c, t, "NULL") == 1) {
+  fb_advance(c);
+  return fb_node(c, N_LIT, t);
+}
+  if (fb_tt_is(c, t, "SELF") == 1) {
+  fb_advance(c);
+  int32_t sv = fb_node(c, N_VAR, t);
+  if (fb_is_op(c, (c[0]).pos, OP_DOT) == 1) {
+  return fb_parse_postfix(c, sv);
+}
+  return sv;
+}
+  if (fb_is_op(c, t, OP_LESS) == 1) {
+  fb_advance(c);
+  int32_t els = (0 - 1);
+  if (fb_is_op(c, (c[0]).pos, OP_GREATER) == 0) {
+  int32_t e0 = fb_parse_primary(c);
+  if (e0 < 0) {
+  return (0 - 1);
+}
+  els = e0;
+  while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  int32_t e1 = fb_parse_primary(c);
+  if (e1 < 0) {
+  return (0 - 1);
+}
+  els = fb_list_add(c, els, e1);
+}
+}
+  if (fb_expect(c, "GREATER") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_VEC, t, els, (0 - 1));
+}
+  if (fb_is_op(c, t, OP_LBRACKET) == 1) {
+  fb_advance(c);
+  int32_t ael = (0 - 1);
+  if (fb_is_op(c, (c[0]).pos, OP_RBRACKET) == 0) {
+  int32_t a0 = fb_parse_expr(c);
+  if (a0 < 0) {
+  return (0 - 1);
+}
+  ael = a0;
+  if (fb_is_op(c, (c[0]).pos, OP_SEMICOLON) == 1) {
+  fb_advance(c);
+  if (fb_parse_expr(c) < 0) {
+  return (0 - 1);
+}
+} else {
+  while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+  int32_t a1 = fb_parse_expr(c);
+  if (a1 < 0) {
+  return (0 - 1);
+}
+  ael = fb_list_add(c, ael, a1);
+}
+}
+}
+  if (fb_expect(c, "RBRACKET") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_ARRAY, t, ael, (0 - 1));
+}
+  if (fb_is_ident(c, t) == 1 || fb_tt_is(c, t, "AND") == 1 || fb_tt_is(c, t, "OR") == 1 || fb_tt_is(c, t, "C64") == 1 || fb_tt_is(c, t, "C128") == 1) {
+  return fb_parse_name_primary(c);
+}
+  if (fb_is_op(c, t, OP_LBRACE) == 1 && fb_is_op(c, fb_la(c), OP_DOTDOT) == 1) {
+  return fb_parse_struct_lit(c, (0 - 1));
+}
+  if (fb_is_op(c, t, OP_LPAREN) == 1) {
+  fb_advance(c);
+  int32_t inner = fb_parse_expr(c);
+  if (inner < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RPAREN") < 0) {
+  return (0 - 1);
+}
+  return fb_parse_postfix(c, inner);
+}
+  if (fb_is_op(c, t, OP_PIPE) == 1) {
+  return fb_parse_lambda(c);
+}
+  if (fb_tt_is(c, t, "IF") == 1) {
+  return fb_parse_if_expr(c);
+}
+  FbBuf* m = (FbBuf*)(fb_serr(c));
+  fb_puts(m, "Unexpected token in expression: ");
+  fb_put_ttype(c, m, t);
+  return (0 - 1);
+}
+
+int32_t fb_is_placeholder(Fb* c, int32_t x) {
+  if ((c[0]).nk[x] == N_VAR && fb_tok_is(c, (c[0]).ntok[x], "_") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_pipe_args(Fb* c, int32_t piped, int32_t args) {
+  int32_t holes = 0;
+  int32_t k = args;
+  while (k >= 0) {
+  if (fb_is_placeholder(c, k) == 1) {
+  holes = (holes + 1);
+}
+  k = (c[0]).nx[k];
+}
+  if (holes == 0) {
+  (c[0]).nx[piped] = args;
+  return piped;
+}
+  if (holes > 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Pipeline placeholder '_' may appear at most once per '|>' stage (found ");
+  fb_put_int(m, holes);
+  fb_puts(m, "); the piped value fills a single slot");
+  return (0 - 2);
+}
+  int32_t head = (0 - 1);
+  int32_t j = args;
+  while (j >= 0) {
+  int32_t nxt = (c[0]).nx[j];
+  (c[0]).nx[j] = (0 - 1);
+  if (fb_is_placeholder(c, j) == 1) {
+  head = fb_list_add(c, head, piped);
+} else {
+  head = fb_list_add(c, head, j);
+}
+  j = nxt;
+}
+  return head;
+}
+
+int32_t fb_parse_stage_params(Fb* c, int32_t name_tok, int32_t source) {
+  int32_t params = (0 - 1);
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  int32_t pt = (c[0]).pos;
+  if (fb_is_ident(c, pt) == 0) {
+  fb_puts(fb_perr(c), "Expected a parameter name in flow stage params");
+  return (0 - 1);
+}
+  fb_advance(c);
+  if (fb_expect(c, "COLON") < 0) {
+  return (0 - 1);
+}
+  int32_t k = params;
+  while (k >= 0) {
+  if (fb_tok_span_eq(c, (c[0]).ntok[k], pt) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Duplicate stage parameter '");
+  fb_put_span(m, (c[0]).src, (c[0]).ts[pt], (c[0]).te[pt]);
+  fb_puts(m, "'");
+  return (0 - 1);
+}
+  k = (c[0]).nx[k];
+}
+  int32_t vs = (c[0]).pos;
+  int32_t v = fb_parse_expr(c);
+  if (v < 0) {
+  return (0 - 1);
+}
+  fb_wrap_top(c, v, vs);
+  params = fb_list_add(c, params, fb_node2(c, N_FINIT, pt, v, (0 - 1)));
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+}
+}
+  if (params < 0) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "flow stage '");
+  fb_put_span(m2, (c[0]).src, (c[0]).ts[name_tok], (c[0]).te[name_tok]);
+  fb_puts(m2, "' has empty '{}'; drop the braces or add `param: value` overrides");
+  return (0 - 1);
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_STAGE, name_tok, source, params);
+}
+
+int32_t fb_tok_span_eq(Fb* c, int32_t a, int32_t b) {
+  int32_t la = ((c[0]).te[a] - (c[0]).ts[a]);
+  int32_t lb = ((c[0]).te[b] - (c[0]).ts[b]);
+  if (la != lb) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < la) {
+  if ((c[0]).src[((c[0]).ts[a] + i)] != (c[0]).src[((c[0]).ts[b] + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t fb_parse_fork(Fb* c, int32_t t, int32_t source) {
+  int32_t nfields = 0;
+  int32_t first_field = (c[0]).pos;
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  int32_t ft = (c[0]).pos;
+  if (fb_is_ident(c, ft) == 0) {
+  fb_puts(fb_perr(c), "Expected a fork field name before '='");
+  return (0 - 1);
+}
+  fb_advance(c);
+  if (fb_is_op(c, (c[0]).pos, OP_COLON) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `");
+  fb_put_tok(m, c, ft);
+  fb_puts(m, "  = source-pipeline`");
+  return (0 - 1);
+}
+  if (fb_expect(c, "ASSIGN") < 0) {
+  return (0 - 1);
+}
+  int32_t q = first_field;
+  while (q < ft) {
+  if (fb_is_ident(c, q) == 1 && fb_is_op(c, (q + 1), OP_ASSIGN) == 1 && fb_tok_span_eq(c, q, ft) == 1 && fb_fork_field_start(c, first_field, q) == 1) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "Duplicate fork field '");
+  fb_put_tok(m2, c, ft);
+  fb_puts(m2, "'");
+  return (0 - 1);
+}
+  q = (q + 1);
+}
+  int32_t rhs = fb_parse_or(c);
+  if (rhs < 0) {
+  return (0 - 1);
+}
+  int32_t src = fb_node(c, N_OPAQUE, ft);
+  int32_t k = (c[0]).nk[rhs];
+  if (k != N_CALL && k != N_METHOD && k != N_VAR) {
+  fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)");
+  return (0 - 1);
+}
+  if (fb_parse_pipeline(c, src) < 0) {
+  return (0 - 1);
+}
+  nfields = (nfields + 1);
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+}
+}
+  if (nfields == 0) {
+  fb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch");
+  return (0 - 1);
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  return fb_node2(c, N_FORK, t, source, (0 - 1));
+}
+
+int32_t fb_fork_field_start(Fb* c, int32_t first, int32_t q) {
+  if (q == first) {
+  return 1;
+}
+  int32_t depth = 0;
+  int32_t i = first;
+  int32_t at_start = 1;
+  while (i < q) {
+  if (fb_is_op(c, i, OP_LPAREN) == 1 || fb_is_op(c, i, OP_LBRACKET) == 1 || fb_is_op(c, i, OP_LBRACE) == 1) {
+  depth = (depth + 1);
+}
+  if (fb_is_op(c, i, OP_RPAREN) == 1 || fb_is_op(c, i, OP_RBRACKET) == 1 || fb_is_op(c, i, OP_RBRACE) == 1) {
+  depth = (depth - 1);
+}
+  at_start = 0;
+  if (depth == 0 && fb_is_op(c, i, OP_COMMA) == 1) {
+  at_start = 1;
+}
+  i = (i + 1);
+}
+  return at_start;
+}
+
+int32_t fb_parse_pipeline(Fb* c, int32_t left0) {
+  int32_t left = left0;
+  while (fb_is_op(c, (c[0]).pos, OP_PIPELINE) == 1) {
+  fb_advance(c);
+  int32_t t = (c[0]).pos;
+  int32_t named = 0;
+  if (fb_is_ident(c, t) == 1 && fb_is_op(c, fb_la(c), OP_LBRACE) == 1) {
+  named = 1;
+}
+  if (fb_is_op(c, t, OP_LBRACE) == 1 || named == 1) {
+  int32_t rec = (0 - 1);
+  if (named == 1) {
+  rec = t;
+  fb_advance(c);
+}
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  if (fb_is_ident(c, (c[0]).pos) == 1 && fb_is_op(c, fb_la(c), OP_COLON) == 1) {
+  if (rec < 0) {
+  fb_puts(fb_perr(c), "an anonymous `|> { ... }` is a fork block and uses '=' branches; ':' parameter fields need a named flow stage");
+  return (0 - 1);
+}
+  left = fb_parse_stage_params(c, rec, left);
+  if (left < 0) {
+  return (0 - 1);
+}
+} else {
+  left = fb_parse_fork(c, t, left);
+  if (left < 0) {
+  return (0 - 1);
+}
+}
+} else {
+  int32_t rhs = fb_parse_or(c);
+  if (rhs < 0) {
+  return (0 - 1);
+}
+  int32_t rk = (c[0]).nk[rhs];
+  if (rk == N_CALL) {
+  int32_t args = fb_pipe_args(c, left, (c[0]).na[rhs]);
+  if (args == (0 - 2)) {
+  return (0 - 1);
+}
+  int32_t call = fb_node2(c, N_CALL, (c[0]).ntok[rhs], args, (0 - 1));
+  (c[0]).nop[call] = (c[0]).nop[rhs];
+  left = call;
+} else {
+  if (rk == N_METHOD) {
+  int32_t margs = fb_pipe_args(c, left, (c[0]).nb[rhs]);
+  if (margs == (0 - 2)) {
+  return (0 - 1);
+}
+  left = fb_node2(c, N_METHOD, (c[0]).ntok[rhs], (c[0]).na[rhs], margs);
+} else {
+  if (rk == N_VAR) {
+  (c[0]).nx[left] = (0 - 1);
+  left = fb_node2(c, N_CALL, (c[0]).ntok[rhs], left, (0 - 1));
+} else {
+  fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)");
+  return (0 - 1);
+}
+}
+}
+}
+}
+  return left;
+}
+
+int32_t fb_add_member(Fb* c, int32_t f, int32_t kind, int32_t name, int32_t ty, int32_t init, int32_t line) {
+  int32_t i = (c[0]).nmm;
+  (c[0]).mm_flow[i] = f;
+  (c[0]).mm_kind[i] = kind;
+  (c[0]).mm_name[i] = name;
+  (c[0]).mm_type[i] = ty;
+  (c[0]).mm_init[i] = init;
+  (c[0]).mm_line[i] = line;
+  (c[0]).mm_synth[i] = 0;
+  (c[0]).mm_params[i] = (0 - 1);
+  (c[0]).mm_pipe_m[i] = (0 - 1);
+  (c[0]).mm_pipe_p[i] = (0 - 1);
+  (c[0]).nmm = (i + 1);
+  return i;
+}
+
+void fb_add_conn(Fb* c, int32_t f, int32_t sm, int32_t sp, int32_t dm, int32_t dp, int32_t line) {
+  int32_t i = (c[0]).ncn;
+  (c[0]).cn_flow[i] = f;
+  (c[0]).cn_sm[i] = sm;
+  (c[0]).cn_sp[i] = sp;
+  (c[0]).cn_dm[i] = dm;
+  (c[0]).cn_dp[i] = dp;
+  (c[0]).cn_line[i] = line;
+  (c[0]).ncn = (i + 1);
+}
+
+void fb_add_name(Fb* c, int32_t kind, int32_t name) {
+  int32_t i = (c[0]).nnames;
+  (c[0]).nx_kind[i] = kind;
+  (c[0]).nx_name[i] = name;
+  (c[0]).nnames = (i + 1);
+}
+
+int32_t fb_has_name(Fb* c, int32_t kind, int32_t name) {
+  int32_t i = 0;
+  while (i < (c[0]).nnames) {
+  if ((c[0]).nx_kind[i] == kind && fb_name_eq(c, (c[0]).nx_name[i], name) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int64_t fb_pow10(int32_t k) {
+  int64_t v = 1;
+  int32_t i = 0;
+  while (i < k) {
+  v = (v * 10);
+  i = (i + 1);
+}
+  return v;
+}
+
+int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text) {
+  int32_t nt = (c[0]).pos;
+  if ((c[0]).tk[nt] != TK_NUM) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Expected a duration in ");
+  fb_puts(m, (const char*)(fb_s(c, where_s)));
+  fb_puts(m, ", got ");
+  fb_put_ttype(c, m, nt);
+  fb_puts(fb_err_hint(c), "write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)");
+  return (0 - 1);
+}
+  fb_advance(c);
+  int32_t st = (c[0]).pos;
+  int32_t upow = (0 - 1);
+  int64_t mult = 1;
+  if (fb_is_ident(c, st) == 1) {
+  if (fb_tok_is(c, st, "ns") == 1) {
+  upow = 0;
+}
+  if (fb_tok_is(c, st, "us") == 1) {
+  upow = 3;
+}
+  if (fb_tok_is(c, st, "ms") == 1) {
+  upow = 6;
+}
+  if (fb_tok_is(c, st, "s") == 1) {
+  upow = 9;
+}
+  if (fb_tok_is(c, st, "min") == 1) {
+  upow = 10;
+  mult = 6;
+}
+}
+  if (upow < 0) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "Expected a time unit after '");
+  fb_put_span(m2, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
+  fb_puts(m2, "' in ");
+  fb_puts(m2, (const char*)(fb_s(c, where_s)));
+  fb_puts(m2, ", got ");
+  if (fb_is_ident(c, st) == 1) {
+  fb_putc(m2, 39);
+  fb_put_span(m2, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
+  fb_putc(m2, 39);
+} else {
+  fb_put_ttype(c, m2, st);
+}
+  fb_puts(fb_err_hint(c), "valid time units: ns, us, ms, s, min");
+  return (0 - 1);
+}
+  fb_advance(c);
+  FbBuf* tb = (FbBuf*)(fb_buf_new(32));
+  fb_put_span(tb, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
+  fb_putc(tb, 32);
+  fb_put_span(tb, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
+  text[0] = fb_intern_buf(c, tb);
+  fb_buf_free(tb);
+  uint8_t* p = (uint8_t*)((c[0]).src);
+  int32_t s = (c[0]).ts[nt];
+  int32_t e = (c[0]).te[nt];
+  int64_t mant = 0;
+  int32_t e10 = 0;
+  int32_t over = 0;
+  if ((e - s) > 2 && p[s] == 48 && p[(s + 1)] == 120) {
+  int32_t h = (s + 2);
+  while (h < e) {
+  uint8_t ch = p[h];
+  int64_t dv = 0;
+  if (fb_is_digit(ch) == 1) {
+  dv = (int64_t)((ch - 48));
+}
+  if (ch >= 97 && ch <= 102) {
+  dv = (int64_t)((ch - 87));
+}
+  if (ch >= 65 && ch <= 70) {
+  dv = (int64_t)((ch - 55));
+}
+  if (mant > ((FB_I64_MAX - dv) / 16)) {
+  over = 1;
+} else {
+  mant = ((mant * 16) + dv);
+}
+  h = (h + 1);
+}
+} else {
+  int32_t i = s;
+  int32_t frac = 0;
+  int32_t in_frac = 0;
+  while (i < e && p[i] != 101 && p[i] != 69) {
+  if (p[i] == 46) {
+  in_frac = 1;
+} else {
+  int64_t dv2 = (int64_t)((p[i] - 48));
+  if (mant > ((FB_I64_MAX - dv2) / 10)) {
+  if (dv2 != 0) {
+  over = 1;
+}
+  if (in_frac == 0) {
+  e10 = (e10 + 1);
+}
+} else {
+  mant = ((mant * 10) + dv2);
+  if (in_frac == 1) {
+  frac = (frac + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  e10 = (e10 - frac);
+  if (i < e) {
+  i = (i + 1);
+  int32_t neg = 0;
+  if (p[i] == 45) {
+  neg = 1;
+  i = (i + 1);
+} else {
+  if (p[i] == 43) {
+  i = (i + 1);
+}
+}
+  int32_t ex = 0;
+  while (i < e) {
+  if (ex < 100000) {
+  ex = ((ex * 10) + (int32_t)((p[i] - 48)));
+}
+  i = (i + 1);
+}
+  if (neg == 1) {
+  e10 = (e10 - ex);
+} else {
+  e10 = (e10 + ex);
+}
+}
+}
+  while (mant != 0 && (mant % 10) == 0 && e10 < 0) {
+  mant = (mant / 10);
+  e10 = (e10 + 1);
+}
+  int32_t pw = (upow + e10);
+  int32_t whole = 1;
+  int64_t val = 0;
+  if (mant == 0) {
+  val = 0;
+} else {
+  if (mant > (FB_I64_MAX / mult)) {
+  over = 1;
+} else {
+  int64_t x = (mant * mult);
+  if (pw < 0) {
+  if (pw < (0 - 18)) {
+  whole = 0;
+} else {
+  int64_t d = fb_pow10((0 - pw));
+  if ((x % d) != 0) {
+  whole = 0;
+} else {
+  x = (x / d);
+}
+}
+} else {
+  while (pw > 0 && over == 0) {
+  if (x > (FB_I64_MAX / 10)) {
+  over = 1;
+} else {
+  x = (x * 10);
+}
+  pw = (pw - 1);
+}
+}
+  val = x;
+}
+}
+  if (whole == 0) {
+  FbBuf* m3 = (FbBuf*)(fb_perr(c));
+  fb_puts(m3, "Duration '");
+  fb_puts(m3, (const char*)(fb_s(c, text[0])));
+  fb_puts(m3, "' in ");
+  fb_puts(m3, (const char*)(fb_s(c, where_s)));
+  fb_puts(m3, " is not a whole number of nanoseconds; time is not silently rounded");
+  fb_puts(fb_err_hint(c), "use a finer unit, e.g. '500 us' instead of '0.5 ms'");
+  return (0 - 1);
+}
+  if (over == 1) {
+  FbBuf* m4 = (FbBuf*)(fb_perr(c));
+  fb_puts(m4, "Duration '");
+  fb_puts(m4, (const char*)(fb_s(c, text[0])));
+  fb_puts(m4, "' in ");
+  fb_puts(m4, (const char*)(fb_s(c, where_s)));
+  fb_puts(m4, " overflows the i64 nanosecond range");
+  return (0 - 1);
+}
+  ns[0] = val;
+  return 0;
+}
+
+void fb_put_tok(FbBuf* b, Fb* c, int32_t t) {
+  fb_put_span(b, (c[0]).src, (c[0]).ts[t], (c[0]).te[t]);
+}
+
+void fb_put_fname(FbBuf* b, Fb* c, int32_t f) {
+  fb_puts(b, (const char*)(fb_s(c, (c[0]).f_name[f])));
+}
+
+int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, const char* word, const char* what) {
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Unterminated '");
+  fb_puts(m, word);
+  fb_puts(m, "' body in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "': expected '}' before end of file");
+  return (0 - 1);
+}
+  int32_t st = (c[0]).pos;
+  int32_t la = fb_la(c);
+  if (fb_is_ident(c, st) == 0 || fb_is_word(c, la, "becomes") == 0) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "Unexpected statement in '");
+  fb_puts(m2, word);
+  fb_puts(m2, "' body of flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "'");
+  FbBuf* h = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h, "'");
+  fb_puts(h, word);
+  fb_puts(h, "' bodies contain ");
+  fb_puts(h, what);
+  fb_puts(h, " in this version: 'x becomes expr'");
+  return (0 - 1);
+}
+  fb_advance(c);
+  fb_advance(c);
+  int32_t rhs_s = (c[0]).pos;
+  int32_t rhs = fb_parse_expr(c);
+  if (rhs < 0) {
+  return (0 - 1);
+}
+  int32_t i = (c[0]).nbc;
+  (c[0]).bc_kind[i] = kind;
+  (c[0]).bc_owner[i] = owner;
+  (c[0]).bc_target[i] = fb_tok_str(c, st);
+  (c[0]).bc_expr[i] = fb_wrap_top(c, rhs, rhs_s);
+  (c[0]).bc_line[i] = (c[0]).tl[st];
+  (c[0]).nbc = (i + 1);
+}
+  return fb_expect(c, "RBRACE");
+}
+
+int32_t fb_wrap_top(Fb* c, int32_t root, int32_t start_tok) {
+  (c[0]).nfs[root] = start_tok;
+  (c[0]).nfe[root] = (c[0]).pos;
+  return root;
+}
+
+int32_t fb_source_between(Fb* c, int32_t st, int32_t et) {
+  uint8_t* p = (uint8_t*)((c[0]).src);
+  FbBuf* b = (FbBuf*)(fb_buf_new(64));
+  int32_t sl = (c[0]).tl[st];
+  int32_t el = (c[0]).tl[et];
+  int32_t s_off = fb_col_offset(c, sl, (c[0]).tc[st]);
+  int32_t e_off = fb_col_offset(c, el, (c[0]).tc[et]);
+  if (sl == el) {
+  fb_put_stripped(b, p, s_off, e_off);
+} else {
+  int32_t first = 1;
+  int32_t l0e = fb_line_end(c, s_off);
+  first = fb_put_part(b, p, s_off, l0e, first);
+  int32_t ln = (sl + 1);
+  while (ln < el) {
+  int32_t ls = fb_line_start(c, ln);
+  if (ls >= 0) {
+  first = fb_put_part(b, p, ls, fb_line_end(c, ls), first);
+}
+  ln = (ln + 1);
+}
+  int32_t ls2 = fb_line_start(c, el);
+  if (ls2 >= 0) {
+  first = fb_put_part(b, p, ls2, e_off, first);
+}
+}
+  int32_t out = fb_intern_buf(c, b);
+  fb_buf_free(b);
+  return out;
+}
+
+int32_t fb_line_start(Fb* c, int32_t ln) {
+  int32_t line = 1;
+  int32_t i = 0;
+  if (ln == 1) {
+  return 0;
+}
+  while (i < (c[0]).n) {
+  if ((c[0]).src[i] == 10) {
+  line = (line + 1);
+  if (line == ln) {
+  return (i + 1);
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_line_end(Fb* c, int32_t off) {
+  int32_t i = off;
+  while (i < (c[0]).n && (c[0]).src[i] != 10) {
+  i = (i + 1);
+}
+  return i;
+}
+
+int32_t fb_col_offset(Fb* c, int32_t ln, int32_t col) {
+  int32_t ls = fb_line_start(c, ln);
+  if (ls < 0) {
+  return (c[0]).n;
+}
+  int32_t le = fb_line_end(c, ls);
+  int32_t want = (col - 1);
+  if (want < 0) {
+  want = 0;
+}
+  int32_t i = ls;
+  int32_t k = 0;
+  while (i < le && k < want) {
+  i = (i + 1);
+  while (i < le && (c[0]).src[i] >= 128 && (c[0]).src[i] < 192) {
+  i = (i + 1);
+}
+  k = (k + 1);
+}
+  return i;
+}
+
+void fb_put_stripped(FbBuf* b, uint8_t* p, int32_t s, int32_t e) {
+  int32_t a = s;
+  int32_t z = e;
+  while (a < z && fb_is_space(p[a]) == 1) {
+  a = (a + 1);
+}
+  while (z > a && fb_is_space(p[(z - 1)]) == 1) {
+  z = (z - 1);
+}
+  fb_put_span(b, p, a, z);
+}
+
+int32_t fb_put_part(FbBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first) {
+  int32_t a = s;
+  int32_t z = e;
+  while (a < z && fb_is_space(p[a]) == 1) {
+  a = (a + 1);
+}
+  while (z > a && fb_is_space(p[(z - 1)]) == 1) {
+  z = (z - 1);
+}
+  if (a >= z) {
+  return first;
+}
+  if (first == 0) {
+  fb_putc(b, 32);
+}
+  fb_put_span(b, p, a, z);
+  return 0;
+}
+
+int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word) {
+  fb_advance(c);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t count = 0;
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Unterminated '");
+  fb_puts(m, word);
+  fb_puts(m, "' body in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "': expected '}' before end of file");
+  return (0 - 1);
+}
+  int32_t st = (c[0]).pos;
+  int32_t ex = fb_parse_expr(c);
+  if (ex < 0) {
+  return (0 - 1);
+}
+  int32_t i = (c[0]).niv;
+  (c[0]).iv_flow[i] = f;
+  (c[0]).iv_kind[i] = kind;
+  (c[0]).iv_expr[i] = fb_wrap_top(c, ex, st);
+  (c[0]).iv_line[i] = (c[0]).tl[st];
+  (c[0]).iv_text[i] = fb_source_between(c, st, (c[0]).pos);
+  (c[0]).niv = (i + 1);
+  count = (count + 1);
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  if (count == 0) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "'");
+  fb_puts(m2, word);
+  fb_puts(m2, "' block in flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' needs at least one boolean expression");
+  FbBuf* h = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h, "write '");
+  fb_puts(h, word);
+  fb_puts(h, " { x < 1.0 }' or remove the block");
+  return (0 - 1);
+}
+  return 0;
+}
+
+int32_t fb_parse_recognize(Fb* c, int32_t f) {
+  int32_t rt = (c[0]).pos;
+  fb_advance(c);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t first = (c[0]).nrc;
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Unterminated 'recognize' block in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "': expected '}' before end of file");
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+} else {
+  int32_t dt = fb_expect(c, "IDENTIFIER");
+  if (dt < 0) {
+  return (0 - 1);
+}
+  int32_t dn = fb_tok_str(c, dt);
+  int32_t k = first;
+  while (k < (c[0]).nrc) {
+  if (fb_name_eq(c, (c[0]).rc_name[k], dn) == 1) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "recognition domain '");
+  fb_puts(m2, (const char*)(fb_s(c, dn)));
+  fb_puts(m2, "' appears twice in flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "'");
+  fb_puts(fb_err_hint(c), "list each recognition domain once");
+  return (0 - 1);
+}
+  k = (k + 1);
+}
+  int32_t i = (c[0]).nrc;
+  (c[0]).rc_flow[i] = f;
+  (c[0]).rc_name[i] = dn;
+  (c[0]).nrc = (i + 1);
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+}
+}
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  if ((c[0]).nrc == first) {
+  FbBuf* m3 = (FbBuf*)(fb_perr(c));
+  fb_puts(m3, "'recognize' block in flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' needs at least one domain");
+  fb_puts(fb_err_hint(c), "write 'recognize { numerical realtime causal safety memory }'");
+  return (0 - 1);
+}
+  (c[0]).f_rec[f] = 1;
+  (c[0]).f_rec_line[f] = (c[0]).tl[rt];
+  return 0;
+}
+
+int32_t fb_parse_connect(Fb* c, int32_t f) {
+  fb_advance(c);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Unterminated 'connect' body in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "': expected '}' before end of file");
+  return (0 - 1);
+}
+  int32_t st = (c[0]).pos;
+  int32_t first = fb_expect(c, "IDENTIFIER");
+  if (first < 0) {
+  return (0 - 1);
+}
+  int32_t sm = fb_intern(c, "");
+  int32_t sp = fb_tok_str(c, first);
+  if (fb_is_op(c, (c[0]).pos, OP_DOT) == 1) {
+  fb_advance(c);
+  int32_t pt = fb_expect(c, "IDENTIFIER");
+  if (pt < 0) {
+  return (0 - 1);
+}
+  sm = fb_tok_str(c, first);
+  sp = fb_tok_str(c, pt);
+}
+  if (fb_expect(c, "ARROW") < 0) {
+  return (0 - 1);
+}
+  int32_t dmt = fb_expect(c, "IDENTIFIER");
+  if (dmt < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "DOT") < 0) {
+  return (0 - 1);
+}
+  int32_t dpt = fb_expect(c, "IDENTIFIER");
+  if (dpt < 0) {
+  return (0 - 1);
+}
+  fb_add_conn(c, f, sm, sp, fb_tok_str(c, dmt), fb_tok_str(c, dpt), (c[0]).tl[st]);
+}
+  return fb_expect(c, "RBRACE");
+}
+
+int32_t fb_parse_solver(Fb* c, int32_t f) {
+  int32_t st = (c[0]).pos;
+  fb_advance(c);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t have_dt = 0;
+  int32_t method = (0 - 1);
+  int64_t* nsbox = (int64_t*)((int64_t*)(malloc(8)));
+  int32_t* txbox = (int32_t*)((int32_t*)(malloc(4)));
+  FbBuf* wb = (FbBuf*)(fb_buf_new(64));
+  fb_puts(wb, "the solver dt of flow '");
+  fb_put_fname(wb, c, f);
+  fb_puts(wb, "'");
+  int32_t where_s = fb_intern_buf(c, wb);
+  fb_buf_free(wb);
+  int32_t rc = 0;
+  while (rc == 0 && fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Unterminated 'solver' block in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "': expected '}' before end of file");
+  rc = (0 - 1);
+} else {
+  int32_t t = (c[0]).pos;
+  if (fb_is_word(c, t, "dt") == 1) {
+  if (have_dt == 1) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "'solver' block in flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' sets 'dt' twice");
+  rc = (0 - 1);
+} else {
+  fb_advance(c);
+  if (fb_parse_duration(c, where_s, nsbox, txbox) < 0) {
+  rc = (0 - 1);
+} else {
+  have_dt = 1;
+  (c[0]).f_dt_ns[f] = nsbox[0];
+  (c[0]).f_dt_text[f] = txbox[0];
+}
+}
+} else {
+  if (fb_is_word(c, t, "method") == 1) {
+  if (method >= 0) {
+  FbBuf* m3 = (FbBuf*)(fb_perr(c));
+  fb_puts(m3, "'solver' block in flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' sets 'method' twice");
+  rc = (0 - 1);
+} else {
+  fb_advance(c);
+  int32_t mt = fb_expect(c, "IDENTIFIER");
+  if (mt < 0) {
+  rc = (0 - 1);
+} else {
+  method = fb_tok_str(c, mt);
+}
+}
+} else {
+  FbBuf* m4 = (FbBuf*)(fb_perr(c));
+  fb_puts(m4, "Unexpected item in 'solver' block of flow '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "'");
+  fb_puts(fb_err_hint(c), "solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'");
+  rc = (0 - 1);
+}
+}
+}
+}
+  free((uint8_t*)(nsbox));
+  free((uint8_t*)(txbox));
+  if (rc < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  if (have_dt == 0) {
+  FbBuf* m5 = (FbBuf*)(fb_perr(c));
+  fb_puts(m5, "'solver' block in flow '");
+  fb_put_fname(m5, c, f);
+  fb_puts(m5, "' needs a 'dt' setting");
+  fb_puts(fb_err_hint(c), "write 'solver { dt 1 ms }'");
+  return (0 - 1);
+}
+  if (method < 0) {
+  method = fb_intern(c, "euler");
+}
+  (c[0]).f_solver[f] = 1;
+  (c[0]).f_method[f] = method;
+  (c[0]).f_solver_line[f] = (c[0]).tl[st];
+  return 0;
+}
+
+int32_t fb_is_section_word(Fb* c, int32_t t) {
+  if (fb_tok_is(c, t, "state") == 1 || fb_tok_is(c, t, "input") == 1) {
+  return 1;
+}
+  if (fb_tok_is(c, t, "output") == 1 || fb_tok_is(c, t, "param") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_parse_flow_item(Fb* c, int32_t f) {
+  int32_t t = (c[0]).pos;
+  int32_t la = fb_la(c);
+  int32_t tid = fb_is_ident(c, t);
+  if (tid == 1 && fb_is_section_word(c, t) == 1 && fb_is_ident(c, la) == 1) {
+  fb_advance(c);
+  int32_t nt = fb_expect(c, "IDENTIFIER");
+  if (nt < 0) {
+  return (0 - 1);
+}
+  if (fb_expect(c, "COLON") < 0) {
+  return (0 - 1);
+}
+  int32_t ty = fb_parse_type(c);
+  if (ty < 0) {
+  return (0 - 1);
+}
+  int32_t init = (0 - 1);
+  if (fb_is_op(c, (c[0]).pos, OP_ASSIGN) == 1) {
+  fb_advance(c);
+  int32_t is = (c[0]).pos;
+  int32_t ie = fb_parse_expr(c);
+  if (ie < 0) {
+  return (0 - 1);
+}
+  init = fb_wrap_top(c, ie, is);
+}
+  int32_t kind = MK_STATE;
+  if (fb_tok_is(c, t, "input") == 1) {
+  kind = MK_INPUT;
+}
+  if (fb_tok_is(c, t, "output") == 1) {
+  kind = MK_OUTPUT;
+}
+  if (fb_tok_is(c, t, "param") == 1) {
+  kind = MK_PARAM;
+}
+  if (kind == MK_INPUT && init >= 0) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "input '");
+  fb_put_tok(m, c, nt);
+  fb_puts(m, "' in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' cannot have an initializer; inputs are written by the embedder");
+  fb_puts(fb_err_hint(c), "remove the '= ...' part");
+  return (0 - 1);
+}
+  fb_add_member(c, f, kind, fb_tok_str(c, nt), ty, init, (c[0]).tl[t]);
+  return 0;
+}
+  if (tid == 1 && fb_is_word(c, la, "evolves") == 1) {
+  fb_advance(c);
+  fb_advance(c);
+  if (fb_expect(c, "AS") < 0) {
+  return (0 - 1);
+}
+  int32_t rs = (c[0]).pos;
+  int32_t rhs = fb_parse_expr(c);
+  if (rhs < 0) {
+  return (0 - 1);
+}
+  int32_t i = (c[0]).nev;
+  (c[0]).ev_flow[i] = f;
+  (c[0]).ev_target[i] = fb_tok_str(c, t);
+  (c[0]).ev_expr[i] = fb_wrap_top(c, rhs, rs);
+  (c[0]).ev_line[i] = (c[0]).tl[t];
+  (c[0]).nev = (i + 1);
+  return 0;
+}
+  if (tid == 1 && fb_tok_is(c, t, "when") == 1 && fb_is_ident(c, la) == 1 && fb_is_word(c, fb_la2(c), "reaches") == 1) {
+  fb_advance(c);
+  int32_t gt = fb_expect(c, "IDENTIFIER");
+  if (gt < 0) {
+  return (0 - 1);
+}
+  fb_advance(c);
+  int32_t ts0 = (c[0]).pos;
+  int32_t thr = fb_parse_expr(c);
+  if (thr < 0) {
+  return (0 - 1);
+}
+  int32_t w = (c[0]).nwh;
+  (c[0]).wh_flow[w] = f;
+  (c[0]).wh_target[w] = fb_tok_str(c, gt);
+  (c[0]).wh_thr[w] = fb_wrap_top(c, thr, ts0);
+  (c[0]).wh_line[w] = (c[0]).tl[t];
+  (c[0]).nwh = (w + 1);
+  return fb_parse_becomes_body(c, f, 1, w, "when", "resets");
+}
+  if (tid == 1 && fb_tok_is(c, t, "every") == 1 && (c[0]).tk[la] == TK_NUM) {
+  fb_advance(c);
+  FbBuf* wb = (FbBuf*)(fb_buf_new(64));
+  fb_puts(wb, "the 'every' period of flow '");
+  fb_put_fname(wb, c, f);
+  fb_puts(wb, "'");
+  int32_t where_s = fb_intern_buf(c, wb);
+  fb_buf_free(wb);
+  int64_t* nsbox = (int64_t*)((int64_t*)(malloc(8)));
+  int32_t* txbox = (int32_t*)((int32_t*)(malloc(4)));
+  int32_t drc = fb_parse_duration(c, where_s, nsbox, txbox);
+  int32_t ev = (c[0]).ney;
+  if (drc == 0) {
+  (c[0]).ey_flow[ev] = f;
+  (c[0]).ey_ns[ev] = nsbox[0];
+  (c[0]).ey_text[ev] = txbox[0];
+  (c[0]).ey_line[ev] = (c[0]).tl[t];
+  (c[0]).ney = (ev + 1);
+}
+  free((uint8_t*)(nsbox));
+  free((uint8_t*)(txbox));
+  if (drc < 0) {
+  return (0 - 1);
+}
+  return fb_parse_becomes_body(c, f, 2, ev, "every", "discrete updates");
+}
+  int32_t la_brace = fb_is_op(c, la, OP_LBRACE);
+  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "solver") == 1) {
+  if ((c[0]).f_solver[f] == 1) {
+  FbBuf* m2 = (FbBuf*)(fb_perr(c));
+  fb_puts(m2, "flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' has two 'solver' blocks; a flow pins at most one default step");
+  fb_puts(fb_err_hint(c), "merge the settings into one solver block");
+  return (0 - 1);
+}
+  return fb_parse_solver(c, f);
+}
+  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "always") == 1) {
+  return fb_parse_invariant(c, f, 1, "always");
+}
+  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "never") == 1) {
+  return fb_parse_invariant(c, f, 2, "never");
+}
+  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "recognize") == 1) {
+  if ((c[0]).f_rec[f] == 1) {
+  FbBuf* m3 = (FbBuf*)(fb_perr(c));
+  fb_puts(m3, "flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' has two 'recognize' blocks");
+  fb_puts(fb_err_hint(c), "merge the domains into one recognize block");
+  return (0 - 1);
+}
+  return fb_parse_recognize(c, f);
+}
+  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "connect") == 1) {
+  return fb_parse_connect(c, f);
+}
+  if (tid == 1 && fb_is_section_word(c, t) == 0 && fb_is_op(c, la, OP_COLON) == 1) {
+  fb_advance(c);
+  fb_advance(c);
+  int32_t cty = fb_parse_type(c);
+  if (cty < 0) {
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_ASSIGN) == 1) {
+  FbBuf* m4 = (FbBuf*)(fb_perr(c));
+  fb_puts(m4, "nested flow member '");
+  fb_put_tok(m4, c, t);
+  fb_puts(m4, "' in flow '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "' cannot have an initializer; children are constructed by ");
+  fb_puts(m4, (const char*)(fb_s(c, cty)));
+  fb_puts(m4, "_new inside the parent");
+  fb_puts(fb_err_hint(c), "remove the '= ...' part");
+  return (0 - 1);
+}
+  fb_add_member(c, f, MK_CHILD, fb_tok_str(c, t), cty, (0 - 1), (c[0]).tl[t]);
+  return 0;
+}
+  FbBuf* m5 = (FbBuf*)(fb_perr(c));
+  fb_puts(m5, "Unexpected item in flow '");
+  fb_put_fname(m5, c, f);
+  fb_puts(m5, "' body");
+  fb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')");
+  return (0 - 1);
+}
+
+int32_t fb_parse_flow(Fb* c, int32_t f) {
+  int32_t ft = (c[0]).pos;
+  (c[0]).f_start[f] = (c[0]).ts[ft];
+  (c[0]).f_line[f] = (c[0]).tl[ft];
+  fb_advance(c);
+  int32_t nt = fb_expect(c, "IDENTIFIER");
+  if (nt < 0) {
+  return (0 - 1);
+}
+  (c[0]).f_name[f] = fb_tok_str(c, nt);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  FbBuf* m = (FbBuf*)(fb_perr(c));
+  fb_puts(m, "Unterminated flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "': expected '}' before end of file");
+  return (0 - 1);
+}
+  if (fb_parse_flow_item(c, f) < 0) {
+  return (0 - 1);
+}
+}
+  int32_t rb = fb_expect(c, "RBRACE");
+  if (rb < 0) {
+  return (0 - 1);
+}
+  (c[0]).f_end[f] = (c[0]).te[rb];
+  return 0;
+}
+
+int32_t fb_find_flow(Fb* c, int32_t name) {
+  int32_t f = 0;
+  while (f < (c[0]).nf) {
+  if (fb_name_eq(c, (c[0]).f_name[f], name) == 1) {
+  return f;
+}
+  f = (f + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_find_flow_str(Fb* c, uint8_t* name) {
+  int32_t f = 0;
+  while (f < (c[0]).nf) {
+  if (strcmp((const char*)(fb_s(c, (c[0]).f_name[f])), (const char*)(name)) == 0) {
+  return f;
+}
+  f = (f + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_find_member(Fb* c, int32_t f, int32_t kind, int32_t name) {
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == kind && fb_name_eq(c, (c[0]).mm_name[i], name) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_lookup_port(Fb* c, int32_t f, int32_t name) {
+  int32_t s = fb_find_member(c, f, MK_STATE, name);
+  if (s >= 0) {
+  return s;
+}
+  int32_t i = fb_find_member(c, f, MK_INPUT, name);
+  if (i >= 0) {
+  return i;
+}
+  int32_t o = fb_find_member(c, f, MK_OUTPUT, name);
+  if (o >= 0) {
+  return o;
+}
+  return fb_find_member(c, f, MK_PARAM, name);
+}
+
+const char* fb_kind_word(int32_t k) {
+  if (k == MK_STATE) {
+  return "state";
+}
+  if (k == MK_INPUT) {
+  return "input";
+}
+  if (k == MK_OUTPUT) {
+  return "output";
+}
+  if (k == MK_PARAM) {
+  return "param";
+}
+  return "child";
+}
+
+int32_t fb_count_members(Fb* c, int32_t f, int32_t kind) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == kind) {
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return n;
+}
+
+int32_t fb_nth_member(Fb* c, int32_t f, int32_t kind, int32_t k) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == kind) {
+  if (n == k) {
+  return i;
+}
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_evolve_of(Fb* c, int32_t f, int32_t name) {
+  int32_t i = 0;
+  while (i < (c[0]).nev) {
+  if ((c[0]).ev_flow[i] == f && fb_name_eq(c, (c[0]).ev_target[i], name) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+uint8_t* fb_tok_name(Fb* c, int32_t node) {
+  return fb_s(c, fb_tok_str(c, (c[0]).ntok[node]));
+}
+
+int32_t fb_call_name(Fb* c, int32_t node) {
+  if ((c[0]).ntok[node] < 0) {
+  return fb_intern(c, "__flow_dbg");
+}
+  return fb_tok_str(c, (c[0]).ntok[node]);
+}
+
+int32_t fb_children(Fb* c, int32_t x, int32_t* out) {
+  int32_t k = (c[0]).nk[x];
+  if (k == N_BIN) {
+  out[0] = (c[0]).na[x];
+  out[1] = (c[0]).nb[x];
+  return 2;
+}
+  if (k == N_UN || k == N_CAST || k == N_FIELD || k == N_TRY) {
+  out[0] = (c[0]).na[x];
+  return 1;
+}
+  if (k == N_INDEX) {
+  out[0] = (c[0]).na[x];
+  out[1] = (c[0]).nb[x];
+  return 2;
+}
+  if (k == N_ARRAY || k == N_VEC || k == N_STRUCT) {
+  int32_t n = 0;
+  int32_t e = (c[0]).na[x];
+  while (e >= 0 && n < 64) {
+  if (k == N_STRUCT) {
+  out[n] = (c[0]).na[e];
+} else {
+  out[n] = e;
+}
+  n = (n + 1);
+  e = (c[0]).nx[e];
+}
+  return n;
+}
+  return 0;
+}
+
+int32_t fb_is_pure_math(uint8_t* name) {
+  const char* s = (const char*)(name);
+  if (strcmp(s, "sin") == 0 || strcmp(s, "cos") == 0 || strcmp(s, "tan") == 0) {
+  return 1;
+}
+  if (strcmp(s, "asin") == 0 || strcmp(s, "acos") == 0 || strcmp(s, "atan") == 0) {
+  return 1;
+}
+  if (strcmp(s, "atan2") == 0 || strcmp(s, "sinh") == 0 || strcmp(s, "cosh") == 0) {
+  return 1;
+}
+  if (strcmp(s, "tanh") == 0 || strcmp(s, "asinh") == 0 || strcmp(s, "acosh") == 0) {
+  return 1;
+}
+  if (strcmp(s, "atanh") == 0 || strcmp(s, "sqrt") == 0 || strcmp(s, "cbrt") == 0) {
+  return 1;
+}
+  if (strcmp(s, "pow") == 0 || strcmp(s, "exp") == 0 || strcmp(s, "exp2") == 0) {
+  return 1;
+}
+  if (strcmp(s, "log") == 0 || strcmp(s, "log2") == 0 || strcmp(s, "log10") == 0) {
+  return 1;
+}
+  if (strcmp(s, "fabs") == 0 || strcmp(s, "abs") == 0 || strcmp(s, "floor") == 0) {
+  return 1;
+}
+  if (strcmp(s, "ceil") == 0 || strcmp(s, "round") == 0 || strcmp(s, "fmod") == 0) {
+  return 1;
+}
+  if (strcmp(s, "fmin") == 0 || strcmp(s, "fmax") == 0 || strcmp(s, "hypot") == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_check_pure(Fb* c, int32_t x, int32_t f, int32_t where_s, int32_t line) {
+  if (x < 0) {
+  return 0;
+}
+  int32_t k = (c[0]).nk[x];
+  if (k == N_EFFECT) {
+  FbBuf* m = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m, "effect call in ");
+  fb_puts(m, (const char*)(fb_s(c, where_s)));
+  fb_puts(m, " of flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "'; dynamics expressions must be pure");
+  fb_puts(fb_err_hint(c), "lift effectful work out of the flow body");
+  return (0 - 1);
+}
+  if (k == N_METHOD) {
+  FbBuf* m2 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m2, "method call in ");
+  fb_puts(m2, (const char*)(fb_s(c, where_s)));
+  fb_puts(m2, " of flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "'; dynamics expressions must be pure plain calls in this version");
+  return (0 - 1);
+}
+  if (k == N_LAMBDA) {
+  FbBuf* m3 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m3, "lambda in ");
+  fb_puts(m3, (const char*)(fb_s(c, where_s)));
+  fb_puts(m3, " of flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' is not supported");
+  return (0 - 1);
+}
+  if (k == N_CALL) {
+  int32_t nm = fb_call_name(c, x);
+  if (fb_is_pure_math(fb_s(c, nm)) == 0 && fb_has_name(c, NX_LOCAL_FN, nm) == 0) {
+  FbBuf* m4 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m4, "call to '");
+  fb_puts(m4, (const char*)(fb_s(c, nm)));
+  fb_puts(m4, "' in ");
+  fb_puts(m4, (const char*)(fb_s(c, where_s)));
+  fb_puts(m4, " of flow '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1)");
+  return (0 - 1);
+}
+  int32_t a = (c[0]).na[x];
+  while (a >= 0) {
+  if (fb_check_pure(c, a, f, where_s, line) < 0) {
+  return (0 - 1);
+}
+  a = (c[0]).nx[a];
+}
+  return 0;
+}
+  int32_t* kids = (int32_t*)((int32_t*)(malloc(256)));
+  int32_t nk = fb_children(c, x, kids);
+  int32_t i = 0;
+  while (i < nk) {
+  if (fb_check_pure(c, kids[i], f, where_s, line) < 0) {
+  free((uint8_t*)(kids));
+  return (0 - 1);
+}
+  i = (i + 1);
+}
+  free((uint8_t*)(kids));
+  return 0;
+}
+
+int32_t fb_check_pure_s(Fb* c, int32_t x, int32_t f, const char* where_s, int32_t line) {
+  return fb_check_pure(c, x, f, fb_intern(c, where_s), line);
+}
+
+int32_t fb_where(Fb* c, const char* pre, int32_t name, const char* post) {
+  FbBuf* b = (FbBuf*)(fb_buf_new(64));
+  fb_puts(b, pre);
+  fb_puts(b, (const char*)(fb_s(c, name)));
+  fb_puts(b, post);
+  int32_t out = fb_intern_buf(c, b);
+  fb_buf_free(b);
+  return out;
+}
+
+int32_t fb_check_threshold(Fb* c, int32_t x, int32_t f, int32_t w) {
+  if (x < 0) {
+  return 0;
+}
+  int32_t k = (c[0]).nk[x];
+  if (k == N_LIT) {
+  return 0;
+}
+  if (k == N_VAR) {
+  int32_t nm = fb_tok_str(c, (c[0]).ntok[x]);
+  if (fb_find_member(c, f, MK_PARAM, nm) >= 0) {
+  return 0;
+}
+  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  fb_puts(m, "threshold of 'when ");
+  fb_puts(m, (const char*)(fb_s(c, (c[0]).wh_target[w])));
+  fb_puts(m, " reaches' in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' references '");
+  fb_puts(m, (const char*)(fb_s(c, nm)));
+  fb_puts(m, "'; thresholds must be constant over a step, built from params and literals (v1)");
+  return (0 - 1);
+}
+  if (k == N_BIN || k == N_UN || k == N_CAST) {
+  int32_t* kids = (int32_t*)((int32_t*)(malloc(256)));
+  int32_t nk = fb_children(c, x, kids);
+  int32_t i = 0;
+  while (i < nk) {
+  if (fb_check_threshold(c, kids[i], f, w) < 0) {
+  free((uint8_t*)(kids));
+  return (0 - 1);
+}
+  i = (i + 1);
+}
+  free((uint8_t*)(kids));
+  return 0;
+}
+  FbBuf* m2 = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  fb_puts(m2, "threshold of 'when ");
+  fb_puts(m2, (const char*)(fb_s(c, (c[0]).wh_target[w])));
+  fb_puts(m2, " reaches' in flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' must be built from params and literals (v1)");
+  return (0 - 1);
+}
+
+int32_t fb_check_booleanish(Fb* c, int32_t x, int32_t f, const char* word, int32_t line) {
+  int32_t k = (c[0]).nk[x];
+  if (k == N_BIN) {
+  int32_t op = (c[0]).nop[x];
+  if (op == OP_EQUALS || op == OP_NOT_EQUALS || op == OP_LESS || op == OP_LESS_EQUAL) {
+  return 0;
+}
+  if (op == OP_GREATER || op == OP_GREATER_EQUAL || op == OP_AND || op == OP_OR) {
+  return 0;
+}
+}
+  if (k == N_UN && ((c[0]).nop[x] == OP_NOT || (c[0]).nop[x] == OPX_NOT_WORD)) {
+  return 0;
+}
+  if (k == N_LIT && fb_tt_is(c, (c[0]).ntok[x], "BOOLEAN") == 1) {
+  return 0;
+}
+  if (k == N_VAR) {
+  return 0;
+}
+  FbBuf* m = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m, "'");
+  fb_puts(m, word);
+  fb_puts(m, "' clause in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' must be a boolean expression");
+  fb_puts(fb_err_hint(c), "write a comparison or logical expression, e.g. 'x < 1.0'");
+  return (0 - 1);
+}
+
+int32_t fb_refs_inputs(Fb* c, int32_t x, int32_t f) {
+  if (x < 0) {
+  return 0;
+}
+  int32_t k = (c[0]).nk[x];
+  if (k == N_VAR) {
+  if (fb_find_member(c, f, MK_INPUT, fb_tok_str(c, (c[0]).ntok[x])) >= 0) {
+  return 1;
+}
+  return 0;
+}
+  if (k == N_CALL) {
+  int32_t a = (c[0]).na[x];
+  while (a >= 0) {
+  if (fb_refs_inputs(c, a, f) == 1) {
+  return 1;
+}
+  a = (c[0]).nx[a];
+}
+  return 0;
+}
+  int32_t* kids = (int32_t*)((int32_t*)(malloc(256)));
+  int32_t nk = fb_children(c, x, kids);
+  int32_t i = 0;
+  int32_t r = 0;
+  while (i < nk && r == 0) {
+  r = fb_refs_inputs(c, kids[i], f);
+  i = (i + 1);
+}
+  free((uint8_t*)(kids));
+  return r;
+}
+
+int32_t fb_port_combinational(Fb* c, int32_t f, int32_t port) {
+  int32_t o = fb_find_member(c, f, MK_OUTPUT, port);
+  if (o < 0) {
+  return 0;
+}
+  if ((c[0]).mm_pipe_m[o] >= 0) {
+  return 0;
+}
+  if ((c[0]).mm_init[o] < 0) {
+  return 0;
+}
+  return fb_refs_inputs(c, (c[0]).mm_init[o], f);
+}
+
+int32_t fb_single_port(Fb* c, int32_t sf, int32_t kind, const char* word, int32_t line) {
+  int32_t n = fb_count_members(c, sf, kind);
+  if (n != 1) {
+  FbBuf* m = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m, "flow '");
+  fb_put_fname(m, c, sf);
+  fb_puts(m, "' used as a pipeline stage must have exactly one ");
+  fb_puts(m, word);
+  fb_puts(m, " (has ");
+  fb_put_int(m, n);
+  fb_puts(m, "); wire it with `connect` explicitly");
+  return (0 - 1);
+}
+  return fb_nth_member(c, sf, kind, 0);
+}
+
+void fb_put_sorted_params(Fb* c, FbBuf* b, int32_t sf) {
+  int32_t n = fb_count_members(c, sf, MK_PARAM);
+  if (n == 0) {
+  fb_puts(b, "(none)");
+  return;
+}
+  int32_t* used = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t i = 0;
+  while (i < n) {
+  used[i] = 0;
+  i = (i + 1);
+}
+  int32_t k = 0;
+  while (k < n) {
+  int32_t best = (0 - 1);
+  int32_t j = 0;
+  while (j < n) {
+  if (used[j] == 0) {
+  if (best < 0) {
+  best = j;
+} else {
+  int32_t a = (c[0]).mm_name[fb_nth_member(c, sf, MK_PARAM, j)];
+  int32_t bb = (c[0]).mm_name[fb_nth_member(c, sf, MK_PARAM, best)];
+  if (strcmp((const char*)(fb_s(c, a)), (const char*)(fb_s(c, bb))) < 0) {
+  best = j;
+}
+}
+}
+  j = (j + 1);
+}
+  used[best] = 1;
+  if (k > 0) {
+  fb_puts(b, ", ");
+}
+  fb_puts(b, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, sf, MK_PARAM, best)])));
+  k = (k + 1);
+}
+  free((uint8_t*)(used));
+}
+
+int32_t fb_expand_pipelines(Fb* c, int32_t f) {
+  int32_t* stages = (int32_t*)((int32_t*)(malloc(4096)));
+  int32_t nouts = fb_count_members(c, f, MK_OUTPUT);
+  int32_t oi = 0;
+  while (oi < nouts) {
+  int32_t o = fb_nth_member(c, f, MK_OUTPUT, oi);
+  int32_t line = (c[0]).mm_line[o];
+  int32_t ns = 0;
+  int32_t cur = (c[0]).mm_init[o];
+  int32_t going = 1;
+  while (going == 1 && cur >= 0 && ns < 1000) {
+  int32_t k = (c[0]).nk[cur];
+  if (k == N_STAGE) {
+  int32_t sname = fb_tok_str(c, (c[0]).ntok[cur]);
+  int32_t sf = fb_find_flow(c, sname);
+  if (sf < 0) {
+  FbBuf* m = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m, "'");
+  fb_puts(m, (const char*)(fb_s(c, sname)));
+  fb_puts(m, " { ... }' in output '");
+  fb_puts(m, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  fb_puts(m, "' of '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' names '");
+  fb_puts(m, (const char*)(fb_s(c, sname)));
+  fb_puts(m, "', which is not a flow");
+  free((uint8_t*)(stages));
+  return (0 - 1);
+}
+  stages[(ns * 2)] = sf;
+  stages[((ns * 2) + 1)] = (c[0]).nb[cur];
+  ns = (ns + 1);
+  cur = (c[0]).na[cur];
+} else {
+  if (k == N_CALL && (c[0]).ntok[cur] >= 0 && fb_find_flow(c, fb_call_name(c, cur)) >= 0) {
+  int32_t cf = fb_find_flow(c, fb_call_name(c, cur));
+  if (fb_list_len(c, (c[0]).na[cur]) != 1) {
+  FbBuf* m2 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m2, "flow stage '");
+  fb_put_fname(m2, c, cf);
+  fb_puts(m2, "' in output '");
+  fb_puts(m2, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  fb_puts(m2, "' of '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' takes only the piped value");
+  free((uint8_t*)(stages));
+  return (0 - 1);
+}
+  stages[(ns * 2)] = cf;
+  stages[((ns * 2) + 1)] = (0 - 1);
+  ns = (ns + 1);
+  cur = (c[0]).na[cur];
+} else {
+  going = 0;
+}
+}
+}
+  if (ns > 0) {
+  int32_t src_m = (0 - 1);
+  int32_t src_p = (0 - 1);
+  if ((c[0]).nk[cur] == N_VAR) {
+  src_m = fb_intern(c, "");
+  src_p = fb_tok_str(c, (c[0]).ntok[cur]);
+} else {
+  if ((c[0]).nk[cur] == N_FIELD && (c[0]).nk[(c[0]).na[cur]] == N_VAR) {
+  src_m = fb_tok_str(c, (c[0]).ntok[(c[0]).na[cur]]);
+  src_p = fb_tok_str(c, (c[0]).ntok[cur]);
+}
+}
+  if (src_m < 0) {
+  FbBuf* m3 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m3, "flow pipeline for output '");
+  fb_puts(m3, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  fb_puts(m3, "' of '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' must start from a port (an input/state, or `child.port`)");
+  free((uint8_t*)(stages));
+  return (0 - 1);
+}
+  int32_t prev_m = src_m;
+  int32_t prev_p = src_p;
+  int32_t i = 0;
+  while (i < ns) {
+  int32_t si = ((ns - 1) - i);
+  int32_t sf2 = stages[(si * 2)];
+  int32_t params = stages[((si * 2) + 1)];
+  FbBuf* cb = (FbBuf*)(fb_buf_new(32));
+  fb_puts(cb, "__");
+  fb_puts(cb, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  fb_puts(cb, "_stage");
+  fb_put_int(cb, i);
+  int32_t child_name = fb_intern_buf(c, cb);
+  fb_buf_free(cb);
+  int32_t pk = params;
+  while (pk >= 0) {
+  int32_t pn = fb_tok_str(c, (c[0]).ntok[pk]);
+  if (fb_find_member(c, sf2, MK_PARAM, pn) < 0) {
+  FbBuf* m4 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m4, "flow stage '");
+  fb_put_fname(m4, c, sf2);
+  fb_puts(m4, "' in '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "' has no param '");
+  fb_puts(m4, (const char*)(fb_s(c, pn)));
+  fb_puts(m4, "'");
+  FbBuf* h = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h, "stage overrides set `param` fields; declared params are: ");
+  fb_put_sorted_params(c, h, sf2);
+  free((uint8_t*)(stages));
+  return (0 - 1);
+}
+  pk = (c[0]).nx[pk];
+}
+  int32_t ch = fb_add_member(c, f, MK_CHILD, child_name, (c[0]).f_name[sf2], (0 - 1), line);
+  (c[0]).mm_synth[ch] = 1;
+  (c[0]).mm_params[ch] = params;
+  int32_t in_port = fb_single_port(c, sf2, MK_INPUT, "input", line);
+  if (in_port < 0) {
+  free((uint8_t*)(stages));
+  return (0 - 1);
+}
+  int32_t out_port = fb_single_port(c, sf2, MK_OUTPUT, "output", line);
+  if (out_port < 0) {
+  free((uint8_t*)(stages));
+  return (0 - 1);
+}
+  fb_add_conn(c, f, prev_m, prev_p, child_name, (c[0]).mm_name[in_port], line);
+  prev_m = child_name;
+  prev_p = (c[0]).mm_name[out_port];
+  i = (i + 1);
+}
+  (c[0]).mm_pipe_m[o] = prev_m;
+  (c[0]).mm_pipe_p[o] = prev_p;
+}
+  oi = (oi + 1);
+}
+  free((uint8_t*)(stages));
+  return 0;
+}
+
+int32_t fb_is_member_type(Fb* c, int32_t ty) {
+  if (fb_name_is(c, ty, "f64") == 1 || fb_name_is(c, ty, "f32") == 1) {
+  return 1;
+}
+  if (fb_has_name(c, NX_DIMENSION, ty) == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_is_scalar_type(Fb* c, int32_t ty) {
+  const char* s = (const char*)(fb_s(c, ty));
+  if (strcmp(s, "f32") == 0 || strcmp(s, "f64") == 0) {
+  return 1;
+}
+  if (strcmp(s, "i8") == 0 || strcmp(s, "i16") == 0 || strcmp(s, "i32") == 0 || strcmp(s, "i64") == 0) {
+  return 1;
+}
+  if (strcmp(s, "u8") == 0 || strcmp(s, "u16") == 0 || strcmp(s, "u32") == 0 || strcmp(s, "u64") == 0) {
+  return 1;
+}
+  return 0;
+}
+
+void fb_reclassify(Fb* c) {
+  int32_t total = (c[0]).nmm;
+  int32_t f = 0;
+  while (f < (c[0]).nf) {
+  int32_t i = 0;
+  while (i < total) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == MK_CHILD) {
+  int32_t ty = (c[0]).mm_type[i];
+  if (fb_find_flow(c, ty) < 0 && (fb_is_scalar_type(c, ty) == 1 || fb_has_name(c, NX_DIMENSION, ty) == 1)) {
+  fb_add_member(c, f, MK_STATE, (c[0]).mm_name[i], ty, (0 - 1), (c[0]).mm_line[i]);
+  (c[0]).mm_kind[i] = MK_DEAD;
+}
+}
+  i = (i + 1);
+}
+  f = (f + 1);
+}
+}
+
+int32_t fb_member_rank(int32_t k) {
+  if (k == MK_STATE) {
+  return 0;
+}
+  if (k == MK_INPUT) {
+  return 1;
+}
+  if (k == MK_OUTPUT) {
+  return 2;
+}
+  if (k == MK_PARAM) {
+  return 3;
+}
+  if (k == MK_CHILD) {
+  return 4;
+}
+  return 9;
+}
+
+int32_t fb_seen_before(Fb* c, int32_t f, int32_t i) {
+  int32_t ri = fb_member_rank((c[0]).mm_kind[i]);
+  int32_t j = 0;
+  while (j < (c[0]).nmm) {
+  if (j != i && (c[0]).mm_flow[j] == f && (c[0]).mm_kind[j] != MK_DEAD) {
+  int32_t rj = fb_member_rank((c[0]).mm_kind[j]);
+  if (rj < ri || rj == ri && j < i) {
+  if (fb_name_eq(c, (c[0]).mm_name[j], (c[0]).mm_name[i]) == 1) {
+  return 1;
+}
+}
+}
+  j = (j + 1);
+}
+  return 0;
+}
+
+int32_t fb_validate_members(Fb* c, int32_t f) {
+  int32_t rank = 0;
+  while (rank < 4) {
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && fb_member_rank((c[0]).mm_kind[i]) == rank) {
+  int32_t nm = (c[0]).mm_name[i];
+  if (fb_seen_before(c, f, i) == 1) {
+  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  fb_puts(m, "flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' declares '");
+  fb_puts(m, (const char*)(fb_s(c, nm)));
+  fb_puts(m, "' twice");
+  return (0 - 1);
+}
+  if (fb_name_starts_uu(c, nm) == 1) {
+  FbBuf* m2 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  fb_puts(m2, "flow member '");
+  fb_puts(m2, (const char*)(fb_s(c, nm)));
+  fb_puts(m2, "' may not start with '__' (reserved for compiler-generated fields)");
+  return (0 - 1);
+}
+  if (fb_is_member_type(c, (c[0]).mm_type[i]) == 0) {
+  FbBuf* m3 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  fb_puts(m3, fb_kind_word((c[0]).mm_kind[i]));
+  fb_puts(m3, " '");
+  fb_puts(m3, (const char*)(fb_s(c, nm)));
+  fb_puts(m3, "' in flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' has type '");
+  fb_puts(m3, (const char*)(fb_s(c, (c[0]).mm_type[i])));
+  fb_puts(m3, "'; a flow member is f64, f32, or a declared unit");
+  fb_puts(fb_err_hint(c), "declare the dimension with 'unit Angle' first");
+  return (0 - 1);
+}
+}
+  i = (i + 1);
+}
+  rank = (rank + 1);
+}
+  int32_t ci = 0;
+  while (ci < (c[0]).nmm) {
+  if ((c[0]).mm_flow[ci] == f && (c[0]).mm_kind[ci] == MK_CHILD) {
+  int32_t cn = (c[0]).mm_name[ci];
+  if (fb_seen_before(c, f, ci) == 1) {
+  FbBuf* m4 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  fb_puts(m4, "flow '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "' declares '");
+  fb_puts(m4, (const char*)(fb_s(c, cn)));
+  fb_puts(m4, "' twice");
+  return (0 - 1);
+}
+  if (fb_name_starts_uu(c, cn) == 1 && (c[0]).mm_synth[ci] == 0) {
+  FbBuf* m5 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  fb_puts(m5, "flow member '");
+  fb_puts(m5, (const char*)(fb_s(c, cn)));
+  fb_puts(m5, "' may not start with '__' (reserved for compiler-generated fields)");
+  return (0 - 1);
+}
+  if (fb_name_eq(c, (c[0]).mm_type[ci], (c[0]).f_name[f]) == 1) {
+  FbBuf* m6 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  fb_puts(m6, "nested flow member '");
+  fb_puts(m6, (const char*)(fb_s(c, cn)));
+  fb_puts(m6, "' in flow '");
+  fb_put_fname(m6, c, f);
+  fb_puts(m6, "' cannot have the parent type (no recursive nesting)");
+  return (0 - 1);
+}
+  if (fb_find_flow(c, (c[0]).mm_type[ci]) < 0) {
+  FbBuf* m7 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  fb_puts(m7, "nested flow member '");
+  fb_puts(m7, (const char*)(fb_s(c, cn)));
+  fb_puts(m7, "' in flow '");
+  fb_put_fname(m7, c, f);
+  fb_puts(m7, "' has type '");
+  fb_puts(m7, (const char*)(fb_s(c, (c[0]).mm_type[ci])));
+  fb_puts(m7, "', which is not a flow in this file");
+  fb_puts(fb_err_hint(c), "declare the child with 'flow ChildName { ... }' first");
+  return (0 - 1);
+}
+}
+  ci = (ci + 1);
+}
+  return 0;
+}
+
+int32_t fb_recognition_ok(uint8_t* name) {
+  const char* s = (const char*)(name);
+  if (strcmp(s, "numerical") == 0 || strcmp(s, "realtime") == 0 || strcmp(s, "causal") == 0) {
+  return 1;
+}
+  if (strcmp(s, "safety") == 0 || strcmp(s, "memory") == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t fb_validate_connect(Fb* c, int32_t f) {
+  int32_t nch = fb_count_members(c, f, MK_CHILD);
+  int32_t first_conn = (0 - 1);
+  int32_t k = 0;
+  while (k < (c[0]).ncn) {
+  if ((c[0]).cn_flow[k] == f && first_conn < 0) {
+  first_conn = k;
+}
+  k = (k + 1);
+}
+  if (first_conn >= 0 && nch == 0) {
+  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).cn_line[first_conn]));
+  fb_puts(m, "'connect' in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' needs nested flow members to wire (e.g. 'plant : Motor')");
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < (c[0]).ncn) {
+  if ((c[0]).cn_flow[i] == f) {
+  int32_t sm = (c[0]).cn_sm[i];
+  int32_t sp = (c[0]).cn_sp[i];
+  int32_t dm = (c[0]).cn_dm[i];
+  int32_t dp = (c[0]).cn_dp[i];
+  int32_t line = (c[0]).cn_line[i];
+  int32_t parent = fb_name_is(c, sm, "");
+  int32_t src_child = fb_find_member(c, f, MK_CHILD, sm);
+  int32_t dst_child = fb_find_member(c, f, MK_CHILD, dm);
+  if (parent == 0 && src_child < 0) {
+  FbBuf* m1 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m1, "connection source '");
+  fb_puts(m1, (const char*)(fb_s(c, sm)));
+  fb_putc(m1, 46);
+  fb_puts(m1, (const char*)(fb_s(c, sp)));
+  fb_puts(m1, "' in flow '");
+  fb_put_fname(m1, c, f);
+  fb_puts(m1, "' names unknown nested member '");
+  fb_puts(m1, (const char*)(fb_s(c, sm)));
+  fb_puts(m1, "'");
+  return (0 - 1);
+}
+  if (dst_child < 0) {
+  FbBuf* m2 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m2, "connection destination '");
+  fb_puts(m2, (const char*)(fb_s(c, dm)));
+  fb_putc(m2, 46);
+  fb_puts(m2, (const char*)(fb_s(c, dp)));
+  fb_puts(m2, "' in flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' names unknown nested member '");
+  fb_puts(m2, (const char*)(fb_s(c, dm)));
+  fb_puts(m2, "'");
+  return (0 - 1);
+}
+  if (parent == 0 && fb_name_eq(c, sm, dm) == 1) {
+  FbBuf* m3 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m3, "connection in flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' wires '");
+  fb_puts(m3, (const char*)(fb_s(c, sm)));
+  fb_puts(m3, "' to itself; Stage-1 connect is between sibling subflows only");
+  return (0 - 1);
+}
+  int32_t dst_flow = fb_find_flow(c, (c[0]).mm_type[dst_child]);
+  int32_t src_port = (0 - 1);
+  if (parent == 1) {
+  src_port = fb_lookup_port(c, f, sp);
+  if (src_port < 0) {
+  FbBuf* m4 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m4, "connection source '");
+  fb_puts(m4, (const char*)(fb_s(c, sp)));
+  fb_puts(m4, "' in flow '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "' is not a port of this flow");
+  FbBuf* h = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h, "a bare source must be an input or state of '");
+  fb_put_fname(h, c, f);
+  fb_puts(h, "'; a child source is written 'child.port'");
+  return (0 - 1);
+}
+  int32_t sk = (c[0]).mm_kind[src_port];
+  if (sk != MK_INPUT && sk != MK_STATE) {
+  FbBuf* m5 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m5, "connection source '");
+  fb_puts(m5, (const char*)(fb_s(c, sp)));
+  fb_puts(m5, "' in flow '");
+  fb_put_fname(m5, c, f);
+  fb_puts(m5, "' is a ");
+  fb_puts(m5, fb_kind_word(sk));
+  fb_puts(m5, "; a parent source must be an input or state");
+  return (0 - 1);
+}
+} else {
+  int32_t src_flow = fb_find_flow(c, (c[0]).mm_type[src_child]);
+  src_port = fb_lookup_port(c, src_flow, sp);
+  if (src_port < 0) {
+  FbBuf* m6 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m6, "'");
+  fb_puts(m6, (const char*)(fb_s(c, sm)));
+  fb_putc(m6, 46);
+  fb_puts(m6, (const char*)(fb_s(c, sp)));
+  fb_puts(m6, "' in flow '");
+  fb_put_fname(m6, c, f);
+  fb_puts(m6, "' is not a port of '");
+  fb_put_fname(m6, c, src_flow);
+  fb_puts(m6, "'");
+  FbBuf* h2 = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h2, "connect sources must be an output or state of '");
+  fb_put_fname(h2, c, src_flow);
+  fb_puts(h2, "'");
+  return (0 - 1);
+}
+  int32_t sk2 = (c[0]).mm_kind[src_port];
+  if (sk2 != MK_OUTPUT && sk2 != MK_STATE) {
+  FbBuf* m7 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m7, "'");
+  fb_puts(m7, (const char*)(fb_s(c, sm)));
+  fb_putc(m7, 46);
+  fb_puts(m7, (const char*)(fb_s(c, sp)));
+  fb_puts(m7, "' in flow '");
+  fb_put_fname(m7, c, f);
+  fb_puts(m7, "' is a ");
+  fb_puts(m7, fb_kind_word(sk2));
+  fb_puts(m7, "; connection sources must be an output or state");
+  return (0 - 1);
+}
+}
+  int32_t dst_port = fb_lookup_port(c, dst_flow, dp);
+  if (dst_port < 0) {
+  FbBuf* m8 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m8, "'");
+  fb_puts(m8, (const char*)(fb_s(c, dm)));
+  fb_putc(m8, 46);
+  fb_puts(m8, (const char*)(fb_s(c, dp)));
+  fb_puts(m8, "' in flow '");
+  fb_put_fname(m8, c, f);
+  fb_puts(m8, "' is not a port of '");
+  fb_put_fname(m8, c, dst_flow);
+  fb_puts(m8, "'");
+  FbBuf* h3 = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h3, "connection destinations must be an input of '");
+  fb_put_fname(h3, c, dst_flow);
+  fb_puts(h3, "'");
+  return (0 - 1);
+}
+  if ((c[0]).mm_kind[dst_port] != MK_INPUT) {
+  FbBuf* m9 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m9, "'");
+  fb_puts(m9, (const char*)(fb_s(c, dm)));
+  fb_putc(m9, 46);
+  fb_puts(m9, (const char*)(fb_s(c, dp)));
+  fb_puts(m9, "' in flow '");
+  fb_put_fname(m9, c, f);
+  fb_puts(m9, "' is a ");
+  fb_puts(m9, fb_kind_word((c[0]).mm_kind[dst_port]));
+  fb_puts(m9, "; connection destinations must be an input");
+  return (0 - 1);
+}
+  if (fb_name_eq(c, (c[0]).mm_type[src_port], (c[0]).mm_type[dst_port]) == 0) {
+  FbBuf* m10 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m10, "type mismatch in connect of flow '");
+  fb_put_fname(m10, c, f);
+  fb_puts(m10, "': '");
+  fb_puts(m10, (const char*)(fb_s(c, sm)));
+  fb_putc(m10, 46);
+  fb_puts(m10, (const char*)(fb_s(c, sp)));
+  fb_puts(m10, "' is ");
+  fb_puts(m10, (const char*)(fb_s(c, (c[0]).mm_type[src_port])));
+  fb_puts(m10, " but '");
+  fb_puts(m10, (const char*)(fb_s(c, dm)));
+  fb_putc(m10, 46);
+  fb_puts(m10, (const char*)(fb_s(c, dp)));
+  fb_puts(m10, "' is ");
+  fb_puts(m10, (const char*)(fb_s(c, (c[0]).mm_type[dst_port])));
+  return (0 - 1);
+}
+  int32_t j = 0;
+  while (j < i) {
+  if ((c[0]).cn_flow[j] == f && fb_name_eq(c, (c[0]).cn_dm[j], dm) == 1 && fb_name_eq(c, (c[0]).cn_dp[j], dp) == 1) {
+  FbBuf* m11 = (FbBuf*)(fb_verr(c, line));
+  fb_puts(m11, "input '");
+  fb_puts(m11, (const char*)(fb_s(c, dm)));
+  fb_putc(m11, 46);
+  fb_puts(m11, (const char*)(fb_s(c, dp)));
+  fb_puts(m11, "' in flow '");
+  fb_put_fname(m11, c, f);
+  fb_puts(m11, "' has two incoming connections");
+  return (0 - 1);
+}
+  j = (j + 1);
+}
+}
+  i = (i + 1);
+}
+  return fb_check_loops(c, f);
+}
+
+int32_t fb_conn_combo(Fb* c, int32_t f, int32_t i) {
+  if (fb_name_is(c, (c[0]).cn_sm[i], "") == 1) {
+  return 0;
+}
+  int32_t sc = fb_find_member(c, f, MK_CHILD, (c[0]).cn_sm[i]);
+  if (sc < 0) {
+  return 0;
+}
+  int32_t sf = fb_find_flow(c, (c[0]).mm_type[sc]);
+  return fb_port_combinational(c, sf, (c[0]).cn_sp[i]);
+}
+
+int32_t fb_child_index(Fb* c, int32_t f, int32_t name) {
+  int32_t n = fb_count_members(c, f, MK_CHILD);
+  int32_t k = 0;
+  while (k < n) {
+  if (fb_name_eq(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, k)], name) == 1) {
+  return k;
+}
+  k = (k + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_dfs(Fb* c, int32_t f, int32_t node, int32_t* state, int32_t* stack, int32_t* sp, int32_t* cyc) {
+  state[node] = 1;
+  stack[sp[0]] = node;
+  sp[0] = (sp[0] + 1);
+  int32_t i = 0;
+  while (i < (c[0]).ncn) {
+  if ((c[0]).cn_flow[i] == f && fb_conn_combo(c, f, i) == 1) {
+  int32_t a = fb_child_index(c, f, (c[0]).cn_sm[i]);
+  int32_t b = fb_child_index(c, f, (c[0]).cn_dm[i]);
+  if (a == node && b >= 0) {
+  if (state[b] == 1) {
+  int32_t k = 0;
+  while (stack[k] != b) {
+  k = (k + 1);
+}
+  cyc[0] = k;
+  cyc[1] = b;
+  return 1;
+}
+  if (state[b] == 0) {
+  if (fb_dfs(c, f, b, state, stack, sp, cyc) == 1) {
+  return 1;
+}
+}
+}
+}
+  i = (i + 1);
+}
+  sp[0] = (sp[0] - 1);
+  state[node] = 2;
+  return 0;
+}
+
+int32_t fb_check_loops(Fb* c, int32_t f) {
+  int32_t n = fb_count_members(c, f, MK_CHILD);
+  if (n == 0) {
+  return 0;
+}
+  int32_t* state = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* stack = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* sp = (int32_t*)((int32_t*)(malloc(4)));
+  int32_t* cyc = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t k = 0;
+  while (k < n) {
+  state[k] = 0;
+  k = (k + 1);
+}
+  sp[0] = 0;
+  int32_t found = 0;
+  int32_t m = 0;
+  while (m < n && found == 0) {
+  if (state[m] == 0) {
+  found = fb_dfs(c, f, m, state, stack, sp, cyc);
+}
+  m = (m + 1);
+}
+  int32_t rc = 0;
+  if (found == 1) {
+  int32_t line = 0;
+  int32_t e = 0;
+  int32_t got = 0;
+  while (e < (c[0]).ncn && got == 0) {
+  if ((c[0]).cn_flow[e] == f && fb_conn_combo(c, f, e) == 1) {
+  int32_t a = fb_child_index(c, f, (c[0]).cn_sm[e]);
+  int32_t b = fb_child_index(c, f, (c[0]).cn_dm[e]);
+  int32_t ina = 0;
+  int32_t inb = 0;
+  int32_t q = cyc[0];
+  while (q < sp[0]) {
+  if (stack[q] == a) {
+  ina = 1;
+}
+  if (stack[q] == b) {
+  inb = 1;
+}
+  q = (q + 1);
+}
+  if (ina == 1 && inb == 1) {
+  line = (c[0]).cn_line[e];
+  got = 1;
+}
+}
+  e = (e + 1);
+}
+  if (got == 0) {
+  int32_t e2 = 0;
+  while (e2 < (c[0]).ncn && got == 0) {
+  if ((c[0]).cn_flow[e2] == f) {
+  line = (c[0]).cn_line[e2];
+  got = 1;
+}
+  e2 = (e2 + 1);
+}
+}
+  FbBuf* mb = (FbBuf*)(fb_verr(c, line));
+  fb_puts(mb, "algebraic loop in connect of flow '");
+  fb_put_fname(mb, c, f);
+  fb_puts(mb, "' through combinational outputs: ");
+  int32_t q2 = cyc[0];
+  while (q2 < sp[0]) {
+  fb_puts(mb, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, stack[q2])])));
+  fb_puts(mb, " -> ");
+  q2 = (q2 + 1);
+}
+  fb_puts(mb, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, cyc[1])])));
+  fb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope");
+  rc = (0 - 1);
+}
+  free((uint8_t*)(state));
+  free((uint8_t*)(stack));
+  free((uint8_t*)(sp));
+  free((uint8_t*)(cyc));
+  return rc;
+}
+
+int32_t fb_validate_flow(Fb* c, int32_t f) {
+  int32_t fline = (c[0]).f_line[f];
+  int32_t r = 0;
+  while (r < (c[0]).nrc) {
+  if ((c[0]).rc_flow[r] == f && fb_recognition_ok(fb_s(c, (c[0]).rc_name[r])) == 0) {
+  int32_t rl = (c[0]).f_rec_line[f];
+  if (rl == 0) {
+  rl = fline;
+}
+  FbBuf* m = (FbBuf*)(fb_verr(c, rl));
+  fb_puts(m, "unknown recognition domain '");
+  fb_puts(m, (const char*)(fb_s(c, (c[0]).rc_name[r])));
+  fb_puts(m, "' in flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "'; valid domains: numerical, realtime, causal, safety, memory");
+  return (0 - 1);
+}
+  r = (r + 1);
+}
+  int32_t nstates = fb_count_members(c, f, MK_STATE);
+  int32_t nchildren = fb_count_members(c, f, MK_CHILD);
+  if (nstates == 0 && nchildren == 0) {
+  FbBuf* m2 = (FbBuf*)(fb_verr(c, fline));
+  fb_puts(m2, "flow '");
+  fb_put_fname(m2, c, f);
+  fb_puts(m2, "' declares no state");
+  fb_puts(fb_err_hint(c), "add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite");
+  return (0 - 1);
+}
+  int32_t si = 0;
+  while (si < 7) {
+  const char* suf = "_new";
+  if (si == 1) {
+  suf = "_init";
+}
+  if (si == 2) {
+  suf = "_derivs";
+}
+  if (si == 3) {
+  suf = "_step";
+}
+  if (si == 4) {
+  suf = "_outputs";
+}
+  if (si == 5) {
+  suf = "_check";
+}
+  if (si == 6) {
+  suf = "_default_dt";
+}
+  int32_t gen = fb_where(c, "", (c[0]).f_name[f], suf);
+  if (fb_has_name(c, NX_TAKEN, gen) == 1) {
+  FbBuf* m3 = (FbBuf*)(fb_verr(c, fline));
+  fb_puts(m3, "name '");
+  fb_puts(m3, (const char*)(fb_s(c, gen)));
+  fb_puts(m3, "' is reserved by flow '");
+  fb_put_fname(m3, c, f);
+  fb_puts(m3, "' (the compiler generates it)");
+  return (0 - 1);
+}
+  si = (si + 1);
+}
+  if (fb_validate_members(c, f) < 0) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == MK_PARAM && (c[0]).mm_init[i] < 0) {
+  FbBuf* m4 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  fb_puts(m4, "param '");
+  fb_puts(m4, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  fb_puts(m4, "' in flow '");
+  fb_put_fname(m4, c, f);
+  fb_puts(m4, "' needs a default value");
+  FbBuf* h = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h, "write 'param ");
+  fb_puts(h, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  fb_puts(h, " : ");
+  fb_puts(h, (const char*)(fb_s(c, (c[0]).mm_type[i])));
+  fb_puts(h, " = 1.0'");
+  return (0 - 1);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == MK_OUTPUT && (c[0]).mm_init[i] < 0) {
+  FbBuf* m5 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  fb_puts(m5, "output '");
+  fb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  fb_puts(m5, "' in flow '");
+  fb_put_fname(m5, c, f);
+  fb_puts(m5, "' needs an inline map ('output ");
+  fb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  fb_puts(m5, " : ");
+  fb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_type[i])));
+  fb_puts(m5, " = expr'); assigning outputs from 'every'/'when' blocks is a later card");
+  return (0 - 1);
+}
+  i = (i + 1);
+}
+  int32_t e = 0;
+  while (e < (c[0]).nev) {
+  if ((c[0]).ev_flow[e] == f) {
+  int32_t tg = (c[0]).ev_target[e];
+  if (fb_find_member(c, f, MK_STATE, tg) < 0) {
+  FbBuf* m6 = (FbBuf*)(fb_verr(c, (c[0]).ev_line[e]));
+  fb_puts(m6, "'");
+  fb_puts(m6, (const char*)(fb_s(c, tg)));
+  fb_puts(m6, " evolves as' in flow '");
+  fb_put_fname(m6, c, f);
+  fb_puts(m6, "' requires '");
+  fb_puts(m6, (const char*)(fb_s(c, tg)));
+  fb_puts(m6, "' to be a declared state");
+  FbBuf* h2 = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h2, "declare 'state ");
+  fb_puts(h2, (const char*)(fb_s(c, tg)));
+  fb_puts(h2, " : f64 = 0.0' or fix the name");
+  return (0 - 1);
+}
+  if (fb_evolve_of(c, f, tg) != e) {
+  FbBuf* m7 = (FbBuf*)(fb_verr(c, (c[0]).ev_line[e]));
+  fb_puts(m7, "state '");
+  fb_puts(m7, (const char*)(fb_s(c, tg)));
+  fb_puts(m7, "' in flow '");
+  fb_put_fname(m7, c, f);
+  fb_puts(m7, "' has two 'evolves' declarations; a state has exactly one derivative");
+  return (0 - 1);
+}
+  if (fb_check_pure(c, (c[0]).ev_expr[e], f, fb_where(c, "'", tg, " evolves as'"), (c[0]).ev_line[e]) < 0) {
+  return (0 - 1);
+}
+}
+  e = (e + 1);
+}
+  int32_t w = 0;
+  while (w < (c[0]).nwh) {
+  if ((c[0]).wh_flow[w] == f) {
+  int32_t gt = (c[0]).wh_target[w];
+  if (fb_find_member(c, f, MK_STATE, gt) < 0) {
+  FbBuf* m8 = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  fb_puts(m8, "'when ");
+  fb_puts(m8, (const char*)(fb_s(c, gt)));
+  fb_puts(m8, " reaches' in flow '");
+  fb_put_fname(m8, c, f);
+  fb_puts(m8, "' requires '");
+  fb_puts(m8, (const char*)(fb_s(c, gt)));
+  fb_puts(m8, "' to be a declared state");
+  FbBuf* h3 = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h3, "declare 'state ");
+  fb_puts(h3, (const char*)(fb_s(c, gt)));
+  fb_puts(h3, " : f64 = 0.0' or fix the name");
+  return (0 - 1);
+}
+  if (fb_evolve_of(c, f, gt) < 0) {
+  FbBuf* m9 = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  fb_puts(m9, "'when ");
+  fb_puts(m9, (const char*)(fb_s(c, gt)));
+  fb_puts(m9, " reaches' in flow '");
+  fb_put_fname(m9, c, f);
+  fb_puts(m9, "' requires '");
+  fb_puts(m9, (const char*)(fb_s(c, gt)));
+  fb_puts(m9, "' to be a continuous state");
+  FbBuf* h4 = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h4, "give '");
+  fb_puts(h4, (const char*)(fb_s(c, gt)));
+  fb_puts(h4, "' an '");
+  fb_puts(h4, (const char*)(fb_s(c, gt)));
+  fb_puts(h4, " evolves as ...' declaration");
+  return (0 - 1);
+}
+  if (fb_check_threshold(c, (c[0]).wh_thr[w], f, w) < 0) {
+  return (0 - 1);
+}
+  int32_t b = 0;
+  while (b < (c[0]).nbc) {
+  if ((c[0]).bc_kind[b] == 1 && (c[0]).bc_owner[b] == w) {
+  int32_t rt = (c[0]).bc_target[b];
+  if (fb_find_member(c, f, MK_STATE, rt) < 0) {
+  FbBuf* m10 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[b]));
+  fb_puts(m10, "'");
+  fb_puts(m10, (const char*)(fb_s(c, rt)));
+  fb_puts(m10, " becomes' in the 'when ");
+  fb_puts(m10, (const char*)(fb_s(c, gt)));
+  fb_puts(m10, " reaches' body of flow '");
+  fb_put_fname(m10, c, f);
+  fb_puts(m10, "' requires '");
+  fb_puts(m10, (const char*)(fb_s(c, rt)));
+  fb_puts(m10, "' to be a declared state");
+  return (0 - 1);
+}
+  if (fb_becomes_seen(c, 1, w, b) == 1) {
+  FbBuf* m11 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[b]));
+  fb_puts(m11, "state '");
+  fb_puts(m11, (const char*)(fb_s(c, rt)));
+  fb_puts(m11, "' has two 'becomes' resets in one 'when' body of flow '");
+  fb_put_fname(m11, c, f);
+  fb_puts(m11, "'; resets in an event apply simultaneously, so each state has one writer");
+  return (0 - 1);
+}
+  if (fb_check_pure(c, (c[0]).bc_expr[b], f, fb_where(c, "'", rt, " becomes'"), (c[0]).bc_line[b]) < 0) {
+  return (0 - 1);
+}
+}
+  b = (b + 1);
+}
+}
+  w = (w + 1);
+}
+  if ((c[0]).f_solver[f] == 1) {
+  if ((c[0]).f_dt_ns[f] <= 0) {
+  FbBuf* m12 = (FbBuf*)(fb_verr(c, (c[0]).f_solver_line[f]));
+  fb_puts(m12, "solver dt of flow '");
+  fb_put_fname(m12, c, f);
+  fb_puts(m12, "' must be positive, got '");
+  fb_puts(m12, (const char*)(fb_s(c, (c[0]).f_dt_text[f])));
+  fb_puts(m12, "'");
+  return (0 - 1);
+}
+  int32_t meth = (c[0]).f_method[f];
+  if (fb_name_is(c, meth, "euler") == 0 && fb_name_is(c, meth, "rk4") == 0) {
+  FbBuf* m13 = (FbBuf*)(fb_verr(c, (c[0]).f_solver_line[f]));
+  fb_puts(m13, "unknown solver method '");
+  fb_puts(m13, (const char*)(fb_s(c, meth)));
+  fb_puts(m13, "' in flow '");
+  fb_put_fname(m13, c, f);
+  fb_puts(m13, "'; valid methods: euler, rk4");
+  return (0 - 1);
+}
+}
+  int32_t v = 0;
+  while (v < (c[0]).ney) {
+  if ((c[0]).ey_flow[v] == f) {
+  if ((c[0]).ey_ns[v] <= 0) {
+  FbBuf* m14 = (FbBuf*)(fb_verr(c, (c[0]).ey_line[v]));
+  fb_puts(m14, "'every ");
+  fb_puts(m14, (const char*)(fb_s(c, (c[0]).ey_text[v])));
+  fb_puts(m14, "' in flow '");
+  fb_put_fname(m14, c, f);
+  fb_puts(m14, "' has a zero period; the period must be positive");
+  return (0 - 1);
+}
+  int32_t u = 0;
+  while (u < (c[0]).nbc) {
+  if ((c[0]).bc_kind[u] == 2 && (c[0]).bc_owner[u] == v) {
+  int32_t ut = (c[0]).bc_target[u];
+  if (fb_find_member(c, f, MK_STATE, ut) < 0) {
+  FbBuf* m15 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[u]));
+  fb_puts(m15, "'");
+  fb_puts(m15, (const char*)(fb_s(c, ut)));
+  fb_puts(m15, " becomes' in the 'every ");
+  fb_puts(m15, (const char*)(fb_s(c, (c[0]).ey_text[v])));
+  fb_puts(m15, "' body of flow '");
+  fb_put_fname(m15, c, f);
+  fb_puts(m15, "' requires '");
+  fb_puts(m15, (const char*)(fb_s(c, ut)));
+  fb_puts(m15, "' to be a declared state");
+  return (0 - 1);
+}
+  if (fb_evolve_of(c, f, ut) >= 0) {
+  FbBuf* m16 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[u]));
+  fb_puts(m16, "state '");
+  fb_puts(m16, (const char*)(fb_s(c, ut)));
+  fb_puts(m16, "' in flow '");
+  fb_put_fname(m16, c, f);
+  fb_puts(m16, "' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete");
+  FbBuf* h5 = (FbBuf*)(fb_err_hint(c));
+  fb_puts(h5, "reset '");
+  fb_puts(h5, (const char*)(fb_s(c, ut)));
+  fb_puts(h5, "' from a 'when ");
+  fb_puts(h5, (const char*)(fb_s(c, ut)));
+  fb_puts(h5, " reaches ...' event, or drop its 'evolves' declaration");
+  return (0 - 1);
+}
+  if (fb_becomes_seen(c, 2, v, u) == 1) {
+  FbBuf* m17 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[u]));
+  fb_puts(m17, "state '");
+  fb_puts(m17, (const char*)(fb_s(c, ut)));
+  fb_puts(m17, "' has two 'becomes' updates in one 'every' body of flow '");
+  fb_put_fname(m17, c, f);
+  fb_puts(m17, "'; updates in a block apply simultaneously, so each state has one writer");
+  return (0 - 1);
+}
+  if (fb_check_pure(c, (c[0]).bc_expr[u], f, fb_where(c, "'", ut, " becomes'"), (c[0]).bc_line[u]) < 0) {
+  return (0 - 1);
+}
+}
+  u = (u + 1);
+}
+}
+  v = (v + 1);
+}
+  int32_t kind = 1;
+  while (kind <= 2) {
+  int32_t q = 0;
+  while (q < (c[0]).niv) {
+  if ((c[0]).iv_flow[q] == f && (c[0]).iv_kind[q] == kind) {
+  const char* word = "always";
+  if (kind == 2) {
+  word = "never";
+}
+  const char* ws = "'always' clause";
+  if (kind == 2) {
+  ws = "'never' clause";
+}
+  if (fb_check_pure_s(c, (c[0]).iv_expr[q], f, ws, (c[0]).iv_line[q]) < 0) {
+  return (0 - 1);
+}
+  if (fb_check_booleanish(c, (c[0]).iv_expr[q], f, word, (c[0]).iv_line[q]) < 0) {
+  return (0 - 1);
+}
+}
+  q = (q + 1);
+}
+  kind = (kind + 1);
+}
+  int32_t pass = 0;
+  while (pass < 3) {
+  int32_t want = MK_STATE;
+  if (pass == 1) {
+  want = MK_PARAM;
+}
+  if (pass == 2) {
+  want = MK_OUTPUT;
+}
+  int32_t j = 0;
+  while (j < (c[0]).nmm) {
+  if ((c[0]).mm_flow[j] == f && (c[0]).mm_kind[j] == want && (c[0]).mm_pipe_m[j] < 0) {
+  int32_t wh = fb_where(c, "initializer of '", (c[0]).mm_name[j], "'");
+  if (want == MK_OUTPUT) {
+  wh = fb_where(c, "output map of '", (c[0]).mm_name[j], "'");
+}
+  if (fb_check_pure(c, (c[0]).mm_init[j], f, wh, (c[0]).mm_line[j]) < 0) {
+  return (0 - 1);
+}
+}
+  j = (j + 1);
+}
+  pass = (pass + 1);
+}
+  int32_t has_conn = 0;
+  int32_t z = 0;
+  while (z < (c[0]).ncn) {
+  if ((c[0]).cn_flow[z] == f) {
+  has_conn = 1;
+}
+  z = (z + 1);
+}
+  if (has_conn == 1 || nchildren > 0) {
+  return fb_validate_connect(c, f);
+}
+  return 0;
+}
+
+int32_t fb_becomes_seen(Fb* c, int32_t kind, int32_t owner, int32_t b) {
+  int32_t k = 0;
+  while (k < b) {
+  if ((c[0]).bc_kind[k] == kind && (c[0]).bc_owner[k] == owner && fb_name_eq(c, (c[0]).bc_target[k], (c[0]).bc_target[b]) == 1) {
+  return 1;
+}
+  k = (k + 1);
+}
+  return 0;
+}
+
+void fb_mark_vars(Fb* c, int32_t x) {
+  if (x < 0) {
+  return;
+}
+  int32_t k = (c[0]).nk[x];
+  if (k == N_VAR) {
+  (c[0]).tvar[(c[0]).ntok[x]] = 1;
+  return;
+}
+  if (k == N_BIN || k == N_INDEX) {
+  fb_mark_vars(c, (c[0]).na[x]);
+  fb_mark_vars(c, (c[0]).nb[x]);
+  return;
+}
+  if (k == N_UN || k == N_CAST || k == N_FIELD || k == N_TRY) {
+  fb_mark_vars(c, (c[0]).na[x]);
+  return;
+}
+  if (k == N_CALL || k == N_ARRAY || k == N_VEC) {
+  int32_t a = (c[0]).na[x];
+  while (a >= 0) {
+  fb_mark_vars(c, a);
+  a = (c[0]).nx[a];
+}
+}
+}
+
+int32_t fb_is_member_tok(Fb* c, int32_t f, int32_t t) {
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] != MK_DEAD) {
+  if (fb_tok_is(c, t, (const char*)(fb_s(c, (c[0]).mm_name[i]))) == 1) {
+  return 1;
+}
+}
+  i = (i + 1);
+}
+  int32_t s = (c[0]).ts[t];
+  int32_t e = (c[0]).te[t];
+  uint8_t* p = (uint8_t*)((c[0]).src);
+  if ((e - s) > 12 && fb_tok_starts(c, t, "__every_") == 1 && fb_tok_ends(c, t, "_acc") == 1) {
+  int32_t k = fb_digits_value(p, (s + 8), (e - 4));
+  if (k >= 0 && k < fb_count_everys(c, f)) {
+  return 1;
+}
+}
+  if ((e - s) > 13 && fb_tok_starts(c, t, "__guard_") == 1 && fb_tok_ends(c, t, "_prev") == 1) {
+  int32_t k2 = fb_digits_value(p, (s + 8), (e - 5));
+  if (k2 >= 0 && k2 < fb_count_whens(c, f)) {
+  return 1;
+}
+}
+  return 0;
+}
+
+int32_t fb_tok_starts(Fb* c, int32_t t, const char* lit) {
+  uint8_t* lp = (uint8_t*)((uint8_t*)(lit));
+  int32_t s = (c[0]).ts[t];
+  int32_t i = 0;
+  while (lp[i] != 0) {
+  if ((s + i) >= (c[0]).te[t]) {
+  return 0;
+}
+  if ((c[0]).src[(s + i)] != lp[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t fb_tok_ends(Fb* c, int32_t t, const char* lit) {
+  int32_t ll = (int32_t)(strlen(lit));
+  uint8_t* lp = (uint8_t*)((uint8_t*)(lit));
+  int32_t e = (c[0]).te[t];
+  if ((e - (c[0]).ts[t]) < ll) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < ll) {
+  if ((c[0]).src[((e - ll) + i)] != lp[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t fb_digits_value(uint8_t* p, int32_t s, int32_t e) {
+  if (s >= e) {
+  return (0 - 1);
+}
+  if (p[s] == 48 && (e - s) > 1) {
+  return (0 - 1);
+}
+  int32_t v = 0;
+  int32_t i = s;
+  while (i < e) {
+  if (fb_is_digit(p[i]) == 0) {
+  return (0 - 1);
+}
+  if (v > 100000000) {
+  return (0 - 1);
+}
+  v = ((v * 10) + (int32_t)((p[i] - 48)));
+  i = (i + 1);
+}
+  return v;
+}
+
+int32_t fb_count_everys(Fb* c, int32_t f) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).ney) {
+  if ((c[0]).ey_flow[i] == f) {
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return n;
+}
+
+int32_t fb_count_whens(Fb* c, int32_t f) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).nwh) {
+  if ((c[0]).wh_flow[i] == f) {
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return n;
+}
+
+void fb_emit_expr(Fb* c, FbBuf* b, int32_t x) {
+  int32_t f = (c[0]).cur;
+  int32_t s = (c[0]).nfs[x];
+  int32_t e = (c[0]).nfe[x];
+  uint8_t* p = (uint8_t*)((c[0]).src);
+  int32_t t = s;
+  while (t < e) {
+  if (t > s) {
+  int32_t g0 = (c[0]).te[(t - 1)];
+  int32_t g1 = (c[0]).ts[t];
+  if (g1 > g0) {
+  int32_t plain = 1;
+  int32_t k = g0;
+  while (k < g1) {
+  if (p[k] != 32 && p[k] != 9) {
+  plain = 0;
+}
+  k = (k + 1);
+}
+  if (plain == 1) {
+  fb_put_span(b, p, g0, g1);
+} else {
+  fb_putc(b, 32);
+}
+}
+}
+  if ((c[0]).tvar[t] == 1 && fb_is_member_tok(c, f, t) == 1) {
+  fb_puts(b, "self.");
+}
+  fb_put_span(b, p, (c[0]).ts[t], (c[0]).te[t]);
+  t = (t + 1);
+}
+}
+
+void fb_put_name(Fb* c, FbBuf* b, int32_t off) {
+  fb_puts(b, (const char*)(fb_s(c, off)));
+}
+
+void fb_put_self(Fb* c, FbBuf* b, int32_t off) {
+  fb_puts(b, "self.");
+  fb_put_name(c, b, off);
+}
+
+void fb_put_seconds(FbBuf* b, int64_t ns) {
+  if (ns == 0) {
+  fb_puts(b, "0.0");
+  return;
+}
+  FbBuf* db = (FbBuf*)(fb_buf_new(32));
+  fb_put_i64(db, ns);
+  int32_t full = (db[0]).len;
+  int32_t nd = full;
+  while (nd > 1 && (db[0]).p[(nd - 1)] == 48) {
+  nd = (nd - 1);
+}
+  int32_t decpt = (full - 9);
+  uint8_t* d = (uint8_t*)((db[0]).p);
+  if (decpt <= (0 - 4) || decpt > 16) {
+  fb_putc(b, d[0]);
+  if (nd > 1) {
+  fb_putc(b, 46);
+  fb_put_span(b, d, 1, nd);
+}
+  fb_putc(b, 101);
+  int32_t ex = (decpt - 1);
+  if (ex < 0) {
+  fb_putc(b, 45);
+} else {
+  fb_putc(b, 43);
+}
+  int32_t ax = ex;
+  if (ax < 0) {
+  ax = (0 - ax);
+}
+  if (ax < 10) {
+  fb_putc(b, 48);
+}
+  fb_put_int(b, ax);
+} else {
+  if (decpt <= 0) {
+  fb_puts(b, "0.");
+  int32_t z = 0;
+  while (z < (0 - decpt)) {
+  fb_putc(b, 48);
+  z = (z + 1);
+}
+  fb_put_span(b, d, 0, nd);
+} else {
+  if (decpt >= nd) {
+  fb_put_span(b, d, 0, nd);
+  int32_t z2 = nd;
+  while (z2 < decpt) {
+  fb_putc(b, 48);
+  z2 = (z2 + 1);
+}
+  fb_puts(b, ".0");
+} else {
+  fb_put_span(b, d, 0, decpt);
+  fb_putc(b, 46);
+  fb_put_span(b, d, decpt, nd);
+}
+}
+}
+  fb_buf_free(db);
+}
+
+void fb_put_mtype(Fb* c, FbBuf* b, int32_t i) {
+  fb_put_name(c, b, (c[0]).mm_type[i]);
+}
+
+int32_t fb_is_float_type(Fb* c, int32_t ty) {
+  if (fb_name_is(c, ty, "f64") == 1 || fb_name_is(c, ty, "f32") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+void fb_put_dtype(Fb* c, FbBuf* b, int32_t i) {
+  if (fb_is_float_type(c, (c[0]).mm_type[i]) == 1) {
+  fb_put_mtype(c, b, i);
+} else {
+  fb_puts(b, "f64");
+}
+}
+
+void fb_put_dt(Fb* c, FbBuf* b, int32_t i) {
+  if (fb_name_is(c, (c[0]).mm_type[i], "f32") == 1) {
+  fb_puts(b, "(dt as f32)");
+} else {
+  fb_puts(b, "dt");
+}
+}
+
+int32_t fb_field_count(Fb* c, int32_t f) {
+  int32_t n = 0;
+  int32_t r = 0;
+  while (r < 5) {
+  n = (n + fb_count_members(c, f, fb_field_kind(r)));
+  r = (r + 1);
+}
+  return ((n + fb_count_everys(c, f)) + fb_count_whens(c, f));
+}
+
+int32_t fb_field_kind(int32_t r) {
+  if (r == 0) {
+  return MK_CHILD;
+}
+  if (r == 1) {
+  return MK_STATE;
+}
+  if (r == 2) {
+  return MK_INPUT;
+}
+  if (r == 3) {
+  return MK_OUTPUT;
+}
+  return MK_PARAM;
+}
+
+void fb_put_zero(Fb* c, FbBuf* b, int32_t ty) {
+  if (fb_name_is(c, ty, "i64") == 1) {
+  fb_puts(b, "0");
+  return;
+}
+  if (fb_is_float_type(c, ty) == 1) {
+  fb_puts(b, "0.0");
+  return;
+}
+  if (fb_find_flow(c, ty) < 0) {
+  fb_puts(b, "(0.0 as ");
+  fb_put_name(c, b, ty);
+  fb_puts(b, ")");
+  return;
+}
+  fb_put_name(c, b, ty);
+  fb_puts(b, "_new()");
+}
+
+void fb_emit_struct(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "struct ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, " { ");
+  int32_t first = 1;
+  int32_t r = 0;
+  while (r < 5) {
+  int32_t kind = fb_field_kind(r);
+  int32_t n = fb_count_members(c, f, kind);
+  int32_t k = 0;
+  while (k < n) {
+  int32_t i = fb_nth_member(c, f, kind, k);
+  if (first == 0) {
+  fb_puts(b, ", ");
+}
+  first = 0;
+  fb_put_name(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, ": ");
+  fb_put_mtype(c, b, i);
+  k = (k + 1);
+}
+  r = (r + 1);
+}
+  int32_t ne = fb_count_everys(c, f);
+  int32_t j = 0;
+  while (j < ne) {
+  if (first == 0) {
+  fb_puts(b, ", ");
+}
+  first = 0;
+  fb_puts(b, "__every_");
+  fb_put_int(b, j);
+  fb_puts(b, "_acc: i64");
+  j = (j + 1);
+}
+  int32_t nw = fb_count_whens(c, f);
+  j = 0;
+  while (j < nw) {
+  if (first == 0) {
+  fb_puts(b, ", ");
+}
+  first = 0;
+  fb_puts(b, "__guard_");
+  fb_put_int(b, j);
+  fb_puts(b, "_prev: f64");
+  j = (j + 1);
+}
+  fb_puts(b, " }");
+}
+
+void fb_fn_head(Fb* c, FbBuf* b, int32_t f, const char* suffix, const char* params, const char* ret) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, suffix);
+  fb_puts(b, "(");
+  if (strlen(params) > 0) {
+  fb_puts(b, params);
+}
+  fb_puts(b, ") -> ");
+  fb_puts(b, ret);
+  fb_puts(b, " { ");
+}
+
+void fb_self_param(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "self: ptr<");
+  fb_put_fname(b, c, f);
+  fb_puts(b, ">");
+}
+
+void fb_emit_new(Fb* c, FbBuf* b, int32_t f) {
+  fb_fn_head(c, b, f, "_new", "", (const char*)(fb_s(c, (c[0]).f_name[f])));
+  fb_puts(b, "let mut __self: ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, " = ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, " { ");
+  int32_t first = 1;
+  int32_t r = 0;
+  while (r < 5) {
+  int32_t kind = fb_field_kind(r);
+  int32_t n = fb_count_members(c, f, kind);
+  int32_t k = 0;
+  while (k < n) {
+  int32_t i = fb_nth_member(c, f, kind, k);
+  if (first == 0) {
+  fb_puts(b, ", ");
+}
+  first = 0;
+  fb_put_name(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, ": ");
+  fb_put_zero(c, b, (c[0]).mm_type[i]);
+  k = (k + 1);
+}
+  r = (r + 1);
+}
+  int32_t ne = fb_count_everys(c, f);
+  int32_t j = 0;
+  while (j < ne) {
+  if (first == 0) {
+  fb_puts(b, ", ");
+}
+  first = 0;
+  fb_puts(b, "__every_");
+  fb_put_int(b, j);
+  fb_puts(b, "_acc: 0");
+  j = (j + 1);
+}
+  int32_t nw = fb_count_whens(c, f);
+  j = 0;
+  while (j < nw) {
+  if (first == 0) {
+  fb_puts(b, ", ");
+}
+  first = 0;
+  fb_puts(b, "__guard_");
+  fb_put_int(b, j);
+  fb_puts(b, "_prev: 0.0");
+  j = (j + 1);
+}
+  fb_puts(b, " }; ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_init(&__self); return __self; }");
+}
+
+int32_t fb_nth_when(Fb* c, int32_t f, int32_t k) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).nwh) {
+  if ((c[0]).wh_flow[i] == f) {
+  if (n == k) {
+  return i;
+}
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_nth_every(Fb* c, int32_t f, int32_t k) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).ney) {
+  if ((c[0]).ey_flow[i] == f) {
+  if (n == k) {
+  return i;
+}
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+void fb_emit_guard(Fb* c, FbBuf* b, int32_t f, int32_t w) {
+  int32_t st = fb_find_member(c, f, MK_STATE, (c[0]).wh_target[w]);
+  int32_t narrow = fb_name_is(c, (c[0]).mm_type[st], "f32");
+  if (narrow == 1) {
+  fb_puts(b, "((");
+}
+  fb_put_self(c, b, (c[0]).wh_target[w]);
+  fb_puts(b, " - (");
+  fb_emit_expr(c, b, (c[0]).wh_thr[w]);
+  fb_puts(b, ")");
+  if (narrow == 1) {
+  fb_puts(b, ") as f64)");
+}
+}
+
+int32_t fb_has_outputs(Fb* c, int32_t f) {
+  if (fb_count_members(c, f, MK_OUTPUT) > 0) {
+  return 1;
+}
+  return 0;
+}
+
+void fb_emit_init(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_init(");
+  fb_self_param(c, b, f);
+  fb_puts(b, ") -> void { ");
+  int32_t np = fb_count_members(c, f, MK_PARAM);
+  int32_t k = 0;
+  while (k < np) {
+  int32_t i = fb_nth_member(c, f, MK_PARAM, k);
+  fb_put_self(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, " = ");
+  fb_emit_expr(c, b, (c[0]).mm_init[i]);
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+  int32_t ni = fb_count_members(c, f, MK_INPUT);
+  k = 0;
+  while (k < ni) {
+  int32_t i2 = fb_nth_member(c, f, MK_INPUT, k);
+  fb_put_self(c, b, (c[0]).mm_name[i2]);
+  fb_puts(b, " = 0.0; ");
+  k = (k + 1);
+}
+  int32_t ns = fb_count_members(c, f, MK_STATE);
+  k = 0;
+  while (k < ns) {
+  int32_t i3 = fb_nth_member(c, f, MK_STATE, k);
+  fb_put_self(c, b, (c[0]).mm_name[i3]);
+  fb_puts(b, " = ");
+  if ((c[0]).mm_init[i3] >= 0) {
+  fb_emit_expr(c, b, (c[0]).mm_init[i3]);
+} else {
+  fb_puts(b, "0.0");
+}
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+  int32_t nc = fb_count_members(c, f, MK_CHILD);
+  k = 0;
+  while (k < nc) {
+  int32_t i4 = fb_nth_member(c, f, MK_CHILD, k);
+  fb_put_name(c, b, (c[0]).mm_type[i4]);
+  fb_puts(b, "_init(&");
+  fb_put_self(c, b, (c[0]).mm_name[i4]);
+  fb_puts(b, "); ");
+  int32_t pk = (c[0]).mm_params[i4];
+  while (pk >= 0) {
+  fb_put_self(c, b, (c[0]).mm_name[i4]);
+  fb_putc(b, 46);
+  fb_put_span(b, (c[0]).src, (c[0]).ts[(c[0]).ntok[pk]], (c[0]).te[(c[0]).ntok[pk]]);
+  fb_puts(b, " = ");
+  fb_emit_expr(c, b, (c[0]).na[pk]);
+  fb_puts(b, "; ");
+  pk = (c[0]).nx[pk];
+}
+  k = (k + 1);
+}
+  int32_t ne = fb_count_everys(c, f);
+  k = 0;
+  while (k < ne) {
+  fb_puts(b, "self.__every_");
+  fb_put_int(b, k);
+  fb_puts(b, "_acc = 0; ");
+  k = (k + 1);
+}
+  int32_t nw = fb_count_whens(c, f);
+  k = 0;
+  while (k < nw) {
+  fb_puts(b, "self.__guard_");
+  fb_put_int(b, k);
+  fb_puts(b, "_prev = ");
+  fb_emit_guard(c, b, f, fb_nth_when(c, f, k));
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+  if (fb_has_outputs(c, f) == 1) {
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_outputs(self); ");
+}
+  fb_puts(b, "}");
+}
+
+int32_t fb_nth_evolved(Fb* c, int32_t f, int32_t k) {
+  int32_t ns = fb_count_members(c, f, MK_STATE);
+  int32_t n = 0;
+  int32_t s = 0;
+  while (s < ns) {
+  int32_t i = fb_nth_member(c, f, MK_STATE, s);
+  if (fb_evolve_of(c, f, (c[0]).mm_name[i]) >= 0) {
+  if (n == k) {
+  return i;
+}
+  n = (n + 1);
+}
+  s = (s + 1);
+}
+  return (0 - 1);
+}
+
+int32_t fb_count_evolved(Fb* c, int32_t f) {
+  int32_t n = 0;
+  while (fb_nth_evolved(c, f, n) >= 0) {
+  n = (n + 1);
+}
+  return n;
+}
+
+void fb_emit_derivs(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_derivs(");
+  fb_self_param(c, b, f);
+  int32_t nev = fb_count_evolved(c, f);
+  int32_t k = 0;
+  while (k < nev) {
+  int32_t i = fb_nth_evolved(c, f, k);
+  fb_puts(b, ", d_");
+  fb_put_name(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, ": ptr<");
+  fb_put_dtype(c, b, i);
+  fb_puts(b, ">");
+  k = (k + 1);
+}
+  fb_puts(b, ") -> void { ");
+  k = 0;
+  while (k < nev) {
+  int32_t i2 = fb_nth_evolved(c, f, k);
+  int32_t e = fb_evolve_of(c, f, (c[0]).mm_name[i2]);
+  fb_puts(b, "d_");
+  fb_put_name(c, b, (c[0]).mm_name[i2]);
+  fb_puts(b, "[0] = ");
+  fb_emit_expr(c, b, (c[0]).ev_expr[e]);
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+  fb_puts(b, "}");
+}
+
+void fb_emit_derivs_call(Fb* c, FbBuf* b, int32_t f, const char* stage) {
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_derivs(self");
+  int32_t nev = fb_count_evolved(c, f);
+  int32_t k = 0;
+  while (k < nev) {
+  int32_t i = fb_nth_evolved(c, f, k);
+  fb_puts(b, ", &");
+  fb_puts(b, stage);
+  fb_putc(b, 95);
+  fb_put_name(c, b, (c[0]).mm_name[i]);
+  k = (k + 1);
+}
+  fb_puts(b, "); ");
+}
+
+void fb_emit_euler(Fb* c, FbBuf* b, int32_t f) {
+  int32_t nev = fb_count_evolved(c, f);
+  int32_t k = 0;
+  while (k < nev) {
+  int32_t i = fb_nth_evolved(c, f, k);
+  fb_puts(b, "let mut d_");
+  fb_put_name(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, ": ");
+  fb_put_dtype(c, b, i);
+  fb_puts(b, " = 0.0; ");
+  k = (k + 1);
+}
+  if (nev > 0) {
+  fb_emit_derivs_call(c, b, f, "d");
+}
+  k = 0;
+  while (k < nev) {
+  int32_t i2 = fb_nth_evolved(c, f, k);
+  int32_t nm = (c[0]).mm_name[i2];
+  fb_put_self(c, b, nm);
+  fb_puts(b, " = ");
+  fb_put_self(c, b, nm);
+  fb_puts(b, " + ");
+  int32_t dim = (1 - fb_is_float_type(c, (c[0]).mm_type[i2]));
+  if (dim == 1) {
+  fb_puts(b, "((");
+}
+  fb_puts(b, "d_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, " * ");
+  fb_put_dt(c, b, i2);
+  if (dim == 1) {
+  fb_puts(b, ") as ");
+  fb_put_mtype(c, b, i2);
+  fb_puts(b, ")");
+}
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+}
+
+void fb_emit_rk_stage(Fb* c, FbBuf* b, int32_t f, const char* stage, int32_t scale) {
+  int32_t nev = fb_count_evolved(c, f);
+  int32_t k = 0;
+  while (k < nev) {
+  int32_t i = fb_nth_evolved(c, f, k);
+  int32_t nm = (c[0]).mm_name[i];
+  fb_put_self(c, b, nm);
+  fb_puts(b, " = y0_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, " + ");
+  fb_puts(b, stage);
+  fb_putc(b, 95);
+  fb_put_name(c, b, nm);
+  fb_puts(b, " * ");
+  if (scale == 1) {
+  fb_puts(b, "(");
+  fb_put_dt(c, b, i);
+  fb_puts(b, " * 0.5)");
+} else {
+  fb_put_dt(c, b, i);
+}
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+}
+
+void fb_emit_rk4(Fb* c, FbBuf* b, int32_t f) {
+  int32_t nev = fb_count_evolved(c, f);
+  int32_t k = 0;
+  while (k < nev) {
+  int32_t i = fb_nth_evolved(c, f, k);
+  fb_puts(b, "let y0_");
+  fb_put_name(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, ": ");
+  fb_put_mtype(c, b, i);
+  fb_puts(b, " = ");
+  fb_put_self(c, b, (c[0]).mm_name[i]);
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+  int32_t st = 1;
+  while (st <= 4) {
+  k = 0;
+  while (k < nev) {
+  int32_t i2 = fb_nth_evolved(c, f, k);
+  fb_puts(b, "let mut k");
+  fb_put_int(b, st);
+  fb_putc(b, 95);
+  fb_put_name(c, b, (c[0]).mm_name[i2]);
+  fb_puts(b, ": ");
+  fb_put_mtype(c, b, i2);
+  fb_puts(b, " = 0.0; ");
+  k = (k + 1);
+}
+  st = (st + 1);
+}
+  fb_emit_derivs_call(c, b, f, "k1");
+  fb_emit_rk_stage(c, b, f, "k1", 1);
+  fb_emit_derivs_call(c, b, f, "k2");
+  fb_emit_rk_stage(c, b, f, "k2", 1);
+  fb_emit_derivs_call(c, b, f, "k3");
+  fb_emit_rk_stage(c, b, f, "k3", 2);
+  fb_emit_derivs_call(c, b, f, "k4");
+  k = 0;
+  while (k < nev) {
+  int32_t i3 = fb_nth_evolved(c, f, k);
+  int32_t nm = (c[0]).mm_name[i3];
+  fb_put_self(c, b, nm);
+  fb_puts(b, " = y0_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, " + (k1_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, " + k2_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, " * 2.0 + k3_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, " * 2.0 + k4_");
+  fb_put_name(c, b, nm);
+  fb_puts(b, ") * (");
+  fb_put_dt(c, b, i3);
+  fb_puts(b, " / 6.0); ");
+  k = (k + 1);
+}
+}
+
+void fb_emit_every(Fb* c, FbBuf* b, int32_t f, int32_t k) {
+  int32_t v = fb_nth_every(c, f, k);
+  FbBuf* acc = (FbBuf*)(fb_buf_new(32));
+  fb_puts(acc, "self.__every_");
+  fb_put_int(acc, k);
+  fb_puts(acc, "_acc");
+  const char* a = (const char*)((acc[0]).p);
+  fb_puts(b, a);
+  fb_puts(b, " = ");
+  fb_puts(b, a);
+  fb_puts(b, " + __dt_ns; let mut __every_");
+  fb_put_int(b, k);
+  fb_puts(b, "_n: i64 = 0; while ");
+  fb_puts(b, a);
+  fb_puts(b, " >= ");
+  fb_put_i64(b, (c[0]).ey_ns[v]);
+  fb_puts(b, " && __every_");
+  fb_put_int(b, k);
+  fb_puts(b, "_n < 1024 { ");
+  fb_puts(b, a);
+  fb_puts(b, " = ");
+  fb_puts(b, a);
+  fb_puts(b, " - ");
+  fb_put_i64(b, (c[0]).ey_ns[v]);
+  fb_puts(b, "; __every_");
+  fb_put_int(b, k);
+  fb_puts(b, "_n = __every_");
+  fb_put_int(b, k);
+  fb_puts(b, "_n + 1; ");
+  fb_emit_staged(c, b, f, 2, v, "__tick_", k);
+  fb_puts(b, "} ");
+  fb_buf_free(acc);
+}
+
+void fb_emit_staged(Fb* c, FbBuf* b, int32_t f, int32_t kind, int32_t owner, const char* prefix, int32_t k) {
+  int32_t u = 0;
+  while (u < (c[0]).nbc) {
+  if ((c[0]).bc_kind[u] == kind && (c[0]).bc_owner[u] == owner) {
+  int32_t tg = (c[0]).bc_target[u];
+  int32_t st = fb_find_member(c, f, MK_STATE, tg);
+  fb_puts(b, "let ");
+  fb_puts(b, prefix);
+  fb_put_int(b, k);
+  fb_putc(b, 95);
+  fb_put_name(c, b, tg);
+  fb_puts(b, ": ");
+  fb_put_mtype(c, b, st);
+  fb_puts(b, " = ");
+  fb_emit_expr(c, b, (c[0]).bc_expr[u]);
+  fb_puts(b, "; ");
+}
+  u = (u + 1);
+}
+  u = 0;
+  while (u < (c[0]).nbc) {
+  if ((c[0]).bc_kind[u] == kind && (c[0]).bc_owner[u] == owner) {
+  int32_t tg2 = (c[0]).bc_target[u];
+  fb_put_self(c, b, tg2);
+  fb_puts(b, " = ");
+  fb_puts(b, prefix);
+  fb_put_int(b, k);
+  fb_putc(b, 95);
+  fb_put_name(c, b, tg2);
+  fb_puts(b, "; ");
+}
+  u = (u + 1);
+}
+}
+
+void fb_emit_event(Fb* c, FbBuf* b, int32_t f, int32_t k) {
+  int32_t w = fb_nth_when(c, f, k);
+  fb_puts(b, "let __g_");
+  fb_put_int(b, k);
+  fb_puts(b, ": f64 = ");
+  fb_emit_guard(c, b, f, w);
+  fb_puts(b, "; if (__g_");
+  fb_put_int(b, k);
+  fb_puts(b, " < 0.0) != (self.__guard_");
+  fb_put_int(b, k);
+  fb_puts(b, "_prev < 0.0) || __g_");
+  fb_put_int(b, k);
+  fb_puts(b, " == 0.0 { ");
+  fb_emit_staged(c, b, f, 1, w, "__reset_", k);
+  fb_puts(b, "} self.__guard_");
+  fb_put_int(b, k);
+  fb_puts(b, "_prev = ");
+  fb_emit_guard(c, b, f, w);
+  fb_puts(b, "; ");
+}
+
+int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
+  int32_t n = fb_count_members(c, f, MK_CHILD);
+  int32_t* indeg = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* done = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t k = 0;
+  while (k < n) {
+  indeg[k] = 0;
+  done[k] = 0;
+  k = (k + 1);
+}
+  int32_t i = 0;
+  while (i < (c[0]).ncn) {
+  if ((c[0]).cn_flow[i] == f && fb_conn_combo(c, f, i) == 1) {
+  int32_t d = fb_child_index(c, f, (c[0]).cn_dm[i]);
+  int32_t s = fb_child_index(c, f, (c[0]).cn_sm[i]);
+  if (d >= 0 && s >= 0) {
+  indeg[d] = (indeg[d] + 1);
+}
+}
+  i = (i + 1);
+}
+  int32_t placed = 0;
+  int32_t cyclic = 0;
+  while (placed < n && cyclic == 0) {
+  int32_t pick = (0 - 1);
+  k = 0;
+  while (k < n && pick < 0) {
+  if (done[k] == 0 && indeg[k] == 0) {
+  pick = k;
+}
+  k = (k + 1);
+}
+  if (pick < 0) {
+  cyclic = 1;
+} else {
+  done[pick] = 1;
+  order[placed] = fb_nth_member(c, f, MK_CHILD, pick);
+  placed = (placed + 1);
+  int32_t pn = (c[0]).mm_name[order[(placed - 1)]];
+  i = 0;
+  while (i < (c[0]).ncn) {
+  if ((c[0]).cn_flow[i] == f && fb_conn_combo(c, f, i) == 1 && fb_name_eq(c, (c[0]).cn_sm[i], pn) == 1) {
+  int32_t d2 = fb_child_index(c, f, (c[0]).cn_dm[i]);
+  if (d2 >= 0) {
+  indeg[d2] = (indeg[d2] - 1);
+}
+}
+  i = (i + 1);
+}
+}
+}
+  if (cyclic == 1) {
+  k = 0;
+  while (k < n) {
+  order[k] = fb_nth_member(c, f, MK_CHILD, k);
+  k = (k + 1);
+}
+}
+  free((uint8_t*)(indeg));
+  free((uint8_t*)(done));
+  return n;
+}
+
+void fb_emit_child_steps(Fb* c, FbBuf* b, int32_t f) {
+  int32_t n = fb_count_members(c, f, MK_CHILD);
+  if (n == 0) {
+  return;
+}
+  int32_t* order = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  fb_topo_children(c, f, order);
+  int32_t k = 0;
+  while (k < n) {
+  int32_t ch = order[k];
+  int32_t cn = (c[0]).mm_name[ch];
+  int32_t i = 0;
+  while (i < (c[0]).ncn) {
+  if ((c[0]).cn_flow[i] == f && fb_name_eq(c, (c[0]).cn_dm[i], cn) == 1) {
+  fb_put_self(c, b, (c[0]).cn_dm[i]);
+  fb_putc(b, 46);
+  fb_put_name(c, b, (c[0]).cn_dp[i]);
+  fb_puts(b, " = ");
+  if (fb_name_is(c, (c[0]).cn_sm[i], "") == 1) {
+  fb_put_self(c, b, (c[0]).cn_sp[i]);
+} else {
+  fb_put_self(c, b, (c[0]).cn_sm[i]);
+  fb_putc(b, 46);
+  fb_put_name(c, b, (c[0]).cn_sp[i]);
+}
+  fb_puts(b, "; ");
+}
+  i = (i + 1);
+}
+  fb_put_name(c, b, (c[0]).mm_type[ch]);
+  fb_puts(b, "_step(&");
+  fb_put_self(c, b, cn);
+  fb_puts(b, ", dt); ");
+  k = (k + 1);
+}
+  free((uint8_t*)(order));
+}
+
+int32_t fb_count_clauses(Fb* c, int32_t f) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < (c[0]).niv) {
+  if ((c[0]).iv_flow[i] == f) {
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return n;
+}
+
+int32_t fb_nth_clause(Fb* c, int32_t f, int32_t idx) {
+  int32_t n = 0;
+  int32_t kind = 1;
+  while (kind <= 2) {
+  int32_t i = 0;
+  while (i < (c[0]).niv) {
+  if ((c[0]).iv_flow[i] == f && (c[0]).iv_kind[i] == kind) {
+  if (n == idx) {
+  return i;
+}
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  kind = (kind + 1);
+}
+  return (0 - 1);
+}
+
+void fb_put_escaped(FbBuf* b, uint8_t* s) {
+  int32_t i = 0;
+  while (s[i] != 0) {
+  if (s[i] == 92 || s[i] == 34) {
+  fb_putc(b, 92);
+}
+  fb_putc(b, s[i]);
+  i = (i + 1);
+}
+}
+
+void fb_emit_step(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_step(");
+  fb_self_param(c, b, f);
+  fb_puts(b, ", dt: f64) -> void { ");
+  if ((c[0]).f_solver[f] == 1 && fb_name_is(c, (c[0]).f_method[f], "rk4") == 1) {
+  fb_emit_rk4(c, b, f);
+} else {
+  fb_emit_euler(c, b, f);
+}
+  int32_t ne = fb_count_everys(c, f);
+  if (ne > 0) {
+  fb_puts(b, "let __dt_ns: i64 = ((dt * 1000000000.0) as i64); ");
+}
+  int32_t k = 0;
+  while (k < ne) {
+  fb_emit_every(c, b, f, k);
+  k = (k + 1);
+}
+  int32_t nw = fb_count_whens(c, f);
+  k = 0;
+  while (k < nw) {
+  fb_emit_event(c, b, f, k);
+  k = (k + 1);
+}
+  if (fb_has_outputs(c, f) == 1) {
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_outputs(self); ");
+}
+  fb_emit_child_steps(c, b, f);
+  int32_t nclauses = fb_count_clauses(c, f);
+  if (nclauses > 0) {
+  fb_puts(b, "let __viol: i32 = ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_check(self); ");
+  int32_t q = 0;
+  while (q < nclauses) {
+  int32_t cl = fb_nth_clause(c, f, q);
+  fb_puts(b, "if __viol == ");
+  fb_put_int(b, (q + 1));
+  fb_puts(b, " { flow_panic(\"");
+  FbBuf* mb = (FbBuf*)(fb_buf_new(64));
+  fb_put_fname(mb, c, f);
+  fb_putc(mb, 58);
+  fb_put_int(mb, (c[0]).iv_line[cl]);
+  fb_puts(mb, ": invariant violated: ");
+  fb_puts(mb, (const char*)(fb_s(c, (c[0]).iv_text[cl])));
+  fb_put_escaped(b, (mb[0]).p);
+  fb_buf_free(mb);
+  fb_puts(b, "\"); } ");
+  q = (q + 1);
+}
+}
+  fb_puts(b, "}");
+}
+
+void fb_emit_default_dt(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_default_dt() -> f64 { return ");
+  if ((c[0]).f_solver[f] == 1) {
+  fb_put_seconds(b, (c[0]).f_dt_ns[f]);
+} else {
+  fb_put_seconds(b, 1000000);
+}
+  fb_puts(b, "; }");
+}
+
+void fb_emit_outputs(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_outputs(");
+  fb_self_param(c, b, f);
+  fb_puts(b, ") -> void { ");
+  int32_t no = fb_count_members(c, f, MK_OUTPUT);
+  int32_t k = 0;
+  while (k < no) {
+  int32_t o = fb_nth_member(c, f, MK_OUTPUT, k);
+  fb_put_self(c, b, (c[0]).mm_name[o]);
+  fb_puts(b, " = ");
+  if ((c[0]).mm_pipe_m[o] >= 0) {
+  fb_put_self(c, b, (c[0]).mm_pipe_m[o]);
+  fb_putc(b, 46);
+  fb_put_name(c, b, (c[0]).mm_pipe_p[o]);
+} else {
+  fb_emit_expr(c, b, (c[0]).mm_init[o]);
+}
+  fb_puts(b, "; ");
+  k = (k + 1);
+}
+  fb_puts(b, "}");
+}
+
+void fb_emit_check(Fb* c, FbBuf* b, int32_t f) {
+  fb_puts(b, "@flow_api function ");
+  fb_put_fname(b, c, f);
+  fb_puts(b, "_check(");
+  fb_self_param(c, b, f);
+  fb_puts(b, ") -> i32 { ");
+  int32_t n = fb_count_clauses(c, f);
+  int32_t q = 0;
+  while (q < n) {
+  int32_t cl = fb_nth_clause(c, f, q);
+  if ((c[0]).iv_kind[cl] == 1) {
+  fb_puts(b, "if !(");
+} else {
+  fb_puts(b, "if (");
+}
+  fb_emit_expr(c, b, (c[0]).iv_expr[cl]);
+  fb_puts(b, ") { return ");
+  fb_put_int(b, (q + 1));
+  fb_puts(b, "; } ");
+  q = (q + 1);
+}
+  fb_puts(b, "return 0; }");
+}
+
+void fb_mark_flow(Fb* c, int32_t f) {
+  int32_t i = 0;
+  while (i < (c[0]).nmm) {
+  if ((c[0]).mm_flow[i] == f) {
+  fb_mark_vars(c, (c[0]).mm_init[i]);
+  int32_t pk = (c[0]).mm_params[i];
+  while (pk >= 0) {
+  fb_mark_vars(c, (c[0]).na[pk]);
+  pk = (c[0]).nx[pk];
+}
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (c[0]).nev) {
+  if ((c[0]).ev_flow[i] == f) {
+  fb_mark_vars(c, (c[0]).ev_expr[i]);
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (c[0]).nwh) {
+  if ((c[0]).wh_flow[i] == f) {
+  fb_mark_vars(c, (c[0]).wh_thr[i]);
+  int32_t u = 0;
+  while (u < (c[0]).nbc) {
+  if ((c[0]).bc_kind[u] == 1 && (c[0]).bc_owner[u] == i) {
+  fb_mark_vars(c, (c[0]).bc_expr[u]);
+}
+  u = (u + 1);
+}
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (c[0]).ney) {
+  if ((c[0]).ey_flow[i] == f) {
+  int32_t u2 = 0;
+  while (u2 < (c[0]).nbc) {
+  if ((c[0]).bc_kind[u2] == 2 && (c[0]).bc_owner[u2] == i) {
+  fb_mark_vars(c, (c[0]).bc_expr[u2]);
+}
+  u2 = (u2 + 1);
+}
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (c[0]).niv) {
+  if ((c[0]).iv_flow[i] == f) {
+  fb_mark_vars(c, (c[0]).iv_expr[i]);
+}
+  i = (i + 1);
+}
+}
+
+void fb_lower_flow(Fb* c, int32_t f) {
+  (c[0]).cur = f;
+  fb_mark_flow(c, f);
+  int32_t lines = 1;
+  int32_t k = (c[0]).f_start[f];
+  while (k < (c[0]).f_end[f]) {
+  if ((c[0]).src[k] == 10) {
+  lines = (lines + 1);
+}
+  k = (k + 1);
+}
+  int32_t ndecl = 6;
+  if (fb_has_outputs(c, f) == 1) {
+  ndecl = (ndecl + 1);
+}
+  if (fb_count_clauses(c, f) > 0) {
+  ndecl = (ndecl + 1);
+}
+  FbBuf* b = (FbBuf*)((c[0]).out);
+  int32_t d = 0;
+  int32_t used = 0;
+  while (d < ndecl) {
+  if (d > 0) {
+  if (used < (lines - 1)) {
+  fb_putc(b, 10);
+  used = (used + 1);
+} else {
+  fb_putc(b, 32);
+}
+}
+  if (d == 0) {
+  fb_emit_struct(c, b, f);
+}
+  if (d == 1) {
+  fb_emit_new(c, b, f);
+}
+  if (d == 2) {
+  fb_emit_init(c, b, f);
+}
+  if (d == 3) {
+  fb_emit_derivs(c, b, f);
+}
+  if (d == 4) {
+  fb_emit_step(c, b, f);
+}
+  if (d == 5) {
+  fb_emit_default_dt(c, b, f);
+}
+  if (d == 6) {
+  if (fb_has_outputs(c, f) == 1) {
+  fb_emit_outputs(c, b, f);
+} else {
+  fb_emit_check(c, b, f);
+}
+}
+  if (d == 7) {
+  fb_emit_check(c, b, f);
+}
+  d = (d + 1);
+}
+  while (used < (lines - 1)) {
+  fb_putc(b, 10);
+  used = (used + 1);
+}
+}
+
+int32_t* fb_alloc_i32(int32_t n) {
+  return (int32_t*)(malloc(((int64_t)((n + 1)) * 4)));
+}
+
+Fb* fb_ctx_new(uint8_t* src, int32_t n) {
+  Fb* c = (Fb*)((Fb*)(malloc(4096)));
+  (c[0]).src = src;
+  (c[0]).n = n;
+  int32_t tcap = (n + 2);
+  (c[0]).nt = 0;
+  (c[0]).tk = fb_alloc_i32(tcap);
+  (c[0]).top = fb_alloc_i32(tcap);
+  (c[0]).ts = fb_alloc_i32(tcap);
+  (c[0]).te = fb_alloc_i32(tcap);
+  (c[0]).tl = fb_alloc_i32(tcap);
+  (c[0]).tc = fb_alloc_i32(tcap);
+  (c[0]).tvar = fb_alloc_i32(tcap);
+  (c[0]).pos = 0;
+  (c[0]).nn = 0;
+  (c[0]).ncap = 256;
+  (c[0]).nk = fb_alloc_i32(256);
+  (c[0]).nop = fb_alloc_i32(256);
+  (c[0]).ntok = fb_alloc_i32(256);
+  (c[0]).na = fb_alloc_i32(256);
+  (c[0]).nb = fb_alloc_i32(256);
+  (c[0]).nc = fb_alloc_i32(256);
+  (c[0]).nx = fb_alloc_i32(256);
+  (c[0]).nfs = fb_alloc_i32(256);
+  (c[0]).nfe = fb_alloc_i32(256);
+  (c[0]).nm = fb_buf_new(4096);
+  (c[0]).nf = 0;
+  (c[0]).f_name = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_line = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_start = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_end = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_solver = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_dt_ns = (int64_t*)(malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8)));
+  (c[0]).f_dt_text = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_method = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_solver_line = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_rec = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_rec_line = fb_alloc_i32(FB_MAX_FLOWS);
+  (c[0]).f_out = fb_alloc_i32(FB_MAX_FLOWS);
+  int32_t icap = ((tcap * 2) + 16);
+  (c[0]).icap = icap;
+  (c[0]).nmm = 0;
+  (c[0]).mm_flow = fb_alloc_i32(icap);
+  (c[0]).mm_kind = fb_alloc_i32(icap);
+  (c[0]).mm_name = fb_alloc_i32(icap);
+  (c[0]).mm_type = fb_alloc_i32(icap);
+  (c[0]).mm_init = fb_alloc_i32(icap);
+  (c[0]).mm_line = fb_alloc_i32(icap);
+  (c[0]).mm_synth = fb_alloc_i32(icap);
+  (c[0]).mm_params = fb_alloc_i32(icap);
+  (c[0]).mm_pipe_m = fb_alloc_i32(icap);
+  (c[0]).mm_pipe_p = fb_alloc_i32(icap);
+  (c[0]).nev = 0;
+  (c[0]).ev_flow = fb_alloc_i32(icap);
+  (c[0]).ev_target = fb_alloc_i32(icap);
+  (c[0]).ev_expr = fb_alloc_i32(icap);
+  (c[0]).ev_line = fb_alloc_i32(icap);
+  (c[0]).nwh = 0;
+  (c[0]).wh_flow = fb_alloc_i32(icap);
+  (c[0]).wh_target = fb_alloc_i32(icap);
+  (c[0]).wh_thr = fb_alloc_i32(icap);
+  (c[0]).wh_line = fb_alloc_i32(icap);
+  (c[0]).ney = 0;
+  (c[0]).ey_flow = fb_alloc_i32(icap);
+  (c[0]).ey_ns = (int64_t*)(malloc(((int64_t)((icap + 1)) * 8)));
+  (c[0]).ey_text = fb_alloc_i32(icap);
+  (c[0]).ey_line = fb_alloc_i32(icap);
+  (c[0]).nbc = 0;
+  (c[0]).bc_kind = fb_alloc_i32(icap);
+  (c[0]).bc_owner = fb_alloc_i32(icap);
+  (c[0]).bc_target = fb_alloc_i32(icap);
+  (c[0]).bc_expr = fb_alloc_i32(icap);
+  (c[0]).bc_line = fb_alloc_i32(icap);
+  (c[0]).niv = 0;
+  (c[0]).iv_flow = fb_alloc_i32(icap);
+  (c[0]).iv_kind = fb_alloc_i32(icap);
+  (c[0]).iv_expr = fb_alloc_i32(icap);
+  (c[0]).iv_line = fb_alloc_i32(icap);
+  (c[0]).iv_text = fb_alloc_i32(icap);
+  (c[0]).ncn = 0;
+  (c[0]).cn_flow = fb_alloc_i32(icap);
+  (c[0]).cn_sm = fb_alloc_i32(icap);
+  (c[0]).cn_sp = fb_alloc_i32(icap);
+  (c[0]).cn_dm = fb_alloc_i32(icap);
+  (c[0]).cn_dp = fb_alloc_i32(icap);
+  (c[0]).cn_line = fb_alloc_i32(icap);
+  (c[0]).nrc = 0;
+  (c[0]).rc_flow = fb_alloc_i32(icap);
+  (c[0]).rc_name = fb_alloc_i32(icap);
+  (c[0]).nnames = 0;
+  (c[0]).nx_kind = fb_alloc_i32(icap);
+  (c[0]).nx_name = fb_alloc_i32(icap);
+  (c[0]).err = 0;
+  (c[0]).err_flow = (0 - 1);
+  (c[0]).err_line = 0;
+  (c[0]).err_col = 0;
+  (c[0]).emsg = fb_buf_new(256);
+  (c[0]).ehint = fb_buf_new(256);
+  (c[0]).has_hint = 0;
+  (c[0]).cur = 0;
+  (c[0]).out = fb_buf_new(((n * 2) + 1024));
+  return c;
+}
+
+void fb_ctx_free(Fb* c) {
+  free((uint8_t*)((c[0]).tk));
+  free((uint8_t*)((c[0]).top));
+  free((uint8_t*)((c[0]).ts));
+  free((uint8_t*)((c[0]).te));
+  free((uint8_t*)((c[0]).tl));
+  free((uint8_t*)((c[0]).tc));
+  free((uint8_t*)((c[0]).tvar));
+  free((uint8_t*)((c[0]).nk));
+  free((uint8_t*)((c[0]).nop));
+  free((uint8_t*)((c[0]).ntok));
+  free((uint8_t*)((c[0]).na));
+  free((uint8_t*)((c[0]).nb));
+  free((uint8_t*)((c[0]).nc));
+  free((uint8_t*)((c[0]).nx));
+  free((uint8_t*)((c[0]).nfs));
+  free((uint8_t*)((c[0]).nfe));
+  fb_buf_free((c[0]).nm);
+  fb_buf_free((c[0]).emsg);
+  fb_buf_free((c[0]).ehint);
+  fb_buf_free((c[0]).out);
+  free((uint8_t*)(c));
+}
+
+int32_t fb_decl_name(Fb* c, int32_t t) {
+  int32_t nt = (t + 1);
+  if (nt >= (c[0]).nt) {
+  return (0 - 1);
+}
+  if ((c[0]).tk[nt] == TK_IDENT) {
+  return nt;
+}
+  return (0 - 1);
+}
+
+int32_t fb_scan(Fb* c, int32_t* flows) {
+  int32_t nfl = 0;
+  int32_t depth = 0;
+  int32_t extern_depth = (0 - 1);
+  int32_t prev_extern = 0;
+  int32_t t = 0;
+  while (t < (c[0]).nt && (c[0]).tk[t] != TK_EOF) {
+  int32_t k = (c[0]).tk[t];
+  if (k == TK_OP) {
+  int32_t op = (c[0]).top[t];
+  if (op == OP_LBRACE || op == OP_LPAREN || op == OP_LBRACKET) {
+  if (op == OP_LBRACE && prev_extern == 1 && depth == 0) {
+  extern_depth = 1;
+}
+  depth = (depth + 1);
+}
+  if (op == OP_RBRACE || op == OP_RPAREN || op == OP_RBRACKET) {
+  depth = (depth - 1);
+  if (depth < extern_depth) {
+  extern_depth = (0 - 1);
+}
+  if (depth < 0) {
+  depth = 0;
+}
+}
+}
+  prev_extern = 0;
+  if (k == TK_IDENT) {
+  if (depth == 0) {
+  if (fb_is_word(c, t, "flow") == 1 && fb_is_ident(c, (t + 1)) == 1 && fb_is_op(c, (t + 2), OP_LBRACE) == 1) {
+  if (nfl < FB_MAX_FLOWS) {
+  flows[nfl] = t;
+  nfl = (nfl + 1);
+}
+}
+  if (fb_tok_is(c, t, "extern") == 1) {
+  prev_extern = 1;
+}
+  const char* ty = fb_ttype(c, t);
+  int32_t taken = 0;
+  int32_t dim = 0;
+  int32_t local = 0;
+  int32_t nt = fb_decl_name(c, t);
+  if (strcmp(ty, "FUNCTION") == 0) {
+  taken = 1;
+  local = 1;
+}
+  if (strcmp(ty, "STRUCT") == 0 || strcmp(ty, "ENUM") == 0 || strcmp(ty, "TRAIT") == 0) {
+  taken = 1;
+}
+  if (strcmp(ty, "EFFECT") == 0 || strcmp(ty, "CAPABILITY") == 0 || strcmp(ty, "MODULE") == 0) {
+  taken = 1;
+}
+  if (strcmp(ty, "THEOREM") == 0 || strcmp(ty, "CONST") == 0) {
+  taken = 1;
+}
+  if (strcmp(ty, "LET") == 0) {
+  taken = 1;
+  if (nt >= 0 && fb_tok_is(c, nt, "mut") == 1) {
+  nt = fb_decl_name(c, nt);
+}
+}
+  if (strcmp(ty, "TYPE") == 0) {
+  taken = 1;
+  dim = 1;
+}
+  if (fb_is_word(c, t, "unit") == 1 && fb_is_ident(c, (t + 1)) == 1) {
+  taken = 1;
+  dim = 1;
+}
+  if (taken == 1 && nt >= 0) {
+  int32_t nm = fb_tok_str(c, nt);
+  fb_add_name(c, NX_TAKEN, nm);
+  if (local == 1) {
+  fb_add_name(c, NX_LOCAL_FN, nm);
+}
+  if (dim == 1) {
+  fb_add_name(c, NX_DIMENSION, nm);
+}
+}
+} else {
+  if (depth == 1 && extern_depth == 1 && fb_tt_is(c, t, "FUNCTION") == 1) {
+  int32_t en = fb_decl_name(c, t);
+  if (en >= 0) {
+  fb_add_name(c, NX_TAKEN, fb_tok_str(c, en));
+}
+}
+}
+}
+  t = (t + 1);
+}
+  return nfl;
+}
+
+void fb_report(Fb* c) {
+  FbBuf* b = (FbBuf*)(fb_buf_new(512));
+  fb_puts(b, "flowc flow: ");
+  if ((c[0]).err == 1) {
+  fb_puts(b, "Error: ");
+  fb_put_span(b, ((c[0]).emsg[0]).p, 0, ((c[0]).emsg[0]).len);
+  if ((c[0]).err_line > 0) {
+  fb_puts(b, " at line ");
+  fb_put_int(b, (c[0]).err_line);
+  if ((c[0]).err_col > 0) {
+  fb_puts(b, ", column ");
+  fb_put_int(b, (c[0]).err_col);
+}
+}
+} else {
+  fb_put_span(b, ((c[0]).emsg[0]).p, 0, ((c[0]).emsg[0]).len);
+}
+  puts((const char*)((b[0]).p));
+  if ((c[0]).has_hint == 1) {
+  (b[0]).len = 0;
+  (b[0]).p[0] = 0;
+  fb_puts(b, "flowc flow hint: ");
+  fb_put_span(b, ((c[0]).ehint[0]).p, 0, ((c[0]).ehint[0]).len);
+  puts((const char*)((b[0]).p));
+}
+  fb_buf_free(b);
+}
+
+int32_t fb_maybe_flow(uint8_t* p, int32_t n) {
+  int32_t i = 0;
+  while ((i + 4) <= n) {
+  if (p[i] == 102 && p[(i + 1)] == 108 && p[(i + 2)] == 111 && p[(i + 3)] == 119) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t fb_expand(Fb* c) {
+  if (fb_lex(c) < 0) {
+  return 0;
+}
+  int32_t* flows = (int32_t*)(fb_alloc_i32(FB_MAX_FLOWS));
+  int32_t nfl = fb_scan(c, flows);
+  if (nfl == 0) {
+  free((uint8_t*)(flows));
+  return 0;
+}
+  int32_t f = 0;
+  while (f < nfl) {
+  (c[0]).f_solver[f] = 0;
+  (c[0]).f_rec[f] = 0;
+  (c[0]).f_rec_line[f] = 0;
+  (c[0]).f_dt_ns[f] = 0;
+  (c[0]).pos = flows[f];
+  (c[0]).nf = (f + 1);
+  if (fb_parse_flow(c, f) < 0) {
+  free((uint8_t*)(flows));
+  return (0 - 1);
+}
+  f = (f + 1);
+}
+  free((uint8_t*)(flows));
+  f = 0;
+  while (f < nfl) {
+  int32_t g = 0;
+  while (g < f) {
+  if (fb_name_eq(c, (c[0]).f_name[g], (c[0]).f_name[f]) == 1) {
+  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).f_line[f]));
+  fb_puts(m, "flow '");
+  fb_put_fname(m, c, f);
+  fb_puts(m, "' is declared twice");
+  return (0 - 1);
+}
+  g = (g + 1);
+}
+  f = (f + 1);
+}
+  fb_reclassify(c);
+  int32_t prev = 0;
+  f = 0;
+  while (f < nfl) {
+  if (fb_expand_pipelines(c, f) < 0) {
+  return (0 - 1);
+}
+  if (fb_validate_flow(c, f) < 0) {
+  return (0 - 1);
+}
+  fb_put_span((c[0]).out, (c[0]).src, prev, (c[0]).f_start[f]);
+  fb_lower_flow(c, f);
+  prev = (c[0]).f_end[f];
+  f = (f + 1);
+}
+  fb_put_span((c[0]).out, (c[0]).src, prev, (c[0]).n);
+  return 1;
+}
+
+int32_t flowc_flow_blocks_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
+  if (n < 0) {
+  return n;
+}
+  if (fb_maybe_flow(buf, n) == 0) {
+  return n;
+}
+  Fb* c = (Fb*)(fb_ctx_new(buf, n));
+  int32_t rc = fb_expand(c);
+  if (rc < 0) {
+  fb_report(c);
+  fb_ctx_free(c);
+  return (0 - 1);
+}
+  if (rc == 0) {
+  fb_ctx_free(c);
+  return n;
+}
+  FbBuf* out = (FbBuf*)((c[0]).out);
+  int32_t m = (out[0]).len;
+  if (m >= cap) {
+  puts("flowc flow: expanded source exceeds the source buffer");
+  fb_ctx_free(c);
+  return (0 - 1);
+}
+  int32_t k = 0;
+  while (k < m) {
+  buf[k] = (out[0]).p[k];
+  k = (k + 1);
+}
+  buf[m] = 0;
+  fb_ctx_free(c);
+  return m;
+}
+
+
 static const int32_t FLOWC_OVERLOAD_NO_MATCH = 0;
 static const int32_t FLOWC_OVERLOAD_COMPATIBLE = 1;
 static const int32_t FLOWC_OVERLOAD_LITERAL_WIDEN = 2;
@@ -14022,6 +25338,9 @@ int32_t flowc_tc_lookup_fn(TcCtx ctx, int32_t start, int32_t end) {
   if (flowc_tc_span_is((ctx).src, start, end, "puts") == 1) {
   return 1;
 }
+  if (flowc_tc_span_is((ctx).src, start, end, "flow_panic") == 1) {
+  return 1;
+}
   if (flowc_tc_span_is((ctx).src, start, end, "sort") == 1) {
   return 1;
 }
@@ -14895,6 +26214,8 @@ static const int32_t FLOWC_RESOLVE_FNS_CAP = 262144;
 int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap);
 int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
+int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages);
+int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap);
 int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap);
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
@@ -14954,12 +26275,30 @@ int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint
   return (0 - 1);
 }
 
+int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages) {
+  int32_t m = n;
+  if (m >= 0 && (stages & 1) != 0) {
+  m = flowc_field_expand_in_place(src, m, cap);
+}
+  if (m >= 0 && (stages & 2) != 0) {
+  m = flowc_dynamics_expand_in_place(src, m, cap);
+}
+  if (m >= 0 && (stages & 4) != 0) {
+  m = flowc_flow_blocks_expand_in_place(src, m, cap);
+}
+  return m;
+}
+
+int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap) {
+  return flowc_expand_stages_in_place(src, n, cap, 7);
+}
+
 int32_t flowc_resolve_read_source(const char* path, uint8_t* src, int32_t cap) {
   int32_t n = flowc_read_file(path, src, cap);
   if (n <= 0) {
   return n;
 }
-  return flowc_field_expand_in_place(src, n, cap);
+  return flowc_expand_all_in_place(src, n, cap);
 }
 
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
@@ -15899,6 +27238,7 @@ int32_t flowc_env_set(const char* name);
 int32_t flowc_env_eq(const char* name, const char* want);
 int32_t flowc_env_is_zero(const char* name);
 int32_t flowc_want_typecheck();
+int32_t flowc_expand_only_stages();
 int32_t flowc_expand_only_mode(const char* in_path, const char* out_path);
 int32_t flowc_emit_mode();
 int32_t flowc_bytes_contains(uint8_t* hay, int32_t hay_len, const char* needle);
@@ -15995,13 +27335,47 @@ int32_t flowc_want_typecheck() {
   return 1;
 }
 
+int32_t flowc_expand_only_stages() {
+  const char* v = getenv("FLOWC_EXPAND_ONLY");
+  if (v == NULL) {
+  return 7;
+}
+  uint8_t* vp = (uint8_t*)((uint8_t*)(v));
+  int32_t mask = 0;
+  int32_t i = 0;
+  while (vp[i] != 0) {
+  int32_t j = i;
+  while (vp[j] != 0 && vp[j] != 44) {
+  j = (j + 1);
+}
+  int32_t wl = (j - i);
+  if (wl == 5 && vp[i] == 102 && vp[(i + 1)] == 105) {
+  mask = (mask | 1);
+}
+  if (wl == 8 && vp[i] == 100) {
+  mask = (mask | 2);
+}
+  if (wl == 4 && vp[i] == 102 && vp[(i + 1)] == 108) {
+  mask = (mask | 4);
+}
+  i = j;
+  if (vp[i] == 44) {
+  i = (i + 1);
+}
+}
+  if (mask == 0) {
+  return 7;
+}
+  return mask;
+}
+
 int32_t flowc_expand_only_mode(const char* in_path, const char* out_path) {
   int64_t fsize = flowc_io_file_size(in_path);
   if (fsize < 0) {
   puts("flowc expand: read FLOWC_IN failed");
   return 1;
 }
-  int32_t src_cap = (((int32_t)(fsize) * 2) + 65536);
+  int32_t src_cap = (((int32_t)(fsize) * 4) + 65536);
   uint8_t* src = (uint8_t*)(malloc((int64_t)(src_cap)));
   if (src == NULL) {
   puts("flowc expand: malloc src failed");
@@ -16014,7 +27388,7 @@ int32_t flowc_expand_only_mode(const char* in_path, const char* out_path) {
   return 1;
 }
   src[nsrc] = 0;
-  nsrc = flowc_field_expand_in_place(src, nsrc, src_cap);
+  nsrc = flowc_expand_stages_in_place(src, nsrc, src_cap, flowc_expand_only_stages());
   if (nsrc < 0) {
   free(src);
   return 1;
@@ -16125,7 +27499,7 @@ int32_t flowc_emit_mode() {
 }
   src[nsrc] = 0;
   if (flowc_env_eq("FLOWC_BACKEND", "fmt") == 0) {
-  nsrc = flowc_field_expand_in_place(src, nsrc, src_cap);
+  nsrc = flowc_expand_all_in_place(src, nsrc, src_cap);
   if (nsrc < 0) {
   free(src);
   free(out);

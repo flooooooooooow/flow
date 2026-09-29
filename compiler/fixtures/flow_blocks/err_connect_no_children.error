@@ -1,0 +1,1 @@
+Error: 'connect' in flow 'B' needs nested flow members to wire (e.g. 'plant : Motor') at line 4

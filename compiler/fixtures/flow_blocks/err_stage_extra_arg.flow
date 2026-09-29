@@ -1,0 +1,9 @@
+flow G {
+    input x : f64
+    param k : f64 = 2.0
+    output y : f64 = k * x
+}
+flow C {
+    input s : f64
+    output r : f64 = s |> G(2.0)
+}

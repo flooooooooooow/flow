@@ -1,0 +1,5 @@
+dsys p { dt 0.5 }
+horizon h finite 3
+function main() -> i32 {
+    return 0
+}

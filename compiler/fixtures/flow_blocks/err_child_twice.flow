@@ -1,0 +1,7 @@
+flow A {
+    state x : f64 = 0.0
+}
+flow B {
+    state a : f64 = 0.0
+    a : A
+}

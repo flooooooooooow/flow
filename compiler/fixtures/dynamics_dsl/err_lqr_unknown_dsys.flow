@@ -1,0 +1,7 @@
+analyze c {
+    lqr {
+        Q 1
+        -> k
+    }
+}
+function main() -> i32 { return 0 }

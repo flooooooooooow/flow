@@ -2391,7 +2391,15 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
             }
         }
-        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        # `!(a < b)`: comparison children print without parentheses, so a
+        # binary operand needs its own or C reads `!a < b`.
+        if arena.nodes[arena.nodes[id].a].kind == AST_BINOP {
+            flowc_cgen_putc(w, 40)
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_putc(w, 41)
+        } else {
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        }
         flowc_cgen_putc(w, 41)
         return
     }
@@ -2556,6 +2564,14 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 rarg = arena.nodes[rarg].next
             }
             flowc_cgen_puts(w, "))")
+            return
+        }
+        # flow_panic(msg): the trap a flow `always`/`never` invariant lowers
+        # to. exit(1) matches the Python host and `expect`.
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "flow_panic") == 1 {
+            flowc_cgen_puts(w, "(fprintf(stderr, \"%s\\n\", ")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, "), exit(1))")
             return
         }
         # len(span) → (span).len

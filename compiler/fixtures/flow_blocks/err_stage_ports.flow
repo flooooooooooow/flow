@@ -1,0 +1,9 @@
+flow Two {
+    input a : f64
+    input b : f64
+    output y : f64 = a + b
+}
+flow C {
+    input s : f64
+    output r : f64 = s |> Two
+}

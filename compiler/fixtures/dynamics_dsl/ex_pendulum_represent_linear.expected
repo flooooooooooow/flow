@@ -1,0 +1,98 @@
+import "stdlib/dynamics/ga_analysis.flow"
+
+# Stage-1 represent-linear bridge: nonlinear flow -> synthesized dsys.
+#
+# Pendulum below is the nonlinear plant (evolves as). An embedded
+# represent-linear block attaches an explicit small-angle A/B/C model at
+# the hanging equilibrium. Pre-parse expansion (dynamics_dsl.py) strips
+# that block and synthesizes dsys Pendulum_lin (continuous), so sense on
+# works unchanged.
+#
+# Automatic Jacobian-at-equilibrium linearization is not yet implemented;
+# omitting A raises "linearization coefficients required".
+#
+# Spec: docs/vision/north-star.md section 9 (card: represent-linear)
+# Run: ./flow run examples/evolution/pendulum_represent_linear.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function sin(x: f64) -> f64
+}
+
+flow Pendulum {
+    state angle    : f64 = 0.5
+    state velocity : f64 = 0.0
+    input torque   : f64
+    param gravity  : f64 = 9.81
+    param length   : f64 = 1.0
+    param damping  : f64 = 0.1
+
+    angle evolves as velocity
+    velocity evolves as -(gravity / length) * sin(angle) - damping * velocity + torque
+
+    # Small-angle linearization at (angle, velocity) = (0, 0):
+    #   A = [[0, 1], [-g/L, -d]],  B = [[0], [1]],  C = [1, 0]
+}
+
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let __dsys_Pendulum_lin_A: array<f64, 4> = [0.0, 1.0, -9.8100000000000005, -0.10000000000000001]
+    let __dsys_Pendulum_lin_B: array<f64, 2> = [0.0, 1.0]
+    let __dsys_Pendulum_lin_C: array<f64, 2> = [1.0, 0.0]
+    let __dsys_Pendulum_lin_cont: DynamicalSystem = dsys_continuous(2, 1, 1, 0.01, Matrix { data: __dsys_Pendulum_lin_A, rows: 2, cols: 2 }, Matrix { data: __dsys_Pendulum_lin_B, rows: 2, cols: 1 }, Matrix { data: __dsys_Pendulum_lin_C, rows: 1, cols: 2 })
+    let __dsys_b0: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b1: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b2: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b3: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b4: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_Pendulum_lin: DynamicalSystem = dsys_euler_discretize(__dsys_Pendulum_lin_cont, __dsys_b0, __dsys_b1, __dsys_b2, __dsys_b3)
+    let Pendulum_lin: DynamicalSystem = __dsys_Pendulum_lin
+    let __dsys_b5: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b6: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b7: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b8: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b9: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut lin_ok: i32 = 0
+    lin_ok = is_controllable(__dsys_Pendulum_lin, __dsys_b5, __dsys_b6, __dsys_b7, __dsys_b8, __dsys_b9)
+    let mut lin_rho: f64 = 0.0
+    lin_rho = matrix_spectral_radius_2x2(__dsys_Pendulum_lin.A)
+    # --- end dsys DSL expansion ---
+
+    println("")
+    println("  Pendulum: represent linear -> Pendulum_lin (dsys)")
+    println("  =================================================")
+    println("")
+
+    print("  linearized plant controllable: ")
+    if lin_ok == 1 {
+        println("yes")
+    } else {
+        println("NO")
+        return 1
+    }
+
+    print("  Euler-discretized spectral radius: ")
+    printf("%.6f", lin_rho)
+    println("")
+
+    # Open-loop damped pendulum discretized at dt=0.01 should be stable.
+    if lin_rho >= 1.0 {
+        println("  FAIL: expected stable open-loop linearization")
+        return 2
+    }
+
+    # Smoke the nonlinear flow still steps after represent was stripped.
+    let mut p: Pendulum = Pendulum_new()
+    p.torque = 0.0
+    let dt: f64 = 0.001
+    for k in 0 to 100 {
+        Pendulum_step(&p, dt)
+    }
+    print("  nonlinear angle after 100 steps: ")
+    printf("%.4f", p.angle)
+    println("")
+
+    println("  OK: represent linear bridged to sense on Pendulum_lin")
+    return 0
+}
