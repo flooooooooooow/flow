@@ -284,7 +284,11 @@ function flowc_emit_mode() -> i32 {
 
     # 4 MiB: the self-hosted compiler bundle passed 1 MiB of C once the
     # dynamics, flow-block, shader, package, effects and proof modules joined it.
-    let out_cap: i32 = 4194304
+    # MLIR text runs larger: Python writes a `[v; N]` literal out N times.
+    let mut out_cap: i32 = 4194304
+    if flowc_want_mlir() == 1 {
+        out_cap = 33554432
+    }
     let out: ptr<u8> = malloc(out_cap as i64)
     if out == null {
         puts("flowc emit: malloc out failed")

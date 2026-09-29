@@ -35,6 +35,7 @@ import .ast {
     AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_EFFECT, AST_CAPABILITY,
     AST_MATCH_ARM, AST_MATCH_ARM_EXT, AST_ENUM_VARIANT,
     AST_ERROR, AST_THEOREM, AST_CLAIM_REF,
+    AST_TYPE_FIXED_ARRAY, AST_TYPE_CAPABILITY,
     flowc_ast_reject_unsupported
 }
 
@@ -193,7 +194,15 @@ export struct Mlg {
     nnl: i32,
     # module statics: top-level `let mut` (AST_LET nodes)
     sv_node: ptr<i32>,
-    nsv: i32
+    nsv: i32,
+    # spans (Python !llvm.struct<(!llvm.ptr, i64)>): the synthesized struct
+    # index, or -1; synthesized span<T> type nodes by element type; an i64
+    # type node for `.len`
+    span_st: i32,
+    sp_elem: ptr<i32>,
+    sp_node: ptr<i32>,
+    nsp: i32,
+    i64_ft: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -742,7 +751,12 @@ function mlg_ft_is_pointer(m: ptr<Mlg>, ft: i32) -> i32 {
     return 0
 }
 
+function mlg_ft_is_fixed(m: ptr<Mlg>, ft: i32) -> i32
+
 function mlg_ft_is_array(m: ptr<Mlg>, ft: i32) -> i32 {
+    if mlg_ft_is_fixed(m, ft) == 1 and m[0].arena.nodes[ft].ival > 0 {
+        return 1
+    }
     if mlg_ft_name_is(m, ft, "array") == 1 and m[0].arena.nodes[ft].a != AST_NONE and m[0].arena.nodes[ft].ival > 0 {
         return 1
     }
@@ -775,6 +789,134 @@ function mlg_ft_struct(m: ptr<Mlg>, ft: i32) -> i32 {
 }
 
 function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32
+
+function mlg_new_node(m: ptr<Mlg>, kind: i32, start: i32) -> i32
+function mlg_xput(m: ptr<Mlg>, p: ptr<u8>, n: i32) -> i32
+function mlg_synth_field(m: ptr<Mlg>, ns: i32, ne: i32, ts: i32, te: i32, at: i32) -> i32
+
+# `[T; N]`: the same array<T, N> as Python's array_N_T.
+function mlg_ft_is_fixed(m: ptr<Mlg>, ft: i32) -> i32 {
+    if ft < 0 {
+        return 0
+    }
+    if mlg_kind(m, ft) != AST_TYPE {
+        return 0
+    }
+    if m[0].arena.nodes[ft].c == AST_TYPE_FIXED_ARRAY and m[0].arena.nodes[ft].a != AST_NONE {
+        return 1
+    }
+    return 0
+}
+
+# span<T>, span<mut T>, span<T, N> and the `&[T]` sugar (Python span_*).
+function mlg_ft_is_span(m: ptr<Mlg>, ft: i32) -> i32 {
+    if ft < 0 {
+        return 0
+    }
+    if mlg_kind(m, ft) != AST_TYPE {
+        return 0
+    }
+    if m[0].arena.nodes[ft].a == AST_NONE or m[0].arena.nodes[ft].ival < 0 {
+        return 0
+    }
+    let c: i32 = m[0].arena.nodes[ft].c
+    if c == AST_TYPE_FIXED_ARRAY or c == AST_TYPE_CAPABILITY {
+        return 0
+    }
+    let ns: i32 = mlg_ns(m, ft)
+    let ne: i32 = mlg_ne(m, ft)
+    if ne <= ns {
+        return 1
+    }
+    return mlg_span_is(m, ns, ne, "span")
+}
+
+# The struct index standing for !llvm.struct<(!llvm.ptr, i64)>, made on
+# first use. Its name is not one a program can spell.
+function mlg_span_mt(m: ptr<Mlg>, at: i32) -> i32 {
+    if m[0].span_st >= 0 {
+        return MT_STRUCT + m[0].span_st
+    }
+    if m[0].nst >= MLG_MAX_STRUCTS {
+        mlg_refuse(m, at, "too many structs")
+        return MT_NONE
+    }
+    let nm: ptr<u8> = "#span"
+    let dn: ptr<u8> = "data"
+    let tn: ptr<u8> = "string"
+    let ln: ptr<u8> = "len"
+    let i6: ptr<u8> = "i64"
+    let a0: i32 = mlg_xput(m, nm, 5)
+    let a1: i32 = mlg_xput(m, dn, 4)
+    let a2: i32 = mlg_xput(m, tn, 6)
+    let a3: i32 = mlg_xput(m, ln, 3)
+    let a4: i32 = mlg_xput(m, i6, 3)
+    if a0 < 0 or a1 < 0 or a2 < 0 or a3 < 0 or a4 < 0 {
+        return MT_NONE
+    }
+    let s: i32 = mlg_new_node(m, AST_STRUCT, 0)
+    if s == AST_NONE {
+        return MT_NONE
+    }
+    m[0].arena.nodes[s].name_start = a0
+    m[0].arena.nodes[s].name_end = a0 + 5
+    let f0: i32 = mlg_synth_field(m, a1, a1 + 4, a2, a2 + 6, 0)
+    let f1: i32 = mlg_synth_field(m, a3, a3 + 3, a4, a4 + 3, 0)
+    if f0 == AST_NONE or f1 == AST_NONE {
+        return MT_NONE
+    }
+    m[0].arena.nodes[s].a = f0
+    m[0].arena.nodes[f0].next = f1
+    m[0].st_node[m[0].nst] = s
+    m[0].st_enum[m[0].nst] = 0
+    m[0].span_st = m[0].nst
+    m[0].nst = m[0].nst + 1
+    return MT_STRUCT + m[0].span_st
+}
+
+# A span<elem> type node (Python make_span_type), one per element type.
+function mlg_span_ft_of(m: ptr<Mlg>, elem: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < m[0].nsp {
+        if m[0].sp_elem[i] == elem {
+            return m[0].sp_node[i]
+        }
+        i = i + 1
+    }
+    if m[0].nsp >= MLG_MAX_FNS {
+        mlg_refuse(m, AST_NONE, "too many span types")
+        return FT_NONE
+    }
+    let t: i32 = mlg_new_node(m, AST_TYPE, 0)
+    if t == AST_NONE {
+        return FT_NONE
+    }
+    m[0].arena.nodes[t].a = elem
+    m[0].sp_elem[m[0].nsp] = elem
+    m[0].sp_node[m[0].nsp] = t
+    m[0].nsp = m[0].nsp + 1
+    return t
+}
+
+# An i64 type node (Python Type("i64"), the type of a span's `.len`).
+function mlg_i64_ft(m: ptr<Mlg>) -> i32 {
+    if m[0].i64_ft != AST_NONE {
+        return m[0].i64_ft
+    }
+    let i6: ptr<u8> = "i64"
+    let a: i32 = mlg_xput(m, i6, 3)
+    if a < 0 {
+        return FT_NONE
+    }
+    let t: i32 = mlg_new_node(m, AST_TYPE, 0)
+    if t == AST_NONE {
+        return FT_NONE
+    }
+    m[0].arena.nodes[t].name_start = a
+    m[0].arena.nodes[t].name_end = a + 3
+    m[0].i64_ft = t
+    return t
+}
 
 # The type of a struct's field node as an MLIR struct member (Python
 # _struct_llvm_type): arrays become !llvm.array.
@@ -907,7 +1049,11 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     let ns: i32 = mlg_ns(m, ft)
     let ne: i32 = mlg_ne(m, ft)
     let ival: i32 = m[0].arena.nodes[ft].ival
-    if ival < 0 or ne <= ns or m[0].arena.nodes[ft].c != AST_NONE {
+    if mlg_ft_is_span(m, ft) == 1 {
+        return mlg_span_mt(m, at)
+    }
+    let fixed: i32 = mlg_ft_is_fixed(m, ft)
+    if fixed == 0 and (ival < 0 or ne <= ns or m[0].arena.nodes[ft].c != AST_NONE) {
         mlg_refuse(m, at, "function, span or fixed-array type")
         return MT_NONE
     }
@@ -927,7 +1073,7 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
         }
         return MT_PTR
     }
-    if mlg_span_is(m, ns, ne, "array") == 1 {
+    if fixed == 1 or mlg_span_is(m, ns, ne, "array") == 1 {
         let inner: i32 = m[0].arena.nodes[ft].a
         if inner == AST_NONE {
             mlg_refuse(m, at, "array type without an element type")
@@ -940,7 +1086,7 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
         if mlg_is_struct_mt(e) == 1 or e == MT_PTR {
             return MT_PTR
         }
-        if mlg_is_llarr_mt(e) == 1 or mlg_is_memref_mt(e) == 1 or e == MT_VOID {
+        if mlg_is_llarr_mt(e) == 1 or e == MT_VOID {
             mlg_refuse(m, at, "nested array type")
             return MT_NONE
         }
@@ -969,7 +1115,8 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
 
 # Python _llvm_array_type_from_flow: !llvm.array<N x T> for array<T, N>.
 function mlg_llarr_from_ft(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
-    if mlg_ft_is_array(m, ft) == 0 {
+    # Python _is_array_flow_type also holds for a span with an extent.
+    if mlg_ft_is_array(m, ft) == 0 and (mlg_ft_is_span(m, ft) == 0 or m[0].arena.nodes[ft].ival <= 0) {
         return MT_NONE
     }
     let e: i32 = mlg_ft_to_mt(m, m[0].arena.nodes[ft].a, at)
@@ -1364,6 +1511,17 @@ function mlg_field_of_n(m: ptr<Mlg>, obj: i32, fs: i32, fe: i32, idx: ptr<i32>, 
     return mlg_struct_field(m, k, fs, fe, idx)
 }
 
+# `s.len` on a span (Python _determine_field_type's span case).
+function mlg_is_span_len(m: ptr<Mlg>, e: i32) -> i32 {
+    if mlg_kind(m, e) != AST_FIELD_ACCESS {
+        return 0
+    }
+    if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "len") == 0 {
+        return 0
+    }
+    return mlg_ft_is_span(m, mlg_expr_ft(m, m[0].arena.nodes[e].a))
+}
+
 function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
     let kind: i32 = mlg_kind(m, e)
     if kind == AST_IDENT {
@@ -1382,6 +1540,9 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         return FT_NONE
     }
     if kind == AST_FIELD_ACCESS {
+        if mlg_is_span_len(m, e) == 1 {
+            return mlg_i64_ft(m)
+        }
         let mut idx: i32 = 0
         let mut sk: i32 = 0
         let f: i32 = mlg_field_of(m, e, &idx, &sk)
@@ -1394,6 +1555,19 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         let arr: i32 = mlg_expr_ft(m, m[0].arena.nodes[e].a)
         if arr == FT_NONE {
             return FT_NONE
+        }
+        if m[0].arena.nodes[e].ival != 0 {
+            # Python _flow_type_of_expr(SliceExpr): a span of the element.
+            if mlg_ft_is_span(m, arr) == 1 {
+                return arr
+            }
+            if arr >= 0 and mlg_kind(m, arr) == AST_TYPE and m[0].arena.nodes[arr].a != AST_NONE {
+                return mlg_span_ft_of(m, m[0].arena.nodes[arr].a)
+            }
+            return FT_NONE
+        }
+        if mlg_ft_is_span(m, arr) == 1 {
+            return m[0].arena.nodes[arr].a
         }
         if mlg_ft_is_pointer(m, arr) == 1 {
             return m[0].arena.nodes[arr].a
@@ -1526,6 +1700,9 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         return mlg_ft_to_mt(m, m[0].arena.nodes[e].b, e)
     }
     if kind == AST_FIELD_ACCESS {
+        if mlg_is_span_len(m, e) == 1 {
+            return MT_I64
+        }
         let mut idx: i32 = 0
         let mut sk: i32 = 0
         let f: i32 = mlg_field_of(m, e, &idx, &sk)
@@ -1533,6 +1710,24 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
             return mlg_ft_to_mt(m, m[0].arena.nodes[f].a, e)
         }
         return MT_I32
+    }
+    if kind == AST_ARRAY_LIT {
+        # Python get_expression_type(ArrayLiteral).
+        let first: i32 = m[0].arena.nodes[e].a
+        if first == AST_NONE {
+            return mlg_memref_of(m, MT_F32, 0 - 1)
+        }
+        let et: i32 = mlg_expr_mt(m, first)
+        if mlg_is_struct_mt(et) == 1 {
+            return MT_PTR
+        }
+        let mut n: i32 = mlg_chain_len(m, first)
+        let rn: i32 = m[0].arena.nodes[e].b
+        if rn != AST_NONE and mlg_kind(m, rn) == AST_INT {
+            let mut ok: i32 = 0
+            n = mlg_int_value(m, rn, &ok) as i32
+        }
+        return mlg_memref_of(m, et, n)
     }
     return MT_I32
 }
@@ -2157,7 +2352,220 @@ function mlg_chain_at(m: ptr<Mlg>, head: i32, idx: i32) -> i32 {
 }
 
 # Python generate_function_call (user and extern functions).
+function mlg_emit_span_borrow(m: ptr<Mlg>, a: i32) -> i32
+function mlg_val_mt(m: ptr<Mlg>, v: i32, e: i32) -> i32
+
+# A call to a name with no declaration (a builtin such as `len`, or a
+# function no module defines). Python's generate_function_call emits
+# `func.call @name` typed from the arguments and returning i32, whether or
+# not the module defines the symbol.
+function mlg_emit_unknown_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
+    let ns: i32 = mlg_ns(m, e)
+    let ne: i32 = mlg_ne(m, e)
+    if mlg_span_prefix(m, ns, ne, "array_") == 1 or mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "__flow_dbg") == 1 or mlg_span_is(m, ns, ne, "sprintf") == 1 or mlg_span_is(m, ns, ne, "snprintf") == 1 or mlg_span_is(m, ns, ne, "fprintf") == 1 or mlg_span_is(m, ns, ne, "sscanf") == 1 or mlg_span_is(m, ns, ne, "fscanf") == 1 or mlg_span_is(m, ns, ne, "scanf") == 1 {
+        mlg_refuse(m, e, "call to an undeclared or builtin function")
+        return V_NONE
+    }
+    let args: i32 = m[0].arena.nodes[e].a
+    let nargs: i32 = mlg_chain_len(m, args)
+    if nargs > 32 {
+        mlg_refuse(m, e, "more than 32 arguments")
+        return V_NONE
+    }
+    let mut vals: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut exp: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut i: i32 = 0
+    while i < nargs {
+        let an: i32 = mlg_chain_at(m, args, i)
+        exp[i] = mlg_expr_mt(m, an)
+        if exp[i] == MT_NONE or exp[i] == MT_VOID {
+            mlg_refuse(m, an, "argument of this type to an undeclared function")
+            return V_NONE
+        }
+        i = i + 1
+    }
+    let mut j: i32 = 0
+    while j < nargs {
+        let an1: i32 = mlg_chain_at(m, args, j)
+        if mlg_kind(m, an1) == AST_STRING {
+            let sk: i32 = mlg_intern_src(m, an1, 0)
+            vals[j] = mlg_emit_addressof_str(m, sk)
+        } else {
+            vals[j] = mlg_emit_expr(m, an1)
+        }
+        if m[0].err != 0 {
+            return V_NONE
+        }
+        j = j + 1
+    }
+    let mut c: i32 = 0
+    while c < nargs {
+        let an2: i32 = mlg_chain_at(m, args, c)
+        let actual: i32 = mlg_val_mt(m, vals[c], an2)
+        if actual != exp[c] {
+            if (actual == MT_INDEX and exp[c] == MT_I32) or (actual == MT_I32 and exp[c] == MT_INDEX) {
+                let cv: i32 = mlg_new_val(m, exp[c])
+                mlg_line(m)
+                mlg_v(m, cv)
+                mlg_s(m, " = arith.index_cast ")
+                mlg_v(m, vals[c])
+                mlg_s(m, " : ")
+                mlg_put_type(m, actual)
+                mlg_s(m, " to ")
+                mlg_put_type(m, exp[c])
+                mlg_nl(m)
+                vals[c] = cv
+            } else {
+                if mlg_is_memref_mt(actual) == 1 and mlg_is_memref_mt(exp[c]) == 1 {
+                    let mc: i32 = mlg_new_val(m, exp[c])
+                    mlg_line(m)
+                    mlg_v(m, mc)
+                    mlg_s(m, " = memref.cast ")
+                    mlg_v(m, vals[c])
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, actual)
+                    mlg_s(m, " to ")
+                    mlg_put_type(m, exp[c])
+                    mlg_nl(m)
+                    vals[c] = mc
+                } else {
+                    vals[c] = mlg_cast(m, vals[c], actual, exp[c])
+                }
+            }
+        }
+        c = c + 1
+    }
+    let r: i32 = mlg_new_val(m, MT_I32)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = func.call @")
+    mlg_span(m, ns, ne)
+    mlg_s(m, "(")
+    let mut w: i32 = 0
+    while w < nargs {
+        if w > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_v(m, vals[w])
+        w = w + 1
+    }
+    mlg_s(m, ") : (")
+    let mut w2: i32 = 0
+    while w2 < nargs {
+        if w2 > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_put_type(m, exp[w2])
+        w2 = w2 + 1
+    }
+    mlg_s(m, ") -> i32")
+    mlg_nl(m)
+    return r
+}
+
+# Python's array<T>(n) and array<T>(a, b, ...) constructors (the parser
+# names them array_T): memref.alloc of n elements, or a stack memref
+# holding the arguments. T is spelled as written.
+function mlg_emit_array_ctor(m: ptr<Mlg>, e: i32) -> i32 {
+    let ta: i32 = m[0].arena.nodes[e].b
+    let mut et: i32 = MT_NONE
+    if m[0].arena.nodes[ta].next == AST_NONE and mlg_kind(m, ta) == AST_TYPE and m[0].arena.nodes[ta].a == AST_NONE {
+        let ts: i32 = mlg_ns(m, ta)
+        let te: i32 = mlg_ne(m, ta)
+        if mlg_span_is(m, ts, te, "i8") == 1 { et = MT_I8 }
+        if mlg_span_is(m, ts, te, "i16") == 1 { et = MT_I16 }
+        if mlg_span_is(m, ts, te, "i32") == 1 { et = MT_I32 }
+        if mlg_span_is(m, ts, te, "i64") == 1 { et = MT_I64 }
+        if mlg_span_is(m, ts, te, "f32") == 1 { et = MT_F32 }
+        if mlg_span_is(m, ts, te, "f64") == 1 { et = MT_F64 }
+    }
+    if et == MT_NONE {
+        mlg_refuse(m, e, "array constructor of this element type")
+        return V_NONE
+    }
+    let args: i32 = m[0].arena.nodes[e].a
+    let nargs: i32 = mlg_chain_len(m, args)
+    if nargs == 1 {
+        let mut sv: i32 = mlg_emit_expr(m, args)
+        if m[0].err != 0 {
+            return V_NONE
+        }
+        let st: i32 = mlg_expr_mt(m, args)
+        if st != MT_INDEX {
+            let c: i32 = mlg_new_val(m, MT_INDEX)
+            mlg_line(m)
+            mlg_v(m, c)
+            mlg_s(m, " = arith.index_cast ")
+            mlg_v(m, sv)
+            mlg_s(m, " : ")
+            mlg_put_type(m, st)
+            mlg_s(m, " to index")
+            mlg_nl(m)
+            sv = c
+        }
+        let dt: i32 = mlg_memref_of(m, et, 0 - 1)
+        let a: i32 = mlg_new_val(m, dt)
+        mlg_line(m)
+        mlg_v(m, a)
+        mlg_s(m, " = memref.alloc(")
+        mlg_v(m, sv)
+        mlg_s(m, ") : ")
+        mlg_put_type(m, dt)
+        mlg_nl(m)
+        return a
+    }
+    if nargs > 64 {
+        mlg_refuse(m, e, "array constructor with more than 64 values")
+        return V_NONE
+    }
+    let vals: ptr<i32> = mlg_alloc_i32(nargs + 1)
+    let mut i: i32 = 0
+    let mut an: i32 = args
+    while i < nargs {
+        vals[i] = mlg_emit_expr(m, an)
+        an = m[0].arena.nodes[an].next
+        i = i + 1
+    }
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    let ft: i32 = mlg_memref_of(m, et, nargs)
+    let b: i32 = mlg_new_val(m, ft)
+    mlg_line(m)
+    mlg_v(m, b)
+    mlg_s(m, " = memref.alloca() : ")
+    mlg_put_type(m, ft)
+    mlg_nl(m)
+    let mut k: i32 = 0
+    while k < nargs {
+        let ix: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, ix)
+        mlg_s(m, " = arith.constant ")
+        mlg_i(m, k)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        mlg_line(m)
+        mlg_s(m, "memref.store ")
+        mlg_v(m, vals[k])
+        mlg_s(m, ", ")
+        mlg_v(m, b)
+        mlg_s(m, "[")
+        mlg_v(m, ix)
+        mlg_s(m, "] : ")
+        mlg_put_type(m, ft)
+        mlg_nl(m)
+        k = k + 1
+    }
+    let raw: ptr<u8> = vals
+    free(raw)
+    return b
+}
+
 function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
+    if m[0].arena.nodes[e].b != AST_NONE and m[0].arena.nodes[e].ival == 0 and mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "array") == 1 and m[0].arena.nodes[e].start == m[0].arena.nodes[e].name_start {
+        return mlg_emit_array_ctor(m, e)
+    }
     if m[0].arena.nodes[e].b != AST_NONE or m[0].arena.nodes[e].ival != 0 {
         mlg_refuse(m, e, "generic call or range sum")
         return V_NONE
@@ -2204,8 +2612,7 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
                 return r0
             }
         }
-        mlg_refuse(m, e, "call to an undeclared or builtin function")
-        return V_NONE
+        return mlg_emit_unknown_call(m, e, want_value)
     }
     let fnode: i32 = m[0].fn_node[k]
     if m[0].fn_ext[k] == 0 and m[0].arena.nodes[e].a == AST_NONE {
@@ -2257,7 +2664,12 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
             let sk: i32 = mlg_intern_src(m, an, 0)
             vals[ai] = mlg_emit_addressof_str(m, sk)
         } else {
-            vals[ai] = mlg_emit_expr(m, an)
+            let pn2: i32 = mlg_chain_at(m, params, ai)
+            if mlg_ft_is_span(m, m[0].arena.nodes[pn2].a) == 1 {
+                vals[ai] = mlg_emit_span_borrow(m, an)
+            } else {
+                vals[ai] = mlg_emit_expr(m, an)
+            }
         }
         j = j + 1
     }
@@ -2291,7 +2703,21 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
                 mlg_nl(m)
                 vals[c] = cv
             } else {
-                vals[c] = mlg_cast(m, vals[c], actual, exp[c])
+                if mlg_is_memref_mt(actual) == 1 and mlg_is_memref_mt(exp[c]) == 1 {
+                    let mc: i32 = mlg_new_val(m, exp[c])
+                    mlg_line(m)
+                    mlg_v(m, mc)
+                    mlg_s(m, " = memref.cast ")
+                    mlg_v(m, vals[c])
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, actual)
+                    mlg_s(m, " to ")
+                    mlg_put_type(m, exp[c])
+                    mlg_nl(m)
+                    vals[c] = mc
+                } else {
+                    vals[c] = mlg_cast(m, vals[c], actual, exp[c])
+                }
             }
         }
         c = c + 1
@@ -2645,17 +3071,193 @@ function mlg_index_type(m: ptr<Mlg>, ie: i32, iv: i32) -> i32 {
     return it
 }
 
+# A span's data pointer: extractvalue [0].
+function mlg_span_data(m: ptr<Mlg>, sv: i32, at: i32) -> i32 {
+    let dp: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, dp)
+    mlg_s(m, " = llvm.extractvalue ")
+    mlg_v(m, sv)
+    mlg_s(m, "[0] : ")
+    mlg_put_type(m, mlg_span_mt(m, at))
+    mlg_nl(m)
+    return dp
+}
+
+# Python _build_span_value.
+function mlg_build_span(m: ptr<Mlg>, dp: i32, ln: i32, at: i32) -> i32 {
+    let st: i32 = mlg_span_mt(m, at)
+    let agg: i32 = mlg_new_val(m, st)
+    mlg_line(m)
+    mlg_v(m, agg)
+    mlg_s(m, " = llvm.mlir.undef : ")
+    mlg_put_type(m, st)
+    mlg_nl(m)
+    let w: i32 = mlg_new_val(m, st)
+    mlg_line(m)
+    mlg_v(m, w)
+    mlg_s(m, " = llvm.insertvalue ")
+    mlg_v(m, dp)
+    mlg_s(m, ", ")
+    mlg_v(m, agg)
+    mlg_s(m, "[0] : ")
+    mlg_put_type(m, st)
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, st)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = llvm.insertvalue ")
+    mlg_v(m, ln)
+    mlg_s(m, ", ")
+    mlg_v(m, w)
+    mlg_s(m, "[1] : ")
+    mlg_put_type(m, st)
+    mlg_nl(m)
+    return r
+}
+
+# The MLIR type of an emitted value (Python `_ssa_types.get(v) or
+# get_expression_type(e)`).
+function mlg_val_mt(m: ptr<Mlg>, v: i32, e: i32) -> i32 {
+    let t: i32 = mlg_vty(m, v)
+    if t != MT_NONE {
+        return t
+    }
+    return mlg_expr_mt(m, e)
+}
+
+# Python generate_slice_expr: base[start..end] as a span.
+function mlg_emit_slice(m: ptr<Mlg>, e: i32) -> i32 {
+    let base: i32 = m[0].arena.nodes[e].a
+    let se: i32 = m[0].arena.nodes[e].b
+    let ee: i32 = m[0].arena.nodes[e].c
+    if se == AST_NONE or ee == AST_NONE {
+        mlg_refuse(m, e, "slice without a start or an end")
+        return V_NONE
+    }
+    let bft: i32 = mlg_expr_ft(m, base)
+    let bv: i32 = mlg_emit_expr(m, base)
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    let mut bp: i32 = V_NONE
+    let mut eft: i32 = AST_NONE
+    if mlg_ft_is_span(m, bft) == 1 {
+        bp = mlg_span_data(m, bv, e)
+        eft = m[0].arena.nodes[bft].a
+    } else {
+        let bt: i32 = mlg_val_mt(m, bv, base)
+        if bt == MT_PTR {
+            bp = bv
+        } else {
+            if mlg_is_memref_mt(bt) == 1 {
+                bp = mlg_cast(m, bv, bt, MT_PTR)
+            } else {
+                mlg_refuse(m, e, "slice of a value that is not a pointer, array or span")
+                return V_NONE
+            }
+        }
+        if bft >= 0 and mlg_kind(m, bft) == AST_TYPE {
+            eft = m[0].arena.nodes[bft].a
+        }
+    }
+    let sv: i32 = mlg_emit_expr(m, se)
+    let ev: i32 = mlg_emit_expr(m, ee)
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    let s64: i32 = mlg_index_i64(m, sv, mlg_val_mt(m, sv, se))
+    let e64: i32 = mlg_index_i64(m, ev, mlg_val_mt(m, ev, ee))
+    let mut et: i32 = MT_I8
+    if eft != AST_NONE {
+        et = mlg_ft_to_mt(m, eft, e)
+    }
+    let dp: i32 = mlg_ptr_gep(m, bp, s64, MT_I64, et)
+    let ln: i32 = mlg_new_val(m, MT_I64)
+    mlg_line(m)
+    mlg_v(m, ln)
+    mlg_s(m, " = arith.subi ")
+    mlg_v(m, e64)
+    mlg_s(m, ", ")
+    mlg_v(m, s64)
+    mlg_s(m, " : i64")
+    mlg_nl(m)
+    return mlg_build_span(m, dp, ln, e)
+}
+
+# Python _generate_span_borrow: an argument bound to a span parameter.
+function mlg_emit_span_borrow(m: ptr<Mlg>, a: i32) -> i32 {
+    if mlg_kind(m, a) == AST_INDEX and m[0].arena.nodes[a].ival != 0 {
+        return mlg_emit_slice(m, a)
+    }
+    let sft: i32 = mlg_expr_ft(m, a)
+    let v: i32 = mlg_emit_expr(m, a)
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    if mlg_ft_is_span(m, sft) == 1 {
+        return v
+    }
+    let smt: i32 = mlg_val_mt(m, v, a)
+    if mlg_is_memref_mt(smt) == 0 {
+        mlg_refuse(m, a, "span borrowed from a value that is not an array, span or slice")
+        return V_NONE
+    }
+    let dp: i32 = mlg_cast(m, v, smt, MT_PTR)
+    let mut ln: i32 = V_NONE
+    if sft >= 0 and mlg_kind(m, sft) == AST_TYPE and m[0].arena.nodes[sft].ival > 0 {
+        ln = mlg_new_val(m, MT_I64)
+        mlg_line(m)
+        mlg_v(m, ln)
+        mlg_s(m, " = arith.constant ")
+        mlg_i(m, m[0].arena.nodes[sft].ival)
+        mlg_s(m, " : i64")
+        mlg_nl(m)
+    } else {
+        let z: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, z)
+        mlg_s(m, " = arith.constant 0 : index")
+        mlg_nl(m)
+        let d: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, d)
+        mlg_s(m, " = memref.dim ")
+        mlg_v(m, v)
+        mlg_s(m, ", ")
+        mlg_v(m, z)
+        mlg_s(m, " : ")
+        mlg_put_type(m, smt)
+        mlg_nl(m)
+        ln = mlg_new_val(m, MT_I64)
+        mlg_line(m)
+        mlg_v(m, ln)
+        mlg_s(m, " = arith.index_cast ")
+        mlg_v(m, d)
+        mlg_s(m, " : index to i64")
+        mlg_nl(m)
+    }
+    return mlg_build_span(m, dp, ln, a)
+}
+
 # Python generate_array_access.
 function mlg_emit_index(m: ptr<Mlg>, e: i32) -> i32 {
     if m[0].arena.nodes[e].ival != 0 {
-        mlg_refuse(m, e, "slice expression")
-        return V_NONE
+        return mlg_emit_slice(m, e)
     }
     let arr: i32 = m[0].arena.nodes[e].a
     let av: i32 = mlg_emit_expr(m, arr)
     let ie: i32 = m[0].arena.nodes[e].b
     let iv: i32 = mlg_emit_expr(m, ie)
     let it: i32 = mlg_index_type(m, ie, iv)
+    let aft: i32 = mlg_expr_ft(m, arr)
+    if mlg_ft_is_span(m, aft) == 1 {
+        let sp_et: i32 = mlg_ft_to_mt(m, m[0].arena.nodes[aft].a, e)
+        let dp: i32 = mlg_span_data(m, av, e)
+        let sg: i32 = mlg_ptr_gep(m, dp, iv, it, sp_et)
+        # Python marks no span element unsigned.
+        return mlg_load(m, sg, sp_et)
+    }
     let la: i32 = mlg_arr_llarr(m, arr, av)
     let ef: i32 = mlg_expr_ft(m, e)
     if la != MT_NONE {
@@ -2751,6 +3353,17 @@ function mlg_emit_field(m: ptr<Mlg>, e: i32) -> i32 {
 # obj.<src[fs..fe]>; e is the node blamed on refusal.
 function mlg_emit_field_n(m: ptr<Mlg>, e: i32, obj: i32, fs: i32, fe: i32) -> i32 {
     let ov: i32 = mlg_emit_expr(m, obj)
+    if mlg_span_is(m, fs, fe, "len") == 1 and mlg_ft_is_span(m, mlg_expr_ft(m, obj)) == 1 {
+        let sl: i32 = mlg_new_val(m, MT_I64)
+        mlg_line(m)
+        mlg_v(m, sl)
+        mlg_s(m, " = llvm.extractvalue ")
+        mlg_v(m, ov)
+        mlg_s(m, "[1] : ")
+        mlg_put_type(m, mlg_span_mt(m, e))
+        mlg_nl(m)
+        return sl
+    }
     let mut idx: i32 = 0
     let mut fsk: i32 = 0
     let f: i32 = mlg_field_of_n(m, obj, fs, fe, &idx, &fsk)
@@ -3688,6 +4301,9 @@ function mlg_emit_expr(m: ptr<Mlg>, e: i32) -> i32 {
     if kind == AST_IF_EXPR {
         return mlg_emit_if_expr(m, e)
     }
+    if kind == AST_ARRAY_LIT {
+        return mlg_emit_memref_lit(m, e, MT_NONE)
+    }
     mlg_refuse(m, e, "expression form")
     return V_NONE
 }
@@ -3695,19 +4311,178 @@ function mlg_emit_expr(m: ptr<Mlg>, e: i32) -> i32 {
 # ---------------------------------------------------------------------------
 # Statements
 # ---------------------------------------------------------------------------
-# Python generate_array_literal with an !llvm.array hint.
-function mlg_emit_array_lit(m: ptr<Mlg>, e: i32, la: i32) -> i32 {
-    if m[0].arena.nodes[e].b != AST_NONE {
-        mlg_refuse(m, e, "repeat array literal")
+# The N of a `[value; N]` literal, which Python's parser expands to N
+# copies of value (_parse_array_repeat), or -1 for a plain literal.
+function mlg_repeat_count(m: ptr<Mlg>, e: i32) -> i32 {
+    let cn: i32 = m[0].arena.nodes[e].b
+    if cn == AST_NONE {
+        return 0 - 1
+    }
+    let ce: i32 = cn
+    if mlg_kind(m, ce) != AST_INT {
+        mlg_refuse(m, e, "repeat array literal with a length that is not a literal")
+        return 0 - 1
+    }
+    let mut ok: i32 = 0
+    let n: i64 = mlg_int_value(m, ce, &ok)
+    if ok == 0 or n > 65536 {
+        mlg_refuse(m, e, "repeat array literal of this length")
+        return 0 - 1
+    }
+    let v: i32 = m[0].arena.nodes[e].a
+    let mut lit: i32 = v
+    if mlg_kind(m, v) == AST_UNARY and (m[0].arena.nodes[v].ival == TOK_MINUS or m[0].arena.nodes[v].ival == TOK_PLUS) {
+        lit = m[0].arena.nodes[v].a
+    }
+    let lk: i32 = mlg_kind(m, lit)
+    if lk != AST_INT and lk != AST_FLOAT and lk != AST_BOOL and lk != AST_STRING {
+        mlg_refuse(m, e, "repeat array literal of a value that is not a literal")
+        return 0 - 1
+    }
+    return n as i32
+}
+
+# Python generate_array_literal without an !llvm.array hint: a stack
+# memref<NxT> (T the first element's type, or `hint` when given), or, for
+# struct and pointer elements, an !llvm.array alloca.
+function mlg_emit_memref_lit(m: ptr<Mlg>, e: i32, hint: i32) -> i32 {
+    let rep: i32 = mlg_repeat_count(m, e)
+    if m[0].err != 0 {
         return V_NONE
     }
-    let mut vals: ptr<i32> = mlg_alloc_i32(mlg_chain_len(m, m[0].arena.nodes[e].a) + 1)
+    let mut total: i32 = rep
+    if rep < 0 {
+        total = mlg_chain_len(m, m[0].arena.nodes[e].a)
+    }
+    let vals: ptr<i32> = mlg_alloc_i32(total + 1)
     let mut n: i32 = 0
     let mut el: i32 = m[0].arena.nodes[e].a
-    while el != AST_NONE {
+    while n < total and m[0].err == 0 {
         vals[n] = mlg_emit_expr(m, el)
         n = n + 1
-        el = m[0].arena.nodes[el].next
+        if rep < 0 {
+            el = m[0].arena.nodes[el].next
+        }
+    }
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    let first: i32 = m[0].arena.nodes[e].a
+    let mut et: i32 = MT_F32
+    if first != AST_NONE {
+        et = mlg_expr_mt(m, first)
+    }
+    if hint != MT_NONE and hint != et {
+        let mut i: i32 = 0
+        el = first
+        while i < n {
+            let st: i32 = mlg_val_mt(m, vals[i], el)
+            if st != hint {
+                vals[i] = mlg_cast(m, vals[i], st, hint)
+            }
+            i = i + 1
+            if rep < 0 {
+                el = m[0].arena.nodes[el].next
+            }
+        }
+        et = hint
+    }
+    if mlg_is_struct_mt(et) == 1 or et == MT_PTR {
+        let la: i32 = mlg_llarr_of(m, et, n)
+        let one: i32 = mlg_new_val(m, MT_I64)
+        mlg_line(m)
+        mlg_v(m, one)
+        mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
+        mlg_nl(m)
+        let p: i32 = mlg_new_val(m, MT_PTR)
+        mlg_line(m)
+        mlg_v(m, p)
+        mlg_s(m, " = llvm.alloca ")
+        mlg_v(m, one)
+        mlg_s(m, " x ")
+        mlg_put_type(m, la)
+        mlg_s(m, " : (i64) -> !llvm.ptr")
+        mlg_nl(m)
+        m[0].v_llarr[p] = la
+        let mut j: i32 = 0
+        while j < n {
+            let idx: i32 = mlg_new_val(m, MT_I64)
+            mlg_line(m)
+            mlg_v(m, idx)
+            mlg_s(m, " = llvm.mlir.constant(")
+            mlg_i(m, j)
+            mlg_s(m, " : i64) : i64")
+            mlg_nl(m)
+            let g: i32 = mlg_new_val(m, MT_PTR)
+            mlg_line(m)
+            mlg_v(m, g)
+            mlg_s(m, " = llvm.getelementptr ")
+            mlg_v(m, p)
+            mlg_s(m, "[0, ")
+            mlg_v(m, idx)
+            mlg_s(m, "] : (!llvm.ptr, i64) -> !llvm.ptr, ")
+            mlg_put_type(m, la)
+            mlg_nl(m)
+            mlg_store(m, vals[j], g, et)
+            j = j + 1
+        }
+        let raw: ptr<u8> = vals
+        free(raw)
+        return p
+    }
+    let mt: i32 = mlg_memref_of(m, et, n)
+    let a: i32 = mlg_new_val(m, mt)
+    mlg_line(m)
+    mlg_v(m, a)
+    mlg_s(m, " = memref.alloca() : ")
+    mlg_put_type(m, mt)
+    mlg_nl(m)
+    let mut k: i32 = 0
+    while k < n {
+        let ix: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, ix)
+        mlg_s(m, " = arith.constant ")
+        mlg_i(m, k)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        mlg_line(m)
+        mlg_s(m, "memref.store ")
+        mlg_v(m, vals[k])
+        mlg_s(m, ", ")
+        mlg_v(m, a)
+        mlg_s(m, "[")
+        mlg_v(m, ix)
+        mlg_s(m, "] : ")
+        mlg_put_type(m, mt)
+        mlg_nl(m)
+        k = k + 1
+    }
+    let raw2: ptr<u8> = vals
+    free(raw2)
+    return a
+}
+
+# Python generate_array_literal with an !llvm.array hint.
+function mlg_emit_array_lit(m: ptr<Mlg>, e: i32, la: i32) -> i32 {
+    # [value; N]: Python's parser writes the literal out N times.
+    let rep: i32 = mlg_repeat_count(m, e)
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    let mut total: i32 = rep
+    if rep < 0 {
+        total = mlg_chain_len(m, m[0].arena.nodes[e].a)
+    }
+    let mut vals: ptr<i32> = mlg_alloc_i32(total + 1)
+    let mut n: i32 = 0
+    let mut el: i32 = m[0].arena.nodes[e].a
+    while n < total and m[0].err == 0 {
+        vals[n] = mlg_emit_expr(m, el)
+        n = n + 1
+        if rep < 0 {
+            el = m[0].arena.nodes[el].next
+        }
     }
     let k: i32 = la - MT_LLARR
     let store_t: i32 = m[0].la_elem[k]
@@ -3744,7 +4519,9 @@ function mlg_emit_array_lit(m: ptr<Mlg>, e: i32, la: i32) -> i32 {
             vals[i] = mlg_cast(m, vals[i], st, store_t)
         }
         i = i + 1
-        el = m[0].arena.nodes[el].next
+        if rep < 0 {
+            el = m[0].arena.nodes[el].next
+        }
     }
     let mut j: i32 = 0
     while j < n {
@@ -3842,11 +4619,15 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
     } else {
         if mlg_kind(m, init) == AST_ARRAY_LIT {
             if la == MT_NONE {
-                mlg_refuse(m, init, "array literal for a memref local")
-                return
+                let mut hint: i32 = MT_NONE
+                if mlg_is_memref_mt(mt) == 1 {
+                    hint = m[0].mr_elem[mt - MT_MEMREF]
+                }
+                v = mlg_emit_memref_lit(m, init, hint)
+            } else {
+                v = mlg_emit_array_lit(m, init, la)
+                vt = MT_PTR
             }
-            v = mlg_emit_array_lit(m, init, la)
-            vt = MT_PTR
         } else {
             v = mlg_emit_expr(m, init)
         }
@@ -3989,6 +4770,18 @@ function mlg_emit_assign(m: ptr<Mlg>, st: i32) {
         let ie: i32 = m[0].arena.nodes[target].b
         let iv: i32 = mlg_emit_expr(m, ie)
         let it: i32 = mlg_index_type(m, ie, iv)
+        let aft: i32 = mlg_expr_ft(m, arr)
+        if mlg_ft_is_span(m, aft) == 1 {
+            let dp: i32 = mlg_span_data(m, av, st)
+            let spt: i32 = mlg_ft_to_mt(m, m[0].arena.nodes[aft].a, st)
+            let vt5: i32 = mlg_val_mt(m, v, rhs)
+            if vt5 != spt {
+                v = mlg_cast(m, v, vt5, spt)
+            }
+            let sg: i32 = mlg_ptr_gep(m, dp, iv, it, spt)
+            mlg_store(m, v, sg, spt)
+            return
+        }
         let la: i32 = mlg_arr_llarr(m, arr, av)
         let ef: i32 = mlg_expr_ft(m, target)
         if la != MT_NONE or mlg_is_ptr_array(m, arr, av) == 1 {
@@ -5013,6 +5806,7 @@ const MP_WILD: i32 = 1
 const MP_BIND: i32 = 2
 const MP_CMP: i32 = 3
 const MP_STRUCT: i32 = 4
+const MP_LIST: i32 = 5
 
 # i1 of `v != 0` in the guard's type (Python guard_as_i1).
 function mlg_guard_i1(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
@@ -5152,7 +5946,10 @@ function mlg_pat_shape(m: ptr<Mlg>, arm: i32, p: i32, ns: ptr<i32>, ne: ptr<i32>
             ne[0] = mlg_ne(m, arm)
             return MP_STRUCT
         }
-        mlg_refuse(m, arm, "list pattern")
+        if pk == 6 {
+            return MP_LIST
+        }
+        mlg_refuse(m, arm, "match pattern form")
         return 0
     }
     let k: i32 = mlg_kind(m, p)
@@ -5257,6 +6054,127 @@ function mlg_match_cmp(m: ptr<Mlg>, scrut: i32, val: i32, val_t: i32, arm: i32, 
     mlg_put_type(m, ct)
     mlg_nl(m)
     return c
+}
+
+# A synthesized AST node named by the literal `text` (an identifier, a
+# type name or an integer literal's digits).
+function mlg_synth_named(m: ptr<Mlg>, kind: i32, text: ptr<u8>, n: i32) -> i32 {
+    let a: i32 = mlg_xput(m, text, n)
+    if a < 0 {
+        return AST_NONE
+    }
+    let t: i32 = mlg_new_node(m, kind, a)
+    if t == AST_NONE {
+        return AST_NONE
+    }
+    m[0].arena.nodes[t].end = a + n
+    m[0].arena.nodes[t].name_start = a
+    m[0].arena.nodes[t].name_end = a + n
+    return t
+}
+
+# A list pattern `[1, c, d]` (mlir_parity.py's ListPattern case): each
+# literal element compares `scrutinee[i]`, and after the combined condition
+# each named element binds `scrutinee[i]`. Returns the condition.
+function mlg_emit_list_pattern(m: ptr<Mlg>, arm: i32, scrut: i32, val: i32, val_t: i32) -> i32 {
+    let tn: ptr<u8> = "__match_arr"
+    let tmp: i32 = mlg_synth_named(m, AST_IDENT, tn, 11)
+    if tmp == AST_NONE {
+        return V_NONE
+    }
+    let l: i32 = mlg_add_local(m, mlg_ns(m, tmp), mlg_ne(m, tmp), val_t, mlg_expr_ft(m, scrut), val)
+    m[0].l_llarr[l] = mlg_vllarr(m, val)
+    let digits: ptr<u8> = malloc(16)
+    let conds: ptr<i32> = mlg_alloc_i32(64)
+    let mut nconds: i32 = 0
+    let mut cond: i32 = V_NONE
+    let mut pass: i32 = 0
+    while pass < 2 and m[0].err == 0 {
+        let mut el: i32 = m[0].arena.nodes[arm].a
+        let mut idx: i32 = 0
+        while el != AST_NONE and m[0].err == 0 {
+            let ek: i32 = mlg_kind(m, el)
+            let mut want: i32 = 0
+            if pass == 0 and ek == AST_INT {
+                want = 1
+            }
+            if pass == 1 and ek == AST_IDENT {
+                want = 1
+                if mlg_ne(m, el) - mlg_ns(m, el) == 1 and m[0].src[mlg_ns(m, el)] == 95 {
+                    want = 0
+                }
+            }
+            if want == 1 {
+                let dn: i32 = snprintf(digits, 16, "%d", idx)
+                let il: i32 = mlg_synth_named(m, AST_INT, digits, dn)
+                let ix: i32 = mlg_new_node(m, AST_INDEX, 0)
+                if il == AST_NONE or ix == AST_NONE {
+                    return V_NONE
+                }
+                m[0].arena.nodes[il].ival = idx
+                m[0].arena.nodes[ix].a = tmp
+                m[0].arena.nodes[ix].b = il
+                let av: i32 = mlg_emit_index(m, ix)
+                let at: i32 = mlg_expr_mt(m, ix)
+                if pass == 0 {
+                    let pv: i32 = mlg_emit_int_lit(m, el)
+                    let c: i32 = mlg_new_val(m, MT_I1)
+                    mlg_line(m)
+                    mlg_v(m, c)
+                    if mlg_is_float_mt(at) == 1 or mlg_is_memref_mt(at) == 1 {
+                        mlg_s(m, " = arith.cmpf oeq, ")
+                    } else {
+                        mlg_s(m, " = arith.cmpi eq, ")
+                    }
+                    mlg_v(m, av)
+                    mlg_s(m, ", ")
+                    mlg_v(m, pv)
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, at)
+                    mlg_nl(m)
+                    if nconds < 64 {
+                        conds[nconds] = c
+                    }
+                    nconds = nconds + 1
+                } else {
+                    let i32n: ptr<u8> = "i32"
+                    let ift: i32 = mlg_synth_named(m, AST_TYPE, i32n, 3)
+                    mlg_add_local(m, mlg_ns(m, el), mlg_ne(m, el), at, ift, av)
+                }
+            }
+            idx = idx + 1
+            el = m[0].arena.nodes[el].next
+        }
+        if pass == 0 {
+            if nconds > 64 {
+                mlg_refuse(m, arm, "list pattern with more than 64 literals")
+                return V_NONE
+            }
+            if nconds == 0 {
+                cond = mlg_true_cond(m)
+            } else {
+                cond = conds[0]
+                let mut ci: i32 = 1
+                while ci < nconds {
+                    let both: i32 = mlg_new_val(m, MT_I1)
+                    mlg_line(m)
+                    mlg_v(m, both)
+                    mlg_s(m, " = arith.andi ")
+                    mlg_v(m, cond)
+                    mlg_s(m, ", ")
+                    mlg_v(m, conds[ci])
+                    mlg_s(m, " : i1")
+                    mlg_nl(m)
+                    cond = both
+                    ci = ci + 1
+                }
+            }
+        }
+        pass = pass + 1
+    }
+    free(digits)
+    mlg_free_i32(conds)
+    return cond
 }
 
 # Python _generate_match_with_parity.
@@ -5402,6 +6320,9 @@ function mlg_emit_match(m: ptr<Mlg>, st: i32) {
                 fi = fi + 1
                 b = m[0].arena.nodes[b].next
             }
+        }
+        if shape == MP_LIST {
+            cond = mlg_emit_list_pattern(m, a, scrut, val, val_t)
         }
         if m[0].err != 0 {
             return
@@ -5964,12 +6885,391 @@ function mlg_put_linalg_memref(m: ptr<Mlg>, hi: i32, is_hex: i32, elem: string) 
     mlg_s(m, ">")
 }
 
+# Python _memref_scalar_base, as _try_vectorize_elementwise_for then uses
+# it: 1 for a local memref of elem (its text ends in `x<elem>>`), 2 for a
+# base that stops the rewrite (a pointer to elem, or a module static), 0
+# when e is not an elem array name.
+function mlg_vec_base(m: ptr<Mlg>, e: i32, elem: i32) -> i32 {
+    if mlg_kind(m, e) != AST_IDENT {
+        return 0
+    }
+    let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
+    let mut ft: i32 = FT_NONE
+    if l >= 0 {
+        let mut t: i32 = m[0].l_mt[l]
+        while mlg_is_memref_mt(t) == 1 {
+            let et: i32 = m[0].mr_elem[t - MT_MEMREF]
+            if et == elem {
+                return 1
+            }
+            t = et
+        }
+        ft = m[0].l_ft[l]
+    } else {
+        let sk: i32 = mlg_find_static(m, mlg_ns(m, e), mlg_ne(m, e))
+        if sk < 0 {
+            return 0
+        }
+        ft = m[0].arena.nodes[m[0].sv_node[sk]].a
+    }
+    if mlg_ft_is_pointer(m, ft) == 1 {
+        let pe: i32 = m[0].arena.nodes[ft].a
+        if (elem == MT_F32 and mlg_ft_name_is(m, pe, "f32") == 1) or (elem == MT_I32 and mlg_ft_name_is(m, pe, "i32") == 1) {
+            return 2
+        }
+    }
+    return 0
+}
+
+# Python _vectorizable_scalar_rhs, plus the leaves _emit_vector_scalar_expr
+# cannot lower (Python raises on them): 1 when e vectorizes, 0 when the loop
+# keeps its scalar form. *bad gets 1 for a base that stops the rewrite.
+function mlg_vec_rhs(m: ptr<Mlg>, e: i32, st: i32, elem: i32, bad: ptr<i32>) -> i32 {
+    let k: i32 = mlg_kind(m, e)
+    if k == AST_INT or k == AST_FLOAT {
+        return 1
+    }
+    if k == AST_BOOL or k == AST_STRING {
+        mlg_refuse(m, e, "vectorized loop over a bool or string literal")
+        return 0
+    }
+    if k == AST_IDENT {
+        if mlg_span_eq(m, mlg_ns(m, e), mlg_ne(m, e), mlg_ns(m, st), mlg_ne(m, st)) == 1 {
+            return 0
+        }
+        if mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e)) < 0 {
+            mlg_refuse(m, e, "vectorized loop reading a module name")
+            return 0
+        }
+        return 1
+    }
+    if k == AST_INDEX {
+        if m[0].arena.nodes[e].ival != 0 {
+            return 0
+        }
+        let b: i32 = mlg_vec_base(m, m[0].arena.nodes[e].a, elem)
+        if b == 0 {
+            return 0
+        }
+        if b == 2 {
+            bad[0] = 1
+        }
+        return mlg_is_iv_index(m, e, st)
+    }
+    if k == AST_BINOP {
+        let op: i32 = m[0].arena.nodes[e].ival
+        let mut okop: i32 = 0
+        if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR {
+            okop = 1
+        }
+        if op == TOK_SLASH and elem == MT_F32 {
+            okop = 1
+        }
+        if okop == 0 {
+            return 0
+        }
+        if mlg_vec_rhs(m, m[0].arena.nodes[e].a, st, elem, bad) == 0 {
+            return 0
+        }
+        return mlg_vec_rhs(m, m[0].arena.nodes[e].b, st, elem, bad)
+    }
+    if k == AST_UNARY and m[0].arena.nodes[e].ival == TOK_MINUS {
+        return mlg_vec_rhs(m, m[0].arena.nodes[e].a, st, elem, bad)
+    }
+    return 0
+}
+
+function mlg_vec_splat(m: ptr<Mlg>, s: i32, elem: i32) -> i32 {
+    let vt: i32 = mlg_new_val(m, MT_NONE)
+    mlg_line(m)
+    mlg_v(m, vt)
+    mlg_s(m, " = vector.broadcast ")
+    mlg_v(m, s)
+    mlg_s(m, " : ")
+    mlg_put_type(m, elem)
+    mlg_s(m, " to vector<4x")
+    mlg_put_type(m, elem)
+    mlg_s(m, ">")
+    mlg_nl(m)
+    return vt
+}
+
+# Python _emit_vector_scalar_expr.
+function mlg_vec_emit(m: ptr<Mlg>, e: i32, ivv: i32, elem: i32) -> i32 {
+    let k: i32 = mlg_kind(m, e)
+    if k == AST_INT or k == AST_FLOAT {
+        let c: i32 = mlg_new_val(m, elem)
+        mlg_line(m)
+        mlg_v(m, c)
+        mlg_s(m, " = arith.constant ")
+        if k == AST_FLOAT {
+            mlg_put_float_text(m, e, elem, 0)
+        } else {
+            let mut ok: i32 = 1
+            let mut n: i64 = mlg_int_value(m, e, &ok)
+            if elem == MT_I32 and n > 2147483647 {
+                n = n - 4294967296
+            }
+            mlg_i64(m, n)
+        }
+        mlg_s(m, " : ")
+        mlg_put_type(m, elem)
+        mlg_nl(m)
+        return mlg_vec_splat(m, c, elem)
+    }
+    if k == AST_IDENT {
+        let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
+        let mut sv: i32 = m[0].l_ssa[l]
+        let ty: i32 = m[0].l_mt[l]
+        if ty != elem {
+            sv = mlg_cast(m, sv, ty, elem)
+        }
+        return mlg_vec_splat(m, sv, elem)
+    }
+    if k == AST_INDEX {
+        let bl: i32 = mlg_find_local(m, mlg_ns(m, m[0].arena.nodes[e].a), mlg_ne(m, m[0].arena.nodes[e].a))
+        let pad: i32 = mlg_new_val(m, elem)
+        mlg_line(m)
+        mlg_v(m, pad)
+        if elem == MT_F32 {
+            mlg_s(m, " = arith.constant 0.0 : f32")
+        } else {
+            mlg_s(m, " = arith.constant 0 : i32")
+        }
+        mlg_nl(m)
+        let rv: i32 = mlg_new_val(m, MT_NONE)
+        mlg_line(m)
+        mlg_v(m, rv)
+        mlg_s(m, " = vector.transfer_read ")
+        mlg_v(m, m[0].l_ssa[bl])
+        mlg_s(m, "[")
+        mlg_v(m, ivv)
+        mlg_s(m, "], ")
+        mlg_v(m, pad)
+        mlg_s(m, " {in_bounds = [true]} : ")
+        mlg_put_type(m, m[0].l_mt[bl])
+        mlg_s(m, ", vector<4x")
+        mlg_put_type(m, elem)
+        mlg_s(m, ">")
+        mlg_nl(m)
+        return rv
+    }
+    if k == AST_UNARY {
+        let inner: i32 = mlg_vec_emit(m, m[0].arena.nodes[e].a, ivv, elem)
+        if elem == MT_F32 {
+            let o: i32 = mlg_new_val(m, MT_NONE)
+            mlg_line(m)
+            mlg_v(m, o)
+            mlg_s(m, " = arith.negf ")
+            mlg_v(m, inner)
+            mlg_s(m, " : vector<4xf32>")
+            mlg_nl(m)
+            return o
+        }
+        let z: i32 = mlg_new_val(m, MT_I32)
+        mlg_line(m)
+        mlg_v(m, z)
+        mlg_s(m, " = arith.constant 0 : i32")
+        mlg_nl(m)
+        let zb: i32 = mlg_vec_splat(m, z, elem)
+        let o2: i32 = mlg_new_val(m, MT_NONE)
+        mlg_line(m)
+        mlg_v(m, o2)
+        mlg_s(m, " = arith.subi ")
+        mlg_v(m, zb)
+        mlg_s(m, ", ")
+        mlg_v(m, inner)
+        mlg_s(m, " : vector<4xi32>")
+        mlg_nl(m)
+        return o2
+    }
+    let lv: i32 = mlg_vec_emit(m, m[0].arena.nodes[e].a, ivv, elem)
+    let rv2: i32 = mlg_vec_emit(m, m[0].arena.nodes[e].b, ivv, elem)
+    let op: i32 = m[0].arena.nodes[e].ival
+    let o3: i32 = mlg_new_val(m, MT_NONE)
+    mlg_line(m)
+    mlg_v(m, o3)
+    if elem == MT_F32 {
+        if op == TOK_PLUS { mlg_s(m, " = arith.addf ") }
+        if op == TOK_MINUS { mlg_s(m, " = arith.subf ") }
+        if op == TOK_STAR { mlg_s(m, " = arith.mulf ") }
+        if op == TOK_SLASH { mlg_s(m, " = arith.divf ") }
+    } else {
+        if op == TOK_PLUS { mlg_s(m, " = arith.addi ") }
+        if op == TOK_MINUS { mlg_s(m, " = arith.subi ") }
+        if op == TOK_STAR { mlg_s(m, " = arith.muli ") }
+    }
+    mlg_v(m, lv)
+    mlg_s(m, ", ")
+    mlg_v(m, rv2)
+    mlg_s(m, " : vector<4x")
+    mlg_put_type(m, elem)
+    mlg_s(m, ">")
+    mlg_nl(m)
+    return o3
+}
+
+function mlg_emit_assign(m: ptr<Mlg>, st: i32)
+
+# Python _try_vectorize_elementwise_for: `for i in lo to hi { out[i] = e }`
+# over local f32 or i32 memrefs becomes a vector<4xT> scf.for plus a scalar
+# remainder loop. Returns 1 when it emitted the loop.
+function mlg_try_vectorize(m: ptr<Mlg>, st: i32) -> i32 {
+    if m[0].arena.nodes[st].ival != 0 {
+        return 0
+    }
+    let body: i32 = m[0].arena.nodes[st].c
+    let s0: i32 = m[0].arena.nodes[body].a
+    if s0 == AST_NONE or m[0].arena.nodes[s0].next != AST_NONE or mlg_kind(m, s0) != AST_ASSIGN {
+        return 0
+    }
+    let target: i32 = m[0].arena.nodes[s0].a
+    if mlg_kind(m, target) != AST_INDEX or m[0].arena.nodes[target].ival != 0 {
+        return 0
+    }
+    let tb: i32 = m[0].arena.nodes[target].a
+    let mut elem: i32 = MT_F32
+    let mut ok: i32 = mlg_vec_base(m, tb, MT_F32)
+    if ok == 0 {
+        elem = MT_I32
+        ok = mlg_vec_base(m, tb, MT_I32)
+    }
+    if ok == 0 or mlg_is_iv_index(m, target, st) == 0 {
+        return 0
+    }
+    let mut bad: i32 = 0
+    if ok == 2 {
+        bad = 1
+    }
+    let rhs: i32 = m[0].arena.nodes[s0].b
+    if mlg_vec_rhs(m, rhs, st, elem, &bad) == 0 or bad == 1 or m[0].err != 0 {
+        return 0
+    }
+    let ol: i32 = mlg_find_local(m, mlg_ns(m, tb), mlg_ne(m, tb))
+    mlg_line(m)
+    mlg_s(m, "// flow: vectorized elementwise f32 loop (VF=4)")
+    mlg_nl(m)
+    let lo: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
+    let hi: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].b)
+    let lb: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, lb)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_v(m, lo)
+    mlg_s(m, " : i32 to index")
+    mlg_nl(m)
+    let ub: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, ub)
+    mlg_s(m, " = arith.index_cast ")
+    mlg_v(m, hi)
+    mlg_s(m, " : i32 to index")
+    mlg_nl(m)
+    let c1: i32 = mlg_emit_idx_const(m, 1)
+    let c4: i32 = mlg_emit_idx_const(m, 4)
+    let n: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, n)
+    mlg_s(m, " = arith.subi ")
+    mlg_v(m, ub)
+    mlg_s(m, ", ")
+    mlg_v(m, lb)
+    mlg_s(m, " : index")
+    mlg_nl(m)
+    let rem: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, rem)
+    mlg_s(m, " = arith.remsi ")
+    mlg_v(m, n)
+    mlg_s(m, ", ")
+    mlg_v(m, c4)
+    mlg_s(m, " : index")
+    mlg_nl(m)
+    let nv: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, nv)
+    mlg_s(m, " = arith.subi ")
+    mlg_v(m, n)
+    mlg_s(m, ", ")
+    mlg_v(m, rem)
+    mlg_s(m, " : index")
+    mlg_nl(m)
+    let vub: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, vub)
+    mlg_s(m, " = arith.addi ")
+    mlg_v(m, lb)
+    mlg_s(m, ", ")
+    mlg_v(m, nv)
+    mlg_s(m, " : index")
+    mlg_nl(m)
+    let ivv: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_s(m, "scf.for ")
+    mlg_v(m, ivv)
+    mlg_s(m, " = ")
+    mlg_v(m, lb)
+    mlg_s(m, " to ")
+    mlg_v(m, vub)
+    mlg_s(m, " step ")
+    mlg_v(m, c4)
+    mlg_s(m, " {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    let nloc0: i32 = m[0].nloc
+    mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, ivv)
+    let vv: i32 = mlg_vec_emit(m, rhs, ivv, elem)
+    mlg_line(m)
+    mlg_s(m, "vector.transfer_write ")
+    mlg_v(m, vv)
+    mlg_s(m, ", ")
+    mlg_v(m, m[0].l_ssa[ol])
+    mlg_s(m, "[")
+    mlg_v(m, ivv)
+    mlg_s(m, "] {in_bounds = [true]} : vector<4x")
+    mlg_put_type(m, elem)
+    mlg_s(m, ">, ")
+    mlg_put_type(m, m[0].l_mt[ol])
+    mlg_nl(m)
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+    let ivs: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_s(m, "scf.for ")
+    mlg_v(m, ivs)
+    mlg_s(m, " = ")
+    mlg_v(m, vub)
+    mlg_s(m, " to ")
+    mlg_v(m, ub)
+    mlg_s(m, " step ")
+    mlg_v(m, c1)
+    mlg_s(m, " {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, ivs)
+    let saved: i32 = m[0].inside_scf_for
+    m[0].inside_scf_for = 1
+    mlg_emit_assign(m, s0)
+    m[0].inside_scf_for = saved
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+    m[0].nloc = nloc0
+    return 1
+}
+
 function mlg_emit_for(m: ptr<Mlg>, st: i32) {
     if mlg_for_is_parallel(m, st) == 1 {
         mlg_refuse(m, st, "parallel for")
         return
     }
     if mlg_try_linalg(m, st) == 1 {
+        return
+    }
+    if mlg_try_vectorize(m, st) == 1 or m[0].err != 0 {
         return
     }
     # Reusing an earlier loop's variable is fine (Python rebinds it); a loop
@@ -6391,6 +7691,62 @@ function mlg_emit_struct(m: ptr<Mlg>, s: i32) {
 }
 
 # Python generate_const for literal values.
+function mlg_const_lit_ok(m: ptr<Mlg>, v: i32) -> i32
+
+# An integer literal as Python's _fold_const_binary reads an operand: a
+# literal, a cast of one, or a negated one. Clears *ok otherwise.
+function mlg_fold_operand(m: ptr<Mlg>, e: i32, ok: ptr<i32>) -> i64 {
+    let mut x: i32 = e
+    if mlg_kind(m, x) == AST_CAST and mlg_kind(m, m[0].arena.nodes[x].a) == AST_INT {
+        x = m[0].arena.nodes[x].a
+    }
+    let mut neg: i32 = 0
+    if mlg_kind(m, x) == AST_UNARY and m[0].arena.nodes[x].ival == TOK_MINUS and mlg_kind(m, m[0].arena.nodes[x].a) == AST_INT {
+        x = m[0].arena.nodes[x].a
+        neg = 1
+    }
+    if mlg_kind(m, x) != AST_INT {
+        ok[0] = 0
+        return 0
+    }
+    let mut iok: i32 = 1
+    let v: i64 = mlg_int_value(m, x, &iok)
+    if iok == 0 {
+        ok[0] = 0
+        return 0
+    }
+    if neg == 1 {
+        return 0 - v
+    }
+    return v
+}
+
+# Python _fold_const_binary: one operator over two integer literals.
+function mlg_fold_binop(m: ptr<Mlg>, e: i32, ok: ptr<i32>) -> i64 {
+    if mlg_kind(m, e) != AST_BINOP {
+        ok[0] = 0
+        return 0
+    }
+    let l: i64 = mlg_fold_operand(m, m[0].arena.nodes[e].a, ok)
+    let r: i64 = mlg_fold_operand(m, m[0].arena.nodes[e].b, ok)
+    if ok[0] == 0 {
+        return 0
+    }
+    let op: i32 = m[0].arena.nodes[e].ival
+    if op == TOK_PLUS { return l + r }
+    if op == TOK_MINUS { return l - r }
+    if op == TOK_STAR { return l * r }
+    if op == TOK_SLASH and r != 0 { return l / r }
+    if op == TOK_PERCENT and r != 0 { return l - (l / r) * r }
+    if op == TOK_SHL and r >= 0 and r < 63 { return l << r }
+    if op == TOK_SHR and r >= 0 and r < 63 { return l >> r }
+    if op == TOK_AMP { return l & r }
+    if op == TOK_BAR { return l | r }
+    if op == TOK_CARET { return l ^ r }
+    ok[0] = 0
+    return 0
+}
+
 function mlg_emit_const(m: ptr<Mlg>, c: i32) {
     let ty: i32 = m[0].arena.nodes[c].a
     let v: i32 = m[0].arena.nodes[c].b
@@ -6420,8 +7776,123 @@ function mlg_emit_const(m: ptr<Mlg>, c: i32) {
         mlg_nl(m)
         return
     }
-    if t == MT_PTR or mlg_is_null(m, v) == 1 {
+    let direct: i32 = mlg_const_lit_ok(m, v)
+    if direct == 1 and (t == MT_PTR or mlg_is_null(m, v) == 1) {
         mlg_s(m, "() : !llvm.ptr")
+        mlg_nl(m)
+        return
+    }
+    if direct == 0 {
+        # Python's second path: a cast-wrapped literal, a negated literal or
+        # an integer expression it folds; anything else starts at zero.
+        let mut u: i32 = v
+        if mlg_kind(m, u) == AST_CAST {
+            let ui: i32 = m[0].arena.nodes[u].a
+            let uk: i32 = mlg_kind(m, ui)
+            if uk == AST_INT or uk == AST_FLOAT or uk == AST_BOOL or uk == AST_STRING or mlg_is_null(m, ui) == 1 {
+                u = ui
+            }
+        }
+        let mut fneg: i32 = 0
+        if mlg_kind(m, u) == AST_UNARY and m[0].arena.nodes[u].ival == TOK_MINUS {
+            let un: i32 = m[0].arena.nodes[u].a
+            let unk: i32 = mlg_kind(m, un)
+            if unk == AST_INT or unk == AST_FLOAT or unk == AST_BOOL or unk == AST_STRING {
+                u = un
+                fneg = 1
+            }
+        }
+        let fk: i32 = mlg_kind(m, u)
+        let mut fok: i32 = 0
+        let mut fval: i64 = 0
+        if fk == AST_BINOP {
+            fok = 1
+            fval = mlg_fold_binop(m, u, &fok)
+        }
+        let is_lit: i32 = fok
+        if fk == AST_INT or fk == AST_FLOAT or fk == AST_BOOL or mlg_is_null(m, u) == 1 {
+            if t == MT_PTR or mlg_is_null(m, u) == 1 {
+                mlg_s(m, "() : !llvm.ptr")
+                mlg_nl(m)
+                return
+            }
+            mlg_s(m, "(")
+            if mlg_ft_name_is(m, ty, "bool") == 1 {
+                let mut bv: i32 = 0
+                if fk == AST_BOOL {
+                    bv = m[0].arena.nodes[u].ival
+                } else {
+                    if fk == AST_INT {
+                        let mut bok: i32 = 1
+                        if mlg_int_value(m, u, &bok) == 1 and fneg == 0 {
+                            bv = 1
+                        }
+                    }
+                }
+                mlg_i(m, bv)
+            } else {
+                if fk == AST_BOOL {
+                    if m[0].arena.nodes[u].ival != 0 {
+                        mlg_s(m, "true")
+                    } else {
+                        mlg_s(m, "false")
+                    }
+                }
+                if fk == AST_FLOAT {
+                    mlg_put_float_text(m, u, t, fneg)
+                }
+                if fk == AST_INT {
+                    let mut iok2: i32 = 1
+                    let mut n2: i64 = mlg_int_value(m, u, &iok2)
+                    if iok2 == 0 {
+                        mlg_refuse(m, c, "const integer literal form")
+                        return
+                    }
+                    if fneg == 1 {
+                        n2 = 0 - n2
+                    }
+                    if t == MT_I32 and n2 > 2147483647 {
+                        n2 = n2 - 4294967296
+                    }
+                    mlg_i64(m, n2)
+                }
+            }
+            mlg_s(m, " : ")
+            mlg_put_type(m, t)
+            mlg_s(m, ") : ")
+            mlg_put_type(m, t)
+            mlg_nl(m)
+            return
+        }
+        if t == MT_PTR {
+            mlg_refuse(m, c, "pointer const Python zero-fills with an integer")
+            return
+        }
+        mlg_s(m, "(")
+        if is_lit == 1 {
+            if mlg_ft_name_is(m, ty, "bool") == 1 {
+                if fval == 1 {
+                    mlg_s(m, "1")
+                } else {
+                    mlg_s(m, "0")
+                }
+            } else {
+                if t == MT_I32 and fval > 2147483647 {
+                    fval = fval - 4294967296
+                }
+                mlg_i64(m, fval)
+            }
+        } else {
+            if mlg_is_float_mt(t) == 1 {
+                mlg_s(m, "0.0")
+            } else {
+                mlg_s(m, "0")
+            }
+        }
+        mlg_s(m, " : ")
+        mlg_put_type(m, t)
+        mlg_s(m, ") : ")
+        mlg_put_type(m, t)
         mlg_nl(m)
         return
     }
@@ -6969,10 +8440,6 @@ function mlg_resolve_const_value(m: ptr<Mlg>, e: i32, depth: i32) -> i32 {
     if mlg_kind(m, v) == AST_IDENT and mlg_is_null(m, v) == 0 {
         return mlg_resolve_const_value(m, v, depth + 1)
     }
-    if mlg_kind(m, v) == AST_BINOP {
-        mlg_refuse(m, e, "static initialized from a folded const expression")
-        return AST_NONE
-    }
     return v
 }
 
@@ -7150,14 +8617,36 @@ function mlg_emit_static(m: ptr<Mlg>, d: i32) {
             rv = cv
         }
     }
+    let mut fok: i32 = 0
+    let mut fval: i64 = 0
     if mlg_kind(m, rv) == AST_BINOP {
-        mlg_refuse(m, d, "static initialized by an expression Python folds")
-        return
+        fok = 1
+        fval = mlg_fold_binop(m, rv, &fok)
     }
     let rk: i32 = mlg_kind(m, rv)
     mlg_line(m)
     mlg_s(m, "llvm.mlir.global internal @")
     mlg_span(m, ns, ne)
+    if fok == 1 {
+        # Python _fold_const_binary gives an integer Literal.
+        mlg_s(m, "(")
+        if t == MT_I1 {
+            if fval == 1 {
+                mlg_s(m, "1")
+            } else {
+                mlg_s(m, "0")
+            }
+        } else {
+            if t == MT_I32 and fval > 2147483647 {
+                fval = fval - 4294967296
+            }
+            mlg_i64(m, fval)
+        }
+        mlg_s(m, " : ")
+        mlg_put_type(m, t)
+        mlg_s(m, ") : ")
+        mlg_put_type(m, t)
+    } else {
     if rk == AST_INT or rk == AST_FLOAT or rk == AST_BOOL {
         mlg_s(m, "(")
         if rk == AST_BOOL {
@@ -7200,6 +8689,7 @@ function mlg_emit_static(m: ptr<Mlg>, d: i32) {
             }
         }
     }
+    }
     mlg_nl(m)
 }
 
@@ -7210,10 +8700,6 @@ function mlg_add_const(m: ptr<Mlg>, d: i32) {
     }
     if m[0].arena.nodes[d].a == AST_NONE {
         mlg_refuse(m, d, "const without a type")
-        return
-    }
-    if mlg_const_lit_ok(m, m[0].arena.nodes[d].b) == 0 {
-        mlg_refuse(m, d, "const whose value is not a literal")
         return
     }
     m[0].c_node[m[0].nconst] = d
@@ -7503,7 +8989,9 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         mod_start: mod_start, nmods: nmods, mod_names: mod_names, mod_stride: mod_stride,
         nl_ns: mlg_alloc_i32(MLG_MAX_FNS), nl_ne: mlg_alloc_i32(MLG_MAX_FNS),
         nl_tag: mlg_alloc_i32(MLG_MAX_FNS), nnl: 0,
-        sv_node: mlg_alloc_i32(MLG_MAX_FNS), nsv: 0
+        sv_node: mlg_alloc_i32(MLG_MAX_FNS), nsv: 0,
+        span_st: 0 - 1, sp_elem: mlg_alloc_i32(MLG_MAX_FNS), sp_node: mlg_alloc_i32(MLG_MAX_FNS),
+        nsp: 0, i64_ft: AST_NONE
     }
     let m: ptr<Mlg> = &mg
     mlg_collect(m, root)
