@@ -105,11 +105,12 @@ This moves stdlib completion items in `completion` ids 9, 11 and 13.
 
 ## 7. The dynamics DSL
 
-The Python server expanded `dyn.` blocks before indexing, so the loop
-variable `i` in `fixtures/dsl.flow` had a binding (hover id 43). flowc has
-no dynamics expansion yet (open PR #999), the file does not parse, and
-the native hover is `null`. Keyword hover over the same file is the same
-in both.
+The Python server expanded `dyn.` blocks before indexing but parsed the
+raw text for diagnostics, so `fixtures/dsl.flow` got a parse error on
+`dyn.dsys` while hover still worked. The native server runs flowc's
+expansions (Field DSL, dynamics DSL, flow blocks) before both, as flowc
+does when it compiles the file, and reports no error (`hover`,
+`completion`).
 
 ## 8. Formatting
 
