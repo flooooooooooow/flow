@@ -1,0 +1,29 @@
+$ flow pkg run
+[0;34mℹ️  Compiling @ROOT@/build/pkg-commands/pkg_run/src/main.flow (host=flowc)...[0m
+[0;34mℹ️  flowc emit via FLOWC
+[0;32m✅ FLOW → C: main.c[0m
+[0;32m✅ C → Executable: main[0m
+[0;32m✅ 🚀 Ready to run: @ROOT@/build/run.XXXXXX/main[0m
+[0;34mℹ️  Running main...[0m
+----------------------------------------
+hello from the project
+----------------------------------------
+[0;32m✅ Program finished[0m
+Exit code: 0
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "runs"
+  | version = "0.3.1"
+  | description = "Test package runs"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 
+D ./src
+F ./src/main.flow
+  | function main() -> i32 {
+  |     printf("hello from the project\n")
+  |     return 0
+  | }

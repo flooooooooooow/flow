@@ -1,0 +1,13 @@
+$ flow publish
+[91mPackage is outside the Flow repo. Pass --git <url> [--tag vX.Y.Z] to publish.[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "outsider"
+  | version = "0.3.1"
+  | description = "Test package outsider"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 

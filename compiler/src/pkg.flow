@@ -1,10 +1,11 @@
 # @module flowc.pkg
 # @means  Flow package manager: registry index, version selection,
-#         install into flow_packages/, flow.lock, `add`, `sync`, `search`
-#         and `info`.
+#         install into flow_packages/, flow.lock, `add`, `sync`, `search`,
+#         `info`, `init`, `publish`, `build`, `run`, `build-native`,
+#         `run-native` and `clean`.
 #
-# This is the package manager that src/flow/package.py used to be for these
-# commands, ported rule for rule so that flow.lock and flow_packages/ come out
+# This is the package manager that src/flow/package.py and registry.py used
+# to be, ported rule for rule so that flow.lock and flow_packages/ come out
 # byte-identical. Flow programs cannot spawn processes with arguments, so the
 # few steps that need another program (git, curl, tar, cp) go through
 # scripts/tools/pkg_fetch.sh. Every decision stays here: which command to run,
@@ -1539,4 +1540,763 @@ export function pm_info(pm: ptr<Pm>, name: string) -> bool {
         say(str_cat("  latest:      ", pv_version(pm, latest)))
     }
     return true
+}
+
+# ---------------------------------------------------------------------------
+# init, publish, build, run, build-native, run-native, clean
+#
+# The rest of src/flow/package.py and src/flow/registry.py, ported with the
+# same messages and files. scripts/check_pkg_commands.sh holds the goldens
+# recorded from the Python version.
+# ---------------------------------------------------------------------------
+
+const ELLIPSIS: string = "\xe2\x80\xa6"
+
+function pkg_table(pm: ptr<Pm>, cfg: i32, key: string) -> i32 {
+    let v: i32 = jd_get(pm[0].d, cfg, key)
+    if v < 0 {
+        return jd_obj(pm[0].d)
+    }
+    return v
+}
+
+# FlowPackage.from_toml's list fields: native.get(key, []).
+function cfg_list(pm: ptr<Pm>, tbl: i32, key: string) -> i32 {
+    let v: i32 = jd_get(pm[0].d, tbl, key)
+    if v < 0 or jd_kind(pm[0].d, v) != JV_ARR {
+        return jd_arr(pm[0].d)
+    }
+    return v
+}
+
+function arr_has_str(pm: ptr<Pm>, arr: i32, s: string) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    let mut c: i32 = jd_first(d, arr)
+    while c >= 0 {
+        if str_eq(jd_sval(d, c), s) {
+            return true
+        }
+        c = jd_next(d, c)
+    }
+    return false
+}
+
+function arr_extend_str(pm: ptr<Pm>, dst: i32, src: i32) {
+    let d: ptr<JDoc> = pm[0].d
+    let mut c: i32 = jd_first(d, src)
+    while c >= 0 {
+        args_push(pm, dst, jd_py_str_s(d, c))
+        c = jd_next(d, c)
+    }
+}
+
+# Contents of a file written by a child process, "" when there is none.
+function read_or_empty(path: string) -> string {
+    if path_exists(path) == false {
+        return ""
+    }
+    return read_text(path)
+}
+
+# Run argv (an array node of strings). With errfile set, stdout is discarded
+# and stderr kept in errfile (subprocess.run with capture_output); otherwise
+# both pass through. Returns the exit status.
+function run_argv(pm: ptr<Pm>, argv: i32, errfile: string) -> i32 {
+    let d: ptr<JDoc> = pm[0].d
+    let sb: ptr<SBuf> = sb_new()
+    let mut c: i32 = jd_first(d, argv)
+    let mut first: bool = true
+    while c >= 0 {
+        if first == false {
+            sb_putc(sb, 32)
+        }
+        first = false
+        shell_quote(sb, jd_sval(d, c))
+        c = jd_next(d, c)
+    }
+    if str_len(errfile) > 0 {
+        sb_puts(sb, " >/dev/null 2>")
+        shell_quote(sb, errfile)
+    }
+    let _f: i32 = fflush(null)
+    let st: i32 = flowc_io_system(sb_str(sb))
+    if st < 0 {
+        return 255
+    }
+    if st % 256 != 0 {
+        return 128 + st % 128
+    }
+    return (st / 256) % 256
+}
+
+# ' '.join(cmd)
+function join_plain(pm: ptr<Pm>, argv: i32) -> string {
+    let d: ptr<JDoc> = pm[0].d
+    let sb: ptr<SBuf> = sb_new()
+    let mut c: i32 = jd_first(d, argv)
+    let mut first: bool = true
+    while c >= 0 {
+        if first == false {
+            sb_putc(sb, 32)
+        }
+        first = false
+        sb_puts(sb, jd_sval(d, c))
+        c = jd_next(d, c)
+    }
+    return sb_str(sb)
+}
+
+# Run a captured command; on failure print the header and its stderr.
+function run_or_report(pm: ptr<Pm>, argv: i32, header: string) -> bool {
+    let errfile: string = temp_path("flow-pkg-stderr")
+    let rc: i32 = run_argv(pm, argv, errfile)
+    let err: string = read_or_empty(errfile)
+    rmtree(pm, errfile)
+    if rc != 0 {
+        say_color(RED, header)
+        say(err)
+        return false
+    }
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
+
+export function pm_init(pm: ptr<Pm>, name_arg: string) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    if path_exists(config_file(pm)) {
+        say_color(YELLOW, "Project already initialized (flow.toml exists)")
+        return false
+    }
+    let mut name: string = name_arg
+    if str_len(name) == 0 {
+        name = path_name(pm[0].project_dir)
+    }
+    let root: i32 = jd_obj(d)
+    let pkg: i32 = jd_obj(d)
+    jd_set(d, pkg, "name", jd_str(d, name))
+    jd_set(d, pkg, "description", jd_str(d, "A FLOW project"))
+    jd_set(d, root, "package", pkg)
+    let _w: bool = write_text(config_file(pm), to_toml(pm, root))
+    say_color(GREEN, str_cat(CHECK, " Created flow.toml"))
+
+    let src_dir: string = path_join(pm[0].project_dir, "src")
+    if path_is_dir(src_dir) == false {
+        let _m: i32 = flowc_io_mkdir(src_dir)
+    }
+    let main_file: string = path_join(src_dir, "main.flow")
+    if path_exists(main_file) == false {
+        let sb: ptr<SBuf> = sb_new()
+        sb_puts(sb, "# ")
+        sb_puts(sb, name)
+        sb_puts(sb, " - A FLOW project\n\nfunction main() -> i32 {\n    printf(\"Hello from ")
+        sb_puts(sb, name)
+        sb_puts(sb, "!\\n\")\n    return 0\n}\n")
+        let _w2: bool = write_text(main_file, sb_str(sb))
+        say_color(GREEN, str_cat(CHECK, " Created src/main.flow"))
+    }
+    let gitignore: string = path_join(pm[0].project_dir, ".gitignore")
+    if path_exists(gitignore) == false {
+        let _w3: bool = write_text(gitignore, "# FLOW build artifacts\nbuild/\nflow_packages/\n*.o\n*.so\n*.dylib\n\n# Editor files\n.vscode/\n.idea/\n*.swp\n*~\n")
+        say_color(GREEN, str_cat(CHECK, " Created .gitignore"))
+    }
+    say(str_cat3(str_cat3("\n", BOLD, "Project '"), name, str_cat("' initialized!", RESET)))
+    say("\nNext steps:")
+    say(str_cat3(str_cat3("  ", BLUE, "cd "), name, RESET))
+    say(str_cat3("  ", BLUE, str_cat("flow run src/main.flow", RESET)))
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# publish (registry.py's publish_local)
+# ---------------------------------------------------------------------------
+
+# registry.parse_semver's int(): the component's value, 0 when it is not one.
+function semver_part(s: string) -> i32 {
+    let t: string = str_strip(s)
+    let p: ptr<u8> = t as ptr<u8>
+    let n: i32 = str_len(t)
+    let mut i: i32 = 0
+    if n > 0 and (p[0] == 43 or p[0] == 45) {
+        i = 1
+    }
+    if i >= n {
+        return 0
+    }
+    let mut v: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c < 48 or c > 57 {
+            return 0
+        }
+        v = v * 10 + (c - 48)
+        i = i + 1
+    }
+    if p[0] == 45 {
+        return 0 - v
+    }
+    return v
+}
+
+# parse_semver into out[0..3]: leading X.Y.Z, junk after it ignored.
+function semver_key(v: string, out: ptr<i32>) {
+    let mut core: string = str_strip(v)
+    while str_starts(core, "v") {
+        core = str_slice(core, 1, str_len(core))
+    }
+    let plus: i32 = str_find_byte(core, 43)
+    if plus >= 0 {
+        core = str_slice(core, 0, plus)
+    }
+    let dash: i32 = str_find_byte(core, 45)
+    if dash >= 0 {
+        core = str_slice(core, 0, dash)
+    }
+    let n: i32 = str_len(core)
+    let p: ptr<u8> = core as ptr<u8>
+    out[0] = 0
+    out[1] = 0
+    out[2] = 0
+    let mut k: i32 = 0
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n and k < 3 {
+        if i == n or p[i] == 46 {
+            out[k] = semver_part(str_slice(core, start, i))
+            k = k + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+}
+
+function semver_key_cmp(a: ptr<i32>, b: ptr<i32>) -> i32 {
+    let mut i: i32 = 0
+    while i < 3 {
+        if a[i] < b[i] {
+            return -1
+        }
+        if a[i] > b[i] {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# str(obj.get(key, dflt))
+function obj_str(pm: ptr<Pm>, obj: i32, key: string, dflt: string) -> string {
+    let v: i32 = jd_get(pm[0].d, obj, key)
+    if v < 0 {
+        return dflt
+    }
+    return jd_py_str_s(pm[0].d, v)
+}
+
+# obj.pop(key): unlink the member and return its value, or -1.
+function obj_pop(d: ptr<JDoc>, obj: i32, key: string) -> i32 {
+    let mut prev: i32 = -1
+    let mut c: i32 = d[0].first[obj]
+    while c >= 0 {
+        if str_eq(d[0].sval[c], key) {
+            if prev < 0 {
+                d[0].first[obj] = d[0].next[c]
+            } else {
+                d[0].next[prev] = d[0].next[c]
+            }
+            d[0].next[c] = -1
+            return d[0].first[c]
+        }
+        prev = c
+        c = d[0].next[c]
+    }
+    return -1
+}
+
+# obj.setdefault(key, dflt)
+function obj_setdefault(d: ptr<JDoc>, obj: i32, key: string, dflt: i32) -> i32 {
+    if jd_has(d, obj, key) {
+        return jd_get(d, obj, key)
+    }
+    jd_set(d, obj, key, dflt)
+    return dflt
+}
+
+# FlowRegistry.publish_local: register a version in the local index.json.
+function publish_local(pm: ptr<Pm>, index_path: string, name: string, version: string, description: string, license: string, path: string, git: string, tag: string) {
+    let d: ptr<JDoc> = pm[0].d
+    let data: i32 = load_index_file(pm, index_path)
+    if jd_has(d, data, "crates") and jd_has(d, data, "packages") == false {
+        jd_set(d, data, "packages", obj_pop(d, data, "crates"))
+    }
+    if jd_has(d, data, "packets") and jd_has(d, data, "packages") == false {
+        jd_set(d, data, "packages", obj_pop(d, data, "packets"))
+    }
+    let packages: i32 = obj_setdefault(d, data, "packages", jd_obj(d))
+    if jd_truthy(d, jd_get(d, data, "name")) == false {
+        jd_set(d, data, "name", jd_str(d, "flow-packages"))
+    }
+    let fresh: i32 = jd_obj(d)
+    jd_set(d, fresh, "description", jd_str(d, description))
+    jd_set(d, fresh, "homepage", jd_str(d, ""))
+    jd_set(d, fresh, "license", jd_str(d, license))
+    jd_set(d, fresh, "versions", jd_arr(d))
+    let entry: i32 = obj_setdefault(d, packages, name, fresh)
+    if str_len(description) > 0 {
+        jd_set(d, entry, "description", jd_str(d, description))
+    }
+    if str_len(license) > 0 {
+        jd_set(d, entry, "license", jd_str(d, license))
+    }
+    let old: i32 = obj_setdefault(d, entry, "versions", jd_arr(d))
+
+    # The kept versions and the new one, as node ids.
+    let total: i32 = jd_count(d, old) + 1
+    let ids: ptr<i32> = malloc(((total + 1) as i64) * 4) as ptr<i32>
+    let keys: ptr<i32> = malloc(((total + 1) as i64) * 12) as ptr<i32>
+    let order: ptr<i32> = malloc(((total + 1) as i64) * 4) as ptr<i32>
+    let mut n: i32 = 0
+    let mut c: i32 = jd_first(d, old)
+    while c >= 0 {
+        if str_eq(obj_str(pm, c, "version", "None"), version) == false {
+            ids[n] = c
+            n = n + 1
+        }
+        c = jd_next(d, c)
+    }
+    let ver: i32 = jd_obj(d)
+    jd_set(d, ver, "version", jd_str(d, version))
+    jd_set(d, ver, "yanked", jd_add(d, JV_BOOL, "", 0))
+    if str_len(path) > 0 {
+        jd_set(d, ver, "path", jd_str(d, path))
+    }
+    if str_len(git) > 0 {
+        jd_set(d, ver, "git", jd_str(d, git))
+        if str_len(tag) > 0 {
+            jd_set(d, ver, "tag", jd_str(d, tag))
+        }
+    }
+    ids[n] = ver
+    n = n + 1
+
+    # versions.sort(key=parse_semver, reverse=True): stable, highest first.
+    let mut i: i32 = 0
+    while i < n {
+        semver_key(obj_str(pm, ids[i], "version", "0"), keys + i * 3)
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        let mut j: i32 = i
+        while j > 0 and semver_key_cmp(keys + order[j - 1] * 3, keys + i * 3) < 0 {
+            order[j] = order[j - 1]
+            j = j - 1
+        }
+        order[j] = i
+        i = i + 1
+    }
+    let sorted: i32 = jd_arr(d)
+    i = 0
+    while i < n {
+        let node: i32 = ids[order[i]]
+        d[0].next[node] = -1
+        jd_append(d, sorted, node)
+        i = i + 1
+    }
+    jd_set(d, entry, "versions", sorted)
+
+    mkdirs(path_parent(index_path))
+    let sb: ptr<SBuf> = sb_new()
+    jd_dump_json(d, data, sb, 0)
+    sb_putc(sb, 10)
+    let _w: bool = write_text(index_path, sb_str(sb))
+}
+
+# Path.relative_to: p below root, "." for root itself, "" when outside.
+function relative_to(p: string, root: string) -> string {
+    if str_eq(p, root) {
+        return "."
+    }
+    let mut prefix: string = root
+    if str_ends(root, "/") == false {
+        prefix = str_cat(root, "/")
+    }
+    if str_starts(p, prefix) {
+        return str_slice(p, str_len(prefix), str_len(p))
+    }
+    return ""
+}
+
+export function pm_publish(pm: ptr<Pm>, git: string, tag: string, path: string, dry_run: bool) -> bool {
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let pkg: i32 = pkg_table(pm, cfg, "package")
+    let name: string = cfg_str(pm, pkg, "name", "unnamed")
+    let version: string = cfg_str(pm, pkg, "version", "0.1.0")
+    let description: string = cfg_str(pm, pkg, "description", "")
+    let license: string = cfg_str(pm, pkg, "license", "MIT")
+    let mut pub_path: string = path
+    if str_len(pub_path) == 0 and str_len(git) == 0 {
+        pub_path = relative_to(path_resolve(pm[0].project_dir), pm[0].repo_root)
+        if str_len(pub_path) == 0 {
+            say_color(RED, "Package is outside the Flow repo. Pass --git <url> [--tag vX.Y.Z] to publish.")
+            return false
+        }
+    }
+    say_color(BLUE, str_cat3(str_cat3("Publishing ", name, "@"), version, ELLIPSIS))
+    if str_len(pub_path) > 0 {
+        say(str_cat("  source: ", pub_path))
+    } else {
+        say(str_cat("  source: ", git))
+    }
+    if dry_run {
+        say_color(YELLOW, "dry-run: index not written")
+        return true
+    }
+    let override: string = pkg_env("FLOW_REGISTRY_PATH")
+    let mut index_path: string = path_join(pm[0].repo_root, "registry/index.json")
+    if str_len(override) > 0 {
+        index_path = path_resolve(expand_user(override))
+    }
+    # FlowRegistry() loads the index (or fetches FLOW_REGISTRY_URL) first.
+    registry(pm)
+    publish_local(pm, index_path, name, version, description, license, pub_path, git, tag)
+    say_color(GREEN, str_cat3(CHECK, " Registered in ", index_path))
+    say(str_cat3("\nNext: commit the index change (or open a PR) so others can ", BLUE, str_cat3("flow add ", name, RESET)))
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# build, run, clean
+# ---------------------------------------------------------------------------
+
+function build_dir(pm: ptr<Pm>) -> string {
+    return path_join(pm[0].project_dir, "build")
+}
+
+function config_entry(pm: ptr<Pm>, cfg: i32) -> string {
+    return cfg_str(pm, pkg_table(pm, cfg, "package"), "entry", "src/main.flow")
+}
+
+function config_name(pm: ptr<Pm>, cfg: i32) -> string {
+    return cfg_str(pm, pkg_table(pm, cfg, "package"), "name", "unnamed")
+}
+
+export function pm_build(pm: ptr<Pm>) -> bool {
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let entry: string = config_entry(pm, cfg)
+    let name: string = config_name(pm, cfg)
+    let entry_file: string = path_normalize(path_join(pm[0].project_dir, entry))
+    if path_exists(entry_file) == false {
+        say_color(RED, str_cat("Entry file not found: ", entry))
+        return false
+    }
+    if path_is_dir(build_dir(pm)) == false {
+        let _m: i32 = flowc_io_mkdir(build_dir(pm))
+    }
+    say_color(BLUE, str_cat3("Building ", name, "..."))
+    let argv: i32 = args1(pm, path_join(pm[0].repo_root, "flow"))
+    args_push(pm, argv, "compile")
+    args_push(pm, argv, entry_file)
+    if run_or_report(pm, argv, "Build failed:") == false {
+        return false
+    }
+    say_color(GREEN, str_cat3(CHECK, " Built ", name))
+    return true
+}
+
+export function pm_run(pm: ptr<Pm>) -> bool {
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let entry: string = config_entry(pm, cfg)
+    let entry_file: string = path_normalize(path_join(pm[0].project_dir, entry))
+    if path_exists(entry_file) == false {
+        say_color(RED, str_cat("Entry file not found: ", entry))
+        return false
+    }
+    let argv: i32 = args1(pm, path_join(pm[0].repo_root, "flow"))
+    args_push(pm, argv, "run")
+    args_push(pm, argv, entry_file)
+    return run_argv(pm, argv, "") == 0
+}
+
+export function pm_clean(pm: ptr<Pm>) -> bool {
+    if path_exists(build_dir(pm)) {
+        rmtree(pm, build_dir(pm))
+        say_color(GREEN, str_cat(CHECK, " Cleaned build/"))
+    }
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# build-native, run-native
+# ---------------------------------------------------------------------------
+
+# Path(p).stem
+function path_stem(p: string) -> string {
+    let name: string = path_name(p)
+    let dot: i32 = str_rfind_byte(name, 46)
+    if dot > 0 and dot < str_len(name) - 1 {
+        return str_slice(name, 0, dot)
+    }
+    return name
+}
+
+function is_cxx_source(s: string) -> bool {
+    return str_ends(s, ".cpp") or str_ends(s, ".cc") or str_ends(s, ".cxx") or str_ends(s, ".mm")
+}
+
+# FlowPackageManager._collect_dependency_native: native sources and flags of
+# the installed dependencies, in dependency order, into the five arrays.
+function collect_dependency_native(pm: ptr<Pm>, cfg: i32, sources: i32, frameworks: i32, libs: i32, cflags: i32, ldflags: i32) {
+    let d: ptr<JDoc> = pm[0].d
+    if path_exists(packages_dir(pm)) == false {
+        return
+    }
+    let deps: i32 = pkg_table(pm, cfg, "dependencies")
+    let mut m: i32 = jd_first(d, deps)
+    while m >= 0 {
+        let dep_dir: string = path_join(packages_dir(pm), jd_mem_key(d, m))
+        let dep_toml: string = path_join(dep_dir, "flow.toml")
+        if path_exists(dep_toml) {
+            let root: i32 = jd_parse_toml(d, read_text(dep_toml))
+            if root < 0 {
+                say_color(YELLOW, str_cat3(str_cat3("Warning: could not read ", dep_toml, ": "), d[0].err, ""))
+            } else {
+                let native: i32 = pkg_table(pm, root, "native")
+                let srcs: i32 = cfg_list(pm, native, "sources")
+                let mut c: i32 = jd_first(d, srcs)
+                while c >= 0 {
+                    let native_path: string = path_resolve(path_join(dep_dir, jd_py_str_s(d, c)))
+                    if arr_has_str(pm, sources, native_path) == false {
+                        if path_exists(native_path) {
+                            args_push(pm, sources, native_path)
+                        } else {
+                            say_color(YELLOW, str_cat("Warning: dep native source not found: ", native_path))
+                        }
+                    }
+                    c = jd_next(d, c)
+                }
+                let fws: i32 = cfg_list(pm, native, "frameworks")
+                c = jd_first(d, fws)
+                while c >= 0 {
+                    if arr_has_str(pm, frameworks, jd_py_str_s(d, c)) == false {
+                        args_push(pm, frameworks, jd_py_str_s(d, c))
+                    }
+                    c = jd_next(d, c)
+                }
+                let ls: i32 = cfg_list(pm, native, "libs")
+                c = jd_first(d, ls)
+                while c >= 0 {
+                    if arr_has_str(pm, libs, jd_py_str_s(d, c)) == false {
+                        args_push(pm, libs, jd_py_str_s(d, c))
+                    }
+                    c = jd_next(d, c)
+                }
+                arr_extend_str(pm, cflags, cfg_list(pm, native, "cflags"))
+                arr_extend_str(pm, ldflags, cfg_list(pm, native, "ldflags"))
+            }
+        }
+        m = jd_next(d, m)
+    }
+}
+
+# FLAG ITEM pairs ("-framework F", "-l LIB") for each distinct item of a,
+# then of b.
+function push_flag_pairs(pm: ptr<Pm>, argv: i32, flag: string, a: i32, b: i32) {
+    let d: ptr<JDoc> = pm[0].d
+    let seen: i32 = jd_arr(d)
+    let mut pass: i32 = 0
+    while pass < 2 {
+        let mut list: i32 = a
+        if pass == 1 {
+            list = b
+        }
+        let mut c: i32 = jd_first(d, list)
+        while c >= 0 {
+            let s: string = jd_py_str_s(d, c)
+            if arr_has_str(pm, seen, s) == false {
+                args_push(pm, seen, s)
+                args_push(pm, argv, flag)
+                args_push(pm, argv, s)
+            }
+            c = jd_next(d, c)
+        }
+        pass = pass + 1
+    }
+}
+
+function native_step(pm: ptr<Pm>, argv: i32) -> bool {
+    say_color(BLUE, str_cat("Running: ", join_plain(pm, argv)))
+    return run_or_report(pm, argv, "Native compilation failed:")
+}
+
+export function pm_build_native(pm: ptr<Pm>, entry_arg: string, release: bool) -> bool {
+    let d: ptr<JDoc> = pm[0].d
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let name: string = config_name(pm, cfg)
+    let mut src_file: string = ""
+    if str_len(entry_arg) > 0 {
+        src_file = path_normalize(entry_arg)
+    } else {
+        src_file = path_normalize(path_join(pm[0].project_dir, config_entry(pm, cfg)))
+    }
+    if path_exists(src_file) == false {
+        say_color(RED, str_cat("Entry file not found: ", src_file))
+        return false
+    }
+    let bdir: string = build_dir(pm)
+    if path_is_dir(bdir) == false {
+        let _m: i32 = flowc_io_mkdir(bdir)
+    }
+    let output_file: string = path_join(bdir, name)
+    let c_file: string = path_join(bdir, str_cat(name, ".c"))
+    say_color(BLUE, str_cat3("Building ", name, " with native support..."))
+
+    # Step 1: Flow to C with flowc.
+    let emit: i32 = args1(pm, path_join(pm[0].repo_root, "compiler/scripts/flowc_emit.sh"))
+    args_push(pm, emit, "--lenient")
+    args_push(pm, emit, path_resolve(src_file))
+    args_push(pm, emit, path_resolve(c_file))
+    if run_or_report(pm, emit, "Flow compilation failed:") == false {
+        return false
+    }
+
+    # Step 2: the Flow C output and the native sources together.
+    let dep_sources: i32 = jd_arr(d)
+    let dep_frameworks: i32 = jd_arr(d)
+    let dep_libs: i32 = jd_arr(d)
+    let dep_cflags: i32 = jd_arr(d)
+    let dep_ldflags: i32 = jd_arr(d)
+    collect_dependency_native(pm, cfg, dep_sources, dep_frameworks, dep_libs, dep_cflags, dep_ldflags)
+    let native: i32 = pkg_table(pm, cfg, "native")
+
+    let c_flags: i32 = jd_arr(d)
+    if release {
+        args_push(pm, c_flags, "-O2")
+    } else {
+        args_push(pm, c_flags, "-g")
+        args_push(pm, c_flags, "-O0")
+    }
+    arr_extend_str(pm, c_flags, dep_cflags)
+    arr_extend_str(pm, c_flags, cfg_list(pm, native, "cflags"))
+
+    let sources: i32 = args1(pm, c_file)
+    arr_extend_str(pm, sources, dep_sources)
+    let own: i32 = cfg_list(pm, native, "sources")
+    let mut c: i32 = jd_first(d, own)
+    while c >= 0 {
+        let rel: string = jd_py_str_s(d, c)
+        let native_path: string = path_join(pm[0].project_dir, rel)
+        if path_exists(native_path) {
+            args_push(pm, sources, path_resolve(native_path))
+        } else {
+            say_color(YELLOW, str_cat("Warning: native source not found: ", rel))
+        }
+        c = jd_next(d, c)
+    }
+    let mut uses_cxx: bool = false
+    c = jd_first(d, sources)
+    while c >= 0 {
+        if is_cxx_source(jd_sval(d, c)) {
+            uses_cxx = true
+        }
+        c = jd_next(d, c)
+    }
+
+    let link_flags: i32 = jd_arr(d)
+    push_flag_pairs(pm, link_flags, "-framework", dep_frameworks, cfg_list(pm, native, "frameworks"))
+    push_flag_pairs(pm, link_flags, "-l", dep_libs, cfg_list(pm, native, "libs"))
+    arr_extend_str(pm, link_flags, dep_ldflags)
+    arr_extend_str(pm, link_flags, cfg_list(pm, native, "ldflags"))
+
+    if uses_cxx {
+        # The Flow C with clang, the native sources with clang++.
+        let c_obj: string = path_join(bdir, str_cat(name, ".o"))
+        let cc: i32 = args1(pm, "clang")
+        c = jd_first(d, c_flags)
+        while c >= 0 {
+            if str_starts(jd_sval(d, c), "-std=c++") == false {
+                args_push(pm, cc, jd_sval(d, c))
+            }
+            c = jd_next(d, c)
+        }
+        args_push(pm, cc, "-c")
+        args_push(pm, cc, c_file)
+        args_push(pm, cc, "-o")
+        args_push(pm, cc, c_obj)
+        if native_step(pm, cc) == false {
+            return false
+        }
+        let objs: i32 = jd_arr(d)
+        let mut idx: i32 = 0
+        c = jd_next(d, jd_first(d, sources))
+        while c >= 0 {
+            let src: string = jd_sval(d, c)
+            let isb: ptr<SBuf> = sb_new()
+            sb_puts(isb, path_stem(src))
+            sb_putc(isb, 95)
+            sb_put_int(isb, idx as i64)
+            sb_puts(isb, ".o")
+            let obj: string = path_join(bdir, sb_str(isb))
+            let cxx: i32 = args1(pm, "clang++")
+            arr_extend_str(pm, cxx, c_flags)
+            args_push(pm, cxx, "-c")
+            args_push(pm, cxx, src)
+            args_push(pm, cxx, "-o")
+            args_push(pm, cxx, obj)
+            if native_step(pm, cxx) == false {
+                return false
+            }
+            args_push(pm, objs, obj)
+            idx = idx + 1
+            c = jd_next(d, c)
+        }
+        let link: i32 = args1(pm, "clang++")
+        args_push(pm, link, c_obj)
+        arr_extend_str(pm, link, objs)
+        arr_extend_str(pm, link, link_flags)
+        args_push(pm, link, "-o")
+        args_push(pm, link, output_file)
+        if native_step(pm, link) == false {
+            return false
+        }
+    } else {
+        let all: i32 = args1(pm, "clang")
+        arr_extend_str(pm, all, c_flags)
+        arr_extend_str(pm, all, sources)
+        arr_extend_str(pm, all, link_flags)
+        args_push(pm, all, "-o")
+        args_push(pm, all, output_file)
+        if native_step(pm, all) == false {
+            return false
+        }
+    }
+    say_color(GREEN, str_cat3(CHECK, " Built ", name))
+    return true
+}
+
+export function pm_run_native(pm: ptr<Pm>, entry_arg: string) -> bool {
+    if pm_build_native(pm, entry_arg, false) == false {
+        return false
+    }
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let name: string = config_name(pm, cfg)
+    say_color(BLUE, str_cat3("Running ", name, "..."))
+    return run_argv(pm, args1(pm, path_join(build_dir(pm), name)), "") == 0
 }

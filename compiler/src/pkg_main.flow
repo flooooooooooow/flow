@@ -1,15 +1,18 @@
 # @module flowc.pkg_main
-# @means  `flow pkg` command line: add, install, sync, search, info.
+# @means  `flow pkg` command line: add, install, sync, search, info, init,
+#         publish, build, run, build-native, run-native, clean.
 #
 # Built by flow-driver with the Stage-A compiler and run with FLOW_REPO_ROOT
 # set to the repository root (registry/index.json, lib/stdlib and the fetch
 # shim live there). Arguments follow the argparse interface the Python
-# package manager had, and so do the exit codes: install, add, search and
-# info exit 0, sync exits 1 when an install failed, usage errors exit 2.
+# package manager had, and so do the exit codes: install, add, search, info
+# and the project commands exit 0, sync exits 1 when an install failed,
+# usage errors exit 2.
 
 import .pkg {
     Pm, AddOpts,
     pm_new, pm_install, pm_sync_for_program, pm_add, pm_search, pm_info,
+    pm_init, pm_publish, pm_build, pm_run, pm_build_native, pm_run_native, pm_clean,
     looks_like_git_url, infer_git_name
 }
 import .pkg_json { str_eq, str_len, str_starts, str_slice, str_find_byte, str_cat }
@@ -21,7 +24,7 @@ extern {
     function fflush(fp: ptr<void>) -> i32
 }
 
-const USAGE: string = "usage: flow pkg {add,install,sync,search,info} ..."
+const USAGE: string = "usage: flow pkg {add,install,sync,search,info,init,publish,build,build-native,run,run-native,clean} ..."
 const ADD_USAGE: string = "usage: flow add [-h] [--version VERSION] [--git GIT] [--path PATH] [--tag TAG] [--rev REV] [--branch BRANCH] [--subdir SUBDIR] [--name DEP_NAME] [package]"
 
 function usage_error(usage: string, msg: string) -> i32 {
@@ -180,12 +183,161 @@ function cmd_add(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     return 0
 }
 
+# init, publish, build, build-native, run, run-native and clean. Like the
+# Python commands they replace, these exit 0 once the arguments parse, even
+# when the command reports an error; usage errors exit 2. `--` ends options,
+# so flow-driver can pass an entry file that starts with a dash.
+function cmd_project(argc: i32, argv: ptr<ptr<u8>>, cmd: string) -> i32 {
+    let mut usage: string = str_cat3("usage: flow ", cmd, " [-h]")
+    let mut max_pos: i32 = 0
+    let mut takes_release: bool = false
+    let is_publish: bool = str_eq(cmd, "publish")
+    if str_eq(cmd, "init") {
+        usage = "usage: flow init [-h] [name]"
+        max_pos = 1
+    }
+    if is_publish {
+        usage = "usage: flow publish [-h] [--git GIT] [--tag TAG] [--path PATH] [--dry-run]"
+    }
+    if str_eq(cmd, "build") {
+        usage = "usage: flow build [-h] [--release]"
+        takes_release = true
+    }
+    if str_eq(cmd, "build-native") {
+        usage = "usage: flow build-native [-h] [--release] [file]"
+        max_pos = 1
+        takes_release = true
+    }
+    if str_eq(cmd, "run-native") {
+        usage = "usage: flow run-native [-h] [file]"
+        max_pos = 1
+    }
+    let mut positional: string = ""
+    let mut npos: i32 = 0
+    let mut release: bool = false
+    let mut dry_run: bool = false
+    let mut git: string = ""
+    let mut tag: string = ""
+    let mut path: string = ""
+    let mut only_pos: bool = false
+    let mut i: i32 = 2
+    while i < argc {
+        let a: string = argv[i] as string
+        if only_pos == false and str_eq(a, "--") {
+            only_pos = true
+            i = i + 1
+            continue
+        }
+        if only_pos == false and str_starts(a, "-") and str_len(a) > 1 {
+            if str_eq(a, "-h") or str_eq(a, "--help") {
+                puts(usage)
+                return 0
+            }
+            let mut key: string = a
+            let mut val: string = ""
+            let mut has_val: bool = false
+            let eq: i32 = str_find_byte(a, 61)
+            if str_starts(a, "--") and eq > 0 {
+                key = str_slice(a, 0, eq)
+                val = str_slice(a, eq + 1, str_len(a))
+                has_val = true
+            }
+            let mut target: i32 = 0
+            if takes_release and (str_eq(key, "-r") or opt_is(key, "--release", 3)) {
+                target = 1
+            }
+            if is_publish {
+                if opt_is(key, "--git", 3) {
+                    target = 2
+                }
+                if opt_is(key, "--tag", 3) {
+                    target = 3
+                }
+                if opt_is(key, "--path", 3) {
+                    target = 4
+                }
+                if opt_is(key, "--dry-run", 3) {
+                    target = 5
+                }
+            }
+            if target == 0 {
+                return usage_error(usage, str_cat("unrecognized arguments: ", a))
+            }
+            if target == 1 or target == 5 {
+                if has_val {
+                    return usage_error(usage, str_cat3("argument ", key, ": ignored explicit argument"))
+                }
+                if target == 1 {
+                    release = true
+                } else {
+                    dry_run = true
+                }
+            } else {
+                if has_val == false {
+                    if i + 1 >= argc {
+                        return usage_error(usage, str_cat3("argument ", key, ": expected one argument"))
+                    }
+                    i = i + 1
+                    val = argv[i] as string
+                }
+                if target == 2 {
+                    git = val
+                }
+                if target == 3 {
+                    tag = val
+                }
+                if target == 4 {
+                    path = val
+                }
+            }
+        } else {
+            if npos >= max_pos {
+                return usage_error(usage, str_cat("unrecognized arguments: ", a))
+            }
+            positional = a
+            npos = npos + 1
+        }
+        i = i + 1
+    }
+    let pm: ptr<Pm> = pm_new(".")
+    let mut _ok: bool = true
+    if str_eq(cmd, "init") {
+        _ok = pm_init(pm, positional)
+    }
+    if is_publish {
+        _ok = pm_publish(pm, git, tag, path, dry_run)
+    }
+    if str_eq(cmd, "build") {
+        _ok = pm_build(pm)
+    }
+    if str_eq(cmd, "run") {
+        _ok = pm_run(pm)
+    }
+    if str_eq(cmd, "build-native") {
+        _ok = pm_build_native(pm, positional, release)
+    }
+    if str_eq(cmd, "run-native") {
+        _ok = pm_run_native(pm, positional)
+    }
+    if str_eq(cmd, "clean") {
+        _ok = pm_clean(pm)
+    }
+    return 0
+}
+
+function is_project_cmd(cmd: string) -> bool {
+    return str_eq(cmd, "init") or str_eq(cmd, "publish") or str_eq(cmd, "build") or str_eq(cmd, "build-native") or str_eq(cmd, "run") or str_eq(cmd, "run-native") or str_eq(cmd, "clean")
+}
+
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     if argc < 2 {
         puts(USAGE)
         return 0
     }
     let cmd: string = argv[1] as string
+    if is_project_cmd(cmd) {
+        return cmd_project(argc, argv, cmd)
+    }
     if str_eq(cmd, "add") {
         return cmd_add(argc, argv)
     }

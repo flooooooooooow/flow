@@ -183,7 +183,8 @@ flow_pkg_tool() {
         compiler/src/semver.flow compiler/src/fileio.flow
 }
 
-# Run the Flow package manager: add, install, sync, search, info.
+# Run the Flow package manager: add, install, sync, search, info, init,
+# publish, build, build-native, run, run-native, clean.
 flow_pkg_native() {
     local tool
     if ! tool="$(flow_pkg_tool)"; then
@@ -2250,84 +2251,43 @@ run_vulkan_demo_advanced() {
     "$demo_dir/run.sh"
 }
 
+# Build and run a demo project with its native sources (flow run-native in
+# demos/NAME, entry src/main.flow).
+flow_demo_run_native() {
+    local demo="$SCRIPT_DIR/demos/$1"
+    (cd "$demo" && flow_pkg_native run-native -- "$demo/src/main.flow")
+}
+
 run_vulkan_2048() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_2048_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_2048_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_2048_flow
 }
 
 run_vulkan_tetris() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_tetris_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_tetris_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_tetris_flow
 }
 
 run_vulkan_snake() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_snake_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_snake_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_snake_flow
 }
 
 run_vulkan_pong() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_pong_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_pong_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_pong_flow
 }
 
 run_vulkan_breakout() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_breakout_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_breakout_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_breakout_flow
 }
 
 run_vulkan_layout() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_layout_flow
 }
 
 run_vulkan_layout_dsl() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_layout_dsl_flow/src/main.flow')
-"
+    flow_demo_run_native vulkan_layout_dsl_flow
 }
 
 run_ui_layout() {
-    python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/ui_layout_flow')
-pm.run_native('$SCRIPT_DIR/demos/ui_layout_flow/src/main.flow')
-"
+    flow_demo_run_native ui_layout_flow
 }
 
 run_ui_layout_window() {
@@ -3496,22 +3456,10 @@ case "${1:-help}" in
             "vulkan-flow")
                 case "${3:-basic}" in
                     "basic")
-                        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_basic')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_basic/src/main.flow')
-"
+                        flow_demo_run_native vulkan_flow_basic
                         ;;
                     "advanced")
-                        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager('$SCRIPT_DIR/demos/vulkan_flow_advanced')
-pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
-"
+                        flow_demo_run_native vulkan_flow_advanced
                         ;;
                     "2048")
                         run_vulkan_2048
@@ -4081,10 +4029,7 @@ PY
             print_error "Usage: flow pkg <install|add|search|info|publish|init|…>"
             exit 1
         fi
-        case "$1" in
-            add|install|sync|search|info) flow_pkg_native "$@" ;;
-            *) python3 -m flow.package "$@" ;;
-        esac
+        flow_pkg_native "$@"
         ;;
     "search")
         shift
@@ -4100,7 +4045,7 @@ PY
         ;;
     "publish")
         shift
-        python3 -m flow.package publish "$@"
+        flow_pkg_native publish "$@"
         ;;
     "repl")
         if ! repl_bin="$(flow_native_tool repl)"; then
@@ -4116,7 +4061,7 @@ PY
         ;;
     "init")
         shift
-        python3 -m flow.package init "$@"
+        flow_pkg_native init "$@"
         ;;
     "add")
         shift
@@ -4127,46 +4072,27 @@ PY
         flow_pkg_native add "$@"
         ;;
     "build")
-        python3 -m flow.package build
+        flow_pkg_native build
         ;;
     "build-native")
+        # One optional entry file, taken literally (after --).
         shift
-        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.package import FlowPackageManager
-
-pm = FlowPackageManager()
-pm.build_native(arg)
-PY
+        if [ -n "${1-}" ]; then
+            flow_pkg_native build-native -- "$1"
+        else
+            flow_pkg_native build-native
+        fi
         ;;
     "run-native")
         shift
-        python3 - "$SCRIPT_DIR" "${1-}" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.package import FlowPackageManager
-
-pm = FlowPackageManager()
-pm.run_native(arg)
-PY
+        if [ -n "${1-}" ]; then
+            flow_pkg_native run-native -- "$1"
+        else
+            flow_pkg_native run-native
+        fi
         ;;
     "clean")
-        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.package import FlowPackageManager
-pm = FlowPackageManager()
-pm.clean()
-"
+        flow_pkg_native clean
         ;;
     "examples")
         if [ "${2:-}" = "run" ]; then

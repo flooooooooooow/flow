@@ -1,0 +1,35 @@
+$ flow publish --path packages/legacy
+[94mPublishing legacy@0.3.1…[0m
+  source: packages/legacy
+[92m✓ Registered in @OUT@/legacy_index.json[0m
+
+Next: commit the index change (or open a PR) so others can [94mflow add legacy[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "legacy"
+  | version = "0.3.1"
+  | description = "Test package legacy"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 
+== legacy_index.json
+{
+  "version": 1,
+  "packages": {
+    "legacy": {
+      "description": "Test package legacy",
+      "license": "Apache-2.0",
+      "versions": [
+        {
+          "version": "0.3.1",
+          "yanked": false,
+          "path": "packages/legacy"
+        }
+      ]
+    }
+  },
+  "name": "flow-packages"
+}

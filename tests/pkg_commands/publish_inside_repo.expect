@@ -1,0 +1,69 @@
+$ flow publish
+[94mPublishing insidepkg@0.3.1…[0m
+  source: build/pkg-commands/publish_inside_repo
+[92m✓ Registered in @ROOT@/build/pkg-commands/publish_inside_repo.index.json[0m
+
+Next: commit the index change (or open a PR) so others can [94mflow add insidepkg[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "insidepkg"
+  | version = "0.3.1"
+  | description = "Test package insidepkg"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 
+== publish_inside_repo.index.json
+{
+  "version": 1,
+  "name": "test-index",
+  "packages": {
+    "other": {
+      "description": "Other",
+      "homepage": "https://example.com",
+      "license": "MIT",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "yanked": false,
+          "path": "x"
+        }
+      ]
+    },
+    "insidepkg": {
+      "description": "Test package insidepkg",
+      "homepage": "https://example.com/insidepkg",
+      "license": "Apache-2.0",
+      "versions": [
+        {
+          "version": "1.0.0-beta",
+          "yanked": false,
+          "git": "g",
+          "tag": "t"
+        },
+        {
+          "version": "0.10.0",
+          "yanked": false,
+          "path": "ten"
+        },
+        {
+          "version": "v0.3.1+meta",
+          "yanked": false,
+          "path": "meta"
+        },
+        {
+          "version": "0.3.1",
+          "yanked": false,
+          "path": "build/pkg-commands/publish_inside_repo"
+        },
+        {
+          "version": "0.1.0",
+          "yanked": false,
+          "path": "old"
+        }
+      ]
+    }
+  }
+}
