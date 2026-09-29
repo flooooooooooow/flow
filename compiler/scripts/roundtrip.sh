@@ -394,8 +394,9 @@ echo "PASS compile_module jsgen greps"
 
 compile_module fmt compiler/src/fmt.flow \
     compiler/build/token_flowc.h \
+    compiler/build/lexer_flowc.h \
     compiler/build/ast_flowc.h
-for needle in 'flowc_fmt_emit' 'typedef struct FmtBuf'; do
+for needle in 'flowc_fmt_emit' 'flowc_fmt_source' 'typedef struct FmtBuf'; do
     if ! grep -Fq "$needle" compiler/build/fmt_flowc.c; then
         echo "FAIL compile_module fmt: missing '${needle}' in emitted C" >&2
         exit 1

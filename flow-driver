@@ -713,7 +713,8 @@ show_help() {
     echo "                    the choice, and what each rejected candidate failed"
     echo "                    (same as: transpile <program> --c --strict --explain)"
     echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
-    echo "  fmt <files...>    Format FLOW source files"
+    echo "  fmt [--check] <files...>  Format FLOW source files in place"
+    echo "                    (--check: list files that would change, exit 1)"
     echo ""
     echo "Testing:"
     echo "  test [flags]      Run FLOW tests (transpile + clang validate)"
@@ -3777,15 +3778,42 @@ PY
         rm -f "$explain_out"
         ;;
     "fmt")
+        # flowc's formatter (compiler/src/fmt.flow). It only changes
+        # whitespace; compiler/scripts/fmt_check.sh holds it to that.
         shift
-        check_deps
-        python3 -c "
-import sys
-sys.path.insert(0, '$SCRIPT_DIR/src')
-from flow.formatter import format_file
-for f in sys.argv[1:]:
-    format_file(f)
-" "$@"
+        fmt_check=0
+        if [ "${1:-}" = "--check" ]; then
+            fmt_check=1
+            shift
+        fi
+        if [ $# -eq 0 ]; then
+            print_error "Usage: flow fmt [--check] <files...>"
+            exit 1
+        fi
+        fmt_driver="$(flow_resolve_flowc)" || exit 1
+        fmt_rc=0
+        for fmt_file in "$@"; do
+            if [ ! -f "$fmt_file" ]; then
+                print_error "flow fmt: no such file: $fmt_file"
+                fmt_rc=1
+                continue
+            fi
+            fmt_tmp="$(mktemp "${TMPDIR:-/tmp}/flow_fmt.XXXXXX")"
+            if ! FLOWC_BACKEND=fmt FLOWC_IN="$fmt_file" FLOWC_OUT="$fmt_tmp" "$fmt_driver" >&2; then
+                print_error "flow fmt: $fmt_file does not parse; left unchanged"
+                fmt_rc=1
+            elif ! cmp -s "$fmt_file" "$fmt_tmp"; then
+                if [ "$fmt_check" -eq 1 ]; then
+                    echo "Would reformat $fmt_file"
+                    fmt_rc=1
+                else
+                    # Rewrite in place so the file keeps its mode and links.
+                    cat "$fmt_tmp" > "$fmt_file"
+                fi
+            fi
+            rm -f "$fmt_tmp"
+        done
+        exit "$fmt_rc"
         ;;
     "test")
         shift

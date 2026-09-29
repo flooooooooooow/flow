@@ -1,26 +1,66 @@
 # @module flowc.fmt
-# @means  Stage-A Flow pretty-printer: emit formatted source into a buffer.
+# @means  Stage-A Flow formatter: a layout pass over the token stream.
+#
+# The formatter lexes the source with the flowc lexer and writes every
+# token and every comment back byte for byte. Only whitespace changes:
+#
+#   * indentation, four spaces per open bracket, counted from the line
+#     that opened it (a line that starts with a closer takes that line's
+#     indent, and a line continued from an operator gets one level more);
+#   * spacing between tokens on one line (see flowc_fmt_space);
+#   * trailing blanks, runs of blank lines (kept to one), blank lines just
+#     inside a bracket, and one blank line after a multi-line top-level
+#     block;
+#   * the file ends with one newline.
+#
+# Line breaks stay where the author put them, and multi-line strings are
+# copied as they are. The flowc parser does not look at whitespace, so the
+# formatted file parses to the same tree and emits the same C.
+# compiler/scripts/fmt_check.sh holds the formatter to that over every
+# tracked .flow file.
 
 import .token {
-    TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
-    TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
-    TOK_AMPAMP, TOK_BARBAR, TOK_IN,
-    KW_DBG, KW_EXPECT
+    Token, Lexer,
+    TOK_EOF, TOK_IDENT, TOK_KEYWORD, TOK_INT, TOK_FLOAT, TOK_STRING,
+    TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACK, TOK_RBRACK,
+    TOK_COLON, TOK_COMMA, TOK_SEMI, TOK_DOT, TOK_ARROW, TOK_EQ, TOK_EQEQ,
+    TOK_NE, TOK_LE, TOK_GE, TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH,
+    TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_ERROR, TOK_AMP, TOK_PERCENT,
+    TOK_FATARROW, TOK_TILDE, TOK_AT, TOK_CARET, TOK_SHL, TOK_PLUS_EQ,
+    TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ, TOK_PIPELINE,
+    TOK_CLAIM, TOK_GT,
+    KW_TRUE, KW_FALSE, KW_NULL, KW_AND, KW_OR, KW_IMPORT, KW_EXPORT
 }
-import .ast {
-    AstArena, AST_NONE,
-    AST_PROGRAM, AST_FN, AST_PARAM, AST_BLOCK, AST_LET, AST_RETURN,
-    AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_BOOL,
-    AST_STRING, AST_STRUCT, AST_FIELD, AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_TYPE,
-    AST_INDEX, AST_CONST, AST_CAST, AST_ARRAY_LIT, AST_FLOAT, AST_ASSIGN,
-    AST_EXPR_STMT, AST_UNARY, AST_BREAK, AST_CONTINUE, AST_EXPORT,
-    AST_ENUM, AST_DEFER, AST_TYPE_ALIAS, AST_IF_EXPR, flowc_ast_reject_unsupported,
-    flowc_ast_reject_effects
-}
+import .lexer { flowc_lexer_new, flowc_lexer_next }
+import .ast { AstArena, AST_NONE, AST_PROGRAM }
 
 extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
 }
+
+# Element kind for a `#` comment. Tokens keep their lexer kind.
+const FMT_COMMENT: i32 = 100
+
+# Element table: FMT_REC i32 slots per token or comment.
+const FMT_REC: i32 = 5
+const FMT_KIND: i32 = 0
+const FMT_KW: i32 = 1
+const FMT_START: i32 = 2
+const FMT_END: i32 = 3
+# Newlines between the end of the previous element and this one.
+const FMT_NL: i32 = 4
+
+# Bracket stack: FMT_SREC slots per open bracket.
+const FMT_SREC: i32 = 4
+const FMT_S_KIND: i32 = 0
+# Indent the bracket's contents are measured from.
+const FMT_S_IND: i32 = 1
+# Output line number the bracket was opened on.
+const FMT_S_LINE: i32 = 2
+# First element of the line the bracket was opened on.
+const FMT_S_FIRST: i32 = 3
 
 # Fixed-buffer writer for formatted Flow text.
 export struct FmtBuf {
@@ -46,16 +86,6 @@ function flowc_fmt_putc(w: ptr<FmtBuf>, c: i32) {
     w[0].len = w[0].len + 1
 }
 
-function flowc_fmt_puts(w: ptr<FmtBuf>, s: string) {
-    let p: ptr<u8> = s
-    let n: i32 = strlen(s) as i32
-    let mut i: i32 = 0
-    while i < n {
-        flowc_fmt_putc(w, p[i])
-        i = i + 1
-    }
-}
-
 function flowc_fmt_put_span(w: ptr<FmtBuf>, src: ptr<u8>, start: i32, end: i32) {
     let mut i: i32 = start
     while i < end {
@@ -64,505 +94,569 @@ function flowc_fmt_put_span(w: ptr<FmtBuf>, src: ptr<u8>, start: i32, end: i32) 
     }
 }
 
-function flowc_fmt_put_i32(w: ptr<FmtBuf>, val: i32) {
-    let mut v: i32 = val
-    if v < 0 {
-        flowc_fmt_putc(w, 45)
-        v = 0 - v
-    }
-    if v == 0 {
-        flowc_fmt_putc(w, 48)
-        return
-    }
-    let mut digits: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    let mut n: i32 = 0
-    while v > 0 {
-        digits[n] = (v % 10) + 48
-        v = v / 10
-        n = n + 1
-    }
-    let mut i: i32 = n
-    while i > 0 {
-        i = i - 1
-        flowc_fmt_putc(w, digits[i])
-    }
-}
-
-# Emit `indent` levels of 4 spaces.
 function flowc_fmt_indent(w: ptr<FmtBuf>, indent: i32) {
     let mut i: i32 = 0
-    while i < indent {
-        flowc_fmt_puts(w, "    ")
+    while i < indent * 4 {
+        flowc_fmt_putc(w, 32)
         i = i + 1
     }
 }
 
-function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32)
-function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, indent: i32)
-function flowc_fmt_emit_type(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, ty: i32)
-
-function flowc_fmt_emit_binop_op(w: ptr<FmtBuf>, op: i32) {
-    if op == TOK_PLUS {
-        flowc_fmt_puts(w, " + ")
-        return
+function flowc_fmt_is_blank(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
     }
-    if op == TOK_MINUS {
-        flowc_fmt_puts(w, " - ")
-        return
-    }
-    if op == TOK_STAR {
-        flowc_fmt_puts(w, " * ")
-        return
-    }
-    if op == TOK_SLASH {
-        flowc_fmt_puts(w, " / ")
-        return
-    }
-    if op == TOK_PERCENT {
-        flowc_fmt_puts(w, " % ")
-        return
-    }
-    if op == TOK_EQEQ {
-        flowc_fmt_puts(w, " == ")
-        return
-    }
-    if op == TOK_NE {
-        flowc_fmt_puts(w, " != ")
-        return
-    }
-    if op == TOK_LT {
-        flowc_fmt_puts(w, " < ")
-        return
-    }
-    if op == TOK_GT {
-        flowc_fmt_puts(w, " > ")
-        return
-    }
-    if op == TOK_LE {
-        flowc_fmt_puts(w, " <= ")
-        return
-    }
-    if op == TOK_GE {
-        flowc_fmt_puts(w, " >= ")
-        return
-    }
-    if op == TOK_AMPAMP {
-        flowc_fmt_puts(w, " && ")
-        return
-    }
-    if op == TOK_BARBAR {
-        flowc_fmt_puts(w, " || ")
-        return
-    }
-    if op == TOK_IN {
-        flowc_fmt_puts(w, " in ")
-        return
-    }
-    flowc_fmt_puts(w, " ")
+    return 0
 }
 
-# Reconstruct Flow type text from AST_TYPE (ptr<T> / array<T, N> / bare name).
-function flowc_fmt_emit_type(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
-    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
-        flowc_fmt_puts(w, "void")
-        return
-    }
-    let ns: i32 = arena.nodes[ty].name_start
-    let ne: i32 = arena.nodes[ty].name_end
-    let inner: i32 = arena.nodes[ty].a
-    if inner != AST_NONE {
-        flowc_fmt_put_span(w, src, ns, ne)
-        flowc_fmt_putc(w, 60)
-        flowc_fmt_emit_type(w, arena, src, inner)
-        if arena.nodes[ty].ival > 0 {
-            flowc_fmt_puts(w, ", ")
-            flowc_fmt_put_i32(w, arena.nodes[ty].ival)
-        }
-        flowc_fmt_putc(w, 62)
-        return
-    }
-    flowc_fmt_put_span(w, src, ns, ne)
-}
-
-function flowc_fmt_emit_expr(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
-    if id == AST_NONE or w[0].err != 0 {
-        return
-    }
-    let kind: i32 = arena.nodes[id].kind
-    if kind == AST_INT {
-        flowc_fmt_put_i32(w, arena.nodes[id].ival)
-        return
-    }
-    if kind == AST_FLOAT {
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        return
-    }
-    if kind == AST_BOOL {
-        if arena.nodes[id].ival == 0 {
-            flowc_fmt_puts(w, "false")
-        } else {
-            flowc_fmt_puts(w, "true")
-        }
-        return
-    }
-    if kind == AST_IDENT {
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        return
-    }
-    if kind == AST_STRING {
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        return
-    }
-    if kind == AST_BINOP {
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_emit_binop_op(w, arena.nodes[id].ival)
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-        return
-    }
-    if kind == AST_UNARY {
-        if arena.nodes[id].ival == KW_DBG {
-            flowc_fmt_puts(w, "dbg ")
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-            return
-        }
-        if arena.nodes[id].ival == KW_EXPECT {
-            flowc_fmt_puts(w, "expect ")
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-            flowc_fmt_putc(w, 10)
-            return
-        }
-        if arena.nodes[id].ival == TOK_MINUS {
-            flowc_fmt_putc(w, 45)
-        } else {
-            if arena.nodes[id].ival == TOK_BANG {
-                flowc_fmt_putc(w, 33)
+# Lex `src` into an element table of tokens and comments. Returns the
+# element count; the table is written to `els` (at least (n + 1) *
+# FMT_REC slots). A comment runs from `#` to the end of its line, with
+# trailing blanks cut, exactly as flowc_lexer_skip_trivia skips it.
+function flowc_fmt_scan(src: ptr<u8>, n: i32, els: ptr<i32>) -> i32 {
+    let mut lex: Lexer = flowc_lexer_new(src, n)
+    let mut count: i32 = 0
+    let mut pos: i32 = 0
+    let mut done: i32 = 0
+    while done == 0 {
+        let t: Token = flowc_lexer_next(&lex)
+        let mut i: i32 = pos
+        while i < t.start {
+            if src[i] == 35 {
+                let mut j: i32 = i
+                while j < t.start and src[j] != 10 {
+                    j = j + 1
+                }
+                let mut e: i32 = j
+                while e > i and flowc_fmt_is_blank(src[e - 1]) == 1 {
+                    e = e - 1
+                }
+                els[count * FMT_REC + FMT_KIND] = FMT_COMMENT
+                els[count * FMT_REC + FMT_KW] = 0
+                els[count * FMT_REC + FMT_START] = i
+                els[count * FMT_REC + FMT_END] = e
+                count = count + 1
+                i = j
             } else {
-                if arena.nodes[id].ival == TOK_AMP {
-                    flowc_fmt_putc(w, 38)
+                i = i + 1
+            }
+        }
+        if t.kind == TOK_EOF or t.end <= t.start {
+            done = 1
+        } else {
+            els[count * FMT_REC + FMT_KIND] = t.kind
+            els[count * FMT_REC + FMT_KW] = t.kw
+            els[count * FMT_REC + FMT_START] = t.start
+            els[count * FMT_REC + FMT_END] = t.end
+            count = count + 1
+            pos = t.end
+        }
+    }
+    let mut prev_end: i32 = 0
+    let mut k: i32 = 0
+    while k < count {
+        let s: i32 = els[k * FMT_REC + FMT_START]
+        let mut nl: i32 = 0
+        let mut i: i32 = prev_end
+        while i < s {
+            if src[i] == 10 {
+                nl = nl + 1
+            }
+            i = i + 1
+        }
+        els[k * FMT_REC + FMT_NL] = nl
+        prev_end = els[k * FMT_REC + FMT_END]
+        k = k + 1
+    }
+    return count
+}
+
+function flowc_fmt_kind(els: ptr<i32>, k: i32) -> i32 {
+    if k < 0 {
+        return 0 - 1
+    }
+    return els[k * FMT_REC + FMT_KIND]
+}
+
+function flowc_fmt_is_open(kind: i32) -> i32 {
+    if kind == TOK_LPAREN or kind == TOK_LBRACK or kind == TOK_LBRACE {
+        return 1
+    }
+    return 0
+}
+
+function flowc_fmt_is_close(kind: i32) -> i32 {
+    if kind == TOK_RPAREN or kind == TOK_RBRACK or kind == TOK_RBRACE {
+        return 1
+    }
+    return 0
+}
+
+# True when element k ends an operand, so an operator after it is binary.
+function flowc_fmt_operand_end(els: ptr<i32>, k: i32) -> i32 {
+    if k < 0 {
+        return 0
+    }
+    let kind: i32 = els[k * FMT_REC + FMT_KIND]
+    if kind == TOK_IDENT or kind == TOK_INT or kind == TOK_FLOAT or kind == TOK_STRING {
+        return 1
+    }
+    if kind == TOK_CLAIM or kind == TOK_RPAREN or kind == TOK_RBRACK {
+        return 1
+    }
+    if kind == TOK_KEYWORD {
+        let kw: i32 = els[k * FMT_REC + FMT_KW]
+        if kw == KW_TRUE or kw == KW_FALSE or kw == KW_NULL {
+            return 1
+        }
+    }
+    return 0
+}
+
+# Operators that are always binary: one space on each side.
+function flowc_fmt_is_spaced_op(kind: i32) -> i32 {
+    if kind == TOK_EQ or kind == TOK_EQEQ or kind == TOK_NE or kind == TOK_LE or kind == TOK_GE {
+        return 1
+    }
+    if kind == TOK_ARROW or kind == TOK_FATARROW or kind == TOK_AMPAMP or kind == TOK_BARBAR {
+        return 1
+    }
+    if kind == TOK_PLUS_EQ or kind == TOK_MINUS_EQ or kind == TOK_STAR_EQ {
+        return 1
+    }
+    if kind == TOK_SLASH_EQ or kind == TOK_PERCENT_EQ or kind == TOK_PIPELINE {
+        return 1
+    }
+    return 0
+}
+
+# Operators that are binary after an operand and prefix otherwise.
+function flowc_fmt_is_arith_op(kind: i32) -> i32 {
+    if kind == TOK_PLUS or kind == TOK_MINUS or kind == TOK_STAR or kind == TOK_SLASH {
+        return 1
+    }
+    if kind == TOK_PERCENT or kind == TOK_AMP or kind == TOK_CARET or kind == TOK_SHL {
+        return 1
+    }
+    return 0
+}
+
+# Operators that are always prefix: no space after.
+function flowc_fmt_is_prefix_op(kind: i32) -> i32 {
+    if kind == TOK_BANG or kind == TOK_TILDE or kind == TOK_AT {
+        return 1
+    }
+    return 0
+}
+
+# Previous token (not comment) before element k, or -1.
+function flowc_fmt_prev_tok(els: ptr<i32>, k: i32) -> i32 {
+    let mut i: i32 = k - 1
+    while i >= 0 and els[i * FMT_REC + FMT_KIND] == FMT_COMMENT {
+        i = i - 1
+    }
+    return i
+}
+
+# True when the operator at element k is binary.
+function flowc_fmt_binary_at(els: ptr<i32>, k: i32) -> i32 {
+    return flowc_fmt_operand_end(els, flowc_fmt_prev_tok(els, k))
+}
+
+function flowc_fmt_word_char(c: i32) -> i32 {
+    if c >= 97 and c <= 122 {
+        return 1
+    }
+    if c >= 65 and c <= 90 {
+        return 1
+    }
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    if c == 95 or c >= 128 {
+        return 1
+    }
+    return 0
+}
+
+# True when writing b straight after a would lex differently: two words
+# run together, a number takes a dot, or two operator characters form a
+# longer operator.
+function flowc_fmt_would_merge(src: ptr<u8>, a_end: i32, b_start: i32) -> i32 {
+    let x: i32 = src[a_end - 1]
+    let y: i32 = src[b_start]
+    if flowc_fmt_word_char(x) == 1 and flowc_fmt_word_char(y) == 1 {
+        return 1
+    }
+    if x >= 48 and x <= 57 and y == 46 {
+        return 1
+    }
+    if x == 46 and y == 46 {
+        return 1
+    }
+    if y == 61 and (x == 61 or x == 33 or x == 60 or x == 62 or x == 43 or x == 45 or x == 42 or x == 47 or x == 37) {
+        return 1
+    }
+    if y == 62 and (x == 45 or x == 61 or x == 62 or x == 124) {
+        return 1
+    }
+    if (x == 60 and y == 60) or (x == 38 and y == 38) or (x == 124 and y == 124) {
+        return 1
+    }
+    return 0
+}
+
+# Spacing between elements a and b on one line: 1 for one space, 0 for
+# none. `had` is 1 when the source had whitespace there; the rules that do
+# not apply keep that. `top` is the kind of the innermost open bracket.
+# 1 when element k sits on a line that starts with `import` or `export`.
+# Operators there are part of a module or claim name
+# (`import .Nat-plus-commutes { commutes }`, `import verify.Nat/+ { zero-left }`).
+function flowc_fmt_on_import_line(els: ptr<i32>, k: i32) -> i32 {
+    let mut i: i32 = k
+    while i > 0 and els[i * FMT_REC + FMT_NL] == 0 {
+        i = i - 1
+    }
+    if els[i * FMT_REC + FMT_KIND] != TOK_KEYWORD {
+        return 0
+    }
+    let kw: i32 = els[i * FMT_REC + FMT_KW]
+    if kw == KW_IMPORT or kw == KW_EXPORT {
+        return 1
+    }
+    return 0
+}
+
+function flowc_fmt_space(els: ptr<i32>, a: i32, b: i32, had: i32, top: i32) -> i32 {
+    let ak: i32 = els[a * FMT_REC + FMT_KIND]
+    let bk: i32 = els[b * FMT_REC + FMT_KIND]
+    if ak == TOK_ERROR or bk == TOK_ERROR or ak == TOK_CLAIM or bk == TOK_CLAIM {
+        return had
+    }
+    if bk == TOK_COMMA or bk == TOK_SEMI {
+        return 0
+    }
+    if bk == TOK_RPAREN or bk == TOK_RBRACK {
+        return 0
+    }
+    if ak == TOK_COMMA or ak == TOK_SEMI {
+        return 1
+    }
+    if ak == TOK_LPAREN or ak == TOK_LBRACK {
+        return 0
+    }
+    if ak == TOK_LBRACE {
+        if bk == TOK_RBRACE {
+            return 0
+        }
+        return 1
+    }
+    if bk == TOK_RBRACE {
+        return 1
+    }
+    if ak == TOK_DOT {
+        return 0
+    }
+    if bk == TOK_DOT {
+        if ak != TOK_INT and ak != TOK_FLOAT and flowc_fmt_operand_end(els, a) == 1 {
+            return 0
+        }
+        return had
+    }
+    if ak == TOK_COLON or bk == TOK_COLON {
+        if top == TOK_LBRACK or (ak == TOK_COLON and bk == TOK_COLON) {
+            return had
+        }
+        if ak == TOK_COLON {
+            # `::` keeps its spacing on both sides.
+            let pa: i32 = flowc_fmt_prev_tok(els, a)
+            if flowc_fmt_kind(els, pa) == TOK_COLON and els[pa * FMT_REC + FMT_END] == els[a * FMT_REC + FMT_START] {
+                return had
+            }
+            return 1
+        }
+        if flowc_fmt_operand_end(els, a) == 1 or ak == TOK_GT {
+            return 0
+        }
+        return had
+    }
+    if flowc_fmt_is_arith_op(ak) == 1 or flowc_fmt_is_arith_op(bk) == 1 or flowc_fmt_is_spaced_op(ak) == 1 or flowc_fmt_is_spaced_op(bk) == 1 {
+        if flowc_fmt_on_import_line(els, a) == 1 {
+            return had
+        }
+    }
+    if flowc_fmt_is_spaced_op(ak) == 1 or flowc_fmt_is_spaced_op(bk) == 1 {
+        return 1
+    }
+    if flowc_fmt_is_arith_op(bk) == 1 and flowc_fmt_binary_at(els, b) == 1 {
+        return 1
+    }
+    if flowc_fmt_is_arith_op(ak) == 1 {
+        if flowc_fmt_binary_at(els, a) == 1 {
+            return 1
+        }
+        return 0
+    }
+    if flowc_fmt_is_prefix_op(ak) == 1 {
+        return 0
+    }
+    if bk == TOK_LBRACE {
+        return 1
+    }
+    if bk == TOK_LPAREN or bk == TOK_LBRACK {
+        if ak == TOK_IDENT or ak == TOK_RPAREN or ak == TOK_RBRACK {
+            return 0
+        }
+        return had
+    }
+    return had
+}
+
+# A line that ends with one of these continues on the next line.
+function flowc_fmt_trailing_cont(els: ptr<i32>, k: i32) -> i32 {
+    if k < 0 {
+        return 0
+    }
+    let kind: i32 = els[k * FMT_REC + FMT_KIND]
+    if flowc_fmt_is_spaced_op(kind) == 1 {
+        return 1
+    }
+    if kind == TOK_PLUS or kind == TOK_MINUS or kind == TOK_STAR or kind == TOK_SLASH or kind == TOK_PERCENT {
+        return 1
+    }
+    if kind == TOK_KEYWORD {
+        let kw: i32 = els[k * FMT_REC + FMT_KW]
+        if kw == KW_AND or kw == KW_OR {
+            return 1
+        }
+    }
+    return 0
+}
+
+# A line that starts with one of these continues the line before it. An
+# arithmetic operator counts only after an operand (`-1,` in a list of
+# rows is a value).
+function flowc_fmt_leading_cont(els: ptr<i32>, k: i32, code_tok: i32) -> i32 {
+    let kind: i32 = els[k * FMT_REC + FMT_KIND]
+    if kind == TOK_PIPELINE or kind == TOK_DOT or kind == TOK_AMPAMP or kind == TOK_BARBAR {
+        return 1
+    }
+    if kind == TOK_PLUS or kind == TOK_MINUS or kind == TOK_STAR or kind == TOK_SLASH or kind == TOK_PERCENT {
+        return flowc_fmt_operand_end(els, code_tok)
+    }
+    if kind == TOK_KEYWORD {
+        let kw: i32 = els[k * FMT_REC + FMT_KW]
+        if kw == KW_AND or kw == KW_OR {
+            return 1
+        }
+    }
+    return 0
+}
+
+# True when element k starts `import` or `export import`. A multi-line
+# import list is not followed by a forced blank line.
+function flowc_fmt_is_import_line(els: ptr<i32>, count: i32, k: i32) -> i32 {
+    if k < 0 or k >= count or els[k * FMT_REC + FMT_KIND] != TOK_KEYWORD {
+        return 0
+    }
+    let kw: i32 = els[k * FMT_REC + FMT_KW]
+    if kw == KW_IMPORT {
+        return 1
+    }
+    if kw == KW_EXPORT and k + 1 < count and els[(k + 1) * FMT_REC + FMT_KIND] == TOK_KEYWORD and els[(k + 1) * FMT_REC + FMT_KW] == KW_IMPORT {
+        return 1
+    }
+    return 0
+}
+
+# Lay out the element table into `w`.
+function flowc_fmt_layout(w: ptr<FmtBuf>, src: ptr<u8>, els: ptr<i32>, count: i32, stack: ptr<i32>) {
+    let mut sp: i32 = 0
+    let mut line_no: i32 = 0
+    let mut line_ind: i32 = 0
+    let mut line_base: i32 = 0
+    let mut line_first: i32 = 0
+    # Last token on the line being written, and on the line before it.
+    let mut line_tok: i32 = 0 - 1
+    let mut prev_line_tok: i32 = 0 - 1
+    # Last token on the most recent line that had one.
+    let mut code_tok: i32 = 0 - 1
+    # Set when this line closed a multi-line `{` back to the top level.
+    let mut line_closed_top: i32 = 0
+    let mut prev_closed_top: i32 = 0
+    let mut k: i32 = 0
+    while k < count {
+        let kind: i32 = els[k * FMT_REC + FMT_KIND]
+        let s: i32 = els[k * FMT_REC + FMT_START]
+        let e: i32 = els[k * FMT_REC + FMT_END]
+        let nl: i32 = els[k * FMT_REC + FMT_NL]
+        if k == 0 or nl > 0 {
+            if k > 0 {
+                prev_line_tok = line_tok
+                if line_tok >= 0 {
+                    code_tok = line_tok
+                }
+                prev_closed_top = line_closed_top
+                flowc_fmt_putc(w, 10)
+                let mut blank: i32 = 0
+                if nl > 1 {
+                    blank = 1
+                }
+                if prev_line_tok >= 0 and flowc_fmt_is_open(flowc_fmt_kind(els, prev_line_tok)) == 1 {
+                    blank = 0
+                }
+                if flowc_fmt_is_close(kind) == 1 {
+                    blank = 0
+                }
+                if prev_closed_top == 1 and sp == 0 and flowc_fmt_is_close(kind) == 0 {
+                    blank = 1
+                }
+                if blank == 1 {
+                    flowc_fmt_putc(w, 10)
+                }
+            }
+            line_tok = 0 - 1
+            line_closed_top = 0
+            line_no = line_no + 1
+            let mut ind: i32 = 0
+            if flowc_fmt_is_close(kind) == 1 {
+                if sp > 0 {
+                    ind = stack[(sp - 1) * FMT_SREC + FMT_S_IND]
+                }
+            } else {
+                if sp > 0 {
+                    ind = stack[(sp - 1) * FMT_SREC + FMT_S_IND] + 1
+                }
+                if flowc_fmt_trailing_cont(els, code_tok) == 1 or (kind != FMT_COMMENT and flowc_fmt_leading_cont(els, k, code_tok) == 1) {
+                    ind = ind + 1
+                }
+            }
+            line_ind = ind
+            line_base = ind
+            line_first = k
+            flowc_fmt_indent(w, ind)
+        } else {
+            let pe: i32 = els[(k - 1) * FMT_REC + FMT_END]
+            if kind == FMT_COMMENT {
+                if s > pe {
+                    flowc_fmt_put_span(w, src, pe, s)
+                } else {
+                    flowc_fmt_putc(w, 32)
+                }
+            } else {
+                let mut had: i32 = 0
+                if s > pe {
+                    had = 1
+                }
+                let mut top: i32 = 0 - 1
+                if sp > 0 {
+                    top = stack[(sp - 1) * FMT_SREC + FMT_S_KIND]
+                }
+                let mut sep: i32 = flowc_fmt_space(els, k - 1, k, had, top)
+                if sep == 0 and had == 1 and flowc_fmt_would_merge(src, pe, s) == 1 {
+                    sep = 1
+                }
+                if sep == 1 {
+                    flowc_fmt_putc(w, 32)
                 }
             }
         }
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        return
-    }
-    if kind == AST_CAST {
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_puts(w, " as ")
-        flowc_fmt_emit_type(w, arena, src, arena.nodes[id].b)
-        return
-    }
-    if kind == AST_IF_EXPR {
-        flowc_fmt_puts(w, "if ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_puts(w, " { ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-        flowc_fmt_puts(w, " } else { ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].c)
-        flowc_fmt_puts(w, " }")
-        return
-    }
-    if kind == AST_INDEX {
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_putc(w, 91)
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-        flowc_fmt_putc(w, 93)
-        return
-    }
-    if kind == AST_CALL {
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        flowc_fmt_putc(w, 40)
-        let mut arg: i32 = arena.nodes[id].a
-        let mut first: i32 = 1
-        while arg != AST_NONE {
-            if first == 0 {
-                flowc_fmt_puts(w, ", ")
+        flowc_fmt_put_span(w, src, s, e)
+        if kind != FMT_COMMENT {
+            line_tok = k
+            if flowc_fmt_is_open(kind) == 1 {
+                stack[sp * FMT_SREC + FMT_S_KIND] = kind
+                stack[sp * FMT_SREC + FMT_S_IND] = line_base
+                stack[sp * FMT_SREC + FMT_S_LINE] = line_no
+                stack[sp * FMT_SREC + FMT_S_FIRST] = line_first
+                sp = sp + 1
             }
-            first = 0
-            flowc_fmt_emit_expr(w, arena, src, arg)
-            arg = arena.nodes[arg].next
-        }
-        flowc_fmt_putc(w, 41)
-        return
-    }
-    if kind == AST_FIELD_ACCESS {
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_putc(w, 46)
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        return
-    }
-    if kind == AST_STRUCT_LIT {
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        flowc_fmt_puts(w, " { ")
-        let mut field: i32 = arena.nodes[id].a
-        let mut first: i32 = 1
-        while field != AST_NONE {
-            if first == 0 {
-                flowc_fmt_puts(w, ", ")
+            if flowc_fmt_is_close(kind) == 1 and sp > 0 {
+                sp = sp - 1
+                # `f(a,\n    b) {`: the brace belongs to the line that
+                # opened the paren, so its body indents from there.
+                if stack[sp * FMT_SREC + FMT_S_IND] < line_base {
+                    line_base = stack[sp * FMT_SREC + FMT_S_IND]
+                }
+                if sp == 0 and kind == TOK_RBRACE and stack[sp * FMT_SREC + FMT_S_LINE] != line_no and flowc_fmt_is_import_line(els, count, stack[sp * FMT_SREC + FMT_S_FIRST]) == 0 {
+                    line_closed_top = 1
+                } else {
+                    line_closed_top = 0
+                }
+            } else {
+                if flowc_fmt_is_open(kind) == 1 {
+                    line_closed_top = 0
+                }
             }
-            first = 0
-            flowc_fmt_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
-            flowc_fmt_puts(w, ": ")
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[field].a)
-            field = arena.nodes[field].next
         }
-        flowc_fmt_puts(w, " }")
-        return
+        k = k + 1
     }
-    if kind == AST_ARRAY_LIT {
-        flowc_fmt_putc(w, 91)
-        if arena.nodes[id].b != AST_NONE {
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-            flowc_fmt_puts(w, "; ")
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-            flowc_fmt_putc(w, 93)
-            return
+    # An unterminated string runs to the end of the file as one token and
+    # already carries the file's last newline.
+    if count > 0 {
+        let last_end: i32 = els[(count - 1) * FMT_REC + FMT_END]
+        if last_end <= 0 or src[last_end - 1] != 10 {
+            flowc_fmt_putc(w, 10)
         }
-        let mut el: i32 = arena.nodes[id].a
-        let mut first: i32 = 1
-        while el != AST_NONE {
-            if first == 0 {
-                flowc_fmt_puts(w, ", ")
-            }
-            first = 0
-            flowc_fmt_emit_expr(w, arena, src, el)
-            el = arena.nodes[el].next
-        }
-        flowc_fmt_putc(w, 93)
-        return
-    }
-    flowc_fmt_puts(w, "<expr>")
-}
-
-function flowc_fmt_emit_block_body(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, block: i32, indent: i32) {
-    if block == AST_NONE {
-        return
-    }
-    let mut st: i32 = arena.nodes[block].a
-    while st != AST_NONE {
-        flowc_fmt_emit_stmt(w, arena, src, st, indent)
-        st = arena.nodes[st].next
     }
 }
 
-function flowc_fmt_emit_stmt(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, indent: i32) {
-    if id == AST_NONE or w[0].err != 0 {
-        return
+# Format Flow source `src[0..n)` into `out` (capacity `out_cap`). Returns
+# bytes written, or -1 on overflow or allocation failure. The caller
+# checks that the source parses; the formatter itself accepts any text
+# the lexer reads.
+export function flowc_fmt_source(src: ptr<u8>, n: i32, out: ptr<u8>, out_cap: i32) -> i32 {
+    let els: ptr<i32> = malloc(((n + 1) * FMT_REC * 4) as i64) as ptr<i32>
+    let stack: ptr<i32> = malloc(((n + 1) * FMT_SREC * 4) as i64) as ptr<i32>
+    if els == null or stack == null {
+        return 0 - 1
     }
-    let kind: i32 = arena.nodes[id].kind
-    if kind == AST_LET {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "let ")
-        if arena.nodes[id].ival == 1 {
-            flowc_fmt_puts(w, "mut ")
+    let count: i32 = flowc_fmt_scan(src, n, els)
+    let mut w: FmtBuf = flowc_fmt_buf_init(out, out_cap)
+    flowc_fmt_layout(&w, src, els, count, stack)
+    free(els as ptr<u8>)
+    free(stack as ptr<u8>)
+    if w.err != 0 {
+        return 0 - 1
+    }
+    return w.len
+}
+
+# The token and comment stream the formatter must keep, one element per
+# record: `T<kind> <text>\n` for a token, `C <text>\n` for a comment.
+# compiler/scripts/fmt_check.sh compares it before and after formatting.
+export function flowc_fmt_token_dump(src: ptr<u8>, n: i32, out: ptr<u8>, out_cap: i32) -> i32 {
+    let els: ptr<i32> = malloc(((n + 1) * FMT_REC * 4) as i64) as ptr<i32>
+    if els == null {
+        return 0 - 1
+    }
+    let count: i32 = flowc_fmt_scan(src, n, els)
+    let mut w: FmtBuf = flowc_fmt_buf_init(out, out_cap)
+    let mut k: i32 = 0
+    while k < count {
+        let kind: i32 = els[k * FMT_REC + FMT_KIND]
+        if kind == FMT_COMMENT {
+            flowc_fmt_putc(&w, 67)
+        } else {
+            flowc_fmt_putc(&w, 84)
+            flowc_fmt_putc(&w, 48 + kind / 10)
+            flowc_fmt_putc(&w, 48 + kind % 10)
         }
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        flowc_fmt_puts(w, ": ")
-        flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
-        if arena.nodes[id].b != AST_NONE {
-            flowc_fmt_puts(w, " = ")
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-        }
-        flowc_fmt_putc(w, 10)
-        return
+        flowc_fmt_putc(&w, 32)
+        flowc_fmt_put_span(&w, src, els[k * FMT_REC + FMT_START], els[k * FMT_REC + FMT_END])
+        flowc_fmt_putc(&w, 10)
+        k = k + 1
     }
-    if kind == AST_RETURN {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "return")
-        if arena.nodes[id].a != AST_NONE {
-            flowc_fmt_putc(w, 32)
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        }
-        flowc_fmt_putc(w, 10)
-        return
+    free(els as ptr<u8>)
+    if w.err != 0 {
+        return 0 - 1
     }
-    if kind == AST_IF {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "if ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_puts(w, " {\n")
-        flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].b, indent + 1)
-        if arena.nodes[id].c != AST_NONE {
-            flowc_fmt_indent(w, indent)
-            flowc_fmt_puts(w, "} else {\n")
-            flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, indent + 1)
-        }
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "}\n")
-        return
-    }
-    if kind == AST_WHILE {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "while ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_puts(w, " {\n")
-        flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].b, indent + 1)
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "}\n")
-        return
-    }
-    if kind == AST_FOR {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "for ")
-        flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        flowc_fmt_puts(w, " in ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_puts(w, " to ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-        if arena.nodes[id].ival != AST_NONE and arena.nodes[id].ival != 0 {
-            flowc_fmt_puts(w, " step ")
-            flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].ival)
-        }
-        flowc_fmt_puts(w, " {\n")
-        flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, indent + 1)
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "}\n")
-        return
-    }
-    if kind == AST_BREAK {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "break\n")
-        return
-    }
-    if kind == AST_CONTINUE {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "continue\n")
-        return
-    }
-    if kind == AST_DEFER {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "defer ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_putc(w, 10)
-        return
-    }
-    if kind == AST_ASSIGN {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_puts(w, " = ")
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-        flowc_fmt_putc(w, 10)
-        return
-    }
-    if kind == AST_EXPR_STMT {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_fmt_putc(w, 10)
-        return
-    }
-    if kind == AST_BLOCK {
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "{\n")
-        flowc_fmt_emit_block_body(w, arena, src, id, indent + 1)
-        flowc_fmt_indent(w, indent)
-        flowc_fmt_puts(w, "}\n")
-        return
-    }
+    return w.len
 }
 
-function flowc_fmt_emit_param(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
-    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    flowc_fmt_puts(w, ": ")
-    flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
-}
-
-function flowc_fmt_emit_fn(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, is_export: i32) {
-    if is_export == 1 {
-        flowc_fmt_puts(w, "export ")
-    }
-    flowc_fmt_puts(w, "function ")
-    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    flowc_fmt_putc(w, 40)
-    let mut param: i32 = arena.nodes[id].a
-    let mut first: i32 = 1
-    while param != AST_NONE {
-        if first == 0 {
-            flowc_fmt_puts(w, ", ")
-        }
-        first = 0
-        flowc_fmt_emit_param(w, arena, src, param)
-        param = arena.nodes[param].next
-    }
-    flowc_fmt_putc(w, 41)
-    let ret_ty: i32 = arena.nodes[id].b
-    if ret_ty != AST_NONE {
-        flowc_fmt_puts(w, " -> ")
-        flowc_fmt_emit_type(w, arena, src, ret_ty)
-    }
-    if arena.nodes[id].c == AST_NONE {
-        flowc_fmt_putc(w, 10)
-        return
-    }
-    flowc_fmt_puts(w, " {\n")
-    flowc_fmt_emit_block_body(w, arena, src, arena.nodes[id].c, 1)
-    flowc_fmt_puts(w, "}\n")
-}
-
-function flowc_fmt_emit_struct(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, is_export: i32) {
-    if is_export == 1 {
-        flowc_fmt_puts(w, "export ")
-    }
-    flowc_fmt_puts(w, "struct ")
-    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    flowc_fmt_puts(w, " {\n")
-    let mut field: i32 = arena.nodes[id].a
-    while field != AST_NONE {
-        flowc_fmt_indent(w, 1)
-        flowc_fmt_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
-        flowc_fmt_puts(w, ": ")
-        flowc_fmt_emit_type(w, arena, src, arena.nodes[field].a)
-        flowc_fmt_putc(w, 10)
-        field = arena.nodes[field].next
-    }
-    flowc_fmt_puts(w, "}\n")
-}
-
-function flowc_fmt_emit_const(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
-    if arena.nodes[id].ival == 1 {
-        flowc_fmt_puts(w, "export ")
-    }
-    flowc_fmt_puts(w, "const ")
-    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    flowc_fmt_puts(w, ": ")
-    flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
-    flowc_fmt_puts(w, " = ")
-    flowc_fmt_emit_expr(w, arena, src, arena.nodes[id].b)
-    flowc_fmt_putc(w, 10)
-}
-
-function flowc_fmt_emit_enum(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32, is_export: i32) {
-    if is_export == 1 {
-        flowc_fmt_puts(w, "export ")
-    }
-    flowc_fmt_puts(w, "enum ")
-    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    flowc_fmt_puts(w, " {\n")
-    let mut var: i32 = arena.nodes[id].a
-    while var != AST_NONE {
-        flowc_fmt_indent(w, 1)
-        flowc_fmt_put_span(w, src, arena.nodes[var].name_start, arena.nodes[var].name_end)
-        flowc_fmt_putc(w, 10)
-        var = arena.nodes[var].next
-    }
-    flowc_fmt_puts(w, "}\n")
-}
-
-function flowc_fmt_emit_type_alias(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
-    # A `unit` declaration (no base type) keeps its source text.
-    if arena.nodes[id].a == AST_NONE {
-        flowc_fmt_put_span(w, src, arena.nodes[id].start, arena.nodes[id].end)
-        flowc_fmt_putc(w, 10)
-        return
-    }
-    flowc_fmt_puts(w, "type ")
-    flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    flowc_fmt_puts(w, " = ")
-    flowc_fmt_emit_type(w, arena, src, arena.nodes[id].a)
-    flowc_fmt_putc(w, 10)
-}
-
-# Emit formatted Flow for a program AST into `out` (capacity `out_cap`).
-# Returns bytes written, or -1 on overflow / bad root.
-# `src` is the original Flow source (name spans index into it).
+# Format a parsed program. `src` is the NUL-terminated source the AST was
+# parsed from; the layout works on its tokens, so the tree is only used
+# to check that the parse succeeded.
 export function flowc_fmt_emit(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, out_cap: i32) -> i32 {
     if root == AST_NONE or root < 0 {
         return 0 - 1
@@ -570,87 +664,5 @@ export function flowc_fmt_emit(arena: AstArena, root: i32, src: ptr<u8>, out: pt
     if arena.nodes[root].kind != AST_PROGRAM {
         return 0 - 1
     }
-    if flowc_ast_reject_unsupported(arena, src, "flowc fmt") != 0 {
-        return 0 - 1
-    }
-    if flowc_ast_reject_effects(arena, src, "flowc fmt") != 0 {
-        return 0 - 1
-    }
-    let mut w: FmtBuf = flowc_fmt_buf_init(out, out_cap)
-    let mut item: i32 = arena.nodes[root].a
-    let mut first_item: i32 = 1
-    while item != AST_NONE {
-        let kind: i32 = arena.nodes[item].kind
-        let mut wrote: i32 = 0
-        if kind == AST_STRUCT {
-            if first_item == 0 {
-                flowc_fmt_putc(&w, 10)
-            }
-            flowc_fmt_emit_struct(&w, arena, src, item, 0)
-            wrote = 1
-        }
-        if kind == AST_FN {
-            if first_item == 0 {
-                flowc_fmt_putc(&w, 10)
-            }
-            flowc_fmt_emit_fn(&w, arena, src, item, 0)
-            wrote = 1
-        }
-        if kind == AST_CONST {
-            if first_item == 0 {
-                flowc_fmt_putc(&w, 10)
-            }
-            flowc_fmt_emit_const(&w, arena, src, item)
-            wrote = 1
-        }
-        if kind == AST_ENUM {
-            if first_item == 0 {
-                flowc_fmt_putc(&w, 10)
-            }
-            flowc_fmt_emit_enum(&w, arena, src, item, 0)
-            wrote = 1
-        }
-        if kind == AST_TYPE_ALIAS {
-            if first_item == 0 {
-                flowc_fmt_putc(&w, 10)
-            }
-            flowc_fmt_emit_type_alias(&w, arena, src, item)
-            wrote = 1
-        }
-        if kind == AST_EXPORT {
-            let inner: i32 = arena.nodes[item].a
-            if inner != AST_NONE {
-                let ik: i32 = arena.nodes[inner].kind
-                if ik == AST_STRUCT {
-                    if first_item == 0 {
-                        flowc_fmt_putc(&w, 10)
-                    }
-                    flowc_fmt_emit_struct(&w, arena, src, inner, 1)
-                    wrote = 1
-                }
-                if ik == AST_FN {
-                    if first_item == 0 {
-                        flowc_fmt_putc(&w, 10)
-                    }
-                    flowc_fmt_emit_fn(&w, arena, src, inner, 1)
-                    wrote = 1
-                }
-                if ik == AST_ENUM {
-                    if first_item == 0 {
-                        flowc_fmt_putc(&w, 10)
-                    }
-                    flowc_fmt_emit_enum(&w, arena, src, inner, 1)
-                    wrote = 1
-                }
-            }
-        }
-        if wrote == 1 {
-            first_item = 0
-        }
-        item = arena.nodes[item].next
-    }
-    if w.err != 0 {
-        return 0 - 1
-    }
-    return w.len
+    return flowc_fmt_source(src, strlen(src as string) as i32, out, out_cap)
 }
