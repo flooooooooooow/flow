@@ -22,6 +22,7 @@ import .pipeline_fusion { flowc_fuse_pipelines }
 import .proof_doc { flowc_proof_doc_mode }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
+import .mlirgen { flowc_mlirgen_emit }
 import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
@@ -178,6 +179,17 @@ function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
     return rc
 }
 
+# FLOWC_EMIT=mlir (or FLOWC_BACKEND=mlir) selects the MLIR text emitter.
+function flowc_want_mlir() -> i32 {
+    if flowc_env_eq("FLOWC_EMIT", "mlir") == 1 {
+        return 1
+    }
+    if flowc_env_eq("FLOWC_BACKEND", "mlir") == 1 {
+        return 1
+    }
+    return 0
+}
+
 # FLOWC_IN / FLOWC_OUT emit path: read .flow, Stage-A emit, write (or stdout).
 # FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt or =tokens → flowc_fmt_mode;
 # else cgen (C).
@@ -234,6 +246,12 @@ function flowc_emit_mode() -> i32 {
     }
 
     let mut nout: i32 = 0
+    let want_mlir: i32 = flowc_want_mlir()
+    if want_mlir == 1 and flowc_env_set("FLOWC_BUNDLE") == 1 {
+        puts("flowc mlir: unsupported: imports (bundle mode) at line 0")
+        free(out)
+        return 1
+    }
     if flowc_env_set("FLOWC_BUNDLE") == 1 {
         let mut search_dir: string = "compiler/src"
         let dir_buf: ptr<u8> = malloc(256)
@@ -331,23 +349,33 @@ function flowc_emit_mode() -> i32 {
             }
         }
 
-        if flowc_env_eq("FLOWC_BACKEND", "js") == 1 {
-            nout = flowc_jsgen_emit(p.arena, root, src, out, out_cap)
+        if want_mlir == 1 {
+            nout = flowc_mlirgen_emit(p.arena, root, src, out, out_cap)
             if nout <= 0 {
-                puts("flowc emit: jsgen failed")
                 free(out)
                 flowc_parser_free(p)
                 free(src)
                 return 1
             }
         } else {
-            nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
-            if nout <= 0 {
-                puts("flowc emit: cgen failed")
-                free(out)
-                flowc_parser_free(p)
-                free(src)
-                return 1
+            if flowc_env_eq("FLOWC_BACKEND", "js") == 1 {
+                nout = flowc_jsgen_emit(p.arena, root, src, out, out_cap)
+                if nout <= 0 {
+                    puts("flowc emit: jsgen failed")
+                    free(out)
+                    flowc_parser_free(p)
+                    free(src)
+                    return 1
+                }
+            } else {
+                nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
+                if nout <= 0 {
+                    puts("flowc emit: cgen failed")
+                    free(out)
+                    flowc_parser_free(p)
+                    free(src)
+                    return 1
+                }
             }
         }
         flowc_parser_free(p)
