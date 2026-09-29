@@ -435,24 +435,8 @@ export function import_is_reexport(a: ptr<Analysis>, id: i32) -> bool {
 
 # ── Export index ────────────────────────────────────────────────
 
-# Bare type name, as lsp_intel read it (getattr(type, 'name')): ptr<T>
-# gives T's name, array<T, N> gives `array`.
-function bare_type(a: ptr<Analysis>, ty: i32) -> string {
-    if ty == AST_NONE or ty < 0 {
-        return "unknown"
-    }
-    let name: string = t_span(a.src, a.arena.nodes[ty].name_start, a.arena.nodes[ty].name_end)
-    if t_eq(name, "ptr") and a.arena.nodes[ty].a != AST_NONE {
-        return bare_type(a, a.arena.nodes[ty].a)
-    }
-    if t_len(name) == 0 {
-        return "unknown"
-    }
-    return name
-}
-
-# Import-style symbol for a declaration of a dependency (no doc; types as
-# bare names), located the way refine_import_symbol_location did.
+# Import-style symbol for a declaration of a dependency (no doc), located
+# the way refine_import_symbol_location did.
 function import_sym(dep: ptr<Analysis>, local: ptr<Sym>, def_text: string, def_path: string) -> ptr<Sym> {
     let s: ptr<Sym> = sym_copy(local)
     s.doc = ""
@@ -497,47 +481,6 @@ function import_sym(dep: ptr<Analysis>, local: ptr<Sym>, def_text: string, def_p
     s.end_line = line
     s.has_end = true
     return s
-}
-
-# Rewrite the parameter / field / return types of a symbol taken from
-# dep's AST as bare names.
-function bare_types(dep: ptr<Analysis>, s: ptr<Sym>) {
-    let mut item: i32 = dep.arena.nodes[dep.root].a
-    while item != AST_NONE {
-        let mut it: i32 = item
-        if dep.arena.nodes[it].kind == AST_EXPORT and dep.arena.nodes[it].ival == 0 and dep.arena.nodes[it].a != AST_NONE {
-            it = dep.arena.nodes[it].a
-        }
-        let k: i32 = dep.arena.nodes[it].kind
-        if (k == AST_FN or k == AST_STRUCT or k == AST_CONST or k == AST_TYPE_ALIAS) and t_eq(name_of(dep, it), s.name) {
-            if k == AST_FN {
-                s.ptypes = tl_new()
-                let mut p: i32 = dep.arena.nodes[it].a
-                while p != AST_NONE {
-                    tl_push(&s.ptypes, bare_type(dep, dep.arena.nodes[p].a))
-                    p = dep.arena.nodes[p].next
-                }
-                if dep.arena.nodes[it].b != AST_NONE {
-                    s.ret = bare_type(dep, dep.arena.nodes[it].b)
-                } else {
-                    s.ret = "void"
-                }
-            } elif k == AST_STRUCT {
-                s.ftypes = tl_new()
-                let mut f: i32 = dep.arena.nodes[it].a
-                while f != AST_NONE {
-                    if dep.arena.nodes[f].kind == AST_FIELD {
-                        tl_push(&s.ftypes, bare_type(dep, dep.arena.nodes[f].a))
-                    }
-                    f = dep.arena.nodes[f].next
-                }
-            } else {
-                s.tstr = bare_type(dep, dep.arena.nodes[it].a)
-            }
-            return
-        }
-        item = dep.arena.nodes[item].next
-    }
 }
 
 # Names in `export a, b` lists of a module.
@@ -605,7 +548,9 @@ export function module_exports(dep_path: string, pr: ptr<Project>, out: ptr<PLis
         if s.exported or tl_index(&listed, s.name) >= 0 {
             let is: ptr<Sym> = import_sym(dep, s, text, dep_path)
             if is != null {
-                bare_types(dep, is)
+                if t_eq(is.kind, "function") and t_eq(is.ret, "unknown") {
+                    is.ret = "void"
+                }
                 sym_put(out, is)
             }
         }
